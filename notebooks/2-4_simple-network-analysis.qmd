@@ -1,9 +1,0 @@
-## Distributions of model weights
-
-Input-hidden, hidden-hidden, and hidden-output
-
-Violins.
-
-### By training condition
-
-### By replicate (sanity check)
