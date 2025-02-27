@@ -1,0 +1,324 @@
+---
+jupyter: python3
+---
+
+```{python}
+%load_ext autoreload
+%autoreload 2
+```
+
+```{python}
+TRAIN_NB_ID = "1"
+```
+
+# Training models for Part 1
+
+In this notebook we train several models separately from each other, to support later analyses of whether RNNs can be learn robust policies for a simple continuous control task. In particular, we train an RNN to drive a point mass from an initial position to a target position (i.e. simple reaching) in a 2D workspace. One model will be trained to do this undisturbed, while another will experience a disturbance which cannot be modeled (curl force fields of random direction and magnitude) on each trial/episode. In the latter case, two variants of the model will be trained, at two levels of average disturbance magnitude.
+
+Multiple replicates of the model are trained in each case, to examine the effect of network weight initialization. 
+
+Each model consists of a single-layer RNN with a linear readout layer, which controls a biomechanical model, forming a closed loop. On each time step of a trial, the RNN outputs a 2D force vector which accelerates a Newtonian point mass across a 2D workspace. The input to the RNN on each time step includes feedback observations of the point mass's position and velocity, as well as the target/reference position and velocity. In the case of simple reaching, the target state is constant across the trial -- the goal position and velocity of the reach.
+
+Symmetric (Gaussian) noise is added to the network's outputs and to the feedback observations on each time step, to model motor and sensory noise in the system.
+
+The training objective is to minimize a continuous cost function which penalizes a sum of the following squared terms:
+
+- the Euclidean distance between the point mass's position and the target position on each time step;
+- the **difference** between the point mass's velocity and the target velocity on each time step;
+- the force vector output by the neural network;
+- the activations of the network units.
+
+## Environment setup
+
+```{python}
+import os
+
+os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
+```
+
+```{python}
+from functools import partial
+from typing import Literal
+
+import equinox as eqx
+import jax
+import jax.numpy as jnp
+import jax.random as jr
+import jax.tree as jt
+import optax 
+
+from feedbax import (
+    is_module,
+    is_type,
+    tree_concatenate,
+    tree_map_tqdm,
+    tree_unzip,
+)
+from feedbax.loss import ModelLoss
+from feedbax.misc import where_func_to_labels
+from feedbax.train import TaskTrainer
+from feedbax.xabdeef.losses import simple_reach_loss
+
+from rnns_learn_robust_motor_policies import PROJECT_SEED
+from rnns_learn_robust_motor_policies.constants import (
+    get_iterations_to_save_model_parameters,
+)
+from rnns_learn_robust_motor_policies.database import (
+    get_db_session,
+    save_model_and_add_record,
+)
+from rnns_learn_robust_motor_policies.misc import log_version_info
+from rnns_learn_robust_motor_policies.setup_utils import (
+    get_readout_norm_loss,
+)
+from rnns_learn_robust_motor_policies.train_setup_part1 import (
+    setup_task_model_pair,
+)
+from rnns_learn_robust_motor_policies.tree_utils import pp
+from rnns_learn_robust_motor_policies.types import TaskModelPair
+from rnns_learn_robust_motor_policies.train_setup import (
+    concat_save_iterations,
+    make_delayed_cosine_schedule,
+    train_pair,
+)
+from rnns_learn_robust_motor_policies.types import TrainStdDict
+```
+
+Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
+
+```{python}
+version_info = log_version_info(jax, eqx, optax)
+```
+
+### Initialize model database connection
+
+```{python}
+db_session = get_db_session()
+```
+
+### Hyperparameters
+
+These are parameters that can be [varied](https://quarto.org/docs/computations/parameters.html) through the command line interface to Quarto. 
+
+```{python}
+#| tags: [parameters]
+
+disturbance_type: Literal['curl', 'constant'] = 'constant'  
+feedback_delay_steps = 0
+feedback_noise_std = 0.1
+motor_noise_std = 0.1
+hidden_size = 100
+n_replicates = 5
+n_steps = 100
+dt = 0.05
+
+n_batches_baseline = 0
+n_batches_condition = 10000
+batch_size = 250
+learning_rate_0 = 0.01
+constant_lr_iterations = 0  # Number of initial training iterations to hold lr constant
+cosine_annealing_alpha = 1.0  # Max learning rate factor decrease during cosine annealing 
+weight_decay = 0
+
+# scales the weight on the control force (i.e. network output) loss term
+# (for supplementary analysis)
+control_loss_scale = 1
+
+# Force the Frobenius norm of the readout weight matrix to be close (squared error) to this value
+readout_norm_value = 2.0
+readout_norm_loss_weight = 0.0
+
+n_scaleup_batches = 0
+intervention_scaleup_batches = (n_batches_baseline, n_batches_baseline + n_scaleup_batches)
+
+# reset the optimizer state at these iterations
+state_reset_iterations = jnp.array([])
+
+# change which parameters are trained, after a given number of iterations
+where_train = {
+    0: lambda model: (
+        model.step.net.hidden,
+        model.step.net.readout, 
+    ),
+    # stop training the readout 
+    # 1000: lambda model: model.step.net.hidden,
+}
+
+disturbance_stds = {
+    'curl': [0, 0.5, 1.0, 1.5],
+    'constant': [0, 0.01, 0.1, 1],
+}
+```
+
+### RNG setup
+
+```{python}
+key = jr.PRNGKey(PROJECT_SEED)
+key_init, key_train, key_eval = jr.split(key, 3)
+```
+
+## Create model-task pairings for different disturbance conditions
+
+```{python}
+if not disturbance_type in ['curl', 'constant']:
+    raise ValueError(f"Unknown disturbance type: {disturbance_type}")
+
+task_model_pairs = jt.map(
+    lambda disturbance_std: setup_task_model_pair(
+        n_replicates=n_replicates,
+        dt=dt,
+        hidden_size=hidden_size,
+        n_steps=n_steps,
+        feedback_delay_steps=feedback_delay_steps,
+        feedback_noise_std=feedback_noise_std,
+        motor_noise_std=motor_noise_std,
+        disturbance_type=disturbance_type,
+        disturbance_std=disturbance_std,
+        intervention_scaleup_batches=intervention_scaleup_batches,
+        control_loss_scale=control_loss_scale,
+        key=key_init, 
+    ),
+    TrainStdDict(zip(
+        disturbance_stds[disturbance_type], 
+        disturbance_stds[disturbance_type],
+    )),
+)
+
+# The task without training perturbations
+task_baseline = task_model_pairs[0].task
+```
+
+## Training setup
+
+### Training hyperparameters and optimizer
+
+```{python}
+optimizer_class = partial(
+    optax.adamw,
+    weight_decay=weight_decay,
+)
+
+n_batches = n_batches_baseline + n_batches_condition
+save_model_parameters = get_iterations_to_save_model_parameters(n_batches)
+```
+
+```{python}
+schedule = make_delayed_cosine_schedule(
+    learning_rate_0, 
+    constant_lr_iterations, 
+    n_batches, 
+    cosine_annealing_alpha,
+) 
+
+trainer = TaskTrainer(
+    optimizer=optax.inject_hyperparams(optimizer_class)(
+        learning_rate=schedule,
+    ),
+    checkpointing=True,
+)
+```
+
+```{python}
+readout_norm_loss = readout_norm_loss_weight * get_readout_norm_loss(readout_norm_value)
+loss_func = simple_reach_loss() + readout_norm_loss
+```
+
+## Train the models
+
+```{python}
+train_params = dict(
+    ensembled=True,
+    loss_func=loss_func,
+    task_baseline=task_baseline, 
+    where_train=where_train,
+    batch_size=batch_size, 
+    log_step=500,
+    save_model_parameters=save_model_parameters,
+    state_reset_iterations=state_reset_iterations,
+    # disable_tqdm=True,
+)
+
+# The imported `train_pair` function actually runs the trainer
+trained_models, train_histories = tree_unzip(tree_map_tqdm(
+    partial(train_pair, trainer, n_batches, key=key_train, **train_params),
+    task_model_pairs,
+    label="Training all pairs",
+    is_leaf=is_type(TaskModelPair),
+))
+```
+
+## Save the models with their parameters on the final iteration
+
+```{python}
+# save_model_parameters_all = concat_save_iterations(
+#     save_model_parameters, 
+#     (n_batches_baseline, n_batches_condition),
+# )
+
+where_train_strs = jt.map(where_func_to_labels, where_train)
+
+training_hyperparameters = dict(
+    learning_rate_0=learning_rate_0,
+    constant_lr_iterations=constant_lr_iterations,
+    cosine_annealing_alpha=cosine_annealing_alpha,
+    weight_decay=weight_decay,
+    n_batches=n_batches,
+    n_batches_condition=n_batches_condition,
+    n_batches_baseline=n_batches_baseline,
+    batch_size=batch_size,
+    save_model_parameters=save_model_parameters.tolist(),
+    where_train_strs=where_train_strs,
+    state_reset_iterations=state_reset_iterations.tolist(),
+)
+```
+
+```{python}
+model_hyperparameters = dict(
+    n_replicates=n_replicates,
+    hidden_size=hidden_size,
+    feedback_delay_steps=feedback_delay_steps,
+    feedback_noise_std=feedback_noise_std,
+    motor_noise_std=motor_noise_std,
+    dt=dt,
+    n_steps=n_steps,
+    disturbance_type=disturbance_type,
+    # disturbance_std=disturbance_std,
+    readout_norm_loss_weight=readout_norm_loss_weight,
+    readout_norm_value=readout_norm_value,
+    intervention_scaleup_batches=intervention_scaleup_batches,
+    control_loss_scale=control_loss_scale,
+)
+```
+
+```{python}
+train_histories_hyperparameters=dict(
+    n_batches=n_batches,
+    batch_size=batch_size,
+    n_replicates=n_replicates,
+    where_train_strs=where_train_strs,
+    save_model_parameters=save_model_parameters.tolist(),
+    readout_norm_loss_weight=readout_norm_loss_weight,
+    readout_norm_value=readout_norm_value,
+)
+```
+
+Create a database record for each ensemble of models trained (i.e. one per disturbance std).
+
+```{python}
+model_records = TrainStdDict({
+    disturbance_std: save_model_and_add_record(
+        db_session,
+        origin=TRAIN_NB_ID,
+        model=models,
+        model_hyperparameters=model_hyperparameters | dict(
+            disturbance_std=disturbance_std,
+        ),
+        other_hyperparameters=training_hyperparameters,
+        train_history=train_histories,
+        train_history_hyperparameters=train_histories_hyperparameters,
+        version_info=version_info,
+    )
+    for disturbance_std, models in trained_models.items()
+})
+```
+
