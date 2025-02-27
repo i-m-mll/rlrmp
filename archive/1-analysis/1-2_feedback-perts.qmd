@@ -1,0 +1,1364 @@
+---
+jupyter: python3
+format:
+  html:
+    toc: true 
+execute:
+  echo: false
+---
+
+```{python}
+NB_ID = "1-2"
+
+TRAIN_NB_ID = "1"
+```
+
+# Analysis of feedback perturbations
+
+We continue our perturbation analysis by examining the response of the trained models to perturbations of their feedback inputs at steady state. 
+
+We will apply an impulse perturbation to each of the feedback input channels (velocity and position), and examine and measure the response profiles, in particular the velocities and the control forces.
+
+## Environment setup
+
+```{python}
+%load_ext autoreload
+%autoreload 2
+```
+
+```{python}
+import os
+
+os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
+```
+
+```{python}
+from collections import OrderedDict, namedtuple
+from functools import partial
+from typing import Literal, Optional
+
+import equinox as eqx
+import jax
+import jax.numpy as jnp
+import jax.random as jr
+import jax.tree as jt
+from jaxtyping import Array, Float, PyTree
+import numpy as np
+import plotly
+import plotly.graph_objects as go
+from tqdm.auto import tqdm
+
+import feedbax
+from feedbax import (
+    is_module, 
+    is_type,
+    load, 
+    move_level_to_outside,
+    tree_key_tuples, 
+    tree_prefix_expand,
+    tree_set_scalar,
+    tree_struct_bytes,
+    tree_take, 
+    tree_take_multi,
+    tree_unstack, 
+    tree_unzip,
+)
+from feedbax.intervene import ConstantInput, schedule_intervenor
+import feedbax.plotly as fbp
+from feedbax.task import SimpleReaches
+from feedbax.xabdeef.losses import simple_reach_loss
+
+import rnns_learn_robust_motor_policies
+from rnns_learn_robust_motor_policies import PROJECT_SEED
+from rnns_learn_robust_motor_policies.colors import (
+    COLORSCALES,
+    get_colors_dicts,
+    get_colors_dicts_from_discrete,
+)
+from rnns_learn_robust_motor_policies.constants import (
+    REPLICATE_CRITERION,
+    WORKSPACE,
+)
+from rnns_learn_robust_motor_policies.database import (
+    ModelRecord,
+    add_evaluation,
+    add_evaluation_figure,
+    get_db_session,
+    get_model_record,
+    use_record_params_where_none,
+)
+from rnns_learn_robust_motor_policies import measures
+from rnns_learn_robust_motor_policies.measures import (
+    MEASURES, 
+    MEASURE_LABELS,
+    RESPONSE_VAR_LABELS,
+    Measure,
+    Responses,
+    compute_all_measures,
+    output_corr,
+)
+from rnns_learn_robust_motor_policies.misc import (
+    lohi, 
+    lomidhi,
+    log_version_info,
+    round_to_list,
+)
+from rnns_learn_robust_motor_policies.perturbations import (
+    feedback_impulse,
+)
+from rnns_learn_robust_motor_policies.train_setup_part1 import (
+    setup_task_model_pair,
+)
+from rnns_learn_robust_motor_policies.plot import get_violins
+from rnns_learn_robust_motor_policies.plot_utils import (
+    toggle_bounds_visibility,
+    figs_flatten_with_paths,
+    figleaves,
+    plotly_vscode_latex_fix,
+)
+from rnns_learn_robust_motor_policies.post_training import setup_replicate_info
+from rnns_learn_robust_motor_policies.state_utils import (
+    project_onto_direction,
+    vmap_eval_ensemble,
+)
+from rnns_learn_robust_motor_policies.tree_utils import (
+    pp, 
+    subdict,
+)
+from rnns_learn_robust_motor_policies.setup_utils import (
+    query_and_load_model,
+    set_model_noise,
+    setup_models_only,
+)
+from rnns_learn_robust_motor_policies.types import (
+    ImpulseAmpTuple, 
+    PertAmpDict,
+    PertVarDict, 
+    TrainStdDict,
+)
+```
+
+Log the library versions and the feedbax commit ID, so they appear in any reports generated from this notebook.
+
+```{python}
+version_info = log_version_info(
+    jax, eqx, plotly, git_modules=(feedbax, rnns_learn_robust_motor_policies)
+)
+```
+
+### Initialize model database connection
+
+```{python}
+db_session = get_db_session()
+```
+
+### Hyperparameters
+
+We may want to specify 1) which trained models to load, by their parameters, and 2) how to modify the model parameters for analysis.
+
+```{python}
+#| tags: [parameters]
+# Specify which trained models to load 
+disturbance_stds_load = [0, 0.5, 1.0, 1.5]
+disturbance_type_load: Literal['curl', 'constant'] = 'curl'
+feedback_noise_std_load = 0.01
+motor_noise_std_load = 0.01
+feedback_delay_steps_load = 0
+hidden_size = 50
+where_train_strs = ["step.net.hidden", "step.net.readout"]
+readout_norm_loss_weight = 0.0
+readout_norm_value = 2.0
+
+# Specify model parameters to use for analysis (None -> use training value)
+# disturbance_type: Optional[Literal['curl', 'constant']] = None
+feedback_noise_std: Optional[float] = 0.01
+motor_noise_std: Optional[float] = 0.01
+```
+
+```{python}
+# If the system is noiseless, this will be reset to 1
+n_evals = 5  
+```
+
+These parameters may be passed as strings from the command line in some cases, so we need to cast them to be sure.
+
+```{python}
+feedback_noise_std_load = float(feedback_noise_std_load)
+motor_noise_std_load = float(motor_noise_std_load)
+feedback_delay_steps_load = int(feedback_delay_steps_load)
+hidden_size = int(hidden_size)
+if feedback_noise_std is not None:
+    feedback_noise_std = float(feedback_noise_std)
+if motor_noise_std is not None:
+    motor_noise_std = float(motor_noise_std)
+```
+
+See further below for parameter-based loading of models, as well as the code that modifies the models prior to analysis.
+
+```{python}
+params_load_func = lambda disturbance_std_load: dict(
+    origin=TRAIN_NB_ID,
+    hidden_size=hidden_size,
+    disturbance_type=disturbance_type_load,
+    disturbance_std=disturbance_std_load,
+    feedback_noise_std=feedback_noise_std_load,
+    motor_noise_std=motor_noise_std_load,
+    feedback_delay_steps=feedback_delay_steps_load,
+    # readout_norm_loss_weight=readout_norm_loss_weight,
+    # readout_norm_value=readout_norm_value,
+    # control_loss_scale=control_loss_scale,
+    # intervention_scaleup_batches=[0,0],
+    # state_reset_iterations=[],
+)
+```
+
+### Task parameters
+
+We'll do feedback perturbations on a grid of steady state (i.e. "stabilization") trials.
+
+```{python}
+eval_grid_n = 5
+EVAL_N_DIRECTIONS = 1
+EVAL_REACH_LENGTH = 0.0  
+```
+
+### Perturbation parameters
+
+```{python}
+max_impulse_amplitude = dict(
+    pos=1.8,
+    vel=1.2,
+)
+
+n_impulse_amplitudes = 3
+
+impulse_start_step = 30  
+impulse_duration = 5  # steps
+```
+
+### RNG setup
+
+```{python}
+key = jr.PRNGKey(PROJECT_SEED)
+key_init, key_train, key_eval = jr.split(key, 3)
+```
+
+### Plotting setup 
+
+The following is a workaround to get LaTeX to display in Plotly figures in VSCode.
+
+```{python}
+plotly_vscode_latex_fix()
+```
+
+## Load and adjust trained models
+
+```{python}
+models_base, model_info, replicate_info, n_replicates_included = tree_unzip(TrainStdDict({
+    disturbance_std: query_and_load_model(
+        db_session,
+        setup_task_model_pair,
+        params_query=params_load_func(disturbance_std),
+        noise_stds=dict(
+            feedback=feedback_noise_std,
+            motor=motor_noise_std,
+        ),
+        exclude_underperformers_by=REPLICATE_CRITERION,
+    )
+    for disturbance_std in disturbance_stds_load
+}))
+
+best_replicate, included_replicates = tree_unzip(TrainStdDict({
+    std: (
+        replicate_info[std]['best_replicates'][REPLICATE_CRITERION],
+        replicate_info[std]['included_replicates'][REPLICATE_CRITERION],
+    ) 
+    for std in disturbance_stds_load
+}))
+```
+
+## Sort out the evaluation parameters and create a database record
+
+We will either be evaluating on specific disturbance types and noise conditions, or if none are specified here,
+keeping the same conditions used during training.
+
+```{python}
+all_eval_parameters = jt.map(
+    lambda record: use_record_params_where_none(
+        dict(
+            feedback_noise_std=feedback_noise_std,
+            motor_noise_std=motor_noise_std,
+        ), 
+        record,
+    ),
+    model_info,
+    is_leaf=is_type(ModelRecord),
+)
+```
+
+All the relevant model info (e.g. noise stds) except disturbance std should be the same across models, at this point. Assert that this is the case, and keep the parameters for only one of the models.
+
+```{python}
+all_eval_params_flat =[tuple(d.items()) for d in all_eval_parameters.values()]
+
+assert len(set(all_eval_params_flat)) == 1
+
+eval_parameters = all_eval_parameters[disturbance_stds_load[0]]
+
+# Later, use this to access the values of hyperparameters, assuming they 
+# are shared between models (e.g. `model_info_0.n_steps`)
+model_info_0 = model_info[disturbance_stds_load[0]]
+```
+
+Are any of the system noise scales non-zero?
+
+```{python}
+any_system_noise = any(jt.leaves((
+    eval_parameters['feedback_noise_std'],
+    eval_parameters['motor_noise_std'],
+)))
+
+if not any_system_noise:
+    n_evals = 1
+```
+
+### Full parameter dict
+
+```{python}
+eval_parameters |= dict(
+    n_evals=n_evals,
+    eval_grid_n=eval_grid_n,
+    impulse_start_step=impulse_start_step,
+    impulse_duration=impulse_duration,
+    max_impulse_amplitude=max_impulse_amplitude,
+    n_impulse_amplitudes=n_impulse_amplitudes,
+)
+```
+
+## Initialize a record in the evaluations database
+
+```{python}
+eval_info = add_evaluation(
+    db_session,
+    origin=NB_ID,
+    models=model_info,
+    eval_parameters=eval_parameters,
+    version_info=version_info,
+)
+```
+
+## Setup tasks with impulse perturbations to different feedback channels
+
+### Setup the base task
+
+```{python}
+# Define the base task
+task = SimpleReaches(
+    loss_func=simple_reach_loss(),
+    workspace=WORKSPACE, 
+    n_steps=model_info_0.n_steps,
+    eval_grid_n=eval_grid_n,
+    eval_n_directions=EVAL_N_DIRECTIONS,
+    eval_reach_length=EVAL_REACH_LENGTH,  
+)
+```
+
+### Schedule impulse perturbations
+
+```{python}
+impulse_amplitudes = jt.map(
+    lambda max_amp: jnp.linspace(0, max_amp, n_impulse_amplitudes + 1)[1:],
+    max_impulse_amplitude,
+)
+
+impulse_end_step = impulse_start_step + impulse_duration
+impulse_time_idxs = slice(impulse_start_step, impulse_end_step)
+```
+
+For the example trajectories and aligned profiles, we'll only plot one of the impulse amplitudes. 
+
+```{python}
+i_impulse_amp_plot = -1  # The largest amplitude perturbation
+impulse_amplitude_plot = {
+    pert_var: v[i_impulse_amp_plot] for pert_var, v in impulse_amplitudes.items()
+}
+```
+
+```{python}
+analysis_variants = ('xy', 'rand')
+
+pert_var_names = ('pos', 'vel')
+feedback_var_idxs = PertVarDict(zip(pert_var_names, range(len(pert_var_names))))
+
+coord_names = ('x', 'y')
+coord_idxs = dict(zip(coord_names, range(len(coord_names))))
+```
+
+#### Perturbations along x/y axes
+
+```{python}
+# from math import copysign
+
+all_tasks_imp = dict()
+all_models_imp = dict()
+impulse_directions = dict()
+
+impulse_xy_conditions = PertVarDict.fromkeys(pert_var_names, dict.fromkeys(coord_names))
+impulse_xy_conditions_keys = tree_key_tuples(
+    impulse_xy_conditions, keys_to_strs=True, is_leaf=lambda x: x is None,
+)
+
+all_tasks_imp['xy'], all_models_imp['xy'] = tree_unzip(jt.map(
+    lambda ks: schedule_intervenor(
+        task, models_base,
+        lambda model: model.step.feedback_channels[0],
+        feedback_impulse(
+            model_info_0.n_steps,
+            1.0, # impulse_amplitude[ks[0]],
+            impulse_duration,
+            feedback_var_idxs[ks[0]],  
+            impulse_start_step,
+            feedback_dim=coord_idxs[ks[1]],  
+        ),
+        default_active=False,
+        stage_name="update_queue",
+    ),
+    impulse_xy_conditions_keys,
+    is_leaf=is_type(tuple),
+))
+```
+
+```{python}
+impulse_directions['xy'] = jt.map(
+    lambda task, ks: jnp.zeros(
+        (task.n_validation_trials, 2)
+    # ).at[:, coord_idxs[ks[1]]].set(copysign(1, impulse_amplitude[ks[0]])),
+    # Assume x-y impulses are in the positive direction.
+    ).at[:, coord_idxs[ks[1]]].set(1),
+    all_tasks_imp['xy'], impulse_xy_conditions_keys,
+    is_leaf=is_module,
+)
+```
+
+#### Perturbations in random directions
+
+```{python}
+all_tasks_imp['rand'], all_models_imp['rand'] = tree_unzip(jt.map(
+    lambda feedback_var_idx: schedule_intervenor(
+        task, models_base,
+        lambda model: model.step.feedback_channels[0],
+        feedback_impulse(  
+            model_info_0.n_steps,
+            1.0, #impulse_amplitude[pert_var_names[feedback_var_idx]],
+            impulse_duration,
+            feedback_var_idx,   
+            impulse_start_step,
+        ),
+        default_active=False,
+        stage_name="update_queue",
+    ),
+    PertVarDict(pos=0, vel=1),
+    is_leaf=is_type(tuple),
+))
+```
+
+Get the perturbation directions, for later:
+
+```{python}
+#? I think these values are equivalent to `line_vec` in the functions in `state_utils`
+impulse_directions['rand'] = jt.map(
+    lambda task: task.validation_trials.intervene['ConstantInput'].arrays[:, impulse_start_step],
+    all_tasks_imp['rand'],
+    is_leaf=is_module,
+)
+```
+
+## Evaluate the trained models on the perturbed tasks
+
+Evaluate multiple times on each trial (i.e. task condition), when there is system noise to cause variation.
+
+```{python}
+def eval_with_imp_amplitude(impulse_amplitude, models, task, n_evals, key_eval):
+    task = eqx.tree_at(
+        lambda task: task.intervention_specs.validation['ConstantInput'].intervenor.params.scale,
+        task,
+        impulse_amplitude,
+    ) 
+    return vmap_eval_ensemble(models, task, n_evals, key_eval)
+
+
+def evaluate_all_impulse_responses():
+    # Wrap as a function for the convenience of estimating the amount of memory needed for the result.
+    return {
+        analysis_variant: PertVarDict({
+            pert_var: jt.map(  # Necessary to map over possibly an extra tree level in different analysis variants
+                lambda task, models: jt.map(  # Maps over the models in the OrderedDict (train conditions)
+                    lambda models: eqx.filter_vmap(
+                        eval_with_imp_amplitude,
+                        in_axes=(0, None, None, None, None)
+                    )(
+                        impulse_amplitudes[pert_var], 
+                        models, 
+                        task, 
+                        n_evals, 
+                        key_eval,
+                    ),
+                    models,
+                    is_leaf=is_module,
+                ),
+                all_tasks_imp[analysis_variant][pert_var],
+                all_models_imp[analysis_variant][pert_var],
+                is_leaf=is_module,
+            )
+            for pert_var in pert_var_names
+        })
+        for analysis_variant in analysis_variants  # TODO: maybe call these `task_variants` or something
+    }
+```
+
+```{python}
+all_states_bytes = tree_struct_bytes(eqx.filter_eval_shape(evaluate_all_impulse_responses))
+
+print(f"\nEstimate {all_states_bytes / 1e9:.2f} GB of memory needed for all responses.")
+```
+
+```{python}
+all_states_imp = evaluate_all_impulse_responses()
+```
+
+## Choose a task variant for analysis
+
+```{python}
+analysis_variant: Literal['xy', 'rand'] = 'rand'
+
+all_states = all_states_imp[analysis_variant]
+# Unstack the first array dimension (impulse amplitude) into another PyTree level
+# all_states = {
+#     pert_var: ImpulseAmpTuple(tree_unstack(states))
+#     for pert_var, states in all_states_imp[analysis_variant].items()
+# }
+
+directions = impulse_directions[analysis_variant]
+tasks = all_tasks_imp[analysis_variant]
+models = all_models_imp[analysis_variant]
+```
+
+### Define colorscales
+
+```{python}
+# when coloring by training condition
+disturbance_train_stds_colors, disturbance_train_stds_colors_dark = get_colors_dicts(
+    disturbance_stds_load, COLORSCALES['disturbance_train_stds'],
+)
+```
+
+```{python}
+# when coloring by perturbed feedback variable
+
+pert_vars_colors, pert_vars_colors_dark = get_colors_dicts_from_discrete(
+    pert_var_names, COLORSCALES['fb_pert_vars']
+)
+```
+
+## Plot some example trial sets
+
+```{python}
+plot_id = 'example_trial_sets'
+```
+
+```{python}
+if not any_system_noise:
+    ExamplePlotVars = namedtuple("ExamplePlotVars", ['pos', 'vel', 'force'])
+    var_labels = ExamplePlotVars('Position', 'Velocity', 'Control force')
+    where_plot = lambda states: ExamplePlotVars(
+        states.mechanics.effector.pos,
+        states.mechanics.effector.vel,
+        states.efferent.output,
+    )
+else:
+    ExamplePlotVars = namedtuple("ExamplePlotVars", ['pos', 'vel'])
+    var_labels = ExamplePlotVars('Position', 'Velocity')
+    # Forces are very messy when there's noise,
+    # and we'll visualize the aligned forces anyway
+    where_plot = lambda states: ExamplePlotVars(
+        states.mechanics.effector.pos,
+        states.mechanics.effector.vel,
+    )
+```
+
+### A single trial set, for a single replicate
+
+```{python}
+i_trial = 0
+i_replicate = None
+
+# Index the trial and replicate
+# plot_states = tree_take_multi(all_states, [i_trial, i_replicate], [0, 1])
+
+# Select the variables to plot
+plot_states = jt.map(where_plot, all_states, is_leaf=is_module)
+
+# Split up the impulse amplitudes from array dim 0, into a tuple part of the PyTree,
+# and unzip them so `ExamplePlotVars` is on the inside
+plot_states = jt.map(
+    lambda plot_vars: tree_unzip(
+        jt.map(
+            lambda arr: ImpulseAmpTuple(arr),
+            plot_vars,
+        ),
+        ImpulseAmpTuple,
+    ),
+    plot_states,
+    is_leaf=is_type(ExamplePlotVars)
+)
+
+# Only plot the strongest impulse amplitude, here
+# (This makes the last step kind of superfluous but if we need to change this 
+# again later, it might be convenient for the impulse amplitudes to be part of 
+# the PyTree structure)
+plot_states = jt.map(
+    lambda t: t[i_impulse_amp_plot],
+    plot_states,
+    is_leaf=is_type(ImpulseAmpTuple),
+)
+```
+
+```{python}
+if i_replicate is None:
+    get_replicate = lambda train_std: best_replicate[train_std]
+else:
+    get_replicate = lambda _: i_replicate
+
+figs = jt.map(
+    lambda states: {
+        train_std: fbp.trajectories_2D(
+            tree_take_multi(
+                plot_vars, 
+                [i_trial, get_replicate(train_std)],
+                [0, 1]
+            ),
+            var_labels=var_labels,
+            axes_labels=('x', 'y'),
+            curves_mode='markers+lines',
+            ms=3,
+            scatter_kws=dict(line_width=0.75),
+            layout_kws=dict(
+                width=100 + len(var_labels) * 300,
+                height=400,
+                legend_tracegroupgap=1,
+            ),
+        )
+        for train_std, plot_vars in states.items()
+    },
+    plot_states,
+    is_leaf=is_type(TrainStdDict),
+)    
+```
+
+In case we're examining the orthogonal x/y perturbations case, we'll plot them on the same figures.
+
+```{python}
+# def merge_xy_trial_set_figs(figs):
+#     fig = figs['x']
+#     figs['y'].update_traces(showlegend=False)
+#     fig.add_traces(figs['y'].data)
+#     return fig
+
+# TODO: Alter something (e.g. color) so it is easier to tell the directions apart
+# TODO: Make sure this is still working, if xy perturbations ever become relevant again
+# if analysis_variant == 'xy':
+#     figs = {
+#         label: jt.map(
+#             lambda train_std_figs: OrderedDict({
+#                 std: merge_xy_trial_set_figs(figs_xy)
+#                 for std, figs_xy in train_std_figs.items()
+#             }),
+#             figs_t,
+#             is_leaf=is_type(OrderedDict),
+#         )
+#         for label, figs_t in {
+#             label: jt.transpose(
+#                 jt.structure(dict.fromkeys(coord_names, '*')),
+#                 jt.structure(OrderedDict.fromkeys(disturbance_train_stds, '*')),
+#                 fs,
+#             )
+#             for label, pert_var_figs in figs.items()
+#         }.items()
+#     }
+```
+
+```{python}
+for path, fig in tqdm(figs_flatten_with_paths(figs)):
+    pert_var = path[0].key
+    disturbance_train_std = path[-1].key
+    i_rep = best_replicate[disturbance_train_std]
+
+    fig_parameters = dict(
+        disturbance_train_std=disturbance_train_std,
+        # analysis_variant=analysis_variant,
+        disturbance_type=f"impulse/feedback/{pert_var}",
+        disturbance_amplitude=impulse_amplitude_plot[pert_var],
+        i_model_replicate=i_rep,
+        i_random_trial=i_trial,
+    )
+    
+    add_evaluation_figure(
+        db_session,
+        eval_info,
+        fig,
+        plot_id,
+        model_records=model_info[disturbance_train_std],
+        **fig_parameters,
+    )
+    
+    if disturbance_train_std in lohi(disturbance_stds_load) and pert_var == 'vel':
+        fig.show()
+```
+
+## Compare response trajectories
+
+Toggle whether to plot x/y components or aligned components.
+
+```{python}
+components_plot: Literal['xy', 'aligned'] = 'aligned'
+components_labels = dict(
+    xy=('x', 'y'),
+    aligned=(r'\parallel', r'\bot')
+)
+components_names = dict(
+    xy=('x', 'y'),
+    aligned=('parallel', 'orthogonal'),
+)
+```
+
+```{python}
+# i_replicate = 1
+n_preceding_steps = 0
+
+# plot_ts = slice(impulse_start_step - n_preceding_steps, None)
+plot_ts = slice(None)
+```
+
+### Obtain the profiles
+
+```{python}
+steady_pos = task.validation_trials.inits["mechanics.effector"].pos
+
+# Short label for the axes/filenames
+profile_vars_labels = Responses(
+    pos='p',
+    vel='v',
+    force='F',
+)
+
+# What part of the state to obtain the profiles from
+profile_vars_where = Responses(
+    pos=lambda states: states.mechanics.effector.pos - steady_pos[..., None, :],
+    vel=lambda states: states.mechanics.effector.vel,
+    force=lambda states: states.efferent.output,
+)
+
+# Different ways to align the profiles with the reach directions
+alignment_funcs = dict(
+    xy=lambda var, _: var, 
+    aligned=lambda var, directions: project_onto_direction(var, directions),
+)
+```
+
+```{python}
+impulse_responses = jt.map(
+    lambda alignment_func: jt.map(
+        lambda where: jt.map(
+            lambda states, directions: alignment_func(where(states)[..., plot_ts, :], directions),
+            all_states, tree_prefix_expand(directions, all_states, is_leaf=is_module),
+            is_leaf=is_module,
+        ),
+        profile_vars_where,
+    ),
+    alignment_funcs,
+)
+```
+
+```{python}
+# pp(impulse_responses)
+```
+
+### Define some plotting functions
+
+**TODO**: Make the figures shorter (too much vertical whitespace) 
+
+**TODO**: Replace this with the more general function from 2-3?
+
+```{python}
+def get_all_profiles(all_plot, var_label, disturbance_stds=None, colors=None):    
+    y_axes_labels = [fr'${var_label}_{sub}$' for sub in components_labels[components_plot]]
+    
+    if colors is None:
+        colors = disturbance_train_stds_colors_dark
+    
+    if disturbance_stds is not None:
+        all_plot = jt.map(
+            lambda d: subdict(d, disturbance_stds),
+            all_plot,
+            is_leaf=is_type(TrainStdDict),
+        )
+        
+        colors = subdict(colors, disturbance_stds)
+    
+    figs = {
+        coord_label: {
+            pert_condn: jt.map(
+                lambda var_by_train_condn: fbp.profiles(
+                    tree_take(var_by_train_condn, i, -1),
+                    timesteps=jnp.arange(-n_preceding_steps, model_info_0.n_steps),
+                    mode='std', 
+                    varname=fr"${y_axes_labels[i]}$",
+                    colors=list(colors.values()),
+                    layout_kws=dict(
+                        title=f"{pert_condn} feedback impulse",
+                        legend_title="Train<br>field std.",
+                        width=600,
+                        height=400,
+                        legend_tracegroupgap=1,
+                    ),
+                ),
+                var_by_pert_amp,
+                is_leaf=is_type(TrainStdDict),
+            )
+            for pert_condn, var_by_pert_amp in all_plot.items()
+        }
+        for i, coord_label in enumerate(components_names[components_plot])
+    }
+
+    for path, fig in figs_flatten_with_paths(figs):
+        component_name = path[0].key
+        pert_var = path[1].key
+        pert_condition = '-'.join(str(dict_key.key) for dict_key in path[1:-1])
+        pert_amp = path[-1].key
+        
+        fig.add_vrect(
+            x0=impulse_start_step, 
+            x1=impulse_end_step,
+            fillcolor='grey', 
+            opacity=0.1, 
+            line_width=0,
+            name='Perturbation',
+        )
+    
+    return figs
+```
+
+```{python}
+def merge_profile_figs(figs):
+    figs['pos'].update_traces(
+        line_dash='dot',
+        showlegend=False,
+    )
+    figs['vel'].add_traces(figs['pos'].data)
+    
+    figs['vel'].update_annotations(
+        selector=dict(name="context_annotation"),
+        # text=get_merged_context_annotation(*figs.values()),
+    )
+    
+    toggle_bounds_visibility(figs['vel'])
+    
+    return figs['vel']
+```
+
+### Generate figures for each perturbation variable, comparing all training conditions
+
+```{python}
+plot_id = "response_profiles/compare_train_conditions"
+```
+
+```{python}
+figs = jt.map(
+    lambda responses, label: get_all_profiles(
+        responses, label, # context_input_colors_dark, ContextInputDict, "Context input"
+    ),
+    impulse_responses[components_plot], 
+    profile_vars_labels,
+    is_leaf=is_type(PertVarDict),
+)
+```
+
+```{python}
+
+# figs = {
+#     var_name: get_all_profiles(getattr(impulse_responses[components_plot], var_name), var_label)
+#     for var_name, var_label in profile_vars_labels.items()
+# }
+
+for path, fig in tqdm(figs_flatten_with_paths(figs)):
+    var_name = path[0].name
+    component_name = path[1].key
+    pert_var = path[2].key
+    
+    n = int(np.prod(jt.leaves(getattr(impulse_responses[components_plot], var_name))[0].shape[:-2]))
+    
+    fig_parameters = dict(
+        disturbance_train_std=disturbance_train_std,
+        # analysis_variant=analysis_variant,
+        variable_name=getattr(profile_vars_labels, var_name),
+        component_name=component_name,
+        disturbance_type=f"impulse/feedback/{pert_var}",
+        disturbance_amplitude=impulse_amplitude_plot[pert_var],
+        n=n,
+    )
+    
+    add_evaluation_figure(
+        db_session,
+        eval_info,
+        fig,
+        plot_id,
+        model_records=model_info[disturbance_train_std],
+        **fig_parameters,
+    )
+    
+    fig.show()
+```
+
+
+### Generate figures comparing the perturbation variables, and the low vs. high training conditions
+
+**TODO**: add legend for dotted lines -> pos, solid lines -> vel
+
+There are only two figures here, for the forward/parallel and lateral/orthogonal directions respectively.
+
+For each figure, we also generate a detail of the peri-perturbation region of the trials.
+
+```{python}
+plot_id = "response_profiles/compare_pert_vars"
+```
+
+```{python}
+def get_summary_profiles(var, var_label):
+    figs = get_all_profiles(var, var_label, lohi(disturbance_stds_load))
+    
+    # Collapses the perturbation amplitude level across perturbation variables (into a tuple).
+    # This implicitly pairs up the perturbation amplitudes for the two variables, in order from lowest to highest.
+    # We just obtained the individual figures using `get_all_profiles` so there should be no issue 
+    # with their contents.
+    # However, in the next cell we retrieve the actual amplitudes, for labeling the filenames.
+    figs_t = {
+        coord_name: jt.transpose(
+            # replace the pert_var level with an ordered dict so we can map over it in the next step
+            jt.structure(PertVarDict.fromkeys(pert_var_names, '*')), 
+            None, 
+            PertVarDict(figs_by_pert_var),
+        )
+        for coord_name, figs_by_pert_var in figs.items()
+    }
+    
+    figs_merged = jt.map(
+        lambda fs: merge_profile_figs(fs),
+        figs_t,
+        is_leaf=is_type(PertVarDict),
+    )
+    
+    figs_updated = jt.map(
+        lambda fig: fig.update_layout(title=""),
+        figs_merged,
+        is_leaf=is_type(go.Figure)
+    )
+    
+    return figs_updated
+```
+
+```{python}
+t_range_detail = [impulse_start_step - 1, impulse_end_step + 5]
+
+# figs = {
+#     var_name: get_summary_profiles(getattr(impulse_responses[components_plot], var_name), var_label)
+#     for var_name, var_label in profile_vars_labels.items()
+# }
+
+figs = jt.map(
+    lambda responses, label: get_summary_profiles(
+        responses, label, # context_input_colors_dark, ContextInputDict, "Context input"
+    ),
+    impulse_responses[components_plot], 
+    profile_vars_labels,
+    is_leaf=is_type(PertVarDict),
+)
+
+for path, fig in tqdm(figs_flatten_with_paths(figs)):
+    var_name = path[0].name
+    component_name = path[1].key
+    
+    pert_amp_idx = path[-1].key
+
+    fig_parameters = dict(
+        # analysis_variant=analysis_variant,
+        variable_name=getattr(profile_vars_labels, var_name),
+        component_name=component_name,
+        disturbance_amplitude=impulse_amplitude_plot['pos'],
+        disturbance_amplitude1=impulse_amplitude_plot['vel'],
+    )
+    
+    add_evaluation_figure(
+        db_session,
+        eval_info,
+        fig,
+        plot_id,
+        model_records=subdict(model_info, lohi(disturbance_stds_load)),
+        **fig_parameters,
+    )
+    
+    fig.show()
+    
+    # Generate detail of the perturbation region
+    fig_detail = go.Figure(fig)
+
+    all_y_in_t_range = np.concatenate([trace.y[slice(*t_range_detail)] for trace in fig_detail.data])
+    y_range = [np.min(all_y_in_t_range), np.max(all_y_in_t_range)]     
+    
+    fig_detail.update_layout(
+        xaxis_range=t_range_detail,
+        yaxis_range=y_range,
+    )
+    
+    toggle_bounds_visibility(fig_detail)
+    
+    add_evaluation_figure(
+        db_session,
+        eval_info,
+        fig,
+        plot_id + "/detail",
+        model_records=subdict(model_info, lohi(disturbance_stds_load)),
+        **fig_parameters,
+    )
+    
+    fig_detail.show()
+```
+
+## Summary comparison of performance measures
+
+```{python}
+plot_id = "performance_measures"
+```
+
+We'll base these measures on the impulse response states which have already been aligned with the impulse directions.
+
+```{python}
+# We'll copy the top level so we can add stuff without affecting what happened earlier
+all_responses = dict(impulse_responses['aligned'])  
+```
+
+Thus note that in what follows, "forward", "backward", "lateral" are all relative to the perturbation direction.
+
+Also note that the outer keys (including `'vel'` etc.) of `all_responses` refer to response variables, whereas the second-level keys (also including `'vel'` etc.) refer to the perturbed feedback variables.
+
+### Add some other state variables to the impulse response tree
+
+**TODO** Position was added to the initial set of aligned variables, so this section can be removed next time we evaluate this notebook and verify everything is okay
+
+We didn't manipulate the position, but we will want to compute deviations with respect to the steady state (i.e. target) position.
+
+**TODO**: Calculate for each perturbation amplitude
+
+```{python}
+# target_pos = jt.map(
+#     lambda task: task.validation_trials.targets['mechanics.effector.pos'].value,
+#     tasks,
+#     is_leaf=is_module,
+# )
+
+# all_responses['pos'] = jt.map(
+#     lambda states, target_pos: (
+#         states.mechanics.effector.pos
+#         - target_pos[:, 0:1, :]  # only the first timestep, though the goal should be constant
+#     ),
+#     all_states, tree_prefix_expand(target_pos, all_states, is_leaf=is_module),
+#     is_leaf=is_module,
+# )
+```
+
+
+### Rearrange the tree of responses
+
+We'll want to map over each combination of perturbation condition (feedback variable) and training condition (disturbance std), in each case passing the responses to the functions which calculate the measures. However, the response variables are currently in the outermost level of the `all_responses` tree, and the conditions we want to map over are inside. Thus we'll transpose the response variables to the inside of the array. 
+
+Also, move the `ImpulseAmpTuple` level to the outside.
+
+```{python}
+# all_responses_tuples = move_level_to_outside(
+#     jt.transpose(
+#         jt.structure(all_responses, is_leaf=is_type(PertVarDict)), 
+#         None, 
+#         all_responses,
+#     ), 
+#     ImpulseAmpTuple,
+# )
+impulse_responses_tuples = jt.transpose(
+    jt.structure(impulse_responses[components_plot], is_leaf=is_type(PertVarDict)), 
+    jt.structure(jt.leaves(impulse_responses[components_plot], is_leaf=is_type(PertVarDict))[0]),
+    impulse_responses[components_plot],
+)
+```
+
+:::{note}
+There's certainly some alternative way to have approached this. In particular, we could have defined all the transformations we needed to plot the profiles, and apply them all at once to get the `Responses` leaves (or equivalent) of the pytree. 
+
+However, the current approach works just fine as well.
+:::
+
+### Define all performance measures
+
+```{python}
+shortly_after_impulse = slice(impulse_end_step, impulse_end_step + impulse_duration)
+after_impulse = slice(impulse_end_step, None)
+
+# Use these as-is from the `measures` module
+measure_keys = [
+    "max_net_force",
+    "max_parallel_force_reverse",
+    "sum_net_force",
+    "max_parallel_vel_forward",
+    "max_parallel_vel_reverse",
+    "max_orthogonal_vel_left",
+    "max_orthogonal_vel_right",
+    "max_deviation",
+    "sum_deviation",
+]
+
+# Add a couple more measures over specific intervals of the trials
+custom_measures, custom_measure_labels = tree_unzip({
+    "max_parallel_force_forward_shortly_after_impulse": (
+        measures.set_timesteps(
+            measures.max_parallel_force, shortly_after_impulse,
+        ),
+        f"Max forward force within {impulse_duration} steps of pert. end",
+    ),
+    "max_net_force_during_impulse": (
+        measures.set_timesteps(
+            measures.max_net_force, impulse_time_idxs,
+        ),
+        "Max net force during pert.",
+    ),
+    "max_net_force_after_impulse": (
+        measures.set_timesteps(
+            measures.max_net_force, after_impulse,
+        ),
+        "Max net force after pert.",
+    ),
+})
+
+all_measures = subdict(MEASURES, measure_keys) | custom_measures
+measure_labels = MEASURE_LABELS | custom_measure_labels
+```
+
+### Calculate all performance measures 
+
+```{python}   
+all_measure_values = compute_all_measures(all_measures, impulse_responses_tuples)
+
+all_measure_values_lohi = jt.map(lohi, all_measure_values, is_leaf=is_type(TrainStdDict))
+```
+
+### Comparison of all training conditions
+
+```{python}
+plot_id = "performance_measures/all_train_conditions"
+```
+
+We'll find the maximum measure value for each measure type, and apply the same y-axis maximum for each plot of the same measure type, across the different impulse magnitudes. 
+
+```{python}
+measure_ranges = {
+    key: (
+            jnp.nanmin(measure_data_stacked),
+            jnp.nanmax(measure_data_stacked),   
+    )
+    for key, measure_data_stacked in {
+        key: jnp.stack(jt.leaves(measure_data))
+        for key, measure_data in all_measure_values.items()
+    }.items()
+}
+
+for i in range(n_impulse_amplitudes):    
+    figs = {
+        key: get_violins(
+            tree_take(measure_values, i),
+            yaxis_title=measure_labels[key],
+            xaxis_title="Train field std.",
+            legend_title="Perturbed<br>feedback var.",
+            colors=pert_vars_colors,
+            arr_axis_labels=["Evaluation", "Replicate", "Condition"],
+            layout_kws=dict(
+                width=800,
+                height=600,
+                yaxis_range=[0, measure_ranges[key][1]],
+            ),
+        )
+        for key, measure_values in all_measure_values.items()
+    }
+    
+    n_dist = int(np.prod(jt.leaves(all_measure_values)[0].shape[1:]))
+
+    for path, fig in tqdm(figs_flatten_with_paths(figs)):
+        fig_parameters = dict(
+            # analysis_variant=analysis_variant,
+            measure_name=path[0].key,
+            disturbance_amplitude=impulse_amplitudes['pos'][i],
+            disturbance_amplitude1=impulse_amplitudes['vel'][i],
+            n=n_dist,
+        )
+        
+        add_evaluation_figure(
+            db_session,
+            eval_info,
+            fig,
+            plot_id,
+            model_records=model_info,
+            **fig_parameters,
+        )
+```
+
+```{python}
+for key in all_measures:
+    figs[key].show()
+```
+
+### Comparison of low-high training conditions
+
+```{python}
+plot_id = "performance_measures/lohi_train_conditions"
+```
+
+```{python}
+measure_ranges_lohi = {
+    key: (
+            jnp.nanmin(measure_data_stacked),
+            jnp.nanmax(measure_data_stacked),   
+    )
+    for key, measure_data_stacked in {
+        key: jnp.stack(jt.leaves(measure_data))
+        for key, measure_data in all_measure_values_lohi.items()
+    }.items()
+}
+
+for i in range(n_impulse_amplitudes):    
+    figs = {
+        key: get_violins(
+            tree_take(measure_values, i),
+            yaxis_title=measure_labels[key],
+            xaxis_title="Train field std.",
+            legend_title="Perturbed<br>feedback var.",
+            colors=pert_vars_colors,
+            arr_axis_labels=["Evaluation", "Replicate", "Condition"],
+            layout_kws=dict(
+                width=500,
+                height=400,
+                yaxis_range=[0, measure_ranges_lohi[key][1]],
+            ),
+        )
+        for key, measure_values in all_measure_values_lohi.items()
+    }
+    
+    n_dist = int(np.prod(jt.leaves(all_measure_values)[0].shape[1:]))
+
+    for path, fig in tqdm(figs_flatten_with_paths(figs)):
+        fig_parameters = dict(
+            # analysis_variant=analysis_variant,
+            measure_name=path[0].key,
+            disturbance_amplitude=impulse_amplitudes['pos'][i],
+            disturbance_amplitude1=impulse_amplitudes['vel'][i],
+            n=n_dist,
+        )
+        
+        add_evaluation_figure(
+            db_session,
+            eval_info,
+            fig,
+            plot_id,
+            model_records=model_info,
+            **fig_parameters,
+        )
+```
+
+
+```{python}
+for key in all_measures:
+    figs[key].show()
+    figs[key].show()
+```
+
+### Comparison across impulse amplitudes
+
+Pull out impulse amplitudes from arrays into a PyTree level, so that we can use `get_violins` as usual.
+
+```{python}
+measures_plot = jt.map(
+    lambda d: PertVarDict({
+        pert_var: jt.map(
+            lambda arr: PertAmpDict(zip(round_to_list(impulse_amplitudes[pert_var]), arr)),
+            d[pert_var],
+        )
+        for pert_var in d
+    }),
+    all_measure_values,
+    is_leaf=is_type(PertVarDict),
+)
+```
+
+Generate separate figures for pos and vel perturbations. The x axis will be the impulse amplitude, and each violin will be split to compare the lowest and highest training conditions.
+
+```{python}
+plot_id = "performance_measures/compare_impulse_amplitudes"
+```
+
+```{python}
+figs = {
+    key: {
+        pert_var: get_violins(
+            measure[pert_var], 
+            yaxis_title=measure_labels[key],
+            xaxis_title="Impulse amplitude",
+            legend_title="Train<br>field std.",
+            colors=disturbance_train_stds_colors_dark,
+            arr_axis_labels=["Evaluation", "Replicate", "Condition"],
+            layout_kws=dict(
+                width=800,
+                height=600,
+                # yaxis_range=[0, measure_ranges[key][1]],
+                title=f"{pert_var} feedback impulse",
+                violinmode="group",
+                violingap=0.25,
+                violingroupgap=0,
+            ),
+        )
+        for pert_var in pert_var_names
+    }
+    for key, measure in measures_plot.items()
+}
+```
+
+```{python}
+for path, fig in tqdm(figs_flatten_with_paths(figs)):
+    pert_var = path[1].key
+    n_dist = int(np.prod(jt.leaves(all_measure_values[path[0].key])[0].shape))
+    
+    fig_parameters = dict(
+        # analysis_variant=analysis_variant,
+        measure_name=path[0].key,
+        disturbance_type=f"impulse/feedback/{pert_var}",
+        n=n_dist,
+    )
+    
+    add_evaluation_figure(
+        db_session,
+        eval_info,
+        fig,
+        plot_id,
+        model_records=model_info,
+        **fig_parameters,
+    )
+```
+
+```{python}
+for key in all_measures:
+    figs[key]['pos'].show()
+    figs[key]['vel'].show()
+```
