@@ -1,3 +1,4 @@
+from cProfile import label
 from importlib import resources
 import logging
 import os
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 CONFIG_DIR_ENV_VAR_NAME = 'RLRMP_CONFIG_DIR'
 
-def setup_paths(paths_ns: TreeNamespace):
+def _setup_paths(paths_ns: TreeNamespace):
     base_path = Path(paths_ns.base)
 
     def _setup_path(path_str: str):
@@ -28,6 +29,33 @@ def setup_paths(paths_ns: TreeNamespace):
             return path
 
     return jt.map(_setup_path, paths_ns)
+
+
+def _normalize_log_level(label: str, lvl: str | int) -> int:
+    if isinstance(lvl, str):
+        lvl = lvl.strip().upper()
+        # this returns an int for a valid name, or the same object if invalid
+        try:
+            lvl = logging.getLevelNamesMapping()[lvl]
+        except KeyError:
+            raise ValueError(f"Invalid {label} specified in YAML config: {lvl!r}")
+    if not isinstance(lvl, int):
+        raise ValueError(f"Cannot parse log level {lvl!r}")
+    return lvl
+
+
+def _setup_logging(logging_ns: TreeNamespace):
+    for label in ['file_level', 'console_level', 'pkg_console_levels', 'pkgs_own_files']:
+        tree = getattr(logging_ns, label, None)
+        if tree is None:
+            continue
+        tree_normalized = jt.map(
+            lambda x: _normalize_log_level(label, x),
+            tree,
+        )
+        setattr(logging_ns, label, tree_normalized)
+
+    return logging_ns
 
 
 T = TypeVar('T', bound=SimpleNamespace)
@@ -80,8 +108,8 @@ def load_config_as_ns(
 
 # Load project-wide configuration from YAML resources in the `config` subpackage
 CONSTANTS: TreeNamespace = load_config_as_ns("constants")
-LOGGING_CONFIG: TreeNamespace = load_config_as_ns("logging")
-PATHS: TreeNamespace = setup_paths(load_config_as_ns("paths"))
+LOGGING: TreeNamespace = _setup_logging(load_config_as_ns("logging"))
+PATHS: TreeNamespace = _setup_paths(load_config_as_ns("paths"))
 PLOTLY_CONFIG: TreeNamespace = load_config_as_ns("plotly")
 PRNG_CONFIG: TreeNamespace = load_config_as_ns("prng")
 STRINGS: TreeNamespace = load_config_as_ns("strings")

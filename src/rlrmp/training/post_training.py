@@ -53,11 +53,11 @@ from rlrmp.training.loss import get_readout_norm_loss
 from rlrmp.types import LDict, TreeNamespace
 
 
-logging.basicConfig(
-    format='(%(name)-20s) %(message)s', 
-    level=logging.INFO, 
-    handlers=[RichHandler(level="NOTSET")],
-)
+# logging.basicConfig(
+#     format='(%(name)-20s) %(message)s', 
+#     level=logging.INFO, 
+#     handlers=[RichHandler(level="NOTSET")],
+# )
 logger = logging.getLogger(__name__)
 
 

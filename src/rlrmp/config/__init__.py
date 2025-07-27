@@ -1,7 +1,7 @@
 from .config import (
     CONFIG_DIR_ENV_VAR_NAME,
     CONSTANTS,
-    LOGGING_CONFIG,
+    LOGGING,
     PATHS,
     PLOTLY_CONFIG,
     PRNG_CONFIG,
