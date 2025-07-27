@@ -1,6 +1,7 @@
 .gitmessage
 COMMIT_MSG.txt
 COMMIT_MSG_STASH.txt
+PROMPT.txt 
 
 # LLM stuff
 .serena

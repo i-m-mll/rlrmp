@@ -37,11 +37,11 @@ import jax_cookbook.tree as jtree
 from rlrmp.tree_utils import subdict
 
 
-logging.basicConfig(
-    format='(%(name)-20s) %(message)s', 
-    level=logging.INFO, 
-    handlers=[RichHandler(level="NOTSET")],
-)
+# logging.basicConfig(
+#     format='(%(name)-20s) %(message)s', 
+#     level=logging.INFO, 
+#     handlers=[RichHandler(level="NOTSET")],
+# )
 logger = logging.getLogger(__name__)
 
 

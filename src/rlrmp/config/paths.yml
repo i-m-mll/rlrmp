@@ -8,3 +8,4 @@ models: models
 figures: figures
 figures_dump: figures_dump
 cache: cache
+logs: logs
