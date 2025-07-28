@@ -21,11 +21,15 @@ from typing import Optional, Set, Dict, Any, ClassVar, Callable
 
 import equinox as eqx
 import jax.tree as jt
+from jax.tree_util import treedef_is_leaf
 from jaxtyping import PyTree
+
+from jax_cookbook import is_type
 
 from rlrmp.analysis.analysis import (
     AbstractAnalysis, AnalysisInputData, _format_dict_of_params, RequiredInput, OptionalInput,
-    _DataField, ConstantInput, FigParamNamespace, DefaultFigParamNamespace, AnalysisDefaultInputsType
+    _DataField, LiteralInput, FigParamNamespace, DefaultFigParamNamespace, AnalysisDefaultInputsType,
+    ExpandTo, Transformed
 )
 from types import MappingProxyType
 from rlrmp.misc import get_md5_hexdigest
@@ -93,13 +97,13 @@ def resolve_dependency_node(analysis, dep_name, dep_source, dependency_lookup=No
     Args:
         analysis: The analysis instance requesting the dependency
         dep_name: The name of the dependency port  
-        dep_source: Either a class type, string reference, analysis instance, or ConstantInput
+        dep_source: Either a class type, string reference, analysis instance, or LiteralInput
         dependency_lookup: Optional dict for resolving string references
     Returns:
-        tuple: (node_id, params, analysis_instance) or None for ConstantInput
+        tuple: (node_id, params, analysis_instance) or None for LiteralInput
     """
-    # Handle ConstantInput - skip dependency resolution
-    if isinstance(dep_source, ConstantInput):
+    # Handle LiteralInput - skip dependency resolution
+    if isinstance(dep_source, LiteralInput):
         return None
         
     # Handle required-but-missing dependencies early
@@ -158,10 +162,10 @@ def resolve_dependency_node(analysis, dep_name, dep_source, dependency_lookup=No
 
 
 def _process_dependency_sources(analysis, dep_name, dep_sources, dependency_lookup, callback):
-    """Helper to iterate over dependency sources and apply callback to non-ConstantInput deps."""
+    """Helper to iterate over dependency sources and apply callback to non-LiteralInput deps."""
     for dep_source in dep_sources:
         dep_result = resolve_dependency_node(analysis, dep_name, dep_source, dependency_lookup)
-        if dep_result is not None:  # Skip ConstantInput
+        if dep_result is not None:  # Skip LiteralInput
             callback(dep_result)
 
 
@@ -278,42 +282,60 @@ def topological_sort(graph: dict[str, Set[str]]) -> list[str]:
     return order
 
 
-def _resolve_expand_to_dependencies(
-    analysis: AbstractAnalysis, 
-    dep_kwargs: dict[str, Any], 
+def _apply_transformations(
+    tree: Any,
+    dep_kwargs: dict[str, Any],
     dependency_lookup: dict[str, AbstractAnalysis]
-) -> dict[str, Any]:
-    """Apply prefix expansion to inputs that were wrapped in ExpandTo.
+) -> Any:
+    """Apply ExpandTo and Transformed transformations recursively from innermost to outermost."""
     
-    All dependencies (including ExpandTo sources and targets) are already resolved.
-    This just applies the prefix_expand transformation.
-    """
-    expand_specs = analysis._expand_to_specs
-    if not expand_specs:
-        return dep_kwargs
-    
-    for input_name, expand_objects in expand_specs.items():
-        expand_to = expand_objects[0]  # Assume one ExpandTo per input for now
+    # Handle transformation objects first
+    if isinstance(tree, ExpandTo):
+        # First, recursively transform the source
+        transformed_source = _apply_transformations(tree.source, dep_kwargs, dependency_lookup)
         
-        # Get target structure (already resolved as dependency)
-        if isinstance(expand_to.target, str):
-            target_structure = dep_kwargs[expand_to.target]
-        elif isinstance(expand_to.target, _DataField):
-            target_key = f"_{input_name}_expand_target"
-            target_structure = dep_kwargs[target_key]
+        # Then apply ExpandTo transformation
+        if isinstance(tree.target, str):
+            target_structure = dep_kwargs[tree.target]
+        elif isinstance(tree.target, _DataField):
+            # For _DataField targets, we need to resolve them like regular dependencies
+            # This is a simplified approach - in practice you might need more sophisticated target resolution
+            raise NotImplementedError("_DataField targets in ExpandTo not yet supported in new PyTree system")
         else:
-            raise TypeError(f"Invalid ExpandTo target type: {type(expand_to.target)}")
+            raise TypeError(f"Invalid ExpandTo target type: {type(tree.target)}")
         
-        # Apply prefix expansion to already-resolved source dependencies
-        dep_kwargs[input_name] = prefix_expand(
-            dep_kwargs[input_name],  # Already resolved ExpandTo.source dependencies
+        return prefix_expand(
+            transformed_source,
             target_structure,
-            is_leaf=expand_to.is_leaf,
-            is_leaf_prefix=expand_to.is_leaf_prefix
+            is_leaf=tree.is_leaf,
+            is_leaf_prefix=tree.is_leaf_prefix
         )
     
-    return dep_kwargs
+    elif isinstance(tree, Transformed):
+        # First, recursively transform the source
+        transformed_source = _apply_transformations(tree.source, dep_kwargs, dependency_lookup)
+        
+        # Then apply the transformation
+        return tree.transform(transformed_source)
+    
+    elif isinstance(tree, LiteralInput):
+        # LiteralInput is a terminal node, return its value directly
+        return tree.value
+    
+    elif treedef_is_leaf(jt.structure(tree)):
+        # If it's a leaf node, return it as is
+        return tree
+    
+    else:
+        leaves, tree_def = jt.flatten(tree, is_leaf=is_type(ExpandTo, Transformed))
+        
+        # For other PyTree structures, recursively apply transformations to children
+        transformed_leaves = [
+            _apply_transformations(leaf, dep_kwargs, dependency_lookup)
+            for leaf in leaves
+        ]
 
+        return jt.unflatten(tree_def, transformed_leaves)
 
 def _reconstruct_dependencies(
     analysis: AbstractAnalysis, 
@@ -329,8 +351,8 @@ def _reconstruct_dependencies(
         
         # Gather results for all leaves in this dependency
         for dep_source in dep_sources:
-            if isinstance(dep_source, ConstantInput):
-                # Add ConstantInput values directly to leaf_results
+            if isinstance(dep_source, LiteralInput):
+                # Add LiteralInput values directly to leaf_results
                 leaf_results.append(dep_source.value)
             else:
                 dep_result = resolve_dependency_node(
@@ -356,12 +378,14 @@ def _reconstruct_dependencies(
                 f"This indicates a bug in dependency resolution or circular dependencies."
             )
         
-        # Reconstruct PyTree from leaf results
+        # Reconstruct PyTree from leaf results - this gives us the structure with ExpandTo/Transformed objects
         tree_def = analysis.input_treedefs[dep_name]
-        dep_kwargs[dep_name] = jt.unflatten(tree_def, leaf_results)
-    
-    # Resolve ExpandTo dependencies after regular dependencies are reconstructed
-    dep_kwargs = _resolve_expand_to_dependencies(analysis, dep_kwargs, dependency_lookup)
+        reconstructed_tree = jt.unflatten(tree_def, leaf_results)
+        
+        # Apply transformations recursively from innermost to outermost
+        dep_kwargs[dep_name] = _apply_transformations(
+            reconstructed_tree, dep_kwargs, dependency_lookup
+        )
     
     return dep_kwargs
 

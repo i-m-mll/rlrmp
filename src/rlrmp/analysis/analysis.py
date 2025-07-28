@@ -15,6 +15,7 @@ import equinox as eqx
 from equinox import AbstractVar, AbstractClassVar, Module
 import jax.numpy as jnp
 import jax.tree as jt
+import jax.tree_util as jtu
 from jaxtyping import ArrayLike, PyTree, Array
 import plotly.graph_objects as go
 from sqlalchemy.orm import Session
@@ -102,7 +103,9 @@ class _DataField:
         return f"Data.{self.attr}"
 
 
-class ExpandTo(Module):
+@jtu.register_pytree_node_class
+@dataclass(frozen=True, slots=True)
+class ExpandTo:
     """Specifies that a PyTree input should be prefix-expanded to match another input's structure.
     
     This is useful when one input lacks the inner structure necessary for tree operations
@@ -128,16 +131,58 @@ class ExpandTo(Module):
     source: PyTree
     is_leaf: Optional[Callable] = None
     is_leaf_prefix: Optional[PyTree[Callable]] = None
+    
+    def tree_flatten(self):
+        return [self.source], (self.target, self.is_leaf, self.is_leaf_prefix)
+    
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        target, is_leaf, is_leaf_prefix = aux_data
+        return cls(target=target, source=children[0], is_leaf=is_leaf, is_leaf_prefix=is_leaf_prefix)
+    
 
+@jtu.register_pytree_node_class
+@dataclass(frozen=True, slots=True)
+class Transformed:
+    """Applies a transformation to resolved dependencies before passing to compute.
+    
+    This allows in-place transformation of dependency results. For example:
+    
+        some_input=Transformed("states_pca", lambda result: result.batch_transform)
+        
+    Or with PyTree sources:
+    
+        some_input=Transformed((Data.states, Data.tasks), lambda tree: custom_transform(tree))
+    
+    The `source` will be resolved as dependencies first, then transformed.
+    
+    Parameters
+    ----------
+    source
+        The PyTree of dependencies to resolve and transform
+    transform
+        Function to apply to the resolved source dependencies
+    """
+    source: PyTree
+    transform: Callable
+    
+    def tree_flatten(self):
+        return [self.source], (self.transform,)
+    
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        transform, = aux_data
+        return cls(source=children[0], transform=transform)
+    
 
 @dataclass(frozen=True, slots=True)
-class ConstantInput:
+class LiteralInput:
     """Wraps a constant value to be passed directly as an analysis input.
     
     This allows passing literal values without going through dependency resolution.
     For example:
     
-        custom_inputs=dict(some_param=ConstantInput(42), other_param=ConstantInput(jnp.array([1, 2, 3])))
+        custom_inputs=dict(some_param=LiteralInput(42), other_param=LiteralInput(jnp.array([1, 2, 3])))
     
     The wrapped value will be passed directly to the analysis's compute method.
     
@@ -706,34 +751,18 @@ class AbstractAnalysis(Module, strict=False):
     def _flattened_inputs(self) -> dict[str, list]:
         """Get flattened dependency sources for each input name.
         
-        Each PyTree input is flattened to a list of leaves. Single dependencies
-        become single-element lists for consistency.
+        Each PyTree input is flattened to a list of leaves. ExpandTo and Transformed
+        are registered as PyTrees so only their .source children are included in leaves.
         """
         flattened = {}
         for name, source in self.inputs.items():
-            # Substitute ExpandTo with their .source, keep ConstantInput as-is
-            def substitute_expand_to(value):
-                if isinstance(value, ExpandTo):
-                    return value.source
-                return value
+            # Flatten the PyTree - ExpandTo/Transformed registration ensures only actual dependencies are leaves
+            leaves, _ = jt.flatten(source)
             
-            # Apply substitution and flatten
-            dependency_tree = jt.map(substitute_expand_to, source, is_leaf=lambda x: isinstance(x, ExpandTo))
-            leaves, _ = jt.flatten(dependency_tree)
-            
-            # Add _DataField targets as private dependencies 
-            expand_specs = self._expand_to_specs
-            if name in expand_specs:
-                for expand_to in expand_specs[name]:
-                    if isinstance(expand_to.target, _DataField):
-                        # Add target as private dependency with key pattern: "_{input_name}_expand_target"
-                        target_key = f"_{name}_expand_target"
-                        flattened[target_key] = [expand_to.target]
-            
-            # Validate all leaves are valid dependency types (ConstantInput kept as-is)
+            # Validate all leaves are valid dependency types
             for leaf in leaves:
-                if not isinstance(leaf, (type, str)) and not isinstance(leaf, (_DataField, AbstractAnalysis, ConstantInput)):
-                    valid_types = "type[AbstractAnalysis], AbstractAnalysis, _DataField, str, or ConstantInput"
+                if not isinstance(leaf, (type, str)) and not isinstance(leaf, (_DataField, AbstractAnalysis, LiteralInput)):
+                    valid_types = "type[AbstractAnalysis], AbstractAnalysis, _DataField, str, or LiteralInput"
                     raise ValueError(
                         f"Invalid dependency leaf in '{name}': {type(leaf)}. "
                         f"All leaves must be {valid_types}"
@@ -745,52 +774,16 @@ class AbstractAnalysis(Module, strict=False):
     def input_treedefs(self) -> dict[str, Any]:
         """Get tree definitions for reconstructing PyTree inputs.
         
-        Returns TreeDef for dependency trees (with ExpandTo.source substituted).
+        Returns TreeDef for dependency trees. ExpandTo/Transformed PyTree registration
+        automatically handles source substitution during flattening/unflattening.
         """
         treedefs = {}
         for name, source in self.inputs.items():
-            # Use same substitution logic as _flattened_inputs  
-            def substitute_expand_to(value):
-                if isinstance(value, ExpandTo):
-                    return value.source
-                return value
-            
-            dependency_tree = jt.map(substitute_expand_to, source, is_leaf=lambda x: isinstance(x, ExpandTo))
-            _, tree_def = jt.flatten(dependency_tree)
+            _, tree_def = jt.flatten(source)
             treedefs[name] = tree_def
-            
-        # Add treedefs for private ExpandTo target dependencies  
-        expand_specs = self._expand_to_specs
-        for input_name in expand_specs:
-            for expand_to in expand_specs[input_name]:
-                if isinstance(expand_to.target, _DataField):
-                    target_key = f"_{input_name}_expand_target"
-                    # Single _DataField has trivial tree structure
-                    _, tree_def = jt.flatten([expand_to.target])
-                    treedefs[target_key] = tree_def
-                    
         return treedefs
 
-    @property
-    def _expand_to_specs(self) -> dict[str, list[ExpandTo]]:
-        """Get ExpandTo transformation specs for each input that needs expansion.
-        
-        Returns a dict mapping input names to lists of ExpandTo objects found in that input.
-        """
-        expand_specs = {}
-        for name, source in self.inputs.items():
-            # Find all ExpandTo objects in this input
-            expand_objects = []
-            def collect_expand_to(value):
-                if isinstance(value, ExpandTo):
-                    expand_objects.append(value)
-                    return value.source  # Return source for tree traversal
-                return value
-            
-            jt.map(collect_expand_to, source, is_leaf=lambda x: isinstance(x, ExpandTo))
-            if expand_objects:
-                expand_specs[name] = expand_objects
-        return expand_specs
+
 
     def _get_target_dependency_names(
         self,
@@ -1758,7 +1751,7 @@ class AbstractAnalysis(Module, strict=False):
 DefaultInputType: TypeAlias = type[AbstractAnalysis] | _RequiredType | _OptionalType | _DataField
 AnalysisDefaultInputsType: TypeAlias = MappingProxyType[str, DefaultInputType]
 
-InputType: TypeAlias = PyTree[type[AbstractAnalysis] | AbstractAnalysis | _DataField | str | ExpandTo | ConstantInput]
+InputType: TypeAlias = PyTree[type[AbstractAnalysis] | AbstractAnalysis | _DataField | str | ExpandTo | Transformed | LiteralInput]
 AnalysisInputsType: TypeAlias = MappingProxyType[str, InputType]
 
 
@@ -1866,6 +1859,3 @@ class CallWithDeps:
         functools.update_wrapper(wrapper, func)
         
         return wrapper
-
-
-

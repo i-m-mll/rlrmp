@@ -51,36 +51,6 @@ def origin_only(states, axis=-2, *, hps_common):
     return jt.map(lambda x: jnp.take_along_axis(x, idx, axis=axis), states)
 
 
-#! TODO: Finish gutting this
-class SteadyStateJacobians(AbstractAnalysis):
-    """Compute Jacobians and their eigendecomposition at steady-state FPs."""
-
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
-        fps_results=FixedPoints,
-    ))
-    conditions: tuple[str, ...] = ()
-    variant: Optional[str] = "full"
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
-    origin_only: bool = False
-    key: PRNGKeyArray = field(default_factory=lambda: jr.PRNGKey(0))
-
-    def compute(
-        self,
-        data: AnalysisInputData,
-        *,
-        fps_results: TreeNamespace,
-        hps_common: TreeNamespace,
-        **kwargs,
-    ):        
-        
-        task_leaf = jt.leaves(data.tasks, is_leaf=is_module)[0]
-        goals_pos = task_leaf.validation_trials.targets["mechanics.effector.pos"].value[:, -1]
-        
-        fps_grid = jnp.moveaxis(fps_results.fps, 0, 1)
-
-        rnn_funcs = jt.map(lambda m: m.step.net.hidden, data.models, is_leaf=is_module)
-
-
 #! Should be totally scrappable
 class FPsInPCSpace(AbstractAnalysis):
     """Plot fixed points in PC space."""
