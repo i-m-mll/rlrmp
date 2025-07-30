@@ -441,7 +441,7 @@ def at_path(path):
     return at_func
 
 
-def first(tree, is_leaf: Callable = _is_leaf):
+def first(tree, is_leaf: Optional[Callable] = _is_leaf):
     """Return the first leaf of a tree."""
     return jt.leaves(tree, is_leaf=is_leaf)[0]
 

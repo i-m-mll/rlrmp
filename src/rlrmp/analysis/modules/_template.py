@@ -4,13 +4,13 @@ For example, `analysis.part1.plant_perts` is such a module.
 """
 
 from collections.abc import Callable, Sequence
-from types import MappingProxyType, SimpleNamespace
-from typing import ClassVar, Optional
+from types import SimpleNamespace
+from typing import Optional
 
 from equinox import Module
 
 from rlrmp.analysis import AbstractAnalysis
-from rlrmp.analysis.analysis import AnalysisDefaultInputsType, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import DefaultFigParamNamespace, FigParamNamespace, NoPorts
 from rlrmp.analysis.state_utils import vmap_eval_ensemble
 from rlrmp.types import TreeNamespace
 from rlrmp.types import LDict
@@ -53,11 +53,8 @@ eval_func: Callable = vmap_eval_ensemble
 
 
 # Define any subclasses of `AbstractAnalysis` that are specific to this task
-class SomeAnalysis(AbstractAnalysis):
-    conditions: tuple[str, ...] = ()
+class SomeAnalysis(AbstractAnalysis[NoPorts]):
     variant: Optional[str] = "full"
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
     ...
  

@@ -1,6 +1,6 @@
 from collections.abc import Callable
-from types import MappingProxyType, SimpleNamespace
-from typing import ClassVar, Literal as L, Optional
+from types import SimpleNamespace
+from typing import Literal as L, Optional
 
 import jax.numpy as jnp
 import jax.tree as jt
@@ -9,7 +9,7 @@ import feedbax.plotly as fbp
 from jax_cookbook import is_module
 import jax_cookbook.tree as jtree
 
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, NoPorts
 from rlrmp.analysis.state_utils import vmap_eval_ensemble
 from rlrmp.types import LDict
 
@@ -29,11 +29,8 @@ INPUT_WHERE = lambda state, idx: state.feedback.noise[idx]
 OUTPUT_WHERE = lambda state: state.net.output
 
 
-class FrequencyResponse(AbstractAnalysis):
-    conditions: tuple[str, ...] = ()
+class FrequencyResponse(AbstractAnalysis[NoPorts]):
     variant: Optional[str] = "full"
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType({})
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
     def compute(self, data: AnalysisInputData, **kwargs):
         all_freqs, all_gains, all_phases = jtree.unzip(jt.map(

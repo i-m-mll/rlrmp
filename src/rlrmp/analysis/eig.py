@@ -1,9 +1,8 @@
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, RequiredInput
-from rlrmp.misc import create_arr_df
-from rlrmp.plot import plot_eigvals_df
-from rlrmp.types import TreeNamespace
+from functools import partial
+from typing import Optional
 
-
+import equinox as eqx
+from equinox import field
 import jax
 import jax.tree as jt
 import jax_cookbook.tree as jtree
@@ -11,19 +10,22 @@ import plotly.graph_objects as go
 from jax_cookbook import is_type
 from jaxtyping import PyTree
 
+from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, InputOf
+from rlrmp.misc import create_arr_df
+from rlrmp.plot import plot_eigvals_df
+from rlrmp.types import TreeNamespace
 
-from functools import partial
-from types import MappingProxyType
-from typing import ClassVar, Optional
+
+class EigendecompositionPorts(AbstractAnalysisPorts):
+    """Input ports for Eigendecomposition analysis."""
+    matrices: InputOf[PyTree]
 
 
-class Eigendecomposition(AbstractAnalysis):
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
-        matrices=RequiredInput,
-    ))
-    conditions: tuple[str, ...] = ()
+class Eigendecomposition(AbstractAnalysis[EigendecompositionPorts]):
+    Ports = EigendecompositionPorts
+    inputs: EigendecompositionPorts = field(default_factory=EigendecompositionPorts, converter=EigendecompositionPorts.converter)
+    
     variant: Optional[str] = "full"
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
 
     @partial(jax.jit, device=jax.devices('cpu')[0])
     def _eig_cpu(self, *a, **kw):

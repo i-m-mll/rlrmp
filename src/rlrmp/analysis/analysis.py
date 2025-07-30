@@ -6,7 +6,7 @@ from functools import cached_property, partial, wraps
 import inspect
 import logging
 from types import LambdaType, MappingProxyType
-from typing import TYPE_CHECKING, Any, ClassVar, Iterable, Literal, NamedTuple, Optional, Dict, Self, TypeAlias, Union, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, Iterable, Literal, Mapping, NamedTuple, Optional, Dict, Self, TypeAlias, TypeVar, Union, cast
 from pathlib import Path
 from typing import Any, Callable
 
@@ -42,6 +42,60 @@ else:
 
 
 logger = logging.getLogger(__name__)
+
+
+# ───────────────────────────────────────────────────────────────────────────────
+#  Typed Ports Infrastructure  
+# ───────────────────────────────────────────────────────────────────────────────
+
+class AbstractAnalysisPorts(Module, Mapping):
+    """Base class for typed analysis input ports."""
+    
+    @classmethod
+    def converter(cls, inputs: Self | Mapping[str, Any]) -> Self:
+        """Convert inputs to the appropriate format."""
+        if isinstance(inputs, Mapping):
+            return cls(**inputs)
+        else:
+            return inputs
+        
+    def __getitem__(self, key: str):
+        if key in self.__dataclass_fields__:
+            return getattr(self, key)
+        raise KeyError(key)
+
+    def __iter__(self):
+        return (f.name for f in dataclasses.fields(self))
+
+    def __len__(self):
+        return len(dataclasses.fields(self))
+
+
+class NoPorts(AbstractAnalysisPorts):
+    """An empty Ports dataclass for analyses with no additional inputs."""
+    pass
+
+
+PortsType = TypeVar("PortsType", bound=AbstractAnalysisPorts)
+
+
+@dataclass(frozen=True)
+class AnalysisRef[T]:
+    """A thin, typed pointer to something that will yield a PyTree[T]."""
+    target: Union[str, "AbstractAnalysis"]  # name or instance
+
+
+# The user asked for AbstractAnalysis without a type parameter in InputOf.
+# We leave it raw here – static tools won't check graph consistency, only help
+# with autocomplete / annotations.
+type InputOf[T] = Union[
+    AnalysisRef[PyTree[T]],
+    str,
+    AbstractAnalysis,    # intentionally un-parameterised
+    _DataField,
+    Transformed,
+    ExpandTo,
+]
 
 
 # Define a string representer for objects PyYAML doesn't know how to handle
@@ -86,14 +140,14 @@ class _DataField:
         *,
         where: Optional[Callable] = None,
         is_leaf: Optional[Callable[[Any], bool]] = None,
-    ) -> "_DataField":
+    ) -> Self:
         """Return a new `_DataField` overriding *where* and/or *is_leaf*.
 
         Any argument left as ``None`` inherits the value from the receiver
         instance so that `Data.states(where=...)` keeps the default
         ``is_leaf=is_module``.
         """
-        return _DataField(
+        return type(self)(
             self.attr,
             where if where is not None else self.where,
             is_leaf if is_leaf is not None else self.is_leaf,
@@ -101,6 +155,9 @@ class _DataField:
 
     def __repr__(self):  # noqa: D401
         return f"Data.{self.attr}"
+
+
+T = TypeVar("T")
 
 
 @jtu.register_pytree_node_class
@@ -127,11 +184,23 @@ class ExpandTo:
     is_leaf, is_leaf_prefix
         Optional leaf predicates passed to the prefix expansion operation
     """
-    target: Union[str, "_DataField"]
+    target: Union[str, _DataField]
     source: PyTree
     is_leaf: Optional[Callable] = None
     is_leaf_prefix: Optional[PyTree[Callable]] = None
-    
+
+    @classmethod
+    def map(cls, target: Union[str, _DataField], source: T, **kwargs) -> T:
+        """Convenience, for mapping over the first level of a tree."""
+        #! TODO: Support mapping to arbitrary levels / leaves, not just first 
+        #! Though this might get kind of confusing with `is_leaf`, `is_leaf_prefix` already 
+        #! allowed as params
+        nodes, treedef = eqx.tree_flatten_one_level(source)
+        return jt.unflatten(
+            treedef,
+            [cls(target, node, **kwargs) for node in nodes],
+        )
+        
     def tree_flatten(self):
         return [self.source], (self.target, self.is_leaf, self.is_leaf_prefix)
     
@@ -274,10 +343,6 @@ class _FinalOp(NamedTuple):
 #! TODO: Make Generic, if that makes sense -- so we can indicate the type to the user 
 class _RequiredType: ...
 RequiredInput = _RequiredType()
-
-"""Sentinel indicating an optional dependency that is not wired by default."""
-class _OptionalType: ...
-OptionalInput = _OptionalType()
     
 
 PARAM_SEQ_LEN_TRUNCATE = 9
@@ -451,7 +516,10 @@ class _AnalysisVmapSpec(eqx.Module):
 _FinalOpKeyType = Literal['results', 'figs']
 
 
-class AbstractAnalysis(Module, strict=False):
+# By using `strict=False`, we can define non-abstract fields, i.e. without needing to 
+# implement them trivially in subclasses. This violates the abstract-final design
+# pattern. This is intentional. If it leads to problems, I will learn from that.
+class AbstractAnalysis(Module, Generic[PortsType], strict=False):
     """Component in an analysis pipeline.
     
     In `run_analysis`, multiple sets of evaluations may be performed
@@ -485,31 +553,27 @@ class AbstractAnalysis(Module, strict=False):
             that case we could give the condition `"any_system_noise"` to those analyses.
     """
     _exclude_fields = (
-        'default_inputs', 
+        'inputs',
         'conditions', 
         'fig_params', 
-        'custom_inputs', #! Should this be here?
         'cache_result',
         '_prep_ops', 
-        # '_state_vmap_axes',
         '_fig_op',
         '_final_ops_by_type',
     )
 
-    default_inputs: AbstractClassVar["AnalysisDefaultInputsType"] 
-    conditions: AbstractVar[tuple[str, ...]]
-    variant: AbstractVar[Optional[str]]  #! TODO: Rename to `task_variant`
-    fig_params: AbstractVar[FigParamNamespace]
+    # 
+    Ports: ClassVar[type[PortsType]] = NoPorts  # type: ignore
     
-    # By using `strict=False`, we can define non-abstract fields, i.e. without needing to 
-    # implement them trivially in subclasses. This violates the abstract-final design
-    # pattern. This is intentional. If it leads to problems, I will learn from that.
-    #! This means no non-default arguments in subclasses
-    custom_inputs: Mapping[str, "InputType"] = eqx.field(default_factory=dict)
+    # We'll store a fully-materialised Ports instance on self  
+    inputs: PortsType = eqx.field(default_factory=NoPorts, converter=NoPorts.converter)
     # Opt-in toggle for result caching.  When True, the result of `compute`
     # is saved to / loaded from PATHS.cache / "results" using a hash that
     # captures the analysis parameters plus the *actual* inputs passed to
     # `compute`.
+    variant: Optional[str] = None  #! TODO: Rename to `task_variant` 
+    conditions: tuple[str, ...] = ()
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
     cache_result: bool = False
     _prep_ops: tuple[_PrepOp, ...] = ()
     _vmap_spec: Optional[_AnalysisVmapSpec] = None
@@ -519,16 +583,12 @@ class AbstractAnalysis(Module, strict=False):
     )
         
     def __post_init__(self):
-        """Validate that custom_inputs only override valid ports."""
-        if self.custom_inputs:
-            invalid_ports = set(self.custom_inputs.keys()) - set(self.default_inputs.keys())
-            if invalid_ports:
-                valid_ports = list(self.default_inputs.keys())
-                raise ValueError(
-                    f"Invalid port(s) in custom_inputs: {invalid_ports}. "
-                    f"Valid ports for {self.__class__.__name__} are: {valid_ports}"
-                )
+        """Validate inputs instance and check for unresolved required inputs."""
+        # Validate that inputs is an instance of the expected Ports class
+        if not isinstance(self.inputs, self.Ports):
+            raise TypeError(f"Expected inputs of type {self.Ports}, got {type(self.inputs)}")
         
+        # Check that no RequiredInput sentinels remain unresolved
         if any(isinstance(v, _RequiredType) for v in self.inputs.values()):
             raise ValueError(
                 f"Some inputs for {self.__class__.__name__} are marked as required, but no custom source is provided."
@@ -727,25 +787,6 @@ class AbstractAnalysis(Module, strict=False):
         figs = self._make_figs_with_ops(data, result, **kwargs)
         return result, figs
 
-    @property
-    def inputs(self) -> "AnalysisInputsType":
-        """Get the complete mapping of dependency names to their sources.
-        
-        Combines default inputs with custom overrides. OptionalInput sentinels
-        are only included if there's a custom override for them.
-        """
-        inputs = {}
-        
-        # Add all default inputs except OptionalInput sentinels
-        for name, source in self.default_inputs.items():
-            if not isinstance(source, _OptionalType):
-                inputs[name] = source
-        
-        # Add custom inputs, including OptionalInput overrides
-        for name, source in self.custom_inputs.items():
-            inputs[name] = source
-        
-        return cast(AnalysisInputsType, MappingProxyType(inputs))
 
     @property
     def _flattened_inputs(self) -> dict[str, list]:
@@ -1284,7 +1325,7 @@ class AbstractAnalysis(Module, strict=False):
         Return a new instance whose `compute` is wrapped in one or more
         nested jax.vmap layers (via vmap_multi).
 
-        `in_axes` maps dependency names (keys in default_inputs or
+        `in_axes` maps dependency names (keys in `inputs` or
         "data.states") to *singular* axis specs: int/None, PyTrees thereof,
         or MultiVmapAxes for nested vmaps.  These are expanded by
         expand_axes_spec into per-level dicts.
@@ -1752,18 +1793,13 @@ class AbstractAnalysis(Module, strict=False):
         return prepped_kwargs
 
 
-DefaultInputType: TypeAlias = type[AbstractAnalysis] | _RequiredType | _OptionalType | _DataField
-AnalysisDefaultInputsType: TypeAlias = MappingProxyType[str, DefaultInputType]
-
+# Keep InputType for validation purposes
 InputType: TypeAlias = PyTree[type[AbstractAnalysis] | AbstractAnalysis | _DataField | str | ExpandTo | Transformed | LiteralInput]
-AnalysisInputsType: TypeAlias = MappingProxyType[str, InputType]
 
 
-class _DummyAnalysis(AbstractAnalysis):
+class _DummyAnalysis(AbstractAnalysis[NoPorts]):
     """An empty analysis, for debugging."""
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
     conditions: tuple[str, ...] = ()
-    variant: Optional[str] = None
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
 
     def compute(self, data: AnalysisInputData, **kwargs) -> PyTree[Any]:

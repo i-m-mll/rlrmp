@@ -1,9 +1,9 @@
 from collections.abc import Callable
 from copy import deepcopy
 from functools import partial
-from types import MappingProxyType
-from typing import ClassVar, Optional, Literal as L
+from typing import Optional, Literal as L
 
+import equinox as eqx
 from equinox import Module
 import jax.numpy as jnp
 import jax.tree as jt
@@ -17,10 +17,12 @@ import jax_cookbook.tree as jtree
 
 from rlrmp.analysis.analysis import (
     AbstractAnalysis,
-    AnalysisDefaultInputsType,
+    AbstractAnalysisPorts,
     AnalysisInputData,
     DefaultFigParamNamespace,
     FigParamNamespace,
+    InputOf,
+    NoPorts,
     get_validation_trial_specs,
 )
 from rlrmp.analysis.state_utils import get_pos_endpoints
@@ -119,12 +121,8 @@ def get_trivial_reach_origins_directions(task: AbstractTask, models: PyTree[Modu
     return origins, directions
 
 
-class AlignedVars(AbstractAnalysis):
+class AlignedVars(AbstractAnalysis[NoPorts]):
     """Align spatial variable (e.g. position and velocity) coordinates with the reach direction."""
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
-    conditions: tuple[str, ...] = ()
-    variant: Optional[str] = None
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
     where_states_to_align: Callable = WHERE_VARS_TO_ALIGN
     origins_directions_func: Callable = get_reach_origins_directions
 
@@ -163,11 +161,14 @@ class AlignedVars(AbstractAnalysis):
         return result
         
         
-class AlignedEffectorTrajectories(AbstractAnalysis):
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
-        aligned_vars=AlignedVars,
-    ))
-    conditions: tuple[str, ...] = ()
+class AlignedEffectorTrajectoriesPorts(AbstractAnalysisPorts):
+    """Input ports for AlignedEffectorTrajectories analysis."""
+    aligned_vars: InputOf[AlignedVars]
+
+
+class AlignedEffectorTrajectories(AbstractAnalysis[AlignedEffectorTrajectoriesPorts]):
+    Ports = AlignedEffectorTrajectoriesPorts
+    inputs: AlignedEffectorTrajectoriesPorts = eqx.field(default_factory=AlignedEffectorTrajectoriesPorts, converter=AlignedEffectorTrajectoriesPorts.converter)
     variant: Optional[str] = "small"
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
         var_labels=RESPONSE_VAR_LABELS,
@@ -207,13 +208,14 @@ class AlignedEffectorTrajectories(AbstractAnalysis):
     ):
         fig_params = deepcopy(self.fig_params)
 
-        if fig_params.legend_title is None and self.colorscale_key is not None:
-            fig_params.legend_title = get_label_str(self.colorscale_key)
+        if self.colorscale_key is not None:
+            if fig_params.legend_title is None:
+                fig_params.legend_title = get_label_str(self.colorscale_key)
             
-        try:
-            fig_params.legend_labels = flat_key_to_where_func(self.colorscale_key)(hps_common)
-        except:
-            pass
+            try:
+                fig_params.legend_labels = flat_key_to_where_func(self.colorscale_key)(hps_common)
+            except:
+                pass
 
         figs = jt.map(
             partial(

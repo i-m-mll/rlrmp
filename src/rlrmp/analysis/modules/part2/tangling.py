@@ -8,8 +8,7 @@ across SISU.
 
 from collections.abc import Callable
 from functools import partial 
-from types import MappingProxyType
-from typing import ClassVar, Optional, Dict, Any, Literal as L, Sequence
+from typing import Optional, Dict, Any, Literal as L, Sequence
 
 import equinox as eqx
 from equinox import Module
@@ -27,7 +26,7 @@ from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
 from rlrmp.analysis.aligned import AlignedEffectorTrajectories, AlignedVars
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, CallWithDeps, Data, DefaultFigParamNamespace, FigParamNamespace, RequiredInput
+from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisInputData, CallWithDeps, Data, DefaultFigParamNamespace, FigParamNamespace, NoPorts, RequiredInput
 from rlrmp.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS
 from rlrmp.analysis.effector import EffectorTrajectories
 from rlrmp.analysis.measures import ALL_MEASURE_KEYS, MEASURE_LABELS
@@ -142,9 +141,7 @@ def rms(x: Array, axis: int = -1) -> Array:
     return jnp.sqrt(jnp.mean(x ** 2, axis=axis))
 
 
-class PCPlot(AbstractAnalysis):
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
-    conditions: tuple[str, ...] = ()  
+class PCPlot(AbstractAnalysis[NoPorts]):  
     variant: Optional[str] = "small"
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
         title="",
@@ -159,7 +156,7 @@ ANALYSES = {
     "tangling": (
         Tangling(
             variant="small",
-            custom_inputs=dict(
+            inputs=Tangling.Ports(
                 state=Data.states(where=lambda states: states.net.hidden),
             )
         )

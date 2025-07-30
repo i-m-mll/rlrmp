@@ -1,7 +1,7 @@
 from collections.abc import Callable
-from types import MappingProxyType
-from typing import ClassVar, Optional
+from typing import Optional
 
+import equinox as eqx
 from equinox import Module
 import jax.tree as jt
 from jaxtyping import PyTree
@@ -13,7 +13,7 @@ from jax_cookbook import is_type
 import jax_cookbook.tree as jtree
 
 from rlrmp.analysis.aligned import AlignedVars
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, InputOf
 from rlrmp.plot_utils import get_label_str
 from rlrmp.tree_utils import move_ldict_level_above, tree_level_labels
 from rlrmp.types import Responses
@@ -21,7 +21,12 @@ from rlrmp.types import TreeNamespace
 from rlrmp.types import LDict
 
 
-class Profiles(AbstractAnalysis):
+class ProfilesPorts(AbstractAnalysisPorts):
+    """Input ports for Profiles analysis."""
+    vars: InputOf[AlignedVars]
+
+
+class Profiles(AbstractAnalysis[ProfilesPorts]):
     """Generates figures for 
     
     Assumes that all the aligned vars have the same number of coordinates (i.e. 
@@ -29,11 +34,10 @@ class Profiles(AbstractAnalysis):
     by `coord_labels`. For example, this is the case when we align position, velocity, 
     acceleration, and force in 2D. 
     """
-    conditions: tuple[str, ...] = ()
+    Ports = ProfilesPorts
+    inputs: ProfilesPorts = eqx.field(default_factory=ProfilesPorts, converter=ProfilesPorts.converter)
+    
     variant: Optional[str] = "full"
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
-        vars=AlignedVars,
-    ))
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
         mode='std', # or 'curves'
         n_std_plot=1,

@@ -2,8 +2,7 @@
 from collections.abc import Callable
 from functools import partial
 from multiprocessing import Value
-from types import MappingProxyType
-from typing import Any, ClassVar, Optional, TypeVar
+from typing import Any, Optional, TypeVar
 import equinox as eqx
 from equinox import field
 import jax
@@ -19,12 +18,11 @@ from optax import GradientTransformation
 
 from rlrmp.analysis.analysis import (
     AbstractAnalysis, 
-    AnalysisDefaultInputsType, 
+    AbstractAnalysisPorts,
     AnalysisInputData, 
     DefaultFigParamNamespace, 
     FigParamNamespace, 
-    OptionalInput, 
-    RequiredInput,
+    InputOf,
 )
 from rlrmp.analysis.fp_finder import (
     FixedPointFinder,
@@ -37,7 +35,14 @@ from rlrmp.types import LDict, TreeNamespace
 T = TypeVar('T')
 
 
-class FixedPoints(AbstractAnalysis):
+class FixedPointsPorts(AbstractAnalysisPorts):
+    """Input ports for FixedPoints analysis."""
+    funcs: InputOf[Callable]  # Functions to find fixed points for, e.g. RNN cells
+    candidates: InputOf[Array]  # Candidate states to initialize the fixed point search  
+    func_args: Optional[tuple[InputOf[Any], ...]] = None  # Optional positional arguments to pass to functions
+
+
+class FixedPoints(AbstractAnalysis[FixedPointsPorts]):
     """Find steady-state fixed points of a function.
     
     Inputs:
@@ -48,14 +53,10 @@ class FixedPoints(AbstractAnalysis):
         func_args: Optional positional arguments to pass to the functions as `*args`.
     """
 
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
-        funcs=RequiredInput,  # Functions to find fixed points for, e.g. RNN cells
-        candidates=RequiredInput,  # Candidate states to initialize the fixed point search
-        func_args=OptionalInput,
-    ))
-    conditions: tuple[str, ...] = ()
+    Ports = FixedPointsPorts
+    inputs: FixedPointsPorts = eqx.field(default_factory=FixedPointsPorts, converter=FixedPointsPorts.converter)
+    
     variant: Optional[str] = "full"
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
     cache_result: bool = True
 
     # ss_func: Callable = get_ss_rnn_func

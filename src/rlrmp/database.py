@@ -1090,7 +1090,7 @@ def records_to_dict(records: list[RecordBase], collapse_constant: bool = True) -
     
 def retrieve_figures(
     session: Session,
-    model_parameters: Optional[dict] = None,
+    # model_parameters: Optional[dict] = None,
     evaluation_parameters: Optional[dict] = None,
     exclude_archived: bool = True,
     **figure_parameters
@@ -1115,7 +1115,7 @@ def retrieve_figures(
     query = (
         session.query(FigureRecord, EvaluationRecord, ModelRecord)
         .join(EvaluationRecord, FigureRecord.evaluation_hash == EvaluationRecord.hash)
-        .join(ModelRecord, FigureRecord.model_hash == ModelRecord.hash)
+        # .join(ModelRecord, FigureRecord.model_hash == ModelRecord.hash)
     )
     
     if exclude_archived:
@@ -1133,8 +1133,8 @@ def retrieve_figures(
     query = add_filters(query, FigureRecord, figure_parameters)
             
     # Add model parameter filters
-    if model_parameters:
-        query = add_filters(query, ModelRecord, model_parameters)
+    # if model_parameters:
+    #     query = add_filters(query, ModelRecord, model_parameters)
     
     # Add evaluation parameter filters
     if evaluation_parameters:

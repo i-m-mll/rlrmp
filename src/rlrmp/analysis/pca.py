@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, NoPorts
 from rlrmp.types import TreeNamespace
 
 import jax.numpy as jnp
@@ -12,11 +12,10 @@ from feedbax.misc import batch_reshape
 from jax_cookbook import is_type
 import jax_cookbook.tree as jtree
 
-from types import MappingProxyType
-from typing import ClassVar, Optional
+from typing import Optional
 
 
-class StatesPCA(AbstractAnalysis):
+class StatesPCA(AbstractAnalysis[NoPorts]):
     """Perform principle component analysis on evaluated states, with sklearn.
     
     Assumes that `data.states` is an array PyTree of shape `(*batch, n_vars)`.
@@ -34,11 +33,6 @@ class StatesPCA(AbstractAnalysis):
         batch_transform: A function that applies the PCA transform to a PyTree of arrays of shape
             `(*batch, n_vars)`, retaining the batch axes in the output. 
     """
-
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
-    conditions: tuple[str, ...] = ()
-    variant: Optional[str] = None
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
     n_components: Optional[int] = None
     where_states: Optional[Callable[[SimpleFeedbackState], PyTree[Array]]] = None
@@ -56,64 +50,20 @@ class StatesPCA(AbstractAnalysis):
 
         states_reshaped = jt.map(lambda arr: arr.reshape(-1, arr.shape[-1]), states_for_pca)
 
+        #! TODO: Use JAX-native PCA
         pca = PCA(n_components=self.n_components).fit(
-            jnp.concatenate(jt.leaves(states_reshaped))
+            jnp.concatenate(jt.leaves(states_reshaped))  # type: ignore
         )
         
-        batch_transform = lambda x: jt.map(batch_reshape(pca.transform), x)
+        batch_transform = lambda x: jt.map(batch_reshape(pca.transform), x)  # type: ignore
 
         if self.return_data:
-            data = jt.map(batch_transform, states_for_pca)
+            states_pc = jt.map(batch_transform, states_for_pca)
         else:
-            data = None
+            states_pc = None
 
         return TreeNamespace(
             pca=pca,
             batch_transform=batch_transform,
-            data=data,
+            states_pc=states_pc,
         )
-    
-
-# class ProjectPCA(AbstractAnalysis):
-#     conditions: tuple[str, ...] = ()
-#     variant: Optional[str] = "small"
-#     default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
-#         pca=PCA,
-#     ))
-#     fig_params: FigParamNamespace = DefaultFigParamNamespace()
-#     variant_pca: Optional[str] = None  
-#     n_components: Optional[int] = None
-    
-#     def dependency_kwargs(self):
-#         return dict(
-#             pca=dict(
-#                 variant=self.variant_pca if self.variant_pca is not None else self.variant,
-#                 n_components=self.n_components,
-#             )
-#         )
-    
-#     def compute(
-#         self,
-#         data: AnalysisInputData,
-#         *,
-#         pca,
-#         hps_0,
-#         **kwargs,
-#     ):
-#         return jt.map(
-#             lambda states: pca.batch_transform(states),
-#             #! TODO: Do not index out variant in `compute`
-#             data.states[self.variant],
-#             is_leaf=is_type(SimpleFeedbackState),
-#         ) 
-
-            
-#     def make_figs(
-#         self,
-#         data: AnalysisInputData,
-#         *,
-#         pca,
-#         hps_0,
-#         **kwargs,
-#     ):
-#         pass

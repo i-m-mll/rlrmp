@@ -129,16 +129,16 @@ DEPENDENCIES = {
 
 # State PyTree structure: ['sisu', 'train__pert__std']
 # Array batch shape: (evals, replicates, reach conditions)
-ANALYSES = {
-    "reach_fps_in_pc_space": (
-        ReachFPsInPCSpace(custom_inputs=dict(pca_results="states_pca"))
-    ),
-    "reach_trajectories_in_pc_space": (
-        ReachTrajectoriesInPCSpace(custom_inputs=dict(pca_results="states_pca"))
-    ),
-    "reach_direction_trajectories": (
-        ReachDirectionTrajectories(custom_inputs=dict(pca_results="states_pca"))
-    ),
-}
+# ANALYSES = {
+#     "reach_fps_in_pc_space": (
+#         ReachFPsInPCSpace(custom_inputs=dict(pca_results="states_pca"))
+#     ),
+#     "reach_trajectories_in_pc_space": (
+#         ReachTrajectoriesInPCSpace(custom_inputs=dict(pca_results="states_pca"))
+#     ),
+#     "reach_direction_trajectories": (
+#         ReachDirectionTrajectories(custom_inputs=dict(pca_results="states_pca"))
+#     ),
+# }
 
 

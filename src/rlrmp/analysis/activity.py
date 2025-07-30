@@ -1,6 +1,6 @@
 from collections.abc import Callable, Sequence
-from types import MappingProxyType, SimpleNamespace
-from typing import ClassVar, Optional
+from types import SimpleNamespace
+from typing import Optional
 
 from equinox import field
 import jax.random as jr
@@ -13,7 +13,7 @@ from feedbax.bodies import SimpleFeedbackState
 from jax_cookbook import is_type
 
 from rlrmp.analysis.pca import PCA
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, NoPorts
 from rlrmp.constants import REPLICATE_CRITERION
 from rlrmp.plot_utils import get_label_str
 from rlrmp.plot_utils import calculate_array_minmax
@@ -191,10 +191,8 @@ def activity_sample_units(
     return fig
 
 
-class NetworkActivity_SampleUnits(AbstractAnalysis):
-    conditions: tuple[str, ...] = ()  
+class NetworkActivity_SampleUnits(AbstractAnalysis[NoPorts]):
     variant: Optional[str] = "small"
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
         n_units_sample=4,
         key=jr.PRNGKey(0),

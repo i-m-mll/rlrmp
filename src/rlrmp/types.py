@@ -228,7 +228,10 @@ class _Wrapped():
 @runtime_checkable
 class _ReprIndentable(Protocol):
     def _repr_with_indent(self, level: int) -> str: ...
-    
+
+
+U = TypeVar('U')
+
 
 @jax.tree_util.register_pytree_with_keys_class
 class LDict(Mapping[K, V], Generic[K, V]):
@@ -328,7 +331,7 @@ class LDict(Mapping[K, V], Generic[K, V]):
         # Avoids `FlattenedIndexKey` appearing in key paths
         children_with_keys = [(jtu.DictKey(k), v) for k, v in self.items()]
         return children_with_keys, (self._label, self.keys())
-    
+
     @classmethod
     def tree_unflatten(cls, aux_data, children):
         label, keys = aux_data
@@ -343,8 +346,8 @@ class LDict(Mapping[K, V], Generic[K, V]):
     def values(self):
         return self._data.values()
     
-    def get(self, key, default=None):
-        return self._data.get(key, default)
+    # def get(self, key, default: U = ...) -> V | U:
+    #     return self._data.get(key, default)
 
     @staticmethod
     def of(label: str):

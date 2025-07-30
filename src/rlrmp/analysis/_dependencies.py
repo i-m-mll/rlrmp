@@ -17,7 +17,7 @@ from collections.abc import Sequence
 import hashlib
 import inspect
 import json
-from typing import Optional, Set, Dict, Any, ClassVar, Callable
+from typing import Optional, Set, Dict, Any, Callable
 
 import equinox as eqx
 import jax.tree as jt
@@ -27,11 +27,10 @@ from jaxtyping import PyTree
 from jax_cookbook import is_type
 
 from rlrmp.analysis.analysis import (
-    AbstractAnalysis, AnalysisInputData, _format_dict_of_params, RequiredInput, OptionalInput,
-    _DataField, LiteralInput, FigParamNamespace, DefaultFigParamNamespace, AnalysisDefaultInputsType,
-    ExpandTo, Transformed
+    AbstractAnalysis, AnalysisInputData, _format_dict_of_params, RequiredInput,
+    _DataField, LiteralInput, FigParamNamespace, DefaultFigParamNamespace,
+    ExpandTo, Transformed, NoPorts
 )
-from types import MappingProxyType
 from rlrmp.misc import get_md5_hexdigest
 from rlrmp.tree_utils import prefix_expand
 
@@ -39,7 +38,7 @@ from rlrmp.tree_utils import prefix_expand
 logger = logging.getLogger(__name__)
 
 
-class _DataForwarder(AbstractAnalysis):
+class _DataForwarder(AbstractAnalysis[NoPorts]):
     """Forwards a single attribute of `AnalysisInputData`.
 
     This node exists only to integrate `Data.<attr>` references into the
@@ -53,12 +52,6 @@ class _DataForwarder(AbstractAnalysis):
     attr: str = ""
     where: Optional[Callable] = None
     is_leaf: Optional[Callable[[Any], bool]] = None
-
-    # No dependencies of its own
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType({})  # type: ignore
-    conditions: tuple[str, ...] = ()
-    variant: Optional[str] = None
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
 
     # Pure forwarding
     def compute(self, data: AnalysisInputData, **kwargs):  # noqa: D401
@@ -106,19 +99,16 @@ def resolve_dependency_node(analysis, dep_name, dep_source, dependency_lookup=No
     if isinstance(dep_source, LiteralInput):
         return None
         
+    # Handle None inputs by skipping them
+    if dep_source is None:
+        return None
+        
     # Handle required-but-missing dependencies early
     if dep_source is RequiredInput:
         raise ValueError(
             f"Dependency '{dep_name}' for analysis '{analysis.name}' is marked as RequiredInput but was not provided. "
             "Pass it via `custom_inputs` on that analysis instance, or reference an entry in the module-level "
             "`DEPENDENCIES` dict and point to it by name from `custom_inputs`."
-        )
-    
-    # Handle optional inputs that weren't provided
-    if dep_source is OptionalInput:
-        raise ValueError(
-            f"Dependency '{dep_name}' for analysis '{analysis.name}' is marked as OptionalInput and should not "
-            "appear in the computation graph unless explicitly overridden in `custom_inputs`."
         )
     
     # Handle forwarding of attributes from AnalysisInputData via the `Data` sentinel
@@ -134,8 +124,6 @@ def resolve_dependency_node(analysis, dep_name, dep_source, dependency_lookup=No
     
     class_params = analysis.dependency_kwargs().get(dep_name, {})
     # Recursively resolve string dependencies
-    if dep_source is None:
-        raise ValueError(f"Dependency '{dep_name}' is None")
     if isinstance(dep_source, str):
         if dependency_lookup is not None and dep_source in dependency_lookup:
             dep_instance = dependency_lookup[dep_source]

@@ -1,7 +1,6 @@
 from collections.abc import Callable
 from functools import partial 
-from types import MappingProxyType
-from typing import ClassVar, Optional, Dict, Any, Literal as L, Sequence
+from typing import Optional, Dict, Any, Literal as L, Sequence
 
 import equinox as eqx
 from equinox import Module
@@ -20,7 +19,7 @@ from jax_cookbook import is_module, is_type, is_none
 import jax_cookbook.tree as jtree
 
 from rlrmp.analysis.aligned import AlignedEffectorTrajectories, AlignedVars, get_trivial_reach_origins_directions
-from rlrmp.analysis.analysis import _DummyAnalysis, AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import _DummyAnalysis, AbstractAnalysis, AbstractAnalysisPorts, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, InputOf, NoPorts
 from rlrmp.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS, get_pert_amp_vmap_eval_func
 from rlrmp.analysis.effector import EffectorTrajectories
 from rlrmp.analysis.measures import ALL_MEASURE_KEYS, MEASURE_LABELS
@@ -321,22 +320,21 @@ def max_deviation_after_stim(states_by_var, *, hps_common, **kwargs):
     return jnp.max(deviation[..., ts], axis=-1)
 
 
-class UnitFbGains(AbstractAnalysis):
+class UnitFbGains(AbstractAnalysis[NoPorts]):
     """Compute unit feedback gains."""
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
-    conditions: tuple[str, ...] = ()
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
     variant: Optional[str] = "full"
     
 
-class UnitStimRegressionFigures(AbstractAnalysis):
-    """Figures for unit stimulation regression."""
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
-        regression_results=None,
-        unit_fb_gains=None,
-    ))
-    conditions: tuple[str, ...] = ()
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
+class UnitStimRegressionFiguresPorts(AbstractAnalysisPorts):
+    """Input ports for UnitStimRegressionFigures analysis."""  
+    regression_results: Optional[InputOf[Any]] = None
+    unit_fb_gains: Optional[InputOf[Any]] = None
+
+
+class UnitStimRegressionFigures(AbstractAnalysis[UnitStimRegressionFiguresPorts]):
+    Ports = UnitStimRegressionFiguresPorts
+    inputs: UnitStimRegressionFiguresPorts = eqx.field(default_factory=UnitStimRegressionFiguresPorts, converter=UnitStimRegressionFiguresPorts.converter)
+
     variant: Optional[str] = "full"
 
     def make_figs(
@@ -430,9 +428,9 @@ ANALYSES = {
             variant="full",
             vrect_kws_func=get_impulse_vrect_kws,
             coord_labels=None, 
-            custom_inputs={
-                "vars": "aligned_vars_trivial",
-            },
+            inputs=Profiles.Ports(
+                vars="aligned_vars_trivial",
+            ),
         )
         .after_transform(partial(get_best_replicate, axis=3))
         .after_indexing(1, unit_idxs_profiles_plot, axis_label="unit_stim_idx")  #! Only make figures for a few stim units
@@ -461,7 +459,7 @@ ANALYSES = {
     "unit_stim_regression": (
         Regression(
             variant="full",
-            custom_inputs=dict(
+            inputs=Regression.Ports(
                 regressor_tree="aligned_vars_trivial",
             ),
         )
@@ -474,7 +472,7 @@ ANALYSES = {
         .vmap(in_axes={"regressor_tree": 0})
     ),
     "unit_stim_regression_figures": UnitStimRegressionFigures(
-        custom_inputs=dict(
+        inputs=UnitStimRegressionFigures.Ports(
             regression_results="unit_stim_regression",
         ),
     ),
