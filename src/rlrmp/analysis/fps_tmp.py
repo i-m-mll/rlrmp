@@ -5,8 +5,7 @@ into the declarative analysis framework.
 """
 
 from collections.abc import Callable
-from types import MappingProxyType
-from typing import ClassVar, Optional, TypeVar
+from typing import Optional, TypeVar
 
 import equinox as eqx
 from equinox import Module, field
@@ -24,20 +23,19 @@ from sqlalchemy import func
 
 from rlrmp.analysis.analysis import (
     AbstractAnalysis,
-    AnalysisDefaultInputsType,
+    AbstractAnalysisPorts,
     AnalysisInputData,
     DefaultFigParamNamespace,
     FigParamNamespace,
-)
-from rlrmp.analysis.fp_finder import (
-    FPFilteredResults,
+    InputOf,
+    NoPorts,
 )
 from rlrmp.analysis.fps import FixedPoints
 from rlrmp.analysis.pca import StatesPCA
 from rlrmp.analysis.state_utils import exclude_bad_replicates
 from rlrmp.misc import take_non_nan
 from rlrmp.plot import plot_fp_pcs
-from rlrmp.tree_utils import first, ldict_level_to_bottom
+from rlrmp.tree_utils import first
 from rlrmp.types import LDict, TreeNamespace
 
 
@@ -52,14 +50,16 @@ def origin_only(states, axis=-2, *, hps_common):
 
 
 #! Should be totally scrappable
-class FPsInPCSpace(AbstractAnalysis):
-    """Plot fixed points in PC space."""
+class FPsInPCSpacePorts(AbstractAnalysisPorts):
+    """Input ports for FPsInPCSpace analysis."""
+    fps_results: InputOf[FixedPoints]
+    pca_results: InputOf[StatesPCA]
 
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
-        fps_results=FixedPoints,
-        pca_results=StatesPCA,
-    ))
-    conditions: tuple[str, ...] = ()
+
+class FPsInPCSpace(AbstractAnalysis[FPsInPCSpacePorts]):
+    """Plot fixed points in PC space."""
+    Ports = FPsInPCSpacePorts
+    inputs: FPsInPCSpacePorts = eqx.field(default_factory=FPsInPCSpacePorts, converter=FPsInPCSpacePorts.converter)
     variant: Optional[str] = "full"
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     

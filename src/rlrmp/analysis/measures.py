@@ -16,7 +16,7 @@ import numpy as np
 from rlrmp.plot_utils import get_label_str
 from rlrmp.types import Responses, TreeNamespace
 from rlrmp.analysis.aligned import AlignedVars
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, InputOf
 from rlrmp.constants import EVAL_REACH_LENGTH, REPLICATE_CRITERION
 from rlrmp.misc import lohi
 from rlrmp.plot import get_measure_replicate_comparisons, get_violins
@@ -353,12 +353,15 @@ def output_corr(
     return jnp.moveaxis(corrs, 0, 1)
 
 
-class Measures(AbstractAnalysis):
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
-        aligned_vars=AlignedVars,
-    ))
+class MeasuresPorts(AbstractAnalysisPorts):
+    """Input ports for Measures analysis."""
+    aligned_vars: InputOf[AlignedVars]
+
+
+class Measures(AbstractAnalysis[MeasuresPorts]):
+    Ports = MeasuresPorts
+    inputs: MeasuresPorts = eqx.field(default_factory=MeasuresPorts, converter=MeasuresPorts.converter)
     variant: Optional[str] = "full"
-    conditions: tuple[str, ...] = ()
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
         # arr_axis_labels=["Evaluation", "Replicate", "Condition"],  #!
     )
@@ -457,44 +460,3 @@ def get_one_measure_plot_per_eval_condition(plot_func, measures, colors, **kwarg
         for key, measure in measures.items()
     })
 
-
-# class Measures_CompareReplicatesLoHi(AbstractAnalysis):
-#     conditions: tuple[str, ...] = ()
-#     variant: Optional[str] = "full"
-#     default_inputs: ClassVar[AnalysisDependenciesType] = MappingProxyType(dict(
-#         measure_values_lohi_train_pert_std=MeasuresLoHiPertStd,
-#     ))
-#     fig_params: FigParamNamespace = DefaultFigParamNamespace()
-#     measure_keys: Sequence[str] = ALL_MEASURE_KEYS
-    
-#     def dependency_kwargs(self) -> Dict[str, Dict[str, Any]]:
-#         return dict(
-#             measure_values_lohi_train_pert_std=dict(
-#                 measure_keys=self.measure_keys,
-#                 variant=self.variant,
-#             )
-#         )
-
-#     def make_figs(
-#         self,
-#         data: AnalysisInputData,
-#         *,
-#         measure_values_lohi_train_pert_std,
-#         colors,
-#         replicate_info,
-#         **kwargs,
-#     ):
-#         included_replicates = replicate_info['included_replicates'][REPLICATE_CRITERION]
-#         replicates_all_lohi_included = jt.reduce(jnp.logical_and, lohi(included_replicates))
-#         figs = get_one_measure_plot_per_eval_condition(
-#             get_measure_replicate_comparisons,
-#             measure_values_lohi_train_pert_std,
-#             lohi(colors["train__pert__std"].dark),
-#             included_replicates=np.where(replicates_all_lohi_included)[0],
-#         )
-#         return figs
-
-#     def _params_to_save(self, hps: PyTree[TreeNamespace], *, measure_values_lohi_train_pert_std, **kwargs):
-#         return dict(
-#             n=int(np.prod(jt.leaves(measure_values_lohi_train_pert_std)[0].shape))
-#         )

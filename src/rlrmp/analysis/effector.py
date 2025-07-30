@@ -1,7 +1,6 @@
 from collections.abc import Callable, Sequence
 from functools import partial
-from types import MappingProxyType
-from typing import ClassVar, Optional
+from typing import Optional
 
 import jax.tree as jt
 from equinox import Module, field
@@ -12,7 +11,7 @@ from feedbax.task import AbstractTask
 from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, NoPorts
 from rlrmp.analysis.state_utils import get_pos_endpoints
 from rlrmp.colors import COLORSCALES
 from rlrmp.config import PLOTLY_CONFIG
@@ -25,10 +24,8 @@ from rlrmp.types import TreeNamespace
 MEAN_LIGHTEN_FACTOR = PLOTLY_CONFIG.mean_lighten_factor
 
 
-class EffectorTrajectories(AbstractAnalysis):
-    conditions: tuple[str, ...] = () # ('any_system_noise',)  # TODO: Skip this analysis, if only one eval
+class EffectorTrajectories(AbstractAnalysis[NoPorts]):
     variant: Optional[str] = "small"
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
         # legend_title="Reach direction",
         mean_exclude_axes=(),
@@ -50,7 +47,7 @@ class EffectorTrajectories(AbstractAnalysis):
     ):
         #! TODO: Add a general way to include callables in `fig_params`;
         #! however this probably requires passing `fig_params` to `AbstractAnalysis.make_figs`...
-        if self.fig_params.legend_title is None:
+        if self.fig_params.legend_title is None and self.colorscale_key is not None:
             fig_params = self.fig_params | dict(legend_title=get_label_str(self.colorscale_key))
         else: 
             fig_params = self.fig_params

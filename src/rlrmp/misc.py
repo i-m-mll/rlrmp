@@ -110,9 +110,11 @@ def with_caller_logger(func):
     def wrapper(*args, **kwargs):
         # If logger is not provided in kwargs, get the caller's logger
         if 'logger' not in kwargs:
-            caller_frame = inspect.currentframe().f_back
-            caller_module = inspect.getmodule(caller_frame)
-            if caller_module:
+            caller_module = None
+            caller_frame = inspect.currentframe()
+            if caller_frame is not None:
+                caller_module = inspect.getmodule(caller_frame.f_back)
+            if caller_module is not None:
                 kwargs['logger'] = logging.getLogger(caller_module.__name__)
             else:
                 kwargs['logger'] = logging.getLogger(func.__module__)
@@ -127,7 +129,8 @@ def with_caller_logger(func):
 def get_name_of_callable(
     func: Callable, 
     return_lambda_id: bool = False,
-    logger: Optional[logging.Logger] = None,
+    *,
+    logger: logging.Logger,
 ) -> str:
     """
     Returns the name of a callable object, handling different types appropriately.
@@ -154,7 +157,7 @@ def get_name_of_callable(
     
     # Handle partial functions
     elif isinstance(func, functools.partial):
-        return get_name_of_callable(func.func)
+        return get_name_of_callable(func.func, logger=logger)
     
     # Handle method objects (bound or unbound)
     elif inspect.ismethod(func):
@@ -251,7 +254,7 @@ def log_version_info(
     *args: ModuleType, 
     git_modules: Optional[Sequence[ModuleType]] = None,
     python_version: bool = True,
-    logger: Optional[logging.Logger] = None,
+    logger: logging.Logger,
 ) -> dict[str, str]:
     version_info: dict[str, str] = {}
     

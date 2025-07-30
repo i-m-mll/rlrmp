@@ -1,6 +1,7 @@
 from functools import wraps
-from types import MappingProxyType
-from typing import ClassVar, Optional, Literal as L
+from typing import Optional, Literal as L
+
+import equinox as eqx
 
 import jax
 import jax.numpy as jnp
@@ -14,20 +15,23 @@ from jax_cookbook.misc import crop_to_shortest
 
 from rlrmp.analysis.analysis import (
     AbstractAnalysis, 
-    AnalysisDefaultInputsType, 
+    AbstractAnalysisPorts,
     AnalysisInputData, 
     Data, 
     DefaultFigParamNamespace, 
     FigParamNamespace,
+    InputOf,
 )
 
 
-class Tangling(AbstractAnalysis):
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
-        #! Maybe should not hardcode this here, but make it `RequiredInput`
-        state=Data.states(where=lambda states: states.net.hidden),
-    ))
-    conditions: tuple[str, ...] = ()
+class TanglingPorts(AbstractAnalysisPorts):
+    """Input ports for Tangling analysis."""
+    state: InputOf[Array]
+
+
+class Tangling(AbstractAnalysis[TanglingPorts]):
+    Ports = TanglingPorts
+    inputs: TanglingPorts = eqx.field(default_factory=TanglingPorts, converter=TanglingPorts.converter)
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     variant: Optional[str] = "full"
     eps: float = 1e-6  # TODO: Allow for `lambda states: ...`

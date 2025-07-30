@@ -2,8 +2,7 @@
 
 from functools import partial
 import itertools
-from types import MappingProxyType
-from typing import ClassVar, Sequence, Optional, Tuple
+from typing import Sequence, Optional, Tuple
 
 import equinox as eqx
 import jax
@@ -16,7 +15,7 @@ from feedbax.train import SimpleTrainer, grad_wrap_simple_loss_func
 from feedbax.loss import nan_safe_mse
 
 from rlrmp.analysis.aligned import AlignedVars
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, InputOf
 from rlrmp.tree_utils import ldict_level_keys, tree_level_labels
 
 
@@ -148,12 +147,16 @@ def fit_regression_from_pytree_vmap(
         return models, feature_names
     
     
-class Regression(AbstractAnalysis):
-    conditions: tuple[str, ...] = ()
+class RegressionPorts(AbstractAnalysisPorts):
+    """Input ports for Regression analysis."""
+    regressor_tree: InputOf[AlignedVars]
+
+
+class Regression(AbstractAnalysis[RegressionPorts]):
+    Ports = RegressionPorts
+    inputs: RegressionPorts = eqx.field(default_factory=RegressionPorts, converter=RegressionPorts.converter)
+    
     variant: Optional[str] = "full"
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
-        regressor_tree=AlignedVars,
-    ))
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
         mode='std', # or 'curves'
         n_std_plot=1,

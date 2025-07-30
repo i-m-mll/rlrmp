@@ -2,26 +2,29 @@
 Compute derivatives of functions. 
 """
 
-from collections.abc import Sequence
-from types import MappingProxyType
-from typing import ClassVar, Optional
+from collections.abc import Callable, Sequence
+from typing import Any, Optional
 
+import equinox as eqx
 import jax
 import jax.tree as jt
 
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, RequiredInput
+from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, InputOf
+
+
+class CallerPorts(AbstractAnalysisPorts):
+    """Input ports for analyses which call other functions with positional arguments."""
+    funcs: InputOf[Callable]
+    func_args: tuple[InputOf[Any], ...]
 
 
 #! TODO: `Jacobians` and `Hessians` seem like good candidates for 
 #! refactoring by a simpler `AbstractAnalysis` functional constructor
-class Jacobians(AbstractAnalysis):
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
-        funcs=RequiredInput,
-        func_args=RequiredInput,
-    ))
-    conditions: tuple[str, ...] = ()
+class Jacobians(AbstractAnalysis[CallerPorts]):
+    Ports = CallerPorts
+    inputs: CallerPorts = eqx.field(default_factory=CallerPorts, converter=CallerPorts.converter) 
+    
     variant: Optional[str] = "full"
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
 
     argnums: Optional[Sequence[int]] = None
 
@@ -44,14 +47,11 @@ class Jacobians(AbstractAnalysis):
         return jt.map(get_jacs, funcs, *func_args)
 
 
-class Hessians(AbstractAnalysis):
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
-        funcs=RequiredInput,
-        func_args=RequiredInput,
-    ))
-    conditions: tuple[str, ...] = ()
+class Hessians(AbstractAnalysis[CallerPorts]):
+    Ports = CallerPorts
+    inputs: CallerPorts = eqx.field(default_factory=CallerPorts, converter=CallerPorts.converter)
+
     variant: Optional[str] = "full"
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
 
     argnums: Optional[Sequence[int]] = None
     diag_only: bool = True  # Whether to compute only the diagonal Hessians (i.e. no cross-input terms)

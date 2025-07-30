@@ -1,7 +1,6 @@
 from collections.abc import Callable
 from functools import partial
-from types import MappingProxyType
-from typing import ClassVar, Optional
+from typing import Optional
 
 import equinox as eqx
 import jax
@@ -16,18 +15,15 @@ from feedbax.train import grad_wrap_simple_loss_func
 from feedbax.loss import nan_safe_mse
 from jax_cookbook import is_module
 
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisDefaultInputsType, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, NoPorts
 from rlrmp.analysis.measures import output_corr
 from rlrmp.misc import center_and_rescale, ravel_except_last
 from rlrmp.plot import get_violins
 from rlrmp.types import LDict, TreeNamespace
 
 
-class OutputWeightCorrelation(AbstractAnalysis):
-    conditions: tuple[str, ...] = ()
+class OutputWeightCorrelation(AbstractAnalysis[NoPorts]):
     variant: Optional[str] = "full"
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
     def compute(
         self, 
@@ -99,12 +95,8 @@ def fit_linear(X, y, n_iter=50, *, key):
     return trainer(lin_model, X.T, y, n_iter=n_iter, progress_bar=False)
 
 
-class UnitPreferences(AbstractAnalysis):
-    conditions: tuple[str, ...] = ()
+class UnitPreferences(AbstractAnalysis[NoPorts]):
     variant: Optional[str] = "full"
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict())
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
-
     n_iter_fit: int = 50
     feature_fn: Callable = lambda task, states: task.validation_trials.targets["mechanics.effector.pos"].value
     key: PRNGKeyArray = eqx.field(default_factory=lambda: jr.PRNGKey(0))  # For linear fit -- not very important.

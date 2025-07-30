@@ -457,6 +457,7 @@ def run_analysis_module(
     """
     if fig_dump_path is None:
         fig_dump_path = PATHS.figures_dump
+    assert fig_dump_path is not None
 
     # Ensure the directory for state pickles exists
     if states_pkl_dir is None:

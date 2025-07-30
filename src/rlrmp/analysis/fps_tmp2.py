@@ -4,14 +4,10 @@ This is a refactoring of the logic in `notebooks/markdown/part2__fps_reach.md`
 into the declarative analysis framework.
 """
 
-from collections.abc import Callable, Sequence
-from functools import partial
-from types import MappingProxyType
-from typing import ClassVar, Optional
+from collections.abc import Sequence
+from typing import Optional, Any
 
 import equinox as eqx
-from equinox import Module
-import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
@@ -20,31 +16,20 @@ import numpy as np
 import plotly.graph_objects as go
 from jaxtyping import Array, Float, PRNGKeyArray, PyTree
 
-from feedbax.bodies import SimpleFeedbackState
-from feedbax.misc import batch_reshape
 import feedbax.plotly as fbp
-from jax_cookbook import is_module, is_type, vmap_multi
+from jax_cookbook import is_module
 
 from rlrmp.analysis.analysis import (
     AbstractAnalysis,
-    AnalysisDefaultInputsType,
+    AbstractAnalysisPorts,
     AnalysisInputData,
     Data,
-    DefaultFigParamNamespace,
-    FigParamNamespace,
-)
-from rlrmp.analysis.fp_finder import (
-    FPFilteredResults,
-    FixedPointFinder,
-    fp_adam_optimizer,
-    take_top_fps,
+    InputOf,
 )
 from rlrmp.analysis.fps import get_simple_reach_first_fps
 from rlrmp.analysis.pca import StatesPCA
 from rlrmp.analysis.state_utils import exclude_bad_replicates
-from rlrmp.misc import create_arr_df, take_non_nan
-from rlrmp.plot import plot_eigvals_df, plot_fp_pcs
-from rlrmp.tree_utils import first, ldict_level_to_bottom
+from rlrmp.tree_utils import first
 from rlrmp.types import LDict, TreeNamespace
 
 
@@ -161,16 +146,17 @@ def plot_hidden_and_fp_trajectories_3D(
 # ########################################################################## #
 
 
-class ReachFPs(AbstractAnalysis):
-    """Find fixed points during simple reaching tasks."""
+class ReachFPsPorts(AbstractAnalysisPorts):
+    """Input ports for ReachFPs analysis."""
+    states: InputOf[Any] = Data.states
+    models: InputOf[Any] = Data.models
 
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
-        states=Data.states,
-        models=Data.models,
-    ))
-    conditions: tuple[str, ...] = ()
+
+class ReachFPs(AbstractAnalysis[ReachFPsPorts]):
+    """Find fixed points during simple reaching tasks."""
+    Ports = ReachFPsPorts
+    inputs: ReachFPsPorts = eqx.field(default_factory=ReachFPsPorts, converter=ReachFPsPorts.converter)
     variant: Optional[str] = "full"
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
     cache_result: bool = True
     
     loss_tol: float = 1e-6
@@ -205,20 +191,22 @@ class ReachFPs(AbstractAnalysis):
         )
 
 
-class ReachFPsInPCSpace(AbstractAnalysis):
-    """Plot reach fixed points in PC space."""
+class ReachFPsInPCSpacePorts(AbstractAnalysisPorts):
+    """Input ports for ReachFPsInPCSpace analysis."""
+    fps_results: InputOf[ReachFPs]
+    pca_results: InputOf[StatesPCA]
 
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
-        fps_results=ReachFPs,
-        pca_results=StatesPCA,
-    ))
-    conditions: tuple[str, ...] = ()
+
+class ReachFPsInPCSpace(AbstractAnalysis[ReachFPsInPCSpacePorts]):
+    """Plot reach fixed points in PC space."""
+    Ports = ReachFPsInPCSpacePorts
+    inputs: ReachFPsInPCSpacePorts = eqx.field(default_factory=ReachFPsInPCSpacePorts, converter=ReachFPsInPCSpacePorts.converter)
     variant: Optional[str] = "full"
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
     def make_figs(
         self,
         data: AnalysisInputData,
+        *,
         result: PyTree,
         fps_results: TreeNamespace,
         pca_results: TreeNamespace,
@@ -329,16 +317,17 @@ class ReachFPsInPCSpace(AbstractAnalysis):
         )
 
 
-class ReachTrajectoriesInPCSpace(AbstractAnalysis):
-    """Plot reach trajectories and fixed points in PC space."""
+class ReachTrajectoriesInPCSpacePorts(AbstractAnalysisPorts):
+    """Input ports for ReachTrajectoriesInPCSpace analysis."""
+    fps_results: InputOf[ReachFPs]
+    pca_results: InputOf[StatesPCA]
 
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
-        fps_results=ReachFPs,
-        pca_results=StatesPCA,
-    ))
-    conditions: tuple[str, ...] = ()
+
+class ReachTrajectoriesInPCSpace(AbstractAnalysis[ReachTrajectoriesInPCSpacePorts]):
+    """Plot reach trajectories and fixed points in PC space."""
+    Ports = ReachTrajectoriesInPCSpacePorts
+    inputs: ReachTrajectoriesInPCSpacePorts = eqx.field(default_factory=ReachTrajectoriesInPCSpacePorts, converter=ReachTrajectoriesInPCSpacePorts.converter)
     variant: Optional[str] = "full"
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
     stride_plot: int = 6
     fp_alpha: float = 0.4
@@ -347,6 +336,7 @@ class ReachTrajectoriesInPCSpace(AbstractAnalysis):
     def make_figs(
         self,
         data: AnalysisInputData,
+        *,
         result: PyTree,
         fps_results: TreeNamespace,
         pca_results: TreeNamespace,
@@ -424,16 +414,17 @@ class ReachTrajectoriesInPCSpace(AbstractAnalysis):
         )
 
 
-class ReachDirectionTrajectories(AbstractAnalysis):
-    """Plot fixed point trajectories for a single reach direction across context inputs."""
+class ReachDirectionTrajectoriesPorts(AbstractAnalysisPorts):
+    """Input ports for ReachDirectionTrajectories analysis."""
+    fps_results: InputOf[ReachFPs]
+    pca_results: InputOf[StatesPCA]
 
-    default_inputs: ClassVar[AnalysisDefaultInputsType] = MappingProxyType(dict(
-        fps_results=ReachFPs,
-        pca_results=StatesPCA,
-    ))
-    conditions: tuple[str, ...] = ()
+
+class ReachDirectionTrajectories(AbstractAnalysis[ReachDirectionTrajectoriesPorts]):
+    """Plot fixed point trajectories for a single reach direction across context inputs."""
+    Ports = ReachDirectionTrajectoriesPorts
+    inputs: ReachDirectionTrajectoriesPorts = eqx.field(default_factory=ReachDirectionTrajectoriesPorts, converter=ReachDirectionTrajectoriesPorts.converter)
     variant: Optional[str] = "full"
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
     
     direction_idx: int = 0
     stride_plot: int = 1
@@ -443,6 +434,7 @@ class ReachDirectionTrajectories(AbstractAnalysis):
     def make_figs(
         self,
         data: AnalysisInputData,
+        *,
         result: PyTree,
         fps_results: TreeNamespace,
         pca_results: TreeNamespace,

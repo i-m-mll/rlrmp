@@ -421,7 +421,7 @@ def query_and_load_model(
                 if isinstance(inclusion, Callable):
                     # Callables always result in sequence-like inclusions
                     inclusion = [
-                        x for x in model_info.inclusion if all(inclusion(x))
+                        x for x in getattr(model_info, "inclusion", []) if all(inclusion(x))
                     ]
                 elif isinstance(inclusion, str) or not isinstance(inclusion, Sequence):
                     # If not a Callable and not a Sequence, then assume we've 

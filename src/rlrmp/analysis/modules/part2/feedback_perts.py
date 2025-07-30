@@ -233,9 +233,9 @@ ANALYSES = {
             variant="full",
             colorscale_axis=1,
             colorscale_key='pert__amp',
-            custom_inputs={
-                "aligned_vars": "aligned_vars_impulse",
-            },
+            inputs=AlignedEffectorTrajectories.Ports(
+                aligned_vars="aligned_vars_impulse",
+            ),
         )
         .after_transform(get_best_replicate)
     ),
@@ -244,9 +244,9 @@ ANALYSES = {
         #! This is broken; nothing appears. 
         AlignedEffectorTrajectories(
             variant="full",
-            custom_inputs={
-                "aligned_vars": "aligned_vars_impulse",
-            },
+            inputs=AlignedEffectorTrajectories.Ports(
+                aligned_vars="aligned_vars_impulse",
+            ),
         )
         .after_transform(get_best_replicate)
         .after_stacking(level='train__pert__std')
@@ -255,9 +255,9 @@ ANALYSES = {
     "profiles": (
         Profiles(
             variant="full",
-            custom_inputs={
-                "vars": "aligned_vars_impulse",
-            },
+            inputs=Profiles.Ports(
+                vars="aligned_vars_impulse",
+            ),
             vrect_kws_func=get_impulse_vrect_kws,  
         )
         .after_transform(get_best_replicate) 
@@ -275,9 +275,9 @@ ANALYSES = {
     "measures": (
         Measures(
             measure_keys=MEASURE_KEYS,
-            custom_inputs={
-                "vars": "aligned_vars_impulse",
-            },
+            inputs=Measures.Ports(
+                aligned_vars="aligned_vars_impulse",
+            ),
         )
         .after_transform(get_best_replicate)
         .after_unstacking(1, "pert__amp")

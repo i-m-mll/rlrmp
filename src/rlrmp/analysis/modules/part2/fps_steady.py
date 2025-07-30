@@ -31,7 +31,7 @@ from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
 from rlrmp.analysis import AbstractAnalysis, AnalysisInputData
-from rlrmp.analysis.analysis import _DummyAnalysis, AnalysisDefaultInputsType, LiteralInput, Data, DefaultFigParamNamespace, ExpandTo, FigParamNamespace, Transformed
+from rlrmp.analysis.analysis import _DummyAnalysis, LiteralInput, Data, DefaultFigParamNamespace, ExpandTo, FigParamNamespace, Transformed
 from rlrmp.analysis.fp_finder import FPFilteredResults, take_top_fps
 from rlrmp.analysis.fps import FixedPoints
 from rlrmp.analysis.grad import Jacobians, Hessians
@@ -195,9 +195,9 @@ DEPENDENCIES = {
     ),
     "steady_state_fp_results": (
         FixedPoints(
-            custom_inputs=dict(
+            inputs=FixedPoints.Ports(
                 funcs=ss_rnn_funcs,
-                func_args=ExpandTo(  
+                func_args=ExpandTo.map(  
                     "funcs", 
                     (sisu, positions), 
                     is_leaf_prefix=(is_type(TreeNamespace), is_type(AbstractTask)),
@@ -215,9 +215,9 @@ DEPENDENCIES = {
     ),
     "steady_state_jacobians": (
         Jacobians(
-            custom_inputs=dict(
+            inputs=Jacobians.Ports(
                 funcs=ss_rnn_funcs,  
-                func_args=ExpandTo(
+                func_args=ExpandTo.map(
                     "funcs",  # signature: (sisu, pos, h)
                     (sisu, positions, steady_state_fps),
                     is_leaf=is_module,
@@ -231,9 +231,9 @@ DEPENDENCIES = {
     "steady_state_hessians": (
         Hessians(
             diag_only=True,  # Only xx & uu, no xu & ux
-            custom_inputs=dict(
+            inputs=Hessians.Ports(
                 funcs=ss_rnn_funcs,  
-                func_args=ExpandTo(
+                func_args=ExpandTo.map(
                     "funcs",  # signature: (sisu, pos, h)
                     (sisu, positions, steady_state_fps),
                     is_leaf=is_module,
