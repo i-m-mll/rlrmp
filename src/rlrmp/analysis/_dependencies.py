@@ -282,6 +282,11 @@ def topological_sort(graph: dict[str, Set[str]]) -> list[str]:
     return order
 
 
+#! Could add the transformation / unpacking logic to the `unflatten` methods of `ExpandTo` and 
+#! `Transformed`, which would apply the transformations inside-out at unflatten time;
+#! this would greatly simplify this function, but we'd need a custom recursive function to 
+#! conservatively operate on PyTrees containing `ExpandTo` and `Transformed` nodes.
+#! https://chatgpt.com/share/68878682-f454-8006-8ff3-433acdcf3f95
 def _apply_transformations(
     tree: Any,
     dep_kwargs: dict[str, Any],
@@ -319,7 +324,7 @@ def _apply_transformations(
         return tree.transform(transformed_source)
     
     elif isinstance(tree, LiteralInput):
-        # LiteralInput is a terminal node, return its value directly
+        # LiteralInput will not contain any further transformations
         return tree.value
     
     elif treedef_is_leaf(jt.structure(tree)):

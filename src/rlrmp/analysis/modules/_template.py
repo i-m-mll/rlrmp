@@ -69,7 +69,11 @@ TRANSFORMS = AnalysisModuleTransformSpec(
     # pre_setup=dict(models=get_best_replicate),  # Granular - apply only to models
     # pre_setup=dict(task=some_task_transform, models=get_best_replicate),  # Both
     # pre_setup=lambda task, models: (task, tree_map(get_best_replicate, models)),  # Combined function
-    # post_eval=some_post_transform,  # Transform evaluation results
+    
+    # post_eval can now transform models, tasks, and/or states:
+    # post_eval=dict(states=some_states_transform),  # Granular - states only (backward compatible)
+    # post_eval=dict(models=some_model_transform, states=some_states_transform),  # Multiple components
+    # post_eval=lambda models, tasks, states: (models, tasks, transformed_states),  # Combined function
 )
 
 
