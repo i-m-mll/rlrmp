@@ -33,7 +33,7 @@ class Jacobians(AbstractAnalysis):
         func_args,
         **kwargs,
     ):
-        def get_jacs(func, args):
+        def get_jacs(func, *args):
             if self.argnums is None:
                 argnums = tuple(range(len(args)))
             else:
@@ -41,7 +41,7 @@ class Jacobians(AbstractAnalysis):
 
             return jax.jacobian(func, argnums=argnums)(*args)
 
-        return jt.map(get_jacs, funcs, func_args)
+        return jt.map(get_jacs, funcs, *func_args)
 
 
 class Hessians(AbstractAnalysis):
@@ -64,7 +64,7 @@ class Hessians(AbstractAnalysis):
         func_args,
         **kwargs,
     ):
-        def get_hessians(func, args):
+        def get_hessians(func, *args):
             # Conditional is fine because it always happens at compile time
             if self.argnums is None:
                 argnums = tuple(range(len(args)))
@@ -76,4 +76,4 @@ class Hessians(AbstractAnalysis):
             else:
                 return jax.hessian(func, argnums=argnums)(*args)
 
-        return jt.map(get_hessians, funcs, func_args)
+        return jt.map(get_hessians, funcs, *func_args)

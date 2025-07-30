@@ -214,3 +214,4 @@ dmypy.json
 *.code-workspace
 
 dev.toml
+.claude-story/

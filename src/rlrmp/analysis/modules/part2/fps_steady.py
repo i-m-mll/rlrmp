@@ -23,17 +23,18 @@ from equinox import Module
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
-
-from jax_cookbook import is_module, is_type
-import jax_cookbook.tree as jtree
 from jaxtyping import Array, Float, PRNGKeyArray, PyTree
 import numpy as np
+
+from feedbax.task import AbstractTask
+from jax_cookbook import is_module, is_type
+import jax_cookbook.tree as jtree
 
 from rlrmp.analysis import AbstractAnalysis, AnalysisInputData
 from rlrmp.analysis.analysis import _DummyAnalysis, AnalysisDefaultInputsType, LiteralInput, Data, DefaultFigParamNamespace, ExpandTo, FigParamNamespace, Transformed
 from rlrmp.analysis.fp_finder import FPFilteredResults, take_top_fps
 from rlrmp.analysis.fps import FixedPoints
-from rlrmp.analysis.grad import Jacobians
+from rlrmp.analysis.grad import Jacobians, Hessians
 from rlrmp.analysis.pca import StatesPCA
 from rlrmp.misc import get_constant_input_fn
 from rlrmp.analysis.state_utils import get_best_model_replicate, vmap_eval_ensemble
@@ -162,8 +163,26 @@ Since this module frequently uses get_best_replicate, we apply it globally
 before evaluation to save computational resources."""
 TRANSFORMS = AnalysisModuleTransformSpec(
     pre_setup=dict(models=get_best_model_replicate),
-    # `get_best_model_replicate` leaves the singleton replicate axis in -- so, remove it 
-    post_eval=lambda states: jt.map(lambda x: x[0], states),
+    # `get_best_model_replicate` leaves in the singleton replicate axis -- so, remove it 
+    post_eval=dict(
+        states=lambda states: jt.map(lambda x: x[0], states),
+        models=partial(take_replicate, 0),
+    )
+)
+
+
+ss_rnn_funcs = Data.models(where=lambda model: get_ss_rnn_func(model.step.net.hidden))
+sisu = Data.hps(where=lambda hps: hps.sisu, is_leaf=is_type(TreeNamespace))
+positions = Data.tasks(where=lambda task: (
+    task.validation_trials.targets["mechanics.effector.pos"].value[:, -1]
+))
+steady_state_fps = Transformed(
+    "steady_state_fp_results",
+    lambda all_fp_results: jt.map(
+        lambda fp_results: fp_results.fps,
+        all_fp_results,
+        is_leaf=is_type(FPFilteredResults),
+    ),
 )
 
 
@@ -174,61 +193,57 @@ DEPENDENCIES = {
         StatesPCA(n_components=N_PCA, where_states=lambda states: states.net.hidden)
         .after_indexing(-2, np.arange(START_STEP, END_STEP), axis_label="timestep")
     ),
-    # "steady_state_fps": (
-    #     FixedPoints(
-    #         custom_inputs=dict(
-    #             funcs=Data.models(
-    #                 where=lambda model: get_ss_rnn_func(model.step.net.hidden),  # inputs: (input, h),
-    #             ),
-    #             func_args=ExpandTo(  #
-    #                 "funcs", 
-    #                 tuple((
-    #                     Data.hps(
-    #                         where=lambda hps: hps.sisu, is_leaf=is_type(TreeNamespace),
-    #                     ),
-    #                     Data.tasks(
-    #                         where=lambda task: (
-    #                             task.validation_trials.targets["mechanics.effector.pos"].value[:, -1]
-    #                         ),
-    #                     ),
-    #                 )), 
-    #                 is_leaf_prefix=(is_type(TreeNamespace), is_module),
-    #             ),
-    #             # We can reshape_candidates here since get_best_replicate is applied globally
-    #             candidates=Data.states(
-    #                 # FP initial conditions <- full hidden state trajectories
-    #                 where=lambda states: reshape_candidates(states.net.hidden),
-    #             ),
-    #         ),
-    #     )
-    #     # vmap over the steady state grid positions
-    #     .vmap(in_axes={'func_args': (None, 0), 'candidates': 0})
-    # ),
+    "steady_state_fp_results": (
+        FixedPoints(
+            custom_inputs=dict(
+                funcs=ss_rnn_funcs,
+                func_args=ExpandTo(  
+                    "funcs", 
+                    (sisu, positions), 
+                    is_leaf_prefix=(is_type(TreeNamespace), is_type(AbstractTask)),
+                ),
+                # We can reshape_candidates here since get_best_replicate is applied globally
+                candidates=Data.states(
+                    # FP initial conditions <- full hidden state trajectories
+                    where=lambda states: reshape_candidates(states.net.hidden),
+                ),
+            ),
+        )
+        # over the steady state workspace positions & corresponding candidates
+        .vmap(in_axes={'func_args': (None, 0), 'candidates': 0})
+        .then_transform_result(process_fps)
+    ),
     "steady_state_jacobians": (
         Jacobians(
             custom_inputs=dict(
-                funcs=Data.models(where=lambda model: model.step.net.hidden),  # inputs: (input, h, key=key)
+                funcs=ss_rnn_funcs,  
                 func_args=ExpandTo(
-                    "funcs", 
-                    tuple((
-                        Data.hps(
-                            where=lambda hps: hps.sisu, is_leaf=is_type(TreeNamespace),
-                        ),
-                        Data.tasks(
-                            where=lambda task: (
-                                task.validation_trials.targets["mechanics.effector.pos"].value[:, -1]
-                            ),
-                        ),
-                        Transformed("states_pca", lambda result: result.batch_transform),
-                    )), 
+                    "funcs",  # signature: (sisu, pos, h)
+                    (sisu, positions, steady_state_fps),
                     is_leaf=is_module,
                     is_leaf_prefix=(is_type(TreeNamespace), is_module, None),
                 ),
             ),
         )
+        # over the steady state workspace positions
+        .vmap(in_axes={'func_args': (None, None, None)})
+    ),
+    "steady_state_hessians": (
+        Hessians(
+            diag_only=True,  # Only xx & uu, no xu & ux
+            custom_inputs=dict(
+                funcs=ss_rnn_funcs,  
+                func_args=ExpandTo(
+                    "funcs",  # signature: (sisu, pos, h)
+                    (sisu, positions, steady_state_fps),
+                    is_leaf=is_module,
+                    is_leaf_prefix=(is_type(TreeNamespace), is_module, None),
+                ),
+            ),
+        )
+        # over the steady state workspace positions
         .vmap(in_axes={'func_args': (None, 0, None)})
     ),
-
 }
 
 

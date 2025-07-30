@@ -28,7 +28,7 @@ import jax_cookbook.tree as jtree
 
 from rlrmp.config.config import STRINGS, PATHS
 from rlrmp.database import EvaluationRecord, add_evaluation_figure, savefig
-from rlrmp.tree_utils import move_ldict_level_above, subdict, tree_level_labels, ldict_level_to_top
+from rlrmp.tree_utils import hash_callable_leaves, move_ldict_level_above, subdict, tree_level_labels, ldict_level_to_top
 from rlrmp.misc import camel_to_snake, get_dataclass_fields, get_md5_hexdigest, get_name_of_callable, is_json_serializable
 from rlrmp.plot_utils import figs_flatten_with_paths, get_label_str
 from rlrmp.tree_utils import _hash_pytree
@@ -839,7 +839,7 @@ class AbstractAnalysis(Module, strict=False):
         self, 
         data: AnalysisInputData,
         **kwargs,
-    ) -> PyTree[Any]:
+    ) -> PyTree:
         """Perform computations for the analysis. 
         
         The return value is passed as `result` to `make_figs`, and is also made available to other
@@ -1698,9 +1698,13 @@ class AbstractAnalysis(Module, strict=False):
         """An md5 hash string that identifies this analysis.
         
         The hash is computed from the analysis parameter values and not the instance itself.
+        Any callable leaves are first replaced with their whitespace-stripped source strings,
+        which should generally capture when the implementation is identical, and should not 
+        result in any 
         """
         ops_params, _ = self._extract_ops_info()
         params = {**ops_params, **self._field_params}
+        params = hash_callable_leaves(params)
         return get_md5_hexdigest(params)
     
     def _params_to_save(self, hps: PyTree[TreeNamespace], **kwargs):

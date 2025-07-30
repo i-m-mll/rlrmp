@@ -6,7 +6,12 @@ import hashlib
 import json
 import re
 import types
+import inspect
+import hashlib
+import types
+import re
 
+import dill
 import equinox as eqx
 import jax as jax 
 import jax.numpy as jnp
@@ -16,7 +21,7 @@ from jaxtyping import Array, ArrayLike, PyTree
 import plotly.graph_objects as go
 
 from feedbax.intervene import AbstractIntervenor
-from jax_cookbook import anyf, is_module, is_type, is_none
+from jax_cookbook import anyf, is_module, is_type, is_none, hash_callable
 import jax_cookbook.tree as jtree
 
 from rlrmp.config import STRINGS
@@ -350,7 +355,7 @@ def index_multi(obj, *idxs):
     return index_multi(obj[idxs[0]], *idxs[1:])
 
 
-_is_leaf = anyf(is_module, is_type(go.Figure, TreeNamespace))
+_is_leaf = anyf(is_type(go.Figure, TreeNamespace))
 
 
 def pp(tree, truncate_leaf=_is_leaf):
@@ -358,14 +363,29 @@ def pp(tree, truncate_leaf=_is_leaf):
     eqx.tree_pprint(tree, truncate_leaf=truncate_leaf)
 
 
-def pp2(tree, truncate_leaf=_is_leaf):
+def pp2(tree, truncate_leaf=_is_leaf, **kwargs):
     """Substitute for `pp` given that `truncate_leaf` of `eqx.tree_pprint` appears to be broken atm."""
     tree = jt.map(
         lambda x: type(x).__name__ if truncate_leaf(x) else x,
         tree,
         is_leaf=truncate_leaf,
     )
-    eqx.tree_pprint(tree)
+    eqx.tree_pprint(tree, **kwargs)
+
+
+def hash_callable_leaves(
+    tree: PyTree,
+    is_leaf: Optional[Callable] = None,
+) -> PyTree:
+    """Convert callable leaves in a PyTree to their source strings."""
+    leaves, treedef = jt.flatten(tree, is_leaf=is_leaf)
+    return jt.unflatten(
+        treedef,
+        [
+            hash_callable(leaf) if callable(leaf) else leaf 
+            for leaf in leaves
+        ],
+    )
 
 
 def take_replicate(i, tree: PyTree[Array, 'T']) -> PyTree[Array, 'T']:
@@ -536,3 +556,5 @@ def prefix_expand(
         tree1, ilp_tree,
         is_leaf=is_type(type(tree2)),
     )
+
+

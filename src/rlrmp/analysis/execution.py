@@ -66,6 +66,12 @@ PreSetupSpec = Union[
     Callable[[Module, LDict[float, Module]], tuple[Module, LDict[float, Module]]]
 ]
 
+# Post-eval can be either granular dict or combined function
+PostEvalSpec = Union[
+    dict[str, Optional[Callable]],  # Runtime validation will check keys are 'models'/'tasks'/'states'
+    Callable[[LDict[float, Module], LDict, PyTree], tuple[LDict[float, Module], LDict, PyTree]]
+]
+
 
 class AnalysisModuleTransformSpec(Module):
     """Specifies transformations to apply at different stages of analysis execution.
@@ -78,12 +84,15 @@ class AnalysisModuleTransformSpec(Module):
         - dict with 'task' and/or 'models' keys mapping to transform functions
         - single function taking (task, models) and returning (task, models)
         Useful for operations like selecting best replicates to save computation.
-    post_eval : Optional[Callable[[PyTree], PyTree]]
-        Transform applied to evaluation results (data.states) after evaluation completes.
+    post_eval : Optional[PostEvalSpec]
+        Transform applied to models, tasks, and/or states after evaluation completes.
+        Can be either:
+        - dict with 'models', 'tasks', and/or 'states' keys mapping to transform functions
+        - single function taking (models, tasks, states) and returning (models, tasks, states)
         Useful for post-processing results while preserving intermediate data.
     """
     pre_setup: Optional[PreSetupSpec] = None
-    post_eval: Optional[Callable[[PyTree], PyTree]] = None
+    post_eval: Optional[PostEvalSpec] = None
 
 
 # Also allow plain dict for convenience
@@ -138,6 +147,16 @@ def validate_and_convert_transforms(transforms_spec: Optional[TransformsSpec]) -
                 raise ValueError(
                     f"Invalid pre_setup keys: {invalid_pre_keys}. "
                     f"Valid keys are: {valid_pre_keys}"
+                )
+        
+        # Validate post_eval if present
+        if post_eval is not None and isinstance(post_eval, dict):
+            valid_post_keys = {'models', 'tasks', 'states'}
+            invalid_post_keys = set(post_eval.keys()) - valid_post_keys
+            if invalid_post_keys:
+                raise ValueError(
+                    f"Invalid post_eval keys: {invalid_post_keys}. "
+                    f"Valid keys are: {valid_post_keys}"
                 )
         
         return AnalysisModuleTransformSpec(
@@ -531,7 +550,32 @@ def run_analysis_module(
 
     # Apply post-eval transformations if present
     if transforms.post_eval is not None:
-        states = _call_user_func(transforms.post_eval, states, common_inputs)
+        if isinstance(transforms.post_eval, dict):
+            # Granular transforms - apply to models, tasks, and/or states separately
+            if 'models' in transforms.post_eval and transforms.post_eval['models'] is not None:
+                data = eqx.tree_at(
+                    lambda data: data.models, 
+                    data, 
+                    _call_user_func(transforms.post_eval['models'], data.models, common_inputs),
+                    is_leaf=is_none
+                )
+            if 'tasks' in transforms.post_eval and transforms.post_eval['tasks'] is not None:
+                data = eqx.tree_at(
+                    lambda data: data.tasks, 
+                    data, 
+                    _call_user_func(transforms.post_eval['tasks'], data.tasks, common_inputs),
+                    is_leaf=is_none
+                )
+            if 'states' in transforms.post_eval and transforms.post_eval['states'] is not None:
+                states = _call_user_func(transforms.post_eval['states'], states, common_inputs)
+        else:
+            # Combined function - pass models, tasks, states as tuple
+            transformed_models, transformed_tasks, transformed_states = _call_user_func(
+                transforms.post_eval, (data.models, data.tasks, states), common_inputs
+            )
+            data = eqx.tree_at(lambda data: data.models, data, transformed_models, is_leaf=is_none)
+            data = eqx.tree_at(lambda data: data.tasks, data, transformed_tasks, is_leaf=is_none)
+            states = transformed_states
 
     data = eqx.tree_at(lambda data: data.states, data, states, is_leaf=is_none)
 
