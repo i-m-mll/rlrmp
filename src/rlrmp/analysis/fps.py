@@ -64,13 +64,13 @@ class FixedPoints(AbstractAnalysis[FixedPointsPorts]):
     unique_tol: float = 0.025
     outlier_tol: float = 1.0
     stride_candidates: int = 16
-    fp_optimizer: GradientTransformation = fp_adam_optimizer()
+    fp_optimizer: Callable[[], GradientTransformation] = fp_adam_optimizer
     key: PRNGKeyArray = field(default_factory=lambda: jr.PRNGKey(0))
 
     @property
     def fpfinder(self):
         """FixedPointFinder instance for this analysis."""
-        return FixedPointFinder(self.fp_optimizer)
+        return FixedPointFinder(self.fp_optimizer())
 
     @property
     def fpf_func(self):

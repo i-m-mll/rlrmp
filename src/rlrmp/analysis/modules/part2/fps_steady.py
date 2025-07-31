@@ -12,6 +12,7 @@ cause the point mass to move, and thus the network's feedback input (and thus FP
 change.
 """
 
+from collections import namedtuple
 from collections.abc import Callable, Sequence
 from functools import partial, wraps
 from types import MappingProxyType, SimpleNamespace
@@ -32,6 +33,7 @@ import jax_cookbook.tree as jtree
 
 from rlrmp.analysis import AbstractAnalysis, AnalysisInputData
 from rlrmp.analysis.analysis import _DummyAnalysis, LiteralInput, Data, DefaultFigParamNamespace, ExpandTo, FigParamNamespace, Transformed
+from rlrmp.analysis.eig import Eigendecomposition
 from rlrmp.analysis.fp_finder import FPFilteredResults, take_top_fps
 from rlrmp.analysis.fps import FixedPoints
 from rlrmp.analysis.grad import Jacobians, Hessians
@@ -96,7 +98,7 @@ STRIDE_FP_CANDIDATES = 16
 
 
 #! TODO: Refactor out the common parts, e.g. meets criteria, top fps, etc.
-def process_fps(all_fps: PyTree[FPFilteredResults]):
+def process_fps(all_fps: PyTree[FPFilteredResults], n_keep: int = 6) -> TreeNamespace:
     """Only keep FPs/replicates that meet criteria."""
     
     n_fps_meeting_criteria = jt.map(
@@ -114,10 +116,9 @@ def process_fps(all_fps: PyTree[FPFilteredResults]):
     #     is_leaf=LDict.is_of('sisu'),
     # )
 
-    all_top_fps = take_top_fps(all_fps, n_keep=6)
+    all_top_fps = take_top_fps(all_fps, n_keep=n_keep)
 
-    # Average over the top fixed points, to get a single one for each included replicate and
-    # control input.
+    # Average over the top fixed points, to get a single one for each included replicate and SISU
     fps_final = jt.map(
         lambda top_fps_by_sisu: jt.map(
             lambda fps: jnp.nanmean(fps, axis=-2),
@@ -178,11 +179,7 @@ positions = Data.tasks(where=lambda task: (
 ))
 steady_state_fps = Transformed(
     "steady_state_fp_results",
-    lambda all_fp_results: jt.map(
-        lambda fp_results: fp_results.fps,
-        all_fp_results,
-        is_leaf=is_type(FPFilteredResults),
-    ),
+    lambda fp_results: fp_results.fps,  # Just the top first FP for each steady state
 )
 
 
@@ -213,41 +210,10 @@ DEPENDENCIES = {
         .vmap(in_axes={'func_args': (None, 0), 'candidates': 0})
         .then_transform_result(process_fps)
     ),
-    "steady_state_jacobians": (
-        Jacobians(
-            inputs=Jacobians.Ports(
-                funcs=ss_rnn_funcs,  
-                func_args=ExpandTo.map(
-                    "funcs",  # signature: (sisu, pos, h)
-                    (sisu, positions, steady_state_fps),
-                    is_leaf=is_module,
-                    is_leaf_prefix=(is_type(TreeNamespace), is_module, None),
-                ),
-            ),
-        )
-        # over the steady state workspace positions
-        .vmap(in_axes={'func_args': (None, None, None)})
-    ),
-    "steady_state_hessians": (
-        Hessians(
-            diag_only=True,  # Only xx & uu, no xu & ux
-            inputs=Hessians.Ports(
-                funcs=ss_rnn_funcs,  
-                func_args=ExpandTo.map(
-                    "funcs",  # signature: (sisu, pos, h)
-                    (sisu, positions, steady_state_fps),
-                    is_leaf=is_module,
-                    is_leaf_prefix=(is_type(TreeNamespace), is_module, None),
-                ),
-            ),
-        )
-        # over the steady state workspace positions
-        .vmap(in_axes={'func_args': (None, 0, None)})
-    ),
 }
 
 
-
+GradArgs = namedtuple("GradArgs", ["sisu", "pos", "h"])
 
 # State PyTree structure: ['sisu', 'train__pert__std']
 # Array batch shape: (evals, replicates, reach conditions)
@@ -261,7 +227,38 @@ ANALYSES = {
     #         )
     #     )
     # ),
-    "temporary": _DummyAnalysis()
+    
+    
+    #! Maybe it would make sense to just make a single class, `Grads` with `grad_func`?
+    #! Though it wouldn't change the verbosity here unless we made `grad_func` a `Port`
+    #! and returned a PyTree containing both the Jacobians and the Hessians
+    **{
+        # "steady_state_jacobians" and "steady_state_hessians"
+        f"steady_state_{cls.__name__.lower()}": (
+            cls(
+                inputs=cls.Ports(
+                    funcs=ss_rnn_funcs,  
+                    func_args=ExpandTo.map(
+                        "funcs",  # signature: (sisu, pos, h)
+                        GradArgs(sisu, positions, steady_state_fps),
+                        is_leaf=is_module,
+                        is_leaf_prefix=GradArgs(is_type(TreeNamespace), is_module, None),
+                    ),
+                ),
+            )
+            # over the steady state workspace positions
+            .vmap(in_axes={'func_args': GradArgs(None, 0, 0)})
+        )
+        for cls in (Jacobians, Hessians)
+    },
+    
+    # "steady_state_jac_eigs": (
+    #     Eigendecomposition(
+    #         inputs=Eigendecomposition.Ports(
+    #             matrices="steady_state_jacobians",
+    #         ),
+    #     )
+    # )
 }
 
 

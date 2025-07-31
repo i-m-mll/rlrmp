@@ -190,15 +190,29 @@ class ExpandTo:
     is_leaf_prefix: Optional[PyTree[Callable]] = None
 
     @classmethod
-    def map(cls, target: Union[str, _DataField], source: T, **kwargs) -> T:
+    def map(
+        cls, 
+        target: Union[str, _DataField], 
+        source: T, 
+        is_leaf_prefix: Optional[PyTree[Callable]] = None,
+        **kwargs,
+    ) -> T:
         """Convenience, for mapping over the first level of a tree."""
         #! TODO: Support mapping to arbitrary levels / leaves, not just first 
         #! Though this might get kind of confusing with `is_leaf`, `is_leaf_prefix` already 
         #! allowed as params
-        nodes, treedef = eqx.tree_flatten_one_level(source)
+        source_with_is_leaf = jt.map(
+            lambda is_leaf_node_prefix, node: (node, is_leaf_node_prefix),
+            is_leaf_prefix, source,
+            is_leaf=is_none,
+        )
+        nodes_with_is_leaf, treedef = eqx.tree_flatten_one_level(source_with_is_leaf)
         return jt.unflatten(
             treedef,
-            [cls(target, node, **kwargs) for node in nodes],
+            [
+                cls(target, node, is_leaf_prefix=is_leaf_node_prefix, **kwargs) 
+                for node, is_leaf_node_prefix in nodes_with_is_leaf
+            ],
         )
         
     def tree_flatten(self):
@@ -540,17 +554,12 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
     TODO: If we return the hps on a fig-by-fig basis from within `make_figs`, then 
     we could avoid this limitation.    
     
-    Abstract class attributes:
-        inputs: Specifies the named input ports and their default dependency types
-            for this subclass of `AbstractAnalysis`.
+    Class attributes:
+        Ports: The structure and defaults for the input ports of the analysis subclass.
+        
+    Fields:
+        inputs: The port->input mapping for the analysis instance.
         variant: Label of the evaluation variant this analysis uses (primarily).
-    
-    Abstract fields:
-        conditions: In `run_analysis`, certain condition checks are performed. The 
-            analysis is only run if all of the checks whose keys are in `conditions`
-            are successful. For example, certain figures may only make sense to generate
-            when there is system noise (i.e. multiple evals per condition), and in 
-            that case we could give the condition `"any_system_noise"` to those analyses.
     """
     _exclude_fields = (
         'inputs',
@@ -562,19 +571,13 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         '_final_ops_by_type',
     )
 
-    # 
     Ports: ClassVar[type[PortsType]] = NoPorts  # type: ignore
-    
-    # We'll store a fully-materialised Ports instance on self  
     inputs: PortsType = eqx.field(default_factory=NoPorts, converter=NoPorts.converter)
-    # Opt-in toggle for result caching.  When True, the result of `compute`
-    # is saved to / loaded from PATHS.cache / "results" using a hash that
-    # captures the analysis parameters plus the *actual* inputs passed to
-    # `compute`.
-    variant: Optional[str] = None  #! TODO: Rename to `task_variant` 
-    conditions: tuple[str, ...] = ()
+    
+    variant: Optional[str] = None  #! TODO: Eliminate this. Should be in `tasks` PyTree, and dealt with explicitly with ops 
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     cache_result: bool = False
+    
     _prep_ops: tuple[_PrepOp, ...] = ()
     _vmap_spec: Optional[_AnalysisVmapSpec] = None
     _fig_op: Optional[_FigOp] = None
@@ -624,7 +627,8 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
                 compute_fn = partial(self.compute, **prepped_kwargs)
                 return compute_fn(prepped_data)
 
-        if self.cache_result:
+        def _try_load_result_from_cache() -> tuple[Optional[Path], Optional[Any]]:
+            """Attempt to load the result from cache."""
             cache_root = PATHS.cache / RESULTS_CACHE_SUBDIR
             cache_root.mkdir(parents=True, exist_ok=True)
 
@@ -635,33 +639,39 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
                     f"Failed to hash inputs for caching of {self.name}: {e}", exc_info=True
                 )
                 # Fallback: disable caching for this invocation
-                return _run_compute()
+                return None, None
 
-            cache_fname = f"{self.md5_str}_{inputs_hash}.pkl"
+            cache_fname = f"{self.name}_{self.md5_str}_{inputs_hash}.pkl"
             cache_path = cache_root / cache_fname
 
             if cache_path.exists():
                 try:
+                    logger.info(f"Loading cached result for {self.name}")
                     with open(cache_path, "rb") as f:
-                        return pickle.load(f)
+                        return None, pickle.load(f)
                 except Exception as e:
                     logger.warning(
                         f"Could not load cached result for {self.name} (will recompute): {e}"
                     )
+                    
+            return cache_path, None
+        
+        result = None
+        cache_path = None
+        
+        if self.cache_result:
+            cache_path, result = _try_load_result_from_cache()
 
+        if result is None:
             result = _run_compute()
-
+            
+        if self.cache_result and cache_path is not None:
             try:
                 with open(cache_path, "wb") as f:
                     pickle.dump(result, f)
                 logger.info(f"Saved cache for {self.name} to {cache_path}")
             except Exception as e:
                 logger.warning(f"Could not save cache for {self.name}: {e}")
-
-            return result
-
-        # ---- No caching requested ---------------------------------------- #
-        result = _run_compute()
             
         for final_op in self._final_ops_by_type.get('results', ()):
             try:
@@ -1359,11 +1369,11 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
 
         # 6) compose with any prior `.vmap` calls on this instance
         if self._vmap_spec is None:
-            combined_spec       = in_axes_spec
-            combined_sequence   = new_sequence
-            combined_dep_names  = new_dep_names
+            combined_spec = in_axes_spec
+            combined_sequence = new_sequence
+            combined_dep_names = new_dep_names
         else:
-            prev   = self._vmap_spec
+            prev = self._vmap_spec
             n_prev = len(prev.in_axes_sequence)
 
             # a) append positional specs
@@ -1372,7 +1382,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
             # b) merge dict specs, padding with None
             combined_spec: dict[str, tuple[int | None, ...]] = {}
             for nm in set(prev.in_axes_spec) | set(in_axes_spec):
-                left  = prev.in_axes_spec.get(nm, (None,) * n_prev)
+                left = prev.in_axes_spec.get(nm, (None,) * n_prev)
                 right = in_axes_spec.get(nm, (None,) * n_new)
                 combined_spec[nm] = left + right
 
@@ -1751,7 +1761,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         """
         ops_params, _ = self._extract_ops_info()
         params = {**ops_params, **self._field_params}
-        params = hash_callable_leaves(params, ignore_types=(LDict, TreeNamespace))
+        params = hash_callable_leaves(params, ignore=(LDict, TreeNamespace, is_module))
         return get_md5_hexdigest(params)
     
     def _params_to_save(self, hps: PyTree[TreeNamespace], **kwargs):
@@ -1805,11 +1815,8 @@ InputType: TypeAlias = PyTree[type[AbstractAnalysis] | AbstractAnalysis | _DataF
 
 class _DummyAnalysis(AbstractAnalysis[NoPorts]):
     """An empty analysis, for debugging."""
-    conditions: tuple[str, ...] = ()
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
 
     def compute(self, data: AnalysisInputData, **kwargs) -> PyTree[Any]:
-        print(tree_level_labels(next(iter(data.states.values()))))
         return None
     
     def make_figs(self, data: AnalysisInputData, **kwargs) -> PyTree[go.Figure]:

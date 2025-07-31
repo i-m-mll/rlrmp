@@ -387,14 +387,14 @@ def pp2(tree, truncate_leaf=_is_leaf, **kwargs):
 def hash_callable_leaves(
     tree: PyTree,
     is_leaf: Optional[Callable] = None,
-    ignore_types: tuple[type, ...] = (),
+    ignore: tuple[Callable, ...] = (),
 ) -> PyTree:
     """Convert callable leaves in a PyTree to their source strings."""
     leaves, treedef = jt.flatten(tree, is_leaf=is_leaf)
     return jt.unflatten(
         treedef,
         [
-            hash_callable(leaf, ignore_types=ignore_types) if callable(leaf) else leaf
+            hash_callable(leaf, ignore=ignore) if callable(leaf) else leaf
             for leaf in leaves
         ],
     )
