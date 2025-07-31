@@ -670,7 +670,7 @@ def _calculate_axis_bounds(
     if axis_prefix in layout_keys:
         subplot_indices.append("")
     for key in layout_keys:
-         match = re.fullmatch(f"{axis_prefix}(\d+)", key)
+         match = re.fullmatch(rf"{axis_prefix}(\d+)", key)
          if match:
              subplot_indices.append(match.group(1))
     subplot_indices.sort(key=lambda s: int(s) if s else 0)
@@ -694,7 +694,7 @@ def _calculate_axis_bounds(
                 trace_target_axis_id = getattr(trace, trace_axis_assignment_attr, None)
                 effective_trace_layout_key = f"{axis}axis" # Default
                 if trace_target_axis_id is not None:
-                    match_id = re.fullmatch(f"{axis}(\d*)", trace_target_axis_id)
+                    match_id = re.fullmatch(rf"{axis}(\d*)", trace_target_axis_id)
                     if match_id:
                          effective_trace_layout_key = f"{axis}axis{match_id.group(1)}"
                     else: continue # Skip trace if axis id format is unexpected

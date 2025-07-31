@@ -320,7 +320,7 @@ def setup_eval_for_module(
         # Apply pre-setup transformations if present
         if transforms.pre_setup is not None:
             if isinstance(transforms.pre_setup, dict):
-                # Granular transforms - apply to task and/or models separately
+            # Granular transforms - apply to task and/or models separately
                 if 'task' in transforms.pre_setup and transforms.pre_setup['task'] is not None:
                     task = _call_user_func(transforms.pre_setup['task'], task, common_inputs)
                 if 'models' in transforms.pre_setup and transforms.pre_setup['models'] is not None:

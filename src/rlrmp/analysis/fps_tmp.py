@@ -40,7 +40,7 @@ from rlrmp.types import LDict, TreeNamespace
 
 
 T = TypeVar('T')
-
+ 
 
 def origin_only(states, axis=-2, *, hps_common):
     #! TODO: Do not assume "full" variant
