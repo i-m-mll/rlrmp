@@ -129,8 +129,7 @@ def with_caller_logger(func):
 def get_name_of_callable(
     func: Callable, 
     return_lambda_id: bool = False,
-    *,
-    logger: logging.Logger,
+    logger: logging.Logger = logger,
 ) -> str:
     """
     Returns the name of a callable object, handling different types appropriately.
@@ -249,31 +248,36 @@ def vector_with_gaussian_length(key):
     return length * jnp.array([jnp.cos(angle), jnp.sin(angle)]) 
 
 
+#! TODO Separate version-getting logic from conditional logging logic
 @with_caller_logger
 def log_version_info(
     *args: ModuleType, 
     git_modules: Optional[Sequence[ModuleType]] = None,
     python_version: bool = True,
-    logger: logging.Logger,
+    logger: logging.Logger = logger,
 ) -> dict[str, str]:
     version_info: dict[str, str] = {}
     
+    log_strs = []
     if python_version:
         python_ver = platform.python_version()
         version_info["python"] = python_ver
-        logger.info(f"python version: {python_ver}")
-    
+        log_strs.append(f"python version: {python_ver}")
+
     for package in args:
         version = package.__version__
         version_info[package.__name__] = version
-        logger.info(f"{package.__name__} version: {version}")
+        log_strs.append(f"{package.__name__} version: {version}")
     
     if git_modules:
         for module in git_modules:
             commit = git_commit_id(module=module)
             version_info[f"{module.__name__} commit"] = commit
-            logger.info(f"{module.__name__} commit: {commit}")
-    
+            log_strs.append(f"{module.__name__} commit: {commit}")
+
+    for s in log_strs:
+        logger.info(s)
+
     return version_info
 
 

@@ -163,12 +163,12 @@ class AlignedVars(AbstractAnalysis[NoPorts]):
         
 class AlignedEffectorTrajectoriesPorts(AbstractAnalysisPorts):
     """Input ports for AlignedEffectorTrajectories analysis."""
-    aligned_vars: InputOf[AlignedVars]
+    aligned_vars: InputOf[Array] = AlignedVars()
 
 
 class AlignedEffectorTrajectories(AbstractAnalysis[AlignedEffectorTrajectoriesPorts]):
     Ports = AlignedEffectorTrajectoriesPorts
-    inputs: AlignedEffectorTrajectoriesPorts = eqx.field(default_factory=AlignedEffectorTrajectoriesPorts, converter=AlignedEffectorTrajectoriesPorts.converter)
+    inputs: AlignedEffectorTrajectoriesPorts = eqx.field(default_factory=Ports, converter=Ports.converter)
     variant: Optional[str] = "small"
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
         var_labels=RESPONSE_VAR_LABELS,

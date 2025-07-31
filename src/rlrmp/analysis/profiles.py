@@ -4,7 +4,7 @@ from typing import Optional
 import equinox as eqx
 from equinox import Module
 import jax.tree as jt
-from jaxtyping import PyTree
+from jaxtyping import Array, PyTree
 import numpy as np
 import plotly.graph_objects as go
 
@@ -23,7 +23,7 @@ from rlrmp.types import LDict
 
 class ProfilesPorts(AbstractAnalysisPorts):
     """Input ports for Profiles analysis."""
-    vars: InputOf[AlignedVars]
+    vars: InputOf[Array] = AlignedVars()
 
 
 class Profiles(AbstractAnalysis[ProfilesPorts]):

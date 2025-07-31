@@ -28,7 +28,7 @@ import jax_cookbook.tree as jtree
 
 from rlrmp.config.config import STRINGS, PATHS
 from rlrmp.database import EvaluationRecord, add_evaluation_figure, savefig
-from rlrmp.tree_utils import hash_callable_leaves, move_ldict_level_above, subdict, tree_level_labels, ldict_level_to_top
+from rlrmp.tree_utils import hash_callable_leaves, ldict_label_only_func, move_ldict_level_above, subdict, tree_level_labels, ldict_level_to_top
 from rlrmp.misc import camel_to_snake, get_dataclass_fields, get_md5_hexdigest, get_name_of_callable, is_json_serializable
 from rlrmp.plot_utils import figs_flatten_with_paths, get_label_str
 from rlrmp.tree_utils import _hash_pytree
@@ -514,7 +514,7 @@ class _AnalysisVmapSpec(eqx.Module):
         
 
 _FinalOpKeyType = Literal['results', 'figs']
-
+     
 
 # By using `strict=False`, we can define non-abstract fields, i.e. without needing to 
 # implement them trivially in subclasses. This violates the abstract-final design
@@ -787,6 +787,14 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         figs = self._make_figs_with_ops(data, result, **kwargs)
         return result, figs
 
+    @classmethod
+    def _input_leaf_types(cls) -> tuple[type, ...]:
+        """Get the set of valid input leaf types for this analysis."""
+        return (str, _DataField, AbstractAnalysis, LiteralInput)
+
+    def is_analysis_input_leaf(self, leaf: Any) -> bool:
+        """Determine if a leaf is a valid analysis input type."""
+        return isinstance(leaf, self._input_leaf_types())
 
     @property
     def _flattened_inputs(self) -> dict[str, list]:
@@ -798,15 +806,15 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         flattened = {}
         for name, source in self.inputs.items():
             # Flatten the PyTree - ExpandTo/Transformed registration ensures only actual dependencies are leaves
-            leaves, _ = jt.flatten(source)
+            leaves = jt.leaves(source, is_leaf=self.is_analysis_input_leaf)
             
             # Validate all leaves are valid dependency types
             for leaf in leaves:
                 if not isinstance(leaf, (type, str)) and not isinstance(leaf, (_DataField, AbstractAnalysis, LiteralInput)):
-                    valid_types = "type[AbstractAnalysis], AbstractAnalysis, _DataField, str, or LiteralInput"
+                    valid_types = ', '.join([t.__name__ for t in self._input_leaf_types()])
                     raise ValueError(
                         f"Invalid dependency leaf in '{name}': {type(leaf)}. "
-                        f"All leaves must be {valid_types}"
+                        f"All leaves must be one of: {valid_types}"
                     )
             flattened[name] = leaves
         return flattened
@@ -818,12 +826,10 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         Returns TreeDef for dependency trees. ExpandTo/Transformed PyTree registration
         automatically handles source substitution during flattening/unflattening.
         """
-        treedefs = {}
-        for name, source in self.inputs.items():
-            _, tree_def = jt.flatten(source)
-            treedefs[name] = tree_def
-        return treedefs
-
+        return {
+            name: jt.structure(source, is_leaf=self.is_analysis_input_leaf)
+            for name, source in self.inputs.items()
+        }
 
 
     def _get_target_dependency_names(
@@ -924,8 +930,8 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         """
         # `sep="_"`` switches the label dunders for single underscores, so 
         # in `_params_to_save` we can use an argument e.g. `train_pert_std` rather than `train__pert__std`
-        param_keys = tree_level_labels(figs, is_leaf=is_type(go.Figure), sep="_")
-        
+        param_keys = tree_level_labels(figs, label_func=ldict_label_only_func, is_leaf=is_type(go.Figure), sep="_")
+
         if dump_path is not None:
             dump_path = Path(dump_path)
             dump_path.mkdir(exist_ok=True, parents=True)
@@ -1745,7 +1751,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         """
         ops_params, _ = self._extract_ops_info()
         params = {**ops_params, **self._field_params}
-        params = hash_callable_leaves(params)
+        params = hash_callable_leaves(params, ignore_types=(LDict, TreeNamespace))
         return get_md5_hexdigest(params)
     
     def _params_to_save(self, hps: PyTree[TreeNamespace], **kwargs):

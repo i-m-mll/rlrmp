@@ -89,10 +89,26 @@ def map_kwargs_to_dict(
 def falsef(x):
     return False
 
+
+def ldict_verbose_label_func(x: Any) -> str:
+    if isinstance(x, (LDict, LDictConstructor)):
+        return f"LDict.of({x.label})"
+    else:
+        return x.__name__
+    
+    
+def ldict_label_only_func(x: Any) -> str:
+    if isinstance(x, (LDict, LDictConstructor)):
+        return x.label
+    else:
+        return x.__name__   
+
+
     
 def tree_level_labels(
     tree: LDict, 
     sep: Optional[str] = None,
+    label_func: Callable[..., str] = ldict_label_only_func,
     is_leaf: Optional[Callable[[Any], bool]] = None,
 ) -> list[str]:
     """
@@ -111,12 +127,7 @@ def tree_level_labels(
     first_path, _ = leaves_with_typed_paths[0]
     
     # Collect the labels from all LDict nodes in the path
-    labels = []
-    for node_type, _ in first_path:
-        if isinstance(node_type, (LDict, LDictConstructor)):
-            labels.append(f"LDict.of({node_type.label})")   
-        else:
-            labels.append(node_type.__name__)
+    labels = [label_func(node_type) for node_type, _ in first_path]
         
     if sep is not None:
         labels = [label.replace(STRINGS.hps_level_label_sep, sep) for label in labels]
@@ -376,13 +387,14 @@ def pp2(tree, truncate_leaf=_is_leaf, **kwargs):
 def hash_callable_leaves(
     tree: PyTree,
     is_leaf: Optional[Callable] = None,
+    ignore_types: tuple[type, ...] = (),
 ) -> PyTree:
     """Convert callable leaves in a PyTree to their source strings."""
     leaves, treedef = jt.flatten(tree, is_leaf=is_leaf)
     return jt.unflatten(
         treedef,
         [
-            hash_callable(leaf) if callable(leaf) else leaf 
+            hash_callable(leaf, ignore_types=ignore_types) if callable(leaf) else leaf
             for leaf in leaves
         ],
     )

@@ -355,7 +355,7 @@ def output_corr(
 
 class MeasuresPorts(AbstractAnalysisPorts):
     """Input ports for Measures analysis."""
-    aligned_vars: InputOf[AlignedVars]
+    aligned_vars: InputOf[Array] = AlignedVars()
 
 
 class Measures(AbstractAnalysis[MeasuresPorts]):
