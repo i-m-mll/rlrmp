@@ -1,6 +1,7 @@
 from collections.abc import Callable, Sequence
 import inspect
 from pathlib import Path
+import sys
 from types import ModuleType
 from typing import Any, List, Optional, Union
 
@@ -292,23 +293,14 @@ def setup_eval_for_module(
         version_info=version_info,
     )
 
-    #? Should this be a method of `AbstractTask`?
-    def _get_task_variant(task: Module, variant_params: dict[str, Any]) -> Module:
-        """Get a task variant based on the base task and the variant parameters."""
-        for attr_name, attr_value in variant_params.items():
-            #! TODO: Might be quicker to do a single `tree_at` with a tuple-of-attrs accessor and a
-            #! tuple of values
-            task = eqx.tree_at(
-                lambda task: getattr(task, attr_name),
-                task_base,
-                attr_value,
-            )
-        return task
-
     # Construct common inputs needed by transforms and analyses
     # Note: We construct trial_specs for all task variants here
     task_variants = LDict.of('task_variant')({
-        variant_key: _get_task_variant(task_base, variant_params)
+        variant_key: eqx.tree_at(
+            lambda task: [getattr(task, name) for name in variant_params.keys()],
+            task_base,
+            [value for value in variant_params.values()],
+        )
         for variant_key, variant_params in namespace_to_dict(hps.task).items()
     })
     
@@ -451,6 +443,7 @@ def run_analysis_module(
     retain_past_fig_dumps: bool = False,
     states_pkl_dir: Optional[Path] = PATHS.cache / "states",
     eval_only: bool = False,  # Skip analyses and just evaluate the states
+    memory_warn_gb: float = 24.0,
     *,
     key,
 ):
@@ -516,7 +509,35 @@ def run_analysis_module(
         states_shapes = eqx.filter_eval_shape(
             evaluate_all_states, data.tasks, data.models, data.hps
         )
-        logger.info(f"{jtree.struct_bytes(states_shapes) / 1e9:.2f} GB of memory estimated to store all states.")
+        logger.info(f"Evaluated states PyTree structure: {tree_level_labels(states_shapes, is_leaf=is_module)}")
+        
+        memory_estimate_gb = jtree.struct_bytes(states_shapes) / 1e9
+        logger.info(f"{memory_estimate_gb:.2f} GB of memory estimated to store all states.")
+        
+        if memory_estimate_gb > memory_warn_gb:
+            logger.warning(
+                f"Estimated memory usage ({memory_estimate_gb:.2f} GB) exceeds the warning threshold "
+                f"({memory_warn_gb:.2f} GB). Consider reducing the number of evaluations or model sizes."
+                f"State shapes PyTree written to {PATHS.logs / 'states_shapes.txt'}."
+            )
+            
+            with open(PATHS.logs / "states_shapes.txt", 'w') as f:
+                f.write(eqx.tree_pformat(states_shapes))
+            
+            print('\n')
+            while True:
+                proceed = input(
+                    "Proceed with the evaluation and analysis? (y/n): "
+                ).strip().lower()
+            
+                if proceed == 'y':
+                    print('\n')
+                    break
+                elif proceed == 'n':
+                    logger.info("Evaluation cancelled by user.")
+                    sys.exit()
+                else:
+                    print("Invalid input; please enter 'y' or 'n'.")
 
         computed_states = evaluate_all_states(data.tasks, data.models, data.hps)
         logger.info("All states evaluated.")
@@ -545,7 +566,6 @@ def run_analysis_module(
 
         # Compute from scratch
         states = _compute_states_and_log_memory_estimate()
-        logger.info(f"Computed states with PyTree structure: {tree_level_labels(states, is_leaf=is_module)}")
 
     # Save states if we didn't use --no-pickle and we didn't successfully load from pickle
     if not no_pickle and not loaded_from_pickle:
