@@ -5,15 +5,14 @@ import plotly.graph_objects as go
 from jax_cookbook import is_type, is_module, is_none
 
 from rlrmp.tree_utils import (
+    ldict_verbose_label_func,
     pp2 as pp, 
-    tree_level_labels as tll, 
+    tree_level_labels, 
     first as fs, 
     first_shape as fsh,
 ) 
 
-
-
-
+tll = lambda *args, **kwargs: tree_level_labels(*args, label_func=ldict_verbose_label_func, **kwargs)
 
 def lf(tree, type_=None):
     if type_ is not None:

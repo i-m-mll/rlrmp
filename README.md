@@ -8,6 +8,29 @@ And then, at least until I make it into a PyPI package:
 
 `uv pip install -e ../../05\ Utils/jax-cookbook`
 
+### Troubleshooting
+
+#### Kaleido error
+
+Such as:
+
+```
+ValueError: Failed to start Kaleido subprocess. Error stream:
+
+/Users/mll/main/10 Projects/10 PhD/41 RNNs learn robust policies/.venv/lib/python3.12/site-packages/kaleido/executable/kaleido: line 4: cd: /Users/mll/main/10: No such file or directory
+```
+
+Edit this file (approximate location wrt. virtual environment folder):
+
+`.venv/lib/python/site-packages/kaleido/executable/kaleido`
+
+Change `cd $DIR` to `cd "$DIR"`, and `$@` to `"$@"`.
+
+This error tends to arise when there are spaces in the path to the directory in which you save your
+analysis figures in raster formats (e.g. PNG).
+
+This issue was eliminated 
+
 ## Configuration
 
 Set environment variable `RLRMP_CONFIG_DIR` to the path of your configuration directory.

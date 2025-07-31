@@ -240,10 +240,17 @@ def setup_eval_for_module(
     hps_filled = fill_hps_with_train_params(hps, hps_train_representative)
     hps = hps_filled  #  use the enriched version for everything below
 
-    #! For this project, the training task should not vary with the train field std 
-    #! so we just keep a single one of them.
+    # For this project, the training task should not vary with the train field std 
+    # so we just keep a single one of them.
     # TODO: In the future, could keep the full `tasks_base`, and update `get_task_variant`/`setup_func`
     task_base = jt.leaves(tasks_train, is_leaf=is_module)[0]
+    
+    #! TODO: This should be generalized once we move `n_steps` to `task` (in YAML config)
+    task_base = eqx.tree_at(
+        lambda task: task.n_steps,
+        task_base,
+        hps.model.n_steps,
+    )
 
     # Load and validate transforms once
     transforms_raw = getattr(analysis_module, 'TRANSFORMS', None)
