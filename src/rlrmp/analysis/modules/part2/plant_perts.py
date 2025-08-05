@@ -110,7 +110,8 @@ MEASURE_KEYS = (
     "sum_net_force",
 )
 
-        
+
+# State PyTree structure: ['sisu', 'pert__amp', 'train__pert__std']
 ANALYSES = {
     # "effector_trajectories_by_condition": (
     #     # By condition, all evals for the best replicate only

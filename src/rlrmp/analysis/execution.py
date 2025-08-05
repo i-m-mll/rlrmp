@@ -404,6 +404,7 @@ def perform_all_analyses(
 
     # Phase 2: Keep results & generate figures for leaf analyses only
     def finish_analysis(analysis_key: str, analysis: AbstractAnalysis, inputs: dict):
+        #! TODO: Check if analysis even returns any figures, before logging this
         logger.info(f"Making figures: {analysis_key}")
         # Get the computed result for this analysis (computed in phase 1)
         result = inputs.pop('result')

@@ -161,7 +161,7 @@ class ReachFPs(AbstractAnalysis[ReachFPsPorts]):
     
     loss_tol: float = 1e-6
     stride_trials: int = 1
-    key: PRNGKeyArray = jr.PRNGKey(0)
+    key: PRNGKeyArray = eqx.field(default_factory=lambda: jr.PRNGKey(0))
 
     def compute(
         self,

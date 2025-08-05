@@ -57,6 +57,7 @@ class FixedPointFinder(Module):
         key: Random key for evaluating `func`. (Not implemented yet!)
     """
     optimizer: optax.GradientTransformation
+    enable_log: bool = True
     
     @eqx.filter_jit
     def __call__(
@@ -135,11 +136,24 @@ class FixedPointFinder(Module):
         key: PRNGKeyArray,  # TODO
     ) -> FPFilteredResults:
         """Finds fixed points and filters by loss, and (optionally) duplicates and outliers."""
-        _, fps, losses = self(func, candidates, loss_tol, n_batches, n_batches_per_iter, key=key)
+        n_batches, fps, losses = self(
+            func, candidates, loss_tol, n_batches, n_batches_per_iter, key=key
+        )
+        if self.enable_log:
+            jax.debug.callback(
+                self._log, 
+                ( 
+                    f"Optimization of {candidates.shape[0]} candidates"
+                    f"converged after {n_batches} batches."
+                )
+            )
         masks, counts = exclude_points(
             fps, losses, loss_tol, outlier_tol, unique_tol, distance_norm, verbose
         )
         return FPFilteredResults(fps, losses, masks, counts)
+
+    def _log(self, msg):
+        logger.debug(msg)
 
 
 def exclude_points(
