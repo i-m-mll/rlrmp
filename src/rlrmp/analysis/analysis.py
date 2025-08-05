@@ -5,7 +5,7 @@ import functools
 from functools import cached_property, partial, wraps
 import inspect
 import logging
-from types import LambdaType, MappingProxyType
+from types import LambdaType, MappingProxyType, SimpleNamespace
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, Iterable, Literal, Mapping, NamedTuple, Optional, Dict, Self, TypeAlias, TypeVar, Union, cast
 from pathlib import Path
 from typing import Any, Callable
@@ -181,11 +181,16 @@ class ExpandTo:
         - A _DataField (e.g., Data.models) 
     source
         The PyTree to be prefix-expanded
+    where
+        Optional function to select a subtree of the target for expansion.
+        For example: where=lambda func_args: func_args[0] to expand to just the
+        first element of a tuple target instead of the entire tuple structure.
     is_leaf, is_leaf_prefix
         Optional leaf predicates passed to the prefix expansion operation
     """
     target: Union[str, _DataField]
     source: PyTree
+    where: Optional[Callable] = None
     is_leaf: Optional[Callable] = None
     is_leaf_prefix: Optional[PyTree[Callable]] = None
 
@@ -216,12 +221,22 @@ class ExpandTo:
         )
         
     def tree_flatten(self):
-        return [self.source], (self.target, self.is_leaf, self.is_leaf_prefix)
+        return [self.source], SimpleNamespace(
+            target=self.target, 
+            where=self.where,
+            is_leaf=self.is_leaf, 
+            is_leaf_prefix=self.is_leaf_prefix,
+        )
     
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        target, is_leaf, is_leaf_prefix = aux_data
-        return cls(target=target, source=children[0], is_leaf=is_leaf, is_leaf_prefix=is_leaf_prefix)
+        return cls(
+            target=aux_data.target, 
+            source=children[0], 
+            where=aux_data.where,
+            is_leaf=aux_data.is_leaf, 
+            is_leaf_prefix=aux_data.is_leaf_prefix,
+        )
     
 
 @jtu.register_pytree_node_class
@@ -615,12 +630,18 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
 
         def _run_compute():
             if self._vmap_spec is not None:
-                vmapped_deps = [prepped_kwargs.pop(name) for name in self._vmap_spec.vmapped_dep_names]
+                vmapped_deps = [
+                    prepped_kwargs.pop(name) 
+                    for name in self._vmap_spec.vmapped_dep_names
+                ]
                 compute_func = _extract_vmapped_kwargs_to_args(
                     self.compute, self._vmap_spec.vmapped_dep_names
                 )
                 compute_func = partial(compute_func, **prepped_kwargs)
-                return vmap_multi(compute_func, in_axes_sequence=self._vmap_spec.in_axes_sequence)(
+                return vmap_multi(
+                    compute_func, 
+                    in_axes_sequence=self._vmap_spec.in_axes_sequence
+                )(
                     prepped_data, *vmapped_deps,
                 )
             else:
@@ -1837,16 +1858,38 @@ def _call_user_func(func, dep_data, extra_kwargs):
 
     sig = inspect.signature(func)
 
-    # Fast path: the function accepts **kwargs; forward everything.
+    # Analyze the signature to determine how to pass dep_data
+    params = list(sig.parameters.values())
+    if not params:
+        # No parameters - this shouldn't happen in practice
+        return func()
+    
+    first_param = params[0]
+    
+    # Determine which kwargs to use based on whether the function accepts **kwargs
     if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
-        return func(dep_data, **extra_kwargs)
-
-    # Otherwise filter down to only the kwargs explicitly listed.
-    filtered = {
+        # Function accepts **kwargs; forward everything except first param name to avoid conflicts
+        accept_kwarg = lambda _: True
+    else:
+        accept_kwarg = lambda k: k in sig.parameters or k in port_names
+        
+    kwargs = {
         k: v for k, v in extra_kwargs.items() 
-        if k in sig.parameters or k in port_names
+        if accept_kwarg(k) and k != first_param.name
     }
-    return func(dep_data, **filtered)
+    
+    # Check if the first parameter can accept dep_data positionally
+    if first_param.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD):
+        # Pass dep_data as positional argument
+        return func(dep_data, **kwargs)
+    elif first_param.kind == inspect.Parameter.KEYWORD_ONLY:
+        # First parameter is keyword-only, so pass dep_data as a keyword argument
+        kwargs[first_param.name] = dep_data
+        return func(**kwargs)
+    else:
+        # VAR_POSITIONAL (*args) - shouldn't happen in practice for transform functions
+        # Fall back to positional behavior
+        return func(dep_data, **kwargs)
 
 
 class CallWithDeps:

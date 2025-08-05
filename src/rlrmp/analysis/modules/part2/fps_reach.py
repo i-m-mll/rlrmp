@@ -8,20 +8,24 @@ This analysis finds fixed points during simple reaching tasks, including:
 """
 
 from collections.abc import Callable, Sequence
+from functools import partial
 from types import MappingProxyType, SimpleNamespace
 from typing import ClassVar, Optional
 
 import equinox as eqx
 from equinox import Module
+import jax
 import jax.numpy as jnp
 import jax.tree as jt
 
-from jax_cookbook import is_module
+from jax_cookbook import is_module, MultiVmapAxes
 import jax_cookbook.tree as jtree
+from jaxtyping import Array, PyTree
 import numpy as np
 
 from rlrmp.analysis import AbstractAnalysis
-from rlrmp.analysis.analysis import _DummyAnalysis, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.analysis import _DummyAnalysis, Data, DefaultFigParamNamespace, ExpandTo, FigParamNamespace, LiteralInput
+from rlrmp.analysis.fps import FixedPoints
 from rlrmp.analysis.pca import StatesPCA
 from rlrmp.misc import get_constant_input_fn
 from rlrmp.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
@@ -46,7 +50,7 @@ COLOR_FUNCS: dict[str, Callable[[TreeNamespace], Sequence]] = dict(
 
 
 def setup_eval_tasks_and_models(task_base: Module, models_base: LDict[float, Module], hps: TreeNamespace):
-    """Set up tasks with plant perturbations and varying SISU inputs."""
+    """Set up tasks with plant perturbations and varying SISU."""
     try:
         disturbance = PLANT_PERT_FUNCS[hps.pert.type]
     except KeyError:
@@ -114,31 +118,114 @@ eval_func: Callable = vmap_eval_ensemble
 
 
 N_PCA = 30
-START_STEP = 50  # Start PCA from midway through trial
-END_STEP = 100
+PCA_START_STEP = 50  # Start PCA from midway through trial
+PCA_END_STEP = 100
+# How many timesteps before and after the state whose FP will be computed,
+# for which states will be taken as candidates for the FP.
+CANDIDATE_TIMESTEP_RADIUS = 1
 
 
+def call_rnn_func(rnn_func, inputs, h) -> Callable:
+    """Get the RNN function for reaching tasks."""
+    return rnn_func(inputs, h)
+
+
+def extract_timestep_windows(
+    candidates: jnp.ndarray,
+    timestep_radius: int = CANDIDATE_TIMESTEP_RADIUS,
+) -> jnp.ndarray:
+    E, R, C, T, S = candidates.shape
+    W = 2 * timestep_radius + 1
+
+    # 1) pad the time axis so that windows at t=0 and t=T-1 still have full W length:
+    pad_width = ((0,0), (0,0), (0,0), (timestep_radius, timestep_radius), (0,0))
+    padded = jnp.pad(candidates, pad_width, mode='edge')  # shape (E, R, C, T+2*rad, S)
+
+    # 2) for each t in [0..T-1], grab the slice padded[..., t:t+W, :]
+    def window_at_t(t):
+        start = (0, 0, 0, t, 0)
+        size  = (E, R, C, W, S)
+        return jax.lax.dynamic_slice(padded, start, size)  # → (E, R, C, W, S)
+    
+    # vmapped over t gives shape (T, E, R, C, W, S)
+    windows = jax.vmap(window_at_t)(jnp.arange(T))
+    windows = windows.transpose(1, 4, 2, 3, 0, 5)    # (E, W, R, C, T, S)
+    return windows.reshape(E * W, R, C, T, S)
+
+
+def prepare_candidates(candidates: PyTree[Array]) -> Array:
+    # in: (evals, replicates, reach conditions, timesteps, state dims)
+    # out: (evals * timestep window, replicates, reach conditions, state dims)
+    return jt.map(
+        partial(extract_timestep_windows, timestep_radius=CANDIDATE_TIMESTEP_RADIUS),
+        candidates,
+    )
+    
+    
 DEPENDENCIES = {
     "states_pca": (
         StatesPCA(n_components=N_PCA, where_states=lambda states: states.net.hidden)
         .after_transform(get_best_replicate)
-        .after_indexing(-2, np.arange(START_STEP, END_STEP), axis_label="timestep")
+        .after_indexing(-2, np.arange(PCA_START_STEP, PCA_END_STEP), axis_label="timestep")
     ),
 }
+    
 
-
-# State PyTree structure: ['sisu', 'train__pert__std']
+# State PyTree structure: ['sisu', 'pert_amp', 'train__pert__std']
 # Array batch shape: (evals, replicates, reach conditions)
-# ANALYSES = {
-#     "reach_fps_in_pc_space": (
-#         ReachFPsInPCSpace(custom_inputs=dict(pca_results="states_pca"))
-#     ),
-#     "reach_trajectories_in_pc_space": (
-#         ReachTrajectoriesInPCSpace(custom_inputs=dict(pca_results="states_pca"))
-#     ),
-#     "reach_direction_trajectories": (
-#         ReachDirectionTrajectories(custom_inputs=dict(pca_results="states_pca"))
-#     ),
-# }
+ANALYSES = {
+    "reach_fp_results": (
+        FixedPoints(
+            inputs=FixedPoints.Ports(
+                funcs=ExpandTo(
+                    "func_args", 
+                    LiteralInput(call_rnn_func),
+                    where=lambda func_args: func_args[0],
+                    is_leaf=is_module,
+                ),
+                func_args=(
+                    Data.models(
+                        where=lambda model: model.step.net.hidden,
+                    ), 
+                    Data.states(
+                        where=lambda states: states.net.input,
+                    ),
+                ),
+                #! TODO: Check how the candidates were actually constructed in the notebook
+                candidates=Data.states(
+                    where=lambda states: states.net.hidden,
+                )
+            )
+        )
+        .after_transform(prepare_candidates, dependency_names="candidates")
+        .vmap(in_axes={
+            # (evals, replicate, condition, timestep)
+            'func_args': (
+                MultiVmapAxes(None, 0, None, None), 
+                MultiVmapAxes(0, 1, 2, 3)
+            ), 
+            'candidates': MultiVmapAxes(None, 1, 2, 3),
+        })
+
+    ) 
+    # "figs/fps_PC": (),
+    # "figs/hidden_and_fp_trajs_PC": (),
+    # "figs/compare_sisu_trajs_PC": (),
+    
+    # "tangling": (),
+    # "jacs": (),
+    # "hessians": (),
+    # # eig -> square matrices, svd -> non-square
+    # "jacs-eig": (),
+    # "jacs-svd": (),
+    # "hessians-eig": (),
+    # "hessians-svd": (),  
+
+    # # Plot. Each of these should probably use the same subclass
+    # # (i.e. PC traj plotting + color)
+    # "figs/jacs_PC": (),
+    # "figs/hessians_PC": (),
+    # "figs/tangling_PC": (),
+}
 
 

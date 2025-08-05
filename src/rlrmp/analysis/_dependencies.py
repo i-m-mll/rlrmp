@@ -25,6 +25,7 @@ from jax.tree_util import treedef_is_leaf
 from jaxtyping import PyTree
 
 from jax_cookbook import is_type
+from jax_cookbook.tree import collect_aux_data
 
 from rlrmp.analysis.analysis import (
     AbstractAnalysis, AnalysisInputData, _format_dict_of_params, RequiredInput,
@@ -54,17 +55,17 @@ class _DataForwarder(AbstractAnalysis[NoPorts]):
     is_leaf: Optional[Callable[[Any], bool]] = None
 
     # Pure forwarding
-    def compute(self, data: AnalysisInputData, **kwargs):  # noqa: D401
+    def compute(self, data: AnalysisInputData, **kwargs): 
         value = getattr(data, self.attr)
         if self.where is not None:
             value = jt.map(self.where, value, is_leaf=self.is_leaf)
         return value
 
-    def make_figs(self, data: AnalysisInputData, *, result=None, **kwargs):  # noqa: D401
+    def make_figs(self, data: AnalysisInputData, *, result=None, **kwargs):  
         # nothing plotted
         return None
 
-    def __post_init__(self):  # noqa: D401
+    def __post_init__(self):  
         if not self.attr:
             raise ValueError("_DataForwarder.attr must be provided")
 
@@ -292,10 +293,16 @@ def _apply_transformations(
             target_structure = dep_kwargs[tree.target]
         elif isinstance(tree.target, _DataField):
             # For _DataField targets, we need to resolve them like regular dependencies
-            # This is a simplified approach - in practice you might need more sophisticated target resolution
+            # This is a simplified approach - in practice you might need more sophisticated target
+            # resolution
+            #! TODO
             raise NotImplementedError("_DataField targets in ExpandTo not yet supported in new PyTree system")
         else:
             raise TypeError(f"Invalid ExpandTo target type: {type(tree.target)}")
+        
+        # Apply where function if provided to select subtree of target
+        if tree.where is not None:
+            target_structure = tree.where(target_structure)
         
         return prefix_expand(
             transformed_source,
@@ -330,6 +337,7 @@ def _apply_transformations(
 
         return jt.unflatten(tree_def, transformed_leaves)
 
+
 def _reconstruct_dependencies(
     analysis: AbstractAnalysis, 
     computed_results: dict[str, Any], 
@@ -338,8 +346,18 @@ def _reconstruct_dependencies(
     """Reconstruct PyTree dependencies for an analysis from computed leaf results."""
     dep_kwargs = {}
     
-    # Collect and reconstruct each dependency PyTree
-    for dep_name, dep_sources in analysis._flattened_inputs.items():
+    # Extract ExpandTo field dependencies so we process our inputs in the correct order
+    inputs_graph = {
+        port_name: {
+            aux_data.target for aux_data in collect_aux_data(treedef, ExpandTo) 
+            if isinstance(aux_data.target, str)
+        }
+        for port_name, treedef in analysis.input_treedefs.items()
+    }
+
+    # Process fields in dependency order to ensure ExpandTo targets are available
+    for dep_name in topological_sort(inputs_graph):
+        dep_sources = analysis._flattened_inputs[dep_name]
         leaf_results = []
         
         # Gather results for all leaves in this dependency

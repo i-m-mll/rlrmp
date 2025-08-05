@@ -3,6 +3,7 @@ Compute derivatives of functions.
 """
 
 from collections.abc import Callable, Sequence
+import re
 from typing import Any, Optional
 
 import equinox as eqx
@@ -23,6 +24,33 @@ class CallerPorts(AbstractAnalysisPorts):
     func_args: tuple[InputOf[Any], ...]
 
 
+def _compute_grads(
+    grad_func: Callable, 
+    funcs: Sequence[Callable], 
+    func_args: tuple, 
+    argnums: Optional[int | Sequence[int]],
+) -> tuple:
+    if argnums is None:
+        argnums = tuple(range(len(func_args)))
+    elif isinstance(argnums, int):
+        argnums = (argnums,)
+
+    grads_raw = jt.map(
+        lambda func, *args: _Tuple(grad_func(func, *args, argnums=argnums)),
+        funcs,
+        *func_args,
+    )
+
+    grads_by_argnum = jtree.unzip(grads_raw, tuple_cls=_Tuple)
+
+    grads_expanded: list = [
+        grads_by_argnum[argnums.index(i)] if i in argnums else None
+        for i in range(len(func_args))
+    ]
+
+    return type(func_args)(*grads_expanded)
+
+
 #! TODO: `Jacobians` and `Hessians` seem like good candidates for 
 #! refactoring by a simpler `AbstractAnalysis` functional constructor
 class Jacobians(AbstractAnalysis[CallerPorts]):
@@ -41,27 +69,12 @@ class Jacobians(AbstractAnalysis[CallerPorts]):
         func_args: tuple,
         **kwargs,
     ) -> tuple:
-        if self.argnums is None:
-            argnums = tuple(range(len(func_args)))
-        elif isinstance(self.argnums, int):
-            argnums = (self.argnums,)
-        else:
-            argnums = self.argnums
-
-        jacs_raw = jt.map(
-            lambda func, *args: _Tuple(jax.jacobian(func, argnums=argnums)(*args)),
-            funcs,
-            *func_args,
+        return _compute_grads(
+            lambda func, *args, argnums: jax.jacobian(func, argnums=argnums)(*args),
+            funcs, 
+            func_args,
+            self.argnums,
         )
-
-        jacs_for_argnums = jtree.unzip(jacs_raw, tuple_cls=_Tuple)
-
-        jacs_expanded: list = [
-            jacs_for_argnums[argnums.index(i)] if i in argnums else None
-            for i in range(len(func_args))
-        ]
-
-        return type(func_args)(*jacs_expanded)
 
 
 class Hessians(AbstractAnalysis[CallerPorts]):
@@ -81,27 +94,10 @@ class Hessians(AbstractAnalysis[CallerPorts]):
         func_args,
         **kwargs,
     ):
-        if self.argnums is None:
-            argnums = tuple(range(len(func_args)))
-        elif isinstance(self.argnums, int):
-            argnums = (self.argnums,)
-        else:
-            argnums = self.argnums
-
-        def get_hessians(func, *args):
+        def get_hessians(func, *args, argnums):
             if self.diag_only:
-                return _Tuple(jax.hessian(func, argnums=i)(*args) for i in argnums)
+                return [jax.hessian(func, argnums=i)(*args) for i in argnums]
             else: 
-                return _Tuple(jax.hessian(func, argnums=argnums)(*args))
+                return jax.hessian(func, argnums=argnums)(*args)
 
-
-        hess_raw = jt.map(get_hessians, funcs, *func_args)
-
-        hess_for_argnums = jtree.unzip(hess_raw, tuple_cls=_Tuple)
-
-        hess_expanded: list = [
-            hess_for_argnums[argnums.index(i)] if i in argnums else None
-            for i in range(len(func_args))
-        ]
-
-        return type(func_args)(*hess_expanded)
+        return _compute_grads(get_hessians, funcs, func_args, self.argnums)

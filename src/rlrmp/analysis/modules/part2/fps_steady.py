@@ -33,7 +33,7 @@ import jax_cookbook.tree as jtree
 
 from rlrmp.analysis import AbstractAnalysis, AnalysisInputData
 from rlrmp.analysis.analysis import _DummyAnalysis, LiteralInput, Data, DefaultFigParamNamespace, ExpandTo, FigParamNamespace, Transformed
-from rlrmp.analysis.eig import Eigendecomposition
+from rlrmp.analysis.eig import SVD, Eig
 from rlrmp.analysis.fp_finder import FPFilteredResults, take_top_fps
 from rlrmp.analysis.fps import FixedPoints
 from rlrmp.analysis.grad import Jacobians, Hessians
@@ -153,10 +153,11 @@ def get_ss_rnn_func(rnn_cell: Callable[[Array, Array], Array]):
 def reshape_candidates(states: Array) -> Array:
     """Reshape the initial FP candidates to (positions, candidates, state)."""
     positions_first = jnp.moveaxis(states, 1, 0)
-    return jnp.reshape(
+    candidates = jnp.reshape(
         positions_first, 
         (positions_first.shape[0], -1, positions_first.shape[-1]),
     )
+    return candidates  # Take every STRIDE_FP_CANDIDATES candidate
 
 
 """Apply global transformations to reduce computation.
@@ -166,7 +167,7 @@ TRANSFORMS = AnalysisModuleTransformSpec(
     pre_setup=dict(models=get_best_model_replicate),
     # `get_best_model_replicate` leaves in the singleton replicate axis -- so, remove it 
     post_eval=dict(
-        states=lambda states: jt.map(lambda x: x[0], states),
+        states=lambda states: jt.map(lambda x: x[:, 0], states),
         models=partial(take_replicate, 0),
     )
 )
@@ -192,6 +193,7 @@ DEPENDENCIES = {
     ),
     "steady_state_fp_results": (
         FixedPoints(
+            stride_candidates=STRIDE_FP_CANDIDATES,
             inputs=FixedPoints.Ports(
                 funcs=ss_rnn_funcs,
                 func_args=ExpandTo.map(  
@@ -228,7 +230,6 @@ ANALYSES = {
     #     )
     # ),
     
-    
     #! Maybe it would make sense to just make a single class, `Grads` with `grad_func`?
     #! Though it wouldn't change the verbosity here unless we made `grad_func` a `Port`
     #! and returned a PyTree containing both the Jacobians and the Hessians
@@ -252,15 +253,25 @@ ANALYSES = {
         for cls in (Jacobians, Hessians)
     },
     
-    # "steady_state_jac_eigs": (
-    #     Eigendecomposition(
-    #         inputs=Eigendecomposition.Ports(
-    #             matrices="steady_state_jacobians",
-    #         ),
-    #     )
-    # )
+    "steady_state_jac-x_eigs": (
+        Eig(
+            inputs=Eig.Ports(
+                # Process only the square (state) Jacobians
+                matrices=Transformed("steady_state_jacobians", lambda jacs: jacs.h),
+            ),
+        )
+        # .vmap(in_axes={'matrices': 0}) #? Should be unnecessary since `eig` works on batches
+    ),
+    
+    "steady_state_jac-u_eigs": (
+        SVD(
+            inputs=SVD.Ports(
+                # Note the SVD for `jacs.sisu`, a vector, will just be its Euclidean norm 
+                matrices=Transformed("steady_state_jacobians", lambda jacs: (jacs.sisu, jacs.pos)),
+            ),
+        )
+    )
 }
-
 
 #! Get readout weights in PC space, for plotting
 # all_readout_weights = exclude_nan_replicates(jt.map(

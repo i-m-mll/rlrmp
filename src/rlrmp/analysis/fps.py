@@ -10,11 +10,12 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 from jaxtyping import Array, PRNGKeyArray, PyTree, Scalar
+from optax import GradientTransformation
 
 from feedbax.bodies import SimpleFeedback
 from feedbax.nn import NetworkState
 from feedbax.task import SimpleReaches
-from optax import GradientTransformation
+from jax_cookbook import is_type
 
 from rlrmp.analysis.analysis import (
     AbstractAnalysis, 
@@ -29,6 +30,7 @@ from rlrmp.analysis.fp_finder import (
     fp_adam_optimizer,
     take_top_fps,
 )
+from rlrmp.tree_utils import first
 from rlrmp.types import LDict, TreeNamespace
 
 
@@ -60,10 +62,10 @@ class FixedPoints(AbstractAnalysis[FixedPointsPorts]):
     cache_result: bool = True
 
     # ss_func: Callable = get_ss_rnn_func
-    fp_tol: Scalar = eqx.field(default=1e-5, converter=jnp.array)
+    fp_tol: Scalar = eqx.field(default=1e-6, converter=jnp.array)
     unique_tol: float = 0.025
     outlier_tol: float = 1.0
-    stride_candidates: int = 16
+    stride_candidates: int = 1
     fp_optimizer: Callable[[], GradientTransformation] = fp_adam_optimizer
     key: PRNGKeyArray = field(default_factory=lambda: jr.PRNGKey(0))
 
@@ -99,7 +101,7 @@ class FixedPoints(AbstractAnalysis[FixedPointsPorts]):
         def get_fps(func, cands, *args):
             return self.fpf_func(
                 lambda h: func(*args, h),
-                cands
+                cands[::self.stride_candidates],
             )
 
         return jt.map(

@@ -8,7 +8,7 @@ import jax.tree as jt
 import jax_cookbook.tree as jtree
 import plotly.graph_objects as go
 from jax_cookbook import is_type
-from jaxtyping import PyTree
+from jaxtyping import PyTree, Float, Array
 
 from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, InputOf
 from rlrmp.misc import create_arr_df
@@ -16,18 +16,20 @@ from rlrmp.plot import plot_eigvals_df
 from rlrmp.types import TreeNamespace
 
 
-class EigendecompositionPorts(AbstractAnalysisPorts):
-    """Input ports for Eigendecomposition analysis."""
-    matrices: InputOf[PyTree]
-
-
-class Eigendecomposition(AbstractAnalysis[EigendecompositionPorts]):
-    Ports = EigendecompositionPorts
-    inputs: EigendecompositionPorts = field(default_factory=EigendecompositionPorts, converter=EigendecompositionPorts.converter)
+class DecompPorts(AbstractAnalysisPorts):
+    matrices: InputOf[Float[Array, "... m n"]]
     
-    variant: Optional[str] = "full"
 
-    @partial(jax.jit, device=jax.devices('cpu')[0])
+class SquareDecompPorts(AbstractAnalysisPorts):
+    """Input ports for Eigendecomposition analysis."""
+    matrices: InputOf[Float[Array, "... m m"]]
+
+
+class Eig(AbstractAnalysis[SquareDecompPorts]):
+    Ports = SquareDecompPorts
+    inputs: SquareDecompPorts = field(default_factory=SquareDecompPorts, converter=SquareDecompPorts.converter)
+
+    # @partial(jax.jit, device=jax.devices('cpu')[0])
     def _eig_cpu(self, *a, **kw):
         return tuple(jax.lax.linalg.eig(*a, **kw))
 
@@ -104,3 +106,22 @@ class Eigendecomposition(AbstractAnalysis[EigendecompositionPorts]):
         )
 
         return figs
+
+
+class SVD(AbstractAnalysis[DecompPorts]):
+    Ports = DecompPorts 
+    inputs: DecompPorts = field(default_factory=DecompPorts, converter=DecompPorts.converter)
+    
+    def compute(
+        self,
+        data: AnalysisInputData,
+        *,
+        matrices,
+        **kwargs,
+    ):
+        singvecs_l, singvals, singvecs_r_adj = jtree.unzip(jt.map(jax.lax.linalg.svd, matrices))
+        return TreeNamespace(
+            singvals=singvals,
+            singvecs_l=singvecs_l,
+            singvecs_r_adj=singvecs_r_adj,
+        )
