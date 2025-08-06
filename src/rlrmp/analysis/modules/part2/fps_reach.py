@@ -154,12 +154,20 @@ def extract_timestep_windows(
 
 
 def prepare_candidates(candidates: PyTree[Array]) -> Array:
+    """Get a small window of candidates around each timestep."""
     # in: (evals, replicates, reach conditions, timesteps, state dims)
     # out: (evals * timestep window, replicates, reach conditions, state dims)
     return jt.map(
         partial(extract_timestep_windows, timestep_radius=CANDIDATE_TIMESTEP_RADIUS),
         candidates,
     )
+    
+
+def prepare_candidates_simple(candidates: PyTree[Array]) -> Array:
+    """Just use the full trajectory as candidates, every time."""
+    E, R, C, T, S = candidates.shape
+    candidates = candidates.transpose(0, 3, 1, 2, 4)  # (E, T, R, C, S)
+    return candidates.reshape(E * T, R, C, S)
     
     
 DEPENDENCIES = {
@@ -197,14 +205,16 @@ ANALYSES = {
                 )
             )
         )
-        .after_transform(prepare_candidates, dependency_names="candidates")
+        # .after_transform(prepare_candidates, dependency_names="candidates")
+        .after_transform(prepare_candidates_simple, dependency_names="candidates")
         .vmap(in_axes={
             # (evals, replicate, condition, timestep)
             'func_args': (
                 MultiVmapAxes(None, 0, None, None), 
                 MultiVmapAxes(0, 1, 2, 3)
             ), 
-            'candidates': MultiVmapAxes(None, 1, 2, 3),
+            # 'candidates': MultiVmapAxes(None, 1, 2, 3),
+            'candidates': MultiVmapAxes(None, 1, 2, None),
         })
 
     ) 

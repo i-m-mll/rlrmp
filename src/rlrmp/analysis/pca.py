@@ -1,18 +1,33 @@
-from collections.abc import Callable
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, NoPorts
-from rlrmp.types import TreeNamespace
+from collections.abc import Callable, Sequence
+from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, InputOf, NoPorts
+from rlrmp.tree_utils import ldict_level_to_bottom, tree_level_labels
+from rlrmp.types import LDict, TreeNamespace
 
+import equinox as eqx
+from equinox import Module
 import jax.numpy as jnp
 import jax.tree as jt
 from jaxtyping import Array, PyTree
 from sklearn.decomposition import PCA
 
 from feedbax.bodies import SimpleFeedbackState
-from feedbax.misc import batch_reshape
-from jax_cookbook import is_type
+from feedbax.misc import batch_reshape, nan_bypass
+from jax_cookbook import is_type, is_module
 import jax_cookbook.tree as jtree
 
-from typing import Optional
+from typing import Literal, Optional
+
+
+class PCAResults(Module):
+    pca: PCA 
+    states_pc: Optional[PyTree[Array]] = None  
+    
+    def batch_transform(self, tree: PyTree[Array]) -> PyTree[Array]:
+        """Transform a PyTree's arrays using the PCA transform, retaining batch axes."""
+        return jt.map(
+            batch_reshape(nan_bypass(self.pca.transform)),  # type: ignore
+            tree,
+        )
 
 
 class StatesPCA(AbstractAnalysis[NoPorts]):
@@ -37,33 +52,49 @@ class StatesPCA(AbstractAnalysis[NoPorts]):
     n_components: Optional[int] = None
     where_states: Optional[Callable[[SimpleFeedbackState], PyTree[Array]]] = None
     return_data: bool = True
+    aggregate_over_labels: Sequence[str] | Literal['all'] = ()
 
     def compute(
         self,
         data: AnalysisInputData,
         **kwargs,
     ):
-        if self.where_states is not None: 
-            states_for_pca = jt.map(self.where_states, data.states, is_leaf=is_type(SimpleFeedbackState))
+        states = data.states
+        if self.aggregate_over_labels == 'all':
+            is_leaf = is_type(type(states))
         else:
-            states_for_pca = data.states
-
-        states_reshaped = jt.map(lambda arr: arr.reshape(-1, arr.shape[-1]), states_for_pca)
-
-        #! TODO: Use JAX-native PCA
-        pca = PCA(n_components=self.n_components).fit(
-            jnp.concatenate(jt.leaves(states_reshaped))  # type: ignore
-        )
+            for label in self.aggregate_over_labels:
+                states = ldict_level_to_bottom(label, states, is_leaf=is_module)
+            if self.aggregate_over_labels:
+                is_leaf = LDict.is_of(self.aggregate_over_labels[0])
+            else:
+                is_leaf = is_module     
         
-        batch_transform = lambda x: jt.map(batch_reshape(pca.transform), x)  # type: ignore
+        def get_pca(states: PyTree[Array]) -> PCAResults:
+            if self.where_states is not None: 
+                states = jt.map(self.where_states, states, is_leaf=is_module)
 
-        if self.return_data:
-            states_pc = jt.map(batch_transform, states_for_pca)
-        else:
-            states_pc = None
+            # flatten into samples; assume last dimension is features
+            states_reshaped = jt.map(lambda arr: arr.reshape(-1, arr.shape[-1]), states)
 
-        return TreeNamespace(
-            pca=pca,
-            batch_transform=batch_transform,
-            states_pc=states_pc,
-        )
+            #! TODO: Use JAX-native PCA
+            pca = PCA(n_components=self.n_components).fit(
+                jnp.concatenate(jt.leaves(states_reshaped))  # type: ignore
+            )
+        
+            if self.return_data:
+                states_pc = jt.map(
+                    batch_reshape(pca.transform),  # type: ignore
+                    states,
+                ) 
+            else:
+                states_pc = None
+
+            return PCAResults(
+                pca=pca,
+                states_pc=states_pc,
+            )
+        
+        return jt.map(get_pca, states, is_leaf=is_leaf)
+
+

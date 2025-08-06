@@ -1,3 +1,4 @@
+from collections import defaultdict
 from collections.abc import Callable, KeysView, Mapping
 import logging
 from types import SimpleNamespace
@@ -153,89 +154,99 @@ def print_ldict_tree_summary(tree):
             break
 
 
-def ldict_level_to_top(label: str, tree: PyTree, is_leaf: Optional[Callable[[Any], bool]] = None) -> list[type]:
-    """Given an `LDict` label and a PyTree containing such nodes, move them to the top of the tree."""
-    #? `is_leaf` doesn't seem to work as an argument to an inner `jt.structure` in transpose,
-    #? e.g. when we want to keep `Responses` on the inside; 
-    #? instead, wrap these inner nodes as non-PyTree objects to force them to be treated as leaves.
-
-    level_labels = tree_level_labels(tree, is_leaf=is_leaf)
-
-    if label not in level_labels:
-        logger.warning(f"{label} not found in tree; doing nothing.")
-        return tree
-    
-    if label == level_labels[0]:
-        logger.debug(f"Level {label} is already at the top of the tree; doing nothing.")
-        return tree
-    
-    if is_leaf is not None:
-        wrapped_tree = jt.map(_Wrapped, tree, is_leaf=is_leaf)
-    else:
-        if label == level_labels[-1]:
-            wrapped_tree = tree  # No need to wrap
-        else:
-            # Treat nodes inside the given level as leaves, so they are not carried outward
-            subtree_outer_label = level_labels[level_labels.index(label) + 1]
-            wrapped_tree = jt.map(_Wrapped, tree, is_leaf=LDict.is_of(subtree_outer_label))
-
-    result = jt.transpose(
-        jt.structure(wrapped_tree, is_leaf=LDict.is_of(label)),
-        None,
-        wrapped_tree,
-    )
-
-    return jt.map(lambda x: x.unwrap() if isinstance(x, _Wrapped) else x, result)
-
-
-def ldict_level_to_bottom(label: str, tree: PyTree, is_leaf: Optional[Callable[[Any], bool]] = None) -> list[type]:
-    """Given an `LDict` label and a PyTree containing such nodes, move them to the bottom of the tree.
-    
-    Similarly to other functions that operate on PyTrees of `LDict`, assumes that the same-labelled `LDict`
-    does not appear at multiple levels of the tree.
+def swap_adjacent_ldict_levels(
+    outer_label: str,
+    inner_label: str,
+    tree,
+    *,
+    is_leaf: Optional[Callable[[Any], bool]] = None,
+):
     """
-    #! Use an inefficient implementation that moves each other level to the top.
-    #! TODO: Find a more efficient implementation. 
-    # 1. Could do a `jt.map` starting at the level of `label`, and only move *lower* levels to the top of the subtrees.
-    # 2. Could find a way to use `jt.transpose`, maybe.
+    Swap an immediately-nested LDict pair `(..., outer_label, inner_label, ...)`
+    so it becomes `(..., inner_label, outer_label, ...)`
+    (and leave everything else untouched).
 
-    level_labels = tree_level_labels(tree, is_leaf=is_leaf)
+    Build the new sub-tree explicitly, keeping the original
+    left-to-right order of the *other* levels.
+    """
 
-    if label not in level_labels:
-        logger.warning(f"{label} not found in tree; doing nothing.")
-        return tree
+    is_outer = LDict.is_of(outer_label)
+    is_inner = LDict.is_of(inner_label)
 
-    if label == level_labels[-1]:
-        logger.debug(f"Level {label} is already at the bottom of the tree; doing nothing.")
-        return tree
+    # -------------------------------------------------------------------
+    # helper that actually swaps *one* outer->inner pair
+    # -------------------------------------------------------------------
+    def _swap_one(node: LDict):
+        assert node.label == outer_label           # guaranteed by caller
 
-    level_labels.remove(label)
+        buckets: dict[Any, dict[Any, Any]] = defaultdict(dict)
+        for outer_key, inner_ldict in node.items():
+            if not is_inner(inner_ldict):
+                raise ValueError(
+                    f"{outer_label} was expected to hold only {inner_label} "
+                    f"children, found {type(inner_ldict)}"
+                )
+            for inner_key, leaf in inner_ldict.items():
+                buckets[inner_key][outer_key] = leaf
 
-    wrapped_tree = jt.map(_Wrapped, tree, is_leaf=is_leaf)
+        # Re-wrap every bucket in an outer-label LDict,
+        # then wrap the whole mapping in an inner-label LDict.
+        swapped = LDict(
+            inner_label,
+            {k_in: LDict(outer_label, v_out) for k_in, v_out in buckets.items()},
+        )
+        return swapped
 
-    current_tree = wrapped_tree
-    for level_label in reversed(level_labels):
-        current_tree = ldict_level_to_top(level_label, current_tree, is_leaf=is_leaf)
+    # -------------------------------------------------------------------
+    # walk the whole pytree but transform only outer-label nodes
+    # -------------------------------------------------------------------
+    def _maybe_swap(node):
+        return _swap_one(node) if is_outer(node) else node
 
-    return jt.map(lambda x: x.unwrap() if isinstance(x, _Wrapped) else x, current_tree)
+    def _stop_descent(node):
+        # Do *not* look inside an outer-label node, and honour any
+        # user-supplied `is_leaf`.
+        return is_outer(node) or (is_leaf(node) if is_leaf is not None else False)
+
+    return jt.map(_maybe_swap, tree, is_leaf=_stop_descent)
 
 
-#! Make naming consistent with the other two. 
+def ldict_level_to_top(label: str, tree, *, is_leaf=None):
+    """Move LDict(label, …) to the outermost level, preserving the order
+       of all other levels."""
+    while True:
+        levels = tree_level_labels(tree, is_leaf=is_leaf)
+        if not levels or levels[0] == label:
+            return tree
+
+        idx = levels.index(label)                 # `label` must exist
+        tree = swap_adjacent_ldict_levels(
+            outer_label=levels[idx - 1],          # its current parent
+            inner_label=label,
+            tree=tree,
+            is_leaf=is_leaf,
+        )
+
+
+def ldict_level_to_bottom(label: str, tree, *, is_leaf=None):
+    """Move LDict(label, …) to the innermost visible level."""
+    while True:
+        levels = tree_level_labels(tree, is_leaf=is_leaf)
+        if not levels or levels[-1] == label:
+            return tree
+
+        idx = levels.index(label)
+        tree = swap_adjacent_ldict_levels(
+            outer_label=label,                    # swap with its child
+            inner_label=levels[idx + 1],
+            tree=tree,
+            is_leaf=is_leaf,
+        )
+
+
 def move_ldict_level_above(inner_label: str, outer_label: str, tree: PyTree, is_leaf: Optional[Callable[[Any], bool]] = None) -> list[type]:
     """Move an `LDict` level just above another, in a PyTree."""
-    level_labels = tree_level_labels(tree, is_leaf=is_leaf)
-    inner_level_idx = level_labels.index(inner_label)
-    outer_level_idx = level_labels.index(outer_label)
-
-    if inner_level_idx < outer_level_idx:
-        logger.warning(f"{inner_label} is outside of {outer_label} in the tree; doing nothing.")
-        return tree
-
-    return jt.map(
-        lambda x: ldict_level_to_top(inner_label, x, is_leaf=is_leaf),
-        tree,
-        is_leaf=LDict.is_of(outer_label),
-    )
+    return swap_adjacent_ldict_levels(outer_label, inner_label, tree, is_leaf=is_leaf)
 
 
 def ldict_level_keys(tree: PyTree, label: str) -> KeysView:

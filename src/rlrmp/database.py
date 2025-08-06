@@ -150,6 +150,7 @@ class EvaluationRecord(RecordBase):
     id: Mapped[int] = mapped_column(primary_key=True)
     hash: Mapped[str] = mapped_column(unique=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    modified_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     expt_name: Mapped[Optional[str]]
     # model_hash: Mapped[Optional[str]] = mapped_column(ForeignKey(f'{MODELS_TABLE_NAME}.hash'))
     model_hashes: Mapped[Optional[Sequence[str]]] = mapped_column(nullable=True)
@@ -172,6 +173,7 @@ class FigureRecord(RecordBase):
     id: Mapped[int] = mapped_column(primary_key=True)
     hash: Mapped[str] = mapped_column(unique=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    modified_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     evaluation_hash: Mapped[str] = mapped_column(ForeignKey(
         f'{STRINGS.db_table_names.evaluations}.hash'
     ))
@@ -802,8 +804,8 @@ def add_evaluation(
     # Delete existing record with same hash, if it exists
     existing_record = get_record(session, EvaluationRecord, hash=eval_hash)
     if existing_record is not None:
-        existing_record.created_at = datetime.utcnow()
-        logger.debug(f"Updating timestamp of existing evaluation record with hash {eval_hash}")
+        existing_record.modified_at = datetime.utcnow()
+        logger.info(f"Updating timestamp of existing evaluation record with hash {eval_hash}")
         eval_record = existing_record
     else:
         eval_record = EvaluationRecord(
@@ -945,6 +947,7 @@ def add_evaluation_figure(
             for model in jt.leaves(model_records, is_leaf=is_type(ModelRecord))
         ]
     
+    #! TODO: Implement `modified_at` rather than just replace it entirely.
     figure_record = FigureRecord(
         hash=figure_hash,
         evaluation_hash=eval_record.hash,
