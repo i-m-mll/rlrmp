@@ -35,10 +35,10 @@ from rlrmp.analysis import AbstractAnalysis, AnalysisInputData
 from rlrmp.analysis.analysis import _DummyAnalysis, LiteralInput, Data, DefaultFigParamNamespace, ExpandTo, FigParamNamespace, Transformed
 from rlrmp.analysis.eig import SVD, Eig
 from rlrmp.analysis.fp_finder import FPFilteredResults, take_top_fps
-from rlrmp.analysis.fps import FixedPoints
+from rlrmp.analysis.fps import FixedPoints, PlotInPCSpace
 from rlrmp.analysis.grad import Jacobians, Hessians
 from rlrmp.analysis.pca import StatesPCA
-from rlrmp.misc import get_constant_input_fn
+from rlrmp.misc import get_constant_input_fn, take_non_nan
 from rlrmp.analysis.state_utils import get_best_model_replicate, vmap_eval_ensemble
 from rlrmp.tree_utils import take_replicate
 from rlrmp.types import TreeNamespace
@@ -188,7 +188,11 @@ steady_state_fps = Transformed(
 # State batch shape: (eval, replicate, condition)
 DEPENDENCIES = {
     "states_pca": (
-        StatesPCA(n_components=N_PCA, where_states=lambda states: states.net.hidden)
+        StatesPCA(
+            n_components=N_PCA, 
+            where_states=lambda states: states.net.hidden,
+            aggregate_over_labels=('sisu',),
+        )
         .after_indexing(-2, np.arange(START_STEP, END_STEP), axis_label="timestep")
     ),
     "steady_state_fp_results": (
@@ -220,67 +224,93 @@ GradArgs = namedtuple("GradArgs", ["sisu", "pos", "h"])
 # State PyTree structure: ['sisu', 'train__pert__std']
 # Array batch shape: (evals, replicates, reach conditions)
 ANALYSES = {
-    # "fps_in_pc_space": (
-    #     FPsInPCSpace(
-    #         custom_inputs=dict(
-    #             fps_results="steady_state_fps",
-    #             pca_results="states_pca",
-                
-    #         )
-    #     )
-    # ),
+    "plot-fps_pc": (
+        PlotInPCSpace(
+            inputs=PlotInPCSpace.Ports(
+                pca_results="states_pca",
+                plot_data="steady_state_fp_results",
+            ),
+            spread_label='sisu',
+        )
+        .after_transform(lambda fp_results: fp_results.fps, dependency_names="plot_data")
+    ),
     
     #! Maybe it would make sense to just make a single class, `Grads` with `grad_func`?
     #! Though it wouldn't change the verbosity here unless we made `grad_func` a `Port`
     #! and returned a PyTree containing both the Jacobians and the Hessians
-    **{
-        # "steady_state_jacobians" and "steady_state_hessians"
-        f"steady_state_{cls.__name__.lower()}": (
-            cls(
-                inputs=cls.Ports(
-                    funcs=ss_rnn_funcs,  
-                    func_args=ExpandTo.map(
-                        "funcs",  # signature: (sisu, pos, h)
-                        GradArgs(sisu, positions, steady_state_fps),
-                        is_leaf=is_module,
-                        is_leaf_prefix=GradArgs(is_type(TreeNamespace), is_module, None),
-                    ),
-                ),
-            )
-            # over the steady state workspace positions
-            .vmap(in_axes={'func_args': GradArgs(None, 0, 0)})
-        )
-        for cls in (Jacobians, Hessians)
-    },
+    # **{
+    #     # "steady_state_jacobians" and "steady_state_hessians"
+    #     f"steady_state_{cls.__name__.lower()}": (
+    #         cls(
+    #             inputs=cls.Ports(
+    #                 funcs=ss_rnn_funcs,  
+    #                 func_args=ExpandTo.map(
+    #                     "funcs",  # signature: (sisu, pos, h)
+    #                     GradArgs(sisu, positions, steady_state_fps),
+    #                     is_leaf=is_module,
+    #                     is_leaf_prefix=GradArgs(is_type(TreeNamespace), is_module, None),
+    #                 ),
+    #             ),
+    #         )
+    #         # over the steady state workspace positions
+    #         .vmap(in_axes={'func_args': GradArgs(None, 0, 0)})
+    #     )
+    #     for cls in (Jacobians, Hessians)
+    # },
     
-    "steady_state_jac-x_eigs": (
-        Eig(
-            inputs=Eig.Ports(
-                # Process only the square (state) Jacobians
-                matrices=Transformed("steady_state_jacobians", lambda jacs: jacs.h),
-            ),
-        )
-        # .vmap(in_axes={'matrices': 0}) #? Should be unnecessary since `eig` works on batches
-    ),
+    # "steady_state_jac-x_eigs": (
+    #     Eig(
+    #         inputs=Eig.Ports(
+    #             # Process only the square (state) Jacobians
+    #             matrices=Transformed("steady_state_jacobians", lambda jacs: jacs.h),
+    #         ),
+    #     )
+    #     # .vmap(in_axes={'matrices': 0}) #? Should be unnecessary since `eig` works on batches
+    # ),
     
-    "steady_state_jac-u_eigs": (
-        SVD(
-            inputs=SVD.Ports(
-                # Note the SVD for `jacs.sisu`, a vector, will just be its Euclidean norm 
-                matrices=Transformed("steady_state_jacobians", lambda jacs: (jacs.sisu, jacs.pos)),
-            ),
-        )
-    )
+    # "steady_state_jac-u_eigs": (
+    #     SVD(
+    #         inputs=SVD.Ports(
+    #             # Note the SVD for `jacs.sisu`, a vector, will just be its Euclidean norm 
+    #             matrices=Transformed("steady_state_jacobians", lambda jacs: (jacs.sisu, jacs.pos)),
+    #         ),
+    #     )
+    # )
 }
 
-#! Get readout weights in PC space, for plotting
-# all_readout_weights = exclude_nan_replicates(jt.map(
-#     lambda model: model.step.net.readout.weight,
-#     all_models,
-#     is_leaf=is_module,
-# ))
+#! The following should either be discarded or refactored into a function for plotting readout
+#! weights. If we refactor, it will be necessary to implement figure combination across `ANALYSES`
+#! entries. 
+# all_readout_weights = exclude_bad_replicates(
+#     jt.map(
+#         lambda model: model.step.net.readout.weight,
+#         # Weights do not depend on SISU, take first
+#         jt.map(first, data.models, is_leaf=LDict.is_of('sisu')),
+#         is_leaf=is_module,
+#     ),
+#     replicate_info=replicate_info,
+#     axis=0,
+# )
 
-# all_readout_weights_pc = batch_transform(all_readout_weights)
+# all_readout_weights_pc = pca_results.batch_transform(all_readout_weights)
+
+# if readout_weights_pc is not None:
+#     fig.update_layout(
+#         legend2=dict(title='Readout components', itemsizing='constant', y=0.45),
+#     )
+#     mean_base_fp_pc = jnp.mean(fp_pcs_by_sisu[min(hps_common.sisu)], axis=1)
+#     traces = []
+#     k = 0.25
+#     for j in range(readout_weights_pc.shape[-2]):
+#         start, end = mean_base_fp_pc, mean_base_fp_pc + k * readout_weights_pc[..., j, :]
+#         x = np.column_stack((start[..., 0], end[..., 0], np.full_like(start[..., 0], None))).ravel()
+#         y = np.column_stack((start[..., 1], end[..., 1], np.full_like(start[..., 1], None))).ravel()
+#         z = np.column_stack((start[..., 2], end[..., 2], np.full_like(start[..., 2], None))).ravel()
+#         traces.append(go.Scatter3d(
+#             x=x, y=y, z=z, mode='lines', line=dict(width=10),
+#             showlegend=True, name=j, legend="legend2",
+#         ))
+#     fig.add_traces(traces)
 
 
 """

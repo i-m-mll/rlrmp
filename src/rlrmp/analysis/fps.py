@@ -2,7 +2,7 @@
 from collections.abc import Callable
 from functools import partial
 from multiprocessing import Value
-from typing import Any, Optional, TypeVar
+from typing import Any, Literal, Optional, TypeVar
 import equinox as eqx
 from equinox import field
 import jax
@@ -16,6 +16,7 @@ from feedbax.bodies import SimpleFeedback
 from feedbax.nn import NetworkState
 from feedbax.task import SimpleReaches
 from jax_cookbook import is_type
+import plotly.graph_objects as go
 
 from rlrmp.analysis.analysis import (
     AbstractAnalysis, 
@@ -30,7 +31,9 @@ from rlrmp.analysis.fp_finder import (
     fp_adam_optimizer,
     take_top_fps,
 )
-from rlrmp.tree_utils import first
+from rlrmp.analysis.pca import PCAResults, StatesPCA
+from rlrmp.plot import plot_fp_pcs
+from rlrmp.tree_utils import first, ldict_level_to_bottom
 from rlrmp.types import LDict, TreeNamespace
 
 
@@ -62,7 +65,7 @@ class FixedPoints(AbstractAnalysis[FixedPointsPorts]):
     cache_result: bool = True
 
     # ss_func: Callable = get_ss_rnn_func
-    fp_tol: Scalar = eqx.field(default=1e-6, converter=jnp.array)
+    fp_tol: Scalar = eqx.field(default=1e-7, converter=jnp.array)
     unique_tol: float = 0.025
     outlier_tol: float = 1.0
     stride_candidates: int = 1
@@ -109,6 +112,73 @@ class FixedPoints(AbstractAnalysis[FixedPointsPorts]):
             funcs, candidates, *func_args,
             is_leaf=callable,
         )
+        
+        
+# ----------------------------------------------------------------
+# Plotting classes
+# ----------------------------------------------------------------        
+
+
+class PlotInPCSpacePorts(AbstractAnalysisPorts):
+    """Input ports for PlotInPCSpace analysis."""
+    pca_results: InputOf[StatesPCA]
+    plot_data: InputOf[Array]
+
+
+class PlotInPCSpace(AbstractAnalysis[PlotInPCSpacePorts]):
+    """Plot data in PCA space."""
+    Ports = PlotInPCSpacePorts
+    inputs: PlotInPCSpacePorts = eqx.field(default_factory=PlotInPCSpacePorts, converter=PlotInPCSpacePorts.converter)
+    variant: Optional[str] = "full"
+    fig_params: FigParamNamespace = DefaultFigParamNamespace()
+
+    # n_pcs: Literal[2, 3] = 3
+    spread_label: str = 'sisu'
+
+    def make_figs(
+        self,
+        data: AnalysisInputData,
+        *,
+        pca_results: PyTree[PCAResults],
+        plot_data: PyTree[Array],
+        colors,
+        **kwargs,
+    ):
+        plot_data = ldict_level_to_bottom(self.spread_label, plot_data)
+        
+        def generate_fig(plot_data, pca):
+            fig = go.Figure(
+                layout=dict(
+                    width=800,
+                    height=800,
+                    scene=dict(
+                        xaxis_title="PC 1",
+                        yaxis_title="PC 2",
+                        zaxis_title="PC 3",
+                    ),
+                    legend=dict(
+                        title=self.spread_label,
+                        itemsizing="constant",
+                        y=0.85,
+                    ),
+                )
+            )
+            
+            plot_data_pc = pca.batch_transform(plot_data)
+            for value in plot_data:
+                fig = plot_fp_pcs(
+                    plot_data_pc[value], fig=fig, label=value, colors=colors[self.spread_label].dark[value]
+                )
+            return fig
+            
+        figs = jt.map(generate_fig, plot_data, pca_results, is_leaf=LDict.is_of(self.spread_label))
+
+        return figs
+    
+
+# ----------------------------------------------------------------
+# DEPRECATED STUFF BELOW
+# ----------------------------------------------------------------
 
 
 def get_endpoint_positions(task):

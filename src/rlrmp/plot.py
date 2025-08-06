@@ -512,6 +512,7 @@ def plot_fp_pcs(
     else:
         emax = n_plot_max
 
+    #! Why not `fps_pc.shape[1:-1]`?
     n_fps_per_condition = np.prod(fps_pc.shape[:-1])
     fps_flat_pc = np.reshape(fps_pc, (-1, fps_pc.shape[-1]))
     

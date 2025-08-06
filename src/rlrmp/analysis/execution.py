@@ -618,6 +618,8 @@ def run_analysis_module(
             logger.info(f"Deleted existing dump figures in {fig_dump_path}")
         except ValueError as e:
             logger.warning(f"Failed to delete existing dump figures: {e}; directory probably doesn't exist yet")
+            
+    # jax.profiler.stop_trace()
 
     all_analyses, all_results, all_figs = perform_all_analyses(
         db_session,
