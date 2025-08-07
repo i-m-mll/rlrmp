@@ -15,8 +15,9 @@ change.
 from collections import namedtuple
 from collections.abc import Callable, Sequence
 from functools import partial, wraps
+from operator import is_
 from types import MappingProxyType, SimpleNamespace
-from typing import ClassVar, Optional
+from typing import ClassVar, Mapping, Optional
 
 from arrow import get
 import equinox as eqx
@@ -25,28 +26,28 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 from jaxtyping import Array, Float, PRNGKeyArray, PyTree
+from matplotlib.pylab import svd
 import numpy as np
+import plotly.graph_objects as go
 
 from feedbax.task import AbstractTask
 from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
 from rlrmp.analysis import AbstractAnalysis, AnalysisInputData
-from rlrmp.analysis.analysis import _DummyAnalysis, LiteralInput, Data, DefaultFigParamNamespace, ExpandTo, FigParamNamespace, Transformed
-from rlrmp.analysis.eig import SVD, Eig
+from rlrmp.analysis.analysis import _DummyAnalysis, AbstractAnalysisPorts, InputOf, LiteralInput, Data, DefaultFigParamNamespace, ExpandTo, FigParamNamespace, Transformed
+from rlrmp.analysis.eig import SVD, Eig, complex_to_polar_abs_angle
 from rlrmp.analysis.fp_finder import FPFilteredResults, take_top_fps
 from rlrmp.analysis.fps import FixedPoints, PlotInPCSpace
 from rlrmp.analysis.grad import Jacobians, Hessians
 from rlrmp.analysis.pca import StatesPCA
-from rlrmp.misc import get_constant_input_fn, take_non_nan
+from rlrmp.misc import create_arr_df, get_constant_input_fn, take_non_nan
 from rlrmp.analysis.state_utils import get_best_model_replicate, vmap_eval_ensemble
-from rlrmp.tree_utils import take_replicate
+from rlrmp.plot import plot_eigvals_df
+from rlrmp.tree_utils import first_shape, take_replicate, tree_level_labels
 from rlrmp.types import TreeNamespace
 from rlrmp.types import LDict
 from rlrmp.analysis.execution import AnalysisModuleTransformSpec
-from rlrmp.analysis.fps_tmp import (
-    FPsInPCSpace,
-)
 
 
 """Specify any additional colorscales needed for this analysis. 
@@ -90,11 +91,191 @@ def setup_eval_tasks_and_models(
 eval_func: Callable = vmap_eval_ensemble
 
 
-
 N_PCA = 50
 START_STEP = 0
 END_STEP = 100
 STRIDE_FP_CANDIDATES = 16
+
+COL_NAMES = ['sisu', 'pos', 'eigenvalue']
+
+class EigvalsPlotPorts(AbstractAnalysisPorts):
+    eigvals: InputOf[Array]
+
+
+class EigvalsPlot(AbstractAnalysis[EigvalsPlotPorts]):
+    """
+    Innermost LDict level is the legend level.
+    """
+    non_data_trace_names = ['zerolines', 'boundary_circle', 'boundary_line']
+    Ports = EigvalsPlotPorts
+    inputs: EigvalsPlotPorts = eqx.field(
+        default_factory=EigvalsPlotPorts, converter=EigvalsPlotPorts.converter
+    )
+
+    axis_names: Optional[Sequence[str]] = None
+    reverse_traces: bool = False
+    hide_histograms: bool = True
+    
+    def make_figs(
+        self,
+        data: AnalysisInputData,
+        *,
+        eigvals: PyTree[LDict],
+        hps_common: TreeNamespace,
+        colors: PyTree,
+        **kwargs
+    ) -> PyTree[go.Figure]:
+        level_labels = tree_level_labels(eigvals)
+        legend_var_label = level_labels[-1]
+        plot_labels = list(jt.leaves(eigvals, is_leaf=LDict.is_of(legend_var_label))[0].keys())
+        
+        if self.axis_names is not None:
+            col_names = [legend_var_label, self.axis_names]
+        else: 
+            col_names = [
+                legend_var_label, 
+                *[f'var_{i}' for i in range(1, len(first_shape(eigvals)))],
+                "eigvals",
+            ]
+            
+        eigval_dfs = jt.map(
+            lambda arr: create_arr_df(
+                arr, 
+                col_names=col_names,
+            ).astype({legend_var_label: 'str'}),
+            jtree.stack_subtrees(eigvals, axis=0, is_subtree=LDict.is_of(legend_var_label)),
+        )
+
+        plot_func_partial = partial(
+            plot_eigvals_df,
+            marginals='box',
+            color=legend_var_label,
+            marginal_boundary_lines=not self.hide_histograms,
+            trace_kws=dict(marker_size=2.5),
+            scatter_kws=dict(opacity=1),
+            layout_kws=dict(
+                legend_title=legend_var_label,
+                legend_itemsizing='constant',
+                xaxis_title='Re',
+                yaxis_title='Im',
+            ),
+        )
+
+        figs = jt.map(
+            lambda df: plot_func_partial(
+                df, color_discrete_sequence=list(colors[legend_var_label].dark.values())
+            ),
+            eigval_dfs
+        )
+        
+        if self.reverse_traces:
+            jt.map(
+                lambda fig: setattr(fig, 'data', fig.data[::-1]),
+                figs,
+                is_leaf=is_type(go.Figure),
+            )
+
+        def _update_trace_name(trace):
+            if trace.name is not None and trace.name not in self.non_data_trace_names:
+                return trace.update(name=plot_labels[int(trace.name)])
+            else:
+                return trace
+
+        jt.map(
+            lambda fig: fig.for_each_trace(_update_trace_name),
+            figs,
+            is_leaf=is_type(go.Figure),
+        )
+        
+        # Set the axis limits of all figures to be equal,
+        # and determined only by the scatter data
+        # def trace_selector(trace):
+        #     return (
+        #         trace.type.startswith('scatter') 
+        #         and trace.name not in non_data_trace_names
+        #     )
+
+        # figs = set_axes_bounds_equal(
+        #     figs,
+        #     trace_selector=trace_selector,
+        #     padding_factor=padding_factor,
+        # )
+        
+        if self.hide_histograms:
+            def _hide_trace(trace):
+                if trace.type == 'box' or trace.name == 'boundary_line':
+                    trace.update(visible=False)
+                return trace
+            
+            jt.map(
+                lambda fig: fig.for_each_trace(_hide_trace),
+                figs,
+                is_leaf=is_type(go.Figure),
+            )
+
+        return figs
+    
+
+#! TODO: Could just put in `Measures`...
+class EigvalsDistributions(AbstractAnalysis[EigvalsPlotPorts]):
+    """Plot the distributions of eigenvalues for each SISU."""
+    
+    Ports = EigvalsPlotPorts
+    inputs: EigvalsPlotPorts = eqx.field(
+        default_factory=EigvalsPlotPorts, converter=EigvalsPlotPorts.converter
+    )
+    
+    n_bins: int = 25
+    x_ranges: Mapping[str, tuple[float, float]] = eqx.field(
+        default_factory=lambda: dict(
+            angle=(0, jnp.pi),
+            mangitude=(0, 1.1),
+        )
+    )
+    
+    def make_figs(
+        self,
+        data: AnalysisInputData,
+        *,
+        eigvals: PyTree[Array],
+        hps_common: TreeNamespace,
+        colors: PyTree,
+        **kwargs
+    ) -> PyTree[go.Figure]:
+        #! TODO: in the original code, this happened prior to `complex_to_polar_abs_angle`
+        #! I guess this was converting the train__pert__std level to an array axis; 
+        #! but be careful about how `COL_NAMES` appears in the def of df below...
+        # jnp.stack(list(eigvals.values()), axis=0)
+        
+        df = create_arr_df(
+            eigvals,
+            col_names=['train__pert__std', 'component'] + COL_NAMES,
+        ).astype({'replicate': 'str'})
+        for i, label in enumerate(['angle', 'magnitude']):
+            fig = go.Figure(
+                layout=dict(
+                    title=f"Distribution of eigenvalue {label} by train pert. std.",
+                    width=500,
+                    height=300,
+                ),
+            )
+            fig.add_traces([
+                go.Histogram(
+                    x=df[df['component'] == i][df['train__pert__std'] == j]['value'],
+                    # name=
+                    xbins=dict(
+                        start=self.x_ranges[label][0], 
+                        end=self.x_ranges[label][-1], 
+                        size=(self.x_ranges[label][-1] - self.x_ranges[label][0])/self.n_bins
+                    ),
+                    name=std,
+                    histnorm='probability',
+                    marker_color=colors["train__pert__std"].dark[std],
+                )
+                for j, std in enumerate(eigvals.keys())
+            ])
+            fig.update_layout(barmode='overlay', legend_title="Train pert. std.", xaxis_range=x_ranges[label])
+            fig.update_traces(opacity=0.66)
 
 
 #! TODO: Refactor out the common parts, e.g. meets criteria, top fps, etc.
@@ -224,58 +405,92 @@ GradArgs = namedtuple("GradArgs", ["sisu", "pos", "h"])
 # State PyTree structure: ['sisu', 'train__pert__std']
 # Array batch shape: (evals, replicates, reach conditions)
 ANALYSES = {
-    "plot-fps_pc": (
-        PlotInPCSpace(
-            inputs=PlotInPCSpace.Ports(
-                pca_results="states_pca",
-                plot_data="steady_state_fp_results",
-            ),
-            spread_label='sisu',
-        )
-        .after_transform(lambda fp_results: fp_results.fps, dependency_names="plot_data")
-    ),
+    # "plot--fps_pc": (
+    #     PlotInPCSpace(
+    #         inputs=PlotInPCSpace.Ports(
+    #             pca_results="states_pca",
+    #             plot_data="steady_state_fp_results",
+    #         ),
+    #         spread_label='sisu',
+    #     )
+    #     .after_transform(lambda fp_results: fp_results.fps, dependency_names="plot_data")
+    # ),
     
     #! Maybe it would make sense to just make a single class, `Grads` with `grad_func`?
     #! Though it wouldn't change the verbosity here unless we made `grad_func` a `Port`
     #! and returned a PyTree containing both the Jacobians and the Hessians
-    # **{
-    #     # "steady_state_jacobians" and "steady_state_hessians"
-    #     f"steady_state_{cls.__name__.lower()}": (
-    #         cls(
-    #             inputs=cls.Ports(
-    #                 funcs=ss_rnn_funcs,  
-    #                 func_args=ExpandTo.map(
-    #                     "funcs",  # signature: (sisu, pos, h)
-    #                     GradArgs(sisu, positions, steady_state_fps),
-    #                     is_leaf=is_module,
-    #                     is_leaf_prefix=GradArgs(is_type(TreeNamespace), is_module, None),
-    #                 ),
-    #             ),
-    #         )
-    #         # over the steady state workspace positions
-    #         .vmap(in_axes={'func_args': GradArgs(None, 0, 0)})
-    #     )
-    #     for cls in (Jacobians, Hessians)
-    # },
+    **{
+        # "steady_state_jacobians" and "steady_state_hessians"
+        f"steady_state_{cls.__name__.lower()}": (
+            cls(
+                inputs=cls.Ports(
+                    funcs=ss_rnn_funcs,  
+                    func_args=ExpandTo.map(
+                        "funcs",  # signature: (sisu, pos, h)
+                        GradArgs(sisu, positions, steady_state_fps),
+                        is_leaf=is_module,
+                        is_leaf_prefix=GradArgs(is_type(TreeNamespace), is_module, None),
+                    ),
+                ),
+            )
+            # over the steady state workspace positions
+            .vmap(in_axes={'func_args': GradArgs(None, 0, 0)})
+        )
+        for cls in (Jacobians,)#!, Hessians)
+    },
     
-    # "steady_state_jac-x_eigs": (
-    #     Eig(
-    #         inputs=Eig.Ports(
-    #             # Process only the square (state) Jacobians
-    #             matrices=Transformed("steady_state_jacobians", lambda jacs: jacs.h),
+    "steady_state_jac-x_eigs": (
+        Eig(
+            inputs=Eig.Ports(
+                # Process only the square (state) Jacobians
+                matrices=Transformed("steady_state_jacobians", lambda jacs: jacs.h),
+            ),
+        )
+        # .vmap(in_axes={'matrices': 0}) #? Should be unnecessary since `eig` works on batches
+    ),
+    "steady_state_jac-u_svd": (
+        SVD(
+            inputs=SVD.Ports(
+                # Note the SVD for `jacs.sisu`, a vector, will just be its Euclidean norm 
+                matrices=Transformed("steady_state_jacobians", lambda jacs: jacs.pos),
+            ),
+        )
+    ),
+    
+    # "plot--steady_state_jac-x_eigvals": (
+    #     EigvalsPlot(
+    #         hide_histograms=False,
+    #         inputs=EigvalsPlot.Ports(
+    #             eigvals=Transformed("steady_state_jac-x_eigs", lambda eigs: eigs.eigvals),
     #         ),
     #     )
-    #     # .vmap(in_axes={'matrices': 0}) #? Should be unnecessary since `eig` works on batches
+    #     .after_level_to_bottom('sisu', dependency_name="eigvals")
     # ),
     
-    # "steady_state_jac-u_eigs": (
-    #     SVD(
-    #         inputs=SVD.Ports(
-    #             # Note the SVD for `jacs.sisu`, a vector, will just be its Euclidean norm 
-    #             matrices=Transformed("steady_state_jacobians", lambda jacs: (jacs.sisu, jacs.pos)),
+    #! This will not work together with "plot--steady_state_jac-x_eigvals" because they have the 
+    #! same `md5_str`; need to make `md5_str` depend on `self.inputs`!
+    #! TODO: Don't use `EigvalsPlot` anyway, since singular values are real-valued and only 
+    #! represent input gains (wrt network state), and *not* dynamics!
+    # "plot--steady_state_jac-u_singvals": (
+    #     EigvalsPlot(
+    #         hide_histograms=False,
+    #         inputs=EigvalsPlot.Ports(
+    #             eigvals=Transformed("steady_state_jac-u_svd", lambda svd: svd.singvals),
     #         ),
     #     )
-    # )
+    #     .after_level_to_bottom('sisu', dependency_name="eigvals")
+    # ),
+    
+    #! TODO: Finish this
+    "plot--steady_state_jac-x_eigvals_dist": (
+        EigvalsDistributions(
+            inputs=EigvalsPlot.Ports(
+                eigvals=Transformed("steady_state_jac-x_eigs", lambda eigs: eigs.eigvals),
+            ),
+        )
+        .after_map(complex_to_polar_abs_angle, dependency_name="eigvals")
+        # .after_subdict_at_level('sisu', keys=SISUS_TO_PLOT_EIGVALS)
+    ),
 }
 
 #! The following should either be discarded or refactored into a function for plotting readout

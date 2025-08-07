@@ -28,7 +28,7 @@ import jax_cookbook.tree as jtree
 
 from rlrmp.config.config import STRINGS, PATHS
 from rlrmp.database import EvaluationRecord, add_evaluation_figure, savefig
-from rlrmp.tree_utils import hash_callable_leaves, ldict_label_only_func, move_ldict_level_above, subdict, tree_level_labels, ldict_level_to_top
+from rlrmp.tree_utils import hash_callable_leaves, ldict_label_only_func, ldict_level_to_bottom, move_ldict_level_above, subdict, tree_level_labels, ldict_level_to_top
 from rlrmp.misc import camel_to_snake, get_dataclass_fields, get_md5_hexdigest, get_name_of_callable, is_json_serializable
 from rlrmp.plot_utils import figs_flatten_with_paths, get_label_str
 from rlrmp.tree_utils import _hash_pytree
@@ -578,7 +578,6 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
     """
     _exclude_fields = (
         'inputs',
-        'conditions', 
         'fig_params', 
         'cache_result',
         '_prep_ops', 
@@ -841,7 +840,10 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
             
             # Validate all leaves are valid dependency types
             for leaf in leaves:
-                if not isinstance(leaf, (type, str)) and not isinstance(leaf, (_DataField, AbstractAnalysis, LiteralInput)):
+                if not (
+                    isinstance(leaf, (type, str)) 
+                    or isinstance(leaf, (_DataField, AbstractAnalysis, LiteralInput))
+                ):
                     valid_types = ', '.join([t.__name__ for t in self._input_leaf_types()])
                     raise ValueError(
                         f"Invalid dependency leaf in '{name}': {type(leaf)}. "
@@ -1268,24 +1270,30 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         """
         # Define the stacking function
         def stack_dependency(dep_data, **kwargs):
+            # jtree.stack stacks subtrees, so we don't need to move `level` to bottom
             return jt.map(
                 lambda d: jtree.stack(list(d.values())),
                 dep_data,
                 is_leaf=LDict.is_of(level),
             )
         
-        modified_analysis = eqx.tree_at(
-            lambda obj: (obj.colorscale_key, obj.colorscale_axis, obj.fig_params),
-            self,
-            (
-                level,
-                0,
-                self.fig_params | dict(legend_title=get_label_str(level)),
-            ),
-            is_leaf=is_none,
-        )
+        #! TODO: Refactor/remove; this is not universal anymore.
+        #! I'm not sure how this would be generalized;
+        #! perhaps subclasses could specify that certain axes (assumed axis=0 in this case)
+        #! are colorscale axes or similar; then when we perform operations such as this,
+        #! we could use `level: str` to modify them respectively.
+        # modified_analysis = eqx.tree_at(
+        #     lambda obj: (obj.colorscale_key, obj.colorscale_axis, obj.fig_params),
+        #     self,
+        #     (
+        #         level,
+        #         0,
+        #         self.fig_params | dict(legend_title=get_label_str(level)),
+        #     ),
+        #     is_leaf=is_none,
+        # )
         
-        return modified_analysis._add_prep_op(
+        return self._add_prep_op(
             name="after_stacking",
             label=f"stack_{_format_level_str(level)}",
             dep_name=dependency_name,
@@ -1315,6 +1323,33 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         return self._add_prep_op(
             name="after_level_to_top",
             label=f"{_format_level_str(label)}_to-top",
+            dep_name=dependency_name,
+            transform_func=transpose_dependency,
+            params=dict(label=label),
+        )
+
+    def after_level_to_bottom(
+        self, 
+        label: str, 
+        is_leaf: Callable[[Any], bool] = LDict.is_of('var'),
+        dependency_name: Optional[str] = None,
+    ) -> Self:
+        """
+        Returns a copy of this analysis that will transpose `LDict` levels of its inputs.
+
+        This is useful when our analysis uses a plotting function that compares across 
+        the outer PyTree level, but for whatever reason this level is not already 
+        the outer level of our results PyTree.
+        """
+        def transpose_dependency(dep_data, **kwargs):
+            return LDict.of('task_variant')({
+                variant_label: ldict_level_to_bottom(label, dep_data[variant_label], is_leaf=is_leaf)
+                for variant_label in dep_data
+            })
+        
+        return self._add_prep_op(
+            name="after_level_to_top",
+            label=f"{_format_level_str(label)}_to-bottom",
             dep_name=dependency_name,
             transform_func=transpose_dependency,
             params=dict(label=label),
@@ -1453,6 +1488,26 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
             label=label,
             is_leaf=is_leaf,
         )
+        
+    #! TODO: Generalize `map_figs_at_level` to map at any PyTree node
+    #! For example, maybe our input is a tuple of LDict and we want to map `make_figs`
+    #! separately, for each element of the tuple.
+    # def map_figs(
+    #     self,
+    #     dependency_name: Optional[str] = None,
+    # ):
+    #     return self._change_fig_op(
+    #         name="map_figs_at_level",
+    #         label=f"map_figs_at-{_format_level_str(level)}",
+    #         dep_name=dependency_name,
+    #         is_leaf=LDict.is_of(level),
+    #         slice_fn=_level_slice_fn,
+    #         items_fn=partial(_level_items_fn, level),
+    #         # Use the new aggregator specific to mapping
+    #         agg_fn=partial(_reconstruct_ldict_aggregator, level),
+    #         fig_params_fn=fig_params_fn, 
+    #         params=dict(level=level),
+    #     )
     
     def map_figs_at_level(
         self, 
@@ -1733,6 +1788,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
             include_internal=False,
         )
 
+    #! TODO: Remove this (probably)
     @cached_property
     def _non_default_field_params(self) -> Dict[str, Any]:
         """
@@ -1780,8 +1836,14 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         which should generally capture when the implementation is identical, and should not 
         result in any 
         """
+        #? TODO: De-duplicate calculations *aside* from ops
         ops_params, _ = self._extract_ops_info()
-        params = {**ops_params, **self._field_params}
+        
+        params = dict(cls_name=self.__class__.__name__) | ops_params | self._field_params
+        
+        #! TODO: add leaves from `self.inputs` and make sure any referenced `AbstractAnalysis` 
+        #! instances are resolved to their own `md5_str`.
+        
         params = hash_callable_leaves(params, ignore=(LDict, TreeNamespace, is_module))
         return get_md5_hexdigest(params)
     
