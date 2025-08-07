@@ -166,6 +166,7 @@ class AlignedEffectorTrajectoriesPorts(AbstractAnalysisPorts):
     aligned_vars: InputOf[Array] = AlignedVars()
 
 
+#! TODO: Fix `AbstractAnalysis.after_stacking`
 class AlignedEffectorTrajectories(AbstractAnalysis[AlignedEffectorTrajectoriesPorts]):
     Ports = AlignedEffectorTrajectoriesPorts
     inputs: AlignedEffectorTrajectoriesPorts = eqx.field(default_factory=Ports, converter=Ports.converter)

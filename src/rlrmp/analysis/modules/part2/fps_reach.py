@@ -218,9 +218,9 @@ ANALYSES = {
         })
 
     ) 
-    # "figs/fps_PC": (),
-    # "figs/hidden_and_fp_trajs_PC": (),
-    # "figs/compare_sisu_trajs_PC": (),
+    # "plot--fps_PC": (),
+    # "plot--hidden_and_fp_trajs_PC": (),
+    # "plot--compare_sisu_trajs_PC": (),
     
     # "tangling": (),
     # "jacs": (),
@@ -233,9 +233,12 @@ ANALYSES = {
 
     # # Plot. Each of these should probably use the same subclass
     # # (i.e. PC traj plotting + color)
-    # "figs/jacs_PC": (),
-    # "figs/hessians_PC": (),
-    # "figs/tangling_PC": (),
+    # "plot--jacs_PC": (),
+    # "plot--hessians_PC": (),
+    # "plot--tangling_PC": (),
+    
+    # # Measures: global tangling, Lyapunov, ...
+    # "measures": ()
 }
 
 

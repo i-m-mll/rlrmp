@@ -395,7 +395,7 @@ def plot_eigvals_df(
 ):
     stable_boundary_kws = dict(
         line=dict(
-            color='black',
+            color='grey',
             width=2,
         ),  
     )
@@ -437,13 +437,13 @@ def plot_eigvals_df(
                 x=coord, 
                 row=0, 
                 name="boundary_line",
-                **stable_boundary_kws,
+                **stable_boundary_kws,  # type: ignore
             )
             fig.add_hline(
                 y=coord, 
                 col=2, 
                 name="boundary_line",
-                **stable_boundary_kws,
+                **stable_boundary_kws,  # type: ignore
             )
     
     fig.add_trace(go.Scatter(

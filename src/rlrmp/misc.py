@@ -23,7 +23,7 @@ import jax
 import jax.numpy as jnp 
 import jax.random as jr 
 import jax.tree as jt
-from jaxtyping import Array, Float, Int
+from jaxtyping import Array, ArrayLike, Float, Int
 import numpy as np
 import pandas as pd
 from rich.logging import RichHandler
@@ -128,7 +128,7 @@ def with_caller_logger(func):
 @with_caller_logger
 def get_name_of_callable(
     func: Callable, 
-    return_lambda_id: bool = False,
+    # return_lambda_id: bool = False,
     logger: logging.Logger = logger,
 ) -> str:
     """
@@ -144,15 +144,16 @@ def get_name_of_callable(
     
     # Handle lambdas
     if func_name == '<lambda>':
-        if return_lambda_id:
-            func_id = f"lambda-{str(id(func))}"
-            logger.warning(
-                f"Generating name for lambda function: returning its id 'lambda-{func_id}'."
-            )
-            return func_id
-        else: 
-            logger.warning("Generating name for lambda function: returning 'lambda'.")
-            return "lambda"
+        # if return_lambda_id:
+        #     func_id = f"lambda-{str(id(func))}"
+        #     logger.warning(
+        #         f"Generating name for lambda function: returning its id 'lambda-{func_id}'."
+        #     )
+        #     return func_id
+        # else: 
+        lambda_loc = location_inspect(func)
+        logger.warning(f"Assigned name 'lambda' to lambda function at {lambda_loc}.")
+        return "lambda"
     
     # Handle partial functions
     elif isinstance(func, functools.partial):
@@ -647,3 +648,31 @@ class GracefulInterruptHandler:
             finally:
                 self.in_sensitive_operation = False
         return wrapper
+    
+    
+def location_inspect(fn):
+    """
+    Returns a string "<module> (<filename>:<start_line>)",
+    using inspect for best‐effort source lookup.
+    Falls back to code‐object attrs if necessary.
+    """
+    mod = fn.__module__
+    try:
+        # inspect.getsourcefile may return None in some REPLs,
+        # so fall back to getfile
+        srcfile = inspect.getsourcefile(fn) or inspect.getfile(fn)
+        src_lines, start = inspect.getsourcelines(fn)
+        return f"{mod} ({srcfile}:{start})"
+    except (OSError, TypeError):
+        # fallback to code‐object
+        return f"{mod} ({fn.__code__.co_filename}:{fn.__code__.co_firstlineno})"
+    
+    
+    
+def find_indices(arr, values: Array | Sequence[ArrayLike]):
+    """Find the indices of `values` in `arr`."""
+    def find_single_value(value):
+        return jnp.where(arr == value, size=1)
+    
+    # Vectorize this function across all values
+    return jax.vmap(find_single_value)(jnp.array(values))

@@ -146,50 +146,6 @@ def plot_hidden_and_fp_trajectories_3D(
 # ########################################################################## #
 
 
-class ReachFPsPorts(AbstractAnalysisPorts):
-    """Input ports for ReachFPs analysis."""
-    states: InputOf[Any] = Data.states
-    models: InputOf[Any] = Data.models
-
-
-class ReachFPs(AbstractAnalysis[ReachFPsPorts]):
-    """Find fixed points during simple reaching tasks."""
-    Ports = ReachFPsPorts
-    inputs: ReachFPsPorts = eqx.field(default_factory=ReachFPsPorts, converter=ReachFPsPorts.converter)
-    variant: Optional[str] = "full"
-    cache_result: bool = True
-    
-    loss_tol: float = 1e-6
-    stride_trials: int = 1
-    key: PRNGKeyArray = eqx.field(default_factory=lambda: jr.PRNGKey(0))
-
-    def compute(
-        self,
-        data: AnalysisInputData,
-        **kwargs,
-    ):
-        def get_model_fps(model, task):
-            return get_simple_reach_first_fps(
-                model, task, self.loss_tol, stride_trials=self.stride_trials, key=self.key
-            )
-
-        all_states, all_fps = jtree.unzip(jt.map(
-            lambda model: LDict.of("sisu")({
-                sisu: get_model_fps(model, task)
-                for sisu, task in data.tasks.items()
-            }),
-            data.models,
-            is_leaf=is_module,
-        ))
-
-        # Squeeze out the single FP dimension
-        all_fps = jt.map(jnp.squeeze, all_fps)
-        
-        return TreeNamespace(
-            states=all_states,
-            fps=all_fps,
-        )
-
 
 class ReachFPsInPCSpacePorts(AbstractAnalysisPorts):
     """Input ports for ReachFPsInPCSpace analysis."""
