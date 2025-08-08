@@ -105,20 +105,8 @@ def ldict_label_only_func(x: Any) -> str:
         return x.__name__   
 
 
-    
-def tree_level_labels(
-    tree: LDict, 
-    sep: Optional[str] = None,
-    label_func: Callable[..., str] = ldict_label_only_func,
-    is_leaf: Optional[Callable[[Any], bool]] = None,
-) -> list[str]:
-    """
-    Given a PyTree of LDict nodes, return a list of labels, one for each level of the tree.
-    
-    This function assumes a homogeneous tree structure where all nodes at the same level
-    have the same label. It traverses the tree from root to first leaf, collecting LDict
-    labels along the way.
-    """
+def tree_level_types(tree: PyTree, is_leaf=falsef) -> list[Callable]:
+    """Given a PyTree, return a PyTree of the types of each node along the path to the first leaf."""
     # Get the path to the first leaf
     leaves_with_typed_paths = jtree.leaves_with_annotated_path(
         tree, is_leaf=is_leaf, annotation_func=_annotation_func,
@@ -127,13 +115,52 @@ def tree_level_labels(
         return []
     first_path, _ = leaves_with_typed_paths[0]
     
+    node_types = [node_type for node_type, _ in first_path]
+    
+    return node_types
+
+    
+def tree_level_labels(
+    tree: LDict, 
+    sep: Optional[str] = None,
+    label_func: Callable[..., str] = ldict_label_only_func,
+    is_leaf: Optional[Callable[[Any], bool]] = None,
+) -> list[str]:
+    """
+    Given a PyTree, return a list of labels, one for each level of the tree.
+    
+    This function assumes a consistent tree structure where all nodes at the same level
+    have the same type/label. Traverses the tree from root to first leaf, collecting labels
+    along the way.
+    """
+    node_types = tree_level_types(tree, is_leaf=is_leaf)
+    
     # Collect the labels from all LDict nodes in the path
-    labels = [label_func(node_type) for node_type, _ in first_path]
+    labels = [label_func(node_type) for node_type in node_types]
         
     if sep is not None:
         labels = [label.replace(STRINGS.hps_level_label_sep, sep) for label in labels]
         
     return labels
+
+
+# def tree_level_types(tree: PyTree, is_leaf=falsef) -> list[type]:
+#     """Given a PyTree, return a PyTree of the types of each node along the path to the first leaf."""
+#     treedef = jt.structure(tree)
+    
+#     subtreedef = treedef
+#     types = []
+    
+#     while any(subtreedef.children()):
+#         node_data = subtreedef.node_data()
+#         if node_data is not None:
+#             if is_leaf(node_data[0]):
+#                 break
+#             types.append(node_data[0])
+#         subtreedef = subtreedef.children()[0]
+    
+#     return types
+
 
 
 def _annotation_func(node):
@@ -276,24 +303,6 @@ def ldict_level_keys(tree: PyTree, label: str) -> KeysView:
 #         reordered = tree 
 #         # TODO: Move the levels of `tree` to the front of `reordered` 
 #     # TODO: Map over `tree`
-
-
-def tree_level_types(tree: PyTree, is_leaf=falsef) -> list[type]:
-    """Given a PyTree, return a PyTree of the types of each node along the path to the first leaf."""
-    treedef = jt.structure(tree)
-    
-    subtreedef = treedef
-    types = []
-    
-    while any(subtreedef.children()):
-        node_data = subtreedef.node_data()
-        if node_data is not None:
-            if is_leaf(node_data[0]):
-                break
-            types.append(node_data[0])
-        subtreedef = subtreedef.children()[0]
-    
-    return types
 
 
 def check_nan_in_pytree(tree: PyTree) -> tuple[PyTree, PyTree]:

@@ -7,9 +7,7 @@ PROMPT.txt
 .serena
 .specstory
 .cursor
-*claude.md
-*o3.md 
-*gem25p.md
+SUMMARY_*.md
 
 # Mac
 .DS_Store

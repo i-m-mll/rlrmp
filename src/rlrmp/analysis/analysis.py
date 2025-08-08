@@ -44,9 +44,29 @@ else:
 logger = logging.getLogger(__name__)
 
 
-# ───────────────────────────────────────────────────────────────────────────────
-#  Typed Ports Infrastructure  
-# ───────────────────────────────────────────────────────────────────────────────
+PARAM_SEQ_LEN_TRUNCATE = 9
+RESULTS_CACHE_SUBDIR = "results"
+
+
+@dataclass(frozen=True)
+class AnalysisRef[T]:
+    """A thin, typed pointer to something that will yield a PyTree[T]."""
+    target: Union[str, "AbstractAnalysis"]  # name or instance
+
+
+# The user asked for AbstractAnalysis without a type parameter in InputOf.
+# We leave it raw here – static tools won't check graph consistency, only help
+# with autocomplete / annotations.
+type InputOf[T] = Union[
+    AnalysisRef[PyTree[T]],
+    str,
+    AbstractAnalysis,    # intentionally un-parameterised
+    _DataField,
+    Transformed,
+    ExpandTo,
+    LiteralInput,
+]
+
 
 class AbstractAnalysisPorts(Module, Mapping):
     """Base class for typed analysis input ports."""
@@ -76,26 +96,15 @@ class NoPorts(AbstractAnalysisPorts):
     pass
 
 
+T = TypeVar("T")
+
+
+class SinglePort(AbstractAnalysisPorts, Generic[T]):
+    """A Ports dataclass with a single port named 'input'."""
+    input: InputOf[T]
+
+
 PortsType = TypeVar("PortsType", bound=AbstractAnalysisPorts)
-
-
-@dataclass(frozen=True)
-class AnalysisRef[T]:
-    """A thin, typed pointer to something that will yield a PyTree[T]."""
-    target: Union[str, "AbstractAnalysis"]  # name or instance
-
-
-# The user asked for AbstractAnalysis without a type parameter in InputOf.
-# We leave it raw here – static tools won't check graph consistency, only help
-# with autocomplete / annotations.
-type InputOf[T] = Union[
-    AnalysisRef[PyTree[T]],
-    str,
-    AbstractAnalysis,    # intentionally un-parameterised
-    _DataField,
-    Transformed,
-    ExpandTo,
-]
 
 
 # Define a string representer for objects PyYAML doesn't know how to handle
@@ -110,9 +119,6 @@ class AnalysisInputData(Module):
     states: PyTree[Module]
     hps: PyTree[TreeNamespace]  
     extras: PyTree[TreeNamespace] 
-
-
-RESULTS_CACHE_SUBDIR = "results"
 
 
 @dataclass(frozen=True, slots=True)
@@ -372,9 +378,6 @@ class _FinalOp(NamedTuple):
 #! TODO: Make Generic, if that makes sense -- so we can indicate the type to the user 
 class _RequiredType: ...
 RequiredInput = _RequiredType()
-    
-
-PARAM_SEQ_LEN_TRUNCATE = 9
 
 
 def _process_param(param: Any) -> Any:
