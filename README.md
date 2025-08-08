@@ -1,12 +1,27 @@
 # RNNs-learn-robust-policies
 
-## Installation
+## Quickstart
+- Create a virtual environment and sync deps: `uv sync`.
+- Set a persistent config dir (optional but recommended): `export RLRMP_CONFIG_DIR=~/rlrmp-config` and create minimal overrides (see Configuration Tips below).
+- Train a small experiment: `uv run python scripts/train.py part1`.
+- Run an analysis and dump figures: `uv run python scripts/run_analysis.py part1.plant_perts
+  --fig-dump-path results/figs --fig-dump-formats html,svg`.
 
-`uv sync`
+- Set `RLRMP_CONFIG_DIR` to point to your local overrides directory for experiment/analysis defaults.
+- Default paths base is `paths.yml: base: /tmp/rlrmp`, which is ephemeral. To persist DB/models/figures, create `~/rlrmp-config/paths.yml` like:
 
-And then, at least until I make it into a PyPI package:
+  ```yaml
+  # ~/rlrmp-config/paths.yml
+  base: ~/rlrmp-data
+  db: db
+  models: models
+  figures: figures
+  figures_dump: figures_dump
+  cache: cache
+  logs: logs
+  ```
 
-`uv pip install -e ../../05\ Utils/jax-cookbook`
+- Place training/analysis YAML overrides under `$RLRMP_CONFIG_DIR/training` and `$RLRMP_CONFIG_DIR/analysis` mirroring the package layout. For example: `$RLRMP_CONFIG_DIR/analysis/part2/plant_perts.yml`.
 
 ### Troubleshooting
 

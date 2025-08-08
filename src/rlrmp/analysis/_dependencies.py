@@ -78,11 +78,11 @@ def param_hash(params: Dict[str, Any]) -> str:
     return get_md5_hexdigest(param_str)
 
 
-def get_params_for_dep_class(analysis, dep_class):
-    """Get parameters for a dependency based on its class."""
-    # Check if the class exists in dep_params
-    dep_params = getattr(analysis, 'dependency_params', {})
-    return dep_params.get(dep_class, {})
+# def get_params_for_dep_class(analysis, dep_class):
+#     """Get parameters for a dependency based on its class."""
+#     # Check if the class exists in dep_params
+#     dep_params = getattr(analysis, 'dependency_params', {})
+#     return dep_params.get(dep_class, {})
 
 
 def resolve_dependency_node(analysis, dep_name, dep_source, dependency_lookup=None):
@@ -132,13 +132,13 @@ def resolve_dependency_node(analysis, dep_name, dep_source, dependency_lookup=No
             return node_id, class_params, dep_instance
         else:
             raise ValueError(f"String dependency '{dep_source}' could not be resolved. Provide dependency_lookup with all available keys.")
-    if isinstance(dep_source, type):
-        # Class type - create instance and use its hash
-        field_params = get_params_for_dep_class(analysis, dep_source)
-        params = {**field_params, **class_params}
-        analysis_instance = dep_source(**params)
-        node_id = analysis_instance.md5_str
-        return node_id, params, analysis_instance
+    # if isinstance(dep_source, type):
+    #     # Class type - create instance and use its hash
+    #     field_params = get_params_for_dep_class(analysis, dep_source)
+    #     params = {**field_params, **class_params}
+    #     analysis_instance = dep_source(**params)
+    #     node_id = analysis_instance.md5_str
+    #     return node_id, params, analysis_instance
     else:
         # Already an analysis instance - use its hash directly
         if dependency_lookup is not None:

@@ -40,6 +40,7 @@ from rlrmp.analysis.eig import SVD, Eig, complex_to_polar_abs_angle
 from rlrmp.analysis.fp_finder import FPFilteredResults, take_top_fps
 from rlrmp.analysis.fps import FixedPoints, PlotInPCSpace
 from rlrmp.analysis.grad import Jacobians, Hessians
+from rlrmp.analysis.measures import Measures
 from rlrmp.analysis.pca import StatesPCA
 from rlrmp.misc import create_arr_df, get_constant_input_fn, take_non_nan
 from rlrmp.analysis.state_utils import get_best_model_replicate, vmap_eval_ensemble
@@ -217,65 +218,65 @@ class EigvalsPlot(AbstractAnalysis[EigvalsPlotPorts]):
     
 
 #! TODO: Could just put in `Measures`...
-class EigvalsDistributions(AbstractAnalysis[EigvalsPlotPorts]):
-    """Plot the distributions of eigenvalues for each SISU."""
+# class EigvalsDistributions(AbstractAnalysis[EigvalsPlotPorts]):
+#     """Plot the distributions of eigenvalues for each SISU."""
     
-    Ports = EigvalsPlotPorts
-    inputs: EigvalsPlotPorts = eqx.field(
-        default_factory=EigvalsPlotPorts, converter=EigvalsPlotPorts.converter
-    )
+#     Ports = EigvalsPlotPorts
+#     inputs: EigvalsPlotPorts = eqx.field(
+#         default_factory=EigvalsPlotPorts, converter=EigvalsPlotPorts.converter
+#     )
     
-    n_bins: int = 25
-    x_ranges: Mapping[str, tuple[float, float]] = eqx.field(
-        default_factory=lambda: dict(
-            angle=(0, jnp.pi),
-            mangitude=(0, 1.1),
-        )
-    )
+#     n_bins: int = 25
+#     x_ranges: Mapping[str, tuple[float, float]] = eqx.field(
+#         default_factory=lambda: dict(
+#             angle=(0, jnp.pi),
+#             mangitude=(0, 1.1),
+#         )
+#     )
     
-    def make_figs(
-        self,
-        data: AnalysisInputData,
-        *,
-        eigvals: PyTree[Array],
-        hps_common: TreeNamespace,
-        colors: PyTree,
-        **kwargs
-    ) -> PyTree[go.Figure]:
-        #! TODO: in the original code, this happened prior to `complex_to_polar_abs_angle`
-        #! I guess this was converting the train__pert__std level to an array axis; 
-        #! but be careful about how `COL_NAMES` appears in the def of df below...
-        # jnp.stack(list(eigvals.values()), axis=0)
+#     def make_figs(
+#         self,
+#         data: AnalysisInputData,
+#         *,
+#         eigvals: PyTree[Array],
+#         hps_common: TreeNamespace,
+#         colors: PyTree,
+#         **kwargs
+#     ) -> PyTree[go.Figure]:
+#         #! TODO: in the original code, this happened prior to `complex_to_polar_abs_angle`
+#         #! I guess this was converting the train__pert__std level to an array axis; 
+#         #! but be careful about how `COL_NAMES` appears in the def of df below...
+#         # jnp.stack(list(eigvals.values()), axis=0)
         
-        df = create_arr_df(
-            eigvals,
-            col_names=['train__pert__std', 'component'] + COL_NAMES,
-        ).astype({'replicate': 'str'})
-        for i, label in enumerate(['angle', 'magnitude']):
-            fig = go.Figure(
-                layout=dict(
-                    title=f"Distribution of eigenvalue {label} by train pert. std.",
-                    width=500,
-                    height=300,
-                ),
-            )
-            fig.add_traces([
-                go.Histogram(
-                    x=df[df['component'] == i][df['train__pert__std'] == j]['value'],
-                    # name=
-                    xbins=dict(
-                        start=self.x_ranges[label][0], 
-                        end=self.x_ranges[label][-1], 
-                        size=(self.x_ranges[label][-1] - self.x_ranges[label][0])/self.n_bins
-                    ),
-                    name=std,
-                    histnorm='probability',
-                    marker_color=colors["train__pert__std"].dark[std],
-                )
-                for j, std in enumerate(eigvals.keys())
-            ])
-            fig.update_layout(barmode='overlay', legend_title="Train pert. std.", xaxis_range=x_ranges[label])
-            fig.update_traces(opacity=0.66)
+#         df = create_arr_df(
+#             eigvals,
+#             col_names=['train__pert__std', 'component'] + COL_NAMES,
+#         ).astype({'replicate': 'str'})
+#         for i, label in enumerate(['angle', 'magnitude']):
+#             fig = go.Figure(
+#                 layout=dict(
+#                     title=f"Distribution of eigenvalue {label} by train pert. std.",
+#                     width=500,
+#                     height=300,
+#                 ),
+#             )
+#             fig.add_traces([
+#                 go.Histogram(
+#                     x=df[df['component'] == i][df['train__pert__std'] == j]['value'],
+#                     # name=
+#                     xbins=dict(
+#                         start=self.x_ranges[label][0], 
+#                         end=self.x_ranges[label][-1], 
+#                         size=(self.x_ranges[label][-1] - self.x_ranges[label][0])/self.n_bins
+#                     ),
+#                     name=std,
+#                     histnorm='probability',
+#                     marker_color=colors["train__pert__std"].dark[std],
+#                 )
+#                 for j, std in enumerate(eigvals.keys())
+#             ])
+#             fig.update_layout(barmode='overlay', legend_title="Train pert. std.", xaxis_range=x_ranges[label])
+#             fig.update_traces(opacity=0.66)
 
 
 #! TODO: Refactor out the common parts, e.g. meets criteria, top fps, etc.
@@ -482,15 +483,20 @@ ANALYSES = {
     # ),
     
     #! TODO: Finish this
-    "plot--steady_state_jac-x_eigvals_dist": (
-        EigvalsDistributions(
-            inputs=EigvalsPlot.Ports(
-                eigvals=Transformed("steady_state_jac-x_eigs", lambda eigs: eigs.eigvals),
-            ),
+    # "plot--steady_state_jac-x_eigvals_dist": (
+    #     EigvalsDistributions(
+    #         inputs=EigvalsPlot.Ports(
+    #             eigvals=Transformed("steady_state_jac-x_eigs", lambda eigs: eigs.eigvals),
+    #         ),
+    #     )
+    #     .after_map(complex_to_polar_abs_angle, dependency_name="eigvals")
+    #     # .after_subdict_at_level('sisu', keys=SISUS_TO_PLOT_EIGVALS)
+    # ),
+    "plot--measures": (
+        Measures(
+            
         )
-        .after_map(complex_to_polar_abs_angle, dependency_name="eigvals")
-        # .after_subdict_at_level('sisu', keys=SISUS_TO_PLOT_EIGVALS)
-    ),
+    )
 }
 
 #! The following should either be discarded or refactored into a function for plotting readout
