@@ -1,10 +1,9 @@
 from collections.abc import Callable, Iterable, Sequence
-from functools import cached_property, partial
+from functools import partial
 from types import MappingProxyType
 from typing import ClassVar, Optional, Dict, Any, TypeAlias
 
 import equinox as eqx
-from equinox import Module
 from equinox import filter_vmap as vmap
 import jax.numpy as jnp
 import jax.tree as jt
@@ -14,10 +13,16 @@ from jax_cookbook import is_type, compose
 import numpy as np
 
 from rlrmp.plot_utils import get_label_str
-from rlrmp.types import Responses, TreeNamespace, LDictConstructor
-from rlrmp.analysis.aligned import AlignedVars
-from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, InputOf, SinglePort
-from rlrmp.constants import EVAL_REACH_LENGTH, REPLICATE_CRITERION
+from rlrmp.types import AnalysisInputData, TreeNamespace, LDictConstructor
+from rlrmp.analysis.aligned import AlignedVars, Direction, Measure, ResponseVar
+from rlrmp.analysis.analysis import (
+    AbstractAnalysis, 
+    AbstractAnalysisPorts, 
+    DefaultFigParamNamespace, 
+    FigParamNamespace, 
+    InputOf, 
+    SinglePort,
+)
 from rlrmp.misc import lohi
 from rlrmp.plot import get_measure_replicate_comparisons, get_violins
 from rlrmp.tree_utils import (
@@ -29,312 +34,15 @@ from rlrmp.tree_utils import (
     tree_level_types, 
     tree_subset_ldict_level,
 )
-from rlrmp.types import ResponseVar, Direction, DIRECTION_IDXS, LDict
-
-
-frob = lambda x: jnp.linalg.norm(x, axis=(-1, -2), ord='fro')
-
-
-class Measure(Module):
-    """Unified measure class for computing response metrics.
-    
-    Attributes:
-        response_var: Which response variable to measure (pos, vel, force)
-        agg_func: Function to aggregate over time axis (e.g. jnp.max, jnp.mean)
-        direction: Optional direction to extract vector component
-        timesteps: Optional slice to select specific timesteps
-        transform_func: Optional function to transform values (e.g. jnp.linalg.norm)
-        normalizer: Optional value to divide result by
-    """
-    response_var: ResponseVar
-    agg_func: Optional[Callable] = None
-    direction: Optional[Direction] = None
-    timesteps: Optional[slice] = None
-    transform_func: Optional[Callable] = None
-    normalizer: Optional[float] = None
-    
-    @cached_property
-    def _methods(self) -> dict[str, Callable]:
-        return {
-            'timesteps': self._select_timesteps,
-            'direction': self._select_direction,
-            'transform_func': self._apply_transform,
-            'agg_func': self._aggregate,
-            'normalizer': self._normalize,
-        }
-        
-    @cached_property
-    def _call_methods(self) -> list[Callable]:
-        return [self._get_response_var] + [
-            value for key, value in self._methods.items() 
-            if getattr(self, key) is not None
-        ]
-
-    def _get_response_var(self, responses: Responses) -> Float[Array, "..."]:
-        """Extract the specified response variable."""
-        return getattr(responses, self.response_var.value)
-
-    def _select_timesteps(self, values: Float[Array, "..."]) -> Float[Array, "..."]:
-        """Select specified timesteps."""
-        return values[..., self.timesteps, :]
-
-    def _select_direction(self, values: Float[Array, "..."]) -> Float[Array, "..."]:
-        """Select specified direction component."""
-        assert self.direction is not None
-        return values[..., DIRECTION_IDXS[self.direction]]
-
-    def _aggregate(self, values: Float[Array, "..."]) -> Float[Array, "..."]:
-        """Apply aggregation function over time axis."""
-        assert self.agg_func is not None
-        return self.agg_func(values, axis=-1)
-
-    def _normalize(self, values: Float[Array, "..."]) -> Float[Array, "..."]:
-        """Apply normalization."""
-        return values / self.normalizer
-    
-    def _apply_transform(self, values: Float[Array, "..."]) -> Float[Array, "..."]:
-        """Apply custom transformation function."""
-        assert self.transform_func is not None
-        return self.transform_func(values)
-
-    def __call__(self, responses: Responses) -> Float[Array, "..."]:
-        """Apply measure to response state.
-        
-        Args:
-            responses: Response state containing trajectories
-            
-        Returns:
-            Computed measure values
-        """
-        return compose(*self._call_methods)(responses)
+from rlrmp.types import LDict
 
 
 # Common transformations
-vector_magnitude = partial(jnp.linalg.norm, axis=-1)
 
-
-def signed_max(x, axis=None, keepdims=False):
-    """Return the value with the largest magnitude, positive or negative.
-    """
-    abs_x = jnp.abs(x)
-    max_idx = jnp.argmax(abs_x, axis=axis)
-    if axis is None:
-        return x.flatten()[max_idx]
-    else:
-        return jnp.take_along_axis(x, jnp.expand_dims(max_idx, axis=axis), axis=axis)
-
-
-# Force measures
-max_net_force = Measure(
-    response_var=ResponseVar.FORCE,
-    transform_func=vector_magnitude,
-    agg_func=jnp.max,
-)
-sum_net_force = Measure(
-    response_var=ResponseVar.FORCE,
-    transform_func=vector_magnitude,
-    agg_func=jnp.sum,
-)
-max_parallel_force = Measure(
-    response_var=ResponseVar.FORCE,
-    direction=Direction.PARALLEL,
-    agg_func=jnp.max,
-)
-sum_parallel_force = Measure(
-    response_var=ResponseVar.FORCE,
-    direction=Direction.PARALLEL,
-    transform_func=jnp.abs,
-    agg_func=jnp.sum,
-)
-max_orthogonal_force = Measure(
-    response_var=ResponseVar.FORCE,
-    direction=Direction.ORTHOGONAL,
-    agg_func=jnp.max,
-)
-sum_orthogonal_force_abs = Measure(
-    response_var=ResponseVar.FORCE,
-    direction=Direction.ORTHOGONAL,
-    transform_func=jnp.abs,
-    agg_func=jnp.sum,
-)
-
-
-# Velocity measures
-max_parallel_vel = Measure(
-    response_var=ResponseVar.VELOCITY,
-    direction=Direction.PARALLEL,
-    agg_func=jnp.max,
-)
-max_orthogonal_vel = Measure(
-    response_var=ResponseVar.VELOCITY,
-    direction=Direction.ORTHOGONAL,
-    agg_func=jnp.max,
-)
-max_orthogonal_vel_signed = Measure(
-    response_var=ResponseVar.VELOCITY,
-    direction=Direction.ORTHOGONAL,
-    agg_func=signed_max,
-)
-
-
-# Position measures
-max_orthogonal_distance = Measure(
-    response_var=ResponseVar.POSITION,
-    direction=Direction.ORTHOGONAL,
-    agg_func=jnp.max,
-    normalizer=EVAL_REACH_LENGTH / 100,
-)
-largest_orthogonal_distance = Measure(
-    response_var=ResponseVar.POSITION,
-    direction=Direction.ORTHOGONAL,
-    agg_func=signed_max,
-    normalizer=EVAL_REACH_LENGTH / 100,
-)
-sum_orthogonal_distance = Measure(
-    response_var=ResponseVar.POSITION,
-    direction=Direction.ORTHOGONAL,
-    agg_func=jnp.sum,
-)
-sum_orthogonal_distance_abs = Measure(
-    response_var=ResponseVar.POSITION,
-    direction=Direction.ORTHOGONAL,
-    transform_func=jnp.abs,
-    agg_func=jnp.sum,
-)
-max_deviation = Measure(
-    response_var=ResponseVar.POSITION,
-    transform_func=vector_magnitude,
-    agg_func=jnp.max,
-)
-sum_deviation = Measure(
-    response_var=ResponseVar.POSITION,
-    transform_func=vector_magnitude,
-    agg_func=jnp.sum,
-)
-
-
-ENDPOINT_ERROR_STEPS = 10
-
-
-def make_end_velocity_error(last_n_steps: int = ENDPOINT_ERROR_STEPS) -> Measure:
-    return Measure(
-        response_var=ResponseVar.VELOCITY,
-        transform_func=vector_magnitude,
-        agg_func=jnp.mean,
-        timesteps=slice(-last_n_steps, None),
-    )
-
-
-def make_end_position_error(
-    reach_length: float = EVAL_REACH_LENGTH, 
-    last_n_steps: int = ENDPOINT_ERROR_STEPS,
-) -> Measure:
-    """Create measure for endpoint position error."""
-    goal_pos = jnp.array([reach_length, 0.])
-    return Measure(
-        response_var=ResponseVar.POSITION,
-        transform_func=lambda x: jnp.linalg.norm(x - goal_pos, axis=-1),
-        agg_func=jnp.mean,
-        timesteps=slice(-last_n_steps, None),
-        normalizer=reach_length / 100,
-    )
     
     
-def reverse_measure(measure: Measure) -> Measure:
-    """Create a new measure that inverts the sign of the states before computing.
-    
-    For example, use this to turn a measure of the maximum forward velocity into a 
-    measure of the maximum reverse velocity.
-    """
-    if measure.transform_func is not None:
-        transform_func = compose(measure.transform_func, jnp.negative)
-    else:
-        transform_func = jnp.negative
-    
-    return eqx.tree_at(
-        lambda measure: measure.transform_func,
-        measure,
-        transform_func,
-        is_leaf=lambda x: x is None,
-    )
-    
+frob = lambda x: jnp.linalg.norm(x, axis=(-1, -2), ord='fro')
 
-def set_timesteps(measure: Measure, timesteps) -> Measure:
-    return eqx.tree_at(
-        lambda measure: measure.timesteps,
-        measure,
-        timesteps,
-        is_leaf=lambda x: x is None,
-    )
-
-
-ALL_MEASURES = LDict.of("measure")(dict(
-    max_net_force=max_net_force,
-    sum_net_force=sum_net_force,
-    max_parallel_force_forward=max_parallel_force,
-    max_parallel_force_reverse=reverse_measure(max_parallel_force),
-    sum_parallel_force=sum_parallel_force,
-    max_orthogonal_force_left=max_orthogonal_force,
-    max_orthogonal_force_right=reverse_measure(max_orthogonal_force),
-    sum_orthogonal_force_abs=sum_orthogonal_force_abs,
-    max_parallel_vel_forward=max_parallel_vel,
-    max_parallel_vel_reverse=reverse_measure(max_parallel_vel),
-    max_orthogonal_vel_left=max_orthogonal_vel,
-    max_orthogonal_vel_right=reverse_measure(max_orthogonal_vel),
-    max_orthogonal_vel_signed=max_orthogonal_vel_signed,
-    max_orthogonal_distance_left=max_orthogonal_distance,
-    max_orthogonal_distance_right=reverse_measure(max_orthogonal_distance),
-    largest_orthogonal_distance=largest_orthogonal_distance,
-    sum_orthogonal_distance=sum_orthogonal_distance,
-    sum_orthogonal_distance_abs=sum_orthogonal_distance_abs,
-    max_deviation=max_deviation,
-    sum_deviation=sum_deviation,
-    end_velocity_error=make_end_velocity_error(),
-    end_position_error=make_end_position_error(),
-))
-
-
-MEASURE_LABELS = LDict.of("measure")(dict(
-    max_net_force="Max net control force",
-    sum_net_force="Sum net control force",
-    max_parallel_force_forward="Max forward force",
-    max_parallel_force_reverse="Max reverse force",
-    sum_parallel_force="Sum of absolute parallel forces",
-    max_orthogonal_force_left="Max lateral force<br>(left)",
-    max_orthogonal_force_right="Max lateral force<br>(right)",
-    sum_orthogonal_force_abs="Sum of absolute lateral forces",
-    max_parallel_vel_forward="Max forward velocity",
-    max_parallel_vel_reverse="Max reverse velocity",
-    max_orthogonal_vel_left="Max lateral velocity<br>(left)",
-    max_orthogonal_vel_right="Max lateral velocity<br>(right)",
-    max_orthogonal_vel_signed="Largest lateral velocity",
-    max_orthogonal_distance_left="Max lateral distance<br>(left, % reach length)",
-    max_orthogonal_distance_right="Max lateral distance<br>(right, % reach length)",
-    largest_orthogonal_distance="Largest lateral distance<br>(% reach length)",
-    sum_orthogonal_distance="Sum of signed lateral distances",
-    sum_orthogonal_distance_abs="Sum of absolute lateral distances",
-    max_deviation="Max deviation",  # From zero/origin! i.e. stabilization task
-    sum_deviation="Sum of deviations",
-    end_velocity_error=f"Mean velocity error<br>(last {ENDPOINT_ERROR_STEPS} steps)",
-    end_position_error=f"Mean position error<br>(last {ENDPOINT_ERROR_STEPS} steps)",
-))
-
-
-ALL_MEASURE_KEYS = tuple(ALL_MEASURES.keys())
-
-
-def compute_all_measures(measures: PyTree[Measure], all_responses: PyTree[Responses]):
-    """Evaluates a tree of measures over a tree of responses."""
-    return jt.map(
-        lambda func: jt.map(
-            lambda responses: func(responses),
-            all_responses,
-            is_leaf=is_type(Responses),
-        ),
-        measures,
-        is_leaf=is_type(Measure),
-    )
-    
     
 def output_corr(
     activities: Float[Array, "evals replicates conditions time hidden"], 
@@ -358,87 +66,7 @@ def output_corr(
     return jnp.moveaxis(corrs, 0, 1)
 
 
-class MeasuresPorts(AbstractAnalysisPorts):
-    """Input ports for Measures analysis."""
-    aligned_vars: InputOf[Array] = AlignedVars()
-
-
-class Measures(AbstractAnalysis[MeasuresPorts]):
-    Ports = MeasuresPorts
-    inputs: MeasuresPorts = eqx.field(default_factory=MeasuresPorts, converter=MeasuresPorts.converter)
-    variant: Optional[str] = "full"
-    fig_params: FigParamNamespace = DefaultFigParamNamespace(
-        # arr_axis_labels=["Evaluation", "Replicate", "Condition"],  #!
-    )
-    
-    measure_keys: Sequence[str] = eqx.field(
-        default=ALL_MEASURE_KEYS,
-        metadata=dict(internal=True),  # Exclude this field from database columns / dump filenames
-    )
-
-    def compute(
-        self,
-        data: AnalysisInputData,
-        *,
-        aligned_vars,
-        **kwargs,
-    ):
-        #! Necessary in case the user has used (say) `after_unstacking`, 
-        #! which displaces the "var" level from the bottom of the tree. 
-        #! TODO: Modify `after_unstacking` to move the resulting level above a level specified by the user.
-        aligned_data = ldict_level_to_bottom('var', aligned_vars.get(self.variant, aligned_vars))
-
-        #! Necessary because I have not yet changed `Measure` to use `LDict.of('var')`.
-        aligned_data = jt.map(
-            lambda x: Responses(x['pos'], x['vel'], x['command'], x['force']),
-            aligned_data,
-            is_leaf=LDict.is_of('var'),
-        )
-
-        all_measures: LDict[str, Measure] = subdict(ALL_MEASURES, self.measure_keys)  # type: ignore
-        all_measure_values = compute_all_measures(all_measures, aligned_data)
-        return all_measure_values
-    
-    def make_figs(self, data: AnalysisInputData, *, result, colors, **kwargs):
-        # Move all but the innermost two LDict levels outside of the `measure` level,
-        # so we will create a batch of figures over them. 
-        level_labels = tree_level_labels(result)
-        outer_label, inner_label = level_labels[-2:]
-        result_ = ldict_level_to_bottom('measure', result, is_leaf=LDict.is_of(outer_label))
-
-        fig_params = dict(
-            legend_title=get_label_str(outer_label),
-            xaxis_title=get_label_str(inner_label),
-        ) | self.fig_params
-
-        figs = jt.map(
-            lambda measure_values: self._get_violins_per_measure(
-                measure_values,
-                colors=colors[outer_label].dark,  
-                **fig_params,
-            ),
-            result_,
-            is_leaf=LDict.is_of("measure"),
-        )
-        return figs
-    
-    def _get_violins_per_measure(self, measure_values, **kwargs):
-        #! TODO: Deal with multiple figures per measure, as in 1-2 
-        return LDict.of("measure")({
-            key: get_violins(
-                values,
-                yaxis_title=MEASURE_LABELS[key],
-                **kwargs,
-            )
-            for key, values in measure_values.items()
-        })
-
-    def _params_to_save(self, hps: PyTree[TreeNamespace], *, result, **kwargs):
-        return dict(
-            n=int(np.prod(jt.leaves(result)[0].shape)),
-        )
-
-#? TODO: Compute this 
+#! TODO
 # measure_ranges = {
 #     key: (
 #             jnp.nanmin(measure_data_stacked),
@@ -451,27 +79,6 @@ class Measures(AbstractAnalysis[MeasuresPorts]):
 # }
 
 
-def get_one_measure_plot_per_eval_condition(plot_func, measures, colors, **kwargs):
-    return LDict.of("measure")({
-        key: LDict.of("pert__amp")({
-            pert_amp: plot_func(
-                measure[pert_amp],
-                MEASURE_LABELS[key],
-                colors,
-                **kwargs,
-            )
-            for pert_amp in measure
-        })
-        for key, measure in measures.items()
-    })
-
-
-# ───────────────────────────────────────────────────────────────────────────────
-#  Generic function application + violin plotting analyses
-# ───────────────────────────────────────────────────────────────────────────────
-
-ApplyFuncsPorts: TypeAlias = SinglePort[PyTree]
-
 
 class ApplyFuncs(AbstractAnalysis[SinglePort[PyTree]]):
     """Apply a PyTree of callables to a PyTree of data.
@@ -479,8 +86,6 @@ class ApplyFuncs(AbstractAnalysis[SinglePort[PyTree]]):
     The functions are stored in the instance field `funcs` and are applied to
     the leaves of the `data` PyTree (customizable via `is_data_leaf`).
 
-    Notes
-    -----
     - If `funcs` is not structurally aligned with `data`, set
       `expand_funcs_to_data=True` to prefix-expand functions across the
       structure of `data` (useful when one set of functions is broadcast over
@@ -489,9 +94,9 @@ class ApplyFuncs(AbstractAnalysis[SinglePort[PyTree]]):
       leaves; `Responses` or arrays are treated as data leaves.
     """
 
-    Ports = ApplyFuncsPorts
-    inputs: ApplyFuncsPorts = eqx.field(
-        default_factory=ApplyFuncsPorts, converter=ApplyFuncsPorts.converter
+    Ports = SinglePort
+    inputs: SinglePort[PyTree] = eqx.field(
+        default_factory=SinglePort[PyTree], converter=SinglePort[PyTree].converter
     )
 
     funcs: PyTree[Callable] = eqx.field(kw_only=True)  # required at runtime
@@ -539,6 +144,8 @@ class Violins(AbstractAnalysis[ViolinsPorts]):
         yaxis_title=None,  # Often provided per-slice via fig-ops
     )
 
+    #? TODO: How can we map figures over multiple levels? 
+    #? e.g. over measure and also over pert__amp, for `part2.plant_perts`?
     def make_figs(
         self, data: AnalysisInputData, *, result, colors, input: PyTree, input_split=None, **kwargs
     ):
@@ -574,8 +181,13 @@ class Violins(AbstractAnalysis[ViolinsPorts]):
 
         # Map over any outer levels; at the group level we build one figure
         if input_split is None:
-            figs = jt.map(_make_fig, data, is_leaf=LDict.is_of(group_label))
+            figs = jt.map(_make_fig, input, is_leaf=LDict.is_of(group_label))
         else:
-            figs = jt.map(_make_fig, data, input_split, is_leaf=LDict.is_of(group_label))
+            figs = jt.map(_make_fig, input, input_split, is_leaf=LDict.is_of(group_label))
 
         return figs
+    
+    def _params_to_save(self, hps: PyTree[TreeNamespace], *, input, **kwargs):
+        return dict(
+            n=int(np.prod(jt.leaves(input)[0].shape)),
+        )

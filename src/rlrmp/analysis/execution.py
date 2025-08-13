@@ -24,7 +24,7 @@ import jax_cookbook.tree as jtree
 import rlrmp
 from rlrmp.analysis import modules as analysis_modules_pkg
 from rlrmp.analysis._dependencies import compute_dependency_results
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisInputData, get_validation_trial_specs, logger
+from rlrmp.analysis.analysis import AbstractAnalysis, get_validation_trial_specs, logger
 from rlrmp.colors import COMMON_COLOR_SPECS, setup_colors
 # Access project paths and string constants
 from rlrmp.config import PATHS
@@ -41,6 +41,7 @@ from rlrmp.database import (
 from rlrmp.database import fill_missing_train_hps_from_record, fill_hps_with_train_params
 from rlrmp.tree_utils import tree_level_labels
 from rlrmp.types import (
+    AnalysisInputData,
     LDict,
     TreeNamespace,
     namespace_to_dict,

@@ -1,4 +1,5 @@
-from .analysis import AbstractAnalysis, AnalysisInputData, CallWithDeps
+from ..types import AnalysisInputData
+from .analysis import AbstractAnalysis, CallWithDeps
 
         
 

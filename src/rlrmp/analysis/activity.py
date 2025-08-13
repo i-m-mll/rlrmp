@@ -13,11 +13,11 @@ from feedbax.bodies import SimpleFeedbackState
 from jax_cookbook import is_type
 
 from rlrmp.analysis.pca import PCA
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, NoPorts
+from rlrmp.analysis.analysis import AbstractAnalysis, DefaultFigParamNamespace, FigParamNamespace, NoPorts
 from rlrmp.constants import REPLICATE_CRITERION
 from rlrmp.plot_utils import get_label_str
 from rlrmp.plot_utils import calculate_array_minmax
-from rlrmp.types import LDict, TreeNamespace
+from rlrmp.types import AnalysisInputData, LDict, TreeNamespace
 
 
 def activity_sample_units(

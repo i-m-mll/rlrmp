@@ -21,7 +21,6 @@ import plotly.graph_objects as go
 from rlrmp.analysis.analysis import (
     AbstractAnalysis, 
     AbstractAnalysisPorts,
-    AnalysisInputData, 
     DefaultFigParamNamespace, 
     FigParamNamespace, 
     InputOf,
@@ -34,7 +33,7 @@ from rlrmp.analysis.fp_finder import (
 from rlrmp.analysis.pca import PCAResults, StatesPCA
 from rlrmp.plot import plot_fp_pcs
 from rlrmp.tree_utils import first, ldict_level_to_bottom
-from rlrmp.types import LDict, TreeNamespace
+from rlrmp.types import AnalysisInputData, LDict, TreeNamespace
 
 
 T = TypeVar('T')

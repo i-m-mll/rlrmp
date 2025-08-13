@@ -22,7 +22,6 @@ from jax_cookbook import is_module
 from rlrmp.analysis.analysis import (
     AbstractAnalysis,
     AbstractAnalysisPorts,
-    AnalysisInputData,
     Data,
     InputOf,
 )
@@ -30,7 +29,7 @@ from rlrmp.analysis.fps import get_simple_reach_first_fps
 from rlrmp.analysis.pca import StatesPCA
 from rlrmp.analysis.state_utils import exclude_bad_replicates
 from rlrmp.tree_utils import first
-from rlrmp.types import LDict, TreeNamespace
+from rlrmp.types import AnalysisInputData, LDict, TreeNamespace
 
 
 # ########################################################################## #

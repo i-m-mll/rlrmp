@@ -13,11 +13,10 @@ from jax_cookbook import is_type
 import jax_cookbook.tree as jtree
 
 from rlrmp.analysis.aligned import AlignedVars
-from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, InputOf
+from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, DefaultFigParamNamespace, FigParamNamespace, InputOf
 from rlrmp.plot_utils import get_label_str
 from rlrmp.tree_utils import move_ldict_level_above, tree_level_labels
-from rlrmp.types import Responses
-from rlrmp.types import TreeNamespace
+from rlrmp.types import AnalysisInputData, TreeNamespace
 from rlrmp.types import LDict
 
 
@@ -50,7 +49,7 @@ class Profiles(AbstractAnalysis[ProfilesPorts]):
     var_level_label: str = "var"
     vrect_kws_func: Optional[Callable[[TreeNamespace], dict]] = None
     var_labels: Optional[dict[str, str]] = None  # e.g. for mapping "pos" to "position"
-    coord_labels: Optional[tuple[str, str]] = ("parallel", "orthogonal")  # None for vars with single, unlabelled coordinates (e.g. deviations) 
+    coord_labels: Optional[tuple[str, str]] = ("parallel", "lateral")  # None for vars with single, unlabelled coordinates (e.g. deviations) 
     
     def make_figs(
         self,

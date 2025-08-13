@@ -13,13 +13,11 @@ import feedbax.plotly as fbp
 
 
 # from rlrmp.analysis import measures
-from rlrmp.analysis import AbstractAnalysis, AnalysisInputData
+from rlrmp.analysis import AbstractAnalysis
 from rlrmp.analysis.analysis import DefaultFigParamNamespace, FigParamNamespace
 from rlrmp.analysis.disturbance import FB_INTERVENOR_LABEL, get_pert_amp_vmap_eval_func, task_with_pert_amp
-from rlrmp.analysis.measures import Measures
-from rlrmp.plot import PLANT_VAR_LABELS, WHERE_PLOT_PLANT_VARS
 from rlrmp.analysis.state_utils import vmap_eval_ensemble
-from rlrmp.types import LDict, unflatten_dict_keys
+from rlrmp.types import AnalysisInputData, LDict, unflatten_dict_keys
 from rlrmp.perturbations import feedback_impulse
 
 
@@ -38,7 +36,7 @@ components_labels = dict(
 )
 components_names = dict(
     xy=COORD_NAMES,
-    aligned=('parallel', 'orthogonal'),
+    aligned=('parallel', 'lateral'),
 )
 
 
@@ -166,8 +164,8 @@ MEASURE_KEYS = [
     "sum_net_force",
     "max_parallel_vel_forward",
     "max_parallel_vel_reverse",
-    "max_orthogonal_vel_left",
-    "max_orthogonal_vel_right",
+    "max_lateral_vel_left",
+    "max_lateral_vel_right",
     "max_deviation",
     "sum_deviation",
 ]
@@ -200,7 +198,8 @@ MEASURE_KEYS = [
 
 
 ANALYSES = {
-    "measures": Measures(measure_keys=MEASURE_KEYS),
+    #! TODO: Use ApplyFuncs + Violins
+    # "measures": Measures(measure_keys=MEASURE_KEYS),
     
     # "effector_single_eval": (
     #     Effector_SingleEval(

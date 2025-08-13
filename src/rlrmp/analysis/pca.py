@@ -1,7 +1,7 @@
 from collections.abc import Callable, Sequence
-from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, InputOf, NoPorts
+from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, DefaultFigParamNamespace, FigParamNamespace, InputOf, NoPorts
 from rlrmp.tree_utils import ldict_level_to_bottom, tree_level_labels
-from rlrmp.types import LDict, TreeNamespace
+from rlrmp.types import AnalysisInputData, LDict, TreeNamespace
 
 import equinox as eqx
 from equinox import Module

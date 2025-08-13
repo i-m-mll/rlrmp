@@ -14,8 +14,7 @@ from sklearn.decomposition import PCA
 
 import feedbax.plotly as fbp
 
-from rlrmp.colors import COLORSCALES
-from rlrmp.types import Responses
+from rlrmp.types import LDict
 
 
 def add_endpoint_traces(
@@ -604,45 +603,6 @@ def plot_traj_and_fp_pcs_3D(
     fig = fbp.trajectories_3D(trajs_pcs, colors=colors, fig=fig)
     
     return fig
-
-
-#! TODO: Not sure this should be here. It also redundant with 
-#! `analysis.aligned.GET_VARS_TO_ALIGN` except for the origin subtraction
-PLANT_VAR_LABELS = Responses('Pos.', 'Vel.', 'Command', 'Force')
-WHERE_PLOT_PLANT_VARS = lambda states: Responses(
-    states.mechanics.effector.pos,
-    states.mechanics.effector.vel,
-    states.net.output,
-    getattr(states.force_filter, 'output', states.efferent.output),
-)
-
-
-def plot_2d_effector_trajectories(
-    states, 
-    *args, 
-    # Corresponding to axis 0 of `states`:
-    legend_title='Reach direction', 
-    colorscale_key='reach_condition', 
-    **kwargs,
-):
-    """Helper to define the usual formatting for effector trajectory plots."""
-    return fbp.trajectories_2D(
-        WHERE_PLOT_PLANT_VARS(states),
-        var_labels=PLANT_VAR_LABELS,
-        axes_labels=('x', 'y'),
-        #! TODO: Replace with `colorscales` (common analysis dependency)
-        colorscale=COLORSCALES[colorscale_key],
-        legend_title=legend_title,
-        # scatter_kws=dict(line_width=0.5),
-        layout_kws=dict(
-            width=100 + len(PLANT_VAR_LABELS) * 300,
-            height=400,
-            legend_tracegroupgap=1,
-        ),
-        *args,
-        **kwargs,
-    )
-
 
 
 def _calculate_axis_bounds(

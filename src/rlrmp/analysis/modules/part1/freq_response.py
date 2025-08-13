@@ -9,9 +9,9 @@ import feedbax.plotly as fbp
 from jax_cookbook import is_module
 import jax_cookbook.tree as jtree
 
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, NoPorts
+from rlrmp.analysis.analysis import AbstractAnalysis, DefaultFigParamNamespace, FigParamNamespace, NoPorts
 from rlrmp.analysis.state_utils import vmap_eval_ensemble
-from rlrmp.types import LDict
+from rlrmp.types import AnalysisInputData, LDict
 
 
 COLOR_FUNCS = dict()

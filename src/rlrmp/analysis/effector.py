@@ -1,31 +1,60 @@
 from collections.abc import Callable, Sequence
 from functools import partial
-from typing import Optional
+from typing import Literal, Optional
 
+import feedbax.plotly as fbp
 import jax.tree as jt
 from equinox import Module, field
-from jaxtyping import PyTree
+from jaxtyping import Array, PyTree
 import plotly.graph_objects as go
 
 from feedbax.task import AbstractTask
 from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, NoPorts
+from rlrmp.analysis.aligned import DEFAULT_VARSET, get_varset_labels
+from rlrmp.analysis.analysis import AbstractAnalysis, DefaultFigParamNamespace, FigParamNamespace, NoPorts
 from rlrmp.analysis.state_utils import get_pos_endpoints
 from rlrmp.colors import COLORSCALES
 from rlrmp.config import PLOTLY_CONFIG
 from rlrmp.constants import REPLICATE_CRITERION
-from rlrmp.plot import add_endpoint_traces, plot_2d_effector_trajectories
+from rlrmp.plot import add_endpoint_traces
 from rlrmp.plot_utils import get_label_str
-from rlrmp.types import TreeNamespace
+from rlrmp.types import AnalysisInputData, TreeNamespace, VarSpec
 
 
 MEAN_LIGHTEN_FACTOR = PLOTLY_CONFIG.mean_lighten_factor
 
 
+def plot_2d_effector_trajectories(
+    plot_data: PyTree[Array],
+    var_labels: Sequence[str],
+    colorscale,
+    # Corresponding to axis 0 of `states`:
+    legend_title='Reach direction',
+    **kwargs,
+):
+    """Helper to define the usual formatting for effector trajectory plots."""
+    return fbp.trajectories_2D(
+        plot_data,
+        var_labels=var_labels,
+        axes_labels=('x', 'y'),
+        #! TODO: Replace with `colorscales` (common analysis dependency)
+        colorscale=colorscale,
+        legend_title=legend_title,
+        # scatter_kws=dict(line_width=0.5),
+        layout_kws=dict(
+            width=100 + len(var_labels) * 300,
+            height=400,
+            legend_tracegroupgap=1,
+        ),
+        **kwargs,
+    )
+
+
 class EffectorTrajectories(AbstractAnalysis[NoPorts]):
     variant: Optional[str] = "small"
+    varset: PyTree[VarSpec] = field(default_factory=lambda: DEFAULT_VARSET)
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
         # legend_title="Reach direction",
         mean_exclude_axes=(),
@@ -39,10 +68,13 @@ class EffectorTrajectories(AbstractAnalysis[NoPorts]):
     colorscale_axis: Optional[int] = None
     pos_endpoints: bool = True
     straight_guides: bool = True
+    label_fmt: Literal['short', 'medium', 'full'] = 'medium'
 
     def make_figs(
         self,
         data: AnalysisInputData,
+        *,
+        colorscales,
         **kwargs,
     ):
         #! TODO: Add a general way to include callables in `fig_params`;
@@ -51,20 +83,25 @@ class EffectorTrajectories(AbstractAnalysis[NoPorts]):
             fig_params = self.fig_params | dict(legend_title=get_label_str(self.colorscale_key))
         else: 
             fig_params = self.fig_params
-
-        figs = jt.map(
-            partial(
-                plot_2d_effector_trajectories,
-                colorscale_key=self.colorscale_key,
+            
+        var_labels = getattr(get_varset_labels(self.varset), self.label_fmt)
+        
+        def _make_fig(states):
+            plot_data = jt.map(
+                lambda spec: spec.where(states), self.varset, is_leaf=is_type(VarSpec)
+            )
+            return plot_2d_effector_trajectories(
+                plot_data,
+                var_labels=var_labels,
+                colorscale=colorscales[self.colorscale_key],
                 colorscale_axis=self.colorscale_axis,
                 **fig_params,
-            ),
-            data.states[self.variant],
-            is_leaf=is_module,
-        )
+            )
+
+        figs = jt.map(_make_fig, data.states[self.variant], is_leaf=is_module)
 
         if self.pos_endpoints:
-            #! See comment in `aligned.AlignedTrajectories`
+            #! See comment in `aligned.AlignedEffectorTrajectories`
             task_0 = jt.leaves(data.tasks[self.variant], is_leaf=is_type(AbstractTask))[0]
             pos_endpoints = get_pos_endpoints(task_0.validation_trials)
 

@@ -6,6 +6,9 @@ train:
     feedback_noise_std: 0.01
     motor_noise_std: 0.01
     feedback_delay_steps: 0
+    dt: 0.01
+    damping: 10
+    tau_rise: 0.05
   pert:  # during training
     type: curl
     std: [0.0, 0.5] 

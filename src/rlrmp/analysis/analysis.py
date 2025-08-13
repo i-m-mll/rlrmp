@@ -29,10 +29,11 @@ import jax_cookbook.tree as jtree
 from rlrmp.config.config import STRINGS, PATHS
 from rlrmp.database import EvaluationRecord, add_evaluation_figure, savefig
 from rlrmp.tree_utils import hash_callable_leaves, ldict_label_only_func, ldict_level_to_bottom, move_ldict_level_above, subdict, tree_level_labels, ldict_level_to_top
-from rlrmp.misc import camel_to_snake, get_dataclass_fields, get_md5_hexdigest, get_name_of_callable, is_json_serializable
+from rlrmp.misc import DoNotHashTree, camel_to_snake, get_dataclass_fields, get_md5_hexdigest, get_name_of_callable, is_json_serializable
 from rlrmp.plot_utils import figs_flatten_with_paths, get_label_str
 from rlrmp.tree_utils import _hash_pytree
 from rlrmp.types import LDict, TreeNamespace
+from rlrmp.types import AnalysisInputData
 
 
 if TYPE_CHECKING:
@@ -111,14 +112,6 @@ PortsType = TypeVar("PortsType", bound=AbstractAnalysisPorts)
 def represent_undefined(dumper, data):
     return dumper.represent_scalar('tag:yaml.org,2002:str', str(data))
 yaml.add_representer(object, represent_undefined)
-
-
-class AnalysisInputData(Module):
-    models: PyTree[Module]
-    tasks: PyTree[Module]
-    states: PyTree[Module]
-    hps: PyTree[TreeNamespace]  
-    extras: PyTree[TreeNamespace] 
 
 
 @dataclass(frozen=True, slots=True)
@@ -477,11 +470,11 @@ def _reconstruct_ldict_aggregator(level: str, figs_list: list[PyTree], items_ite
 
 def get_validation_trial_specs(task: AbstractTask):
     # TODO: Support any number of extra axes (i.e. for analyses that vmap over multiple axes in their task/model objects)
-    if len(task.workspace.shape) == 3:
-        #! I don't understand why/if this is necessary
-        return eqx.filter_vmap(lambda task: task.validation_trials)(task)
-    else:
-        return task.validation_trials
+    # if len(task.workspace.shape) == 3:
+    #     #! I don't understand why/if this is necessary
+    #     return eqx.filter_vmap(lambda task: task.validation_trials)(task)
+    # else:
+    return task.validation_trials
     
 
 def _extract_vmapped_kwargs_to_args(func, vmapped_dep_names: Sequence[str]):
@@ -1839,7 +1832,8 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         which should generally capture when the implementation is identical, and should not 
         result in any 
         """
-        #? TODO: De-duplicate calculations *aside* from ops
+        #? TODO: De-duplicate computations *prior* to ops (i.e. some analyses get repeated with
+        #? different ops)
         ops_params, _ = self._extract_ops_info()
         
         params = dict(cls_name=self.__class__.__name__) | ops_params | self._field_params
@@ -1847,7 +1841,11 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         #! TODO: add leaves from `self.inputs` and make sure any referenced `AbstractAnalysis` 
         #! instances are resolved to their own `md5_str`.
         
-        params = hash_callable_leaves(params, ignore=(LDict, TreeNamespace, is_module))
+        params = hash_callable_leaves(
+            params, 
+            is_leaf=is_type(DoNotHashTree),
+            ignore=(LDict, is_module, DoNotHashTree),
+        )
         return get_md5_hexdigest(params)
     
     def _params_to_save(self, hps: PyTree[TreeNamespace], **kwargs):

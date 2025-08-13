@@ -34,19 +34,27 @@ from feedbax.task import AbstractTask
 from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
-from rlrmp.analysis import AbstractAnalysis, AnalysisInputData
-from rlrmp.analysis.analysis import _DummyAnalysis, AbstractAnalysisPorts, InputOf, LiteralInput, Data, DefaultFigParamNamespace, ExpandTo, FigParamNamespace, Transformed
+from rlrmp.analysis import AbstractAnalysis
+from rlrmp.analysis.analysis import (
+    AbstractAnalysisPorts, 
+    InputOf, 
+    LiteralInput, 
+    Data, 
+    DefaultFigParamNamespace, 
+    ExpandTo, 
+    FigParamNamespace, 
+    Transformed,
+)
 from rlrmp.analysis.eig import SVD, Eig, complex_to_polar_abs_angle
 from rlrmp.analysis.fp_finder import FPFilteredResults, take_top_fps
 from rlrmp.analysis.fps import FixedPoints, PlotInPCSpace
 from rlrmp.analysis.grad import Jacobians, Hessians
-from rlrmp.analysis.measures import Measures
 from rlrmp.analysis.pca import StatesPCA
 from rlrmp.misc import create_arr_df, get_constant_input_fn, take_non_nan
 from rlrmp.analysis.state_utils import get_best_model_replicate, vmap_eval_ensemble
 from rlrmp.plot import plot_eigvals_df
 from rlrmp.tree_utils import first_shape, take_replicate, tree_level_labels
-from rlrmp.types import TreeNamespace
+from rlrmp.types import AnalysisInputData, TreeNamespace
 from rlrmp.types import LDict
 from rlrmp.analysis.execution import AnalysisModuleTransformSpec
 
@@ -492,11 +500,13 @@ ANALYSES = {
     #     .after_map(complex_to_polar_abs_angle, dependency_name="eigvals")
     #     # .after_subdict_at_level('sisu', keys=SISUS_TO_PLOT_EIGVALS)
     # ),
-    "plot--measures": (
-        Measures(
+    
+    #! TODO: Use ApplyFuncs + Violins
+    # "plot--measures": (
+    #     Measures(
             
-        )
-    )
+    #     )
+    # )
 }
 
 #! The following should either be discarded or refactored into a function for plotting readout

@@ -7,16 +7,16 @@ from feedbax.intervene import add_intervenors, schedule_intervenor
 from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
-from rlrmp.analysis.aligned import AlignedEffectorTrajectories
+from rlrmp.analysis.aligned import ALL_MEASURES, MEASURE_LABELS, VAR_LEVEL_LABEL, AlignedEffectorTrajectories, AlignedVars
 from rlrmp.analysis.effector import EffectorTrajectories
 from rlrmp.analysis.disturbance import PLANT_PERT_FUNCS
-from rlrmp.analysis.measures import Measures, output_corr
+from rlrmp.analysis.measures import ApplyFuncs, Violins
 from rlrmp.analysis.profiles import Profiles
 from rlrmp.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
 from rlrmp.analysis.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.misc import lohi
 from rlrmp.plot import get_violins, set_axes_bounds_equal, set_axis_bounds_equal
-from rlrmp.tree_utils import ldict_level_to_bottom, move_ldict_level_above
+from rlrmp.tree_utils import ldict_level_to_bottom, move_ldict_level_above, subdict
 from rlrmp.types import LDict
 
 
@@ -71,27 +71,54 @@ eval_func = vmap_eval_ensemble
 """Labels of measures to include in the analysis."""
 MEASURE_KEYS = (
     "max_parallel_vel_forward",
-    "max_orthogonal_vel_left",
-    "max_orthogonal_vel_right",
-    "max_orthogonal_distance_left",
-    "sum_orthogonal_distance",
+    "max_lateral_vel_left",
+    "max_lateral_vel_right",
+    "max_lateral_distance_left",
+    "sum_lateral_distance",
     "end_position_error",
     # "end_velocity_error",
     "max_parallel_force_forward",
     "sum_parallel_force",
-    "max_orthogonal_force_right",  
-    "sum_orthogonal_force_abs",
+    "max_lateral_force_right",  
+    "sum_lateral_force_abs",
     "max_net_force",
     "sum_net_force",
 )
 
-measures_base = (
-    Measures(measure_keys=MEASURE_KEYS)
-    .after_transform(get_best_replicate)
-)
+
+MEASURE_FUNCS = subdict(ALL_MEASURES, MEASURE_KEYS)
+
 
 i_eval = 0  # For single-eval plots   
-        
+
+
+DEPENDENCIES = {
+    "measures": (
+        ApplyFuncs(
+            funcs=MEASURE_FUNCS,
+            inputs=ApplyFuncs.Ports(input=AlignedVars()),
+            is_leaf=LDict.is_of(VAR_LEVEL_LABEL),
+        )
+        # Discard the varset; only keep the aligned vars
+        .after_transform(lambda results: results[0]['full'], dependency_names="input")
+    )
+}
+
+
+def measure_violin_params_fn(fig_params, i, item):
+    return fig_params | dict(
+        yaxis_title=MEASURE_LABELS[item],
+    )
+
+measures_base = (
+     Violins(inputs=Violins.Ports(input="measures"))
+    .map_figs_at_level(
+        "measure", 
+        dependency_name="input", 
+        fig_params_fn=measure_violin_params_fn,
+    )
+)
+
 
 # PyTree levels: 
 # State batch shape: (eval, replicate, condition)
@@ -138,12 +165,16 @@ ANALYSES = {
     ),
 
     "aligned_trajectories_by_pert_amp": (
-        AlignedEffectorTrajectories()
+        AlignedEffectorTrajectories(
+            colorscale_key="pert__amp",
+        )
         .after_transform(get_best_replicate)
         .after_stacking(level='pert__amp')
     ),
     "aligned_trajectories_by_train_std": (
-        AlignedEffectorTrajectories()
+        AlignedEffectorTrajectories(
+            colorscale_key="train__pert__std",
+        )
         .after_transform(get_best_replicate)
         .after_stacking(level='train__pert__std')
     ),
@@ -155,7 +186,13 @@ ANALYSES = {
             dependency_names="vars",
         )
     ),
-    "measures": measures_base,
-    "measures_lohi_train_std": measures_base.after_transform(lohi, level='train__pert__std'),
-    "measures_lohi_train_std_and_pert_amp": measures_base.after_transform(lohi, level=['train__pert__std', 'pert__amp']),
+    "plot--measures": measures_base,
+    "plot--measures_lohi_train_std": (
+        measures_base
+        .after_transform(lohi, level='train__pert__std')
+    ),
+    "plot--measures_lohi_train_std_and_pert_amp": (
+        measures_base
+        .after_transform(lohi, level=['train__pert__std', 'pert__amp'])
+    ),
 }

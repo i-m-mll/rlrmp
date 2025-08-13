@@ -1,17 +1,21 @@
 from collections import namedtuple
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from copy import deepcopy
-from enum import Enum
 from token import COMMA
 from types import SimpleNamespace
-from typing import Any, Dict, Generic, NamedTuple, Optional, Protocol, TypeVar, overload, runtime_checkable
+from typing import Any, Dict, Generic, Literal, NamedTuple, Optional, Protocol, TypeVar, overload, runtime_checkable
 import equinox as eqx
+from equinox import Module, field
 import jax
 import jax.tree as jt
 import jax.tree_util as jtu
 from jax_cookbook import is_type
-from jaxtyping import ArrayLike, PyTree
+import jax_cookbook.tree as jtree
+from jaxtyping import Array, ArrayLike, PyTree
 import yaml
+
+
+from feedbax.task import AbstractTask
 
 
 TaskModelPair = namedtuple("TaskModelPair", ["task", "model"])
@@ -472,49 +476,6 @@ def pprint_ldict_structure(
 
 
 # TODO: Rename to Effector, or something; also this probably shouldn't be in this module.
-class ResponseVar(str, Enum):
-    """Variables available in response state."""
-    POSITION = 'pos'
-    VELOCITY = 'vel'
-    COMMAND = 'command'
-    FORCE = 'force'
-
-
-class Responses(NamedTuple):
-    pos: Any
-    vel: Any
-    command: Any
-    force: Any
-
-
-RESPONSE_VAR_LABELS = LDict.of('var')(dict(
-    pos='Position',
-    vel='Velocity',
-    command='Control command',
-    force='Control force',
-))
-            
-
-RESPONSE_VAR_LABELS_SHORT = LDict.of('var')(dict(
-    pos='p',
-    vel='v',
-    command='u',
-    force='F',
-))
-
-
-class Direction(str, Enum):
-    """Available directions for vector components."""
-    PARALLEL = 'parallel'
-    ORTHOGONAL = 'orthogonal'
-
-
-DIRECTION_IDXS = {
-    Direction.PARALLEL: 0,
-    Direction.ORTHOGONAL: 1,
-}
-
-
 def _convert_value(value: Any, to_type: type, from_type: type, exclude: Callable) -> Any:
     recurse_func = lambda x: _convert_value(x, to_type, from_type, exclude)
     map_recurse_func = lambda tree: jt.map(recurse_func, tree, is_leaf=is_type(from_type))
@@ -545,3 +506,28 @@ def _convert_value(value: Any, to_type: type, from_type: type, exclude: Callable
             return map_recurse_func(value)
 
     return value
+
+
+class AnalysisInputData(Module):
+    models: PyTree[Module]
+    tasks: PyTree[Module]
+    states: PyTree[Module]
+    hps: PyTree[TreeNamespace]
+    extras: PyTree[TreeNamespace]
+
+
+class Labels(NamedTuple):
+    full: PyTree[str] 
+    medium: PyTree[str]
+    short: PyTree[str] 
+
+
+class VarSpec(eqx.Module):
+    where: Callable[[AnalysisInputData], Array]
+    labels: Labels
+    time_axis: int = -2
+    vec_axis: int = -1
+    origin: Optional[ArrayLike | Callable[[AbstractTask], ArrayLike]] = None
+    # is_spatial: bool = True
+    
+

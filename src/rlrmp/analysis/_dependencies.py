@@ -28,12 +28,13 @@ from jax_cookbook import is_type
 from jax_cookbook.tree import collect_aux_data
 
 from rlrmp.analysis.analysis import (
-    AbstractAnalysis, AnalysisInputData, _format_dict_of_params, RequiredInput,
+    AbstractAnalysis, _format_dict_of_params, RequiredInput,
     _DataField, LiteralInput, FigParamNamespace, DefaultFigParamNamespace,
     ExpandTo, Transformed, NoPorts
 )
 from rlrmp.misc import get_md5_hexdigest
 from rlrmp.tree_utils import prefix_expand
+from rlrmp.types import AnalysisInputData
 
 
 logger = logging.getLogger(__name__)
