@@ -12,7 +12,8 @@ import jax.tree as jt
 
 import jax_cookbook.tree as jtree
 
-from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, InputOf
+from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, DefaultFigParamNamespace, FigParamNamespace, InputOf
+from rlrmp.types import AnalysisInputData
 
 
 _Tuple = jtree.make_named_tuple_subclass("Tuple")

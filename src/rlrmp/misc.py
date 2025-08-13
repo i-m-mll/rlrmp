@@ -45,6 +45,10 @@ from rlrmp.tree_utils import subdict
 logger = logging.getLogger(__name__)
 
 
+class DoNotHashTree:
+    ...
+    
+
 def delete_all_files_in_dir(dir_path: Path):
     """Delete all files in a directory."""
     if not dir_path.exists() or not dir_path.is_dir():

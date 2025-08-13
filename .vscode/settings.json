@@ -4,5 +4,6 @@
         "scripts",
         "notebooks",
         "tests"
-    ]
+    ],
+    "kiroAgent.configureMCP": "Disabled"
 }

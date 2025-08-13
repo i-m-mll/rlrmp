@@ -14,6 +14,7 @@ from feedbax.task import AbstractTask
 import jax_cookbook.tree as jtree
 from jax_cookbook import is_type, is_module
 
+from rlrmp.analysis.analysis import get_validation_trial_specs
 from rlrmp.constants import REPLICATE_CRITERION
 from rlrmp.misc import dynamic_slice_with_padding
 from rlrmp.types import LDict, TreeNamespace
@@ -213,4 +214,14 @@ def get_segment_trials_func(slice_bounds_func, axis=-2):
         return jt.map(_segment_states, all_states, is_leaf=is_module)
 
     return segment_trials
-    
+
+
+def get_trial_start_positions(task: AbstractTask) -> Array:
+    return get_validation_trial_specs(task).inits['mechanics.effector'].pos
+
+
+def unsqueezer(axis: int):
+    """Return a function that unsqueezes an array along the specified axis."""
+    def _unsqueeze(x):
+        return jnp.expand_dims(x, axis=axis)
+    return _unsqueeze

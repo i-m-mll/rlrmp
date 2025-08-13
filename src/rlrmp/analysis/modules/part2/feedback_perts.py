@@ -14,18 +14,17 @@ from feedbax.intervene import schedule_intervenor
 import feedbax.plotly as fbp
 
 # from rlrmp.analysis import measures
-from rlrmp.analysis import AbstractAnalysis, AnalysisInputData
-from rlrmp.analysis.aligned import AlignedEffectorTrajectories, AlignedVars
+from rlrmp.analysis import AbstractAnalysis
+from rlrmp.analysis.aligned import AlignedEffectorTrajectories, AlignedVars 
 from rlrmp.analysis.analysis import _DummyAnalysis, DefaultFigParamNamespace, FigParamNamespace
 from rlrmp.analysis.disturbance import FB_INTERVENOR_LABEL, get_pert_amp_vmap_eval_func, task_with_pert_amp
 from rlrmp.analysis.effector import EffectorTrajectories
-from rlrmp.analysis.measures import Measures
 from rlrmp.analysis.profiles import Profiles
 from rlrmp.misc import lohi
-from rlrmp.plot import PLANT_VAR_LABELS, WHERE_PLOT_PLANT_VARS, set_axis_bounds_equal
+from rlrmp.plot import set_axis_bounds_equal
 from rlrmp.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
 from rlrmp.misc import get_constant_input_fn
-from rlrmp.types import LDict, unflatten_dict_keys
+from rlrmp.types import AnalysisInputData, LDict, unflatten_dict_keys
 from rlrmp.perturbations import feedback_impulse
 from rlrmp.colors import ColorscaleSpec
 
@@ -38,7 +37,7 @@ PERT_VAR_NAMES = ('fb_pos', 'fb_vel')
 COORD_NAMES = ('x', 'y')
 I_IMPULSE_AMP_PLOT = -1  # The largest amplitude perturbation
 COMPONENTS_LABELS = (r'\parallel', r'\bot')
-COMPONENTS_NAMES = ('parallel', 'orthogonal')
+COMPONENTS_NAMES = ('parallel', 'lateral')
 
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
@@ -122,8 +121,8 @@ MEASURE_KEYS = [
     "sum_net_force",
     "max_parallel_vel_forward",
     "max_parallel_vel_reverse",
-    "max_orthogonal_vel_left",
-    "max_orthogonal_vel_right",
+    "max_lateral_vel_left",
+    "max_lateral_vel_right",
     "max_deviation",
     "sum_deviation",
 ]
@@ -159,10 +158,7 @@ ORIGIN_GRID_IDX = 12
 # measure_labels = MEASURE_LABELS | custom_measure_labels
 
 
-def get_impulse_origins_directions(task, models, hps):
-    # Steady-state positions
-    origins = task.validation_trials.inits["mechanics.effector"].pos
-
+def get_impulse_directions(task, hps):
     # Impulse directions
     directions = (
         task
@@ -171,12 +167,12 @@ def get_impulse_origins_directions(task, models, hps):
         .arrays[:, hps.pert.start_step]
     )
 
-    return origins, directions
+    return directions
 
 
 DEPENDENCIES = {
-    "aligned_vars_impulse": AlignedVars(
-        origins_directions_func=get_impulse_origins_directions,
+    "aligned_vars": AlignedVars(
+        directions_func=get_impulse_directions,
     ),
 }
 
@@ -234,7 +230,7 @@ ANALYSES = {
             colorscale_axis=1,
             colorscale_key='pert__amp',
             inputs=AlignedEffectorTrajectories.Ports(
-                aligned_vars="aligned_vars_impulse",
+                aligned_vars="aligned_vars",
             ),
         )
         .after_transform(get_best_replicate)
@@ -245,7 +241,7 @@ ANALYSES = {
         AlignedEffectorTrajectories(
             variant="full",
             inputs=AlignedEffectorTrajectories.Ports(
-                aligned_vars="aligned_vars_impulse",
+                aligned_vars="aligned_vars",
             ),
         )
         .after_transform(get_best_replicate)
@@ -272,29 +268,30 @@ ANALYSES = {
         )
     ),
 
-    "measures": (
-        Measures(
-            measure_keys=MEASURE_KEYS,
-            inputs=Measures.Ports(
-                aligned_vars="aligned_vars_impulse",
-            ),
-        )
-        .after_transform(get_best_replicate)
-        .after_unstacking(1, "pert__amp")
-        .after_transform(lohi, level="train__pert__std")
-        # Save seperate figures for zero-std, as pared-down all-grey
-        .map_figs_at_level(
-            'train__pert__std',
-            fig_params_fn=measures_fig_params_fn,
-        )
-        .with_fig_params(
-            legend_title="SISU",
-            xaxis_title="Feedback impulse amplitude",
-            violinmode="group",
-        )
-        .then_transform_figs(
-            partial(set_axis_bounds_equal, 'y'),
-            level='train__pert__std'
-        )
-    ),
+    #! TODO: Use ApplyFuncs + Violins
+    # "measures": (
+    #     Measures(
+    #         measure_keys=MEASURE_KEYS,
+    #         inputs=Measures.Ports(
+    #             aligned_vars="aligned_vars_impulse",
+    #         ),
+    #     )
+    #     .after_transform(get_best_replicate)
+    #     .after_unstacking(1, "pert__amp")
+    #     .after_transform(lohi, level="train__pert__std")
+    #     # Save seperate figures for zero-std, as pared-down all-grey
+    #     .map_figs_at_level(
+    #         'train__pert__std',
+    #         fig_params_fn=measures_fig_params_fn,
+    #     )
+    #     .with_fig_params(
+    #         legend_title="SISU",
+    #         xaxis_title="Feedback impulse amplitude",
+    #         violinmode="group",
+    #     )
+    #     .then_transform_figs(
+    #         partial(set_axis_bounds_equal, 'y'),
+    #         level='train__pert__std'
+    #     )
+    # ),
 }

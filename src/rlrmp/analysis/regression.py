@@ -15,8 +15,9 @@ from feedbax.train import SimpleTrainer, grad_wrap_simple_loss_func
 from feedbax.loss import nan_safe_mse
 
 from rlrmp.analysis.aligned import AlignedVars
-from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, InputOf
+from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, DefaultFigParamNamespace, FigParamNamespace, InputOf
 from rlrmp.tree_utils import ldict_level_keys, tree_level_labels
+from rlrmp.types import AnalysisInputData
 
 
 def prepare_interaction_indices(regressor_labels, interactions):

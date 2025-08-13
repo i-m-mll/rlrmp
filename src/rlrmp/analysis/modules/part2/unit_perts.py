@@ -18,12 +18,10 @@ import feedbax.plotly as fbp
 from jax_cookbook import is_module, is_type, is_none
 import jax_cookbook.tree as jtree
 
-from rlrmp.analysis.aligned import AlignedEffectorTrajectories, AlignedVars, get_trivial_reach_origins_directions
-from rlrmp.analysis.analysis import _DummyAnalysis, AbstractAnalysis, AbstractAnalysisPorts, AnalysisInputData, DefaultFigParamNamespace, FigParamNamespace, InputOf, NoPorts
+from rlrmp.analysis.aligned import DEFAULT_VARSET, VAR_LEVEL_LABEL, AlignedEffectorTrajectories, AlignedVars, get_trivial_reach_directions
+from rlrmp.analysis.analysis import _DummyAnalysis, AbstractAnalysis, AbstractAnalysisPorts, DefaultFigParamNamespace, FigParamNamespace, InputOf, NoPorts
 from rlrmp.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS, get_pert_amp_vmap_eval_func
 from rlrmp.analysis.effector import EffectorTrajectories
-from rlrmp.analysis.measures import ALL_MEASURE_KEYS, MEASURE_LABELS
-from rlrmp.analysis.measures import Measures
 from rlrmp.analysis.network import UnitPreferences
 from rlrmp.analysis.profiles import Profiles
 from rlrmp.analysis.regression import Regression
@@ -32,12 +30,12 @@ from rlrmp.colors import ColorscaleSpec
 from rlrmp.config.config import PLOTLY_CONFIG
 from rlrmp.constants import POS_ENDPOINTS_ALIGNED
 from rlrmp.plot import add_endpoint_traces, get_violins, set_axes_bounds_equal
-from rlrmp.tree_utils import ldict_level_keys, move_ldict_level_above, tree_level_labels
+from rlrmp.tree_utils import ldict_level_keys, move_ldict_level_above, subdict, tree_level_labels
 from rlrmp.types import (
-    RESPONSE_VAR_LABELS,
+    AnalysisInputData,
     LDict,
-    Responses,
     TreeNamespace,
+    VarSpec,
 )
 
 
@@ -403,16 +401,16 @@ class UnitStimRegressionFigures(AbstractAnalysis[UnitStimRegressionFiguresPorts]
         #     fig.write_image(f"{label}.webp")
         
         return LDict.of("comparison")(figs)
-        
+
+
+VARSET = subdict(DEFAULT_VARSET, ('pos', 'vel'))
+
 
 DEPENDENCIES = {
     "aligned_vars_trivial": AlignedVars(
+        varset=VARSET,
         # Bypass alignment; keep aligned with x-y axes
-        origins_directions_func=get_trivial_reach_origins_directions,
-        where_states_to_align=lambda states, origins: LDict.of('var')(dict(
-            pos=states.mechanics.effector.pos - origins[..., None, :],
-            vel=states.mechanics.effector.vel,
-        )),
+        directions_func=get_trivial_reach_directions,
     ),
     "unit_fb_gains": UnitFbGains(
         variant="full",

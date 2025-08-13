@@ -33,14 +33,18 @@ class ColorscaleSpec(NamedTuple):
 
 
 # Colorscales
-COLORSCALES: dict[str, Union[str, Sequence[str], Sequence[tuple]]] = dict(
+COLORSCALES: dict[str, str] = dict(
     train__pert__std='viridis',
     pert__amp='plotly3',
     sisu='thermal',
-    pert_var=plc.qualitative.D3,  # list[str]
     reach_condition='phase',
     replicate='twilight',
     trial='Tealgrn',
+    # pert_var=plc.qualitative.D3, 
+)
+
+DISCRETE_COLORSCALES = dict(
+    pert_var=plc.qualitative.D3,  # list[str]
 )
 
 

@@ -16,12 +16,12 @@ from jax_cookbook.misc import crop_to_shortest
 from rlrmp.analysis.analysis import (
     AbstractAnalysis, 
     AbstractAnalysisPorts,
-    AnalysisInputData, 
     Data, 
     DefaultFigParamNamespace, 
     FigParamNamespace,
     InputOf,
 )
+from rlrmp.types import AnalysisInputData
 
 
 class TanglingPorts(AbstractAnalysisPorts):

@@ -12,8 +12,8 @@ from jaxtyping import PyTree, Float, Array
 
 import jax_cookbook.tree as jtree
 
-from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, AnalysisInputData, InputOf
-from rlrmp.types import TreeNamespace
+from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, InputOf
+from rlrmp.types import AnalysisInputData, TreeNamespace
 
 
 class DecompPorts(AbstractAnalysisPorts):

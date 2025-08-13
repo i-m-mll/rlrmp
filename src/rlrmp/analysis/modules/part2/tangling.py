@@ -26,11 +26,9 @@ from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
 from rlrmp.analysis.aligned import AlignedEffectorTrajectories, AlignedVars
-from rlrmp.analysis.analysis import AbstractAnalysis, AnalysisInputData, CallWithDeps, Data, DefaultFigParamNamespace, FigParamNamespace, NoPorts
+from rlrmp.analysis.analysis import AbstractAnalysis, CallWithDeps, Data, DefaultFigParamNamespace, FigParamNamespace, NoPorts
 from rlrmp.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS
 from rlrmp.analysis.effector import EffectorTrajectories
-from rlrmp.analysis.measures import ALL_MEASURE_KEYS, MEASURE_LABELS
-from rlrmp.analysis.measures import Measures
 from rlrmp.analysis.pca import StatesPCA
 from rlrmp.analysis.profiles import Profiles
 from rlrmp.analysis.state_utils import get_best_replicate, get_constant_task_input_fn, vmap_eval_ensemble
@@ -41,9 +39,8 @@ from rlrmp.constants import POS_ENDPOINTS_ALIGNED
 from rlrmp.plot import add_endpoint_traces, get_violins, set_axes_bounds_equal
 from rlrmp.tree_utils import move_ldict_level_above
 from rlrmp.types import (
-    RESPONSE_VAR_LABELS,
+    AnalysisInputData,
     LDict,
-    Responses,
     TreeNamespace,
 )
 
