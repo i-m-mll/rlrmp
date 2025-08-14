@@ -192,7 +192,7 @@ DEPENDENCIES = {
             is_leaf=LDict.is_of(VAR_LEVEL_LABEL),
         )
         # Discard the varset; only keep the aligned vars
-        .after_transform(lambda results: results[0]['full'], dependency_names="input")
+        .after_transform(lambda results: results['full'], dependency_names="input")
     )    
 }
 

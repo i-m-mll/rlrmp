@@ -12,7 +12,7 @@ import feedbax.plotly as fbp
 from jax_cookbook import is_type
 import jax_cookbook.tree as jtree
 
-from rlrmp.analysis.aligned import AlignedVars
+from rlrmp.analysis.aligned import AlignedVars, get_varset_labels
 from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, DefaultFigParamNamespace, FigParamNamespace, InputOf
 from rlrmp.plot_utils import get_label_str
 from rlrmp.tree_utils import move_ldict_level_above, tree_level_labels
@@ -36,7 +36,7 @@ class Profiles(AbstractAnalysis[ProfilesPorts]):
     Ports = ProfilesPorts
     inputs: ProfilesPorts = eqx.field(default_factory=ProfilesPorts, converter=ProfilesPorts.converter)
     
-    variant: Optional[str] = "full"
+    # variant: Optional[str] = "full"
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
         mode='std', # or 'curves'
         n_std_plot=1,
@@ -48,8 +48,9 @@ class Profiles(AbstractAnalysis[ProfilesPorts]):
     )
     var_level_label: str = "var"
     vrect_kws_func: Optional[Callable[[TreeNamespace], dict]] = None
-    var_labels: Optional[dict[str, str]] = None  # e.g. for mapping "pos" to "position"
+    # var_labels: Optional[dict[str, str]] = None  # e.g. for mapping "pos" to "position"
     coord_labels: Optional[tuple[str, str]] = ("parallel", "lateral")  # None for vars with single, unlabelled coordinates (e.g. deviations) 
+    varset: Optional[PyTree[TreeNamespace]] = None  # e.g. for aligned vars with metadata
     
     def make_figs(
         self,
@@ -60,10 +61,19 @@ class Profiles(AbstractAnalysis[ProfilesPorts]):
         hps_common,
         **kwargs,
     ):
+        if self.varset is not None:
+            labels = get_varset_labels(self.varset).medium
+        else:
+            labels = None
+        
         def _get_fig(fig_data, i, coord_label, var_key, colors):      
-            if self.var_labels is not None:
-                var_label = self.var_labels[var_key]
-            else:
+            # if self.var_labels is not None:
+            #     var_label = self.var_labels[var_key]
+            # else:
+            #     var_label = var_key
+            if labels is not None:
+                var_label = labels[var_key]
+            else: 
                 var_label = var_key
                 
             if coord_label:
@@ -103,7 +113,7 @@ class Profiles(AbstractAnalysis[ProfilesPorts]):
                 var_key: _get_figs_by_coord(var_key, var_data)
                 for var_key, var_data in results_by_var.items()
             }),
-            vars[self.variant],
+            vars,
             is_leaf=LDict.is_of(self.var_level_label),
         )
 
@@ -119,5 +129,5 @@ class Profiles(AbstractAnalysis[ProfilesPorts]):
 
     def _params_to_save(self, hps: PyTree[TreeNamespace], *, vars, **kwargs):
         return dict(
-            n=int(np.prod(jt.leaves(vars[self.variant])[0].shape[:-2]))
+            n=int(np.prod(jt.leaves(vars)[0].shape[:-2]))
         )

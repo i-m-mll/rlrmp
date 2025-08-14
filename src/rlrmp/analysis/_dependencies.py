@@ -458,11 +458,15 @@ def compute_dependency_results(
         else:
             log_name = f"{dep_instance.__class__.__name__} ({dep_instance.md5_str})"
         
-        if not log_name.startswith("_DataForwarder"):
-            logger.info(f"Computing analysis node: {log_name}")
-        
-        # Execute analysis and store result
-        result = dep_instance._compute_with_ops(data, **dep_kwargs)
+        if dep_instance.__class__.compute is AbstractAnalysis.compute:
+            # Skip this node -- no implementation of compute()
+            logger.debug(f"Skipping analysis node: {log_name} (no compute implementation)")
+            result = None
+        else:
+            if not log_name.startswith("_DataForwarder"):
+                logger.info(f"Computing analysis node: {log_name}")
+            # Execute analysis and store result
+            result = dep_instance._compute_with_ops(data, **dep_kwargs)
         computed_results[node_id] = result
     
     # Assemble final results for each requested analysis

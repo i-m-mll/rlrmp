@@ -5,8 +5,9 @@ import jax.tree as jt
 from feedbax.intervene import add_intervenors, schedule_intervenor
 from jax_cookbook import is_module
 import jax_cookbook.tree as jtree
+from numpy import var
 
-from rlrmp.analysis.aligned import ALL_MEASURES, MEASURE_LABELS, VAR_LEVEL_LABEL, AlignedEffectorTrajectories, AlignedVars
+from rlrmp.analysis.aligned import ALL_MEASURES, DEFAULT_VARSET, MEASURE_LABELS, VAR_LEVEL_LABEL, AlignedEffectorTrajectories, AlignedVars
 from rlrmp.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS
 from rlrmp.analysis.func import ApplyFuncs
 from rlrmp.analysis.violins import Violins
@@ -122,7 +123,7 @@ DEPENDENCIES = {
             is_leaf=LDict.is_of(VAR_LEVEL_LABEL),
         )
         # Discard the varset; only keep the aligned vars
-        .after_transform(lambda results: results[0]['full'], dependency_names="input")
+        .after_transform(lambda results: results['full'], dependency_names="input")
     )
 }
 
@@ -158,11 +159,13 @@ ANALYSES = {
     #     .after_transform(get_best_replicate)  # By default has `axis=1` for replicates
     # ),
     
-    
     "aligned_trajectories_by_sisu": (
-        AlignedEffectorTrajectories(colorscale_key="sisu")
+        AlignedEffectorTrajectories(
+            colorscale_key="sisu",
+            varset=DEFAULT_VARSET,
+        )
         .after_stacking('sisu')
-        .map_figs_at_level("train__pert__std")
+        .map_figs_at_level("train__pert__std", dependency_name="aligned_vars")
         .then_transform_figs(
             partial(
                 set_axes_bounds_equal, 
@@ -172,25 +175,22 @@ ANALYSES = {
         )
     ),
     "aligned_trajectories_by_train_std": (
-        AlignedEffectorTrajectories(colorscale_key="train__pert__std")
+        AlignedEffectorTrajectories(
+            colorscale_key="train__pert__std",
+            varset=DEFAULT_VARSET,
+        )
         .after_stacking("train__pert__std")
-        .map_figs_at_level('sisu')
+        .map_figs_at_level('sisu', dependency_name="aligned_vars")
     ),
     "profiles_by_train_std": (
-        Profiles()
+        Profiles(varset=DEFAULT_VARSET)
         .after_transform(get_best_replicate)
-        .after_transform(
-            lambda tree, **kws: ldict_level_to_bottom("train__pert__std", tree),
-            dependency_names="vars",
-        )
+        .after_level_to_bottom('train__pert__std', dependency_name="vars")
     ),
     "profiles_by_sisu": (
-        Profiles()
+        Profiles(varset=DEFAULT_VARSET)
         .after_transform(get_best_replicate)
-        .after_transform(
-            lambda tree, **kws: ldict_level_to_bottom("sisu", tree),
-            dependency_names="vars",
-        )
+        .after_level_to_bottom('sisu', dependency_name="vars")
     ),
 
     "plot--measures_by_pert_amp": measure_violins("sisu", "train__pert__std"),
