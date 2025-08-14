@@ -33,7 +33,7 @@ class Tangling(AbstractAnalysis[TanglingPorts]):
     Ports = TanglingPorts
     inputs: TanglingPorts = eqx.field(default_factory=TanglingPorts, converter=TanglingPorts.converter)
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
-    variant: Optional[str] = "full"
+    variant: Optional[str] = None
     eps: float = 1e-6  # TODO: Allow for `lambda states: ...`
     t_axis: int = -2  # time step axis in arrays
     method: L["direct", "kdtree"] = "direct"
@@ -49,7 +49,8 @@ class Tangling(AbstractAnalysis[TanglingPorts]):
     def compute(self, data: AnalysisInputData, *, state, hps_common, **kwargs) -> dict:
         #! Should probably be hps_common.dt, top-level
         dt = hps_common.train.model.dt  
-        state = state[self.variant]
+        if self.variant is not None:
+            state = state[self.variant]
         flow = jt.map(lambda x: self._flow_field(x, dt), state)
         tangling = jt.map(lambda x, dxdt: self._tangling(x, dxdt), state, flow)
         return tangling
