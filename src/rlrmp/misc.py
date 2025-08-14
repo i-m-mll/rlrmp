@@ -680,3 +680,8 @@ def find_indices(arr, values: Array | Sequence[ArrayLike]):
     
     # Vectorize this function across all values
     return jax.vmap(find_single_value)(jnp.array(values))
+
+
+def rms(x: Array, axis: int = -1) -> Array:
+    """Returns the root mean square of `x` along `axis`."""
+    return jnp.sqrt(jnp.mean(x ** 2, axis=axis))

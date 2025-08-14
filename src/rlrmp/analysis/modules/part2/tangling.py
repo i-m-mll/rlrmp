@@ -13,10 +13,9 @@ from typing import Optional, Dict, Any, Literal as L, Sequence
 import equinox as eqx
 from equinox import Module
 import jax
-import jax.numpy as jnp
 import jax.tree as jt
 from feedbax.misc import batch_reshape  # for flattening/unflattening
-from jaxtyping import Array, Float, PyTree
+from jaxtyping import Float, PyTree
 import numpy as np
 import plotly.graph_objects as go
 
@@ -121,29 +120,25 @@ N_PCA = 10
 TANGLING_AGG_T_SLICE = slice(1, None)
 
 
-DEPENDENCIES = {
-    "hidden_states_pca": (
-        StatesPCA(
-            n_components=N_PCA, 
-            where_states=lambda states: states.net.hidden,
-        )
-        .after_transform(get_best_replicate)
-        # .after_indexing(-2, np.arange(START_STEP, END_STEP), axis_label="timestep")
-    ),
-}
-
-
-def rms(x: Array, axis: int = -1) -> Array:
-    """Returns the root mean square of `x` along `axis`."""
-    return jnp.sqrt(jnp.mean(x ** 2, axis=axis))
-
-
 class PCPlot(AbstractAnalysis[NoPorts]):  
     variant: Optional[str] = "small"
     fig_params: FigParamNamespace = DefaultFigParamNamespace(
         title="",
         x_label="",
     )
+
+
+DEPENDENCIES = {
+    "hidden_states_pca": (
+        StatesPCA(
+            n_components=N_PCA, 
+            where_states=lambda states: states.net.hidden,
+            aggregate_over_labels=('pert__amp', 'sisu'),
+        )
+        .after_transform(get_best_replicate)
+        # .after_indexing(-2, np.arange(START_STEP, END_STEP), axis_label="timestep")
+    ),
+}
 
 
 # State batch shape: (eval, replicate, condition)

@@ -5,6 +5,7 @@ from enum import Enum
 import functools
 from functools import cached_property, partial, wraps
 import inspect
+from itertools import chain
 import logging
 from types import EllipsisType, MappingProxyType, SimpleNamespace
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, Iterable, Literal, Mapping, NamedTuple, Optional, Dict, Self, TypeAlias, TypeVar, Union, cast
@@ -402,12 +403,6 @@ class _FinalOp(NamedTuple):
     transform_func: Callable[[PyTree[go.Figure]], PyTree[go.Figure]]
     params: Optional[dict[str, Any]] = {}
     is_leaf: Optional[Callable[[Any], bool]] = None
-    
-    
-"""Sentinel indicating a required dependency."""
-#! TODO: Make Generic, if that makes sense -- so we can indicate the type to the user 
-class _RequiredType: ...
-RequiredInput = _RequiredType()
 
 
 def _process_param(param: Any) -> Any:
@@ -731,6 +726,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         '_prep_ops', 
         '_fig_ops',
         '_final_ops_by_type',
+        '_extra_inputs',
     )
 
     Ports: ClassVar[type[PortsType]] = NoPorts  # type: ignore
@@ -749,18 +745,13 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
     _final_ops_by_type: Mapping[_FinalOpKeyType, tuple[_FinalOp, ...]] = field(
         default_factory=lambda: MappingProxyType({'results': (), 'figs': ()})
     )
+    _extra_inputs: dict[str, Any] = field(default_factory=dict, metadata={'internal': True})
         
     def __post_init__(self):
         """Validate inputs instance and check for unresolved required inputs."""
         # Validate that inputs is an instance of the expected Ports class
         if not isinstance(self.inputs, self.Ports):
             raise TypeError(f"Expected inputs of type {self.Ports}, got {type(self.inputs)}")
-        
-        # Check that no RequiredInput sentinels remain unresolved
-        if any(isinstance(v, _RequiredType) for v in self.inputs.values()):
-            raise ValueError(
-                f"Some inputs for {self.__class__.__name__} are marked as required, but no custom source is provided."
-            )
 
     def _compute_with_ops(
         self, 
@@ -917,7 +908,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         are registered as PyTrees so only their .source children are included in leaves.
         """
         flattened = {}
-        for name, source in self.inputs.items():
+        for name, source in chain(self.inputs.items(), self._extra_inputs.items()):
             # Flatten the PyTree - ExpandTo/Transformed registration ensures only actual dependencies are leaves
             leaves = jt.leaves(source, is_leaf=self.is_analysis_input_leaf)
             
@@ -936,7 +927,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         return flattened
 
     @property 
-    def input_treedefs(self) -> dict[str, Any]:
+    def _input_treedefs(self) -> dict[str, Any]:
         """Get tree definitions for reconstructing PyTree inputs.
         
         Returns TreeDef for dependency trees. ExpandTo/Transformed PyTree registration
@@ -944,7 +935,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         """
         return {
             name: jt.structure(source, is_leaf=self.is_analysis_input_leaf)
-            for name, source in self.inputs.items()
+            for name, source in chain(self.inputs.items(), self._extra_inputs.items())
         }
 
 
@@ -1252,7 +1243,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
             for level in levels:
                 def _transform_level(dep_data, level=level, **kwargs):  
                     return jt.map(
-                        lambda node: _call_user_func(func, node, kwargs), 
+                        lambda node: _call_user_func(func, node, **kwargs), 
                         dep_data, 
                         is_leaf=LDict.is_of(level),
                     )
@@ -1847,21 +1838,15 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
     ) -> Self:
         # If the transform consumes extra dependencies, ensure the analysis
         # instance knows about them so the graph builder evaluates them.
-        port_map = getattr(transform_func, "_cwd_port_map", {})
-
-        if port_map:
-            new_custom_deps = dict(self.custom_inputs)
-            for global_lbl, port_key in port_map.items():
-                if port_key not in self.inputs:
-                    new_custom_deps[port_key] = global_lbl  # reference original label
-
+        analysis_with_deps = self
+        spec_map = getattr(transform_func, "_extra_inputs", None)  # {port -> dep_spec}
+        if spec_map:
+            # Each dep_spec can be a PyTree; store it verbatim under the port.
             analysis_with_deps = eqx.tree_at(
-                lambda a: a.custom_inputs,
-                self,
-                new_custom_deps,
+                lambda a: a._extra_inputs, 
+                self, 
+                self._extra_inputs | spec_map,
             )
-        else:
-            analysis_with_deps = self
 
         return eqx.tree_at(
             lambda a: a._prep_ops,
@@ -2023,7 +2008,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
                     prepped_kwargs[name] = _call_user_func(
                         prep_op.transform_func,
                         prepped_kwargs[name],
-                        kwargs,
+                        **kwargs,
                     )
                 except Exception as e:
                     logger.error(
@@ -2031,11 +2016,11 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
                     )
                     raise e
 
-            # Pop any CallWithDeps-only dependencies that are not part of the analysis interface
-            port_map = getattr(prep_op.transform_func, "_cwd_port_map", {})
-            for port_key in port_map.values():
-                if port_key not in self.inputs:
-                    prepped_kwargs.pop(port_key, None)
+            # Pop any extra dependencies that are not part of the analysis interface
+            extra_ports = getattr(prep_op.transform_func, "_ports", ())
+            for port in extra_ports:
+                if port not in self.inputs:
+                    prepped_kwargs.pop(port, None)
 
         return prepped_kwargs
 
@@ -2054,114 +2039,132 @@ class _DummyAnalysis(AbstractAnalysis[NoPorts]):
         return None
 
 
-def _call_user_func(func, dep_data, extra_kwargs):
+def _call_user_func(func, *args, **kwargs):
     """Invoke *func* with *dep_data* and the subset of *extra_kwargs* it accepts.
-
-    If *func* originated from CallWithDeps we may need to translate
-    user-visible dependency labels (e.g. "hidden_states_pca") that are
-    present in *extra_kwargs* into the unique, private port names
-    (e.g. "__cwd_1") that the wrapper will look up internally.  The
-    mapping is stored on the wrapper object as ``_cwd_port_map``.
+    
+    - If `func` exposes `_ports`, it's a wrapper:
+        * Verify all required port kwargs exist, then pass through *args/**kwargs.
+        * The wrapper handles placement/filtering.
+    - Otherwise (plain callable):
+        * Drop unknown kwargs if the function doesn't accept **kwargs.
     """
-    port_map: dict[str, str] | None = getattr(func, "_cwd_port_map", None)
-    port_names = set(port_map.values()) if port_map else set()
+    ports = getattr(func, "_ports", None)
+
+    if ports:
+        missing = [p for p in ports if p not in kwargs]
+        if missing:
+            raise KeyError(
+                f"Missing dependency ports {missing}; available keys: {sorted(kwargs.keys())}"
+            )
+        return func(*args, **kwargs)
 
     sig = inspect.signature(func)
+    has_varkw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+    if not has_varkw:
+        allowed = set(sig.parameters.keys())
+        kwargs = {k: v for k, v in kwargs.items() if k in allowed}
 
-    # Analyze the signature to determine how to pass dep_data
-    params = list(sig.parameters.values())
-    if not params:
-        # No parameters - this shouldn't happen in practice
-        return func()
-    
-    first_param = params[0]
-    
-    # Determine which kwargs to use based on whether the function accepts **kwargs
-    if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
-        # Function accepts **kwargs; forward everything except first param name to avoid conflicts
-        accept_kwarg = lambda _: True
-    else:
-        accept_kwarg = lambda k: k in sig.parameters or k in port_names
-        
-    kwargs = {
-        k: v for k, v in extra_kwargs.items() 
-        if accept_kwarg(k) and k != first_param.name
-    }
-    
-    # Check if the first parameter can accept dep_data positionally
-    if first_param.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD):
-        # Pass dep_data as positional argument
-        return func(dep_data, **kwargs)
-    elif first_param.kind == inspect.Parameter.KEYWORD_ONLY:
-        # First parameter is keyword-only, so pass dep_data as a keyword argument
-        kwargs[first_param.name] = dep_data
-        return func(**kwargs)
-    else:
-        # VAR_POSITIONAL (*args) - shouldn't happen in practice for transform functions
-        # Fall back to positional behavior
-        return func(dep_data, **kwargs)
+    return func(*args, **kwargs)
 
 
 class CallWithDeps:
+    """
+    Plug (PyTrees of) dependency specs into arbitrary argument positions.
+
+    Positional spec slots:
+      - None -> consume the NEXT *caller*-provided positional arg.
+      - Any other object -> treat as a dependency *spec*; it will be computed
+        under a private port and injected here when the wrapper is called.
+
+    Keyword spec slots:
+      - name=spec -> inject the computed dependency as keyword `name`
+        unless the caller explicitly provides `name` (caller wins).
+    """
     _counter = 0
 
-    def __init__(self, *pos_deps: str | None, **kw_deps: str):
-        self.pos_deps = pos_deps
-        self.kw_deps = kw_deps
+    def __init__(self, *pos_specs: Any, **kw_specs: Any):
+        self.pos_specs = pos_specs
+        self.kw_specs = kw_specs
+
+    @staticmethod
+    def _alloc_port() -> str:
+        CallWithDeps._counter += 1
+        return f"__cwd_{CallWithDeps._counter:x}"
 
     def __call__(self, func: Callable):
-        # build your port map as before...
-        label_set = [d for d in self.pos_deps if d is not None] + list(self.kw_deps.values())
-        label_to_port: dict[str, str] = {}
-        for lbl in label_set:
-            if lbl not in label_to_port:
-                CallWithDeps._counter += 1
-                label_to_port[lbl] = f"__cwd_{CallWithDeps._counter:x}"
-                
-        pos_deps = self.pos_deps 
-        kw_deps = self.kw_deps
+        # Plan structures
+        spec_map: Dict[str, Any] = {}           # {private_port -> spec (leaf or PyTree)}
+        pos_tokens: list[Optional[str]] = []     # [None | private_port]
+        kw_ports: Dict[str, str] = {}           # {param_name -> private_port}
 
-        # define the wrapper class
-        class _Wrapper:
-            __slots__ = ("_func", "_port_map")
+        def port_for(spec: Any) -> str:
+            p = self._alloc_port()
+            spec_map[p] = spec
+            return p
 
-            def __init__(self, func: Callable, port_map: dict[str, str]) -> None:
-                self._func = func
-                self._port_map = port_map
+        for item in self.pos_specs:
+            pos_tokens.append(None if item is None else port_for(item))
+        for name, item in self.kw_specs.items():
+            kw_ports[name] = port_for(item)
 
-            @property
-            def _cwd_port_map(self) -> dict[str, str]:
-                return self._port_map
+        # Introspect the *wrapped* function once, outside the wrapper body
+        sig = inspect.signature(func)
+        param_names = set(sig.parameters.keys())
+        has_varkw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
 
-            def __call__(self, dep_data: Any, **all_kwargs: Any) -> Any:
-                # replicate your positional‑and‑keyword logic
-                pos_args: list[Any] = []
-                for dep in pos_deps:
-                    if dep is None:
-                        pos_args.append(dep_data)
-                    else:
-                        port = self._port_map[dep]
-                        try:
-                            pos_args.append(all_kwargs[port])
-                        except KeyError:
-                            raise KeyError(f"Dependency '{dep}' not found") from None
+        @functools.wraps(func)
+        def wrapper(
+            *caller_args: Any,
+            _spec_map=spec_map,                 # capture to avoid late binding
+            _pos_tokens=tuple(pos_tokens),
+            _kw_ports=kw_ports,
+            _param_names=param_names,
+            _has_varkw=has_varkw,
+            **caller_kwargs: Any
+        ) -> Any:
+            # 1) Extract dependency payloads from private ports
+            deps: Dict[str, Any] = {}
+            for p in _spec_map.keys():
+                if p in caller_kwargs:
+                    deps[p] = caller_kwargs.pop(p)
 
-                if None not in pos_deps:
-                    pos_args.append(dep_data)
+            missing = [p for p in _spec_map.keys() if p not in deps]
+            if missing:
+                raise KeyError(
+                    f"Missing dependency ports {missing}; have keys={sorted(deps.keys())}"
+                )
 
-                mapped_kwargs: dict[str, Any] = {}
-                for param, dep_name in kw_deps.items():
-                    port = self._port_map[dep_name]
+            # 2) Build positional args: None consumes a caller positional
+            args: list[Any] = []
+            it = iter(caller_args)
+            for tok in _pos_tokens:
+                if tok is None:
                     try:
-                        mapped_kwargs[param] = all_kwargs[port]
-                    except KeyError:
-                        raise KeyError(f"Dependency '{dep_name}' not found for '{param}'") from None
+                        args.append(next(it))
+                    except StopIteration:
+                        raise TypeError(
+                            "Not enough positional arguments from caller "
+                            "to satisfy `None` placeholders."
+                        ) from None
+                else:
+                    args.append(deps[tok])
 
-                return self._func(*pos_args, **mapped_kwargs)
+            # Any remaining caller positionals go after the tokens
+            args.extend(list(it))
 
-        # instantiate
-        wrapper = _Wrapper(func, label_to_port)
-        # **here**: update the instance with all of func’s metadata
-        functools.update_wrapper(wrapper, func)
-        
+            # 3) Build keyword args: caller wins; fill missing with deps
+            mapped_kwargs: Dict[str, Any] = dict(caller_kwargs)
+            for name, port in _kw_ports.items():
+                if name not in mapped_kwargs:
+                    mapped_kwargs[name] = deps[port]
+
+            # 4) Filter unknown kwargs if the underlying function has no **kwargs
+            if not _has_varkw:
+                mapped_kwargs = {k: v for k, v in mapped_kwargs.items() if k in _param_names}
+
+            return func(*args, **mapped_kwargs)
+
+        # Expose to the engine:
+        wrapper._extra_inputs = spec_map     # {port -> spec}  # type: ignore[attr-defined]
+        wrapper._ports = tuple(spec_map.keys())  # type: ignore[attr-defined]
         return wrapper

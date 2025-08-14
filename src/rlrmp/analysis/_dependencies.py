@@ -28,7 +28,7 @@ from jax_cookbook import is_type
 from jax_cookbook.tree import collect_aux_data
 
 from rlrmp.analysis.analysis import (
-    AbstractAnalysis, _format_dict_of_params, RequiredInput,
+    AbstractAnalysis, _format_dict_of_params,
     _DataField, LiteralInput, FigParamNamespace, DefaultFigParamNamespace,
     ExpandTo, Transformed, NoPorts
 )
@@ -104,14 +104,6 @@ def resolve_dependency_node(analysis, dep_name, dep_source, dependency_lookup=No
     # Handle None inputs by skipping them
     if dep_source is None:
         return None
-        
-    # Handle required-but-missing dependencies early
-    if dep_source is RequiredInput:
-        raise ValueError(
-            f"Dependency '{dep_name}' for analysis '{analysis.name}' is marked as RequiredInput but was not provided. "
-            "Pass it via `custom_inputs` on that analysis instance, or reference an entry in the module-level "
-            "`DEPENDENCIES` dict and point to it by name from `custom_inputs`."
-        )
     
     # Handle forwarding of attributes from AnalysisInputData via the `Data` sentinel
     if isinstance(dep_source, _DataField):
@@ -353,7 +345,7 @@ def _reconstruct_dependencies(
             aux_data.target for aux_data in collect_aux_data(treedef, ExpandTo) 
             if isinstance(aux_data.target, str)
         }
-        for port_name, treedef in analysis.input_treedefs.items()
+        for port_name, treedef in analysis._input_treedefs.items()
     }
 
     # Process fields in dependency order to ensure ExpandTo targets are available
@@ -391,7 +383,7 @@ def _reconstruct_dependencies(
             )
         
         # Reconstruct PyTree from leaf results - this gives us the structure with ExpandTo/Transformed objects
-        tree_def = analysis.input_treedefs[dep_name]
+        tree_def = analysis._input_treedefs[dep_name]
         reconstructed_tree = jt.unflatten(tree_def, leaf_results)
         
         # Apply transformations recursively from innermost to outermost

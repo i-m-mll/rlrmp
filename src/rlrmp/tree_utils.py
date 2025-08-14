@@ -2,7 +2,7 @@ from collections import defaultdict
 from collections.abc import Callable, KeysView, Mapping
 import logging
 from types import EllipsisType, SimpleNamespace
-from typing import Any, Optional, TypeVar, Sequence
+from typing import Any, Optional, TypeVar, Sequence, cast, overload
 import hashlib
 import json
 import re
@@ -32,7 +32,8 @@ from rlrmp.types import _Wrapped, LDict, LDictConstructor, TreeNamespace
 
 T = TypeVar("T")
 M = TypeVar("M", bound=Mapping)
-
+K = TypeVar('K')
+V = TypeVar('V')
 
 logger = logging.getLogger(__name__)
 
@@ -45,16 +46,22 @@ def swap_model_trainables(model: PyTree[..., "T"], trained: PyTree[..., "T"], wh
     )
 
 
-def _get_mapping_constructor(d: Mapping):
+
+
+def _get_mapping_constructor(d: Mapping[K, V]) -> Callable[[Mapping], Mapping]:
     if isinstance(d, LDict):
-        return LDict.of(d.label)   
-    else:
-        return type(d)
+        # returns (Mapping[K, V]) -> LDict[K, V], which is fine (Mapping is a supertype of LDict)
+        return LDict.of(d.label)
+    return type(d)
 
 
-def subdict(d: Mapping[T, Any], keys: Sequence[T]):
-    """Returns the mapping containing only the keys `keys`."""
-    return _get_mapping_constructor(d)({k: d[k] for k in keys})
+@overload
+def subdict(d: "LDict[K, V]", keys: Sequence[K]) -> "LDict[K, V]": ...
+@overload
+def subdict(d: M, keys: Sequence[K]) -> M: ...
+def subdict(d: Mapping[K, V], keys: Sequence[K]) -> Mapping[K, V]:
+    ctor = _get_mapping_constructor(d)
+    return ctor({k: d[k] for k in keys})
 
 
 def dictmerge(*dicts: Mapping) -> Mapping:

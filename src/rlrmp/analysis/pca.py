@@ -1,6 +1,6 @@
 from collections.abc import Callable, Sequence
 from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, DefaultFigParamNamespace, FigParamNamespace, InputOf, NoPorts
-from rlrmp.tree_utils import ldict_level_to_bottom, tree_level_labels
+from rlrmp.tree_utils import ldict_level_to_bottom, rearrange_ldict_levels, tree_level_labels
 from rlrmp.types import AnalysisInputData, LDict, TreeNamespace
 
 import equinox as eqx
@@ -63,9 +63,10 @@ class StatesPCA(AbstractAnalysis[NoPorts]):
         if self.aggregate_over_labels == 'all':
             is_leaf = is_type(type(states))
         else:
-            for label in self.aggregate_over_labels:
-                states = ldict_level_to_bottom(label, states, is_leaf=is_module)
             if self.aggregate_over_labels:
+                states = rearrange_ldict_levels(
+                    states, [...] + list(self.aggregate_over_labels), is_leaf=is_module
+                )
                 is_leaf = LDict.is_of(self.aggregate_over_labels[0])
             else:
                 is_leaf = is_module     
