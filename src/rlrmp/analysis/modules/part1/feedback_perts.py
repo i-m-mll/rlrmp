@@ -14,7 +14,7 @@ import feedbax.plotly as fbp
 
 # from rlrmp.analysis import measures
 from rlrmp.analysis import AbstractAnalysis
-from rlrmp.analysis.aligned import ALL_MEASURES, VAR_LEVEL_LABEL, AlignedVars
+from rlrmp.analysis.aligned import ALL_MEASURES, MEASURE_LABELS, VAR_LEVEL_LABEL, AlignedVars
 from rlrmp.analysis.analysis import DefaultFigParamNamespace, FigParamNamespace
 from rlrmp.analysis.disturbance import FB_INTERVENOR_LABEL, get_pert_amp_vmap_eval_func, task_with_pert_amp
 from rlrmp.analysis.func import ApplyFuncs
@@ -178,6 +178,12 @@ MEASURE_KEYS = [
 MEASURE_FUNCS = subdict(ALL_MEASURES, MEASURE_KEYS)
 
 
+def measure_violin_params_fn(fig_params, i, item):
+    return fig_params | dict(
+        yaxis_title=MEASURE_LABELS[item],
+    )
+
+
 DEPENDENCIES = {
     "measures": (
         ApplyFuncs(
@@ -193,7 +199,12 @@ DEPENDENCIES = {
 
 ANALYSES = {
     "plot--measures": Violins(
-        inputs=Violins.Ports(input="measures"),
+        inputs=Violins.Ports(input="measures")
+        .map_figs_at_level(
+            "measure", 
+            dependency_name="input", 
+            fig_params_fn=measure_violin_params_fn,
+        )
     )
     
     # "effector_single_eval": (
