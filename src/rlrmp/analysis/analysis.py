@@ -1013,7 +1013,10 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         a subclass that implements `compute` is implicitly available as a dependency for other subclasses
         which may depend on data for any variant.  
         """
-        return
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not implement compute(). "
+            "Either implement this method or the analysis will be skipped during computation."
+        )
     
     def make_figs(
         self, 
@@ -1027,7 +1030,10 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         Figures are returned, but are not made available to other subclasses of `AbstractAnalysis`
         which depend on the subclass implementing this method. 
         """
-        return
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not implement make_figs(). "
+            "Either implement this method or the analysis will be skipped during figure generation."
+        )
     
     def save_figs(
         self, 
@@ -1382,7 +1388,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
     def after_level_to_top(
         self, 
         label: str, 
-        is_leaf: Callable[[Any], bool] = LDict.is_of('var'),
+        is_leaf: Callable[[Any], bool] | None = None, # LDict.is_of('var'),
         dependency_name: Optional[str] = None,
     ) -> Self:
         """
@@ -1409,7 +1415,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
     def after_rearrange_levels(
         self, 
         spec: Sequence[str | EllipsisType],
-        is_leaf: Callable[[Any], bool] = LDict.is_of('var'),
+        is_leaf: Callable[[Any], bool] | None = None, # LDict.is_of('var'),
         dependency_name: Optional[str] = None,
     ) -> Self:
         """
@@ -1437,7 +1443,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
     def after_level_to_bottom(
         self, 
         label: str, 
-        is_leaf: Callable[[Any], bool] = LDict.is_of('var'),
+        is_leaf: Callable[[Any], bool] | None = None, # LDict.is_of('var'),
         dependency_name: Optional[str] = None,
     ) -> Self:
         """
@@ -1449,12 +1455,14 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         """
         def transpose_dependency(dep_data, **kwargs):
             return LDict.of('task_variant')({
-                variant_label: ldict_level_to_bottom(label, dep_data[variant_label], is_leaf=is_leaf)
+                variant_label: ldict_level_to_bottom(
+                    label, dep_data[variant_label], is_leaf=is_leaf
+                )
                 for variant_label in dep_data
             })
         
         return self._add_prep_op(
-            name="after_level_to_top",
+            name="after_level_to_bottom",
             label=f"{_format_level_str(label)}_to-bottom",
             dep_name=dependency_name,
             transform_func=transpose_dependency,

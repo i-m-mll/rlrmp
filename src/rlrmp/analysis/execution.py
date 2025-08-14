@@ -405,14 +405,17 @@ def perform_all_analyses(
 
     # Phase 2: Keep results & generate figures for leaf analyses only
     def finish_analysis(analysis_key: str, analysis: AbstractAnalysis, inputs: dict):
-        #! TODO: Check if analysis even returns any figures, before logging this
-        logger.info(f"Making figures: {analysis_key}")
         # Get the computed result for this analysis (computed in phase 1)
         result = inputs.pop('result')
         
-        figs = analysis._make_figs_with_ops(data, result, **inputs)
+        # Check if make_figs is overridden before attempting figure generation
+        if "make_figs" not in analysis.__class__.__dict__:
+            logger.debug(f"Skipping figure generation for {analysis_key} (no make_figs implementation)")
+            figs = None
+        else:
+            logger.info(f"Making figures: {analysis_key}")
+            figs = analysis._make_figs_with_ops(data, result, **inputs)
         
-        if figs is not None:
             analysis.save_figs(
                 db_session,
                 eval_info,

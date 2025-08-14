@@ -199,7 +199,7 @@ class AlignedVars(AbstractAnalysis[NoPorts]):
         self,
         data: AnalysisInputData,
         **kwargs,
-    ) -> tuple[PyTree[Array], PyTree[VarSpec]]:
+    ) -> PyTree[Array]:
         
         def _get_aligned_vars_by_task(task, states_by_task, hps_by_task):
             
@@ -214,6 +214,7 @@ class AlignedVars(AbstractAnalysis[NoPorts]):
                         else:
                             # Assume `spec.origin` is a constant array
                             arr = arr - spec.origin
+                    #! TODO: Use `ArrayLikeWrapper` to keep var metadata with arrays
                     return project_onto_direction(arr, directions)
                 
                 return jt.map(_align_var, self.varset, is_leaf=is_type(VarSpec))
@@ -232,7 +233,7 @@ class AlignedVars(AbstractAnalysis[NoPorts]):
             is_leaf=is_module,
         )
 
-        return result, self.varset
+        return result
         
         
 class AlignedEffectorTrajectoriesPorts(AbstractAnalysisPorts):
@@ -240,7 +241,6 @@ class AlignedEffectorTrajectoriesPorts(AbstractAnalysisPorts):
     aligned_vars: AlignedVars | str = AlignedVars()
 
 
-#! TODO: Fix `AbstractAnalysis.after_stacking`
 class AlignedEffectorTrajectories(AbstractAnalysis[AlignedEffectorTrajectoriesPorts]):
     Ports = AlignedEffectorTrajectoriesPorts
     inputs: AlignedEffectorTrajectoriesPorts = eqx.field(default_factory=Ports, converter=Ports.converter)
@@ -271,6 +271,7 @@ class AlignedEffectorTrajectories(AbstractAnalysis[AlignedEffectorTrajectoriesPo
     colorscale_key: str = field(kw_only=True)
     colorscale_axis: int = 0
     pos_endpoints: bool = True
+    varset: Optional[PyTree[VarSpec]] = None
 
     def make_figs(
         self,
@@ -291,10 +292,11 @@ class AlignedEffectorTrajectories(AbstractAnalysis[AlignedEffectorTrajectoriesPo
                 fig_params.legend_labels = flat_key_to_where_func(self.colorscale_key)(hps_common)
             except:
                 pass
-            
-        #! TODO: Use `ArrayLikeWrapper` to keep labels with arrays. 
-        aligned_vars, varset = aligned_vars
-        labels = get_varset_labels(varset).medium
+        
+        if self.varset is not None:
+            labels = get_varset_labels(self.varset).medium
+        else:
+            labels = None
 
         def _make_fig(vars_):            
             return fbp.trajectories_2D(

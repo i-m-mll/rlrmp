@@ -12,11 +12,12 @@ import jax_cookbook.tree as jtree
 
 from feedbax.intervene import schedule_intervenor
 import feedbax.plotly as fbp
+from numpy import var
 
 # from rlrmp.analysis import measures
 from rlrmp.analysis import AbstractAnalysis
-from rlrmp.analysis.aligned import ALL_MEASURES, MEASURE_LABELS, VAR_LEVEL_LABEL, AlignedEffectorTrajectories, AlignedVars 
-from rlrmp.analysis.analysis import _DummyAnalysis, DefaultFigParamNamespace, FigIterCtx, FigParamNamespace
+from rlrmp.analysis.aligned import ALL_MEASURES, DEFAULT_VARSET, MEASURE_LABELS, VAR_LEVEL_LABEL, AlignedEffectorTrajectories, AlignedVars 
+from rlrmp.analysis.analysis import _DummyAnalysis, DefaultFigParamNamespace, FigIterCtx, FigParamNamespace, Transformed
 from rlrmp.analysis.disturbance import FB_INTERVENOR_LABEL, get_pert_amp_vmap_eval_func, task_with_pert_amp
 from rlrmp.analysis.effector import EffectorTrajectories
 from rlrmp.analysis.func import ApplyFuncs
@@ -178,6 +179,7 @@ def get_impulse_directions(task, hps):
 DEPENDENCIES = {
     "aligned_vars": AlignedVars(
         directions_func=get_impulse_directions,
+        varset=DEFAULT_VARSET,
     ),
     "measures": (
         ApplyFuncs(
@@ -186,7 +188,7 @@ DEPENDENCIES = {
             is_leaf=LDict.is_of(VAR_LEVEL_LABEL),
         )
         # Discard the varset; only keep the aligned vars
-        .after_transform(lambda results: results[0]['full'], dependency_names="input")
+        .after_transform(lambda results: results['full'], dependency_names="input")
     )   
 }
 
@@ -243,30 +245,30 @@ ANALYSES = {
     #     )
     # ),
 
-    "aligned_trajectories": (
-        AlignedEffectorTrajectories(
-            variant="full",
-            inputs=AlignedEffectorTrajectories.Ports(
-                aligned_vars="aligned_vars",
-            ),
-            colorscale_axis=1,
-            colorscale_key='pert__amp',
-        )
-        .after_transform(get_best_replicate)
-    ),
+    # "aligned_trajectories": (
+    #     AlignedEffectorTrajectories(
+    #         variant="full",
+    #         inputs=AlignedEffectorTrajectories.Ports(
+    #             aligned_vars="aligned_vars",
+    #         ),
+    #         colorscale_axis=1,
+    #         colorscale_key='pert__amp',
+    #     )
+    #     .after_transform(get_best_replicate)
+    # ),
 
-    "aligned_trajectories_by_train_std": (
-        #! This is broken; nothing appears. 
-        AlignedEffectorTrajectories(
-            variant="full",
-            inputs=AlignedEffectorTrajectories.Ports(
-                aligned_vars="aligned_vars",
-            ),
-            colorscale_key='train__pert__std',
-        )
-        .after_transform(get_best_replicate)
-        .after_stacking(level='train__pert__std')
-    ),
+    # "aligned_trajectories_by_train_std": (
+    #     AlignedEffectorTrajectories(
+    #         variant="full",
+    #         inputs=AlignedEffectorTrajectories.Ports(
+    #             aligned_vars="aligned_vars"
+    #         ),
+    #         colorscale_key='train__pert__std',
+    #         varset=DEFAULT_VARSET,
+    #     )
+    #     .after_transform(get_best_replicate)
+    #     .after_stacking(level='train__pert__std', dependency_name="aligned_vars")
+    # ),
 
     "profiles": (
         Profiles(
@@ -275,10 +277,12 @@ ANALYSES = {
                 vars="aligned_vars",
             ),
             vrect_kws_func=get_impulse_vrect_kws,  
+            varset=DEFAULT_VARSET,
         )
         .after_transform(get_best_replicate) 
+        .after_level_to_bottom('sisu', dependency_name="vars")
         .after_indexing(1, -2, axis_label='pert__amp') 
-        .map_figs_at_level('train__pert__std')
+        # .map_figs_at_level('train__pert__std', dependency_name="vars")
         .with_fig_params(
             # legend_title="SISU",
             layout_kws=dict(

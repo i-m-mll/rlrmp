@@ -6,8 +6,9 @@ import jax.tree as jt
 from feedbax.intervene import add_intervenors, schedule_intervenor
 from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
+from numpy import var
 
-from rlrmp.analysis.aligned import ALL_MEASURES, MEASURE_LABELS, VAR_LEVEL_LABEL, AlignedEffectorTrajectories, AlignedVars
+from rlrmp.analysis.aligned import ALL_MEASURES, DEFAULT_VARSET, MEASURE_LABELS, VAR_LEVEL_LABEL, AlignedEffectorTrajectories, AlignedVars
 from rlrmp.analysis.effector import EffectorTrajectories
 from rlrmp.analysis.disturbance import PLANT_PERT_FUNCS
 from rlrmp.analysis.func import ApplyFuncs
@@ -101,7 +102,7 @@ DEPENDENCIES = {
             is_leaf=LDict.is_of(VAR_LEVEL_LABEL),
         )
         # Discard the varset; only keep the aligned vars
-        .after_transform(lambda results: results[0]['full'], dependency_names="input")
+        .after_transform(lambda results: results['full'], dependency_names="input")
     )
 }
 
@@ -168,6 +169,7 @@ ANALYSES = {
     "aligned_trajectories_by_pert_amp": (
         AlignedEffectorTrajectories(
             colorscale_key="pert__amp",
+            varset=DEFAULT_VARSET,
         )
         .after_transform(get_best_replicate)
         .after_stacking(level='pert__amp')
@@ -175,17 +177,19 @@ ANALYSES = {
     "aligned_trajectories_by_train_std": (
         AlignedEffectorTrajectories(
             colorscale_key="train__pert__std",
+            varset=DEFAULT_VARSET,
         )
         .after_transform(get_best_replicate)
         .after_stacking(level='train__pert__std')
     ),
     "profiles": (
-        Profiles()
+        Profiles(varset=DEFAULT_VARSET)
         .after_transform(get_best_replicate)
-        .after_transform(
-            lambda tree, **kws: move_ldict_level_above("var", "train__pert__std", tree),
-            dependency_names="vars",
-        )
+        .after_level_to_bottom('train__pert__std', dependency_name="vars")
+        # .after_transform(
+        #     lambda tree, **kws: move_ldict_level_above("var", "train__pert__std", tree),
+        #     dependency_names="vars",
+        # )
     ),
     "plot--measures": measure_violins_base,
     "plot--measures_lohi_train_std": (
