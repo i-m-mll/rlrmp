@@ -1,7 +1,7 @@
 from collections import defaultdict
 from collections.abc import Callable, KeysView, Mapping
 import logging
-from types import SimpleNamespace
+from types import EllipsisType, SimpleNamespace
 from typing import Any, Optional, TypeVar, Sequence
 import hashlib
 import json
@@ -200,9 +200,6 @@ def swap_adjacent_ldict_levels(
     is_outer = LDict.is_of(outer_label)
     is_inner = LDict.is_of(inner_label)
 
-    # -------------------------------------------------------------------
-    # helper that actually swaps *one* outer->inner pair
-    # -------------------------------------------------------------------
     def _swap_one(node: LDict):
         assert node.label == outer_label           # guaranteed by caller
 
@@ -274,6 +271,101 @@ def ldict_level_to_bottom(label: str, tree, *, is_leaf=None):
 def move_ldict_level_above(inner_label: str, outer_label: str, tree: PyTree, is_leaf: Optional[Callable[[Any], bool]] = None) -> list[type]:
     """Move an `LDict` level just above another, in a PyTree."""
     return swap_adjacent_ldict_levels(outer_label, inner_label, tree, is_leaf=is_leaf)
+
+
+
+def rearrange_ldict_levels(
+    tree,
+    spec: Sequence[str | EllipsisType],
+    *,
+    is_leaf=None,
+):
+    """
+    Reorder LDict levels according to `spec`.
+
+    `spec` may contain 0 or 1 Ellipsis (the literal `...`):
+      - If Ellipsis is present: items before `...` become the top (outermost)
+        in the given order; items after `...` become the bottom (innermost) in
+        the given order; all other levels (not named in `spec`) remain in the
+        middle, preserving their original relative order.
+      - If Ellipsis is absent: bring the listed labels to the top (outermost)
+        in the given order; all other levels follow in their original
+        relative order.
+
+    Assumes each level label is unique along the LDict stack.
+
+    Raises:
+      - ValueError for unknown labels, duplicates in `spec`, or more than one
+        ellipsis.
+    """
+    # Current order of LDict level labels
+    current_levels = tree_level_labels(tree, is_leaf=is_leaf)
+    if not current_levels:
+        return tree
+
+    # Normalize spec & validate
+    spec_list = list(spec)
+    ell_count = sum(1 for x in spec_list if x is Ellipsis)
+    if ell_count > 1:
+        raise ValueError("`spec` may contain at most one Ellipsis (`...`).")
+
+    spec_labels = [x for x in spec_list if x is not Ellipsis]
+    # duplicate labels in spec?
+    if len(set(spec_labels)) != len(spec_labels):
+        dups = [lbl for lbl in spec_labels if spec_labels.count(lbl) > 1]
+        raise ValueError(f"Duplicate label(s) in spec: {sorted(set(dups))}")
+
+    # unknown labels?
+    missing = [lbl for lbl in spec_labels if lbl not in current_levels]
+    if missing:
+        raise ValueError(f"Unknown level label(s): {missing}")
+
+    if ell_count == 1:
+        ell_ix = spec_list.index(Ellipsis)
+        top_labels = list(spec_list[:ell_ix])          # before ...
+        bottom_labels = list(spec_list[ell_ix + 1:])   # after ...
+        # safety: labels around ellipsis are strings
+        top_labels = [x for x in top_labels if x is not Ellipsis]
+        bottom_labels = [x for x in bottom_labels if x is not Ellipsis]
+        if set(top_labels) & set(bottom_labels):
+            both = sorted(set(top_labels) & set(bottom_labels))
+            raise ValueError(f"Label(s) appear on both sides of Ellipsis: {both}")
+    else:
+        # No ellipsis: interpret as "bring these to the top"
+        top_labels = spec_labels
+        bottom_labels = []
+
+    # Middle labels keep their original relative order
+    pinned = set(top_labels) | set(bottom_labels)
+    middle_labels = [lbl for lbl in current_levels if lbl not in pinned]
+
+    target = list(top_labels) + middle_labels + list(bottom_labels)
+
+    # Now transform the tree to match `target`, using adjacent swaps.
+    # We mirror the same swaps in an in-memory `levels` list so we
+    # don’t have to recompute labels each step.
+    levels = list(current_levels)
+
+    for i, want in enumerate(target):
+        if levels[i] == want:
+            continue
+        # Find where the desired label currently sits
+        j = levels.index(want)
+        # Bubble it left to position i by swapping adjacent pairs
+        while j > i:
+            outer = levels[j - 1]
+            inner = levels[j]
+            tree = swap_adjacent_ldict_levels(
+                outer_label=outer,
+                inner_label=inner,
+                tree=tree,
+                is_leaf=is_leaf,
+            )
+            # Keep our local mirror in sync
+            levels[j - 1], levels[j] = levels[j], levels[j - 1]
+            j -= 1
+
+    return tree
 
 
 def ldict_level_keys(tree: PyTree, label: str) -> KeysView:

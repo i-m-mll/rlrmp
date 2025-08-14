@@ -14,9 +14,13 @@ import feedbax.plotly as fbp
 
 # from rlrmp.analysis import measures
 from rlrmp.analysis import AbstractAnalysis
+from rlrmp.analysis.aligned import ALL_MEASURES, VAR_LEVEL_LABEL, AlignedVars
 from rlrmp.analysis.analysis import DefaultFigParamNamespace, FigParamNamespace
 from rlrmp.analysis.disturbance import FB_INTERVENOR_LABEL, get_pert_amp_vmap_eval_func, task_with_pert_amp
+from rlrmp.analysis.func import ApplyFuncs
 from rlrmp.analysis.state_utils import vmap_eval_ensemble
+from rlrmp.analysis.violins import Violins
+from rlrmp.tree_utils import subdict
 from rlrmp.types import AnalysisInputData, LDict, unflatten_dict_keys
 from rlrmp.perturbations import feedback_impulse
 
@@ -170,36 +174,27 @@ MEASURE_KEYS = [
     "sum_deviation",
 ]
 
-#! Add a couple more measures over specific intervals of the trials
-# shortly_after_impulse = slice(impulse_end_step, impulse_end_step + impulse_duration)
-# after_impulse = slice(impulse_end_step, None)
-# custom_measures, custom_measure_labels = jtree.unzip({
-#     "max_parallel_force_forward_shortly_after_impulse": (
-#         measures.set_timesteps(
-#             measures.max_parallel_force, shortly_after_impulse,
-#         ),
-#         f"Max forward force within {impulse_duration} steps of pert. end",
-#     ),
-#     "max_net_force_during_impulse": (
-#         measures.set_timesteps(
-#             measures.max_net_force, impulse_time_idxs,
-#         ),
-#         "Max net force during pert.",
-#     ),
-#     "max_net_force_after_impulse": (
-#         measures.set_timesteps(
-#             measures.max_net_force, after_impulse,
-#         ),
-#         "Max net force after pert.",
-#     ),
-# })
-# all_measures = subdict(MEASURES, measure_keys) | custom_measures
-# measure_labels = MEASURE_LABELS | custom_measure_labels
+
+MEASURE_FUNCS = subdict(ALL_MEASURES, MEASURE_KEYS)
+
+
+DEPENDENCIES = {
+    "measures": (
+        ApplyFuncs(
+            funcs=MEASURE_FUNCS,
+            inputs=ApplyFuncs.Ports(input=AlignedVars()),
+            is_leaf=LDict.is_of(VAR_LEVEL_LABEL),
+        )
+        # Discard the varset; only keep the aligned vars
+        .after_transform(lambda results: results[0]['full'], dependency_names="input")
+    )    
+}
 
 
 ANALYSES = {
-    #! TODO: Use ApplyFuncs + Violins
-    # "measures": Measures(measure_keys=MEASURE_KEYS),
+    "plot--measures": Violins(
+        inputs=Violins.Ports(input="measures"),
+    )
     
     # "effector_single_eval": (
     #     Effector_SingleEval(
