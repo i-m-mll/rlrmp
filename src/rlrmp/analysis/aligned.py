@@ -7,6 +7,7 @@ from typing import NamedTuple, Optional, Literal as L, TypeVar
 
 import equinox as eqx
 from equinox import Module, field
+from h11 import Response
 import jax.numpy as jnp
 import jax.tree as jt
 from jaxtyping import PyTree, Array, Float
@@ -70,7 +71,7 @@ def get_reach_directions(task: AbstractTask, *args) -> Array:
     return pos_endpoints[1] - pos_endpoints[0]
 
 
-DEFAULT_VARSET = LDict.of(VAR_LEVEL_LABEL)({
+DEFAULT_VARSET: LDict[str, VarSpec] = LDict.of(VAR_LEVEL_LABEL)({
     ResponseVar.POSITION: VarSpec(
         where=lambda states, *_: states.mechanics.effector.pos,
         labels=Labels("Position", "Pos.", "p"),
@@ -343,6 +344,8 @@ class AlignedEffectorTrajectories(AbstractAnalysis[AlignedEffectorTrajectoriesPo
         )
 
 
+
+#! TODO: This should not be limited to `ResponseVar`
 class Measure(Module):
     """Unified measure class for computing response metrics.
 

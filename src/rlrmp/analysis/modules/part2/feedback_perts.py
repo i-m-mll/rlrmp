@@ -15,15 +15,18 @@ import feedbax.plotly as fbp
 
 # from rlrmp.analysis import measures
 from rlrmp.analysis import AbstractAnalysis
-from rlrmp.analysis.aligned import AlignedEffectorTrajectories, AlignedVars 
+from rlrmp.analysis.aligned import ALL_MEASURES, VAR_LEVEL_LABEL, AlignedEffectorTrajectories, AlignedVars 
 from rlrmp.analysis.analysis import _DummyAnalysis, DefaultFigParamNamespace, FigParamNamespace
 from rlrmp.analysis.disturbance import FB_INTERVENOR_LABEL, get_pert_amp_vmap_eval_func, task_with_pert_amp
 from rlrmp.analysis.effector import EffectorTrajectories
+from rlrmp.analysis.func import ApplyFuncs
 from rlrmp.analysis.profiles import Profiles
+from rlrmp.analysis.violins import Violins
 from rlrmp.misc import lohi
 from rlrmp.plot import set_axis_bounds_equal
 from rlrmp.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
 from rlrmp.misc import get_constant_input_fn
+from rlrmp.tree_utils import subdict
 from rlrmp.types import AnalysisInputData, LDict, unflatten_dict_keys
 from rlrmp.perturbations import feedback_impulse
 from rlrmp.colors import ColorscaleSpec
@@ -127,6 +130,8 @@ MEASURE_KEYS = [
     "sum_deviation",
 ]
 
+MEASURE_FUNCS = subdict(ALL_MEASURES, MEASURE_KEYS)
+
 
 # TODO: We wouldn't need to hardcode this if we could pass a callable to `after_indexing`
 ORIGIN_GRID_IDX = 12
@@ -174,6 +179,15 @@ DEPENDENCIES = {
     "aligned_vars": AlignedVars(
         directions_func=get_impulse_directions,
     ),
+    "measures": (
+        ApplyFuncs(
+            funcs=MEASURE_FUNCS,
+            inputs=ApplyFuncs.Ports(input="aligned_vars"),
+            is_leaf=LDict.is_of(VAR_LEVEL_LABEL),
+        )
+        # Discard the varset; only keep the aligned vars
+        .after_transform(lambda results: results[0]['full'], dependency_names="input")
+    )   
 }
 
 
@@ -203,6 +217,8 @@ def measures_fig_params_fn(fig_params, i, item):
     return fig_params
 
 
+
+
 # State PyTree structure: ['pert__var', 'sisu', 'train__pert__std']
 # Array batch shape: (evals, replicates, impulse amplitudes, reach conditions)
 ANALYSES = {
@@ -227,11 +243,11 @@ ANALYSES = {
     "aligned_trajectories": (
         AlignedEffectorTrajectories(
             variant="full",
-            colorscale_axis=1,
-            colorscale_key='pert__amp',
             inputs=AlignedEffectorTrajectories.Ports(
                 aligned_vars="aligned_vars",
             ),
+            colorscale_axis=1,
+            colorscale_key='pert__amp',
         )
         .after_transform(get_best_replicate)
     ),
@@ -243,6 +259,7 @@ ANALYSES = {
             inputs=AlignedEffectorTrajectories.Ports(
                 aligned_vars="aligned_vars",
             ),
+            colorscale_key='train__pert__std',
         )
         .after_transform(get_best_replicate)
         .after_stacking(level='train__pert__std')
@@ -252,7 +269,7 @@ ANALYSES = {
         Profiles(
             variant="full",
             inputs=Profiles.Ports(
-                vars="aligned_vars_impulse",
+                vars="aligned_vars",
             ),
             vrect_kws_func=get_impulse_vrect_kws,  
         )
@@ -268,30 +285,32 @@ ANALYSES = {
         )
     ),
 
-    #! TODO: Use ApplyFuncs + Violins
-    # "measures": (
-    #     Measures(
-    #         measure_keys=MEASURE_KEYS,
-    #         inputs=Measures.Ports(
-    #             aligned_vars="aligned_vars_impulse",
-    #         ),
-    #     )
-    #     .after_transform(get_best_replicate)
-    #     .after_unstacking(1, "pert__amp")
-    #     .after_transform(lohi, level="train__pert__std")
-    #     # Save seperate figures for zero-std, as pared-down all-grey
-    #     .map_figs_at_level(
-    #         'train__pert__std',
-    #         fig_params_fn=measures_fig_params_fn,
+    #! TODO: Implement chained fig ops (for multi map_figs_at_level)
+    # "plot--measures": (
+    #     Violins(
+    #         inputs=Violins.Ports(input="measures"),
     #     )
     #     .with_fig_params(
     #         legend_title="SISU",
     #         xaxis_title="Feedback impulse amplitude",
     #         violinmode="group",
     #     )
+    #     .after_transform(get_best_replicate)
+    #     .after_unstacking(1, "pert__amp")
+    #     .after_transform(lohi, level="train__pert__std")
+    #     .map_figs_at_level(
+    #         "measure",
+    #         dependency_name="input",
+    #     )
+    #     # Save seperate figures for zero-std, as pared-down all-grey
+    #     .map_figs_at_level(
+    #         'train__pert__std',
+    #         fig_params_fn=measures_fig_params_fn,
+    #     )
+    #     # Ensure the pared-down figures have the same y-axis bounds as the main figures
     #     .then_transform_figs(
     #         partial(set_axis_bounds_equal, 'y'),
     #         level='train__pert__std'
     #     )
-    # ),
+    # )
 }

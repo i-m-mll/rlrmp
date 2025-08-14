@@ -8,7 +8,8 @@ import jax_cookbook.tree as jtree
 
 from rlrmp.analysis.aligned import ALL_MEASURES, MEASURE_LABELS, VAR_LEVEL_LABEL, AlignedEffectorTrajectories, AlignedVars
 from rlrmp.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS
-from rlrmp.analysis.measures import ApplyFuncs, Violins
+from rlrmp.analysis.func import ApplyFuncs
+from rlrmp.analysis.violins import Violins
 from rlrmp.analysis.profiles import Profiles
 from rlrmp.analysis.state_utils import get_best_replicate, get_constant_task_input_fn, vmap_eval_ensemble
 from rlrmp.colors import ColorscaleSpec
@@ -112,6 +113,7 @@ MEASURE_KEYS = (
 
 MEASURE_FUNCS = subdict(ALL_MEASURES, MEASURE_KEYS)
 
+
 DEPENDENCIES = {
     "measures": (
         ApplyFuncs(
@@ -120,7 +122,7 @@ DEPENDENCIES = {
             is_leaf=LDict.is_of(VAR_LEVEL_LABEL),
         )
         # Discard the varset; only keep the aligned vars
-        .after_transform(lambda result, varset: result, dependency_names="input")
+        .after_transform(lambda results: results[0]['full'], dependency_names="input")
     )
 }
 
@@ -130,14 +132,19 @@ def measure_violin_params_fn(fig_params, i, item):
         yaxis_title=MEASURE_LABELS[item],
     )
 
-measures_base = (
-     Violins(inputs=Violins.Ports(input="measures"))
+measure_violins_base = (
+    Violins(inputs=Violins.Ports(input="measures"))
     .map_figs_at_level(
         "measure", 
         dependency_name="input", 
         fig_params_fn=measure_violin_params_fn,
     )
 )
+
+def measure_violins(group_var: str, x_var: str):
+    return measure_violins_base.after_rearrange_levels(
+        [..., group_var, x_var], dependency_name="input",
+    )
 
 
 # State PyTree structure: ['sisu', 'pert__amp', 'train__pert__std']
@@ -150,6 +157,8 @@ ANALYSES = {
     #     )
     #     .after_transform(get_best_replicate)  # By default has `axis=1` for replicates
     # ),
+    
+    
     "aligned_trajectories_by_sisu": (
         AlignedEffectorTrajectories(colorscale_key="sisu")
         .after_stacking('sisu')
@@ -183,20 +192,8 @@ ANALYSES = {
             dependency_names="vars",
         )
     ),
-    # "measures_by_pert_amp": Measures(measure_keys=MEASURE_KEYS).map_figs_at_level("pert__amp"),
-    # "measures_by_train_std": Measures(measure_keys=MEASURE_KEYS).map_figs_at_level("train__pert__std"),
-    # "measures_train_std_by_pert_amp": Measures(measure_keys=MEASURE_KEYS).after_level_to_top("train__pert__std").map_figs_at_level("pert__amp"),
-    "plot--measures_by_pert_amp": (
-        Violins(inputs=Violins.Ports(input="measures"))
-        .map_figs_at_level("pert__amp")
-    ),
-    "plot--measures_by_train_std": (
-        Violins(inputs=Violins.Ports(input="measures"))
-        .map_figs_at_level("train__pert__std")
-    ),
-    "plot--measures_train_std_by_pert_amp": (
-        Violins(inputs=Violins.Ports(input="measures"))
-        .after_level_to_top("train__pert__std")
-        .map_figs_at_level("pert__amp")
-    ),
+
+    "plot--measures_by_pert_amp": measure_violins("sisu", "train__pert__std"),
+    "plot--measures_by_train_std": measure_violins("sisu", "pert__amp"),
+    "plot--measures_train_std_by_pert_amp": measure_violins("train__pert__std", "sisu"),
 }

@@ -10,7 +10,8 @@ import jax_cookbook.tree as jtree
 from rlrmp.analysis.aligned import ALL_MEASURES, MEASURE_LABELS, VAR_LEVEL_LABEL, AlignedEffectorTrajectories, AlignedVars
 from rlrmp.analysis.effector import EffectorTrajectories
 from rlrmp.analysis.disturbance import PLANT_PERT_FUNCS
-from rlrmp.analysis.measures import ApplyFuncs, Violins
+from rlrmp.analysis.func import ApplyFuncs
+from rlrmp.analysis.violins import Violins
 from rlrmp.analysis.profiles import Profiles
 from rlrmp.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
 from rlrmp.analysis.disturbance import PLANT_INTERVENOR_LABEL
@@ -110,7 +111,7 @@ def measure_violin_params_fn(fig_params, i, item):
         yaxis_title=MEASURE_LABELS[item],
     )
 
-measures_base = (
+measure_violins_base = (
      Violins(inputs=Violins.Ports(input="measures"))
     .map_figs_at_level(
         "measure", 
@@ -186,13 +187,13 @@ ANALYSES = {
             dependency_names="vars",
         )
     ),
-    "plot--measures": measures_base,
+    "plot--measures": measure_violins_base,
     "plot--measures_lohi_train_std": (
-        measures_base
+        measure_violins_base
         .after_transform(lohi, level='train__pert__std')
     ),
     "plot--measures_lohi_train_std_and_pert_amp": (
-        measures_base
+        measure_violins_base
         .after_transform(lohi, level=['train__pert__std', 'pert__amp'])
     ),
 }

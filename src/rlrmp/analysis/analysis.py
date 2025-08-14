@@ -1,18 +1,18 @@
 from collections.abc import Callable, Hashable, Mapping, Sequence
 import dataclasses
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import functools
 from functools import cached_property, partial, wraps
 import inspect
 import logging
-from types import LambdaType, MappingProxyType, SimpleNamespace
+from types import EllipsisType, MappingProxyType, SimpleNamespace
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, Iterable, Literal, Mapping, NamedTuple, Optional, Dict, Self, TypeAlias, TypeVar, Union, cast
 from pathlib import Path
 from typing import Any, Callable
 
 import dill as pickle  # for result caching
 import equinox as eqx
-from equinox import AbstractVar, AbstractClassVar, Module
+from equinox import field, Module
 import jax.numpy as jnp
 import jax.tree as jt
 import jax.tree_util as jtu
@@ -28,9 +28,9 @@ import jax_cookbook.tree as jtree
 
 from rlrmp.config.config import STRINGS, PATHS
 from rlrmp.database import EvaluationRecord, add_evaluation_figure, savefig
-from rlrmp.tree_utils import hash_callable_leaves, ldict_label_only_func, ldict_level_to_bottom, move_ldict_level_above, subdict, tree_level_labels, ldict_level_to_top
+from rlrmp.tree_utils import hash_callable_leaves, ldict_label_only_func, ldict_level_to_bottom, move_ldict_level_above, rearrange_ldict_levels, subdict, tree_level_labels, ldict_level_to_top
 from rlrmp.misc import DoNotHashTree, camel_to_snake, get_dataclass_fields, get_md5_hexdigest, get_name_of_callable, is_json_serializable
-from rlrmp.plot_utils import figs_flatten_with_paths, get_label_str
+from rlrmp.plot_utils import figs_flatten_with_paths
 from rlrmp.tree_utils import _hash_pytree
 from rlrmp.types import LDict, TreeNamespace
 from rlrmp.types import AnalysisInputData
@@ -336,7 +336,7 @@ class FigParamNamespace(TreeNamespace):
     
 
 # Alias for constructing `FigParamNamespace` defaults in Equinox Module fields
-DefaultFigParamNamespace = lambda **kwargs: eqx.field(default_factory=lambda: FigParamNamespace(**kwargs))
+DefaultFigParamNamespace = lambda **kwargs: field(default_factory=lambda: FigParamNamespace(**kwargs))
 
 
 class _PrepOp(NamedTuple):
@@ -531,7 +531,7 @@ class _AnalysisVmapSpec(eqx.Module):
     """Immutable container holding all accumulated vmap information
     for an AbstractAnalysis instance."""
     # Logical → per-level axis schedule (one tuple entry per vmap level)
-    in_axes_spec: Mapping[str, tuple[int | None, ...]] = eqx.field(default_factory=dict)
+    in_axes_spec: Mapping[str, tuple[int | None, ...]] = field(default_factory=dict)
     # Names of dependencies (kwargs) that must be popped before vmapping
     vmapped_dep_names: tuple[str, ...] = ()
     # Fully-resolved positional in_axes_sequence for vmap_multi
@@ -582,16 +582,19 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
     )
 
     Ports: ClassVar[type[PortsType]] = NoPorts  # type: ignore
-    inputs: PortsType = eqx.field(default_factory=NoPorts, converter=NoPorts.converter)
+    inputs: PortsType = field(default_factory=NoPorts, converter=NoPorts.converter)
     
     variant: Optional[str] = None  #! TODO: Eliminate this. Should be in `tasks` PyTree, and dealt with explicitly with ops 
     fig_params: FigParamNamespace = DefaultFigParamNamespace()
     cache_result: bool = False
     
-    _prep_ops: tuple[_PrepOp, ...] = ()
-    _vmap_spec: Optional[_AnalysisVmapSpec] = None
-    _fig_op: Optional[_FigOp] = None
-    _final_ops_by_type: Mapping[_FinalOpKeyType, tuple[_FinalOp, ...]] = eqx.field(
+    #! TODO: Make these `init=False` so they don't appear in the constructor signature IDE
+    #! suggestions. (However, this leads to issues with `eqx.tree_at` for some reason.)
+    #! One solution might be (for one) to make a `_PrepOps` wrapper class for the tuple.
+    _prep_ops: tuple[_PrepOp, ...] = field(default=())
+    _vmap_spec: Optional[_AnalysisVmapSpec] = field(default=None)
+    _fig_op: Optional[_FigOp] = field(default=None)
+    _final_ops_by_type: Mapping[_FinalOpKeyType, tuple[_FinalOp, ...]] = field(
         default_factory=lambda: MappingProxyType({'results': (), 'figs': ()})
     )
         
@@ -1322,6 +1325,34 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
             dep_name=dependency_name,
             transform_func=transpose_dependency,
             params=dict(label=label),
+        )
+
+    def after_rearrange_levels(
+        self, 
+        spec: Sequence[str | EllipsisType],
+        is_leaf: Callable[[Any], bool] = LDict.is_of('var'),
+        dependency_name: Optional[str] = None,
+    ) -> Self:
+        """
+        Returns a copy of this analysis that will transpose `LDict` levels of its inputs.
+
+        This is useful when our analysis uses a plotting function that compares across 
+        the outer PyTree level, but for whatever reason this level is not already 
+        the outer level of our results PyTree.
+        """
+        def transpose_dependency(dep_data, **kwargs):
+            return rearrange_ldict_levels(dep_data, spec, is_leaf=is_leaf)
+        
+        spec_str = '-'.join(
+            str(...) if s is Ellipsis else _format_level_str(s) for s in spec  # type: ignore[call-arg]
+        )
+        
+        return self._add_prep_op(
+            name="after_rearrange_levels",
+            label=f"levels-to-{spec_str}",
+            dep_name=dependency_name,
+            transform_func=transpose_dependency,
+            params=dict(spec=spec),
         )
 
     def after_level_to_bottom(
