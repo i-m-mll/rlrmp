@@ -15,8 +15,8 @@ import feedbax.plotly as fbp
 
 # from rlrmp.analysis import measures
 from rlrmp.analysis import AbstractAnalysis
-from rlrmp.analysis.aligned import ALL_MEASURES, VAR_LEVEL_LABEL, AlignedEffectorTrajectories, AlignedVars 
-from rlrmp.analysis.analysis import _DummyAnalysis, DefaultFigParamNamespace, FigParamNamespace
+from rlrmp.analysis.aligned import ALL_MEASURES, MEASURE_LABELS, VAR_LEVEL_LABEL, AlignedEffectorTrajectories, AlignedVars 
+from rlrmp.analysis.analysis import _DummyAnalysis, DefaultFigParamNamespace, FigIterCtx, FigParamNamespace
 from rlrmp.analysis.disturbance import FB_INTERVENOR_LABEL, get_pert_amp_vmap_eval_func, task_with_pert_amp
 from rlrmp.analysis.effector import EffectorTrajectories
 from rlrmp.analysis.func import ApplyFuncs
@@ -202,12 +202,17 @@ def get_impulse_vrect_kws(hps):
     )
 
 
-def measures_fig_params_fn(fig_params, i, item):
-    if i == 0: 
+def measures_fig_params_fn(fig_params, ctx: FigIterCtx):
+    if ctx.level == 'measure':
+        return fig_params | dict(
+            yaxis_title=MEASURE_LABELS[ctx.key],
+        ) 
+    # Figures for zero-std as pared-down all-grey
+    if ctx.level == 'train__pert__std' and ctx.idx == 0: 
         return fig_params | dict(
             trace_kws=dict(
-                    opacity=0.3, line_color='grey',
-                ),
+                opacity=0.3, line_color='grey',
+            ),
             layout_kws=dict(
                 showlegend=False,
                 xaxis_visible=False, 
@@ -215,8 +220,6 @@ def measures_fig_params_fn(fig_params, i, item):
             ),
         )
     return fig_params
-
-
 
 
 # State PyTree structure: ['pert__var', 'sisu', 'train__pert__std']
@@ -285,32 +288,27 @@ ANALYSES = {
         )
     ),
 
-    #! TODO: Implement chained fig ops (for multi map_figs_at_level)
-    # "plot--measures": (
-    #     Violins(
-    #         inputs=Violins.Ports(input="measures"),
-    #     )
-    #     .with_fig_params(
-    #         legend_title="SISU",
-    #         xaxis_title="Feedback impulse amplitude",
-    #         violinmode="group",
-    #     )
-    #     .after_transform(get_best_replicate)
-    #     .after_unstacking(1, "pert__amp")
-    #     .after_transform(lohi, level="train__pert__std")
-    #     .map_figs_at_level(
-    #         "measure",
-    #         dependency_name="input",
-    #     )
-    #     # Save seperate figures for zero-std, as pared-down all-grey
-    #     .map_figs_at_level(
-    #         'train__pert__std',
-    #         fig_params_fn=measures_fig_params_fn,
-    #     )
-    #     # Ensure the pared-down figures have the same y-axis bounds as the main figures
-    #     .then_transform_figs(
-    #         partial(set_axis_bounds_equal, 'y'),
-    #         level='train__pert__std'
-    #     )
-    # )
+    "plot--measures": (
+        Violins(
+            inputs=Violins.Ports(input="measures"),
+        )
+        .with_fig_params(
+            legend_title="SISU",
+            xaxis_title="Feedback impulse amplitude",
+            violinmode="group",
+        )
+        .after_transform(get_best_replicate)
+        .after_unstacking(1, "pert__amp")
+        .after_transform(lohi, level="train__pert__std")
+        .map_figs_at_level(
+            ["measure", "train__pert__std"],
+            fig_params_fn=measures_fig_params_fn,
+            dependency_name="input",
+        )
+        # Ensure the pared-down figures have the same y-axis bounds as the main figures
+        .then_transform_figs(
+            partial(set_axis_bounds_equal, 'y'),
+            level='train__pert__std'
+        )
+    )
 }

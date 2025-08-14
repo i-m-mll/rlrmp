@@ -62,8 +62,6 @@ class Violins(AbstractAnalysis[ViolinsPorts]):
         yaxis_title=None,  # Often provided per-slice via fig-ops
     )
 
-    #? TODO: How can we map figures over multiple levels? 
-    #? e.g. over measure and also over pert__amp, for `part2.plant_perts`?
     def make_figs(
         self, data: AnalysisInputData, *, result, colors, input: PyTree, input_split=None, **kwargs
     ):
@@ -83,18 +81,18 @@ class Violins(AbstractAnalysis[ViolinsPorts]):
         legend_title = self.fig_params.legend_title or get_label_str(group_label)
         xaxis_title = self.fig_params.xaxis_title or get_label_str(x_label)
 
+        plot_kwargs = dict(
+            split_mode='whole' if input_split is None else 'split',
+            legend_title=legend_title,
+            xaxis_title=xaxis_title,
+            colors=colors[group_label].dark,
+        )
+
         def _make_fig(node, node_split=None):
             return get_violins(
                 node,
                 data_split=node_split,
-                split_mode='whole' if node_split is None else 'split',
-                legend_title=legend_title,
-                violinmode=self.fig_params.violinmode or 'overlay',
-                arr_axis_labels=self.fig_params.arr_axis_labels,
-                zero_hline=bool(self.fig_params.zero_hline),
-                yaxis_title=self.fig_params.yaxis_title or "Value",
-                xaxis_title=xaxis_title,
-                colors=colors[group_label].dark,
+                **plot_kwargs | self.fig_params,
             )
 
         # Map over any outer levels; at the group level we build one figure

@@ -1,6 +1,7 @@
 from collections.abc import Callable, Hashable, Mapping, Sequence
 import dataclasses
 from dataclasses import dataclass
+from enum import Enum
 import functools
 from functools import cached_property, partial, wraps
 import inspect
@@ -333,6 +334,36 @@ class FigParamNamespace(TreeNamespace):
             # Avert issues with methods like `copy.deepcopy` which check for presence of dunder methods
             return object.__getattribute__(self, item)
         return None
+
+@dataclass(frozen=True)
+class FigIterCtx:
+    """Context object passed to fig_params_fn during figure iteration.
+    
+    Provides information about the current iteration state for context-aware
+    figure parameter updates.
+    """
+    level: Optional[str]               # the LDict level label for this mapping step (or None for axis maps)
+    key: Any                           # the selected key at this level (or index for axis maps)
+    idx: int                           # 0-based index of `key` within items at this level
+    depth: int                         # 0 = outermost mapped level
+    path: tuple[tuple[Optional[str], Any, int], ...]  # cumulative selections from outermost→current
+
+
+class FigParamStyle(Enum):
+    """Enumeration for fig_params_fn signature styles."""
+    CTX = "ctx"      # New style: fig_params_fn(fp, ctx)
+    LEGACY = "legacy" # Legacy style: fig_params_fn(fp, idx, item)
+
+def _detect_fig_params_style(fn: Optional[Callable]) -> Optional[FigParamStyle]:
+    """Detect the signature style of a fig_params_fn."""
+    if fn is None:
+        return None
+    
+    sig = inspect.signature(fn)
+    if len(sig.parameters) == 2:
+        return FigParamStyle.CTX
+    else:
+        return FigParamStyle.LEGACY
     
 
 # Alias for constructing `FigParamNamespace` defaults in Equinox Module fields
@@ -347,16 +378,22 @@ class _PrepOp(NamedTuple):
     params: Optional[dict[str, Any]] = {}  
 
 
-class _FigOp(NamedTuple):
+@dataclass(frozen=True)
+class _FigOp:
     name: str
     label: str
-    dep_name: Optional[Union[str, Sequence[str]]] 
+    dep_name: Optional[Union[str, Sequence[str]]]
     is_leaf: Callable[[Any], bool]
-    slice_fn: Callable[[Any, Any], Any]
-    items_fn: Callable[[Any], Any]
-    agg_fn: Callable[[list[PyTree], Iterable], PyTree]
-    fig_params_fn: Optional[Callable[[FigParamNamespace, int, Any], dict[str, Any]]]
-    params: dict[str, Any] = {}
+    slice_fn: Callable[[Any, Any], Any]    # (leaf, item) -> sliced_leaf
+    items_fn: Callable[[Any], list]        # (leaf) -> items at this level
+    agg_fn: Callable[[list, list], Any]    # (list(child_figs), items) -> aggregated_figs_tree
+    fig_params_fn: Optional[Callable] = None
+    fig_params_style: Optional[FigParamStyle] = None  # Cached signature style
+    params: dict = field(default_factory=dict)
+
+    # Optional hooks (default None)
+    pre_slice_hook: Optional[Callable] = None
+    post_agg_hook: Optional[Callable] = None
 
 
 class _FinalOp(NamedTuple):
@@ -544,6 +581,121 @@ _FinalOpKeyType = Literal['results', 'figs']
 # By using `strict=False`, we can define non-abstract fields, i.e. without needing to 
 # implement them trivially in subclasses. This violates the abstract-final design
 # pattern. This is intentional. If it leads to problems, I will learn from that.
+def _apply_fig_ops(analysis, data, kwargs, depth: int, path: tuple):
+    """Recursively apply figure operations outer→inner.
+    
+    Args:
+        analysis: The AbstractAnalysis instance
+        data: AnalysisInputData 
+        kwargs: Dependency kwargs
+        depth: Current recursion depth (0 = outermost)
+        path: Cumulative path selections from outermost→current
+    
+    Returns:
+        PyTree of figures
+    """
+    if depth >= len(analysis._fig_ops):
+        # Base case: no more fig-ops
+        return analysis.make_figs(data, **kwargs)
+
+    op = analysis._fig_ops[depth]
+
+    # Choose dependencies that will vary at this level (as today)
+    target_dep_names = analysis._get_target_dependency_names(op.dep_name, kwargs, "Fig op")
+    deps = {k: kwargs[k] for k in target_dep_names if k in kwargs}
+    if not deps:
+        logger.warning("No varying dependencies for fig-op %s; falling back to make_figs.", op.name)
+        return analysis.make_figs(data, **kwargs)
+
+    # Find a representative leaf for items
+    first_dep = next(iter(deps.values()))
+    leaves = jt.leaves(first_dep, is_leaf=op.is_leaf)
+    if not leaves:
+        logger.error("Fig-op %s found no matching leaves; falling back.", op.name)
+        return analysis.make_figs(data, **kwargs)
+    sample_leaf = leaves[0]
+
+    ref_keys = list(op.items_fn(sample_leaf))
+    for name, dep in deps.items():
+        keys = list(op.items_fn(jt.leaves(dep, is_leaf=op.is_leaf)[0]))
+        if keys != ref_keys:
+            logger.warning(
+                "Fig-op %s: keys for %r differ from reference; proceeding with reference ordering.",
+                op.name, 
+                name,
+            )
+            
+    children = []
+
+    for i, key in enumerate(ref_keys):
+        # Slice kwargs for this item
+        sliced_kwargs = dict(kwargs)
+        for k, v in deps.items():
+            sliced_kwargs[k] = jt.map(
+                lambda x: op.slice_fn(x, key) if op.is_leaf(x) else x,
+                v,
+                is_leaf=op.is_leaf,
+            )
+
+        # (Optional) move states in/out as in current pipeline
+        data_i = data
+        if "data.states" in sliced_kwargs:
+            data_i = eqx.tree_at(
+                lambda d: d.states, data, sliced_kwargs["data.states"]
+            )
+            del sliced_kwargs["data.states"]
+
+        # Context
+        ctx = FigIterCtx(
+            level=op.params.get("level"),
+            key=key,
+            idx=i,
+            depth=depth,
+            path=path,
+        )
+
+        # Optional hook before recursion
+        if op.pre_slice_hook is not None:
+            data_i, sliced_kwargs = op.pre_slice_hook(data_i, sliced_kwargs, ctx)
+
+        # Per-level fig params (ctx-aware) – optimized call using cached style
+        analysis_i = analysis
+        if op.fig_params_fn is not None:
+            new_fp = _call_fig_params_fn(op.fig_params_fn, analysis.fig_params, ctx, op.fig_params_style)
+            analysis_i = eqx.tree_at(lambda a: a.fig_params, analysis, analysis.fig_params | new_fp)
+
+        # Recurse
+        child = _apply_fig_ops(
+            analysis_i, data_i, sliced_kwargs, depth + 1, path + ((ctx.level, key, i),)
+        )
+        children.append(child)
+
+    # Aggregate children at this depth
+    figs = op.agg_fn(children, ref_keys)
+
+    # Optional post-aggregation hook
+    if op.post_agg_hook is not None:
+        figs = op.post_agg_hook(figs, ref_keys, path)
+
+    return figs
+
+def _call_fig_params_fn(fn, fp, ctx, style: FigParamStyle):
+    """Optimized adapter using pre-computed signature style.
+    
+    Args:
+        fn: The fig_params_fn to call
+        fp: Current figure parameters
+        ctx: Context object
+        style: Pre-computed signature style (CTX or LEGACY)
+    
+    Returns:
+        Updated figure parameters
+    """
+    if style == FigParamStyle.CTX:
+        return fn(fp, ctx)
+    else:  # FigParamStyle.LEGACY
+        return fn(fp, ctx.idx, ctx.key)
+
 class AbstractAnalysis(Module, Generic[PortsType], strict=False):
     """Component in an analysis pipeline.
     
@@ -577,7 +729,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         'fig_params', 
         'cache_result',
         '_prep_ops', 
-        '_fig_op',
+        '_fig_ops',
         '_final_ops_by_type',
     )
 
@@ -593,7 +745,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
     #! One solution might be (for one) to make a `_PrepOps` wrapper class for the tuple.
     _prep_ops: tuple[_PrepOp, ...] = field(default=())
     _vmap_spec: Optional[_AnalysisVmapSpec] = field(default=None)
-    _fig_op: Optional[_FigOp] = field(default=None)
+    _fig_ops: tuple[_FigOp, ...] = field(default=())
     _final_ops_by_type: Mapping[_FinalOpKeyType, tuple[_FinalOp, ...]] = field(
         default_factory=lambda: MappingProxyType({'results': (), 'figs': ()})
     )
@@ -719,83 +871,15 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         del prepped_kwargs["data.states"]
 
         figs: PyTree[go.Figure] = None
-        if self._fig_op is None:
-            figs = self.make_figs(prepped_data, result=result, **prepped_kwargs)
-        else:
-            fig_op = self._fig_op
-
-            # `make_figs` inputs will need to be sliced for different figures.
-            # Prepare by amalgamating them.
+        if self._fig_ops:
+            # Prepare by amalgamating all kwargs including results
             prepped_kwargs_with_results = prepped_kwargs.copy()
             prepped_kwargs_with_results["data.states"] = prepped_data.states
             prepped_kwargs_with_results["result"] = result
-
-            # Determine which dependencies to process
-            target_dep_names = self._get_target_dependency_names(
-                fig_op.dep_name, prepped_kwargs_with_results, "Fig op"
-            )
-
-            dependencies_to_process: Dict[str, Any] = {}
-            if target_dep_names:
-                 dependencies_to_process = {name: prepped_kwargs_with_results[name] for name in target_dep_names}
-
-            if dependencies_to_process:
-                # Find the first leaf to determine items
-                first_dep = next(iter(dependencies_to_process.values()))
-
-                if first_dep is not None: 
-                    try:
-                        first_leaf = jt.leaves(first_dep, is_leaf=fig_op.is_leaf)[0]
-                        items_to_iterate = list(fig_op.items_fn(first_leaf))
-
-                        figs_list = []
-                        for i, item in enumerate(items_to_iterate):
-                            # Slice the `make_figs` inputs
-                            sliced_kwargs = prepped_kwargs_with_results.copy() # Start from processed state for each slice
-                            for k, v in dependencies_to_process.items():
-                                sliced_kwargs[k] = jt.map(
-                                    lambda x: fig_op.slice_fn(x, item) if fig_op.is_leaf(x) else x,
-                                    v,
-                                    is_leaf=fig_op.is_leaf
-                                )
-
-                            # Modify the `fig_params` of the `AbstractAnalysis` instance
-                            analysis_for_item = self
-                            if fig_op.fig_params_fn is not None:
-                                modified_fig_params = fig_op.fig_params_fn(self.fig_params, i, item)
-                                analysis_for_item = eqx.tree_at(
-                                    lambda a: a.fig_params,
-                                    self,
-                                    self.fig_params | modified_fig_params
-                                )
-
-                            # Pop the `data.states` back out of the amalgamated inputs, if necessary 
-                            data_for_item = data
-                            if "data.states" in sliced_kwargs:
-                                data_for_item = eqx.tree_at(
-                                    lambda d: d.states, data, sliced_kwargs["data.states"]
-                                )
-                                del sliced_kwargs["data.states"]
-
-                            # Generate a figure by passing sliced inputs to `make_figs` of the modified instance
-                            slice_figs = analysis_for_item.make_figs(data_for_item, **sliced_kwargs)
-                            figs_list.append(slice_figs)
-
-                        # Potentially combine the figures into a single figure
-                        if figs_list:
-                             figs = fig_op.agg_fn(figs_list, items_to_iterate)
-                        else:
-                             logger.error(f"No figures generated by fig op for {self.name}")
-                    except StopIteration:
-                         logger.error(f"Could not find leaf matching predicate for fig op in dependency '{list(dependencies_to_process.keys())[0]}'. Skipping fig op.")
-                    except Exception as e:
-                         logger.error(f"Error during fig op execution", exc_info=True)
-                         raise e
-            else:
-                logger.warning("Fig ops require dependencies to vary over figures, but no valid dependencies were specified.")
-                
-            if figs is None and self._fig_op:
-                 logger.warning(f"Fig operation for {self.name} could not proceed or produced no figures.")
+            
+            figs = _apply_fig_ops(self, prepped_data, prepped_kwargs_with_results, 0, ())
+        else:
+            figs = self.make_figs(prepped_data, result=result, **prepped_kwargs)
 
         for final_fig_op in self._final_ops_by_type.get('figs', ()):
             try: 
@@ -881,6 +965,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
             target_names = [k for k in self.inputs if k in available_kwargs]
             # Process the states and `compute` results by default
             target_names.append('data.states')
+            #? Don't include 'result' by default?
             if 'result' in available_kwargs:
                 target_names.append('result')
             if not target_names and self.inputs: # Log only if dependencies were expected
@@ -1025,14 +1110,8 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
 
     @property
     def _all_ops(self) -> tuple: 
-        if self._fig_op is not None:
-            fig_ops = (self._fig_op,)
-        else:
-            fig_ops = ()
-
         all_final_ops = sum(self._final_ops_by_type.values(), ())
-
-        return self._prep_ops + fig_ops + all_final_ops
+        return self._prep_ops + self._fig_ops + all_final_ops
 
     def _extract_ops_info(self):
         """
@@ -1538,17 +1617,36 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
     
     def map_figs_at_level(
         self, 
-        level: str, 
+        level, 
         dependency_name: Optional[str] = None,
-        fig_params_fn: Optional[Callable[[FigParamNamespace, int, Any], FigParamNamespace]] = None,
+        fig_params_fn: Optional[Callable] = None,
     ) -> Self: 
         """
         Returns a copy of this analysis that maps over the input PyTrees, down to a certain `LDict` level.
 
         This is useful when e.g. the analysis calls a plotting function that expects a two-level PyTree, 
-        but we've evaluated a deeper PyTree of states, where the two levels are inner. 
+        but we've evaluated a deeper PyTree of states, where the two levels are inner.
+        
+        Args:
+            level: str | Sequence[str] | Sequence[tuple[str, Callable]]
+                - str: append a single fig-op that maps by this LDict level.
+                - Sequence[str]: expand into a chain, appending one fig-op per level in order,
+                  reusing `fig_params_fn` for each op.
+                - Sequence[tuple[str, Callable]]: per-level override for `fig_params_fn`.
+            dependency_name: Optional name of specific dependency to map
+            fig_params_fn: Optional function for fig parameter updates
         """
-        return self._change_fig_op(
+        if isinstance(level, (list, tuple)):
+            ana = self
+            for spec in level:
+                if isinstance(spec, (list, tuple)) and len(spec) == 2:
+                    lv, fn = spec
+                    ana = ana.map_figs_at_level(lv, dependency_name, fn)
+                else:
+                    ana = ana.map_figs_at_level(spec, dependency_name, fig_params_fn)
+            return ana
+
+        return self._append_fig_op(
             name="map_figs_at_level",
             label=f"map_figs_at-{_format_level_str(level)}",
             dep_name=dependency_name,
@@ -1578,7 +1676,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         """
         # TODO: combined `map_at_level` with `after_unstacking` so the user can control the 
         # keys of the resulting output LDict level
-        return self._change_fig_op(
+        return self._append_fig_op(
             name="map_figs_by_axis",
             label=f"map_figs_by-axis{axis}",
             dep_name=dependency_name,
@@ -1610,7 +1708,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
             dependency_name: Optional name of specific dependency to slice.
                 If None, will slice all dependencies listed in self.inputs.
         """
-        return self._change_fig_op(
+        return self._append_fig_op(
             name="combine_figs_by_axis",
             label=f"combine_by-axis{axis}",
             dep_name=dependency_name,
@@ -1643,7 +1741,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
             dependency_name: Optional name of specific dependency to iterate over.
                 If None, will iterate over all dependencies listed in self.inputs.
         """
-        return self._change_fig_op(
+        return self._append_fig_op(
             name="combine_figs_by_level",
             label=f"combine_by-{_format_level_str(level)}",
             dep_name=dependency_name,
@@ -1769,6 +1867,20 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
             ),)
         )
     
+    def _append_fig_op(self, **kwargs) -> Self:
+        """Append a new figure operation to the chain."""
+        # Detect and cache the signature style for optimization
+        fig_params_fn = kwargs.get('fig_params_fn')
+        fig_params_style = _detect_fig_params_style(fig_params_fn)
+        kwargs['fig_params_style'] = fig_params_style
+        
+        new_op = _FigOp(**kwargs)
+        return eqx.tree_at(
+            lambda a: a._fig_ops,
+            self,
+            self._fig_ops + (new_op,)
+        )
+    
     def _add_final_op(
         self,
         op_type: _FinalOpKeyType,
@@ -1799,12 +1911,8 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         )
 
     def _change_fig_op(self, **kwargs) -> Self:
-        return eqx.tree_at(
-            lambda a: a._fig_op,
-            self,
-            _FigOp(**kwargs),
-            is_leaf=is_none,
-        )
+        """Legacy method - now appends a fig op to the chain instead of replacing."""
+        return self._append_fig_op(**kwargs)
                       
     @cached_property
     def _field_params(self):
