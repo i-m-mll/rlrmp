@@ -50,6 +50,7 @@ from rlrmp.analysis.fp_finder import FPFilteredResults, take_top_fps
 from rlrmp.analysis.fps import FixedPoints, PlotInPCSpace
 from rlrmp.analysis.grad import Jacobians, Hessians
 from rlrmp.analysis.pca import StatesPCA
+from rlrmp.analysis.violins import Violins
 from rlrmp.misc import create_arr_df, get_constant_input_fn, take_non_nan
 from rlrmp.analysis.state_utils import get_best_model_replicate, vmap_eval_ensemble
 from rlrmp.plot import plot_eigvals_df
@@ -59,9 +60,12 @@ from rlrmp.types import LDict
 from rlrmp.analysis.execution import AnalysisModuleTransformSpec
 
 
-"""Specify any additional colorscales needed for this analysis. 
-These will be included in the `colors` kwarg passed to `AbstractAnalysis` methods
-"""
+N_PCA = 50
+PCA_START_STEP = 0
+PCA_END_STEP = 100
+STRIDE_FP_CANDIDATES = 16
+
+
 COLOR_FUNCS: dict[str, Callable[[TreeNamespace], Sequence]] = dict(
 )
 
@@ -99,13 +103,6 @@ def setup_eval_tasks_and_models(
 # Unlike `feedback_perts`, we don't need to vmap over impulse amplitude 
 eval_func: Callable = vmap_eval_ensemble
 
-
-N_PCA = 50
-START_STEP = 0
-END_STEP = 100
-STRIDE_FP_CANDIDATES = 16
-
-COL_NAMES = ['sisu', 'pos', 'eigenvalue']
 
 class EigvalsPlotPorts(AbstractAnalysisPorts):
     eigvals: InputOf[Array]
@@ -225,68 +222,6 @@ class EigvalsPlot(AbstractAnalysis[EigvalsPlotPorts]):
         return figs
     
 
-#! TODO: Could just put in `Measures`...
-# class EigvalsDistributions(AbstractAnalysis[EigvalsPlotPorts]):
-#     """Plot the distributions of eigenvalues for each SISU."""
-    
-#     Ports = EigvalsPlotPorts
-#     inputs: EigvalsPlotPorts = eqx.field(
-#         default_factory=EigvalsPlotPorts, converter=EigvalsPlotPorts.converter
-#     )
-    
-#     n_bins: int = 25
-#     x_ranges: Mapping[str, tuple[float, float]] = eqx.field(
-#         default_factory=lambda: dict(
-#             angle=(0, jnp.pi),
-#             mangitude=(0, 1.1),
-#         )
-#     )
-    
-#     def make_figs(
-#         self,
-#         data: AnalysisInputData,
-#         *,
-#         eigvals: PyTree[Array],
-#         hps_common: TreeNamespace,
-#         colors: PyTree,
-#         **kwargs
-#     ) -> PyTree[go.Figure]:
-#         #! TODO: in the original code, this happened prior to `complex_to_polar_abs_angle`
-#         #! I guess this was converting the train__pert__std level to an array axis; 
-#         #! but be careful about how `COL_NAMES` appears in the def of df below...
-#         # jnp.stack(list(eigvals.values()), axis=0)
-        
-#         df = create_arr_df(
-#             eigvals,
-#             col_names=['train__pert__std', 'component'] + COL_NAMES,
-#         ).astype({'replicate': 'str'})
-#         for i, label in enumerate(['angle', 'magnitude']):
-#             fig = go.Figure(
-#                 layout=dict(
-#                     title=f"Distribution of eigenvalue {label} by train pert. std.",
-#                     width=500,
-#                     height=300,
-#                 ),
-#             )
-#             fig.add_traces([
-#                 go.Histogram(
-#                     x=df[df['component'] == i][df['train__pert__std'] == j]['value'],
-#                     # name=
-#                     xbins=dict(
-#                         start=self.x_ranges[label][0], 
-#                         end=self.x_ranges[label][-1], 
-#                         size=(self.x_ranges[label][-1] - self.x_ranges[label][0])/self.n_bins
-#                     ),
-#                     name=std,
-#                     histnorm='probability',
-#                     marker_color=colors["train__pert__std"].dark[std],
-#                 )
-#                 for j, std in enumerate(eigvals.keys())
-#             ])
-#             fig.update_layout(barmode='overlay', legend_title="Train pert. std.", xaxis_range=x_ranges[label])
-#             fig.update_traces(opacity=0.66)
-
-
 #! TODO: Refactor out the common parts, e.g. meets criteria, top fps, etc.
 def process_fps(all_fps: PyTree[FPFilteredResults], n_keep: int = 6) -> TreeNamespace:
     """Only keep FPs/replicates that meet criteria."""
@@ -351,7 +286,7 @@ def reshape_candidates(states: Array) -> Array:
 
 
 """Apply global transformations to reduce computation.
-Since this module frequently uses get_best_replicate, we apply it globally
+Since this module always uses get_best_replicate, we apply it globally
 before evaluation to save computational resources."""
 TRANSFORMS = AnalysisModuleTransformSpec(
     pre_setup=dict(models=get_best_model_replicate),
@@ -383,7 +318,7 @@ DEPENDENCIES = {
             where_states=lambda states: states.net.hidden,
             aggregate_over_labels=('sisu',),
         )
-        .after_indexing(-2, np.arange(START_STEP, END_STEP), axis_label="timestep")
+        .after_indexing(-2, np.arange(PCA_START_STEP, PCA_END_STEP), axis_label="timestep")
     ),
     "steady_state_fp_results": (
         FixedPoints(
@@ -411,6 +346,22 @@ DEPENDENCIES = {
 
 GradArgs = namedtuple("GradArgs", ["sisu", "pos", "h"])
 
+
+def jac_eigval_violin_params_fn(fig_params, i, item):
+    if item == 'angle':
+        yaxis_title = 'Eigenvalue angle (rad)'
+        yaxis_range = [0, jnp.pi]
+    elif item == 'magnitude':
+        yaxis_title = 'Eigenvalue magnitude'
+        yaxis_range = [0, 1.1]
+    else:
+        raise ValueError(f"Unknown component {item}")
+    return fig_params | dict(
+        yaxis_title=yaxis_title,
+        yaxis_range=yaxis_range,
+    )
+
+
 # State PyTree structure: ['sisu', 'train__pert__std']
 # Array batch shape: (evals, replicates, reach conditions)
 ANALYSES = {
@@ -428,8 +379,7 @@ ANALYSES = {
     #! Maybe it would make sense to just make a single class, `Grads` with `grad_func`?
     #! Though it wouldn't change the verbosity here unless we made `grad_func` a `Port`
     #! and returned a PyTree containing both the Jacobians and the Hessians
-    **{
-        # "steady_state_jacobians" and "steady_state_hessians"
+    **{  # "steady_state_jacobians" and "steady_state_hessians"
         f"steady_state_{cls.__name__.lower()}": (
             cls(
                 inputs=cls.Ports(
@@ -466,15 +416,15 @@ ANALYSES = {
         )
     ),
     
-    # "plot--steady_state_jac-x_eigvals": (
-    #     EigvalsPlot(
-    #         hide_histograms=False,
-    #         inputs=EigvalsPlot.Ports(
-    #             eigvals=Transformed("steady_state_jac-x_eigs", lambda eigs: eigs.eigvals),
-    #         ),
-    #     )
-    #     .after_level_to_bottom('sisu', dependency_name="eigvals")
-    # ),
+    "plot--steady_state_jac-x_eigvals": (
+        EigvalsPlot(
+            hide_histograms=False,
+            inputs=EigvalsPlot.Ports(
+                eigvals=Transformed("steady_state_jac-x_eigs", lambda eigs: eigs.eigvals),
+            ),
+        )
+        .after_level_to_bottom('sisu', dependency_name="eigvals")
+    ),
     
     #! This will not work together with "plot--steady_state_jac-x_eigvals" because they have the 
     #! same `md5_str`; need to make `md5_str` depend on `self.inputs`!
@@ -490,24 +440,37 @@ ANALYSES = {
     #     .after_level_to_bottom('sisu', dependency_name="eigvals")
     # ),
     
-    #! TODO: Finish this
-    # "plot--steady_state_jac-x_eigvals_dist": (
-    #     EigvalsDistributions(
-    #         inputs=EigvalsPlot.Ports(
-    #             eigvals=Transformed("steady_state_jac-x_eigs", lambda eigs: eigs.eigvals),
-    #         ),
-    #     )
-    #     .after_map(complex_to_polar_abs_angle, dependency_name="eigvals")
-    #     # .after_subdict_at_level('sisu', keys=SISUS_TO_PLOT_EIGVALS)
-    # ),
+    "plot--jac_x_eigval-violins": (
+        Violins(
+            inputs=Violins.Ports(
+                input=Transformed.map(
+                    source="steady_state_jac-x_eigs",
+                    transform=complex_to_polar_abs_angle,
+                )
+            ),
+        )
+        # .after_subdict_at_level('sisu', keys=SISUS_TO_PLOT_EIGVALS)
+        .after_rearrange_levels(
+            [..., 'component', 'sisu', 'train__pert__std'], 
+            dependency_name="input",
+        )
+        .map_figs_at_level('component', fig_params_fn=jac_eigval_violin_params_fn)
+    ),
     
-    #! TODO: Use ApplyFuncs + Violins
-    # "plot--measures": (
-    #     Measures(
-            
-    #     )
-    # )
+    "plot--jac_u_singval-violins": (
+        Violins(
+            inputs=Violins.Ports(
+                input="steady_state_jac-u_svd",
+            ),
+        )
+        # .after_subdict_at_level('sisu', keys=SISUS_TO_PLOT_EIGVALS)
+        .after_rearrange_levels(
+            [..., 'sisu', 'train__pert__std'], 
+            dependency_name="input",
+        )
+    )
 }
+
 
 #! The following should either be discarded or refactored into a function for plotting readout
 #! weights. If we refactor, it will be necessary to implement figure combination across `ANALYSES`

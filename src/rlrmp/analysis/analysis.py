@@ -31,7 +31,7 @@ import jax_cookbook.tree as jtree
 from rlrmp.config.config import STRINGS, PATHS
 from rlrmp.database import EvaluationRecord, add_evaluation_figure, savefig
 from rlrmp.tree_utils import hash_callable_leaves, ldict_label_only_func, ldict_level_to_bottom, move_ldict_level_above, rearrange_ldict_levels, subdict, tree_level_labels, ldict_level_to_top
-from rlrmp.misc import DoNotHashTree, camel_to_snake, get_dataclass_fields, get_md5_hexdigest, get_name_of_callable, is_json_serializable
+from rlrmp.misc import DoNotHashTree, camel_to_snake, field_names, get_dataclass_fields, get_md5_hexdigest, get_name_of_callable, is_json_serializable
 from rlrmp.plot_utils import figs_flatten_with_paths
 from rlrmp.tree_utils import _hash_pytree
 from rlrmp.types import LDict, TreeNamespace
@@ -272,6 +272,12 @@ class Transformed:
     def tree_unflatten(cls, aux_data, children):
         transform, = aux_data
         return cls(source=children[0], transform=transform)
+    
+    @classmethod
+    def map(cls, source: PyTree, transform: Callable, is_leaf: Optional[Callable] = None) -> PyTree:
+        def _map_transform(tree):
+            return jt.map(transform, tree, is_leaf=is_leaf)
+        return cls(source=source, transform=_map_transform)
     
 
 @dataclass(frozen=True, slots=True)
@@ -727,6 +733,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         '_fig_ops',
         '_final_ops_by_type',
         '_extra_inputs',
+        '_estimate_mem_preflight',
     )
 
     Ports: ClassVar[type[PortsType]] = NoPorts  # type: ignore
@@ -745,7 +752,8 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
     _final_ops_by_type: Mapping[_FinalOpKeyType, tuple[_FinalOp, ...]] = field(
         default_factory=lambda: MappingProxyType({'results': (), 'figs': ()})
     )
-    _extra_inputs: dict[str, Any] = field(default_factory=dict, metadata={'internal': True})
+    _extra_inputs: dict[str, Any] = field(default_factory=dict)
+    _estimate_mem_preflight: Literal["off", "stages", "final"] = field(default="off")
         
     def __post_init__(self):
         """Validate inputs instance and check for unresolved required inputs."""
@@ -819,7 +827,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
             return cache_path, None
         
         result = None
-        cache_path = None
+        cache_path, cached = None, None
         
         if self.cache_result:
             cache_path, result = _try_load_result_from_cache()
@@ -957,7 +965,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
             # Process the states and `compute` results by default
             target_names.append('data.states')
             #? Don't include 'result' by default?
-            if 'result' in available_kwargs:
+            if available_kwargs.get('result') is not None:
                 target_names.append('result')
             if not target_names and self.inputs: # Log only if dependencies were expected
                  logger.warning(f"{op_context} needs dependencies (dep_name_spec=None), but none found in kwargs.")
@@ -1137,7 +1145,17 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
             f"{self.name}({_format_dict_of_params(field_params)})", 
             *op_params_strs
         ])
+    
+    def estimate_memory(self, mode: Literal['off', 'stages', 'final'] = 'final') -> Self:
+        """Returns a copy of this analysis with memory estimation enabled."""
+        if self.compute is AbstractAnalysis.compute:
+            raise NotImplementedError(
+                f"{self.__class__.__name__} does not implement compute(). "
+                "Memory estimation requires a compute method."
+            )
         
+        return eqx.tree_at(lambda x: x._estimate_mem_preflight, self, mode)
+    
     def with_fig_params(self, **kwargs) -> Self:
         """Returns a copy of this analysis with updated figure parameters."""
         return eqx.tree_at(
@@ -1149,19 +1167,27 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
     def after_indexing(
         self, 
         axis: int, 
-        idxs: ArrayLike, 
+        idxs: ArrayLike | Callable[[Array], ArrayLike], 
         axis_label: Optional[str] = None,
         dependency_name: Optional[str] = None,
     ) -> Self:
         """
         Returns a copy of this analysis that slices its inputs along an axis before proceeding.
+        
+        Args:
+            axis: The axis to index along.
+            idxs: The indices to take along the axis. Can be an array-like object or a callable 
+                that takes the shape of the array to be indexed and returns array-like indices.
+            axis_label: Optional label for the axis, used to construct the operation label.
+            dependency_name: Optional name of one or more dependencies to transform. If None,
+                transforms all inputs. 
         """
 
         if axis_label is None:
             label = f"axis{axis}-idx{idxs}"
         else: 
             label = f"{axis_label}-idx{idxs}"
-
+            
         def index_func(dep_data, **kwargs):
             return jtree.take(dep_data, idxs, axis)
 
@@ -1190,9 +1216,9 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
             params=dict(func=func),
         )
         
-    def after_transform_states(
+    def after_transform_states(     
         self, 
-        func: Callable[..., Any],  # Must take two arguments: a PyTree, and **kwargs
+        func: Callable[..., Any],  
         level: Optional[str | Sequence[str]] = None,
         label: Optional[str] = None,
     ) -> Self:
@@ -1203,10 +1229,24 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
             label=label,
             dependency_names="data.states",
         )
+        
+    def after_transform_inputs(
+        self, 
+        func: Callable[..., Any],  
+        level: Optional[str | Sequence[str]] = None,
+        label: Optional[str] = None,
+    ) -> Self:
+        """Returns a copy of this analysis that transforms the instance's port inputs before proceeding."""
+        return self.after_transform(
+            func=func,
+            level=level,
+            label=label,
+            dependency_names=field_names(self.Ports),
+        )
     
     def after_transform(
         self, 
-        func: Callable[..., Any],  # Must take two arguments: a PyTree, and **kwargs
+        func: Callable[..., Any],  
         level: Optional[str | Sequence[str]] = None,
         dependency_names: Optional[str | Sequence[str]] = None,
         label: Optional[str] = None,

@@ -46,8 +46,6 @@ def swap_model_trainables(model: PyTree[..., "T"], trained: PyTree[..., "T"], wh
     )
 
 
-
-
 def _get_mapping_constructor(d: Mapping[K, V]) -> Callable[[Mapping], Mapping]:
     if isinstance(d, LDict):
         # returns (Mapping[K, V]) -> LDict[K, V], which is fine (Mapping is a supertype of LDict)
@@ -279,6 +277,14 @@ def move_ldict_level_above(inner_label: str, outer_label: str, tree: PyTree, is_
     """Move an `LDict` level just above another, in a PyTree."""
     return swap_adjacent_ldict_levels(outer_label, inner_label, tree, is_leaf=is_leaf)
 
+
+def getitem_at_level(level: str, key: Any, tree: PyTree) -> Any:
+    """Get an item from a PyTree at a specific ldict level."""
+    return jt.map(
+        lambda x: x[key] if isinstance(x, LDict) else x,
+        tree, 
+        is_leaf=LDict.is_of(level),
+    )
 
 
 def rearrange_ldict_levels(

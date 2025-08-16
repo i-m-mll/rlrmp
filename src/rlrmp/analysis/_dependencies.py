@@ -11,12 +11,14 @@ I've decided to use `eqx.Module` and stick with a stateless solution. So we need
 parse the graph.
 """
 
+from functools import partial
 import logging
 from collections import defaultdict
 from collections.abc import Sequence
 import hashlib
 import inspect
 import json
+from types import MappingProxyType
 from typing import Optional, Set, Dict, Any, Callable
 
 import equinox as eqx
@@ -25,12 +27,13 @@ from jax.tree_util import treedef_is_leaf
 from jaxtyping import PyTree
 
 from jax_cookbook import is_type
+import jax_cookbook.tree as jtree
 from jax_cookbook.tree import collect_aux_data
 
 from rlrmp.analysis.analysis import (
     AbstractAnalysis, _format_dict_of_params,
     _DataField, LiteralInput, FigParamNamespace, DefaultFigParamNamespace,
-    ExpandTo, Transformed, NoPorts
+    ExpandTo, Transformed, NoPorts, _FinalOp
 )
 from rlrmp.misc import get_md5_hexdigest
 from rlrmp.tree_utils import prefix_expand
@@ -125,13 +128,7 @@ def resolve_dependency_node(analysis, dep_name, dep_source, dependency_lookup=No
             return node_id, class_params, dep_instance
         else:
             raise ValueError(f"String dependency '{dep_source}' could not be resolved. Provide dependency_lookup with all available keys.")
-    # if isinstance(dep_source, type):
-    #     # Class type - create instance and use its hash
-    #     field_params = get_params_for_dep_class(analysis, dep_source)
-    #     params = {**field_params, **class_params}
-    #     analysis_instance = dep_source(**params)
-    #     node_id = analysis_instance.md5_str
-    #     return node_id, params, analysis_instance
+
     else:
         # Already an analysis instance - use its hash directly
         if dependency_lookup is not None:
@@ -394,6 +391,82 @@ def _reconstruct_dependencies(
     return dep_kwargs
 
 
+def _stage_collector(ops, x):
+    outs = [x]
+    for op in ops:
+        x = op.transform_func(x)
+        outs.append(x)
+    return tuple(outs)
+
+
+def _replace_results_final_ops(inst, new_ops_tuple):
+    """Return a clone with result final-ops replaced."""
+    d = dict(inst._final_ops_by_type)
+    d['results'] = new_ops_tuple
+    return eqx.tree_at(lambda a: a._final_ops_by_type, inst, MappingProxyType(d))
+
+
+def _run_preflight_memory_estimation(
+    dep_instance: AbstractAnalysis,
+    data: AnalysisInputData,
+    dep_kwargs: dict[str, Any],
+    log_name: str
+) -> None:
+    """Run preflight memory estimation for an analysis instance.
+    
+    Args:
+        dep_instance: The analysis instance to estimate memory for
+        data: Input data for analysis
+        dep_kwargs: Keyword arguments for the analysis compute method
+        log_name: Name for logging purposes
+    """
+    preflight_mode = getattr(dep_instance, '_estimate_mem_preflight')
+     
+    if preflight_mode != "off":
+        try:
+            # Avoid caching during the eval_shape pass
+            preflight_inst = eqx.tree_at(lambda obj: obj.cache_result, dep_instance, False)
+            
+            if preflight_mode == "final":
+                final_shapes = eqx.filter_eval_shape(
+                    lambda obj, d, **kw: obj._compute_with_ops(d, **kw),
+                    preflight_inst, data, **dep_kwargs
+                )
+                final_gb = jtree.struct_bytes(final_shapes) / 1e9
+                logger.info(
+                    f"Estimated final memory usage for {log_name}: {final_gb:.2f} GB"
+                )
+                
+            elif preflight_mode == "stages":
+                ops = preflight_inst._final_ops_by_type.get('results', ())
+                
+                tap = _FinalOp(
+                    name="__shape_mem_tap__", 
+                    label="shape-mem-tap",
+                    transform_func=partial(_stage_collector, ops), 
+                    params={}, 
+                    is_leaf=None,
+                )
+                tapped = _replace_results_final_ops(preflight_inst, (tap,))
+
+                stages_shapes = eqx.filter_eval_shape(
+                    lambda inst, d, **kw: inst._compute_with_ops(d, **kw),
+                    tapped, data, **dep_kwargs
+                )
+                # stages_shapes is a tuple: (pre_final, after_op1, after_op2, ...)
+                stages_gb = [jtree.struct_bytes(s) / 1e9 for s in stages_shapes]
+                names = ["pre-final"] + [f"{op.name}/{op.label}" for op in ops]
+                peak = max(stages_gb)
+
+                parts = ", ".join(f"{n} {gb:.2f}GB" for n, gb in zip(names, stages_gb))
+                logger.info(
+                    f"Estimated memory usage for {log_name} across chain of final ops: "
+                    f"{parts} (peak≈{peak:.2f} GB)"
+                )
+                
+        except Exception as e:  
+            logger.warning(f"Failed to estimate memory usage for {log_name}: {e}")
+
 def compute_dependency_results(
     analyses: dict[str, AbstractAnalysis],
     data: AnalysisInputData,
@@ -457,6 +530,10 @@ def compute_dependency_results(
         else:
             if not log_name.startswith("_DataForwarder"):
                 logger.info(f"Computing analysis node: {log_name}")
+               
+            # Run preflight memory estimation
+            _run_preflight_memory_estimation(dep_instance, data, dep_kwargs, log_name)    
+                 
             # Execute analysis and store result
             result = dep_instance._compute_with_ops(data, **dep_kwargs)
         computed_results[node_id] = result

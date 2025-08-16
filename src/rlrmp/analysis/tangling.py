@@ -21,6 +21,7 @@ from rlrmp.analysis.analysis import (
     FigParamNamespace,
     InputOf,
 )
+from rlrmp.tree_utils import getitem_at_level
 from rlrmp.types import AnalysisInputData
 
 
@@ -50,7 +51,7 @@ class Tangling(AbstractAnalysis[TanglingPorts]):
         #! Should probably be hps_common.dt, top-level
         dt = hps_common.train.model.dt  
         if self.variant is not None:
-            state = state[self.variant]
+            state = getitem_at_level("task_variant", self.variant, state)
         flow = jt.map(lambda x: self._flow_field(x, dt), state)
         tangling = jt.map(lambda x, dxdt: self._tangling(x, dxdt), state, flow)
         return tangling
