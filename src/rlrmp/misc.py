@@ -685,3 +685,7 @@ def find_indices(arr, values: Array | Sequence[ArrayLike]):
 def rms(x: Array, axis: int = -1) -> Array:
     """Returns the root mean square of `x` along `axis`."""
     return jnp.sqrt(jnp.mean(x ** 2, axis=axis))
+
+
+def field_names(datacls) -> tuple[str, ...]:
+    return tuple(datacls.__dataclass_fields__)

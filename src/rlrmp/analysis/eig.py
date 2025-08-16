@@ -1,7 +1,5 @@
 from functools import partial
-from typing import Optional
 
-import equinox as eqx
 from equinox import field
 import jax
 import jax.numpy as jnp
@@ -13,7 +11,8 @@ from jaxtyping import PyTree, Float, Array
 import jax_cookbook.tree as jtree
 
 from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, InputOf
-from rlrmp.types import AnalysisInputData, TreeNamespace
+from rlrmp.types import AnalysisInputData, LDict, TreeNamespace
+from rlrmp.types import Polar
 
 
 class DecompPorts(AbstractAnalysisPorts):
@@ -68,7 +67,7 @@ class SVD(AbstractAnalysis[DecompPorts]):
         )
 
 
-def complex_to_polar_abs_angle(arr: Array) -> Array:
+def complex_to_polar_abs_angle(arr: Array) -> LDict[str, Array]:
   """
   Converts complex numbers to polar coordinates with symmetric angles.
   
@@ -87,7 +86,8 @@ def complex_to_polar_abs_angle(arr: Array) -> Array:
                   Shape (..., n).
   """
   # Calculate magnitudes (absolute values)
-  magnitudes = jnp.abs(arr)
+  magnitude = jnp.abs(arr)
   # Calculate standard angles in (-pi, pi] and take absolute value for [0, pi]
-  angles = jnp.abs(jnp.angle(arr))
-  return jnp.stack([angles, magnitudes], axis=0)
+  angle = jnp.abs(jnp.angle(arr))
+  return LDict.of("component")(dict(angle=angle, magnitude=magnitude))
+  # return jnp.stack([angles, magnitudes], axis=0)

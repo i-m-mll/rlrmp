@@ -57,8 +57,6 @@ class Violins(AbstractAnalysis[ViolinsPorts]):
         violinmode="overlay",
         zero_hline=False,
         arr_axis_labels=None,
-        legend_title=None,
-        xaxis_title=None,
         yaxis_title=None,  # Often provided per-slice via fig-ops
     )
 
@@ -77,14 +75,10 @@ class Violins(AbstractAnalysis[ViolinsPorts]):
 
         group_label, x_label = level_labels[-2:]
 
-        # Prepare figure params
-        legend_title = self.fig_params.legend_title or get_label_str(group_label)
-        xaxis_title = self.fig_params.xaxis_title or get_label_str(x_label)
-
         plot_kwargs = dict(
             split_mode='whole' if input_split is None else 'split',
-            legend_title=legend_title,
-            xaxis_title=xaxis_title,
+            legend_title=get_label_str(group_label),
+            xaxis_title=get_label_str(x_label),
             colors=colors[group_label].dark,
         )
 

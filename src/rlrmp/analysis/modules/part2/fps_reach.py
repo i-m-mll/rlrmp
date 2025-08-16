@@ -177,7 +177,10 @@ DEPENDENCIES = {
         .after_indexing(-2, np.arange(PCA_START_STEP, PCA_END_STEP), axis_label="timestep")
     ),
 }
-    
+
+rnn_funcs = Data.models(where=lambda model: model.step.net.hidden)
+rnn_inputs = Data.states(where=lambda states: states.net.input)
+rnn_states = Data.states(where=lambda states: states.net.hidden)
 
 # State PyTree structure: ['sisu', 'pert_amp', 'train__pert__std']
 # Array batch shape: (evals, replicates, reach conditions)
@@ -191,18 +194,9 @@ ANALYSES = {
                     where=lambda func_args: func_args[0],
                     is_leaf=is_module,
                 ),
-                func_args=(
-                    Data.models(
-                        where=lambda model: model.step.net.hidden,
-                    ), 
-                    Data.states(
-                        where=lambda states: states.net.input,
-                    ),
-                ),
+                func_args=(rnn_funcs, rnn_states),
                 #! TODO: Check how the candidates were actually constructed in the notebook
-                candidates=Data.states(
-                    where=lambda states: states.net.hidden,
-                )
+                candidates=rnn_states,
             )
         )
         # .after_transform(prepare_candidates, dependency_names="candidates")

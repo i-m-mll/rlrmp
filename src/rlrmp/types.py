@@ -528,6 +528,11 @@ class VarSpec(eqx.Module):
     time_axis: int = -2
     vec_axis: int = -1
     origin: Optional[ArrayLike | Callable[[AbstractTask], ArrayLike]] = None
+
+
+class Polar(NamedTuple):
+    angle: Array
+    radius: Array
     # is_spatial: bool = True
     
 

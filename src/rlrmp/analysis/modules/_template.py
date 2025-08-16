@@ -67,7 +67,6 @@ TRANSFORMS = AnalysisModuleTransformSpec(
     # pre_setup=dict(task=some_task_transform, models=get_best_replicate),  # Both
     # pre_setup=lambda task, models: (task, tree_map(get_best_replicate, models)),  # Combined function
     
-    # post_eval can now transform models, tasks, and/or states:
     # post_eval=dict(states=some_states_transform),  # Granular - states only (backward compatible)
     # post_eval=dict(models=some_model_transform, states=some_states_transform),  # Multiple components
     # post_eval=lambda models, tasks, states: (models, tasks, transformed_states),  # Combined function
@@ -79,8 +78,8 @@ ANALYSES = {
     "analysis_label": SomeAnalysis(),
 }
 
-"""Analyses which may be used as dependencies by entries in `ANALYSES`, 
-but which themselves are not computed/rendered and returned."""
+"""Analyses which may be referenced as inputs to other analyses, 
+but whose results are not returned, nor figures rendered."""
 DEPENDENCIES = {
     # "dep_label": SomeOtherAnalysis(),
 }
