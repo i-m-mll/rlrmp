@@ -1,3 +1,4 @@
+from collections import namedtuple
 from functools import partial
 
 from equinox import field
@@ -15,6 +16,25 @@ from rlrmp.types import AnalysisInputData, LDict, TreeNamespace
 from rlrmp.types import Polar
 
 
+DecompResults = namedtuple("DecompResults", ["vals", "vecs_l", "vecs_r"])
+
+
+# @partial(jax.jit, device=jax.devices('cpu')[0])
+def eig(    
+    arr: Float[Array, "... m n"],
+    **kwargs,
+) -> DecompResults:
+    """Compute eigenvalues and eigenvectors of square matrices."""
+    eigvals, eigvecs_l, eigvecs_r = jax.lax.linalg.eig(arr, **kwargs)
+    return DecompResults(eigvals, eigvecs_l, eigvecs_r)
+
+
+def svd(arr: Float[Array, "... m n"], **kwargs) -> DecompResults:
+    """Compute singular values and vectors of matrices."""
+    singvecs_l, singvals, singvecs_r_adj = jax.lax.linalg.svd(arr, **kwargs)
+    return DecompResults(singvals, singvecs_l, singvecs_r_adj.conj().T)
+
+
 class DecompPorts(AbstractAnalysisPorts):
     matrices: InputOf[Float[Array, "... m n"]]
     
@@ -26,11 +46,9 @@ class SquareDecompPorts(AbstractAnalysisPorts):
 
 class Eig(AbstractAnalysis[SquareDecompPorts]):
     Ports = SquareDecompPorts
-    inputs: SquareDecompPorts = field(default_factory=SquareDecompPorts, converter=SquareDecompPorts.converter)
-
-    # @partial(jax.jit, device=jax.devices('cpu')[0])
-    def _eig_cpu(self, *a, **kw):
-        return tuple(jax.lax.linalg.eig(*a, **kw))
+    inputs: SquareDecompPorts = field(
+        default_factory=SquareDecompPorts, converter=SquareDecompPorts.converter
+    )
 
     def compute(
         self,
@@ -39,12 +57,7 @@ class Eig(AbstractAnalysis[SquareDecompPorts]):
         matrices,
         **kwargs,
     ):
-        eigvals, eigvecs_l, eigvecs_r = jtree.unzip(jt.map(self._eig_cpu, matrices))
-        return TreeNamespace(
-            eigvals=eigvals,
-            eigvecs_l=eigvecs_l,
-            eigvecs_r=eigvecs_r,
-        )
+        return jtree.unzip(jt.map(eig, matrices), tuple_cls=DecompResults)
 
 
 
@@ -59,12 +72,7 @@ class SVD(AbstractAnalysis[DecompPorts]):
         matrices,
         **kwargs,
     ):
-        singvecs_l, singvals, singvecs_r_adj = jtree.unzip(jt.map(jax.lax.linalg.svd, matrices))
-        return TreeNamespace(
-            singvals=singvals,
-            singvecs_l=singvecs_l,
-            singvecs_r_adj=singvecs_r_adj,
-        )
+        return jtree.unzip(jt.map(svd, matrices), tuple_cls=DecompResults)
 
 
 def complex_to_polar_abs_angle(arr: Array) -> LDict[str, Array]:
