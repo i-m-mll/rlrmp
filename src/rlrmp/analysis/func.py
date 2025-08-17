@@ -1,13 +1,13 @@
 from ast import TypeVar
 from collections.abc import Callable, Sequence
-from typing import Any, Concatenate, Optional, TypeAlias
+from typing import Any, Concatenate, Optional, ParamSpec, TypeAlias
 
 
 import equinox as eqx
 import jax.tree as jt
 from jaxtyping import PyTree
-from matplotlib.pylab import ParamSpec
 
+import jax_cookbook.tree as jtree
 from jax_cookbook.misc import construct_tuple_like
 
 from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, InputOf, SinglePort
@@ -88,7 +88,9 @@ class ApplyFunctional(AbstractAnalysis[CallerPorts]):
             per_leaf = eqx.filter_jit(per_leaf)  
 
         # Apply per leaf: funcs and each item of func_args must be matching PyTrees
-        return jt.map(per_leaf, funcs, *func_args, is_leaf=self.is_leaf)
+        return jtree.map_rich(
+            per_leaf, funcs, *func_args, is_leaf=self.is_leaf, description=""
+        )
 
 
 def _canon_argnums(argnums: Optional[int | Sequence[int]], nargs: int) -> tuple[int, ...]:

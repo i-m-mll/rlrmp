@@ -12,10 +12,10 @@ from jax.flatten_util import ravel_pytree
 import jax.numpy as jnp
 import jax.tree as jt
 
-from jax_cookbook import is_module
+from jax_cookbook import is_module, is_none
 from jax_cookbook.misc import construct_tuple_like
 import jax_cookbook.tree as jtree
-from jaxtyping import PyTree
+from jaxtyping import Array, PyTree
 
 from rlrmp.analysis.analysis import AbstractAnalysis, DefaultFigParamNamespace, FigParamNamespace, InputOf
 from rlrmp.analysis.func import CallerPorts, make_argwise_functional
@@ -158,46 +158,65 @@ class BatchDotUScalarizer(eqx.Module):
 # ABC for per-funcs    
 
 class ArgwisePer(eqx.Module):
-    """Abstract per-arg computation with optional scalarization, flattening, reducers.
+    """Abstract per-arg computation with optional scalarization, flattening, reducer.
 
     Subclasses must implement:
       - per_fn(self, func, args, i) -> block or tuple of blocks
       - flatten(self, value, args, i) -> 2D block(s) (only used if reducers present)
+      
+    Fields:
+      - scalarizer: Optional callable that takes func and returns a scalarized func.
+      - reducer: 
     """
-    scalarizer: Optional[Callable[[Callable[..., Any]], Callable[..., Any]]] = eqx.field(
-        default=None
-    )
-    reducers: tuple[Callable[[Any], Any], ...] = eqx.field(default=())
+    scalarizer: Optional[Callable[[Callable[..., Any]], Callable[..., Any]]] = None
+    reducer: Optional[Callable[[Array], Any] | tuple[Callable[[Array], Any], ...]] = None
 
-    # ---- core API ----
-    def per_fn(self, func: Callable[..., Any], args: tuple, i: int):  # abstract
+    def per_fn(self, func: Callable[..., Any], args: tuple, i: int):
         raise NotImplementedError
 
-    def flatten(self, value: Any, args: tuple, i: int):  # default: identity
+    def flatten(self, value: Any, args: tuple, i: int):
         return value
 
-    def _apply_reducers(self, x: Any):
+    def _reducer_for(self, args: tuple, i: int) -> Optional[Callable[[Any], Any]]:
+        spec = self.reducer
+        if spec is None:
+            return None
+        if callable(spec):
+            return spec
+        # tuple or namedtuple-like
+        if isinstance(spec, tuple) and len(spec) == len(args):
+            return spec[i]
+        # dict mapping index -> reducer
+        if isinstance(spec, dict):
+            return spec.get(i, None)
+        # namedtuple subclass fallback (has _fields)
+        if hasattr(spec, "_fields") and hasattr(spec, "__getitem__"):
+            try:
+                return spec[i]
+            except Exception as e:
+                raise ValueError("namedtuple reducer spec must index by arg position") from e
+        raise TypeError("Unsupported reducer spec; use callable, tuple/namedtuple, or dict.")
+
+    def _apply_reducer(self, x: Any, reducer_fn: Callable[[Any], Any]):
         if isinstance(x, tuple):
-            return tuple(self._apply_reducers(xi) for xi in x)
-        y = x
-        for r in self.reducers:
-            y = r(y)
-        return y
+            return tuple(self._apply_reducer(xi, reducer_fn) for xi in x)
+        return reducer_fn(x)
 
     def __call__(self, func: Callable[..., Any], args: tuple, i: int):
         f = self.scalarizer(func) if self.scalarizer is not None else func
         value = self.per_fn(f, args, i)
-        if len(self.reducers) > 0:
-            value = self.flatten(value, args, i)
-            value = self._apply_reducers(value)
+        reducer_fn = self._reducer_for(args, i)
+        if reducer_fn is not None:
+            value = self.flatten(value, args, i)  # flatten once
+            value = self._apply_reducer(value, reducer_fn)    # map recursively over tuples
         return value
 
-    #! TODO: Could simplify by accepting `u` directly and inferring whether vmap is needed
-    def with_scalarizer(self, scalarizer) -> Self:
+    # immutable mutators
+    def with_scalarizer(self, scalarizer) -> "ArgwisePer":
         return eqx.tree_at(lambda m: m.scalarizer, self, scalarizer)
 
-    def with_reducer(self, reducer: Callable[[Any], Any]) -> Self:
-        return eqx.tree_at(lambda m: m.reducers, self, self.reducers + (reducer,))
+    def with_reducer(self, reducer: Callable[[Any], Any]) -> "ArgwisePer":
+        return eqx.tree_at(lambda m: m.reducer, self, reducer, is_leaf=is_none)
 
 
 # Per-arg producers (subclasses)
@@ -268,38 +287,38 @@ def trace_square(A):
 # -----------------------------------------------------------------------------
 # 1) Full Jacobian blocks (raw) per selected arg
 # per = PerJacobianBlock()                             # no reducers → raw y⊗x_i
-# jac_fn = make_argwise_per_functional(argnums=(0,1), per=per)
+# jac_fn = make_argwise_functional(argnums=(0,1), per=per)
 # result = jac_fn(func, args_ex)                       # (J_0_raw, J_1_raw)
 # -----------------------------------------------------------------------------
 # 2) Argwise Jacobian operator norms
 # per = PerJacobianBlock().with_reducer(spectral_norm) # reducers → flattened → reduced
-# jac_opnorm_fn = make_argwise_per_functional(argnums=(0,1), per=per)
+# jac_opnorm_fn = make_argwise_functional(argnums=(0,1), per=per)
 # opnorms = jac_opnorm_fn(func, args_ex)               # (||J_0||_2, ||J_1||_2)
 # -----------------------------------------------------------------------------
 # 3) Full Hessian diagonal blocks (vector-output allowed, no scalarization)
 # per = PerHessianDiag()                               # no reducers → raw blocks
-# hdiag_fn = make_argwise_per_functional(argnums=(0,1), per=per)
+# hdiag_fn = make_argwise_functional(argnums=(0,1), per=per)
 # hdiag = hdiag_fn(func, args_ex)                      # (H_00_raw, H_11_raw)
 #   where shapes are y⊗x_i⊗x_i if y is vector; x_i⊗x_i if y is scalar
 # -----------------------------------------------------------------------------
 # 4) Hessian diagonal operator norms along a direction u in output space
 # per = PerHessianDiag().with_scalarizer(DotUScalarizer(u)).with_reducer(spectral_norm)
-# hdiag_opnorm_fn = make_argwise_per_functional(argnums=(0,1), per=per)
+# hdiag_opnorm_fn = make_argwise_functional(argnums=(0,1), per=per)
 # hdiag_opnorms = hdiag_opnorm_fn(func, args_ex)       # (||H_00^{(u)}||_2, ||H_11^{(u)}||_2)
 # -----------------------------------------------------------------------------
 # 5) Hessian row of mixed blocks (raw) for j in idxs
 # per = PerHessianRow(idxs=(0,1))                      # no reducers → row of raw blocks
-# hrow_fn = make_argwise_per_functional(argnums=(0,1), per=per)
+# hrow_fn = make_argwise_functional(argnums=(0,1), per=per)
 # hrow = hrow_fn(func, args_ex)                        # each slot: (H_i0_raw, H_i1_raw)
 # -----------------------------------------------------------------------------
 # 6) Hessian row operator norms (vector-output, scalarized by u)
 # per = PerHessianRow(idxs=(0,1)).with_scalarizer(DotUScalarizer(u)).with_reducer(spectral_norm)
-# hrow_opnorm_fn = make_argwise_per_functional(argnums=(0,1), per=per)
+# hrow_opnorm_fn = make_argwise_functional(argnums=(0,1), per=per)
 # hrow_opnorms = hrow_opnorm_fn(func, args_ex)         # each slot: (||H_i0^{(u)}||, ||H_i1^{(u)}||)
 # -----------------------------------------------------------------------------
 # 7) Multiple directions U (batch). Reducers handle batched matrices.
 # per = PerHessianDiag().with_scalarizer(BatchDotUScalarizer(U)).with_reducer(spectral_norm)
-# hdiag_opnorms_batch_fn = make_argwise_per_functional(argnums=(0,1), per=per)
+# hdiag_opnorms_batch_fn = make_argwise_functional(argnums=(0,1), per=per)
 # # returns per-arg arrays of shape (B,) with op-norms per u in U.
 # hdiag_opnorms_batch = hdiag_opnorms_batch_fn(func, args_ex)
 
@@ -623,15 +642,15 @@ def hessian_block_opnorm_matrix_u(
         rows.append(tuple(row))
     return tuple(rows)
 
-# Can use the last in a couple of ways (I think):
-# Given: idxs = (0, 1) for (input, hidden)
-u = None  # some hidden direction to probe the curvature
-functional = lambda f, args: hessian_block_opnorm_matrix_u(f, args, idxs=(0, 1), u=u, iters=40)
+# # Can use the last in a couple of ways (I think):
+# # Given: idxs = (0, 1) for (input, hidden)
+# u = None  # some hidden direction to probe the curvature
+# functional = lambda f, args: hessian_block_opnorm_matrix_u(f, args, idxs=(0, 1), u=u, iters=40)
 
-# Each selected slot i gets row i of the block op-norm matrix; others are None.
-# The only difference here is that the outer level of the result will have the same type as the 
-# `args` passed to `functional`.
-functional = make_argwise_functional(
-    argnums=(0, 1),  # e.g., (input, hidden)
-    all_fn=lambda f, args, idxs: hessian_block_opnorm_matrix_u(f, args, idxs, u=u, iters=40),
-)
+# # Each selected slot i gets row i of the block op-norm matrix; others are None.
+# # The only difference here is that the outer level of the result will have the same type as the 
+# # `args` passed to `functional`.
+# functional = make_argwise_functional(
+#     argnums=(0, 1),  # e.g., (input, hidden)
+#     all_fn=lambda f, args, idxs: hessian_block_opnorm_matrix_u(f, args, idxs, u=u, iters=40),
+# )
