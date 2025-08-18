@@ -19,7 +19,7 @@ from jax_cookbook import is_module, is_type, is_none
 import jax_cookbook.tree as jtree
 
 from rlrmp.analysis.aligned import DEFAULT_VARSET, VAR_LEVEL_LABEL, AlignedEffectorTrajectories, AlignedVars, get_trivial_reach_directions
-from rlrmp.analysis.analysis import _DummyAnalysis, AbstractAnalysis, AbstractAnalysisPorts, DefaultFigParamNamespace, FigParamNamespace, InputOf, NoPorts
+from rlrmp.analysis.analysis import _DummyAnalysis, AbstractAnalysis, AbstractAnalysisPorts, DefaultFigParamNamespace, FigIterCtx, FigParamNamespace, InputOf, NoPorts
 from rlrmp.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS, get_pert_amp_vmap_eval_func
 from rlrmp.analysis.effector import EffectorTrajectories
 from rlrmp.analysis.network import UnitPreferences
@@ -417,6 +417,16 @@ DEPENDENCIES = {
     ),
 }
 
+
+def dashed_fig_params_fn(fig_params, ctx: FigIterCtx):
+    return fig_params | dict(
+        scatter_kws=dict(
+            line_dash=SISU_STYLES['line_dash'][ctx.idx],
+            legendgroup=SISU_LABELS[ctx.idx],
+            legendgrouptitle_text=f"SISU: {SISU_LABELS[ctx.idx]}",
+        ),
+    )
+
     
 # PyTree structure: [sisu, pert__amp, train__pert__std]
 # Array batch shape: [stim_amp, unit_idx, eval, replicate, condition]
@@ -433,19 +443,13 @@ ANALYSES = {
         .after_transform(partial(get_best_replicate, axis=3))
         .after_indexing(1, unit_idxs_profiles_plot, axis_label="unit_stim_idx")  #! Only make figures for a few stim units
         .after_transform(transform_profile_vars, level='var', dependency_names="vars")  # e.g. positions to deviations
-        .after_unstacking(1, 'unit_stim_idx', above_level='pert__amp')
+        .after_unstacking(1, 'unit_stim_idx', above_level='pert__amp', dependency_name="vars")
         # .after_indexing(0, 1, axis_label="stim_amp")  #! Only make figures for unit stim condition
-        .after_unstacking(0, 'stim_amp', above_level='pert__amp')
+        .after_unstacking(0, 'stim_amp', above_level='pert__amp', dependency_name="vars")
         .after_transform(rearrange_profile_vars, dependency_names="vars")  # Plot pert amp. on same figure
         .combine_figs_by_level(  # Also plot SISU on same figure, with different line styles
             level='sisu',
-            fig_params_fn=lambda fig_params, i, item: dict(
-                scatter_kws=dict(
-                    line_dash=SISU_STYLES['line_dash'][i],
-                    legendgroup=SISU_LABELS[i],
-                    legendgrouptitle_text=f"SISU: {SISU_LABELS[i]}",
-                ),
-            ),
+            fig_params_fn=dashed_fig_params_fn,
         )
         .with_fig_params(
             layout_kws=dict(

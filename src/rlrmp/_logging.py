@@ -1,10 +1,16 @@
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+import re
 
+from rich.highlighter import ReprHighlighter
 from rich.logging import RichHandler
+from rich.text import Text
 
 from rlrmp.config import LOGGING, PATHS
+
+
+SESSION_START_BANNER = "―" * 20 + " NEW SESSION STARTED " + "―" * 20
 
 
 def _remove_handlers(logger: logging.Logger, *, predicate) -> None:
@@ -55,7 +61,24 @@ _console_handler_pred = lambda h: (
 )
 
 
-SESSION_START_BANNER = "―" * 20 + " NEW SESSION STARTED " + "―" * 20
+#! TODO: Fix paren delimiting
+class BacktickPathHighlighter(ReprHighlighter):
+    # Detect a delimited chunk: "…", '…', `…`, or (…)
+    _DELIM = re.compile(r'`(?P<body>[^`]+)`')
+    # What "looks like a path" inside the delimiter
+    _PATH = re.compile(r'^(?:~|/|[A-Za-z]:\\)[\w.\- /\\]+$')
+
+    def highlight(self, text: Text) -> None:
+        # Run the normal rules first (numbers, bools, etc.)
+        super().highlight(text)
+
+        s = text.plain
+        for m in self._DELIM.finditer(s):
+            # locate the inner body (whichever matched)
+            body = m.group("body").strip()
+            if self._PATH.match(body):
+                # style only the inner content (no bleed)
+                text.stylize("repr.path", m.start("body"), m.end("body"))
 
 
 def enable_logging_handlers(
@@ -98,7 +121,7 @@ def enable_logging_handlers(
 
     # replace *any* old console streams with a single RichHandler
     _remove_handlers(root, predicate=_console_handler_pred)
-    console_h = RichHandler(level=console_lvl)
+    console_h = RichHandler(level=console_lvl, highlighter=BacktickPathHighlighter())
     console_h.setFormatter(console_fmt)
     root.addHandler(console_h)
 
@@ -107,7 +130,7 @@ def enable_logging_handlers(
         lg = logging.getLogger(pkg)
         _remove_handlers(lg, predicate=_console_handler_pred)
 
-        sh = RichHandler(level=lvl)
+        sh = RichHandler(level=lvl, highlighter=BacktickPathHighlighter())
         sh.setFormatter(console_fmt)
         lg.addHandler(sh)
         lg.propagate = True  # still bubble to root.log for files

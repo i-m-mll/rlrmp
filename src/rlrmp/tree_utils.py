@@ -1,3 +1,4 @@
+from cProfile import label
 from collections import defaultdict
 from collections.abc import Callable, KeysView, Mapping
 import logging
@@ -186,6 +187,8 @@ def print_ldict_tree_summary(tree):
             break
 
 
+#! TODO: Generalize this. It should work with any PyTree nodes, as long as they are 
+#! uniform at each level -- not just LDicts.
 def swap_adjacent_ldict_levels(
     outer_label: str,
     inner_label: str,
@@ -211,9 +214,13 @@ def swap_adjacent_ldict_levels(
         buckets: dict[Any, dict[Any, Any]] = defaultdict(dict)
         for outer_key, inner_ldict in node.items():
             if not is_inner(inner_ldict):
+                if isinstance(inner_ldict, LDict):
+                    label = f'LDict.of({inner_ldict.label})'
+                else: 
+                    label = type(inner_ldict)
                 raise ValueError(
                     f"{outer_label} was expected to hold only {inner_label} "
-                    f"children, found {type(inner_ldict)}"
+                    f"children, found {label}"
                 )
             for inner_key, leaf in inner_ldict.items():
                 buckets[inner_key][outer_key] = leaf
@@ -240,42 +247,120 @@ def swap_adjacent_ldict_levels(
     return jt.map(_maybe_swap, tree, is_leaf=_stop_descent)
 
 
-def ldict_level_to_top(label: str, tree, *, is_leaf=None):
-    """Move LDict(label, …) to the outermost level, preserving the order
-       of all other levels."""
-    while True:
-        levels = tree_level_labels(tree, is_leaf=is_leaf)
-        if not levels or levels[0] == label:
-            return tree
+def _bubble_to_index(
+    tree,
+    levels: list[str],
+    label: str,
+    dst_idx: int,
+    *,
+    is_leaf: Optional[Callable[[Any], bool]] = None,
+):
+    """
+    Move `label` to `dst_idx` by adjacent swaps, updating `levels` in lock-step.
+    Returns (tree, levels).
+    """
+    i = levels.index(label)
 
-        idx = levels.index(label)                 # `label` must exist
+    # Bubble inward (toward larger index) until we reach dst
+    while i < dst_idx:
+        outer = levels[i]         # current node
+        inner = levels[i + 1]     # its child
         tree = swap_adjacent_ldict_levels(
-            outer_label=levels[idx - 1],          # its current parent
-            inner_label=label,
-            tree=tree,
-            is_leaf=is_leaf,
+            outer_label=outer, inner_label=inner, tree=tree, is_leaf=is_leaf
         )
+        levels[i], levels[i + 1] = levels[i + 1], levels[i]
+        i += 1
 
-
-def ldict_level_to_bottom(label: str, tree, *, is_leaf=None):
-    """Move LDict(label, …) to the innermost visible level."""
-    while True:
-        levels = tree_level_labels(tree, is_leaf=is_leaf)
-        if not levels or levels[-1] == label:
-            return tree
-
-        idx = levels.index(label)
+    # Bubble outward (toward smaller index) until we reach dst
+    while i > dst_idx:
+        outer = levels[i - 1]     # parent
+        inner = levels[i]         # current node
         tree = swap_adjacent_ldict_levels(
-            outer_label=label,                    # swap with its child
-            inner_label=levels[idx + 1],
-            tree=tree,
-            is_leaf=is_leaf,
+            outer_label=outer, inner_label=inner, tree=tree, is_leaf=is_leaf
         )
+        levels[i - 1], levels[i] = levels[i], levels[i - 1]
+        i -= 1
+
+    return tree, levels
 
 
-def move_ldict_level_above(inner_label: str, outer_label: str, tree: PyTree, is_leaf: Optional[Callable[[Any], bool]] = None) -> list[type]:
-    """Move an `LDict` level just above another, in a PyTree."""
-    return swap_adjacent_ldict_levels(outer_label, inner_label, tree, is_leaf=is_leaf)
+def _normalize_label(s: str) -> str:
+    # Accept both raw "label" and formatted "LDict.of(label)".
+    if isinstance(s, str) and s.startswith("LDict.of(") and s.endswith(")"):
+        return s[len("LDict.of("):-1]
+    return s
+
+
+def _levels_raw(tree, *, is_leaf=None) -> list[str]:
+    """Get current LDict level labels as raw strings (no 'LDict.of(...)')."""
+    return [_normalize_label(s) for s in tree_level_labels(tree, is_leaf=is_leaf)]
+
+
+def move_ldict_level_above(
+    label_to_move: str,
+    anchor_label: str,
+    tree,
+    *,
+    is_leaf: Optional[Callable[[Any], bool]] = None,
+):
+    """
+    Place `label_to_move` immediately *outside* (just above) `anchor_label`.
+
+    - If mover is already outside the anchor: bubble inward to index (anchor_idx - 1).
+    - If mover is inside the anchor: bubble outward to index (anchor_idx).
+      (After the final swap with the anchor, mover sits right above it.)
+    """
+    levels = _levels_raw(tree, is_leaf=is_leaf)
+
+    if label_to_move not in levels:
+        raise ValueError(f"`label_to_move` not found among levels: {label_to_move!r}")
+    if anchor_label not in levels:
+        raise ValueError(f"`anchor_label` not found among levels: {anchor_label!r}")
+    
+    if label_to_move == anchor_label:
+        return tree
+
+    if not levels:
+        return tree
+    
+    i_anchor = levels.index(anchor_label)
+    i_move = levels.index(label_to_move)
+
+    dst_idx = i_anchor - 1 if i_move < i_anchor else i_anchor
+    tree, _ = _bubble_to_index(tree, levels, label_to_move, dst_idx, is_leaf=is_leaf)
+    return tree
+
+
+def ldict_level_to_top(
+    label: str,
+    tree,
+    *,
+    is_leaf: Optional[Callable[[Any], bool]] = None,
+):
+    """Move `label` to the outermost level, preserving other relative order."""
+    levels = _levels_raw(tree, is_leaf=is_leaf)
+    if not levels:
+        return tree
+    if label not in levels:
+        raise ValueError(f"label not found among levels: {label!r}")
+    tree, _ = _bubble_to_index(tree, levels, label, 0, is_leaf=is_leaf)
+    return tree
+
+
+def ldict_level_to_bottom(
+    label: str,
+    tree,
+    *,
+    is_leaf: Optional[Callable[[Any], bool]] = None,
+):
+    """Move `label` to the innermost level, preserving other relative order."""
+    levels = _levels_raw(tree, is_leaf=is_leaf)
+    if not levels:
+        return tree
+    if label not in levels:
+        raise ValueError(f"label not found among levels: {label!r}")
+    tree, _ = _bubble_to_index(tree, levels, label, len(levels) - 1, is_leaf=is_leaf)
+    return tree
 
 
 def getitem_at_level(level: str, key: Any, tree: PyTree) -> Any:

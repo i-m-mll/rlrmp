@@ -9,6 +9,7 @@ import jax_cookbook.tree as jtree
 from numpy import var
 
 from rlrmp.analysis.aligned import ALL_MEASURES, DEFAULT_VARSET, MEASURE_LABELS, VAR_LEVEL_LABEL, AlignedEffectorTrajectories, AlignedVars
+from rlrmp.analysis.analysis import FigIterCtx
 from rlrmp.analysis.effector import EffectorTrajectories
 from rlrmp.analysis.disturbance import PLANT_PERT_FUNCS
 from rlrmp.analysis.func import ApplyFuncs
@@ -107,10 +108,11 @@ DEPENDENCIES = {
 }
 
 
-def measure_violin_params_fn(fig_params, i, item):
+def measure_violin_params_fn(fig_params, ctx: FigIterCtx):
     return fig_params | dict(
-        yaxis_title=MEASURE_LABELS[item],
+        yaxis_title=MEASURE_LABELS[ctx.key],
     )
+    
 
 measure_violins_base = (
      Violins(inputs=Violins.Ports(input="measures"))

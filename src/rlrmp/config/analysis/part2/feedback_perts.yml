@@ -1,17 +1,6 @@
 #  Hyperparameters that uniquely identify the model(s)/training run(s) to analyze
 train:
-  model:   
-    n_steps: 100  
-    hidden_size: 100
-    feedback_noise_std: 0.01
-    motor_noise_std: 0.01
-    feedback_delay_steps: 0
-    dt: 0.01
-    damping: 10
-    tau_rise: 0.05
-  # where: 
-  #   0: ['step.net.hidden', 'step.net.readout']
-  pert:  # during training
+  pert:  
     type: curl
     std: [0.0, 1.0]
     # std: [0.0, 0.04]

@@ -71,6 +71,17 @@ def get_reach_directions(task: AbstractTask, *args) -> Array:
     return pos_endpoints[1] - pos_endpoints[0]
 
 
+def get_trivial_reach_directions(task: AbstractTask, *args) -> Array:
+    """Return 'aligns' 'reaches' with the x-y axes; i.e. effectively does nothing.
+    
+    The purpose of this is to avoid (for now) trying to bypass `AlignedVars` as a dependency of 
+    other analyses (e.g. `Profiles`) in cases where it doesn't make sense to align with a certain 
+    directon (e.g. certain steady-state tasks performed using `SimpleReaches`).
+    """
+    origins, _ = get_pos_endpoints(get_validation_trial_specs(task))
+    return jnp.broadcast_to(jnp.array([1., 0.]), origins.shape)
+
+
 DEFAULT_VARSET: LDict[str, VarSpec] = LDict.of(VAR_LEVEL_LABEL)({
     ResponseVar.POSITION: VarSpec(
         where=lambda states, *_: states.mechanics.effector.pos,
@@ -178,16 +189,6 @@ def get_reach_origins_directions(task: AbstractTask, models: PyTree[Module], hps
     origins = pos_endpoints[0]
     return origins, directions
 
-
-def get_trivial_reach_directions(task: AbstractTask):
-    """Return 'aligns' 'reaches' with the x-y axes; i.e. effectively does nothing.
-    
-    The purpose of this is to avoid (for now) trying to bypass `AlignedVars` as a dependency of 
-    other analyses (e.g. `Profiles`) in cases where it doesn't make sense to align with a certain 
-    directon (e.g. certain steady-state tasks performed using `SimpleReaches`).
-    """
-    origins, _ = get_pos_endpoints(get_validation_trial_specs(task))
-    return jnp.broadcast_to(jnp.array([1., 0.]), origins.shape)
 
 
 class AlignedVars(AbstractAnalysis[NoPorts]):

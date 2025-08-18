@@ -8,6 +8,7 @@ import jax_cookbook.tree as jtree
 
 from rlrmp.analysis.activity import NetworkActivity_SampleUnits
 from rlrmp.analysis.aligned import AlignedEffectorTrajectories
+from rlrmp.analysis.analysis import FigIterCtx
 from rlrmp.analysis.effector import EffectorTrajectories
 from rlrmp.colors import ColorscaleSpec
 from rlrmp.analysis.disturbance import PLANT_PERT_FUNCS, get_pert_amp_vmap_eval_func
@@ -73,6 +74,17 @@ PLANT_PERT_LABELS = {0: "no curl", 1: "curl"}
 PLANT_PERT_STYLES = dict(line_dash={0: "dot", 1: "solid"})
 
 
+def dashed_fig_params_fn(fig_params, ctx: FigIterCtx):
+    return fig_params | dict(
+        scatter_kws=dict(
+            line_dash=PLANT_PERT_STYLES['line_dash'][ctx.idx],
+            legendgroup=PLANT_PERT_LABELS[ctx.idx],
+            legendgrouptitle_text=PLANT_PERT_LABELS[ctx.idx].capitalize(),
+        ),
+    )
+
+
+
 ANALYSES = {
     "effector_trajectories_steady": (
         # -- Steady-state --
@@ -111,11 +123,11 @@ ANALYSES = {
     "network_activity_steady": (
         # 1. Activity of sample units, to show they change when SISU does
         NetworkActivity_SampleUnits(variant="steady")
-            .after_transform(get_best_replicate)
-            .after_level_to_top('train__pert__std')
-            .with_fig_params(
-                legend_title="SISU pert. amp.",  #! No effect
-            )
+        .after_transform(get_best_replicate)
+        .after_level_to_top('train__pert__std')
+        .with_fig_params(
+            legend_title="SISU pert. amp.",  #! No effect
+        )
     ),
 
     "aligned_trajectories_reach": (
@@ -124,31 +136,28 @@ ANALYSES = {
         # (It only makes sense to do this for reaches (not ss), at least for curl fields.)
         # Hide individual trials for this plot, since they make it hard to distinguish the means;
         # the variability should be clear from other plots. 
-        AlignedEffectorTrajectories(variant="reach")
-            .after_stacking(level="pert__sisu__amp")
-            .combine_figs_by_axis(
-                axis=3,  # Not 2, because of the prior stacking
-                fig_params_fn=lambda fig_params, i, item: dict(
-                    mean_scatter_kws=dict(
-                        line_dash=PLANT_PERT_STYLES['line_dash'][i],
-                        legendgroup=PLANT_PERT_LABELS[i],
-                        legendgrouptitle_text=PLANT_PERT_LABELS[i].capitalize(),
-                    ),
-                ),
-            )
-            .with_fig_params(
-                legend_title="Final SISU",
-                scatter_kws=dict(line_width=0),  # Hide individual trials
-                layout_kws=dict(
-                    legend_title_font_weight="bold",
-                    #! TODO: Nested dict update so we don't need to pass these redundantly
-                    width=900, 
-                    height=300,
-                    legend_tracegroupgap=1, 
-                    margin_t=50,
-                    margin_b=20,
-                ),
-            )
+        AlignedEffectorTrajectories(
+            variant="reach",
+            colorscale_key="pert__sisu__amp",
+        )
+        .after_stacking(level="pert__sisu__amp")
+        .combine_figs_by_axis(
+            axis=3,  # Not 2, because of the prior stacking
+            fig_params_fn=dashed_fig_params_fn,
+        )
+        .with_fig_params(
+            legend_title="Final SISU",
+            scatter_kws=dict(line_width=0),  # Hide individual trials
+            layout_kws=dict(
+                legend_title_font_weight="bold",
+                #! TODO: Nested dict update so we don't need to pass these redundantly
+                width=900, 
+                height=300,
+                legend_tracegroupgap=1, 
+                margin_t=50,
+                margin_b=20,
+            ),
+        )
     ),
 
     "profiles_reach": (
@@ -158,12 +167,7 @@ ANALYSES = {
             .after_level_to_top('train__pert__std')
             .combine_figs_by_axis(
                 axis=2,     
-                fig_params_fn=lambda fig_params, i, item: dict(
-                    scatter_kws=dict(
-                        line_dash=PLANT_PERT_STYLES['line_dash'][i],
-                        legendgroup=PLANT_PERT_LABELS[i],
-                        legendgrouptitle_text=PLANT_PERT_LABELS[i].capitalize(),
-                    ),
+                fig_params_fn=dashed_fig_params_fn,
                 ),
             )
     ),

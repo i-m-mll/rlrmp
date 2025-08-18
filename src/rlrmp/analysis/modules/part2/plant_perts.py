@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 import jax.tree as jt
 from jaxtyping import Array, Float
+from lark import Tree
 import numpy as np
 
 from feedbax.intervene import add_intervenors, schedule_intervenor
@@ -21,7 +22,7 @@ from rlrmp.analysis.aligned import (
     AlignedEffectorTrajectories, 
     AlignedVars,
 )
-from rlrmp.analysis.analysis import CallWithDeps, Data, ExpandTo
+from rlrmp.analysis.analysis import CallWithDeps, Data, ExpandTo, FigIterCtx
 from rlrmp.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS
 from rlrmp.analysis.eig import eig, svd
 from rlrmp.analysis.func import ApplyFuncs, ApplyFunctional, make_argwise_functional
@@ -148,9 +149,9 @@ measure_funcs = subdict(ALL_MEASURES, MEASURE_KEYS)
 measure_labels = MEASURE_LABELS 
 
 
-def measure_violin_params_fn(fig_params, i, item):
+def measure_violin_params_fn(fig_params, ctx: FigIterCtx):
     return fig_params | dict(
-        yaxis_title=measure_labels[item],
+        yaxis_title=measure_labels[ctx.key],
     )
 
 measure_violins_base = (
@@ -286,16 +287,30 @@ tangling_violins = (
 
 GradArgs = namedtuple("GradArgs", ["input", "state"])
 
-def jac_u_reducer(x: Array):
+
+RNN_INPUT_CHANNELS = dict(sisu=1, goal_pos=2, goal_vel=2, fb_pos=2, fb_vel=2) 
+RNNInputs = namedtuple("RNNInputs", RNN_INPUT_CHANNELS.keys())
+
+
+def split_by(x, sizes, axis=0):
+    return jnp.split(x, np.cumsum(list(sizes))[:-1], axis=axis)
+
+
+def jac_u_reducer(jac_u: Array):
     """Compute desired functions of the input Jacobian."""
-    #! It might be necessary to perform this analysis separately for different components of the 
-    #! input; e.g. position and velocity do not have comparable units/scaling, so one of them 
-    #! may dominate any computed norms. Instead, we should compare them individually across 
-    #! conditions. 
+    # It might be necessary to perform this analysis separately for different components of the 
+    # input; e.g. position and velocity do not have comparable units/scaling, so one of them 
+    # may dominate any computed norms. Instead, we should compare them individually across 
+    # conditions. 
+    split_jac = RNNInputs(*split_by(jac_u, RNN_INPUT_CHANNELS.values()))
     
-    jac_u_svd = svd(x)
-    max_singval_idx = jnp.argmax(jac_u_svd.vals, axis=0)
-    max_sing = jtree.take(jac_u_svd, max_singval_idx)
+    def _get_measures(jac_part):
+        part_svd = svd(jac_part)
+        max_singval_idx = jnp.argmax(part_svd.vals, axis=0)
+        max_sing = jtree.take(part_svd, max_singval_idx)
+        return TreeNamespace(
+            max_sing=max_sing,
+        )
     
     # Also: Multiply C = WJ_u, where W is the readout
     # Then we can SVD of C (split into input types) to examine the input-output gains.
@@ -309,10 +324,7 @@ def jac_u_reducer(x: Array):
     # 3. Technically, we do not have access to the readout here. But also we do not want to 
     #    keep the full Jacobians and do the analysis later. So how can we pull in the readouts?
     
-    return TreeNamespace(
-        max_sing=max_sing,
-        # singvals=jac_u_svd.vals,
-    )
+    return jt.map(_get_measures, split_jac)
     
 def jac_x_reducer(x: Array):
     """Compute desired functions of the state Jacobian."""
