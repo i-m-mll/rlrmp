@@ -25,6 +25,7 @@ import jax.random as jr
 import jax.tree as jt
 from jaxtyping import Array, ArrayLike, Float, Int
 import numpy as np
+from optax import lamb
 import pandas as pd
 from rich.logging import RichHandler
 import yaml
@@ -148,15 +149,8 @@ def get_name_of_callable(
     
     # Handle lambdas
     if func_name == '<lambda>':
-        # if return_lambda_id:
-        #     func_id = f"lambda-{str(id(func))}"
-        #     logger.warning(
-        #         f"Generating name for lambda function: returning its id 'lambda-{func_id}'."
-        #     )
-        #     return func_id
-        # else: 
-        lambda_loc = location_inspect(func)
-        logger.warning(f"Assigned name 'lambda' to lambda function at {lambda_loc}.")
+        lambda_loc_str = location_for_log(func)
+        logger.warning(f"Assigned name 'lambda' to lambda function at {lambda_loc_str}")
         return "lambda"
     
     # Handle partial functions
@@ -652,11 +646,11 @@ class GracefulInterruptHandler:
             finally:
                 self.in_sensitive_operation = False
         return wrapper
+
     
-    
-def location_inspect(fn):
+def location_inspect(fn) -> tuple[str, str, int]:
     """
-    Returns a string "<module> (<filename>:<start_line>)",
+    Returns a tuple ("<module>", "<filename>", <start_line>)
     using inspect for best‐effort source lookup.
     Falls back to code‐object attrs if necessary.
     """
@@ -666,11 +660,22 @@ def location_inspect(fn):
         # so fall back to getfile
         srcfile = inspect.getsourcefile(fn) or inspect.getfile(fn)
         src_lines, start = inspect.getsourcelines(fn)
-        return f"{mod} ({srcfile}:{start})"
+        return mod, srcfile, start
     except (OSError, TypeError):
         # fallback to code‐object
-        return f"{mod} ({fn.__code__.co_filename}:{fn.__code__.co_firstlineno})"
-    
+        return mod, fn.__code__.co_filename, fn.__code__.co_firstlineno
+
+
+def path_delim(p: Path | str) -> str:
+    return f"{PATH_DELIM}{str(p)}{PATH_DELIM}"
+
+
+def location_for_log(fn) -> str:
+    """
+    Returns a string representation of the location of a function.
+    """
+    mod, srcfile, start = location_inspect(fn)
+    return f"{mod} ({path_delim(srcfile)}:{start})"
     
     
 def find_indices(arr, values: Array | Sequence[ArrayLike]):
@@ -689,3 +694,8 @@ def rms(x: Array, axis: int = -1) -> Array:
 
 def field_names(datacls) -> tuple[str, ...]:
     return tuple(datacls.__dataclass_fields__)
+
+
+PATH_DELIM = '`'
+
+

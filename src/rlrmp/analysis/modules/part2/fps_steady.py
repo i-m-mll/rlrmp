@@ -36,7 +36,8 @@ import jax_cookbook.tree as jtree
 
 from rlrmp.analysis import AbstractAnalysis
 from rlrmp.analysis.analysis import (
-    AbstractAnalysisPorts, 
+    AbstractAnalysisPorts,
+    FigIterCtx, 
     InputOf, 
     LiteralInput, 
     Data, 
@@ -347,15 +348,15 @@ DEPENDENCIES = {
 GradArgs = namedtuple("GradArgs", ["sisu", "pos", "h"])
 
 
-def jac_eigval_violin_params_fn(fig_params, i, item):
-    if item == 'angle':
+def jac_eigval_violin_params_fn(fig_params, ctx: FigIterCtx):
+    if ctx.key == 'angle':
         yaxis_title = 'Eigenvalue angle (rad)'
         yaxis_range = [0, jnp.pi]
-    elif item == 'magnitude':
+    elif ctx.key == 'magnitude':
         yaxis_title = 'Eigenvalue magnitude'
         yaxis_range = [0, 1.1]
     else:
-        raise ValueError(f"Unknown component {item}")
+        raise ValueError(f"Unknown component {ctx.key}")
     return fig_params | dict(
         yaxis_title=yaxis_title,
         yaxis_range=yaxis_range,

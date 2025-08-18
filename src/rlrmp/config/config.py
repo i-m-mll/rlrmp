@@ -3,6 +3,8 @@ from importlib import resources
 import logging
 import os
 from pathlib import Path
+from re import sub
+import shlex
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Literal, Optional, TypeVar
 import yaml
@@ -16,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 
 CONFIG_DIR_ENV_VAR_NAME = 'RLRMP_CONFIG_DIR'
+DEFAULT_CONFIG_FILENAME = 'default.yml'
+
 
 def _setup_paths(paths_ns: TreeNamespace):
     base_path = Path(paths_ns.base)
@@ -70,6 +74,54 @@ def get_user_config_dir():
         return Path(env_config_dir).expanduser() 
 
 
+def _deep_merge_dicts(base: dict, update: dict) -> dict:
+    """Recursively merge two dictionaries, with update taking precedence."""
+    result = base.copy()
+    for key, value in update.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = _deep_merge_dicts(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+def _load_defaults_hierarchy(
+    name_parts: list[str], 
+    config_type: str,
+) -> tuple[dict, list[str | None]]:
+    """Load hierarchical default configs from root to parent directory.
+    
+    For name_parts=['part1', 'plant_perts'] and config_type='analysis':
+    - Try to load rlrmp.config.analysis/default.yml
+    - Try to load rlrmp.config.analysis.part1/default.yml
+    - Return merged result
+    """
+    merged_config = {}
+    base_subpackage = f'rlrmp.config.{config_type}'
+    
+    # Generate all subpackage paths from root to parent directory
+    subpackage_paths: list[str | None] = [base_subpackage]  
+    for i in range(len(name_parts) - 1):  # Exclude the final config name
+        subpath_parts = name_parts[:i+1]
+        subpackage_paths.append('.'.join([base_subpackage, *subpath_parts]))
+    
+    # Load and merge each default.yml that exists
+    for i, subpackage_name in enumerate(subpackage_paths):
+        try:
+            assert subpackage_name is not None
+            with resources.open_text(subpackage_name, DEFAULT_CONFIG_FILENAME) as f:
+                default_config = yaml.safe_load(f) 
+                if default_config is None:
+                    subpackage_paths[i] = None  # Mark as not found
+                    pass
+                merged_config = _deep_merge_dicts(merged_config, default_config)
+        except (FileNotFoundError, ModuleNotFoundError):
+            pass
+    
+    return merged_config, subpackage_paths
+
+from rich.text import Text
+
 def load_config(name: str, config_type: Optional[Literal['training', 'analysis']] = None):
     """Load the contents of a project YAML config file resource as a nested dict."""
     name_parts = name.split('.')
@@ -83,8 +135,27 @@ def load_config(name: str, config_type: Optional[Literal['training', 'analysis']
             with open(user_config_dir / subpath / f'{name}.yml') as f:
                 return yaml.safe_load(f)
         except:  
-            logger.info(f'Config file {f"{subpath}/{config_name}.yml"} not found in user config directory; using default.')
+            # ppp = shlex.quote(str(user_config_dir))
+            logger.info(
+                f'Config file {subpath}/{config_name}.yml not found in user config directory '
+                f'`{user_config_dir}`. Falling back to package resources.'
+            )
     
+    # Load hierarchical defaults if config_type is specified
+    if config_type is not None:
+        merged_config, paths = _load_defaults_hierarchy(name_parts, config_type)
+        if paths:
+            # `None` corresponds to an empty defaults.yml
+            paths_used = [p for p in paths if p is not None]
+            if len(paths_used) == 1:
+                logger.info(f'Loaded default.yml config from: {paths_used[0]}')
+            else:
+                logger.info('Loaded default.yml configs hierarchically from: '
+                            f'{", ".join(paths_used)}')
+    else:
+        merged_config = {}
+    
+    # Load the final config and merge with defaults
     if config_type is None:
         subpackage_name = 'rlrmp.config'
     else:
@@ -92,9 +163,14 @@ def load_config(name: str, config_type: Optional[Literal['training', 'analysis']
     
     subpackage_name = '.'.join([subpackage_name, *name_parts[:-1]])
     
-    # Otherwise, load the default
+    # Load the specific config file
     with resources.open_text(subpackage_name, f'{config_name}.yml') as f:
-        return yaml.safe_load(f)
+        final_config = yaml.safe_load(f) or {}
+    
+    logger.info(f'Loaded run config from resource {subpackage_name}/{config_name}.yml')
+    
+    # Merge defaults with final config (final config takes precedence)
+    return _deep_merge_dicts(merged_config, final_config)
 
 
 def load_config_as_ns(
