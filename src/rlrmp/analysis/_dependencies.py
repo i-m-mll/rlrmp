@@ -32,7 +32,7 @@ from jax_cookbook.tree import collect_aux_data
 
 from rlrmp.analysis.analysis import (
     AbstractAnalysis, _format_dict_of_params,
-    _DataField, LiteralInput, FigParamNamespace, DefaultFigParamNamespace,
+    _DataField, LiteralInput, 
     ExpandTo, Transformed, NoPorts, _FinalOp
 )
 from rlrmp.misc import get_md5_hexdigest
@@ -64,10 +64,6 @@ class _DataForwarder(AbstractAnalysis[NoPorts]):
         if self.where is not None:
             value = jt.map(self.where, value, is_leaf=self.is_leaf)
         return value
-
-    def make_figs(self, data: AnalysisInputData, *, result=None, **kwargs):  
-        # nothing plotted
-        return None
 
     def __post_init__(self):  
         if not self.attr:

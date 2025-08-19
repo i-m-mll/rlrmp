@@ -14,7 +14,7 @@ from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, Inp
 from rlrmp.types import AnalysisInputData
 
 
-class ApplyFuncs(AbstractAnalysis[SinglePort[PyTree]]):
+class ApplyFuncs(AbstractAnalysis[SinglePort[PyTree[Any]]]):
     """Apply a PyTree of callables to a PyTree of data.
 
     The functions are stored in the instance field `funcs` and are applied to
@@ -28,7 +28,7 @@ class ApplyFuncs(AbstractAnalysis[SinglePort[PyTree]]):
       leaves; `Responses` or arrays are treated as data leaves.
     """
 
-    Ports = SinglePort
+    Ports = SinglePort[PyTree[Any]]
     inputs: SinglePort[PyTree] = eqx.field(
         default_factory=SinglePort[PyTree], converter=SinglePort[PyTree].converter
     )

@@ -1,5 +1,5 @@
-from collections.abc import Callable, Sequence
-from types import SimpleNamespace
+from collections.abc import Callable, Mapping, Sequence
+from types import MappingProxyType, SimpleNamespace
 from typing import Optional
 
 from equinox import field
@@ -13,7 +13,7 @@ from feedbax.bodies import SimpleFeedbackState
 from jax_cookbook import is_type
 
 from rlrmp.analysis.pca import PCA
-from rlrmp.analysis.analysis import AbstractAnalysis, DefaultFigParamNamespace, FigParamNamespace, NoPorts
+from rlrmp.analysis.analysis import AbstractAnalysis, NoPorts
 from rlrmp.constants import REPLICATE_CRITERION
 from rlrmp.plot_utils import get_label_str
 from rlrmp.plot_utils import calculate_array_minmax
@@ -193,7 +193,7 @@ def activity_sample_units(
 
 class NetworkActivity_SampleUnits(AbstractAnalysis[NoPorts]):
     variant: Optional[str] = "small"
-    fig_params: FigParamNamespace = DefaultFigParamNamespace(
+    fig_params: Mapping = MappingProxyType(dict(
         n_units_sample=4,
         key=jr.PRNGKey(0),
         layout_kws=dict(
@@ -204,7 +204,7 @@ class NetworkActivity_SampleUnits(AbstractAnalysis[NoPorts]):
             line_width=1,
         ),
         # legend_title="Reach direction",
-    )
+    ))
     # colorscale_key: str = "reach_condition"
 
     def make_figs(
@@ -224,16 +224,16 @@ class NetworkActivity_SampleUnits(AbstractAnalysis[NoPorts]):
         figs = LDict.of(activities.label)({
             outer_value: activity_sample_units(
                 activities=inner_dict,
-                n_units_sample=self.fig_params.n_units_sample,
+                n_units_sample=self.fig_params.get("n_units_sample"),
                 colors=colors[inner_dict.label].dark,
-                key=self.fig_params.key,
-                **self.fig_params.scatter_kws,
+                key=self.fig_params.get("key"),
+                **self.fig_params.get("scatter_kws", {}),
             )
             for outer_value, inner_dict in activities.items()
         })
 
         figs = jt.map(
-            lambda fig: fig.update_layout(**self.fig_params.layout_kws),
+            lambda fig: fig.update_layout(**self.fig_params.get("layout_kws", {})),
             figs, 
             is_leaf=is_type(go.Figure),
         )

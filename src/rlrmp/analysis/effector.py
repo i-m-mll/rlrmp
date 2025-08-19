@@ -1,5 +1,6 @@
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from functools import partial
+from types import MappingProxyType
 from typing import Literal, Optional
 
 import feedbax.plotly as fbp
@@ -13,11 +14,12 @@ from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
 from rlrmp.analysis.aligned import DEFAULT_VARSET, get_varset_labels
-from rlrmp.analysis.analysis import AbstractAnalysis, DefaultFigParamNamespace, FigParamNamespace, NoPorts
+from rlrmp.analysis.analysis import AbstractAnalysis, NoPorts
 from rlrmp.analysis.state_utils import get_pos_endpoints
 from rlrmp.colors import COLORSCALES
 from rlrmp.config import PLOTLY_CONFIG
 from rlrmp.constants import REPLICATE_CRITERION
+from rlrmp.misc import deep_merge
 from rlrmp.plot import add_endpoint_traces
 from rlrmp.plot_utils import get_label_str
 from rlrmp.types import AnalysisInputData, TreeNamespace, VarSpec
@@ -55,7 +57,7 @@ def plot_2d_effector_trajectories(
 class EffectorTrajectories(AbstractAnalysis[NoPorts]):
     variant: Optional[str] = "small"
     varset: PyTree[VarSpec] = field(default_factory=lambda: DEFAULT_VARSET)
-    fig_params: FigParamNamespace = DefaultFigParamNamespace(
+    fig_params: Mapping = MappingProxyType(dict(
         # legend_title="Reach direction",
         mean_exclude_axes=(),
         curves_mode='lines',
@@ -63,7 +65,7 @@ class EffectorTrajectories(AbstractAnalysis[NoPorts]):
         darken_mean=MEAN_LIGHTEN_FACTOR,
         scatter_kws=dict(line_width=0.75, opacity=0.4),
         mean_scatter_kws=dict(line_width=2.5),
-    )
+    ))
     colorscale_key: Optional[str] = None 
     colorscale_axis: Optional[int] = None
     pos_endpoints: bool = True
@@ -79,8 +81,8 @@ class EffectorTrajectories(AbstractAnalysis[NoPorts]):
     ):
         #! TODO: Add a general way to include callables in `fig_params`;
         #! however this probably requires passing `fig_params` to `AbstractAnalysis.make_figs`...
-        if self.fig_params.legend_title is None and self.colorscale_key is not None:
-            fig_params = self.fig_params | dict(legend_title=get_label_str(self.colorscale_key))
+        if self.fig_params.get("legend_title") is None and self.colorscale_key is not None:
+            fig_params = MappingProxyType(deep_merge(self.fig_params, {"legend_title": get_label_str(self.colorscale_key)}))
         else: 
             fig_params = self.fig_params
             

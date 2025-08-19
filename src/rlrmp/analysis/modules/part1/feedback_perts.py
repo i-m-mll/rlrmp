@@ -15,7 +15,7 @@ import feedbax.plotly as fbp
 # from rlrmp.analysis import measures
 from rlrmp.analysis import AbstractAnalysis
 from rlrmp.analysis.aligned import ALL_MEASURES, MEASURE_LABELS, VAR_LEVEL_LABEL, AlignedVars
-from rlrmp.analysis.analysis import DefaultFigParamNamespace, FigIterCtx, FigParamNamespace
+from rlrmp.analysis.analysis import FigIterCtx
 from rlrmp.analysis.disturbance import FB_INTERVENOR_LABEL, get_pert_amp_vmap_eval_func, task_with_pert_amp
 from rlrmp.analysis.func import ApplyFuncs
 from rlrmp.analysis.state_utils import vmap_eval_ensemble

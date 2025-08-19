@@ -3,14 +3,14 @@
 For example, `analysis.part1.plant_perts` is such a module.
 """
 
-from collections.abc import Callable, Sequence
-from types import SimpleNamespace
+from collections.abc import Callable, Mapping, Sequence
+from types import MappingProxyType, SimpleNamespace
 from typing import Optional
 
 from equinox import Module
 
 from rlrmp.analysis import AbstractAnalysis
-from rlrmp.analysis.analysis import DefaultFigParamNamespace, FigParamNamespace, NoPorts
+from rlrmp.analysis.analysis import NoPorts
 from rlrmp.analysis.state_utils import vmap_eval_ensemble
 from rlrmp.types import TreeNamespace
 from rlrmp.types import LDict

@@ -173,7 +173,7 @@ def add_endpoint_traces(
     return fig
 
 
-def get_violins(\
+def get_violins(
     data: dict[float, dict[float, Float[Array, "..."]]],  # "evals replicates conditions"
     data_split: Optional[dict[float, dict[float, Float[Array, "..."]]]] = None,
     split_mode: Literal['whole', 'split'] = 'whole',

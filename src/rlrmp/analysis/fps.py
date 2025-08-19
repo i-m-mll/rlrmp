@@ -1,7 +1,8 @@
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from functools import partial
 from multiprocessing import Value
+from types import MappingProxyType
 from typing import Any, Literal, Optional, TypeVar
 import equinox as eqx
 from equinox import field
@@ -21,8 +22,6 @@ import plotly.graph_objects as go
 from rlrmp.analysis.analysis import (
     AbstractAnalysis, 
     AbstractAnalysisPorts,
-    DefaultFigParamNamespace, 
-    FigParamNamespace, 
     InputOf,
 )
 from rlrmp.analysis.fp_finder import (
@@ -129,7 +128,7 @@ class PlotInPCSpace(AbstractAnalysis[PlotInPCSpacePorts]):
     Ports = PlotInPCSpacePorts
     inputs: PlotInPCSpacePorts = eqx.field(default_factory=PlotInPCSpacePorts, converter=PlotInPCSpacePorts.converter)
     variant: Optional[str] = "full"
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
+    fig_params: Mapping = MappingProxyType(dict())
 
     # n_pcs: Literal[2, 3] = 3
     spread_label: str = 'sisu'

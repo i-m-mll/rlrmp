@@ -30,7 +30,7 @@ import jax_cookbook.tree as jtree
 from rlrmp.config.config import STRINGS, PATHS
 from rlrmp.database import EvaluationRecord, add_evaluation_figure, savefig
 from rlrmp.tree_utils import hash_callable_leaves, ldict_label_only_func, ldict_level_to_bottom, move_ldict_level_above, rearrange_ldict_levels, subdict, tree_level_labels, ldict_level_to_top
-from rlrmp.misc import DoNotHashTree, camel_to_snake, field_names, get_dataclass_fields, get_md5_hexdigest, get_name_of_callable, is_json_serializable
+from rlrmp.misc import DoNotHashTree, camel_to_snake, deep_merge, field_names, get_dataclass_fields, get_md5_hexdigest, get_name_of_callable, get_origin_type, is_json_serializable
 from rlrmp.plot_utils import figs_flatten_with_paths
 from rlrmp.tree_utils import _hash_pytree
 from rlrmp.types import LDict, TreeNamespace
@@ -103,7 +103,7 @@ T = TypeVar("T")
 
 class SinglePort(AbstractAnalysisPorts, Generic[T]):
     """A Ports dataclass with a single port named 'input'."""
-    input: InputOf[T]
+    input: InputOf[T] = eqx.field(kw_only=True)
 
 
 PortsType = TypeVar("PortsType", bound=AbstractAnalysisPorts)
@@ -322,24 +322,24 @@ class _DataProxy:
 Data = _DataProxy()
 
 
-class FigParamNamespace(TreeNamespace):
-    """Namespace PyTree whose attributes are all `None` unless assigned.
+# class FigParamNamespace(TreeNamespace):
+#     """Namespace PyTree whose attributes are all `None` unless assigned.
     
-    This is useful because different subclasses of `AbstractAnalysis` may call different
-    plotting functions, each of which may take arbitrary keyword arguments. Thus we can 
-    define defaults for any subset of these arguments in the implementation of 
-    `fig_params: ClassVar[FigParamNamespace]` for the subclass, while still passing `None` to the plotting 
-    functions for those parameters which do not need to be explicitly specified. 
-    Likewise, the user can pass arbitrary kwargs to the `with_fig_params` method without 
-    their having to be hardcoded into the subclass implementation.
-    """
+#     This is useful because different subclasses of `AbstractAnalysis` may call different
+#     plotting functions, each of which may take arbitrary keyword arguments. Thus we can 
+#     define defaults for any subset of these arguments in the implementation of 
+#     `fig_params: ClassVar[FigParamNamespace]` for the subclass, while still passing `None` to the plotting 
+#     functions for those parameters which do not need to be explicitly specified. 
+#     Likewise, the user can pass arbitrary kwargs to the `with_fig_params` method without 
+#     their having to be hardcoded into the subclass implementation.
+#     """
 
-    # Only called if the attribute is not found in the instance `__dict__`
-    def __getattr__(self, item: str) -> Any:
-        if item.startswith('__'):
-            # Avert issues with methods like `copy.deepcopy` which check for presence of dunder methods
-            return object.__getattribute__(self, item)
-        return None
+#     # Only called if the attribute is not found in the instance `__dict__`
+#     def __getattr__(self, item: str) -> Any:
+#         if item.startswith('__'):
+#             # Avert issues with methods like `copy.deepcopy` which check for presence of dunder methods
+#             return object.__getattribute__(self, item)
+#         return None
 
 
 @dataclass(frozen=True)
@@ -358,8 +358,7 @@ class FigIterCtx:
 
     
 
-# Alias for constructing `FigParamNamespace` defaults in Equinox Module fields
-DefaultFigParamNamespace = lambda **kwargs: field(default_factory=lambda: FigParamNamespace(**kwargs))
+# NOTE: DefaultFigParamNamespace removed - now using MappingProxyType({}) directly
 
 
 class _PrepOp(NamedTuple):
@@ -585,7 +584,7 @@ def _apply_fig_ops(analysis, data, kwargs, depth: int, path: tuple):
 
     op = analysis._fig_ops[depth]
 
-    # Choose dependencies that will vary at this level (as today)
+    # Choose dependencies that will vary at this level 
     target_dep_names = analysis._get_target_dependency_names(op.dep_name, kwargs, "Fig op")
     deps = {k: kwargs[k] for k in target_dep_names if k in kwargs}
     if not deps:
@@ -647,7 +646,7 @@ def _apply_fig_ops(analysis, data, kwargs, depth: int, path: tuple):
         analysis_i = analysis
         if op.fig_params_fn is not None:
             new_fp = _call_fig_params_fn(op.fig_params_fn, analysis.fig_params, ctx)
-            analysis_i = eqx.tree_at(lambda a: a.fig_params, analysis, analysis.fig_params | new_fp)
+            analysis_i = eqx.tree_at(lambda a: a.fig_params, analysis, MappingProxyType(deep_merge(analysis.fig_params, new_fp)))
 
         # Recurse
         child = _apply_fig_ops(
@@ -721,7 +720,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
     inputs: PortsType = field(default_factory=NoPorts, converter=NoPorts.converter)
     
     variant: Optional[str] = None  #! TODO: Eliminate this. Should be in `tasks` PyTree, and dealt with explicitly with ops 
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
+    fig_params: Mapping[str, Any] = MappingProxyType(dict())
     cache_result: bool = False
     
     #! TODO: Make these `init=False` so they don't appear in the constructor signature IDE
@@ -739,7 +738,8 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
     def __post_init__(self):
         """Validate inputs instance and check for unresolved required inputs."""
         # Validate that inputs is an instance of the expected Ports class
-        if not isinstance(self.inputs, self.Ports):
+        ports_origin_type = get_origin_type(self.Ports)
+        if not isinstance(self.inputs, ports_origin_type):
             raise TypeError(f"Expected inputs of type {self.Ports}, got {type(self.inputs)}")
 
     def _compute_with_ops(
@@ -826,7 +826,12 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
             
         for final_op in self._final_ops_by_type.get('results', ()):
             try:
-                result = final_op.transform_func(result)
+                result = _call_user_func(
+                    final_op.transform_func,
+                    result,
+                    data=data,
+                    **prepped_kwargs,
+                )
             except Exception as e:
                 logger.error(f"Error during execution of final op '{final_op.name}'", exc_info=True)
                 raise e
@@ -863,7 +868,13 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
 
         for final_fig_op in self._final_ops_by_type.get('figs', ()):
             try: 
-                figs = final_fig_op.transform_func(figs)
+                figs = _call_user_func(
+                    final_fig_op.transform_func,
+                    figs,
+                    data=prepped_data,
+                    result=result,
+                    **prepped_kwargs,
+                )
             except Exception as e:
                 logger.error(f"Error during execution of final op '{final_fig_op.name}'", exc_info=True)
                 raise e
@@ -1142,7 +1153,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         return eqx.tree_at(
             lambda x: x.fig_params,
             self,
-            self.fig_params | kwargs,
+            MappingProxyType(deep_merge(self.fig_params, kwargs)),
         )
 
     def after_indexing(
@@ -1517,6 +1528,32 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
             dependency_names=dependency_name,
             label=label,
         )
+
+    def after_getitem_at_level(
+        self, 
+        level: str, 
+        key: Hashable, 
+        dependency_name: Optional[str] = None,
+    ) -> Self:
+        """
+        Returns a copy of this analysis that selects a single key from an `LDict` level, 
+        completely removing that level.
+
+        Args:
+            level: The `LDict` level to select from
+            key: The specific key to select from the `LDict`
+            dependency_name: Optional name of specific dependency to transform
+        """
+        def getitem(d, key=key):
+            return d[key]
+        label = f"getitem-at-{_format_level_str(level)}_{key}"
+
+        return self.after_transform(
+            func=getitem, 
+            level=level, 
+            dependency_names=dependency_name,
+            label=label,
+        )
         
     def vmap(self, in_axes: Mapping[str, _AxisSpec]) -> Self:
         """
@@ -1684,7 +1721,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         axis: int, 
         output_level_label: str, 
         dependency_name: Optional[str] = None,
-        fig_params_fn: Optional[Callable[[FigParamNamespace, FigIterCtx], FigParamNamespace]] = None,
+        fig_params_fn: Optional[Callable[[Mapping, FigIterCtx], Mapping]] = None,
     ) -> Self:
         """Returns a copy of this analysis that maps over a given axis of the input PyTree(s).
         
@@ -1712,7 +1749,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         self, 
         axis: int, 
         dependency_name: Optional[str] = None,
-        fig_params_fn: Optional[Callable[[FigParamNamespace, FigIterCtx], FigParamNamespace]] = None
+        fig_params_fn: Optional[Callable[[Mapping, FigIterCtx], Mapping]] = None
     ) -> Self:
         """
         Returns a copy of this analysis that will merge individual figures generated by slicing along
@@ -1745,7 +1782,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
         self, 
         level: str, 
         dependency_name: Optional[str] = None,
-        fig_params_fn: Optional[Callable[[FigParamNamespace, FigIterCtx], FigParamNamespace]] = None
+        fig_params_fn: Optional[Callable[[Mapping, FigIterCtx], Mapping]] = None
     ) -> Self:
         """
         Returns a copy of this analysis that will merge individual figures generated by iterating over
@@ -2024,6 +2061,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
                     prepped_kwargs[name] = _call_user_func(
                         prep_op.transform_func,
                         prepped_kwargs[name],
+                        data=data,
                         **kwargs,
                     )
                 except Exception as e:

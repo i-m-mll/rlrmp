@@ -1,4 +1,5 @@
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from types import MappingProxyType
 from typing import Optional
 
 import equinox as eqx
@@ -13,7 +14,7 @@ from jax_cookbook import is_type
 import jax_cookbook.tree as jtree
 
 from rlrmp.analysis.aligned import AlignedVars, get_varset_labels
-from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, DefaultFigParamNamespace, FigParamNamespace, InputOf
+from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, InputOf
 from rlrmp.plot_utils import get_label_str
 from rlrmp.tree_utils import move_ldict_level_above, tree_level_labels
 from rlrmp.types import AnalysisInputData, TreeNamespace
@@ -37,15 +38,15 @@ class Profiles(AbstractAnalysis[ProfilesPorts]):
     inputs: ProfilesPorts = eqx.field(default_factory=ProfilesPorts, converter=ProfilesPorts.converter)
     
     # variant: Optional[str] = "full"
-    fig_params: FigParamNamespace = DefaultFigParamNamespace(
+    fig_params: Mapping = MappingProxyType(dict(
         mode='std', # or 'curves'
         n_std_plot=1,
         layout_kws=dict(
             width=600,
             height=400,
             legend_tracegroupgap=1,
-        ),
-    )
+        )
+    ))
     var_level_label: str = "var"
     vrect_kws_func: Optional[Callable[[TreeNamespace], dict]] = None
     # var_labels: Optional[dict[str, str]] = None  # e.g. for mapping "pos" to "position"

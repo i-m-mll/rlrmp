@@ -6,8 +6,9 @@ in state space many times. However, it may be the case that there are still sign
 across SISU. 
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from functools import partial 
+from types import MappingProxyType
 from typing import Optional, Dict, Any, Literal as L, Sequence
 
 import equinox as eqx
@@ -25,7 +26,7 @@ from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
 from rlrmp.analysis.aligned import AlignedEffectorTrajectories, AlignedVars
-from rlrmp.analysis.analysis import AbstractAnalysis, CallWithDeps, Data, DefaultFigParamNamespace, FigParamNamespace, NoPorts
+from rlrmp.analysis.analysis import AbstractAnalysis, CallWithDeps, Data, NoPorts
 from rlrmp.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS
 from rlrmp.analysis.effector import EffectorTrajectories
 from rlrmp.analysis.pca import StatesPCA
@@ -122,10 +123,10 @@ TANGLING_AGG_T_SLICE = slice(1, None)
 
 class PCPlot(AbstractAnalysis[NoPorts]):  
     variant: Optional[str] = "small"
-    fig_params: FigParamNamespace = DefaultFigParamNamespace(
+    fig_params: Mapping = MappingProxyType(dict(
         title="",
         x_label="",
-    )
+    ))
 
 
 DEPENDENCIES = {

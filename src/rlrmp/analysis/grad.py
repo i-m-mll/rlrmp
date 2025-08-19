@@ -2,8 +2,9 @@
 Compute derivatives of functions. 
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 import re
+from types import MappingProxyType
 from typing import Any, Optional, Self, TypeAlias, TypeVar
 
 import equinox as eqx
@@ -17,7 +18,7 @@ from jax_cookbook.misc import construct_tuple_like
 import jax_cookbook.tree as jtree
 from jaxtyping import Array, PyTree
 
-from rlrmp.analysis.analysis import AbstractAnalysis, DefaultFigParamNamespace, FigParamNamespace, InputOf
+from rlrmp.analysis.analysis import AbstractAnalysis, InputOf
 from rlrmp.analysis.func import CallerPorts, make_argwise_functional
 from rlrmp.types import AnalysisInputData
 

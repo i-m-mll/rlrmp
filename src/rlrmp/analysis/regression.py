@@ -2,6 +2,7 @@
 
 from functools import partial
 import itertools
+from types import MappingProxyType
 from typing import Sequence, Optional, Tuple
 
 import equinox as eqx
@@ -15,7 +16,7 @@ from feedbax.train import SimpleTrainer, grad_wrap_simple_loss_func
 from feedbax.loss import nan_safe_mse
 
 from rlrmp.analysis.aligned import AlignedVars
-from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, DefaultFigParamNamespace, FigParamNamespace, InputOf
+from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, InputOf
 from rlrmp.tree_utils import ldict_level_keys, tree_level_labels
 from rlrmp.types import AnalysisInputData
 
@@ -158,15 +159,15 @@ class Regression(AbstractAnalysis[RegressionPorts]):
     inputs: RegressionPorts = eqx.field(default_factory=RegressionPorts, converter=RegressionPorts.converter)
     
     variant: Optional[str] = "full"
-    fig_params: FigParamNamespace = DefaultFigParamNamespace(
+    fig_params: Mapping = MappingProxyType(dict(
         mode='std', # or 'curves'
         n_std_plot=1,
         layout_kws=dict(
             width=600,
             height=400,
             legend_tracegroupgap=1,
-        ),
-    )
+        )
+    ))
     key: PRNGKeyArray = eqx.field(default_factory=lambda: jr.PRNGKey(0))
 
     def compute(self, data: AnalysisInputData, *, regressor_tree, **kwargs):

@@ -41,9 +41,7 @@ from rlrmp.analysis.analysis import (
     InputOf, 
     LiteralInput, 
     Data, 
-    DefaultFigParamNamespace, 
-    ExpandTo, 
-    FigParamNamespace, 
+
     Transformed,
 )
 from rlrmp.analysis.eig import SVD, Eig, complex_to_polar_abs_angle
