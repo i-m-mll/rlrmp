@@ -1,8 +1,9 @@
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from copy import deepcopy
 from enum import Enum
 from functools import cached_property, partial
 from turtle import pos
+from types import MappingProxyType
 from typing import NamedTuple, Optional, Literal as L, TypeVar
 
 import equinox as eqx
@@ -28,17 +29,16 @@ import jax_cookbook.tree as jtree
 from rlrmp.analysis.analysis import (
     AbstractAnalysis,
     AbstractAnalysisPorts,
-    DefaultFigParamNamespace,
-    FigParamNamespace,
     InputOf,
     NoPorts,
     get_validation_trial_specs,
 )
+from rlrmp.analysis.plot import ScatterN2D
 from rlrmp.analysis.state_utils import get_pos_endpoints, get_trial_start_positions, unsqueezer
 from rlrmp.config import PLOTLY_CONFIG
 from rlrmp.constants import EVAL_REACH_LENGTH
 from rlrmp.hyperparams import flat_key_to_where_func
-from rlrmp.misc import DoNotHashTree
+from rlrmp.misc import DoNotHashTree, deep_merge
 from rlrmp.plot import add_endpoint_traces
 from rlrmp.plot_utils import get_label_str
 from rlrmp.types import (
@@ -236,116 +236,54 @@ class AlignedVars(AbstractAnalysis[NoPorts]):
 
         return result
         
-        
-class AlignedEffectorTrajectoriesPorts(AbstractAnalysisPorts):
-    """Input ports for AlignedEffectorTrajectories analysis."""
-    aligned_vars: AlignedVars | str = AlignedVars()
 
-
-class AlignedEffectorTrajectories(AbstractAnalysis[AlignedEffectorTrajectoriesPorts]):
-    Ports = AlignedEffectorTrajectoriesPorts
-    inputs: AlignedEffectorTrajectoriesPorts = eqx.field(default_factory=Ports, converter=Ports.converter)
-    variant: Optional[str] = "small"
-    fig_params: FigParamNamespace = DefaultFigParamNamespace(
-        # var_labels=RESPONSE_VAR_LABELS.full,
-        axes_labels=('Parallel', 'Orthogonal'),
-        # mode='std',
-        # n_curves_max=n_curves_max,
-        darken_mean=PLOTLY_CONFIG.mean_lighten_factor,
-        n_curves_max=20,
-        layout_kws=dict(
-            width=900,
-            height=300,
-            legend_tracegroupgap=1,
-            margin_t=50,
-            margin_b=20,
+def add_aligned_position_endpoints(
+    figs: PyTree[go.Figure], xaxis='x1', yaxis='y1'
+) -> PyTree[go.Figure]:
+    """Add aligned position endpoints to the figures."""
+    #! TODO: Don't hardcode reach length  but use `data.tasks` or `data.hps` per leaf!
+    #! (First need to solve: things:///show?id=GGRNzFkx5fUCNnwy9kzfvt)
+    return jt.map(
+        lambda fig: add_endpoint_traces(
+            fig,
+            jnp.array([[0., 0.], [EVAL_REACH_LENGTH, 0.]]),
+            xaxis=xaxis,
+            yaxis=yaxis,
         ),
-        scatter_kws=dict(
-            line_width=0.5,
-            opacity=0.5,
-        ),
-        mean_scatter_kws=dict(
-            line_width=2.5,
-            opacity=1,
-        ),
+        figs,
+        is_leaf=is_type(go.Figure),
     )
-    colorscale_key: str = field(kw_only=True)
-    colorscale_axis: int = 0
-    pos_endpoints: bool = True
-    varset: Optional[PyTree[VarSpec]] = None
 
-    def make_figs(
-        self,
-        data: AnalysisInputData,
-        *,
-        aligned_vars,
-        hps_common,
-        colorscales,
-        **kwargs,
-    ):  
-        fig_params = deepcopy(self.fig_params)
 
-        if self.colorscale_key is not None:
-            if fig_params.legend_title is None:
-                fig_params.legend_title = get_label_str(self.colorscale_key)
-            
-            try:
-                fig_params.legend_labels = flat_key_to_where_func(self.colorscale_key)(hps_common)
-            except:
-                pass
-        
-        if self.varset is not None:
-            labels = get_varset_labels(self.varset).medium
-        else:
-            labels = None
-
-        def _make_fig(vars_):            
-            return fbp.trajectories_2D(
-                vars_,
-                colorscale=colorscales[self.colorscale_key],
-                colorscale_axis=self.colorscale_axis,
-                curves_mode='lines',
-                var_labels=labels,
-                **fig_params,
-            )
-
-        figs = jt.map(
-            _make_fig,
-            aligned_vars[self.variant],
-            #! TODO: Don't hardcode `VAR_LEVEL_LABEL` but infer from `aligned_vars`...
-            is_leaf=LDict.is_of(VAR_LEVEL_LABEL),
+def get_aligned_trajectories_node(
+    colorscale_key: Optional[str] = None,
+    pos_endpoints: bool = True,
+    varset: PyTree[VarSpec] = DEFAULT_VARSET,
+    subplot_level: str = VAR_LEVEL_LABEL,
+) -> ScatterN2D:
+        aligned_var_subplot_labels = get_varset_labels(varset).medium
+        aligned_var_axes_labels = jt.map(
+            lambda l: fbp.AxesLabels2D(rf"${l}_\parallel$", rf"${l}_\perp$"),
+            get_varset_labels(varset).short,
         )
-
-        if self.pos_endpoints:
-            #! Assume all tasks are straight reaches with the same length.
-            #! TODO: Remove this assumption. Depending on `_pre_ops`/`_fig_ops`, the 
-            #! PyTree structure of `data.tasks[self.variant]` may differ from that of `figs`
-            #! and thus we have to be careful about how to perform the mapping. 
-            #! (In the simplest case, without ops, the task PyTree is a prefix of `figs`)
-            task_0 = jt.leaves(data.tasks[self.variant], is_leaf=is_type(AbstractTask))[0]
-            pos_endpoints = self._get_aligned_pos_endpoints(task_0.eval_reach_length)
-
-            figs = jt.map(
-                lambda fig: add_endpoint_traces(
-                    fig, 
-                    pos_endpoints, 
-                    xaxis='x1', 
-                    yaxis='y1', 
-                ),
-                figs,
-                is_leaf=is_type(go.Figure),
+        node = (
+            ScatterN2D(
+                inputs=ScatterN2D.Ports(input=AlignedVars(varset=varset)),
+                subplot_level=subplot_level,
             )
-
-        return figs
-
-    def _get_aligned_pos_endpoints(self, eval_reach_length: TreeNamespace) -> Array:
-        return jnp.array([[0., 0.], [eval_reach_length, 0.]])
-
-    def _params_to_save(self, hps: PyTree[TreeNamespace], *, hps_common, **kwargs):
-        return dict(
-            # n=min(self.n_curves_max, hps_common.eval_n * n_replicates_included[train_pert_std] * self.n_conditions)
+            .with_fig_params(
+                colorscale_key=colorscale_key,
+                var_labels=aligned_var_subplot_labels,
+                #! TODO: Probably leave the individual labels out; just use master labels
+                axes_labels=aligned_var_axes_labels,
+                # master_axes_labels=AxesLabels2D("Parallel", "Lateral"),
+            )    
         )
-
+        if colorscale_key is not None:
+            node = node.after_stacking(colorscale_key)
+        if pos_endpoints:
+            node = node.then_transform_figs(add_aligned_position_endpoints)
+        return node
 
 
 #! TODO: This should not be limited to `ResponseVar`

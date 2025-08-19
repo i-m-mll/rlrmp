@@ -17,7 +17,7 @@ from numpy import var
 # from rlrmp.analysis import measures
 from rlrmp.analysis import AbstractAnalysis
 from rlrmp.analysis.aligned import ALL_MEASURES, DEFAULT_VARSET, MEASURE_LABELS, VAR_LEVEL_LABEL, AlignedEffectorTrajectories, AlignedVars 
-from rlrmp.analysis.analysis import _DummyAnalysis, DefaultFigParamNamespace, FigIterCtx, FigParamNamespace, Transformed
+from rlrmp.analysis.analysis import _DummyAnalysis, FigIterCtx, Transformed
 from rlrmp.analysis.disturbance import FB_INTERVENOR_LABEL, get_pert_amp_vmap_eval_func, task_with_pert_amp
 from rlrmp.analysis.effector import EffectorTrajectories
 from rlrmp.analysis.func import ApplyFuncs

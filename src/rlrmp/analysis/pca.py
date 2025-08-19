@@ -1,5 +1,5 @@
-from collections.abc import Callable, Sequence
-from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, DefaultFigParamNamespace, FigParamNamespace, InputOf, NoPorts
+from collections.abc import Callable, Mapping, Sequence
+from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, InputOf, NoPorts
 from rlrmp.tree_utils import ldict_level_to_bottom, rearrange_ldict_levels, tree_level_labels
 from rlrmp.types import AnalysisInputData, LDict, TreeNamespace
 
@@ -15,6 +15,7 @@ from feedbax.misc import batch_reshape, nan_bypass
 from jax_cookbook import is_type, is_module
 import jax_cookbook.tree as jtree
 
+from types import MappingProxyType
 from typing import Literal, Optional
 
 

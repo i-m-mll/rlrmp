@@ -10,6 +10,7 @@ from lark import Tree
 import numpy as np
 
 from feedbax.intervene import add_intervenors, schedule_intervenor
+from feedbax.plotly import AxesLabels2D
 from jax_cookbook import is_module, is_type, MultiVmapAxes
 import jax_cookbook.tree as jtree
 
@@ -19,8 +20,10 @@ from rlrmp.analysis.aligned import (
     DEFAULT_VARSET, 
     MEASURE_LABELS, 
     VAR_LEVEL_LABEL, 
-    AlignedEffectorTrajectories, 
     AlignedVars,
+    add_aligned_position_endpoints,
+    get_aligned_trajectories_node,
+    get_varset_labels,
 )
 from rlrmp.analysis.analysis import CallWithDeps, Data, ExpandTo, FigIterCtx
 from rlrmp.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS
@@ -28,6 +31,7 @@ from rlrmp.analysis.eig import eig, svd
 from rlrmp.analysis.func import ApplyFuncs, ApplyFunctional, make_argwise_functional
 from rlrmp.analysis.grad import Hessians, Jacobians, PerJacobianBlock, spectral_norm
 from rlrmp.analysis.pca import PCAResults, StatesPCA
+from rlrmp.analysis.plot import ScatterN2D
 from rlrmp.analysis.tangling import Tangling
 from rlrmp.analysis.violins import Violins
 from rlrmp.analysis.profiles import Profiles
@@ -148,6 +152,11 @@ MEASURE_KEYS = (
 measure_funcs = subdict(ALL_MEASURES, MEASURE_KEYS) 
 measure_labels = MEASURE_LABELS 
 
+# this has a single batch axis for replicates
+rnn_funcs = Data.models(where=lambda model: model.step.net.hidden)
+# these have batch shape (evals, replicates, reach conditions, time)
+rnn_inputs = Data.states(where=lambda states: states.net.input)
+rnn_states = Data.states(where=lambda states: states.net.hidden)
 
 def measure_violin_params_fn(fig_params, ctx: FigIterCtx):
     return fig_params | dict(
@@ -179,19 +188,6 @@ def get_state_pcs(pca_results, states):
         is_leaf=LDict.is_of("train__pert__std"),
     )
 
-# this has a single batch axis for replicates
-rnn_funcs = Data.models(where=lambda model: model.step.net.hidden)
-# these have batch shape (evals, replicates, reach conditions, time)
-rnn_inputs = Data.states(where=lambda states: states.net.input)
-rnn_states = Data.states(where=lambda states: states.net.hidden)
-
-# sisu = Data.hps(where=lambda hps: hps.sisu, is_leaf=is_type(TreeNamespace))
-# positions = Data.tasks(where=lambda task: (
-#     task.validation_trials.targets["mechanics.effector.pos"].value[:, -1]
-# ))
-
-
-# GradArgs = namedtuple("GradArgs", ["sisu", "pos", "h"])
 
 DEPENDENCIES = {
     # "measures": (
@@ -296,6 +292,8 @@ def split_by(x, sizes, axis=0):
     return jnp.split(x, np.cumsum(list(sizes))[:-1], axis=axis)
 
 
+
+
 def jac_u_reducer(jac_u: Array):
     """Compute desired functions of the input Jacobian."""
     # It might be necessary to perform this analysis separately for different components of the 
@@ -343,30 +341,31 @@ def jac_x_reducer(x: Array):
         # jac_x_eig=jac_x_eig,
     )
 
+
 # State PyTree structure: ['sisu', 'pert__amp', 'train__pert__std']
 ANALYSES = {
-    "jac_functions": (
-        ApplyFunctional(
-            inputs=ApplyFunctional.Ports(
-                funcs=rnn_funcs,
-                func_args=GradArgs(rnn_inputs, rnn_states),
-            ),
-            functional=make_argwise_functional(
-                per=PerJacobianBlock(reducer=GradArgs(
-                    input=jac_u_reducer,
-                    state=jac_x_reducer,
-                )),
-            ),
-        )
-        .after_transform_inputs(partial(getitem_at_level, "task_variant", "small"))
-        .after_subdict_at_level("sisu", [-3, 0, 1, 3])
-        .after_subdict_at_level("train__pert__std", [0, 1.5])
-        .vmap(in_axes={
-            'funcs': MultiVmapAxes(None, 0, None, None), 
-            'func_args': MultiVmapAxes(0, 1, 2, 3),
-        })
-        .estimate_memory()
-    ),
+    # "jac_functions": (
+    #     ApplyFunctional(
+    #         inputs=ApplyFunctional.Ports(
+    #             funcs=rnn_funcs,
+    #             func_args=GradArgs(rnn_inputs, rnn_states),
+    #         ),
+    #         functional=make_argwise_functional(
+    #             per=PerJacobianBlock(reducer=GradArgs(
+    #                 input=jac_u_reducer,
+    #                 state=jac_x_reducer,
+    #             )),
+    #         ),
+    #     )
+    #     .after_transform_inputs(partial(getitem_at_level, "task_variant", "small"))
+    #     .after_subdict_at_level("sisu", [-3, 0, 1, 3])
+    #     .after_subdict_at_level("train__pert__std", [0, 1.5])
+    #     .vmap(in_axes={
+    #         'funcs': MultiVmapAxes(None, 0, None, None), 
+    #         'func_args': MultiVmapAxes(0, 1, 2, 3),
+    #     })
+    #     .estimate_memory()
+    # ),
 
     # "plot--tangling-by_train_std": tangling_violins.after_rearrange_levels(
     #     [..., 'sisu', 'pert__amp'], dependency_name="input"
@@ -376,22 +375,18 @@ ANALYSES = {
     #     [..., 'sisu', 'train__pert__std'], dependency_name="input"
     # ),
     
-    # "plot--aligned_trajectories-by_sisu": (
-    #     AlignedEffectorTrajectories(
-    #         colorscale_key="sisu",
-    #         varset=DEFAULT_VARSET,
-    #     )
-    #     .after_stacking('sisu')
-    #     .map_figs_at_level("train__pert__std", dependency_name="aligned_vars")
-    #     .then_transform_figs(
-    #         partial(
-    #             set_axes_bounds_equal, 
-    #             padding_factor=0.1,
-    #             trace_selector=lambda trace: trace.showlegend is True,
-    #         ),
-    #     )
-    # ),
-    
+    "plot--aligned_trajectories-by_sisu": (
+        get_aligned_trajectories_node(colorscale_key="sisu")
+        .after_getitem_at_level("task_variant", "small")
+        .map_figs_at_level("train__pert__std", dependency_name="input")
+        .then_transform_figs(
+            partial(
+                set_axes_bounds_equal, 
+                padding_factor=0.1,
+                trace_selector=lambda trace: trace.showlegend is True,
+            ),
+        )
+    ),
     # "plot--aligned_trajectories-by_train_std": (
     #     AlignedEffectorTrajectories(
     #         colorscale_key="train__pert__std",
@@ -415,5 +410,5 @@ ANALYSES = {
 
     # "plot--measures-by_pert_amp": measure_violins("sisu", "train__pert__std"),
     # "plot--measures-by_train_std": measure_violins("sisu", "pert__amp"),
-}
     # "plot--measures-train_std_by_pert_amp": measure_violins("train__pert__std", "sisu"),
+}

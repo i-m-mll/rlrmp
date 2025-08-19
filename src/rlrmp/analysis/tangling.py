@@ -1,4 +1,6 @@
+from collections.abc import Mapping
 from functools import wraps
+from types import MappingProxyType
 from typing import Optional, Literal as L
 
 import equinox as eqx
@@ -17,8 +19,6 @@ from rlrmp.analysis.analysis import (
     AbstractAnalysis, 
     AbstractAnalysisPorts,
     Data, 
-    DefaultFigParamNamespace, 
-    FigParamNamespace,
     InputOf,
 )
 from rlrmp.tree_utils import getitem_at_level
@@ -33,7 +33,7 @@ class TanglingPorts(AbstractAnalysisPorts):
 class Tangling(AbstractAnalysis[TanglingPorts]):
     Ports = TanglingPorts
     inputs: TanglingPorts = eqx.field(default_factory=TanglingPorts, converter=TanglingPorts.converter)
-    fig_params: FigParamNamespace = DefaultFigParamNamespace()
+    fig_params: Mapping = MappingProxyType(dict())
     variant: Optional[str] = None
     eps: float = 1e-6  # TODO: Allow for `lambda states: ...`
     t_axis: int = -2  # time step axis in arrays

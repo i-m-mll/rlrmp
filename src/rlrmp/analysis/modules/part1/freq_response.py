@@ -1,5 +1,5 @@
-from collections.abc import Callable
-from types import SimpleNamespace
+from collections.abc import Callable, Mapping
+from types import MappingProxyType, SimpleNamespace
 from typing import Literal as L, Optional
 
 import jax.numpy as jnp
@@ -9,7 +9,7 @@ import feedbax.plotly as fbp
 from jax_cookbook import is_module
 import jax_cookbook.tree as jtree
 
-from rlrmp.analysis.analysis import AbstractAnalysis, DefaultFigParamNamespace, FigParamNamespace, NoPorts
+from rlrmp.analysis.analysis import AbstractAnalysis, NoPorts
 from rlrmp.analysis.state_utils import vmap_eval_ensemble
 from rlrmp.types import AnalysisInputData, LDict
 

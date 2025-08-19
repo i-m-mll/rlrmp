@@ -361,7 +361,10 @@ class LDict(Mapping[K, V], Generic[K, V]):
     @staticmethod
     def is_of(label: str) -> Callable[[Any], bool]:
         """Return a predicate checking if an object is an `LDict` with a given label."""
-        return lambda node: isinstance(node, LDict) and node.label == label
+        def is_ldict_of(node: Any) -> bool:
+            """Check if the node is an LDict with the specified label."""
+            return isinstance(node, LDict) and node.label == label
+        return is_ldict_of
     
     @staticmethod
     @overload

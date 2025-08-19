@@ -1,4 +1,9 @@
 
+from collections.abc import Mapping
+from types import MappingProxyType
+
+from rlrmp.misc import deep_merge
+
 import equinox as eqx
 import jax.tree as jt
 from jaxtyping import PyTree
@@ -10,8 +15,6 @@ from rlrmp.types import AnalysisInputData, TreeNamespace, LDictConstructor
 from rlrmp.analysis.analysis import (
     AbstractAnalysis, 
     AbstractAnalysisPorts, 
-    DefaultFigParamNamespace, 
-    FigParamNamespace, 
     InputOf,
 )
 from rlrmp.plot import get_violins
@@ -53,12 +56,12 @@ class Violins(AbstractAnalysis[ViolinsPorts]):
         default_factory=ViolinsPorts, converter=ViolinsPorts.converter
     )
 
-    fig_params: FigParamNamespace = DefaultFigParamNamespace(
+    fig_params: Mapping = MappingProxyType(dict(
         violinmode="overlay",
         zero_hline=False,
         arr_axis_labels=None,
         yaxis_title=None,  # Often provided per-slice via fig-ops
-    )
+    ))
 
     def make_figs(
         self, data: AnalysisInputData, *, result, colors, input: PyTree, input_split=None, **kwargs
@@ -86,7 +89,7 @@ class Violins(AbstractAnalysis[ViolinsPorts]):
             return get_violins(
                 node,
                 data_split=node_split,
-                **plot_kwargs | self.fig_params,
+                **deep_merge(plot_kwargs, self.fig_params),
             )
 
         # Map over any outer levels; at the group level we build one figure

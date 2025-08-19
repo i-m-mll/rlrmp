@@ -24,7 +24,7 @@ from jaxtyping import Array, PyTree
 import numpy as np
 
 from rlrmp.analysis import AbstractAnalysis
-from rlrmp.analysis.analysis import _DummyAnalysis, Data, DefaultFigParamNamespace, ExpandTo, FigParamNamespace, LiteralInput
+from rlrmp.analysis.analysis import _DummyAnalysis, Data, ExpandTo, LiteralInput
 from rlrmp.analysis.fps import FixedPoints
 from rlrmp.analysis.pca import StatesPCA
 from rlrmp.misc import get_constant_input_fn

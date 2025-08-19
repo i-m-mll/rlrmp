@@ -1,5 +1,6 @@
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from functools import partial
+from types import MappingProxyType
 from typing import Optional
 
 import equinox as eqx
@@ -15,7 +16,7 @@ from feedbax.train import grad_wrap_simple_loss_func
 from feedbax.loss import nan_safe_mse
 from jax_cookbook import is_module
 
-from rlrmp.analysis.analysis import AbstractAnalysis, DefaultFigParamNamespace, FigParamNamespace, NoPorts
+from rlrmp.analysis.analysis import AbstractAnalysis, NoPorts
 from rlrmp.analysis.state_utils import output_corr
 from rlrmp.misc import center_and_rescale, ravel_except_last
 from rlrmp.plot import get_violins

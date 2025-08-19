@@ -168,8 +168,7 @@ ANALYSES = {
             .combine_figs_by_axis(
                 axis=2,     
                 fig_params_fn=dashed_fig_params_fn,
-                ),
-            )
+            ),
     ),
 
     # "network_activity_project_pca": (

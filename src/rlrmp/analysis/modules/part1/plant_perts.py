@@ -1,4 +1,5 @@
 from functools import partial
+from typing import Any
 
 import jax.numpy as jnp
 import jax.tree as jt
@@ -7,6 +8,7 @@ from feedbax.intervene import add_intervenors, schedule_intervenor
 from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 from numpy import var
+from optree import PyTree
 
 from rlrmp.analysis.aligned import ALL_MEASURES, DEFAULT_VARSET, MEASURE_LABELS, VAR_LEVEL_LABEL, AlignedEffectorTrajectories, AlignedVars
 from rlrmp.analysis.analysis import FigIterCtx

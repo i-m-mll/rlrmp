@@ -16,7 +16,7 @@ import signal
 import subprocess
 from types import ModuleType, GeneratorType
 import types
-from typing import Any, Optional
+from typing import Any, Optional, get_origin
 
 import equinox as eqx
 import jax
@@ -694,6 +694,24 @@ def rms(x: Array, axis: int = -1) -> Array:
 
 def field_names(datacls) -> tuple[str, ...]:
     return tuple(datacls.__dataclass_fields__)
+
+
+def deep_merge(base: Mapping[str, Any], over: Mapping[str, Any]) -> dict[str, Any]:
+    """Pure 'overlay' that copies only touched branches."""
+    out: dict[str, Any] = dict(base)
+    for k, v in over.items():
+        bv = out.get(k)
+        if isinstance(v, Mapping) and isinstance(bv, Mapping):
+            out[k] = deep_merge(bv, v)
+        else:
+            out[k] = v
+    return out
+
+
+def get_origin_type(type_):
+    """Get the origin type of a generic type, or the type itself if not generic."""
+    origin = get_origin(type_) 
+    return origin if origin is not None else type_
 
 
 PATH_DELIM = '`'

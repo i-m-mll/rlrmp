@@ -1,5 +1,6 @@
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from functools import partial 
+from types import MappingProxyType
 from typing import Optional, Dict, Any, Literal as L, Sequence
 
 import equinox as eqx
@@ -19,7 +20,7 @@ from jax_cookbook import is_module, is_type, is_none
 import jax_cookbook.tree as jtree
 
 from rlrmp.analysis.aligned import DEFAULT_VARSET, VAR_LEVEL_LABEL, AlignedEffectorTrajectories, AlignedVars, get_trivial_reach_directions
-from rlrmp.analysis.analysis import _DummyAnalysis, AbstractAnalysis, AbstractAnalysisPorts, DefaultFigParamNamespace, FigIterCtx, FigParamNamespace, InputOf, NoPorts
+from rlrmp.analysis.analysis import _DummyAnalysis, AbstractAnalysis, AbstractAnalysisPorts, FigIterCtx, InputOf, NoPorts
 from rlrmp.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS, get_pert_amp_vmap_eval_func
 from rlrmp.analysis.effector import EffectorTrajectories
 from rlrmp.analysis.network import UnitPreferences
