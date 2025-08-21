@@ -1,5 +1,4 @@
 from functools import partial
-from typing import Any
 
 import jax.numpy as jnp
 import jax.tree as jt
@@ -7,10 +6,15 @@ import jax.tree as jt
 from feedbax.intervene import add_intervenors, schedule_intervenor
 from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
-from numpy import var
-from optree import PyTree
 
-from rlrmp.analysis.aligned import ALL_MEASURES, DEFAULT_VARSET, MEASURE_LABELS, VAR_LEVEL_LABEL, AlignedEffectorTrajectories, AlignedVars
+from rlrmp.analysis.aligned import (
+    ALL_MEASURES, 
+    DEFAULT_VARSET, 
+    MEASURE_LABELS, 
+    VAR_LEVEL_LABEL, 
+    AlignedVars, 
+    get_aligned_trajectories_node,
+)
 from rlrmp.analysis.analysis import FigIterCtx
 from rlrmp.analysis.effector import EffectorTrajectories
 from rlrmp.analysis.disturbance import PLANT_PERT_FUNCS
@@ -20,8 +24,13 @@ from rlrmp.analysis.profiles import Profiles
 from rlrmp.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
 from rlrmp.analysis.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.misc import lohi
-from rlrmp.plot import get_violins, set_axes_bounds_equal, set_axis_bounds_equal
-from rlrmp.tree_utils import ldict_level_to_bottom, move_ldict_level_above, subdict
+from rlrmp.plot import (
+    get_violins, 
+    set_axes_bounds_equal, 
+    set_axis_bounds_equal,
+    set_axes_bounds_equal_traj2D,
+)
+from rlrmp.tree_utils import subdict
 from rlrmp.types import LDict
 
 
@@ -169,22 +178,18 @@ ANALYSES = {
             mean_scatter_kws=dict(line_width=0),
         )
     ),
-
-    "aligned_trajectories_by_pert_amp": (
-        AlignedEffectorTrajectories(
-            colorscale_key="pert__amp",
-            varset=DEFAULT_VARSET,
-        )
+    "plot--aligned_trajectories-by_pert_amp": (
+        get_aligned_trajectories_node(colorscale_key="pert__amp")
         .after_transform(get_best_replicate)
-        .after_stacking(level='pert__amp')
+        .after_getitem_at_level("task_variant", "small")
+        .then_transform_figs(set_axes_bounds_equal_traj2D)
     ),
+
     "aligned_trajectories_by_train_std": (
-        AlignedEffectorTrajectories(
-            colorscale_key="train__pert__std",
-            varset=DEFAULT_VARSET,
-        )
+        get_aligned_trajectories_node(colorscale_key="train__pert__std")
         .after_transform(get_best_replicate)
-        .after_stacking(level='train__pert__std')
+        .after_getitem_at_level("task_variant", "small")
+        .then_transform_figs(set_axes_bounds_equal_traj2D)
     ),
     "profiles": (
         Profiles(varset=DEFAULT_VARSET)

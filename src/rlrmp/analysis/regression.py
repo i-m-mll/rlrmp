@@ -1,5 +1,6 @@
 """Facilities for linear regression given regressor-structured PyTrees."""
 
+from collections.abc import Mapping
 from functools import partial
 import itertools
 from types import MappingProxyType

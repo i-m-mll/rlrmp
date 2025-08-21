@@ -5,5 +5,5 @@
         "notebooks",
         "tests"
     ],
-    "kiroAgent.configureMCP": "Disabled"
+    "kiroAgent.configureMCP": "Disabled",
 }

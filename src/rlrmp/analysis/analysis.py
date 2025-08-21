@@ -1313,7 +1313,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
                 By default, uses integer keys starting from zero. 
             dependency_name: Optional name of specific dependency to transform
         """
-        def unpack_axis(data, **kwargs):
+        def unpack_axis(data_, **kwargs):
             def transform_array(arr):
                 nonlocal keys
                 if keys is None:
@@ -1334,7 +1334,7 @@ class AbstractAnalysis(Module, Generic[PortsType], strict=False):
             
             unstacked = jt.map(
                 transform_array,
-                data,
+                data_,
                 is_leaf=eqx.is_array,
             )
             
