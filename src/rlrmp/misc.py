@@ -717,3 +717,8 @@ def get_origin_type(type_):
 PATH_DELIM = '`'
 
 
+def unit_circle_points(n):
+    """Generate N evenly spaced points."""
+    angles = jnp.linspace(0, 2 * jnp.pi, n, endpoint=False)
+    z = jnp.exp(1j * angles)
+    return jnp.column_stack([z.real, z.imag])

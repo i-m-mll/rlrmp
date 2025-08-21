@@ -37,6 +37,7 @@ import jax_cookbook.tree as jtree
 from rlrmp.analysis import AbstractAnalysis
 from rlrmp.analysis.analysis import (
     AbstractAnalysisPorts,
+    ExpandTo,
     FigIterCtx, 
     InputOf, 
     LiteralInput, 
@@ -49,6 +50,7 @@ from rlrmp.analysis.fp_finder import FPFilteredResults, take_top_fps
 from rlrmp.analysis.fps import FixedPoints, PlotInPCSpace
 from rlrmp.analysis.grad import Jacobians, Hessians
 from rlrmp.analysis.pca import StatesPCA
+from rlrmp.analysis.plot import ScatterN3D
 from rlrmp.analysis.violins import Violins
 from rlrmp.misc import create_arr_df, get_constant_input_fn, take_non_nan
 from rlrmp.analysis.state_utils import get_best_model_replicate, vmap_eval_ensemble
@@ -364,17 +366,26 @@ def jac_eigval_violin_params_fn(fig_params, ctx: FigIterCtx):
 # State PyTree structure: ['sisu', 'train__pert__std']
 # Array batch shape: (evals, replicates, reach conditions)
 ANALYSES = {
-    # "plot--fps_pc": (
-    #     PlotInPCSpace(
-    #         inputs=PlotInPCSpace.Ports(
-    #             pca_results="states_pca",
-    #             plot_data="steady_state_fp_results",
-    #         ),
-    #         spread_label='sisu',
-    #     )
-    #     .after_transform(lambda fp_results: fp_results.fps, dependency_names="plot_data")
-    # ),
-    
+    "plot--fps_pc": (
+        PlotInPCSpace(
+            inputs=PlotInPCSpace.Ports(
+                pca_results="states_pca",
+                plot_data="steady_state_fp_results",
+            ),
+            spread_label='sisu',
+        )
+        .after_transform(lambda fp_results: fp_results.fps, dependency_names="plot_data")
+    ),
+    "plot--fps_pc": (
+        ScatterN3D(
+            inputs=PlotInPCSpace.Ports(
+                pca_results="states_pca",
+                plot_data="steady_state_fp_results",
+            ),
+            spread_label='sisu',
+        )
+        .after_transform(lambda fp_results: fp_results.fps, dependency_names="plot_data")
+    ),
     #! Maybe it would make sense to just make a single class, `Grads` with `grad_func`?
     #! Though it wouldn't change the verbosity here unless we made `grad_func` a `Port`
     #! and returned a PyTree containing both the Jacobians and the Hessians

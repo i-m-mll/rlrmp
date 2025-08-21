@@ -410,9 +410,20 @@ class LDictConstructor(Generic[K, V]):
     def __init__(self, label: str):
         self.label = label
     
-    def __call__(self, data: Optional[Mapping[K, V]] = None):
-        if data is None:
-            data = dict()
+    @overload
+    def __call__(self, __mapping: Mapping[K, V], /) -> LDict[K, V]: ...
+    @overload
+    def __call__(self, /, **kwargs: V) -> LDict[str, V]: ...
+
+    def __call__(self, __mapping: Optional[Mapping[Any, V]] = None, /, **kwargs: V):
+        """Call with either a single mapping positional arg or keyword args (not both)."""
+        if __mapping is not None and kwargs:
+            raise TypeError("Pass either a mapping positional argument or keyword args, not both.")
+        data: Mapping[Any, V]
+        if __mapping is not None:
+            data = __mapping
+        else:
+            data = dict(kwargs)
         return LDict(self.label, data)
     
     def __repr__(self) -> str:
@@ -428,7 +439,12 @@ class LDictConstructor(Generic[K, V]):
     @property
     def predicate(self) -> Callable[[Any], bool]:
         """A predicate that checks if an object is an `LDict` with this constructor's label."""
-        return lambda node: isinstance(node, LDict) and node.label == self.label
+        def is_ldict_of(node: Any) -> bool:
+            """Check if the node is an LDict with the specified label."""
+            if isinstance(node, LDict):
+                return node.label == self.label
+            return False
+        return is_ldict_of
 
 
 # YAML serialisation/deserialisation for LDict objects

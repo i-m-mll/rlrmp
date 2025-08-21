@@ -103,7 +103,11 @@ class EffectorTrajectories(AbstractAnalysis[NoPorts]):
         figs = jt.map(_make_fig, data.states[self.variant], is_leaf=is_module)
 
         if self.pos_endpoints:
-            #! See comment in `aligned.AlignedEffectorTrajectories`
+            #! Assume all tasks are straight reaches with the same length.
+            #! TODO: Remove this assumption. Depending on `_pre_ops`/`_fig_ops`, the 
+            #! PyTree structure of `data.tasks[self.variant]` may differ from that of `figs`
+            #! and thus we have to be careful about how to perform the mapping. 
+            #! (In the simplest case, without ops, the task PyTree is a prefix of `figs`)
             task_0 = jt.leaves(data.tasks[self.variant], is_leaf=is_type(AbstractTask))[0]
             pos_endpoints = get_pos_endpoints(task_0.validation_trials)
 

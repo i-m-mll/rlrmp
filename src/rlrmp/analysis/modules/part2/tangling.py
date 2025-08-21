@@ -25,7 +25,7 @@ import feedbax.plotly as fbp
 from jax_cookbook import is_module, is_type
 import jax_cookbook.tree as jtree
 
-from rlrmp.analysis.aligned import AlignedEffectorTrajectories, AlignedVars
+from rlrmp.analysis.aligned import AlignedVars
 from rlrmp.analysis.analysis import AbstractAnalysis, CallWithDeps, Data, NoPorts
 from rlrmp.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS
 from rlrmp.analysis.effector import EffectorTrajectories

@@ -1,26 +1,27 @@
+from ast import In
 from collections.abc import Callable, Mapping
 from functools import partial 
 from types import MappingProxyType
 from typing import Optional, Dict, Any, Literal as L, Sequence
 
 import equinox as eqx
-from equinox import Module
+from equinox import Module, field
 import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
-from jaxtyping import PyTree, PRNGKeyArray
+from jaxtyping import ArrayLike, PyTree, PRNGKeyArray
 import numpy as np
 import plotly.graph_objects as go
 
 from feedbax.intervene import NetworkConstantInput, TimeSeriesParam, add_intervenors, schedule_intervenor
 from feedbax.task import AbstractTask
 import feedbax.plotly as fbp
-from jax_cookbook import is_module, is_type, is_none
+from jax_cookbook import is_module, is_type, is_none, MultiVmapAxes
 import jax_cookbook.tree as jtree
 
-from rlrmp.analysis.aligned import DEFAULT_VARSET, VAR_LEVEL_LABEL, AlignedEffectorTrajectories, AlignedVars, get_trivial_reach_directions
-from rlrmp.analysis.analysis import _DummyAnalysis, AbstractAnalysis, AbstractAnalysisPorts, FigIterCtx, InputOf, NoPorts
+from rlrmp.analysis.aligned import DEFAULT_VARSET, VAR_LEVEL_LABEL, AlignedVars, get_trivial_reach_directions
+from rlrmp.analysis.analysis import AbstractAnalysis, AbstractAnalysisPorts, Data, FigIterCtx, InputOf, NoPorts, SinglePort
 from rlrmp.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS, get_pert_amp_vmap_eval_func
 from rlrmp.analysis.effector import EffectorTrajectories
 from rlrmp.analysis.network import UnitPreferences
@@ -30,8 +31,9 @@ from rlrmp.analysis.state_utils import get_best_replicate, get_constant_task_inp
 from rlrmp.colors import ColorscaleSpec
 from rlrmp.config.config import PLOTLY_CONFIG
 from rlrmp.constants import POS_ENDPOINTS_ALIGNED
+from rlrmp.misc import unit_circle_points
 from rlrmp.plot import add_endpoint_traces, get_violins, set_axes_bounds_equal
-from rlrmp.tree_utils import ldict_level_keys, move_ldict_level_above, subdict, tree_level_labels
+from rlrmp.tree_utils import first, ldict_level_keys, move_ldict_level_above, subdict, tree_level_labels
 from rlrmp.types import (
     AnalysisInputData,
     LDict,
@@ -59,6 +61,14 @@ COLOR_FUNCS = dict(
 UNIT_STIM_INTERVENOR_LABEL = "UnitStim"
 
 SCALE_UNIT_STIM_BY_READOUT_VECTOR_LENGTH = False
+
+# UNIT_STIM_IDX = 1
+
+PLANT_PERT_LABELS = {0: "no curl", 1: "curl"}
+PLANT_PERT_STYLES = dict(line_dash={0: "dot", 1: "solid"})
+
+SISU_LABELS = {0: -2, 1: 0, 2: 2}
+SISU_STYLES = dict(line_dash={0: "dot", 1: "dash", 2: "solid"})
 
 
 def unit_stim(hps):
@@ -157,12 +167,12 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     
 def task_with_scaled_unit_stim(model, task, unit_idx, stim_amp_base, hidden_size, intervenor_label):
     """Scale the magnitude of unit stim based on the length of the unit's readout vector."""
-    readout_vector_length = jnp.linalg.norm(model.step.net.readout.weight[..., unit_idx])
     if SCALE_UNIT_STIM_BY_READOUT_VECTOR_LENGTH:
+        readout_vector_length = jnp.linalg.norm(model.step.net.readout.weight[..., unit_idx])
         stim_amp = stim_amp_base / readout_vector_length
     else:
         stim_amp = stim_amp_base
-    # jax.debug.print("unit_idx={unit_idx}, stim_amp={stim_amp}, readout_vector_length={readout_vector_length}", unit_idx=unit_idx, stim_amp=stim_amp, readout_vector_length=readout_vector_length)
+
     return eqx.tree_at(
         lambda task: (
             task.intervention_specs.validation[intervenor_label].intervenor.params.scale,
@@ -195,9 +205,9 @@ def eval_func(key_eval, hps, models, task):
     states = eqx.filter_vmap(
         lambda stim_amp: eqx.filter_vmap(
             lambda unit_idx: eqx.filter_vmap(
-                lambda key: eqx.filter_vmap(
+                lambda key_eval: eqx.filter_vmap(
                     get_task_eval_func(task, hps, unit_idx, stim_amp)
-                )(models, jr.split(key, hps.train.model.n_replicates))
+                )(models, jr.split(key_eval, hps.train.model.n_replicates))
             )(jr.split(key_eval, hps.eval_n))
         )(jnp.arange(hps.train.model.hidden_size))
     )(jnp.array(hps.pert.unit.amp))
@@ -205,56 +215,10 @@ def eval_func(key_eval, hps, models, task):
     return states
 
 
-#! This is the old eval func, without model-dependent unit stim scaling
-# def task_with_unit_stim(task, unit_idx, stim_amp, hidden_size, intervenor_label):
-#     return eqx.tree_at(
-#         lambda task: (
-#             task.intervention_specs.validation[intervenor_label].intervenor.params.scale,
-#             task.intervention_specs.validation[intervenor_label].intervenor.params.unit_spec,
-#         ),
-#         task,
-#         (
-#             stim_amp,
-#             jnp.full(hidden_size, jnp.nan).at[unit_idx].set(1.0),
-#         ),
-#         is_leaf=is_none,
-#     )
-    
-# def eval_func(key_eval, hps, models, task):
-#     states = eqx.filter_vmap(
-#         lambda stim_amp: eqx.filter_vmap(
-#             lambda unit_idx: vmap_eval_ensemble(
-#                 key_eval, 
-#                 hps,
-#                 models,
-#                 task_with_unit_stim(
-#                     task, 
-#                     unit_idx, 
-#                     stim_amp, 
-#                     hps.train.model.hidden_size, 
-#                     UNIT_STIM_INTERVENOR_LABEL,
-#                 ),
-#             ),
-#         )(jnp.arange(hps.train.model.hidden_size))
-#     )(jnp.array(hps.pert.unit.amp))
-    
-#     return states
-
-
 MEASURE_KEYS = (
 )
 
 
-PLANT_PERT_LABELS = {0: "no curl", 1: "curl"}
-PLANT_PERT_STYLES = dict(line_dash={0: "dot", 1: "solid"})
-
-SISU_LABELS = {0: -2, 1: 0, 2: 2}
-SISU_STYLES = dict(line_dash={0: "dot", 1: "dash", 2: "solid"})
-
-UNIT_STIM_IDX = 1
-
-
-#! I'm not sure how 
 # def get_unit_stim_origins_directions(task, models, hps):
 #     origins = task.validation_trials.inits["mechanics.effector"].pos
 #     directions = jnp.broadcast_to(jnp.array([1., 0.]), origins.shape)
@@ -272,8 +236,8 @@ def get_impulse_vrect_kws(hps):
     )
 
 
-def move_var_above_train_pert_std(tree, **kwargs):
-    return move_ldict_level_above('var', 'train__pert__std', tree)
+# def move_var_above_train_pert_std(tree, **kwargs):
+#     return move_ldict_level_above('var', 'train__pert__std', tree)
 
 
 def rearrange_profile_vars(tree, **kwargs):
@@ -332,7 +296,10 @@ class UnitStimRegressionFiguresPorts(AbstractAnalysisPorts):
 
 class UnitStimRegressionFigures(AbstractAnalysis[UnitStimRegressionFiguresPorts]):
     Ports = UnitStimRegressionFiguresPorts
-    inputs: UnitStimRegressionFiguresPorts = eqx.field(default_factory=UnitStimRegressionFiguresPorts, converter=UnitStimRegressionFiguresPorts.converter)
+    inputs: UnitStimRegressionFiguresPorts = eqx.field(
+        default_factory=UnitStimRegressionFiguresPorts, 
+        converter=UnitStimRegressionFiguresPorts.converter,
+    )
 
     variant: Optional[str] = "full"
 
@@ -402,9 +369,55 @@ class UnitStimRegressionFigures(AbstractAnalysis[UnitStimRegressionFiguresPorts]
         #     fig.write_image(f"{label}.webp")
         
         return LDict.of("comparison")(figs)
+    
+
+class InstantFBResponsePorts(AbstractAnalysisPorts):
+    rnn_cells: InputOf[Callable] = Data.models(where=lambda m: m.step.net.hidden)
+    
+    
+class InstantFBResponse(AbstractAnalysis[InstantFBResponsePorts]):
+    """Plot the instantaneous feedback response of the network."""
+    Ports = InstantFBResponsePorts
+    inputs: InstantFBResponsePorts = eqx.field(default_factory=Ports, converter=Ports.converter)
+    
+    n_directions: int = 24
+    # n_samples: int = 1000
+    fb_pert_amp: PyTree[float] = 0.5
+    input_idxs: PyTree[slice | ArrayLike] = field(default_factory=lambda: LDict.of('fb_var')(
+        pos=slice(5, 7), 
+        vel=slice(7, 9),
+    ))  
+
+    def compute(self, data, *, rnn_cells, hps_common, **kwargs):
+        fb_perts = self.fb_pert_amp * unit_circle_points(self.n_directions) 
+        pert_step = hps_common.pert.unit.start_step
+        
+        def _compute_single(rnn_cell, states):
+            base_net_state = first(states, is_leaf=is_module).net
+            # TODO: Repeat computation independently over multiple steady-state steps, and average.
+            init_state = base_net_state.hidden[..., pert_step - 1, :]
+            base_input = base_net_state.input[..., pert_step, :]
+            
+            def _single_pert(fb_pert):
+                def _per_input(idxs):
+                    perturbed_input = base_input.at[..., idxs].add(fb_pert)
+                    return rnn_cell(perturbed_input, init_state) - init_state
+                return jt.map(_per_input, self.input_idxs)
+            return eqx.filter_vmap(_single_pert)(fb_perts)
+            
+        return jt.map(
+            _compute_single, 
+            rnn_cells,
+            data.states,
+            is_leaf=is_module,
+        ) 
 
 
 VARSET = subdict(DEFAULT_VARSET, ('pos', 'vel'))
+
+
+def aggregate_unit_gains(fb_gains):
+    return fb_gains
 
 
 DEPENDENCIES = {
@@ -413,9 +426,22 @@ DEPENDENCIES = {
         # Bypass alignment; keep aligned with x-y axes
         directions_func=get_trivial_reach_directions,
     ),
-    "unit_fb_gains": UnitFbGains(
-        variant="full",
-    ),
+    "unit_fb_gains": (
+        InstantFBResponse(
+            n_directions=24,
+            fb_pert_amp=0.5,
+        )
+        # There's only one reach condition atm
+        .after_indexing(-3, 0, axis_label="condition", dependency_name="data.states")  
+        # Computation based on steady-state period; stim vars not relevant.
+        .after_indexing(1, 0, axis_label="stim_unit_idx", dependency_name="data.states")   
+        .after_indexing(0, 0, axis_label="stim_amp", dependency_name="data.states")  
+        .vmap(in_axes={
+            'rnn_cells': MultiVmapAxes(0, None), 
+            'data.states': MultiVmapAxes(1, 2)
+        })  # replicates
+        .then_transform_result(aggregate_unit_gains)
+    )
 }
 
 
@@ -430,7 +456,7 @@ def dashed_fig_params_fn(fig_params, ctx: FigIterCtx):
 
     
 # PyTree structure: [sisu, pert__amp, train__pert__std]
-# Array batch shape: [stim_amp, unit_idx, eval, replicate, condition]
+# Array batch shape: [stim_amp, stim_unit_idx, eval, replicate, condition]
 ANALYSES = {
     "unit_stim_profiles": (
         Profiles(
@@ -459,26 +485,28 @@ ANALYSES = {
             ),
         )
     ),
-    "unit_stim_regression": (
-        Regression(
-            variant="full",
-            inputs=Regression.Ports(
-                regressor_tree="aligned_vars_trivial",
-            ),
-        )
-        .after_transform(partial(get_best_replicate, axis=3))
-        .after_indexing(0, 1, axis_label="stim_amp")  #! Only do regression for stim condition
-        .after_transform(lambda subtree, **kwargs: subtree[1.5], level="train__pert__std")  #! Only for trained on perturbations
-        # .after_transform(transform_profile_vars, level='var', dependency_name="regressor_tree")  #
-        # e.g. positions to deviations
-        .after_transform(max_deviation_after_stim, level="var", dependency_names="regressor_tree")
-        .vmap(in_axes={"regressor_tree": 0})
-    ),
-    "unit_stim_regression_figures": UnitStimRegressionFigures(
-        inputs=UnitStimRegressionFigures.Ports(
-            regression_results="unit_stim_regression",
-        ),
-    ),
+    # "unit_stim_regression": (
+    #     Regression(
+    #         variant="full",
+    #         inputs=Regression.Ports(
+    #             regressor_tree="aligned_vars_trivial",
+    #         ),
+    #     )
+    #     .after_transform(partial(get_best_replicate, axis=3))
+    #     .after_indexing(0, 1, axis_label="stim_amp")  #! Only do regression for stim condition
+    #     .after_transform(lambda subtree, **kwargs: subtree[1.5], level="train__pert__std")  #! Only for trained on perturbations
+    #     # .after_transform(transform_profile_vars, level='var', dependency_name="regressor_tree")  #
+    #     # e.g. positions to deviations
+    #     .after_transform(max_deviation_after_stim, level="var", dependency_names="regressor_tree")
+    #     .vmap(in_axes={"regressor_tree": 0})
+    # ),
+    # "unit_stim_regression_figures": UnitStimRegressionFigures(
+    #     inputs=UnitStimRegressionFigures.Ports(
+    #         regression_results="unit_stim_regression",
+    #     ),
+    # ),
+    
+    #! TODO: Replace with `get_aligned_trajectories_node`
     # "aligned_effector_trajectories": (
     #     AlignedEffectorTrajectories(
     #         variant="full",

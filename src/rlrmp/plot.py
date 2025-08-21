@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from functools import partial
 import math
 import re
 from typing import Callable, Literal, Optional
@@ -434,13 +435,13 @@ def plot_eigvals_df(
         for coord in [-1, 1]:
             fig.add_vline(
                 x=coord, 
-                row=0, 
+                row=0,  # type: ignore
                 name="boundary_line",
                 **stable_boundary_kws,  # type: ignore
             )
             fig.add_hline(
                 y=coord, 
-                col=2, 
+                col=2,   # type: ignore
                 name="boundary_line",
                 **stable_boundary_kws,  # type: ignore
             )
@@ -500,7 +501,6 @@ def plot_fp_pcs(
     candidates_alpha: float = 0.05, 
     marker_size: int = 3, 
     marker_symbol: str = 'circle',
-    #! Is this why we can't plot all the FPs in nb6?
     n_plot_max: int = 1000, 
     candidates_pc: Optional[Float[Array, "candidate pc"]] = None, 
     label: str = 'Fixed points',
@@ -714,7 +714,7 @@ def _calculate_axis_bounds(
 def set_axis_bounds_equal(
     axis: Literal['x', 'y'],
     figs: PyTree,
-    padding_factor: float = 0.05,
+    padding_factor: float = 0.1,
     trace_selector: Callable = lambda trace: True,
     **kwargs,
 ) -> PyTree:
@@ -780,6 +780,7 @@ def set_axes_bounds_equal(
         figs: A PyTree containing go.Figure objects.
         padding_factor: Padding factor for the range calculation.
         trace_selector: Function to select traces for bounds calculation.
+            Defaults to selecting traces shown in the legend. 
 
     Returns:
         PyTree with both x and y axes synchronized subplot-wise, respecting scaling.
@@ -879,3 +880,11 @@ def set_axes_bounds_equal(
         return leaf
     # Corrected: Use jt.map
     return jt.map(_update_leaf_final_axes, figs)
+
+
+# Case: for aligned effector trajectories
+set_axes_bounds_equal_traj2D = partial(
+    set_axes_bounds_equal,
+    padding_factor=0.1,
+    trace_selector=lambda trace: trace.showlegend is True,
+)

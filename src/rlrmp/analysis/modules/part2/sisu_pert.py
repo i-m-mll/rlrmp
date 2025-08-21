@@ -7,7 +7,7 @@ from feedbax.intervene import schedule_intervenor
 import jax_cookbook.tree as jtree
 
 from rlrmp.analysis.activity import NetworkActivity_SampleUnits
-from rlrmp.analysis.aligned import AlignedEffectorTrajectories
+from rlrmp.analysis.aligned import get_aligned_trajectories_node
 from rlrmp.analysis.analysis import FigIterCtx
 from rlrmp.analysis.effector import EffectorTrajectories
 from rlrmp.colors import ColorscaleSpec
@@ -136,15 +136,8 @@ ANALYSES = {
         # (It only makes sense to do this for reaches (not ss), at least for curl fields.)
         # Hide individual trials for this plot, since they make it hard to distinguish the means;
         # the variability should be clear from other plots. 
-        AlignedEffectorTrajectories(
-            variant="reach",
-            colorscale_key="pert__sisu__amp",
-        )
-        .after_stacking(level="pert__sisu__amp")
-        .combine_figs_by_axis(
-            axis=3,  # Not 2, because of the prior stacking
-            fig_params_fn=dashed_fig_params_fn,
-        )
+        get_aligned_trajectories_node(colorscale_key="pert__sisu__amp")
+        .after_getitem_at_level("task_variant", "reach")
         .with_fig_params(
             legend_title="Final SISU",
             scatter_kws=dict(line_width=0),  # Hide individual trials
@@ -158,11 +151,18 @@ ANALYSES = {
                 margin_b=20,
             ),
         )
+        .combine_figs_by_axis(
+            axis=3,  # Not 2, because of the prior stacking
+            fig_params_fn=dashed_fig_params_fn,
+        )
     ),
 
     "profiles_reach": (
         #! Only one of the two legendgroup titles is displayed, even though the respective values/labels appear to be properly passed.
-        #! I'm not sure why this is different from `AlignedEffectorTrajectories`, where the legend is displayed correctly
+        #! I'm not sure why this is different from `AlignedEffectorTrajectories`, where the legend
+        #! is displayed correctly (2025-08-20: Is it still different from `ScatterN2D` now that 
+        #! `AlignedEffectorTrajectories` is gone?)
+        
         Profiles(variant="reach")
             .after_level_to_top('train__pert__std')
             .combine_figs_by_axis(
