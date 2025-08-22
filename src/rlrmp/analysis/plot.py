@@ -133,19 +133,17 @@ class ScatterPlots(AbstractPlotter[SinglePort, FigFnParams]):
     inputs: SinglePort[Array] = eqx.field(  # pyright: ignore[reportGeneralTypeIssues]
         kw_only=True, converter=SinglePort[Array].converter
     )
-    fig_fn: Callable[Concatenate[PyTree, FigFnParams], go.Figure] = fbp.trajectories_2D  # pyright: ignore[reportAssignmentType]
+    fig_fn: Callable[Concatenate[PyTree, FigFnParams], go.Figure] = fbp.trajectories  # pyright: ignore[reportAssignmentType]
 
     subplot_level: str | None = None
-    # colorscale_key: Optional[str] = None
+    colorscale_key: Optional[str] = None
 
     # Node-level default fig parameters; everything is optional.
     fig_params: Mapping[str, Any] = MappingProxyType(
         dict(
-            colorscale_key=None,
             colorscale_axis=0,
             # colorscale=PLOTLY_CONFIG.default_colorscale,
-            curves_mode="lines",  # "lines" | "markers" | "lines+markers"
-            darken_mean=PLOTLY_CONFIG.mean_lighten_factor,
+            lighten_mean=PLOTLY_CONFIG.mean_lighten_factor,
             n_curves_max=20,
             layout_kws=dict(
                 width=900,
@@ -157,6 +155,7 @@ class ScatterPlots(AbstractPlotter[SinglePort, FigFnParams]):
             scatter_kws=dict(
                 line_width=0.5,
                 opacity=0.5,
+                mode="lines",
             ),
             mean_scatter_kws=dict(
                 line_width=2.5,
@@ -176,15 +175,14 @@ class ScatterPlots(AbstractPlotter[SinglePort, FigFnParams]):
     ) -> PyTree[go.Figure]:
         fig_params = self.fig_params
 
-        colorscale_key = fig_params.get("colorscale_key")
-        if colorscale_key is not None:
+        if self.colorscale_key is not None:
             updates = {}
             if fig_params.get("colorscale") is None:
-                updates["colorscale"] = colorscales[colorscale_key]
+                updates["colorscale"] = colorscales[self.colorscale_key]
             if fig_params.get("legend_title") is None:
-                updates["legend_title"] = get_label_str(colorscale_key)
+                updates["legend_title"] = get_label_str(self.colorscale_key)
             if fig_params.get("legend_labels") is None:
-                updates["legend_labels"] = flat_key_to_where_func(colorscale_key)(hps_common)
+                updates["legend_labels"] = flat_key_to_where_func(self.colorscale_key)(hps_common)
 
             if updates:
                 fig_params = deep_merge(fig_params, updates)
@@ -202,47 +200,3 @@ class ScatterPlots(AbstractPlotter[SinglePort, FigFnParams]):
             is_leaf = None
 
         return jt.map(_make_fig, input, is_leaf=is_leaf)
-
-
-class ScatterN3D(AbstractPlotter[SinglePort, FigFnParams]):
-    """General 3D plotter (lines/markers) over a PyTree of 3D arrays."""
-
-    Ports = SinglePort[Array]
-    inputs: SinglePort[Array] = eqx.field(  # pyright: ignore[reportGeneralTypeIssues]
-        kw_only=True, converter=Ports.converter
-    )
-    fig_fn: Callable[Concatenate[PyTree, FigFnParams], go.Figure] = fbp.trajectories_3D  # pyright: ignore[reportAssignmentType]
-
-    fig_params: Mapping = MappingProxyType(
-        dict(
-            # axis_labels=("PC1", "PC2", "PC3"),
-            colorscale_key=None,
-            colorscale_axis=0,
-            mode="lines",  # "lines" | "markers" (fbp.trajectories_3D)
-            # marker_size=..., line_width=..., endpoint_symbol=..., etc.
-        )
-    )
-
-    def make_figs(
-        self, data: AnalysisInputData, *, input, colorscales, hps_common, **kwargs
-    ) -> PyTree[go.Figure]:
-        fig_params = self.fig_params
-
-        colorscale_key = fig_params.get("colorscale_key")
-        if colorscale_key is not None:
-            updates = {}
-            if fig_params.get("colorscale") is None:
-                updates["colorscale"] = colorscales[colorscale_key]
-            if fig_params.get("legend_title") is None:
-                updates["legend_title"] = get_label_str(colorscale_key)
-            if fig_params.get("legend_labels") is None:
-                updates["legend_labels"] = flat_key_to_where_func(colorscale_key)(hps_common)
-
-            if updates:
-                fig_params = deep_merge(fig_params, updates)
-
-        def _make_fig(arr3d: Array | PyTree[Array], *_) -> go.Figure:
-            return self.fig_fn(arr3d, *_, **fig_params)
-
-        # Typically a single array; if a tree, the calling code will map before we get here.
-        return jt.map(_make_fig, input)
