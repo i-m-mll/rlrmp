@@ -254,17 +254,17 @@ def get_aligned_trajectories_node(
     varset: PyTree[VarSpec] = DEFAULT_VARSET,
     subplot_level: str = VAR_LEVEL_LABEL,
 ) -> ScatterPlots:
-    aligned_var_subplot_labels = get_varset_labels(varset).medium
+    aligned_var_subplot_titles = get_varset_labels(varset).medium
     aligned_var_axes_labels = jt.map(
         lambda l: fbp.AxesLabels(rf"${l}_\parallel$", rf"${l}_\perp$"),
         get_varset_labels(varset).short,
     )
     node = ScatterPlots(
         inputs=ScatterPlots.Ports(input=AlignedVars(varset=varset)),
+        colorscale_key=colorscale_key,
         subplot_level=subplot_level,
     ).with_fig_params(
-        colorscale_key=colorscale_key,
-        var_labels=aligned_var_subplot_labels,
+        subplot_titles=aligned_var_subplot_titles,
         #! TODO: Probably leave the individual labels out; just use master labels
         axes_labels=aligned_var_axes_labels,
         # master_axes_labels=AxesLabels2D("Parallel", "Lateral"),

@@ -1,54 +1,49 @@
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from copy import deepcopy
-from dataclasses import fields
-from datetime import datetime
 import functools
 import hashlib
 import importlib
 import inspect
 import json
 import logging
-from pathlib import Path
 import pkgutil
 import platform
 import re
 import signal
 import subprocess
-from types import ModuleType, GeneratorType
 import types
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from copy import deepcopy
+from dataclasses import fields
+from datetime import datetime
+from pathlib import Path
+from types import GeneratorType, ModuleType
 from typing import Any, Optional, get_origin
 
 import equinox as eqx
 import jax
-import jax.numpy as jnp 
-import jax.random as jr 
+import jax.numpy as jnp
+import jax.random as jr
 import jax.tree as jt
-from jaxtyping import Array, ArrayLike, Float, Int
-import numpy as np
-from optax import lamb
-import pandas as pd
-from rich.logging import RichHandler
-import yaml
-
-from feedbax.misc import git_commit_id
-from feedbax.intervene import AbstractIntervenor, CurlFieldParams, FixedFieldParams
-from jax_cookbook import is_type
 import jax_cookbook.tree as jtree
+import numpy as np
+import pandas as pd
+import yaml
+from feedbax.intervene import AbstractIntervenor, CurlFieldParams, FixedFieldParams
+from feedbax.misc import git_commit_id
+from jax_cookbook import is_type
+from jaxtyping import Array, ArrayLike, Float, Int
 
 from rlrmp.tree_utils import subdict
 
-
 # logging.basicConfig(
-#     format='(%(name)-20s) %(message)s', 
-#     level=logging.INFO, 
+#     format='(%(name)-20s) %(message)s',
+#     level=logging.INFO,
 #     handlers=[RichHandler(level="NOTSET")],
 # )
 logger = logging.getLogger(__name__)
 
 
-class DoNotHashTree:
-    ...
-    
+class DoNotHashTree: ...
+
 
 def delete_all_files_in_dir(dir_path: Path):
     """Delete all files in a directory."""
@@ -60,10 +55,10 @@ def delete_all_files_in_dir(dir_path: Path):
             item.unlink()
 
 
-def dict_str(d, value_format='.2f'):
+def dict_str(d, value_format=".2f"):
     """A string representation of a dict that is more filename-friendly than `str` or `repr`."""
     format_string = f"{{k}}-{{v:{value_format}}}"
-    return '-'.join(format_string.format(k=k, v=v) for k, v in d.items())
+    return "-".join(format_string.format(k=k, v=v) for k, v in d.items())
 
 
 def get_datetime_str():
@@ -72,11 +67,11 @@ def get_datetime_str():
 
 def get_gpu_memory(gpu_idx=0):
     """Returns the available memory (in MB) on a GPU. Depends on `nvidia-smi`.
-    
+
     Source: https://stackoverflow.com/a/59571639
     """
     command = "nvidia-smi --query-gpu=memory.free --format=csv"
-    memory_free_info = subprocess.check_output(command.split()).decode('ascii').split('\n')[:-1][1:]
+    memory_free_info = subprocess.check_output(command.split()).decode("ascii").split("\n")[:-1][1:]
     memory_free_values = [int(x.split()[0]) for i, x in enumerate(memory_free_info)]
     return memory_free_values[gpu_idx]
 
@@ -86,22 +81,22 @@ def lohi(x: Iterable, **kwargs):
     if isinstance(x, Mapping):
         # TODO: Maybe should return first and last key-value pairs?
         return subdict(x, tuple(lohi(tuple(x.keys()))))
-    
+
     elif isinstance(x, Iterator):
         first = last = next(x)
         for last in x:
             pass
-        
+
     elif isinstance(x, Sequence):
         first = x[0]
         last = x[-1]
-    
+
     elif isinstance(x, Array):
         return lohi(x.tolist())
-        
-    else: 
+
+    else:
         raise ValueError(f"Unsupported type: {type(x)}")
-    
+
     return first, last
 
 
@@ -111,70 +106,73 @@ def with_caller_logger(func):
 
     Wrapped functions should accept a `logger: logging.Logger` keyword argument.
     """
+
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         # If logger is not provided in kwargs, get the caller's logger
-        if 'logger' not in kwargs:
+        if "logger" not in kwargs:
             caller_module = None
             caller_frame = inspect.currentframe()
             if caller_frame is not None:
                 caller_module = inspect.getmodule(caller_frame.f_back)
             if caller_module is not None:
-                kwargs['logger'] = logging.getLogger(caller_module.__name__)
+                kwargs["logger"] = logging.getLogger(caller_module.__name__)
             else:
-                kwargs['logger'] = logging.getLogger(func.__module__)
-        
+                kwargs["logger"] = logging.getLogger(func.__module__)
+
         # Call the original function with the resolved logger
         return func(*args, **kwargs)
-    
+
     return wrapper
 
 
 @with_caller_logger
 def get_name_of_callable(
-    func: Callable, 
+    func: Callable,
     # return_lambda_id: bool = False,
     logger: logging.Logger = logger,
 ) -> str:
     """
     Returns the name of a callable object, handling different types appropriately.
-    
+
     Args:
         func: The callable object whose name is to be retrieved.
-        
+
     Returns:
         A string representing the callable's name or identifier.
     """
-    func_name = getattr(func, '__name__', None)
-    
+    func_name = getattr(func, "__name__", None)
+
     # Handle lambdas
-    if func_name == '<lambda>':
+    if func_name == "<lambda>":
         lambda_loc_str = location_for_log(func)
         logger.warning(f"Assigned name 'lambda' to lambda function at {lambda_loc_str}")
         return "lambda"
-    
+
     # Handle partial functions
     elif isinstance(func, functools.partial):
         return get_name_of_callable(func.func, logger=logger)
-    
+
     # Handle method objects (bound or unbound)
     elif inspect.ismethod(func):
         # For bound methods, include class name
-        if hasattr(func, '__self__'):
+        if hasattr(func, "__self__"):
             return f"{func.__self__.__class__.__name__}.{func.__name__}"
         return func.__name__
-    
+
     # Handle callable class instances
-    elif callable(func) and not isinstance(func, (types.FunctionType, types.BuiltinFunctionType, type)):
+    elif callable(func) and not isinstance(
+        func, (types.FunctionType, types.BuiltinFunctionType, type)
+    ):
         class_name = func.__class__.__name__
         logger.warning(
             f"Generating name for instance of callable class '{class_name}'. "
             f"Note that instance attributes/state are not captured by this name."
         )
         return class_name
-    
+
     # Regular functions, built-in functions, and classes
-    else: 
+    else:
         if func_name is not None:
             return func.__name__
         else:
@@ -183,12 +181,12 @@ def get_name_of_callable(
 
 def camel_to_snake(s: str):
     """Convert camel case to snake case."""
-    return re.sub(r'(?<!^)(?=[A-Z])', '_', s).lower()
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", s).lower()
 
 
 def snake_to_camel(s: str):
     """Convert snake case to camel case."""
-    return ''.join(word.title() for word in s.split('_'))
+    return "".join(word.title() for word in s.split("_"))
 
 
 def lomidhi(x: Iterable):
@@ -204,31 +202,31 @@ def lomidhi(x: Iterable):
 
     elif isinstance(x, Array):
         return lomidhi(x.tolist())
-    
-    else: 
+
+    else:
         raise ValueError(f"Unsupported type: {type(x)}")
 
 
 def load_yaml(path: Path) -> dict:
     """Load a YAML file."""
-    with open(path, 'r') as f:
+    with open(path, "r") as f:
         return yaml.safe_load(f)
 
 
 def load_from_json(path):
-    with open(path, 'r') as jsonf:
+    with open(path, "r") as jsonf:
         return json.load(jsonf)
-    
-    
+
+
 def write_to_json(tree, file_path):
     arrays, other = eqx.partition(tree, eqx.is_array)
     lists = jt.map(lambda arr: arr.tolist(), arrays)
     serializable = eqx.combine(other, lists)
 
-    with open(file_path, 'w') as jsonf:
+    with open(file_path, "w") as jsonf:
         json.dump(serializable, jsonf, indent=4)
-        
-        
+
+
 def get_field_amplitude(intervenor_params):
     if isinstance(intervenor_params, FixedFieldParams):
         return jnp.linalg.norm(intervenor_params.field, axis=-1)
@@ -240,23 +238,24 @@ def get_field_amplitude(intervenor_params):
 
 def vector_with_gaussian_length(key):
     key1, key2 = jr.split(key)
-    
+
     angle = jr.uniform(key1, (), minval=-jnp.pi, maxval=jnp.pi)
     length = jr.normal(key2, ())
 
-    return length * jnp.array([jnp.cos(angle), jnp.sin(angle)]) 
+    return length * jnp.array([jnp.cos(angle), jnp.sin(angle)])
 
 
 #! TODO Separate version-getting logic from conditional logging logic
 @with_caller_logger
 def log_version_info(
-    *args: ModuleType, 
+    *args: ModuleType,
     git_modules: Optional[Sequence[ModuleType]] = None,
     python_version: bool = True,
     logger: logging.Logger = logger,
+    level: int = logging.DEBUG,
 ) -> dict[str, str]:
     version_info: dict[str, str] = {}
-    
+
     log_strs = []
     if python_version:
         python_ver = platform.python_version()
@@ -267,7 +266,7 @@ def log_version_info(
         version = package.__version__
         version_info[package.__name__] = version
         log_strs.append(f"{package.__name__} version: {version}")
-    
+
     if git_modules:
         for module in git_modules:
             commit = git_commit_id(module=module)
@@ -275,62 +274,62 @@ def log_version_info(
             log_strs.append(f"{module.__name__} commit: {commit}")
 
     for s in log_strs:
-        logger.info(s)
+        logger.log(level, s)
 
     return version_info
 
 
 def round_to_list(xs: Array, n: int = 5):
     """Rounds floats to a certain number of decimals when casting an array to a list.
-    
-    This is useful when (e.g.) using `jnp.linspace` to get a sequence of numbers which 
+
+    This is useful when (e.g.) using `jnp.linspace` to get a sequence of numbers which
     will be used as keys of a dict, where we want to avoid small floating point variations
     being present in the keys.
     """
     return [round(x, n) for x in xs.tolist()]
 
 
-def create_arr_df(arr, col_names=None):   
+def create_arr_df(arr, col_names=None):
     """Convert a numpy/JAX array into a dataframe of values, with additional columns
     giving the indices of the values in the array.
-    
+
     If the array has complex dtype, split the real and imaginary components
     into separate columns.
     """
     if col_names is None:
-        col_names = [f'dim_{i}' for i in range(len(arr.shape))]
-    
+        col_names = [f"dim_{i}" for i in range(len(arr.shape))]
+
     # Get all indices including the eigenvalue dimension
     indices = np.indices(arr.shape)
-    
+
     if np.iscomplexobj(arr):
-        data_cols = {'real': arr.real.flatten(), 'imag': arr.imag.flatten()}
+        data_cols = {"real": arr.real.flatten(), "imag": arr.imag.flatten()}
     else:
-        data_cols = {'value': arr.flatten()}
-    
+        data_cols = {"value": arr.flatten()}
+
     # Create the base dataframe
     df = pd.DataFrame(data_cols)
-    
+
     # Add all dimension indices
     for i, idx_array in enumerate(indices):
         df[col_names[i]] = idx_array.flatten()
-    
+
     return df
 
 
 def squareform_pdist(xs: Float[Array, "points dims"], ord: int | str | None = 2):
     """Return the pairwise distance matrix between points in `x`.
-    
+
     In the case of `ord=2`, this should be equivalent to:
-    
+
         ```python
         from scipy.spatial.distance import pdist, squareform
-        
+
         squareform(pdist(x, metric='euclidean'))
         ```
-    
+
     However, note that the values for `ord` are those supported
-    by `jax.numpy.linalg.norm`. This provides fewer metrics than those 
+    by `jax.numpy.linalg.norm`. This provides fewer metrics than those
     supported by `scipy.spatial.distance.pdist`.
     """
     dist = lambda x1, x2: jnp.linalg.norm(x1 - x2, ord=ord)
@@ -338,24 +337,22 @@ def squareform_pdist(xs: Float[Array, "points dims"], ord: int | str | None = 2)
     return jax.lax.map(row_dist, xs)
 
 
-def take_model(*args, **kwargs): 
+def take_model(*args, **kwargs):
     """Performs `jtree.take` on a feedbax model.
-    
-    It is currently necessary to use this in place of `jtree.take` when 
-    the model contains intervenors with arrays, since those arrays may 
-    not have the same batch (e.g. replicate) dimensions as the other 
+
+    It is currently necessary to use this in place of `jtree.take` when
+    the model contains intervenors with arrays, since those arrays may
+    not have the same batch (e.g. replicate) dimensions as the other
     model arrays.
     """
     return jtree.filter_wrap(
-        lambda x: not is_type(AbstractIntervenor)(x), 
+        lambda x: not is_type(AbstractIntervenor)(x),
         is_leaf=is_type(AbstractIntervenor),
-    )(jtree.take)(
-        *args, **kwargs
-    )
-    
-    
+    )(jtree.take)(*args, **kwargs)
+
+
 def get_dataclass_fields(
-    obj: Any, 
+    obj: Any,
     exclude: tuple[str, ...] = (),
     include_internal: bool = False,
 ) -> dict[str, Any]:
@@ -364,7 +361,7 @@ def get_dataclass_fields(
         field.name: getattr(obj, field.name)
         for field in fields(obj)
         if field.name not in exclude
-        and (include_internal or not field.metadata.get('internal', False))
+        and (include_internal or not field.metadata.get("internal", False))
     }
 
 
@@ -376,7 +373,7 @@ def filename_join(strs, joinwith="__"):
 def is_json_serializable(value):
     """Recursive helper function for isinstance-based checking"""
     json_types = (str, int, float, bool, type(None))
-    
+
     if isinstance(value, json_types):
         return True
     elif isinstance(value, Mapping):
@@ -387,9 +384,7 @@ def is_json_serializable(value):
 
 
 def get_constant_input_fn(x, n_steps: int, n_trials: int):
-    return lambda trial_spec, key: (
-        jnp.full((n_trials, n_steps - 1), x, dtype=float)
-    )
+    return lambda trial_spec, key: (jnp.full((n_trials, n_steps - 1), x, dtype=float))
 
 
 def copy_delattr(obj: Any, *attr_names: str):
@@ -414,9 +409,11 @@ def vectors_to_2d_angles(vectors):
 
 def map_fn_over_tree(func, is_leaf: Optional[Callable] = None):
     """Partially applies `jt.map`, for use in functional expressions."""
+
     @functools.wraps(func)
     def map_fn(tree, *rest):
         return jt.map(func, tree, *rest, is_leaf=is_leaf)
+
     return map_fn
 
 
@@ -487,29 +484,29 @@ def dynamic_slice_with_padding(
 
 def get_all_module_names(package_obj, exclude_private: bool = True):
     """Get the names of all modules in a package.
-    
-    Names include the full package path, e.g. `"some_library.subpackage.module_name"`, 
+
+    Names include the full package path, e.g. `"some_library.subpackage.module_name"`,
     even if `package_obj` is `some_library.subpackage`.
     """
     names = []
-    if not hasattr(package_obj, '__path__') or not hasattr(package_obj, '__name__'):
-        return tuple() # Not a valid package object to inspect
-        
+    if not hasattr(package_obj, "__path__") or not hasattr(package_obj, "__name__"):
+        return tuple()  # Not a valid package object to inspect
+
     # The prefix ensures names are fully qualified relative to the initial package
-    prefix = package_obj.__name__ + '.'
-    
+    prefix = package_obj.__name__ + "."
+
     for module_info in pkgutil.walk_packages(package_obj.__path__, prefix):
-        is_private = module_info.name.startswith('_') or '._' in module_info.name
+        is_private = module_info.name.startswith("_") or "._" in module_info.name
         if not module_info.ispkg and not (exclude_private and is_private):
             names.append(module_info.name)
-            
+
     return tuple(names)
 
 
 def load_module_from_package(name: str, package: ModuleType) -> ModuleType:
     """Given a package object and a string specifying a module within the package, load the module."""
     module_name = f"{package.__name__}.{name}"
-    try: 
+    try:
         module = importlib.import_module(module_name)
     except ModuleNotFoundError:
         logger.error(f"Module '{name}' not found.")
@@ -527,7 +524,8 @@ def exclude_unshared_keys_and_identical_values(list_of_dicts):
         common_keys.intersection_update(d.keys())
 
     keys_to_exclude = {
-        key for key in common_keys
+        key
+        for key in common_keys
         if all(d[key] == list_of_dicts[0][key] for d in list_of_dicts[1:])
     }
 
@@ -535,15 +533,15 @@ def exclude_unshared_keys_and_identical_values(list_of_dicts):
         {k: v for k, v in original_dict.items() if k not in keys_to_exclude}
         for original_dict in list_of_dicts
     ]
-    
-    
+
+
 def batch_index(arr, idxs):
     """
     Given a batched array of indices, take the elements of `arr` at those indices.
-    
-    If `arr` has shape `(*batch, x, ...)` and `idxs` has shape `(*batch)`, then this 
-    indexes axis `x` of `arr` at the scalar indices specified by `idxs`. This does not 
-    work for arbitrary slices over `x`, as the result would be ragged. 
+
+    If `arr` has shape `(*batch, x, ...)` and `idxs` has shape `(*batch)`, then this
+    indexes axis `x` of `arr` at the scalar indices specified by `idxs`. This does not
+    work for arbitrary slices over `x`, as the result would be ragged.
     """
     n_final_axes = len(arr.shape) - len(idxs.shape)
     final_axes = tuple(-i for i in range(1, n_final_axes + 1))
@@ -557,12 +555,13 @@ def get_md5_hexdigest(content):
 
 class GracefulStopRequested(Exception):
     """Custom exception for graceful stopping."""
+
     pass
 
 
 class GracefulInterruptHandler:
     """Context manager and decorator for graceful keyboard interrupt handling.
-    
+
     Usage as context manager:
     ```python
     with GracefulInterruptHandler() as interrupt_handler:
@@ -570,17 +569,17 @@ class GracefulInterruptHandler:
         def sensitive_operation():
             # ... long running operation
             pass
-        
+
         for item in items:
             sensitive_operation()
     ```
-    
+
     The handler will:
     - First Ctrl-C during sensitive operation: Wait for completion, then stop
-    - First Ctrl-C outside sensitive operation: Stop immediately  
+    - First Ctrl-C outside sensitive operation: Stop immediately
     - Second Ctrl-C anywhere: Abort immediately like normal
     """
-    
+
     def __init__(
         self,
         sensitive_msg: Optional[str] = None,
@@ -596,25 +595,27 @@ class GracefulInterruptHandler:
         self.stop_requested = False
         self.in_sensitive_operation = False
         self.original_handler = None
-        
-        self.sensitive_msg = sensitive_msg or "Ctrl-C caught: will exit after current operation completes..."
+
+        self.sensitive_msg = (
+            sensitive_msg or "Ctrl-C caught: will exit after current operation completes..."
+        )
         self.stop_msg = stop_msg or "Operation completed, stopping as requested..."
         self.logger = logger
-        
+
     def _log_message(self, message: str):
         """Log message using logger or print."""
         if self.logger:
             self.logger.info(message)
         else:
             print(f"\n{message}")
-    
+
     def __enter__(self):
         self.original_handler = signal.signal(signal.SIGINT, self._signal_handler)
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         signal.signal(signal.SIGINT, self.original_handler)
-    
+
     def _signal_handler(self, signum, frame):
         if self.stop_requested:
             # Second Ctrl-C: restore default and abort immediately
@@ -627,14 +628,15 @@ class GracefulInterruptHandler:
             else:
                 self._log_message("Ctrl-C caught: stopping...")
                 raise KeyboardInterrupt
-    
+
     def __call__(self, func):
         """Use as decorator."""
+
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             if self.stop_requested:
                 raise GracefulStopRequested()
-            
+
             self.in_sensitive_operation = True
             try:
                 result = func(*args, **kwargs)
@@ -645,9 +647,10 @@ class GracefulInterruptHandler:
                 return result
             finally:
                 self.in_sensitive_operation = False
+
         return wrapper
 
-    
+
 def location_inspect(fn) -> tuple[str, str, int]:
     """
     Returns a tuple ("<module>", "<filename>", <start_line>)
@@ -676,20 +679,21 @@ def location_for_log(fn) -> str:
     """
     mod, srcfile, start = location_inspect(fn)
     return f"{mod} ({path_delim(srcfile)}:{start})"
-    
-    
+
+
 def find_indices(arr, values: Array | Sequence[ArrayLike]):
     """Find the indices of `values` in `arr`."""
+
     def find_single_value(value):
         return jnp.where(arr == value, size=1)
-    
+
     # Vectorize this function across all values
     return jax.vmap(find_single_value)(jnp.array(values))
 
 
 def rms(x: Array, axis: int = -1) -> Array:
     """Returns the root mean square of `x` along `axis`."""
-    return jnp.sqrt(jnp.mean(x ** 2, axis=axis))
+    return jnp.sqrt(jnp.mean(x**2, axis=axis))
 
 
 def field_names(datacls) -> tuple[str, ...]:
@@ -710,15 +714,15 @@ def deep_merge(base: Mapping[str, Any], over: Mapping[str, Any]) -> dict[str, An
 
 def get_origin_type(type_):
     """Get the origin type of a generic type, or the type itself if not generic."""
-    origin = get_origin(type_) 
+    origin = get_origin(type_)
     return origin if origin is not None else type_
 
 
-PATH_DELIM = '`'
+PATH_DELIM = "`"
 
 
 def unit_circle_points(n):
-    """Generate N evenly spaced points."""
+    """Generate N evenly spaced points on a unit circle."""
     angles = jnp.linspace(0, 2 * jnp.pi, n, endpoint=False)
     z = jnp.exp(1j * angles)
     return jnp.column_stack([z.real, z.imag])

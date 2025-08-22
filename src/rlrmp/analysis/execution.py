@@ -1,44 +1,54 @@
-from collections.abc import Callable, Sequence
 import inspect
-from pathlib import Path
 import sys
+from collections.abc import Callable
+from pathlib import Path
 from types import ModuleType
 from typing import Any, List, Optional, Union
 
 import dill as pickle
 import equinox as eqx
-from equinox import Module
+import feedbax
 import jax
 import jax.tree as jt
-from jaxtyping import PyTree
+import jax_cookbook.tree as jtree
 import optax
 import plotly
 import plotly.graph_objects as go
-from sklearn import tree
+from equinox import Module
+from jax_cookbook import is_module, is_none, is_type
+from jaxtyping import PyTree
 from sqlalchemy.orm import Session
 
-import feedbax
-from jax_cookbook import is_module, is_type, is_none
-import jax_cookbook.tree as jtree
-
 import rlrmp
+import rlrmp.training.modules as training_modules_pkg
 from rlrmp.analysis import modules as analysis_modules_pkg
 from rlrmp.analysis._dependencies import compute_dependency_results
 from rlrmp.analysis.analysis import AbstractAnalysis, get_validation_trial_specs, logger
 from rlrmp.colors import COMMON_COLOR_SPECS, setup_colors
+
 # Access project paths and string constants
 from rlrmp.config import PATHS
 from rlrmp.constants import REPLICATE_CRITERION
+
 # `record_to_dict` converts SQLAlchemy records to plain dicts
+# Added utilities for unflattening record hyperparameters into namespaces
 from rlrmp.database import (
     EvaluationRecord,
     ModelRecord,
     add_evaluation,
     check_model_files,
+    fill_hps_with_train_params,
     get_db_session,
 )
-# Added utilities for unflattening record hyperparameters into namespaces  
-from rlrmp.database import fill_missing_train_hps_from_record, fill_hps_with_train_params
+
+# `cast_hps` is needed to convert dictionaries (e.g. `where`) back into the expected objects
+from rlrmp.hyperparams import (
+    flatten_hps,
+    load_hps,
+    use_train_hps_when_none,
+)
+from rlrmp.misc import delete_all_files_in_dir, load_module_from_package, log_version_info
+from rlrmp.setup_utils import query_and_load_model
 from rlrmp.tree_utils import tree_level_labels
 from rlrmp.types import (
     AnalysisInputData,
@@ -46,38 +56,27 @@ from rlrmp.types import (
     TreeNamespace,
     namespace_to_dict,
 )
-# `cast_hps` is needed to convert dictionaries (e.g. `where`) back into the expected objects
-from rlrmp.hyperparams import (
-    flatten_hps,
-    load_hps,
-    use_train_hps_when_none,
-)
-from rlrmp.misc import delete_all_files_in_dir, log_version_info, load_module_from_package
-from rlrmp.setup_utils import query_and_load_model
-import rlrmp.training.modules as training_modules_pkg
-
 
 STATES_CACHE_SUBDIR = "states"
 
 
-# === Transform System ===
-
 # Pre-setup can be either granular dict or combined function
 PreSetupSpec = Union[
     dict[str, Optional[Callable]],  # Runtime validation will check keys are 'task'/'models'
-    Callable[[Module, LDict[float, Module]], tuple[Module, LDict[float, Module]]]
+    Callable[[Module, LDict[float, Module]], tuple[Module, LDict[float, Module]]],
 ]
 
 # Post-eval can be either granular dict or combined function
 PostEvalSpec = Union[
-    dict[str, Optional[Callable]],  # Runtime validation will check keys are 'models'/'tasks'/'states'
-    Callable[[LDict[float, Module], LDict, PyTree], tuple[LDict[float, Module], LDict, PyTree]]
+    # Runtime validation will check keys are 'models'/'tasks'/'states'
+    dict[str, Optional[Callable]],
+    Callable[[LDict[float, Module], LDict, PyTree], tuple[LDict[float, Module], LDict, PyTree]],
 ]
 
 
 class AnalysisModuleTransformSpec(Module):
     """Specifies transformations to apply at different stages of analysis execution.
-    
+
     Attributes
     ----------
     pre_setup : Optional[PreSetupSpec]
@@ -93,6 +92,7 @@ class AnalysisModuleTransformSpec(Module):
         - single function taking (models, tasks, states) and returning (models, tasks, states)
         Useful for post-processing results while preserving intermediate data.
     """
+
     pre_setup: Optional[PreSetupSpec] = None
     post_eval: Optional[PostEvalSpec] = None
 
@@ -100,75 +100,69 @@ class AnalysisModuleTransformSpec(Module):
 # Also allow plain dict for convenience
 TransformsSpec = Union[
     AnalysisModuleTransformSpec,  # Structured (better static typing)
-    dict[str, Any]  # Dict (convenience) - runtime validation will check keys
+    dict[str, Any],  # Dict (convenience) - runtime validation will check keys
 ]
 
 
 def _call_user_func(func, data, extra_kwargs):
     """Invoke func with data and the subset of extra_kwargs it accepts.
-    
+
     This allows transform functions to optionally accept common inputs like replicate_info.
     """
     sig = inspect.signature(func)
-    
+
     # Fast path: the function accepts **kwargs; forward everything.
     if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
         return func(data, **extra_kwargs)
-    
+
     # Otherwise filter down to only the kwargs explicitly listed.
-    filtered = {
-        k: v for k, v in extra_kwargs.items() 
-        if k in sig.parameters
-    }
+    filtered = {k: v for k, v in extra_kwargs.items() if k in sig.parameters}
     return func(data, **filtered)
 
 
-def validate_and_convert_transforms(transforms_spec: Optional[TransformsSpec]) -> AnalysisModuleTransformSpec:
+def validate_and_convert_transforms(
+    transforms_spec: Optional[TransformsSpec],
+) -> AnalysisModuleTransformSpec:
     """Convert and validate transforms specification to canonical form."""
     if transforms_spec is None:
         return AnalysisModuleTransformSpec()
-        
+
     if isinstance(transforms_spec, dict):
         # Validate top-level keys
-        valid_keys = {'pre_setup', 'post_eval'}
+        valid_keys = {"pre_setup", "post_eval"}
         invalid_keys = set(transforms_spec.keys()) - valid_keys
         if invalid_keys:
             raise ValueError(
-                f"Invalid transform keys: {invalid_keys}. "
-                f"Valid keys are: {valid_keys}"
+                f"Invalid transform keys: {invalid_keys}. Valid keys are: {valid_keys}"
             )
-        
-        pre_setup = transforms_spec.get('pre_setup')
-        post_eval = transforms_spec.get('post_eval')
-        
+
+        pre_setup = transforms_spec.get("pre_setup")
+        post_eval = transforms_spec.get("post_eval")
+
         # Validate pre_setup if present
         if pre_setup is not None and isinstance(pre_setup, dict):
-            valid_pre_keys = {'task', 'models'}
+            valid_pre_keys = {"task", "models"}
             invalid_pre_keys = set(pre_setup.keys()) - valid_pre_keys
             if invalid_pre_keys:
                 raise ValueError(
-                    f"Invalid pre_setup keys: {invalid_pre_keys}. "
-                    f"Valid keys are: {valid_pre_keys}"
+                    f"Invalid pre_setup keys: {invalid_pre_keys}. Valid keys are: {valid_pre_keys}"
                 )
-        
+
         # Validate post_eval if present
         if post_eval is not None and isinstance(post_eval, dict):
-            valid_post_keys = {'models', 'tasks', 'states'}
+            valid_post_keys = {"models", "tasks", "states"}
             invalid_post_keys = set(post_eval.keys()) - valid_post_keys
             if invalid_post_keys:
                 raise ValueError(
                     f"Invalid post_eval keys: {invalid_post_keys}. "
                     f"Valid keys are: {valid_post_keys}"
                 )
-        
-        return AnalysisModuleTransformSpec(
-            pre_setup=pre_setup,
-            post_eval=post_eval
-        )
-    
+
+        return AnalysisModuleTransformSpec(pre_setup=pre_setup, post_eval=post_eval)
+
     elif isinstance(transforms_spec, AnalysisModuleTransformSpec):
         return transforms_spec
-    
+
     else:
         raise ValueError(
             f"transforms_spec must be dict or AnalysisModuleTransformSpec, "
@@ -176,36 +170,38 @@ def validate_and_convert_transforms(transforms_spec: Optional[TransformsSpec]) -
         )
 
 
-def load_trained_models_and_aux_objects(training_module_name: str, hps: TreeNamespace, db_session: Session):
+def load_trained_models_and_aux_objects(
+    training_module_name: str, hps: TreeNamespace, db_session: Session
+):
     """Given the analysis config, load the trained models and related objects (e.g. train tasks)."""
-    
+
     training_module = load_module_from_package(training_module_name, training_modules_pkg)
-    
+
     pairs, model_info, replicate_info, n_replicates_included, hps_train_dict = jtree.unzip(
-        #? Should this structure be hardcoded here?
-        #? At least for this project, we typically load spreads of trained models, 
-        #? and those spreads are always over the training perturbation std.
-        LDict.of("train__pert__std")({
-            train_pert_std: query_and_load_model(
-                db_session,
-                training_module.setup_task_model_pair,
-                params_query=namespace_to_dict(flatten_hps(hps.train)) | dict(
-                    expt_name=training_module_name,
-                    pert__std=train_pert_std
-                ),
-                noise_stds=dict(
-                    feedback=hps.model.feedback_noise_std,
-                    motor=hps.model.motor_noise_std,
-                ),
-                surgeries={
-                    # Change
-                    ('n_steps',): hps.model.n_steps,
-                },
-                exclude_underperformers_by=REPLICATE_CRITERION,
-                return_task=True,
-            )
-            for train_pert_std in hps.train.pert.std
-        })
+        #! Should this structure be hardcoded here?
+        #! At least for this project, we typically load spreads of trained models,
+        #! and those spreads are always over the training perturbation std.
+        LDict.of("train__pert__std")(
+            {
+                train_pert_std: query_and_load_model(
+                    db_session,
+                    training_module.setup_task_model_pair,
+                    params_query=namespace_to_dict(flatten_hps(hps.train))
+                    | dict(expt_name=training_module_name, pert__std=train_pert_std),
+                    noise_stds=dict(
+                        feedback=hps.model.feedback_noise_std,
+                        motor=hps.model.motor_noise_std,
+                    ),
+                    surgeries={
+                        # Change
+                        ("n_steps",): hps.model.n_steps,
+                    },
+                    exclude_underperformers_by=REPLICATE_CRITERION,
+                    return_task=True,
+                )
+                for train_pert_std in hps.train.pert.std
+            }
+        )
     )
 
     tasks_train, models = jtree.unzip(pairs)
@@ -215,25 +211,27 @@ def load_trained_models_and_aux_objects(training_module_name: str, hps: TreeName
 
 def setup_eval_for_module(
     analysis_name: str,
-    hps: TreeNamespace, 
-    db_session: Session,    
+    hps: TreeNamespace,
+    db_session: Session,
+    version_info: dict[str, str],
 ):
     """Given the analysis module, set up the evaluation(s).
-    
+
     1. Construct the task-model pairs to evaluate, to produce the state needed for the analyses.
-    2. Add an evaluation record to the database. 
+    2. Add an evaluation record to the database.
     """
-    
+
     analysis_module: ModuleType = load_module_from_package(analysis_name, analysis_modules_pkg)
-    
+
     #! For this project, assume only a single-level mapping between training experiments and analysis subpackages;
     #! thus `analysis.modules.part1` corresponds to `training.modules.part1`.
-    #! In general, it might be better to go back to explicitly specifying the `expt_name` for the 
+    #! In general, it might be better to go back to explicitly specifying the `expt_name` for the
     #! training experiment, in each analysis config file.
-    training_module_name = analysis_name.split('.')[0]
-    
-    models_base, model_info, replicate_info, tasks_train, n_replicates_included, hps_train_dict = \
+    training_module_name = analysis_name.split(".")[0]
+
+    models_base, model_info, replicate_info, tasks_train, n_replicates_included, hps_train_dict = (
         load_trained_models_and_aux_objects(training_module_name, hps, db_session)
+    )
 
     # Fill-in any missing training hyper-parameters **out-of-place** and switch to
     # the enriched version from here onward. Use training hps from database records.
@@ -242,11 +240,11 @@ def setup_eval_for_module(
     hps_filled = fill_hps_with_train_params(hps, hps_train_representative)
     hps = hps_filled  #  use the enriched version for everything below
 
-    # For this project, the training task should not vary with the train field std 
+    # For this project, the training task should not vary with the train field std
     # so we just keep a single one of them.
     # TODO: In the future, could keep the full `tasks_base`, and update `get_task_variant`/`setup_func`
     task_base = jt.leaves(tasks_train, is_leaf=is_module)[0]
-    
+
     #! TODO: This should be generalized once we move `n_steps` to `task` (in YAML config)
     task_base = eqx.tree_at(
         lambda task: task.n_steps,
@@ -255,17 +253,21 @@ def setup_eval_for_module(
     )
 
     # Load and validate transforms once
-    transforms_raw = getattr(analysis_module, 'TRANSFORMS', None)
+    transforms_raw = getattr(analysis_module, "TRANSFORMS", None)
     transforms = validate_and_convert_transforms(transforms_raw)
 
     # If there is no system noise (i.e. the stds are zero), set the number of evaluations per condition to zero.
     # (Is there any other reason than the noise samples, why evaluations might differ?)
-    # TODO: Make this optional? 
-    #? What is the point of using `jt.leaves` here? 
-    any_system_noise = any(jt.leaves((
-        hps.model.feedback_noise_std,
-        hps.model.motor_noise_std,
-    )))
+    # TODO: Make this optional?
+    # ? What is the point of using `jt.leaves` here?
+    any_system_noise = any(
+        jt.leaves(
+            (
+                hps.model.feedback_noise_std,
+                hps.model.motor_noise_std,
+            )
+        )
+    )
     if not any_system_noise:
         hps.eval_n = 1
 
@@ -274,41 +276,39 @@ def setup_eval_for_module(
     #     std: (
     #         replicate_info[std]['best_replicates'][REPLICATE_CRITERION],
     #         replicate_info[std]['included_replicates'][REPLICATE_CRITERION],
-    #     ) 
+    #     )
     #     # Assumes that `train.pert.std` is given as a sequence
     #     for std in hps.train.pert.std
     # }))
-
-    version_info = log_version_info(
-        jax, eqx, optax, plotly, git_modules=(feedbax, rlrmp),
-    )
 
     # Add evaluation record to the database
     eval_info = add_evaluation(
         db_session,
         expt_name=analysis_name,
         models=model_info,
-        #? Could move the flattening/conversion to `database`?
-        #! TODO: Could exclude train parameters, since 
+        # ? Could move the flattening/conversion to `database`?
+        #! TODO: Could exclude train parameters, since
         eval_parameters=namespace_to_dict(flatten_hps(hps)),
         version_info=version_info,
     )
 
     # Construct common inputs needed by transforms and analyses
     # Note: We construct trial_specs for all task variants here
-    task_variants = LDict.of('task_variant')({
-        variant_key: eqx.tree_at(
-            lambda task: [getattr(task, name) for name in variant_params.keys()],
-            task_base,
-            [value for value in variant_params.values()],
-        )
-        for variant_key, variant_params in namespace_to_dict(hps.task).items()
-    })
-    
+    task_variants = LDict.of("task_variant")(
+        {
+            variant_key: eqx.tree_at(
+                lambda task: [getattr(task, name) for name in variant_params.keys()],
+                task_base,
+                [value for value in variant_params.values()],
+            )
+            for variant_key, variant_params in namespace_to_dict(hps.task).items()
+        }
+    )
+
     trial_specs = jt.map(get_validation_trial_specs, task_variants, is_leaf=is_module)
-    
+
     colors, colorscales = setup_colors(hps, COMMON_COLOR_SPECS | analysis_module.COLOR_FUNCS)
-    
+
     common_inputs = dict(
         hps_common=hps,
         colors=colors,
@@ -321,14 +321,18 @@ def setup_eval_for_module(
         # Apply pre-setup transformations if present
         if transforms.pre_setup is not None:
             if isinstance(transforms.pre_setup, dict):
-            # Granular transforms - apply to task and/or models separately
-                if 'task' in transforms.pre_setup and transforms.pre_setup['task'] is not None:
-                    task = _call_user_func(transforms.pre_setup['task'], task, common_inputs)
-                if 'models' in transforms.pre_setup and transforms.pre_setup['models'] is not None:
-                    models_base = _call_user_func(transforms.pre_setup['models'], models_base, common_inputs)
+                # Granular transforms - apply to task and/or models separately
+                if "task" in transforms.pre_setup and transforms.pre_setup["task"] is not None:
+                    task = _call_user_func(transforms.pre_setup["task"], task, common_inputs)
+                if "models" in transforms.pre_setup and transforms.pre_setup["models"] is not None:
+                    models_base = _call_user_func(
+                        transforms.pre_setup["models"], models_base, common_inputs
+                    )
             else:
                 # Combined function - pass task and models as tuple
-                task, models_base = _call_user_func(transforms.pre_setup, (task, models_base), common_inputs)
+                task, models_base = _call_user_func(
+                    transforms.pre_setup, (task, models_base), common_inputs
+                )
 
         tasks, models, hps, extras = analysis_module.setup_eval_tasks_and_models(
             task, models_base, hps
@@ -348,16 +352,20 @@ def setup_eval_for_module(
 
     # Outer level is task variants, inner is the structure returned by `setup_func`
     # i.e. "task variants" are a way to evaluate different sets of conditions
-    all_tasks, all_models, all_hps, all_extras = jtree.unzip(LDict.of('task_variant')({
-        variant_key: setup_per_task_variant(
-            task_variant, 
-            models_base, 
-            hps, 
-            variant_key,
+    all_tasks, all_models, all_hps, all_extras = jtree.unzip(
+        LDict.of("task_variant")(
+            {
+                variant_key: setup_per_task_variant(
+                    task_variant,
+                    models_base,
+                    hps,
+                    variant_key,
+                )
+                for variant_key, task_variant in task_variants.items()
+            }
         )
-        for variant_key, task_variant in task_variants.items()
-    }))
-    
+    )
+
     data = AnalysisInputData(
         hps=all_hps,
         tasks=all_tasks,
@@ -389,16 +397,20 @@ def perform_all_analyses(
     **kwargs,
 ) -> tuple[PyTree[AbstractAnalysis], PyTree[Any], PyTree[go.Figure]]:
     """Given a list or dict of instances of `AbstractAnalysis`, perform all analyses and save any figures."""
-    
+
     if not analyses:
         logger.warning("No analyses given to perform; nothing returned")
         return None, None, None
-    
+
     if not all(isinstance(value, AbstractAnalysis) for value in analyses.values()):
-        raise ValueError("All analyses defined in given analysis module must be instances of `AbstractAnalysis`")
-    
-    # Phase 1: Compute all analysis nodes (dependencies + leaves) 
-    all_dependency_results = compute_dependency_results(analyses, data, custom_dependencies, **kwargs)
+        raise ValueError(
+            "All analyses defined in given analysis module must be instances of `AbstractAnalysis`"
+        )
+
+    # Phase 1: Compute all analysis nodes (dependencies + leaves)
+    all_dependency_results = compute_dependency_results(
+        analyses, data, custom_dependencies, **kwargs
+    )
 
     if not any(analyses):
         raise ValueError("No analyses given to perform")
@@ -406,16 +418,18 @@ def perform_all_analyses(
     # Phase 2: Keep results & generate figures for leaf analyses only
     def finish_analysis(analysis_key: str, analysis: AbstractAnalysis, inputs: dict):
         # Get the computed result for this analysis (computed in phase 1)
-        result = inputs.pop('result')
-        
+        result = inputs.pop("result")
+
         # Check if make_figs is overridden before attempting figure generation
         if "make_figs" not in analysis.__class__.__dict__:
-            logger.debug(f"Skipping figure generation for {analysis_key} (no make_figs implementation)")
+            logger.debug(
+                f"Skipping figure generation for {analysis_key} (no make_figs implementation)"
+            )
             figs = None
         else:
             logger.info(f"Making figures: {analysis_key}")
             figs = analysis._make_figs_with_ops(data, result, **inputs)
-        
+
             analysis.save_figs(
                 db_session,
                 eval_info,
@@ -429,13 +443,17 @@ def perform_all_analyses(
                 **inputs,
             )
             logger.info(f"Figures saved: {analysis_key}")
-            
+
         return analysis, result, figs
 
-    all_analyses, all_results, all_figs = jtree.unzip({
-        analysis_key: finish_analysis(analysis_key, analysis, dependencies)
-        for (analysis_key, analysis), dependencies in zip(analyses.items(), all_dependency_results)
-    })
+    all_analyses, all_results, all_figs = jtree.unzip(
+        {
+            analysis_key: finish_analysis(analysis_key, analysis, dependencies)
+            for (analysis_key, analysis), dependencies in zip(
+                analyses.items(), all_dependency_results
+            )
+        }
+    )
 
     return all_analyses, all_results, all_figs
 
@@ -453,13 +471,21 @@ def run_analysis_module(
     key,
 ):
     """Given the path/string id of an analysis module, run it.
-    
-    1. Construct all task-model pairs defined by the module's `setup_eval_tasks_and_models` 
-       function, then evaluate them according to the module's `eval_func`. The result is 
-       a PyTree of states for different evaluation/training conditions. 
+
+    1. Construct all task-model pairs defined by the module's `setup_eval_tasks_and_models`
+       function, then evaluate them according to the module's `eval_func`. The result is
+       a PyTree of states for different evaluation/training conditions.
     2. Perform all analyses defined by the module's `ANALYSES` attribute,
        given all the available data (states, tasks, models, hyperparameters, etc.).
     """
+    version_info = log_version_info(
+        jax,
+        eqx,
+        optax,
+        plotly,
+        git_modules=(feedbax, rlrmp),
+    )
+
     if fig_dump_path is None:
         fig_dump_path = PATHS.figures_dump
     assert fig_dump_path is not None
@@ -475,30 +501,31 @@ def run_analysis_module(
     check_model_files(db_session)  # Ensure we don't try to load any models whose files don't exist
 
     # Load the config (hyperparameters) for the analysis module
-    hps = load_hps(analysis_name, config_type='analysis')
+    hps = load_hps(analysis_name, config_type="analysis")
     # Establish a provisional common namespace (needed for querying the DB); this
     # will be superseded after we load the model records and fill in any missing
     # hyper-parameters.
     provisional_hps_common = use_train_hps_when_none(hps)
 
     (
-        analysis_module, 
+        analysis_module,
         data,
-        common_inputs, 
+        common_inputs,
         transforms,
-        model_info, 
-        eval_info, 
-    ) = \
-        setup_eval_for_module(
-            analysis_name,
-            provisional_hps_common,
-            db_session,
-        )
-
+        model_info,
+        eval_info,
+    ) = setup_eval_for_module(
+        analysis_name,
+        provisional_hps_common,
+        db_session,
+        version_info,
+    )
 
     def evaluate_all_states(all_tasks, all_models, all_hps):
         return jt.map(  # Map over the task-base model subtree pairs generated by `schedule_intervenor` for each base task
-            lambda task, models, hps: jt.map(  # Map over the base model subtree, for the given base task
+            lambda task,
+            models,
+            hps: jt.map(  # Map over the base model subtree, for the given base task
                 lambda model: analysis_module.eval_func(key, hps, model, task),
                 models,
                 is_leaf=is_module,
@@ -514,31 +541,31 @@ def run_analysis_module(
         states_shapes = eqx.filter_eval_shape(
             evaluate_all_states, data.tasks, data.models, data.hps
         )
-        logger.info(f"Evaluated states PyTree structure: {tree_level_labels(states_shapes, is_leaf=is_module)}")
-        
+        logger.info(
+            f"Evaluated states PyTree structure: {tree_level_labels(states_shapes, is_leaf=is_module)}"
+        )
+
         memory_estimate_gb = jtree.struct_bytes(states_shapes) / 1e9
         logger.info(f"{memory_estimate_gb:.2f} GB of memory estimated to store all states.")
-        
+
         if memory_estimate_gb > memory_warn_gb:
             logger.warning(
                 f"Estimated memory usage ({memory_estimate_gb:.2f} GB) exceeds the warning threshold "
                 f"({memory_warn_gb:.2f} GB). Consider reducing the number of evaluations or model sizes."
                 f"State shapes PyTree written to {PATHS.logs / 'states_shapes.txt'}."
             )
-            
-            with open(PATHS.logs / "states_shapes.txt", 'w') as f:
+
+            with open(PATHS.logs / "states_shapes.txt", "w") as f:
                 f.write(eqx.tree_pformat(states_shapes))
-            
-            print('\n')
+
+            print("\n")
             while True:
-                proceed = input(
-                    "Proceed with the evaluation and analysis? (y/n): "
-                ).strip().lower()
-            
-                if proceed == 'y':
-                    print('\n')
+                proceed = input("Proceed with the evaluation and analysis? (y/n): ").strip().lower()
+
+                if proceed == "y":
+                    print("\n")
                     break
-                elif proceed == 'n':
+                elif proceed == "n":
                     logger.info("Evaluation cancelled by user.")
                     sys.exit()
                 else:
@@ -557,9 +584,11 @@ def run_analysis_module(
         # Try to load from pickle
         logger.info(f"Loading states from {states_pickle_path}...")
         try:
-            with open(states_pickle_path, 'rb') as f:
+            with open(states_pickle_path, "rb") as f:
                 states = pickle.load(f)
-            logger.info(f"Loaded pickled states with PyTree structure: {tree_level_labels(states, is_leaf=is_module)}")
+            logger.info(
+                f"Loaded pickled states with PyTree structure: {tree_level_labels(states, is_leaf=is_module)}"
+            )
             loaded_from_pickle = True
         except Exception as e:
             logger.error(f"Failed to load pickled states: {e}")
@@ -574,10 +603,11 @@ def run_analysis_module(
 
     # Save states if we didn't use --no-pickle and we didn't successfully load from pickle
     if not no_pickle and not loaded_from_pickle:
+
         def _test(tree):
             return jt.map(lambda x: x, tree)
 
-        with open(states_pickle_path, 'wb') as f:
+        with open(states_pickle_path, "wb") as f:
             pickle.dump(_test(states), f)
         logger.info(f"Saved evaluated states to {states_pickle_path}")
 
@@ -585,22 +615,22 @@ def run_analysis_module(
     if transforms.post_eval is not None:
         if isinstance(transforms.post_eval, dict):
             # Granular transforms - apply to models, tasks, and/or states separately
-            if 'models' in transforms.post_eval and transforms.post_eval['models'] is not None:
+            if "models" in transforms.post_eval and transforms.post_eval["models"] is not None:
                 data = eqx.tree_at(
-                    lambda data: data.models, 
-                    data, 
-                    _call_user_func(transforms.post_eval['models'], data.models, common_inputs),
-                    is_leaf=is_none
+                    lambda data: data.models,
+                    data,
+                    _call_user_func(transforms.post_eval["models"], data.models, common_inputs),
+                    is_leaf=is_none,
                 )
-            if 'tasks' in transforms.post_eval and transforms.post_eval['tasks'] is not None:
+            if "tasks" in transforms.post_eval and transforms.post_eval["tasks"] is not None:
                 data = eqx.tree_at(
-                    lambda data: data.tasks, 
-                    data, 
-                    _call_user_func(transforms.post_eval['tasks'], data.tasks, common_inputs),
-                    is_leaf=is_none
+                    lambda data: data.tasks,
+                    data,
+                    _call_user_func(transforms.post_eval["tasks"], data.tasks, common_inputs),
+                    is_leaf=is_none,
                 )
-            if 'states' in transforms.post_eval and transforms.post_eval['states'] is not None:
-                states = _call_user_func(transforms.post_eval['states'], states, common_inputs)
+            if "states" in transforms.post_eval and transforms.post_eval["states"] is not None:
+                states = _call_user_func(transforms.post_eval["states"], states, common_inputs)
         else:
             # Combined function - pass models, tasks, states as tuple
             transformed_models, transformed_tasks, transformed_states = _call_user_func(
@@ -615,14 +645,16 @@ def run_analysis_module(
     if eval_only:
         logger.info("Eval-only requested; skipping analyses and returning.")
         return data, common_inputs, None, None, None
-    
+
     if not retain_past_fig_dumps:
         try:
             delete_all_files_in_dir(Path(fig_dump_path))
             logger.info(f"Deleted existing dump figures in {fig_dump_path}")
         except ValueError as e:
-            logger.warning(f"Failed to delete existing dump figures: {e}; directory probably doesn't exist yet")
-            
+            logger.warning(
+                f"Failed to delete existing dump figures: {e}; directory probably doesn't exist yet"
+            )
+
     # jax.profiler.stop_trace()
 
     all_analyses, all_results, all_figs = perform_all_analyses(
@@ -633,7 +665,7 @@ def run_analysis_module(
         eval_info,
         fig_dump_path=Path(fig_dump_path),
         fig_dump_formats=fig_dump_formats,
-        custom_dependencies=getattr(analysis_module, 'DEPENDENCIES', {}),
+        custom_dependencies=getattr(analysis_module, "DEPENDENCIES", {}),
         **common_inputs,
     )
 
