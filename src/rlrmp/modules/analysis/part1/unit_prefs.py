@@ -123,7 +123,7 @@ ANALYSES = {
 #! I have not included this in `UnitPreferences.make_figs` at this time.
 # import jax.numpy as jnp
 # import numpy as np
-# from rlrmp.analysis.state_utils import get_best_replicate
+# from feedbax_experiments.analysis.state_utils import get_best_replicate
 
 # unit_plot = 0
 # ts = np.arange(15)
