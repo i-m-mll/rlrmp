@@ -9,6 +9,32 @@
     // },
     "configurations": [
         {
+            "name": "Python Debugger: run_analysis.py batched",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/scripts/run_analysis.py",
+            "console": "integratedTerminal",
+            "args": ["--batched", "${command:pickArgs}"],
+            "env": {
+                "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2",
+                // "PYTHONSTARTUP": "${workspaceFolder}/scripts/debug_startup.py"
+            },
+            // "preLaunchTask": "activate-conda-env"
+        },   
+        {
+            "name": "Python Debugger: run_analysis.py single",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/scripts/run_analysis.py",
+            "console": "integratedTerminal",
+            "args": ["--single", "${command:pickArgs}"],
+            "env": {
+                "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2",
+                // "PYTHONSTARTUP": "${workspaceFolder}/scripts/debug_startup.py"
+            },
+            // "preLaunchTask": "activate-conda-env"
+        },   
+        {
             "name": "Python Debugger: run_analysis.py with Arguments",
             "type": "debugpy",
             "request": "launch",

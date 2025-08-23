@@ -10,7 +10,7 @@ import re
 import signal
 import subprocess
 import types
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import fields
 from datetime import datetime
@@ -32,17 +32,12 @@ from feedbax.misc import git_commit_id
 from jax_cookbook import is_type
 from jaxtyping import Array, ArrayLike, Float, Int
 
-from rlrmp.tree_utils import subdict
-
 # logging.basicConfig(
 #     format='(%(name)-20s) %(message)s',
 #     level=logging.INFO,
 #     handlers=[RichHandler(level="NOTSET")],
 # )
 logger = logging.getLogger(__name__)
-
-
-class DoNotHashTree: ...
 
 
 def delete_all_files_in_dir(dir_path: Path):
@@ -74,30 +69,6 @@ def get_gpu_memory(gpu_idx=0):
     memory_free_info = subprocess.check_output(command.split()).decode("ascii").split("\n")[:-1][1:]
     memory_free_values = [int(x.split()[0]) for i, x in enumerate(memory_free_info)]
     return memory_free_values[gpu_idx]
-
-
-def lohi(x: Iterable, **kwargs):
-    """Returns a tuple containing the first and last values of a sequence, mapping, or other iterable."""
-    if isinstance(x, Mapping):
-        # TODO: Maybe should return first and last key-value pairs?
-        return subdict(x, tuple(lohi(tuple(x.keys()))))
-
-    elif isinstance(x, Iterator):
-        first = last = next(x)
-        for last in x:
-            pass
-
-    elif isinstance(x, Sequence):
-        first = x[0]
-        last = x[-1]
-
-    elif isinstance(x, Array):
-        return lohi(x.tolist())
-
-    else:
-        raise ValueError(f"Unsupported type: {type(x)}")
-
-    return first, last
 
 
 def with_caller_logger(func):
@@ -187,24 +158,6 @@ def camel_to_snake(s: str):
 def snake_to_camel(s: str):
     """Convert snake case to camel case."""
     return "".join(word.title() for word in s.split("_"))
-
-
-def lomidhi(x: Iterable):
-    if isinstance(x, dict):
-        keys: tuple = tuple(lomidhi(x.keys()))
-        return subdict(x, keys)
-
-    elif isinstance(x, Iterator):
-        x = tuple(x)
-        first, last = lohi(x)
-        mid = x[len(x) // 2]
-        return first, mid, last
-
-    elif isinstance(x, Array):
-        return lomidhi(x.tolist())
-
-    else:
-        raise ValueError(f"Unsupported type: {type(x)}")
 
 
 def load_yaml(path: Path) -> dict:
@@ -700,18 +653,6 @@ def field_names(datacls) -> tuple[str, ...]:
     return tuple(datacls.__dataclass_fields__)
 
 
-def deep_merge(base: Mapping[str, Any], over: Mapping[str, Any]) -> dict[str, Any]:
-    """Pure 'overlay' that copies only touched branches."""
-    out: dict[str, Any] = dict(base)
-    for k, v in over.items():
-        bv = out.get(k)
-        if isinstance(v, Mapping) and isinstance(bv, Mapping):
-            out[k] = deep_merge(bv, v)
-        else:
-            out[k] = v
-    return out
-
-
 def get_origin_type(type_):
     """Get the origin type of a generic type, or the type itself if not generic."""
     origin = get_origin(type_)
@@ -726,3 +667,15 @@ def unit_circle_points(n):
     angles = jnp.linspace(0, 2 * jnp.pi, n, endpoint=False)
     z = jnp.exp(1j * angles)
     return jnp.column_stack([z.real, z.imag])
+
+
+def deep_merge(base: Mapping[str, Any], over: Mapping[str, Any]) -> dict[str, Any]:
+    """Pure 'overlay' that copies only touched branches."""
+    out: dict[str, Any] = dict(base)
+    for k, v in over.items():
+        bv = out.get(k)
+        if isinstance(v, Mapping) and isinstance(bv, Mapping):
+            out[k] = deep_merge(bv, v)
+        else:
+            out[k] = v
+    return out

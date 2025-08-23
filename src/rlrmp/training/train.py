@@ -28,7 +28,7 @@ from jax_cookbook import is_type
 import rlrmp
 import rlrmp.training.modules as training_modules_pkg
 from rlrmp.database import ModelRecord, get_db_session, get_record, save_model_and_add_record
-from rlrmp.hyperparams import flatten_hps, load_hps
+from rlrmp.hyperparams import config_to_hps, flatten_hps
 from rlrmp.misc import GracefulInterruptHandler, GracefulStopRequested, log_version_info, load_module_from_package
 from rlrmp.types import namespace_to_dict
 from rlrmp.tree_utils import pp
@@ -148,7 +148,7 @@ def where_strs_to_funcs(where_strs: Sequence[str] | dict[int, Sequence[str]]):
 
 
 def train_and_save_models(
-    hps: TreeNamespace,
+    config: dict,
     expt_name: str,
     untrained_only: bool = True,
     postprocess: bool = True,
@@ -158,11 +158,15 @@ def train_and_save_models(
     *,
     key: PRNGKeyArray,
 ):
-    """Given hyperparameters and experiment name, execute the respective training run.
+    """Given config and experiment name, execute the respective training run.
     
-    The config must have a top-level key `id` whose positive integer value 
-    indicates which training experiment to run. 
+    Args:
+        config: Training configuration dictionary
+        expt_name: Name of the training experiment
     """
+    # Convert config dict to hyperparameters namespace
+    hps = config_to_hps(config, config_type="training")
+    
     db_session = get_db_session()
 
     key_init, key_train, key_eval = jr.split(key, 3)

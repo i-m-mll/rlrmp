@@ -1,6 +1,7 @@
 import inspect
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
 from typing import Any, List, Optional, Union
@@ -14,6 +15,7 @@ import jax_cookbook.tree as jtree
 import optax
 import plotly
 import plotly.graph_objects as go
+import yaml
 from equinox import Module
 from jax_cookbook import is_module, is_none, is_type
 from jaxtyping import PyTree
@@ -43,8 +45,8 @@ from rlrmp.database import (
 
 # `cast_hps` is needed to convert dictionaries (e.g. `where`) back into the expected objects
 from rlrmp.hyperparams import (
+    config_to_hps,
     flatten_hps,
-    load_hps,
     use_train_hps_when_none,
 )
 from rlrmp.misc import delete_all_files_in_dir, load_module_from_package, log_version_info
@@ -58,6 +60,40 @@ from rlrmp.types import (
 )
 
 STATES_CACHE_SUBDIR = "states"
+
+
+@dataclass
+class FigDumpManager:
+    """Helper for batch-aware figure organization."""
+
+    root: Path = PATHS.figures_dump
+    _counters: dict[str, int] = field(default_factory=dict)
+
+    def module_dir(self, module_key: str) -> Path:
+        return self.root / Path(module_key.replace(".", "/"))
+
+    def prepare_module_dir(self, module_key: str, module_config: dict) -> Path:
+        d = self.module_dir(module_key)
+        d.mkdir(parents=True, exist_ok=True)
+        with open(d / "module.yml", "w") as f:
+            yaml.dump(module_config, f, default_flow_style=False, sort_keys=False)
+        return d
+
+    def prepare_run_dir(self, module_key: str, run_params: dict) -> Path:
+        i = self._counters.get(module_key, 0) + 1
+        self._counters[module_key] = i
+        module_dir = self.module_dir(module_key)
+        i_str = f"{i:03d}"
+        dump_dir = module_dir / i_str
+        dump_dir.mkdir(parents=True, exist_ok=True)
+        with open(module_dir / f"{i_str}.yml", "w") as f:
+            yaml.dump(run_params, f, default_flow_style=False, sort_keys=False)
+        return dump_dir
+
+    def clear_all_figures(self) -> None:
+        """Clear all figures in the root dump directory."""
+        if self.root.exists():
+            delete_all_files_in_dir(self.root)
 
 
 # Pre-setup can be either granular dict or combined function
@@ -210,7 +246,7 @@ def load_trained_models_and_aux_objects(
 
 
 def setup_eval_for_module(
-    analysis_name: str,
+    module_key: str,
     hps: TreeNamespace,
     db_session: Session,
     version_info: dict[str, str],
@@ -221,13 +257,13 @@ def setup_eval_for_module(
     2. Add an evaluation record to the database.
     """
 
-    analysis_module: ModuleType = load_module_from_package(analysis_name, analysis_modules_pkg)
+    analysis_module: ModuleType = load_module_from_package(module_key, analysis_modules_pkg)
 
     #! For this project, assume only a single-level mapping between training experiments and analysis subpackages;
     #! thus `analysis.modules.part1` corresponds to `training.modules.part1`.
     #! In general, it might be better to go back to explicitly specifying the `expt_name` for the
     #! training experiment, in each analysis config file.
-    training_module_name = analysis_name.split(".")[0]
+    training_module_name = module_key.split(".")[0]
 
     models_base, model_info, replicate_info, tasks_train, n_replicates_included, hps_train_dict = (
         load_trained_models_and_aux_objects(training_module_name, hps, db_session)
@@ -284,7 +320,7 @@ def setup_eval_for_module(
     # Add evaluation record to the database
     eval_info = add_evaluation(
         db_session,
-        expt_name=analysis_name,
+        expt_name=module_key,
         models=model_info,
         # ? Could move the flattening/conversion to `database`?
         #! TODO: Could exclude train parameters, since
@@ -459,24 +495,22 @@ def perform_all_analyses(
 
 
 def run_analysis_module(
-    analysis_name: str,
-    fig_dump_path: Optional[str] = None,
-    fig_dump_formats: List[str] = ["html", "webp", "svg"],
-    no_pickle: bool = False,
-    retain_past_fig_dumps: bool = False,
-    states_pkl_dir: Optional[Path] = PATHS.cache / "states",
-    eval_only: bool = False,  # Skip analyses and just evaluate the states
-    memory_warn_gb: float = 24.0,
+    module_key: str,
+    module_config: dict,
     *,
+    fig_dump_dir: str | Path | None = None,
+    fig_dump_formats: list[str] = ["html", "webp", "svg"],
+    no_pickle: bool = False,
+    states_pkl_dir: Path | None = PATHS.cache / "states",
+    eval_only: bool = False,
+    memory_warn_gb: float = 24.0,
     key,
 ):
-    """Given the path/string id of an analysis module, run it.
+    """Run a single analysis module using provided hyperparameters.
 
-    1. Construct all task-model pairs defined by the module's `setup_eval_tasks_and_models`
-       function, then evaluate them according to the module's `eval_func`. The result is
-       a PyTree of states for different evaluation/training conditions.
-    2. Perform all analyses defined by the module's `ANALYSES` attribute,
-       given all the available data (states, tasks, models, hyperparameters, etc.).
+    - `module_key` is the analysis module key (e.g., 'part2.plant_perts').
+    - `module_config` is the resolved config returned by config.load_config(...).
+    - `fig_dump_dir`, if provided, is passed to analysis.save_figs(..., dump_path=...).
     """
     version_info = log_version_info(
         jax,
@@ -486,9 +520,9 @@ def run_analysis_module(
         git_modules=(feedbax, rlrmp),
     )
 
-    if fig_dump_path is None:
-        fig_dump_path = PATHS.figures_dump
-    assert fig_dump_path is not None
+    if fig_dump_dir is None:
+        fig_dump_dir = PATHS.figures_dump
+    assert fig_dump_dir is not None
 
     # Ensure the directory for state pickles exists
     if states_pkl_dir is None:
@@ -500,8 +534,8 @@ def run_analysis_module(
     db_session = get_db_session()
     check_model_files(db_session)  # Ensure we don't try to load any models whose files don't exist
 
-    # Load the config (hyperparameters) for the analysis module
-    hps = load_hps(analysis_name, config_type="analysis")
+    # Use the provided config (hyperparameters) for the analysis module
+    hps = config_to_hps(module_config, config_type="analysis")
     # Establish a provisional common namespace (needed for querying the DB); this
     # will be superseded after we load the model records and fill in any missing
     # hyper-parameters.
@@ -515,7 +549,7 @@ def run_analysis_module(
         model_info,
         eval_info,
     ) = setup_eval_for_module(
-        analysis_name,
+        module_key,
         provisional_hps_common,
         db_session,
         version_info,
@@ -646,15 +680,6 @@ def run_analysis_module(
         logger.info("Eval-only requested; skipping analyses and returning.")
         return data, common_inputs, None, None, None
 
-    if not retain_past_fig_dumps:
-        try:
-            delete_all_files_in_dir(Path(fig_dump_path))
-            logger.info(f"Deleted existing dump figures in {fig_dump_path}")
-        except ValueError as e:
-            logger.warning(
-                f"Failed to delete existing dump figures: {e}; directory probably doesn't exist yet"
-            )
-
     # jax.profiler.stop_trace()
 
     all_analyses, all_results, all_figs = perform_all_analyses(
@@ -663,7 +688,7 @@ def run_analysis_module(
         data,
         model_info,
         eval_info,
-        fig_dump_path=Path(fig_dump_path),
+        fig_dump_path=Path(fig_dump_dir),
         fig_dump_formats=fig_dump_formats,
         custom_dependencies=getattr(analysis_module, "DEPENDENCIES", {}),
         **common_inputs,

@@ -1,14 +1,15 @@
 import logging
+import re
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-import re
 
+import jax.tree as jt
 from rich.highlighter import ReprHighlighter
 from rich.logging import RichHandler
 from rich.text import Text
 
 from rlrmp.config import LOGGING, PATHS
-
+from rlrmp.types import TreeNamespace
 
 SESSION_START_BANNER = "―" * 20 + " NEW SESSION STARTED " + "―" * 20
 
@@ -21,9 +22,7 @@ def _remove_handlers(logger: logging.Logger, *, predicate) -> None:
             h.close()
 
 
-def _make_rotating_handler(
-    path: Path, level: int, fmt: logging.Formatter
-) -> RotatingFileHandler:
+def _make_rotating_handler(path: Path, level: int, fmt: logging.Formatter) -> RotatingFileHandler:
     """Create a RotatingFileHandler writing to `path` at `level` with `fmt`."""
     fh = RotatingFileHandler(
         filename=str(path),
@@ -56,17 +55,16 @@ def _prune_foreign_file_handlers(central_dir: Path) -> None:
                 pass
 
 
-_console_handler_pred = lambda h: (
-    isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
-)
+def _console_handler_pred(h: logging.Handler) -> bool:
+    return isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
 
 
 #! TODO: Fix paren delimiting
 class BacktickPathHighlighter(ReprHighlighter):
     # Detect a delimited chunk: "…", '…', `…`, or (…)
-    _DELIM = re.compile(r'`(?P<body>[^`]+)`')
+    _DELIM = re.compile(r"`(?P<body>[^`]+)`")
     # What "looks like a path" inside the delimiter
-    _PATH = re.compile(r'^(?:~|/|[A-Za-z]:\\)[\w.\- /\\]+$')
+    _PATH = re.compile(r"^(?:~|/|[A-Za-z]:\\)[\w.\- /\\]+$")
 
     def highlight(self, text: Text) -> None:
         # Run the normal rules first (numbers, bools, etc.)
@@ -90,13 +88,13 @@ def enable_logging_handlers(
     """
     Configure `rich` console logs, and centralize all file logs into `PATHS.logs`.
 
-    Default arguments are taken from `LOGGING` config, if available. 
+    Default arguments are taken from `LOGGING` config, if available.
 
     Args:
-      file_level: minimum level for file output 
-      console_level: minimum level for console output 
+      file_level: minimum level for file output
+      console_level: minimum level for console output
       pkg_console_levels: overrides console levels for specific packages
-      pkgs_own_files: write these packages to their own rotating files, at the specified level 
+      pkgs_own_files: write these packages to their own rotating files, at the specified level
     """
     # ─── 0) unpack defaults ──────────────────────────────────────────────────
     file_lvl: int = file_level or LOGGING.file_level
