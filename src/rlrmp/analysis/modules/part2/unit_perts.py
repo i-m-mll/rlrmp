@@ -57,7 +57,7 @@ from rlrmp.analysis.state_utils import (
     vmap_eval_ensemble,
 )
 from rlrmp.colors import ColorscaleSpec
-from rlrmp.config.config import PLOTLY_CONFIG
+from rlrmp.config import PLOTLY_CONFIG
 from rlrmp.constants import POS_ENDPOINTS_ALIGNED
 from rlrmp.misc import unit_circle_points
 from rlrmp.plot import add_endpoint_traces, get_violins, set_axes_bounds_equal

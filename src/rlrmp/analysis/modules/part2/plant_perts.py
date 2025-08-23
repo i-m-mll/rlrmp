@@ -8,7 +8,6 @@ import jax.tree as jt
 import jax_cookbook.tree as jtree
 import numpy as np
 from feedbax.intervene import add_intervenors, schedule_intervenor
-from feedbax.plotly import AxesLabels2D
 from jax_cookbook import MultiVmapAxes, is_module, is_type
 from jaxtyping import Array, Float
 from lark import Tree

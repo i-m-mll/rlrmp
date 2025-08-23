@@ -39,10 +39,9 @@ from jax_cookbook._vmap import AxisSpec, expand_axes_spec
 from jaxtyping import Array, ArrayLike, PyTree
 from sqlalchemy.orm import Session
 
-from rlrmp.config.config import PATHS, STRINGS
+from rlrmp.config import PATHS, STRINGS
 from rlrmp.database import EvaluationRecord, add_evaluation_figure, savefig
 from rlrmp.misc import (
-    DoNotHashTree,
     camel_to_snake,
     deep_merge,
     field_names,
@@ -54,6 +53,7 @@ from rlrmp.misc import (
 )
 from rlrmp.plot_utils import figs_flatten_with_paths
 from rlrmp.tree_utils import (
+    DoNotHashTree,
     _hash_pytree,
     first_shape,
     hash_callable_leaves,

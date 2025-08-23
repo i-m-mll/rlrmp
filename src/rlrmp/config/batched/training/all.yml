@@ -51,3 +51,35 @@ part2:
             type: constant
             std: 
               value: [0, 0.01, 0.1, 1]
+
+
+part2:
+  product:  
+    - params: 
+        model:
+          feedback_noise_std: [0.01, 0.1]
+          motor_noise_std: [0.01, 0.1]
+    - params: 
+        model:
+          feedback_delay_steps: [0, 5, 10]
+    - cases:
+        - params: ...
+
+part2:
+  type: product 
+  of: 
+    - type: params
+      name: noise_levels
+      of:  
+        model:
+          feedback_noise_std: [0.01, 0.1]
+          motor_noise_std: [0.01, 0.1]
+    - type: params
+      of:  
+        model:
+          feedback_delay_steps: [0, 5, 10]
+    - type: cases
+      name: some_label
+      of: 
+        - type: params
+          of: ...

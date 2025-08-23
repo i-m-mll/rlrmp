@@ -20,7 +20,7 @@ from rlrmp.analysis.analysis import (
     PortsType,
     SinglePort,
 )
-from rlrmp.config.config import PLOTLY_CONFIG
+from rlrmp.config import PLOTLY_CONFIG
 from rlrmp.hyperparams import flat_key_to_where_func
 from rlrmp.misc import deep_merge
 from rlrmp.plot import set_axes_bounds_equal

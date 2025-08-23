@@ -1,45 +1,40 @@
-from cProfile import label
-from collections import defaultdict
-from collections.abc import Callable, KeysView, Mapping
-import logging
-from types import EllipsisType, SimpleNamespace
-from typing import Any, Optional, TypeVar, Sequence, cast, overload
 import hashlib
-import json
-import re
-import types
 import inspect
-import hashlib
-import types
+import json
+import logging
 import re
+import types
+from collections import defaultdict
+from collections.abc import Callable, Iterable, Iterator, KeysView, Mapping, Sequence
+from types import EllipsisType, SimpleNamespace
+from typing import Any, Optional, Sequence, TypeVar, overload
 
-import dill
 import equinox as eqx
-import jax as jax 
+import jax as jax
 import jax.numpy as jnp
 import jax.tree as jt
 import jax.tree_util as jtu
-from jaxtyping import Array, ArrayLike, PyTree
-import plotly.graph_objects as go
-
-from feedbax.intervene import AbstractIntervenor
-from jax_cookbook import anyf, is_module, is_type, is_none, hash_callable
 import jax_cookbook.tree as jtree
+import plotly.graph_objects as go
+from feedbax.intervene import AbstractIntervenor
+from jax_cookbook import anyf, hash_callable, is_module, is_none, is_type
+from jaxtyping import Array, ArrayLike, PyTree
 
 from rlrmp.config import STRINGS
-from rlrmp.types import _Wrapped, LDict, LDictConstructor, TreeNamespace
-
-
+from rlrmp.misc import deep_merge
+from rlrmp.types import LDict, LDictConstructor, TreeNamespace, _Wrapped
 
 T = TypeVar("T")
 M = TypeVar("M", bound=Mapping)
-K = TypeVar('K')
-V = TypeVar('V')
+K = TypeVar("K")
+V = TypeVar("V")
 
 logger = logging.getLogger(__name__)
 
 
-def swap_model_trainables(model: PyTree[..., "T"], trained: PyTree[..., "T"], where_train: Callable):
+def swap_model_trainables(
+    model: PyTree[..., "T"], trained: PyTree[..., "T"], where_train: Callable
+):
     return eqx.tree_at(
         where_train,
         model,
@@ -55,7 +50,7 @@ def _get_mapping_constructor(d: Mapping[K, V]) -> Callable[[Mapping], Mapping]:
 
 
 @overload
-def subdict(d: "LDict[K, V]", keys: Sequence[K]) -> "LDict[K, V]": ...
+def subdict(d: LDict[K, V], keys: Sequence[K]) -> LDict[K, V]: ...
 @overload
 def subdict(d: M, keys: Sequence[K]) -> M: ...
 def subdict(d: Mapping[K, V], keys: Sequence[K]) -> Mapping[K, V]:
@@ -66,31 +61,33 @@ def subdict(d: Mapping[K, V], keys: Sequence[K]) -> Mapping[K, V]:
 def dictmerge(*dicts: Mapping) -> Mapping:
     if len(set(type(d) for d in dicts)) == 1:
         constructor = _get_mapping_constructor(dicts[0])
-    else: 
+    else:
         constructor = dict
     return constructor({k: v for d in dicts for k, v in d.items()})
 
 
 # TODO: This exists because I was thinking of generalizing the way that
-# the model PyTree is constructed in training notebook 2. If that doesn't get done, 
-# then it would make sense to just do a dict comprehension explicitly when 
-# constructing the `task_model_pairs` dict, instead of making an 
+# the model PyTree is constructed in training notebook 2. If that doesn't get done,
+# then it would make sense to just do a dict comprehension explicitly when
+# constructing the `task_model_pairs` dict, instead of making an
 # opaque call to this function.
 def map_kwargs_to_dict(
     func: Callable[..., Any],  #! kwargs only
     keyword: str,
     values: Sequence[Any],
 ):
-    """Given a function that takes optional kwargs, evaluate the function over 
+    """Given a function that takes optional kwargs, evaluate the function over
     a sequence of values of a single kwarg
     """
-    return dict(zip(
-        values, 
-        map(
-            lambda value: func(**{keyword: value}), 
+    return dict(
+        zip(
             values,
+            map(
+                lambda value: func(**{keyword: value}),
+                values,
+            ),
         )
-    ))
+    )
 
 
 def falsef(x):
@@ -102,71 +99,54 @@ def ldict_verbose_label_func(x: Any) -> str:
         return f"LDict.of({x.label})"
     else:
         return x.__name__
-    
-    
+
+
 def ldict_label_only_func(x: Any) -> str:
     if isinstance(x, (LDict, LDictConstructor)):
         return x.label
     else:
-        return x.__name__   
+        return x.__name__
 
 
 def tree_level_types(tree: PyTree, is_leaf=falsef) -> list[Callable]:
     """Given a PyTree, return a PyTree of the types of each node along the path to the first leaf."""
     # Get the path to the first leaf
     leaves_with_typed_paths = jtree.leaves_with_annotated_path(
-        tree, is_leaf=is_leaf, annotation_func=_annotation_func,
+        tree,
+        is_leaf=is_leaf,
+        annotation_func=_annotation_func,
     )
     if not leaves_with_typed_paths:
         return []
     first_path, _ = leaves_with_typed_paths[0]
-    
+
     node_types = [node_type for node_type, _ in first_path]
-    
+
     return node_types
 
-    
+
 def tree_level_labels(
-    tree: LDict, 
+    tree: LDict,
     sep: Optional[str] = None,
     label_func: Callable[..., str] = ldict_label_only_func,
     is_leaf: Optional[Callable[[Any], bool]] = None,
 ) -> list[str]:
     """
     Given a PyTree, return a list of labels, one for each level of the tree.
-    
+
     This function assumes a consistent tree structure where all nodes at the same level
     have the same type/label. Traverses the tree from root to first leaf, collecting labels
     along the way.
     """
     node_types = tree_level_types(tree, is_leaf=is_leaf)
-    
+
     # Collect the labels from all LDict nodes in the path
     labels = [label_func(node_type) for node_type in node_types]
-        
+
     if sep is not None:
         labels = [label.replace(STRINGS.hps_level_label_sep, sep) for label in labels]
-        
+
     return labels
-
-
-# def tree_level_types(tree: PyTree, is_leaf=falsef) -> list[type]:
-#     """Given a PyTree, return a PyTree of the types of each node along the path to the first leaf."""
-#     treedef = jt.structure(tree)
-    
-#     subtreedef = treedef
-#     types = []
-    
-#     while any(subtreedef.children()):
-#         node_data = subtreedef.node_data()
-#         if node_data is not None:
-#             if is_leaf(node_data[0]):
-#                 break
-#             types.append(node_data[0])
-#         subtreedef = subtreedef.children()[0]
-    
-#     return types
-
 
 
 def _annotation_func(node):
@@ -181,13 +161,13 @@ def print_ldict_tree_summary(tree):
     """Prints a summary of the labels and keys of a pure `LDict` tree."""
     while True:
         try:
-            print(tree.label, '\t', list(tree.keys()))
+            print(tree.label, "\t", list(tree.keys()))
             tree = next(iter(tree.values()))
         except AttributeError:
             break
 
 
-#! TODO: Generalize this. It should work with any PyTree nodes, as long as they are 
+#! TODO: Generalize this. It should work with any PyTree nodes, as long as they are
 #! uniform at each level -- not just LDicts.
 def swap_adjacent_ldict_levels(
     outer_label: str,
@@ -209,18 +189,17 @@ def swap_adjacent_ldict_levels(
     is_inner = LDict.is_of(inner_label)
 
     def _swap_one(node: LDict):
-        assert node.label == outer_label           # guaranteed by caller
+        assert node.label == outer_label  # guaranteed by caller
 
         buckets: dict[Any, dict[Any, Any]] = defaultdict(dict)
         for outer_key, inner_ldict in node.items():
             if not is_inner(inner_ldict):
                 if isinstance(inner_ldict, LDict):
-                    label = f'LDict.of({inner_ldict.label})'
-                else: 
+                    label = f"LDict.of({inner_ldict.label})"
+                else:
                     label = type(inner_ldict)
                 raise ValueError(
-                    f"{outer_label} was expected to hold only {inner_label} "
-                    f"children, found {label}"
+                    f"{outer_label} was expected to hold only {inner_label} children, found {label}"
                 )
             for inner_key, leaf in inner_ldict.items():
                 buckets[inner_key][outer_key] = leaf
@@ -263,8 +242,8 @@ def _bubble_to_index(
 
     # Bubble inward (toward larger index) until we reach dst
     while i < dst_idx:
-        outer = levels[i]         # current node
-        inner = levels[i + 1]     # its child
+        outer = levels[i]  # current node
+        inner = levels[i + 1]  # its child
         tree = swap_adjacent_ldict_levels(
             outer_label=outer, inner_label=inner, tree=tree, is_leaf=is_leaf
         )
@@ -273,8 +252,8 @@ def _bubble_to_index(
 
     # Bubble outward (toward smaller index) until we reach dst
     while i > dst_idx:
-        outer = levels[i - 1]     # parent
-        inner = levels[i]         # current node
+        outer = levels[i - 1]  # parent
+        inner = levels[i]  # current node
         tree = swap_adjacent_ldict_levels(
             outer_label=outer, inner_label=inner, tree=tree, is_leaf=is_leaf
         )
@@ -287,7 +266,7 @@ def _bubble_to_index(
 def _normalize_label(s: str) -> str:
     # Accept both raw "label" and formatted "LDict.of(label)".
     if isinstance(s, str) and s.startswith("LDict.of(") and s.endswith(")"):
-        return s[len("LDict.of("):-1]
+        return s[len("LDict.of(") : -1]
     return s
 
 
@@ -316,13 +295,13 @@ def move_ldict_level_above(
         raise ValueError(f"`label_to_move` not found among levels: {label_to_move!r}")
     if anchor_label not in levels:
         raise ValueError(f"`anchor_label` not found among levels: {anchor_label!r}")
-    
+
     if label_to_move == anchor_label:
         return tree
 
     if not levels:
         return tree
-    
+
     i_anchor = levels.index(anchor_label)
     i_move = levels.index(label_to_move)
 
@@ -367,7 +346,7 @@ def getitem_at_level(level: str, key: Any, tree: PyTree) -> Any:
     """Get an item from a PyTree at a specific ldict level."""
     return jt.map(
         lambda x: x[key] if isinstance(x, LDict) else x,
-        tree, 
+        tree,
         is_leaf=LDict.is_of(level),
     )
 
@@ -420,8 +399,8 @@ def rearrange_ldict_levels(
 
     if ell_count == 1:
         ell_ix = spec_list.index(Ellipsis)
-        top_labels = list(spec_list[:ell_ix])          # before ...
-        bottom_labels = list(spec_list[ell_ix + 1:])   # after ...
+        top_labels = list(spec_list[:ell_ix])  # before ...
+        bottom_labels = list(spec_list[ell_ix + 1 :])  # after ...
         # safety: labels around ellipsis are strings
         top_labels = [x for x in top_labels if x is not Ellipsis]
         bottom_labels = [x for x in bottom_labels if x is not Ellipsis]
@@ -472,26 +451,26 @@ def ldict_level_keys(tree: PyTree, label: str) -> KeysView:
 
 
 # def align_levels_and_map(
-#     func, tree, *rest, is_leaf=None, 
+#     func, tree, *rest, is_leaf=None,
 # ):
 #     """
 #     Map over the nodes within the lowest `LDict` level of `tree`.
-    
-#     Before mapping, rearrange the levels of the tree(s) in `*rest` 
+
+#     Before mapping, rearrange the levels of the tree(s) in `*rest`
 #     so that they are a prefix for `tree`, for the purpose of this mapping.
-    
-#     The argument `is_leaf` can be used to terminate the mapping at a higher 
+
+#     The argument `is_leaf` can be used to terminate the mapping at a higher
 #     `LDict` level of `tree`.
-    
-#     NOTE: This assumes there are no non-LDict nodes in `tree` above the level 
-#     of the nodes to be mapped; otherwise `tree_level_labels` will return a 
-#     truncated list.  
+
+#     NOTE: This assumes there are no non-LDict nodes in `tree` above the level
+#     of the nodes to be mapped; otherwise `tree_level_labels` will return a
+#     truncated list.
 #     """
 #     level_labels = tree_level_labels(tree, is_leaf=is_leaf)
 #     other_trees = []
 #     for tree in rest:
-#         reordered = tree 
-#         # TODO: Move the levels of `tree` to the front of `reordered` 
+#         reordered = tree
+#         # TODO: Move the levels of `tree` to the front of `reordered`
 #     # TODO: Map over `tree`
 
 
@@ -517,28 +496,28 @@ def check_nan_in_pytree(tree: PyTree) -> tuple[PyTree, PyTree]:
     # Define a function that processes a single leaf (assumed to be an array)
     def process_leaf(leaf):
         # Check if the leaf is likely an array type JAX can handle
-        if not hasattr(leaf, 'dtype') or not hasattr(leaf, 'shape'):
-             # Handle non-array leaves if necessary. 
-             pass 
+        if not hasattr(leaf, "dtype") or not hasattr(leaf, "shape"):
+            # Handle non-array leaves if necessary.
+            pass
 
         is_nan_mask = jnp.isnan(leaf)
         has_nans = jnp.any(is_nan_mask)
         # jnp.where called with only the condition returns a tuple of
         # arrays representing the indices where the condition is True.
         nan_indices = _Wrapped(jnp.where(is_nan_mask))
-        return has_nans, nan_indices # Return both results as a tuple
+        return has_nans, nan_indices  # Return both results as a tuple
 
     processed_tree = jt.map(process_leaf, tree)
 
     return jt.map(
-        lambda x: x.unwrap() if isinstance(x, _Wrapped) else x, 
+        lambda x: x.unwrap() if isinstance(x, _Wrapped) else x,
         jtree.unzip(processed_tree),
     )
 
 
 def tree_map_with_keys(func, tree: PyTree, *rest, is_leaf=None, **kwargs):
     """Maps `func` over a PyTree, returning a PyTree of the results and the paths to the leaves.
-    
+
     The first argument of `func` must be the path
     """
     return jt.map(
@@ -549,21 +528,20 @@ def tree_map_with_keys(func, tree: PyTree, *rest, is_leaf=None, **kwargs):
         is_leaf=is_leaf,
         **kwargs,
     )
-    
-    
-K = TypeVar('K')
-V = TypeVar('V')
 
-LT = TypeVar('LT', bound=str) 
+
+K = TypeVar("K")
+V = TypeVar("V")
+
+LT = TypeVar("LT", bound=str)
 
 
 def tree_subset_ldict_level(tree: PyTree[LDict[K, V]], keys: Sequence[K], label: str):
-    """Maps `subdict` over LabeledDict nodes with a specific label in a PyTree.
-    """
+    """Maps `subdict` over LabeledDict nodes with a specific label in a PyTree."""
     ldicts, other = eqx.partition(tree, LDict.is_of(label), is_leaf=LDict.is_of(label))
     ldicts = [subdict(ld, keys) for ld in ldicts if ld is not None]
     return eqx.combine(ldicts, other)
-    
+
 
 def flatten_with_paths(tree, is_leaf=None):
     return jax.tree_util.tree_flatten_with_path(tree, is_leaf=is_leaf)
@@ -603,25 +581,22 @@ def hash_callable_leaves(
     leaves, treedef = jt.flatten(tree, is_leaf=is_leaf)
     return jt.unflatten(
         treedef,
-        [
-            hash_callable(leaf, ignore=ignore) if callable(leaf) else leaf
-            for leaf in leaves
-        ],
+        [hash_callable(leaf, ignore=ignore) if callable(leaf) else leaf for leaf in leaves],
     )
 
 
-def take_replicate(i, tree: PyTree[Array, 'T']) -> PyTree[Array, 'T']:
+def take_replicate(i, tree: PyTree[Array, "T"]) -> PyTree[Array, "T"]:
     """"""
-    # TODO: Wrap non-batched array leaves in a `Module`? 
+    # TODO: Wrap non-batched array leaves in a `Module`?
     # e.g. `WithoutBatches[0]` means the wrapped array is missing axis 0 relative to the "full" state;
     # for ensembled models, this is the ensemble (or model replicate) axis. So in this function, we should
     # be able to check for `WithoutBatches[0]`, given that the model is ensembled.
     # Need to partition since there are non-vmapped *arrays* in the intervenors...
     intervenors, other = eqx.partition(
-        tree, 
+        tree,
         jt.map(
-            lambda x: isinstance(x, AbstractIntervenor), 
-            tree, 
+            lambda x: isinstance(x, AbstractIntervenor),
+            tree,
             is_leaf=is_type(AbstractIntervenor),
         ),
     )
@@ -630,7 +605,7 @@ def take_replicate(i, tree: PyTree[Array, 'T']) -> PyTree[Array, 'T']:
 
 def deep_update(d1, d2):
     """Updates a dict with another, recursively.
-    
+
     ```
     deep_update(dict(a=dict(b=2, c=3)), dict(a=dict(b=4)))
     # Returns dict(a=dict(b=4, c=3)), not dict(a=dict(b=4)).
@@ -649,17 +624,18 @@ def at_path(path):
         """Navigate to `path` in `obj` and return the value there."""
         # TODO: Generalize this to use the usual key types from `jax.tree_utils`
         # We can then create a separate function to translate "simple" representations
-        # like `('step', 'feedback_channels', 0, 'noise_func', 'std')` into paths that use 
+        # like `('step', 'feedback_channels', 0, 'noise_func', 'std')` into paths that use
         # e.g. `DictKey`
         for key in path:
             if isinstance(obj, (eqx.Module, TreeNamespace)):
                 # Assume the key can be cast to the attribute name (string)
                 obj = getattr(obj, str(key))
             elif isinstance(obj, (dict, list, tuple)):
-                # Assume the key types match with the tree level types so this doesn't err 
+                # Assume the key types match with the tree level types so this doesn't err
                 obj = obj[key]
 
         return obj
+
     return at_func
 
 
@@ -694,8 +670,6 @@ def _hash_pytree(tree) -> str:
       so it stays identical across interpreter sessions.
     """
 
-
-
     md5 = hashlib.md5()
 
     # Pre-compiled regex to erase memory addresses like 0x7ffde82aaf80
@@ -705,7 +679,7 @@ def _hash_pytree(tree) -> str:
         """Convert *leaf* into a stable sequence of bytes."""
         # Arrays (JAX DeviceArray, numpy.ndarray, etc.)
         if eqx.is_array(leaf):
-            return leaf.tobytes(order='C')
+            return leaf.tobytes(order="C")
 
         # JSON primitives – cheap & deterministic
         if isinstance(leaf, (int, float, bool, str)) or leaf is None:
@@ -736,47 +710,99 @@ def _hash_pytree(tree) -> str:
 
 
 def _prefix_expand_inner(
-    tree1: PyTree, 
-    tree2: PyTree, 
-    is_leaf: Optional[Callable] = None, 
+    tree1: PyTree,
+    tree2: PyTree,
+    is_leaf: Optional[Callable] = None,
     is_leaf_prefix: Optional[Callable] = None,
 ) -> PyTree:
     """Expands a prefix of a PyTree to have the same structure as the PyTree."""
+
     def expand_leaf(leaf, subtree):
         return jt.map(lambda _: leaf, subtree, is_leaf=is_leaf)
+
     return jt.map(expand_leaf, tree1, tree2, is_leaf=is_leaf_prefix)
 
 
 def prefix_expand(
-    tree1: PyTree, 
-    tree2: PyTree, 
-    is_leaf: Optional[Callable] = None, 
+    tree1: PyTree,
+    tree2: PyTree,
+    is_leaf: Optional[Callable] = None,
     is_leaf_prefix: Optional[PyTree[Callable]] = None,
 ) -> PyTree:
     """Expands a prefix of a PyTree to have the same structure as the PyTree.
-    
+
     Handles cases where the outer structure of tree1 doesn't match tree2 by
     automatically descending through tree1 until finding nodes of the same type
     as tree2, then applying prefix expansion.
-    
+
     Args:
         tree1: PyTree to expand (source)
-        tree2: PyTree to match structure of (target)  
+        tree2: PyTree to match structure of (target)
         is_leaf: Leaf predicate for the expansion operation
         is_leaf_prefix: Leaf predicate for the prefix descent operation
-        
+
     Returns:
         tree1 expanded to match the structure of tree2
     """
     ilp_tree = _prefix_expand_inner(
-        is_leaf_prefix, tree1, is_leaf=is_type(type(tree2)), is_leaf_prefix=is_none,
+        is_leaf_prefix,
+        tree1,
+        is_leaf=is_type(type(tree2)),
+        is_leaf_prefix=is_none,
     )
     return jt.map(
         lambda prefix, ilp: _prefix_expand_inner(
-            prefix, tree2, is_leaf=is_leaf, is_leaf_prefix=ilp,
+            prefix,
+            tree2,
+            is_leaf=is_leaf,
+            is_leaf_prefix=ilp,
         ),
-        tree1, ilp_tree,
+        tree1,
+        ilp_tree,
         is_leaf=is_type(type(tree2)),
     )
 
 
+def lohi(x: Iterable, **kwargs):
+    """Returns a tuple containing the first and last values of a sequence, mapping, or other iterable."""
+    if isinstance(x, Mapping):
+        # TODO: Maybe should return first and last key-value pairs?
+        return subdict(x, tuple(lohi(tuple(x.keys()))))
+
+    elif isinstance(x, Iterator):
+        first = last = next(x)
+        for last in x:
+            pass
+
+    elif isinstance(x, Sequence):
+        first = x[0]
+        last = x[-1]
+
+    elif isinstance(x, Array):
+        return lohi(x.tolist())
+
+    else:
+        raise ValueError(f"Unsupported type: {type(x)}")
+
+    return first, last
+
+
+def lomidhi(x: Iterable):
+    if isinstance(x, dict):
+        keys: tuple = tuple(lomidhi(x.keys()))
+        return subdict(x, keys)
+
+    elif isinstance(x, Iterator):
+        x = tuple(x)
+        first, last = lohi(x)
+        mid = x[len(x) // 2]
+        return first, mid, last
+
+    elif isinstance(x, Array):
+        return lomidhi(x.tolist())
+
+    else:
+        raise ValueError(f"Unsupported type: {type(x)}")
+
+
+class DoNotHashTree: ...
