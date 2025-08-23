@@ -26,7 +26,7 @@ from jaxtyping import Array, PyTree
 from feedbax_experiments.analysis import AbstractAnalysis
 from feedbax_experiments.analysis.analysis import Data, ExpandTo, LiteralInput, _DummyAnalysis
 
-# from rlrmp.analysis.fps_tmp2 import (
+# from feedbax_experiments.analysis.fps_tmp2 import (
 #     # ReachFPs,
 #     ReachFPsInPCSpace,
 #     ReachTrajectoriesInPCSpace,

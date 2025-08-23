@@ -12,7 +12,7 @@ from feedbax.intervene import schedule_intervenor
 from jax_cookbook import is_module, is_none, is_type
 from numpy import var
 
-# from rlrmp.analysis import measures
+# from feedbax_experiments.analysis import measures
 from feedbax_experiments.analysis import AbstractAnalysis
 from feedbax_experiments.analysis.aligned import (
     ALL_MEASURES,
