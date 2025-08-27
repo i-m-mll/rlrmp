@@ -4,8 +4,6 @@ import jax.numpy as jnp
 import jax.tree as jt
 import jax_cookbook.tree as jtree
 from feedbax.intervene import add_intervenors, schedule_intervenor
-from jax_cookbook import is_module, is_type
-
 from feedbax_experiments.analysis.aligned import (
     ALL_MEASURES,
     DEFAULT_VARSET,
@@ -29,6 +27,7 @@ from feedbax_experiments.plot import (
 )
 from feedbax_experiments.tree_utils import lohi, subdict
 from feedbax_experiments.types import LDict
+from jax_cookbook import is_module, is_type
 
 COLOR_FUNCS = dict()
 
@@ -144,45 +143,48 @@ ANALYSES = {
         )
         # .with_fig_params()
     ),
-    "effector_trajectories_by_replicate": (
-        # By replicate, single eval
-        EffectorTrajectories(
-            colorscale_axis=0,
-            colorscale_key="replicate",
-        )
-        .after_indexing(0, i_eval, axis_label="eval")
-        .with_fig_params(
-            scatter_kws=dict(line_width=1),
-        )
-    ),
-    "effector_trajectories_single": (
-        # Single eval for a single replicate
-        EffectorTrajectories(
-            colorscale_axis=0,
-            colorscale_key="reach_condition",
-        )
-        .after_transform(get_best_replicate)
-        .after_indexing(0, i_eval, axis_label="eval")
-        .with_fig_params(
-            curves_mode="markers+lines",
-            ms=3,
-            scatter_kws=dict(line_width=0.75),
-            mean_scatter_kws=dict(line_width=0),
-        )
-    ),
+    # "effector_trajectories_by_replicate": (
+    #     # By replicate, single eval
+    #     EffectorTrajectories(
+    #         colorscale_axis=0,
+    #         colorscale_key="replicate",
+    #     )
+    #     .after_indexing(0, i_eval, axis_label="eval")
+    #     .with_fig_params(
+    #         scatter_kws=dict(line_width=1),
+    #     )
+    # ),
+    # "effector_trajectories_single": (
+    #     # Single eval for a single replicate
+    #     EffectorTrajectories(
+    #         colorscale_axis=0,
+    #         colorscale_key="reach_condition",
+    #     )
+    #     .after_transform(get_best_replicate)
+    #     .after_indexing(0, i_eval, axis_label="eval")
+    #     .with_fig_params(
+    #         curves_mode="markers+lines",
+    #         ms=3,
+    #         scatter_kws=dict(line_width=0.75),
+    #         mean_scatter_kws=dict(line_width=0),
+    #     )
+    # ),
     "plot--aligned_trajectories-by_pert_amp": (
         get_aligned_trajectories_node(colorscale_key="pert__amp")
         .after_transform(get_best_replicate)
         .after_getitem_at_level("task_variant", "small")
         .then_transform_figs(set_axes_bounds_equal_traj2D)
     ),
-    "aligned_trajectories_by_train_std": (
-        get_aligned_trajectories_node(colorscale_key="train__pert__std")
-        .after_transform(get_best_replicate)
+    "plot--aligned_trajectories_by_train_std": (
+        get_aligned_trajectories_node(
+            # Transform to best replicate *before* stacking `colorscale_key`
+            colorscale_key="train__pert__std",
+            pre_transform_fns=(get_best_replicate,),
+        )
         .after_getitem_at_level("task_variant", "small")
         .then_transform_figs(set_axes_bounds_equal_traj2D)
     ),
-    "profiles": (
+    "plot--profiles": (
         Profiles(varset=DEFAULT_VARSET)
         .after_transform(get_best_replicate)
         .after_level_to_bottom("train__pert__std", dependency_name="vars")

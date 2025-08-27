@@ -8,9 +8,6 @@ import jax.tree as jt
 from feedbax.intervene import schedule_intervenor
 from feedbax.xabdeef.losses import simple_reach_loss
 from feedbax.xabdeef.models import point_mass_nn
-from jax_cookbook.tree import get_ensemble
-from jaxtyping import PRNGKeyArray
-
 from feedbax_experiments.analysis.disturbance import (
     PLANT_DISTURBANCE_CLASSES,
     PLANT_INTERVENOR_LABEL,
@@ -19,23 +16,28 @@ from feedbax_experiments.constants import (
     MASS,
 )
 from feedbax_experiments.misc import vector_with_gaussian_length
-from feedbax_experiments.setup_utils import get_base_reaching_task, get_train_pairs_by_pert_std
-from feedbax_experiments.types import TaskModelPair, TreeNamespace
+from feedbax_experiments.setup_utils import get_base_reaching_task
+from feedbax_experiments.types import LDict, TaskModelPair, TreeNamespace
+from jax_cookbook.tree import get_ensemble
+from jaxtyping import PRNGKeyArray
 
-disturbance_params = lambda scale_func: {
-    "curl": dict(
-        amplitude=lambda trial_spec, batch_info, key: scale_func(
-            batch_info,
-            jr.normal(key, ()),
-        )
-    ),
-    "constant": dict(
-        field=lambda trial_spec, batch_info, key: scale_func(
-            batch_info,
-            vector_with_gaussian_length(key),
-        )
-    ),
-}
+
+def disturbance_params(scale_func):
+    """Returns a dict of disturbance parameter functions, scaled by `scale_func`."""
+    return {
+        "curl": dict(
+            amplitude=lambda trial_spec, batch_info, key: scale_func(
+                batch_info,
+                jr.normal(key, ()),
+            )
+        ),
+        "constant": dict(
+            field=lambda trial_spec, batch_info, key: scale_func(
+                batch_info,
+                vector_with_gaussian_length(key),
+            )
+        ),
+    }
 
 
 def setup_task_model_pair(hps_train: TreeNamespace, *, key):
@@ -103,14 +105,3 @@ def setup_task_model_pair(hps_train: TreeNamespace, *, key):
             default_active=False,
         )
     )
-
-
-def get_train_pairs(hps_train: TreeNamespace, key: PRNGKeyArray):
-    """Given hyperparams and a particular task-model pair setup function, return the PyTree of task-model pairs.
-
-    Here in Part 1 this is trivial since we're only training a single set of models, by training pert std.
-    """
-    task_model_pairs, all_hps_train = get_train_pairs_by_pert_std(
-        setup_task_model_pair, hps_train, key=key
-    )
-    return task_model_pairs, all_hps_train

@@ -8,10 +8,6 @@ import jax.tree as jt
 import jax_cookbook.tree as jtree
 import numpy as np
 from feedbax.intervene import add_intervenors, schedule_intervenor
-from jax_cookbook import MultiVmapAxes, is_module, is_type
-from jaxtyping import Array, Float
-from lark import Tree
-
 from feedbax_experiments.analysis import tangling
 from feedbax_experiments.analysis.aligned import (
     ALL_MEASURES,
@@ -50,6 +46,9 @@ from feedbax_experiments.types import (
     LDict,
     TreeNamespace,
 )
+from jax_cookbook import MultiVmapAxes, is_module, is_type
+from jaxtyping import Array, Float
+from lark import Tree
 
 N_PCA = 10
 PCA_START_STEP = 0
@@ -198,39 +197,39 @@ def get_state_pcs(pca_results, states):
 
 
 DEPENDENCIES = {
-    # "measures": (
-    #     ApplyFuncs(
-    #         funcs=measure_funcs,
-    #         inputs=ApplyFuncs.Ports(input=AlignedVars()),
-    #         is_leaf=LDict.is_of(VAR_LEVEL_LABEL),
-    #     )
-    #     # Discard the varset; only keep the aligned vars
-    #     .after_transform(lambda results: results['full'], dependency_names="input")
-    # ),
-    # "hidden_states_pca": (
-    #     StatesPCA(
-    #         n_components=N_PCA,
-    #         where_states=lambda states: states.net.hidden,
-    #         aggregate_over_labels=('pert__amp', 'sisu')
-    #     )
-    #     .after_transform(get_best_replicate)
-    #     .after_transform(lambda x: x['full'])
-    #     .after_indexing(-2, np.arange(PCA_START_STEP, PCA_END_STEP), axis_label="timestep")
-    # ),
-    # "tangling": (
-    #     Tangling(
-    #         variant="small",
-    #         inputs=Tangling.Ports(
-    #             state=Data.states(where=lambda states: states.net.hidden),
-    #         ),
-    #     )
-    #     .after_transform(get_best_replicate)
-    #     .after_transform(
-    #         # Pull in the PCA results and use them to transform the hidden states
-    #         CallWithDeps("hidden_states_pca")(get_state_pcs),
-    #         dependency_names="state",
-    #     )
-    # ),
+    "measures": (
+        ApplyFuncs(
+            funcs=measure_funcs,
+            inputs=ApplyFuncs.Ports(input=AlignedVars()),
+            is_leaf=LDict.is_of(VAR_LEVEL_LABEL),
+        )
+        # Discard the varset; only keep the aligned vars
+        .after_transform(lambda results: results["full"], dependency_names="input")
+    ),
+    "hidden_states_pca": (
+        StatesPCA(
+            n_components=N_PCA,
+            where_states=lambda states: states.net.hidden,
+            aggregate_over_labels=("pert__amp", "sisu"),
+        )
+        .after_transform(get_best_replicate)
+        .after_transform(lambda x: x["full"])
+        .after_indexing(-2, np.arange(PCA_START_STEP, PCA_END_STEP), axis_label="timestep")
+    ),
+    "tangling": (
+        Tangling(
+            variant="small",
+            inputs=Tangling.Ports(
+                state=Data.states(where=lambda states: states.net.hidden),
+            ),
+        )
+        .after_transform(get_best_replicate)
+        .after_transform(
+            # Pull in the PCA results and use them to transform the hidden states
+            CallWithDeps("hidden_states_pca")(get_state_pcs),
+            dependency_names="state",
+        )
+    ),
     # **{  # "jacobians" and "hessians"
     #     cls.__name__.lower(): (
     #         cls(
@@ -256,14 +255,6 @@ DEPENDENCIES = {
     #     )
     #     for cls in (Jacobians, Hessians)
     # },
-    # "effector_trajectories_by_condition": (
-    #     # By condition, all evals for the best replicate only
-    #     EffectorTrajectories(
-    #         colorscale_axis=1,
-    #         colorscale_key="reach_condition",
-    #     )
-    #     .after_transform(get_best_replicate)  # By default has `axis=1` for replicates
-    # ),
 }
 
 
@@ -367,12 +358,20 @@ ANALYSES = {
     #     })
     #     .estimate_memory()
     # ),
-    # "plot--tangling-by_train_std": tangling_violins.after_rearrange_levels(
-    #     [..., 'sisu', 'pert__amp'], dependency_name="input"
+    # "effector_trajectories_by_condition": (
+    #     # By condition, all evals for the best replicate only
+    #     EffectorTrajectories(
+    #         colorscale_axis=1,
+    #         colorscale_key="reach_condition",
+    #     )
+    #     .after_transform(get_best_replicate)  # By default has `axis=1` for replicates
     # ),
-    # "plot--tangling-by_pert_amp": tangling_violins.after_rearrange_levels(
-    #     [..., 'sisu', 'train__pert__std'], dependency_name="input"
-    # ),
+    "plot--tangling-by_train_std": tangling_violins.after_rearrange_levels(
+        [..., "sisu", "pert__amp"], dependency_name="input"
+    ),
+    "plot--tangling-by_pert_amp": tangling_violins.after_rearrange_levels(
+        [..., "sisu", "train__pert__std"], dependency_name="input"
+    ),
     "plot--aligned_trajectories-by_sisu": (
         get_aligned_trajectories_node(colorscale_key="sisu")
         .after_getitem_at_level("task_variant", "small")
@@ -385,17 +384,17 @@ ANALYSES = {
         .map_figs_at_level("sisu", dependency_name="input")
         .then_transform_figs(set_axes_bounds_equal_traj2D)
     ),
-    # "plot--profiles-by_train_std": (
-    #     Profiles(varset=DEFAULT_VARSET)
-    #     .after_transform(get_best_replicate)
-    #     .after_level_to_bottom('train__pert__std', dependency_name="vars")
-    # ),
-    # "plot--profiles-by_sisu": (
-    #     Profiles(varset=DEFAULT_VARSET)
-    #     .after_transform(get_best_replicate)
-    #     .after_level_to_bottom('sisu', dependency_name="vars")
-    # ),
-    # "plot--measures-by_pert_amp": measure_violins("sisu", "train__pert__std"),
-    # "plot--measures-by_train_std": measure_violins("sisu", "pert__amp"),
-    # "plot--measures-train_std_by_pert_amp": measure_violins("train__pert__std", "sisu"),
+    "plot--profiles-by_train_std": (
+        Profiles(varset=DEFAULT_VARSET)
+        .after_transform(get_best_replicate)
+        .after_level_to_bottom("train__pert__std", dependency_name="vars")
+    ),
+    "plot--profiles-by_sisu": (
+        Profiles(varset=DEFAULT_VARSET)
+        .after_transform(get_best_replicate)
+        .after_level_to_bottom("sisu", dependency_name="vars")
+    ),
+    "plot--measures-by_pert_amp": measure_violins("sisu", "train__pert__std"),
+    "plot--measures-by_train_std": measure_violins("sisu", "pert__amp"),
+    "plot--measures-train_std_by_pert_amp": measure_violins("train__pert__std", "sisu"),
 }

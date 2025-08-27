@@ -1,85 +1,67 @@
-part1:
-  product:  # take the cartesian product of the following sets of runs
-    - name: noise_levels
+# reusable definitions (ignored by parser)
+defs:
+  noise_levels: &noise_levels
+    type: config
+    name: noise_levels
+    of:
       model:
         feedback_noise_std: [0.01, 0.1]
-        motor_noise_std: [0.01, 0.1]
-      # labels: ["low_noise", "high_noise"]
-    - name: feedback_delays
+        motor_noise_std:    [0.01, 0.1]
+
+  feedback_delays: &feedback_delays
+    type: config
+    name: feedback_delays
+    of:
       model:
         feedback_delay_steps: [0, 5]
-    - name: damping 
+
+  damping: &damping
+    type: config
+    name: damping
+    of:
       model:
         damping: [0, 10]
-    - name: disturbance_types
-      cases:  # run these separately
-        - name: curl
+
+  tau_rise: &tau_rise
+    type: config
+    name: tau_rise
+    of:
+      model:
+        tau_rise: [0, 0.05]
+
+  disturbance_types: &disturbance_types
+    type: cases
+    name: disturbance_types
+    of:
+      - type: config
+        name: curl
+        of:
           pert:
             type: curl
-            std: 
-              value: [0.0, 0.5, 1.0, 1.5]
-        - name: constant
+            std: [0.0, 0.5, 1.0, 1.5]
+      - type: config
+        name: constant
+        of:
           pert:
             type: constant
-            std: 
-              value: [0, 0.01, 0.1, 1]
+            std: [0, 0.01, 0.1, 1]
 
-#! TODO: hidden_size, 
+# actual per-module specs
+SPEC:
+  - part1:
+      type: product
+      of:
+        - *noise_levels
+        - *feedback_delays
+        - *damping
+        - *tau_rise
+        - *disturbance_types
 
-part2:
-  product:  
-    - name: noise_levels
-      model:
-        feedback_noise_std: [0.01, 0.1]
-        motor_noise_std: [0.01, 0.1]
-      # labels: ["low_noise", "high_noise"]
-    - name: feedback_delays
-      model:
-        feedback_delay_steps: [0, 5]
-    - name: damping 
-      model:
-        damping: [0, 10]
-    - name: disturbance_types
-      cases: 
-        - name: curl
-          pert:
-            type: curl
-            std: 
-              value: [0.0, 0.5, 1.0, 1.5]
-        - name: constant
-          pert:
-            type: constant
-            std: 
-              value: [0, 0.01, 0.1, 1]
-
-
-part2:
-  product:  
-    - params: 
-        model:
-          feedback_noise_std: [0.01, 0.1]
-          motor_noise_std: [0.01, 0.1]
-    - params: 
-        model:
-          feedback_delay_steps: [0, 5, 10]
-    - cases:
-        - params: ...
-
-part2:
-  type: product 
-  of: 
-    - type: params
-      name: noise_levels
-      of:  
-        model:
-          feedback_noise_std: [0.01, 0.1]
-          motor_noise_std: [0.01, 0.1]
-    - type: params
-      of:  
-        model:
-          feedback_delay_steps: [0, 5, 10]
-    - type: cases
-      name: some_label
-      of: 
-        - type: params
-          of: ...
+  - part2:
+      type: product
+      of:
+        - *noise_levels
+        - *feedback_delays
+        - *damping
+        - *tau_rise
+        - *disturbance_types

@@ -9,11 +9,11 @@
     // },
     "configurations": [
         {
-            "name": "Debug: run_analysis (batched)",
+            "name": "Debug: run analysis (batched)",
             "type": "debugpy",
             "request": "launch",
-            "module": "feedbax_experiments.bin.run_analysis",
-            "args": ["--batched", "${command:pickArgs}"],
+            "module": "feedbax_experiments.bin.run",
+            "args": ["analysis", "--batched", "${command:pickArgs}"],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
             "justMyCode": false,
@@ -22,11 +22,11 @@
             }
         },
             {
-            "name": "Debug: run_analysis (single)",
+            "name": "Debug: run analysis (single)",
             "type": "debugpy",
             "request": "launch",
-            "module": "feedbax_experiments.bin.run_analysis",
-            "args": ["--single", "${command:pickArgs}"],
+            "module": "feedbax_experiments.bin.run",
+            "args": ["analysis", "--single", "${command:pickArgs}"],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
             "justMyCode": false,
@@ -35,10 +35,36 @@
             }
         },
         {
-            "name": "Debug: run_analysis (with args)",
+            "name": "Debug: run train (batched)",
             "type": "debugpy",
             "request": "launch",
-            "module": "feedbax_experiments.bin.run_analysis",
+            "module": "feedbax_experiments.bin.run",
+            "args": ["train", "--batched", "${command:pickArgs}"],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "justMyCode": false,
+            "env": {
+                "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2"
+            }
+        },
+            {
+            "name": "Debug: run train (single)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "feedbax_experiments.bin.run",
+            "args": ["train", "--single", "${command:pickArgs}"],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "justMyCode": false,
+            "env": {
+                "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2"
+            }
+        },
+        {
+            "name": "Debug: run (with args)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "feedbax_experiments.bin.run",
             "args": ["${command:pickArgs}"],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
@@ -46,19 +72,6 @@
             "env": {
                 "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2"
             }
-        },
-        {
-            "name": "Debug: run_analysis (SVG only)",
-            "type": "debugpy",
-            "request": "launch",
-            "module": "feedbax_experiments.bin.run_analysis",
-            "args": ["${command:pickArgs}", "--fig-dump-formats", "svg"],
-            "console": "integratedTerminal",
-            "cwd": "${workspaceFolder}",
-            "justMyCode": false,
-            "env": {
-                "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2"
-        }
         },
         {
             "name": "Python Debugger: Current File with Arguments",

@@ -1,4 +1,4 @@
-method: ['pai-asf']  # , 'bcs']
+method: 'pai-asf'
 
 
   
