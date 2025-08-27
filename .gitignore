@@ -3,6 +3,9 @@ COMMIT_MSG.txt
 COMMIT_MSG_STASH.txt
 PROMPT.txt 
 
+# Local config 
+local_base_path.yml
+
 # LLM stuff
 .serena
 .specstory

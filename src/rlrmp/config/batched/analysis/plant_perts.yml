@@ -1,0 +1,74 @@
+get_alidefs:
+  noise_levels: &noise_levels
+    type: config
+    name: noise_levels
+    of:
+      train:
+        model:
+          feedback_noise_std: [0.01, 0.1]
+          motor_noise_std:    [0.01, 0.1]
+      model:
+        feedback_noise_std: [0.01, 0.1]
+        motor_noise_std:    [0.01, 0.1]
+
+  delays: &delays
+    type: config
+    name: delays
+    of:
+      train.model.feedback_delay_steps: [0, 5]
+
+  damping: &damping
+    type: config
+    name: damping
+    of:
+      train.model.damping: 10 #[0.05, 10]
+
+  curl-curl: &curl-curl
+    type: config
+    name: curl-curl
+    of:
+      train:
+        pert:
+          type: curl
+          std: !Literal [0.0, 0.5, 1.0, 1.5]
+      pert:
+        type: curl
+        amp: !Literal [0.0, 4.0, 8.0, 16.0]
+
+  constant-constant: &constant-constant
+    type: config
+    name: constant-constant
+    of:
+      train:
+        pert:
+          type: constant
+          std: !Literal [0, 0.01, 0.1, 1]
+      pert:
+        type: constant
+        amp: !Literal [0, 0.4, 0.8, 1.6]
+
+
+SPEC: 
+  - part1.plant_perts:
+      type: product
+      of: 
+        - *noise_levels
+        - *delays
+        - *damping
+        - type: cases
+          name: disturbance_types
+          of:
+            - *curl-curl
+            - *constant-constant
+
+  # - part2.plant_perts:
+  #     type: product
+  #     of: 
+  #       - *noise_levels
+  #       - *delays
+  #       - *damping
+  #       - type: cases
+  #         name: disturbance_types
+  #         of:
+  #           - *curl-curl
+  #           - *constant-constant

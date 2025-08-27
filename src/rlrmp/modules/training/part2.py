@@ -10,8 +10,6 @@ import jax.random as jr
 import jax_cookbook.tree as jtree
 from feedbax.intervene import schedule_intervenor
 from feedbax.xabdeef.models import point_mass_nn
-from jaxtyping import PRNGKeyArray
-
 from feedbax_experiments.analysis.disturbance import (
     PLANT_DISTURBANCE_CLASSES,
     PLANT_INTERVENOR_LABEL,
@@ -20,8 +18,9 @@ from feedbax_experiments.constants import (
     MASS,
 )
 from feedbax_experiments.misc import get_field_amplitude, vector_with_gaussian_length
-from feedbax_experiments.setup_utils import get_base_reaching_task, get_train_pairs_by_pert_std
+from feedbax_experiments.setup_utils import get_base_reaching_task
 from feedbax_experiments.types import LDict, TaskModelPair, TreeNamespace
+from jaxtyping import PRNGKeyArray
 
 TrainingMethodLabel: TypeAlias = L["bcs", "dai", "pai-asf", "pai-n"]
 
@@ -194,25 +193,3 @@ def setup_task_model_pair(
             default_active=False,
         )
     )
-
-
-def get_train_pairs(hps_train: TreeNamespace, key: PRNGKeyArray):
-    """Given hyperparams and a particular task-model pair setup function, return the PyTree of task-model pairs."""
-
-    get_train_pairs_partial = partial(
-        get_train_pairs_by_pert_std,
-        setup_task_model_pair,
-        key=key,  # Use the same PRNG key for all training methods
-    )
-
-    task_model_pairs, all_hps_train = jtree.unzip(
-        LDict.of("method")(
-            {
-                method_label: get_train_pairs_partial(hps_train | dict(method=method_label))
-                #! Assume `hps_train.method` is a list of training method labels
-                for method_label in hps_train.method
-            }
-        )
-    )
-
-    return task_model_pairs, all_hps_train
