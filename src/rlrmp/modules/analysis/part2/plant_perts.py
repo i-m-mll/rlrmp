@@ -238,7 +238,7 @@ DEPENDENCIES = {
     #                 func_args=(rnn_inputs, rnn_states),
     #             ),
     #         )
-    #         .after_transform_inputs(partial(getitem_at_level, "task_variant", "small"))
+    #         .after_getitem_at_level("task_variant", "small")
     #         .after_subdict_at_level("sisu", [-3, 0, 1, 3])
     #         .after_subdict_at_level("train__pert__std", [0, 1.5])
     #         .after_indexing(
