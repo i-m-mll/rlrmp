@@ -42,7 +42,7 @@ unfixable = ["F401"]
 
 [tool.ruff.lint.per-file-ignores]
 # Scripts often need to run things before importing more things
-"scripts/*.py" = ["E402"] 
+"src/feedbax_experiments/bin/*.py" = ["E402"] 
 
 [tool.ruff.format]
 indent-style = "space"

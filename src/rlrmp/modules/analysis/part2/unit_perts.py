@@ -1,5 +1,4 @@
 from ast import In
-from collections.abc import Callable, Mapping
 from functools import partial
 from types import MappingProxyType
 from typing import Any, Dict, Optional, Sequence
@@ -14,7 +13,7 @@ import jax.tree as jt
 import jax_cookbook.tree as jtree
 import numpy as np
 import plotly.graph_objects as go
-from equinox import Module, field
+from equinox import Module
 from feedbax.intervene import (
     NetworkConstantInput,
     TimeSeriesParam,
@@ -22,9 +21,6 @@ from feedbax.intervene import (
     schedule_intervenor,
 )
 from feedbax.task import AbstractTask
-from jax_cookbook import MultiVmapAxes, is_module, is_none, is_type
-from jaxtyping import ArrayLike, PRNGKeyArray, PyTree
-
 from feedbax_experiments.analysis.aligned import (
     DEFAULT_VARSET,
     VAR_LEVEL_LABEL,
@@ -37,8 +33,6 @@ from feedbax_experiments.analysis.analysis import (
     Data,
     FigIterCtx,
     InputOf,
-    NoPorts,
-    SinglePort,
 )
 from feedbax_experiments.analysis.disturbance import (
     PLANT_INTERVENOR_LABEL,
@@ -46,9 +40,10 @@ from feedbax_experiments.analysis.disturbance import (
     get_pert_amp_vmap_eval_func,
 )
 from feedbax_experiments.analysis.effector import EffectorTrajectories
+from feedbax_experiments.analysis.grad import Jacobians
 from feedbax_experiments.analysis.network import UnitPreferences
 from feedbax_experiments.analysis.profiles import Profiles
-from feedbax_experiments.analysis.regression import Regression
+from feedbax_experiments.analysis.regression import Regression, RegressionResults
 from feedbax_experiments.analysis.state_utils import (
     get_best_replicate,
     get_constant_task_input_fn,
@@ -56,13 +51,12 @@ from feedbax_experiments.analysis.state_utils import (
     get_symmetric_accel_decel_epochs,
     vmap_eval_ensemble,
 )
+from feedbax_experiments.analysis.violins import Violins
 from feedbax_experiments.colors import ColorscaleSpec
 from feedbax_experiments.config import PLOTLY_CONFIG
 from feedbax_experiments.constants import POS_ENDPOINTS_ALIGNED
-from feedbax_experiments.misc import unit_circle_points
 from feedbax_experiments.plot import add_endpoint_traces, get_violins, set_axes_bounds_equal
 from feedbax_experiments.tree_utils import (
-    first,
     ldict_level_keys,
     move_ldict_level_above,
     subdict,
@@ -74,6 +68,10 @@ from feedbax_experiments.types import (
     TreeNamespace,
     VarSpec,
 )
+from jax_cookbook import MultiVmapAxes, is_module, is_none, is_type
+from jaxtyping import ArrayLike, PRNGKeyArray, PyTree
+
+from rlrmp.fb_response import InstantFBResponse
 
 COLOR_FUNCS = dict(
     sisu=ColorscaleSpec(
@@ -277,16 +275,6 @@ def get_impulse_vrect_kws(hps):
     )
 
 
-# def move_var_above_train_pert_std(tree, **kwargs):
-#     return move_ldict_level_above('var', 'train__pert__std', tree)
-
-
-def rearrange_profile_vars(tree, **kwargs):
-    tree = move_ldict_level_above("train__pert__std", "pert__amp", tree)
-    tree = move_ldict_level_above("var", "pert__amp", tree)
-    return tree
-
-
 unit_idxs_profiles_plot = jnp.array([2, 83, 95, 97, 43, 48])  # jnp.arange(8)
 
 
@@ -313,14 +301,14 @@ def segment_stim_epochs(states, *, hps_common, **kwargs):
     )
 
 
-def transform_profile_vars(states_by_var, **kwargs):
+def transform_profile_vars(states_by_var, keepdims=True, **kwargs):
     return LDict.of("var")(
         dict(
-            deviation=jnp.linalg.norm(states_by_var["pos"], axis=-1, keepdims=True),
+            deviation=jnp.linalg.norm(states_by_var["pos"], axis=-1, keepdims=keepdims),
             angle=jnp.arctan2(states_by_var["pos"][..., 1], states_by_var["pos"][..., 0])[
                 ..., None
             ],
-            speed=jnp.linalg.norm(states_by_var["vel"], axis=-1, keepdims=True),
+            speed=jnp.linalg.norm(states_by_var["vel"], axis=-1, keepdims=keepdims),
         )
     )
 
@@ -332,10 +320,23 @@ def max_deviation_after_stim(states_by_var, *, hps_common, **kwargs):
     return jnp.max(deviation[..., ts], axis=-1)
 
 
+def get_response_vars(states_by_var, *, hps_common):
+    vars = transform_profile_vars(states_by_var, keepdims=False)
+    pert_end = hps_common.pert.unit.start_step + hps_common.pert.unit.duration
+    ts = jnp.arange(pert_end, hps_common.model.n_steps)
+    return LDict.of("response_var")(
+        dict(
+            max_deviation=jnp.max(vars["deviation"][..., ts], axis=-1),
+            max_speed=jnp.max(vars["speed"][..., ts], axis=-1),
+            angle=vars["angle"],
+        )
+    )
+
+
 class UnitStimRegressionFiguresPorts(AbstractAnalysisPorts):
     """Input ports for UnitStimRegressionFigures analysis."""
 
-    regression_results: Optional[InputOf[Any]] = None
+    regression_results: Optional[InputOf[RegressionResults]] = None
     unit_fb_gains: Optional[InputOf[Any]] = None
 
 
@@ -426,58 +427,17 @@ class UnitStimRegressionFigures(AbstractAnalysis[UnitStimRegressionFiguresPorts]
         return LDict.of("comparison")(figs)
 
 
-class InstantFBResponsePorts(AbstractAnalysisPorts):
-    rnn_cells: InputOf[Callable] = Data.models(where=lambda m: m.step.net.hidden)
-
-
-class InstantFBResponse(AbstractAnalysis[InstantFBResponsePorts]):
-    """Plot the instantaneous feedback response of the network."""
-
-    Ports = InstantFBResponsePorts
-    inputs: InstantFBResponsePorts = eqx.field(default_factory=Ports, converter=Ports.converter)
-
-    n_directions: int = 24
-    # n_samples: int = 1000
-    fb_pert_amp: PyTree[float] = 0.5
-    input_idxs: PyTree[slice | ArrayLike] = field(
-        default_factory=lambda: LDict.of("fb_var")(
-            pos=slice(5, 7),
-            vel=slice(7, 9),
-        )
-    )
-
-    def compute(self, data, *, rnn_cells, hps_common, **kwargs):
-        fb_perts = self.fb_pert_amp * unit_circle_points(self.n_directions)
-        pert_step = hps_common.pert.unit.start_step
-
-        def _compute_single(rnn_cell, states):
-            base_net_state = first(states, is_leaf=is_module).net
-            # TODO: Repeat computation independently over multiple steady-state steps, and average.
-            init_state = base_net_state.hidden[..., pert_step - 1, :]
-            base_input = base_net_state.input[..., pert_step, :]
-
-            def _single_pert(fb_pert):
-                def _per_input(idxs):
-                    perturbed_input = base_input.at[..., idxs].add(fb_pert)
-                    return rnn_cell(perturbed_input, init_state) - init_state
-
-                return jt.map(_per_input, self.input_idxs)
-
-            return eqx.filter_vmap(_single_pert)(fb_perts)
-
-        return jt.map(
-            _compute_single,
-            rnn_cells,
-            data.states,
-            is_leaf=is_module,
-        )
-
-
 VARSET = subdict(DEFAULT_VARSET, ("pos", "vel"))
 
 
 def aggregate_unit_gains(fb_gains):
     return fb_gains
+
+
+rnn_funcs = Data.models(where=lambda model: model.step.net.hidden)
+# these have batch shape (evals, replicates, reach conditions, time)
+rnn_inputs = Data.states(where=lambda states: states.net.input)
+rnn_states = Data.states(where=lambda states: states.net.hidden)
 
 
 DEPENDENCIES = {
@@ -486,21 +446,45 @@ DEPENDENCIES = {
         # Bypass alignment; keep aligned with x-y axes
         directions_func=get_trivial_reach_directions,
     ),
-    "unit_fb_gains": (
-        InstantFBResponse(
-            n_directions=24,
-            fb_pert_amp=0.5,
+    "unit_stim_regression": (
+        Regression(
+            variant="full",
+            inputs=Regression.Ports(
+                regressor_tree="aligned_vars_trivial",
+            ),
         )
-        # There's only one reach condition atm
-        .after_indexing(-3, 0, axis_label="condition", dependency_name="data.states")
-        # Computation based on steady-state period; stim vars not relevant.
-        .after_indexing(1, 0, axis_label="stim_unit_idx", dependency_name="data.states")
-        .after_indexing(0, 0, axis_label="stim_amp", dependency_name="data.states")
-        .vmap(
-            in_axes={"rnn_cells": MultiVmapAxes(0, None), "data.states": MultiVmapAxes(1, 2)}
-        )  # replicates
-        .then_transform_result(aggregate_unit_gains)
+        .after_transform(partial(get_best_replicate, axis=3))
+        .after_getitem_at_level("task_variant", "full")
+        #! Only compute regression for stim condition
+        .after_indexing(0, 1, axis_label="stim_amp")
+        #! Compute the response variables of interest
+        .after_transform(get_response_vars, level="var", dependency_names="regressor_tree")  #
+        .after_rearrange_levels(
+            ["response_var", "train__pert__std", "sisu", "pert__amp"],
+            dependency_name="regressor_tree",
+        )
+        #! Compute distinct regressions for each response variable, and for each train std
+        .map_compute(is_leaf=LDict.is_of("sisu"), dependency_names="regressor_tree")
+        # e.g. positions to deviations
+        # .after_transform(max_deviation_after_stim, level="var", dependency_names="regressor_tree")
+        #! Compute distinct regressions (in parallel) over stim units
+        .vmap(in_axes={"regressor_tree": 0})
     ),
+    # "unit_fb_gains": (
+    #     InstantFBResponse(
+    #         n_directions=24,
+    #         fb_pert_amp=0.5,
+    #     )
+    #     # There's only one reach condition atm
+    #     .after_indexing(-3, 0, axis_label="condition", dependency_name="data.states")
+    #     # Computation based on steady-state period; stim vars not relevant.
+    #     .after_indexing(1, 0, axis_label="stim_unit_idx", dependency_name="data.states")
+    #     .after_indexing(0, 0, axis_label="stim_amp", dependency_name="data.states")
+    #     .vmap(
+    #         in_axes={"rnn_cells": MultiVmapAxes(0, None), "data.states": MultiVmapAxes(0, 0)}
+    #     )  # replicates
+    #     .then_transform_result(aggregate_unit_gains)
+    # ),
 }
 
 
@@ -517,7 +501,44 @@ def dashed_fig_params_fn(fig_params, ctx: FigIterCtx):
 # PyTree structure: [sisu, pert__amp, train__pert__std]
 # Array batch shape: [stim_amp, stim_unit_idx, eval, replicate, condition]
 ANALYSES = {
-    "unit_stim_profiles": (
+    "jacobians-ss": (
+        Jacobians(
+            inputs=Jacobians.Ports(
+                funcs=rnn_funcs,
+                func_args=(rnn_inputs, rnn_states),
+            ),
+            argnums=0,  # with respect to inputs only
+        )
+        .after_getitem_at_level("task_variant", "full")
+        # There's only one reach condition atm
+        .after_indexing(-3, 0, axis_label="condition", dependency_name="func_args")
+        # Computation based on steady-state period; stim vars not relevant.
+        .after_indexing(1, 0, axis_label="stim_unit_idx", dependency_name="func_args")
+        .after_indexing(0, 0, axis_label="stim_amp", dependency_name="func_args")
+        #! Shape is now: (evals, replicates, time, input/state)
+        # We'll average the Jacobian over several steady-state timesteps
+        .after_indexing(
+            -2,
+            #! For now, hardcode the steps. But should base on `hps`, generally.
+            lambda shape: jnp.arange(19, 29),
+            axis_label="timestep",
+            dependency_name="func_args",
+        )
+        .vmap(
+            in_axes={
+                "funcs": MultiVmapAxes(None, 0, None),
+                "func_args": MultiVmapAxes(0, 1, 2),
+            }
+        )
+        .then_transform_result(
+            func=lambda tree: jt.map(
+                lambda arr: jnp.mean(arr, axis=-2),
+                tree,  # mean over time
+            )
+        )
+        # .estimate_memory()
+    ),
+    "plot--unit_stim_profiles": (
         Profiles(
             variant="full",
             vrect_kws_func=get_impulse_vrect_kws,
@@ -527,18 +548,19 @@ ANALYSES = {
             ),
         )
         .after_transform(partial(get_best_replicate, axis=3))
-        .after_indexing(
-            1, unit_idxs_profiles_plot, axis_label="unit_stim_idx"
-        )  #! Only make figures for a few stim units
+        #! Only make figures for a few stim units
+        .after_indexing(1, unit_idxs_profiles_plot, axis_label="unit_stim_idx")
         .after_transform(
             transform_profile_vars, level="var", dependency_names="vars"
         )  # e.g. positions to deviations
         .after_unstacking(1, "unit_stim_idx", above_level="pert__amp", dependency_name="vars")
-        # .after_indexing(0, 1, axis_label="stim_amp")  #! Only make figures for unit stim condition
+        #! Only make figures for unit stim condition
+        # .after_indexing(0, 1, axis_label="stim_amp")
         .after_unstacking(0, "stim_amp", above_level="pert__amp", dependency_name="vars")
-        .after_transform(
-            rearrange_profile_vars, dependency_names="vars"
-        )  # Plot pert amp. on same figure
+        # Plot pert amp. on same figure
+        .after_rearrange_levels(
+            [..., "train__pert__std", "var", "pert__amp"], dependency_name="vars"
+        )
         .combine_figs_by_level(  # Also plot SISU on same figure, with different line styles
             level="sisu",
             fig_params_fn=dashed_fig_params_fn,
@@ -550,26 +572,29 @@ ANALYSES = {
             ),
         )
     ),
-    # "unit_stim_regression": (
-    #     Regression(
-    #         variant="full",
-    #         inputs=Regression.Ports(
-    #             regressor_tree="aligned_vars_trivial",
+    # "plot--unit-agg-fb-gains": (
+    #     Violins(
+    #         inputs=Violins.Ports(
+    #             input="unit_fb_gains",
     #         ),
     #     )
-    #     .after_transform(partial(get_best_replicate, axis=3))
-    #     .after_indexing(0, 1, axis_label="stim_amp")  #! Only do regression for stim condition
-    #     .after_transform(lambda subtree, **kwargs: subtree[1.5], level="train__pert__std")  #! Only for trained on perturbations
-    #     # .after_transform(transform_profile_vars, level='var', dependency_name="regressor_tree")  #
-    #     # e.g. positions to deviations
-    #     .after_transform(max_deviation_after_stim, level="var", dependency_names="regressor_tree")
-    #     .vmap(in_axes={"regressor_tree": 0})
+    #     .after_transform(get_best_replicate)
+    #     .after_rearrange_levels([..., "sisu", "train__pert__std"], dependency_name="input")
     # ),
-    # "unit_stim_regression_figures": UnitStimRegressionFigures(
-    #     inputs=UnitStimRegressionFigures.Ports(
-    #         regression_results="unit_stim_regression",
-    #     ),
-    # ),
+    "unit_stim_regression_figures": (
+        UnitStimRegressionFigures(
+            inputs=UnitStimRegressionFigures.Ports(
+                regression_results="unit_stim_regression",
+                unit_fb_gains="unit_fb_gains",
+            ),
+        )
+        .after_getitem_at_level("task_variant", "full", dependency_name="unit_fb_gains")
+        .map_make_figs_to_output(
+            ["response_var", "fb_var", "train__pert__std"],
+            dependency_names=["regression_results", "unit_fb_gains"],
+            is_leaf=is_type(RegressionResults),
+        )
+    ),
     #! TODO: Replace with `get_aligned_trajectories_node`
     # "aligned_effector_trajectories": (
     #     AlignedEffectorTrajectories(
