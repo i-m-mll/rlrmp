@@ -1,4 +1,3 @@
-from collections import namedtuple
 from collections.abc import Callable
 from functools import partial
 
@@ -47,8 +46,12 @@ from feedbax_experiments.types import (
     TreeNamespace,
 )
 from jax_cookbook import MultiVmapAxes, is_module, is_type
+from jax_cookbook.misc import split_by
 from jaxtyping import Array, Float
 from lark import Tree
+
+from rlrmp.constants import RNN_INPUT_CHANNEL_SIZES
+from rlrmp.types import RNNInputChannels
 
 N_PCA = 10
 PCA_START_STEP = 0
@@ -232,12 +235,12 @@ DEPENDENCIES = {
     ),
     # **{  # "jacobians" and "hessians"
     #     cls.__name__.lower(): (
-    #         cls(
-    #             inputs=cls.Ports(
-    #                 funcs=rnn_funcs,
-    #                 func_args=(rnn_inputs, rnn_states),
-    #             ),
-    #         )
+    # cls(
+    #     inputs=cls.Ports(
+    #         funcs=rnn_funcs,
+    #         func_args=(rnn_inputs, rnn_states),
+    #     ),
+    # )
     #         .after_getitem_at_level("task_variant", "small")
     #         .after_subdict_at_level("sisu", [-3, 0, 1, 3])
     #         .after_subdict_at_level("train__pert__std", [0, 1.5])
@@ -274,24 +277,13 @@ tangling_violins = (
 )
 
 
-GradArgs = namedtuple("GradArgs", ["input", "state"])
-
-
-RNN_INPUT_CHANNELS = dict(sisu=1, goal_pos=2, goal_vel=2, fb_pos=2, fb_vel=2)
-RNNInputs = namedtuple("RNNInputs", RNN_INPUT_CHANNELS.keys())
-
-
-def split_by(x, sizes, axis=0):
-    return jnp.split(x, np.cumsum(list(sizes))[:-1], axis=axis)
-
-
 def jac_u_reducer(jac_u: Array):
     """Compute desired functions of the input Jacobian."""
     # It might be necessary to perform this analysis separately for different components of the
     # input; e.g. position and velocity do not have comparable units/scaling, so one of them
     # may dominate any computed norms. Instead, we should compare them individually across
     # conditions.
-    split_jac = RNNInputs(*split_by(jac_u, RNN_INPUT_CHANNELS.values()))
+    split_jac = RNNInputChannels(*split_by(jac_u, RNN_INPUT_CHANNEL_SIZES))
 
     def _get_measures(jac_part):
         part_svd = svd(jac_part)

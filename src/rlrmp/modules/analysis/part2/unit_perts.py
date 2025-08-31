@@ -1,4 +1,5 @@
 from ast import In
+from collections.abc import Mapping
 from functools import partial
 from types import MappingProxyType
 from typing import Any, Dict, Optional, Sequence
@@ -69,9 +70,13 @@ from feedbax_experiments.types import (
     VarSpec,
 )
 from jax_cookbook import MultiVmapAxes, is_module, is_none, is_type
-from jaxtyping import ArrayLike, PRNGKeyArray, PyTree
+from jax_cookbook.misc import deep_merge, split_by
+from jaxtyping import Array, ArrayLike, PRNGKeyArray, PyTree
 
+from rlrmp.constants import RNN_INPUT_CHANNEL_SIZES
 from rlrmp.fb_response import InstantFBResponse
+from rlrmp.misc import split_rnn_input_channels
+from rlrmp.types import RNNCellArgs, RNNInputChannels
 
 COLOR_FUNCS = dict(
     sisu=ColorscaleSpec(
@@ -93,13 +98,16 @@ UNIT_STIM_INTERVENOR_LABEL = "UnitStim"
 
 SCALE_UNIT_STIM_BY_READOUT_VECTOR_LENGTH = False
 
-# UNIT_STIM_IDX = 1
-
 PLANT_PERT_LABELS = {0: "no curl", 1: "curl"}
 PLANT_PERT_STYLES = dict(line_dash={0: "dot", 1: "solid"})
 
 SISU_LABELS = {0: -2, 1: 0, 2: 2}
 SISU_STYLES = dict(line_dash={0: "dot", 1: "dash", 2: "solid"})
+
+aligned_varset = subdict(DEFAULT_VARSET, ("pos", "vel"))
+
+
+unit_idxs_profiles_plot = jnp.array([2, 83, 95, 97, 43, 48])  # jnp.arange(8)
 
 
 def unit_stim(hps):
@@ -275,9 +283,6 @@ def get_impulse_vrect_kws(hps):
     )
 
 
-unit_idxs_profiles_plot = jnp.array([2, 83, 95, 97, 43, 48])  # jnp.arange(8)
-
-
 def segment_stim_epochs(states, *, hps_common, **kwargs):
     start_step = hps_common.pert.unit.start_step
     end_step = start_step + hps_common.pert.unit.duration
@@ -313,14 +318,15 @@ def transform_profile_vars(states_by_var, keepdims=True, **kwargs):
     )
 
 
-def max_deviation_after_stim(states_by_var, *, hps_common, **kwargs):
-    deviation = jnp.linalg.norm(states_by_var["pos"], axis=-1)
-    pert_end = hps_common.pert.unit.start_step + hps_common.pert.unit.duration
-    ts = jnp.arange(pert_end, hps_common.model.n_steps)
-    return jnp.max(deviation[..., ts], axis=-1)
+# def max_deviation_after_stim(states_by_var, *, hps_common, **kwargs):
+#     deviation = jnp.linalg.norm(states_by_var["pos"], axis=-1)
+#     pert_end = hps_common.pert.unit.start_step + hps_common.pert.unit.duration
+#     ts = jnp.arange(pert_end, hps_common.model.n_steps)
+#     return jnp.max(deviation[..., ts], axis=-1)
 
 
 def get_response_vars(states_by_var, *, hps_common):
+    """Response variables for regression analysis."""
     vars = transform_profile_vars(states_by_var, keepdims=False)
     pert_end = hps_common.pert.unit.start_step + hps_common.pert.unit.duration
     ts = jnp.arange(pert_end, hps_common.model.n_steps)
@@ -347,6 +353,17 @@ class UnitStimRegressionFigures(AbstractAnalysis[UnitStimRegressionFiguresPorts]
         converter=UnitStimRegressionFiguresPorts.converter,
     )
 
+    fig_params: Mapping = MappingProxyType(
+        dict(
+            mode="markers",
+            hovertemplate="unit %{pointNumber}: (%{x}, %{y})",
+            layout=dict(
+                xaxis_title="Response regressor weight",
+                yaxis_title="Feedback gain regressor weight",
+            ),
+        )
+    )
+
     variant: Optional[str] = "full"
 
     def make_figs(
@@ -358,80 +375,51 @@ class UnitStimRegressionFigures(AbstractAnalysis[UnitStimRegressionFiguresPorts]
         replicate_info,
         **kwargs,
     ) -> PyTree[go.Figure]:
-        regression_weights = regression_results[0].weight
-        feature_labels = regression_results[1]
+        coefs_response = regression_results[0].weight
 
-        figs = {}
+        coefs_gain = unit_fb_gains[0].weight
+
+        feature_labels = regression_results[1]
+        assert unit_fb_gains[1] == feature_labels
+
+        kwargs = dict(self.fig_params)
+        layout_kws = kwargs.pop("layout", {})
+
+        figs = LDict.of("regressor")(
+            {
+                feature_label: go.Figure(
+                    data=go.Scatter(
+                        x=coefs_gain[:, 0, i],
+                        y=coefs_response[:, 0, i],
+                        **kwargs,
+                    ),
+                    layout=layout_kws,
+                )
+                for i, feature_label in enumerate(feature_labels)
+            }
+        )
+
+        for feature_label, fig in figs.items():
+            fig.update_layout(
+                title=self.fig_params["layout"]["title"].replace("{feature_label}", feature_label)
+            )
 
         # ## Plot single regressor weights against each other
-        fig = go.Figure(
-            layout=dict(
-                xaxis_title="SISU regression weight",
-                yaxis_title="Curl amp. regression weight",
-            )
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=regression_weights[:, 0, 1],
-                y=regression_weights[:, 0, 2],
-                mode="markers",
-                hovertemplate="unit %{pointNumber}: (%{x}, %{y})",
-            )
-        )
-
-        figs[(feature_labels[1], feature_labels[2])] = fig
-
-        ## Plot SISU weight against feedback input weights (input idxs 5,6 & 7,8)
-        # fig = go.Figure()
-        # # Model should not depend on SISU or pert amp; select 0 for each
-        # models = data.models["full"][0][0][1.5]
-        # models_best_replicate = get_best_replicate(
-        #     models, replicate_info=replicate_info[1.5], axis=0
-        # )
-        # input_weights = models_best_replicate.step.net.hidden.weight_ih
-
-        # feedback_slices = {
-        #     "pos": slice(5, 7),
-        #     "vel": slice(7, 9),
-        # }
-        # gate_slices = {
-        #     "reset": slice(0, 100),
-        #     "update": slice(100, 200),
-        #     "candidate": slice(200, 300),
-        # }
-
-        # # TODO: Make into nested LDict
-        # for fb_var, idxs in feedback_slices.items():
-        #     fig = go.Figure(
-        #         layout=dict(
-        #             xaxis_title="SISU regression weight",
-        #             yaxis_title=f"{fb_var} feedback input weight",
-        #         )
+        # fig = go.Figure(
+        #     layout=dict(
+        #         xaxis_title="SISU regression weight",
+        #         yaxis_title="Curl amp. regression weight",
         #     )
-        #     weight_amp = jnp.linalg.norm(input_weights[..., idxs], axis=-1)
+        # )
 
-        #     for gate, gate_idxs in gate_slices.items():
-        #         fig.add_trace(
-        #             go.Scatter(
-        #                 x=regression_weights[:, 0, 1],
-        #                 y=weight_amp[gate_idxs],
-        #                 mode="markers",
-        #                 name=gate,
-        #             )
-        #         )
+        # figs[(feature_labels[1], feature_labels[2])] = fig
 
-        #     label = f"{fb_var}-fb-input-weight_vs_SISU-reg-weight"
-        #     fig.write_html(f"{label}.html")
-        #     fig.write_image(f"{label}.webp")
-
-        return LDict.of("comparison")(figs)
+        return figs
 
 
-VARSET = subdict(DEFAULT_VARSET, ("pos", "vel"))
-
-
-def aggregate_unit_gains(fb_gains):
-    return fb_gains
+def jacobian_input_channel_norms(jacobians: Array, *, axis=-1) -> RNNInputChannels[Array]:
+    jacobians_split = split_rnn_input_channels(jacobians, axis=axis)
+    return jt.map(lambda arr: jnp.linalg.norm(arr, axis=-1), jacobians_split)
 
 
 rnn_funcs = Data.models(where=lambda model: model.step.net.hidden)
@@ -442,70 +430,15 @@ rnn_states = Data.states(where=lambda states: states.net.hidden)
 
 DEPENDENCIES = {
     "aligned_vars_trivial": AlignedVars(
-        varset=VARSET,
+        varset=aligned_varset,
         # Bypass alignment; keep aligned with x-y axes
         directions_func=get_trivial_reach_directions,
     ),
-    "unit_stim_regression": (
-        Regression(
-            variant="full",
-            inputs=Regression.Ports(
-                regressor_tree="aligned_vars_trivial",
-            ),
-        )
-        .after_transform(partial(get_best_replicate, axis=3))
-        .after_getitem_at_level("task_variant", "full")
-        #! Only compute regression for stim condition
-        .after_indexing(0, 1, axis_label="stim_amp")
-        #! Compute the response variables of interest
-        .after_transform(get_response_vars, level="var", dependency_names="regressor_tree")  #
-        .after_rearrange_levels(
-            ["response_var", "train__pert__std", "sisu", "pert__amp"],
-            dependency_name="regressor_tree",
-        )
-        #! Compute distinct regressions for each response variable, and for each train std
-        .map_compute(is_leaf=LDict.is_of("sisu"), dependency_names="regressor_tree")
-        # e.g. positions to deviations
-        # .after_transform(max_deviation_after_stim, level="var", dependency_names="regressor_tree")
-        #! Compute distinct regressions (in parallel) over stim units
-        .vmap(in_axes={"regressor_tree": 0})
-    ),
-    # "unit_fb_gains": (
-    #     InstantFBResponse(
-    #         n_directions=24,
-    #         fb_pert_amp=0.5,
-    #     )
-    #     # There's only one reach condition atm
-    #     .after_indexing(-3, 0, axis_label="condition", dependency_name="data.states")
-    #     # Computation based on steady-state period; stim vars not relevant.
-    #     .after_indexing(1, 0, axis_label="stim_unit_idx", dependency_name="data.states")
-    #     .after_indexing(0, 0, axis_label="stim_amp", dependency_name="data.states")
-    #     .vmap(
-    #         in_axes={"rnn_cells": MultiVmapAxes(0, None), "data.states": MultiVmapAxes(0, 0)}
-    #     )  # replicates
-    #     .then_transform_result(aggregate_unit_gains)
-    # ),
-}
-
-
-def dashed_fig_params_fn(fig_params, ctx: FigIterCtx):
-    return fig_params | dict(
-        scatter_kws=dict(
-            line_dash=SISU_STYLES["line_dash"][ctx.idx],
-            legendgroup=SISU_LABELS[ctx.idx],
-            legendgrouptitle_text=f"SISU: {SISU_LABELS[ctx.idx]}",
-        ),
-    )
-
-
-# PyTree structure: [sisu, pert__amp, train__pert__std]
-# Array batch shape: [stim_amp, stim_unit_idx, eval, replicate, condition]
-ANALYSES = {
-    "jacobians-ss": (
+    "jac-u-ss": (
         Jacobians(
             inputs=Jacobians.Ports(
                 funcs=rnn_funcs,
-                func_args=(rnn_inputs, rnn_states),
+                func_args=RNNCellArgs(rnn_inputs, rnn_states),
             ),
             argnums=0,  # with respect to inputs only
         )
@@ -530,48 +463,166 @@ ANALYSES = {
                 "func_args": MultiVmapAxes(0, 1, 2),
             }
         )
-        .then_transform_result(
-            func=lambda tree: jt.map(
-                lambda arr: jnp.mean(arr, axis=-2),
-                tree,  # mean over time
-            )
-        )
-        # .estimate_memory()
+        # Take the mean over the sampled timesteps
+        .then_transform_result(func=lambda tree: jt.map(lambda arr: jnp.mean(arr, axis=-3), tree))
+        # Split the Jacobian by input channel, and take the Euclidean norm for each channel
+        .then_transform_result(jacobian_input_channel_norms, is_leaf=None)
+        # Only keep results for the inputs; the state Jacobians weren't calculated anyway
+        # result: RNNCellArgs; result.state is None
+        .then_transform_result(lambda result: result.input)
     ),
-    "plot--unit_stim_profiles": (
-        Profiles(
-            variant="full",
-            vrect_kws_func=get_impulse_vrect_kws,
-            coord_labels=None,
-            inputs=Profiles.Ports(
-                vars="aligned_vars_trivial",
+    "unit_stim_regression": (
+        Regression(
+            inputs=Regression.Ports(
+                regressor_tree="aligned_vars_trivial",
             ),
         )
         .after_transform(partial(get_best_replicate, axis=3))
-        #! Only make figures for a few stim units
-        .after_indexing(1, unit_idxs_profiles_plot, axis_label="unit_stim_idx")
-        .after_transform(
-            transform_profile_vars, level="var", dependency_names="vars"
-        )  # e.g. positions to deviations
-        .after_unstacking(1, "unit_stim_idx", above_level="pert__amp", dependency_name="vars")
-        #! Only make figures for unit stim condition
-        # .after_indexing(0, 1, axis_label="stim_amp")
-        .after_unstacking(0, "stim_amp", above_level="pert__amp", dependency_name="vars")
-        # Plot pert amp. on same figure
+        .after_getitem_at_level("task_variant", "full")
+        #! Only compute regression for stim condition
+        .after_indexing(0, 1, axis_label="stim_amp")
+        # Compute the response variables of interest
+        .after_transform(get_response_vars, level="var", dependency_names="regressor_tree")  #
         .after_rearrange_levels(
-            [..., "train__pert__std", "var", "pert__amp"], dependency_name="vars"
+            ["response_var", "train__pert__std", "sisu", "pert__amp"],
+            dependency_name="regressor_tree",
         )
-        .combine_figs_by_level(  # Also plot SISU on same figure, with different line styles
-            level="sisu",
-            fig_params_fn=dashed_fig_params_fn,
-        )
-        .with_fig_params(
-            layout_kws=dict(
-                width=500,
-                height=350,
+        # Compute distinct regressions for each response variable, and for each train std
+        .map_compute(is_leaf=LDict.is_of("sisu"), dependency_names="regressor_tree")
+        # e.g. positions to deviations
+        # .after_transform(max_deviation_after_stim, level="var", dependency_names="regressor_tree")
+        #! Compute distinct regressions (in parallel) over stim units
+        .vmap(in_axes={"regressor_tree": 0})
+    ),
+    "jac-u-ss_regression": (
+        Regression(
+            inputs=Regression.Ports(
+                regressor_tree="jac-u-ss",
             ),
         )
+        .after_transform(partial(get_best_replicate, axis=1))
+        .after_rearrange_levels(
+            ["train__pert__std", ...],
+            dependency_name="regressor_tree",
+            # is_leaf=is_type(RNNInputChannels),
+        )
+        #! TEMP: Move `RNNInputChannels` above `LDict.of("sisu")` so we can map input channels separately
+        .after_transform(
+            lambda tree: jt.map(
+                lambda subtree: jt.transpose(
+                    jt.structure(subtree, is_leaf=is_type(RNNInputChannels)),
+                    None,
+                    subtree,
+                ),
+                tree,
+                is_leaf=LDict.is_of("sisu"),
+            ),
+            dependency_names="regressor_tree",
+        )
+        # Compute distinct regressions for each input channel
+        .map_compute(is_leaf=LDict.is_of("sisu"), dependency_names="regressor_tree")
+        #! Compute distinct regressions (in parallel) over stim units
+        .vmap(in_axes={"regressor_tree": 1})
     ),
+    # "unit_fb_gains": (
+    #     InstantFBResponse(
+    #         n_directions=24,
+    #         fb_pert_amp=0.5,
+    #     )
+    #     # There's only one reach condition atm
+    #     .after_indexing(-3, 0, axis_label="condition", dependency_name="data.states")
+    #     # Computation based on steady-state period; stim vars not relevant.
+    #     .after_indexing(1, 0, axis_label="stim_unit_idx", dependency_name="data.states")
+    #     .after_indexing(0, 0, axis_label="stim_amp", dependency_name="data.states")
+    #     .vmap(
+    #         in_axes={"rnn_cells": MultiVmapAxes(0, None), "data.states": MultiVmapAxes(0, 0)}
+    #     )  # replicates
+    # ),
+}
+
+
+def dashed_fig_params_fn(fig_params, ctx: FigIterCtx):
+    return fig_params | dict(
+        scatter_kws=dict(
+            line_dash=SISU_STYLES["line_dash"][ctx.idx],
+            legendgroup=SISU_LABELS[ctx.idx],
+            legendgrouptitle_text=f"SISU: {SISU_LABELS[ctx.idx]}",
+        ),
+    )
+
+
+def regression_fig_params_fn(fig_params, ctx: FigIterCtx):
+    if ctx.level == "response_var":
+        fig_params = deep_merge(
+            fig_params,
+            dict(
+                layout=dict(
+                    title=fig_params["layout"]["yaxis_title"].replace(
+                        "{feature_label}", str(ctx.key)
+                    ),
+                )
+            ),
+        )
+    elif ctx.level == "train__pert__std":
+        fig_params = deep_merge(
+            fig_params,
+            dict(
+                layout=dict(
+                    title=fig_params["layout"]["title"].replace("{train__pert__std}", str(ctx.key)),
+                )
+            ),
+        )
+    elif ctx.level == "input_channel":
+        fig_params = deep_merge(
+            fig_params,
+            dict(
+                layout=dict(
+                    title=fig_params["layout"]["yaxis_title"].replace(
+                        "{input_channel}", str(ctx.key)
+                    ),
+                )
+            ),
+        )
+    return fig_params
+
+
+# PyTree structure: [sisu, pert__amp, train__pert__std]
+# Array batch shape: [stim_amp, stim_unit_idx, eval, replicate, condition]
+ANALYSES = {
+    # "plot--unit_stim_profiles": (
+    #     Profiles(
+    #         variant="full",
+    #         vrect_kws_func=get_impulse_vrect_kws,
+    #         coord_labels=None,
+    #         inputs=Profiles.Ports(
+    #             vars="aligned_vars_trivial",
+    #         ),
+    #     )
+    #     .after_transform(partial(get_best_replicate, axis=3))
+    #     #! Only make figures for a few stim units
+    #     .after_indexing(1, unit_idxs_profiles_plot, axis_label="unit_stim_idx")
+    #     .after_transform(
+    #         transform_profile_vars, level="var", dependency_names="vars"
+    #     )  # e.g. positions to deviations
+    #     .after_unstacking(1, "unit_stim_idx", above_level="pert__amp", dependency_name="vars")
+    #     #! Only make figures for unit stim condition
+    #     # .after_indexing(0, 1, axis_label="stim_amp")
+    #     .after_unstacking(0, "stim_amp", above_level="pert__amp", dependency_name="vars")
+    #     # Plot pert amp. on same figure
+    #     .after_rearrange_levels(
+    #         [..., "train__pert__std", "var", "pert__amp"], dependency_name="vars"
+    #     )
+    #     .combine_figs_by_level(  # Also plot SISU on same figure, with different line styles
+    #         level="sisu",
+    #         fig_params_fn=dashed_fig_params_fn,
+    #     )
+    #     .with_fig_params(
+    #         layout_kws=dict(
+    #             width=500,
+    #             height=350,
+    #         ),
+    #     )
+    # ),
     # "plot--unit-agg-fb-gains": (
     #     Violins(
     #         inputs=Violins.Ports(
@@ -585,14 +636,26 @@ ANALYSES = {
         UnitStimRegressionFigures(
             inputs=UnitStimRegressionFigures.Ports(
                 regression_results="unit_stim_regression",
-                unit_fb_gains="unit_fb_gains",
+                unit_fb_gains="jac-u-ss_regression",
             ),
         )
-        .after_getitem_at_level("task_variant", "full", dependency_name="unit_fb_gains")
+        .with_fig_params(
+            layout=dict(
+                xaxis_title="{input_channel} input channel gain coef.",
+                yaxis_title="{response_var} response coef.",
+                title="Regressor: {feature_label}; Train pert. std.: {train__pert__std}",
+            )
+        )
+        .after_map(
+            lambda ntuple: LDict.of("input_channel")(ntuple._asdict()),
+            is_leaf=is_type(RNNInputChannels),
+            dependency_name="unit_fb_gains",
+        )
         .map_make_figs_to_output(
-            ["response_var", "fb_var", "train__pert__std"],
+            ["response_var", "train__pert__std", "input_channel"],
             dependency_names=["regression_results", "unit_fb_gains"],
             is_leaf=is_type(RegressionResults),
+            # fig_params_fn=regression_fig_params_fn,
         )
     ),
     #! TODO: Replace with `get_aligned_trajectories_node`

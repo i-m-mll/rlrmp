@@ -2,6 +2,7 @@ from collections.abc import Callable
 
 import equinox as eqx
 import jax.tree as jt
+import jax_cookbook.tree as jtree
 from equinox import field
 from feedbax_experiments.analysis.analysis import (
     AbstractAnalysis,
@@ -10,7 +11,6 @@ from feedbax_experiments.analysis.analysis import (
     InputOf,
 )
 from feedbax_experiments.misc import unit_circle_points
-from feedbax_experiments.tree_utils import first
 from feedbax_experiments.types import LDict
 from jax_cookbook import is_module
 from jaxtyping import ArrayLike, PyTree
@@ -41,7 +41,7 @@ class InstantFBResponse(AbstractAnalysis[InstantFBResponsePorts]):
         pert_step = hps_common.pert.unit.start_step
 
         def _compute_single(rnn_cell, states):
-            base_net_state = first(states, is_leaf=is_module).net
+            base_net_state = jtree.first(states, is_leaf=is_module).net
             # TODO: Repeat computation independently over multiple steady-state steps, and average.
             init_state = base_net_state.hidden[..., pert_step - 1, :]
             base_input = base_net_state.input[..., pert_step, :]
