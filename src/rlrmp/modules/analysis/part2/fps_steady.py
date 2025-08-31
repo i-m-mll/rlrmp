@@ -29,10 +29,6 @@ import plotly.graph_objects as go
 from arrow import get
 from equinox import Module
 from feedbax.task import AbstractTask
-from jax_cookbook import is_module, is_type
-from jaxtyping import Array, Float, PRNGKeyArray, PyTree
-from matplotlib.pylab import svd
-
 from feedbax_experiments.analysis import AbstractAnalysis
 from feedbax_experiments.analysis.analysis import (
     AbstractAnalysisPorts,
@@ -49,13 +45,16 @@ from feedbax_experiments.analysis.fp_finder import FPFilteredResults, take_top_f
 from feedbax_experiments.analysis.fps import FixedPoints, PlotInPCSpace
 from feedbax_experiments.analysis.grad import Hessians, Jacobians
 from feedbax_experiments.analysis.pca import StatesPCA
-from feedbax_experiments.analysis.plot import ScatterN3D
+from feedbax_experiments.analysis.plot import ScatterPlots
 from feedbax_experiments.analysis.state_utils import get_best_model_replicate, vmap_eval_ensemble
 from feedbax_experiments.analysis.violins import Violins
 from feedbax_experiments.misc import create_arr_df, get_constant_input_fn, take_non_nan
 from feedbax_experiments.plot import plot_eigvals_df
-from feedbax_experiments.tree_utils import first_shape, take_replicate, tree_level_labels
+from feedbax_experiments.tree_utils import take_replicate, tree_level_labels
 from feedbax_experiments.types import AnalysisInputData, LDict, TreeNamespace
+from jax_cookbook import is_module, is_type
+from jaxtyping import Array, Float, PRNGKeyArray, PyTree
+from matplotlib.pylab import svd
 
 N_PCA = 50
 PCA_START_STEP = 0
@@ -139,7 +138,7 @@ class EigvalsPlot(AbstractAnalysis[EigvalsPlotPorts]):
         else:
             col_names = [
                 legend_var_label,
-                *[f"var_{i}" for i in range(1, len(first_shape(eigvals)))],
+                *[f"var_{i}" for i in range(1, len(jtree.first_shape(eigvals)))],
                 "eigvals",
             ]
 
@@ -479,7 +478,7 @@ ANALYSES = {
 #     jt.map(
 #         lambda model: model.step.net.readout.weight,
 #         # Weights do not depend on SISU, take first
-#         jt.map(first, data.models, is_leaf=LDict.is_of('sisu')),
+#         jt.map(jtree.first, data.models, is_leaf=LDict.is_of('sisu')),
 #         is_leaf=is_module,
 #     ),
 #     replicate_info=replicate_info,
