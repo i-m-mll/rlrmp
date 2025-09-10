@@ -8,7 +8,6 @@ import jax.numpy as jnp
 import jax.tree as jt
 import jax_cookbook.tree as jtree
 from feedbax.intervene import schedule_intervenor
-from jax_cookbook import is_module, is_none, is_type
 
 # from feedbax_experiments.analysis import measures
 from feedbax_experiments.analysis import AbstractAnalysis
@@ -21,17 +20,18 @@ from feedbax_experiments.analysis.aligned import (
 from feedbax_experiments.analysis.analysis import FigIterCtx
 from feedbax_experiments.analysis.disturbance import (
     FB_INTERVENOR_LABEL,
-    get_pert_amp_vmap_eval_func,
+    get_pert_amp_vmap_eval_fn,
     task_with_pert_amp,
 )
-from feedbax_experiments.analysis.func import ApplyFuncs
+from feedbax_experiments.analysis.func import ApplyFns
 from feedbax_experiments.analysis.state_utils import vmap_eval_ensemble
 from feedbax_experiments.analysis.violins import Violins
 from feedbax_experiments.perturbations import feedback_impulse
 from feedbax_experiments.tree_utils import subdict
 from feedbax_experiments.types import AnalysisInputData, LDict, unflatten_dict_keys
+from jax_cookbook import is_module, is_none, is_type
 
-COLOR_FUNCS = dict()
+COLOR_FNS = dict()
 
 
 #! TODO: Move; these are redundant with 2-2
@@ -135,7 +135,7 @@ def _setup_xy(task_base, models_base, hps):
     return all_tasks, all_models, impulse_directions
 
 
-SETUP_FUNCS_BY_DIRECTION = dict(
+SETUP_FNS_BY_DIRECTION = dict(
     rand=_setup_rand,
     xy=_setup_xy,
 )
@@ -145,7 +145,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     impulse_end_step = hps.pert.start_step + hps.pert.duration
     impulse_time_idxs = slice(hps.pert.start_step, impulse_end_step)
 
-    all_tasks, all_models, impulse_directions = SETUP_FUNCS_BY_DIRECTION[hps.pert.direction](
+    all_tasks, all_models, impulse_directions = SETUP_FNS_BY_DIRECTION[hps.pert.direction](
         task_base, models_base, hps
     )
 
@@ -173,7 +173,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     return all_tasks, all_models, all_hps, extras
 
 
-eval_func = get_pert_amp_vmap_eval_func(lambda hps: hps.pert.amps, FB_INTERVENOR_LABEL)
+eval_fn = get_pert_amp_vmap_eval_fn(lambda hps: hps.pert.amps, FB_INTERVENOR_LABEL)
 
 
 MEASURE_KEYS = [
@@ -189,7 +189,7 @@ MEASURE_KEYS = [
 ]
 
 
-MEASURE_FUNCS = subdict(ALL_MEASURES, MEASURE_KEYS)
+MEASURE_FNS = subdict(ALL_MEASURES, MEASURE_KEYS)
 
 
 def measure_violin_params_fn(fig_params, ctx: FigIterCtx):
@@ -200,9 +200,9 @@ def measure_violin_params_fn(fig_params, ctx: FigIterCtx):
 
 DEPENDENCIES = {
     "measures": (
-        ApplyFuncs(
-            funcs=MEASURE_FUNCS,
-            inputs=ApplyFuncs.Ports(input=AlignedVars()),
+        ApplyFns(
+            fns=MEASURE_FNS,
+            inputs=ApplyFns.Ports(input=AlignedVars()),
             is_leaf=LDict.is_of(VAR_LEVEL_LABEL),
         )
         # Discard the varset; only keep the aligned vars

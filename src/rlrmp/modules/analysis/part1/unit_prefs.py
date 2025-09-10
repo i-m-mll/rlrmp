@@ -5,26 +5,25 @@ import jax.tree as jt
 import jax_cookbook.tree as jtree
 import numpy as np
 from feedbax.intervene import add_intervenors, schedule_intervenor
-from jax_cookbook import is_module
-from jaxtyping import Array, Float
-
-from feedbax_experiments.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS
+from feedbax_experiments.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FNS
 from feedbax_experiments.analysis.network import UnitPreferences
 from feedbax_experiments.analysis.state_utils import (
     get_best_replicate,
-    get_segment_trials_func,
+    get_segment_trials_fn,
     get_symmetric_accel_decel_epochs,
     vmap_eval_ensemble,
 )
 from feedbax_experiments.misc import vectors_to_2d_angles
 from feedbax_experiments.types import LDict
+from jax_cookbook import is_module
+from jaxtyping import Array, Float
 
-COLOR_FUNCS = {}
+COLOR_FNS = {}
 
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
     try:
-        disturbance = PLANT_PERT_FUNCS[hps.pert.type]
+        disturbance = PLANT_PERT_FNS[hps.pert.type]
     except KeyError:
         raise ValueError(f"Unknown perturbation type: {hps.pert.type}")
 
@@ -64,7 +63,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     return all_tasks, all_models, all_hps, None
 
 
-eval_func = vmap_eval_ensemble
+eval_fn = vmap_eval_ensemble
 
 
 def get_goal_positions(task, states):
@@ -84,7 +83,7 @@ ANALYSES = {
     #     UnitPreferences(feature_fn=get_goal_positions)
     #     .after_transform(get_best_replicate)
     #     .after_transform(
-    #         get_segment_trials_func(get_symmetric_accel_decel_epochs),
+    #         get_segment_trials_fn(get_symmetric_accel_decel_epochs),
     #         dependency_names="states",
     #     )
     #     # .after_indexing(-2, ts, axis_label="timestep")
@@ -96,7 +95,7 @@ ANALYSES = {
         )
         .after_transform(get_best_replicate)
         .after_transform(
-            get_segment_trials_func(get_symmetric_accel_decel_epochs),
+            get_segment_trials_fn(get_symmetric_accel_decel_epochs),
             dependency_names="states",
         )
         # .after_indexing(-2, ts, axis_label="timestep")
@@ -108,7 +107,7 @@ ANALYSES = {
         )
         .after_transform(get_best_replicate)
         .after_transform(
-            get_segment_trials_func(get_symmetric_accel_decel_epochs),
+            get_segment_trials_fn(get_symmetric_accel_decel_epochs),
             dependency_names="states",
         )
         # .after_indexing(-2, ts, axis_label="timestep")

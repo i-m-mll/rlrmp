@@ -22,12 +22,9 @@ import plotly.graph_objects as go
 from equinox import Module
 from feedbax.intervene import add_intervenors, schedule_intervenor
 from feedbax.misc import batch_reshape  # for flattening/unflattening
-from jax_cookbook import is_module, is_type
-from jaxtyping import Float, PyTree
-
 from feedbax_experiments.analysis.aligned import AlignedVars
 from feedbax_experiments.analysis.analysis import AbstractAnalysis, CallWithDeps, Data, NoPorts
-from feedbax_experiments.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS
+from feedbax_experiments.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FNS
 from feedbax_experiments.analysis.effector import EffectorTrajectories
 from feedbax_experiments.analysis.pca import StatesPCA
 from feedbax_experiments.analysis.profiles import Profiles
@@ -47,21 +44,23 @@ from feedbax_experiments.types import (
     LDict,
     TreeNamespace,
 )
+from jax_cookbook import is_module, is_type
+from jaxtyping import Float, PyTree
 
-COLOR_FUNCS = dict(
+COLOR_FNS = dict(
     sisu=ColorscaleSpec(
-        sequence_func=lambda hps: hps.sisu,
+        sequence_fn=lambda hps: hps.sisu,
         colorscale="thermal",
     ),
 )
 
 
-eval_func = vmap_eval_ensemble
+eval_fn = vmap_eval_ensemble
 
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
     try:
-        disturbance = PLANT_PERT_FUNCS[hps.pert.type]
+        disturbance = PLANT_PERT_FNS[hps.pert.type]
     except KeyError:
         raise ValueError(f"Unknown disturbance type: {hps.pert.type}")
 

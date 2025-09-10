@@ -8,7 +8,6 @@ from types import MappingProxyType, SimpleNamespace
 from typing import Optional
 
 from equinox import Module
-
 from feedbax_experiments.analysis import AbstractAnalysis
 from feedbax_experiments.analysis.analysis import NoPorts
 
@@ -20,7 +19,7 @@ from feedbax_experiments.types import LDict, TreeNamespace
 """Specify any additional colorscales needed for this analysis. 
 These will be included in the `colors` kwarg passed to `AbstractAnalysis` methods
 """
-COLOR_FUNCS: dict[str, Callable[[TreeNamespace], Sequence]] = dict(
+COLOR_FNS: dict[str, Callable[[TreeNamespace], Sequence]] = dict(
     some_variable=lambda hps: hps.some_variable,  #! e.g.
 )
 
@@ -48,7 +47,7 @@ necessary to define a more complex function here.
 
 For example, check out `analysis.part2.unit_perts`.
 """
-eval_func: Callable = vmap_eval_ensemble
+eval_fn: Callable = vmap_eval_ensemble
 
 
 # Define any subclasses of `AbstractAnalysis` that are specific to this task

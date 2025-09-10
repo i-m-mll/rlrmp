@@ -7,7 +7,7 @@ train:
     
 eval_n: 10
 
-sisu: [-2.0, 0, 2.0]
+sisu: [-2.0, -1.0, 0, 1.0, 2.0]
 
 task:  # Passed to the base task constructor
   full:
@@ -17,10 +17,10 @@ task:  # Passed to the base task constructor
 
 pert:
   plant:
-    amp: [0.0, 4.0]  
+    amp: [0.0, 4.0, 8.0]
     type: curl
   unit:
-    amp: [0.0, 1.0] 
+    amp: [0.0, 0.5] 
     start_step: 30
     duration: 10
 

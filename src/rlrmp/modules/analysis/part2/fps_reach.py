@@ -20,11 +20,8 @@ import jax_cookbook.tree as jtree
 import numpy as np
 from equinox import Module
 from feedbax.intervene import add_intervenors, schedule_intervenor
-from jax_cookbook import MultiVmapAxes, is_module
-from jaxtyping import Array, PyTree
-
 from feedbax_experiments.analysis import AbstractAnalysis
-from feedbax_experiments.analysis.analysis import Data, ExpandTo, LiteralInput, _DummyAnalysis
+from feedbax_experiments.analysis.analysis import Data, DummyNode, ExpandTo, LiteralInput
 
 # from feedbax_experiments.analysis.fps_tmp2 import (
 #     # ReachFPs,
@@ -32,18 +29,20 @@ from feedbax_experiments.analysis.analysis import Data, ExpandTo, LiteralInput, 
 #     ReachTrajectoriesInPCSpace,
 #     ReachDirectionTrajectories,
 # )
-from feedbax_experiments.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS
+from feedbax_experiments.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FNS
 from feedbax_experiments.analysis.fps import FixedPoints
 from feedbax_experiments.analysis.pca import StatesPCA
 from feedbax_experiments.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
 from feedbax_experiments.misc import get_constant_input_fn
 from feedbax_experiments.tree_utils import take_replicate
 from feedbax_experiments.types import LDict, TreeNamespace
+from jax_cookbook import MultiVmapAxes, is_module
+from jaxtyping import Array, PyTree
 
 """Specify any additional colorscales needed for this analysis. 
 These will be included in the `colors` kwarg passed to `AbstractAnalysis` methods
 """
-COLOR_FUNCS: dict[str, Callable[[TreeNamespace], Sequence]] = dict()
+COLOR_FNS: dict[str, Callable[[TreeNamespace], Sequence]] = dict()
 
 
 def setup_eval_tasks_and_models(
@@ -51,7 +50,7 @@ def setup_eval_tasks_and_models(
 ):
     """Set up tasks with plant perturbations and varying SISU."""
     try:
-        disturbance = PLANT_PERT_FUNCS[hps.pert.type]
+        disturbance = PLANT_PERT_FNS[hps.pert.type]
     except KeyError:
         raise ValueError(f"Unknown disturbance type: {hps.pert.type}")
 
@@ -114,7 +113,7 @@ def setup_eval_tasks_and_models(
 
 
 # Unlike `feedback_perts`, we don't need to vmap over impulse amplitude
-eval_func: Callable = vmap_eval_ensemble
+eval_fn: Callable = vmap_eval_ensemble
 
 # goals_pos = task.validation_trials.targets["mechanics.effector.pos"].value[:, -1]
 
@@ -127,9 +126,9 @@ PCA_END_STEP = 100
 CANDIDATE_TIMESTEP_RADIUS = 1
 
 
-def call_rnn_func(rnn_func, inputs, h) -> Callable:
+def call_rnn_fn(rnn_fn, inputs, h) -> Callable:
     """Get the RNN function for reaching tasks."""
-    return rnn_func(inputs, h)
+    return rnn_fn(inputs, h)
 
 
 def extract_timestep_windows(
@@ -180,7 +179,7 @@ DEPENDENCIES = {
     ),
 }
 
-rnn_funcs = Data.models(where=lambda model: model.step.net.hidden)
+rnn_fns = Data.models(where=lambda model: model.step.net.hidden)
 rnn_inputs = Data.states(where=lambda states: states.net.input)
 rnn_states = Data.states(where=lambda states: states.net.hidden)
 
@@ -190,13 +189,13 @@ ANALYSES = {
     "reach_fp_results": (
         FixedPoints(
             inputs=FixedPoints.Ports(
-                funcs=ExpandTo(
-                    "func_args",
-                    LiteralInput(call_rnn_func),
-                    where=lambda func_args: func_args[0],
+                fns=ExpandTo(
+                    "fn_args",
+                    LiteralInput(call_rnn_fn),
+                    where=lambda fn_args: fn_args[0],
                     is_leaf=is_module,
                 ),
-                func_args=(rnn_funcs, rnn_states),
+                fn_args=(rnn_fns, rnn_states),
                 #! TODO: Check how the candidates were actually constructed in the notebook
                 candidates=rnn_states,
             )
@@ -206,7 +205,7 @@ ANALYSES = {
         .vmap(
             in_axes={
                 # (evals, replicate, condition, timestep)
-                "func_args": (MultiVmapAxes(None, 0, None, None), MultiVmapAxes(0, 1, 2, 3)),
+                "fn_args": (MultiVmapAxes(None, 0, None, None), MultiVmapAxes(0, 1, 2, 3)),
                 # 'candidates': MultiVmapAxes(None, 1, 2, 3),
                 "candidates": MultiVmapAxes(None, 1, 2, None),
             }

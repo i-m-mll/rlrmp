@@ -9,6 +9,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax_cookbook.tree as jtree
 from feedbax.intervene import schedule_intervenor
+from feedbax.task import TimeSeriesParam
 from feedbax.xabdeef.models import point_mass_nn
 from feedbax_experiments.analysis.disturbance import (
     PLANT_DISTURBANCE_CLASSES,
@@ -19,10 +20,91 @@ from feedbax_experiments.constants import (
 )
 from feedbax_experiments.misc import get_field_amplitude, vector_with_gaussian_length
 from feedbax_experiments.setup_utils import get_base_reaching_task
+from feedbax_experiments.training.train import always_active, bernoulli_active
 from feedbax_experiments.types import LDict, TaskModelPair, TreeNamespace
-from jaxtyping import PRNGKeyArray
+from jaxtyping import Array, Float, Int, PRNGKeyArray
 
 TrainingMethodLabel: TypeAlias = L["bcs", "dai", "pai-asf", "pai-n"]
+
+
+P_PERTURBED = LDict.of("train__method")(
+    {
+        "bcs": 0.5,
+        "dai": 1.0,
+        "pai-asf": 1.0,
+    }
+)
+
+# Define whether the disturbance is active on each trial
+disturbance_active: LDict[str, Callable] = LDict.of("train__method")(
+    {
+        "bcs": bernoulli_active,
+        "dai": bernoulli_active,  # or always_active?
+        "pai-asf": always_active,  # or bernoulli_active? and let hps control it
+    }
+)
+
+
+class Gusts(eqx.Module):
+    signal: Float[Array, "k d=2"]
+    starts: Int[Array, " k"]
+    durations: Int[Array, " k"]
+    forces: Float[Array, "k d=2"]
+
+
+def get_gusts_fn(hps):
+    n_steps = hps.model.n_steps - 1
+    amplitude_std = hps.pert.std
+    n_expected = hps.pert.n_expected
+    duration_mean = hps.pert.duration_mean
+
+    p_offset = 1.0 / jnp.maximum(1.0, duration_mean)
+    max_gusts = n_steps // 2
+
+    def _gusts_fn(trial_spec, batch_info, key):
+        key1, key2, key3, key4 = jr.split(key, 4)
+        n_gusts = jr.poisson(key1, n_expected, shape=())
+        n_gusts = jnp.minimum(n_gusts, max_gusts)
+
+        def no_gusts():
+            # return Gusts(
+            #     signal=jnp.zeros((n_steps, 2), dtype=jnp.float32),
+            #     starts=jnp.zeros((max_gusts,), dtype=jnp.int32),
+            #     durations=jnp.zeros((max_gusts,), dtype=jnp.int32),
+            #     forces=jnp.zeros((max_gusts, 2), dtype=jnp.float32),
+            # )
+            return jnp.zeros((n_steps, 2), dtype=jnp.float32)
+
+        def some_gusts():
+            starts_all = jr.choice(key2, n_steps, (max_gusts,), replace=False)
+            durations_all = jr.geometric(key3, p_offset, (max_gusts,))
+            forces_all = amplitude_std * vector_with_gaussian_length(key4, shape=(max_gusts,))
+
+            # mask valid gusts
+            mask = jnp.arange(max_gusts) < n_gusts
+            starts = jnp.where(mask, starts_all, 0)
+            durations = jnp.where(mask, durations_all, 0)
+            forces = jnp.where(mask[:, None], forces_all, 0.0)
+
+            # Build the signal
+            ts = jnp.arange(n_steps)[None, :]  # (1, n_steps)
+            s = starts[:, None]  # (n_gusts, 1)
+            d = durations[:, None]  # (n_gusts, 1)
+            in_window = (ts >= s) & (ts < (s + d))  # (n_gusts, n_steps)
+            signal = jnp.einsum("kd,kt->td", forces, in_window.astype(jnp.float32))  # (n_steps, 2)
+            # return Gusts(signal=signal, starts=starts, durations=durations, forces=forces)
+            return signal
+
+        return TimeSeriesParam(jax.lax.cond(n_gusts == 0, no_gusts, some_gusts))
+
+    return dict(field=_gusts_fn)
+
+
+def scaled_sampler(sample_fn, scale=1.0):
+    def _fn(trial_spec, batch_info, key):
+        return scale * sample_fn(key)
+
+    return _fn
 
 
 # Separate this def by training method so that we can multiply by `field_std` in the "pai-asf" case,
@@ -30,51 +112,30 @@ TrainingMethodLabel: TypeAlias = L["bcs", "dai", "pai-asf", "pai-n"]
 # the actual field strength, but in `"bcs"` and `"dai"` it is multiplied by the
 # `scale` parameter, which is not seen by the network in those cases; and in `"pai-asf"` it is
 # multiplied by the `field` parameter, which is not seen by the network in that case.
-# (See the definition of `SCALE_FUNCS` below.)
+# (See the definition of `SCALE_FNS` below.)
 disturbance_params = LDict.of("train__method")(
     {
-        "bcs": lambda field_std: {
-            "curl": dict(
-                amplitude=lambda trial_spec, batch_info, key: jr.normal(key, ()),
-            ),
-            "constant": dict(
-                field=lambda trial_spec, batch_info, key: vector_with_gaussian_length(key),
-            ),
+        "bcs": {
+            "curl": lambda hps: dict(amplitude=scaled_sampler(jr.normal)),
+            "constant": lambda hps: dict(field=scaled_sampler(vector_with_gaussian_length)),
         },
-        "dai": lambda field_std: {
-            "curl": dict(
-                amplitude=lambda trial_spec, batch_info, key: jr.normal(key, ()),
-            ),
-            "constant": dict(
-                field=lambda trial_spec, batch_info, key: vector_with_gaussian_length(key),
-            ),
+        "dai": {
+            "curl": lambda hps: dict(amplitude=scaled_sampler(jr.normal)),
+            "constant": lambda hps: dict(field=scaled_sampler(vector_with_gaussian_length)),
         },
-        "pai-asf": lambda field_std: {
-            "curl": dict(
-                amplitude=lambda trial_spec, batch_info, key: field_std * jr.normal(key, ())
+        "pai-asf": {
+            "curl": lambda hps: dict(amplitude=scaled_sampler(jr.normal, hps.pert.std)),
+            "constant": lambda hps: dict(
+                field=scaled_sampler(vector_with_gaussian_length, hps.pert.std)
             ),
-            "constant": dict(
-                field=lambda trial_spec, batch_info, key: (
-                    field_std * vector_with_gaussian_length(key)
-                )
-            ),
+            "gusts": get_gusts_fn,
         },
-    }
-)
-
-
-# Define whether the disturbance is active on each trial
-disturbance_active: LDict[str, Callable] = LDict.of("train__method")(
-    {
-        "bcs": lambda p: lambda trial_spec, _, key: jr.bernoulli(key, p=p),
-        "dai": lambda p: lambda trial_spec, _, key: jr.bernoulli(key, p=p),
-        "pai-asf": lambda p: lambda trial_spec, _, key: jr.bernoulli(key, p=p),
     }
 )
 
 
 # Define how the network's SISU will be determined from the trial specs, to which it is then added
-SISU_FUNCS = LDict.of("train__method")(
+SISU_FNS = LDict.of("train__method")(
     {
         "bcs": lambda trial_specs, key: trial_specs.intervene[PLANT_INTERVENOR_LABEL].active.astype(
             float
@@ -87,23 +148,13 @@ SISU_FUNCS = LDict.of("train__method")(
 )
 
 
-# TODO: Move to config yaml
-P_PERTURBED = LDict.of("train__method")(
-    {
-        "bcs": 0.5,
-        "dai": 1.0,
-        "pai-asf": 1.0,
-    }
-)
-
-
 """Either scale the field strength by a constant std, or sample the std for each trial.
 
 Note that in the `"pai-asf"` case the actual field amplitude is still scaled by `field_std`, 
 but this is done in `disturbance_params` so that the magnitude of the SISU 
 is the same on average between the `"dai"` and `"pai-asf"` methods.
 """
-SCALE_FUNCS = LDict.of("train__method")(
+SCALE_FNS = LDict.of("train__method")(
     {
         "bcs": lambda field_std: field_std,
         "dai": lambda field_std: field_std,
@@ -114,15 +165,11 @@ SCALE_FUNCS = LDict.of("train__method")(
 )
 
 
-def disturbance(pert_type, field_std, method):
-    return PLANT_DISTURBANCE_CLASSES[pert_type].with_params(
-        scale=SCALE_FUNCS[method](field_std),
-        active=disturbance_active[method](P_PERTURBED[method]),
-        **disturbance_params[method](
-            # TODO: Scaleup
-            # partial(batch_scale_up, intervention_scaleup_batches[0], n_batches_scaleup)
-            field_std
-        )[pert_type],
+def disturbance(hps: TreeNamespace):
+    return PLANT_DISTURBANCE_CLASSES[hps.pert.type].with_params(
+        scale=SCALE_FNS[hps.method](hps.pert.std),
+        active=disturbance_active[hps.method](P_PERTURBED[hps.method]),
+        **disturbance_params[hps.method][hps.pert.type](hps),
     )
 
 
@@ -173,7 +220,7 @@ def setup_task_model_pair(
     try:
         task = task_base.add_input(
             name="sisu",
-            input_fn=SISU_FUNCS[hps_train.method],
+            input_fn=SISU_FNS[hps_train.method],
         )
     except AttributeError:
         raise ValueError("No training method label assigned to hps_train.method")
@@ -183,12 +230,7 @@ def setup_task_model_pair(
             task,
             models_base,
             lambda model: model.step.mechanics,
-            disturbance(
-                hps_train.pert.type,
-                hps_train.pert.std,
-                # p_perturbed,
-                hps_train.method,
-            ),
+            disturbance(hps_train),
             label=PLANT_INTERVENOR_LABEL,
             default_active=False,
         )

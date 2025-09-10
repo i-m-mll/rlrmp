@@ -22,6 +22,7 @@ from feedbax.intervene import (
     schedule_intervenor,
 )
 from feedbax.task import AbstractTask
+from feedbax_experiments.analysis import CallWithDeps
 from feedbax_experiments.analysis.aligned import (
     DEFAULT_VARSET,
     VAR_LEVEL_LABEL,
@@ -32,23 +33,27 @@ from feedbax_experiments.analysis.analysis import (
     AbstractAnalysis,
     AbstractAnalysisPorts,
     Data,
+    DummyNode,
     FigIterCtx,
+    IdentityNode,
     InputOf,
 )
 from feedbax_experiments.analysis.disturbance import (
     PLANT_INTERVENOR_LABEL,
-    PLANT_PERT_FUNCS,
-    get_pert_amp_vmap_eval_func,
+    PLANT_PERT_FNS,
+    get_pert_amp_vmap_eval_fn,
 )
 from feedbax_experiments.analysis.effector import EffectorTrajectories
 from feedbax_experiments.analysis.grad import Jacobians
 from feedbax_experiments.analysis.network import UnitPreferences
+from feedbax_experiments.analysis.pca import StatesPCA
+from feedbax_experiments.analysis.plot import ScatterPlots
 from feedbax_experiments.analysis.profiles import Profiles
 from feedbax_experiments.analysis.regression import Regression, RegressionResults
 from feedbax_experiments.analysis.state_utils import (
     get_best_replicate,
     get_constant_task_input_fn,
-    get_segment_trials_func,
+    get_segment_trials_fn,
     get_symmetric_accel_decel_epochs,
     vmap_eval_ensemble,
 )
@@ -76,19 +81,20 @@ from jaxtyping import Array, ArrayLike, PRNGKeyArray, PyTree
 from rlrmp.constants import RNN_INPUT_CHANNEL_SIZES
 from rlrmp.fb_response import InstantFBResponse
 from rlrmp.misc import split_rnn_input_channels
+from rlrmp.transforms import get_state_pcs, segment_epochs
 from rlrmp.types import RNNCellArgs, RNNInputChannels
 
-COLOR_FUNCS = dict(
+COLOR_FNS = dict(
     sisu=ColorscaleSpec(
-        sequence_func=lambda hps: hps.sisu,
+        sequence_fn=lambda hps: hps.sisu,
         colorscale="thermal",
     ),
     stim_amp=ColorscaleSpec(
-        sequence_func=lambda hps: hps.pert.unit.amp,
+        sequence_fn=lambda hps: hps.pert.unit.amp,
         colorscale="viridis",
     ),
     pert__amp=ColorscaleSpec(
-        sequence_func=lambda hps: hps.pert.plant.amp,
+        sequence_fn=lambda hps: hps.pert.plant.amp,
         colorscale="viridis",
     ),
 )
@@ -103,6 +109,12 @@ PLANT_PERT_STYLES = dict(line_dash={0: "dot", 1: "solid"})
 
 SISU_LABELS = {0: -2, 1: 0, 2: 2}
 SISU_STYLES = dict(line_dash={0: "dot", 1: "dash", 2: "solid"})
+
+N_PCA = 10
+#! Long enough to get some stim effects, not so long that our PCs
+#! are influenced by huge variance of some trials after unit stim?
+PCA_START_STEP = 0
+PCA_END_STEP = 60
 
 aligned_varset = subdict(DEFAULT_VARSET, ("pos", "vel"))
 
@@ -147,7 +159,7 @@ def schedule_unit_stim(*, tasks, models, hps):
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
     try:
-        disturbance = PLANT_PERT_FUNCS[hps.pert.plant.type]
+        disturbance = PLANT_PERT_FNS[hps.pert.plant.type]
     except KeyError:
         raise ValueError(f"Unknown disturbance type: {hps.pert.plant.type}")
 
@@ -234,8 +246,8 @@ def task_with_scaled_unit_stim(model, task, unit_idx, stim_amp_base, hidden_size
     )
 
 
-def get_task_eval_func(task_base, hps, unit_idx, stim_amp_base):
-    def task_eval_func(model, key):
+def get_task_eval_fn(task_base, hps, unit_idx, stim_amp_base):
+    def task_eval_fn(model, key):
         task = task_with_scaled_unit_stim(
             model,
             task_base,
@@ -246,14 +258,14 @@ def get_task_eval_func(task_base, hps, unit_idx, stim_amp_base):
         )
         return task.eval(model, key=key)
 
-    return task_eval_func
+    return task_eval_fn
 
 
-def eval_func(key_eval, hps, models, task):
+def eval_fn(key_eval, hps, models, task):
     states = eqx.filter_vmap(
         lambda stim_amp: eqx.filter_vmap(
             lambda unit_idx: eqx.filter_vmap(
-                lambda key_eval: eqx.filter_vmap(get_task_eval_func(task, hps, unit_idx, stim_amp))(
+                lambda key_eval: eqx.filter_vmap(get_task_eval_fn(task, hps, unit_idx, stim_amp))(
                     models, jr.split(key_eval, hps.train.model.n_replicates)
                 )
             )(jr.split(key_eval, hps.eval_n))
@@ -283,30 +295,7 @@ def get_impulse_vrect_kws(hps):
     )
 
 
-def segment_stim_epochs(states, *, hps_common, **kwargs):
-    start_step = hps_common.pert.unit.start_step
-    end_step = start_step + hps_common.pert.unit.duration
-
-    return jt.map(
-        lambda states: jt.map(
-            lambda idxs: jt.map(
-                lambda arr: arr[..., idxs, :],
-                states,
-            ),
-            LDict.of("epoch")(
-                {
-                    "pre": slice(0, start_step),
-                    "peri": slice(start_step, end_step),
-                    "post": slice(end_step, None),
-                }
-            ),
-        ),
-        states,
-        is_leaf=is_module,
-    )
-
-
-def transform_profile_vars(states_by_var, keepdims=True, **kwargs):
+def transform_profile_vars(states_by_var, keepdims=True):
     return LDict.of("var")(
         dict(
             deviation=jnp.linalg.norm(states_by_var["pos"], axis=-1, keepdims=keepdims),
@@ -329,7 +318,7 @@ def get_response_vars(states_by_var, *, hps_common):
     """Response variables for regression analysis."""
     vars = transform_profile_vars(states_by_var, keepdims=False)
     pert_end = hps_common.pert.unit.start_step + hps_common.pert.unit.duration
-    ts = jnp.arange(pert_end, hps_common.model.n_steps)
+    ts = jnp.arange(pert_end, pert_end + 30)
     return LDict.of("response_var")(
         dict(
             max_deviation=jnp.max(vars["deviation"][..., ts], axis=-1),
@@ -422,7 +411,7 @@ def jacobian_input_channel_norms(jacobians: Array, *, axis=-1) -> RNNInputChanne
     return jt.map(lambda arr: jnp.linalg.norm(arr, axis=-1), jacobians_split)
 
 
-rnn_funcs = Data.models(where=lambda model: model.step.net.hidden)
+rnn_fns = Data.models(where=lambda model: model.step.net.hidden)
 # these have batch shape (evals, replicates, reach conditions, time)
 rnn_inputs = Data.states(where=lambda states: states.net.input)
 rnn_states = Data.states(where=lambda states: states.net.hidden)
@@ -432,49 +421,66 @@ DEPENDENCIES = {
     "aligned_vars_trivial": AlignedVars(
         varset=aligned_varset,
         # Bypass alignment; keep aligned with x-y axes
-        directions_func=get_trivial_reach_directions,
+        directions_fn=get_trivial_reach_directions,
+    ),
+    "hidden_states_pca": (
+        StatesPCA(
+            n_components=N_PCA,
+            where_states=lambda states: states.net.hidden,
+            aggregate_over_labels=("pert__amp", "sisu"),
+        )
+        .after_transform(partial(get_best_replicate, axis=3))
+        .after_getitem_at_level("task_variant", "full")
+        .after_indexing(
+            -2,
+            #! TODO: Improve `CallWithDeps` so it works with functions that map over leaves,
+            #! like `jtree.take` does in `after_indexing`.
+            np.arange(PCA_START_STEP, PCA_END_STEP),
+            axis_label="timestep",
+        )
     ),
     "jac-u-ss": (
         Jacobians(
             inputs=Jacobians.Ports(
-                funcs=rnn_funcs,
-                func_args=RNNCellArgs(rnn_inputs, rnn_states),
+                fns=rnn_fns,
+                fn_args=RNNCellArgs(rnn_inputs, rnn_states),
             ),
             argnums=0,  # with respect to inputs only
         )
         .after_getitem_at_level("task_variant", "full")
         # There's only one reach condition atm
-        .after_indexing(-3, 0, axis_label="condition", dependency_name="func_args")
+        .after_indexing(-3, 0, axis_label="condition", dependency_name="fn_args")
         # Computation based on steady-state period; stim vars not relevant.
-        .after_indexing(1, 0, axis_label="stim_unit_idx", dependency_name="func_args")
-        .after_indexing(0, 0, axis_label="stim_amp", dependency_name="func_args")
-        #! Shape is now: (evals, replicates, time, input/state)
+        .after_indexing(1, 0, axis_label="stim_unit_idx", dependency_name="fn_args")
+        .after_indexing(0, 0, axis_label="stim_amp", dependency_name="fn_args")
+        # Shape is now: (evals, replicates, time, input/state)
         # We'll average the Jacobian over several steady-state timesteps
         .after_indexing(
             -2,
             #! For now, hardcode the steps. But should base on `hps`, generally.
             lambda shape: jnp.arange(19, 29),
             axis_label="timestep",
-            dependency_name="func_args",
+            dependency_name="fn_args",
         )
         .vmap(
             in_axes={
-                "funcs": MultiVmapAxes(None, 0, None),
-                "func_args": MultiVmapAxes(0, 1, 2),
+                "fns": MultiVmapAxes(None, 0, None),
+                "fn_args": MultiVmapAxes(0, 1, 2),
             }
         )
         # Take the mean over the sampled timesteps
-        .then_transform_result(func=lambda tree: jt.map(lambda arr: jnp.mean(arr, axis=-3), tree))
+        .then_transform_result(fn=lambda tree: jt.map(lambda arr: jnp.mean(arr, axis=-3), tree))
         # Split the Jacobian by input channel, and take the Euclidean norm for each channel
         .then_transform_result(jacobian_input_channel_norms, is_leaf=None)
         # Only keep results for the inputs; the state Jacobians weren't calculated anyway
         # result: RNNCellArgs; result.state is None
         .then_transform_result(lambda result: result.input)
+        # .estimate_memory()
     ),
-    "unit_stim_regression": (
-        Regression(
-            inputs=Regression.Ports(
-                regressor_tree="aligned_vars_trivial",
+    "unit_stim_regression_prep": (
+        IdentityNode(
+            inputs=IdentityNode.Ports(
+                input="aligned_vars_trivial",
             ),
         )
         .after_transform(partial(get_best_replicate, axis=3))
@@ -482,28 +488,35 @@ DEPENDENCIES = {
         #! Only compute regression for stim condition
         .after_indexing(0, 1, axis_label="stim_amp")
         # Compute the response variables of interest
-        .after_transform(get_response_vars, level="var", dependency_names="regressor_tree")  #
+        .after_transform(get_response_vars, level="var", dependency_names="input")  #
         .after_rearrange_levels(
             ["response_var", "train__pert__std", "sisu", "pert__amp"],
-            dependency_name="regressor_tree",
+            dependency_name="input",
+        )
+        # e.g. positions to deviations
+        # .after_transform(max_deviation_after_stim, level="var", dependency_names="regressor_tree")
+    ),
+    "unit_stim_regression": (
+        Regression(
+            inputs=Regression.Ports(
+                regressor_tree="unit_stim_regression_prep",
+            ),
         )
         # Compute distinct regressions for each response variable, and for each train std
         .map_compute(is_leaf=LDict.is_of("sisu"), dependency_names="regressor_tree")
-        # e.g. positions to deviations
-        # .after_transform(max_deviation_after_stim, level="var", dependency_names="regressor_tree")
         #! Compute distinct regressions (in parallel) over stim units
         .vmap(in_axes={"regressor_tree": 0})
     ),
-    "jac-u-ss_regression": (
-        Regression(
-            inputs=Regression.Ports(
-                regressor_tree="jac-u-ss",
+    "jac-u-ss_regression_prep": (
+        IdentityNode(
+            inputs=IdentityNode.Ports(
+                input="jac-u-ss",
             ),
         )
         .after_transform(partial(get_best_replicate, axis=1))
         .after_rearrange_levels(
             ["train__pert__std", ...],
-            dependency_name="regressor_tree",
+            dependency_name="input",
             # is_leaf=is_type(RNNInputChannels),
         )
         #! TEMP: Move `RNNInputChannels` above `LDict.of("sisu")` so we can map input channels separately
@@ -517,7 +530,14 @@ DEPENDENCIES = {
                 tree,
                 is_leaf=LDict.is_of("sisu"),
             ),
-            dependency_names="regressor_tree",
+            dependency_names="input",
+        )
+    ),
+    "jac-u-ss_regression": (
+        Regression(
+            inputs=Regression.Ports(
+                regressor_tree="jac-u-ss_regression_prep",
+            ),
         )
         # Compute distinct regressions for each input channel
         .map_compute(is_leaf=LDict.is_of("sisu"), dependency_names="regressor_tree")
@@ -587,39 +607,89 @@ def regression_fig_params_fn(fig_params, ctx: FigIterCtx):
 
 
 # PyTree structure: [sisu, pert__amp, train__pert__std]
-# Array batch shape: [stim_amp, stim_unit_idx, eval, replicate, condition]
+# Array batch shape: [stim_amp, stim_unit_idx, eval, replicate, condition=1]
 ANALYSES = {
-    # "plot--unit_stim_profiles": (
-    #     Profiles(
-    #         variant="full",
-    #         vrect_kws_func=get_impulse_vrect_kws,
-    #         coord_labels=None,
-    #         inputs=Profiles.Ports(
-    #             vars="aligned_vars_trivial",
+    "JJ": IdentityNode(
+        inputs=IdentityNode.Ports(
+            input="jac-u-ss_regression_prep",
+        ),
+        tmp_label="1",
+    ),
+    "RR": IdentityNode(
+        inputs=IdentityNode.Ports(
+            input="unit_stim_regression_prep",
+        ),
+        tmp_label="2",
+    ),
+    "plot--unit-stim_profiles": (
+        Profiles(
+            variant="full",
+            vrect_kws_fn=get_impulse_vrect_kws,
+            coord_labels=None,
+            inputs=Profiles.Ports(
+                vars="aligned_vars_trivial",
+            ),
+            agg_mode=dict(deviation="standard", angle="circular", speed="standard"),
+        )
+        .after_transform(partial(get_best_replicate, axis=3))
+        #! Only make figures for a few stim units
+        .after_indexing(1, unit_idxs_profiles_plot, axis_label="unit_stim_idx")
+        .after_transform(
+            transform_profile_vars, level="var", dependency_names="vars"
+        )  # e.g. positions to deviations
+        .after_unstacking(1, "unit_stim_idx", above_level="pert__amp", dependency_name="vars")
+        #! Only make figures for unit stim condition
+        # .after_indexing(0, 1, axis_label="stim_amp")
+        .after_unstacking(0, "stim_amp", above_level="pert__amp", dependency_name="vars")
+        # Plot pert amp. on same figure
+        .after_rearrange_levels(
+            [..., "train__pert__std", "var", "pert__amp"], dependency_name="vars"
+        )
+        # .after_subdict_at_level("pert__amp", [0.0, 8.0], dependency_name="vars")
+        .after_subdict_at_level("sisu", [-2, 0, 2], dependency_name="vars")
+        .combine_figs_by_level(  # Also plot SISU on same figure, with different line styles
+            level="sisu",
+            fig_params_fn=dashed_fig_params_fn,
+        )
+        .with_fig_params(
+            layout_kws=dict(
+                width=500,
+                height=350,
+            ),
+        )
+    ),
+    # "plot--unit-stim_hidden_pc": (
+    #     ScatterPlots(
+    #         inputs=ScatterPlots.Ports(
+    #             input=rnn_states,
     #         ),
-    #     )
-    #     .after_transform(partial(get_best_replicate, axis=3))
-    #     #! Only make figures for a few stim units
-    #     .after_indexing(1, unit_idxs_profiles_plot, axis_label="unit_stim_idx")
-    #     .after_transform(
-    #         transform_profile_vars, level="var", dependency_names="vars"
-    #     )  # e.g. positions to deviations
-    #     .after_unstacking(1, "unit_stim_idx", above_level="pert__amp", dependency_name="vars")
-    #     #! Only make figures for unit stim condition
-    #     # .after_indexing(0, 1, axis_label="stim_amp")
-    #     .after_unstacking(0, "stim_amp", above_level="pert__amp", dependency_name="vars")
-    #     # Plot pert amp. on same figure
-    #     .after_rearrange_levels(
-    #         [..., "train__pert__std", "var", "pert__amp"], dependency_name="vars"
-    #     )
-    #     .combine_figs_by_level(  # Also plot SISU on same figure, with different line styles
-    #         level="sisu",
-    #         fig_params_fn=dashed_fig_params_fn,
+    #         subplot_level="train__pert__std",
+    #         colorscale_key="sisu",
     #     )
     #     .with_fig_params(
-    #         layout_kws=dict(
-    #             width=500,
-    #             height=350,
+    #         axes_labels=fbp.AxesLabels("PC1", "PC2"),
+    #         layout_kws=dict(width=800, height=500),
+    #     )
+    #     .after_getitem_at_level("task_variant", "full", dependency_name="input")
+    #     # Take a subset of perturbed units
+    #     .after_indexing(1, np.arange(10), axis_label="unit_stim_idx", dependency_name="input")
+    #     .after_unstacking(1, "unit_stim_idx", dependency_name="input")
+    #     # Expects SISU in the legend
+    #     .after_stacking("sisu", dependency_name="input")
+    #     # Now shape: (sisu, stim_amp, eval, replicate, condn=1, timestep, state)
+    #     .after_transform(
+    #         # Pull in the PCA results and use them to transform the hidden states
+    #         CallWithDeps("hidden_states_pca")(get_state_pcs),
+    #         dependency_names="input",
+    #     )
+    #     #! Select top 2/3 PCs
+    #     .after_indexing(-1, jnp.arange(2), axis_label="pc", dependency_name="input")
+    #     .map_figs_at_level("pert__amp", dependency_name="input")
+    # ),
+    # "plot--unit-jac-u-ss": (
+    #     Violins(
+    #         inputs=Violins.Ports(
+    #             input="jac-u-ss",
     #         ),
     #     )
     # ),
@@ -632,32 +702,32 @@ ANALYSES = {
     #     .after_transform(get_best_replicate)
     #     .after_rearrange_levels([..., "sisu", "train__pert__std"], dependency_name="input")
     # ),
-    "unit_stim_regression_figures": (
-        UnitStimRegressionFigures(
-            inputs=UnitStimRegressionFigures.Ports(
-                regression_results="unit_stim_regression",
-                unit_fb_gains="jac-u-ss_regression",
-            ),
-        )
-        .with_fig_params(
-            layout=dict(
-                xaxis_title="{input_channel} input channel gain coef.",
-                yaxis_title="{response_var} response coef.",
-                title="Regressor: {feature_label}; Train pert. std.: {train__pert__std}",
-            )
-        )
-        .after_map(
-            lambda ntuple: LDict.of("input_channel")(ntuple._asdict()),
-            is_leaf=is_type(RNNInputChannels),
-            dependency_name="unit_fb_gains",
-        )
-        .map_make_figs_to_output(
-            ["response_var", "train__pert__std", "input_channel"],
-            dependency_names=["regression_results", "unit_fb_gains"],
-            is_leaf=is_type(RegressionResults),
-            # fig_params_fn=regression_fig_params_fn,
-        )
-    ),
+    # "unit_stim_regression_figures": (
+    #     UnitStimRegressionFigures(
+    #         inputs=UnitStimRegressionFigures.Ports(
+    #             regression_results="unit_stim_regression",
+    #             unit_fb_gains="jac-u-ss_regression",
+    #         ),
+    #     )
+    #     .with_fig_params(
+    #         layout=dict(
+    #             xaxis_title="{input_channel} input channel gain coef.",
+    #             yaxis_title="{response_var} response coef.",
+    #             title="Regressor: {feature_label}; Train pert. std.: {train__pert__std}",
+    #         )
+    #     )
+    #     .after_map(
+    #         lambda ntuple: LDict.of("input_channel")(ntuple._asdict()),
+    #         is_leaf=is_type(RNNInputChannels),
+    #         dependency_name="unit_fb_gains",
+    #     )
+    #     .map_make_figs_to_output(
+    #         ["response_var", "train__pert__std", "input_channel"],
+    #         dependency_names=["regression_results", "unit_fb_gains"],
+    #         is_leaf=is_type(RegressionResults),
+    #         # fig_params_fn=regression_fig_params_fn,
+    #     )
+    # ),
     #! TODO: Replace with `get_aligned_trajectories_node`
     # "aligned_effector_trajectories": (
     #     AlignedEffectorTrajectories(
@@ -676,10 +746,19 @@ ANALYSES = {
     #     )
     #     .after_transform(partial(get_best_replicate, axis=3))
     #     .after_transform(
-    #         # get_segment_trials_func(get_symmetric_accel_decel_epochs),
-    #         segment_stim_epochs,
+    #         # get_segment_trials_fn(get_symmetric_accel_decel_epochs),
+    #         partial(
+    #             segment_epochs,
+    #             where_idxs=lambda hps: (
+    #                 hps.pert.unit.start_step,
+    #                 hps.pert.unit.start_step + hps.pert.unit.duration,
+    #             ),
+    #             labels=("pre", "peri", "post"),
+    #         ),
     #         dependency_names="states",
     #     )
-    #     .vmap_over_states(axes=[0, 1])  # Compute preferences separately for stim vs. nostim, and for each stim unit
+    #     .vmap(
+    #         in_axes={"data.states": MultiVmapAxes(0, 1)}
+    #     )  # Compute preferences separately for stim vs. nostim, and for each stim unit
     # ),
 }

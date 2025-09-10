@@ -22,7 +22,7 @@ defs:
     name: damping
     of:
       train.model.damping: [0, 10]
-
+  
   tau_rise: &tau_rise
     type: config
     name: tau_rise
@@ -32,16 +32,13 @@ defs:
   disturbance_types: &disturbance_types
     type: cases
     of:
-      # - type: config
-      #   name: curl-curl
-      #   of:
-      #     train:
-      #       pert:
-      #         type: curl
-      #         std: !Literal [0.0, 0.5, 1.0, 1.5]
-      #     pert:
-      #       type: curl
-      #       amp: !Literal [0.0, 4.0, 8.0]
+      - type: config
+        name: curl-curl
+        of:
+          train:
+            pert:
+              type: curl
+              std: !Literal [0.0, 1.5]
 
       - type: config
         name: constant-constant
@@ -49,23 +46,12 @@ defs:
           train:
             pert:
               type: constant
-              std: !Literal [0, 0.01, 0.1, 1]
-          pert:
-            type: constant
-            amp: !Literal [0, 2.0, 4.0]
+              std: !Literal [0, 1]
+
 
 
 SPEC: 
-  - part1.plant_perts:
-      type: product
-      of: 
-        - *damping
-        - *tau_rise
-        - *noise_levels
-        - *delays
-        - *disturbance_types
-
-  - part2.plant_perts:
+  - part2.feedback_perts:
       type: product
       of: 
         - *damping

@@ -22,17 +22,17 @@ from jax_cookbook.tree import get_ensemble
 from jaxtyping import PRNGKeyArray
 
 
-def disturbance_params(scale_func):
-    """Returns a dict of disturbance parameter functions, scaled by `scale_func`."""
+def disturbance_params(scale_fn):
+    """Returns a dict of disturbance parameter functions, scaled by `scale_fn`."""
     return {
         "curl": dict(
-            amplitude=lambda trial_spec, batch_info, key: scale_func(
+            amplitude=lambda trial_spec, batch_info, key: scale_fn(
                 batch_info,
                 jr.normal(key, ()),
             )
         ),
         "constant": dict(
-            field=lambda trial_spec, batch_info, key: scale_func(
+            field=lambda trial_spec, batch_info, key: scale_fn(
                 batch_info,
                 vector_with_gaussian_length(key),
             )
@@ -56,17 +56,17 @@ def setup_task_model_pair(hps_train: TreeNamespace, *, key):
         def batch_scale_up(batch_start, n_batches, batch_info, x):
             return x
 
-    loss_func = simple_reach_loss()
+    loss_fn = simple_reach_loss()
 
-    loss_func = eqx.tree_at(
-        lambda loss_func: loss_func.weights["nn_output"],
-        loss_func,
-        hps_train.model.control_loss_scale * loss_func.weights["nn_output"],
+    loss_fn = eqx.tree_at(
+        lambda loss_fn: loss_fn.weights["nn_output"],
+        loss_fn,
+        hps_train.model.control_loss_scale * loss_fn.weights["nn_output"],
     )
 
     task_base = get_base_reaching_task(
         n_steps=hps_train.model.n_steps,
-        loss_func=loss_func,
+        loss_fn=loss_fn,
     )
 
     models = get_ensemble(

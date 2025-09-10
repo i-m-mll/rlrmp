@@ -1,0 +1,38 @@
+defs:
+  config: &config
+    type: product
+    of:
+      - type: config
+        of:
+          train.model.damping: [0, 10]
+          train.model.tau_rise: [0.0, 0.05]
+          train.model.feedback_delay_steps: [0, 5]
+          train.model.feedback_noise_std: [0.01, 0.1]
+          train.model.motor_noise_std:    [0.01, 0.1]
+          model.feedback_noise_std: [0.01, 0.1]
+          model.motor_noise_std: [0.01, 0.1]
+      - type: cases
+        of:
+        - type: config
+          name: curl
+          of: 
+            train.pert.type: curl
+            train.pert.std: !Literal [0.0, 0.5, 1.0, 1.5]
+            pert.type: curl
+            pert.amp: !Literal [0.0, 4.0, 8.0]
+        # - type: config
+        #   name: constant
+        #   of: 
+        #     train.pert.type: constant 
+        #     train.pert.std: !Literal [0, 0.01, 0.1, 1]
+        #     pert.type: constant
+        #     pert.amp: !Literal [0.0, 2.0, 4.0]
+
+
+SPEC: 
+  - part1.plant_perts:
+      <<: *config
+
+
+  # - part2.plant_perts:
+  #     <<: *config
