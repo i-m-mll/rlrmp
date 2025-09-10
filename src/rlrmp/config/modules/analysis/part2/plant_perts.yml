@@ -12,7 +12,7 @@ eval_n: 10
 task:  # Passed to the base task constructor
   full:
     eval_grid_n: 2
-    eval_n_directions: 24
+    eval_n_directions: 16
     # eval_reach_length: 0.5
   small:
     eval_grid_n: 1
@@ -22,7 +22,7 @@ task:  # Passed to the base task constructor
 pert:
   # null -> same as during training, e.g. load.train.pert.type in this case
   type: null 
-  amp: [0.0, 4.0] 
+  amp: [0.0, 4.0, 8.0] 
   # constant -> [0.0, 0.4],
 
 model:

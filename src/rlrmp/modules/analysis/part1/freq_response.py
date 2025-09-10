@@ -7,13 +7,12 @@ import feedbax.plotly as fbp
 import jax.numpy as jnp
 import jax.tree as jt
 import jax_cookbook.tree as jtree
-from jax_cookbook import is_module
-
 from feedbax_experiments.analysis.analysis import AbstractAnalysis, NoPorts
 from feedbax_experiments.analysis.state_utils import vmap_eval_ensemble
 from feedbax_experiments.types import AnalysisInputData, LDict
+from jax_cookbook import is_module
 
-COLOR_FUNCS = dict()
+COLOR_FNS = dict()
 
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
@@ -21,7 +20,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     return task_base, models_base, hps, None
 
 
-eval_func = vmap_eval_ensemble
+eval_fn = vmap_eval_ensemble
 
 
 INPUT_WHERE = lambda state, idx: state.feedback.noise[idx]

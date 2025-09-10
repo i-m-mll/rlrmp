@@ -122,7 +122,7 @@ This is more correct in general than the [[#Two-regression comparison]].
 Essentially we do 
 
 $$
-Y_{i,s,p,r} \;=\; \underbrace{\alpha_0 + u_i}_{\text{baseline}} \;+\; \underbrace{\beta_G\,G_{i,s,p} + \beta_S\,S + \beta_P\,P + \beta_{SP}\,S P}_{\text{fixed effects}}\;+\; \underbrace{v_{iG}\,G_{i,s,p} + v_{iS}\,S + v_{iP}\,P}_{\text{unit-specific slopes (optional)}} \;+\; \varepsilon
+Y_{i,s,p,r} \;=\; \underbrace{\alpha_0 + u_i}_{\text{baseline}} \;+\; \underbrace{\beta_G\,G_{i,s,p} + \beta_S\,S + \beta_P\,P + \beta_{SP}\,S P}_{\text{fixed effects}}\;+\; \underbrace{v_{iG}\,G_{i,s,p} + v_{iS}\,S + v_{iP}\,P}_{\text{group=-specific slopes (optional)}} \;+\; \varepsilon
 $$
 where 
 

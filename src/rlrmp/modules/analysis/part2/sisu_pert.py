@@ -3,14 +3,13 @@
 import equinox as eqx
 import jax_cookbook.tree as jtree
 from feedbax.intervene import schedule_intervenor
-
 from feedbax_experiments.analysis.activity import NetworkActivity_SampleUnits
 from feedbax_experiments.analysis.aligned import get_aligned_trajectories_node
 from feedbax_experiments.analysis.analysis import FigIterCtx
 from feedbax_experiments.analysis.disturbance import (
     PLANT_INTERVENOR_LABEL,
-    PLANT_PERT_FUNCS,
-    get_pert_amp_vmap_eval_func,
+    PLANT_PERT_FNS,
+    get_pert_amp_vmap_eval_fn,
 )
 from feedbax_experiments.analysis.effector import EffectorTrajectories
 from feedbax_experiments.analysis.profiles import Profiles
@@ -18,11 +17,11 @@ from feedbax_experiments.analysis.state_utils import get_best_replicate, get_ste
 from feedbax_experiments.colors import ColorscaleSpec
 from feedbax_experiments.types import LDict
 
-COLOR_FUNCS = dict(
+COLOR_FNS = dict(
     # pert__amp=lambda hps: [final - hps.pert.sisu.init for final in hps.pert.sisu.final],
     # sisu=lambda hps: [final - hps.pert.sisu.init for final in hps.pert.sisu.final],
     pert__sisu__amp=ColorscaleSpec(
-        sequence_func=lambda hps: [final - hps.pert.sisu.init for final in hps.pert.sisu.final],
+        sequence_fn=lambda hps: [final - hps.pert.sisu.init for final in hps.pert.sisu.final],
         colorscale="thermal",
     ),
 )
@@ -34,7 +33,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     Note that this is a bit different to how we perturb state variables; normally we'd use an intervenor
     but since the SISU is supplied by the task, we can just change the way that's defined.
     """
-    plant_disturbance = PLANT_PERT_FUNCS[hps.pert.plant.type]
+    plant_disturbance = PLANT_PERT_FNS[hps.pert.plant.type]
 
     # Add placeholder for plant perturbations
     task_base, models_base = schedule_intervenor(
@@ -72,7 +71,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     return tasks, models, hps, None
 
 
-eval_func = get_pert_amp_vmap_eval_func(lambda hps: hps.pert.plant.amp, PLANT_INTERVENOR_LABEL)
+eval_fn = get_pert_amp_vmap_eval_fn(lambda hps: hps.pert.plant.amp, PLANT_INTERVENOR_LABEL)
 
 
 PLANT_PERT_LABELS = {0: "no curl", 1: "curl"}

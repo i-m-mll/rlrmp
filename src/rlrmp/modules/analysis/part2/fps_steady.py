@@ -62,7 +62,7 @@ PCA_END_STEP = 100
 STRIDE_FP_CANDIDATES = 16
 
 
-COLOR_FUNCS: dict[str, Callable[[TreeNamespace], Sequence]] = dict()
+COLOR_FNS: dict[str, Callable[[TreeNamespace], Sequence]] = dict()
 
 
 def setup_eval_tasks_and_models(
@@ -98,7 +98,7 @@ def setup_eval_tasks_and_models(
 
 
 # Unlike `feedback_perts`, we don't need to vmap over impulse amplitude
-eval_func: Callable = vmap_eval_ensemble
+eval_fn: Callable = vmap_eval_ensemble
 
 
 class EigvalsPlotPorts(AbstractAnalysisPorts):
@@ -150,7 +150,7 @@ class EigvalsPlot(AbstractAnalysis[EigvalsPlotPorts]):
             jtree.stack_subtrees(eigvals, axis=0, is_subtree=LDict.is_of(legend_var_label)),
         )
 
-        plot_func_partial = partial(
+        plot_fn_partial = partial(
             plot_eigvals_df,
             marginals="box",
             color=legend_var_label,
@@ -166,7 +166,7 @@ class EigvalsPlot(AbstractAnalysis[EigvalsPlotPorts]):
         )
 
         figs = jt.map(
-            lambda df: plot_func_partial(
+            lambda df: plot_fn_partial(
                 df, color_discrete_sequence=list(colors[legend_var_label].dark.values())
             ),
             eigval_dfs,
@@ -266,12 +266,12 @@ def get_ss_rnn_input(sisu: float, pos: Float[Array, "2"]):
     return jnp.array([sisu, *pos, *vel, *pos, *vel])
 
 
-def get_ss_rnn_func(rnn_cell: Callable[[Array, Array], Array]):
-    def rnn_func(sisu, pos, h):
+def get_ss_rnn_fn(rnn_cell: Callable[[Array, Array], Array]):
+    def rnn_fn(sisu, pos, h):
         input_star = get_ss_rnn_input(sisu, pos)
         return rnn_cell(input_star, h)
 
-    return rnn_func
+    return rnn_fn
 
 
 def reshape_candidates(states: Array) -> Array:
@@ -297,7 +297,7 @@ TRANSFORMS = AnalysisModuleTransformSpec(
 )
 
 
-ss_rnn_funcs = Data.models(where=lambda model: get_ss_rnn_func(model.step.net.hidden))
+ss_rnn_fns = Data.models(where=lambda model: get_ss_rnn_fn(model.step.net.hidden))
 sisu = Data.hps(where=lambda hps: hps.sisu, is_leaf=is_type(TreeNamespace))
 positions = Data.tasks(
     where=lambda task: (task.validation_trials.targets["mechanics.effector.pos"].value[:, -1])
@@ -322,9 +322,9 @@ DEPENDENCIES = {
         FixedPoints(
             stride_candidates=STRIDE_FP_CANDIDATES,
             inputs=FixedPoints.Ports(
-                funcs=ss_rnn_funcs,
-                func_args=ExpandTo.map(
-                    "funcs",
+                fns=ss_rnn_fns,
+                fn_args=ExpandTo.map(
+                    "fns",
                     (sisu, positions),
                     is_leaf_prefix=(is_type(TreeNamespace), is_type(AbstractTask)),
                 ),
@@ -336,7 +336,7 @@ DEPENDENCIES = {
             ),
         )
         # over the steady state workspace positions & corresponding candidates
-        .vmap(in_axes={"func_args": (None, 0), "candidates": 0})
+        .vmap(in_axes={"fn_args": (None, 0), "candidates": 0})
         .then_transform_result(process_fps)
     ),
 }
@@ -373,7 +373,7 @@ ANALYSES = {
         ).after_transform(lambda fp_results: fp_results.fps, dependency_names="plot_data")
     ),
     "plot--fps_pc": (
-        ScatterN3D(
+        ScatterPlots(
             inputs=PlotInPCSpace.Ports(
                 pca_results="states_pca",
                 plot_data="steady_state_fp_results",
@@ -388,9 +388,9 @@ ANALYSES = {
         f"steady_state_{cls.__name__.lower()}": (
             cls(
                 inputs=cls.Ports(
-                    funcs=ss_rnn_funcs,
-                    func_args=ExpandTo.map(
-                        "funcs",  # signature: (sisu, pos, h)
+                    fns=ss_rnn_fns,
+                    fn_args=ExpandTo.map(
+                        "fns",  # signature: (sisu, pos, h)
                         GradArgs(sisu, positions, steady_state_fps),
                         is_leaf=is_module,
                         is_leaf_prefix=GradArgs(is_type(TreeNamespace), is_module, None),
@@ -398,7 +398,7 @@ ANALYSES = {
                 ),
             )
             # over the steady state workspace positions
-            .vmap(in_axes={"func_args": GradArgs(None, 0, 0)})
+            .vmap(in_axes={"fn_args": GradArgs(None, 0, 0)})
         )
         for cls in (Jacobians,)  #!, Hessians)
     },

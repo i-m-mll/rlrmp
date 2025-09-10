@@ -13,9 +13,9 @@ from feedbax_experiments.analysis.aligned import (
     get_aligned_trajectories_node,
 )
 from feedbax_experiments.analysis.analysis import FigIterCtx
-from feedbax_experiments.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FUNCS
+from feedbax_experiments.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FNS
 from feedbax_experiments.analysis.effector import EffectorTrajectories
-from feedbax_experiments.analysis.func import ApplyFuncs
+from feedbax_experiments.analysis.func import ApplyFns
 from feedbax_experiments.analysis.profiles import Profiles
 from feedbax_experiments.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
 from feedbax_experiments.analysis.violins import Violins
@@ -29,12 +29,12 @@ from feedbax_experiments.tree_utils import lohi, subdict
 from feedbax_experiments.types import LDict
 from jax_cookbook import is_module, is_type
 
-COLOR_FUNCS = dict()
+COLOR_FNS = dict()
 
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
     try:
-        disturbance = PLANT_PERT_FUNCS[hps.pert.type]
+        disturbance = PLANT_PERT_FNS[hps.pert.type]
     except KeyError:
         raise ValueError(f"Unknown perturbation type: {hps.pert.type}")
 
@@ -75,11 +75,17 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
 
 
 # We aren't vmapping over any other variables, so this is trivial.
-eval_func = vmap_eval_ensemble
+eval_fn = vmap_eval_ensemble
 
 
 """Labels of measures to include in the analysis."""
 MEASURE_KEYS = (
+    "initial_command",
+    "max_net_command",
+    "sum_net_command",
+    "initial_force",
+    "max_net_force",
+    "sum_net_force",
     "max_parallel_vel_forward",
     "max_lateral_vel_left",
     "max_lateral_vel_right",
@@ -91,12 +97,10 @@ MEASURE_KEYS = (
     "sum_parallel_force",
     "max_lateral_force_right",
     "sum_lateral_force_abs",
-    "max_net_force",
-    "sum_net_force",
 )
 
 
-MEASURE_FUNCS = subdict(ALL_MEASURES, MEASURE_KEYS)
+MEASURE_FNS = subdict(ALL_MEASURES, MEASURE_KEYS)
 
 
 i_eval = 0  # For single-eval plots
@@ -104,9 +108,9 @@ i_eval = 0  # For single-eval plots
 
 DEPENDENCIES = {
     "measures": (
-        ApplyFuncs(
-            funcs=MEASURE_FUNCS,
-            inputs=ApplyFuncs.Ports(input=AlignedVars()),
+        ApplyFns(
+            fns=MEASURE_FNS,
+            inputs=ApplyFns.Ports(input=AlignedVars()),
             is_leaf=LDict.is_of(VAR_LEVEL_LABEL),
         )
         # Discard the varset; only keep the aligned vars
@@ -139,7 +143,9 @@ ANALYSES = {
         )
         .after_transform(get_best_replicate)
         .then_transform_figs(
-            partial(set_axis_bounds_equal, "y", padding_factor=0.1),
+            partial(set_axis_bounds_equal, "y", padding_factor=0.2),
+            levels=(),
+            invert_levels=True,
         )
         # .with_fig_params()
     ),
@@ -173,7 +179,11 @@ ANALYSES = {
         get_aligned_trajectories_node(colorscale_key="pert__amp")
         .after_transform(get_best_replicate)
         .after_getitem_at_level("task_variant", "small")
-        .then_transform_figs(set_axes_bounds_equal_traj2D)
+        .then_transform_figs(
+            partial(set_axis_bounds_equal, "y", padding_factor=0.2),
+            levels=(),
+            invert_levels=True,
+        )
     ),
     "plot--aligned_trajectories_by_train_std": (
         get_aligned_trajectories_node(
@@ -182,12 +192,24 @@ ANALYSES = {
             pre_transform_fns=(get_best_replicate,),
         )
         .after_getitem_at_level("task_variant", "small")
-        .then_transform_figs(set_axes_bounds_equal_traj2D)
+        .then_transform_figs(
+            partial(set_axis_bounds_equal, "y", padding_factor=0.2),
+            levels=(),
+            invert_levels=True,
+        )
     ),
     "plot--profiles": (
         Profiles(varset=DEFAULT_VARSET)
+        .with_fig_params(
+            layout_kws=dict(height=300, width=450),
+        )
         .after_transform(get_best_replicate)
         .after_level_to_bottom("train__pert__std", dependency_name="vars")
+        .then_transform_figs(
+            partial(set_axis_bounds_equal, "y"),
+            levels=["var"],
+            invert_levels=True,
+        )
         # .after_transform(
         #     lambda tree, **kws: move_ldict_level_above("var", "train__pert__std", tree),
         #     dependency_names="vars",
