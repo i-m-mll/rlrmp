@@ -23,7 +23,7 @@ COLOR_FNS = {}
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
     try:
-        disturbance = PLANT_PERT_FNS[hps.pert.type]
+        disturbance = PLANT_PERT_FNS[hps.pert.type](hps)
     except KeyError:
         raise ValueError(f"Unknown perturbation type: {hps.pert.type}")
 

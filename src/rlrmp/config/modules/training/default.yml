@@ -1,14 +1,21 @@
+dt: 0.01
+
 model:
   n_replicates: 5
+  effector_mass: 1.0
   hidden_size: 100
   feedback_delay_steps: 0
   feedback_noise_std: 0.01
   motor_noise_std: 0.01
-  n_steps: 100
-  dt: 0.01  #!
   damping: 10   #!
-  tau_rise: 0.05  #!  
-  control_loss_scale: 1.0
+  tau_rise: 0.05  #! 
+
+task: 
+  n_steps: 100
+  workspace: [[-1.0, -1.0], [1.0, 1.0]]  #!
+  eval_grid_n: 2
+  eval_n_directions: 7
+  eval_reach_length: 0.5
 
 where: 
   0: ['step.net.hidden', 'step.net.readout']
@@ -24,12 +31,29 @@ constant_lr_iterations: 0
 cosine_annealing_alpha: 1.0
 weight_decay: 0.0
 # save_model_parameters: 
-# readout_norm_loss_weight:
-# readout_norm_value:
+
+loss:
+  weights:
+    effector_stop_at_goal: 1.0
+    effector_position: 1.0
+    effector_final_velocity: 1.0
+    nn_output: 1e-5
+    nn_hidden: 1e-5
+    # fix_readout_norm: 0.1
+  stop_at_goal:
+    method: "soft-or"
+    window_len: 5
+    std_dist: 0.025
+    std_vel: 0.05
+    vel_weight: 1.0
+    tau: 0.2
+  # fix_readout_norm: 1.0
 
 pert:
-  type: constant
+  type: gusts
   std: 1
+  duration_mean: 8
+  n_expected: 8
 
   # type: curl
   # std: 1.5

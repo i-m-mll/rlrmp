@@ -50,7 +50,7 @@ def setup_eval_tasks_and_models(
 ):
     """Set up tasks with plant perturbations and varying SISU."""
     try:
-        disturbance = PLANT_PERT_FNS[hps.pert.type]
+        disturbance = PLANT_PERT_FNS[hps.pert.type](hps)
     except KeyError:
         raise ValueError(f"Unknown disturbance type: {hps.pert.type}")
 
@@ -95,7 +95,7 @@ def setup_eval_tasks_and_models(
                     name="sisu",
                     input_fn=get_constant_input_fn(
                         sisu,
-                        hps.model.n_steps,
+                        hps.task.n_steps,
                         task.n_validation_trials,
                     ),
                 ),

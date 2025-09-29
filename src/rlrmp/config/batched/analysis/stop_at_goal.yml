@@ -1,0 +1,61 @@
+# reusable definitions (ignored by parser)
+defs:
+  base: &base
+    type: config
+    name: base
+    of:
+      pert.amp: !Literal [0, 2, 4]
+      train:
+        pert: 
+          type: gusts
+          std: !Literal [0, 1, 2]
+          duration_mean: 8
+          n_expected: 8
+        n_batches_condition: 5000
+        model:
+          damping: 10
+          tau_rise: 0.05
+
+  # realism_levels: &realism_levels
+  #   type: config
+  #   of:
+  #     train:
+  #       model:
+  #         feedback_noise_std: [0.01, 0.1]
+  #         motor_noise_std:    [0.01, 0.1]
+  #         feedback_delay_steps: [0, 5]
+  #         damping: [0, 10]
+  #         tau_rise: [0.0, 0.05]
+
+  loss_weights: &loss_weights
+    type: config
+    of:
+      train.loss.weights.effector_stop_at_goal: 2 #[2.0, 1.0, 0.1]
+
+  loss_methods: &loss_methods
+    type: config
+    of:
+      train.loss.stop_at_goal.method: "soft-or"
+      
+  loss_tol: &loss_tol
+    type: config
+    of:
+      train.loss.stop_at_goal:
+        std_dist: 0.005 #[0.005, 0.025, 0.05]
+        std_vel: 0.001 #[0.001, 0.005, 0.01]
+    
+  loss_tau: &loss_tau
+    type: config
+    of:
+      train.loss.stop_at_goal.tau: [0.2, 0.4]
+
+# actual per-module specs
+SPEC:
+  - part2.plant_perts:
+      type: product
+      of:
+        - *base
+        - *loss_methods
+        - *loss_weights
+        - *loss_tol
+        - *loss_tau

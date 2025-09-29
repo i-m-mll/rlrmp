@@ -1,23 +1,32 @@
 # reusable definitions (ignored by parser)
+defs:
+  base: &base
+    type: config
+    name: base
+    of:
+      pert.type: gusts
 
 # actual per-module specs
 SPEC:
   - part2:
       type: product
       of:
-        - type: config
-          of: 
-            model.damping: [0, 10]
-            model.tau_rise: [0.0, 0.05]
-            model.feedback_delay_steps: [0, 5]
-            model.feedback_noise_std: [0.01, 0.1]
-            model.motor_noise_std:    [0.01, 0.1]
-        - type: config
+        - *base
+        - type: product
           of:
-            pert.std: [0, 1, 4, 8]
-        - type: config
-          of:
-            pert.duration_mean: [4, 8, 12]
-        - type: config
-          of:
-            pert.n_expected: [1, 2, 4, 16]
+            - type: config
+              of: 
+                model.damping: [0, 10]
+                model.tau_rise: [0.0, 0.05]
+                model.feedback_delay_steps: [0, 5]
+                model.feedback_noise_std: [0.01, 0.1]
+                model.motor_noise_std:    [0.01, 0.1]
+            - type: config
+              of:
+                pert.std: [0, 1, 4, 8]
+            - type: config
+              of:
+                pert.duration_mean: [4, 8, 12]
+            - type: config
+              of:
+                pert.n_expected: [1, 2, 4, 16]

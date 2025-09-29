@@ -7,17 +7,22 @@ train:
 
 sisu: [-3., -2., -1., 0., 1., 2., 3.]
 
-eval_n: 10
+model:
+  feedback_noise_std: null
+  motor_noise_std: null
   
 task:  # Passed to the base task constructor
-  full:
-    eval_grid_n: 2
-    eval_n_directions: 24
-    # eval_reach_length: 0.5
-  small:
-    eval_grid_n: 2
-    eval_n_directions: 7
-  #   # eval_reach_length: 0.5
+  n_steps: null
+  eval_n: 10
+  variants:
+    full:
+      eval_grid_n: 2
+      eval_n_directions: 24
+      # eval_reach_length: 0.5
+    small:
+      eval_grid_n: 2
+      eval_n_directions: 7
+    #   # eval_reach_length: 0.5
 
 pert:
   # null -> same as during training, e.g. load.train.pert.type in this case
@@ -25,10 +30,6 @@ pert:
   amp: [0.0, 4.0] 
   # constant -> [0.0, 0.4],
 
-model:
-  n_steps: null
-  feedback_noise_std: null
-  motor_noise_std: null
 
 # analyses:
 #   center_out_sets: 

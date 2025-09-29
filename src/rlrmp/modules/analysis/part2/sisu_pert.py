@@ -33,7 +33,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     Note that this is a bit different to how we perturb state variables; normally we'd use an intervenor
     but since the SISU is supplied by the task, we can just change the way that's defined.
     """
-    plant_disturbance = PLANT_PERT_FNS[hps.pert.plant.type]
+    plant_disturbance = PLANT_PERT_FNS[hps.pert.plant.type](hps)
 
     # Add placeholder for plant perturbations
     task_base, models_base = schedule_intervenor(
@@ -56,7 +56,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
                             hps.pert.sisu.init,
                             sisu_final,
                             hps.pert.sisu.step,
-                            hps.model.n_steps - 1,
+                            hps.task.n_steps - 1,
                             task_base.n_validation_trials,
                         ),
                     ),
