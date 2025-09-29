@@ -80,7 +80,7 @@ def setup_eval_tasks_and_models(
                         name="sisu",
                         input_fn=get_constant_input_fn(
                             sisu,
-                            hps.model.n_steps,
+                            hps.task.n_steps,
                             task_base.n_validation_trials,
                         ),
                     ),

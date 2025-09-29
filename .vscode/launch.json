@@ -17,9 +17,7 @@
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
             "justMyCode": false,
-            "env": {
-                "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2"
-            }
+            "envFile": "${workspaceFolder}/.env",
         },
             {
             "name": "Debug: run analysis (single)",
@@ -30,9 +28,7 @@
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
             "justMyCode": false,
-            "env": {
-                "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2"
-            }
+            "envFile": "${workspaceFolder}/.env",
         },
         {
             "name": "Debug: run train (batched)",
@@ -43,9 +39,7 @@
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
             "justMyCode": false,
-            "env": {
-                "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2"
-            }
+            "envFile": "${workspaceFolder}/.env",
         },
             {
             "name": "Debug: run train (single)",
@@ -56,9 +50,7 @@
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
             "justMyCode": false,
-            "env": {
-                "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2"
-            }
+            "envFile": "${workspaceFolder}/.env",
         },
         {
             "name": "Debug: run (with args)",
@@ -69,9 +61,7 @@
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
             "justMyCode": false,
-            "env": {
-                "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2"
-            }
+            "envFile": "${workspaceFolder}/.env",
         },
         {
             "name": "Python Debugger: Current File with Arguments",
@@ -80,7 +70,7 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "args": ["${command:pickArgs}"],
-            "env": {"PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2"},
+            "envFile": "${workspaceFolder}/.env",
             // "preLaunchTask": "activate-conda-env"
         },
         {
@@ -90,7 +80,7 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "cwd": "${fileDirname}",
-            "env": {"PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2"},
+            "envFile": "${workspaceFolder}/.env",
             // "preLaunchTask": "activate-conda-env"
         }
     ]

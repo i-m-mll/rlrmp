@@ -3,26 +3,26 @@ from functools import partial
 from typing import Literal as L
 from typing import TypeAlias
 
-import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax_cookbook.tree as jtree
 from feedbax.intervene import schedule_intervenor
-from feedbax.task import TimeSeriesParam
+from feedbax.task import SimpleReaches
 from feedbax.xabdeef.models import point_mass_nn
 from feedbax_experiments.analysis.disturbance import (
     PLANT_DISTURBANCE_CLASSES,
     PLANT_INTERVENOR_LABEL,
 )
-from feedbax_experiments.constants import (
-    MASS,
-)
 from feedbax_experiments.misc import get_field_amplitude, vector_with_gaussian_length
-from feedbax_experiments.setup_utils import get_base_reaching_task
+
+# from rlrmp.loss import get_reach_loss
+from feedbax_experiments.training.loss import get_reach_loss
 from feedbax_experiments.training.train import always_active, bernoulli_active
 from feedbax_experiments.types import LDict, TaskModelPair, TreeNamespace
-from jaxtyping import Array, Float, Int, PRNGKeyArray
+from jaxtyping import PRNGKeyArray
+
+from rlrmp.disturbances import get_gusts_fn
 
 TrainingMethodLabel: TypeAlias = L["bcs", "dai", "pai-asf", "pai-n"]
 
@@ -43,61 +43,6 @@ disturbance_active: LDict[str, Callable] = LDict.of("train__method")(
         "pai-asf": always_active,  # or bernoulli_active? and let hps control it
     }
 )
-
-
-class Gusts(eqx.Module):
-    signal: Float[Array, "k d=2"]
-    starts: Int[Array, " k"]
-    durations: Int[Array, " k"]
-    forces: Float[Array, "k d=2"]
-
-
-def get_gusts_fn(hps):
-    n_steps = hps.model.n_steps - 1
-    amplitude_std = hps.pert.std
-    n_expected = hps.pert.n_expected
-    duration_mean = hps.pert.duration_mean
-
-    p_offset = 1.0 / jnp.maximum(1.0, duration_mean)
-    max_gusts = n_steps // 2
-
-    def _gusts_fn(trial_spec, batch_info, key):
-        key1, key2, key3, key4 = jr.split(key, 4)
-        n_gusts = jr.poisson(key1, n_expected, shape=())
-        n_gusts = jnp.minimum(n_gusts, max_gusts)
-
-        def no_gusts():
-            # return Gusts(
-            #     signal=jnp.zeros((n_steps, 2), dtype=jnp.float32),
-            #     starts=jnp.zeros((max_gusts,), dtype=jnp.int32),
-            #     durations=jnp.zeros((max_gusts,), dtype=jnp.int32),
-            #     forces=jnp.zeros((max_gusts, 2), dtype=jnp.float32),
-            # )
-            return jnp.zeros((n_steps, 2), dtype=jnp.float32)
-
-        def some_gusts():
-            starts_all = jr.choice(key2, n_steps, (max_gusts,), replace=False)
-            durations_all = jr.geometric(key3, p_offset, (max_gusts,))
-            forces_all = amplitude_std * vector_with_gaussian_length(key4, shape=(max_gusts,))
-
-            # mask valid gusts
-            mask = jnp.arange(max_gusts) < n_gusts
-            starts = jnp.where(mask, starts_all, 0)
-            durations = jnp.where(mask, durations_all, 0)
-            forces = jnp.where(mask[:, None], forces_all, 0.0)
-
-            # Build the signal
-            ts = jnp.arange(n_steps)[None, :]  # (1, n_steps)
-            s = starts[:, None]  # (n_gusts, 1)
-            d = durations[:, None]  # (n_gusts, 1)
-            in_window = (ts >= s) & (ts < (s + d))  # (n_gusts, n_steps)
-            signal = jnp.einsum("kd,kt->td", forces, in_window.astype(jnp.float32))  # (n_steps, 2)
-            # return Gusts(signal=signal, starts=starts, durations=durations, forces=forces)
-            return signal
-
-        return TimeSeriesParam(jax.lax.cond(n_gusts == 0, no_gusts, some_gusts))
-
-    return dict(field=_gusts_fn)
 
 
 def scaled_sampler(sample_fn, scale=1.0):
@@ -174,16 +119,16 @@ def disturbance(hps: TreeNamespace):
 
 
 def setup_task_model_pair(
-    hps_train: TreeNamespace = TreeNamespace(),
+    hps: TreeNamespace = TreeNamespace(),
     *,
     key: PRNGKeyArray,
     **kwargs,
 ):
     """Returns a skeleton PyTree for reloading trained models."""
-    hps_train = hps_train | kwargs
+    hps = hps | kwargs
 
     # TODO: Implement scale-up for this experiment
-    scaleup_batches = hps_train.intervention_scaleup_batches
+    scaleup_batches = hps.intervention_scaleup_batches
     n_batches_scaleup = scaleup_batches[1] - scaleup_batches[0]
     if n_batches_scaleup > 0:
 
@@ -197,30 +142,33 @@ def setup_task_model_pair(
         def batch_scale_up(batch_start, n_batches, batch_info, x):
             return x
 
-    task_base = get_base_reaching_task(n_steps=hps_train.model.n_steps)
+    task_base = SimpleReaches(
+        loss_func=get_reach_loss(hps),
+        **hps.task.omitting_attrs("eval_n"),
+    )
 
     models_base = jtree.get_ensemble(
         point_mass_nn,
         task_base,
         n_extra_inputs=1,  # for SISU
-        n=hps_train.model.n_replicates,
-        dt=hps_train.model.dt,
-        mass=MASS,
-        damping=hps_train.model.damping,
-        hidden_size=hps_train.model.hidden_size,
-        n_steps=hps_train.model.n_steps,
-        feedback_delay_steps=hps_train.model.feedback_delay_steps,
-        feedback_noise_std=hps_train.model.feedback_noise_std,
-        motor_noise_std=hps_train.model.motor_noise_std,
-        tau_rise=hps_train.model.tau_rise,
-        tau_decay=hps_train.model.tau_rise,
+        n=hps.model.n_replicates,
+        dt=hps.dt,
+        mass=hps.model.effector_mass,
+        damping=hps.model.damping,
+        hidden_size=hps.model.hidden_size,
+        n_steps=hps.task.n_steps,
+        feedback_delay_steps=hps.model.feedback_delay_steps,
+        feedback_noise_std=hps.model.feedback_noise_std,
+        motor_noise_std=hps.model.motor_noise_std,
+        tau_rise=hps.model.tau_rise,
+        tau_decay=hps.model.tau_rise,
         key=key,
     )
 
     try:
         task = task_base.add_input(
             name="sisu",
-            input_fn=SISU_FNS[hps_train.method],
+            input_fn=SISU_FNS[hps.method],
         )
     except AttributeError:
         raise ValueError("No training method label assigned to hps_train.method")
@@ -230,7 +178,7 @@ def setup_task_model_pair(
             task,
             models_base,
             lambda model: model.step.mechanics,
-            disturbance(hps_train),
+            disturbance(hps),
             label=PLANT_INTERVENOR_LABEL,
             default_active=False,
         )

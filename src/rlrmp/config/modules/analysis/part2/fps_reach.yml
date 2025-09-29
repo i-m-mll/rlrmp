@@ -7,23 +7,23 @@ train:
 
 sisu: [-3., -2., -1., 0., 1., 2., 3.]
 
-eval_n: 5
-
 pert:
   type: curl
   amp: [0.0, 2.0]
 
+model:
+  feedback_noise_std: null
+  motor_noise_std: null
+  # damping: 0.0
+  
 task:  # Passed to the base task constructor
+  n_steps: null
+  eval_n: 5
   full:
     eval_grid_n: 1
     eval_n_directions: 24
     eval_reach_length: 0.5
 
-model:
-  n_steps: null
-  feedback_noise_std: null
-  motor_noise_std: null
-  # damping: 0.0
   
   
   

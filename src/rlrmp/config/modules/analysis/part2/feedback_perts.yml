@@ -6,13 +6,19 @@ train:
 
 sisu: [-3., -2., -1., 0., 1., 2., 3.]
 
-eval_n: 25
-
+model:
+  feedback_noise_std: null
+  motor_noise_std: null
+  # damping: 0.0
+  
 task:  # Passed to the base task constructor
-  full:
-    eval_grid_n: 5
-    eval_n_directions: 1
-    eval_reach_length: 0
+  n_steps: null
+  eval_n: 25
+  variants:
+    full:
+      eval_grid_n: 5
+      eval_n_directions: 1
+      eval_reach_length: 0
 
 pert:
   # null -> same as during training, e.g. load.train.pert.type in this case
@@ -26,11 +32,6 @@ pert:
   duration: 10
   # direction: rand  # 'rand' or 'xy'
 
-model:
-  n_steps: null
-  feedback_noise_std: null
-  motor_noise_std: null
-  # damping: 0.0
   
   
   

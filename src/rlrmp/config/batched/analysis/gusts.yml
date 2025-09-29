@@ -1,0 +1,47 @@
+defs:
+  base: &base
+    type: config
+    name: base
+    of:
+      train:
+        pert:
+          type: gusts
+          std: !Literal [0, 1, 4, 8]
+      pert:
+        type: gusts
+        amp: !Literal [0, 4.0, 8.0]
+      sisu: !Literal [0., 1.]
+
+  realism_levels: &realism_levels
+    type: config
+    of:
+      train:
+        model:
+          feedback_noise_std: [0.01, 0.1]
+          motor_noise_std:    [0.01, 0.1]
+          feedback_delay_steps: [0, 5]
+          damping: [0, 10]
+          tau_rise: [0.0, 0.05]
+      # model:
+      #   feedback_noise_std: [0.01, 0.1]
+      #   motor_noise_std:    [0.01, 0.1]
+
+  pert_duration_mean: &pert_duration_mean
+    type: config
+    of:
+      train.pert.duration_mean: [4, 8, 12]
+  
+  pert_n_expected: &pert_n_expected
+    type: config
+    of:
+      train.pert.n_expected: [1, 2, 4, 16]
+
+
+SPEC: 
+  - part2.plant_perts:
+      type: product
+      of: 
+        - *base 
+        - *realism_levels
+        - *pert_duration_mean
+        - *pert_n_expected

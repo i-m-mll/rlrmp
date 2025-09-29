@@ -68,7 +68,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
                     models_base,
                     lambda model: model.step.feedback_channels[0],  # type: ignore
                     feedback_impulse(
-                        hps.model.n_steps,
+                        hps.task.n_steps,
                         1.0,  # Will be varied later
                         hps.pert.duration,
                         feedback_var_idx,
@@ -107,7 +107,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
                             name="sisu",
                             input_fn=get_constant_input_fn(
                                 sisu,
-                                hps.model.n_steps,
+                                hps.task.n_steps,
                                 task.n_validation_trials,
                             ),
                         ),

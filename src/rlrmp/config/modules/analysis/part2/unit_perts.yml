@@ -5,15 +5,21 @@ train:
     # list -> load multiple models
     std: [0, 1.5] 
     
-eval_n: 10
 
 sisu: [-2.0, -1.0, 0, 1.0, 2.0]
 
+model:
+  feedback_noise_std: null
+  motor_noise_std: null
+
 task:  # Passed to the base task constructor
-  full:
-    eval_grid_n: 1
-    eval_n_directions: 1  #! 
-    eval_reach_length: 0.0
+  n_steps: 200
+  eval_n: 10
+  variants:
+    full:
+      eval_grid_n: 1
+      eval_n_directions: 1  #! 
+      eval_reach_length: 0.0
 
 pert:
   plant:
@@ -24,10 +30,6 @@ pert:
     start_step: 30
     duration: 10
 
-model:
-  n_steps: 200
-  feedback_noise_std: null
-  motor_noise_std: null
 
   
   

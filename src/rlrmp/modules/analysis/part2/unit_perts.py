@@ -127,7 +127,7 @@ def unit_stim(hps):
         hps.pert.unit.start_step,
         hps.pert.unit.start_step + hps.pert.unit.duration,
     )
-    trial_mask = jnp.zeros((hps.model.n_steps - 1,), bool).at[idxs].set(True)
+    trial_mask = jnp.zeros((hps.task.n_steps - 1,), bool).at[idxs].set(True)
 
     return NetworkConstantInput.with_params(
         # active=True,
@@ -159,7 +159,7 @@ def schedule_unit_stim(*, tasks, models, hps):
 
 def setup_eval_tasks_and_models(task_base, models_base, hps):
     try:
-        disturbance = PLANT_PERT_FNS[hps.pert.plant.type]
+        disturbance = PLANT_PERT_FNS[hps.pert.plant.type](hps)
     except KeyError:
         raise ValueError(f"Unknown disturbance type: {hps.pert.plant.type}")
 
@@ -204,7 +204,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
                     name="sisu",
                     input_fn=get_constant_task_input_fn(
                         sisu,
-                        hps.model.n_steps - 1,
+                        hps.task.n_steps - 1,
                         task.n_validation_trials,
                     ),
                 ),
@@ -310,7 +310,7 @@ def transform_profile_vars(states_by_var, keepdims=True):
 # def max_deviation_after_stim(states_by_var, *, hps_common, **kwargs):
 #     deviation = jnp.linalg.norm(states_by_var["pos"], axis=-1)
 #     pert_end = hps_common.pert.unit.start_step + hps_common.pert.unit.duration
-#     ts = jnp.arange(pert_end, hps_common.model.n_steps)
+#     ts = jnp.arange(pert_end, hps_common.task.n_steps)
 #     return jnp.max(deviation[..., ts], axis=-1)
 
 
@@ -439,45 +439,45 @@ DEPENDENCIES = {
             axis_label="timestep",
         )
     ),
-    "jac-u-ss": (
-        Jacobians(
-            inputs=Jacobians.Ports(
-                fns=rnn_fns,
-                fn_args=RNNCellArgs(rnn_inputs, rnn_states),
-            ),
-            argnums=0,  # with respect to inputs only
-        )
-        .after_getitem_at_level("task_variant", "full")
-        # There's only one reach condition atm
-        .after_indexing(-3, 0, axis_label="condition", dependency_name="fn_args")
-        # Computation based on steady-state period; stim vars not relevant.
-        .after_indexing(1, 0, axis_label="stim_unit_idx", dependency_name="fn_args")
-        .after_indexing(0, 0, axis_label="stim_amp", dependency_name="fn_args")
-        # Shape is now: (evals, replicates, time, input/state)
-        # We'll average the Jacobian over several steady-state timesteps
-        .after_indexing(
-            -2,
-            #! For now, hardcode the steps. But should base on `hps`, generally.
-            lambda shape: jnp.arange(19, 29),
-            axis_label="timestep",
-            dependency_name="fn_args",
-        )
-        .vmap(
-            in_axes={
-                "fns": MultiVmapAxes(None, 0, None),
-                "fn_args": MultiVmapAxes(0, 1, 2),
-            }
-        )
-        # Take the mean over the sampled timesteps
-        .then_transform_result(fn=lambda tree: jt.map(lambda arr: jnp.mean(arr, axis=-3), tree))
-        # Split the Jacobian by input channel, and take the Euclidean norm for each channel
-        .then_transform_result(jacobian_input_channel_norms, is_leaf=None)
-        # Only keep results for the inputs; the state Jacobians weren't calculated anyway
-        # result: RNNCellArgs; result.state is None
-        .then_transform_result(lambda result: result.input)
-        # .estimate_memory()
-    ),
-    "unit_stim_regression_prep": (
+    # "jac-u-ss": (
+    #     Jacobians(
+    #         inputs=Jacobians.Ports(
+    #             fns=rnn_fns,
+    #             fn_args=RNNCellArgs(rnn_inputs, rnn_states),
+    #         ),
+    #         argnums=0,  # with respect to inputs only
+    #     )
+    #     .after_getitem_at_level("task_variant", "full")
+    #     # There's only one reach condition atm
+    #     .after_indexing(-3, 0, axis_label="condition", dependency_name="fn_args")
+    #     # Computation based on steady-state period; stim vars not relevant.
+    #     .after_indexing(1, 0, axis_label="stim_unit_idx", dependency_name="fn_args")
+    #     .after_indexing(0, 0, axis_label="stim_amp", dependency_name="fn_args")
+    #     # Shape is now: (evals, replicates, time, input/state)
+    #     # We'll average the Jacobian over several steady-state timesteps
+    #     .after_indexing(
+    #         -2,
+    #         #! For now, hardcode the steps. But should base on `hps`, generally.
+    #         lambda shape: jnp.arange(19, 29),
+    #         axis_label="timestep",
+    #         dependency_name="fn_args",
+    #     )
+    #     .vmap(
+    #         in_axes={
+    #             "fns": MultiVmapAxes(None, 0, None),
+    #             "fn_args": MultiVmapAxes(0, 1, 2),
+    #         }
+    #     )
+    #     # Take the mean over the sampled timesteps
+    #     .then_transform_result(fn=lambda tree: jt.map(lambda arr: jnp.mean(arr, axis=-3), tree))
+    #     # Split the Jacobian by input channel, and take the Euclidean norm for each channel
+    #     .then_transform_result(jacobian_input_channel_norms, is_leaf=None)
+    #     # Only keep results for the inputs; the state Jacobians weren't calculated anyway
+    #     # result: RNNCellArgs; result.state is None
+    #     .then_transform_result(lambda result: result.input)
+    #     # .estimate_memory()
+    # ),
+    "unit_stim_response_vars": (
         IdentityNode(
             inputs=IdentityNode.Ports(
                 input="aligned_vars_trivial",
@@ -496,54 +496,54 @@ DEPENDENCIES = {
         # e.g. positions to deviations
         # .after_transform(max_deviation_after_stim, level="var", dependency_names="regressor_tree")
     ),
-    "unit_stim_regression": (
-        Regression(
-            inputs=Regression.Ports(
-                regressor_tree="unit_stim_regression_prep",
-            ),
-        )
-        # Compute distinct regressions for each response variable, and for each train std
-        .map_compute(is_leaf=LDict.is_of("sisu"), dependency_names="regressor_tree")
-        #! Compute distinct regressions (in parallel) over stim units
-        .vmap(in_axes={"regressor_tree": 0})
-    ),
-    "jac-u-ss_regression_prep": (
-        IdentityNode(
-            inputs=IdentityNode.Ports(
-                input="jac-u-ss",
-            ),
-        )
-        .after_transform(partial(get_best_replicate, axis=1))
-        .after_rearrange_levels(
-            ["train__pert__std", ...],
-            dependency_name="input",
-            # is_leaf=is_type(RNNInputChannels),
-        )
-        #! TEMP: Move `RNNInputChannels` above `LDict.of("sisu")` so we can map input channels separately
-        .after_transform(
-            lambda tree: jt.map(
-                lambda subtree: jt.transpose(
-                    jt.structure(subtree, is_leaf=is_type(RNNInputChannels)),
-                    None,
-                    subtree,
-                ),
-                tree,
-                is_leaf=LDict.is_of("sisu"),
-            ),
-            dependency_names="input",
-        )
-    ),
-    "jac-u-ss_regression": (
-        Regression(
-            inputs=Regression.Ports(
-                regressor_tree="jac-u-ss_regression_prep",
-            ),
-        )
-        # Compute distinct regressions for each input channel
-        .map_compute(is_leaf=LDict.is_of("sisu"), dependency_names="regressor_tree")
-        #! Compute distinct regressions (in parallel) over stim units
-        .vmap(in_axes={"regressor_tree": 1})
-    ),
+    # "unit_stim_regression": (
+    #     Regression(
+    #         inputs=Regression.Ports(
+    #             regressor_tree="unit_stim_response_vars",
+    #         ),
+    #     )
+    #     # Compute distinct regressions for each response variable, and for each train std
+    #     .map_compute(is_leaf=LDict.is_of("sisu"), dependency_names="regressor_tree")
+    #     #! Compute distinct regressions (in parallel) over stim units
+    #     .vmap(in_axes={"regressor_tree": 0})
+    # ),
+    # "jac-u-ss_regression_prep": (
+    #     IdentityNode(
+    #         inputs=IdentityNode.Ports(
+    #             input="jac-u-ss",
+    #         ),
+    #     )
+    #     .after_transform(partial(get_best_replicate, axis=1))
+    #     .after_rearrange_levels(
+    #         ["train__pert__std", ...],
+    #         dependency_name="input",
+    #         # is_leaf=is_type(RNNInputChannels),
+    #     )
+    #     #! TEMP: Move `RNNInputChannels` above `LDict.of("sisu")` so we can map input channels separately
+    #     .after_transform(
+    #         lambda tree: jt.map(
+    #             lambda subtree: jt.transpose(
+    #                 jt.structure(subtree, is_leaf=is_type(RNNInputChannels)),
+    #                 None,
+    #                 subtree,
+    #             ),
+    #             tree,
+    #             is_leaf=LDict.is_of("sisu"),
+    #         ),
+    #         dependency_names="input",
+    #     )
+    # ),
+    # "jac-u-ss_regression": (
+    #     Regression(
+    #         inputs=Regression.Ports(
+    #             regressor_tree="jac-u-ss_regression_prep",
+    #         ),
+    #     )
+    #     # Compute distinct regressions for each input channel
+    #     .map_compute(is_leaf=LDict.is_of("sisu"), dependency_names="regressor_tree")
+    #     #! Compute distinct regressions (in parallel) over stim units
+    #     .vmap(in_axes={"regressor_tree": 1})
+    # ),
     # "unit_fb_gains": (
     #     InstantFBResponse(
     #         n_directions=24,
@@ -606,21 +606,27 @@ def regression_fig_params_fn(fig_params, ctx: FigIterCtx):
     return fig_params
 
 
+def response_violin_params_fn(fig_params, ctx: FigIterCtx):
+    return fig_params | dict(
+        yaxis_title=ctx.key,
+    )
+
+
 # PyTree structure: [sisu, pert__amp, train__pert__std]
 # Array batch shape: [stim_amp, stim_unit_idx, eval, replicate, condition=1]
 ANALYSES = {
-    "JJ": IdentityNode(
-        inputs=IdentityNode.Ports(
-            input="jac-u-ss_regression_prep",
-        ),
-        tmp_label="1",
-    ),
-    "RR": IdentityNode(
-        inputs=IdentityNode.Ports(
-            input="unit_stim_regression_prep",
-        ),
-        tmp_label="2",
-    ),
+    # "JJ": IdentityNode(
+    #     inputs=IdentityNode.Ports(
+    #         input="jac-u-ss_regression_prep",
+    #     ),
+    #     tmp_label="1",
+    # ),
+    # "RR": IdentityNode(
+    #     inputs=IdentityNode.Ports(
+    #         input="unit_stim_response_vars",
+    #     ),
+    #     tmp_label="2",
+    # ),
     "plot--unit-stim_profiles": (
         Profiles(
             variant="full",
@@ -656,6 +662,21 @@ ANALYSES = {
                 width=500,
                 height=350,
             ),
+        )
+    ),
+    #! Compare distributions (over units) of response variables, with varying SiSU
+    "plot--stim_response_dists": (
+        Violins(
+            inputs=Violins.Ports(
+                input="unit_stim_response_vars",
+            ),
+        )
+        .with_fig_params(violinmode="group")
+        .after_rearrange_levels([..., "sisu", "train__pert__std"], dependency_name="input")
+        .map_figs_at_level(
+            "response_var",
+            fig_params_fn=response_violin_params_fn,
+            dependency_name="input",
         )
     ),
     # "plot--unit-stim_hidden_pc": (
