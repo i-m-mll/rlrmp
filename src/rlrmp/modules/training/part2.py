@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax_cookbook.tree as jtree
 from feedbax.intervene import schedule_intervenor
-from feedbax.task import SimpleReaches
+from feedbax.task import DelayedReaches, SimpleReaches
 from feedbax.xabdeef.models import point_mass_nn
 from feedbax_experiments.analysis.disturbance import (
     PLANT_DISTURBANCE_CLASSES,
@@ -142,10 +142,18 @@ def setup_task_model_pair(
         def batch_scale_up(batch_start, n_batches, batch_info, x):
             return x
 
-    task_base = SimpleReaches(
-        loss_func=get_reach_loss(hps),
-        **hps.task.omitting_attrs("eval_n"),
-    )
+    if hps.task.type == "simple_reach":
+        task_base = SimpleReaches(
+            loss_func=get_reach_loss(hps),
+            **hps.task.omitting_attrs("eval_n", "type"),
+        )
+    elif hps.task.type == "delayed_reach":
+        task_base = DelayedReaches(
+            loss_func=get_reach_loss(hps),
+            **hps.task.omitting_attrs("eval_n", "type"),
+        )
+    else:
+        raise ValueError(f"Unrecognized task type: {hps.task.type}")
 
     models_base = jtree.get_ensemble(
         point_mass_nn,

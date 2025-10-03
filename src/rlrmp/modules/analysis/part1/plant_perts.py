@@ -201,6 +201,7 @@ ANALYSES = {
     "plot--profiles": (
         Profiles(varset=DEFAULT_VARSET)
         .with_fig_params(
+            mode="curves",  #! TEMP
             layout_kws=dict(height=300, width=450),
         )
         .after_transform(get_best_replicate)
