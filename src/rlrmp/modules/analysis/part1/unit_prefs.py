@@ -1,9 +1,11 @@
 from functools import partial
 from typing import Optional
 
+import feedbax.plot as fbp
 import jax.tree as jt
 import jax_cookbook.tree as jtree
 import numpy as np
+import plotly.graph_objects as go
 from feedbax.intervene import add_intervenors, schedule_intervenor
 from feedbax_experiments.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FNS
 from feedbax_experiments.analysis.network import UnitPreferences
@@ -138,10 +140,6 @@ ANALYSES = {
 # pref_dirs = jt.map(lambda pd: pd / jnp.linalg.norm(pd, axis=-1, keepdims=True), pref_dirs)
 
 # fig = planar_regression(targets_early, hidden_early[0, ..., unit_plot], pref_dirs['accel'][unit_plot])
-
-import feedbax.plotly as fbp
-import numpy as np
-import plotly.graph_objects as go
 
 
 def plot_planar_regression(

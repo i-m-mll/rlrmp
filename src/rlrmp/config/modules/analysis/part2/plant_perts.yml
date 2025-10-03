@@ -32,8 +32,6 @@ pert:
   # null -> same as during training, e.g. load.train.pert.type in this case
   type: null 
   amp: [0.0, 4.0, 8.0] 
-  # constant -> [0.0, 0.4],
-
 
 analyses:
   center_out_sets: 

@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional, Sequence
 from typing import Literal as L
 
 import equinox as eqx
-import feedbax.plotly as fbp
+import feedbax.plot as fbp
 import jax
 import jax.tree as jt
 import jax_cookbook.tree as jtree

@@ -1,0 +1,76 @@
+# reusable definitions (ignored by parser)
+defs:
+  base: &base
+    type: config
+    name: base
+    of:
+      pert:
+        type: gusts
+        duration_mean: 8
+        n_expected: 4
+        std: [0, 4, 8]
+
+      task:
+        type: delayed_reach
+        epoch_len_ranges: !Literal
+          - [10, 11]   # pre-target on
+          - [5, 20]  # target on, pre-movement
+        target_on_epochs: !Literal [1, 2]
+        hold_epochs: !Literal [0, 1]
+        move_epochs: !Literal [2]
+
+  p_catch_trial: &p_catch_trial
+    type: config
+    name: p_catch_trial
+    of:
+      task:
+        p_catch_trial: [0.3, 0.6, 0.9]
+
+  noise_levels: &noise_levels
+    type: config
+    name: noise_levels
+    of:
+      model:
+        feedback_noise_std: 0.1 #![0.01, 0.1]
+        motor_noise_std:    0.1 #![0.01, 0.1]
+
+  feedback_delays: &feedback_delays
+    type: config
+    name: feedback_delays
+    of:
+      model:
+        feedback_delay_steps: 0 #![0, 5]
+
+  damping: &damping
+    type: config
+    name: damping
+    of:
+      model:
+        damping: 0 #![0, 10]
+
+  tau_rise: &tau_rise
+    type: config
+    name: tau_rise
+    of:
+      model:
+        tau_rise: 0 #![0, 0.05]
+
+# actual per-module specs
+SPEC:
+  - part1:
+      type: product
+      of:
+        - *base
+        - *p_catch_trial
+        - *noise_levels
+        - *feedback_delays
+        - *damping
+        - *tau_rise
+
+  # - part2:
+  #     type: product
+  #     of:
+  #       - *noise_levels
+  #       - *feedback_delays
+  #       - *damping
+  #       - *tau_rise

@@ -3,7 +3,7 @@ from types import MappingProxyType, SimpleNamespace
 from typing import Literal as L
 from typing import Optional
 
-import feedbax.plotly as fbp
+import feedbax.plot as fbp
 import jax.numpy as jnp
 import jax.tree as jt
 import jax_cookbook.tree as jtree
