@@ -21,6 +21,7 @@ from jaxtyping import PRNGKeyArray
 
 from rlrmp.disturbances import get_gusts_fn
 
+#! TODO: limit curl and constant fields to movement epoch!
 disturbance_params = LDict.of("pert__type")(
     {
         "curl": lambda hps: dict(

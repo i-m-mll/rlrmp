@@ -58,6 +58,7 @@ def scaled_sampler(sample_fn, scale=1.0):
 # `scale` parameter, which is not seen by the network in those cases; and in `"pai-asf"` it is
 # multiplied by the `field` parameter, which is not seen by the network in that case.
 # (See the definition of `SCALE_FNS` below.)
+#! TODO: limit curl and constant fields to movement epoch!
 disturbance_params = LDict.of("train__method")(
     {
         "bcs": {

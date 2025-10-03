@@ -28,35 +28,37 @@ def get_gusts_fn(hps):
         n_gusts = jr.poisson(key1, n_expected, shape=())
         n_gusts = jnp.minimum(n_gusts, max_gusts)
 
-        def no_gusts():
-            # return Gusts(
-            #     signal=jnp.zeros((n_steps, 2), dtype=jnp.float32),
-            #     starts=jnp.zeros((max_gusts,), dtype=jnp.int32),
-            #     durations=jnp.zeros((max_gusts,), dtype=jnp.int32),
-            #     forces=jnp.zeros((max_gusts, 2), dtype=jnp.float32),
-            # )
-            return jnp.zeros((n_steps, 2), dtype=jnp.float32)
+        if trial_spec.timeline.has_epochs:
+            move_start, move_end = trial_spec.timeline.window_for_epoch("movement")
+        else:
+            move_start = 0
+            move_end = n_steps  # exclusive
 
-        def some_gusts():
-            starts_all = jr.choice(key2, n_steps, (max_gusts,), replace=False)
-            durations_all = jr.geometric(key3, p_offset, (max_gusts,))
-            forces_all = amplitude_std * vector_with_gaussian_length(key4, shape=(max_gusts,))
+        # Always sample a fixed-size pool; later, mask down to n_gusts.
+        # Use randint over [start, end) → avoids population-size issues entirely.
+        starts_all = jr.randint(key2, (max_gusts,), minval=move_start, maxval=move_end)
 
-            # mask valid gusts
-            mask = jnp.arange(max_gusts) < n_gusts
-            starts = jnp.where(mask, starts_all, 0)
-            durations = jnp.where(mask, durations_all, 0)
-            forces = jnp.where(mask[:, None], forces_all, 0.0)
+        # Geometric durations (>=1), then clamp so pulses never extend past the epoch end.
+        durations_all = jr.geometric(key3, p_offset, (max_gusts,))
+        max_dur_all = jnp.maximum(0, move_end - starts_all)  # per-gust budget
+        durations_all = jnp.minimum(durations_all, max_dur_all)
 
-            # Build the signal
-            ts = jnp.arange(n_steps)[None, :]  # (1, n_steps)
-            s = starts[:, None]  # (n_gusts, 1)
-            d = durations[:, None]  # (n_gusts, 1)
-            in_window = (ts >= s) & (ts < (s + d))  # (n_gusts, n_steps)
-            signal = jnp.einsum("kd,kt->td", forces, in_window.astype(jnp.float32))  # (n_steps, 2)
-            # return Gusts(signal=signal, starts=starts, durations=durations, forces=forces)
-            return signal
+        # Forces: random direction with Gaussian length scaled by amplitude_std
+        forces_all = amplitude_std * vector_with_gaussian_length(key4, shape=(max_gusts,))
 
-        return TimeSeriesParam(jax.lax.cond(n_gusts == 0, no_gusts, some_gusts))
+        # Keep only the first n_gusts; zero out the rest
+        mask = jnp.arange(max_gusts) < n_gusts
+        starts = jnp.where(mask, starts_all, 0)
+        durations = jnp.where(mask, durations_all, 0)
+        forces = jnp.where(mask[:, None], forces_all, 0.0)
+
+        # Build the time-series by summing rectangular pulses
+        ts = jnp.arange(n_steps)[None, :]  # (1, T)
+        s = starts[:, None]  # (K, 1)
+        d = durations[:, None]  # (K, 1)
+        in_window = (ts >= s) & (ts < (s + d))  # (K, T)
+        signal = jnp.einsum("kd,kt->td", forces, in_window.astype(jnp.float32))  # (T, 2)
+
+        return TimeSeriesParam(signal)
 
     return dict(field=_gusts_fn)
