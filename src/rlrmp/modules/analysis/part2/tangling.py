@@ -24,7 +24,6 @@ from feedbax.intervene import add_intervenors, schedule_intervenor
 from feedbax.misc import batch_reshape  # for flattening/unflattening
 from feedbax_experiments.analysis.aligned import AlignedVars
 from feedbax_experiments.analysis.analysis import AbstractAnalysis, CallWithDeps, Data, NoPorts
-from feedbax_experiments.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FNS
 from feedbax_experiments.analysis.effector import EffectorTrajectories
 from feedbax_experiments.analysis.pca import StatesPCA
 from feedbax_experiments.analysis.profiles import Profiles
@@ -46,6 +45,8 @@ from feedbax_experiments.types import (
 )
 from jax_cookbook import is_module, is_type
 from jaxtyping import Float, PyTree
+
+from rlrmp.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FNS
 
 COLOR_FNS = dict(
     sisu=ColorscaleSpec(

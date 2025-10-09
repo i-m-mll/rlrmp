@@ -7,7 +7,6 @@ import jax_cookbook.tree as jtree
 import numpy as np
 import plotly.graph_objects as go
 from feedbax.intervene import add_intervenors, schedule_intervenor
-from feedbax_experiments.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FNS
 from feedbax_experiments.analysis.network import UnitPreferences
 from feedbax_experiments.analysis.state_utils import (
     get_best_replicate,
@@ -19,6 +18,8 @@ from feedbax_experiments.misc import vectors_to_2d_angles
 from feedbax_experiments.types import LDict
 from jax_cookbook import is_module
 from jaxtyping import Array, Float
+
+from rlrmp.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FNS
 
 COLOR_FNS = {}
 

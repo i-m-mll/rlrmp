@@ -19,7 +19,6 @@ from feedbax_experiments.analysis.aligned import (
     get_varset_labels,
 )
 from feedbax_experiments.analysis.analysis import CallWithDeps, Data, ExpandTo, FigIterCtx
-from feedbax_experiments.analysis.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FNS
 from feedbax_experiments.analysis.eig import eig, svd
 from feedbax_experiments.analysis.func import ApplyFns, ApplyFunctional, make_argwise_functional
 from feedbax_experiments.analysis.grad import Hessians, Jacobians, PerJacobianBlock, spectral_norm
@@ -51,6 +50,7 @@ from jaxtyping import Array, Float
 from lark import Tree
 
 from rlrmp.constants import RNN_INPUT_CHANNEL_SIZES
+from rlrmp.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FNS
 from rlrmp.transforms import get_state_pcs
 from rlrmp.types import RNNInputChannels
 

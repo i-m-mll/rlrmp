@@ -26,34 +26,16 @@ defs:
       task:
         p_catch_trial: [0.3, 0.6, 0.9]
 
-  noise_levels: &noise_levels
+  noise_levels: &realism
     type: config
-    name: noise_levels
+    name: realism
     of:
       model:
-        feedback_noise_std: 0.1 #![0.01, 0.1]
-        motor_noise_std:    0.1 #![0.01, 0.1]
-
-  feedback_delays: &feedback_delays
-    type: config
-    name: feedback_delays
-    of:
-      model:
-        feedback_delay_steps: 0 #![0, 5]
-
-  damping: &damping
-    type: config
-    name: damping
-    of:
-      model:
-        damping: 0 #![0, 10]
-
-  tau_rise: &tau_rise
-    type: config
-    name: tau_rise
-    of:
-      model:
-        tau_rise: 0 #![0, 0.05]
+        feedback_noise_std: [0.01, 0.1]
+        motor_noise_std:    [0.01, 0.1]
+        feedback_delay_steps: [0, 5]
+        damping: [0, 10]
+        tau_rise: [0, 0.05]
 
 # actual per-module specs
 SPEC:
@@ -62,10 +44,7 @@ SPEC:
       of:
         - *base
         - *p_catch_trial
-        - *noise_levels
-        - *feedback_delays
-        - *damping
-        - *tau_rise
+        - *realism
 
   # - part2:
   #     type: product

@@ -21,11 +21,6 @@ from feedbax_experiments.analysis.aligned import (
     Measure,
 )
 from feedbax_experiments.analysis.analysis import FigIterCtx, Transformed
-from feedbax_experiments.analysis.disturbance import (
-    FB_INTERVENOR_LABEL,
-    get_pert_amp_vmap_eval_fn,
-    task_with_pert_amp,
-)
 from feedbax_experiments.analysis.effector import EffectorTrajectories
 from feedbax_experiments.analysis.func import ApplyFns
 from feedbax_experiments.analysis.profiles import Profiles
@@ -39,6 +34,12 @@ from feedbax_experiments.tree_utils import lohi, subdict
 from feedbax_experiments.types import AnalysisInputData, LDict, unflatten_dict_keys
 from jax_cookbook import is_module, is_none, is_type
 from jax_cookbook.misc import deep_merge
+
+from rlrmp.disturbance import (
+    FB_INTERVENOR_LABEL,
+    get_pert_amp_vmap_eval_fn,
+    task_with_pert_amp,
+)
 
 COLOR_FNS = dict()
 

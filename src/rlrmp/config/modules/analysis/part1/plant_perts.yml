@@ -3,7 +3,7 @@ train:
   pert:  
     type: gusts
     # list -> load multiple models
-    std: [1.0]
+    std: [0.0, 4.0]
   
 model:
   feedback_noise_std: null
@@ -14,8 +14,8 @@ task:  # Passed to the base task constructor
   eval_n: 10
   variants:
     full:
-      eval_grid_n: 2
-      eval_n_directions: 24
+      eval_grid_n: 1 #!2
+      eval_n_directions:  5 #! 24
       eval_reach_length: 0.5
     small:
       eval_grid_n: 1
@@ -24,7 +24,7 @@ task:  # Passed to the base task constructor
 
 pert:
   type: null
-  amp: [0.0, 4.0, 8.0] 
+  amp: [0.0, 16.0, 32.0] 
 
 analyses:
   center_out_sets: 
