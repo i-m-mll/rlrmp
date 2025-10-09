@@ -10,10 +10,6 @@ import jax_cookbook.tree as jtree
 from feedbax.intervene import schedule_intervenor
 from feedbax.task import DelayedReaches, SimpleReaches
 from feedbax.xabdeef.models import point_mass_nn
-from feedbax_experiments.analysis.disturbance import (
-    PLANT_DISTURBANCE_CLASSES,
-    PLANT_INTERVENOR_LABEL,
-)
 from feedbax_experiments.misc import get_field_amplitude, vector_with_gaussian_length
 
 # from rlrmp.loss import get_reach_loss
@@ -22,6 +18,10 @@ from feedbax_experiments.training.train import always_active, bernoulli_active
 from feedbax_experiments.types import LDict, TaskModelPair, TreeNamespace
 from jaxtyping import PRNGKeyArray
 
+from rlrmp.disturbance import (
+    PLANT_DISTURBANCE_CLASSES,
+    PLANT_INTERVENOR_LABEL,
+)
 from rlrmp.disturbances import get_gusts_fn
 
 TrainingMethodLabel: TypeAlias = L["bcs", "dai", "pai-asf", "pai-n"]

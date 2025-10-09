@@ -7,10 +7,6 @@ import jax.tree as jt
 from feedbax.intervene import schedule_intervenor
 from feedbax.task import DelayedReaches, SimpleReaches
 from feedbax.xabdeef.models import point_mass_nn
-from feedbax_experiments.analysis.disturbance import (
-    PLANT_DISTURBANCE_CLASSES,
-    PLANT_INTERVENOR_LABEL,
-)
 from feedbax_experiments.misc import vector_with_gaussian_length
 
 # from rlrmp.loss import get_reach_loss
@@ -19,6 +15,10 @@ from feedbax_experiments.types import LDict, TaskModelPair, TreeNamespace
 from jax_cookbook.tree import get_ensemble
 from jaxtyping import PRNGKeyArray
 
+from rlrmp.disturbance import (
+    PLANT_DISTURBANCE_CLASSES,
+    PLANT_INTERVENOR_LABEL,
+)
 from rlrmp.disturbances import get_gusts_fn
 
 #! TODO: limit curl and constant fields to movement epoch!

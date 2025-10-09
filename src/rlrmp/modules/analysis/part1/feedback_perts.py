@@ -18,11 +18,6 @@ from feedbax_experiments.analysis.aligned import (
     AlignedVars,
 )
 from feedbax_experiments.analysis.analysis import FigIterCtx
-from feedbax_experiments.analysis.disturbance import (
-    FB_INTERVENOR_LABEL,
-    get_pert_amp_vmap_eval_fn,
-    task_with_pert_amp,
-)
 from feedbax_experiments.analysis.func import ApplyFns
 from feedbax_experiments.analysis.state_utils import vmap_eval_ensemble
 from feedbax_experiments.analysis.violins import Violins
@@ -30,6 +25,12 @@ from feedbax_experiments.perturbations import feedback_impulse
 from feedbax_experiments.tree_utils import subdict
 from feedbax_experiments.types import AnalysisInputData, LDict, unflatten_dict_keys
 from jax_cookbook import is_module, is_none, is_type
+
+from rlrmp.disturbance import (
+    FB_INTERVENOR_LABEL,
+    get_pert_amp_vmap_eval_fn,
+    task_with_pert_amp,
+)
 
 COLOR_FNS = dict()
 
