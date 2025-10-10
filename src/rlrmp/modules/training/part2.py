@@ -23,6 +23,7 @@ from rlrmp.disturbance import (
     PLANT_INTERVENOR_LABEL,
 )
 from rlrmp.disturbances import get_gusts_fn
+from rlrmp.task import TASK_TYPES
 
 TrainingMethodLabel: TypeAlias = L["bcs", "dai", "pai-asf", "pai-n"]
 
@@ -143,18 +144,9 @@ def setup_task_model_pair(
         def batch_scale_up(batch_start, n_batches, batch_info, x):
             return x
 
-    if hps.task.type == "simple_reach":
-        task_base = SimpleReaches(
-            loss_func=get_reach_loss(hps),
-            **hps.task.omitting_attrs("eval_n", "type"),
-        )
-    elif hps.task.type == "delayed_reach":
-        task_base = DelayedReaches(
-            loss_func=get_reach_loss(hps),
-            **hps.task.omitting_attrs("eval_n", "type"),
-        )
-    else:
-        raise ValueError(f"Unrecognized task type: {hps.task.type}")
+    hps_task = {k: v for k, v in hps.task.omitting_attrs("eval_n", "type").items() if v is not None}
+
+    task_base = TASK_TYPES[hps.task.type](loss_func=get_reach_loss(hps), **hps_task)
 
     models_base = jtree.get_ensemble(
         point_mass_nn,

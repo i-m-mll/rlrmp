@@ -1,9 +1,14 @@
 #  Hyperparameters that uniquely identify the model(s)/training run(s) to analyze
 train:
   pert:  
-    type: gusts
+    # type: gusts
     # list -> load multiple models
-    std: [0.0, 4.0]
+    # std: [0.0, 4.0]
+    type: constant
+    std: [0.0, 0.1, 1.0]
+  task:
+    type: simple_reach
+    n_steps: 100
   
 model:
   feedback_noise_std: null
@@ -23,7 +28,7 @@ task:  # Passed to the base task constructor
       eval_reach_length: 0.5
 
 pert:
-  type: null
+  type: gusts
   amp: [0.0, 16.0, 32.0] 
 
 analyses:

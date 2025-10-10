@@ -17,7 +17,11 @@ from feedbax_experiments.analysis.analysis import FigIterCtx
 from feedbax_experiments.analysis.effector import EffectorTrajectories
 from feedbax_experiments.analysis.func import ApplyFns
 from feedbax_experiments.analysis.profiles import Profiles
-from feedbax_experiments.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
+from feedbax_experiments.analysis.state_utils import (
+    get_align_epoch_start,
+    get_best_replicate,
+    vmap_eval_ensemble,
+)
 from feedbax_experiments.analysis.violins import Violins
 from feedbax_experiments.plot import (
     get_add_epoch_bounds_vlines,
@@ -155,6 +159,7 @@ ANALYSES = {
     "plot--aligned_trajectories-by_pert_amp": (
         get_aligned_trajectories_node(colorscale_key="pert__amp")
         .after_transform(get_best_replicate)
+        # .after_transform(get_align_epoch_start(2))
         .after_getitem_at_level("task_variant", "small")
         .then_transform_figs(
             partial(set_axis_bounds_equal, "y", padding_factor=0.2),
@@ -189,7 +194,7 @@ ANALYSES = {
             invert_levels=True,
         )
         .then_transform_figs(
-            add_movement_start_vlines,
+            get_add_epoch_bounds_vlines([2]),
             levels=["pert__amp"],
             # invert_levels=True,
         )
