@@ -18,6 +18,7 @@ task:
   eval_reach_length: 0.5
 
   type: delayed_reach
+  
   epoch_len_ranges: 
     - [10, 11]   # pre-target on
     - [5, 20]  # target on, pre-movement

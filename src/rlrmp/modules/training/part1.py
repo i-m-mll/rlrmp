@@ -5,12 +5,8 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 from feedbax.intervene import schedule_intervenor
-from feedbax.task import DelayedReaches, SimpleReaches
 from feedbax.xabdeef.models import point_mass_nn
 from feedbax_experiments.misc import vector_with_gaussian_length
-
-# from rlrmp.loss import get_reach_loss
-from feedbax_experiments.training.loss import get_reach_loss
 from feedbax_experiments.types import LDict, TaskModelPair, TreeNamespace
 from jax_cookbook.tree import get_ensemble
 from jaxtyping import PRNGKeyArray
@@ -20,6 +16,8 @@ from rlrmp.disturbance import (
     PLANT_INTERVENOR_LABEL,
 )
 from rlrmp.disturbances import get_gusts_fn
+from rlrmp.loss import get_reach_loss
+from rlrmp.task import TASK_TYPES
 
 #! TODO: limit curl and constant fields to movement epoch!
 disturbance_params = LDict.of("pert__type")(
@@ -51,23 +49,9 @@ def setup_task_model_pair(hps: TreeNamespace, *, key):
         def batch_scale_up(batch_start, n_batches, batch_info, x):
             return x
 
-    # task_base = SimpleReaches(
-    #     loss_func=get_reach_loss(hps),
-    #     **hps.task.omitting_attrs("eval_n"),
-    # )
+    hps_task = {k: v for k, v in hps.task.omitting_attrs("eval_n", "type").items() if v is not None}
 
-    if hps.task.type == "simple_reach":
-        task_base = SimpleReaches(
-            loss_func=get_reach_loss(hps),
-            **hps.task.omitting_attrs("eval_n", "type"),
-        )
-    elif hps.task.type == "delayed_reach":
-        task_base = DelayedReaches(
-            loss_func=get_reach_loss(hps),
-            **hps.task.omitting_attrs("eval_n", "type"),
-        )
-    else:
-        raise ValueError(f"Unrecognized task type: {hps.task.type}")
+    task_base = TASK_TYPES[hps.task.type](loss_func=get_reach_loss(hps), **hps_task)
 
     models = get_ensemble(
         point_mass_nn,
