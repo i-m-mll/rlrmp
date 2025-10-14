@@ -13,7 +13,7 @@
             "type": "debugpy",
             "request": "launch",
             "module": "feedbax_experiments.bin.run",
-            "args": ["analysis", "--batched", "${command:pickArgs}"],
+            "args": ["analysis", "--batched", "${input:pickArgs}"],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
             "justMyCode": false,
@@ -24,7 +24,7 @@
             "type": "debugpy",
             "request": "launch",
             "module": "feedbax_experiments.bin.run",
-            "args": ["analysis", "--single", "${command:pickArgs}"],
+            "args": ["analysis", "--single", "${input:pickArgs}"],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
             "justMyCode": false,
@@ -35,7 +35,7 @@
             "type": "debugpy",
             "request": "launch",
             "module": "feedbax_experiments.bin.run",
-            "args": ["train", "--batched", "${command:pickArgs}"],
+            "args": ["train", "--batched", "${input:pickArgs}"],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
             "justMyCode": false,
@@ -46,9 +46,10 @@
             "type": "debugpy",
             "request": "launch",
             "module": "feedbax_experiments.bin.run",
-            "args": ["train", "--single", "${command:pickArgs}"],
+            "args": ["train", "--single", "${input:pickArgs}"],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
+            // "python": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/.venv/bin/python",
             "justMyCode": false,
             "envFile": "${workspaceFolder}/.env",
         },
@@ -57,7 +58,7 @@
             "type": "debugpy",
             "request": "launch",
             "module": "feedbax_experiments.bin.run",
-            "args": ["${command:pickArgs}"],
+            "args": ["${input:pickArgs}"],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
             "justMyCode": false,
@@ -82,6 +83,14 @@
             "cwd": "${fileDirname}",
             "envFile": "${workspaceFolder}/.env",
             // "preLaunchTask": "activate-conda-env"
+        }
+    ],
+    "inputs": [
+        {
+            "id": "pickArgs",
+            "type": "promptString",
+            "description": "Arguments to pass to the script",
+            "default": ""
         }
     ]
 }

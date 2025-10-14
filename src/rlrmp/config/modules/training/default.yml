@@ -18,7 +18,7 @@ task:
   eval_reach_length: 0.5
 
   type: delayed_reach
-  
+
   epoch_len_ranges: 
     - [10, 11]   # pre-target on
     - [5, 20]  # target on, pre-movement
@@ -44,12 +44,22 @@ weight_decay: 0.0
 
 loss:
   weights:
-    # effector_stop_at_goal: 1.0
-    # effector_fixation: 1.0
-    effector_position: 1.0
-    effector_final_velocity: 1.0
+    effector_hold_pos: 1.0
+    effector_hold_vel: 1.0
+    goal_hit_in_window: 1.0
+    effector_pos: 1.0
+    effector_final_vel: 1.0
     nn_output: 1e-5
     nn_hidden: 1e-5
+  goal_hit_in_window:
+    window_bounds: [60, 80]
+    softmin_tau: 0.2
+    post_pos_sigma_t: 5
+    weights: 
+      pos: 1.0 
+      vel: 1.0
+      post_pos: 1.0
+
     # fix_readout_norm: 0.1
   # stop_at_goal:
   #   method: "soft-or"
