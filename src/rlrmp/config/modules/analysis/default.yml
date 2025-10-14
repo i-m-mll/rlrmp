@@ -13,7 +13,7 @@ train:
   task:
     type: delayed_reach
     n_steps: 100
-    # p_catch_trial: 0.9
+    p_catch_trial: 0.6
   # where: 
   #   0: ['step.net.hidden', 'step.net.readout']
   # intervention_scaleup_batches=[0,0],

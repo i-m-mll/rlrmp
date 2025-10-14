@@ -1,13 +1,12 @@
 #  Hyperparameters that uniquely identify the model(s)/training run(s) to analyze
 train:
   pert:  
-    # type: gusts
-    # list -> load multiple models
-    # std: [0.0, 4.0]
-    type: constant
-    std: [0.0, 0.1, 1.0]
+    type: gusts
+    std: [0.0, 4.0]
+    # type: constant
+    # std: [0.0, 0.1, 1.0]
   task:
-    type: simple_reach
+    type: delayed_reach
     n_steps: 100
   
 model:
