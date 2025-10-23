@@ -138,7 +138,7 @@ class EigvalsPlot(AbstractAnalysis[EigvalsPlotPorts]):
         else:
             col_names = [
                 legend_var_label,
-                *[f"var_{i}" for i in range(1, len(jtree.first_shape(eigvals)))],
+                *[f"var_{i}" for i in range(1, len(jtree.first_leaf_shape(eigvals)))],
                 "eigvals",
             ]
 

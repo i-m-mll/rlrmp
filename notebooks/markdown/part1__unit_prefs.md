@@ -90,8 +90,8 @@ from rlrmp.plot_utils import (
     figleaves,
 )
 from rlrmp.tree_utils import (
-    first,
-    first_shape as fs,
+    first_leaf as first,
+    first_leaf_shape as fs,
     pp,
     subdict, 
     take_replicate,

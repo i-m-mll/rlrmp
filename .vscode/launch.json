@@ -54,6 +54,42 @@
             "envFile": "${workspaceFolder}/.env",
         },
         {
+            "name": "Debug: run train (batched) + optional extras",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/.vscode/args_shim.py",
+            "args": [
+                "train",
+                "--batched",
+                "${input:expKey}" // optional positional (can be left blank)
+            ],
+            "env": {
+                "EXTRA_ARGS": "${input:extraArgs}" // zero or more extra flags/tokens
+            },
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "justMyCode": false,
+            "envFile": "${workspaceFolder}/.env"
+        },
+        {
+            "name": "Debug: run analysis (batched) + optional extras",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/.vscode/args_shim.py",
+            "args": [
+                "analysis",
+                "--batched",
+                "${input:expKey}"
+            ],
+            "env": {
+                "EXTRA_ARGS": "${input:extraArgs}"
+            },
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "justMyCode": false,
+            "envFile": "${workspaceFolder}/.env"
+        },
+        {
             "name": "Debug: run (with args)",
             "type": "debugpy",
             "request": "launch",
@@ -90,6 +126,18 @@
             "id": "pickArgs",
             "type": "promptString",
             "description": "Arguments to pass to the script",
+            "default": ""
+        },  
+        {
+            "id": "extraArgs",
+            "type": "promptString",
+            "description": "Extra CLI args (optional, space-separated). Example: --force-postprocess --epochs 5",
+            "default": ""
+        },
+        {
+            "id": "expKey",
+            "type": "promptString",
+            "description": "Experiment key / trailing positional (optional)",
             "default": ""
         }
     ]

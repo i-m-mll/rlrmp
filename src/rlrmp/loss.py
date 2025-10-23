@@ -19,6 +19,7 @@ from feedbax.loss import (
 )
 from feedbax.task import TaskTrialSpec
 from feedbax.xabdeef.losses import simple_reach_loss
+from feedbax_experiments.misc import deep_merge
 
 # from feedbax.xabdeef.losses import simple_reach_loss
 from feedbax_experiments.training.loss import get_readout_norm_loss
@@ -34,8 +35,9 @@ def softmin_and_alpha(values, tau, axis=-1, eps=1e-12, keepdims=False):
     m = jnp.min(values, axis=axis, keepdims=True)  # shift for stability
     z = jnp.exp(-(values - m) / tau)
     S = jnp.sum(z, axis=axis, keepdims=True)
-    softmin = -tau * jnp.log(S) + m
-    alpha = z / (S + eps)  # normalized on W
+    W = values.shape[axis]
+    softmin = tau * (jnp.log(W) - jnp.log(S)) + m
+    alpha = z / (S + eps)
     if not keepdims:
         softmin = jnp.squeeze(softmin, axis=axis)
     return softmin, alpha
@@ -156,7 +158,7 @@ DEFAULT_TOP_WEIGHTS: dict[str, float] = {
     "effector_pos": 1.0,
     "effector_hold_pos": 1.0,
     "effector_hold_vel": 1.0,
-    "effector_final_vel": 1.0,
+    "effector_vel_late": 1.0,
     "nn_output": 1e-5,
     "nn_hidden": 1e-5,
     # composite bundle (if enabled)
@@ -178,34 +180,12 @@ DEFAULT_GOAL_HIT_PARAMS: dict[str, Any] = {
 }
 
 
-# def get_epochs_idxs(
-#     trial_spec: TaskTrialSpec,
-#     *,
-#     end_epoch: Optional[int] = None,
-#     start_epoch: Optional[int] = None,
-# ):
-#     if trial_spec.timeline.epoch_bounds is None:
-#         # ? Or, could return empty array (no such epoch)
-#         raise ValueError("Trial spec supplies no epoch_bounds")
-
-#     if trial_spec.timeline.n_steps is None:
-#         raise ValueError("Trial spec does not specify n_steps")
-
-#     start, end = [  # mll
-#         default if idx is None else trial_spec.timeline.epoch_bounds[idx]
-#         for idx, default in [
-#             [start_epoch, jnp.zeros((), dtype=int)],
-#             [end_epoch, trial_spec.timeline.n_steps],
-#         ]
-#     ]
-#     return jnp.arange(start, end)
-
-
 def get_epoch_weights(
     trial_spec: TaskTrialSpec,
     *,
     end_epoch: Optional[int] = None,
     start_epoch: Optional[int] = None,
+    start_offset: int = 0,
     dtype=jnp.float32,
 ) -> jnp.ndarray:
     """
@@ -219,20 +199,56 @@ def get_epoch_weights(
     n_steps = trial_spec.timeline.n_steps
     if n_steps is None:
         raise ValueError("Trial spec does not specify n_steps")
+    n_steps -= 1
 
-    # Compute start/end as traced scalars (OK)
-    start = jnp.where(start_epoch is None, jnp.array(0, dtype=jnp.int32), bounds[start_epoch])
-    end = jnp.where(end_epoch is None, jnp.array(n_steps, dtype=jnp.int32), bounds[end_epoch])
+    start_idx = 0 if start_epoch is None else start_epoch
+    end_idx = -1 if end_epoch is None else end_epoch
 
     # Build a fixed-length index vector once (needs T known at trace time, which is typical)
     t = jnp.arange(n_steps, dtype=jnp.int32)
 
-    mask = (t >= start) & (t < end)
+    mask = (t >= bounds[start_idx] + start_offset) & (t < bounds[end_idx])
     return mask.astype(dtype)
 
 
 during_hold = TargetSpec(time_mask=partial(get_epoch_weights, end_epoch=-2))
 during_movement = TargetSpec(time_mask=partial(get_epoch_weights, start_epoch=-2))
+
+
+def make_late_discount_from_epoch(
+    offset_steps: int, max_factor: float = 3.0, smooth: str = "cosine", start_epoch: int = -2
+):
+    """Return a callable(spec_i)->(T,) that ramps from 1.0 to max_factor starting at
+    (epoch -2 start) + offset_steps, over the remainder of the trial.
+
+    smooth: "linear" or "cosine" (cosine has C1 continuity at endpoints).
+    """
+
+    def discount(spec):
+        # T and epoch bounds are available on the per-trial spec
+        T = spec.timeline.n_steps - 1
+        t = jnp.arange(T, dtype=jnp.float32)
+
+        # 1. Get the mask for epoch -2 (1 from start of epoch -2 to its end)
+        epoch_m = get_epoch_weights(
+            spec, start_epoch=start_epoch, end_epoch=None, dtype=jnp.float32
+        )  # (T,)
+
+        # 2. Start index: first 1 in that mask, then add the late offset
+        start = jnp.argmax(epoch_m > 0).astype(jnp.int32) + jnp.int32(offset_steps)
+
+        # 3. Fraction along the late region [start, T)
+        denom = jnp.maximum(1.0, (jnp.asarray(T, jnp.float32) - start.astype(jnp.float32)))
+        frac = jnp.clip((t - start.astype(jnp.float32)) / denom, 0.0, 1.0)
+
+        # 4. Apply smoothing if desired
+        if smooth == "cosine":
+            frac = 0.5 - 0.5 * jnp.cos(jnp.pi * frac)  # 0 → 0, 1 → 1, smooth
+        # elif smooth == "linear": keep as-is
+
+        return 1.0 + (max_factor - 1.0) * frac  # (T,)
+
+    return discount
 
 
 def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
@@ -246,7 +262,7 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
       loss:
         weights:
           effector_pos: 1.0
-          effector_final_vel: 1.0
+          effector_vel_late: 1.0
           nn_output: 1e-5
           nn_hidden: 1e-5
           goal_hit_in_window: 1.0
@@ -278,18 +294,13 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
         )
 
     terms: Mapping[str, AbstractLoss] = dict(
-        effector_final_vel=TargetStateLoss(
-            "Effector final velocity",
-            where=lambda state: state.mechanics.effector.vel,
-            spec=target_zero & target_final_state,
-        ),
         nn_output=TargetStateLoss(
-            "Command",
+            "nn_output",
             where=lambda state: state.efferent.output,
             spec=target_zero,
         ),
         nn_hidden=TargetStateLoss(
-            "NN activity",
+            "nn_hidden",
             where=lambda state: state.net.hidden,
             spec=target_zero,
         ),
@@ -297,13 +308,13 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
 
     if hps.task.type == "delayed_reach":
         terms["effector_hold_pos"] = TargetStateLoss(
-            "Effector hold position",
+            "effector_hold_pos",
             where=lambda state: state.mechanics.effector.pos,
             # norm=lambda x: jnp.sum(x**2, axis=-1),
             spec=during_hold,
         )
         terms["effector_hold_vel"] = TargetStateLoss(
-            "Effector hold velocity",
+            "effector_hold_vel",
             where=lambda state: state.mechanics.effector.vel,
             # norm=lambda x: jnp.sum(x**2, axis=-1),
             spec=target_zero & during_hold,
@@ -318,7 +329,7 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
 
     goal_hit_cfg = _nsget(hps, "loss.goal_hit_in_window", None)
     if goal_hit_cfg is not None and getattr(user_outer_weights, "goal_hit_in_window", 1.0) != 0.0:
-        goal_hit_params = {**DEFAULT_GOAL_HIT_PARAMS, **(goal_hit_cfg or {})}
+        goal_hit_params = deep_merge(DEFAULT_GOAL_HIT_PARAMS, goal_hit_cfg or {})
 
         window_bounds = tuple(goal_hit_params["window_bounds"])
         softmin_tau = float(goal_hit_params["softmin_tau"])
@@ -329,14 +340,14 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
             pos=goal_hit_pos_loss_term_fn,
             vel=goal_hit_vel_loss_term_fn,
             post_pos=partial(post_hit_pos_loss_term_fn, sigma_t=post_pos_sigma_t),
-            late_pos=goal_hit_late_pos_loss_term_fn,
+            # late_pos=goal_hit_late_pos_loss_term_fn,
         )
 
         # Merge default and user subweights
-        goal_hit_subweights = {
-            **DEFAULT_GOAL_HIT_SUBWEIGHTS,
-            **_nsget(hps, "loss.goal_hit_in_window.weights", {}),
-        }
+        goal_hit_subweights = deep_merge(
+            DEFAULT_GOAL_HIT_SUBWEIGHTS,
+            _nsget(hps, "loss.goal_hit_in_window.weights", {}),
+        )
 
         # Exclude zero-weighted sub-terms
         goal_hit_subweights = _filter_nonzero(goal_hit_subweights)
@@ -351,16 +362,54 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
             terms=goal_hit_terms,
             weights=goal_hit_subweights,
         )
+
+        after_stop_window = TargetSpec(
+            time_mask=partial(
+                get_epoch_weights,
+                start_epoch=-2,
+                start_offset=window_bounds[-1],
+            )
+        )
+
+        #
+        terms["effector_pos_late"] = TargetStateLoss(
+            "effector_pos_late",
+            where=lambda state: state.mechanics.effector.pos,
+            spec=(
+                after_stop_window
+                & TargetSpec(
+                    discount=make_late_discount_from_epoch(
+                        window_bounds[-1],
+                        max_factor=3.0,
+                        smooth="cosine",
+                        start_epoch=-2,
+                    ),
+                )
+            ),
+        )
+
+        # Penalize movement at all times after the stopping window
+        terms["effector_vel_late"] = TargetStateLoss(
+            "effector_vel_late",
+            where=lambda state: state.mechanics.effector.vel,
+            spec=target_zero & after_stop_window,
+        )
     else:
         terms["effector_pos"] = TargetStateLoss(
-            "Effector position",
+            "effector_pos",
             where=lambda state: state.mechanics.effector.pos,
-            norm=lambda x: jnp.sum(x**2, axis=-1),
+            # norm=lambda x: jnp.sum(x**2, axis=-1),
             spec=during_movement,
             # norm=lambda *args, **kwargs: (
             #     # Euclidean distance
             #     jnp.linalg.norm(*args, axis=-1, **kwargs) ** 2
             # ),
+        )
+        # Only penalize velocity on the final timestep, since there is no structure
+        terms["effector_vel_late"] = TargetStateLoss(
+            "effector_final_vel",
+            where=lambda state: state.mechanics.effector.vel,
+            spec=target_zero & target_final_state,
         )
 
     # Defaults only for present terms
