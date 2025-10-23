@@ -157,9 +157,8 @@ ANALYSES = {
     #     # .with_fig_params()
     # ),
     "plot--aligned_trajectories-by_pert_amp": (
-        get_aligned_trajectories_node(colorscale_key="pert__amp")
+        get_aligned_trajectories_node(colorscale_key="pert__amp", align_epoch=2)
         .after_transform(get_best_replicate)
-        # .after_transform(get_align_epoch_start(2))
         .after_getitem_at_level("task_variant", "small")
         .then_transform_figs(
             partial(set_axis_bounds_equal, "y", padding_factor=0.2),
@@ -183,7 +182,7 @@ ANALYSES = {
     "plot--profiles": (
         Profiles(varset=DEFAULT_VARSET)
         .with_fig_params(
-            mode="curves",  #! TEMP
+            # mode="curves",  #! TEMP
             layout_kws=dict(height=300, width=450),
         )
         .after_transform(get_best_replicate)
@@ -193,11 +192,11 @@ ANALYSES = {
             levels=["var"],
             invert_levels=True,
         )
-        .then_transform_figs(
-            get_add_epoch_bounds_vlines([2]),
-            levels=["pert__amp"],
-            # invert_levels=True,
-        )
+        # .then_transform_figs(  #! TEMP
+        #     get_add_epoch_bounds_vlines([2]),
+        #     levels=["pert__amp"],
+        #     # invert_levels=True,
+        # )
         # .after_transform(
         #     lambda tree, **kws: move_ldict_level_above("var", "train__pert__std", tree),
         #     dependency_names="vars",

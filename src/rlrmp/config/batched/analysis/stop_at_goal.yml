@@ -4,58 +4,85 @@ defs:
     type: config
     name: base
     of:
-      pert.amp: !Literal [0, 2, 4]
-      train:
-        pert: 
+      train: 
+        pert:
           type: gusts
-          std: !Literal [0, 1, 2]
           duration_mean: 8
-          n_expected: 8
-        n_batches_condition: 5000
+          n_expected: 4
+          std: !Literal [0, 4]
+
+        task:
+          type: delayed_reach
+          n_steps: 130
+          epoch_len_ranges: !Literal
+            - [10, 11]   # pre-target on
+            - [5, 20]  # target on, pre-movement
+          target_on_epochs: !Literal [1, 2]
+          hold_epochs: !Literal [0, 1]
+          move_epochs: !Literal [2]
+        
         model:
-          damping: 10
           tau_rise: 0.05
+          damping: 10
 
-  # realism_levels: &realism_levels
+  loss_weights: &loss_weights 
+    type: config 
+    name: loss_weights 
+    of: 
+      train:
+        loss:
+          weights:
+            effector_hold_pos: 1.0
+            effector_hold_vel: 1.0
+            goal_hit_in_window: [0.1, 1.0, 5.0, 0.1, 1.0, 5.0, 0.1, 1.0, 5.0, 0.1, 1.0, 5.0]  #!
+            effector_pos: 1.0
+            effector_pos_late: 1.0
+            effector_vel_late: 1.0
+            nn_output: 1e-5
+            nn_hidden: 1e-5
+          goal_hit_in_window:
+            window_bounds: !Literal [60, 80]
+            softmin_tau: [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]  #!
+            post_pos_sigma_t: 5  #!
+            weights: 
+              pos: 1.0 
+              vel: 1.0
+              post_pos: [0.25, 0.25, 0.25, 1.0, 1.0, 1.0, 0.25, 0.25, 0.25, 1.0, 1.0, 1.0] #!
+              # late_pos: 1.0  #!
+
+  p_catch_trial: &p_catch_trial
+    type: config
+    name: p_catch_trial
+    of:
+      train:
+        task:
+          p_catch_trial: [0.6, 0.9]
+
+  # noise_levels: &realism
   #   type: config
+  #   name: realism
   #   of:
-  #     train:
-  #       model:
-  #         feedback_noise_std: [0.01, 0.1]
-  #         motor_noise_std:    [0.01, 0.1]
-  #         feedback_delay_steps: [0, 5]
-  #         damping: [0, 10]
-  #         tau_rise: [0.0, 0.05]
-
-  loss_weights: &loss_weights
-    type: config
-    of:
-      train.loss.weights.effector_stop_at_goal: 2 #[2.0, 1.0, 0.1]
-
-  loss_methods: &loss_methods
-    type: config
-    of:
-      train.loss.stop_at_goal.method: "soft-or"
-      
-  loss_tol: &loss_tol
-    type: config
-    of:
-      train.loss.stop_at_goal:
-        std_dist: 0.005 #[0.005, 0.025, 0.05]
-        std_vel: 0.001 #[0.001, 0.005, 0.01]
-    
-  loss_tau: &loss_tau
-    type: config
-    of:
-      train.loss.stop_at_goal.tau: [0.2, 0.4]
+  #     model:
+  #       feedback_noise_std: [0.01, 0.1]
+  #       motor_noise_std:    [0.01, 0.1]
+  #       feedback_delay_steps: [0, 5]
+  #       damping: [0, 10]
+  #       tau_rise: [0, 0.05]
 
 # actual per-module specs
 SPEC:
-  - part2.plant_perts:
+  - part1.plant_perts:
       type: product
       of:
         - *base
-        - *loss_methods
         - *loss_weights
-        - *loss_tol
-        - *loss_tau
+        - *p_catch_trial
+        # - *realism
+
+  # - part2:
+  #     type: product
+  #     of:
+  #       - *noise_levels
+  #       - *feedback_delays
+  #       - *damping
+  #       - *tau_rise

@@ -69,6 +69,12 @@ Also:
 
 - Input sensitivity: largest singular value of the Jacobian wrt inputs
 
+### Subspace decomposition
+
+At least split into null + potent.
+
+Does SiSU affect the **observability** (how much they ultimately affect the output, even if null) or the **controllability** (how easily driven by inputs) of the subspaces?
+
 ### Fixed point analysis
 
 #### PCs vs. SISU

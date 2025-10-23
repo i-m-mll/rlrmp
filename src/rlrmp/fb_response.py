@@ -41,7 +41,7 @@ class InstantFBResponse(AbstractAnalysis[InstantFBResponsePorts]):
         pert_step = hps_common.pert.unit.start_step
 
         def _compute_single(rnn_cell, states):
-            base_net_state = jtree.first(states, is_leaf=is_module).net
+            base_net_state = jtree.first_leaf(states, is_leaf=is_module).net
             # TODO: Repeat computation independently over multiple steady-state steps, and average.
             init_state = base_net_state.hidden[..., pert_step - 1, :]
             base_input = base_net_state.input[..., pert_step, :]

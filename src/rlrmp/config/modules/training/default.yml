@@ -11,7 +11,9 @@ model:
   tau_rise: 0.05  #! 
 
 task: 
-  n_steps: 100
+  #! n_steps should be greater than `sum(r[-1]-1 for r in epoch_len_ranges) + window_bounds[-1]`
+  #! to contain the entire post-go-cue window, for all trials
+  n_steps: 130  # 10 + 20 + 80 (+ 20)
   workspace: [[-1.0, -1.0], [1.0, 1.0]]  #!
   eval_grid_n: 2
   eval_n_directions: 7
@@ -48,6 +50,7 @@ loss:
     effector_hold_vel: 1.0
     goal_hit_in_window: 1.0
     effector_pos: 1.0
+    effector_pos_late: 1.0
     effector_final_vel: 1.0
     nn_output: 1e-5
     nn_hidden: 1e-5
