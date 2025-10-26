@@ -6,10 +6,8 @@ from typing import TypeAlias
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-import jax_cookbook.tree as jtree
 from feedbax.intervene import schedule_intervenor
 from feedbax.task import DelayedReaches, SimpleReaches
-from feedbax.xabdeef.models import point_mass_nn
 from feedbax_experiments.misc import get_field_amplitude, vector_with_gaussian_length
 
 # from rlrmp.loss import get_reach_loss
@@ -23,6 +21,7 @@ from rlrmp.disturbance import (
     PLANT_INTERVENOR_LABEL,
 )
 from rlrmp.disturbances import get_gusts_fn
+from rlrmp.models import create_point_mass_nn_ensemble
 from rlrmp.task import TASK_TYPES
 
 TrainingMethodLabel: TypeAlias = L["bcs", "dai", "pai-asf", "pai-n"]
@@ -148,21 +147,10 @@ def setup_task_model_pair(
 
     task_base = TASK_TYPES[hps.task.type](loss_func=get_reach_loss(hps), **hps_task)
 
-    models_base = jtree.get_ensemble(
-        point_mass_nn,
+    models_base = create_point_mass_nn_ensemble(
+        hps,
         task_base,
         n_extra_inputs=1,  # for SISU
-        n=hps.model.n_replicates,
-        dt=hps.dt,
-        mass=hps.model.effector_mass,
-        damping=hps.model.damping,
-        hidden_size=hps.model.hidden_size,
-        n_steps=hps.task.n_steps,
-        feedback_delay_steps=hps.model.feedback_delay_steps,
-        feedback_noise_std=hps.model.feedback_noise_std,
-        motor_noise_std=hps.model.motor_noise_std,
-        tau_rise=hps.model.tau_rise,
-        tau_decay=hps.model.tau_rise,
         key=key,
     )
 

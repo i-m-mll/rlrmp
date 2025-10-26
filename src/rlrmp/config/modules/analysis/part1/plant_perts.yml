@@ -7,7 +7,20 @@ train:
     # std: [0.0, 0.1, 1.0]
   task:
     type: delayed_reach
-    n_steps: 100
+    n_steps: 130
+
+  loss: 
+    weights:
+      goal_hit_in_window: 1.0  #! or 5, or 0.1
+    goal_hit_in_window: 
+      softmin_tau: 0.2  #! or 0.05
+      weights:
+        post_pos: 1  #! or 0.25
+      
+
+  model:
+    tau_rise: 0.05
+    damping: 10
   
 model:
   feedback_noise_std: null
@@ -18,8 +31,8 @@ task:  # Passed to the base task constructor
   eval_n: 10
   variants:
     full:
-      eval_grid_n: 1 #!2
-      eval_n_directions:  5 #! 24
+      eval_grid_n: 1 #! 2
+      eval_n_directions:  24
       eval_reach_length: 0.5
     small:
       eval_grid_n: 1
