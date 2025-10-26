@@ -8,7 +8,16 @@ model:
   feedback_noise_std: 0.01
   motor_noise_std: 0.01
   damping: 10   #!
-  tau_rise: 0.05  #! 
+  tau_rise: 0.05  #!
+  # Optional: partition hidden units into subpopulations with different connectivity
+  # Uncomment and configure to enable population structure:
+  population_structure:
+    n_input_only: 30      # units that receive inputs but don't contribute to readout
+    n_readout_only: 30    # units that contribute to readout but don't receive inputs
+    n_recurrent_only: 40  # units that are internal-only (no input/output)
+    n_input_readout: 0   # units that both receive inputs and contribute to readout
+    # Note: sum must equal hidden_size (100 in this case)
+    # assignment: random  # or provide custom assignment function 
 
 task: 
   #! n_steps should be greater than `sum(r[-1]-1 for r in epoch_len_ranges) + window_bounds[-1]`
@@ -46,17 +55,18 @@ weight_decay: 0.0
 
 loss:
   weights:
-    effector_hold_pos: 1.0
-    effector_hold_vel: 1.0
     goal_hit_in_window: 1.0
-    effector_pos: 1.0
-    effector_pos_late: 1.0
-    effector_final_vel: 1.0
-    nn_output: 1e-5
-    nn_hidden: 1e-5
+    # Quadratic terms:
+    effector_pos: 1.0  # only if goal_hit_in_window = 0
+    effector_pos_late: 1.0  # post hit-window
+    effector_final_vel: 1.0  
+    effector_hold_pos: 1.0  # pre-GO
+    effector_hold_vel: 1.0
+    nn_output: 1e-5  # command
+    nn_hidden: 1e-5  # network activity
   goal_hit_in_window:
-    window_bounds: [60, 80]
-    softmin_tau: 0.2
+    window_bounds: [60, 80]  # hit window
+    softmin_tau: 0.2  # timescale of 
     post_pos_sigma_t: 5
     weights: 
       pos: 1.0 

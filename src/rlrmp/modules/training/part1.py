@@ -5,10 +5,8 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 from feedbax.intervene import schedule_intervenor
-from feedbax.xabdeef.models import point_mass_nn
 from feedbax_experiments.misc import vector_with_gaussian_length
 from feedbax_experiments.types import LDict, TaskModelPair, TreeNamespace
-from jax_cookbook.tree import get_ensemble
 from jaxtyping import PRNGKeyArray
 
 from rlrmp.disturbance import (
@@ -17,6 +15,7 @@ from rlrmp.disturbance import (
 )
 from rlrmp.disturbances import get_gusts_fn
 from rlrmp.loss import get_reach_loss
+from rlrmp.models import create_point_mass_nn_ensemble
 from rlrmp.task import TASK_TYPES
 
 #! TODO: limit curl and constant fields to movement epoch!
@@ -53,20 +52,10 @@ def setup_task_model_pair(hps: TreeNamespace, *, key):
 
     task_base = TASK_TYPES[hps.task.type](loss_func=get_reach_loss(hps), **hps_task)
 
-    models = get_ensemble(
-        point_mass_nn,
+    models = create_point_mass_nn_ensemble(
+        hps,
         task_base,
-        n=hps.model.n_replicates,
-        dt=hps.dt,
-        mass=hps.model.effector_mass,
-        damping=hps.model.damping,
-        hidden_size=hps.model.hidden_size,
-        n_steps=hps.task.n_steps,
-        feedback_delay_steps=hps.model.feedback_delay_steps,
-        feedback_noise_std=hps.model.feedback_noise_std,
-        motor_noise_std=hps.model.motor_noise_std,
-        tau_rise=hps.model.tau_rise,
-        tau_decay=hps.model.tau_rise,
+        n_extra_inputs=0,
         key=key,
     )
 
