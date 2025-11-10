@@ -4,7 +4,7 @@
 :license: Apache 2.0. See LICENSE for details.
 """
 
-from typing import Optional
+from typing import Any, Optional
 
 import jax.random as jr
 from feedbax.nn import PopulationStructure
@@ -12,6 +12,12 @@ from feedbax.xabdeef.models import point_mass_nn
 from feedbax_experiments.types import TreeNamespace
 from jax_cookbook.tree import get_ensemble
 from jaxtyping import PRNGKeyArray
+
+
+def _get_or_default(obj: Any, attr: str, default: Any) -> Any:
+    """Get attribute value, returning default if attribute is missing or None."""
+    value = getattr(obj, attr, default)
+    return default if value is None else value
 
 
 def create_point_mass_nn_ensemble(
@@ -47,10 +53,10 @@ def create_point_mass_nn_ensemble(
         key_pop, key = jr.split(key)
         population_structure = PopulationStructure.create(
             hidden_size=hps.model.hidden_size,
-            n_input_only=getattr(pop_config, 'n_input_only', 0),
-            n_readout_only=getattr(pop_config, 'n_readout_only', 0),
-            n_recurrent_only=getattr(pop_config, 'n_recurrent_only', 0),
-            n_input_readout=getattr(pop_config, 'n_input_readout', 0),
+            n_input_only=_get_or_default(pop_config, 'n_input_only', 0),
+            n_readout_only=_get_or_default(pop_config, 'n_readout_only', 0),
+            n_recurrent_only=_get_or_default(pop_config, 'n_recurrent_only', 0),
+            n_input_readout=_get_or_default(pop_config, 'n_input_readout', 0),
             assignment_fn=None,  # TODO: support custom assignment functions from config
             key=key_pop,
         )

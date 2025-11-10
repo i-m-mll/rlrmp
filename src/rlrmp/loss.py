@@ -1,5 +1,5 @@
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from functools import partial
 from typing import Any, Optional
 
@@ -14,6 +14,7 @@ from feedbax.loss import (
     StopAtGoalLoss,
     TargetSpec,
     TargetStateLoss,
+    TermTree,
     target_final_state,
     target_zero,
 )
@@ -158,6 +159,9 @@ DEFAULT_TOP_WEIGHTS: dict[str, float] = {
     "effector_pos": 1.0,
     "effector_hold_pos": 1.0,
     "effector_hold_vel": 1.0,
+    "effector_pos_mid": 1.0,
+    "effector_vel_mid": 1.0,
+    "effector_pos_late": 1.0,
     "effector_vel_late": 1.0,
     "nn_output": 1e-5,
     "nn_hidden": 1e-5,
@@ -173,10 +177,35 @@ DEFAULT_GOAL_HIT_SUBWEIGHTS: dict[str, float] = {
 }
 
 DEFAULT_GOAL_HIT_PARAMS: dict[str, Any] = {
-    "window_bounds": (60, 80),
+    "start_step_after_go": 60,
+    "end_step_after_go": 80,
     "softmin_tau": 0.2,
     "post_pos_sigma_t": 5.0,
     "alpha_eps": 1e-12,
+}
+
+DEFAULT_EFFECTOR_POS_LATE_PARAMS: dict[str, Any] = {
+    "start_step_after_go": 80,
+    "final_scale_factor": 1.0,
+}
+
+DEFAULT_EFFECTOR_VEL_LATE_PARAMS: dict[str, Any] = {
+    "start_step_after_go": 80,
+    "final_scale_factor": 1.0,
+}
+
+DEFAULT_EFFECTOR_POS_MID_PARAMS: dict[str, Any] = {
+    "start_step_after_go": 0,
+    "end_step_after_go": 80,
+    "ramp_init_weight": 0.0,
+    "ramp_final_weight": 0.1,
+}
+
+DEFAULT_EFFECTOR_VEL_MID_PARAMS: dict[str, Any] = {
+    "start_step_after_go": 0,
+    "end_step_after_go": 80,
+    "ramp_init_weight": 0.0,
+    "ramp_final_weight": 0.1,
 }
 
 
@@ -251,47 +280,124 @@ def make_late_discount_from_epoch(
     return discount
 
 
+def make_mid_period_ramp(
+    start_step: int,
+    end_step: int,
+    init_weight: float,
+    final_weight: float,
+    start_epoch: int = -2,
+):
+    """Return a callable(spec_i)->(T,) that linearly ramps from init_weight to final_weight
+    during a window relative to the start of the specified epoch.
+
+    The returned discount is:
+    - 0.0 before the window
+    - linearly interpolates from init_weight to final_weight during the window
+    - 0.0 after the window
+
+    Args:
+        start_step: Window start offset relative to epoch start (e.g., 0)
+        end_step: Window end offset relative to epoch start (e.g., 80)
+        init_weight: Weight at window start
+        final_weight: Weight at window end
+        start_epoch: Which epoch to offset from (default -2, the go cue)
+    """
+
+    def discount(spec):
+        T = spec.timeline.n_steps - 1
+        t = jnp.arange(T, dtype=jnp.float32)
+
+        # Get the mask for the specified epoch
+        epoch_m = get_epoch_weights(
+            spec, start_epoch=start_epoch, end_epoch=None, dtype=jnp.float32
+        )
+
+        # Epoch start index
+        epoch_start = jnp.argmax(epoch_m > 0).astype(jnp.int32)
+
+        # Window boundaries in absolute time
+        window_start = epoch_start + jnp.int32(start_step)
+        window_end = epoch_start + jnp.int32(end_step)
+
+        # Fraction through the window [0, 1]
+        window_length = jnp.maximum(1.0, (window_end - window_start).astype(jnp.float32))
+        frac = (t - window_start.astype(jnp.float32)) / window_length
+        frac = jnp.clip(frac, 0.0, 1.0)
+
+        # Linear interpolation from init_weight to final_weight
+        ramp_value = init_weight + (final_weight - init_weight) * frac
+
+        # Mask: only apply during the window
+        in_window = (t >= window_start) & (t < window_end)
+
+        return jnp.where(in_window, ramp_value, 0.0)
+
+    return discount
+
+
 def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
     """Construct a loss function for reaching task.
 
     Some terms are always included (e.g. penalty on neural network activity and output) while others
-    (e.g. simple effector goal position error, versus hit-in-window error) depend on user config.
+    depend on which mode is active based on weight configuration.
 
-    Example of a typical YAML config fragment for the loss function:
+    Three modes are available:
+    1. **Simple mode** (`effector_pos` weight > 0): Basic position error during movement + final
+       velocity penalty. No mid/late terms.
+    2. **Goal hit mode** (`goal_hit_in_window` weight > 0): Soft hit-window objective with optional
+       mid/late terms.
+    3. **Structured mode** (both above weights = 0): Fully configurable mid/late period terms.
+
+    Example YAML config for structured mode with mid/late-period ramping:
 
       loss:
         weights:
-          effector_pos: 1.0
+          goal_hit_in_window: 0.0
+          effector_pos: 0.0
+          effector_pos_mid: 1.0
+          effector_vel_mid: 1.0
+          effector_pos_late: 1.0
           effector_vel_late: 1.0
-          nn_output: 1e-5
-          nn_hidden: 1e-5
-          goal_hit_in_window: 1.0
+          effector_hold_pos: 10.0
+          effector_hold_vel: 10.0
+          nn_output: 1e-6
+          nn_hidden: 1e-6
+        effector_pos_late:
+          start_step_after_go: 80
+          final_scale_factor: 1.0
+        effector_vel_late:
+          start_step_after_go: 80
+          final_scale_factor: 1.0
+        effector_pos_mid:
+          start_step_after_go: 0
+          end_step_after_go: 80
+          ramp_init_weight: 0.0
+          ramp_final_weight: 0.1
+        effector_vel_mid:
+          start_step_after_go: 0
+          end_step_after_go: 80
+          ramp_init_weight: 0.0
+          ramp_final_weight: 0.1
         goal_hit_in_window:
-          window_bounds: [60, 80]
+          start_step_after_go: 60
+          end_step_after_go: 80
           softmin_tau: 0.2
           post_pos_sigma_t: 5
-          alpha_eps: 1e-12
           weights:
             pos: 1.0
-            vel: 1.0
+            vel: 0.1
             post_pos: 1.0
 
-    If `hps.loss.goal_hit_in_window` is present and `hps.loss.weights.goal_hit_in_window` is
-    non-zero, then the goal-hit-in-window term is used; otherwise, the simple position error term
-    is used.
+    The mid-period terms (`effector_pos_mid`, `effector_vel_mid`) provide linear ramping penalties
+    during a specified window after the go cue (active in goal-hit and structured modes only).
+
+    The late-period terms (`effector_pos_late`, `effector_vel_late`) provide constant or increasing
+    penalties starting at a specified time after the go cue, continuing until trial end (active in
+    goal-hit and structured modes only, disabled in simple mode).
 
     TODO: Refactor all the defaults/merging logic into a preparatory function.
     """
     user_outer_weights = _nsget(hps, "loss.weights", {}) or {}
-
-    if (
-        getattr(user_outer_weights, "effector_pos", 1.0) == 0.0
-        and getattr(user_outer_weights, "goal_hit_in_window", 1.0) == 0.0
-    ):
-        logger.warning(
-            "Both effector_pos and goal_hit_in_window loss term weights are zero; "
-            "goal position error will NOT be penalized."
-        )
 
     terms: Mapping[str, AbstractLoss] = dict(
         nn_output=TargetStateLoss(
@@ -327,90 +433,184 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
     if fix_readout_cfg:
         terms["fix_readout_norm"] = get_readout_norm_loss(**fix_readout_cfg)
 
-    goal_hit_cfg = _nsget(hps, "loss.goal_hit_in_window", None)
-    if goal_hit_cfg is not None and getattr(user_outer_weights, "goal_hit_in_window", 1.0) != 0.0:
-        goal_hit_params = deep_merge(DEFAULT_GOAL_HIT_PARAMS, goal_hit_cfg or {})
+    # Determine which mode we're in based on weights
+    use_goal_hit = getattr(user_outer_weights, "goal_hit_in_window", 0.0) != 0.0
+    use_simple_effector_pos = getattr(user_outer_weights, "effector_pos", 0.0) != 0.0
 
-        window_bounds = tuple(goal_hit_params["window_bounds"])
-        softmin_tau = float(goal_hit_params["softmin_tau"])
-        post_pos_sigma_t = float(goal_hit_params["post_pos_sigma_t"])
-        alpha_eps = float(goal_hit_params["alpha_eps"])
+    # Read configs for late-period terms (used in goal_hit and structured modes)
+    effector_pos_late_cfg = _nsget(hps, "loss.effector_pos_late", None)
+    effector_pos_late_params = deep_merge(
+        DEFAULT_EFFECTOR_POS_LATE_PARAMS, effector_pos_late_cfg or {}
+    )
+    pos_late_start = int(effector_pos_late_params["start_step_after_go"])
+    pos_late_scale_factor = float(effector_pos_late_params["final_scale_factor"])
 
-        goal_hit_terms = dict(
-            pos=goal_hit_pos_loss_term_fn,
-            vel=goal_hit_vel_loss_term_fn,
-            post_pos=partial(post_hit_pos_loss_term_fn, sigma_t=post_pos_sigma_t),
-            # late_pos=goal_hit_late_pos_loss_term_fn,
-        )
+    effector_vel_late_cfg = _nsget(hps, "loss.effector_vel_late", None)
+    effector_vel_late_params = deep_merge(
+        DEFAULT_EFFECTOR_VEL_LATE_PARAMS, effector_vel_late_cfg or {}
+    )
+    vel_late_start = int(effector_vel_late_params["start_step_after_go"])
+    vel_late_scale_factor = float(effector_vel_late_params["final_scale_factor"])
 
-        # Merge default and user subweights
-        goal_hit_subweights = deep_merge(
-            DEFAULT_GOAL_HIT_SUBWEIGHTS,
-            _nsget(hps, "loss.goal_hit_in_window.weights", {}),
-        )
-
-        # Exclude zero-weighted sub-terms
-        goal_hit_subweights = _filter_nonzero(goal_hit_subweights)
-        goal_hit_terms = {k: v for k, v in goal_hit_terms.items() if k in goal_hit_subweights}
-
-        terms["goal_hit_in_window"] = FuncTermsLoss(
-            label="goal_hit_in_window",
-            build_context=GoalHitCtxBuilder(
-                window_bounds=window_bounds, tau=softmin_tau, eps=alpha_eps
-            ),
-            # Only include terms with nonzero weights
-            terms=goal_hit_terms,
-            weights=goal_hit_subweights,
-        )
-
-        after_stop_window = TargetSpec(
-            time_mask=partial(
-                get_epoch_weights,
-                start_epoch=-2,
-                start_offset=window_bounds[-1],
-            )
-        )
-
-        #
-        terms["effector_pos_late"] = TargetStateLoss(
-            "effector_pos_late",
-            where=lambda state: state.mechanics.effector.pos,
-            spec=(
-                after_stop_window
-                & TargetSpec(
-                    discount=make_late_discount_from_epoch(
-                        window_bounds[-1],
-                        max_factor=3.0,
-                        smooth="cosine",
-                        start_epoch=-2,
-                    ),
-                )
-            ),
-        )
-
-        # Penalize movement at all times after the stopping window
-        terms["effector_vel_late"] = TargetStateLoss(
-            "effector_vel_late",
-            where=lambda state: state.mechanics.effector.vel,
-            spec=target_zero & after_stop_window,
-        )
-    else:
+    # MODE 1: Simple mode (effector_pos weight > 0)
+    # Creates simple effector_pos term + final velocity penalty only
+    if use_simple_effector_pos:
         terms["effector_pos"] = TargetStateLoss(
             "effector_pos",
             where=lambda state: state.mechanics.effector.pos,
-            # norm=lambda x: jnp.sum(x**2, axis=-1),
             spec=during_movement,
-            # norm=lambda *args, **kwargs: (
-            #     # Euclidean distance
-            #     jnp.linalg.norm(*args, axis=-1, **kwargs) ** 2
-            # ),
         )
-        # Only penalize velocity on the final timestep, since there is no structure
-        terms["effector_vel_late"] = TargetStateLoss(
+        # Final velocity penalty (only at final timestep)
+        terms["effector_final_vel"] = TargetStateLoss(
             "effector_final_vel",
             where=lambda state: state.mechanics.effector.vel,
             spec=target_zero & target_final_state,
         )
+
+    # MODE 2: Goal hit mode (goal_hit_in_window weight > 0)
+    # Creates goal hit term + can have mid/late terms
+    elif use_goal_hit:
+        goal_hit_cfg = _nsget(hps, "loss.goal_hit_in_window", None)
+        if goal_hit_cfg is not None:
+            goal_hit_params = deep_merge(DEFAULT_GOAL_HIT_PARAMS, goal_hit_cfg or {})
+
+            window_start = int(goal_hit_params["start_step_after_go"])
+            window_end = int(goal_hit_params["end_step_after_go"])
+            softmin_tau = float(goal_hit_params["softmin_tau"])
+            post_pos_sigma_t = float(goal_hit_params["post_pos_sigma_t"])
+            alpha_eps = float(goal_hit_params["alpha_eps"])
+
+            goal_hit_terms = dict(
+                pos=goal_hit_pos_loss_term_fn,
+                vel=goal_hit_vel_loss_term_fn,
+                post_pos=partial(post_hit_pos_loss_term_fn, sigma_t=post_pos_sigma_t),
+            )
+
+            # Merge default and user subweights
+            goal_hit_subweights = deep_merge(
+                DEFAULT_GOAL_HIT_SUBWEIGHTS,
+                _nsget(hps, "loss.goal_hit_in_window.weights", {}),
+            )
+
+            # Exclude zero-weighted sub-terms
+            goal_hit_subweights = _filter_nonzero(goal_hit_subweights)
+            goal_hit_terms = {k: v for k, v in goal_hit_terms.items() if k in goal_hit_subweights}
+
+            terms["goal_hit_in_window"] = FuncTermsLoss(
+                label="goal_hit_in_window",
+                build_context=GoalHitCtxBuilder(
+                    window_bounds=(window_start, window_end), tau=softmin_tau, eps=alpha_eps
+                ),
+                terms=goal_hit_terms,
+                weights=goal_hit_subweights,
+            )
+
+    # MODE 3: Structured mode (neither effector_pos nor goal_hit_in_window)
+    # Can have mid/late terms for both position and velocity
+
+    # Mid-period terms (active in goal_hit or structured modes, NOT in simple mode)
+    if not use_simple_effector_pos:
+        # Mid-period position ramping (optional)
+        effector_pos_mid_cfg = _nsget(hps, "loss.effector_pos_mid", None)
+        if effector_pos_mid_cfg is not None:
+            effector_pos_mid_params = deep_merge(
+                DEFAULT_EFFECTOR_POS_MID_PARAMS, effector_pos_mid_cfg or {}
+            )
+            pos_mid_start = int(effector_pos_mid_params["start_step_after_go"])
+            pos_mid_end = int(effector_pos_mid_params["end_step_after_go"])
+            pos_mid_init = float(effector_pos_mid_params["ramp_init_weight"])
+            pos_mid_final = float(effector_pos_mid_params["ramp_final_weight"])
+
+            terms["effector_pos_mid"] = TargetStateLoss(
+                "effector_pos_mid",
+                where=lambda state: state.mechanics.effector.pos,
+                spec=TargetSpec(
+                    discount=make_mid_period_ramp(
+                        start_step=pos_mid_start,
+                        end_step=pos_mid_end,
+                        init_weight=pos_mid_init,
+                        final_weight=pos_mid_final,
+                        start_epoch=-2,
+                    )
+                ),
+            )
+
+        # Mid-period velocity ramping (optional)
+        effector_vel_mid_cfg = _nsget(hps, "loss.effector_vel_mid", None)
+        if effector_vel_mid_cfg is not None:
+            effector_vel_mid_params = deep_merge(
+                DEFAULT_EFFECTOR_VEL_MID_PARAMS, effector_vel_mid_cfg or {}
+            )
+            vel_mid_start = int(effector_vel_mid_params["start_step_after_go"])
+            vel_mid_end = int(effector_vel_mid_params["end_step_after_go"])
+            vel_mid_init = float(effector_vel_mid_params["ramp_init_weight"])
+            vel_mid_final = float(effector_vel_mid_params["ramp_final_weight"])
+
+            terms["effector_vel_mid"] = TargetStateLoss(
+                "effector_vel_mid",
+                where=lambda state: state.mechanics.effector.vel,
+                spec=target_zero
+                & TargetSpec(
+                    discount=make_mid_period_ramp(
+                        start_step=vel_mid_start,
+                        end_step=vel_mid_end,
+                        init_weight=vel_mid_init,
+                        final_weight=vel_mid_final,
+                        start_epoch=-2,
+                    )
+                ),
+            )
+
+        # Late-period position term (optional, active in goal_hit or structured modes)
+        if getattr(user_outer_weights, "effector_pos_late", 0.0) != 0.0:
+            after_pos_late_window = TargetSpec(
+                time_mask=partial(
+                    get_epoch_weights,
+                    start_epoch=-2,
+                    start_offset=pos_late_start,
+                )
+            )
+            terms["effector_pos_late"] = TargetStateLoss(
+                "effector_pos_late",
+                where=lambda state: state.mechanics.effector.pos,
+                spec=(
+                    after_pos_late_window
+                    & TargetSpec(
+                        discount=make_late_discount_from_epoch(
+                            pos_late_start,
+                            max_factor=pos_late_scale_factor,
+                            smooth="cosine",
+                            start_epoch=-2,
+                        ),
+                    )
+                ),
+            )
+
+        # Late-period velocity term (entire late window, not just final timestep)
+        if getattr(user_outer_weights, "effector_vel_late", 0.0) != 0.0:
+            after_vel_late_window = TargetSpec(
+                time_mask=partial(
+                    get_epoch_weights,
+                    start_epoch=-2,
+                    start_offset=vel_late_start,
+                )
+            )
+            terms["effector_vel_late"] = TargetStateLoss(
+                "effector_vel_late",
+                where=lambda state: state.mechanics.effector.vel,
+                spec=(
+                    target_zero
+                    & after_vel_late_window
+                    & TargetSpec(
+                        discount=make_late_discount_from_epoch(
+                            vel_late_start,
+                            max_factor=vel_late_scale_factor,
+                            smooth="cosine",
+                            start_epoch=-2,
+                        ),
+                    )
+                ),
+            )
 
     # Defaults only for present terms
     defaults_for_present = _pick(DEFAULT_TOP_WEIGHTS, terms.keys())
@@ -429,3 +629,102 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
 
     loss_fn = CompositeLoss(label="reach_loss", terms=terms, weights=outer_weights)
     return loss_fn
+
+
+def get_adaptive_control_penalty_update(
+    *,
+    target_ratio: float,
+    alpha: float,
+    control_term: str = "nn_output",
+    goal_term: str | list[str] = "effector_pos_late",
+) -> Callable[[CompositeLoss, TermTree, PyTree], CompositeLoss]:
+    """Create a loss update function that adaptively adjusts control penalty weights.
+
+    Maintains a target ratio between control cost and goal error by updating the
+    control term's weight according to:
+
+        ρ_{k+1} = ρ_k * (J_x / (r* · J_u))^α
+
+    where:
+        - ρ is the weight on the control term
+        - J_x is the goal error (after weighting, summed if multiple terms)
+        - J_u is the control cost (after weighting)
+        - r* is the target ratio (J_u / J_x)
+        - α is the update rate
+
+    Arguments:
+        target_ratio: Desired ratio of control cost to goal error (J_u / J_x)
+        alpha: Update rate in (0, 1]. Smaller values = slower adaptation.
+        control_term: Name of the control cost term in the loss function
+        goal_term: Name(s) of the goal error term(s) in the loss function. If a list,
+                   all terms will be summed to compute total goal error.
+
+    Returns:
+        Update function with signature (loss_func, losses, grads) -> updated_loss_func
+    """
+    # Normalize goal_term to always be a list
+    goal_terms = [goal_term] if isinstance(goal_term, str) else goal_term
+
+    def loss_update_func(
+        loss_func: CompositeLoss,
+        losses: TermTree,
+        grads: PyTree,  # Not used but required by signature
+    ) -> CompositeLoss:
+        # Extract term values (already weighted and aggregated over trials)
+        # Sum multiple goal terms if provided
+        J_x = sum(
+            jnp.mean(losses[term].total) for term in goal_terms if term in losses
+        )
+        J_u = jnp.mean(losses[control_term].total)  # Control cost
+
+        # Compute multiplicative update
+        # Want: J_u ≈ target_ratio * J_x
+        # So if J_u is too small, increase weight; if too large, decrease weight
+        current_weight = loss_func.weights[control_term]
+        ratio = J_x / (target_ratio * J_u + 1e-12)  # Add epsilon to avoid division by zero
+        new_weight = current_weight * (ratio ** alpha)
+
+        # Optional: clip to reasonable range to prevent runaway
+        new_weight = jnp.clip(new_weight, 1e-8, 1e-2)
+
+        # Update weights dict
+        new_weights = loss_func.weights.copy()
+        new_weights[control_term] = float(new_weight)
+
+        return loss_func.with_weights(new_weights)
+
+    return loss_update_func
+
+
+def get_loss_update_func(hps: TreeNamespace):
+    """Return loss update function configured from hyperparameters, or None if disabled.
+
+    This is the standard interface that training modules should use to get a loss
+    update function from the configuration.
+
+    Arguments:
+        hps: Hyperparameters namespace containing `loss_update` configuration
+
+    Returns:
+        Tuple of (update_func, iterations) where:
+            - update_func: Callable[[CompositeLoss, TermTree, PyTree], CompositeLoss] or None
+            - iterations: bool | Array controlling when to apply updates
+    """
+    loss_update_cfg = getattr(hps, "loss_update", None)
+    if loss_update_cfg is None or not getattr(loss_update_cfg, "enabled", False):
+        return None, True  # (func, iterations)
+
+    # Default goal_term: sum mid and late position penalties for full movement error
+    default_goal_term = ["effector_pos_mid", "effector_pos_late"]
+    goal_term = getattr(loss_update_cfg, "goal_term", default_goal_term)
+
+    update_func = get_adaptive_control_penalty_update(
+        target_ratio=loss_update_cfg.target_ratio,
+        alpha=loss_update_cfg.alpha,
+        control_term=getattr(loss_update_cfg, "control_term", "nn_output"),
+        goal_term=goal_term,
+    )
+
+    iterations = getattr(loss_update_cfg, "iterations", True)
+
+    return update_func, iterations
