@@ -5,11 +5,14 @@ defs:
     name: base
     of:
       train: 
+        model:
+          hidden_size: 120
+
         pert:
           type: gusts
           duration_mean: 8
           n_expected: 4
-          std: !Literal [0, 4]
+          std: !Literal [0, 2, 4]
 
         task:
           type: delayed_reach
@@ -20,10 +23,18 @@ defs:
           target_on_epochs: !Literal [1, 2]
           hold_epochs: !Literal [0, 1]
           move_epochs: !Literal [2]
-        
-        model:
-          tau_rise: 0.05
-          damping: 10
+
+  pert_n: &pert_n
+    type: config 
+    name: pert_n
+    of: 
+      train.pert.n_expected: [1, 2, 4]
+
+  pert_duration: &pert_duration
+    type: config 
+    name: pert_duration
+    of: 
+      train.pert.duration_mean: [4, 8]
 
   loss_weights: &loss_weights 
     type: config 
@@ -32,42 +43,62 @@ defs:
       train:
         loss:
           weights:
-            effector_hold_pos: 1.0
-            effector_hold_vel: 1.0
-            goal_hit_in_window: [0.1, 1.0, 5.0, 0.1, 1.0, 5.0, 0.1, 1.0, 5.0, 0.1, 1.0, 5.0]  #!
-            effector_pos: 1.0
+            effector_hold_pos: 10.0
+            effector_hold_vel: 10.0
+            goal_hit_in_window: 0.0  #! [0.0, 1.0, 10.0]  
+            effector_pos: 0.0
             effector_pos_late: 1.0
             effector_vel_late: 1.0
-            nn_output: 1e-5
-            nn_hidden: 1e-5
+            nn_hidden: 1e-6  
           goal_hit_in_window:
             window_bounds: !Literal [60, 80]
-            softmin_tau: [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]  #!
+            softmin_tau: 0.05  #!
             post_pos_sigma_t: 5  #!
             weights: 
               pos: 1.0 
-              vel: 1.0
-              post_pos: [0.25, 0.25, 0.25, 1.0, 1.0, 1.0, 0.25, 0.25, 0.25, 1.0, 1.0, 1.0] #!
-              # late_pos: 1.0  #!
+              vel: 0.1
+              post_pos: 0.25 #!
 
   p_catch_trial: &p_catch_trial
     type: config
     name: p_catch_trial
     of:
-      train:
-        task:
-          p_catch_trial: [0.6, 0.9]
+      train.task.p_catch_trial: 0.5
 
-  # noise_levels: &realism
-  #   type: config
-  #   name: realism
-  #   of:
-  #     model:
-  #       feedback_noise_std: [0.01, 0.1]
-  #       motor_noise_std:    [0.01, 0.1]
-  #       feedback_delay_steps: [0, 5]
-  #       damping: [0, 10]
-  #       tau_rise: [0, 0.05]
+  nn_structure: &nn_structure 
+    type: config 
+    name: nn_structure 
+    of: 
+      train:
+        model: 
+          hidden_size: 180 #! [120, 180]
+
+          population_structure:
+            n_input_only: 60 #! [10, 40, 60]      # units that receive inputs but don't contribute to readout
+            n_readout_only: 60 #! [10, 40, 60]    # units that contribute to readout but don't receive inputs
+            n_recurrent_only: 60 #! [10, 40, 60]  # units that are internal-only (no input/output)
+            n_input_readout: 0   # units that both receive inputs and contribute to readout
+
+  noise_levels: &realism
+    type: config
+    name: realism
+    of:
+      model:
+        feedback_noise_std: [0.01, 0.1]
+        motor_noise_std:    [0.01, 0.1]
+        feedback_delay_steps: [0, 5]
+        damping: [0, 10]
+        tau_rise: [0, 0.05]
+
+      train:
+        model:
+          feedback_noise_std: [0.01, 0.1]
+          motor_noise_std: [0.01, 0.1]
+          feedback_delay_steps: [0, 5]
+          tau_rise: [0, 0.05]
+          damping: [0, 10]
+        
+        # loss.weights.nn_output: [1e-6, 1e-7] #! Change to 1e-6, 1e-7 later
 
 # actual per-module specs
 SPEC:
@@ -77,7 +108,10 @@ SPEC:
         - *base
         - *loss_weights
         - *p_catch_trial
-        # - *realism
+        - *realism
+        - *pert_n
+        - *pert_duration
+        - *nn_structure
 
   # - part2:
   #     type: product

@@ -3,24 +3,30 @@ train:
   pert:  
     type: gusts
     std: [0.0, 4.0]
+    n_expected: 4
+    duration_mean: 8
     # type: constant
     # std: [0.0, 0.1, 1.0]
   task:
     type: delayed_reach
     n_steps: 130
+    p_catch_trial: 0.5
 
   loss: 
     weights:
-      goal_hit_in_window: 1.0  #! or 5, or 0.1
+      goal_hit_in_window: 0.0  #! or 5, or 0.1
+      nn_hidden: 1e-6
+      nn_output: 1e-6
     goal_hit_in_window: 
-      softmin_tau: 0.2  #! or 0.05
+      softmin_tau: 0.05  #! or 0.05
       weights:
-        post_pos: 1  #! or 0.25
+        post_pos: 0.25  #! or 0.25
       
 
   model:
-    tau_rise: 0.05
-    damping: 10
+    tau_rise: 0.0
+    damping: 0
+    hidden_size: 120
   
 model:
   feedback_noise_std: null
@@ -32,7 +38,7 @@ task:  # Passed to the base task constructor
   variants:
     full:
       eval_grid_n: 1 #! 2
-      eval_n_directions:  24
+      eval_n_directions:  24  #!24
       eval_reach_length: 0.5
     small:
       eval_grid_n: 1
@@ -41,7 +47,7 @@ task:  # Passed to the base task constructor
 
 pert:
   type: gusts
-  amp: [0.0, 16.0, 32.0] 
+  amp: [0.0, 8.0, 16.0] 
 
 analyses:
   center_out_sets: 

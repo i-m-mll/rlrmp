@@ -24,7 +24,7 @@ from feedbax_experiments.analysis.state_utils import (
 )
 from feedbax_experiments.analysis.violins import Violins
 from feedbax_experiments.plot import (
-    get_add_epoch_bounds_vlines,
+    get_add_aligned_epoch_vline,
     get_violins,
     set_axes_bounds_equal,
     set_axes_bounds_equal_traj2D,
@@ -114,15 +114,15 @@ i_eval = 0  # For single-eval plots
 
 
 DEPENDENCIES = {
-    # "measures": (
-    #     ApplyFns(
-    #         fns=MEASURE_FNS,
-    #         inputs=ApplyFns.Ports(input=AlignedVars()),
-    #         is_leaf=LDict.is_of(VAR_LEVEL_LABEL),
-    #     )
-    #     # Discard the varset; only keep the aligned vars
-    #     .after_transform(lambda results: results["full"], dependency_names="input")
-    # )
+    "measures": (
+        ApplyFns(
+            fns=MEASURE_FNS,
+            inputs=ApplyFns.Ports(input=AlignedVars()),
+            is_leaf=LDict.is_of(VAR_LEVEL_LABEL),
+        )
+        # Discard the varset; only keep the aligned vars
+        .after_transform(lambda results: results["full"], dependency_names="input")
+    )
 }
 
 
@@ -137,6 +137,8 @@ measure_violins_base = Violins(inputs=Violins.Ports(input="measures")).map_figs_
     dependency_name="input",
     fig_params_fn=measure_violin_params_fn,
 )
+
+MVT_EPOCH_IDX = 2
 
 
 # PyTree levels:
@@ -166,6 +168,16 @@ ANALYSES = {
             invert_levels=True,
         )
     ),
+    "plot--aligned_trajectories-by_pert_amp_noalign": (
+        get_aligned_trajectories_node(colorscale_key="pert__amp", align_epoch=None)
+        .after_transform(get_best_replicate)
+        .after_getitem_at_level("task_variant", "small")
+        .then_transform_figs(
+            partial(set_axis_bounds_equal, "y", padding_factor=0.2),
+            levels=(),
+            invert_levels=True,
+        )
+    ),
     # "plot--aligned_trajectories_by_train_std": (
     #     get_aligned_trajectories_node(
     #         # Transform to best replicate *before* stacking `colorscale_key`
@@ -185,6 +197,10 @@ ANALYSES = {
             mode="curves",  #! TEMP
             layout_kws=dict(height=300, width=450),
         )
+        .after_transform(
+            lambda vars_, *, data: get_align_epoch_start(MVT_EPOCH_IDX)(vars_, data=data),
+            dependency_names="vars",
+        )
         .after_transform(get_best_replicate)
         .after_level_to_bottom("train__pert__std", dependency_name="vars")
         .then_transform_figs(
@@ -192,17 +208,17 @@ ANALYSES = {
             levels=["var"],
             invert_levels=True,
         )
-        # .then_transform_figs(  #! TEMP
-        #     get_add_epoch_bounds_vlines([2]),
-        #     levels=["pert__amp"],
-        #     # invert_levels=True,
-        # )
+        .then_transform_figs(  #! TEMP
+            get_add_aligned_epoch_vline(MVT_EPOCH_IDX),
+            levels=["pert__amp"],
+            # invert_levels=True,
+        )
         # .after_transform(
         #     lambda tree, **kws: move_ldict_level_above("var", "train__pert__std", tree),
         #     dependency_names="vars",
         # )
     ),
-    # "plot--measures": measure_violins_base,
+    "plot--measures": measure_violins_base,
     # "plot--measures_lohi_train_std": (
     #     measure_violins_base.after_transform(lohi, level="train__pert__std")
     # ),

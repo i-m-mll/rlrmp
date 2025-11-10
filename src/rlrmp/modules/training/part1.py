@@ -14,7 +14,7 @@ from rlrmp.disturbance import (
     PLANT_INTERVENOR_LABEL,
 )
 from rlrmp.disturbances import get_gusts_fn
-from rlrmp.loss import get_reach_loss
+from rlrmp.loss import get_loss_update_func, get_reach_loss
 from rlrmp.models import create_point_mass_nn_ensemble
 from rlrmp.task import TASK_TYPES
 

@@ -4,11 +4,7 @@ defs:
     type: config
     name: base
     of:
-      pert:
-        type: gusts
-        duration_mean: 8
-        n_expected: 4
-        std: [0, 4, 8]
+      pert.type: gusts
 
       task:
         type: delayed_reach
@@ -18,48 +14,81 @@ defs:
         target_on_epochs: !Literal [1, 2]
         hold_epochs: !Literal [0, 1]
         move_epochs: !Literal [2]
+  
+  pert_n: &pert_n
+    type: config 
+    name: pert_n
+    of: 
+      pert.n_expected: [2, 4]
+
+  pert_duration: &pert_duration
+    type: config 
+    name: pert_duration
+    of: 
+      pert.duration_mean: [4, 8]
+
+  nn_structure: &nn_structure 
+    type: config 
+    name: nn_structure 
+    of: 
+      model: 
+        hidden_size: [30, 180]
+
+        population_structure:
+          n_input_only: [10, 60]      # units that receive inputs but don't contribute to readout
+          n_readout_only: [10, 60]    # units that contribute to readout but don't receive inputs
+          n_recurrent_only: [10, 60]  # units that are internal-only (no input/output)
+          n_input_readout: 0   # units that both receive inputs and contribute to readout
+
+  pert_std: &pert_std 
+    type: config 
+    name: pert_std 
+    of: 
+      pert.std: [0, 4, 8]
 
   loss_weights: &loss_weights 
     type: config 
     name: loss_weights 
     of: 
-      loss:
-        weights:
-          effector_hold_pos: 1.0
-          effector_hold_vel: 1.0
-          goal_hit_in_window: [0.1, 1.0] #, 5.0, 0.1, 1.0, 5.0, 0.1, 1.0, 5.0, 0.1, 1.0, 5.0]  #!
-          effector_pos: 1.0
-          effector_pos_late: 1.0
-          effector_vel_late: 1.0
-          nn_output: 1e-5
-          nn_hidden: 1e-5
-        goal_hit_in_window:
-          window_bounds: !Literal [60, 80]
-          softmin_tau: [0.05, 0.05] #, 0.05, 0.05, 0.05, 0.05, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]  #!
-          post_pos_sigma_t: 5  #!
-          weights: 
-            pos: 1.0 
-            vel: 1.0
-            post_pos: [0.25, 0.25] #, 0.25, 1.0, 1.0, 1.0, 0.25, 0.25, 0.25, 1.0, 1.0, 1.0] #!
-            # late_pos: 1.0  #!
+      # loss:
+      #   weights:
+      #     goal_hit_in_window: 0.0 #! [0.0, 1.0, 10.0] #, 5.0, 0.1, 1.0, 5.0, 0.1, 1.0, 5.0, 0.1, 1.0, 5.0]  #!
+      #   goal_hit_in_window:
+      #     softmin_tau: 0.05 #, 0.05, 0.05, 0.05, 0.05, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]  #!
+      #     post_pos_sigma_t: 5  #!
+      #     weights: 
+      #       post_pos: 0.25 #, 0.25, 1.0, 1.0, 1.0, 0.25, 0.25, 0.25, 1.0, 1.0, 1.0] #!
+
+      loss_update: 
+        target_ratio: [0.5, 1.0]
+
+  loss_structure: &loss_structure 
+    type: config 
+    name: loss_structure 
+    of: 
+      loss: 
+        effector_pos_mid.start_step_after_go: [0, 40]
+        effector_vel_mid.start_step_after_go: [0, 40]
 
   p_catch_trial: &p_catch_trial
     type: config
     name: p_catch_trial
     of:
       task:
-        p_catch_trial: [0.6, 0.9]
+        p_catch_trial: 0.5  #! [0.6, 0.9]
 
-  # noise_levels: &realism
-  #   type: config
-  #   name: realism
-  #   of:
-  #     model:
-  #       feedback_noise_std: [0.01, 0.1]
-  #       motor_noise_std:    [0.01, 0.1]
-  #       feedback_delay_steps: [0, 5]
-  #       damping: [0, 10]
-  #       tau_rise: [0, 0.05]
+  realism: &realism
+    type: config
+    name: realism
+    of:
+      model:
+        feedback_noise_std: [0.01, 0.1]
+        motor_noise_std:    [0.01, 0.1]
+        feedback_delay_steps: [0, 5]
+        damping: [0, 10]
+        tau_rise: [0, 0.05]
+
+      loss.weights.nn_output: [1e-6, 1e-7]  
 
 # actual per-module specs
 SPEC:
@@ -67,9 +96,14 @@ SPEC:
       type: product
       of:
         - *base
+        # - *pert_n 
+        # - *pert_duration 
+        - *pert_std
+        - *loss_structure
         - *loss_weights
         - *p_catch_trial
         # - *realism
+        # - *nn_structure
 
   # - part2:
   #     type: product
