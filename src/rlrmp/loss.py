@@ -671,13 +671,16 @@ def get_adaptive_control_penalty_update(
         grads: PyTree,  # Not used but required by signature
     ) -> CompositeLoss:
         # Extract term values (already weighted and aggregated over trials)
-        # Sum multiple goal terms if provided
-        J_x = sum(
-            jnp.mean(losses[term].total) for term in goal_terms if term in losses
-        )
-        J_u = jnp.mean(losses[control_term].total)  # Control cost
+        # For ensembled training, losses[term].total has shape (replicates,)
+        # Keep this shape to compute per-replicate weight updates
 
-        # Compute multiplicative update
+        # Sum multiple goal terms if provided (maintains replicate dimension)
+        J_x = sum(
+            losses[term].total for term in goal_terms if term in losses
+        )
+        J_u = losses[control_term].total  # Control cost (shape: (replicates,) or ())
+
+        # Compute multiplicative update per replicate
         # Want: J_u ≈ target_ratio * J_x
         # So if J_u is too small, increase weight; if too large, decrease weight
         current_weight = loss_func.weights[control_term]
@@ -688,8 +691,9 @@ def get_adaptive_control_penalty_update(
         new_weight = jnp.clip(new_weight, 1e-8, 1e-2)
 
         # Update weights dict
+        # new_weight is now a JAX array (scalar or shape (replicates,))
         new_weights = loss_func.weights.copy()
-        new_weights[control_term] = float(new_weight)
+        new_weights[control_term] = new_weight
 
         return loss_func.with_weights(new_weights)
 
@@ -706,13 +710,13 @@ def get_loss_update_func(hps: TreeNamespace):
         hps: Hyperparameters namespace containing `loss_update` configuration
 
     Returns:
-        Tuple of (update_func, iterations) where:
+        Tuple of (update_func, start_iteration) where:
             - update_func: Callable[[CompositeLoss, TermTree, PyTree], CompositeLoss] or None
-            - iterations: bool | Array controlling when to apply updates
+            - start_iteration: int indicating iteration to start applying updates (0 = from beginning)
     """
     loss_update_cfg = getattr(hps, "loss_update", None)
     if loss_update_cfg is None or not getattr(loss_update_cfg, "enabled", False):
-        return None, True  # (func, iterations)
+        return None, 0  # (func, start_iteration) - 0 is a dummy value when func is None
 
     # Default goal_term: sum mid and late position penalties for full movement error
     default_goal_term = ["effector_pos_mid", "effector_pos_late"]
@@ -725,6 +729,6 @@ def get_loss_update_func(hps: TreeNamespace):
         goal_term=goal_term,
     )
 
-    iterations = getattr(loss_update_cfg, "iterations", True)
+    start_iteration = getattr(loss_update_cfg, "start_iteration", 0)
 
-    return update_func, iterations
+    return update_func, start_iteration

@@ -22,11 +22,6 @@ train:
       weights:
         post_pos: 0.25  #! or 0.25
       
-
-  model:
-    tau_rise: 0.0
-    damping: 0
-    hidden_size: 120
   
 model:
   feedback_noise_std: null
