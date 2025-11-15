@@ -3,17 +3,23 @@ train:
 
   model:  
     n_replicates: 5
-    hidden_size: 100
-    feedback_noise_std: 0.01
-    motor_noise_std: 0.01
-    feedback_delay_steps: 0
-    damping: 0.0
-    tau_rise: 0.0
+    hidden_size: 180
+    feedback_noise_std: 0.1
+    motor_noise_std: 0.1
+    feedback_delay_steps: 5
+    damping: 10.0
+    tau_rise: 0.05
 
   task:
     type: delayed_reach
     n_steps: 130
     p_catch_trial: 0.5
+
+  pert:
+    type: gusts
+    std: 1
+    duration_mean: 8
+    n_expected: 2
   # where: 
   #   0: ['step.net.hidden', 'step.net.readout']
   # intervention_scaleup_batches=[0,0],

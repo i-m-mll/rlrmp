@@ -19,11 +19,11 @@ model:
   n_replicates: 5
   effector_mass: 1.0
   hidden_size: 180
-  feedback_delay_steps: 0
+  feedback_delay_steps: 5
   feedback_noise_std: 0.01
   motor_noise_std: 0.01
   damping: 10.0   #! 10.0
-  tau_rise: 0.0  #! 0.05
+  tau_rise: 0.05  #! 0.05
   # Optional: partition hidden units into subpopulations with different connectivity
   # Uncomment and configure to enable population structure:
   population_structure:
@@ -86,9 +86,9 @@ loss:
     # Quadratic terms:
     effector_pos: 0.0  # simple mode: constant penalty during movement + final vel only
     effector_pos_mid: 1.0  # ramping position penalty during mid-period (optional)
-    effector_vel_mid: 1.0  # ramping velocity penalty during mid-period (optional)
+    effector_vel_mid: 0.0  # ramping velocity penalty during mid-period (optional) #! 
     effector_pos_late: 1.0  # late-period position penalty (structured/goal-hit modes)
-    effector_vel_late: 1.0  # late-period velocity penalty (structured/goal-hit modes)
+    effector_vel_late: 0.1  # late-period velocity penalty (structured/goal-hit modes)
     effector_final_vel: 1.0  # final timestep velocity (simple mode only)
     effector_hold_pos: 10.0  # pre-GO position hold
     effector_hold_vel: 10.0  # pre-GO velocity hold
@@ -96,10 +96,10 @@ loss:
     nn_hidden: 1e-6  # network activity penalty
   effector_pos_late:
     start_step_after_go: 80  # timesteps after go cue when late period begins
-    final_scale_factor: 1.0  # discount ramp endpoint (1.0 = constant, >1.0 = increasing)
+    final_scale_factor: 3.0  # discount ramp endpoint (1.0 = constant, >1.0 = increasing)
   effector_vel_late:
     start_step_after_go: 80  # timesteps after go cue when late period begins
-    final_scale_factor: 1.0  # discount ramp endpoint (1.0 = constant, >1.0 = increasing)
+    final_scale_factor: 3.0  # discount ramp endpoint (1.0 = constant, >1.0 = increasing)
   effector_pos_mid:
     start_step_after_go: 0  # window start (timesteps after go cue)
     end_step_after_go: 80  # window end (timesteps after go cue)
@@ -133,9 +133,9 @@ loss:
 loss_update:
   enabled: true  # Set to true to enable adaptive loss weight updates
   target_ratio: 0.5  # Target ratio: J_u / J_x (control cost / goal error)
-  alpha: 0.1  # Update rate (learning rate for weight adjustment)
+  alpha: 0.005  # Update rate (learning rate for weight adjustment)
   control_term: "nn_output"  # Name of control cost term
   goal_term: ["effector_pos_mid", "effector_pos_late"]  # Name(s) of goal error term(s) (summed if list)
-  # When to apply updates (true = every iteration, false = never, or array of iterations)
-  iterations: true  # Can also be: [100, 200, 300, ...] for specific iterations
+  # Iteration to start applying updates (0 = from beginning)
+  start_iteration: 0  # Updates will be applied at every iteration >= start_iteration
 
