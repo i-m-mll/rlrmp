@@ -3,9 +3,9 @@ from typing import Optional
 
 import jax.numpy as jnp
 import jax.tree as jt
-from feedbax_experiments.analysis.pca import PCAResults
-from feedbax_experiments.tree_utils import ldict_level_to_top
-from feedbax_experiments.types import LDict, TreeNamespace
+from feedbax.analysis.pca import PCAResults
+from feedbax.tree_utils import ldict_level_to_top
+from feedbax.types import LDict, TreeNamespace
 from jax_cookbook import is_module
 from jaxtyping import Array
 

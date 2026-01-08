@@ -8,12 +8,12 @@ import jax.numpy as jnp
 import jax.random as jr
 from feedbax.intervene import schedule_intervenor
 from feedbax.task import DelayedReaches, SimpleReaches
-from feedbax_experiments.misc import get_field_amplitude, vector_with_gaussian_length
+from feedbax.misc import get_field_amplitude, vector_with_gaussian_length
 
 # from rlrmp.loss import get_reach_loss
-from feedbax_experiments.training.loss import get_reach_loss
-from feedbax_experiments.training.train import always_active, bernoulli_active
-from feedbax_experiments.types import LDict, TaskModelPair, TreeNamespace
+from feedbax.training.loss import get_reach_loss
+from feedbax.training.train import always_active, bernoulli_active
+from feedbax.types import LDict, TaskModelPair, TreeNamespace
 from jaxtyping import PRNGKeyArray
 
 from rlrmp.disturbance import (

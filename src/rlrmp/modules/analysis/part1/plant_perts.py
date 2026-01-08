@@ -5,7 +5,7 @@ import jax.tree as jt
 import jax_cookbook.tree as jtree
 import plotly.graph_objects as go
 from feedbax.intervene import add_intervenors, schedule_intervenor
-from feedbax_experiments.analysis.aligned import (
+from feedbax.analysis.aligned import (
     ALL_MEASURES,
     DEFAULT_VARSET,
     MEASURE_LABELS,
@@ -13,25 +13,25 @@ from feedbax_experiments.analysis.aligned import (
     AlignedVars,
     get_aligned_trajectories_node,
 )
-from feedbax_experiments.analysis.analysis import FigIterCtx
-from feedbax_experiments.analysis.effector import EffectorTrajectories
-from feedbax_experiments.analysis.func import ApplyFns
-from feedbax_experiments.analysis.profiles import Profiles
-from feedbax_experiments.analysis.state_utils import (
+from feedbax.analysis.analysis import FigIterCtx
+from feedbax.analysis.effector import EffectorTrajectories
+from feedbax.analysis.func import ApplyFns
+from feedbax.analysis.profiles import Profiles
+from feedbax.analysis.state_utils import (
     get_align_epoch_start,
     get_best_replicate,
     vmap_eval_ensemble,
 )
-from feedbax_experiments.analysis.violins import Violins
-from feedbax_experiments.plot import (
+from feedbax.analysis.violins import Violins
+from feedbax.plot import (
     get_add_aligned_epoch_vline,
     get_violins,
     set_axes_bounds_equal,
     set_axes_bounds_equal_traj2D,
     set_axis_bounds_equal,
 )
-from feedbax_experiments.tree_utils import lohi, subdict
-from feedbax_experiments.types import LDict
+from feedbax.tree_utils import lohi, subdict
+from feedbax.types import LDict
 from jax_cookbook import is_module, is_type
 
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL, PLANT_PERT_FNS

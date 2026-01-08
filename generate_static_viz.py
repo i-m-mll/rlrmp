@@ -1,4 +1,4 @@
-"""Test script for loss function visualization."""
+"""Generate static PNG version of loss visualization."""
 
 import jax
 import jax.numpy as jnp
@@ -37,17 +37,11 @@ def main():
 
     print("Building loss function...")
     loss_fn = get_reach_loss(hps)
-    print(f"Loss function: {loss_fn.label}")
-    print(f"Terms: {list(loss_fn.terms.keys())}")
-    print(f"Weights: {loss_fn.weights}")
-
-    # Create a task to generate trial specs
-    print("\nGenerating trial specs...")
-    task_cfg = hps.task
 
     # Build task kwargs (including loss_func which is required)
+    task_cfg = hps.task
     task_kwargs = {
-        "loss_func": loss_fn,  # Required by DelayedReaches
+        "loss_func": loss_fn,
         "n_steps": task_cfg.n_steps,
         "workspace": jnp.array(task_cfg.workspace),
     }
@@ -70,30 +64,34 @@ def main():
     key = jax.random.PRNGKey(0)
     trial_specs = task.get_validation_trials(key)
 
-    n_trials = trial_specs.timeline.epoch_bounds.shape[0]
-    print(f"Generated {n_trials} trial specs")
-    print(f"Timeline n_steps: {trial_specs.timeline.n_steps}")
-    print(f"Epoch bounds shape: {trial_specs.timeline.epoch_bounds.shape}")
-    print(f"First trial epoch bounds: {trial_specs.timeline.epoch_bounds[0]}")
+    print(f"Generating visualization for {trial_specs.timeline.epoch_bounds.shape[0]} trials...")
 
-    # Visualize
-    print("\nCreating visualization...")
+    # Create visualization - only show combined for cleaner view
+    # Uses defaults: multiply_term_weight=False, log_scale=True (symlog)
     fig = visualize_loss_structure(
         loss_fn,
         trial_specs,
         structure_only=True,
         depth=0,
-        n_trials_viz=10,
-        show_time_mask=True,
-        show_discount=True,
+        n_trials_viz=7,
+        show_time_mask=False,
+        show_discount=False,
         show_combined=True,
     )
 
     # Save to HTML
-    output_path = "loss_structure_viz.html"
-    fig.write_html(output_path)
-    print(f"\nVisualization saved to: {output_path}")
-    print("Open this file in a web browser to view the interactive plot.")
+    output_html = "loss_structure_combined.html"
+    fig.write_html(output_html)
+    print(f"HTML saved to: {output_html}")
+
+    # Try to export to PNG if kaleido is available
+    try:
+        output_png = "loss_structure_combined.png"
+        fig.write_image(output_png, width=1600, height=2000)
+        print(f"PNG saved to: {output_png}")
+    except Exception as e:
+        print(f"Could not save PNG (kaleido might not be installed): {e}")
+        print("To enable PNG export, install: pip install kaleido")
 
 
 if __name__ == "__main__":

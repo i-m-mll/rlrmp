@@ -4,14 +4,14 @@ import equinox as eqx
 import jax.tree as jt
 import jax_cookbook.tree as jtree
 from equinox import field
-from feedbax_experiments.analysis.analysis import (
+from feedbax.analysis.analysis import (
     AbstractAnalysis,
     AbstractAnalysisPorts,
     Data,
     InputOf,
 )
-from feedbax_experiments.misc import unit_circle_points
-from feedbax_experiments.types import LDict
+from feedbax.misc import unit_circle_points
+from feedbax.types import LDict
 from jax_cookbook import is_module
 from jaxtyping import ArrayLike, PyTree
 

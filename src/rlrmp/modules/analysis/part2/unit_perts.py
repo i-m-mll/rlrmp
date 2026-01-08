@@ -22,14 +22,14 @@ from feedbax.intervene import (
     schedule_intervenor,
 )
 from feedbax.task import AbstractTask
-from feedbax_experiments.analysis import CallWithDeps
-from feedbax_experiments.analysis.aligned import (
+from feedbax.analysis import CallWithDeps
+from feedbax.analysis.aligned import (
     DEFAULT_VARSET,
     VAR_LEVEL_LABEL,
     AlignedVars,
     get_trivial_reach_directions,
 )
-from feedbax_experiments.analysis.analysis import (
+from feedbax.analysis.analysis import (
     AbstractAnalysis,
     AbstractAnalysisPorts,
     Data,
@@ -38,32 +38,32 @@ from feedbax_experiments.analysis.analysis import (
     IdentityNode,
     InputOf,
 )
-from feedbax_experiments.analysis.effector import EffectorTrajectories
-from feedbax_experiments.analysis.grad import Jacobians
-from feedbax_experiments.analysis.network import UnitPreferences
-from feedbax_experiments.analysis.pca import StatesPCA
-from feedbax_experiments.analysis.plot import ScatterPlots
-from feedbax_experiments.analysis.profiles import Profiles
-from feedbax_experiments.analysis.regression import Regression, RegressionResults
-from feedbax_experiments.analysis.state_utils import (
+from feedbax.analysis.effector import EffectorTrajectories
+from feedbax.analysis.grad import Jacobians
+from feedbax.analysis.network import UnitPreferences
+from feedbax.analysis.pca import StatesPCA
+from feedbax.analysis.plot import ScatterPlots
+from feedbax.analysis.profiles import Profiles
+from feedbax.analysis.regression import Regression, RegressionResults
+from feedbax.analysis.state_utils import (
     get_best_replicate,
     get_constant_task_input_fn,
     get_segment_trials_fn,
     get_symmetric_accel_decel_epochs,
     vmap_eval_ensemble,
 )
-from feedbax_experiments.analysis.violins import Violins
-from feedbax_experiments.colors import ColorscaleSpec
-from feedbax_experiments.config import PLOTLY_CONFIG
-from feedbax_experiments.constants import POS_ENDPOINTS_ALIGNED
-from feedbax_experiments.plot import add_endpoint_traces, get_violins, set_axes_bounds_equal
-from feedbax_experiments.tree_utils import (
+from feedbax.analysis.violins import Violins
+from feedbax.colors import ColorscaleSpec
+from feedbax.config import PLOTLY_CONFIG
+from feedbax.constants import POS_ENDPOINTS_ALIGNED
+from feedbax.plot import add_endpoint_traces, get_violins, set_axes_bounds_equal
+from feedbax.tree_utils import (
     ldict_level_keys,
     move_ldict_level_above,
     subdict,
     tree_level_labels,
 )
-from feedbax_experiments.types import (
+from feedbax.types import (
     AnalysisInputData,
     LDict,
     TreeNamespace,

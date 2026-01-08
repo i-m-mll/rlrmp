@@ -20,18 +20,18 @@ import jax_cookbook.tree as jtree
 import numpy as np
 from equinox import Module
 from feedbax.intervene import add_intervenors, schedule_intervenor
-from feedbax_experiments.analysis import AbstractAnalysis
-from feedbax_experiments.analysis.analysis import Data, DummyNode, ExpandTo, LiteralInput
-from feedbax_experiments.analysis.fps import FixedPoints
-from feedbax_experiments.analysis.pca import StatesPCA
-from feedbax_experiments.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
-from feedbax_experiments.misc import get_constant_input_fn
-from feedbax_experiments.tree_utils import take_replicate
-from feedbax_experiments.types import LDict, TreeNamespace
+from feedbax.analysis import AbstractAnalysis
+from feedbax.analysis.analysis import Data, DummyNode, ExpandTo, LiteralInput
+from feedbax.analysis.fps import FixedPoints
+from feedbax.analysis.pca import StatesPCA
+from feedbax.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
+from feedbax.misc import get_constant_input_fn
+from feedbax.tree_utils import take_replicate
+from feedbax.types import LDict, TreeNamespace
 from jax_cookbook import MultiVmapAxes, is_module
 from jaxtyping import Array, PyTree
 
-# from feedbax_experiments.analysis.fps_tmp2 import (
+# from feedbax.analysis.fps_tmp2 import (
 #     # ReachFPs,
 #     ReachFPsInPCSpace,
 #     ReachTrajectoriesInPCSpace,

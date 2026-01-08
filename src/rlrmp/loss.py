@@ -20,11 +20,11 @@ from feedbax.loss import (
 )
 from feedbax.task import TaskTrialSpec
 from feedbax.xabdeef.losses import simple_reach_loss
-from feedbax_experiments.misc import deep_merge
+from feedbax.misc import deep_merge
 
 # from feedbax.xabdeef.losses import simple_reach_loss
-from feedbax_experiments.training.loss import get_readout_norm_loss
-from feedbax_experiments.types import TreeNamespace
+from feedbax.training.loss import get_readout_norm_loss
+from feedbax.types import TreeNamespace
 from jax_cookbook.misc import window_take
 from jaxtyping import Array, PyTree
 

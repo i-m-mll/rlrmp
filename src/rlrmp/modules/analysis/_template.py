@@ -8,13 +8,13 @@ from types import MappingProxyType, SimpleNamespace
 from typing import Optional
 
 from equinox import Module
-from feedbax_experiments.analysis import AbstractAnalysis
-from feedbax_experiments.analysis.analysis import NoPorts
+from feedbax.analysis import AbstractAnalysis
+from feedbax.analysis.analysis import NoPorts
 
 # Import transform machinery from execution module
-from feedbax_experiments.analysis.execution import AnalysisModuleTransformSpec
-from feedbax_experiments.analysis.state_utils import vmap_eval_ensemble
-from feedbax_experiments.types import LDict, TreeNamespace
+from feedbax.analysis.execution import AnalysisModuleTransformSpec
+from feedbax.analysis.state_utils import vmap_eval_ensemble
+from feedbax.types import LDict, TreeNamespace
 
 """Specify any additional colorscales needed for this analysis. 
 These will be included in the `colors` kwarg passed to `AbstractAnalysis` methods

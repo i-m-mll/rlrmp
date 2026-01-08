@@ -7,8 +7,8 @@ import jax.tree as jt
 import jax_cookbook.tree as jtree
 import numpy as np
 from feedbax.intervene import add_intervenors, schedule_intervenor
-from feedbax_experiments.analysis import tangling
-from feedbax_experiments.analysis.aligned import (
+from feedbax.analysis import tangling
+from feedbax.analysis.aligned import (
     ALL_MEASURES,
     DEFAULT_VARSET,
     MEASURE_LABELS,
@@ -18,29 +18,29 @@ from feedbax_experiments.analysis.aligned import (
     get_aligned_trajectories_node,
     get_varset_labels,
 )
-from feedbax_experiments.analysis.analysis import CallWithDeps, Data, ExpandTo, FigIterCtx
-from feedbax_experiments.analysis.eig import eig, svd
-from feedbax_experiments.analysis.func import ApplyFns, ApplyFunctional, make_argwise_functional
-from feedbax_experiments.analysis.grad import Hessians, Jacobians, PerJacobianBlock, spectral_norm
-from feedbax_experiments.analysis.pca import PCAResults, StatesPCA
-from feedbax_experiments.analysis.plot import ScatterPlots
-from feedbax_experiments.analysis.profiles import Profiles
-from feedbax_experiments.analysis.state_utils import (
+from feedbax.analysis.analysis import CallWithDeps, Data, ExpandTo, FigIterCtx
+from feedbax.analysis.eig import eig, svd
+from feedbax.analysis.func import ApplyFns, ApplyFunctional, make_argwise_functional
+from feedbax.analysis.grad import Hessians, Jacobians, PerJacobianBlock, spectral_norm
+from feedbax.analysis.pca import PCAResults, StatesPCA
+from feedbax.analysis.plot import ScatterPlots
+from feedbax.analysis.profiles import Profiles
+from feedbax.analysis.state_utils import (
     get_best_replicate,
     get_constant_task_input_fn,
     vmap_eval_ensemble,
 )
-from feedbax_experiments.analysis.tangling import Tangling
-from feedbax_experiments.analysis.violins import Violins
-from feedbax_experiments.colors import ColorscaleSpec
-from feedbax_experiments.misc import rms
-from feedbax_experiments.plot import (
+from feedbax.analysis.tangling import Tangling
+from feedbax.analysis.violins import Violins
+from feedbax.colors import ColorscaleSpec
+from feedbax.misc import rms
+from feedbax.plot import (
     set_axes_bounds_equal,
     set_axes_bounds_equal_traj2D,
     set_axis_bounds_equal,
 )
-from feedbax_experiments.tree_utils import getitem_at_level, subdict
-from feedbax_experiments.types import (
+from feedbax.tree_utils import getitem_at_level, subdict
+from feedbax.types import (
     LDict,
     TreeNamespace,
 )

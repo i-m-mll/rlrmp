@@ -4,8 +4,8 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.tree as jt
 from feedbax.intervene import AddNoise, CurlField, FixedField, TimeSeriesParam
-from feedbax_experiments.analysis.state_utils import vmap_eval_ensemble
-from feedbax_experiments.types import TreeNamespace
+from feedbax.analysis.state_utils import vmap_eval_ensemble
+from feedbax.types import TreeNamespace
 from jaxtyping import Array, Float, Int
 
 FB_INTERVENOR_LABEL = "FeedbackPert"

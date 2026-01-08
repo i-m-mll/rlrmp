@@ -7,15 +7,15 @@ import jax_cookbook.tree as jtree
 import numpy as np
 import plotly.graph_objects as go
 from feedbax.intervene import add_intervenors, schedule_intervenor
-from feedbax_experiments.analysis.network import UnitPreferences
-from feedbax_experiments.analysis.state_utils import (
+from feedbax.analysis.network import UnitPreferences
+from feedbax.analysis.state_utils import (
     get_best_replicate,
     get_segment_trials_fn,
     get_symmetric_accel_decel_epochs,
     vmap_eval_ensemble,
 )
-from feedbax_experiments.misc import vectors_to_2d_angles
-from feedbax_experiments.types import LDict
+from feedbax.misc import vectors_to_2d_angles
+from feedbax.types import LDict
 from jax_cookbook import is_module
 from jaxtyping import Array, Float
 
@@ -125,7 +125,7 @@ ANALYSES = {
 #! I have not included this in `UnitPreferences.make_figs` at this time.
 # import jax.numpy as jnp
 # import numpy as np
-# from feedbax_experiments.analysis.state_utils import get_best_replicate
+# from feedbax.analysis.state_utils import get_best_replicate
 
 # unit_plot = 0
 # ts = np.arange(15)

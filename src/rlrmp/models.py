@@ -9,7 +9,7 @@ from typing import Any, Optional
 import jax.random as jr
 from feedbax.nn import PopulationStructure
 from feedbax.xabdeef.models import point_mass_nn
-from feedbax_experiments.types import TreeNamespace
+from feedbax.types import TreeNamespace
 from jax_cookbook.tree import get_ensemble
 from jaxtyping import PRNGKeyArray
 

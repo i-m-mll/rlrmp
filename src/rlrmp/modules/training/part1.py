@@ -5,8 +5,8 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 from feedbax.intervene import schedule_intervenor
-from feedbax_experiments.misc import vector_with_gaussian_length
-from feedbax_experiments.types import LDict, TaskModelPair, TreeNamespace
+from feedbax.misc import vector_with_gaussian_length
+from feedbax.types import LDict, TaskModelPair, TreeNamespace
 from jaxtyping import PRNGKeyArray
 
 from rlrmp.disturbance import (

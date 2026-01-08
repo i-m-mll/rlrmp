@@ -10,9 +10,9 @@ import jax.tree as jt
 import jax_cookbook.tree as jtree
 from feedbax.intervene import schedule_intervenor
 
-# from feedbax_experiments.analysis import measures
-from feedbax_experiments.analysis import AbstractAnalysis
-from feedbax_experiments.analysis.aligned import (
+# from feedbax.analysis import measures
+from feedbax.analysis import AbstractAnalysis
+from feedbax.analysis.aligned import (
     ALL_MEASURES,
     DEFAULT_VARSET,
     MEASURE_LABELS,
@@ -20,18 +20,18 @@ from feedbax_experiments.analysis.aligned import (
     AlignedVars,
     Measure,
 )
-from feedbax_experiments.analysis.analysis import FigIterCtx, Transformed
-from feedbax_experiments.analysis.effector import EffectorTrajectories
-from feedbax_experiments.analysis.func import ApplyFns
-from feedbax_experiments.analysis.profiles import Profiles
-from feedbax_experiments.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
-from feedbax_experiments.analysis.violins import Violins
-from feedbax_experiments.colors import ColorscaleSpec
-from feedbax_experiments.misc import get_constant_input_fn
-from feedbax_experiments.perturbations import feedback_impulse
-from feedbax_experiments.plot import set_axis_bounds_equal
-from feedbax_experiments.tree_utils import lohi, subdict
-from feedbax_experiments.types import AnalysisInputData, LDict, unflatten_dict_keys
+from feedbax.analysis.analysis import FigIterCtx, Transformed
+from feedbax.analysis.effector import EffectorTrajectories
+from feedbax.analysis.func import ApplyFns
+from feedbax.analysis.profiles import Profiles
+from feedbax.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
+from feedbax.analysis.violins import Violins
+from feedbax.colors import ColorscaleSpec
+from feedbax.misc import get_constant_input_fn
+from feedbax.perturbations import feedback_impulse
+from feedbax.plot import set_axis_bounds_equal
+from feedbax.tree_utils import lohi, subdict
+from feedbax.types import AnalysisInputData, LDict, unflatten_dict_keys
 from jax_cookbook import is_module, is_none, is_type
 from jax_cookbook.misc import deep_merge
 

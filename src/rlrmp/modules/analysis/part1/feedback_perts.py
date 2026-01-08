@@ -9,21 +9,21 @@ import jax.tree as jt
 import jax_cookbook.tree as jtree
 from feedbax.intervene import schedule_intervenor
 
-# from feedbax_experiments.analysis import measures
-from feedbax_experiments.analysis import AbstractAnalysis
-from feedbax_experiments.analysis.aligned import (
+# from feedbax.analysis import measures
+from feedbax.analysis import AbstractAnalysis
+from feedbax.analysis.aligned import (
     ALL_MEASURES,
     MEASURE_LABELS,
     VAR_LEVEL_LABEL,
     AlignedVars,
 )
-from feedbax_experiments.analysis.analysis import FigIterCtx
-from feedbax_experiments.analysis.func import ApplyFns
-from feedbax_experiments.analysis.state_utils import vmap_eval_ensemble
-from feedbax_experiments.analysis.violins import Violins
-from feedbax_experiments.perturbations import feedback_impulse
-from feedbax_experiments.tree_utils import subdict
-from feedbax_experiments.types import AnalysisInputData, LDict, unflatten_dict_keys
+from feedbax.analysis.analysis import FigIterCtx
+from feedbax.analysis.func import ApplyFns
+from feedbax.analysis.state_utils import vmap_eval_ensemble
+from feedbax.analysis.violins import Violins
+from feedbax.perturbations import feedback_impulse
+from feedbax.tree_utils import subdict
+from feedbax.types import AnalysisInputData, LDict, unflatten_dict_keys
 from jax_cookbook import is_module, is_none, is_type
 
 from rlrmp.disturbance import (

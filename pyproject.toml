@@ -7,11 +7,11 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "feedbax-experiments>=0.1.0",
+    "feedbax>=0.2.0",
     "statsmodels>=0.14.5",
 ]
 
-[project.entry-points."feedbax_experiments.packages"]
+[project.entry-points."feedbax.packages"]
 rlrmp = "rlrmp:register_experiment_package"
 
 [build-system]
@@ -27,8 +27,8 @@ packages = ["src/rlrmp"]
 [tool.uv]
 config-settings = { editable-mode = "compat" }
 
-[tool.uv.sources.feedbax-experiments]
-path = "../41 RNNs learn robust policies"
+[tool.uv.sources.feedbax]
+path = "../20 Feedbax/feedbax-merge-workspace"
 editable = true
 
 [tool.ruff]
@@ -40,10 +40,6 @@ line-length = 100
 ignore = ["F722"]  
 # Prevent removal of unused imports
 unfixable = ["F401"]  
-
-[tool.ruff.lint.per-file-ignores]
-# Scripts often need to run things before importing more things
-"src/feedbax_experiments/bin/*.py" = ["E402"] 
 
 [tool.ruff.format]
 indent-style = "space"

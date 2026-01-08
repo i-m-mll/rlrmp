@@ -3,14 +3,14 @@
 import equinox as eqx
 import jax_cookbook.tree as jtree
 from feedbax.intervene import schedule_intervenor
-from feedbax_experiments.analysis.activity import NetworkActivity_SampleUnits
-from feedbax_experiments.analysis.aligned import get_aligned_trajectories_node
-from feedbax_experiments.analysis.analysis import FigIterCtx
-from feedbax_experiments.analysis.effector import EffectorTrajectories
-from feedbax_experiments.analysis.profiles import Profiles
-from feedbax_experiments.analysis.state_utils import get_best_replicate, get_step_task_input_fn
-from feedbax_experiments.colors import ColorscaleSpec
-from feedbax_experiments.types import LDict
+from feedbax.analysis.activity import NetworkActivity_SampleUnits
+from feedbax.analysis.aligned import get_aligned_trajectories_node
+from feedbax.analysis.analysis import FigIterCtx
+from feedbax.analysis.effector import EffectorTrajectories
+from feedbax.analysis.profiles import Profiles
+from feedbax.analysis.state_utils import get_best_replicate, get_step_task_input_fn
+from feedbax.colors import ColorscaleSpec
+from feedbax.types import LDict
 
 from rlrmp.disturbance import (
     PLANT_INTERVENOR_LABEL,

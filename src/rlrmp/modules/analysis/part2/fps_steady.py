@@ -29,8 +29,8 @@ import plotly.graph_objects as go
 from arrow import get
 from equinox import Module
 from feedbax.task import AbstractTask
-from feedbax_experiments.analysis import AbstractAnalysis
-from feedbax_experiments.analysis.analysis import (
+from feedbax.analysis import AbstractAnalysis
+from feedbax.analysis.analysis import (
     AbstractAnalysisPorts,
     Data,
     ExpandTo,
@@ -39,19 +39,19 @@ from feedbax_experiments.analysis.analysis import (
     LiteralInput,
     Transformed,
 )
-from feedbax_experiments.analysis.eig import SVD, Eig, complex_to_polar_abs_angle
-from feedbax_experiments.analysis.execution import AnalysisModuleTransformSpec
-from feedbax_experiments.analysis.fp_finder import FPFilteredResults, take_top_fps
-from feedbax_experiments.analysis.fps import FixedPoints, PlotInPCSpace
-from feedbax_experiments.analysis.grad import Hessians, Jacobians
-from feedbax_experiments.analysis.pca import StatesPCA
-from feedbax_experiments.analysis.plot import ScatterPlots
-from feedbax_experiments.analysis.state_utils import get_best_model_replicate, vmap_eval_ensemble
-from feedbax_experiments.analysis.violins import Violins
-from feedbax_experiments.misc import create_arr_df, get_constant_input_fn, take_non_nan
-from feedbax_experiments.plot import plot_eigvals_df
-from feedbax_experiments.tree_utils import take_replicate, tree_level_labels
-from feedbax_experiments.types import AnalysisInputData, LDict, TreeNamespace
+from feedbax.analysis.eig import SVD, Eig, complex_to_polar_abs_angle
+from feedbax.analysis.execution import AnalysisModuleTransformSpec
+from feedbax.analysis.fp_finder import FPFilteredResults, take_top_fps
+from feedbax.analysis.fps import FixedPoints, PlotInPCSpace
+from feedbax.analysis.grad import Hessians, Jacobians
+from feedbax.analysis.pca import StatesPCA
+from feedbax.analysis.plot import ScatterPlots
+from feedbax.analysis.state_utils import get_best_model_replicate, vmap_eval_ensemble
+from feedbax.analysis.violins import Violins
+from feedbax.misc import create_arr_df, get_constant_input_fn, take_non_nan
+from feedbax.plot import plot_eigvals_df
+from feedbax.tree_utils import take_replicate, tree_level_labels
+from feedbax.types import AnalysisInputData, LDict, TreeNamespace
 from jax_cookbook import is_module, is_type
 from jaxtyping import Array, Float, PRNGKeyArray, PyTree
 from matplotlib.pylab import svd
