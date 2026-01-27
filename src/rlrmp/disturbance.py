@@ -3,9 +3,17 @@ from collections.abc import Callable, Sequence
 import equinox as eqx
 import jax.numpy as jnp
 import jax.tree as jt
-from feedbax.intervene import AddNoise, CurlField, FixedField, TimeSeriesParam
-from feedbax_experiments.analysis.state_utils import vmap_eval_ensemble
-from feedbax_experiments.types import TreeNamespace
+from feedbax.intervene import (
+    AddNoise,
+    AddNoiseParams,
+    CurlField,
+    CurlFieldParams,
+    FixedField,
+    FixedFieldParams,
+    TimeSeriesParam,
+)
+from feedbax.analysis.state_utils import vmap_eval_ensemble
+from feedbax.types import TreeNamespace
 from jaxtyping import Array, Float, Int
 
 FB_INTERVENOR_LABEL = "FeedbackPert"
@@ -50,37 +58,53 @@ def get_fixed_gust_fn(hps: TreeNamespace, start_prop: float = 0.1, end_prop: flo
         active_ts = (idxs >= gust_start) & (idxs < gust_end)
         return TimeSeriesParam(active_ts)
 
-    def fixed_gust_fn(scale: float):
-        return FixedField.with_params(
+    def fixed_gust_params_fn(scale: float):
+        return FixedFieldParams(
             scale=scale,
             field=orthogonal_field,
             active=_get_active_ts,
         )
 
-    return fixed_gust_fn
+    return fixed_gust_params_fn
 
 
+def get_plant_intervention_params(intervention_type: str, hps: TreeNamespace, scale: float):
+    """Get intervention params for the given type.
+
+    Args:
+        intervention_type: Type of intervention ("curl", "constant", "gusts")
+        hps: Hyperparameters
+        scale: Scale factor for the intervention
+
+    Returns:
+        Params object appropriate for the intervention type.
+    """
+    if intervention_type == "curl":
+        return CurlFieldParams(scale=scale)
+    elif intervention_type == "constant":
+        return FixedFieldParams(scale=scale, field=orthogonal_field)
+    elif intervention_type == "gusts":
+        return get_fixed_gust_fn(hps)(scale)
+    else:
+        raise ValueError(f"Unknown intervention type: {intervention_type}")
+
+
+# Legacy compatibility - functions that return params-creating callables
 PLANT_PERT_FNS = {
-    "curl": lambda hps: lambda scale: CurlField.with_params(
-        #! amplitude=amplitude,
-        scale=scale,
-    ),
-    "constant": lambda hps: lambda scale: FixedField.with_params(
-        scale=scale,
-        field=orthogonal_field,
-    ),
-    #! TODO: Maybe eval on a single large gust.
+    "curl": lambda hps: lambda scale: CurlFieldParams(scale=scale),
+    "constant": lambda hps: lambda scale: FixedFieldParams(scale=scale, field=orthogonal_field),
     "gusts": get_fixed_gust_fn,
-    # "noise": lambda scale: AddNoise.with_params(
-    #     scale=scale,
-    # ),
 }
 
 
 def task_with_pert_amp(task, pert_amp, intervenor_label):
-    """Returns a task with the given disturbance amplitude."""
+    """Returns a task with the given disturbance amplitude.
+
+    Note: In the eager-models architecture, intervention params are stored
+    directly on InterventionSpec.params, not via .intervenor.params.
+    """
     return eqx.tree_at(
-        lambda task: task.intervention_specs.validation[intervenor_label].intervenor.params.scale,
+        lambda task: task.intervention_specs.validation[intervenor_label].params.scale,
         task,
         pert_amp,
     )

@@ -6,12 +6,12 @@ and configuration files for the RLRMP project.
 
 
 def register_experiment_package(registry):
-    """Register this experiment package with the feedbax-experiments registry.
+    """Register this experiment package with the feedbax plugin registry.
 
     Args:
         registry: ExperimentRegistry instance to register with
     """
-    from feedbax_experiments.plugins.discovery import register_package_from_module_info
+    from feedbax.plugins.discovery import register_package_from_module_info
 
     register_package_from_module_info(
         registry=registry,
