@@ -113,8 +113,8 @@ def _loss_cfg_running_cost() -> dict:
                 "effector_vel_late": 0.1,
                 "effector_hold_pos": 10.0,
                 "effector_hold_vel": 10.0,
-                "nn_output": 1e-6,
-                "nn_hidden": 1e-6,
+                "nn_output": 1e-5,
+                "nn_hidden": 1e-5,
             },
             "effector_pos_late": {
                 "start_step_after_go": 80,
@@ -126,7 +126,7 @@ def _loss_cfg_running_cost() -> dict:
             },
         },
         "loss_update": {
-            "enabled": True,
+            "enabled": False,  # Disabled: tracer leak in TermTree.aggregate when weights are JAX arrays
             "target_ratio": 0.5,
             "alpha": 0.005,
             "control_term": "nn_output",
@@ -150,8 +150,8 @@ def _loss_cfg_softmin() -> dict:
                 "effector_vel_late": 0.1,
                 "effector_hold_pos": 10.0,
                 "effector_hold_vel": 10.0,
-                "nn_output": 1e-6,
-                "nn_hidden": 1e-6,
+                "nn_output": 1e-5,
+                "nn_hidden": 1e-5,
             },
             "effector_pos_mid": {
                 "start_step_after_go": 0,
@@ -180,7 +180,7 @@ def _loss_cfg_softmin() -> dict:
             },
         },
         "loss_update": {
-            "enabled": True,
+            "enabled": False,  # Disabled: tracer leak in TermTree.aggregate when weights are JAX arrays
             "target_ratio": 0.5,
             "alpha": 0.005,
             "control_term": "nn_output",
@@ -204,8 +204,8 @@ def _loss_cfg_combined() -> dict:
                 "effector_vel_late": 0.1,
                 "effector_hold_pos": 10.0,
                 "effector_hold_vel": 10.0,
-                "nn_output": 1e-6,
-                "nn_hidden": 1e-6,
+                "nn_output": 1e-5,
+                "nn_hidden": 1e-5,
             },
             "effector_pos_late": {
                 "start_step_after_go": 80,
@@ -228,7 +228,7 @@ def _loss_cfg_combined() -> dict:
             },
         },
         "loss_update": {
-            "enabled": True,
+            "enabled": False,  # Disabled: tracer leak in TermTree.aggregate when weights are JAX arrays
             "target_ratio": 0.5,
             "alpha": 0.005,
             "control_term": "nn_output",
@@ -252,8 +252,8 @@ def _loss_cfg_default() -> dict:
                 "effector_vel_late": 0.1,
                 "effector_hold_pos": 10.0,
                 "effector_hold_vel": 10.0,
-                "nn_output": 1e-6,
-                "nn_hidden": 1e-6,
+                "nn_output": 1e-5,
+                "nn_hidden": 1e-5,
             },
             "effector_pos_late": {
                 "start_step_after_go": 80,
@@ -271,7 +271,7 @@ def _loss_cfg_default() -> dict:
             },
         },
         "loss_update": {
-            "enabled": True,
+            "enabled": False,  # Disabled: tracer leak in TermTree.aggregate when weights are JAX arrays
             "target_ratio": 0.5,
             "alpha": 0.005,
             "control_term": "nn_output",
