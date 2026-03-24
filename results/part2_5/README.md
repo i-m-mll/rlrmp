@@ -10,9 +10,16 @@ We needed to find a loss function that trains stably with the new feedbax graph 
 
 **Running cost** (constant position error penalty from the go cue through trial end) was the only loss mode that converged. Softmin and the default structured ramps both diverged catastrophically — likely due to incompatibilities with the graph architecture's new intervenor handling. The combined mode (weak running cost + strong softmin) trained but produced mediocre results.
 
+| Loss mode | Description | Loss (initial→final) | Endpoint error | Peak speed | Status |
+|---|---|---|---|---|---|
+| running_cost | Constant penalty from go cue | 32.3 → 2.9 | 0.007 | 3.33 | **Converged** |
+| softmin | Goal-hit window (softmin) | 5.0 → 843 | — | — | Diverged |
+| default | Structured mid/late ramps | 14.9 → 885 | — | — | Diverged |
+| combined | Weak running + strong softmin | 10.7 → 5.0 | 0.152 | 2.06 | Mediocre |
+
 See `figures/fig_loss_curves.html` for training curves of all four modes.
 
-**Data:** `phase1_loss_comparison/running_cost_standard/` (converged), `softmin_standard/` (diverged), `default_standard/` (diverged), `combined_standard/` (mediocre).
+Models saved in `models/running_cost_standard/`, `models/softmin_standard/`, `models/default_standard/`, `models/combined_standard/`.
 
 ## Phase 2: Does SISU Modulate Velocity?
 
