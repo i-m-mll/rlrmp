@@ -9,7 +9,7 @@ Figures produced:
     fig3_lateral_force.html         — Lateral force profiles over time
     fig4_forward_velocity_no_pert.html — Forward velocity without perturbation
     fig5_endpoint_error_violin.html — Endpoint error vs SISU (violin plots)
-    fig6_loss_<condition>.html      — Loss curves per condition
+    fig6_all_loss_curves.html       — Loss curves for all conditions (grid of subplots)
 
 Usage:
     python scripts/eval_robustness.py
@@ -62,30 +62,25 @@ FIGURES_DIR = RESULTS_BASE / "figures"
 
 # Conditions to evaluate: (display_name, model_dir_name)
 CONDITIONS = [
-    ("Running cost (standard)", "running_cost_standard"),
-    ("Baseline (no pert)", "baseline_no_pert"),
-    ("APT lr=0.001", "apt_lr001"),
-    ("APT pert_std=2", "apt_pert2"),
+    ("Standard (pert_std=1)", "running_cost_standard"),
+    ("Baseline (no pert training)", "baseline_no_pert"),
+    ("APT (lr=0.001, pert_std=1)", "apt_lr001"),
+    ("APT (lr=0.01, pert_std=2)", "apt_pert2"),
 ]
 
 # Eval parameters
 SISU_LEVELS = [0.0, 0.25, 0.5, 0.75, 1.0]
 PERT_AMPLITUDES = [0.0, 0.5, 1.0, 2.0]
 EVAL_SISU = 0.5        # Fixed SISU for trajectory and profile figures
-EVAL_PERT_AMP = 1.0    # Fixed perturbation amplitude for profile figures
+EVAL_PERT_AMP = 5.0    # Fixed perturbation amplitude for profile figures
 
-# Colors: one per condition.  Blue-family for standard/trained, gray for baseline, red for APT.
+# Colors: color = training method (blue=standard, gray=baseline, red=APT variants).
+# All lines are solid — dash/dot distinction removed.
 CONDITION_COLORS = {
-    "Running cost (standard)": "#1f77b4",   # blue
-    "Baseline (no pert)": "#888888",         # gray
-    "APT lr=0.001": "#d62728",               # red
-    "APT pert_std=2": "#e07a5f",             # salmon
-}
-CONDITION_DASH = {
-    "Running cost (standard)": "solid",
-    "Baseline (no pert)": "dash",
-    "APT lr=0.001": "solid",
-    "APT pert_std=2": "dot",
+    "Standard (pert_std=1)": "#1f77b4",         # blue
+    "Baseline (no pert training)": "#888888",    # gray
+    "APT (lr=0.001, pert_std=1)": "#d62728",     # red
+    "APT (lr=0.01, pert_std=2)": "#e07a5f",      # salmon
 }
 
 
@@ -125,7 +120,29 @@ def load_condition(display_name: str, model_dir_name: str):
     history_path = cond_dir / "train_history.eqx"
     with open(history_path, "rb") as f:
         f.readline()  # skip hyperparameters line
-        history = eqx.tree_deserialise_leaves(f, history_skeleton)
+        # The file was saved with only multi-element JAX arrays (training curves), not the
+        # scalar loss weight leaves. Build a skeleton with float leaves promoted to 0-d
+        # JAX arrays so the tree structure matches the saved file, then use a filter_spec
+        # that only reads from file for multi-element arrays (skipping scalars).
+        def _float_to_array(x):
+            if isinstance(x, (float, int)) and not isinstance(x, bool):
+                return jnp.array(x)
+            return x
+
+        history_skeleton_arr = jt.map(_float_to_array, history_skeleton)
+
+        def _multi_array_filter_spec(file, x):
+            """Load from file only for multi-element arrays; keep default for scalars."""
+            if isinstance(x, jax.Array) and x.size > 1:
+                return jnp.load(file)
+            elif isinstance(x, np.ndarray) and x.size > 1:
+                return np.load(file)
+            else:
+                return x  # keep skeleton default, don't advance file pointer
+
+        history = eqx.tree_deserialise_leaves(
+            f, history_skeleton_arr, filter_spec=_multi_array_filter_spec
+        )
 
     trained_model, _ = load_with_hyperparameters(
         cond_dir / "trained_model.eqx",
@@ -259,7 +276,6 @@ def add_mean_std_band(
     data,
     color,
     name,
-    dash="solid",
     showlegend=True,
     *,
     row=None,
@@ -267,6 +283,8 @@ def add_mean_std_band(
     legendgroup=None,
 ):
     """Add a mean line + ±1 std band to a Plotly figure.
+
+    All lines are drawn solid; dash/dot distinction is not used.
 
     Args:
         data: (n_samples, n_timepoints) — mean and std computed over axis 0.
@@ -312,7 +330,7 @@ def add_mean_std_band(
             y=mean,
             mode="lines",
             name=name,
-            line=dict(color=color, dash=dash, width=2),
+            line=dict(color=color, dash="solid", width=2),
             showlegend=showlegend,
             legendgroup=legendgroup or name,
         ),
@@ -327,6 +345,87 @@ def _hex_to_rgba(hex_color: str, alpha: float = 0.3) -> str:
         hex_color = "".join(c * 2 for c in hex_color)
     r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
     return f"rgba({r},{g},{b},{alpha})"
+
+
+# Gust timing constants (must match disturbance.py get_fixed_gust_fn defaults)
+_GUST_START_PROP = 0.1
+_GUST_END_PROP = 0.75
+
+
+def get_gust_window_seconds(trial_specs, dt: float = 0.01) -> tuple[float, float] | None:
+    """Return the gust window (t_start, t_end) in seconds relative to the go cue.
+
+    The gust is active from go_cue + start_prop*move_len to go_cue + end_prop*move_len
+    (see disturbance.py::get_fixed_gust_fn). Returns None if timeline has no epochs.
+
+    Args:
+        trial_specs: Trial specs with timeline.epoch_bounds.
+        dt: Timestep duration in seconds.
+
+    Returns:
+        (t_start, t_end) in seconds measured from go cue, or None.
+    """
+    if trial_specs.timeline is None or trial_specs.timeline.epoch_bounds is None:
+        return None
+    if not trial_specs.timeline.has_epochs:
+        return None
+
+    epoch_bounds = np.array(trial_specs.timeline.epoch_bounds)  # (n_trials, E+1)
+    epoch_names = trial_specs.timeline.epoch_names
+
+    if "movement" not in epoch_names:
+        return None
+
+    move_idx = list(epoch_names).index("movement")
+    # epoch_bounds columns: [epoch0_start, epoch1_start, ..., epochN_start, end]
+    # move epoch: [epoch_bounds[:, move_idx], epoch_bounds[:, move_idx+1])
+    move_start = np.mean(epoch_bounds[:, move_idx])
+    move_end = np.mean(epoch_bounds[:, move_idx + 1])
+    move_len = move_end - move_start
+
+    gust_start_step = move_start + int(np.floor(move_len * _GUST_START_PROP))
+    gust_end_step = min(move_start + int(np.floor(move_len * _GUST_END_PROP)), move_end)
+
+    # Convert from absolute step to seconds relative to go cue (= move_start)
+    t_start = (gust_start_step - move_start) * dt
+    t_end = (gust_end_step - move_start) * dt
+    return float(t_start), float(t_end)
+
+
+def add_gust_vrect(fig, trial_specs, *, row=None, col=None, dt: float = 0.01) -> None:
+    """Add a light-grey vrect showing when the gust perturbation is active.
+
+    The x-axis is assumed to be time from go cue (seconds). Does nothing if gust
+    timing cannot be determined from trial_specs.
+
+    Args:
+        fig: Plotly Figure to annotate.
+        trial_specs: Trial specs containing timeline with epoch info.
+        row: Subplot row (1-indexed). Pass None for a non-subplot figure.
+        col: Subplot col (1-indexed). Pass None for a non-subplot figure.
+        dt: Timestep duration in seconds.
+    """
+    window = get_gust_window_seconds(trial_specs, dt=dt)
+    if window is None:
+        return
+
+    t_start, t_end = window
+    vrect_kwargs = dict(
+        x0=t_start,
+        x1=t_end,
+        fillcolor="lightgrey",
+        opacity=0.3,
+        layer="below",
+        line_width=0,
+        annotation_text="gust",
+        annotation_position="top left",
+        annotation_font_size=10,
+        annotation_font_color="grey",
+    )
+    if row is not None:
+        vrect_kwargs["row"] = row
+        vrect_kwargs["col"] = col
+    fig.add_vrect(**vrect_kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -462,6 +561,7 @@ def make_fig2_lateral_velocity(loaded: dict, ref_task=None) -> go.Figure:
     """Time-series of lateral velocity under fixed eval perturbation, aligned to go cue.
 
     Mean ± 1 std across trials × replicates, one line per condition.
+    A grey vrect shows when the gust perturbation is active.
 
     Args:
         loaded: Dict of condition data.
@@ -469,10 +569,9 @@ def make_fig2_lateral_velocity(loaded: dict, ref_task=None) -> go.Figure:
     """
     fig = go.Figure()
 
-    first = True
+    last_trial_specs = None
     for cond_name, d in loaded.items():
         color = CONDITION_COLORS[cond_name]
-        dash = CONDITION_DASH[cond_name]
         task = d["task"]
         model = d["model"]
         key = jr.PRNGKey(42)
@@ -480,6 +579,7 @@ def make_fig2_lateral_velocity(loaded: dict, ref_task=None) -> go.Figure:
         states, trial_specs = eval_fixed_pert(
             task, model, EVAL_SISU, EVAL_PERT_AMP, key=key, ref_task=ref_task
         )
+        last_trial_specs = trial_specs
         vel = np.array(states.mechanics.effector.vel)  # (n_rep, n_trials, n_steps, 2)
         direction_unit, _, _ = get_reach_direction(trial_specs)
         go_idx_arr = get_go_idx(trial_specs)
@@ -512,11 +612,13 @@ def make_fig2_lateral_velocity(loaded: dict, ref_task=None) -> go.Figure:
             data=traces,
             color=color,
             name=cond_name,
-            dash=dash,
             showlegend=True,
             legendgroup=cond_name,
         )
-        first = False
+
+    # Add gust perturbation timing indicator (vrect) below all data traces
+    if last_trial_specs is not None:
+        add_gust_vrect(fig, last_trial_specs)
 
     fig.add_hline(y=0, line_dash="dot", line_color="lightgray", line_width=1)
     fig.update_layout(
@@ -539,6 +641,7 @@ def make_fig3_lateral_force(loaded: dict, ref_task=None) -> go.Figure:
     """Time-series of lateral force output under fixed eval perturbation.
 
     Same format as Fig 2 but for force_filter.output lateral component.
+    A grey vrect shows when the gust perturbation is active.
 
     Args:
         loaded: Dict of condition data.
@@ -546,9 +649,9 @@ def make_fig3_lateral_force(loaded: dict, ref_task=None) -> go.Figure:
     """
     fig = go.Figure()
 
+    last_trial_specs = None
     for cond_name, d in loaded.items():
         color = CONDITION_COLORS[cond_name]
-        dash = CONDITION_DASH[cond_name]
         task = d["task"]
         model = d["model"]
         key = jr.PRNGKey(43)
@@ -556,6 +659,7 @@ def make_fig3_lateral_force(loaded: dict, ref_task=None) -> go.Figure:
         states, trial_specs = eval_fixed_pert(
             task, model, EVAL_SISU, EVAL_PERT_AMP, key=key, ref_task=ref_task
         )
+        last_trial_specs = trial_specs
         force = np.array(states.force_filter.output)  # (n_rep, n_trials, n_steps, 2)
         direction_unit, _, _ = get_reach_direction(trial_specs)
         go_idx_arr = get_go_idx(trial_specs)
@@ -584,10 +688,13 @@ def make_fig3_lateral_force(loaded: dict, ref_task=None) -> go.Figure:
             data=traces,
             color=color,
             name=cond_name,
-            dash=dash,
             showlegend=True,
             legendgroup=cond_name,
         )
+
+    # Add gust perturbation timing indicator (vrect) below all data traces
+    if last_trial_specs is not None:
+        add_gust_vrect(fig, last_trial_specs)
 
     fig.add_hline(y=0, line_dash="dot", line_color="lightgray", line_width=1)
     fig.update_layout(
@@ -612,7 +719,6 @@ def make_fig4_forward_velocity_no_pert(loaded: dict) -> go.Figure:
 
     for cond_name, d in loaded.items():
         color = CONDITION_COLORS[cond_name]
-        dash = CONDITION_DASH[cond_name]
         task = d["task"]
         model = d["model"]
         key = jr.PRNGKey(44)
@@ -646,7 +752,6 @@ def make_fig4_forward_velocity_no_pert(loaded: dict) -> go.Figure:
             data=traces,
             color=color,
             name=cond_name,
-            dash=dash,
             showlegend=True,
             legendgroup=cond_name,
         )
@@ -671,6 +776,9 @@ def make_fig4_forward_velocity_no_pert(loaded: dict) -> go.Figure:
 def make_fig5_endpoint_error_violin(loaded: dict, ref_task=None) -> go.Figure:
     """Violin plots of endpoint error by SISU level, grouped by condition.
 
+    Uses go.Violin with violinmode='group'. Each SISU level is a categorical x-axis
+    tick; conditions are shown side-by-side at each SISU level.
+
     Uses fixed perturbation amplitude EVAL_PERT_AMP.
 
     Args:
@@ -679,14 +787,17 @@ def make_fig5_endpoint_error_violin(loaded: dict, ref_task=None) -> go.Figure:
     """
     fig = go.Figure()
 
-    # X positions: SISU_LEVELS, with groups of conditions side-by-side
-    n_conds = len(loaded)
-    offsets = np.linspace(-0.3, 0.3, n_conds)
+    # Use string labels for the x-axis so Plotly groups the violins automatically
+    sisu_labels = [str(s) for s in SISU_LEVELS]
 
     for cond_idx, (cond_name, d) in enumerate(loaded.items()):
         color = CONDITION_COLORS[cond_name]
         task = d["task"]
         model = d["model"]
+
+        # Collect all endpoint errors for this condition, one entry per SISU level
+        all_x: list[str] = []
+        all_y: list[float] = []
 
         for sisu_idx, sisu_val in enumerate(SISU_LEVELS):
             key = jr.PRNGKey(55 + sisu_idx * 13 + cond_idx * 7)
@@ -695,42 +806,36 @@ def make_fig5_endpoint_error_violin(loaded: dict, ref_task=None) -> go.Figure:
             )
 
             metrics = compute_kinematics(states, trial_specs)
-            endpoint_err = metrics["endpoint_error"].ravel()  # (n_rep * n_trials,)
+            endpoint_err = np.array(metrics["endpoint_error"]).ravel()  # (n_rep * n_trials,)
 
-            x_pos = sisu_val + offsets[cond_idx]
-            x_arr = [x_pos] * len(endpoint_err)
+            sisu_label = sisu_labels[sisu_idx]
+            all_x.extend([sisu_label] * len(endpoint_err))
+            all_y.extend(endpoint_err.tolist())
 
-            fig.add_trace(
-                go.Violin(
-                    x=x_arr,
-                    y=endpoint_err,
-                    name=cond_name,
-                    legendgroup=cond_name,
-                    showlegend=(sisu_idx == 0),
-                    box_visible=True,
-                    meanline_visible=True,
-                    points="all",
-                    pointpos=0,
-                    marker=dict(size=3, opacity=0.4),
-                    fillcolor=_hex_to_rgba(color, alpha=0.4),
-                    line_color=color,
-                    width=0.12,
-                )
+        fig.add_trace(
+            go.Violin(
+                x=all_x,
+                y=all_y,
+                name=cond_name,
+                legendgroup=cond_name,
+                showlegend=True,
+                box_visible=True,
+                meanline_visible=True,
+                points="all",
+                pointpos=0,
+                marker=dict(size=3, opacity=0.35),
+                fillcolor=_hex_to_rgba(color, alpha=0.4),
+                line_color=color,
             )
+        )
 
-    # Set x-axis tick labels to SISU values
     fig.update_layout(
         title=f"Endpoint error vs SISU (perturbation amp={EVAL_PERT_AMP})",
-        xaxis=dict(
-            title="SISU",
-            tickvals=SISU_LEVELS,
-            ticktext=[str(s) for s in SISU_LEVELS],
-            range=[-0.15, 1.15],
-        ),
+        xaxis_title="SISU",
         yaxis_title="Endpoint error (m)",
-        violinmode="overlay",
+        violinmode="group",
         height=500,
-        width=800,
+        width=850,
         legend_title="Condition",
     )
     return fig
@@ -741,26 +846,63 @@ def make_fig5_endpoint_error_violin(loaded: dict, ref_task=None) -> go.Figure:
 # ---------------------------------------------------------------------------
 
 
-def make_fig6_loss_curves(loaded: dict) -> dict[str, go.Figure]:
-    """One loss-curve figure per condition.
+def make_fig6_all_loss_curves(loaded: dict) -> go.Figure:
+    """All loss curves in a single figure with one subplot per condition.
+
+    Arranged in a grid: up to 2 columns, as many rows as needed. Each subplot
+    contains the loss-history traces for one condition.
 
     Uses feedbax.plot.loss_history style: log-log with error bands per term.
     """
     from feedbax.plot import loss_history as fb_loss_history
 
-    figs = {}
-    for cond_name, d in loaded.items():
+    cond_names = list(loaded.keys())
+    n_conds = len(cond_names)
+    n_cols = min(2, n_conds)
+    n_rows = (n_conds + n_cols - 1) // n_cols
+
+    # Build per-condition figures first, then transplant their traces into subplots
+    subplot_titles = cond_names
+    fig = make_subplots(
+        rows=n_rows,
+        cols=n_cols,
+        subplot_titles=subplot_titles,
+        shared_xaxes=False,
+        shared_yaxes=False,
+        horizontal_spacing=0.12,
+        vertical_spacing=0.15,
+    )
+
+    for idx, (cond_name, d) in enumerate(loaded.items()):
+        row = idx // n_cols + 1
+        col = idx % n_cols + 1
         history = d["history"]
-        fig = fb_loss_history(
+
+        # Build a standalone figure via feedbax helper, then copy traces into grid
+        sub_fig = fb_loss_history(
             history.loss,
             loss_context="training",
         )
-        fig.update_layout(
-            title=f"Training loss — {cond_name}",
-        )
-        figs[cond_name] = fig
+        for trace in sub_fig.data:
+            # Prevent duplicate legend entries across subplots
+            trace.showlegend = (idx == 0)
+            fig.add_trace(trace, row=row, col=col)
 
-    return figs
+        # Mirror log-axis settings from the standalone figure
+        axis_idx = (row - 1) * n_cols + col
+        x_key = f"xaxis{axis_idx}" if axis_idx > 1 else "xaxis"
+        y_key = f"yaxis{axis_idx}" if axis_idx > 1 else "yaxis"
+        if sub_fig.layout.xaxis.type:
+            fig.update_layout({x_key: dict(type=sub_fig.layout.xaxis.type)})
+        if sub_fig.layout.yaxis.type:
+            fig.update_layout({y_key: dict(type=sub_fig.layout.yaxis.type)})
+
+    fig.update_layout(
+        title="Training loss curves — all conditions",
+        height=350 * n_rows,
+        width=700 * n_cols,
+    )
+    return fig
 
 
 # ---------------------------------------------------------------------------
@@ -792,7 +934,7 @@ def main() -> None:
     # task is used for ALL perturbed evaluations so that models trained without
     # perturbations (pert_std=0, e.g. baseline_no_pert) still receive non-zero
     # gusts when we scale by pert_amp > 0.
-    REF_CONDITION_NAME = "Running cost (standard)"
+    REF_CONDITION_NAME = "Standard (pert_std=1)"
     ref_task = loaded[REF_CONDITION_NAME]["task"] if REF_CONDITION_NAME in loaded else None
     if ref_task is None:
         print(
@@ -836,14 +978,12 @@ def main() -> None:
     fig5.write_html(str(out_path))
     print(f"  Saved: {out_path}")
 
-    # --- Figure 6: Loss curves ---
-    print("Fig 6: Loss curves...")
-    figs6 = make_fig6_loss_curves(loaded)
-    for cond_name, fig6 in figs6.items():
-        safe_name = cond_name.replace(" ", "_").replace("=", "").replace("/", "-")
-        out_path = FIGURES_DIR / f"fig6_loss_{safe_name}.html"
-        fig6.write_html(str(out_path))
-        print(f"  Saved: {out_path}")
+    # --- Figure 6: Loss curves (all conditions in one figure) ---
+    print("Fig 6: Loss curves (all conditions)...")
+    fig6 = make_fig6_all_loss_curves(loaded)
+    out_path = FIGURES_DIR / "fig6_all_loss_curves.html"
+    fig6.write_html(str(out_path))
+    print(f"  Saved: {out_path}")
 
     print(f"\nAll figures saved to: {FIGURES_DIR}")
 
