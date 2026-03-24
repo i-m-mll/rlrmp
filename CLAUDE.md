@@ -25,3 +25,10 @@
 ### jax_cookbook Helpers
 - `import jax_cookbook.tree as jtree` for PyTree utilities not in core JAX (e.g., `jtree.unzip`, `jtree.get_ensemble`). Use `jtree.*` for these helpers.
 - `from jax_cookbook import is_type, is_module, is_none` for convenient shorthands. For example, `jt.map(..., is_leaf=is_type(tuple))`, `jt.map(..., is_leaf=is_module)` (for `equinox.Module` instances).
+
+### TPU Multi-Process (Independent Jobs on Separate Chips)
+To run N independent training jobs on a multi-chip TPU (e.g., v4-8 with 4 chips), use these env vars per process — NO `jax.distributed.initialize()`:
+```bash
+TPU_CHIPS_PER_PROCESS_BOUNDS=1,1,1 TPU_PROCESS_BOUNDS=1,1,1 TPU_VISIBLE_DEVICES=<chip_id> python train.py
+```
+Each process sees exactly 1 device via `jax.devices()`. They share no state. Clear `/tmp/libtpu_lockfile` before launching. Source: [Skye's canonical gist](https://gist.github.com/skye/f82ba45d2445bb19d53545538754f9a3).
