@@ -732,8 +732,8 @@ def run_training(args: argparse.Namespace) -> None:
                 losses = loss_func(states, new_trial_specs, model)
                 return losses.total
 
-            # Inner gradient ascent loop
-            for _ in range(inner_steps):
+            # Inner gradient ascent loop (compiled as single body via fori_loop)
+            def _inner_step(_, w):
                 grad_w = jax.grad(_inner_loss)(w)
                 w = w + inner_lr * grad_w
                 # Project onto budget ball (per-trial)
@@ -742,7 +742,9 @@ def run_training(args: argparse.Namespace) -> None:
                 )  # (batch, 1)
                 budget_expanded = budget.reshape(-1, 1)
                 scale_factor = jnp.minimum(1.0, budget_expanded / (w_norm + 1e-12))
-                w = w * scale_factor.reshape(w.shape[0], *([1] * (w.ndim - 1)))
+                return w * scale_factor.reshape(w.shape[0], *([1] * (w.ndim - 1)))
+
+            w = jax.lax.fori_loop(0, inner_steps, _inner_step, w)
 
             # Apply adversarial perturbation to trial_specs
             adv_signal = orig_signal + w
