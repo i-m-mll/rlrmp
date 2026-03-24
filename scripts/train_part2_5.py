@@ -31,7 +31,7 @@ from feedbax.training.train import (
     train_pair,
     where_strs_to_fns,
 )
-from feedbax.types import TaskModelPair, TreeNamespace
+from feedbax.types import TaskModelPair, TreeNamespace, dict_to_namespace
 from jaxtyping import PyTree
 
 from rlrmp.modules.training.part2 import setup_task_model_pair
@@ -351,19 +351,47 @@ class _CVaRCompositeLoss(eqx.Module):
         new_base = self.base.with_weights(new_weights)
         return _CVaRCompositeLoss(new_base, self.alpha)
 
+    def _make_cvar_leaf_fn(self, alpha: float):
+        """Return a leaf aggregation function that applies CVaR filtering.
+
+        The returned function takes a per-trial loss array of shape (batch,) and
+        returns the mean over the worst (1 - alpha) fraction of trials.
+
+        We use a soft mask via straight-through estimation: the quantile threshold
+        is computed from the detached values, then the mask is applied to the
+        original (differentiable) array so gradients flow through the selected
+        worst-case trials.
+        """
+        def _cvar_mean(x: jnp.ndarray) -> jnp.ndarray:
+            # x has shape (batch,); compute the CVaR mean over worst fraction
+            threshold = jnp.quantile(jax.lax.stop_gradient(x), alpha)
+            # Soft mask: 1.0 for trials with loss >= threshold, 0.0 otherwise
+            mask = (jax.lax.stop_gradient(x) >= threshold).astype(x.dtype)
+            total_weight = jnp.sum(mask) + 1e-12
+            return jnp.sum(mask * x) / total_weight
+        return _cvar_mean
+
     def __call__(self, *args, **kwargs):
-        # Delegate to the base loss, which returns a TermTree
+        # Delegate to the base loss, which returns a TermTree whose leaf nodes
+        # have shape (batch,) values and leaf_fn=jnp.mean by default.
         result = self.base(*args, **kwargs)
 
-        # The TermTree contains per-term results. The `total` field on each term
-        # has shape (batch,) before aggregation. We need to filter at the
-        # trial level, which requires access to the total loss across all terms.
-        # In Feedbax's architecture, the CompositeLoss returns already-aggregated
-        # results. CVaR filtering must happen at the training loop level.
-        #
-        # For now, we apply a soft CVaR approximation: reweight the total loss
-        # using a smooth top-k mask based on the aggregated total.
-        return result
+        # Replace every leaf node's leaf_fn with the CVaR aggregation function
+        # so that TermTree.aggregate() uses CVaR instead of jnp.mean.
+        # TermTree.map() recurses over value arrays; we instead need to modify
+        # the leaf_fn field. We do this with a recursive helper using eqx.tree_at.
+        cvar_fn = self._make_cvar_leaf_fn(self.alpha)
+
+        def _apply_cvar_leaf_fn(node: TermTree) -> TermTree:
+            if node.value is not None:
+                # Leaf: replace leaf_fn with our CVaR aggregation
+                return eqx.tree_at(lambda t: t.leaf_fn, node, cvar_fn)
+            else:
+                # Branch: recurse into children
+                new_children = tuple(_apply_cvar_leaf_fn(c) for c in node.children)
+                return eqx.tree_at(lambda t: t.children, node, new_children)
+
+        return _apply_cvar_leaf_fn(result)
 
     def cvar_reweight(self, total_loss: jnp.ndarray) -> jnp.ndarray:
         """Given per-trial total losses of shape (batch,), return CVaR-filtered mean.
@@ -507,11 +535,15 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
     # Deep merge loss config into base
     merged = {**base, **loss_cfg}
 
-    # Override target_ratio if provided
-    if args.target_ratio != 0.3:
-        merged["loss_update"]["target_ratio"] = args.target_ratio
+    # Always set target_ratio from args; loss_cfg_* functions all hardcode 0.5
+    # so without this the user's --target-ratio default of 0.3 would never apply.
+    merged["loss_update"]["target_ratio"] = args.target_ratio
 
-    return TreeNamespace(**merged)
+    # Recursively convert nested dicts to TreeNamespaces so that dot-access works
+    # throughout (e.g. hps.pert.type, hps.loss_update.target_ratio).
+    # TreeNamespace(**merged) is only a shallow conversion; dict_to_namespace
+    # recurses into nested dicts.
+    return dict_to_namespace(merged, to_type=TreeNamespace)
 
 
 def run_training(args: argparse.Namespace) -> None:
@@ -581,17 +613,23 @@ def run_training(args: argparse.Namespace) -> None:
     # APT would require either:
     # (a) A custom training loop that wraps TaskTrainer.__call__, or
     # (b) Implementing APT as a model_update_func that modifies perturbations.
-    # For now, APT is noted as experimental and logs a warning.
+    #
+    # What Feedbax would need for full APT support:
+    #   A `pre_step_hook` on TaskTrainer (called before each training step's
+    #   forward pass) that receives the current (task, model, trial_specs, key)
+    #   and can return modified trial_specs. APTTrainingWrapper.find_adversarial_perturbation
+    #   would then be registered as such a hook, injecting worst-case perturbations
+    #   into the trial specs before each gradient step. Without this hook, the
+    #   adversarial inner loop cannot interact with the batched trial specs that
+    #   TaskTrainer generates internally.
+    #
+    # For now, APT is noted as experimental and falls back to standard training.
     if args.training_method == "apt":
         logger.warning(
             "APT training method is experimental. The adversarial inner loop "
-            "requires custom integration with the Feedbax training loop. "
-            "Falling back to standard training with increased perturbation std."
+            "requires a pre_step_hook on Feedbax's TaskTrainer (not yet implemented). "
+            "Falling back to standard training."
         )
-        # As a practical approximation, increase perturbation std to simulate
-        # stronger perturbations (the spirit of APT without the inner loop).
-        # A full APT implementation would need modifications to Feedbax's
-        # TaskTrainer to expose a pre-step hook for trial spec modification.
 
     # Train
     logger.info("Starting training for %d batches", n_batches)
