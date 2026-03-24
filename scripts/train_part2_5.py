@@ -636,6 +636,12 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
     # so without this the user's --target-ratio default of 0.3 would never apply.
     merged["loss_update"]["target_ratio"] = args.target_ratio
 
+    # Enable loss update if --enable-loss-update was passed.
+    # Bug: previously this flag didn't exist, so loss_update was always disabled regardless
+    # of --target-ratio. The enabled flag must be set explicitly.
+    if getattr(args, "enable_loss_update", False):
+        merged["loss_update"]["enabled"] = True
+
     # Override nn_output weight if specified
     if hasattr(args, "nn_output"):
         merged["loss"]["weights"]["nn_output"] = args.nn_output
@@ -901,6 +907,9 @@ def parse_args() -> argparse.Namespace:
                         help="APT inner loop learning rate (default: 0.01).")
     parser.add_argument("--target-ratio", type=float, default=0.3,
                         help="Target ratio for adaptive control penalty (default: 0.3).")
+    parser.add_argument("--enable-loss-update", action="store_true", default=False,
+                        help="Enable the adaptive control penalty update during training. "
+                             "Without this flag, --target-ratio has no effect.")
     parser.add_argument("--pert-std", type=float, default=1.0,
                         help="Perturbation standard deviation (default: 1.0).")
     parser.add_argument("--nn-output", type=float, default=1e-5,
