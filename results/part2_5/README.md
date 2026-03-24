@@ -1,75 +1,71 @@
-# Part 2.5 Experiment Results
+# Part 2.5 Experiment: Does SISU Modulate Peak Velocity?
 
-## Overview
+## Background
 
-Comparison of loss functions and training objectives for PAI-ASF models.
-Primary question: does any combination produce SISU-dependent peak velocity increase?
+Crevecoeur & Scott (2019) showed that humans increase peak reaching velocity when facing unpredictable perturbations — a signature of H-infinity robust control. Our PAI-ASF models receive a SISU input (0 = no perturbation expected, 1 = full perturbation expected). The question: does training with perturbation uncertainty produce the same velocity increase?
 
-## Results Summary
+## Phase 1: Which Loss Function Works?
 
-### Phase 1: Loss Function Comparison (standard backprop)
+We needed to find a loss function that trains stably with the new feedbax graph architecture before we could test anything else. Four loss modes were compared, all using standard backprop with PAI-ASF and 5 replicates.
 
-| Condition | Loss mode | Status | Loss (initial→final) | Endpoint error | Peak speed | SISU→velocity |
-|---|---|---|---|---|---|---|
-| `running_cost_standard/` | Running cost from go cue | **Converged** | 32.3→2.9 | 0.007 | 3.33 | -0.3% |
-| `softmin_standard/` | Goal-hit window (softmin) | **Diverged** | 5.0→843 | - | - | - |
-| `default_standard/` | Structured mid/late ramps | **Diverged** | 14.9→885 | - | - | - |
-| `combined_standard/` | Weak running + strong softmin | **Mediocre** | 10.7→5.0 | 0.15 | 2.06 | N/A |
+**Running cost** (constant position error penalty from the go cue through trial end) was the only loss mode that converged. Softmin and the default structured ramps both diverged catastrophically — likely due to incompatibilities with the graph architecture's new intervenor handling. The combined mode (weak running cost + strong softmin) trained but produced mediocre results.
 
-**Winner:** `running_cost` — the only loss mode that trains stably with the graph architecture.
+See `figures/fig_loss_curves.html` for training curves of all four modes.
 
-### Phase 2: Training Objective + Control Cost Variants
+**Data:** `phase1_loss_comparison/running_cost_standard/` (converged), `softmin_standard/` (diverged), `default_standard/` (diverged), `combined_standard/` (mediocre).
 
-| Condition | Method | nn_output | Status | Loss | Ep error | Peak speed | SISU→velocity |
-|---|---|---|---|---|---|---|---|
-| `running_cost_cvar/` | CVaR 10% | 1e-5 | Converged (weak) | 32→17 | 0.109 | 3.18 | -0.9% |
-| `running_cost_nn1e4/` | Standard | 1e-4 | Diverged | 32→714 | 0.78 | 2.63 | invalid |
-| `running_cost_nn1e6/` | Standard | 1e-6 | Converged | 32→5.4 | 0.070 | 3.91 | -0.7% |
-| `running_cost_apt/` | APT (adversarial) | 1e-5 | **Running** | - | - | - | - |
+## Phase 2: Does SISU Modulate Velocity?
 
-### Key Finding: Decoupled SISU Test
+With running_cost as the loss, we tested three training objectives and three control cost levels. The key measurement: evaluate the trained model at SISU=0 vs SISU=1 with the same perturbation and compare peak velocities.
 
-With fixed perturbation amplitude (scale=0.5), varying only the SISU input signal:
+### The answer: no.
 
-| SISU input | Peak velocity | Endpoint error | Interpretation |
+Across every converged condition, SISU produces **no increase in peak velocity** (changes range from -1.2% to +0.1%, all within noise):
+
+| Condition | SISU 0→1 velocity | Endpoint error | Notes |
 |---|---|---|---|
-| 0.00 | 3.330 | 0.0070 | Baseline |
-| 0.50 | 3.327 | 0.0062 | **11% better accuracy** |
-| 1.00 | 3.321 | 0.0069 | Slight accuracy improvement |
+| Standard backprop | -0.3% | 0.007 | Excellent reaching |
+| CVaR 10% (worst-case emphasis) | -0.9% | 0.109 | Harder training, less accurate |
+| APT (adversarial, default) | +0.1% | 0.006 | 2000 batches on TPU |
+| APT (10k batches) | -1.2% | 0.078 | Worse convergence than 5k |
+| APT (lr=0.001) | -0.3% | 0.005 | Conservative adversary |
+| APT (lr=0.1) | -0.1% | 0.006 | Aggressive adversary |
+| APT (5 inner steps) | -0.2% | 0.004 | More inner optimization |
+| APT (pert_std=2) | -0.1% | 0.005 | Stronger perturbations |
+| nn_output=1e-6 (low cost) | -0.7% | 0.070 | Faster movement (3.91 vs 3.33) |
 
-The network uses SISU for **accuracy modulation** (feedback gain changes) but NOT **velocity modulation** (trajectory shape changes). This confirms the LQG separation principle: expected-cost optimization changes gains, not trajectories.
+See `figures/fig_peak_velocity_by_sisu.html` and `figures/fig_endpoint_error_by_sisu.html`.
 
-## Figures
+### But SISU does modulate accuracy.
 
-All in `figures/`:
-- `fig_peak_velocity_by_sisu.html` — peak velocity vs SISU level, per condition
-- `fig_endpoint_error_by_sisu.html` — endpoint error vs SISU level
-- `fig_lateral_deviation_by_sisu.html` — max lateral deviation vs SISU
-- `fig_loss_curves.html` — training loss over 10k iterations
+A decoupled test — fixed perturbation amplitude (scale=0.5), varying only the SISU input signal — reveals that the network IS using SISU. Endpoint error improves by ~11% at moderate SISU (0.0070 → 0.0062). This is feedback gain modulation: the network increases its corrective gains when told to expect perturbations, producing better accuracy without changing its movement speed.
 
-## Data Files
+This is the LQG separation principle in action: expected-cost optimization (and even CVaR/APT approximations to worst-case) changes feedback gains but not the trajectory shape. The velocity signature specifically requires the trajectory itself to change — and none of our training methods produced that.
 
-Each condition directory contains:
-- `config.json` — full training hyperparameters
-- `trained_model.eqx` — trained model (equinox serialized, 5 replicates)
-- `train_history.eqx` — loss history over training
+## What This Means
 
-## Feedbax Bugs Fixed
+1. **The running cost loss works.** It's the correct loss structure for reaching tasks in the graph architecture. Other modes need debugging.
 
-This experiment required 12 fixes to the feedbax develop branch (on `feature/fix-stale-experiments-imports`):
-1. Stale `_experiments` imports (6 files)
-2. `AbstractIntervenor` → `is_intervenor`
-3. `Channel.change_input` reconstruction
-4. Ensemble vmap broadcasting for StateIndex
-5. Intervenor params single-pass processing
-6. `_apply_inits` TimeSeriesParam skip
-7. `filter_spec_leaves` Module→leaf expansion (**critical**: zero gradients)
-8. `model.net` vs `model.nodes['net']` identity mismatch (**critical**: zero gradients)
-9. `loss_reduction_fn` parameter for CVaR
-10. Various training script fixes (where_train paths, nn_output CLI arg)
+2. **PAI-ASF models learn SISU-dependent accuracy modulation** — a real robustness signature, just not the one Crevecoeur & Scott highlighted.
 
-## What's Next
+3. **The velocity signature is harder to produce than expected.** Neither expected-cost optimization (standard backprop), tail-risk optimization (CVaR), nor adversarial optimization (APT with various hyperparameters) generates it. Possible remaining explanations:
+   - The loss structure still doesn't sufficiently reward speed (no movement-time penalty)
+   - The GRU architecture may need an explicit velocity-cost tradeoff mechanism
+   - The point-mass dynamics may lack the biomechanical structure that produces co-contraction/impedance-based velocity changes in humans
 
-- **APT (adversarial perturbation training)**: the most promising remaining experiment. If minimax optimization produces velocity modulation where expected-cost doesn't, this confirms the theoretical prediction.
-- **Movement-time penalty**: adding an accumulating cost that rewards early arrival
-- **Adaptive control cost**: fixing the tracer leak in `loss_update_func` to enable dynamic control cost adjustment
+## Directory Structure
+
+- `phase1_loss_comparison/` — 4 loss mode conditions (raw training data: config.json, trained_model.eqx, train_history.eqx)
+- `phase2_training_objectives/` — CVaR and APT baseline conditions
+- `phase2_control_cost/` — nn_output weight variants (1e-4, 1e-5, 1e-6)
+- `apt_hyperparams/` — 4 APT variants from v4-8 parallel run (lr, steps, pert_std)
+- `apt_tpu_checkpoints/` — periodic checkpoint grabs from TPU (safety against preemption)
+- `figures/` — plotly HTML figures (peak velocity, endpoint error, lateral deviation, loss curves)
+
+## Timing and Infrastructure
+
+- Phase 1: ~50 min per condition on CPU (4 conditions sequential = ~3.3 hr)
+- Phase 2 standard: ~50 min per condition on CPU
+- APT on v5litepod-1: 10k batches in 15.3 min (vs ~3 hr estimated on CPU)
+- APT hyperparameter sweep: 4 × 5k batches on v4-8 (4 chips parallel) in ~13 min
+- Multi-chip parallelism via: `TPU_CHIPS_PER_PROCESS_BOUNDS=1,1,1 TPU_PROCESS_BOUNDS=1,1,1 TPU_VISIBLE_DEVICES=N`
