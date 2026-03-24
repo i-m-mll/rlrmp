@@ -700,9 +700,10 @@ def get_adaptive_control_penalty_update(
         new_weight = jnp.clip(new_weight, 1e-8, 1e-2)
 
         # Convert to Python float before storing. TermTree.tree_flatten puts
-        # `weight` in aux (static metadata), so a traced JAX array stored as a
-        # weight would escape its JIT scope on the next training step and cause
-        # an UnexpectedTracerError. We are outside JIT here, so .item() is safe.
+        # `weight` in the dynamic children (so that changing it does NOT change
+        # the PyTree treedef), but Python float weights are treated as non-array
+        # leaves by filter_jit/filter_vmap, keeping them outside JAX's trace scope.
+        # We are outside JIT here, so float() is safe.
         new_weight_float = float(new_weight)
 
         new_weights = loss_func.weights.copy()

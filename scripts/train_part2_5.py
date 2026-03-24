@@ -126,7 +126,7 @@ def _loss_cfg_running_cost() -> dict:
             },
         },
         "loss_update": {
-            "enabled": False,  # Disabled: tracer leak in TermTree.aggregate when weights are JAX arrays
+            "enabled": False,  # Disabled by default; enable with --target-ratio to use adaptive control penalty
             "target_ratio": 0.5,
             "alpha": 0.005,
             "control_term": "nn_output",
@@ -180,7 +180,7 @@ def _loss_cfg_softmin() -> dict:
             },
         },
         "loss_update": {
-            "enabled": False,  # Disabled: tracer leak in TermTree.aggregate when weights are JAX arrays
+            "enabled": False,  # Disabled by default; enable with --target-ratio to use adaptive control penalty
             "target_ratio": 0.5,
             "alpha": 0.005,
             "control_term": "nn_output",
@@ -228,7 +228,7 @@ def _loss_cfg_combined() -> dict:
             },
         },
         "loss_update": {
-            "enabled": False,  # Disabled: tracer leak in TermTree.aggregate when weights are JAX arrays
+            "enabled": False,  # Disabled by default; enable with --target-ratio to use adaptive control penalty
             "target_ratio": 0.5,
             "alpha": 0.005,
             "control_term": "nn_output",
@@ -271,7 +271,7 @@ def _loss_cfg_default() -> dict:
             },
         },
         "loss_update": {
-            "enabled": False,  # Disabled: tracer leak in TermTree.aggregate when weights are JAX arrays
+            "enabled": False,  # Disabled by default; enable with --target-ratio to use adaptive control penalty
             "target_ratio": 0.5,
             "alpha": 0.005,
             "control_term": "nn_output",
