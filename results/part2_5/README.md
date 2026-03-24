@@ -29,23 +29,34 @@ With running_cost as the loss, we tested three training objectives and three con
 
 Across every converged condition, SISU produces **no increase in peak velocity** (changes range from -1.2% to +0.1%, all within noise):
 
-| Condition | SISU 0→1 velocity | Endpoint error | Notes |
-|---|---|---|---|
-| Standard backprop | -0.3% | 0.007 | Excellent reaching |
-| CVaR 10% (worst-case emphasis) | -0.9% | 0.109 | Harder training, less accurate |
-| APT (adversarial, default) | +0.1% | 0.006 | 2000 batches on TPU |
-| APT (10k batches) | -1.2% | 0.078 | Worse convergence than 5k |
-| APT (lr=0.001) | -0.3% | 0.005 | Conservative adversary |
-| APT (lr=0.1) | -0.1% | 0.006 | Aggressive adversary |
-| APT (5 inner steps) | -0.2% | 0.004 | More inner optimization |
-| APT (pert_std=2) | -0.1% | 0.005 | Stronger perturbations |
-| nn_output=1e-6 (low cost) | -0.7% | 0.070 | Faster movement (3.91 vs 3.33) |
+| Condition | Loss (init→final) | Ep error | Peak speed | SISU 0→1 velocity | Notes |
+|---|---|---|---|---|---|
+| Standard backprop | 32→2.9 | 0.007 | 3.33 | -0.3% | Best overall convergence |
+| CVaR 10% | 32→16.6 | 0.109 | 3.18 | -0.9% | Harder training, less accurate |
+| APT (2k batches) | 32→3.0 | 0.006 | 3.27 | +0.1% | Quick TPU run |
+| APT (10k batches) | 32→9.9 | 0.078 | 3.23 | -1.2% | Worse convergence than shorter runs |
+| APT (lr=0.001) | 32→2.9 | 0.005 | 3.31 | -0.3% | Conservative adversary |
+| APT (lr=0.1) | 32→2.9 | 0.006 | 3.31 | -0.1% | Aggressive adversary |
+| APT (5 inner steps) | 32→2.9 | 0.004 | 3.30 | -0.2% | More inner optimization |
+| APT (pert_std=2) | 32→2.9 | 0.005 | 3.32 | -0.1% | Stronger perturbations |
+| nn_output=1e-6 | 32→5.4 | 0.070 | 3.91 | -0.7% | Lower control cost → faster |
+| nn_output=1e-4 | 32→714 | 0.780 | 2.63 | — | Diverged |
 
 See `figures/fig_peak_velocity_by_sisu.html` and `figures/fig_endpoint_error_by_sisu.html`.
 
 ### But SISU does modulate accuracy.
 
-A decoupled test — fixed perturbation amplitude (scale=0.5), varying only the SISU input signal — reveals that the network IS using SISU. Endpoint error improves by ~11% at moderate SISU (0.0070 → 0.0062). This is feedback gain modulation: the network increases its corrective gains when told to expect perturbations, producing better accuracy without changing its movement speed.
+A decoupled test — fixed perturbation amplitude (scale=0.5), varying only the SISU input signal — reveals that the network IS using SISU:
+
+| SISU input | Peak velocity | Endpoint error | Lateral deviation |
+|---|---|---|---|
+| 0.00 | 3.330 | 0.0070 | 0.0129 |
+| 0.25 | 3.329 | 0.0065 | 0.0123 |
+| 0.50 | 3.327 | **0.0062** | **0.0122** |
+| 0.75 | 3.321 | 0.0069 | 0.0124 |
+| 1.00 | 3.321 | 0.0069 | 0.0132 |
+
+Endpoint error improves by ~11% at moderate SISU (0.0070 → 0.0062). Peak velocity is flat. This is feedback gain modulation: the network increases its corrective gains when told to expect perturbations, producing better accuracy without changing its movement speed.
 
 This is the LQG separation principle in action: expected-cost optimization (and even CVaR/APT approximations to worst-case) changes feedback gains but not the trajectory shape. The velocity signature specifically requires the trajectory itself to change — and none of our training methods produced that.
 
