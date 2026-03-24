@@ -161,6 +161,7 @@ DEFAULT_TOP_WEIGHTS: dict[str, float] = {
     "effector_vel_mid": 1.0,
     "effector_pos_late": 1.0,
     "effector_vel_late": 1.0,
+    "effector_pos_running": 0.0,
     "nn_output": 1e-5,
     "nn_hidden": 1e-5,
     # composite bundle (if enabled)
@@ -559,6 +560,16 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
                 ),
             )
 
+        # Running position cost: penalizes position error during the entire movement period.
+        # Unlike mid-period terms (which ramp), this applies a uniform penalty from
+        # go cue to trial end, encouraging the effector to track the target throughout.
+        if getattr(user_outer_weights, "effector_pos_running", 0.0) != 0.0:
+            terms["effector_pos_running"] = TargetStateLoss(
+                "effector_pos_running",
+                where=lambda state: state.mechanics.effector.pos,
+                spec=during_movement,
+            )
+
         # Late-period position term (optional, active in goal_hit or structured modes)
         if getattr(user_outer_weights, "effector_pos_late", 0.0) != 0.0:
             after_pos_late_window = TargetSpec(
@@ -716,8 +727,8 @@ def get_loss_update_func(hps: TreeNamespace):
     if loss_update_cfg is None or not getattr(loss_update_cfg, "enabled", False):
         return None, 0  # (func, start_iteration) - 0 is a dummy value when func is None
 
-    # Default goal_term: sum mid and late position penalties for full movement error
-    default_goal_term = ["effector_pos_mid", "effector_pos_late"]
+    # Default goal_term: sum mid, late, and running position penalties for full movement error
+    default_goal_term = ["effector_pos_mid", "effector_pos_late", "effector_pos_running"]
     goal_term = getattr(loss_update_cfg, "goal_term", default_goal_term)
 
     update_func = get_adaptive_control_penalty_update(
