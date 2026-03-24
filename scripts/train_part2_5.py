@@ -347,9 +347,19 @@ class _CVaRCompositeLoss(eqx.Module):
     def weights(self):
         return self.base.weights
 
+    @property
+    def skeleton(self):
+        return self.base.skeleton
+
+    def without(self, *keys):
+        return _CVaRCompositeLoss(self.base.without(*keys), self.alpha)
+
     def __getattr__(self, name):
         # Forward any attribute not defined here to self.base (CompositeLoss)
-        return getattr(self.base, name)
+        try:
+            return getattr(self.base, name)
+        except AttributeError:
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
     def with_weights(self, new_weights):
         new_base = self.base.with_weights(new_weights)
@@ -550,6 +560,11 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
     # so without this the user's --target-ratio default of 0.3 would never apply.
     merged["loss_update"]["target_ratio"] = args.target_ratio
 
+    # Override nn_output weight if specified
+    if hasattr(args, "nn_output"):
+        merged["loss"]["weights"]["nn_output"] = args.nn_output
+        merged["loss"]["weights"]["nn_hidden"] = args.nn_output
+
     # Recursively convert nested dicts to TreeNamespaces so that dot-access works
     # throughout (e.g. hps.pert.type, hps.loss_update.target_ratio).
     # TreeNamespace(**merged) is only a shallow conversion; dict_to_namespace
@@ -708,6 +723,8 @@ def parse_args() -> argparse.Namespace:
                         help="Target ratio for adaptive control penalty (default: 0.3).")
     parser.add_argument("--pert-std", type=float, default=1.0,
                         help="Perturbation standard deviation (default: 1.0).")
+    parser.add_argument("--nn-output", type=float, default=1e-5,
+                        help="Neural output control cost weight (default: 1e-5).")
     parser.add_argument("--n-batches", type=int, default=10000,
                         help="Number of training batches (default: 10000).")
     parser.add_argument("--output-dir", type=str, default="results/part2_5",
