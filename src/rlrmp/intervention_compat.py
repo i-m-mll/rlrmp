@@ -117,6 +117,22 @@ def add_plant_intervention(
             output_port="force",
         )
 
+    # Add an input binding so that time-varying intervention params can be
+    # passed as model inputs keyed by "intervene:{label}".  The training
+    # loop (grad_wrap_abstract_loss) and eval_single extract TimeSeriesParam
+    # leaves from trial_spec.intervene and pass them under this key.
+    intervene_port = f"intervene:{intervention.label}"
+    model = eqx.tree_at(
+        lambda g: g.input_ports,
+        model,
+        model.input_ports + (intervene_port,),
+    )
+    model = eqx.tree_at(
+        lambda g: g.input_bindings,
+        model,
+        {**model.input_bindings, intervene_port: (node_name, "params_override")},
+    )
+
     return model
 
 
