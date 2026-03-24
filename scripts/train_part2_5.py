@@ -672,13 +672,98 @@ def run_training(args: argparse.Namespace) -> None:
     #   adversarial inner loop cannot interact with the batched trial specs that
     #   TaskTrainer generates internally.
     #
-    # For now, APT is noted as experimental and falls back to standard training.
+    # APT: adversarial perturbation training via pre_step_fn hook
+    pre_step_fn = None
     if args.training_method == "apt":
-        logger.warning(
-            "APT training method is experimental. The adversarial inner loop "
-            "requires a pre_step_hook on Feedbax's TaskTrainer (not yet implemented). "
-            "Falling back to standard training."
-        )
+        from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
+        from feedbax.intervene.schedule import TimeSeriesParam
+        from feedbax.graph import init_state_from_component
+        from feedbax.train import grad_wrap_abstract_loss
+
+        inner_steps = args.apt_inner_steps
+        inner_lr = args.apt_inner_lr
+        pert_budget = args.pert_std
+
+        def apt_pre_step(task, model, trial_specs, loss_func, keys):
+            """Find worst-case perturbation via gradient ascent on the force field.
+
+            For each trial in the batch, does `inner_steps` of gradient ascent
+            on the perturbation force time-series to maximize the loss, then
+            returns modified trial_specs with the adversarial perturbation.
+            """
+            # Get the current perturbation field from trial_specs
+            intervene = trial_specs.intervene[PLANT_INTERVENOR_LABEL]
+            field = intervene.field  # TimeSeriesParam wrapping (batch, T, 2) or similar
+            if isinstance(field, TimeSeriesParam):
+                orig_signal = field.value  # (batch, T, 2)
+            else:
+                orig_signal = field  # already an array
+
+            # Initialize adversarial perturbation as zeros
+            w = jnp.zeros_like(orig_signal)
+
+            # Budget per trial: scale * pert_std * sqrt(T * d)
+            scale = intervene.scale  # (batch,) — the SISU value
+            n_elems = float(orig_signal.shape[-2] * orig_signal.shape[-1])
+            budget = scale * pert_budget * jnp.sqrt(n_elems)  # (batch,)
+
+            def _inner_loss(w_pert):
+                """Loss with adversarial perturbation added to the field."""
+                new_signal = orig_signal + w_pert
+                if isinstance(field, TimeSeriesParam):
+                    new_field = TimeSeriesParam(new_signal)
+                else:
+                    new_field = new_signal
+
+                new_intervene = eqx.tree_at(
+                    lambda p: p.field, intervene, new_field
+                )
+                new_trial_specs = eqx.tree_at(
+                    lambda t: t.intervene[PLANT_INTERVENOR_LABEL],
+                    trial_specs,
+                    replace=new_intervene,
+                )
+                # Forward pass and loss (same as grad_wrap_abstract_loss)
+                init_states = eqx.filter_vmap(
+                    lambda _: init_state_from_component(model)
+                )(keys)
+                # Simplified forward: use task.eval_trials
+                states = task.eval_trials(model, new_trial_specs, keys)
+                losses = loss_func(states, new_trial_specs, model)
+                return losses.total
+
+            # Inner gradient ascent loop
+            for _ in range(inner_steps):
+                grad_w = jax.grad(_inner_loss)(w)
+                w = w + inner_lr * grad_w
+                # Project onto budget ball (per-trial)
+                w_norm = jnp.linalg.norm(
+                    w.reshape(w.shape[0], -1), axis=-1, keepdims=True
+                )  # (batch, 1)
+                budget_expanded = budget.reshape(-1, 1)
+                scale_factor = jnp.minimum(1.0, budget_expanded / (w_norm + 1e-12))
+                w = w * scale_factor.reshape(w.shape[0], *([1] * (w.ndim - 1)))
+
+            # Apply adversarial perturbation to trial_specs
+            adv_signal = orig_signal + w
+            if isinstance(field, TimeSeriesParam):
+                adv_field = TimeSeriesParam(adv_signal)
+            else:
+                adv_field = adv_signal
+
+            adv_intervene = eqx.tree_at(
+                lambda p: p.field, intervene, adv_field
+            )
+            return eqx.tree_at(
+                lambda t: t.intervene[PLANT_INTERVENOR_LABEL],
+                trial_specs,
+                replace=adv_intervene,
+            )
+
+        pre_step_fn = apt_pre_step
+        logger.info("APT enabled: %d inner steps, lr=%f, budget=%f", inner_steps, inner_lr, pert_budget)
+
+    train_kwargs["pre_step_fn"] = pre_step_fn
 
     # Train
     logger.info("Starting training for %d batches", n_batches)
