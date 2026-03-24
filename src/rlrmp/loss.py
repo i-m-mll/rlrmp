@@ -696,11 +696,15 @@ def get_adaptive_control_penalty_update(
         ratio = J_x / (target_ratio * J_u + 1e-12)  # Add epsilon to avoid division by zero
         new_weight = current_weight * (ratio ** alpha)
 
-        # Clip to reasonable range to prevent runaway. Keep as JAX array —
-        # TermTree.weight is a dynamic leaf (in children, not aux), so a JAX
-        # 0-d array is fine. Avoid float() here: it forces a device→host sync
-        # barrier on every iteration, serializing the TPU pipeline (~100x slower).
+        # Clip to reasonable range to prevent runaway.
         new_weight = jnp.clip(new_weight, 1e-8, 1e-2)
+
+        # Convert to Python float. This forces a device→host sync, but
+        # loss_update_iterations is set to run infrequently (every ~100 iters)
+        # so the amortized cost is negligible. We MUST use a Python float
+        # because vmap stacks JAX array weights across replicas, breaking the
+        # scalar weight invariant.
+        new_weight = float(new_weight)
 
         new_weights = loss_func.weights.copy()
         new_weights[control_term] = new_weight

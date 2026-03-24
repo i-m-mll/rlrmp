@@ -735,7 +735,7 @@ def run_training(args: argparse.Namespace) -> None:
         log_step=100,
         loss_update_func=loss_update_func,
         loss_update_iterations=(
-            jnp.arange(loss_update_start, n_batches) if loss_update_func is not None else False
+            jnp.arange(loss_update_start, n_batches, 100) if loss_update_func is not None else False
         ),
         loss_reduction_fn=loss_reduction_fn,
     )
