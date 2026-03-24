@@ -94,7 +94,7 @@ def _base_hps(args: argparse.Namespace) -> dict:
             "n_expected": 3,
         },
         "where": {
-            0: ["net.hidden", "net.readout"],
+            0: ["nodes.net.hidden", "nodes.net.readout"],
         },
     }
 
@@ -580,10 +580,15 @@ def run_training(args: argparse.Namespace) -> None:
     )
     trainer = TaskTrainer(optimizer=optimizer, checkpointing=True)
 
-    # Get where_train from config
-    # TreeNamespace stringifies integer keys; convert back to int
-    where_raw = {int(k): v for k, v in dict(hps.where).items()}
-    where_train = where_strs_to_fns(where_raw)
+    # Custom where_train that accesses model.nodes['net'] (not model.net)
+    # to ensure we train the same weights used in the Graph forward pass.
+    # model.net is a separate dataclass field from model.nodes['net'];
+    # Graph._execute_step uses nodes, so we must train nodes.
+    def where_train_fn(model):
+        net = model.nodes["net"]
+        return (net.hidden, net.readout)
+
+    where_train = {0: where_train_fn}
 
     # Get loss update function
     from rlrmp.loss import get_loss_update_func
