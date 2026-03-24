@@ -205,14 +205,32 @@ def align_positions(pos, direction_unit, init_pos):
 # ---------------------------------------------------------------------------
 
 
-def eval_fixed_pert(task, model, sisu: float, pert_amp: float, *, key):
+def eval_fixed_pert(task, model, sisu: float, pert_amp: float, *, key, ref_task=None):
     """Evaluate model at a fixed SISU and perturbation amplitude.
+
+    When pert_amp > 0, trial specs (including gust amplitudes) are drawn from
+    ref_task if provided, so that models trained with pert_std=0 are still
+    evaluated under meaningful perturbations.  For pert_amp=0 the model's own
+    task is always used.
+
+    Args:
+        task: The model's own task (used for unperturbed eval and model runner).
+        model: The trained model to evaluate.
+        sisu: SISU level to set.
+        pert_amp: Perturbation scale factor to apply.
+        key: JAX PRNGKey.
+        ref_task: Reference task whose validation_trials supply gust amplitudes
+            for perturbed evaluations.  Required when pert_amp > 0 and the
+            model's own task has pert_std=0.  If None, falls back to task.
 
     Returns:
         states: model states, shape (n_rep, n_trials, n_steps, ...).
         trial_specs: the modified trial specs used.
     """
-    val_trials = task.validation_trials
+    # Use ref_task's trials for perturbed conditions so that models trained
+    # without perturbations (pert_std=0) still receive non-zero gusts.
+    source_task = (ref_task if (ref_task is not None and pert_amp > 0) else task)
+    val_trials = source_task.validation_trials
     # Set SISU
     trial_specs = set_sisu(val_trials, sisu)
     # Set perturbation amplitude (scale)
@@ -316,10 +334,14 @@ def _hex_to_rgba(hex_color: str, alpha: float = 0.3) -> str:
 # ---------------------------------------------------------------------------
 
 
-def make_fig1_aligned_trajectories(loaded: dict) -> go.Figure:
+def make_fig1_aligned_trajectories(loaded: dict, ref_task=None) -> go.Figure:
     """2D position plots aligned to reach direction, one subplot per condition.
 
     Two rows: without perturbation (top), with perturbation EVAL_PERT_AMP (bottom).
+
+    Args:
+        loaded: Dict of condition data.
+        ref_task: Reference task used for perturbed evaluations (see eval_fixed_pert).
     """
     n_conds = len(loaded)
     n_rows = 2
@@ -346,7 +368,7 @@ def make_fig1_aligned_trajectories(loaded: dict) -> go.Figure:
         for row, pert_amp in enumerate([0.0, EVAL_PERT_AMP], 1):
             key = jr.PRNGKey(7 + col * 100 + row * 10)
             states, trial_specs = eval_fixed_pert(
-                task, model, EVAL_SISU, pert_amp, key=key
+                task, model, EVAL_SISU, pert_amp, key=key, ref_task=ref_task
             )
 
             pos = np.array(states.mechanics.effector.pos)  # (n_rep, n_trials, n_steps, 2)
@@ -404,6 +426,19 @@ def make_fig1_aligned_trajectories(loaded: dict) -> go.Figure:
         font_size=11,
     )
 
+    # Enforce square aspect ratio on every subplot so lateral deviations are
+    # visually proportional to the forward distance.
+    # scaleanchor uses axis *reference* format (x, x2, x3, ...) not layout key names.
+    for col in range(1, n_conds + 1):
+        for row in range(1, n_rows + 1):
+            axis_idx = (row - 1) * n_conds + col
+            y_axis_key = f"yaxis{axis_idx}" if axis_idx > 1 else "yaxis"
+            # axis reference: "x" for the first axis, "x2", "x3", ... for the rest
+            x_ref = "x" if axis_idx == 1 else f"x{axis_idx}"
+            fig.update_layout({
+                y_axis_key: dict(scaleanchor=x_ref, scaleratio=1),
+            })
+
     # Axis labels only on edge subplots
     for col in range(1, n_conds + 1):
         for row in range(1, n_rows + 1):
@@ -423,10 +458,14 @@ def make_fig1_aligned_trajectories(loaded: dict) -> go.Figure:
 # ---------------------------------------------------------------------------
 
 
-def make_fig2_lateral_velocity(loaded: dict) -> go.Figure:
+def make_fig2_lateral_velocity(loaded: dict, ref_task=None) -> go.Figure:
     """Time-series of lateral velocity under fixed eval perturbation, aligned to go cue.
 
     Mean ± 1 std across trials × replicates, one line per condition.
+
+    Args:
+        loaded: Dict of condition data.
+        ref_task: Reference task used for perturbed evaluations (see eval_fixed_pert).
     """
     fig = go.Figure()
 
@@ -439,7 +478,7 @@ def make_fig2_lateral_velocity(loaded: dict) -> go.Figure:
         key = jr.PRNGKey(42)
 
         states, trial_specs = eval_fixed_pert(
-            task, model, EVAL_SISU, EVAL_PERT_AMP, key=key
+            task, model, EVAL_SISU, EVAL_PERT_AMP, key=key, ref_task=ref_task
         )
         vel = np.array(states.mechanics.effector.vel)  # (n_rep, n_trials, n_steps, 2)
         direction_unit, _, _ = get_reach_direction(trial_specs)
@@ -496,10 +535,14 @@ def make_fig2_lateral_velocity(loaded: dict) -> go.Figure:
 # ---------------------------------------------------------------------------
 
 
-def make_fig3_lateral_force(loaded: dict) -> go.Figure:
+def make_fig3_lateral_force(loaded: dict, ref_task=None) -> go.Figure:
     """Time-series of lateral force output under fixed eval perturbation.
 
     Same format as Fig 2 but for force_filter.output lateral component.
+
+    Args:
+        loaded: Dict of condition data.
+        ref_task: Reference task used for perturbed evaluations (see eval_fixed_pert).
     """
     fig = go.Figure()
 
@@ -511,7 +554,7 @@ def make_fig3_lateral_force(loaded: dict) -> go.Figure:
         key = jr.PRNGKey(43)
 
         states, trial_specs = eval_fixed_pert(
-            task, model, EVAL_SISU, EVAL_PERT_AMP, key=key
+            task, model, EVAL_SISU, EVAL_PERT_AMP, key=key, ref_task=ref_task
         )
         force = np.array(states.force_filter.output)  # (n_rep, n_trials, n_steps, 2)
         direction_unit, _, _ = get_reach_direction(trial_specs)
@@ -625,10 +668,14 @@ def make_fig4_forward_velocity_no_pert(loaded: dict) -> go.Figure:
 # ---------------------------------------------------------------------------
 
 
-def make_fig5_endpoint_error_violin(loaded: dict) -> go.Figure:
+def make_fig5_endpoint_error_violin(loaded: dict, ref_task=None) -> go.Figure:
     """Violin plots of endpoint error by SISU level, grouped by condition.
 
     Uses fixed perturbation amplitude EVAL_PERT_AMP.
+
+    Args:
+        loaded: Dict of condition data.
+        ref_task: Reference task used for perturbed evaluations (see eval_fixed_pert).
     """
     fig = go.Figure()
 
@@ -644,7 +691,7 @@ def make_fig5_endpoint_error_violin(loaded: dict) -> go.Figure:
         for sisu_idx, sisu_val in enumerate(SISU_LEVELS):
             key = jr.PRNGKey(55 + sisu_idx * 13 + cond_idx * 7)
             states, trial_specs = eval_fixed_pert(
-                task, model, sisu_val, EVAL_PERT_AMP, key=key
+                task, model, sisu_val, EVAL_PERT_AMP, key=key, ref_task=ref_task
             )
 
             metrics = compute_kinematics(states, trial_specs)
@@ -741,28 +788,41 @@ def main() -> None:
 
     print(f"\nLoaded {len(loaded)} condition(s): {list(loaded)}\n")
 
+    # Load the reference task from running_cost_standard (pert_std=1).  This
+    # task is used for ALL perturbed evaluations so that models trained without
+    # perturbations (pert_std=0, e.g. baseline_no_pert) still receive non-zero
+    # gusts when we scale by pert_amp > 0.
+    REF_CONDITION_NAME = "Running cost (standard)"
+    ref_task = loaded[REF_CONDITION_NAME]["task"] if REF_CONDITION_NAME in loaded else None
+    if ref_task is None:
+        print(
+            f"WARNING: reference condition '{REF_CONDITION_NAME}' not loaded; "
+            "perturbed evaluations will fall back to each model's own task."
+        )
+
     # --- Figure 1: Aligned trajectories ---
     print("Fig 1: Aligned trajectories...")
-    fig1 = make_fig1_aligned_trajectories(loaded)
+    fig1 = make_fig1_aligned_trajectories(loaded, ref_task=ref_task)
     out_path = FIGURES_DIR / "fig1_aligned_trajectories.html"
     fig1.write_html(str(out_path))
     print(f"  Saved: {out_path}")
 
     # --- Figure 2: Lateral velocity profiles ---
     print("Fig 2: Lateral velocity profiles...")
-    fig2 = make_fig2_lateral_velocity(loaded)
+    fig2 = make_fig2_lateral_velocity(loaded, ref_task=ref_task)
     out_path = FIGURES_DIR / "fig2_lateral_velocity.html"
     fig2.write_html(str(out_path))
     print(f"  Saved: {out_path}")
 
     # --- Figure 3: Lateral force profiles ---
     print("Fig 3: Lateral force profiles...")
-    fig3 = make_fig3_lateral_force(loaded)
+    fig3 = make_fig3_lateral_force(loaded, ref_task=ref_task)
     out_path = FIGURES_DIR / "fig3_lateral_force.html"
     fig3.write_html(str(out_path))
     print(f"  Saved: {out_path}")
 
     # --- Figure 4: Forward velocity (no pert) ---
+    # No perturbation: ref_task not needed, each model uses its own task.
     print("Fig 4: Forward velocity (no perturbation)...")
     fig4 = make_fig4_forward_velocity_no_pert(loaded)
     out_path = FIGURES_DIR / "fig4_forward_velocity_no_pert.html"
@@ -771,7 +831,7 @@ def main() -> None:
 
     # --- Figure 5: Endpoint error violin ---
     print("Fig 5: Endpoint error violin plots...")
-    fig5 = make_fig5_endpoint_error_violin(loaded)
+    fig5 = make_fig5_endpoint_error_violin(loaded, ref_task=ref_task)
     out_path = FIGURES_DIR / "fig5_endpoint_error_violin.html"
     fig5.write_html(str(out_path))
     print(f"  Saved: {out_path}")
