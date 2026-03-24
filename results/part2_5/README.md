@@ -10,7 +10,7 @@ We needed to find a loss function that trains stably with the new feedbax graph 
 
 **Running cost** (constant position error penalty from the go cue through trial end) was the only loss mode that converged. Softmin and the default structured ramps both diverged catastrophically — likely due to incompatibilities with the graph architecture's new intervenor handling. The combined mode (weak running cost + strong softmin) trained but produced mediocre results.
 
-See `data/figures/fig_loss_curves.html` for training curves of all four modes.
+See `figures/fig_loss_curves.html` for training curves of all four modes.
 
 **Data:** `phase1_loss_comparison/running_cost_standard/` (converged), `softmin_standard/` (diverged), `default_standard/` (diverged), `combined_standard/` (mediocre).
 
@@ -34,7 +34,7 @@ Across every converged condition, SISU produces **no increase in peak velocity**
 | APT (pert_std=2) | -0.1% | 0.005 | Stronger perturbations |
 | nn_output=1e-6 (low cost) | -0.7% | 0.070 | Faster movement (3.91 vs 3.33) |
 
-See `data/figures/fig_peak_velocity_by_sisu.html` and `data/figures/fig_endpoint_error_by_sisu.html`.
+See `figures/fig_peak_velocity_by_sisu.html` and `figures/fig_endpoint_error_by_sisu.html`.
 
 ### But SISU does modulate accuracy.
 
@@ -55,5 +55,5 @@ This is the LQG separation principle in action: expected-cost optimization (and 
 
 ## Files and Data
 
-- `data/training_runs/` — raw training outputs for each condition (config.json, trained_model.eqx, train_history.eqx). One subdirectory per training run.
-- `data/figures/` — plotly HTML interactive figures, referenced throughout the sections above.
+- `figures/` — interactive plotly HTML figures, referenced inline throughout this document.
+- `models/` — saved trained models, training configs, and loss histories. One subdirectory per condition, each containing `config.json`, `trained_model.eqx`, and `train_history.eqx`.
