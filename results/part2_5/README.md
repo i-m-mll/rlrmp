@@ -10,7 +10,7 @@ We needed to find a loss function that trains stably with the new feedbax graph 
 
 **Running cost** (constant position error penalty from the go cue through trial end) was the only loss mode that converged. Softmin and the default structured ramps both diverged catastrophically — likely due to incompatibilities with the graph architecture's new intervenor handling. The combined mode (weak running cost + strong softmin) trained but produced mediocre results.
 
-See `figures/fig_loss_curves.html` for training curves of all four modes.
+See `data/figures/fig_loss_curves.html` for training curves of all four modes.
 
 **Data:** `phase1_loss_comparison/running_cost_standard/` (converged), `softmin_standard/` (diverged), `default_standard/` (diverged), `combined_standard/` (mediocre).
 
@@ -34,7 +34,7 @@ Across every converged condition, SISU produces **no increase in peak velocity**
 | APT (pert_std=2) | -0.1% | 0.005 | Stronger perturbations |
 | nn_output=1e-6 (low cost) | -0.7% | 0.070 | Faster movement (3.91 vs 3.33) |
 
-See `figures/fig_peak_velocity_by_sisu.html` and `figures/fig_endpoint_error_by_sisu.html`.
+See `data/figures/fig_peak_velocity_by_sisu.html` and `data/figures/fig_endpoint_error_by_sisu.html`.
 
 ### But SISU does modulate accuracy.
 
@@ -53,19 +53,7 @@ This is the LQG separation principle in action: expected-cost optimization (and 
    - The GRU architecture may need an explicit velocity-cost tradeoff mechanism
    - The point-mass dynamics may lack the biomechanical structure that produces co-contraction/impedance-based velocity changes in humans
 
-## Directory Structure
+## Files and Data
 
-- `phase1_loss_comparison/` — 4 loss mode conditions (raw training data: config.json, trained_model.eqx, train_history.eqx)
-- `phase2_training_objectives/` — CVaR and APT baseline conditions
-- `phase2_control_cost/` — nn_output weight variants (1e-4, 1e-5, 1e-6)
-- `apt_hyperparams/` — 4 APT variants from v4-8 parallel run (lr, steps, pert_std)
-- `apt_tpu_checkpoints/` — periodic checkpoint grabs from TPU (safety against preemption)
-- `figures/` — plotly HTML figures (peak velocity, endpoint error, lateral deviation, loss curves)
-
-## Timing and Infrastructure
-
-- Phase 1: ~50 min per condition on CPU (4 conditions sequential = ~3.3 hr)
-- Phase 2 standard: ~50 min per condition on CPU
-- APT on v5litepod-1: 10k batches in 15.3 min (vs ~3 hr estimated on CPU)
-- APT hyperparameter sweep: 4 × 5k batches on v4-8 (4 chips parallel) in ~13 min
-- Multi-chip parallelism via: `TPU_CHIPS_PER_PROCESS_BOUNDS=1,1,1 TPU_PROCESS_BOUNDS=1,1,1 TPU_VISIBLE_DEVICES=N`
+- `data/training_runs/` — raw training outputs for each condition (config.json, trained_model.eqx, train_history.eqx). One subdirectory per training run.
+- `data/figures/` — plotly HTML interactive figures, referenced throughout the sections above.
