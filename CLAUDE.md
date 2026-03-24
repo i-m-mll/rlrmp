@@ -32,3 +32,8 @@ To run N independent training jobs on a multi-chip TPU (e.g., v4-8 with 4 chips)
 TPU_CHIPS_PER_PROCESS_BOUNDS=1,1,1 TPU_PROCESS_BOUNDS=1,1,1 TPU_VISIBLE_DEVICES=<chip_id> python train.py
 ```
 Each process sees exactly 1 device via `jax.devices()`. They share no state. Clear `/tmp/libtpu_lockfile` before launching. Source: [Skye's canonical gist](https://gist.github.com/skye/f82ba45d2445bb19d53545538754f9a3).
+
+### Cloud/Remote Training Practices
+- **Always verify the latest code is deployed** before running on cloud instances. Stale code on TPU/GPU is a recurring source of wasted time.
+- **Never use `pkill -f python` on TPU VMs** — it kills the SSH helper processes, breaking the SSH connection. Use targeted `kill <pid>` for specific processes instead.
+- **Use `uv` for all package management**, including on cloud instances. Do not use `pip install` directly (this is also in the global CLAUDE.md but bears repeating for remote contexts where habits may slip).
