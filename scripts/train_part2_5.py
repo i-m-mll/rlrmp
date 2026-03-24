@@ -94,7 +94,7 @@ def _base_hps(args: argparse.Namespace) -> dict:
             "n_expected": 3,
         },
         "where": {
-            0: ["step.net.hidden", "step.net.readout"],
+            0: ["net.hidden", "net.readout"],
         },
     }
 
@@ -581,7 +581,9 @@ def run_training(args: argparse.Namespace) -> None:
     trainer = TaskTrainer(optimizer=optimizer, checkpointing=True)
 
     # Get where_train from config
-    where_train = where_strs_to_fns(dict(hps.where))
+    # TreeNamespace stringifies integer keys; convert back to int
+    where_raw = {int(k): v for k, v in dict(hps.where).items()}
+    where_train = where_strs_to_fns(where_raw)
 
     # Get loss update function
     from rlrmp.loss import get_loss_update_func
