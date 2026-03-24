@@ -45,8 +45,15 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def _get_git_metadata() -> dict:
-    """Capture git commit hashes for reproducibility."""
+    """Capture version and git info for reproducibility."""
     meta = {}
+
+    # rlrmp version and git info
+    try:
+        import rlrmp
+        meta["rlrmp_version"] = getattr(rlrmp, "__version__", "unknown")
+    except ImportError:
+        pass
     try:
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -54,10 +61,25 @@ def _get_git_metadata() -> dict:
         )
         if result.returncode == 0:
             meta["rlrmp_commit"] = result.stdout.strip()
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            meta["rlrmp_branch"] = result.stdout.strip()
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            meta["rlrmp_dirty"] = bool(result.stdout.strip())
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass
+
+    # feedbax version and git info
     try:
         import feedbax
+        meta["feedbax_version"] = getattr(feedbax, "__version__", "unknown")
         fbx_path = Path(feedbax.__file__).parent.parent
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -66,8 +88,30 @@ def _get_git_metadata() -> dict:
         )
         if result.returncode == 0:
             meta["feedbax_commit"] = result.stdout.strip()
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+            cwd=str(fbx_path),
+        )
+        if result.returncode == 0:
+            meta["feedbax_branch"] = result.stdout.strip()
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True, text=True, timeout=5,
+            cwd=str(fbx_path),
+        )
+        if result.returncode == 0:
+            meta["feedbax_dirty"] = bool(result.stdout.strip())
     except (subprocess.TimeoutExpired, FileNotFoundError, ImportError):
         pass
+
+    # JAX version (important for reproducibility)
+    try:
+        import jax
+        meta["jax_version"] = jax.__version__
+    except ImportError:
+        pass
+
     return meta
 
 
