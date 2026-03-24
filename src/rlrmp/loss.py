@@ -696,18 +696,14 @@ def get_adaptive_control_penalty_update(
         ratio = J_x / (target_ratio * J_u + 1e-12)  # Add epsilon to avoid division by zero
         new_weight = current_weight * (ratio ** alpha)
 
-        # Optional: clip to reasonable range to prevent runaway
+        # Clip to reasonable range to prevent runaway. Keep as JAX array —
+        # TermTree.weight is a dynamic leaf (in children, not aux), so a JAX
+        # 0-d array is fine. Avoid float() here: it forces a device→host sync
+        # barrier on every iteration, serializing the TPU pipeline (~100x slower).
         new_weight = jnp.clip(new_weight, 1e-8, 1e-2)
 
-        # Convert to Python float before storing. TermTree.tree_flatten puts
-        # `weight` in the dynamic children (so that changing it does NOT change
-        # the PyTree treedef), but Python float weights are treated as non-array
-        # leaves by filter_jit/filter_vmap, keeping them outside JAX's trace scope.
-        # We are outside JIT here, so float() is safe.
-        new_weight_float = float(new_weight)
-
         new_weights = loss_func.weights.copy()
-        new_weights[control_term] = new_weight_float
+        new_weights[control_term] = new_weight
 
         return loss_func.with_weights(new_weights)
 
