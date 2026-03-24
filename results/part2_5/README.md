@@ -62,20 +62,23 @@ This is the LQG separation principle in action: expected-cost optimization (and 
 
 ## Phase 3: Is the Training Actually Producing Robustness?
 
-The SISU-velocity null result raises a question: are the perturbations during training sufficient to induce robustness at all? We compared models trained with perturbations (pert_std=1) against baselines trained without (pert_std=0), evaluating both under the same fixed gust perturbation.
+The SISU-velocity null result raises a question: are the perturbations during training sufficient to induce robustness at all? We compared models trained with perturbations (pert_std=1) against baselines trained without (pert_std=0), evaluating all models under the same gust perturbations (from the trained model's task).
 
-### Training with perturbations produces massive robustness.
+**Important methodological note:** The baseline model's own task generates zero-amplitude gusts (pert_std=0). To compare fairly, all models must be evaluated using the *trained* model's task, which generates non-zero gusts. Otherwise the baseline appears to be unaffected by any perturbation scale (scaling zero is still zero).
 
-| Model | Eval pert 0.5 lat_dev | Eval pert 1.0 | Eval pert 2.0 | Interpretation |
+### Training with perturbations produces clear robustness.
+
+Max lateral deviation under fixed gust perturbation at SISU=0.5:
+
+| Model | scale=0.5 | scale=1.0 | scale=2.0 | scale=5.0 |
 |---|---|---|---|---|
-| Baseline (pert_std=0) | 0.380 | 0.378 | 0.375 | **Saturated failure** — can't handle any perturbation |
-| Standard (pert_std=1) | 0.012 | 0.013 | 0.015 | Good — 30x improvement over baseline |
-| APT lr=0.001 (pert_std=1) | **0.007** | **0.008** | **0.010** | Best — 40% better than standard |
-| APT pert_std=2 | **0.007** | **0.007** | **0.010** | Best — matches APT lr=0.001 |
+| Baseline (pert_std=0) | 0.0165 | 0.0175 | 0.0200 | 0.0291 |
+| Standard (pert_std=1) | 0.0122 | 0.0127 | 0.0145 | 0.0219 |
+| APT lr=0.001 (pert_std=1) | **0.0072** | **0.0079** | **0.0103** | **0.0192** |
 
-Training with perturbations induces a **30x improvement** in robustness (lateral deviation 0.38 → 0.012). APT further improves robustness by ~40% over standard backprop (0.012 → 0.007). The perturbation training IS working — the models are genuinely more robust. They just don't express this robustness through velocity changes.
+Standard training reduces lateral deviation by ~26% vs baseline. APT reduces it by ~55% at moderate perturbations and ~34% at strong perturbations. The perturbation training IS working — APT in particular produces substantially more robust controllers.
 
-Note: the baseline's numbers barely change with perturbation scale (0.380 → 0.375) because it's already failing completely — the perturbation pushes it into a regime where it can't correct at all. The trained models scale appropriately (0.012 → 0.015 at 2x perturbation).
+However, even the baseline handles these perturbations fairly well (max deviation 2.9% of reach at scale=5). The perturbation amplitudes may still be too weak to fully separate robust from non-robust behavior. A perturbation strength sweep (pert_std=2, 5, 10, 20 during training) is running on TPU to test this.
 
 ### Perturbation size sweep (in progress)
 
