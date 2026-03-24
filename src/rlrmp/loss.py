@@ -699,10 +699,14 @@ def get_adaptive_control_penalty_update(
         # Optional: clip to reasonable range to prevent runaway
         new_weight = jnp.clip(new_weight, 1e-8, 1e-2)
 
-        # Update weights dict
-        # new_weight is now a JAX array (scalar or shape (replicates,))
+        # Convert to Python float before storing. TermTree.tree_flatten puts
+        # `weight` in aux (static metadata), so a traced JAX array stored as a
+        # weight would escape its JIT scope on the next training step and cause
+        # an UnexpectedTracerError. We are outside JIT here, so .item() is safe.
+        new_weight_float = float(new_weight)
+
         new_weights = loss_func.weights.copy()
-        new_weights[control_term] = new_weight
+        new_weights[control_term] = new_weight_float
 
         return loss_func.with_weights(new_weights)
 
