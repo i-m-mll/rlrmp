@@ -13,6 +13,7 @@ Usage:
 import argparse
 import json
 import logging
+import subprocess
 from functools import partial
 from pathlib import Path
 from typing import Optional
@@ -37,6 +38,37 @@ from jaxtyping import PyTree
 from rlrmp.modules.training.part2 import setup_task_model_pair
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Reproducibility helpers
+# ---------------------------------------------------------------------------
+
+def _get_git_metadata() -> dict:
+    """Capture git commit hashes for reproducibility."""
+    meta = {}
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            meta["rlrmp_commit"] = result.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    try:
+        import feedbax
+        fbx_path = Path(feedbax.__file__).parent.parent
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+            cwd=str(fbx_path),
+        )
+        if result.returncode == 0:
+            meta["feedbax_commit"] = result.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError, ImportError):
+        pass
+    return meta
 
 
 # ---------------------------------------------------------------------------
@@ -580,6 +612,7 @@ def run_training(args: argparse.Namespace) -> None:
     # Save the full configuration for reproducibility
     config_path = output_dir / "config.json"
     config_dict = vars(args)
+    config_dict["git"] = _get_git_metadata()
     with open(config_path, "w") as f:
         json.dump(config_dict, f, indent=2, default=str)
     logger.info("Saved config to %s", config_path)
