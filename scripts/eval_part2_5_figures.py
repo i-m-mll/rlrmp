@@ -57,6 +57,9 @@ N_REPLICATES = 5
 def load_condition(cond_name: str, cond_dir: Path):
     """Load config, training history, and trained model for a condition."""
     config_path = cond_dir / "config.json"
+    if not config_path.exists():
+        print(f"  {cond_name}: skipped (not found: {cond_dir})")
+        return None
     with open(config_path) as f:
         config = json.load(f)
 
@@ -397,8 +400,15 @@ def main():
     loaded = {}
     for cond_name, cond_dir in CONDITIONS.items():
         print(f"  Loading {cond_name} from {cond_dir} ...")
-        task, model, history, config = load_condition(cond_name, cond_dir)
-        loaded[cond_name] = dict(task=task, model=model, history=history, config=config)
+        try:
+            result = load_condition(cond_name, cond_dir)
+            if result is None:
+                continue
+            task, model, history, config = result
+            loaded[cond_name] = dict(task=task, model=model, history=history, config=config)
+        except Exception as e:
+            print(f"  {cond_name}: FAILED to load — {e}")
+            continue
 
     # --- Loss curves figure ---
     print("\nGenerating loss curves figure...")
