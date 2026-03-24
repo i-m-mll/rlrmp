@@ -623,10 +623,25 @@ def run_training(args: argparse.Namespace) -> None:
     # Build the loss function (already set on the task via setup_task_model_pair)
     loss_func = pair.task.loss_func
 
-    # Apply CVaR wrapper if requested
+    # Set up loss_reduction_fn for CVaR if requested
+    loss_reduction_fn = None
     if args.training_method == "cvar":
-        logger.info("Wrapping loss with CVaR (alpha=%.2f)", args.cvar_alpha)
-        loss_func = make_cvar_loss_wrapper(loss_func, args.cvar_alpha)
+        alpha = args.cvar_alpha
+        logger.info("Using CVaR loss reduction (alpha=%.2f — worst %.0f%% of trials)", alpha, (1 - alpha) * 100)
+
+        def cvar_reduction(per_trial_total):
+            """CVaR: mean of worst (1-alpha) fraction of per-trial losses.
+
+            per_trial_total has shape (batch,) — per-trial total losses before
+            mean reduction. We sort, keep the worst fraction, and average those.
+            Gradients flow through the selected trials via straight-through.
+            """
+            threshold = jnp.quantile(jax.lax.stop_gradient(per_trial_total), alpha)
+            mask = (jax.lax.stop_gradient(per_trial_total) >= threshold).astype(per_trial_total.dtype)
+            return jnp.sum(mask * per_trial_total) / (jnp.sum(mask) + 1e-12)
+
+        loss_reduction_fn = cvar_reduction
+        logger.info("CVaR reduction active: keeping worst %.0f%% of trials", (1 - alpha) * 100)
 
     # Prepare training kwargs
     train_kwargs = dict(
@@ -639,6 +654,7 @@ def run_training(args: argparse.Namespace) -> None:
         loss_update_iterations=(
             jnp.arange(loss_update_start, n_batches) if loss_update_func is not None else False
         ),
+        loss_reduction_fn=loss_reduction_fn,
     )
 
     # Note: APT requires modifying the training loop itself. Since Feedbax's
