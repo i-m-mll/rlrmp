@@ -84,39 +84,34 @@ However, even the baseline handles these perturbations fairly well (max deviatio
 
 Models with pert_std = 2, 5, 10, 20 were trained (see `models/pert_std_*/`). Results: robustness improves with higher pert_std and the models still converge well through pert_std=10. At pert_std=20 there may be degradation; eval pending.
 
-## Phase 4: Loss Balance Experiment — Does Adaptive Control Penalty Enable SISU→Velocity Modulation?
+## Phase 4: Does Adaptive Control Cost Enable Velocity Modulation?
 
-**Hypothesis:** The SISU signal has no effect on trajectory speed because the control cost (nn_output penalty) is too weak relative to the goal-error terms. If we adaptively rebalance them to maintain a target ratio of control cost to goal error, the network should face a genuine speed-accuracy tradeoff, giving SISU room to modulate velocity.
+### Background
 
-**What was intended:** Train 4 models with `loss_update` enabled and different `target_ratio` and `pert_std` values:
-- `ratio03_pert1`: target_ratio=0.3, pert_std=1.0
-- `ratio05_pert1`: target_ratio=0.5, pert_std=1.0
-- `ratio03_pert10`: target_ratio=0.3, pert_std=10.0
-- `ratio05_pert10`: target_ratio=0.5, pert_std=10.0
+With the running_cost loss, position error dominates and the model operates at ceiling speed — SISU cannot push it higher. The adaptive control cost (`loss_update`) dynamically increases the `nn_output` penalty weight to balance control cost against goal error. This reduces peak speed and potentially creates room for SISU to modulate velocity.
 
-**What actually happened:** The adaptive loss update was **not enabled** during training. The `build_hps` function stores `target_ratio` from `--target-ratio` in `hps.loss_update.target_ratio` but never sets `hps.loss_update.enabled = True`. As a result:
-- `ratio03_pert1` and `ratio05_pert1` are identical models (same MD5 hash), differing only in stored config metadata.
-- `ratio03_pert10` and `ratio05_pert10` are identical models.
-- The conditions are equivalent to `running_cost_standard` with `pert_std=1.0` and `pert_std=10.0` respectively.
+### Setup
 
-**Evaluation results (run `scripts/eval_loss_balance.py`):**
+4 conditions: target_ratio ∈ {0.3, 0.5} × pert_std ∈ {1, 10}, all trained with `--enable-loss-update`, 10k batches, running_cost loss. The adaptive update runs every 100 iterations with alpha=0.005.
 
-| Condition           | Loss   | Ep err | Peak vel | vel@SISU=0 | vel@SISU=1 | SISU 0→1 Δvel | Lat dev (×1) | nn_output_w |
-|---------------------|--------|--------|----------|------------|------------|---------------|--------------|-------------|
-| running_cost_std    | 7.7219 | 0.0059 | 3.329    | 3.328      | 3.323      | -0.1%         | 0.0125       | 1.00e-05    |
-| ratio03_pert1 (=ratio05_pert1) | 8.1421 | 0.0094 | 3.363 | 3.362 | 3.368 | +0.2% | 0.0169 | 1.00e-05 |
-| ratio03_pert10 (=ratio05_pert10) | 7.7975 | 0.0056 | 3.306 | 3.301 | 3.314 | +0.4% | 0.0081 | 1.00e-05 |
+### Results
 
-Notes:
-- Unperturbed metrics (ep_err, peak_vel) at SISU=0.5, pert_scale=0.
-- SISU comparison at pert_scale=0.5 using `running_cost_standard` trial specs.
-- Lateral deviation at SISU=0.5, pert_scale=1.0.
+| Condition | Val loss | Ep err | Peak vel | SISU 0→1 Δvel | Lat dev (×1) | nn_output wt |
+|---|---|---|---|---|---|---|
+| baseline (no update) | 7.72 | 0.0059 | 3.329 | -0.1% | 0.0125 | 1e-5 |
+| ratio=0.3, pert_std=1 | 10.58 | 0.0051 | 2.424 | +0.2% | 0.0063 | 3.7e-5 |
+| ratio=0.5, pert_std=1 | 9.93 | 0.0045 | 2.581 | +0.2% | 0.0069 | 2.9e-5 |
+| ratio=0.3, pert_std=10 | 10.66 | 0.0047 | 2.435 | +0.6% | 0.0066 | 3.7e-5 |
+| ratio=0.5, pert_std=10 | 10.01 | 0.0048 | 2.586 | +0.4% | 0.0065 | 2.9e-5 |
 
-**Result: No SISU→velocity effect.** The SISU 0→1 velocity change is +0.2%–+0.4% across all conditions — consistent noise, not a real effect. This is the same null result as Phase 2.
+### Interpretation
 
-pert_std=10.0 models show improved robustness vs pert_std=1.0 (lateral deviation 0.0081 vs 0.0169 at scale=1), confirming that stronger perturbation training helps. But the SISU velocity signature remains absent.
+- The adaptive control cost successfully reduced peak velocity from 3.33 to 2.4–2.6 and improved lateral robustness (~50% reduction in deviation).
+- SISU velocity direction flipped from slightly negative (-0.1%) to slightly positive (+0.2% to +0.6%). This is the correct direction but the magnitude is negligible.
+- Higher pert_std produced marginally larger effects (+0.6% at pert_std=10 vs +0.2% at pert_std=1), consistent with stronger perturbation training creating clearer SISU expectations.
+- The nn_output weight converged to 3–4× its initial value (3e-5 to 4e-5 from 1e-5) — the adaptive mechanism works but the weight increase is modest.
 
-**The adaptive loss update still needs to be tested.** Fix required: add `--enable-loss-update` flag to `train_part2_5.py` (or auto-enable when `target_ratio` is explicitly set), retrain the 4 conditions with it actually active, and re-evaluate.
+Models saved in `models/ratio03_pert1_v4/`, `models/ratio05_pert1_v4/`, `models/ratio03_pert10_v4/`, `models/ratio05_pert10_v4/`.
 
 ## What This Means
 
@@ -128,6 +123,8 @@ pert_std=10.0 models show improved robustness vs pert_std=1.0 (lateral deviation
    - The loss structure still doesn't sufficiently reward speed (no movement-time penalty)
    - The GRU architecture may need an explicit velocity-cost tradeoff mechanism
    - The point-mass dynamics may lack the biomechanical structure that produces co-contraction/impedance-based velocity changes in humans
+
+4. **Adaptive control cost reduces peak speed and improves robustness but does not produce a meaningful SISU → velocity signature.** The ~3–4× weight increase is insufficient to create exploitable speed headroom. A much larger control penalty (or different loss structure such as an explicit movement-time penalty) may be needed.
 
 ## Files and Data
 
