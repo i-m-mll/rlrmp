@@ -380,20 +380,27 @@ class _CVaRCompositeLoss(eqx.Module):
         # have shape (batch,) values and leaf_fn=jnp.mean by default.
         result = self.base(*args, **kwargs)
 
-        # Replace every leaf node's leaf_fn with the CVaR aggregation function
-        # so that TermTree.aggregate() uses CVaR instead of jnp.mean.
-        # TermTree.map() recurses over value arrays; we instead need to modify
-        # the leaf_fn field. We do this with a recursive helper using eqx.tree_at.
+        # Replace every leaf node's leaf_fn with the CVaR aggregation function.
+        # Since leaf_fn is in TermTree's aux_data (static), we must reconstruct
+        # the tree nodes rather than using eqx.tree_at.
         cvar_fn = self._make_cvar_leaf_fn(self.alpha)
 
         def _apply_cvar_leaf_fn(node: TermTree) -> TermTree:
             if node.value is not None:
-                # Leaf: replace leaf_fn with our CVaR aggregation
-                return eqx.tree_at(lambda t: t.leaf_fn, node, cvar_fn)
+                # Leaf: reconstruct with CVaR leaf_fn
+                return TermTree(
+                    label=node.label, names=node.names,
+                    children=node.children, value=node.value,
+                    weight=node.weight, leaf_fn=cvar_fn,
+                )
             else:
-                # Branch: recurse into children
+                # Branch: recurse into children, reconstruct
                 new_children = tuple(_apply_cvar_leaf_fn(c) for c in node.children)
-                return eqx.tree_at(lambda t: t.children, node, new_children)
+                return TermTree(
+                    label=node.label, names=node.names,
+                    children=new_children, value=node.value,
+                    weight=node.weight, leaf_fn=node.leaf_fn,
+                )
 
         return _apply_cvar_leaf_fn(result)
 
