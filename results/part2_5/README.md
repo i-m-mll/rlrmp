@@ -60,6 +60,27 @@ Endpoint error improves by ~11% at moderate SISU (0.0070 → 0.0062). Peak veloc
 
 This is the LQG separation principle in action: expected-cost optimization (and even CVaR/APT approximations to worst-case) changes feedback gains but not the trajectory shape. The velocity signature specifically requires the trajectory itself to change — and none of our training methods produced that.
 
+## Phase 3: Is the Training Actually Producing Robustness?
+
+The SISU-velocity null result raises a question: are the perturbations during training sufficient to induce robustness at all? We compared models trained with perturbations (pert_std=1) against baselines trained without (pert_std=0), evaluating both under the same fixed gust perturbation.
+
+### Training with perturbations produces massive robustness.
+
+| Model | Eval pert 0.5 lat_dev | Eval pert 1.0 | Eval pert 2.0 | Interpretation |
+|---|---|---|---|---|
+| Baseline (pert_std=0) | 0.380 | 0.378 | 0.375 | **Saturated failure** — can't handle any perturbation |
+| Standard (pert_std=1) | 0.012 | 0.013 | 0.015 | Good — 30x improvement over baseline |
+| APT lr=0.001 (pert_std=1) | **0.007** | **0.008** | **0.010** | Best — 40% better than standard |
+| APT pert_std=2 | **0.007** | **0.007** | **0.010** | Best — matches APT lr=0.001 |
+
+Training with perturbations induces a **30x improvement** in robustness (lateral deviation 0.38 → 0.012). APT further improves robustness by ~40% over standard backprop (0.012 → 0.007). The perturbation training IS working — the models are genuinely more robust. They just don't express this robustness through velocity changes.
+
+Note: the baseline's numbers barely change with perturbation scale (0.380 → 0.375) because it's already failing completely — the perturbation pushes it into a regime where it can't correct at all. The trained models scale appropriately (0.012 → 0.015 at 2x perturbation).
+
+### Perturbation size sweep (in progress)
+
+Training 4 models with pert_std = 2, 5, 10, 20 on TPU v4-8 to find the range where robustness breaks down. Results pending.
+
 ## What This Means
 
 1. **The running cost loss works.** It's the correct loss structure for reaching tasks in the graph architecture. Other modes need debugging.
