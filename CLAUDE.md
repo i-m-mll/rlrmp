@@ -35,5 +35,8 @@ Each process sees exactly 1 device via `jax.devices()`. They share no state. Cle
 
 ### Cloud/Remote Training Practices
 - **Always verify the latest code is deployed** before running on cloud instances. Stale code on TPU/GPU is a recurring source of wasted time.
-- **Never use `pkill -f python` on TPU VMs** — it kills the SSH helper processes, breaking the SSH connection. Use targeted `kill <pid>` for specific processes instead.
+- **Never kill processes on TPU VMs via SSH.** Any `kill`, `pkill`, or signal sent during an SSH command can disrupt the SSH session itself, causing the connection to drop. If a process has crashed, just clear `/tmp/libtpu_lockfile` and launch a new one — the crashed process is already dead.
 - **Use `uv` for all package management**, including on cloud instances. Do not use `pip install` directly (this is also in the global CLAUDE.md but bears repeating for remote contexts where habits may slip).
+
+### Experiment Results [TEMPORARY]
+When adding new training results to `results/part2_5/`, update `results/part2_5/README.md` with a row in the appropriate table and a brief description. This keeps the results navigable for the user.

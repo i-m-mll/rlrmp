@@ -60,10 +60,10 @@ MODELS_BASE = RESULTS_BASE / "models"
 # Conditions: (display_name, model_dir, has_loss_update)
 CONDITIONS = [
     ("running_cost_standard", "running_cost_standard", False),
-    ("ratio03_pert1",  "ratio03_pert1",  True),
-    ("ratio05_pert1",  "ratio05_pert1",  True),
-    ("ratio03_pert10", "ratio03_pert10", True),
-    ("ratio05_pert10", "ratio05_pert10", True),
+    ("ratio03_pert1_v4",  "ratio03_pert1_v4",  True),
+    ("ratio05_pert1_v4",  "ratio05_pert1_v4",  True),
+    ("ratio03_pert10_v4", "ratio03_pert10_v4", True),
+    ("ratio05_pert10_v4", "ratio05_pert10_v4", True),
 ]
 
 
