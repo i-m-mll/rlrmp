@@ -347,6 +347,10 @@ class _CVaRCompositeLoss(eqx.Module):
     def weights(self):
         return self.base.weights
 
+    def __getattr__(self, name):
+        # Forward any attribute not defined here to self.base (CompositeLoss)
+        return getattr(self.base, name)
+
     def with_weights(self, new_weights):
         new_base = self.base.with_weights(new_weights)
         return _CVaRCompositeLoss(new_base, self.alpha)
