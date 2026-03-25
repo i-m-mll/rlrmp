@@ -382,21 +382,32 @@ def run_training(args: argparse.Namespace) -> None:
     # ---------------------------------------------------------------------------
 
     @eqx.filter_jit
-    def _loss_and_force_grad(flat_model, trial_specs, forces, keys):
+    def _loss_and_force_grad(flat_model, adversary, trial_specs, keys, batch_size):
         """Compute loss and gradient w.r.t. force array.
+
+        Forces are generated inside JIT so that the eager adversary() call and
+        jnp.broadcast_to do not accumulate primitive compilations in the JIT cache.
 
         Args:
             flat_model: Flat list of model array leaves (dynamic part only).
+            adversary: Current GaussianBumpAdversary.
             trial_specs: Batched trial specifications.
-            forces: Force array of shape (batch_size, T, d).
             keys: Per-trial PRNG keys, shape (batch_size,).
+            batch_size: Python int; number of trials in the batch (static → no recompile).
 
         Returns:
             Tuple of (loss_scalar, dL_dforces) where dL_dforces has shape (batch_size, T, d).
         """
         model = jtu.tree_unflatten(treedef_model, flat_model)
-        # stop_gradient inside JIT: does not affect treedef, so no recompilation.
-        model_sg = jax.lax.stop_gradient(model)
+        # stop_gradient on array leaves only (model has string/callable non-array leaves)
+        model_sg = jt.map(
+            lambda x: jax.lax.stop_gradient(x) if eqx.is_array(x) else x,
+            model, is_leaf=eqx.is_array,
+        )
+
+        # Generate forces INSIDE JIT to avoid per-call primitive compilations.
+        force_profile = adversary()  # (T, d)
+        forces = jnp.broadcast_to(force_profile, (batch_size, *force_profile.shape))
 
         def _loss_fn(f):
             ts = _inject_adversary_forces(trial_specs, f)
@@ -406,23 +417,33 @@ def run_training(args: argparse.Namespace) -> None:
         return jax.value_and_grad(_loss_fn)(forces)
 
     @eqx.filter_jit
-    def _controller_step(flat_model, ctrl_opt_st, trial_specs, keys):
+    def _controller_step(flat_model, ctrl_opt_st, adversary, trial_specs, keys, batch_size):
         """Single gradient-descent step on the controller with adversary forces.
+
+        Forces are generated inside JIT (same pattern as _loss_and_force_grad) to
+        avoid per-call primitive compilations from eager adversary() calls.
 
         Args:
             flat_model: Flat list of model array leaves (dynamic part only).
             ctrl_opt_st: Current controller optimizer state.
-            trial_specs: Batched trial specifications (with adversary forces injected).
+            adversary: Current GaussianBumpAdversary (forces generated internally).
+            trial_specs: Batched trial specifications (forces injected internally).
             keys: Per-trial PRNG keys, shape (batch_size,).
+            batch_size: Python int; number of trials in the batch (static → no recompile).
 
         Returns:
             Tuple of (flat_updated_model, updated_opt_state, loss_scalar).
         """
         model = jtu.tree_unflatten(treedef_model, flat_model)
 
+        # Generate forces INSIDE JIT and inject into trial specs.
+        force_profile = adversary()  # (T, d)
+        forces = jnp.broadcast_to(force_profile, (batch_size, *force_profile.shape))
+        adv_trial_specs = _inject_adversary_forces(trial_specs, forces)
+
         def _ctrl_loss(m):
-            states = task.eval_trials(m, trial_specs, keys)
-            return loss_func(states, trial_specs, m).total.mean()
+            states = task.eval_trials(m, adv_trial_specs, keys)
+            return loss_func(states, adv_trial_specs, m).total.mean()
 
         loss_val, grads = eqx.filter_value_and_grad(_ctrl_loss)(model)
 
@@ -480,28 +501,21 @@ def run_training(args: argparse.Namespace) -> None:
         )
 
         # --- Adversary update (K ascent steps, Python-level loop) ---
-        # Generate forces from the current adversary; the same force profile is used
-        # for all trials in the batch (adversary does not condition on trial context).
-        force_profile = adversary()  # (T, d)
-        forces = jnp.broadcast_to(force_profile, (adv_batch_size,) + force_profile.shape)
+        # Force generation happens inside _loss_and_force_grad (JIT) so that eager
+        # adversary() / jnp.broadcast_to calls do not accumulate primitive compilations.
         _adv_loss_val = None
         for _ in range(args.n_adversary_steps):
             _adv_loss_val, dL_dforces = _loss_and_force_grad(
-                flat_model, trial_specs, forces, trial_keys
+                flat_model, adversary, trial_specs, trial_keys, adv_batch_size
             )
             adversary, adv_opt_state = _adversary_update(
                 adversary_optimizer, adversary, dL_dforces, adv_opt_state
             )
-            # Recompute forces from updated adversary for next inner step
-            force_profile = adversary()
-            forces = jnp.broadcast_to(force_profile, (adv_batch_size,) + force_profile.shape)
-
-        # Inject adversary forces into trial specs for the controller step
-        adv_trial_specs = _inject_adversary_forces(trial_specs, forces)
 
         # --- Controller update (1 descent step) ---
+        # Force generation and injection happen inside _controller_step (JIT).
         flat_model, ctrl_opt_state, ctrl_loss = _controller_step(
-            flat_model, ctrl_opt_state, adv_trial_specs, trial_keys
+            flat_model, ctrl_opt_state, adversary, trial_specs, trial_keys, adv_batch_size
         )
 
         adv_loss_val = float(_adv_loss_val)
