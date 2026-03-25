@@ -687,7 +687,9 @@ def run_training(args: argparse.Namespace) -> None:
     optimizer = optax.inject_hyperparams(partial(optax.adamw, weight_decay=hps.weight_decay))(
         learning_rate=schedule,
     )
-    trainer = TaskTrainer(optimizer=optimizer, checkpointing=True)
+    chkpt_dir = output_dir / "checkpoints"
+    chkpt_dir.mkdir(parents=True, exist_ok=True)
+    trainer = TaskTrainer(optimizer=optimizer, checkpointing=True, chkpt_dir=chkpt_dir)
 
     # Custom where_train that accesses model.nodes['net'] (not model.net)
     # to ensure we train the same weights used in the Graph forward pass.

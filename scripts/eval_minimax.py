@@ -70,18 +70,51 @@ def load_config(results_dir: Path) -> dict:
 def load_model(results_dir: Path, filename: str, hps, config: dict):
     """Load a model by filename from the results directory.
 
+    Tries two templates: first with the unsqueezed [1, ...] replicate axis
+    (warmup_model.eqx is saved directly from train_pair), then with a squeezed
+    template (adversarial_model.eqx is saved after squeezing). Returns the loaded
+    model with any replicate axis already removed (i.e., always returns a squeezed model).
+
     Returns:
-        The loaded model, or None if the file is not present.
+        The loaded model (squeezed), or None if the file is not present.
     """
     model_path = results_dir / filename
     if not model_path.exists():
         return None
 
-    model, _ = load_with_hyperparameters(
-        model_path,
-        setup_func=lambda key, **kwargs: setup_task_model_pair(hps, key=key).model,
-    )
-    return model
+    def _make_template(key):
+        return setup_task_model_pair(hps, key=key).model
+
+    def _make_squeezed_template(key):
+        template = setup_task_model_pair(hps, key=key).model
+        return jt.map(
+            lambda x: x[0] if (hasattr(x, "ndim") and x.ndim > 0 and x.shape[0] == 1) else x,
+            template,
+            is_leaf=eqx.is_array,
+        )
+
+    # Try unsqueezed template first (warmup model), then squeezed (adversarial model).
+    for make_template, already_squeezed in [
+        (_make_template, False),
+        (_make_squeezed_template, True),
+    ]:
+        try:
+            model, _ = load_with_hyperparameters(
+                model_path,
+                setup_func=lambda key, **kwargs: make_template(key),
+            )
+            # If loaded with unsqueezed template, squeeze it now for eval.
+            if not already_squeezed:
+                model = jt.map(
+                    lambda x: x[0] if (hasattr(x, "ndim") and x.ndim > 0 and x.shape[0] == 1) else x,
+                    model,
+                    is_leaf=eqx.is_array,
+                )
+            return model
+        except (RuntimeError, ValueError):
+            continue
+
+    raise RuntimeError(f"Could not load model from {model_path} with either squeezed or unsqueezed template.")
 
 
 def _squeeze_replicate_axis(model):
@@ -113,7 +146,11 @@ def load_adversary(results_dir: Path, hps) -> GaussianBumpAdversary | None:
         dt=hps.dt,
         key=jr.PRNGKey(0),
     )
-    adversary = eqx.tree_deserialise_leaves(adv_path, adversary_template)
+    try:
+        adversary = eqx.tree_deserialise_leaves(adv_path, adversary_template)
+    except Exception as e:
+        print(f"WARNING: could not deserialise adversary ({e}); will use pre-saved force profiles only.")
+        return None
     return adversary
 
 
@@ -279,20 +316,16 @@ def main():
     # Load models
     # -----------------------------------------------------------------------
     print("Loading models:")
-    warmup_model_raw = load_model(results_dir, "warmup_model.eqx", hps, config)
-    adv_model_raw = load_model(results_dir, "adversarial_model.eqx", hps, config)
+    # load_model returns already-squeezed models (handles both unsqueezed and squeezed on-disk)
+    warmup_model = load_model(results_dir, "warmup_model.eqx", hps, config)
+    adv_model = load_model(results_dir, "adversarial_model.eqx", hps, config)
 
-    warmup_model = None
-    adv_model = None
-
-    if warmup_model_raw is not None:
-        warmup_model = _squeeze_replicate_axis(warmup_model_raw)
+    if warmup_model is not None:
         print("  warmup_model.eqx      ... OK")
     else:
         print("  warmup_model.eqx      ... NOT FOUND")
 
-    if adv_model_raw is not None:
-        adv_model = _squeeze_replicate_axis(adv_model_raw)
+    if adv_model is not None:
         print("  adversarial_model.eqx ... OK")
     else:
         print("  adversarial_model.eqx ... NOT FOUND (training may not be complete)")

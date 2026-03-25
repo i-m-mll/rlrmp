@@ -1,0 +1,15 @@
+{
+  "n_warmup_batches": 500,
+  "n_adversary_batches": 2000,
+  "n_adversary_steps": 5,
+  "adversary_lr": 0.0003,
+  "controller_lr": 0.0001,
+  "n_bumps": 3,
+  "force_max": 1.0,
+  "adv_batch_size": 64,
+  "output_dir": "results/minimax_test2",
+  "git": {
+    "rlrmp_version": "unknown",
+    "jax_version": "0.9.2"
+  }
+}

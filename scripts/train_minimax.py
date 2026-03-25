@@ -307,6 +307,10 @@ def run_training(args: argparse.Namespace) -> None:
         eqx.filter(_get_trainable(adv_model), eqx.is_array)
     )
 
+    # Adversarial phase batch size (may differ from warmup to reduce XLA compile time)
+    adv_batch_size = args.adv_batch_size if args.adv_batch_size is not None else hps.batch_size
+    logger.info("Adversarial phase batch size: %d", adv_batch_size)
+
     # Periodic logging interval
     log_step = max(1, args.n_adversary_batches // 20)
     adv_losses = []
@@ -381,11 +385,11 @@ def run_training(args: argparse.Namespace) -> None:
 
     for batch_idx in range(args.n_adversary_batches):
         batch_key, key_adv = jr.split(key_adv)
-        trial_keys = jr.split(batch_key, hps.batch_size)
+        trial_keys = jr.split(batch_key, adv_batch_size)
 
         # Sample trial specs with intervenor params (needed for SISU/scale values)
         batch_info = BatchInfo(
-            size=hps.batch_size,
+            size=adv_batch_size,
             current=batch_idx,
             total=args.n_adversary_batches,
         )
@@ -524,6 +528,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--force-max", type=float, default=1.0,
         help="Maximum adversary force magnitude per timestep (default: 1.0).",
+    )
+    parser.add_argument(
+        "--adv-batch-size", type=int, default=None,
+        help=(
+            "Batch size for adversarial phase (default: same as warmup batch size). "
+            "Smaller values (e.g. 64) dramatically reduce XLA compilation time."
+        ),
     )
     parser.add_argument(
         "--output-dir", type=str, default="results/minimax_test",
