@@ -113,6 +113,51 @@ With the running_cost loss, position error dominates and the model operates at c
 
 Models saved in `models/ratio03_pert1_v4/`, `models/ratio05_pert1_v4/`, `models/ratio03_pert10_v4/`, `models/ratio05_pert10_v4/`.
 
+## Phase 5: Center-Out Translation-Invariant Task
+
+### Background
+
+The original task sampled random (start, target) pairs in a [-1,1]^2 workspace. The network had to learn translation invariance from data. A new center-out task (Bug: be3804f) enforces translation invariance by starting all reaches at origin with constant length 0.5 in random directions. This simplifies the task, reduces input dimensionality waste, and matches how the point-mass dynamics (F=ma) are translation-invariant.
+
+### Key finding: pert_std=0 now converges
+
+The pert_std=0 baseline, which previously failed to converge (ep_err=0.47), now converges to ep_err=0.005 — equivalent to the pert_std=1 baseline. The center-out task provides sufficient gradient signal even without perturbation training.
+
+### Results table (pert_scale=0, unperturbed eval)
+
+| # | method | pert_std | loss_upd | ratio | vel(S=0.5) | ep_err | vel(S=0) | vel(S=1) | Δvel |
+|---|--------|----------|----------|-------|------------|--------|----------|----------|------|
+| 1 | std | 0 | no | — | 2.647 | 0.005 | 2.648 | 2.652 | +0.004 |
+| 2 | std | 1 | no | — | 2.634 | 0.004 | 2.631 | 2.635 | +0.005 |
+| 3 | std | 0 | yes | 0.3 | 1.654 | 0.037 | 1.657 | 1.645 | -0.012 |
+| 4 | std | 1 | yes | 0.3 | 2.097 | 0.005 | 2.101 | 2.093 | -0.008 |
+| 5 | std | 0 | yes | 0.5 | 2.196 | 0.004 | 2.189 | 2.199 | +0.010 |
+| 6 | APT | 0 | yes | 0.3 | 1.657 | 0.038 | 1.656 | 1.650 | -0.006 |
+| 7 | APT | 1 | no | — | 2.642 | 0.004 | 2.647 | 2.648 | +0.002 |
+| 8 | APT | 1 | yes | 0.3 | 2.113 | 0.003 | 2.115 | 2.116 | +0.001 |
+| 9 | std | 1 | yes | 0.5 | 2.219 | 0.003 | 2.215 | 2.223 | +0.008 |
+| 10 | APT | 1 | yes | 0.5 | 2.223 | 0.004 | 2.219 | 2.218 | -0.001 |
+
+### Robustness table (pert_scale=5, SISU=0.5)
+
+| # | method | pert_std | loss_upd | ratio | lat_dev(p=5) | ep_err(p=5) |
+|---|--------|----------|----------|-------|--------------|-------------|
+| 1 | std | 0 | no | — | 0.015 | 0.013 |
+| 2 | std | 1 | no | — | 0.014 | 0.010 |
+| 7 | APT | 1 | no | — | 0.014 | 0.011 |
+| 4 | std | 1 | yes | 0.3 | 0.016 | 0.011 |
+| 8 | APT | 1 | yes | 0.3 | 0.013 | 0.010 |
+| 9 | std | 1 | yes | 0.5 | 0.014 | 0.010 |
+| 10 | APT | 1 | yes | 0.5 | 0.014 | 0.010 |
+
+### Interpretation
+
+- SISU velocity effect remains negligible (|Δvel| < 0.013) across all conditions — same null result as Phases 2-4.
+- r=0.3 with pert_std=0 causes training degradation (models 3, 6: vel ~1.65, ep_err ~0.037) — the adaptive control cost is too aggressive without perturbation-derived gradient signal.
+- r=0.5 performs better than r=0.3 overall: higher velocity and comparable robustness.
+- APT provides marginal improvement over standard training in robustness metrics.
+- Ratio sweep (r=0.1, 0.2, 0.4, 0.6) in progress to find optimal balance.
+
 ## What This Means
 
 1. **The running cost loss works.** It's the correct loss structure for reaching tasks in the graph architecture. Other modes need debugging.
@@ -125,6 +170,8 @@ Models saved in `models/ratio03_pert1_v4/`, `models/ratio05_pert1_v4/`, `models/
    - The point-mass dynamics may lack the biomechanical structure that produces co-contraction/impedance-based velocity changes in humans
 
 4. **Adaptive control cost reduces peak speed and improves robustness but does not produce a meaningful SISU → velocity signature.** The ~3–4× weight increase is insufficient to create exploitable speed headroom. A much larger control penalty (or different loss structure such as an explicit movement-time penalty) may be needed.
+
+5. **Translation-invariant center-out task fixes pert_std=0 convergence, but the SISU velocity null result persists across all conditions including center-out.** The task geometry does not explain the absence of the velocity signature.
 
 ## Files and Data
 
