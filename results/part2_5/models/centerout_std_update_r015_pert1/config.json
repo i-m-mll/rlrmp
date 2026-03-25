@@ -1,0 +1,18 @@
+{
+  "loss_mode": "running_cost",
+  "training_method": "standard",
+  "cvar_alpha": 0.9,
+  "apt_inner_steps": 3,
+  "apt_inner_lr": 0.01,
+  "target_ratio": 0.15,
+  "enable_loss_update": true,
+  "pert_std": 1.0,
+  "nn_output": 1e-05,
+  "n_batches": 10000,
+  "output_dir": "results/centerout_std_update_r015_pert1",
+  "git": {
+    "rlrmp_version": "unknown",
+    "feedbax_version": "0.1.2",
+    "jax_version": "0.9.2"
+  }
+}
