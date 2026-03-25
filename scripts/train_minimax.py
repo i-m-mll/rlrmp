@@ -35,7 +35,7 @@ from feedbax.training.train import (
 )
 from feedbax.types import TaskModelPair, TreeNamespace, dict_to_namespace
 
-from rlrmp.adversarial_training import _adversary_loss, _inject_adversary_forces
+from rlrmp.adversarial_training import _inject_adversary_forces
 from rlrmp.adversary import GaussianBumpAdversary
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.modules.training.part2 import setup_task_model_pair
@@ -312,13 +312,41 @@ def run_training(args: argparse.Namespace) -> None:
     adv_losses = []
     ctrl_losses = []
 
-    # JIT-compiled adversary ascent step
+    # Decomposed adversary gradient: avoids JIT-compiling the full chain
+    # (adversary params → forces → trial spec injection → forward pass → loss),
+    # which stalls XLA compilation on TPU v4.  Instead we split into two
+    # separately-compiled pieces:
+    #   Step A: dL/d(forces) — gradient of loss w.r.t. force arrays (simple)
+    #   Step B: VJP of forces w.r.t. adversary params — just the adversary network
+
     @eqx.filter_jit
-    def _adversary_step(adv, adv_opt_st, model, trial_specs, keys):
-        """Single gradient-ascent step on the adversary."""
-        grads = eqx.filter_grad(_adversary_loss)(adv, task, model, trial_specs, loss_func, keys)
-        # Negate gradients for ascent (maximise loss)
-        neg_grads = jt.map(lambda g: -g, grads)
+    def _loss_and_force_grad(model, trial_specs, forces, keys):
+        """Compute loss value and gradient w.r.t. the force array."""
+        def _loss(f):
+            ts = _inject_adversary_forces(trial_specs, f)
+            # Stop gradient through model: adversary step does not touch controller.
+            model_stopped = jt.map(
+                lambda x: jax.lax.stop_gradient(x) if eqx.is_array(x) else x,
+                model,
+                is_leaf=eqx.is_array,
+            )
+            states = task.eval_trials(model_stopped, ts, keys)
+            return loss_func(states, ts, model).total.mean()
+
+        return jax.value_and_grad(_loss)(forces)
+
+    @eqx.filter_jit
+    def _adversary_update(adv, sisu_batch, dL_dforces, adv_opt_st):
+        """Backprop dL/dforces through the adversary network and apply update."""
+        def _gen_forces(a):
+            return jax.vmap(a)(sisu_batch)
+
+        # VJP: propagate dL/d(forces) back through adversary params
+        _, vjp_fn = jax.vjp(_gen_forces, adv)
+        (adv_grads,) = vjp_fn(dL_dforces)
+
+        # Negate for gradient ascent (maximise loss)
+        neg_grads = jt.map(lambda g: -g, adv_grads)
         updates, new_opt_st = adversary_optimizer.update(
             neg_grads, adv_opt_st, eqx.filter(adv, eqx.is_array)
         )
@@ -375,13 +403,20 @@ def run_training(args: argparse.Namespace) -> None:
         )
 
         # --- Adversary update (K ascent steps) ---
+        sisu_batch = trial_specs.intervene[PLANT_INTERVENOR_LABEL].scale  # (batch,)
         for _ in range(args.n_adversary_steps):
-            adversary, adv_opt_state = _adversary_step(
-                adversary, adv_opt_state, adv_model, trial_specs, trial_keys
+            # Step 1: generate forces (eager, outside JIT — trivially fast)
+            forces = jax.vmap(adversary)(sisu_batch)  # (batch, T, 2)
+            # Step 2: dL/d(forces) — JIT-compiled forward pass + grad w.r.t. forces
+            _adv_loss_val, dL_dforces = _loss_and_force_grad(
+                adv_model, trial_specs, forces, trial_keys
+            )
+            # Step 3: VJP through adversary network + optimizer update
+            adversary, adv_opt_state = _adversary_update(
+                adversary, sisu_batch, dL_dforces, adv_opt_state
             )
 
-        # Inject adversary forces into trial specs
-        sisu_batch = trial_specs.intervene[PLANT_INTERVENOR_LABEL].scale  # (batch,)
+        # Inject adversary forces into trial specs for the controller step
         forces = jax.vmap(adversary)(sisu_batch)  # (batch, T, 2)
         adv_trial_specs = _inject_adversary_forces(trial_specs, forces)
 
@@ -390,7 +425,7 @@ def run_training(args: argparse.Namespace) -> None:
             adv_model, ctrl_opt_state, adv_trial_specs, trial_keys
         )
 
-        adv_loss_val = float(_adversary_loss(adversary, task, adv_model, trial_specs, loss_func, trial_keys))
+        adv_loss_val = float(_adv_loss_val)
         adv_losses.append(adv_loss_val)
         ctrl_losses.append(float(ctrl_loss))
 
