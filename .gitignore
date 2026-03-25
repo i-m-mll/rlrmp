@@ -216,3 +216,4 @@ dmypy.json
 
 dev.toml
 .claude-story/
+worktrees/
