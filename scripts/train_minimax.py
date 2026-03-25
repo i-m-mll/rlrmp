@@ -24,6 +24,7 @@ import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
+import jax.tree_util as jtu
 import numpy as np
 import optax
 from feedbax._io import save as fbx_save
@@ -40,55 +41,6 @@ from rlrmp.adversary import GaussianBumpAdversary
 from rlrmp.modules.training.part2 import setup_task_model_pair
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# JIT-compiled training steps (module-level to avoid closure-based cache
-# invalidation in eqx.filter_jit).
-#
-# When these functions were defined inside run_training and closed over `task`,
-# `loss_func`, and optimizer objects, eqx.filter_jit incorporated the identity
-# of those closed-over objects in its cache key. Passing them as explicit
-# arguments instead lets filter_jit partition them into static (non-array) and
-# dynamic (array) parts using its standard mechanism, eliminating spurious
-# recompilation. Bug: d6cc111
-# ---------------------------------------------------------------------------
-
-@eqx.filter_jit
-def _loss_and_force_grad(task, loss_func, model, trial_specs, forces, keys):
-    """Compute loss and its gradient w.r.t. the force array.
-
-    Applies stop_gradient to model array leaves inside the JIT to prevent
-    adversary force gradients from flowing back through the controller.
-    Doing this inside JIT (rather than in the Python loop) avoids creating
-    new Python objects each batch, which would change the JIT treedef and
-    trigger recompilation every iteration.
-
-    Args:
-        task: Feedbax task (static across training).
-        loss_func: Loss function (static across training).
-        model: Controller model (no replicate axis).
-        trial_specs: Batched trial specifications.
-        forces: Force array of shape (batch_size, T, d).
-        keys: Per-trial PRNG keys, shape (batch_size,).
-
-    Returns:
-        Tuple of (loss_scalar, dL_dforces) where dL_dforces has shape (batch_size, T, d).
-    """
-    # stop_gradient inside JIT: a no-op on non-array leaves and a trace-level
-    # operation on array leaves — does not affect the treedef seen by JIT.
-    model_sg = jt.map(
-        lambda x: jax.lax.stop_gradient(x) if eqx.is_array(x) else x,
-        model,
-        is_leaf=eqx.is_array,
-    )
-
-    def _loss_fn(f):
-        ts = _inject_adversary_forces(trial_specs, f)
-        states = task.eval_trials(model_sg, ts, keys)
-        return loss_func(states, ts, model_sg).total.mean()
-
-    return jax.value_and_grad(_loss_fn)(forces)
 
 
 @eqx.filter_jit
@@ -127,49 +79,6 @@ def _adversary_update(adversary_optimizer, adversary, dL_dforces, adv_opt_st):
     )
     new_adversary = eqx.apply_updates(adversary, updates)
     return new_adversary, new_opt_st
-
-
-@eqx.filter_jit
-def _controller_step(task, loss_func, ctrl_optimizer, model, ctrl_opt_st, trial_specs, keys):
-    """Single gradient-descent step on the controller with adversary forces.
-
-    Args:
-        task: Feedbax task (static across training).
-        loss_func: Loss function (static across training).
-        ctrl_optimizer: Optax optimizer for the controller (static).
-        model: Current controller model (no replicate axis).
-        ctrl_opt_st: Current controller optimizer state.
-        trial_specs: Batched trial specifications (with adversary forces injected).
-        keys: Per-trial PRNG keys, shape (batch_size,).
-
-    Returns:
-        Tuple of (updated_model, updated_opt_state, loss_scalar).
-    """
-    def _ctrl_loss(m):
-        states = task.eval_trials(m, trial_specs, keys)
-        return loss_func(states, trial_specs, m).total.mean()
-
-    loss_val, grads = eqx.filter_value_and_grad(_ctrl_loss)(model)
-
-    # Extract gradients for trainable leaves only (net hidden + readout)
-    def _get_trainable(m):
-        net = m.nodes["net"]
-        return (net.hidden, net.readout)
-
-    trainable_grads = eqx.filter(_get_trainable(grads), eqx.is_array)
-    updates, new_opt_st = ctrl_optimizer.update(
-        trainable_grads,
-        ctrl_opt_st,
-        eqx.filter(_get_trainable(model), eqx.is_array),
-    )
-    # Apply updates to the net hidden + readout leaves only
-    updated_trainable = eqx.apply_updates(_get_trainable(model), updates)
-    new_model = eqx.tree_at(
-        lambda m: (m.nodes["net"].hidden, m.nodes["net"].readout),
-        model,
-        updated_trainable,
-    )
-    return new_model, new_opt_st, loss_val
 
 
 # ---------------------------------------------------------------------------
@@ -451,10 +360,86 @@ def run_training(args: argparse.Namespace) -> None:
         is_leaf=eqx.is_array,
     )
 
+    # Pre-flatten the model into dynamic (array) and static (treedef) parts ONCE.
+    # This is the key fix for JIT recompilation: feedbax models store JAX arrays as
+    # static PyTree metadata, so passing the model object directly to eqx.filter_jit
+    # produces a new cache key after every controller update. Instead, we pass only
+    # the flat list of arrays (all dynamic) and close over the treedef (which never
+    # changes because the model structure is fixed). Bug: d6cc111
+    flat_model, treedef_model = jtu.tree_flatten(adv_model)
+
     # Initialise controller optimizer state on the squeezed model's trainable leaves
     ctrl_opt_state = ctrl_optimizer.init(
         eqx.filter(_get_trainable(adv_model), eqx.is_array)
     )
+
+    # ---------------------------------------------------------------------------
+    # JIT-compiled training steps — defined as closures over task, loss_func,
+    # ctrl_optimizer, and treedef_model, all of which are fixed for the entire
+    # adversarial phase. The model is passed as a flat list of arrays (flat_model)
+    # so that eqx.filter_jit sees only dynamic leaves in its argument, never
+    # static metadata that changes with each update. Bug: d6cc111
+    # ---------------------------------------------------------------------------
+
+    @eqx.filter_jit
+    def _loss_and_force_grad(flat_model, trial_specs, forces, keys):
+        """Compute loss and gradient w.r.t. force array.
+
+        Args:
+            flat_model: Flat list of model array leaves (dynamic part only).
+            trial_specs: Batched trial specifications.
+            forces: Force array of shape (batch_size, T, d).
+            keys: Per-trial PRNG keys, shape (batch_size,).
+
+        Returns:
+            Tuple of (loss_scalar, dL_dforces) where dL_dforces has shape (batch_size, T, d).
+        """
+        model = jtu.tree_unflatten(treedef_model, flat_model)
+        # stop_gradient inside JIT: does not affect treedef, so no recompilation.
+        model_sg = jax.lax.stop_gradient(model)
+
+        def _loss_fn(f):
+            ts = _inject_adversary_forces(trial_specs, f)
+            states = task.eval_trials(model_sg, ts, keys)
+            return loss_func(states, ts, model_sg).total.mean()
+
+        return jax.value_and_grad(_loss_fn)(forces)
+
+    @eqx.filter_jit
+    def _controller_step(flat_model, ctrl_opt_st, trial_specs, keys):
+        """Single gradient-descent step on the controller with adversary forces.
+
+        Args:
+            flat_model: Flat list of model array leaves (dynamic part only).
+            ctrl_opt_st: Current controller optimizer state.
+            trial_specs: Batched trial specifications (with adversary forces injected).
+            keys: Per-trial PRNG keys, shape (batch_size,).
+
+        Returns:
+            Tuple of (flat_updated_model, updated_opt_state, loss_scalar).
+        """
+        model = jtu.tree_unflatten(treedef_model, flat_model)
+
+        def _ctrl_loss(m):
+            states = task.eval_trials(m, trial_specs, keys)
+            return loss_func(states, trial_specs, m).total.mean()
+
+        loss_val, grads = eqx.filter_value_and_grad(_ctrl_loss)(model)
+
+        trainable_grads = eqx.filter(_get_trainable(grads), eqx.is_array)
+        updates, new_opt_st = ctrl_optimizer.update(
+            trainable_grads,
+            ctrl_opt_st,
+            eqx.filter(_get_trainable(model), eqx.is_array),
+        )
+        updated_trainable = eqx.apply_updates(_get_trainable(model), updates)
+        new_model = eqx.tree_at(
+            lambda m: (m.nodes["net"].hidden, m.nodes["net"].readout),
+            model,
+            updated_trainable,
+        )
+        flat_updated = jtu.tree_flatten(new_model)[0]
+        return flat_updated, new_opt_st, loss_val
 
     # Adversarial phase batch size (may differ from warmup to reduce XLA compile time)
     adv_batch_size = args.adv_batch_size if args.adv_batch_size is not None else hps.batch_size
@@ -470,10 +455,6 @@ def run_training(args: argparse.Namespace) -> None:
     # Each adversary step is a separate Python-level call (~12 host-device round-trips
     # per batch), but each compiled function is small enough to compile on TPU (~14 min
     # vs 40+ min for the monolithic fori_loop approach).
-    #
-    # The three compiled functions (_loss_and_force_grad, _adversary_update,
-    # _controller_step) are module-level to avoid closure-based JIT cache
-    # invalidation — see their definitions above run_training. Bug: d6cc111
 
     for batch_idx in range(args.n_adversary_batches):
         batch_key, key_adv = jr.split(key_adv)
@@ -505,10 +486,8 @@ def run_training(args: argparse.Namespace) -> None:
         forces = jnp.broadcast_to(force_profile, (adv_batch_size,) + force_profile.shape)
         _adv_loss_val = None
         for _ in range(args.n_adversary_steps):
-            # Pass raw model — _loss_and_force_grad applies stop_gradient inside JIT,
-            # avoiding per-batch treedef changes that trigger recompilation.
             _adv_loss_val, dL_dforces = _loss_and_force_grad(
-                task, loss_func, adv_model, trial_specs, forces, trial_keys
+                flat_model, trial_specs, forces, trial_keys
             )
             adversary, adv_opt_state = _adversary_update(
                 adversary_optimizer, adversary, dL_dforces, adv_opt_state
@@ -521,8 +500,8 @@ def run_training(args: argparse.Namespace) -> None:
         adv_trial_specs = _inject_adversary_forces(trial_specs, forces)
 
         # --- Controller update (1 descent step) ---
-        adv_model, ctrl_opt_state, ctrl_loss = _controller_step(
-            task, loss_func, ctrl_optimizer, adv_model, ctrl_opt_state, adv_trial_specs, trial_keys
+        flat_model, ctrl_opt_state, ctrl_loss = _controller_step(
+            flat_model, ctrl_opt_state, adv_trial_specs, trial_keys
         )
 
         adv_loss_val = float(_adv_loss_val)
@@ -536,6 +515,9 @@ def run_training(args: argparse.Namespace) -> None:
             )
 
     logger.info("Adversarial training complete.")
+
+    # Reconstruct model from its flat arrays for saving/logging
+    adv_model = jtu.tree_unflatten(treedef_model, flat_model)
 
     # -----------------------------------------------------------------------
     # Save outputs
