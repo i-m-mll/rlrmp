@@ -64,10 +64,13 @@ class GaussianBumpAdversary(eqx.Module):
 
         # Raw widths: initialise so softplus gives ~50 ms
         # softplus(x) ≈ x for large x; we want softplus(x) ≈ 0.05 → x ≈ 0.05
-        self.bump_widths_raw = jnp.full((n_bumps,), 0.05)
+        # Use explicit dtype=float32 to avoid weak_type=True from Python scalar
+        # initialization, which causes JIT recompilation after the first optimizer
+        # update strips weak_type from the leaves.
+        self.bump_widths_raw = jnp.array([0.05] * n_bumps, dtype=jnp.float32)
 
         # Raw amplitudes: initialise so softplus gives ~0.1 (small perturbation)
-        self.bump_amplitudes_raw = jnp.full((n_bumps,), 0.1)
+        self.bump_amplitudes_raw = jnp.array([0.1] * n_bumps, dtype=jnp.float32)
 
         # Directions: random unit vectors
         raw_dirs = jr.normal(keys[1], (n_bumps, n_force_dims))

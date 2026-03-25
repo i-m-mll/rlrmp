@@ -344,6 +344,12 @@ def run_training(args: argparse.Namespace) -> None:
     def _loss_and_force_grad(model, trial_specs, forces, keys):
         """Compute loss and its gradient w.r.t. the force array.
 
+        Applies stop_gradient to model array leaves inside the JIT to prevent
+        adversary force gradients from flowing back through the controller.
+        Doing this inside JIT (rather than in the Python loop) avoids creating
+        new Python objects each batch, which would change the JIT treedef and
+        trigger recompilation every iteration.
+
         Args:
             model: Controller model (no replicate axis).
             trial_specs: Batched trial specifications.
@@ -353,10 +359,18 @@ def run_training(args: argparse.Namespace) -> None:
         Returns:
             Tuple of (loss_scalar, dL_dforces) where dL_dforces has shape (batch_size, T, d).
         """
+        # stop_gradient inside JIT: a no-op on non-array leaves and a trace-level
+        # operation on array leaves — does not affect the treedef seen by JIT.
+        model_sg = jt.map(
+            lambda x: jax.lax.stop_gradient(x) if eqx.is_array(x) else x,
+            model,
+            is_leaf=eqx.is_array,
+        )
+
         def _loss_fn(f):
             ts = _inject_adversary_forces(trial_specs, f)
-            states = task.eval_trials(model, ts, keys)
-            return loss_func(states, ts, model).total.mean()
+            states = task.eval_trials(model_sg, ts, keys)
+            return loss_func(states, ts, model_sg).total.mean()
 
         return jax.value_and_grad(_loss_fn)(forces)
 
@@ -452,14 +466,10 @@ def run_training(args: argparse.Namespace) -> None:
         forces = jnp.broadcast_to(force_profile, (adv_batch_size,) + force_profile.shape)
         _adv_loss_val = None
         for _ in range(args.n_adversary_steps):
-            # Stop gradient through model so adversary step doesn't update controller.
-            model_stopped = jt.map(
-                lambda x: jax.lax.stop_gradient(x) if eqx.is_array(x) else x,
-                adv_model,
-                is_leaf=eqx.is_array,
-            )
+            # Pass raw model — _loss_and_force_grad applies stop_gradient inside JIT,
+            # avoiding per-batch treedef changes that trigger recompilation.
             _adv_loss_val, dL_dforces = _loss_and_force_grad(
-                model_stopped, trial_specs, forces, trial_keys
+                adv_model, trial_specs, forces, trial_keys
             )
             adversary, adv_opt_state = _adversary_update(adversary, dL_dforces, adv_opt_state)
             # Recompute forces from updated adversary for next inner step
