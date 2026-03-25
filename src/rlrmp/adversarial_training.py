@@ -121,8 +121,16 @@ def _adversary_loss(
     adv_trial_specs = _inject_adversary_forces(trial_specs, forces)
 
     # Forward pass (model is fixed — stop gradient to prevent adversary from
-    # affecting controller parameters during the inner loop)
-    states = task.eval_trials(jax.lax.stop_gradient(model), adv_trial_specs, keys)
+    # affecting controller parameters during the inner loop).
+    # Use eqx.filter + jt.map to stop-gradient only the array leaves, since
+    # jax.lax.stop_gradient cannot handle non-JAX types (strings, ints, etc.)
+    # that live in the model pytree as static metadata.
+    model_stopped = jt.map(
+        lambda x: jax.lax.stop_gradient(x) if eqx.is_array(x) else x,
+        model,
+        is_leaf=eqx.is_array,
+    )
+    states = task.eval_trials(model_stopped, adv_trial_specs, keys)
     losses = loss_func(states, adv_trial_specs, model)
 
     return losses.total.mean()
