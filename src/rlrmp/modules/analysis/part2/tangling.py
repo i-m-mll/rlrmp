@@ -22,23 +22,23 @@ import plotly.graph_objects as go
 from equinox import Module
 from feedbax.intervene import add_intervenors, schedule_intervenor
 from feedbax.misc import batch_reshape  # for flattening/unflattening
-from feedbax_experiments.analysis.aligned import AlignedVars
-from feedbax_experiments.analysis.analysis import AbstractAnalysis, CallWithDeps, Data, NoPorts
-from feedbax_experiments.analysis.effector import EffectorTrajectories
-from feedbax_experiments.analysis.pca import StatesPCA
-from feedbax_experiments.analysis.profiles import Profiles
-from feedbax_experiments.analysis.state_utils import (
+from feedbax.analysis.aligned import AlignedVars
+from feedbax.analysis.analysis import AbstractAnalysis, CallWithDeps, Data, NoPorts
+from feedbax.analysis.effector import EffectorTrajectories
+from feedbax.analysis.pca import StatesPCA
+from feedbax.analysis.profiles import Profiles
+from feedbax.analysis.state_utils import (
     get_best_replicate,
     get_constant_task_input_fn,
     vmap_eval_ensemble,
 )
-from feedbax_experiments.analysis.tangling import Tangling
-from feedbax_experiments.colors import ColorscaleSpec
-from feedbax_experiments.config import PLOTLY_CONFIG
-from feedbax_experiments.constants import POS_ENDPOINTS_ALIGNED
-from feedbax_experiments.plot import add_endpoint_traces, get_violins, set_axes_bounds_equal
-from feedbax_experiments.tree_utils import move_ldict_level_above
-from feedbax_experiments.types import (
+from feedbax.analysis.tangling import Tangling
+from feedbax.colors import ColorscaleSpec
+from feedbax.config import PLOTLY_CONFIG
+from feedbax.constants import POS_ENDPOINTS_ALIGNED
+from feedbax.plot import add_endpoint_traces, get_violins, set_axes_bounds_equal
+from feedbax.tree_utils import move_ldict_level_above
+from feedbax.types import (
     AnalysisInputData,
     LDict,
     TreeNamespace,
@@ -73,7 +73,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
             lambda pert_amp: schedule_intervenor(  # (implicitly) over train stds
                 task_base,
                 jt.leaves(models_base, is_leaf=is_module)[0],
-                lambda model: model.step.mechanics,
+                lambda model: model.mechanics,
                 disturbance(pert_amp),
                 label=PLANT_INTERVENOR_LABEL,
                 default_active=False,
@@ -88,7 +88,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     models_by_std = jt.map(
         lambda models: add_intervenors(
             models,
-            lambda model: model.step.mechanics,
+            lambda model: model.mechanics,
             # The first key is the model stage where to insert the disturbance field;
             # `None` means prior to the first stage.
             # The field parameters will come from the task, so use an amplitude 0.0 placeholder.

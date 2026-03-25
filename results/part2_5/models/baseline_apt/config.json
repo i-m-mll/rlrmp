@@ -1,0 +1,12 @@
+{
+  "loss_mode": "running_cost",
+  "training_method": "apt",
+  "cvar_alpha": 0.9,
+  "apt_inner_steps": 3,
+  "apt_inner_lr": 0.01,
+  "target_ratio": 0.3,
+  "pert_std": 0.0,
+  "nn_output": 1e-05,
+  "n_batches": 10000,
+  "output_dir": "results/baseline_apt"
+}

@@ -6,21 +6,25 @@ from typing import TypeAlias
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-from feedbax.intervene import schedule_intervenor
+from feedbax.intervene import (
+    CurlFieldParams,
+    FixedFieldParams,
+    schedule_intervenor,
+)
 from feedbax.task import DelayedReaches, SimpleReaches
-from feedbax_experiments.misc import get_field_amplitude, vector_with_gaussian_length
+from feedbax.misc import get_field_amplitude, vector_with_gaussian_length
+from feedbax.training.train import always_active, bernoulli_active
 
-# from rlrmp.loss import get_reach_loss
-from feedbax_experiments.training.loss import get_reach_loss
-from feedbax_experiments.training.train import always_active, bernoulli_active
-from feedbax_experiments.types import LDict, TaskModelPair, TreeNamespace
+from rlrmp.loss import get_reach_loss
+from feedbax.types import LDict, TaskModelPair, TreeNamespace
+from jax_cookbook import is_module
 from jaxtyping import PRNGKeyArray
 
 from rlrmp.disturbance import (
-    PLANT_DISTURBANCE_CLASSES,
     PLANT_INTERVENOR_LABEL,
 )
 from rlrmp.disturbances import get_gusts_fn
+from rlrmp.intervention_compat import add_plant_intervention_to_ensemble
 from rlrmp.loss import get_loss_update_func
 from rlrmp.models import create_point_mass_nn_ensemble
 from rlrmp.task import TASK_TYPES
@@ -59,8 +63,7 @@ def scaled_sampler(sample_fn, scale=1.0):
 # `scale` parameter, which is not seen by the network in those cases; and in `"pai-asf"` it is
 # multiplied by the `field` parameter, which is not seen by the network in that case.
 # (See the definition of `SCALE_FNS` below.)
-#! TODO: limit curl and constant fields to movement epoch!
-disturbance_params = LDict.of("train__method")(
+disturbance_extra_params = LDict.of("train__method")(
     {
         "bcs": {
             "curl": lambda hps: dict(amplitude=scaled_sampler(jr.normal)),
@@ -97,8 +100,8 @@ SISU_FNS = LDict.of("train__method")(
 
 """Either scale the field strength by a constant std, or sample the std for each trial.
 
-Note that in the `"pai-asf"` case the actual field amplitude is still scaled by `field_std`, 
-but this is done in `disturbance_params` so that the magnitude of the SISU 
+Note that in the `"pai-asf"` case the actual field amplitude is still scaled by `field_std`,
+but this is done in `disturbance_extra_params` so that the magnitude of the SISU
 is the same on average between the `"dai"` and `"pai-asf"` methods.
 """
 SCALE_FNS = LDict.of("train__method")(
@@ -112,12 +115,30 @@ SCALE_FNS = LDict.of("train__method")(
 )
 
 
-def disturbance(hps: TreeNamespace):
-    return PLANT_DISTURBANCE_CLASSES[hps.pert.type].with_params(
-        scale=SCALE_FNS[hps.method](hps.pert.std),
-        active=disturbance_active[hps.method](P_PERTURBED[hps.method]),
-        **disturbance_params[hps.method][hps.pert.type](hps),
-    )
+def get_disturbance_params(hps: TreeNamespace):
+    """Build disturbance params for the given hyperparameters.
+
+    Args:
+        hps: Hyperparameters including method, pert.type, pert.std
+
+    Returns:
+        Appropriate params object (CurlFieldParams, FixedFieldParams, etc.)
+    """
+    pert_type = hps.pert.type
+    method = hps.method
+
+    extra_params = disturbance_extra_params[method][pert_type](hps)
+    scale = SCALE_FNS[method](hps.pert.std)
+    active = disturbance_active[method](P_PERTURBED[method])
+
+    if pert_type == "curl":
+        return CurlFieldParams(scale=scale, active=active, **extra_params)
+    elif pert_type == "constant":
+        return FixedFieldParams(scale=scale, active=active, **extra_params)
+    elif pert_type == "gusts":
+        return FixedFieldParams(scale=scale, active=active, **extra_params)
+    else:
+        raise ValueError(f"Unknown perturbation type: {pert_type}")
 
 
 def setup_task_model_pair(
@@ -148,6 +169,7 @@ def setup_task_model_pair(
 
     task_base = TASK_TYPES[hps.task.type](loss_func=get_reach_loss(hps), **hps_task)
 
+    # Create base models with extra input for SISU
     models_base = create_point_mass_nn_ensemble(
         hps,
         task_base,
@@ -155,6 +177,15 @@ def setup_task_model_pair(
         key=key,
     )
 
+    # Insert intervention components into models via graph surgery
+    models = add_plant_intervention_to_ensemble(
+        models_base,
+        hps.pert.type,
+        PLANT_INTERVENOR_LABEL,
+        active=False,  # Default to inactive; schedule_intervenor will control activation
+    )
+
+    # Add SISU input to task
     try:
         task = task_base.add_input(
             name="sisu",
@@ -163,13 +194,16 @@ def setup_task_model_pair(
     except AttributeError:
         raise ValueError("No training method label assigned to hps_train.method")
 
-    return TaskModelPair(
-        *schedule_intervenor(
-            task,
-            models_base,
-            lambda model: model.step.mechanics,
-            disturbance(hps),
-            label=PLANT_INTERVENOR_LABEL,
-            default_active=False,
-        )
+    # Build disturbance params for scheduling
+    disturbance_params = get_disturbance_params(hps)
+
+    # Schedule the intervention params on the task
+    task, models = schedule_intervenor(
+        task,
+        models,
+        label=PLANT_INTERVENOR_LABEL,
+        intervenor_params=disturbance_params,
+        default_active=False,
     )
+
+    return TaskModelPair(task, models)
