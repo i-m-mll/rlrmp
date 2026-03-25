@@ -1,1 +1,1 @@
-{"author":{"id":"4bb6c1767e50694cfde61856db22bf137d1651e8a0b5ca858c486db3dd02f280"},"ops":[{"type":4,"timestamp":1774459061,"nonce":"x1L0ZnkHRJ6WOX0gA8Zg7dPbx1s=","status":2}]}
+{"author":{"id":"4bb6c1767e50694cfde61856db22bf137d1651e8a0b5ca858c486db3dd02f280"},"ops":[{"type":3,"timestamp":1774459061,"nonce":"L1ldu3FpAtoyVyS+nRcbgWXj3ho=","message":"Resolved by merge 950833d4b530 (declared in auth request 41df0e87)","files":null}]}
