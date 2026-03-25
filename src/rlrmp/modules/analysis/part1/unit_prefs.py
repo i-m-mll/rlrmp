@@ -7,15 +7,15 @@ import jax_cookbook.tree as jtree
 import numpy as np
 import plotly.graph_objects as go
 from feedbax.intervene import add_intervenors, schedule_intervenor
-from feedbax_experiments.analysis.network import UnitPreferences
-from feedbax_experiments.analysis.state_utils import (
+from feedbax.analysis.network import UnitPreferences
+from feedbax.analysis.state_utils import (
     get_best_replicate,
     get_segment_trials_fn,
     get_symmetric_accel_decel_epochs,
     vmap_eval_ensemble,
 )
-from feedbax_experiments.misc import vectors_to_2d_angles
-from feedbax_experiments.types import LDict
+from feedbax.misc import vectors_to_2d_angles
+from feedbax.types import LDict
 from jax_cookbook import is_module
 from jaxtyping import Array, Float
 
@@ -34,7 +34,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
     models = jt.map(
         lambda models: add_intervenors(
             models,
-            lambda model: model.step.mechanics,
+            lambda model: model.mechanics,
             # The first key is the model stage where to insert the disturbance field;
             # `None` means prior to the first stage.
             # The field parameters will come from the task, so use an amplitude 0.0 placeholder.
@@ -52,7 +52,7 @@ def setup_eval_tasks_and_models(task_base, models_base, hps):
             lambda pert_amp: schedule_intervenor(
                 task_base,
                 models,
-                lambda model: model.step.mechanics,
+                lambda model: model.mechanics,
                 disturbance(pert_amp),
                 label=PLANT_INTERVENOR_LABEL,
                 default_active=False,

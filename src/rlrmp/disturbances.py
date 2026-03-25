@@ -2,8 +2,8 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-from feedbax.task import TimeSeriesParam
-from feedbax_experiments.misc import vector_with_gaussian_length
+from feedbax.intervene import TimeSeriesParam
+from feedbax.misc import vector_with_gaussian_length
 from jaxtyping import Array, Float, Int
 
 

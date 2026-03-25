@@ -20,14 +20,14 @@ import jax_cookbook.tree as jtree
 import numpy as np
 from equinox import Module
 from feedbax.intervene import add_intervenors, schedule_intervenor
-from feedbax_experiments.analysis import AbstractAnalysis
-from feedbax_experiments.analysis.analysis import Data, DummyNode, ExpandTo, LiteralInput
-from feedbax_experiments.analysis.fps import FixedPoints
-from feedbax_experiments.analysis.pca import StatesPCA
-from feedbax_experiments.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
-from feedbax_experiments.misc import get_constant_input_fn
-from feedbax_experiments.tree_utils import take_replicate
-from feedbax_experiments.types import LDict, TreeNamespace
+from feedbax.analysis import AbstractAnalysis
+from feedbax.analysis.analysis import Data, DummyNode, ExpandTo, LiteralInput
+from feedbax.analysis.fps import FixedPoints
+from feedbax.analysis.pca import StatesPCA
+from feedbax.analysis.state_utils import get_best_replicate, vmap_eval_ensemble
+from feedbax.misc import get_constant_input_fn
+from feedbax.tree_utils import take_replicate
+from feedbax.types import LDict, TreeNamespace
 from jax_cookbook import MultiVmapAxes, is_module
 from jaxtyping import Array, PyTree
 
@@ -62,7 +62,7 @@ def setup_eval_tasks_and_models(
             lambda pert_amp: schedule_intervenor(  # (implicitly) over train stds
                 task_base,
                 jt.leaves(models_base, is_leaf=is_module)[0],
-                lambda model: model.step.mechanics,
+                lambda model: model.mechanics,
                 disturbance(pert_amp),
                 label=PLANT_INTERVENOR_LABEL,
                 default_active=False,
@@ -77,7 +77,7 @@ def setup_eval_tasks_and_models(
     models_by_std = jt.map(
         lambda models: add_intervenors(
             models,
-            lambda model: model.step.mechanics,
+            lambda model: model.mechanics,
             # The first key is the model stage where to insert the disturbance field;
             # `None` means prior to the first stage.
             # The field parameters will come from the task, so use an amplitude 0.0 placeholder.
@@ -179,7 +179,7 @@ DEPENDENCIES = {
     ),
 }
 
-rnn_fns = Data.models(where=lambda model: model.step.net.hidden)
+rnn_fns = Data.models(where=lambda model: model.net.hidden)
 rnn_inputs = Data.states(where=lambda states: states.net.input)
 rnn_states = Data.states(where=lambda states: states.net.hidden)
 

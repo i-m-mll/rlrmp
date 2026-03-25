@@ -4,22 +4,29 @@ import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
-from feedbax.intervene import schedule_intervenor
-from feedbax_experiments.misc import vector_with_gaussian_length
-from feedbax_experiments.types import LDict, TaskModelPair, TreeNamespace
+from feedbax.intervene import (
+    CurlFieldParams,
+    FixedFieldParams,
+    schedule_intervenor,
+)
+from feedbax.misc import vector_with_gaussian_length
+from feedbax.types import LDict, TaskModelPair, TreeNamespace
+from jax_cookbook import is_module
 from jaxtyping import PRNGKeyArray
 
 from rlrmp.disturbance import (
-    PLANT_DISTURBANCE_CLASSES,
     PLANT_INTERVENOR_LABEL,
 )
 from rlrmp.disturbances import get_gusts_fn
+from rlrmp.intervention_compat import add_plant_intervention_to_ensemble
 from rlrmp.loss import get_loss_update_func, get_reach_loss
 from rlrmp.models import create_point_mass_nn_ensemble
 from rlrmp.task import TASK_TYPES
 
-#! TODO: limit curl and constant fields to movement epoch!
-disturbance_params = LDict.of("pert__type")(
+
+# Parameter builders for different disturbance types
+# These return dicts of additional params to merge into the base params
+disturbance_extra_params = LDict.of("pert__type")(
     {
         "curl": lambda hps: dict(
             amplitude=lambda trial_spec, batch_info, key: jr.normal(key, ()),
@@ -30,6 +37,30 @@ disturbance_params = LDict.of("pert__type")(
         "gusts": get_gusts_fn,
     }
 )
+
+
+def get_disturbance_params(pert_type: str, hps: TreeNamespace, scale, active=True):
+    """Build disturbance params for the given type.
+
+    Args:
+        pert_type: Type of perturbation ("curl", "constant", "gusts")
+        hps: Hyperparameters
+        scale: Scale factor for the disturbance
+        active: Whether the disturbance is active
+
+    Returns:
+        Appropriate params object (CurlFieldParams, FixedFieldParams, etc.)
+    """
+    extra_params = disturbance_extra_params[pert_type](hps)
+
+    if pert_type == "curl":
+        return CurlFieldParams(scale=scale, active=active, **extra_params)
+    elif pert_type == "constant":
+        return FixedFieldParams(scale=scale, active=active, **extra_params)
+    elif pert_type == "gusts":
+        return FixedFieldParams(scale=scale, active=active, **extra_params)
+    else:
+        raise ValueError(f"Unknown perturbation type: {pert_type}")
 
 
 def setup_task_model_pair(hps: TreeNamespace, *, key):
@@ -52,30 +83,37 @@ def setup_task_model_pair(hps: TreeNamespace, *, key):
 
     task_base = TASK_TYPES[hps.task.type](loss_func=get_reach_loss(hps), **hps_task)
 
-    models = create_point_mass_nn_ensemble(
+    # Create base models
+    models_base = create_point_mass_nn_ensemble(
         hps,
         task_base,
         n_extra_inputs=0,
         key=key,
     )
 
-    def disturbance(field_std, active=True):
-        return PLANT_DISTURBANCE_CLASSES[hps.pert.type].with_params(
-            scale=field_std,
-            active=active,
-            # **disturbance_params(partial(batch_scale_up, scaleup_batches[0], n_batches_scaleup))[
-            #     hps.pert.type
-            # ],
-            **disturbance_params[hps.pert.type](hps),
-        )
-
-    return TaskModelPair(
-        *schedule_intervenor(
-            task_base,
-            models,
-            lambda model: model.step.mechanics,
-            disturbance(hps.pert.std),
-            label=PLANT_INTERVENOR_LABEL,
-            default_active=False,
-        )
+    # Insert intervention components into models via graph surgery
+    models = add_plant_intervention_to_ensemble(
+        models_base,
+        hps.pert.type,
+        PLANT_INTERVENOR_LABEL,
+        active=False,  # Default to inactive; schedule_intervenor will control activation
     )
+
+    # Build disturbance params for scheduling
+    disturbance_params = get_disturbance_params(
+        hps.pert.type,
+        hps,
+        scale=hps.pert.std,
+        active=False,  # default_active is False
+    )
+
+    # Schedule the intervention params on the task
+    task, models = schedule_intervenor(
+        task_base,
+        models,
+        label=PLANT_INTERVENOR_LABEL,
+        intervenor_params=disturbance_params,
+        default_active=False,
+    )
+
+    return TaskModelPair(task, models)

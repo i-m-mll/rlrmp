@@ -7,9 +7,9 @@ import feedbax.plot as fbp
 import jax.numpy as jnp
 import jax.tree as jt
 import jax_cookbook.tree as jtree
-from feedbax_experiments.analysis.analysis import AbstractAnalysis, NoPorts
-from feedbax_experiments.analysis.state_utils import vmap_eval_ensemble
-from feedbax_experiments.types import AnalysisInputData, LDict
+from feedbax.analysis.analysis import AbstractAnalysis, NoPorts
+from feedbax.analysis.state_utils import vmap_eval_ensemble
+from feedbax.types import AnalysisInputData, LDict
 from jax_cookbook import is_module
 
 COLOR_FNS = dict()

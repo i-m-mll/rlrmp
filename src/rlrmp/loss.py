@@ -20,11 +20,9 @@ from feedbax.loss import (
 )
 from feedbax.task import TaskTrialSpec
 from feedbax.xabdeef.losses import simple_reach_loss
-from feedbax_experiments.misc import deep_merge
-
-# from feedbax.xabdeef.losses import simple_reach_loss
-from feedbax_experiments.training.loss import get_readout_norm_loss
-from feedbax_experiments.types import TreeNamespace
+from feedbax.misc import deep_merge
+from feedbax.training.loss import get_readout_norm_loss
+from feedbax.types import TreeNamespace
 from jax_cookbook.misc import window_take
 from jaxtyping import Array, PyTree
 
@@ -163,6 +161,7 @@ DEFAULT_TOP_WEIGHTS: dict[str, float] = {
     "effector_vel_mid": 1.0,
     "effector_pos_late": 1.0,
     "effector_vel_late": 1.0,
+    "effector_pos_running": 0.0,
     "nn_output": 1e-5,
     "nn_hidden": 1e-5,
     # composite bundle (if enabled)
@@ -561,6 +560,16 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
                 ),
             )
 
+        # Running position cost: penalizes position error during the entire movement period.
+        # Unlike mid-period terms (which ramp), this applies a uniform penalty from
+        # go cue to trial end, encouraging the effector to track the target throughout.
+        if getattr(user_outer_weights, "effector_pos_running", 0.0) != 0.0:
+            terms["effector_pos_running"] = TargetStateLoss(
+                "effector_pos_running",
+                where=lambda state: state.mechanics.effector.pos,
+                spec=during_movement,
+            )
+
         # Late-period position term (optional, active in goal_hit or structured modes)
         if getattr(user_outer_weights, "effector_pos_late", 0.0) != 0.0:
             after_pos_late_window = TargetSpec(
@@ -687,11 +696,16 @@ def get_adaptive_control_penalty_update(
         ratio = J_x / (target_ratio * J_u + 1e-12)  # Add epsilon to avoid division by zero
         new_weight = current_weight * (ratio ** alpha)
 
-        # Optional: clip to reasonable range to prevent runaway
+        # Clip to reasonable range to prevent runaway.
         new_weight = jnp.clip(new_weight, 1e-8, 1e-2)
 
-        # Update weights dict
-        # new_weight is now a JAX array (scalar or shape (replicates,))
+        # Convert to Python float. This forces a device→host sync, but
+        # loss_update_iterations is set to run infrequently (every ~100 iters)
+        # so the amortized cost is negligible. We MUST use a Python float
+        # because vmap stacks JAX array weights across replicas, breaking the
+        # scalar weight invariant.
+        new_weight = float(new_weight)
+
         new_weights = loss_func.weights.copy()
         new_weights[control_term] = new_weight
 
@@ -718,8 +732,8 @@ def get_loss_update_func(hps: TreeNamespace):
     if loss_update_cfg is None or not getattr(loss_update_cfg, "enabled", False):
         return None, 0  # (func, start_iteration) - 0 is a dummy value when func is None
 
-    # Default goal_term: sum mid and late position penalties for full movement error
-    default_goal_term = ["effector_pos_mid", "effector_pos_late"]
+    # Default goal_term: sum mid, late, and running position penalties for full movement error
+    default_goal_term = ["effector_pos_mid", "effector_pos_late", "effector_pos_running"]
     goal_term = getattr(loss_update_cfg, "goal_term", default_goal_term)
 
     update_func = get_adaptive_control_penalty_update(
