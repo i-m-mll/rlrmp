@@ -158,6 +158,22 @@ The pert_std=0 baseline, which previously failed to converge (ep_err=0.47), now 
 - APT provides marginal improvement over standard training in robustness metrics.
 - Ratio sweep (r=0.1, 0.2, 0.4, 0.6) in progress to find optimal balance.
 
+### Fine Ratio Sweep (r=0.10–0.20)
+
+The fine sweep confirms a sharp transition between r=0.10 and r=0.12:
+
+| ratio | vel(S=0.5) | ep_err | Δvel% |
+|-------|-----------|--------|-------|
+| 0.10 | 2.00 | 0.158 | +4.8% |
+| 0.12 | 1.94 | 0.003 | +0.3% |
+| 0.15 | 1.97 | 0.003 | +0.1% |
+| 0.18 | 2.01 | 0.005 | -0.1% |
+| 0.20 | 2.04 | 0.004 | +0.4% |
+
+The SISU velocity effect exists ONLY when the model is at the edge of task failure (r=0.10, ep_err=0.158). At r≥0.12, reaching is competent and the effect vanishes. No intermediate "sweet spot" exists.
+
+**Next approach: minimax training.** Rather than relying on random gusts (APT/CVaR), we are training a GaussianBumpAdversary that generates SISU-conditional force profiles via gradient ascent against the controller. The adversary is trained to maximise loss specifically at high SISU, creating a gradient pressure for the controller to increase velocity when SISU=1. Minimax training is currently in progress; results will be added in Phase 6.
+
 ## What This Means
 
 1. **The running cost loss works.** It's the correct loss structure for reaching tasks in the graph architecture. Other modes need debugging.
