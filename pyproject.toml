@@ -8,6 +8,8 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "feedbax",
+    "ipyfilechooser>=0.6.0",
+    "ipywidgets>=8.1.8",
     "statsmodels>=0.14.5",
 ]
 
@@ -28,7 +30,7 @@ packages = ["src/rlrmp"]
 config-settings = { editable-mode = "compat" }
 
 [tool.uv.sources.feedbax]
-path = "../20 Feedbax/feedbax/worktrees/develop"
+path = "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax/worktrees/feature__fix-stale-experiments-imports"
 editable = true
 
 [tool.ruff]
