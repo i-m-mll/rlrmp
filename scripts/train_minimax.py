@@ -101,7 +101,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             # Use a single replicate for the adversarial phase — the ensemble
             # complexity doesn't add value for initial minimax exploration, and
             # avoiding the replicate batch axis simplifies the standalone loop.
-            "n_replicates": 1,
+            "n_replicates": 5,
             "effector_mass": 1.0,
             "hidden_size": 180,
             "feedback_delay_steps": 5,
@@ -213,40 +213,58 @@ def run_training(args: argparse.Namespace) -> None:
     where_train = _make_where_train()
 
     # -----------------------------------------------------------------------
-    # Phase 1 — warm-start
+    # Phase 1 — warm-start (or load pre-trained model)
     # -----------------------------------------------------------------------
-    logger.info("Phase 1: warm-start for %d batches (controller_lr=%g)",
-                args.n_warmup_batches, args.controller_lr)
+    if args.warmup_model is not None:
+        from feedbax._io import load as fbx_load
+        logger.info("Loading pre-trained warm-start model from %s", args.warmup_model)
 
-    warmup_schedule = make_delayed_cosine_schedule(
-        args.controller_lr,
-        constant_steps=0,
-        total_steps=args.n_warmup_batches,
-    )
-    warmup_optimizer = optax.inject_hyperparams(
-        partial(optax.adamw, weight_decay=0.0)
-    )(learning_rate=warmup_schedule)
+        def _model_setup_func(key=jr.PRNGKey(0), **stored_hps):
+            """Reconstruct a model from stored hyperparameters."""
+            # The stored hps come from train_part2_5.py, not train_minimax.py,
+            # so use its build_hps function
+            from train_part2_5 import build_hps as build_hps_standard
+            stored_hps.pop("git", None)
+            stored_hps.pop("output_dir", None)
+            stored_args = argparse.Namespace(**stored_hps)
+            stored_hps_obj = build_hps_standard(stored_args)
+            return setup_task_model_pair(stored_hps_obj, key=key).model
 
-    chkpt_dir = output_dir / "checkpoints_warmup"
-    chkpt_dir.mkdir(parents=True, exist_ok=True)
-    warmup_trainer = TaskTrainer(
-        optimizer=warmup_optimizer,
-        checkpointing=True,
-        chkpt_dir=chkpt_dir,
-    )
+        warmup_model = fbx_load(args.warmup_model, setup_func=_model_setup_func)
+        logger.info("Loaded warm-start model (skipping phase 1).")
+    else:
+        logger.info("Phase 1: warm-start for %d batches (controller_lr=%g)",
+                    args.n_warmup_batches, args.controller_lr)
 
-    warmup_model, warmup_history = train_pair(
-        warmup_trainer,
-        pair,
-        n_batches=args.n_warmup_batches,
-        key=key_warmup,
-        ensembled=True,
-        loss_func=loss_func,
-        where_train=where_train,
-        batch_size=hps.batch_size,
-        log_step=max(1, args.n_warmup_batches // 20),
-    )
-    logger.info("Warm-start complete.")
+        warmup_schedule = make_delayed_cosine_schedule(
+            args.controller_lr,
+            constant_steps=0,
+            total_steps=args.n_warmup_batches,
+        )
+        warmup_optimizer = optax.inject_hyperparams(
+            partial(optax.adamw, weight_decay=0.0)
+        )(learning_rate=warmup_schedule)
+
+        chkpt_dir = output_dir / "checkpoints_warmup"
+        chkpt_dir.mkdir(parents=True, exist_ok=True)
+        warmup_trainer = TaskTrainer(
+            optimizer=warmup_optimizer,
+            checkpointing=True,
+            chkpt_dir=chkpt_dir,
+        )
+
+        warmup_model, warmup_history = train_pair(
+            warmup_trainer,
+            pair,
+            n_batches=args.n_warmup_batches,
+            key=key_warmup,
+            ensembled=True,
+            loss_func=loss_func,
+            where_train=where_train,
+            batch_size=hps.batch_size,
+            log_step=max(1, args.n_warmup_batches // 20),
+        )
+        logger.info("Warm-start complete.")
 
     # Save warm-started model
     warmup_model_path = output_dir / "warmup_model.eqx"
@@ -292,11 +310,12 @@ def run_training(args: argparse.Namespace) -> None:
         net = model.nodes["net"]
         return (net.hidden, net.readout)
 
-    # For n_replicates=1, the model from train_pair has a leading singleton replicate
-    # axis on all array leaves (shape [1, ...]). task.eval_trials expects a
-    # single-replicate model without this extra axis. Squeeze it out here.
+    # The model from train_pair has a leading replicate axis on all array leaves
+    # (shape [n_replicates, ...]). task.eval_trials expects a single model without
+    # this extra axis. Extract the first replicate.
+    n_reps = hps.model.n_replicates
     adv_model = jt.map(
-        lambda x: x[0] if (hasattr(x, "ndim") and x.ndim > 0 and x.shape[0] == 1) else x,
+        lambda x: x[0] if (hasattr(x, "ndim") and x.ndim > 0 and x.shape[0] == n_reps) else x,
         warmup_model,
         is_leaf=eqx.is_array,
     )
@@ -315,50 +334,67 @@ def run_training(args: argparse.Namespace) -> None:
     adv_losses = []
     ctrl_losses = []
 
-    # Monolithic adversary gradient: differentiate w.r.t. bump params directly
-    # (bump_params → force generation → injection → forward pass → loss).
-    # The adversary has only ~15 gradient targets (bump params), so XLA sees far
-    # fewer paths than the decomposed approach's 130 force-timestep targets.
-    # K adversary steps are fused into a single lax.fori_loop to eliminate
-    # host-device round-trips.
+    # Decomposed adversary gradient: differentiate loss w.r.t. force array first,
+    # then VJP through adversary() to get bump-param gradients.
+    # Each adversary step is a separate Python-level call (~12 host-device round-trips
+    # per batch), but each compiled function is small enough to compile on TPU (~14 min
+    # vs 40+ min for the monolithic fori_loop approach).
 
     @eqx.filter_jit
-    def _adversary_steps(adv, adv_opt_st, trial_specs, keys):
-        """Run n_adversary_steps gradient-ascent steps, fused with lax.fori_loop."""
+    def _loss_and_force_grad(model, trial_specs, forces, keys):
+        """Compute loss and its gradient w.r.t. the force array.
 
-        def _adv_loss(a):
-            # Generate force profile inside the JIT; broadcast across batch.
+        Args:
+            model: Controller model (no replicate axis).
+            trial_specs: Batched trial specifications.
+            forces: Force array of shape (batch_size, T, d).
+            keys: Per-trial PRNG keys, shape (batch_size,).
+
+        Returns:
+            Tuple of (loss_scalar, dL_dforces) where dL_dforces has shape (batch_size, T, d).
+        """
+        def _loss_fn(f):
+            ts = _inject_adversary_forces(trial_specs, f)
+            states = task.eval_trials(model, ts, keys)
+            return loss_func(states, ts, model).total.mean()
+
+        return jax.value_and_grad(_loss_fn)(forces)
+
+    @eqx.filter_jit
+    def _adversary_update(adversary, dL_dforces, adv_opt_st):
+        """Update adversary parameters via VJP through adversary().
+
+        Performs gradient ascent: adversary maximises loss, so we negate dL_dforces
+        before computing the VJP (equivalent to ascending the loss gradient).
+
+        Args:
+            adversary: Current GaussianBumpAdversary.
+            dL_dforces: Gradient of loss w.r.t. forces, shape (batch_size, T, d).
+            adv_opt_st: Current adversary optimizer state.
+
+        Returns:
+            Tuple of (updated_adversary, updated_opt_state).
+        """
+        # forces = adversary() broadcast to (batch_size, T, d)
+        # We need dL/d(adversary_params) = dL/dforces * dforces/d(adversary_params)
+        # Use jax.linear_util / vjp directly through the broadcast.
+        def _forces_fn(a):
             force_profile = a()  # (T, d)
-            forces = jnp.broadcast_to(
-                force_profile, (adv_batch_size,) + force_profile.shape
-            )
-            ts = _inject_adversary_forces(trial_specs, forces)
-            # Stop gradient through model: adversary step does not update controller.
-            model_stopped = jt.map(
-                lambda x: jax.lax.stop_gradient(x) if eqx.is_array(x) else x,
-                adv_model,
-                is_leaf=eqx.is_array,
-            )
-            states = task.eval_trials(model_stopped, ts, keys)
-            return loss_func(states, ts, adv_model).total.mean()
+            return jnp.broadcast_to(force_profile, dL_dforces.shape)
 
-        def _one_step(_, carry):
-            a, opt_st = carry
-            loss_val, grads = eqx.filter_value_and_grad(_adv_loss)(a)
-            # Negate for gradient ascent (maximise loss)
-            neg_grads = jt.map(lambda g: -g, grads)
-            updates, new_opt_st = adversary_optimizer.update(
-                neg_grads, opt_st, eqx.filter(a, eqx.is_array)
-            )
-            new_a = eqx.apply_updates(a, updates)
-            return new_a, new_opt_st
+        # VJP: dL/d(params) via chain rule through the broadcast
+        _, vjp_fn = jax.vjp(lambda a: eqx.filter(_forces_fn(a), eqx.is_array), adversary)
+        # Negate for gradient ascent
+        neg_dL_dforces = jt.map(lambda g: -g, dL_dforces)
+        (param_grads,) = vjp_fn(neg_dL_dforces)
 
-        new_adv, new_opt_st = jax.lax.fori_loop(
-            0, args.n_adversary_steps, _one_step, (adv, adv_opt_st)
+        updates, new_opt_st = adversary_optimizer.update(
+            eqx.filter(param_grads, eqx.is_array),
+            adv_opt_st,
+            eqx.filter(adversary, eqx.is_array),
         )
-        # Compute loss with updated adversary for logging
-        loss_val = _adv_loss(new_adv)
-        return new_adv, new_opt_st, loss_val
+        new_adversary = eqx.apply_updates(adversary, updates)
+        return new_adversary, new_opt_st
 
     # JIT-compiled controller descent step
     @eqx.filter_jit
@@ -409,14 +445,28 @@ def run_training(args: argparse.Namespace) -> None:
             int(hps.task.n_steps),
         )
 
-        # --- Adversary update (K ascent steps, fused in JIT) ---
-        adversary, adv_opt_state, _adv_loss_val = _adversary_steps(
-            adversary, adv_opt_state, trial_specs, trial_keys
-        )
-
-        # Inject adversary forces into trial specs for the controller step
+        # --- Adversary update (K ascent steps, Python-level loop) ---
+        # Generate forces from the current adversary; the same force profile is used
+        # for all trials in the batch (adversary does not condition on trial context).
         force_profile = adversary()  # (T, d)
         forces = jnp.broadcast_to(force_profile, (adv_batch_size,) + force_profile.shape)
+        _adv_loss_val = None
+        for _ in range(args.n_adversary_steps):
+            # Stop gradient through model so adversary step doesn't update controller.
+            model_stopped = jt.map(
+                lambda x: jax.lax.stop_gradient(x) if eqx.is_array(x) else x,
+                adv_model,
+                is_leaf=eqx.is_array,
+            )
+            _adv_loss_val, dL_dforces = _loss_and_force_grad(
+                model_stopped, trial_specs, forces, trial_keys
+            )
+            adversary, adv_opt_state = _adversary_update(adversary, dL_dforces, adv_opt_state)
+            # Recompute forces from updated adversary for next inner step
+            force_profile = adversary()
+            forces = jnp.broadcast_to(force_profile, (adv_batch_size,) + force_profile.shape)
+
+        # Inject adversary forces into trial specs for the controller step
         adv_trial_specs = _inject_adversary_forces(trial_specs, forces)
 
         # --- Controller update (1 descent step) ---
@@ -524,6 +574,10 @@ def parse_args() -> argparse.Namespace:
             "Batch size for adversarial phase (default: same as warmup batch size). "
             "Smaller values (e.g. 64) dramatically reduce XLA compilation time."
         ),
+    )
+    parser.add_argument(
+        "--warmup-model", type=str, default=None,
+        help="Path to a pre-trained model to use as warm-start (skips phase 1).",
     )
     parser.add_argument(
         "--output-dir", type=str, default="results/minimax_test",
