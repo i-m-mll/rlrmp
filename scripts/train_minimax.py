@@ -43,6 +43,136 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# JIT-compiled training steps (module-level to avoid closure-based cache
+# invalidation in eqx.filter_jit).
+#
+# When these functions were defined inside run_training and closed over `task`,
+# `loss_func`, and optimizer objects, eqx.filter_jit incorporated the identity
+# of those closed-over objects in its cache key. Passing them as explicit
+# arguments instead lets filter_jit partition them into static (non-array) and
+# dynamic (array) parts using its standard mechanism, eliminating spurious
+# recompilation. Bug: d6cc111
+# ---------------------------------------------------------------------------
+
+@eqx.filter_jit
+def _loss_and_force_grad(task, loss_func, model, trial_specs, forces, keys):
+    """Compute loss and its gradient w.r.t. the force array.
+
+    Applies stop_gradient to model array leaves inside the JIT to prevent
+    adversary force gradients from flowing back through the controller.
+    Doing this inside JIT (rather than in the Python loop) avoids creating
+    new Python objects each batch, which would change the JIT treedef and
+    trigger recompilation every iteration.
+
+    Args:
+        task: Feedbax task (static across training).
+        loss_func: Loss function (static across training).
+        model: Controller model (no replicate axis).
+        trial_specs: Batched trial specifications.
+        forces: Force array of shape (batch_size, T, d).
+        keys: Per-trial PRNG keys, shape (batch_size,).
+
+    Returns:
+        Tuple of (loss_scalar, dL_dforces) where dL_dforces has shape (batch_size, T, d).
+    """
+    # stop_gradient inside JIT: a no-op on non-array leaves and a trace-level
+    # operation on array leaves — does not affect the treedef seen by JIT.
+    model_sg = jt.map(
+        lambda x: jax.lax.stop_gradient(x) if eqx.is_array(x) else x,
+        model,
+        is_leaf=eqx.is_array,
+    )
+
+    def _loss_fn(f):
+        ts = _inject_adversary_forces(trial_specs, f)
+        states = task.eval_trials(model_sg, ts, keys)
+        return loss_func(states, ts, model_sg).total.mean()
+
+    return jax.value_and_grad(_loss_fn)(forces)
+
+
+@eqx.filter_jit
+def _adversary_update(adversary_optimizer, adversary, dL_dforces, adv_opt_st):
+    """Update adversary parameters via VJP through adversary().
+
+    Performs gradient ascent: adversary maximises loss, so we negate dL_dforces
+    before computing the VJP (equivalent to ascending the loss gradient).
+
+    Args:
+        adversary_optimizer: Optax optimizer for the adversary (static).
+        adversary: Current GaussianBumpAdversary.
+        dL_dforces: Gradient of loss w.r.t. forces, shape (batch_size, T, d).
+        adv_opt_st: Current adversary optimizer state.
+
+    Returns:
+        Tuple of (updated_adversary, updated_opt_state).
+    """
+    # forces = adversary() broadcast to (batch_size, T, d)
+    # We need dL/d(adversary_params) = dL/dforces * dforces/d(adversary_params)
+    # Use jax.linear_util / vjp directly through the broadcast.
+    def _forces_fn(a):
+        force_profile = a()  # (T, d)
+        return jnp.broadcast_to(force_profile, dL_dforces.shape)
+
+    # VJP: dL/d(params) via chain rule through the broadcast
+    _, vjp_fn = jax.vjp(lambda a: eqx.filter(_forces_fn(a), eqx.is_array), adversary)
+    # Negate for gradient ascent
+    neg_dL_dforces = jt.map(lambda g: -g, dL_dforces)
+    (param_grads,) = vjp_fn(neg_dL_dforces)
+
+    updates, new_opt_st = adversary_optimizer.update(
+        eqx.filter(param_grads, eqx.is_array),
+        adv_opt_st,
+        eqx.filter(adversary, eqx.is_array),
+    )
+    new_adversary = eqx.apply_updates(adversary, updates)
+    return new_adversary, new_opt_st
+
+
+@eqx.filter_jit
+def _controller_step(task, loss_func, ctrl_optimizer, model, ctrl_opt_st, trial_specs, keys):
+    """Single gradient-descent step on the controller with adversary forces.
+
+    Args:
+        task: Feedbax task (static across training).
+        loss_func: Loss function (static across training).
+        ctrl_optimizer: Optax optimizer for the controller (static).
+        model: Current controller model (no replicate axis).
+        ctrl_opt_st: Current controller optimizer state.
+        trial_specs: Batched trial specifications (with adversary forces injected).
+        keys: Per-trial PRNG keys, shape (batch_size,).
+
+    Returns:
+        Tuple of (updated_model, updated_opt_state, loss_scalar).
+    """
+    def _ctrl_loss(m):
+        states = task.eval_trials(m, trial_specs, keys)
+        return loss_func(states, trial_specs, m).total.mean()
+
+    loss_val, grads = eqx.filter_value_and_grad(_ctrl_loss)(model)
+
+    # Extract gradients for trainable leaves only (net hidden + readout)
+    def _get_trainable(m):
+        net = m.nodes["net"]
+        return (net.hidden, net.readout)
+
+    trainable_grads = eqx.filter(_get_trainable(grads), eqx.is_array)
+    updates, new_opt_st = ctrl_optimizer.update(
+        trainable_grads,
+        ctrl_opt_st,
+        eqx.filter(_get_trainable(model), eqx.is_array),
+    )
+    # Apply updates to the net hidden + readout leaves only
+    updated_trainable = eqx.apply_updates(_get_trainable(model), updates)
+    new_model = eqx.tree_at(
+        lambda m: (m.nodes["net"].hidden, m.nodes["net"].readout),
+        model,
+        updated_trainable,
+    )
+    return new_model, new_opt_st, loss_val
+
+
+# ---------------------------------------------------------------------------
 # Reproducibility helpers
 # ---------------------------------------------------------------------------
 
@@ -178,6 +308,12 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
 # Training
 # ---------------------------------------------------------------------------
 
+def _get_trainable(model):
+    """Return the trainable leaves of the model (net hidden + readout)."""
+    net = model.nodes["net"]
+    return (net.hidden, net.readout)
+
+
 def _make_where_train():
     """Return the where_train dict for the controller optimizer."""
     def where_train_fn(model):
@@ -305,11 +441,6 @@ def run_training(args: argparse.Namespace) -> None:
     # We train only the recurrent net weights (hidden + readout), same as TaskTrainer.
     ctrl_optimizer = optax.adamw(args.controller_lr, weight_decay=0.0)
 
-    def _get_trainable(model):
-        """Return the trainable leaves of the model (net hidden + readout)."""
-        net = model.nodes["net"]
-        return (net.hidden, net.readout)
-
     # The model from train_pair has a leading replicate axis on all array leaves
     # (shape [n_replicates, ...]). task.eval_trials expects a single model without
     # this extra axis. Extract the first replicate.
@@ -339,102 +470,10 @@ def run_training(args: argparse.Namespace) -> None:
     # Each adversary step is a separate Python-level call (~12 host-device round-trips
     # per batch), but each compiled function is small enough to compile on TPU (~14 min
     # vs 40+ min for the monolithic fori_loop approach).
-
-    @eqx.filter_jit
-    def _loss_and_force_grad(model, trial_specs, forces, keys):
-        """Compute loss and its gradient w.r.t. the force array.
-
-        Applies stop_gradient to model array leaves inside the JIT to prevent
-        adversary force gradients from flowing back through the controller.
-        Doing this inside JIT (rather than in the Python loop) avoids creating
-        new Python objects each batch, which would change the JIT treedef and
-        trigger recompilation every iteration.
-
-        Args:
-            model: Controller model (no replicate axis).
-            trial_specs: Batched trial specifications.
-            forces: Force array of shape (batch_size, T, d).
-            keys: Per-trial PRNG keys, shape (batch_size,).
-
-        Returns:
-            Tuple of (loss_scalar, dL_dforces) where dL_dforces has shape (batch_size, T, d).
-        """
-        # stop_gradient inside JIT: a no-op on non-array leaves and a trace-level
-        # operation on array leaves — does not affect the treedef seen by JIT.
-        model_sg = jt.map(
-            lambda x: jax.lax.stop_gradient(x) if eqx.is_array(x) else x,
-            model,
-            is_leaf=eqx.is_array,
-        )
-
-        def _loss_fn(f):
-            ts = _inject_adversary_forces(trial_specs, f)
-            states = task.eval_trials(model_sg, ts, keys)
-            return loss_func(states, ts, model_sg).total.mean()
-
-        return jax.value_and_grad(_loss_fn)(forces)
-
-    @eqx.filter_jit
-    def _adversary_update(adversary, dL_dforces, adv_opt_st):
-        """Update adversary parameters via VJP through adversary().
-
-        Performs gradient ascent: adversary maximises loss, so we negate dL_dforces
-        before computing the VJP (equivalent to ascending the loss gradient).
-
-        Args:
-            adversary: Current GaussianBumpAdversary.
-            dL_dforces: Gradient of loss w.r.t. forces, shape (batch_size, T, d).
-            adv_opt_st: Current adversary optimizer state.
-
-        Returns:
-            Tuple of (updated_adversary, updated_opt_state).
-        """
-        # forces = adversary() broadcast to (batch_size, T, d)
-        # We need dL/d(adversary_params) = dL/dforces * dforces/d(adversary_params)
-        # Use jax.linear_util / vjp directly through the broadcast.
-        def _forces_fn(a):
-            force_profile = a()  # (T, d)
-            return jnp.broadcast_to(force_profile, dL_dforces.shape)
-
-        # VJP: dL/d(params) via chain rule through the broadcast
-        _, vjp_fn = jax.vjp(lambda a: eqx.filter(_forces_fn(a), eqx.is_array), adversary)
-        # Negate for gradient ascent
-        neg_dL_dforces = jt.map(lambda g: -g, dL_dforces)
-        (param_grads,) = vjp_fn(neg_dL_dforces)
-
-        updates, new_opt_st = adversary_optimizer.update(
-            eqx.filter(param_grads, eqx.is_array),
-            adv_opt_st,
-            eqx.filter(adversary, eqx.is_array),
-        )
-        new_adversary = eqx.apply_updates(adversary, updates)
-        return new_adversary, new_opt_st
-
-    # JIT-compiled controller descent step
-    @eqx.filter_jit
-    def _controller_step(model, ctrl_opt_st, trial_specs, keys):
-        """Single gradient-descent step on the controller with adversary forces."""
-        def _ctrl_loss(m):
-            states = task.eval_trials(m, trial_specs, keys)
-            return loss_func(states, trial_specs, m).total.mean()
-
-        loss_val, grads = eqx.filter_value_and_grad(_ctrl_loss)(model)
-
-        # Extract gradients for trainable leaves only
-        trainable_grads = eqx.filter(_get_trainable(grads), eqx.is_array)
-        updates, new_opt_st = ctrl_optimizer.update(
-            trainable_grads,
-            ctrl_opt_st,
-            eqx.filter(_get_trainable(model), eqx.is_array),
-        )
-        # Apply updates to the net hidden + readout leaves only
-        updated_trainable = eqx.apply_updates(_get_trainable(model), updates)
-        new_model = eqx.tree_at(
-            lambda m: (m.nodes["net"].hidden, m.nodes["net"].readout),
-            model,
-            updated_trainable,
-        )
-        return new_model, new_opt_st, loss_val
+    #
+    # The three compiled functions (_loss_and_force_grad, _adversary_update,
+    # _controller_step) are module-level to avoid closure-based JIT cache
+    # invalidation — see their definitions above run_training. Bug: d6cc111
 
     for batch_idx in range(args.n_adversary_batches):
         batch_key, key_adv = jr.split(key_adv)
@@ -469,9 +508,11 @@ def run_training(args: argparse.Namespace) -> None:
             # Pass raw model — _loss_and_force_grad applies stop_gradient inside JIT,
             # avoiding per-batch treedef changes that trigger recompilation.
             _adv_loss_val, dL_dforces = _loss_and_force_grad(
-                adv_model, trial_specs, forces, trial_keys
+                task, loss_func, adv_model, trial_specs, forces, trial_keys
             )
-            adversary, adv_opt_state = _adversary_update(adversary, dL_dforces, adv_opt_state)
+            adversary, adv_opt_state = _adversary_update(
+                adversary_optimizer, adversary, dL_dforces, adv_opt_state
+            )
             # Recompute forces from updated adversary for next inner step
             force_profile = adversary()
             forces = jnp.broadcast_to(force_profile, (adv_batch_size,) + force_profile.shape)
@@ -481,7 +522,7 @@ def run_training(args: argparse.Namespace) -> None:
 
         # --- Controller update (1 descent step) ---
         adv_model, ctrl_opt_state, ctrl_loss = _controller_step(
-            adv_model, ctrl_opt_state, adv_trial_specs, trial_keys
+            task, loss_func, ctrl_optimizer, adv_model, ctrl_opt_state, adv_trial_specs, trial_keys
         )
 
         adv_loss_val = float(_adv_loss_val)
