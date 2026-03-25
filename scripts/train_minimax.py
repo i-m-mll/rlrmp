@@ -37,7 +37,6 @@ from feedbax.types import TaskModelPair, TreeNamespace, dict_to_namespace
 
 from rlrmp.adversarial_training import _inject_adversary_forces
 from rlrmp.adversary import GaussianBumpAdversary
-from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.modules.training.part2 import setup_task_model_pair
 
 logger = logging.getLogger(__name__)
@@ -316,46 +315,50 @@ def run_training(args: argparse.Namespace) -> None:
     adv_losses = []
     ctrl_losses = []
 
-    # Decomposed adversary gradient: avoids JIT-compiling the full chain
-    # (adversary params → forces → trial spec injection → forward pass → loss),
-    # which stalls XLA compilation on TPU v4.  Instead we split into two
-    # separately-compiled pieces:
-    #   Step A: dL/d(forces) — gradient of loss w.r.t. force arrays (simple)
-    #   Step B: VJP of forces w.r.t. adversary params — just the adversary network
+    # Monolithic adversary gradient: differentiate w.r.t. bump params directly
+    # (bump_params → force generation → injection → forward pass → loss).
+    # The adversary has only ~15 gradient targets (bump params), so XLA sees far
+    # fewer paths than the decomposed approach's 130 force-timestep targets.
+    # K adversary steps are fused into a single lax.fori_loop to eliminate
+    # host-device round-trips.
 
     @eqx.filter_jit
-    def _loss_and_force_grad(model, trial_specs, forces, keys):
-        """Compute loss value and gradient w.r.t. the force array."""
-        def _loss(f):
-            ts = _inject_adversary_forces(trial_specs, f)
-            # Stop gradient through model: adversary step does not touch controller.
+    def _adversary_steps(adv, adv_opt_st, trial_specs, keys):
+        """Run n_adversary_steps gradient-ascent steps, fused with lax.fori_loop."""
+
+        def _adv_loss(a):
+            # Generate force profile inside the JIT; broadcast across batch.
+            force_profile = a()  # (T, d)
+            forces = jnp.broadcast_to(
+                force_profile, (adv_batch_size,) + force_profile.shape
+            )
+            ts = _inject_adversary_forces(trial_specs, forces)
+            # Stop gradient through model: adversary step does not update controller.
             model_stopped = jt.map(
                 lambda x: jax.lax.stop_gradient(x) if eqx.is_array(x) else x,
-                model,
+                adv_model,
                 is_leaf=eqx.is_array,
             )
             states = task.eval_trials(model_stopped, ts, keys)
-            return loss_func(states, ts, model).total.mean()
+            return loss_func(states, ts, adv_model).total.mean()
 
-        return jax.value_and_grad(_loss)(forces)
+        def _one_step(_, carry):
+            a, opt_st = carry
+            loss_val, grads = eqx.filter_value_and_grad(_adv_loss)(a)
+            # Negate for gradient ascent (maximise loss)
+            neg_grads = jt.map(lambda g: -g, grads)
+            updates, new_opt_st = adversary_optimizer.update(
+                neg_grads, opt_st, eqx.filter(a, eqx.is_array)
+            )
+            new_a = eqx.apply_updates(a, updates)
+            return new_a, new_opt_st
 
-    @eqx.filter_jit
-    def _adversary_update(adv, sisu_batch, dL_dforces, adv_opt_st):
-        """Backprop dL/dforces through the adversary network and apply update."""
-        def _gen_forces(a):
-            return jax.vmap(a)(sisu_batch)
-
-        # VJP: propagate dL/d(forces) back through adversary params
-        _, vjp_fn = jax.vjp(_gen_forces, adv)
-        (adv_grads,) = vjp_fn(dL_dforces)
-
-        # Negate for gradient ascent (maximise loss)
-        neg_grads = jt.map(lambda g: -g, adv_grads)
-        updates, new_opt_st = adversary_optimizer.update(
-            neg_grads, adv_opt_st, eqx.filter(adv, eqx.is_array)
+        new_adv, new_opt_st = jax.lax.fori_loop(
+            0, args.n_adversary_steps, _one_step, (adv, adv_opt_st)
         )
-        new_adv = eqx.apply_updates(adv, updates)
-        return new_adv, new_opt_st
+        # Compute loss with updated adversary for logging
+        loss_val = _adv_loss(new_adv)
+        return new_adv, new_opt_st, loss_val
 
     # JIT-compiled controller descent step
     @eqx.filter_jit
@@ -406,22 +409,14 @@ def run_training(args: argparse.Namespace) -> None:
             int(hps.task.n_steps),
         )
 
-        # --- Adversary update (K ascent steps) ---
-        sisu_batch = trial_specs.intervene[PLANT_INTERVENOR_LABEL].scale  # (batch,)
-        for _ in range(args.n_adversary_steps):
-            # Step 1: generate forces (eager, outside JIT — trivially fast)
-            forces = jax.vmap(adversary)(sisu_batch)  # (batch, T, 2)
-            # Step 2: dL/d(forces) — JIT-compiled forward pass + grad w.r.t. forces
-            _adv_loss_val, dL_dforces = _loss_and_force_grad(
-                adv_model, trial_specs, forces, trial_keys
-            )
-            # Step 3: VJP through adversary network + optimizer update
-            adversary, adv_opt_state = _adversary_update(
-                adversary, sisu_batch, dL_dforces, adv_opt_state
-            )
+        # --- Adversary update (K ascent steps, fused in JIT) ---
+        adversary, adv_opt_state, _adv_loss_val = _adversary_steps(
+            adversary, adv_opt_state, trial_specs, trial_keys
+        )
 
         # Inject adversary forces into trial specs for the controller step
-        forces = jax.vmap(adversary)(sisu_batch)  # (batch, T, 2)
+        force_profile = adversary()  # (T, d)
+        forces = jnp.broadcast_to(force_profile, (adv_batch_size,) + force_profile.shape)
         adv_trial_specs = _inject_adversary_forces(trial_specs, forces)
 
         # --- Controller update (1 descent step) ---
@@ -471,24 +466,18 @@ def run_training(args: argparse.Namespace) -> None:
 def _log_adversary_force_profiles(
     adversary: GaussianBumpAdversary,
     output_dir: Path,
-    sisu_values: tuple[float, ...] = (0.0, 0.25, 0.5, 0.75, 1.0),
 ) -> None:
-    """Log adversary force profiles for a range of SISU values to a numpy archive.
+    """Log adversary force profile (SISU-independent) to a numpy archive.
 
     Args:
         adversary: Trained GaussianBumpAdversary.
         output_dir: Directory to write the archive into.
-        sisu_values: SISU scalars at which to evaluate the adversary.
     """
-    profiles = {}
-    for sisu in sisu_values:
-        forces = adversary(float(sisu))  # (T, 2)
-        profiles[f"sisu_{sisu:.2f}"] = np.array(forces)
+    forces = adversary()  # (T, 2)
+    profile_norm = float(np.linalg.norm(np.array(forces)))
+    logger.info("Adversary force profile norm: %.4g", profile_norm)
 
-    profile_norms = {k: float(np.linalg.norm(v)) for k, v in profiles.items()}
-    logger.info("Adversary force profile norms: %s", profile_norms)
-
-    np.savez(output_dir / "adversary_force_profiles.npz", **profiles)
+    np.savez(output_dir / "adversary_force_profiles.npz", forces=np.array(forces))
     logger.info("Saved adversary force profiles to %s",
                 output_dir / "adversary_force_profiles.npz")
 
