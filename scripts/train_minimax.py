@@ -35,7 +35,7 @@ import jax.tree as jt
 import jax.tree_util as jtu
 import numpy as np
 import optax
-from feedbax._io import save as fbx_save
+from feedbax._io import load_with_hyperparameters, save as fbx_save
 from feedbax.misc import BatchInfo
 from feedbax.training.train import (
     TaskTrainer,
@@ -437,17 +437,32 @@ def run_training(args: argparse.Namespace) -> None:
     warmup_model_path = output_dir / "warmup_model.eqx"
 
     warmup_model = None
+    warmup_history = None
 
-    # When resuming, load an already-saved warmup_model.eqx directly using the
-    # current model as a template (avoids fbx_load's stored-hps reconstruction,
-    # which fails because warmup_model.eqx was saved by train_minimax.py with a
-    # different config format than train_part2_5.py expects).
+    # When resuming, load an already-saved warmup_model.eqx using
+    # load_with_hyperparameters and this script's build_hps, since
+    # warmup_model.eqx was saved with fbx_save (HDF5 format), not eqx's
+    # native format. Using eqx.tree_deserialise_leaves would fail with
+    # a TreePathError.
     if args.resume and warmup_model_path.exists():
         logger.info(
             "--resume: loading warmup_model.eqx from %s — skipping phase 1.",
             warmup_model_path,
         )
-        warmup_model = eqx.tree_deserialise_leaves(str(warmup_model_path), pair.model)
+
+        def _resume_setup_func(key=jr.PRNGKey(0), **stored_hps):
+            """Reconstruct model from stored config for resume."""
+            # Filter out non-hps keys that are stored in config.json but not
+            # expected by build_hps
+            for k in ("git", "output_dir", "checkpoint_every", "resume"):
+                stored_hps.pop(k, None)
+            resume_args = argparse.Namespace(**stored_hps)
+            resume_hps = build_hps(resume_args)
+            return setup_task_model_pair(resume_hps, key=key).model
+
+        warmup_model, _ = load_with_hyperparameters(
+            warmup_model_path, setup_func=_resume_setup_func
+        )
 
     if warmup_model is None and args.warmup_model is not None:
         from feedbax._io import load as fbx_load
@@ -817,7 +832,7 @@ def run_training(args: argparse.Namespace) -> None:
     logger.info("Saved adversarial model to %s", final_model_path)
 
     # Training histories (warmup from TaskTrainer; adversarial phase as numpy arrays)
-    if effective_warmup_model is None:
+    if warmup_history is not None:
         fbx_save(output_dir / "warmup_history.eqx", warmup_history)
     loss_data = {
         "ctrl_losses": np.array(ctrl_losses),
