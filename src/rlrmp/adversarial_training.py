@@ -110,12 +110,14 @@ def _adversary_loss(
     Returns:
         Scalar mean controller loss.
     """
-    # Extract per-trial SISU values: stored as scale on the plant intervenor params.
-    # Shape: (batch,) — scalar per trial.
-    sisu_batch = trial_specs.intervene[PLANT_INTERVENOR_LABEL].scale  # (batch,)
+    # Infer batch size from the SISU scale array (used only for shape, not value).
+    batch_size = trial_specs.intervene[PLANT_INTERVENOR_LABEL].scale.shape[0]
 
-    # Generate force profiles: (batch, T, d)
-    forces = jax.vmap(adversary)(sisu_batch)
+    # Generate force profile once, then broadcast across batch: (batch, T, d).
+    # SISU gating is handled by the task (PAI-ASF scale * field); the adversary
+    # produces a single SISU-independent profile.
+    force_profile = adversary()  # (T, d)
+    forces = jnp.broadcast_to(force_profile, (batch_size,) + force_profile.shape)
 
     # Inject forces into trial specs
     adv_trial_specs = _inject_adversary_forces(trial_specs, forces)
@@ -142,7 +144,7 @@ def adversarial_train_step(
     adversary_opt_state: PyTree,
     adversary_optimizer: optax.GradientTransformation,
     batch_key: Array,
-    sisu_values: Float[Array, " batch_size"],
+    batch_size: int,
     n_adversary_steps: int = 5,
 ):
     """One outer training step with adversarial perturbation.
@@ -161,7 +163,7 @@ def adversarial_train_step(
         adversary_opt_state: optax optimizer state for the adversary.
         adversary_optimizer: optax optimizer for the adversary (ascent via negated grad).
         batch_key: PRNG key for the forward pass.
-        sisu_values: (batch_size,) SISU values for this batch.
+        batch_size: Number of trials per batch.
         n_adversary_steps: Number of inner gradient-ascent steps.
 
     Returns:
@@ -171,8 +173,6 @@ def adversarial_train_step(
     model = controller_pair.model
     loss_func = task.loss_func
 
-    # Sample a batch of trial specs with the given SISU values
-    batch_size = sisu_values.shape[0]
     trial_keys = jax.random.split(batch_key, batch_size)
     trial_specs = jax.vmap(task.get_trial_spec)(trial_keys)
 
@@ -240,9 +240,6 @@ def make_adversary_pre_step_fn(
         """
         adv, opt_st = state
 
-        # Extract SISU values from the trial specs: shape (batch,)
-        sisu_batch = trial_specs.intervene[PLANT_INTERVENOR_LABEL].scale  # (batch,)
-
         def _loss_for_ascent(a: GaussianBumpAdversary) -> Float[Array, ""]:
             return _adversary_loss(a, task, model, trial_specs, loss_func, keys)
 
@@ -260,8 +257,10 @@ def make_adversary_pre_step_fn(
         state[0] = adv
         state[1] = opt_st
 
-        # Generate force profiles with the updated adversary: (batch, T, d)
-        forces = jax.vmap(adv)(sisu_batch)
+        # Generate force profile with the updated adversary; broadcast across batch.
+        batch_size = trial_specs.intervene[PLANT_INTERVENOR_LABEL].scale.shape[0]
+        force_profile = adv()  # (T, d)
+        forces = jnp.broadcast_to(force_profile, (batch_size,) + force_profile.shape)
 
         # Replace the perturbation field in trial_specs with the adversary forces
         return _inject_adversary_forces(trial_specs, forces)
