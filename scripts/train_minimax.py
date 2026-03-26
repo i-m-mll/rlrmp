@@ -41,7 +41,7 @@ from feedbax.training.train import (
     make_delayed_cosine_schedule,
     train_pair,
 )
-from feedbax.types import TaskModelPair, TreeNamespace, dict_to_namespace
+from feedbax.types import TreeNamespace, dict_to_namespace
 
 from rlrmp.adversarial_training import _inject_adversary_forces
 from rlrmp.adversary import GaussianBumpAdversary
