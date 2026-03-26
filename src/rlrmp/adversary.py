@@ -17,8 +17,8 @@ class GaussianBumpAdversary(eqx.Module):
     """Generates perturbation as sum of K Gaussian force bumps.
 
     Each bump has learnable: timing (center), width (sigma), amplitude, direction.
-    The adversary receives SISU and reach direction as context, enabling
-    SISU-conditional perturbation strategies.
+    The adversary produces SISU-independent force profiles; SISU gating is handled
+    externally by the task (PAI-ASF's ``scale * field`` term).
 
     Parameters are stored as raw (unconstrained) values; widths and amplitudes
     are passed through softplus during the forward pass to ensure positivity.
@@ -37,9 +37,6 @@ class GaussianBumpAdversary(eqx.Module):
     bump_amplitudes_raw: Float[Array, " n_bumps"]  # softplus → positive amplitude
     bump_directions: Float[Array, "n_bumps n_force_dims"]  # unit vectors
 
-    # Context-dependent modulation: SISU → amplitude scale
-    sisu_amp_scale: Float[Array, " n_bumps"]  # additive log-amplitude shift per unit SISU
-
     # Fixed metadata
     n_timesteps: int = eqx.field(static=True)
     n_force_dims: int = eqx.field(static=True)
@@ -56,7 +53,7 @@ class GaussianBumpAdversary(eqx.Module):
         *,
         key: Array,
     ):
-        keys = jr.split(key, 5)
+        keys = jr.split(key, 2)
 
         trial_duration = n_timesteps * dt
 
@@ -67,28 +64,25 @@ class GaussianBumpAdversary(eqx.Module):
 
         # Raw widths: initialise so softplus gives ~50 ms
         # softplus(x) ≈ x for large x; we want softplus(x) ≈ 0.05 → x ≈ 0.05
-        self.bump_widths_raw = jnp.full((n_bumps,), 0.05)
+        # Use explicit dtype=float32 to avoid weak_type=True from Python scalar
+        # initialization, which causes JIT recompilation after the first optimizer
+        # update strips weak_type from the leaves.
+        self.bump_widths_raw = jnp.array([0.05] * n_bumps, dtype=jnp.float32)
 
         # Raw amplitudes: initialise so softplus gives ~0.1 (small perturbation)
-        self.bump_amplitudes_raw = jnp.full((n_bumps,), 0.1)
+        self.bump_amplitudes_raw = jnp.array([0.1] * n_bumps, dtype=jnp.float32)
 
         # Directions: random unit vectors
         raw_dirs = jr.normal(keys[1], (n_bumps, n_force_dims))
         self.bump_directions = raw_dirs / (jnp.linalg.norm(raw_dirs, axis=-1, keepdims=True) + 1e-8)
-
-        # No SISU modulation initially
-        self.sisu_amp_scale = jnp.zeros((n_bumps,))
 
         self.n_timesteps = n_timesteps
         self.n_force_dims = n_force_dims
         self.force_max = force_max
         self.dt = dt
 
-    def __call__(self, sisu: float) -> Float[Array, "n_timesteps n_force_dims"]:
-        """Generate force profile given SISU value.
-
-        Args:
-            sisu: SISU value in [0, 1], scalar float or 0-d array.
+    def __call__(self) -> Float[Array, "n_timesteps n_force_dims"]:
+        """Generate force profile.
 
         Returns:
             forces: (n_timesteps, n_force_dims) perturbation force profile.
@@ -97,10 +91,7 @@ class GaussianBumpAdversary(eqx.Module):
 
         # Positive widths and amplitudes via softplus
         widths = jax.nn.softplus(self.bump_widths_raw)  # (K,)
-        base_amps = jax.nn.softplus(self.bump_amplitudes_raw)  # (K,)
-
-        # SISU modulates amplitude multiplicatively
-        amps = base_amps * (1.0 + self.sisu_amp_scale * sisu)  # (K,)
+        amps = jax.nn.softplus(self.bump_amplitudes_raw)  # (K,)
 
         # Gaussian envelope for each bump: (T, K)
         diff = t[:, None] - self.bump_centers[None, :]  # (T, K)
