@@ -263,7 +263,7 @@ def run_training(args: argparse.Namespace) -> None:
 
     hps = build_hps(args)
 
-    key = jr.PRNGKey(42)
+    key = jr.PRNGKey(args.seed)
     key_init, key_warmup, key_adv = jr.split(key, 3)
 
     # -----------------------------------------------------------------------
@@ -668,6 +668,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--jax-explain-cache-misses", action="store_true",
         help="Enable JAX cache-miss diagnostics for debugging recompilation.",
+    )
+    parser.add_argument(
+        "--seed", type=int, default=42,
+        help="Random seed for JAX PRNG (default: 42). Use different seeds for independent replicates.",
     )
     parser.add_argument(
         "--checkpoint", action="store_true",
