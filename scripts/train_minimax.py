@@ -436,19 +436,22 @@ def run_training(args: argparse.Namespace) -> None:
     # -----------------------------------------------------------------------
     warmup_model_path = output_dir / "warmup_model.eqx"
 
-    # When resuming, treat an already-saved warmup_model.eqx as equivalent to
-    # --warmup-model, so we don't redo phase 1 unnecessarily.
-    effective_warmup_model = args.warmup_model
-    if args.resume and effective_warmup_model is None and warmup_model_path.exists():
+    warmup_model = None
+
+    # When resuming, load an already-saved warmup_model.eqx directly using the
+    # current model as a template (avoids fbx_load's stored-hps reconstruction,
+    # which fails because warmup_model.eqx was saved by train_minimax.py with a
+    # different config format than train_part2_5.py expects).
+    if args.resume and warmup_model_path.exists():
         logger.info(
-            "--resume: found existing warmup_model.eqx at %s — skipping phase 1.",
+            "--resume: loading warmup_model.eqx from %s — skipping phase 1.",
             warmup_model_path,
         )
-        effective_warmup_model = str(warmup_model_path)
+        warmup_model = eqx.tree_deserialise_leaves(str(warmup_model_path), pair.model)
 
-    if effective_warmup_model is not None:
+    if warmup_model is None and args.warmup_model is not None:
         from feedbax._io import load as fbx_load
-        logger.info("Loading pre-trained warm-start model from %s", effective_warmup_model)
+        logger.info("Loading pre-trained warm-start model from %s", args.warmup_model)
 
         def _model_setup_func(key=jr.PRNGKey(0), **stored_hps):
             """Reconstruct a model from stored hyperparameters."""
@@ -461,9 +464,10 @@ def run_training(args: argparse.Namespace) -> None:
             stored_hps_obj = build_hps_standard(stored_args)
             return setup_task_model_pair(stored_hps_obj, key=key).model
 
-        warmup_model = fbx_load(effective_warmup_model, setup_func=_model_setup_func)
+        warmup_model = fbx_load(args.warmup_model, setup_func=_model_setup_func)
         logger.info("Loaded warm-start model (skipping phase 1).")
-    else:
+
+    if warmup_model is None:
         logger.info("Phase 1: warm-start for %d batches (controller_lr=%g)",
                     args.n_warmup_batches, args.controller_lr)
 
