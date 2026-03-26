@@ -144,15 +144,39 @@ def _configure_jax_runtime(args: argparse.Namespace) -> None:
 # Hyperparameter construction
 # ---------------------------------------------------------------------------
 
+def _resolve_hidden_type(hidden_type_str: str, dt: float):
+    """Map a CLI hidden-type string to the corresponding recurrent cell class/partial.
+
+    Args:
+        hidden_type_str: One of "gru" or "vanilla_rnn".
+        dt: Simulation timestep (passed to VanillaRNNCell so that alpha=dt/tau=1.0).
+
+    Returns:
+        A class or partial-applied constructor compatible with point_mass_nn's
+        ``hidden_type`` parameter (i.e. callable as ``hidden_type(input_size,
+        hidden_size, use_bias=..., key=...)``).
+    """
+    if hidden_type_str == "gru":
+        return eqx.nn.GRUCell
+    elif hidden_type_str == "vanilla_rnn":
+        from functools import partial as _partial
+        from rlrmp.models import VanillaRNNCell
+        # dt=tau => alpha=1.0 (pure vanilla RNN, no leaky integration)
+        return _partial(VanillaRNNCell, dt=dt, tau=dt)
+    else:
+        raise ValueError(f"Unknown hidden_type: {hidden_type_str!r}")
+
+
 def build_hps(args: argparse.Namespace) -> TreeNamespace:
     """Construct hyperparameters for task/model setup.
 
     Uses the same task config as train_part2_5.py (running_cost loss mode),
     so the two scripts produce comparable models.
     """
+    dt = 0.01
     hps_dict = {
         "method": "pai-asf",
-        "dt": 0.01,
+        "dt": dt,
         # n_batches_condition drives setup_task_model_pair's loss schedule;
         # set to total training length so late-ramp terms are calibrated correctly.
         "n_batches_condition": args.n_warmup_batches + args.n_adversary_batches,
@@ -235,6 +259,9 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         "where": {
             0: ["nodes.net.hidden", "nodes.net.readout"],
         },
+        # hidden_type is a callable (class or partial), not serialisable to JSON.
+        # It is resolved here from the CLI string and stored directly in the namespace.
+        "hidden_type": _resolve_hidden_type(args.hidden_type, dt),
     }
     return dict_to_namespace(hps_dict, to_type=TreeNamespace)
 
@@ -426,7 +453,7 @@ def run_training(args: argparse.Namespace) -> None:
     # -----------------------------------------------------------------------
     # Task / model setup
     # -----------------------------------------------------------------------
-    logger.info("Setting up task-model pair")
+    logger.info("Setting up task-model pair (hidden_type=%s)", args.hidden_type)
     pair = setup_task_model_pair(hps, key=key_init)
     task = pair.task
     loss_func = task.loss_func
@@ -1289,6 +1316,15 @@ def parse_args() -> argparse.Namespace:
             "call using lax.fori_loop (default: True). Use --no-fused to fall "
             "back to the decomposed approach (K×2 + 1 separate JIT calls per "
             "batch) for debugging or comparison."
+        ),
+    )
+    parser.add_argument(
+        "--hidden-type", type=str, default="gru",
+        choices=["gru", "vanilla_rnn"],
+        help=(
+            "Recurrent network type: gru (default, GRUCell with gating) or "
+            "vanilla_rnn (LeakyRNNCell with dt=tau, no gating). "
+            "vanilla_rnn is a diagnostic for the gating-laziness hypothesis."
         ),
     )
     return parser.parse_args()
