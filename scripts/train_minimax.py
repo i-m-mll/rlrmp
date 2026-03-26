@@ -2,6 +2,9 @@
 
 Phase 1 (warm-start): Train the controller normally with random gust perturbations.
 Phase 2 (adversarial): Alternate between adversary gradient ascent and controller gradient descent.
+Supports fused mode (--fused, default) which compiles the K adversary steps + 1 controller
+step into a single JIT call via lax.fori_loop, and decomposed mode (--no-fused) which uses
+K×2 + 1 separate JIT calls per batch.
 
 The adversary (GaussianBumpAdversary) generates SISU-conditional force profiles that
 replace random gusts during adversarial training.
@@ -681,6 +684,117 @@ def run_training(args: argparse.Namespace) -> None:
         flat_updated = jtu.tree_flatten(new_model)[0]
         return flat_updated, new_opt_st, loss_val
 
+    # ---------------------------------------------------------------------------
+    # Fused adversary batch — single JIT call replaces K×2 + 1 round-trips.
+    # Uses lax.fori_loop for the inner adversary ascent steps, then performs a
+    # single controller descent step. Closes over the same fixed objects as the
+    # decomposed functions above. Bug: d6cc111
+    # ---------------------------------------------------------------------------
+
+    n_adversary_steps = args.n_adversary_steps
+
+    @eqx.filter_jit
+    def _fused_adversary_batch(flat_model, adversary, adv_opt_st, ctrl_opt_st,
+                               trial_specs, keys):
+        """Fused adversary inner loop + controller step in a single JIT call.
+
+        Replaces the K separate ``_loss_and_force_grad`` + ``_adversary_update``
+        calls and the final ``_controller_step`` call with a single compiled
+        function, eliminating host-device round-trip overhead and enabling XLA
+        cross-step optimization.
+
+        Args:
+            flat_model: Flat list of model array leaves (dynamic part only).
+            adversary: Current GaussianBumpAdversary.
+            adv_opt_st: Adversary optimizer state.
+            ctrl_opt_st: Controller optimizer state.
+            trial_specs: Batched trial specifications.
+            keys: Per-trial PRNG keys, shape (batch_size,).
+
+        Returns:
+            Tuple of (flat_model_new, adversary_new, adv_opt_st_new,
+            ctrl_opt_st_new, adv_loss, ctrl_loss).
+        """
+        model = jtu.tree_unflatten(treedef_model, flat_model)
+        # Stop-gradient model for adversary phase (adversary ascends loss
+        # w.r.t. force params, not model params).
+        model_sg = jt.map(
+            lambda x: jax.lax.stop_gradient(x) if eqx.is_array(x) else x,
+            model, is_leaf=eqx.is_array,
+        )
+
+        # --- Inner adversary loop (K ascent steps) via lax.fori_loop ---
+        def _adv_body(i, carry):
+            adv, opt_st, _last_loss = carry
+
+            # Generate forces from current adversary parameters.
+            force_profile = adv()  # (T, d)
+            forces = jnp.broadcast_to(
+                force_profile, (adv_batch_size, *force_profile.shape)
+            )
+
+            # Loss and grad w.r.t. forces.
+            def _loss_fn(f):
+                ts = _inject_adversary_forces(trial_specs, f)
+                states = task.eval_trials(model_sg, ts, keys)
+                return loss_func(states, ts, model_sg).total.mean()
+
+            loss_val, dL_dforces = jax.value_and_grad(_loss_fn)(forces)
+
+            # VJP through adversary() for parameter gradients (gradient ascent).
+            def _forces_fn(a):
+                fp = a()
+                return jnp.broadcast_to(fp, dL_dforces.shape)
+
+            _, vjp_fn = jax.vjp(
+                lambda a: eqx.filter(_forces_fn(a), eqx.is_array), adv
+            )
+            neg_dL = jt.map(lambda g: -g, dL_dforces)
+            (param_grads,) = vjp_fn(neg_dL)
+
+            updates, new_opt_st = adversary_optimizer.update(
+                eqx.filter(param_grads, eqx.is_array),
+                opt_st,
+                eqx.filter(adv, eqx.is_array),
+            )
+            new_adv = eqx.apply_updates(adv, updates)
+            return new_adv, new_opt_st, loss_val
+
+        init_carry = (adversary, adv_opt_st, jnp.float32(0.0))
+        adversary_new, adv_opt_st_new, adv_loss = jax.lax.fori_loop(
+            0, n_adversary_steps, _adv_body, init_carry
+        )
+
+        # --- Controller descent step (1 step) ---
+        force_profile = adversary_new()
+        forces = jnp.broadcast_to(
+            force_profile, (adv_batch_size, *force_profile.shape)
+        )
+        adv_trial_specs = _inject_adversary_forces(trial_specs, forces)
+
+        def _ctrl_loss(m):
+            states = task.eval_trials(m, adv_trial_specs, keys)
+            return loss_func(states, adv_trial_specs, m).total.mean()
+
+        ctrl_loss_val, grads = eqx.filter_value_and_grad(_ctrl_loss)(model)
+
+        trainable_grads = eqx.filter(_get_trainable(grads), eqx.is_array)
+        updates, ctrl_opt_st_new = ctrl_optimizer.update(
+            trainable_grads,
+            ctrl_opt_st,
+            eqx.filter(_get_trainable(model), eqx.is_array),
+        )
+        updated_trainable = eqx.apply_updates(_get_trainable(model), updates)
+        new_model = eqx.tree_at(
+            lambda m: (m.nodes["net"].hidden, m.nodes["net"].readout),
+            model,
+            updated_trainable,
+        )
+        flat_model_new = jtu.tree_flatten(new_model)[0]
+
+        return (flat_model_new, adversary_new, adv_opt_st_new,
+                ctrl_opt_st_new, adv_loss, ctrl_loss_val)
+
     # Adversarial phase batch size (may differ from warmup to reduce XLA compile time)
     adv_batch_size = args.adv_batch_size if args.adv_batch_size is not None else hps.batch_size
     logger.info("Adversarial phase batch size: %d", adv_batch_size)
@@ -729,11 +843,19 @@ def run_training(args: argparse.Namespace) -> None:
     # Periodic logging interval
     log_step = max(1, args.n_adversary_batches // 20)
 
-    # Decomposed adversary gradient: differentiate loss w.r.t. force array first,
-    # then VJP through adversary() to get bump-param gradients.
-    # Each adversary step is a separate Python-level call (~12 host-device round-trips
-    # per batch), but each compiled function is small enough to compile on TPU (~14 min
-    # vs 40+ min for the monolithic fori_loop approach).
+    use_fused = args.fused
+    if use_fused:
+        logger.info(
+            "Using FUSED adversary batch (single JIT call with lax.fori_loop "
+            "for %d inner adversary steps + 1 controller step)",
+            n_adversary_steps,
+        )
+    else:
+        logger.info(
+            "Using DECOMPOSED adversary batch (%d×2 + 1 = %d separate JIT "
+            "calls per batch)",
+            n_adversary_steps, 2 * n_adversary_steps + 1,
+        )
 
     for batch_idx in range(start_batch_idx, args.n_adversary_batches):
         batch_key, key_adv = jr.split(key_adv)
@@ -764,30 +886,35 @@ def run_training(args: argparse.Namespace) -> None:
         adv_opt_state = adv_opt_states[adv_idx]
         adv_indices.append(adv_idx)
 
-        # --- Adversary update (K ascent steps, Python-level loop) ---
-        # Force generation happens inside _loss_and_force_grad (JIT) so that eager
-        # adversary() / jnp.broadcast_to calls do not accumulate primitive compilations.
-        _adv_loss_val = None
-        for _ in range(args.n_adversary_steps):
-            _adv_loss_val, dL_dforces = _loss_and_force_grad(
-                flat_model, adversary, trial_specs, trial_keys, adv_batch_size
+        if use_fused:
+            # --- Single fused JIT call: K adversary steps + 1 controller step ---
+            (flat_model, adversary, adv_opt_state, ctrl_opt_state,
+             adv_loss_val, ctrl_loss) = _fused_adversary_batch(
+                flat_model, adversary, adv_opt_state, ctrl_opt_state,
+                trial_specs, trial_keys,
             )
-            adversary, adv_opt_state = _adversary_update(
-                adversary_optimizer, adversary, dL_dforces, adv_opt_state
+        else:
+            # --- Decomposed: K×2 + 1 separate JIT calls per batch ---
+            adv_loss_val = jnp.float32(0.0)
+            for _ in range(args.n_adversary_steps):
+                adv_loss_val, dL_dforces = _loss_and_force_grad(
+                    flat_model, adversary, trial_specs, trial_keys, adv_batch_size
+                )
+                adversary, adv_opt_state = _adversary_update(
+                    adversary_optimizer, adversary, dL_dforces, adv_opt_state
+                )
+
+            # Controller update (1 descent step)
+            flat_model, ctrl_opt_state, ctrl_loss = _controller_step(
+                flat_model, ctrl_opt_state, adversary, trial_specs, trial_keys,
+                adv_batch_size,
             )
 
         # Write back updated adversary and optimizer state
         adversaries[adv_idx] = adversary
         adv_opt_states[adv_idx] = adv_opt_state
 
-        # --- Controller update (1 descent step) ---
-        # Force generation and injection happen inside _controller_step (JIT).
-        flat_model, ctrl_opt_state, ctrl_loss = _controller_step(
-            flat_model, ctrl_opt_state, adversary, trial_specs, trial_keys, adv_batch_size
-        )
-
-        adv_loss_val = float(_adv_loss_val if _adv_loss_val is not None else jnp.array(0.0))
-        adv_losses.append(adv_loss_val)
+        adv_losses.append(float(adv_loss_val))
         ctrl_losses.append(float(ctrl_loss))
 
         if batch_idx % log_step == 0 or batch_idx == args.n_adversary_batches - 1:
@@ -982,6 +1109,15 @@ def parse_args() -> argparse.Namespace:
             "<output-dir>/checkpoints_adversarial/checkpoint_latest/. "
             "Skips phase 1 (warm-start) if warmup_model.eqx already exists in "
             "<output-dir>."
+        ),
+    )
+    parser.add_argument(
+        "--fused", action=argparse.BooleanOptionalAction, default=True,
+        help=(
+            "Fuse the K adversary steps + controller step into a single JIT "
+            "call using lax.fori_loop (default: True). Use --no-fused to fall "
+            "back to the decomposed approach (K×2 + 1 separate JIT calls per "
+            "batch) for debugging or comparison."
         ),
     )
     return parser.parse_args()
