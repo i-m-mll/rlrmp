@@ -252,12 +252,6 @@ def run_training(args: argparse.Namespace) -> None:
     """Run minimax adversarial training."""
     _configure_jax_runtime(args)
 
-    if args.checkpoint:
-        logger.warning(
-            "--checkpoint flag is set but feedbax's Iterator does not yet expose a "
-            "checkpoint field; flag has no effect."
-        )
-
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -335,6 +329,19 @@ def run_training(args: argparse.Namespace) -> None:
             log_step=max(1, args.n_warmup_batches // 20),
         )
         logger.info("Warm-start complete.")
+
+    # Enable jax.checkpoint on the model's scan body to trade compute for VRAM.
+    # Must be done before extracting the first replicate for the adversarial phase,
+    # but the checkpoint field is static so the timing relative to replicate extraction
+    # doesn't technically matter — we do it here for clarity.
+    if args.checkpoint:
+        try:
+            warmup_model = eqx.tree_at(lambda m: m.checkpoint, warmup_model, True)
+            logger.info("Enabled jax.checkpoint on model scan body (trading ~22%% VRAM for compute)")
+        except (AttributeError, ValueError):
+            logger.warning(
+                "feedbax Graph does not have a checkpoint field — --checkpoint flag has no effect"
+            )
 
     # Save warm-started model
     warmup_model_path = output_dir / "warmup_model.eqx"
@@ -667,9 +674,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--checkpoint", action="store_true",
         help=(
-            "Enable jax.checkpoint on the scan body to reduce VRAM at ~22%% time cost. "
-            "Note: feedbax's Iterator does not currently expose a checkpoint field; "
-            "this flag is reserved for when that support is added."
+            "Enable jax.checkpoint on the model's scan body to reduce peak VRAM at ~22%% "
+            "extra compute cost. Requires feedbax Graph to have a checkpoint field "
+            "(available on the target GPU pod); silently no-ops otherwise."
         ),
     )
     return parser.parse_args()
