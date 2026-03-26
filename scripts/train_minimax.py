@@ -54,7 +54,6 @@ from rlrmp.modules.training.part2 import setup_task_model_pair
 logger = logging.getLogger(__name__)
 
 
-@eqx.filter_jit
 def _adversary_update(adversary_optimizer, adversary, dL_dforces, adv_opt_st):
     """Update adversary parameters via VJP through adversary().
 
@@ -520,9 +519,8 @@ def run_training(args: argparse.Namespace) -> None:
         logger.info("Warm-start complete.")
 
     # Enable jax.checkpoint on the model's scan body to trade compute for VRAM.
-    # Must be done before extracting the first replicate for the adversarial phase,
-    # but the checkpoint field is static so the timing relative to replicate extraction
-    # doesn't technically matter — we do it here for clarity.
+    # Must be done before flattening the model for the adversarial phase.
+    # The checkpoint field is static so it doesn't affect array shapes.
     if args.checkpoint:
         try:
             object.__setattr__(warmup_model, "checkpoint", True)
@@ -538,61 +536,134 @@ def run_training(args: argparse.Namespace) -> None:
     # Phase 2 — adversarial training
     # -----------------------------------------------------------------------
     n_adversaries = args.n_adversaries
+    n_reps = hps.model.n_replicates
     logger.info(
         "Phase 2: adversarial training for %d batches "
-        "(n_adversaries=%d, n_adversary_steps=%d, adversary_lr=%g, controller_lr=%g, "
-        "n_bumps=%d, force_max=%g)",
-        args.n_adversary_batches, n_adversaries, args.n_adversary_steps,
+        "(n_replicates=%d vmapped, n_adversaries=%d, n_adversary_steps=%d, "
+        "adversary_lr=%g, controller_lr=%g, n_bumps=%d, force_max=%g)",
+        args.n_adversary_batches, n_reps, n_adversaries, args.n_adversary_steps,
         args.adversary_lr, args.controller_lr,
         args.n_bumps, args.force_max,
     )
 
-    # Create adversary population (K independent adversaries with different seeds)
+    # Create adversary population (K independent adversaries with different seeds).
+    # Each adversary is vmapped across n_reps replicates so every replicate gets
+    # its own independent adversary parameters.
     n_timesteps = hps.task.n_steps - 1  # feedbax uses n_steps-1 as the sim length
-    adversaries = [
-        GaussianBumpAdversary(
-            n_bumps=args.n_bumps,
-            n_timesteps=n_timesteps,
-            n_force_dims=2,
-            force_max=args.force_max,
-            dt=hps.dt,
-            key=jr.PRNGKey(7 + i),
-        )
-        for i in range(n_adversaries)
-    ]
 
-    # Adversary optimizers (one per adversary; higher LR for TTUR)
+    def _make_adversary_population(n_adversaries: int) -> list:
+        """Create K adversaries, each vmapped over n_reps replicates."""
+        pop = []
+        for i in range(n_adversaries):
+            # Each replicate within adversary i gets a unique key
+            rep_keys = jr.split(jr.PRNGKey(7 + i), n_reps)
+            adv_vmapped = eqx.filter_vmap(
+                lambda k: GaussianBumpAdversary(
+                    n_bumps=args.n_bumps,
+                    n_timesteps=n_timesteps,
+                    n_force_dims=2,
+                    force_max=args.force_max,
+                    dt=hps.dt,
+                    key=k,
+                )
+            )(rep_keys)
+            pop.append(adv_vmapped)
+        return pop
+
+    adversaries = _make_adversary_population(n_adversaries)
+
+    # Adversary optimizers (one per adversary population member).
+    # Init on a single-replicate adversary, then stack n_reps copies so ALL
+    # state arrays (including step counters) carry a leading (n_reps,) axis.
     adversary_optimizer = optax.adam(args.adversary_lr)
-    adv_opt_states = [
-        adversary_optimizer.init(eqx.filter(adv, eqx.is_array))
-        for adv in adversaries
-    ]
+
+    def _init_vmapped_opt_state(vmapped_adv):
+        """Init optimizer on one replicate's adversary, stack for all reps."""
+        single_adv = jt.map(
+            lambda x: x[0] if (eqx.is_array(x) and x.ndim > 0) else x,
+            vmapped_adv, is_leaf=eqx.is_array,
+        )
+        single_st = adversary_optimizer.init(eqx.filter(single_adv, eqx.is_array))
+        return jt.map(
+            lambda x: jnp.stack([x] * n_reps) if eqx.is_array(x) else x,
+            single_st, is_leaf=eqx.is_array,
+        )
+
+    adv_opt_states = [_init_vmapped_opt_state(adv) for adv in adversaries]
 
     # Controller optimizer (constant LR for the adversarial phase).
     # We train only the recurrent net weights (hidden + readout), same as TaskTrainer.
     ctrl_optimizer = optax.adamw(args.controller_lr, weight_decay=0.0)
 
-    # The model from train_pair has a leading replicate axis on all array leaves
-    # (shape [n_replicates, ...]). task.eval_trials expects a single model without
-    # this extra axis. Extract the first replicate.
-    n_reps = hps.model.n_replicates
-    adv_model = jt.map(
-        lambda x: x[0] if (hasattr(x, "ndim") and x.ndim > 0 and x.shape[0] == n_reps) else x,
+    # The model from train_pair with ensembled=True has a leading replicate axis
+    # on MOST array leaves: shape (n_reps, ...). Some arrays are shared across
+    # replicates (no leading axis). We separate these for vmapping.
+    #
+    # Pre-flatten strategy (Bug: d6cc111): feedbax models store JAX arrays as
+    # static PyTree metadata, so passing the model directly to filter_jit causes
+    # recompilation after every update. We pass only flat arrays (all dynamic)
+    # and close over the treedef (fixed).
+    #
+    # For vmapping: we split arrays into "per-replicate" (leading n_reps axis)
+    # and "shared" (no replicate axis). The vmapped function receives per-rep
+    # arrays; shared arrays are closed over. Both are recombined inside the
+    # function via treedef_model.unflatten.
+
+    def _has_rep_axis(x):
+        return eqx.is_array(x) and x.ndim > 0 and x.shape[0] == n_reps
+
+    # Extract single replicate for treedef (structure is same across replicates)
+    single_rep_model = jt.map(
+        lambda x: x[0] if _has_rep_axis(x) else x,
         warmup_model,
         is_leaf=eqx.is_array,
     )
+    flat_single_rep, treedef_model = jtu.tree_flatten(single_rep_model)
 
-    # Pre-flatten the model into dynamic (array) and static (treedef) parts ONCE.
-    # This is the key fix for JIT recompilation: feedbax models store JAX arrays as
-    # static PyTree metadata, so passing the model object directly to eqx.filter_jit
-    # produces a new cache key after every controller update. Instead, we pass only
-    # the flat list of arrays (all dynamic) and close over the treedef (which never
-    # changes because the model structure is fixed). Bug: d6cc111
-    flat_model, treedef_model = jtu.tree_flatten(adv_model)
+    # Build masks: which flat leaves are per-replicate vs shared
+    flat_ensembled = jtu.tree_flatten(warmup_model)[0]
+    is_per_rep = [_has_rep_axis(x) for x in flat_ensembled]
 
-    # Initialise controller optimizer state on the squeezed model's trainable leaves
-    ctrl_opt_state = ctrl_optimizer.init(
-        eqx.filter(_get_trainable(adv_model), eqx.is_array)
+    # Split into per-replicate arrays (vmapped) and shared arrays (closed over)
+    per_rep_arrays = [x for x, pr in zip(flat_ensembled, is_per_rep) if pr]
+    shared_leaves = [x for x, pr in zip(flat_ensembled, is_per_rep) if not pr]
+
+    def _recombine_flat(per_rep_list, shared_list):
+        """Recombine per-rep and shared leaves into a full flat list."""
+        result = []
+        pr_idx, sh_idx = 0, 0
+        for is_pr in is_per_rep:
+            if is_pr:
+                result.append(per_rep_list[pr_idx])
+                pr_idx += 1
+            else:
+                result.append(shared_list[sh_idx])
+                sh_idx += 1
+        return result
+
+    def _split_flat(flat_list):
+        """Split a full flat list into per-rep and shared portions."""
+        per_rep = [x for x, pr in zip(flat_list, is_per_rep) if pr]
+        shared = [x for x, pr in zip(flat_list, is_per_rep) if not pr]
+        return per_rep, shared
+
+    # The "flat_model" for the training loop is just the per-replicate arrays.
+    # Shared arrays are closed over inside the vmapped functions.
+    flat_model = per_rep_arrays
+
+    # Also keep the full ensembled treedef for final model reconstruction
+    _, treedef_ensembled = jtu.tree_flatten(warmup_model)
+
+    # Initialise controller optimizer state on a single replicate, then stack
+    # n_reps copies so ALL state arrays (including step counters) carry a leading
+    # (n_reps,) axis for the vmapped training loop.
+    single_rep_ctrl_state = ctrl_optimizer.init(
+        eqx.filter(_get_trainable(single_rep_model), eqx.is_array)
+    )
+    ctrl_opt_state = jt.map(
+        lambda x: jnp.stack([x] * n_reps) if eqx.is_array(x) else x,
+        single_rep_ctrl_state,
+        is_leaf=eqx.is_array,
     )
 
     # ---------------------------------------------------------------------------
@@ -601,35 +672,54 @@ def run_training(args: argparse.Namespace) -> None:
     # adversarial phase. The model is passed as a flat list of arrays (flat_model)
     # so that eqx.filter_jit sees only dynamic leaves in its argument, never
     # static metadata that changes with each update. Bug: d6cc111
+    #
+    # All functions operate on a SINGLE replicate internally. They are wrapped
+    # with eqx.filter_vmap at the call site so each replicate trains its own
+    # model + adversary independently, sharing only trial_specs and PRNG keys.
     # ---------------------------------------------------------------------------
 
-    @eqx.filter_jit
-    def _loss_and_force_grad(flat_model, adversary, trial_specs, keys, batch_size):
-        """Compute loss and gradient w.r.t. force array.
+    # Adversarial phase batch size (may differ from warmup to reduce XLA compile time)
+    adv_batch_size = args.adv_batch_size if args.adv_batch_size is not None else hps.batch_size
+    logger.info("Adversarial phase batch size: %d", adv_batch_size)
 
-        Forces are generated inside JIT so that the eager adversary() call and
-        jnp.broadcast_to do not accumulate primitive compilations in the JIT cache.
+    n_adversary_steps = args.n_adversary_steps
+
+    def _unflatten_model(per_rep_flat):
+        """Reconstruct a single-replicate model from per-rep arrays + shared leaves.
+
+        Merges the dynamic per-replicate arrays with the static shared leaves
+        (closed over), then unflattens using treedef_model.
+        """
+        full_flat = _recombine_flat(per_rep_flat, shared_leaves)
+        return jtu.tree_unflatten(treedef_model, full_flat)
+
+    def _reflatten_model(model):
+        """Extract only the per-replicate arrays from a single-replicate model."""
+        full_flat = jtu.tree_flatten(model)[0]
+        per_rep, _ = _split_flat(full_flat)
+        return per_rep
+
+    def _single_rep_loss_and_force_grad(per_rep_flat, adversary, trial_specs, keys):
+        """Compute loss and gradient w.r.t. force array for a single replicate.
 
         Args:
-            flat_model: Flat list of model array leaves (dynamic part only).
-            adversary: Current GaussianBumpAdversary.
-            trial_specs: Batched trial specifications.
+            per_rep_flat: Per-replicate model arrays for ONE replicate.
+            adversary: GaussianBumpAdversary for this replicate.
+            trial_specs: Batched trial specifications (shared across replicates).
             keys: Per-trial PRNG keys, shape (batch_size,).
-            batch_size: Python int; number of trials in the batch (static → no recompile).
 
         Returns:
-            Tuple of (loss_scalar, dL_dforces) where dL_dforces has shape (batch_size, T, d).
+            Tuple of (loss_scalar, dL_dforces) where dL_dforces has shape
+            (batch_size, T, d).
         """
-        model = jtu.tree_unflatten(treedef_model, flat_model)
-        # stop_gradient on array leaves only (model has string/callable non-array leaves)
+        model = _unflatten_model(per_rep_flat)
         model_sg = jt.map(
             lambda x: jax.lax.stop_gradient(x) if eqx.is_array(x) else x,
             model, is_leaf=eqx.is_array,
         )
 
-        # Generate forces INSIDE JIT to avoid per-call primitive compilations.
         force_profile = adversary()  # (T, d)
-        forces = jnp.broadcast_to(force_profile, (batch_size, *force_profile.shape))
+        forces = jnp.broadcast_to(force_profile, (adv_batch_size, *force_profile.shape))
 
         def _loss_fn(f):
             ts = _inject_adversary_forces(trial_specs, f)
@@ -638,29 +728,24 @@ def run_training(args: argparse.Namespace) -> None:
 
         return jax.value_and_grad(_loss_fn)(forces)
 
-    @eqx.filter_jit
-    def _controller_step(flat_model, ctrl_opt_st, adversary, trial_specs, keys, batch_size):
-        """Single gradient-descent step on the controller with adversary forces.
-
-        Forces are generated inside JIT (same pattern as _loss_and_force_grad) to
-        avoid per-call primitive compilations from eager adversary() calls.
+    def _single_rep_controller_step(per_rep_flat, ctrl_opt_st, adversary,
+                                    trial_specs, keys):
+        """Single gradient-descent step on the controller for one replicate.
 
         Args:
-            flat_model: Flat list of model array leaves (dynamic part only).
-            ctrl_opt_st: Current controller optimizer state.
-            adversary: Current GaussianBumpAdversary (forces generated internally).
-            trial_specs: Batched trial specifications (forces injected internally).
+            per_rep_flat: Per-replicate model arrays for ONE replicate.
+            ctrl_opt_st: Controller optimizer state for this replicate.
+            adversary: GaussianBumpAdversary for this replicate.
+            trial_specs: Batched trial specifications (shared across replicates).
             keys: Per-trial PRNG keys, shape (batch_size,).
-            batch_size: Python int; number of trials in the batch (static → no recompile).
 
         Returns:
-            Tuple of (flat_updated_model, updated_opt_state, loss_scalar).
+            Tuple of (per_rep_flat_updated, updated_opt_state, loss_scalar).
         """
-        model = jtu.tree_unflatten(treedef_model, flat_model)
+        model = _unflatten_model(per_rep_flat)
 
-        # Generate forces INSIDE JIT and inject into trial specs.
         force_profile = adversary()  # (T, d)
-        forces = jnp.broadcast_to(force_profile, (batch_size, *force_profile.shape))
+        forces = jnp.broadcast_to(force_profile, (adv_batch_size, *force_profile.shape))
         adv_trial_specs = _inject_adversary_forces(trial_specs, forces)
 
         def _ctrl_loss(m):
@@ -681,8 +766,7 @@ def run_training(args: argparse.Namespace) -> None:
             model,
             updated_trainable,
         )
-        flat_updated = jtu.tree_flatten(new_model)[0]
-        return flat_updated, new_opt_st, loss_val
+        return _reflatten_model(new_model), new_opt_st, loss_val
 
     # ---------------------------------------------------------------------------
     # Fused adversary batch — single JIT call replaces K×2 + 1 round-trips.
@@ -691,33 +775,23 @@ def run_training(args: argparse.Namespace) -> None:
     # decomposed functions above. Bug: d6cc111
     # ---------------------------------------------------------------------------
 
-    n_adversary_steps = args.n_adversary_steps
-
-    @eqx.filter_jit
-    def _fused_adversary_batch(flat_model, adversary, adv_opt_st, ctrl_opt_st,
-                               trial_specs, keys):
-        """Fused adversary inner loop + controller step in a single JIT call.
-
-        Replaces the K separate ``_loss_and_force_grad`` + ``_adversary_update``
-        calls and the final ``_controller_step`` call with a single compiled
-        function, eliminating host-device round-trip overhead and enabling XLA
-        cross-step optimization.
+    def _single_rep_fused_batch(per_rep_flat, adversary, adv_opt_st, ctrl_opt_st,
+                                trial_specs, keys):
+        """Fused adversary inner loop + controller step for a single replicate.
 
         Args:
-            flat_model: Flat list of model array leaves (dynamic part only).
-            adversary: Current GaussianBumpAdversary.
-            adv_opt_st: Adversary optimizer state.
-            ctrl_opt_st: Controller optimizer state.
-            trial_specs: Batched trial specifications.
+            per_rep_flat: Per-replicate model arrays for ONE replicate.
+            adversary: GaussianBumpAdversary for this replicate.
+            adv_opt_st: Adversary optimizer state for this replicate.
+            ctrl_opt_st: Controller optimizer state for this replicate.
+            trial_specs: Batched trial specifications (shared across replicates).
             keys: Per-trial PRNG keys, shape (batch_size,).
 
         Returns:
-            Tuple of (flat_model_new, adversary_new, adv_opt_st_new,
+            Tuple of (per_rep_flat_new, adversary_new, adv_opt_st_new,
             ctrl_opt_st_new, adv_loss, ctrl_loss).
         """
-        model = jtu.tree_unflatten(treedef_model, flat_model)
-        # Stop-gradient model for adversary phase (adversary ascends loss
-        # w.r.t. force params, not model params).
+        model = _unflatten_model(per_rep_flat)
         model_sg = jt.map(
             lambda x: jax.lax.stop_gradient(x) if eqx.is_array(x) else x,
             model, is_leaf=eqx.is_array,
@@ -727,13 +801,11 @@ def run_training(args: argparse.Namespace) -> None:
         def _adv_body(i, carry):
             adv, opt_st, _last_loss = carry
 
-            # Generate forces from current adversary parameters.
             force_profile = adv()  # (T, d)
             forces = jnp.broadcast_to(
                 force_profile, (adv_batch_size, *force_profile.shape)
             )
 
-            # Loss and grad w.r.t. forces.
             def _loss_fn(f):
                 ts = _inject_adversary_forces(trial_specs, f)
                 states = task.eval_trials(model_sg, ts, keys)
@@ -741,7 +813,6 @@ def run_training(args: argparse.Namespace) -> None:
 
             loss_val, dL_dforces = jax.value_and_grad(_loss_fn)(forces)
 
-            # VJP through adversary() for parameter gradients (gradient ascent).
             def _forces_fn(a):
                 fp = a()
                 return jnp.broadcast_to(fp, dL_dforces.shape)
@@ -790,14 +861,68 @@ def run_training(args: argparse.Namespace) -> None:
             model,
             updated_trainable,
         )
-        flat_model_new = jtu.tree_flatten(new_model)[0]
 
-        return (flat_model_new, adversary_new, adv_opt_st_new,
+        return (_reflatten_model(new_model), adversary_new, adv_opt_st_new,
                 ctrl_opt_st_new, adv_loss, ctrl_loss_val)
 
-    # Adversarial phase batch size (may differ from warmup to reduce XLA compile time)
-    adv_batch_size = args.adv_batch_size if args.adv_batch_size is not None else hps.batch_size
-    logger.info("Adversarial phase batch size: %d", adv_batch_size)
+    # ---------------------------------------------------------------------------
+    # Vmapped + JIT wrappers: vmap over replicate axis (0) for model, adversary,
+    # and optimizer states; trial_specs and keys are broadcast (shared).
+    # ---------------------------------------------------------------------------
+
+    @eqx.filter_jit
+    def _vmapped_fused_batch(flat_model, adversary, adv_opt_st, ctrl_opt_st,
+                             trial_specs, keys):
+        """Fused adversary batch vmapped over replicates.
+
+        flat_model, adversary, adv_opt_st, ctrl_opt_st have leading (n_reps,)
+        on array leaves and are vmapped. trial_specs and keys are shared
+        across replicates (closed over via lambda).
+
+        Args:
+            flat_model: Flat list of arrays, each (n_reps, ...).
+            adversary: Vmapped GaussianBumpAdversary (arrays have leading n_reps).
+            adv_opt_st: Vmapped adversary optimizer state.
+            ctrl_opt_st: Vmapped controller optimizer state.
+            trial_specs: Batched trial specs (shared across replicates).
+            keys: Per-trial PRNG keys (shared across replicates).
+
+        Returns:
+            Same as _single_rep_fused_batch, with leading (n_reps,) on arrays.
+        """
+        # Close over trial_specs/keys so they are NOT vmapped; only the
+        # per-replicate state (model, adversary, opt states) is vmapped.
+        return eqx.filter_vmap(
+            lambda fm, adv, aos, cos: _single_rep_fused_batch(
+                fm, adv, aos, cos, trial_specs, keys
+            )
+        )(flat_model, adversary, adv_opt_st, ctrl_opt_st)
+
+    @eqx.filter_jit
+    def _vmapped_loss_and_force_grad(flat_model, adversary, trial_specs, keys):
+        """Loss and force grad vmapped over replicates."""
+        return eqx.filter_vmap(
+            lambda fm, adv: _single_rep_loss_and_force_grad(
+                fm, adv, trial_specs, keys
+            )
+        )(flat_model, adversary)
+
+    @eqx.filter_jit
+    def _vmapped_controller_step(flat_model, ctrl_opt_st, adversary, trial_specs,
+                                 keys):
+        """Controller step vmapped over replicates."""
+        return eqx.filter_vmap(
+            lambda fm, cos, adv: _single_rep_controller_step(
+                fm, cos, adv, trial_specs, keys
+            )
+        )(flat_model, ctrl_opt_st, adversary)
+
+    @eqx.filter_jit
+    def _vmapped_adversary_update(adversary, dL_dforces, adv_opt_st):
+        """Adversary update vmapped over replicates (decomposed mode only)."""
+        return eqx.filter_vmap(
+            partial(_adversary_update, adversary_optimizer)
+        )(adversary, dL_dforces, adv_opt_st)
 
     # -----------------------------------------------------------------------
     # Resume from checkpoint (if requested)
@@ -813,7 +938,7 @@ def run_training(args: argparse.Namespace) -> None:
         if ckpt_path.exists():
             logger.info("--resume: loading adversarial checkpoint from %s", ckpt_path)
             (
-                flat_model,
+                full_flat_loaded,
                 adversaries,
                 adv_opt_states,
                 ctrl_opt_state,
@@ -823,12 +948,14 @@ def run_training(args: argparse.Namespace) -> None:
                 adv_indices,
             ) = _load_adversarial_checkpoint(
                 adv_checkpoint_dir,
-                adv_model,
+                warmup_model,
                 adversaries,
                 adv_opt_states,
                 ctrl_opt_state,
-                treedef_model,
+                treedef_ensembled,
             )
+            # Extract only the per-replicate arrays for the training loop
+            flat_model, _ = _split_flat(full_flat_loaded)
             start_batch_idx = last_completed_batch + 1
             logger.info(
                 "Resuming adversarial training from batch %d/%d",
@@ -880,7 +1007,8 @@ def run_training(args: argparse.Namespace) -> None:
             int(hps.task.n_steps),
         )
 
-        # Select active adversary (deterministic rotation for equal usage)
+        # Select active adversary (deterministic rotation for equal usage).
+        # Each adversary in the population is vmapped across n_reps replicates.
         adv_idx = batch_idx % n_adversaries
         adversary = adversaries[adv_idx]
         adv_opt_state = adv_opt_states[adv_idx]
@@ -888,41 +1016,48 @@ def run_training(args: argparse.Namespace) -> None:
 
         if use_fused:
             # --- Single fused JIT call: K adversary steps + 1 controller step ---
+            # Vmapped over replicates: each replicate trains independently.
             (flat_model, adversary, adv_opt_state, ctrl_opt_state,
-             adv_loss_val, ctrl_loss) = _fused_adversary_batch(
+             adv_loss_vals, ctrl_loss_vals) = _vmapped_fused_batch(
                 flat_model, adversary, adv_opt_state, ctrl_opt_state,
                 trial_specs, trial_keys,
             )
         else:
             # --- Decomposed: K×2 + 1 separate JIT calls per batch ---
-            adv_loss_val = jnp.float32(0.0)
+            # Vmapped over replicates.
+            adv_loss_vals = jnp.zeros(n_reps)
             for _ in range(args.n_adversary_steps):
-                adv_loss_val, dL_dforces = _loss_and_force_grad(
-                    flat_model, adversary, trial_specs, trial_keys, adv_batch_size
+                adv_loss_vals, dL_dforces = _vmapped_loss_and_force_grad(
+                    flat_model, adversary, trial_specs, trial_keys,
                 )
-                adversary, adv_opt_state = _adversary_update(
-                    adversary_optimizer, adversary, dL_dforces, adv_opt_state
+                adversary, adv_opt_state = _vmapped_adversary_update(
+                    adversary, dL_dforces, adv_opt_state,
                 )
 
             # Controller update (1 descent step)
-            flat_model, ctrl_opt_state, ctrl_loss = _controller_step(
+            flat_model, ctrl_opt_state, ctrl_loss_vals = _vmapped_controller_step(
                 flat_model, ctrl_opt_state, adversary, trial_specs, trial_keys,
-                adv_batch_size,
             )
 
         # Write back updated adversary and optimizer state
         adversaries[adv_idx] = adversary
         adv_opt_states[adv_idx] = adv_opt_state
 
-        adv_losses.append(float(adv_loss_val))
-        ctrl_losses.append(float(ctrl_loss))
+        # Losses are (n_reps,) arrays; store per-replicate means for history
+        adv_loss_mean = float(jnp.mean(adv_loss_vals))
+        ctrl_loss_mean = float(jnp.mean(ctrl_loss_vals))
+        adv_losses.append(adv_loss_mean)
+        ctrl_losses.append(ctrl_loss_mean)
 
         if batch_idx % log_step == 0 or batch_idx == args.n_adversary_batches - 1:
             adv_label = f" [adv {adv_idx}]" if n_adversaries > 1 else ""
+            ctrl_std = float(jnp.std(ctrl_loss_vals))
+            adv_std = float(jnp.std(adv_loss_vals))
             logger.info(
-                "Adversarial batch %d/%d%s — ctrl_loss=%.4g, adv_loss=%.4g",
+                "Adversarial batch %d/%d%s — ctrl_loss=%.4g +/- %.4g, "
+                "adv_loss=%.4g +/- %.4g  (n_reps=%d)",
                 batch_idx, args.n_adversary_batches, adv_label,
-                ctrl_loss, adv_loss_val,
+                ctrl_loss_mean, ctrl_std, adv_loss_mean, adv_std, n_reps,
             )
 
         # Periodic checkpoint (save after batch_idx is complete, not before)
@@ -934,8 +1069,8 @@ def run_training(args: argparse.Namespace) -> None:
             )
             _save_adversarial_checkpoint(
                 adv_checkpoint_dir,
-                flat_model,
-                treedef_model,
+                _recombine_flat(flat_model, shared_leaves),
+                treedef_ensembled,
                 adversaries,
                 adv_opt_states,
                 ctrl_opt_state,
@@ -947,16 +1082,21 @@ def run_training(args: argparse.Namespace) -> None:
 
     logger.info("Adversarial training complete.")
 
-    # Reconstruct model from its flat arrays for saving/logging
-    adv_model = jtu.tree_unflatten(treedef_model, flat_model)
+    # Reconstruct the ensembled model from per-replicate + shared arrays.
+    # flat_model contains only per-replicate arrays (with leading n_reps axis);
+    # shared_leaves are the arrays/values without the replicate axis.
+    full_flat = _recombine_flat(flat_model, shared_leaves)
+    adv_model = jtu.tree_unflatten(treedef_ensembled, full_flat)
 
     # -----------------------------------------------------------------------
     # Save outputs
     # -----------------------------------------------------------------------
-    # Final adversarially-trained model
+    # Final adversarially-trained model (ensembled: arrays have leading n_reps axis)
     final_model_path = output_dir / "adversarial_model.eqx"
     fbx_save(final_model_path, adv_model, hyperparameters=config_dict)
-    logger.info("Saved adversarial model to %s", final_model_path)
+    logger.info(
+        "Saved adversarial model (n_reps=%d ensembled) to %s", n_reps, final_model_path
+    )
 
     # Training histories (warmup from TaskTrainer; adversarial phase as numpy arrays)
     if warmup_history is not None:
@@ -969,12 +1109,15 @@ def run_training(args: argparse.Namespace) -> None:
     np.savez(output_dir / "adversarial_losses.npz", **loss_data)
     logger.info("Saved adversarial loss curves to %s", output_dir / "adversarial_losses.npz")
 
-    # Final adversary/adversaries
+    # Final adversary/adversaries (each is vmapped across n_reps replicates)
     if n_adversaries == 1:
-        # Single adversary: save with original filename for backward compatibility
+        # Single adversary population: save with original filename for backward compat
         fbx_save(output_dir / "trained_adversary.eqx", adversaries[0])
-        logger.info("Saved trained adversary to %s", output_dir / "trained_adversary.eqx")
-        _log_adversary_force_profiles(adversaries[0], output_dir)
+        logger.info(
+            "Saved trained adversary (n_reps=%d) to %s",
+            n_reps, output_dir / "trained_adversary.eqx",
+        )
+        _log_adversary_force_profiles(adversaries[0], output_dir, n_reps=n_reps)
     else:
         adv_dir = output_dir / "adversaries"
         adv_dir.mkdir(parents=True, exist_ok=True)
@@ -983,9 +1126,10 @@ def run_training(args: argparse.Namespace) -> None:
             fbx_save(adv_path, adv)
             logger.info("Saved adversary %d to %s", i, adv_path)
             _log_adversary_force_profiles(
-                adv, output_dir, suffix=f"_adv{i}",
+                adv, output_dir, suffix=f"_adv{i}", n_reps=n_reps,
             )
-        logger.info("Saved %d adversaries to %s", n_adversaries, adv_dir)
+        logger.info("Saved %d adversaries (each n_reps=%d) to %s",
+                     n_adversaries, n_reps, adv_dir)
 
     logger.info("All results saved to %s", output_dir)
 
@@ -994,20 +1138,31 @@ def _log_adversary_force_profiles(
     adversary: GaussianBumpAdversary,
     output_dir: Path,
     suffix: str = "",
+    n_reps: int = 1,
 ) -> None:
-    """Log adversary force profile (SISU-independent) to a numpy archive.
+    """Log adversary force profiles (SISU-independent) to a numpy archive.
+
+    When the adversary is vmapped across replicates, generates and saves
+    per-replicate force profiles with shape (n_reps, T, 2).
 
     Args:
-        adversary: Trained GaussianBumpAdversary.
+        adversary: Trained GaussianBumpAdversary (possibly vmapped with leading
+            n_reps axis on array leaves).
         output_dir: Directory to write the archive into.
         suffix: Optional suffix for the output filename (e.g. "_adv0").
+        n_reps: Number of replicates (for logging).
     """
-    forces = adversary()  # (T, 2)
-    profile_norm = float(np.linalg.norm(np.array(forces)))
-    logger.info("Adversary%s force profile norm: %.4g", suffix, profile_norm)
+    # Generate force profiles: vmapped adversary produces (n_reps, T, 2)
+    forces = eqx.filter_vmap(lambda a: a())(adversary)  # (n_reps, T, 2)
+    forces_np = np.array(forces)
+    per_rep_norms = np.linalg.norm(forces_np.reshape(n_reps, -1), axis=-1)
+    logger.info(
+        "Adversary%s force profile norms: mean=%.4g +/- %.4g (n_reps=%d)",
+        suffix, per_rep_norms.mean(), per_rep_norms.std(), n_reps,
+    )
 
     filename = f"adversary_force_profiles{suffix}.npz"
-    np.savez(output_dir / filename, forces=np.array(forces))
+    np.savez(output_dir / filename, forces=forces_np)
     logger.info("Saved adversary force profiles to %s", output_dir / filename)
 
 
