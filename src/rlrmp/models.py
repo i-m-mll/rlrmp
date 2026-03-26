@@ -84,6 +84,7 @@ def create_point_mass_nn_ensemble(
     n_extra_inputs: int = 0,
     population_structure: Optional[PopulationStructure] = None,
     hidden_type: Optional[type] = None,
+    sisu_gating: str = "additive",
     *,
     key: PRNGKeyArray,
 ):
@@ -142,5 +143,6 @@ def create_point_mass_nn_ensemble(
         tau_decay=hps.model.tau_rise,  # Note: using tau_rise for both
         population_structure=population_structure,
         hidden_type=hidden_type,
+        sisu_gating=sisu_gating,
         key=key,
     )
