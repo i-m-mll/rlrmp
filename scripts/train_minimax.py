@@ -39,13 +39,26 @@ import jax.tree_util as jtu
 import numpy as np
 import optax
 from feedbax._io import load_with_hyperparameters, save as fbx_save
+from feedbax.graph import init_state_from_component
+from feedbax.iterate import run_component
 from feedbax.misc import BatchInfo
+from feedbax.streaming_loss import make_streaming_loss_fn
+from feedbax.task import (
+    _extract_timeseries_params,
+    _infer_n_steps,
+    _merge_intervene_inputs,
+    _prepare_inputs,
+    _safe_state_set,
+    _set_state_by_path,
+    _where_key_to_path,
+)
 from feedbax.training.train import (
     TaskTrainer,
     make_delayed_cosine_schedule,
     train_pair,
 )
 from feedbax.types import TreeNamespace, dict_to_namespace
+from feedbax.intervene import TimeSeriesParam
 
 from rlrmp.adversarial_training import _inject_adversary_forces
 from rlrmp.adversary import GaussianBumpAdversary
@@ -425,6 +438,85 @@ def _get_trainable(model):
     return (net.hidden, net.readout)
 
 
+def _eval_trials_streaming(task, model, trial_specs, keys, loss_func):
+    """Evaluate trials with streaming loss — no trajectory stored.
+
+    Mirrors ``task.eval_trials`` but passes a ``streaming_loss_fn`` to
+    ``run_component`` so that loss is accumulated inside the scan body.
+    Returns the mean scalar loss across the batch (no state history).
+
+    Args:
+        task: The task instance (provides intervention_state_indices, etc.).
+        model: The model to evaluate.
+        trial_specs: Batched trial specifications (leading batch dim).
+        keys: Per-trial PRNG keys, shape ``(batch_size,)``.
+        loss_func: The loss function (``AbstractLoss``); used to build the
+            per-step streaming closure via ``make_streaming_loss_fn``.
+
+    Returns:
+        Scalar loss averaged over the batch.
+    """
+    # Bug: 3ef9c25 — streaming loss integration for memory-efficient training
+    def eval_single(trial_spec, key):
+        key_init, key_run = jr.split(key)
+        init_state = init_state_from_component(model)
+
+        for where_substate, init_substate in trial_spec.inits.items():
+            path = _where_key_to_path(where_substate)
+            init_state = _set_state_by_path(model, init_state, path, init_substate)
+
+        # Apply intervention params (same logic as task.eval_trials)
+        intervene_inputs = {}
+        if trial_spec.intervene:
+            indices = model.intervention_state_indices()
+            for label, params in trial_spec.intervene.items():
+                if label not in indices:
+                    raise ValueError(f"Unknown intervention label '{label}'")
+                idx = indices[label]
+                current = init_state.get(idx)
+
+                def _merge_leaf(p, c):
+                    if isinstance(p, TimeSeriesParam):
+                        return c
+                    if p is None:
+                        return c
+                    return p
+
+                merged = jt.map(
+                    _merge_leaf,
+                    params, current,
+                    is_leaf=lambda x: x is None or isinstance(x, TimeSeriesParam),
+                )
+                init_state = _safe_state_set(init_state, idx, merged)
+                tv_params = _extract_timeseries_params(params, current)
+                if tv_params is not None:
+                    intervene_inputs[label] = tv_params
+
+        init_state = model.state_consistency_update(init_state)
+
+        inputs = _prepare_inputs(model, trial_spec.inputs)
+        if intervene_inputs:
+            inputs = _merge_intervene_inputs(inputs, intervene_inputs)
+        n_steps = _infer_n_steps(inputs, trial_spec.timeline)
+
+        # Build per-step streaming loss closure (single trial, no batch dim)
+        streaming_fn = make_streaming_loss_fn(loss_func, trial_spec, model, n_steps)
+
+        checkpoint = getattr(model, 'checkpoint', False)
+        _outputs, _final_state, total_loss = run_component(
+            model,
+            inputs,
+            init_state,
+            key=key_run,
+            n_steps=n_steps,
+            streaming_loss_fn=streaming_fn,
+        )
+        return total_loss
+
+    per_trial_losses = eqx.filter_vmap(eval_single)(trial_specs, keys)
+    return per_trial_losses.mean()
+
+
 def _make_where_train(sisu_gating: str = "additive"):
     """Return the where_train dict for the controller optimizer."""
     def where_train_fn(model):
@@ -465,6 +557,20 @@ def run_training(args: argparse.Namespace) -> None:
     pair = setup_task_model_pair(hps, key=key_init)
     task = pair.task
     loss_func = task.loss_func
+
+    # Build a loss computation closure that abstracts over standard vs
+    # streaming evaluation.  Streaming mode accumulates loss inside the scan
+    # body, avoiding storage of the full state trajectory.  Bug: 3ef9c25
+    use_streaming_loss = args.streaming_loss
+    if use_streaming_loss:
+        logger.info("Using STREAMING loss (no trajectory storage)")
+
+        def _compute_loss(model, trial_specs, keys):
+            return _eval_trials_streaming(task, model, trial_specs, keys, loss_func)
+    else:
+        def _compute_loss(model, trial_specs, keys):
+            states = task.eval_trials(model, trial_specs, keys)
+            return loss_func(states, trial_specs, model).total.mean()
 
     where_train = _make_where_train(sisu_gating=args.sisu_gating)
 
@@ -760,8 +866,7 @@ def run_training(args: argparse.Namespace) -> None:
 
         def _loss_fn(f):
             ts = _inject_adversary_forces(trial_specs, f)
-            states = task.eval_trials(model_sg, ts, keys)
-            return loss_func(states, ts, model_sg).total.mean()
+            return _compute_loss(model_sg, ts, keys)
 
         return jax.value_and_grad(_loss_fn)(forces)
 
@@ -786,8 +891,7 @@ def run_training(args: argparse.Namespace) -> None:
         adv_trial_specs = _inject_adversary_forces(trial_specs, forces)
 
         def _ctrl_loss(m):
-            states = task.eval_trials(m, adv_trial_specs, keys)
-            return loss_func(states, adv_trial_specs, m).total.mean()
+            return _compute_loss(m, adv_trial_specs, keys)
 
         loss_val, grads = eqx.filter_value_and_grad(_ctrl_loss)(model)
 
@@ -845,8 +949,7 @@ def run_training(args: argparse.Namespace) -> None:
 
             def _loss_fn(f):
                 ts = _inject_adversary_forces(trial_specs, f)
-                states = task.eval_trials(model_sg, ts, keys)
-                return loss_func(states, ts, model_sg).total.mean()
+                return _compute_loss(model_sg, ts, keys)
 
             loss_val, dL_dforces = jax.value_and_grad(_loss_fn)(forces)
 
@@ -881,8 +984,7 @@ def run_training(args: argparse.Namespace) -> None:
         adv_trial_specs = _inject_adversary_forces(trial_specs, forces)
 
         def _ctrl_loss(m):
-            states = task.eval_trials(m, adv_trial_specs, keys)
-            return loss_func(states, adv_trial_specs, m).total.mean()
+            return _compute_loss(m, adv_trial_specs, keys)
 
         ctrl_loss_val, grads = eqx.filter_value_and_grad(_ctrl_loss)(model)
 
@@ -1329,6 +1431,16 @@ def parse_args() -> argparse.Namespace:
             "call using lax.fori_loop (default: True). Use --no-fused to fall "
             "back to the decomposed approach (K×2 + 1 separate JIT calls per "
             "batch) for debugging or comparison."
+        ),
+    )
+    parser.add_argument(
+        "--streaming-loss", action=argparse.BooleanOptionalAction, default=False,
+        help=(
+            "Accumulate loss inside the simulation scan body instead of storing "
+            "the full state trajectory (default: False). Eliminates trajectory "
+            "memory at the cost of requiring all loss terms to support per-step "
+            "evaluation (cross-timestep losses like EffectorStraightPathLoss "
+            "are not supported). Use --no-streaming-loss to disable."
         ),
     )
     parser.add_argument(
