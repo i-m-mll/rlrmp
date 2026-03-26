@@ -15,6 +15,7 @@ Usage:
 import argparse
 import json
 import logging
+import os
 import subprocess
 from functools import partial
 from pathlib import Path
@@ -111,6 +112,20 @@ def _get_git_metadata() -> dict:
     return meta
 
 
+def _configure_jax_runtime(args: argparse.Namespace) -> None:
+    """Configure JAX runtime options that must be set before first compile."""
+    cache_dir = args.jax_cache_dir or os.environ.get("JAX_COMPILATION_CACHE_DIR")
+    if cache_dir:
+        cache_path = Path(cache_dir).expanduser()
+        cache_path.mkdir(parents=True, exist_ok=True)
+        jax.config.update("jax_compilation_cache_dir", str(cache_path))
+        logger.info("Using JAX compilation cache dir: %s", cache_path)
+
+    if args.jax_explain_cache_misses:
+        jax.config.update("jax_explain_cache_misses", True)
+        logger.info("Enabled jax_explain_cache_misses for cache diagnostics")
+
+
 # ---------------------------------------------------------------------------
 # Hyperparameter construction
 # ---------------------------------------------------------------------------
@@ -140,7 +155,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             # Use a single replicate for the adversarial phase — the ensemble
             # complexity doesn't add value for initial minimax exploration, and
             # avoiding the replicate batch axis simplifies the standalone loop.
-            "n_replicates": 5,
+            "n_replicates": 1,
             "effector_mass": 1.0,
             "hidden_size": 180,
             "feedback_delay_steps": 5,
@@ -233,6 +248,8 @@ def _make_where_train():
 
 def run_training(args: argparse.Namespace) -> None:
     """Run minimax adversarial training."""
+    _configure_jax_runtime(args)
+
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -629,6 +646,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir", type=str, default="results/minimax_test",
         help="Output directory for results (default: results/minimax_test).",
+    )
+    parser.add_argument(
+        "--jax-cache-dir", type=str, default=None,
+        help=(
+            "Persistent JAX compilation cache directory. If omitted, uses "
+            "JAX_COMPILATION_CACHE_DIR from the environment when set."
+        ),
+    )
+    parser.add_argument(
+        "--jax-explain-cache-misses", action="store_true",
+        help="Enable JAX cache-miss diagnostics for debugging recompilation.",
     )
     return parser.parse_args()
 
