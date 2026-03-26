@@ -169,11 +169,15 @@ def setup_task_model_pair(
 
     task_base = TASK_TYPES[hps.task.type](loss_func=get_reach_loss(hps), **hps_task)
 
+    # Resolve hidden_type from hps if present; default (None) falls back to GRUCell
+    hidden_type = getattr(hps, 'hidden_type', None)
+
     # Create base models with extra input for SISU
     models_base = create_point_mass_nn_ensemble(
         hps,
         task_base,
         n_extra_inputs=1,  # for SISU
+        hidden_type=hidden_type,
         key=key,
     )
 
