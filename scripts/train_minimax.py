@@ -163,7 +163,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         "state_reset_iterations": [],
         "intervention_scaleup_batches": [0, 0],
         "model": {
-            "n_replicates": 1,
+            "n_replicates": 5,
             "effector_mass": 1.0,
             "hidden_size": 180,
             "feedback_delay_steps": 5,
