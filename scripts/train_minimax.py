@@ -6,10 +6,16 @@ Phase 2 (adversarial): Alternate between adversary gradient ascent and controlle
 The adversary (GaussianBumpAdversary) generates SISU-conditional force profiles that
 replace random gusts during adversarial training.
 
+Population-based mode (--n-adversaries K) creates K independent adversaries that
+rotate each batch (adversary index = batch_idx % K), providing diverse perturbation
+pressure. When K=1, behavior is identical to the original single-adversary mode.
+
 Usage:
     uv run python scripts/train_minimax.py --n-warmup-batches 2000 --n-adversary-batches 8000
     uv run python scripts/train_minimax.py --n-warmup-batches 20 --n-adversary-batches 30 \
         --output-dir /tmp/minimax_smoke
+    uv run python scripts/train_minimax.py --n-adversaries 5 --n-adversary-batches 10000 \
+        --output-dir results/pop_adversary
 """
 
 import argparse
@@ -349,29 +355,36 @@ def run_training(args: argparse.Namespace) -> None:
     # -----------------------------------------------------------------------
     # Phase 2 — adversarial training
     # -----------------------------------------------------------------------
+    n_adversaries = args.n_adversaries
     logger.info(
         "Phase 2: adversarial training for %d batches "
-        "(n_adversary_steps=%d, adversary_lr=%g, controller_lr=%g, "
+        "(n_adversaries=%d, n_adversary_steps=%d, adversary_lr=%g, controller_lr=%g, "
         "n_bumps=%d, force_max=%g)",
-        args.n_adversary_batches, args.n_adversary_steps,
+        args.n_adversary_batches, n_adversaries, args.n_adversary_steps,
         args.adversary_lr, args.controller_lr,
         args.n_bumps, args.force_max,
     )
 
-    # Create adversary
+    # Create adversary population (K independent adversaries with different seeds)
     n_timesteps = hps.task.n_steps - 1  # feedbax uses n_steps-1 as the sim length
-    adversary = GaussianBumpAdversary(
-        n_bumps=args.n_bumps,
-        n_timesteps=n_timesteps,
-        n_force_dims=2,
-        force_max=args.force_max,
-        dt=hps.dt,
-        key=jr.PRNGKey(7),
-    )
+    adversaries = [
+        GaussianBumpAdversary(
+            n_bumps=args.n_bumps,
+            n_timesteps=n_timesteps,
+            n_force_dims=2,
+            force_max=args.force_max,
+            dt=hps.dt,
+            key=jr.PRNGKey(7 + i),
+        )
+        for i in range(n_adversaries)
+    ]
 
-    # Adversary optimizer (higher LR for TTUR)
+    # Adversary optimizers (one per adversary; higher LR for TTUR)
     adversary_optimizer = optax.adam(args.adversary_lr)
-    adv_opt_state = adversary_optimizer.init(eqx.filter(adversary, eqx.is_array))
+    adv_opt_states = [
+        adversary_optimizer.init(eqx.filter(adv, eqx.is_array))
+        for adv in adversaries
+    ]
 
     # Controller optimizer (constant LR for the adversarial phase).
     # We train only the recurrent net weights (hidden + readout), same as TaskTrainer.
@@ -497,6 +510,7 @@ def run_training(args: argparse.Namespace) -> None:
     log_step = max(1, args.n_adversary_batches // 20)
     adv_losses = []
     ctrl_losses = []
+    adv_indices = []  # track which adversary was active each batch
 
     # Decomposed adversary gradient: differentiate loss w.r.t. force array first,
     # then VJP through adversary() to get bump-param gradients.
@@ -527,6 +541,12 @@ def run_training(args: argparse.Namespace) -> None:
             int(hps.task.n_steps),
         )
 
+        # Select active adversary (deterministic rotation for equal usage)
+        adv_idx = batch_idx % n_adversaries
+        adversary = adversaries[adv_idx]
+        adv_opt_state = adv_opt_states[adv_idx]
+        adv_indices.append(adv_idx)
+
         # --- Adversary update (K ascent steps, Python-level loop) ---
         # Force generation happens inside _loss_and_force_grad (JIT) so that eager
         # adversary() / jnp.broadcast_to calls do not accumulate primitive compilations.
@@ -539,6 +559,10 @@ def run_training(args: argparse.Namespace) -> None:
                 adversary_optimizer, adversary, dL_dforces, adv_opt_state
             )
 
+        # Write back updated adversary and optimizer state
+        adversaries[adv_idx] = adversary
+        adv_opt_states[adv_idx] = adv_opt_state
+
         # --- Controller update (1 descent step) ---
         # Force generation and injection happen inside _controller_step (JIT).
         flat_model, ctrl_opt_state, ctrl_loss = _controller_step(
@@ -550,9 +574,11 @@ def run_training(args: argparse.Namespace) -> None:
         ctrl_losses.append(float(ctrl_loss))
 
         if batch_idx % log_step == 0 or batch_idx == args.n_adversary_batches - 1:
+            adv_label = f" [adv {adv_idx}]" if n_adversaries > 1 else ""
             logger.info(
-                "Adversarial batch %d/%d — ctrl_loss=%.4g, adv_loss=%.4g",
-                batch_idx, args.n_adversary_batches, ctrl_loss, adv_loss_val,
+                "Adversarial batch %d/%d%s — ctrl_loss=%.4g, adv_loss=%.4g",
+                batch_idx, args.n_adversary_batches, adv_label,
+                ctrl_loss, adv_loss_val,
             )
 
     logger.info("Adversarial training complete.")
@@ -571,19 +597,31 @@ def run_training(args: argparse.Namespace) -> None:
     # Training histories (warmup from TaskTrainer; adversarial phase as numpy arrays)
     if args.warmup_model is None:
         fbx_save(output_dir / "warmup_history.eqx", warmup_history)
-    np.savez(
-        output_dir / "adversarial_losses.npz",
-        ctrl_losses=np.array(ctrl_losses),
-        adv_losses=np.array(adv_losses),
-    )
+    loss_data = {
+        "ctrl_losses": np.array(ctrl_losses),
+        "adv_losses": np.array(adv_losses),
+        "adv_indices": np.array(adv_indices),
+    }
+    np.savez(output_dir / "adversarial_losses.npz", **loss_data)
     logger.info("Saved adversarial loss curves to %s", output_dir / "adversarial_losses.npz")
 
-    # Final adversary
-    fbx_save(output_dir / "trained_adversary.eqx", adversary)
-    logger.info("Saved trained adversary to %s", output_dir / "trained_adversary.eqx")
-
-    # Log adversary force profiles for a range of SISU values
-    _log_adversary_force_profiles(adversary, output_dir)
+    # Final adversary/adversaries
+    if n_adversaries == 1:
+        # Single adversary: save with original filename for backward compatibility
+        fbx_save(output_dir / "trained_adversary.eqx", adversaries[0])
+        logger.info("Saved trained adversary to %s", output_dir / "trained_adversary.eqx")
+        _log_adversary_force_profiles(adversaries[0], output_dir)
+    else:
+        adv_dir = output_dir / "adversaries"
+        adv_dir.mkdir(parents=True, exist_ok=True)
+        for i, adv in enumerate(adversaries):
+            adv_path = adv_dir / f"adversary_{i}.eqx"
+            fbx_save(adv_path, adv)
+            logger.info("Saved adversary %d to %s", i, adv_path)
+            _log_adversary_force_profiles(
+                adv, output_dir, suffix=f"_adv{i}",
+            )
+        logger.info("Saved %d adversaries to %s", n_adversaries, adv_dir)
 
     logger.info("All results saved to %s", output_dir)
 
@@ -591,20 +629,22 @@ def run_training(args: argparse.Namespace) -> None:
 def _log_adversary_force_profiles(
     adversary: GaussianBumpAdversary,
     output_dir: Path,
+    suffix: str = "",
 ) -> None:
     """Log adversary force profile (SISU-independent) to a numpy archive.
 
     Args:
         adversary: Trained GaussianBumpAdversary.
         output_dir: Directory to write the archive into.
+        suffix: Optional suffix for the output filename (e.g. "_adv0").
     """
     forces = adversary()  # (T, 2)
     profile_norm = float(np.linalg.norm(np.array(forces)))
-    logger.info("Adversary force profile norm: %.4g", profile_norm)
+    logger.info("Adversary%s force profile norm: %.4g", suffix, profile_norm)
 
-    np.savez(output_dir / "adversary_force_profiles.npz", forces=np.array(forces))
-    logger.info("Saved adversary force profiles to %s",
-                output_dir / "adversary_force_profiles.npz")
+    filename = f"adversary_force_profiles{suffix}.npz"
+    np.savez(output_dir / filename, forces=np.array(forces))
+    logger.info("Saved adversary force profiles to %s", output_dir / filename)
 
 
 # ---------------------------------------------------------------------------
@@ -642,6 +682,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--force-max", type=float, default=1.0,
         help="Maximum adversary force magnitude per timestep (default: 1.0).",
+    )
+    parser.add_argument(
+        "--n-adversaries", type=int, default=1,
+        help=(
+            "Number of adversaries in the population (default: 1 = single adversary). "
+            "When K > 1, adversaries rotate each batch (index = batch_idx %% K), "
+            "providing diverse perturbation strategies."
+        ),
     )
     parser.add_argument(
         "--adv-batch-size", type=int, default=None,
