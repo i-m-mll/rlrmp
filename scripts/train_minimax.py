@@ -152,10 +152,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         "state_reset_iterations": [],
         "intervention_scaleup_batches": [0, 0],
         "model": {
-            # Use a single replicate for the adversarial phase — the ensemble
-            # complexity doesn't add value for initial minimax exploration, and
-            # avoiding the replicate batch axis simplifies the standalone loop.
-            "n_replicates": 1,
+            "n_replicates": 5,
             "effector_mass": 1.0,
             "hidden_size": 180,
             "feedback_delay_steps": 5,
