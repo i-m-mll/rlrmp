@@ -336,12 +336,10 @@ def run_training(args: argparse.Namespace) -> None:
     # doesn't technically matter — we do it here for clarity.
     if args.checkpoint:
         try:
-            warmup_model = eqx.tree_at(lambda m: m.checkpoint, warmup_model, True)
-            logger.info("Enabled jax.checkpoint on model scan body (trading ~22%% VRAM for compute)")
-        except (AttributeError, ValueError):
-            logger.warning(
-                "feedbax Graph does not have a checkpoint field — --checkpoint flag has no effect"
-            )
+            object.__setattr__(warmup_model, "checkpoint", True)
+            logger.info("Enabled jax.checkpoint on model scan body")
+        except Exception:
+            logger.warning("Could not enable checkpoint on model — flag has no effect")
 
     # Save warm-started model
     warmup_model_path = output_dir / "warmup_model.eqx"
