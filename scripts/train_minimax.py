@@ -262,6 +262,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         # hidden_type is a callable (class or partial), not serialisable to JSON.
         # It is resolved here from the CLI string and stored directly in the namespace.
         "hidden_type": _resolve_hidden_type(args.hidden_type, dt),
+        "sisu_gating": args.sisu_gating,
     }
     return dict_to_namespace(hps_dict, to_type=TreeNamespace)
 
@@ -424,11 +425,15 @@ def _get_trainable(model):
     return (net.hidden, net.readout)
 
 
-def _make_where_train():
+def _make_where_train(sisu_gating: str = "additive"):
     """Return the where_train dict for the controller optimizer."""
     def where_train_fn(model):
         net = model.nodes["net"]
-        return (net.hidden, net.readout)
+        params = [net.hidden, net.readout]
+        # Include sisu_alpha in trainable params when using multiplicative gating
+        if sisu_gating == "multiplicative" and net.sisu_alpha is not None:
+            params.append(net.sisu_alpha)
+        return tuple(params)
     return {0: where_train_fn}
 
 
@@ -453,12 +458,15 @@ def run_training(args: argparse.Namespace) -> None:
     # -----------------------------------------------------------------------
     # Task / model setup
     # -----------------------------------------------------------------------
-    logger.info("Setting up task-model pair (hidden_type=%s)", args.hidden_type)
+    logger.info(
+        "Setting up task-model pair (hidden_type=%s, sisu_gating=%s)",
+        args.hidden_type, args.sisu_gating,
+    )
     pair = setup_task_model_pair(hps, key=key_init)
     task = pair.task
     loss_func = task.loss_func
 
-    where_train = _make_where_train()
+    where_train = _make_where_train(sisu_gating=args.sisu_gating)
 
     # -----------------------------------------------------------------------
     # Phase 1 — warm-start (or load pre-trained model)
@@ -1325,6 +1333,16 @@ def parse_args() -> argparse.Namespace:
             "Recurrent network type: gru (default, GRUCell with gating) or "
             "vanilla_rnn (LeakyRNNCell with dt=tau, no gating). "
             "vanilla_rnn is a diagnostic for the gating-laziness hypothesis."
+        ),
+    )
+    parser.add_argument(
+        "--sisu-gating", type=str, default="additive",
+        choices=["additive", "multiplicative"],
+        help=(
+            "How SISU enters the network: additive (default, concatenated with input) "
+            "or multiplicative (post-hidden gain modulation h*(1+alpha*sisu), where "
+            "alpha is a learned per-unit vector). Multiplicative forces SISU to act "
+            "as neuromodulatory gain control rather than an ignorable input channel."
         ),
     )
     return parser.parse_args()

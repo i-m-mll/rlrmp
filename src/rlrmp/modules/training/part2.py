@@ -171,13 +171,16 @@ def setup_task_model_pair(
 
     # Resolve hidden_type from hps if present; default (None) falls back to GRUCell
     hidden_type = getattr(hps, 'hidden_type', None)
+    # Resolve SISU gating mode; default "additive" preserves existing behavior
+    sisu_gating = getattr(hps, 'sisu_gating', 'additive')
 
     # Create base models with extra input for SISU
     models_base = create_point_mass_nn_ensemble(
         hps,
         task_base,
-        n_extra_inputs=1,  # for SISU
+        n_extra_inputs=1,  # for SISU (even when multiplicative, task still provides it)
         hidden_type=hidden_type,
+        sisu_gating=sisu_gating,
         key=key,
     )
 
