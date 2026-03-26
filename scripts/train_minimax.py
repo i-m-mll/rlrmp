@@ -109,6 +109,11 @@ def _get_git_metadata() -> dict:
         meta["jax_version"] = jax.__version__
     except ImportError:
         pass
+    try:
+        import feedbax
+        meta["feedbax_version"] = getattr(feedbax, "__version__", "unknown")
+    except ImportError:
+        pass
     return meta
 
 
@@ -247,6 +252,12 @@ def run_training(args: argparse.Namespace) -> None:
     """Run minimax adversarial training."""
     _configure_jax_runtime(args)
 
+    if args.checkpoint:
+        logger.warning(
+            "--checkpoint flag is set but feedbax's Iterator does not yet expose a "
+            "checkpoint field; flag has no effect."
+        )
+
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -329,9 +340,6 @@ def run_training(args: argparse.Namespace) -> None:
     warmup_model_path = output_dir / "warmup_model.eqx"
     fbx_save(warmup_model_path, warmup_model, hyperparameters=config_dict)
     logger.info("Saved warm-start model to %s", warmup_model_path)
-
-    # Build a warm-started TaskModelPair for the adversarial phase
-    warm_pair = TaskModelPair(task=task, model=warmup_model)
 
     # -----------------------------------------------------------------------
     # Phase 2 — adversarial training
@@ -532,7 +540,7 @@ def run_training(args: argparse.Namespace) -> None:
             flat_model, ctrl_opt_state, adversary, trial_specs, trial_keys, adv_batch_size
         )
 
-        adv_loss_val = float(_adv_loss_val)
+        adv_loss_val = float(_adv_loss_val if _adv_loss_val is not None else jnp.array(0.0))
         adv_losses.append(adv_loss_val)
         ctrl_losses.append(float(ctrl_loss))
 
@@ -556,7 +564,8 @@ def run_training(args: argparse.Namespace) -> None:
     logger.info("Saved adversarial model to %s", final_model_path)
 
     # Training histories (warmup from TaskTrainer; adversarial phase as numpy arrays)
-    fbx_save(output_dir / "warmup_history.eqx", warmup_history)
+    if args.warmup_model is None:
+        fbx_save(output_dir / "warmup_history.eqx", warmup_history)
     np.savez(
         output_dir / "adversarial_losses.npz",
         ctrl_losses=np.array(ctrl_losses),
@@ -654,6 +663,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--jax-explain-cache-misses", action="store_true",
         help="Enable JAX cache-miss diagnostics for debugging recompilation.",
+    )
+    parser.add_argument(
+        "--checkpoint", action="store_true",
+        help=(
+            "Enable jax.checkpoint on the scan body to reduce VRAM at ~22%% time cost. "
+            "Note: feedbax's Iterator does not currently expose a checkpoint field; "
+            "this flag is reserved for when that support is added."
+        ),
     )
     return parser.parse_args()
 
