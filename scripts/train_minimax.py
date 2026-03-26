@@ -1025,11 +1025,16 @@ def run_training(args: argparse.Namespace) -> None:
         batch_key, key_adv = jr.split(key_adv)
         trial_keys = jr.split(batch_key, adv_batch_size)
 
-        # Sample trial specs with intervenor params (needed for SISU/scale values)
+        # Sample trial specs with intervenor params (needed for SISU/scale values).
+        # BatchInfo fields must be JAX arrays (not Python ints) so that
+        # filter_jit on get_train_trial_with_intervenor_params treats them as
+        # dynamic traced values.  Python ints are static in eqx.Module and
+        # would cause recompilation every batch, leaking ~0.5 GB/min of host
+        # memory from the accumulated compilation cache.  Bug: d6cc111
         batch_info = BatchInfo(
-            size=adv_batch_size,
-            current=batch_idx,
-            total=args.n_adversary_batches,
+            size=jnp.int32(adv_batch_size),
+            current=jnp.int32(batch_idx),
+            total=jnp.int32(args.n_adversary_batches),
         )
         trial_specs = jax.vmap(
             lambda key: task.get_train_trial_with_intervenor_params(key, batch_info)
