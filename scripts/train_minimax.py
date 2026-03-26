@@ -22,6 +22,7 @@ import argparse
 import json
 import logging
 import os
+import shutil
 import subprocess
 from functools import partial
 from pathlib import Path
@@ -237,6 +238,154 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
 
 
 # ---------------------------------------------------------------------------
+# Checkpoint save / load
+# ---------------------------------------------------------------------------
+
+_CHECKPOINT_DIR_NAME = "checkpoints_adversarial"
+_CHECKPOINT_SUBDIR = "checkpoint_latest"
+
+
+def _save_adversarial_checkpoint(
+    checkpoint_dir: Path,
+    flat_model: list,
+    treedef_model,
+    adversaries: list,
+    adv_opt_states: list,
+    ctrl_opt_state,
+    batch_idx: int,
+    adv_losses: list,
+    ctrl_losses: list,
+    adv_indices: list,
+) -> None:
+    """Save adversarial training state to a checkpoint directory.
+
+    Writes atomically: assembles state in a temp dir then renames it over
+    the previous checkpoint so a preempted write never leaves corrupt state.
+
+    The model is serialized with ``eqx.tree_serialise_leaves`` (template needed
+    at load time is the current ``adv_model`` reconstructed via ``treedef_model``).
+    Adversaries and optimizer states are similarly serialized.
+
+    Args:
+        checkpoint_dir: Parent directory; ``checkpoint_latest/`` is created inside.
+        flat_model: Flat list of model array leaves (from ``jtu.tree_flatten``).
+        treedef_model: PyTree treedef for reconstructing the model.
+        adversaries: List of ``GaussianBumpAdversary`` instances.
+        adv_opt_states: List of adversary optimizer states (one per adversary).
+        ctrl_opt_state: Controller optimizer state.
+        batch_idx: Index of the batch that was just completed.
+        adv_losses: Adversary loss history (up to and including ``batch_idx``).
+        ctrl_losses: Controller loss history.
+        adv_indices: Active adversary index history.
+    """
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    target = checkpoint_dir / _CHECKPOINT_SUBDIR
+
+    # Write into a sibling temp dir for atomic replacement.
+    tmp_dir = checkpoint_dir / (f"_{_CHECKPOINT_SUBDIR}_tmp")
+    if tmp_dir.exists():
+        shutil.rmtree(tmp_dir)
+    tmp_dir.mkdir()
+
+    try:
+        # 1. Model: reconstruct → serialize leaves
+        model = jtu.tree_unflatten(treedef_model, flat_model)
+        eqx.tree_serialise_leaves(tmp_dir / "model.eqx", model)
+
+        # 2. Adversaries: serialize each
+        for i, adv in enumerate(adversaries):
+            eqx.tree_serialise_leaves(tmp_dir / f"adversary_{i}.eqx", adv)
+
+        # 3. Optimizer states: serialize
+        eqx.tree_serialise_leaves(tmp_dir / "ctrl_opt_state.eqx", ctrl_opt_state)
+        for i, opt_st in enumerate(adv_opt_states):
+            eqx.tree_serialise_leaves(tmp_dir / f"adv_opt_state_{i}.eqx", opt_st)
+
+        # 4. Scalar progress + loss histories
+        meta = {
+            "batch_idx": batch_idx,
+            "n_adversaries": len(adversaries),
+            "adv_losses": adv_losses,
+            "ctrl_losses": ctrl_losses,
+            "adv_indices": adv_indices,
+        }
+        with open(tmp_dir / "meta.json", "w") as fh:
+            json.dump(meta, fh)
+
+        # Atomic rename
+        if target.exists():
+            shutil.rmtree(target)
+        tmp_dir.rename(target)
+
+    except Exception:
+        # Leave the tmp dir for debugging; do not corrupt the previous checkpoint.
+        logger.exception("Checkpoint save failed — previous checkpoint (if any) is intact")
+        raise
+
+
+def _load_adversarial_checkpoint(
+    checkpoint_dir: Path,
+    model_template,
+    adversaries_template: list,
+    adv_opt_states_template: list,
+    ctrl_opt_state_template,
+    treedef_model,
+):
+    """Load adversarial training state from ``checkpoint_latest/``.
+
+    Args:
+        checkpoint_dir: Parent directory containing ``checkpoint_latest/``.
+        model_template: Model object with the correct PyTree structure (template).
+        adversaries_template: List of ``GaussianBumpAdversary`` instances with the
+            correct structure (used as deserialization templates).
+        adv_opt_states_template: List of adversary optimizer states (templates).
+        ctrl_opt_state_template: Controller optimizer state (template).
+        treedef_model: PyTree treedef for the model (used to re-flatten the result).
+
+    Returns:
+        Tuple of ``(flat_model, adversaries, adv_opt_states, ctrl_opt_state,
+        resume_batch_idx, adv_losses, ctrl_losses, adv_indices)``.
+    """
+    target = checkpoint_dir / _CHECKPOINT_SUBDIR
+    if not target.exists():
+        raise FileNotFoundError(f"No checkpoint found at {target}")
+
+    # 1. Model — deserialize onto the template; then flatten for the training loop
+    model = eqx.tree_deserialise_leaves(target / "model.eqx", model_template)
+    flat_model = jtu.tree_flatten(model)[0]
+
+    # 2. Adversaries
+    adversaries = []
+    for i, tmpl in enumerate(adversaries_template):
+        adv = eqx.tree_deserialise_leaves(target / f"adversary_{i}.eqx", tmpl)
+        adversaries.append(adv)
+
+    # 3. Optimizer states
+    ctrl_opt_state = eqx.tree_deserialise_leaves(
+        target / "ctrl_opt_state.eqx", ctrl_opt_state_template
+    )
+    adv_opt_states = []
+    for i, tmpl in enumerate(adv_opt_states_template):
+        opt_st = eqx.tree_deserialise_leaves(target / f"adv_opt_state_{i}.eqx", tmpl)
+        adv_opt_states.append(opt_st)
+
+    # 4. Meta
+    with open(target / "meta.json") as fh:
+        meta = json.load(fh)
+
+    return (
+        flat_model,
+        adversaries,
+        adv_opt_states,
+        ctrl_opt_state,
+        meta["batch_idx"],
+        meta["adv_losses"],
+        meta["ctrl_losses"],
+        meta["adv_indices"],
+    )
+
+
+# ---------------------------------------------------------------------------
 # Training
 # ---------------------------------------------------------------------------
 
@@ -285,9 +434,21 @@ def run_training(args: argparse.Namespace) -> None:
     # -----------------------------------------------------------------------
     # Phase 1 — warm-start (or load pre-trained model)
     # -----------------------------------------------------------------------
-    if args.warmup_model is not None:
+    warmup_model_path = output_dir / "warmup_model.eqx"
+
+    # When resuming, treat an already-saved warmup_model.eqx as equivalent to
+    # --warmup-model, so we don't redo phase 1 unnecessarily.
+    effective_warmup_model = args.warmup_model
+    if args.resume and effective_warmup_model is None and warmup_model_path.exists():
+        logger.info(
+            "--resume: found existing warmup_model.eqx at %s — skipping phase 1.",
+            warmup_model_path,
+        )
+        effective_warmup_model = str(warmup_model_path)
+
+    if effective_warmup_model is not None:
         from feedbax._io import load as fbx_load
-        logger.info("Loading pre-trained warm-start model from %s", args.warmup_model)
+        logger.info("Loading pre-trained warm-start model from %s", effective_warmup_model)
 
         def _model_setup_func(key=jr.PRNGKey(0), **stored_hps):
             """Reconstruct a model from stored hyperparameters."""
@@ -300,7 +461,7 @@ def run_training(args: argparse.Namespace) -> None:
             stored_hps_obj = build_hps_standard(stored_args)
             return setup_task_model_pair(stored_hps_obj, key=key).model
 
-        warmup_model = fbx_load(args.warmup_model, setup_func=_model_setup_func)
+        warmup_model = fbx_load(effective_warmup_model, setup_func=_model_setup_func)
         logger.info("Loaded warm-start model (skipping phase 1).")
     else:
         logger.info("Phase 1: warm-start for %d batches (controller_lr=%g)",
@@ -347,8 +508,7 @@ def run_training(args: argparse.Namespace) -> None:
         except Exception:
             logger.warning("Could not enable checkpoint on model — flag has no effect")
 
-    # Save warm-started model
-    warmup_model_path = output_dir / "warmup_model.eqx"
+    # Save warm-started model (skip if we loaded it from this path via --resume)
     fbx_save(warmup_model_path, warmup_model, hyperparameters=config_dict)
     logger.info("Saved warm-start model to %s", warmup_model_path)
 
@@ -506,11 +666,49 @@ def run_training(args: argparse.Namespace) -> None:
     adv_batch_size = args.adv_batch_size if args.adv_batch_size is not None else hps.batch_size
     logger.info("Adversarial phase batch size: %d", adv_batch_size)
 
-    # Periodic logging interval
-    log_step = max(1, args.n_adversary_batches // 20)
+    # -----------------------------------------------------------------------
+    # Resume from checkpoint (if requested)
+    # -----------------------------------------------------------------------
+    adv_checkpoint_dir = output_dir / _CHECKPOINT_DIR_NAME
+    start_batch_idx = 0
     adv_losses = []
     ctrl_losses = []
     adv_indices = []  # track which adversary was active each batch
+
+    if args.resume:
+        ckpt_path = adv_checkpoint_dir / _CHECKPOINT_SUBDIR
+        if ckpt_path.exists():
+            logger.info("--resume: loading adversarial checkpoint from %s", ckpt_path)
+            (
+                flat_model,
+                adversaries,
+                adv_opt_states,
+                ctrl_opt_state,
+                last_completed_batch,
+                adv_losses,
+                ctrl_losses,
+                adv_indices,
+            ) = _load_adversarial_checkpoint(
+                adv_checkpoint_dir,
+                adv_model,
+                adversaries,
+                adv_opt_states,
+                ctrl_opt_state,
+                treedef_model,
+            )
+            start_batch_idx = last_completed_batch + 1
+            logger.info(
+                "Resuming adversarial training from batch %d/%d",
+                start_batch_idx, args.n_adversary_batches,
+            )
+        else:
+            logger.warning(
+                "--resume was set but no checkpoint found at %s — starting from scratch.",
+                ckpt_path,
+            )
+
+    # Periodic logging interval
+    log_step = max(1, args.n_adversary_batches // 20)
 
     # Decomposed adversary gradient: differentiate loss w.r.t. force array first,
     # then VJP through adversary() to get bump-param gradients.
@@ -518,7 +716,7 @@ def run_training(args: argparse.Namespace) -> None:
     # per batch), but each compiled function is small enough to compile on TPU (~14 min
     # vs 40+ min for the monolithic fori_loop approach).
 
-    for batch_idx in range(args.n_adversary_batches):
+    for batch_idx in range(start_batch_idx, args.n_adversary_batches):
         batch_key, key_adv = jr.split(key_adv)
         trial_keys = jr.split(batch_key, adv_batch_size)
 
@@ -581,6 +779,26 @@ def run_training(args: argparse.Namespace) -> None:
                 ctrl_loss, adv_loss_val,
             )
 
+        # Periodic checkpoint (save after batch_idx is complete, not before)
+        checkpoint_every = args.checkpoint_every
+        if checkpoint_every > 0 and (batch_idx + 1) % checkpoint_every == 0:
+            logger.info(
+                "Saving adversarial checkpoint at batch %d → %s",
+                batch_idx, adv_checkpoint_dir / _CHECKPOINT_SUBDIR,
+            )
+            _save_adversarial_checkpoint(
+                adv_checkpoint_dir,
+                flat_model,
+                treedef_model,
+                adversaries,
+                adv_opt_states,
+                ctrl_opt_state,
+                batch_idx,
+                adv_losses,
+                ctrl_losses,
+                adv_indices,
+            )
+
     logger.info("Adversarial training complete.")
 
     # Reconstruct model from its flat arrays for saving/logging
@@ -595,7 +813,7 @@ def run_training(args: argparse.Namespace) -> None:
     logger.info("Saved adversarial model to %s", final_model_path)
 
     # Training histories (warmup from TaskTrainer; adversarial phase as numpy arrays)
-    if args.warmup_model is None:
+    if effective_warmup_model is None:
         fbx_save(output_dir / "warmup_history.eqx", warmup_history)
     loss_data = {
         "ctrl_losses": np.array(ctrl_losses),
@@ -727,6 +945,24 @@ def parse_args() -> argparse.Namespace:
             "Enable jax.checkpoint on the model's scan body to reduce peak VRAM at ~22%% "
             "extra compute cost. Requires feedbax Graph to have a checkpoint field "
             "(available on the target GPU pod); silently no-ops otherwise."
+        ),
+    )
+    parser.add_argument(
+        "--checkpoint-every", type=int, default=500,
+        help=(
+            "Save adversarial training checkpoint every N batches (default: 500). "
+            "Set 0 to disable. Checkpoints are written to "
+            "<output-dir>/checkpoints_adversarial/checkpoint_latest/ and overwritten "
+            "each time (only one checkpoint is kept)."
+        ),
+    )
+    parser.add_argument(
+        "--resume", action="store_true",
+        help=(
+            "Resume adversarial training from the latest checkpoint in "
+            "<output-dir>/checkpoints_adversarial/checkpoint_latest/. "
+            "Skips phase 1 (warm-start) if warmup_model.eqx already exists in "
+            "<output-dir>."
         ),
     )
     return parser.parse_args()
