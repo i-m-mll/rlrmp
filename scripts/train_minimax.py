@@ -225,8 +225,8 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             },
         },
         "loss_update": {
-            "enabled": False,
-            "target_ratio": 0.5,
+            "enabled": args.loss_update_enabled,
+            "target_ratio": args.loss_update_ratio,
             "alpha": 0.005,
             "control_term": "nn_output",
             "goal_term": ["effector_pos_running", "effector_pos_late"],
@@ -540,10 +540,12 @@ def run_training(args: argparse.Namespace) -> None:
     logger.info(
         "Phase 2: adversarial training for %d batches "
         "(n_replicates=%d vmapped, n_adversaries=%d, n_adversary_steps=%d, "
-        "adversary_lr=%g, controller_lr=%g, n_bumps=%d, force_max=%g)",
+        "adversary_lr=%g, controller_lr=%g, n_bumps=%d, force_max=%g, "
+        "loss_update_enabled=%s, loss_update_ratio=%g)",
         args.n_adversary_batches, n_reps, n_adversaries, args.n_adversary_steps,
         args.adversary_lr, args.controller_lr,
         args.n_bumps, args.force_max,
+        args.loss_update_enabled, args.loss_update_ratio,
     )
 
     # Create adversary population (K independent adversaries with different seeds).
@@ -1264,6 +1266,20 @@ def parse_args() -> argparse.Namespace:
             "<output-dir>/checkpoints_adversarial/checkpoint_latest/. "
             "Skips phase 1 (warm-start) if warmup_model.eqx already exists in "
             "<output-dir>."
+        ),
+    )
+    parser.add_argument(
+        "--loss-update-enabled", action=argparse.BooleanOptionalAction, default=False,
+        help=(
+            "Enable adaptive loss update to drive control cost toward a target ratio "
+            "of goal-state cost (default: False)."
+        ),
+    )
+    parser.add_argument(
+        "--loss-update-ratio", type=float, default=0.5,
+        help=(
+            "Target ratio of control cost to goal-state cost for adaptive loss update "
+            "(default: 0.5). Only used when --loss-update-enabled is set."
         ),
     )
     parser.add_argument(
