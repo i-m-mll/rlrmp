@@ -33,9 +33,9 @@ Feedbax Studio (web app) runs from the Feedbax repo. See Feedbax CLAUDE.md for s
 
 ## Issue Coordination
 
-### Project Analyses Coordination Umbrella
+### Project Analyses Coordination
 
-Issue `4d38c15` is the **project analyses coordination umbrella** — central place for cross-cutting decisions about analyses. **Always check it when:**
+Issue `4d38c15` is the **project analyses coordination issue** (label: `coordination`) — central place for cross-cutting decisions about analyses. **Always check it when:**
 
 - **Discovering a new analysis worth doing.** File a normal issue for the analysis itself, AND comment on the umbrella with: new issue ID, initial tier guess (essential / desirable / auxiliary), one-line rationale.
 - **Shifting tier priority** of an existing analysis. Comment on the umbrella, NOT on the individual analysis issue. Include: issue ID(s), old tier → new tier, reason.
@@ -43,4 +43,4 @@ Issue `4d38c15` is the **project analyses coordination umbrella** — central pl
 
 Individual analysis issues focus on the analysis itself; how analyses fit into the bigger scheme is dealt with on the umbrella.
 
-**Do NOT reference the umbrella in commit `Bug:` trailers** — that auto-closes the umbrella on merge. Reference only the relevant child issues.
+**Do NOT reference coordination issues in commit `Bug:` trailers** — that auto-closes them on merge (pending dotfiles issue `49e81d9` to add a label-based skip). Reference only the relevant child issues.
