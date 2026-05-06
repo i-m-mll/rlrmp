@@ -31,6 +31,53 @@
 ## Feedbax Studio
 Feedbax Studio (web app) runs from the Feedbax repo. See Feedbax CLAUDE.md for server startup instructions.
 
+## Experiment Artifacts: Tracked vs Ignored
+
+The repo separates artifacts by ROLE, not by directory name:
+
+- **`results/`** is tracked. It holds *specs* (recipes) and *narratives* (prose).
+- **`_artifacts/`** is gitignored. It mirrors `results/` and holds *bulk* outputs.
+- **Cloud-provider directory names (`runpod/`, `modal/`, etc.) are NOT meaningful** — they all go under `_artifacts/`. Never patch `.gitignore` with a new provider name.
+
+### If you produce X, put it at Y
+
+| You produce | Path |
+|---|---|
+| Model checkpoint, `.eqx`, training log, large `.npz` | `_artifacts/<exp>/runs/<run>/` |
+| Hyperparameters that produced a run | `results/<exp>/runs/<run>/run.json` |
+| Per-run commentary (optional) | `results/<exp>/runs/<run>/notes.md` |
+| Long-form analysis or post-mortem | `results/<exp>/<topic>_review.md` |
+| Figure spec (always) | `results/<exp>/figures/<fig>/spec.json` |
+| Figure JSON (only if ≤ 2 MB) | `results/<exp>/figures/<fig>/figure.json` |
+| Figure thumbnail (only if ≤ 300 KB at 100 DPI) | `results/<exp>/figures/<fig>/figure.png` |
+| Heavy figure render (HTML, full-DPI PNG, MP4) | `_artifacts/<exp>/figures/<fig>/` |
+| Final-cut paper figure | `manuscript/figures/<fig>/` (same rules) |
+
+Run identifier convention: `<group>__<variant>` (double underscore separator, matching the branch-naming convention). Examples: `baseline__standard_12k`, `minimax_single__seed_0`.
+
+### Run-spec vs figure-spec
+
+A `run.json` captures hyperparameters that produced model weights — stable, one per run.
+A `spec.json` captures plotting parameters and the data-transform pipeline — volatile, many per run, **references** input runs by path. Never inline run hyperparameters into a figure spec.
+
+### Figure-saving helper (when available)
+
+Use `feedbax.plot.io.save_figure_with_spec(fig, spec, dst_dir)` when it exists (tracking: feedbax issue `0eebc71`). Until then, hand-write `spec.json` next to the figure with at minimum: `figure_kind`, `input_artifacts` (paths + sha256), `plot_kwargs`, and `feedbax`/`jax`/`rlrmp` versions.
+
+### Adding a new experiment
+
+1. Create `results/<exp>/README.md` with one paragraph of context.
+2. Each run script writes `results/<exp>/runs/<run>/run.json` (spec) and all heavy outputs under `_artifacts/<exp>/runs/<run>/` (mirror).
+3. Never write `.eqx`, large `.npz`, full-DPI images, or training logs anywhere under `results/`.
+
+### What NOT to gitignore
+
+Do not add directory-name patterns (`runpod/`, `modal/`, `coreweave/`, `tpu/`, `gpu_box/`) to `.gitignore`. The role-based whitelist already excludes these by construction. If you find yourself wanting to add a name-based ignore, the artifact is in the wrong tree — move it under `_artifacts/`.
+
+### Legacy paths
+
+Pre-migration directories under `results/` (e.g., `centerout_apt_pert1/config.json`, `results/part2_5/models/<name>/config.json`) keep their existing layout for now. The new `<exp>/runs/<group>__<variant>/run.json` convention applies to new experiments; legacy directories migrate opportunistically when their experiments are revisited.
+
 ## Issue Coordination
 
 ### Project Analyses Coordination
