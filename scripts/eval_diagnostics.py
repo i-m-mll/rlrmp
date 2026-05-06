@@ -548,8 +548,12 @@ def main() -> None:
     parser.add_argument(
         "--results-dir",
         type=str,
-        default="results/minimax_test",
-        help="Path to a tier results directory (e.g. results/tier1b/mult_single).",
+        default="_artifacts/minimax/minimax_test",
+        help=(
+            "Path to a bulk artifact directory for a tier run "
+            "(e.g. _artifacts/minimax/tier1b__mult_single). "
+            "Use rlrmp.paths.run_artifact_dir(exp, run) to construct this path."
+        ),
     )
     parser.add_argument(
         "--pert-scale",
