@@ -30,24 +30,27 @@ from feedbax._io import load_with_hyperparameters
 from feedbax.train import init_task_trainer_history
 from rlrmp.modules.training.part2 import setup_task_model_pair
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
+from rlrmp.paths import figure_artifact_dir, run_artifact_dir
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-WORKTREE = Path(__file__).parent.parent
-RESULTS_BASE = WORKTREE / "results" / "part2_5"
-FIGURES_DIR = RESULTS_BASE / "figures"
+# Bulk artifact directories (gitignored, mirror of results/).
+# Heavy figure renders (HTML, large PNG) go to figure_artifact_dir.
+# Trained models and training histories are loaded from run_artifact_dir.
+# Bug: fd64bb4 — structure migration phase 2 (role-based path helpers)
+FIGURES_DIR = figure_artifact_dir("part2_5", "eval_by_sisu")
 
 CONDITIONS = {
-    "running_cost": RESULTS_BASE / "running_cost_standard",
-    "softmin": RESULTS_BASE / "softmin_standard",
-    "default": RESULTS_BASE / "default_standard",
-    "combined": RESULTS_BASE / "combined_standard",
-    "CVaR_10pct": RESULTS_BASE / "running_cost_cvar",
-    "nn_1e-4": RESULTS_BASE / "running_cost_nn1e4",
-    "nn_1e-6": RESULTS_BASE / "running_cost_nn1e6",
+    "running_cost": run_artifact_dir("part2_5", "running_cost__standard"),
+    "softmin": run_artifact_dir("part2_5", "softmin__standard"),
+    "default": run_artifact_dir("part2_5", "default__standard"),
+    "combined": run_artifact_dir("part2_5", "combined__standard"),
+    "CVaR_10pct": run_artifact_dir("part2_5", "running_cost__cvar"),
+    "nn_1e-4": run_artifact_dir("part2_5", "running_cost__nn1e4"),
+    "nn_1e-6": run_artifact_dir("part2_5", "running_cost__nn1e6"),
 }
 
 SISU_LEVELS = [0.0, 0.25, 0.5, 0.75, 1.0]

@@ -918,8 +918,16 @@ def parse_args() -> argparse.Namespace:
                         help="Neural output control cost weight (default: 1e-5).")
     parser.add_argument("--n-batches", type=int, default=10000,
                         help="Number of training batches (default: 10000).")
-    parser.add_argument("--output-dir", type=str, default="results/part2_5",
-                        help="Output directory for results (default: results/part2_5).")
+    parser.add_argument(
+        "--output-dir", type=str, default="_artifacts/part2_5/runs/default",
+        help=(
+            "Output directory for bulk artifacts (checkpoints, .eqx, .npz, logs). "
+            "Default mirrors the role-based layout: _artifacts/<exp>/runs/<run>/. "
+            "Use rlrmp.paths.run_artifact_dir(exp, run) to construct this path "
+            "programmatically. Write run.json to the sibling spec directory "
+            "results/<exp>/runs/<run>/ via rlrmp.paths.run_spec_dir(exp, run)."
+        ),
+    )
     return parser.parse_args()
 
 
