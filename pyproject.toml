@@ -16,6 +16,11 @@ dependencies = [
 [project.entry-points."feedbax.plugins"]
 rlrmp = "rlrmp:register_experiment_package"
 
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
