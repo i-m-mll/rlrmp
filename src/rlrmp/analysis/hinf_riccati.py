@@ -650,6 +650,82 @@ def cost_schedule_from_spec(
     return CostSchedule(Q=Q, R=R, Q_f=Q_f)
 
 
+def cs_eq15_cost_schedule(
+    n_steps: int,
+    alpha_1: float = 1.0,
+) -> CostSchedule:
+    """Build the Crevecoeur & Scott (2019) Eq. 15 cost schedule.
+
+    Implements the C&S 2019 cost function on the 6-state augmented
+    ``[pos(2), vel(2), F(2)]`` plant:
+
+    .. math::
+
+        J(x, u) = \\sum_t \\alpha_1 \\left(\\frac{t}{N}\\right)^6 x_t^\\top Q\\, x_t
+                  + \\sum_t \\|u_t\\|^2,
+
+    with
+
+    .. math::
+
+        Q = \\mathrm{diag}([10^6, 10^6, 10^5, 10^5, 1, 1])
+
+    and ``R = I_2`` (identity on the 2-D control space). The ``(t/N)^6``
+    ramp ensures near-zero stage cost early in the reach and a smooth build-up
+    to a heavy terminal-like cost penalty at ``t = N``, consistent with C&S's
+    described cost function.
+
+    The plant this schedule is designed for is the 6-state linearised point
+    mass with first-order force filter (tau > 0). Build it with::
+
+        plant = linearize_pointmass(mass=1.0, damping=0.1, tau=0.06, dt=0.01)
+
+    and verify ``plant.n == 6`` before passing here.
+
+    Args:
+        n_steps: Total number of stages T (i.e., number of discrete time
+            steps in the reach). C&S use 10 ms time steps; for a 0.8 s reach
+            ``n_steps=80`` is representative.
+        alpha_1: Cost coefficient on the quadratic state penalty. C&S sweep
+            ``alpha_1`` over an order of magnitude in their sensitivity
+            analysis. The default ``1.0`` is a representative value that
+            keeps the Riccati well-conditioned.
+
+    Returns:
+        A ``CostSchedule`` with shape ``Q=(T, 6, 6)``, ``R=(T, 2, 2)``,
+        ``Q_f=(6, 6)``, matching the 6-state augmented plant.
+
+    Note:
+        The ``Q_f`` terminal cost is set to ``alpha_1 * Q`` (i.e., the
+        ramp factor at ``t = N`` is 1.0), consistent with the ``(t/N)^6``
+        ramp reaching its maximum at the final step.
+    """
+    T = n_steps
+    # C&S Q matrix: diag([1e6, 1e6, 1e5, 1e5, 1, 1])
+    # Ordered as [pos_x, pos_y, vel_x, vel_y, F_x, F_y]
+    Q_diag = jnp.array(
+        [1e6, 1e6, 1e5, 1e5, 1.0, 1.0],
+        dtype=jnp.float64,
+    )
+    Q_base = jnp.diag(Q_diag)  # (6, 6)
+
+    # Time-varying ramp: alpha_1 * (t/N)^6, t = 0, 1, ..., T-1
+    t = jnp.arange(T, dtype=jnp.float64)
+    ramp = alpha_1 * (t / float(T)) ** 6  # shape (T,)
+
+    # Q_t = ramp[t] * Q_base, broadcast via vmap
+    Q = jax.vmap(lambda r: r * Q_base)(ramp)  # (T, 6, 6)
+
+    # R = I_2 (unit control cost, matching |u_t|^2 in C&S Eq. 15)
+    R_t = jnp.eye(2, dtype=jnp.float64)
+    R = jnp.tile(R_t[None], (T, 1, 1))  # (T, 2, 2)
+
+    # Terminal cost Q_f = alpha_1 * Q_base (ramp factor = 1 at t = N)
+    Q_f = alpha_1 * Q_base  # (6, 6)
+
+    return CostSchedule(Q=Q, R=R, Q_f=Q_f)
+
+
 def cost_schedule_from_loss_config(hps, plant: PlantLinearization) -> CostSchedule:
     """Build a Q,R schedule from a populated rlrmp ``hps`` namespace.
 
@@ -1364,6 +1440,7 @@ __all__ = [
     "linearize_pointmass",
     "linearize_from_model",
     "cost_schedule_from_spec",
+    "cs_eq15_cost_schedule",
     "cost_schedule_from_loss_config",
     "solve_hinf_riccati",
     "solve_lqr",
