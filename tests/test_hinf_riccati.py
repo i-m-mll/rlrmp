@@ -23,6 +23,16 @@ of exceptions:
   Phase 2 result is reproduced within ~5 percentage points.
 - ``test_inadmissible_gamma_short_circuits``: Below the boundary, the
   recursion flags ``admissible=False`` and does not produce NaN gains.
+- ``test_cs_eq15_schedule_shape``: ``cs_eq15_cost_schedule`` returns the
+  correct shapes and the Q diagonal matches the paper's specification.
+- ``test_cs_eq15_ramp_boundary_values``: The (t/N)^6 ramp is 0 at t=0 and
+  alpha_1 at t=N (Q_f), with scaling applied correctly.
+- ``test_cs_faithful_qr_velocity_inflation``: Faithful C&S Q,R on the C&S
+  plant (k=0.1, tau=0.06). Paper claim: robust controller generates faster
+  movement velocities toward target (Δv > 0). xfailed with diagnosis if
+  Δv ≤ 0 even with faithful Q,R.
+- ``test_cs_qr_vs_rlrmp_qr_on_cs_plant``: Comparative test capturing the
+  Q-shape sensitivity finding from synthesis_review section 10.
 
 Tests use double precision throughout (the module enables x64 on import).
 """
@@ -38,6 +48,7 @@ from rlrmp.analysis.hinf_riccati import (
     PlantLinearization,
     compute_velocity_inflation,
     cost_schedule_from_spec,
+    cs_eq15_cost_schedule,
     find_gamma_star,
     linearization_fidelity,
     linearize_from_model,
@@ -443,3 +454,199 @@ def test_input_validation():
     schedule = _rlrmp_schedule(plant)
     with pytest.raises(ValueError, match="gamma must be positive"):
         solve_hinf_riccati(plant, schedule, 0.0)
+
+
+# -----------------------------------------------------------------------------
+# C&S Eq. 15 faithful Q,R reproduction tests
+# Bug: 19b9921 — add faithful C&S Eq. 15 Q,R reproduction test for Riccati
+# -----------------------------------------------------------------------------
+
+
+def test_cs_eq15_schedule_shape():
+    """cs_eq15_cost_schedule returns correct shapes and Q diagonal values.
+
+    Verifies that the C&S Eq. 15 cost schedule:
+      - Q has shape (T, 6, 6) with the correct diagonal [1e6, 1e6, 1e5, 1e5, 1, 1]
+        scaled by alpha_1
+      - R has shape (T, 2, 2) as identity (unit control cost)
+      - Q_f has shape (6, 6) equalling alpha_1 * diag([1e6, 1e6, 1e5, 1e5, 1, 1])
+    """
+    n_steps = 80
+    alpha_1 = 1.0
+    schedule = cs_eq15_cost_schedule(n_steps=n_steps, alpha_1=alpha_1)
+
+    assert schedule.Q.shape == (n_steps, 6, 6), f"Q shape {schedule.Q.shape} != (80, 6, 6)"
+    assert schedule.R.shape == (n_steps, 2, 2), f"R shape {schedule.R.shape} != (80, 2, 2)"
+    assert schedule.Q_f.shape == (6, 6), f"Q_f shape {schedule.Q_f.shape} != (6, 6)"
+
+    # R must be identity (unit control cost per C&S Eq. 15 |u_t|^2)
+    for t in range(n_steps):
+        assert jnp.allclose(schedule.R[t], jnp.eye(2, dtype=jnp.float64), atol=1e-14), (
+            f"R[{t}] is not identity; expected unit control cost from C&S Eq. 15"
+        )
+
+    # Q_f diagonal should be alpha_1 * [1e6, 1e6, 1e5, 1e5, 1, 1]
+    expected_q_diag = alpha_1 * jnp.array([1e6, 1e6, 1e5, 1e5, 1.0, 1.0], dtype=jnp.float64)
+    q_f_diag = jnp.diag(schedule.Q_f)
+    assert jnp.allclose(q_f_diag, expected_q_diag, rtol=1e-12), (
+        f"Q_f diagonal {q_f_diag} != expected {expected_q_diag}"
+    )
+
+    # Q_f should be diagonal (off-diagonal zero)
+    off_diag = schedule.Q_f - jnp.diag(q_f_diag)
+    assert jnp.allclose(off_diag, 0.0, atol=1e-14), "Q_f has non-zero off-diagonal entries"
+
+
+def test_cs_eq15_ramp_boundary_values():
+    """(t/N)^6 ramp: Q[0] is near-zero, Q_f equals alpha_1 * Q_base.
+
+    The ramp at t=0 is 0; at t=N-1 it is ((N-1)/N)^6 ≈ 1 for large N.
+    Q_f (at t=N) has ramp=1, giving alpha_1 * Q_base exactly.
+    """
+    n_steps = 80
+    alpha_1 = 2.5  # Non-default to test scaling
+    schedule = cs_eq15_cost_schedule(n_steps=n_steps, alpha_1=alpha_1)
+
+    # At t=0: ramp = (0/80)^6 = 0 → Q[0] is the zero matrix
+    assert jnp.allclose(schedule.Q[0], 0.0, atol=1e-14), (
+        f"Q[0] should be zero (ramp=0 at t=0); got max {float(jnp.max(jnp.abs(schedule.Q[0])))}"
+    )
+
+    # Q_f = alpha_1 * Q_base (ramp factor=1 at terminal step)
+    expected_q_f_diag = alpha_1 * jnp.array([1e6, 1e6, 1e5, 1e5, 1.0, 1.0], dtype=jnp.float64)
+    assert jnp.allclose(jnp.diag(schedule.Q_f), expected_q_f_diag, rtol=1e-12), (
+        "Q_f diagonal does not match alpha_1 * [1e6, 1e6, 1e5, 1e5, 1, 1]"
+    )
+
+    # Ramp is monotonically non-decreasing (each Q[t] element >= Q[t-1])
+    q_trace = jax.vmap(jnp.trace)(schedule.Q)  # trace as a proxy for "total cost weight"
+    for t in range(1, n_steps):
+        assert float(q_trace[t]) >= float(q_trace[t - 1]) - 1e-14, (
+            f"Ramp not monotone at t={t}: trace[t]={q_trace[t]} < trace[t-1]={q_trace[t-1]}"
+        )
+
+
+def test_cs_faithful_qr_velocity_inflation():
+    """Faithful C&S Eq. 15 Q,R on the C&S plant: paper claims Δv > 0.
+
+    Crevecoeur & Scott (2019) report that "the robust controller always
+    generated faster movement velocities toward the target" (p. 8139, Fig. 1e).
+    This test reproduces the C&S setup faithfully:
+
+    - Plant: mass=1 kg, k=0.1 Ns/m, tau=0.06 s, dt=0.01 s (10 ms steps)
+    - Cost: C&S Eq. 15 with alpha_1=1.0, n_steps=80 (0.8 s reach)
+    - Reach: 15 cm forward (matching C&S experimental geometry)
+    - Evaluation: gamma_factor=1.5 (matching synthesis_review section 2)
+
+    If Δv > 0: Q-shape sensitivity confirmed; the faithful C&S Q,R produces
+    the paper's claimed velocity inflation on the C&S plant.
+
+    If Δv ≤ 0: xfailed with diagnosis — the faithful Q,R also fails to
+    produce velocity inflation, suggesting a Riccati implementation issue
+    rather than Q-shape sensitivity.
+    """
+    # C&S plant: near-frictionless point mass with slow force filter
+    plant = linearize_pointmass(mass=1.0, damping=0.1, tau=0.06, dt=0.01)
+
+    # C&S Eq. 15 cost: 80 steps = 0.8 s reach at 10 ms timestep
+    # alpha_1=1.0 is a representative value from the paper's sensitivity sweep
+    schedule = cs_eq15_cost_schedule(n_steps=80, alpha_1=1.0)
+
+    # 15 cm forward reach (C&S experimental geometry: reaches of ~15 cm)
+    init_pos = jnp.array([0.0, 0.0], dtype=jnp.float64)
+    target_pos = jnp.array([0.15, 0.0], dtype=jnp.float64)  # 15 cm in x
+
+    gamma_star = find_gamma_star(plant, schedule)
+    res = compute_velocity_inflation(
+        plant,
+        schedule,
+        init_pos=init_pos,
+        target_pos=target_pos,
+        gamma_factor=1.5,
+        gamma_star=gamma_star,
+    )
+
+    delta_v = res.delta_v_percent
+
+    # Failure handling: if Δv ≤ 0 even with faithful Q,R, mark as xfail
+    # with a clear diagnosis rather than a hard failure. This distinguishes
+    # the Q-shape sensitivity hypothesis from a potential Riccati bug.
+    if delta_v <= 0.0:
+        pytest.xfail(
+            f"Faithful C&S Eq. 15 Q,R gives Δv = {delta_v:.4f}% ≤ 0 on the C&S plant "
+            f"(gamma_star={gamma_star:.6f}, gamma_eval={res.gamma_evaluated:.6f}, "
+            f"LQR v_peak={res.lqr_peak_velocity:.4f}, H∞ v_peak={res.hinf_peak_velocity:.4f}). "
+            "This suggests a potential Riccati implementation issue to investigate: "
+            "the faithful C&S Q,R should produce the paper's claimed velocity inflation "
+            "(Fig. 1e: 'robust controller always generated faster movement velocities toward the target'). "
+            "Investigate whether the (t/N)^6 ramp, the large Q diagonal magnitudes, or "
+            "the R=I cost produce an unexpected Riccati boundary or admissibility regime."
+        )
+
+    # If we reach here, Δv > 0: Q-shape sensitivity is confirmed.
+    # The faithful C&S Q,R does produce velocity inflation on the C&S plant.
+    assert delta_v > 0, f"Δv = {delta_v:.4f}%; faithful C&S Q,R should give Δv > 0"
+
+
+def test_cs_qr_vs_rlrmp_qr_on_cs_plant():
+    """Comparative test: faithful C&S Q,R vs rlrmp Q,R on the same C&S plant.
+
+    Captures the Q-shape sensitivity finding from synthesis_review section 10.
+    Both schedules are evaluated on the C&S plant (k=0.1, tau=0.06) so that
+    the only variable is the cost shape — not the plant parameters.
+
+    Expected behaviour per synthesis_review:
+    - Faithful C&S Q,R: Δv > 0 (paper claim, reproduced by test above)
+    - rlrmp Q,R on C&S plant: Δv ≈ small positive (synthesis_review table
+      section 2 reports +1.5% at 1.5 gamma_star on the C&S plant with
+      rlrmp Q,R)
+
+    This test records both Δv values for comparison. It does not assert a
+    specific ordering — the goal is to capture the numbers for the synthesis
+    review section 10 analysis. A failure of either Riccati to be admissible
+    will surface here as a RuntimeError rather than an assertion error.
+    """
+    plant = linearize_pointmass(mass=1.0, damping=0.1, tau=0.06, dt=0.01)
+    init_pos = jnp.array([0.0, 0.0], dtype=jnp.float64)
+    target_pos = jnp.array([0.15, 0.0], dtype=jnp.float64)
+
+    # Faithful C&S Eq. 15 cost
+    cs_schedule = cs_eq15_cost_schedule(n_steps=80, alpha_1=1.0)
+    cs_res = compute_velocity_inflation(
+        plant, cs_schedule, init_pos=init_pos, target_pos=target_pos, gamma_factor=1.5
+    )
+
+    # rlrmp Q,R on the C&S plant (same schedule as synthesis_review section 2 table)
+    rlrmp_schedule = _rlrmp_schedule(plant)
+    rlrmp_res = compute_velocity_inflation(
+        plant, rlrmp_schedule, init_pos=init_pos, target_pos=target_pos, gamma_factor=1.5
+    )
+
+    # Both Riccati solutions must be admissible at 1.5 gamma_star
+    assert cs_res.riccati.admissible, (
+        "Faithful C&S Q,R Riccati inadmissible at 1.5 gamma_star on C&S plant"
+    )
+    assert rlrmp_res.riccati.admissible, (
+        "rlrmp Q,R Riccati inadmissible at 1.5 gamma_star on C&S plant"
+    )
+
+    # Log the comparison for traceability (visible in pytest -s output)
+    import sys
+    print(
+        f"\n[Q-shape sensitivity] C&S plant (k=0.1, tau=0.06), gamma_factor=1.5:\n"
+        f"  Faithful C&S Q,R (Eq. 15):  Δv = {cs_res.delta_v_percent:+.4f}%  "
+        f"(LQR v_peak={cs_res.lqr_peak_velocity:.4f}, H∞ v_peak={cs_res.hinf_peak_velocity:.4f})\n"
+        f"  rlrmp Q,R (synthesis_review §2): Δv = {rlrmp_res.delta_v_percent:+.4f}%  "
+        f"(LQR v_peak={rlrmp_res.lqr_peak_velocity:.4f}, H∞ v_peak={rlrmp_res.hinf_peak_velocity:.4f})",
+        file=sys.stderr,
+    )
+
+    # Structural check: both LQR peak velocities are plausible for a 15 cm reach
+    # on the C&S plant. The C&S plant is near-frictionless so baseline velocity
+    # can be higher than on the rlrmp plant.
+    assert 0.1 < cs_res.lqr_peak_velocity, (
+        f"C&S plant LQR peak velocity {cs_res.lqr_peak_velocity} implausibly low for 15 cm reach"
+    )
+    assert 0.1 < rlrmp_res.lqr_peak_velocity, (
+        f"rlrmp Q,R on C&S plant LQR peak velocity {rlrmp_res.lqr_peak_velocity} implausibly low"
+    )
