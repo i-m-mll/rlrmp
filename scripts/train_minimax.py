@@ -1366,8 +1366,14 @@ def parse_args() -> argparse.Namespace:
         help="Path to a pre-trained model to use as warm-start (skips phase 1).",
     )
     parser.add_argument(
-        "--output-dir", type=str, default="results/minimax_test",
-        help="Output directory for results (default: results/minimax_test).",
+        "--output-dir", type=str, default="_artifacts/minimax/minimax_test",
+        help=(
+            "Output directory for bulk artifacts (checkpoints, .eqx, .npz, logs). "
+            "Default mirrors the role-based layout: _artifacts/<exp>/runs/<run>/. "
+            "Use rlrmp.paths.run_artifact_dir(exp, run) to construct this path "
+            "programmatically. Write run.json to the sibling spec directory "
+            "results/<exp>/runs/<run>/ via rlrmp.paths.run_spec_dir(exp, run)."
+        ),
     )
     parser.add_argument(
         "--jax-cache-dir", type=str, default=None,

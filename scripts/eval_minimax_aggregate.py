@@ -183,8 +183,12 @@ def main() -> None:
     parser.add_argument(
         "--results-dir",
         type=str,
-        default="/workspace/results/minimax_single",
-        help="Parent directory containing seed_0/, seed_1/, ... sub-directories.",
+        default="/workspace/_artifacts/minimax/minimax_single",
+        help=(
+            "Parent directory containing seed_0/, seed_1/, ... sub-directories "
+            "(bulk artifact directory). "
+            "Use rlrmp.paths.run_artifact_dir(exp, run) to construct this path."
+        ),
     )
     parser.add_argument(
         "--eval-key",

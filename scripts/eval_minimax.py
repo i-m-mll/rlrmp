@@ -274,8 +274,12 @@ def main():
         description="Evaluate a minimax-trained model and its adversary."
     )
     parser.add_argument(
-        "--results-dir", type=str, default="results/minimax_test",
-        help="Path to minimax results directory (default: results/minimax_test).",
+        "--results-dir", type=str, default="_artifacts/minimax/minimax_test",
+        help=(
+            "Path to minimax bulk artifact directory containing the trained model. "
+            "Default: _artifacts/minimax/minimax_test. "
+            "Use rlrmp.paths.run_artifact_dir(exp, run) to construct this path."
+        ),
     )
     parser.add_argument(
         "--pert-scale", type=float, default=5.0,
