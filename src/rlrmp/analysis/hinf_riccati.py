@@ -1,0 +1,1375 @@
+"""Finite-horizon discrete-time H-infinity LQ-game Riccati on the rlrmp plant.
+
+This module implements the finite-horizon, discrete-time H-infinity Riccati
+recursion (Crevecoeur & Scott 2019 / Basar-Bernhard form) on the linearised
+rlrmp point-mass plant with first-order force filter. It computes the smallest
+admissible disturbance-attenuation level gamma_star, the H-infinity feedback
+gain K_t, and a closed-loop simulator for comparing peak velocity against the
+LQR baseline (gamma -> infinity).
+
+Bug: 5a44bd3 - production reimplementation of the H-infinity Riccati sanity
+check. See ``results/part2_5/synthesis_review.md`` section 2 for the
+mathematical spec, the Q,R schedule, and the predicted velocity inflation
+magnitude on the rlrmp parameter regime.
+
+Math (synthesis_review section 2 spec)
+--------------------------------------
+The discrete-time finite-horizon LQ-game value function is
+
+.. math::
+
+    V_t(x) = x^\\top P_t\\, x
+
+with the backward recursion
+
+.. math::
+
+    P_t = Q_t + A^\\top P_{t+1}
+        \\bigl(I + (B R_t^{-1} B^\\top - \\gamma^{-2} B_w B_w^\\top) P_{t+1}\\bigr)^{-1} A,
+
+initialised at :math:`P_T = Q_f`. The H-infinity feedback gain is
+
+.. math::
+
+    K_t = (R_t + B^\\top \\Lambda_t B)^{-1} B^\\top \\Lambda_t A,
+    \\qquad
+    \\Lambda_t = (I - \\gamma^{-2} P_{t+1} B_w B_w^\\top)^{-1} P_{t+1},
+
+and the closed-loop dynamics with the worst-case disturbance are
+
+.. math::
+
+    x_{t+1} = (A - B K_t)\\,x_t + B_w w_t^\\star,
+
+where :math:`w_t^\\star = \\gamma^{-2} B_w^\\top \\Lambda_t (A - B K_t) x_t`.
+We use both as needed.
+
+Solvability of the Riccati at gamma is encoded by the requirement that, at
+every step, :math:`I - \\gamma^{-2} B_w^\\top P_{t+1} B_w` is positive definite
+(equivalently, all eigenvalues of :math:`\\gamma^{-2} B_w^\\top P_{t+1} B_w` lie
+strictly below 1). Below this threshold, the recursion's bracket inverse is
+ill-posed and the disturbance "wins".
+
+Numerical strategy
+------------------
+Phase 2's quick standalone implementation blew up near the Riccati boundary.
+This implementation uses three guards:
+
+1. **Double precision.** All matrices are cast to ``float64`` before
+   recursion. The module's public API also enables ``jax_enable_x64`` once at
+   import time (idempotent).
+2. **Linear solve, not explicit inverse.** The bracket inversion is done via
+   ``jnp.linalg.solve`` on a 6x6 system at each timestep (``B R^{-1} B^T -
+   gamma^{-2} B_w B_w^T`` premultiplied by ``P_{t+1}``, plus identity).
+3. **Per-step admissibility check.** At each backward step we compute the
+   spectral radius :math:`\\rho_t = \\lambda_{\\max}(\\gamma^{-2} B_w^\\top
+   P_{t+1} B_w)` and the condition number of the bracket. If
+   :math:`\\rho_t \\ge 1 - \\epsilon` or the bracket is severely
+   ill-conditioned, the recursion flags the gamma as inadmissible and
+   short-circuits. The ``RiccatiSolution`` carries these diagnostics for every
+   step.
+
+The bisection for ``gamma_star`` uses the admissibility flag as the predicate.
+
+Linearisation
+-------------
+The rlrmp plant is a continuous-time LTI system: a 4-state point mass
+(position, velocity) plus a 2-state first-order force filter (acting on the
+commanded force ``u`` with rise/decay time constant ``tau``). Stacked state
+:math:`x_c = [pos(2), vel(2), F(2)]`. Continuous-time matrices
+
+.. math::
+
+    A_c = \\begin{pmatrix} 0 & I & 0 \\\\ 0 & -k/m\\,I & I/m \\\\ 0 & 0 & -I/\\tau \\end{pmatrix},
+    \\quad
+    B_c = \\begin{pmatrix} 0 \\\\ 0 \\\\ I/\\tau \\end{pmatrix},
+    \\quad
+    B_{w,c} = \\begin{pmatrix} 0 \\\\ I/m \\\\ 0 \\end{pmatrix},
+
+where the disturbance ``w`` enters as an additive force on the velocity row
+(matching feedbax's effector-force intervenor channel; see
+``rlrmp.disturbance``). Discretisation uses zero-order hold via
+``jax.scipy.linalg.expm`` on the augmented 9x9 block
+
+.. math::
+
+    \\exp\\!\\left(\\begin{bmatrix} A_c & B_c & B_{w,c} \\\\ 0 & 0 & 0 \\\\ 0 & 0 & 0 \\end{bmatrix} dt\\right)
+    = \\begin{bmatrix} A_d & B_d & B_{w,d} \\\\ 0 & I & 0 \\\\ 0 & 0 & I \\end{bmatrix}.
+
+For ``tau == 0`` (no filter) we bypass the filter rows and return the bare
+4-state plant.
+
+Relationship to flavor (b) :math:`\\max_{\\Delta A}`
+---------------------------------------------------
+The synthesis (``synthesis_review.md`` section 2 / 4.2) distinguishes:
+
+- **Flavor (a)**: additive force-trajectory disturbance ``w``. This is what
+  the H-infinity Riccati here directly computes -- ``B_w`` enters the bracket
+  with weight :math:`\\gamma^{-2}`.
+- **Flavor (b)**: structural perturbation :math:`\\Delta A` to the dynamics
+  matrix, constant over the trial.
+
+These are different worst-case classes. The H-infinity Riccati gives the
+optimal feedback law against flavor (a) at attenuation level :math:`\\gamma`.
+Section 4.2 of synthesis_review argues that flavor (b) is the natural target
+for the C&S signature; in practice the feedback K_t derived here is
+structurally the same kind of "robust gain" controller that a flavor-(b)
+adversary at the right amplitude would induce, and section 2's empirical table
+shows it produces the predicted +10 to +25% velocity inflation on the rlrmp
+parameter regime.
+
+Usage
+-----
+Three public uses:
+
+1. **Sanity check.** ``compute_velocity_inflation`` returns the LQR vs
+   H-infinity peak-velocity comparison. Pre-registered prediction
+   (synthesis_review section 11 step 1): +10 to +25% at :math:`\\gamma \\sim
+   1.5\\gamma_*` on rlrmp parameters; <1% on C&S parameters.
+2. **Distillation teacher** (synthesis_review section 4.3 phase A). The
+   ``RiccatiSolution.K`` array provides time-varying linear feedback gains
+   that can be fed into a behavioural-cloning loop to teach the GRU policy
+   the H-infinity controller.
+3. **Adversary baseline** (synthesis_review section 4.2). The Riccati gain
+   provides a reference closed-loop for evaluating
+   ``LinearDynamicsAdversary``-trained networks.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Optional, Tuple
+
+import equinox as eqx
+import jax
+import jax.numpy as jnp
+import jax.scipy.linalg as jsla
+import jax.tree as jt
+from feedbax.mechanics.skeleton.pointmass import PointMass
+from jaxtyping import Array, Float
+
+# Enable x64 once on import. Idempotent and only triggers if x64 isn't already
+# on. The Riccati recursion is numerically sensitive near the gamma boundary
+# and double precision is non-negotiable here.
+jax.config.update("jax_enable_x64", True)
+
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Data classes
+# =============================================================================
+
+
+class PlantLinearization(eqx.Module):
+    """Continuous- and discrete-time LTI matrices for the linearised plant.
+
+    Attributes:
+        A_c: Continuous-time state-evolution matrix, shape (n, n).
+        B_c: Continuous-time control matrix, shape (n, m_u).
+        Bw_c: Continuous-time disturbance matrix, shape (n, m_w).
+        A: Discrete-time state-evolution matrix at time step ``dt``, shape (n, n).
+        B: Discrete-time control matrix, shape (n, m_u).
+        Bw: Discrete-time disturbance matrix, shape (n, m_w).
+        dt: Time step (seconds).
+        state_indices: Dict mapping subspace name to slice (``"pos"``, ``"vel"``,
+            ``"force"``).
+        n: Total state dimension.
+        m_u: Control dimension.
+        m_w: Disturbance dimension.
+    """
+
+    A_c: Float[Array, "n n"]
+    B_c: Float[Array, "n m_u"]
+    Bw_c: Float[Array, "n m_w"]
+    A: Float[Array, "n n"]
+    B: Float[Array, "n m_u"]
+    Bw: Float[Array, "n m_w"]
+    dt: float
+    pos_slice: tuple[int, int]
+    vel_slice: tuple[int, int]
+    force_slice: Optional[tuple[int, int]]
+
+    @property
+    def n(self) -> int:
+        return int(self.A.shape[0])
+
+    @property
+    def m_u(self) -> int:
+        return int(self.B.shape[1])
+
+    @property
+    def m_w(self) -> int:
+        return int(self.Bw.shape[1])
+
+    def pos(self, x: Float[Array, "... n"]) -> Float[Array, "... 2"]:
+        """Extract position subvector from a state vector."""
+        return x[..., self.pos_slice[0] : self.pos_slice[1]]
+
+    def vel(self, x: Float[Array, "... n"]) -> Float[Array, "... 2"]:
+        """Extract velocity subvector from a state vector."""
+        return x[..., self.vel_slice[0] : self.vel_slice[1]]
+
+
+class CostSchedule(eqx.Module):
+    """Time-varying quadratic cost matrices for the LQ recursion.
+
+    Attributes:
+        Q: Stage state cost, shape (T, n, n) for T stages.
+        R: Stage control cost, shape (T, m_u, m_u).
+        Q_f: Terminal state cost, shape (n, n).
+        T: Number of stages.
+    """
+
+    Q: Float[Array, "T n n"]
+    R: Float[Array, "T m_u m_u"]
+    Q_f: Float[Array, "n n"]
+
+    @property
+    def T(self) -> int:
+        return int(self.Q.shape[0])
+
+
+class RiccatiSolution(eqx.Module):
+    """Output of ``solve_hinf_riccati``.
+
+    Attributes:
+        P: Riccati matrix sequence, shape (T+1, n, n). ``P[t]`` is the value-
+            function Hessian at stage ``t``; ``P[T] = Q_f``.
+        K: Feedback gain sequence, shape (T, m_u, n). Optimal control is
+            ``u_t = -K[t] x_t``.
+        admissible: Whether gamma is admissible (no boundary crossing through
+            the recursion).
+        spectral_radii: Per-step spectral radius
+            :math:`\\lambda_{\\max}(\\gamma^{-2} B_w^\\top P_{t+1} B_w)`,
+            shape (T,). Must stay below 1 for admissibility.
+        bracket_conditions: Per-step condition number of the bracket
+            :math:`I + (B R^{-1} B^\\top - \\gamma^{-2} B_w B_w^\\top) P_{t+1}`,
+            shape (T,).
+        max_P_cond: Maximum condition number of P_t over t.
+        gamma: The gamma value at which this Riccati was solved.
+    """
+
+    P: Float[Array, "T_plus_1 n n"]
+    K: Float[Array, "T m_u n"]
+    admissible: bool = eqx.field(static=True)
+    spectral_radii: Float[Array, "T"]
+    bracket_conditions: Float[Array, "T"]
+    max_P_cond: float = eqx.field(static=True)
+    gamma: float = eqx.field(static=True)
+
+
+class ClosedLoopRollout(eqx.Module):
+    """Closed-loop simulation result.
+
+    Attributes:
+        x: State trajectory, shape (T+1, n).
+        u: Control trajectory, shape (T, m_u).
+        peak_velocity: Maximum :math:`\\lVert v_t \\rVert_2` over t.
+        peak_velocity_idx: Time index of peak velocity.
+        peak_lateral_deviation: Maximum perpendicular distance from the
+            straight line connecting initial position to terminal target.
+        control_effort: :math:`\\sum_t \\lVert u_t \\rVert_2^2 \\, dt`.
+        terminal_position_error: :math:`\\lVert x_T^{pos} - x_{target} \\rVert`.
+    """
+
+    x: Float[Array, "T_plus_1 n"]
+    u: Float[Array, "T m_u"]
+    peak_velocity: float
+    peak_velocity_idx: int
+    peak_lateral_deviation: float
+    control_effort: float
+    terminal_position_error: float
+
+
+# =============================================================================
+# Plant linearisation
+# =============================================================================
+
+
+def linearize_pointmass(
+    *,
+    mass: float,
+    damping: float,
+    tau: float,
+    dt: float,
+) -> PlantLinearization:
+    """Linearise the rlrmp point-mass-plus-filter plant.
+
+    Builds the continuous-time LTI matrices for the augmented state
+    ``[pos(2), vel(2), F(2)]`` (or ``[pos(2), vel(2)]`` if ``tau == 0``) and
+    discretises via zero-order hold using ``jax.scipy.linalg.expm`` on the
+    augmented (state | inputs) block.
+
+    The plant is the one used in ``feedbax.xabdeef.models.point_mass_nn``:
+
+        ``dot pos = vel``
+        ``dot vel = -(damping/mass) vel + F/mass``
+        ``dot F   = -F/tau + u/tau``                  (omitted if tau == 0)
+
+    The disturbance ``w`` is treated as an additive force on the velocity row,
+    matching the channel used by ``feedbax.intervene.CurlField`` /
+    ``FixedField`` (see ``rlrmp.disturbance``):
+
+        ``dot vel += w / mass``.
+
+    For ``tau == 0`` the filter rows drop out and ``B = [0; I/mass]``,
+    ``Bw = [0; I/mass]``.
+
+    Args:
+        mass: Effector mass (kg).
+        damping: Velocity damping coefficient k (Ns/m).
+        tau: First-order force-filter time constant (s). If ``0.0`` the filter
+            is omitted and the plant is the bare 4-state point mass.
+        dt: Discretisation time step (s).
+
+    Returns:
+        A ``PlantLinearization`` with continuous- and discrete-time matrices.
+
+    Raises:
+        ValueError: If ``mass`` or ``dt`` is non-positive, or ``tau`` is
+            negative.
+    """
+    if mass <= 0:
+        raise ValueError(f"mass must be positive, got {mass}")
+    if dt <= 0:
+        raise ValueError(f"dt must be positive, got {dt}")
+    if tau < 0:
+        raise ValueError(f"tau must be non-negative, got {tau}")
+
+    I2 = jnp.eye(2, dtype=jnp.float64)
+    Z2 = jnp.zeros((2, 2), dtype=jnp.float64)
+
+    if tau == 0.0:
+        # 4-state plant: [pos, vel]
+        A_c = jnp.block(
+            [
+                [Z2, I2],
+                [Z2, -(damping / mass) * I2],
+            ]
+        )
+        # control acts directly on velocity through (1/mass)
+        B_c = jnp.concatenate([Z2, I2 / mass], axis=0)  # (4, 2)
+        # disturbance acts identically on velocity
+        Bw_c = jnp.concatenate([Z2, I2 / mass], axis=0)  # (4, 2)
+        pos_slice = (0, 2)
+        vel_slice = (2, 4)
+        force_slice = None
+    else:
+        # 6-state plant: [pos, vel, F]
+        A_c = jnp.block(
+            [
+                [Z2, I2, Z2],
+                [Z2, -(damping / mass) * I2, I2 / mass],
+                [Z2, Z2, -(1.0 / tau) * I2],
+            ]
+        )
+        B_c = jnp.concatenate([Z2, Z2, I2 / tau], axis=0)  # (6, 2)
+        # disturbance bypasses the force filter, entering as additive force on velocity
+        Bw_c = jnp.concatenate([Z2, I2 / mass, Z2], axis=0)  # (6, 2)
+        pos_slice = (0, 2)
+        vel_slice = (2, 4)
+        force_slice = (4, 6)
+
+    A_d, B_d, Bw_d = _zoh_discretize(A_c, B_c, Bw_c, dt)
+
+    return PlantLinearization(
+        A_c=A_c,
+        B_c=B_c,
+        Bw_c=Bw_c,
+        A=A_d,
+        B=B_d,
+        Bw=Bw_d,
+        dt=float(dt),
+        pos_slice=pos_slice,
+        vel_slice=vel_slice,
+        force_slice=force_slice,
+    )
+
+
+def linearize_from_model(model, *, dt: Optional[float] = None) -> PlantLinearization:
+    """Linearise the rlrmp plant from an ``eqx.Module`` model.
+
+    Walks the model PyTree to find the ``PointMass`` skeleton and the
+    associated ``mass``, ``damping``, ``tau``, ``dt`` parameters. This
+    accepts either:
+
+    - a feedbax ``Iterator`` wrapping ``SimpleFeedback`` (the standard
+      ``point_mass_nn`` model), or
+    - a ``SimpleFeedback`` body directly, or
+    - a ``Mechanics`` instance, or
+    - a ``PointMass`` instance directly.
+
+    The plant is *time-invariant* in the rlrmp setup, so this function does
+    not require a nominal trajectory: linearisation around any state is
+    identical (the system is exactly linear). The argument is named
+    ``model`` rather than ``trajectory`` to match the spec.
+
+    Args:
+        model: A feedbax model containing a ``PointMass`` skeleton (or the
+            skeleton directly).
+        dt: Override the discretisation time step. If ``None``, pull from the
+            model's ``Mechanics.dt`` (or the FilterState's ``dt``).
+
+    Returns:
+        A ``PlantLinearization``. See ``linearize_pointmass``.
+
+    Raises:
+        ValueError: If the model does not contain a ``PointMass`` skeleton or
+            ``dt`` cannot be resolved.
+    """
+    pm, found_dt, found_tau = _walk_model_for_plant_params(model)
+    if pm is None:
+        raise ValueError(
+            "Could not find a PointMass skeleton inside the model. "
+            "Pass a feedbax Iterator/SimpleFeedback/Mechanics/PointMass "
+            "instance."
+        )
+    final_dt = float(dt) if dt is not None else found_dt
+    if final_dt is None:
+        raise ValueError(
+            "Could not resolve dt from model and none was provided. "
+            "Pass dt explicitly."
+        )
+    return linearize_pointmass(
+        mass=float(pm.mass),
+        damping=float(pm.damping),
+        tau=float(found_tau if found_tau is not None else 0.0),
+        dt=final_dt,
+    )
+
+
+def _walk_model_for_plant_params(model) -> Tuple[Optional[PointMass], Optional[float], Optional[float]]:
+    """Find PointMass instance, dt, tau in a feedbax-shaped model.
+
+    Returns ``(pointmass_or_none, dt_or_none, tau_or_none)``. If the model is
+    a ``PointMass`` directly, returns ``(model, None, None)``.
+    """
+    pm: Optional[PointMass] = None
+    dt: Optional[float] = None
+    tau: Optional[float] = None
+
+    # Direct PointMass case
+    if isinstance(model, PointMass):
+        return model, None, None
+
+    leaves = jt.leaves(model, is_leaf=lambda x: isinstance(x, PointMass))
+    for leaf in leaves:
+        if isinstance(leaf, PointMass):
+            pm = leaf
+            break
+
+    # Best-effort attribute walk for dt and tau. The feedbax Iterator wraps
+    # SimpleFeedback which holds Mechanics with ``dt`` and a force filter with
+    # tau_rise/tau_decay. We don't depend on a specific shape; we search.
+    def _maybe_set(node):
+        nonlocal dt, tau
+        if dt is None and hasattr(node, "dt"):
+            try:
+                cand = float(getattr(node, "dt"))
+                if cand > 0:
+                    dt = cand
+            except (TypeError, ValueError):
+                pass
+        if tau is None and hasattr(node, "tau_rise"):
+            try:
+                tau = float(getattr(node, "tau_rise"))
+            except (TypeError, ValueError):
+                pass
+        return node
+
+    jt.map(_maybe_set, model, is_leaf=lambda x: hasattr(x, "dt") or hasattr(x, "tau_rise"))
+
+    return pm, dt, tau
+
+
+def _zoh_discretize(
+    A_c: Float[Array, "n n"],
+    B_c: Float[Array, "n m_u"],
+    Bw_c: Float[Array, "n m_w"],
+    dt: float,
+) -> Tuple[Float[Array, "n n"], Float[Array, "n m_u"], Float[Array, "n m_w"]]:
+    """Zero-order hold discretisation of (A_c, B_c, Bw_c) to step size dt.
+
+    Uses the augmented exponential trick: stack inputs into a block and
+    take the matrix exponential of a (n + m_u + m_w) square matrix.
+    """
+    n = A_c.shape[0]
+    m_u = B_c.shape[1]
+    m_w = Bw_c.shape[1]
+    M = jnp.zeros((n + m_u + m_w, n + m_u + m_w), dtype=jnp.float64)
+    M = M.at[:n, :n].set(A_c)
+    M = M.at[:n, n : n + m_u].set(B_c)
+    M = M.at[:n, n + m_u :].set(Bw_c)
+    expM = jsla.expm(M * dt)
+    A_d = expM[:n, :n]
+    B_d = expM[:n, n : n + m_u]
+    Bw_d = expM[:n, n + m_u :]
+    return A_d, B_d, Bw_d
+
+
+# =============================================================================
+# Cost schedule
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class CostSpec:
+    """Specification for the rlrmp loss-derived Q,R schedule.
+
+    Mirrors synthesis_review section 2: position-only state cost during the
+    movement window, with a cosine ramp on the late portion. Matches the
+    ``running_cost`` mode used in Phase 2 of part2_5.
+
+    All weights are unitless multipliers on identity matrices in the
+    relevant subspace.
+
+    Attributes:
+        n_steps: Total number of stages T (= ``hps.task.n_steps - 1`` in
+            rlrmp; one fewer than total simulation timesteps because the
+            terminal stage carries Q_f).
+        go_step: Time index of the go cue (zero-based).
+        pos_mid_weight: Weight on position cost during mid-period (after go,
+            before late). Maps to ``loss.weights.effector_pos_mid *
+            loss.effector_pos_mid.ramp_final_weight`` in the rlrmp config.
+        vel_mid_weight: Weight on velocity cost during mid-period.
+        pos_late_weight: Weight on position cost during late period.
+        vel_late_weight: Weight on velocity cost during late period.
+        pos_late_scale_factor: Cosine ramp endpoint scale factor on late
+            position weight (matches ``effector_pos_late.final_scale_factor``).
+        vel_late_scale_factor: Cosine ramp endpoint scale factor on late
+            velocity weight.
+        late_start_offset: Steps after go cue when the late period begins
+            (matches ``effector_pos_late.start_step_after_go``).
+        R_weight: Diagonal control cost. Matches ``loss.weights.nn_output``
+            for non-adaptive runs, or the converged adaptive control weight
+            (typically ~3e-5) for ``loss_update``-enabled runs.
+        terminal_pos_weight: Weight on final-stage position cost (Q_f).
+        terminal_vel_weight: Weight on final-stage velocity cost.
+
+    Notes:
+        - The weights are applied to position and velocity subspaces of the
+          full augmented state (pos, vel, [F]). Force-state cost is zero.
+        - For C&S-style sanity tests, override ``vel_late_weight`` and
+          ``vel_late_scale_factor`` to match C&S's cost emphasis.
+    """
+
+    n_steps: int
+    go_step: int = 30
+    pos_mid_weight: float = 0.1  # rlrmp default ramp_final_weight
+    vel_mid_weight: float = 0.0  # rlrmp default for vel_mid is zeroed
+    pos_late_weight: float = 1.0
+    vel_late_weight: float = 0.1
+    pos_late_scale_factor: float = 3.0
+    vel_late_scale_factor: float = 3.0
+    late_start_offset: int = 80
+    R_weight: float = 3.0e-5  # Adaptive-control-cost converged value (synthesis_review section 2)
+    terminal_pos_weight: float = 4.0
+    terminal_vel_weight: float = 0.4
+
+
+def cost_schedule_from_spec(
+    spec: CostSpec,
+    plant: PlantLinearization,
+) -> CostSchedule:
+    """Build a time-varying Q,R schedule from a ``CostSpec`` and plant.
+
+    Constructs Q_t, R_t, Q_f matching the rlrmp ``running_cost`` loss with
+    the late-period cosine ramp described in synthesis_review section 2.
+    Position and velocity weights apply to their respective state subspaces;
+    the force subspace (if present) carries zero cost.
+
+    The cosine ramp on the late period follows
+    ``rlrmp.loss.make_late_discount_from_epoch``:
+
+        ``frac(t) = clip((t - late_start) / (T - late_start), 0, 1)``
+        ``ramp(t) = 1 + (scale - 1) * (0.5 - 0.5 cos(pi * frac))``
+
+    Args:
+        spec: The cost specification.
+        plant: The plant linearisation, used to size the matrices.
+
+    Returns:
+        A ``CostSchedule`` with ``Q``, ``R``, ``Q_f``.
+    """
+    T = spec.n_steps
+    n = plant.n
+    m_u = plant.m_u
+
+    # Per-step time index
+    t = jnp.arange(T, dtype=jnp.float64)
+    late_start = float(spec.go_step + spec.late_start_offset)
+    denom = max(1.0, float(T) - late_start)
+    frac = jnp.clip((t - late_start) / denom, 0.0, 1.0)
+    cos_ramp = 0.5 - 0.5 * jnp.cos(jnp.pi * frac)  # 0 -> 0, 1 -> 1, smooth
+
+    # Mid-period mask: from go_step until late_start
+    mid_mask = jnp.where((t >= float(spec.go_step)) & (t < late_start), 1.0, 0.0)
+    # Late-period mask: from late_start onwards
+    late_mask = jnp.where(t >= late_start, 1.0, 0.0)
+
+    # Time-varying scalar weights
+    pos_weight_t = (
+        spec.pos_mid_weight * mid_mask
+        + spec.pos_late_weight * (1.0 + (spec.pos_late_scale_factor - 1.0) * cos_ramp) * late_mask
+    )
+    vel_weight_t = (
+        spec.vel_mid_weight * mid_mask
+        + spec.vel_late_weight * (1.0 + (spec.vel_late_scale_factor - 1.0) * cos_ramp) * late_mask
+    )
+
+    # Build Q_t by writing position and velocity blocks into the full n x n
+    pos_lo, pos_hi = plant.pos_slice
+    vel_lo, vel_hi = plant.vel_slice
+    I_pos = jnp.eye(pos_hi - pos_lo, dtype=jnp.float64)
+    I_vel = jnp.eye(vel_hi - vel_lo, dtype=jnp.float64)
+
+    base_Q = jnp.zeros((n, n), dtype=jnp.float64)
+
+    def _Q_at(pos_w, vel_w):
+        Q = base_Q
+        Q = jax.lax.dynamic_update_slice(
+            Q, pos_w * I_pos, (pos_lo, pos_lo)
+        )
+        Q = jax.lax.dynamic_update_slice(
+            Q, vel_w * I_vel, (vel_lo, vel_lo)
+        )
+        return Q
+
+    # vmap over time
+    Q = jax.vmap(_Q_at)(pos_weight_t, vel_weight_t)
+
+    # R_t (constant in time for the rlrmp setup)
+    R = jnp.tile(spec.R_weight * jnp.eye(m_u, dtype=jnp.float64)[None], (T, 1, 1))
+
+    # Terminal Q_f
+    Q_f = _Q_at(jnp.float64(spec.terminal_pos_weight), jnp.float64(spec.terminal_vel_weight))
+
+    return CostSchedule(Q=Q, R=R, Q_f=Q_f)
+
+
+def cost_schedule_from_loss_config(hps, plant: PlantLinearization) -> CostSchedule:
+    """Build a Q,R schedule from a populated rlrmp ``hps`` namespace.
+
+    This is the bridge between rlrmp's YAML loss config and the LQ-game
+    representation. It handles the ``running_cost`` mode and the standard
+    structured mode used in part2_5.
+
+    Args:
+        hps: A ``feedbax.types.TreeNamespace`` containing ``loss``, ``task``,
+            and ``loss_update`` sub-namespaces (as produced by
+            ``rlrmp.config``).
+        plant: The plant linearisation.
+
+    Returns:
+        A ``CostSchedule``.
+    """
+    weights = getattr(hps.loss, "weights", {}) or {}
+
+    def _w(name: str, default: float) -> float:
+        val = getattr(weights, name, None)
+        if val is None and isinstance(weights, dict):
+            val = weights.get(name, None)
+        return float(default if val is None else val)
+
+    # Mid-period
+    mid_pos_cfg = getattr(hps.loss, "effector_pos_mid", None)
+    mid_pos_final = 0.1
+    if mid_pos_cfg is not None:
+        mid_pos_final = float(getattr(mid_pos_cfg, "ramp_final_weight", 0.1))
+    mid_vel_cfg = getattr(hps.loss, "effector_vel_mid", None)
+    mid_vel_final = 0.1
+    if mid_vel_cfg is not None:
+        mid_vel_final = float(getattr(mid_vel_cfg, "ramp_final_weight", 0.1))
+
+    # Late-period
+    late_pos_cfg = getattr(hps.loss, "effector_pos_late", None)
+    late_pos_offset = 80
+    late_pos_scale = 3.0
+    if late_pos_cfg is not None:
+        late_pos_offset = int(getattr(late_pos_cfg, "start_step_after_go", 80))
+        late_pos_scale = float(getattr(late_pos_cfg, "final_scale_factor", 3.0))
+    late_vel_cfg = getattr(hps.loss, "effector_vel_late", None)
+    late_vel_scale = 3.0
+    if late_vel_cfg is not None:
+        late_vel_scale = float(getattr(late_vel_cfg, "final_scale_factor", 3.0))
+
+    n_steps = int(hps.task.n_steps) - 1
+    go_step = _resolve_go_step(hps)
+
+    # Adaptive control cost: if loss_update is enabled, prefer the converged
+    # value documented in synthesis_review section 2; else fall back to the
+    # static weight in loss.weights.nn_output (typically 1e-6).
+    R_weight = _w("nn_output", 1e-6)
+    loss_update = getattr(hps, "loss_update", None)
+    if loss_update is not None and bool(getattr(loss_update, "enabled", False)):
+        target_ratio = float(getattr(loss_update, "target_ratio", 0.5))
+        # Synthesis review section 2 reports the converged value as ~3e-5 for
+        # rlrmp's standard config. Pass through unless caller overrides.
+        R_weight = float(getattr(loss_update, "converged_R", 3.0e-5))
+        # We don't know the converged ratio without running; expose the
+        # target_ratio for documentation but keep R_weight as the override.
+        del target_ratio
+
+    spec = CostSpec(
+        n_steps=n_steps,
+        go_step=go_step,
+        pos_mid_weight=_w("effector_pos_mid", 1.0) * mid_pos_final,
+        vel_mid_weight=_w("effector_vel_mid", 0.0) * mid_vel_final,
+        pos_late_weight=_w("effector_pos_late", 1.0),
+        vel_late_weight=_w("effector_vel_late", 0.1),
+        pos_late_scale_factor=late_pos_scale,
+        vel_late_scale_factor=late_vel_scale,
+        late_start_offset=late_pos_offset,
+        R_weight=R_weight,
+        terminal_pos_weight=_w("effector_pos_late", 1.0) * late_pos_scale,
+        terminal_vel_weight=_w("effector_vel_late", 0.1) * late_vel_scale,
+    )
+    return cost_schedule_from_spec(spec, plant)
+
+
+def _resolve_go_step(hps) -> int:
+    """Resolve the go-cue step index from an hps namespace.
+
+    rlrmp encodes epoch lengths as ranges in ``hps.task.epoch_len_ranges``.
+    The go cue falls at the start of the last (movement) epoch, which is the
+    sum of the means of all preceding epoch ranges. For a deterministic
+    canonical schedule we use the upper bound of each range (matching the
+    fixed-trial policy used for evaluation).
+    """
+    epoch_ranges = getattr(hps.task, "epoch_len_ranges", None)
+    if epoch_ranges is None:
+        # Conservative default: go cue ~1/4 into trial
+        return int(hps.task.n_steps) // 4
+    # Use upper bound of each pre-movement epoch for the canonical schedule
+    return int(sum(r[1] - 1 for r in list(epoch_ranges)))
+
+
+# =============================================================================
+# Riccati recursion
+# =============================================================================
+
+
+# Numerical thresholds for admissibility. ``RHO_TOL`` is the margin below 1
+# for the spectral radius gamma^{-2} B_w^T P B_w; ``COND_TOL`` is the maximum
+# acceptable bracket condition number before we flag instability.
+_RHO_TOL = 1e-6
+_COND_TOL = 1e12
+
+
+def solve_hinf_riccati(
+    plant: PlantLinearization,
+    schedule: CostSchedule,
+    gamma: float,
+) -> RiccatiSolution:
+    """Solve the finite-horizon discrete-time H-infinity LQ-game Riccati.
+
+    Implements the backward recursion described at the top of this module.
+    The recursion is unrolled in Python (no ``jax.lax.scan``) so that we can
+    short-circuit on inadmissibility and report per-step diagnostics. T is
+    typically ~100 in the rlrmp setup, which is comfortably within the
+    XLA-trace budget for single-call usage.
+
+    Args:
+        plant: Linearised plant (provides A, B, B_w).
+        schedule: Time-varying Q, R, Q_f.
+        gamma: H-infinity disturbance attenuation level. ``gamma -> infinity``
+            recovers LQR; ``gamma`` near ``gamma_star`` is the most aggressive
+            admissible H-infinity controller.
+
+    Returns:
+        A ``RiccatiSolution`` with ``P``, ``K``, admissibility flag, and
+        per-step diagnostics. If the recursion crosses the boundary at some
+        step ``t``, ``admissible = False`` and ``K[t:]`` carries the partial
+        result up to that step (later entries are zero).
+
+    Raises:
+        ValueError: If ``gamma <= 0`` or shapes do not match.
+    """
+    if gamma <= 0:
+        raise ValueError(f"gamma must be positive, got {gamma}")
+    A = plant.A.astype(jnp.float64)
+    B = plant.B.astype(jnp.float64)
+    Bw = plant.Bw.astype(jnp.float64)
+    n = A.shape[0]
+    m_u = B.shape[1]
+    m_w = Bw.shape[1]
+    T = schedule.T
+
+    if schedule.Q.shape[1:] != (n, n):
+        raise ValueError(
+            f"Q shape mismatch: got {schedule.Q.shape}, expected (T, {n}, {n})"
+        )
+    if schedule.R.shape[1:] != (m_u, m_u):
+        raise ValueError(
+            f"R shape mismatch: got {schedule.R.shape}, expected (T, {m_u}, {m_u})"
+        )
+
+    Q_f = schedule.Q_f.astype(jnp.float64)
+    Q_seq = schedule.Q.astype(jnp.float64)
+    R_seq = schedule.R.astype(jnp.float64)
+    I_n = jnp.eye(n, dtype=jnp.float64)
+    I_mw = jnp.eye(m_w, dtype=jnp.float64)
+    inv_gamma2 = 1.0 / (gamma * gamma)
+
+    P_list = [Q_f]
+    K_list: list[jnp.ndarray] = []
+    spectral_radii: list[float] = []
+    bracket_conds: list[float] = []
+    admissible = True
+
+    for k in range(T - 1, -1, -1):
+        P_next = P_list[-1]
+        Q_t = Q_seq[k]
+        R_t = R_seq[k]
+
+        # Admissibility check on the m_w x m_w spectral radius
+        # gamma^{-2} B_w^T P B_w. If max eigenvalue >= 1, gamma is too small.
+        BwT_P_Bw = inv_gamma2 * (Bw.T @ P_next @ Bw)
+        eigvals = jnp.linalg.eigvalsh(BwT_P_Bw)
+        rho = float(jnp.max(jnp.real(eigvals)))
+        spectral_radii.append(rho)
+
+        if not jnp.isfinite(rho) or rho >= 1.0 - _RHO_TOL:
+            admissible = False
+            # Pad K with zeros for the remaining steps
+            for _ in range(k + 1):
+                K_list.append(jnp.zeros((m_u, n), dtype=jnp.float64))
+                bracket_conds.append(float("inf"))
+                if len(spectral_radii) <= k:
+                    spectral_radii.append(float("inf"))
+            # Keep P at last successful value (don't update further)
+            for _ in range(k + 1):
+                P_list.append(P_list[-1])
+            break
+
+        # M = B R^{-1} B^T - gamma^{-2} B_w B_w^T  (n x n)
+        # We want (I_n + M @ P_next)^{-1} A. Compute via solve.
+        # Since R is small (~3e-5), use solve(R, B^T) for stability.
+        R_inv_BT = jnp.linalg.solve(R_t, B.T)  # (m_u, n)
+        M = B @ R_inv_BT - inv_gamma2 * (Bw @ Bw.T)  # (n, n)
+        bracket = I_n + M @ P_next  # (n, n)
+
+        # Condition-number-based diagnostic
+        try:
+            sing_vals = jnp.linalg.svd(bracket, compute_uv=False)
+            sv_min = float(jnp.min(sing_vals))
+            sv_max = float(jnp.max(sing_vals))
+            cond = sv_max / max(sv_min, 1e-30)
+        except Exception:
+            cond = float("inf")
+        bracket_conds.append(cond)
+
+        if not jnp.isfinite(cond) or cond > _COND_TOL:
+            admissible = False
+            for _ in range(k + 1):
+                K_list.append(jnp.zeros((m_u, n), dtype=jnp.float64))
+            for _ in range(k + 1):
+                P_list.append(P_list[-1])
+            break
+
+        bracket_inv_A = jnp.linalg.solve(bracket, A)  # (n, n)
+        P_t = Q_t + A.T @ P_next @ bracket_inv_A
+        # Symmetrise to suppress drift
+        P_t = 0.5 * (P_t + P_t.T)
+
+        # Feedback gain K_t
+        # Lambda_t = (I - gamma^{-2} P_next B_w B_w^T)^{-1} P_next  (n x n)
+        # Equivalent: solve (I - gamma^{-2} P_next B_w B_w^T) X = P_next.
+        Lambda_lhs = I_n - inv_gamma2 * (P_next @ Bw @ Bw.T)
+        Lambda = jnp.linalg.solve(Lambda_lhs, P_next)
+        # K_t = (R + B^T Lambda B)^{-1} B^T Lambda A  (m_u x n)
+        K_lhs = R_t + B.T @ Lambda @ B
+        K_rhs = B.T @ Lambda @ A
+        K_t = jnp.linalg.solve(K_lhs, K_rhs)
+
+        K_list.append(K_t)
+        P_list.append(P_t)
+
+    # P_list was built backwards from index T to 0. Reverse to get [P_0, P_1, ..., P_T].
+    P_arr = jnp.stack(list(reversed(P_list)), axis=0)
+    # K_list was built backwards from t=T-1 down to t=0. Reverse to t=0..T-1.
+    K_arr = jnp.stack(list(reversed(K_list)), axis=0)
+    spec_arr = jnp.array(list(reversed(spectral_radii)), dtype=jnp.float64)
+    cond_arr = jnp.array(list(reversed(bracket_conds)), dtype=jnp.float64)
+
+    # Pad spec_arr if recursion short-circuited (length should be T)
+    if spec_arr.shape[0] < T:
+        spec_arr = jnp.concatenate([
+            jnp.full((T - spec_arr.shape[0],), float("inf"), dtype=jnp.float64),
+            spec_arr,
+        ])
+    if cond_arr.shape[0] < T:
+        cond_arr = jnp.concatenate([
+            jnp.full((T - cond_arr.shape[0],), float("inf"), dtype=jnp.float64),
+            cond_arr,
+        ])
+
+    # Compute max P condition number across t (only over admissible entries)
+    if admissible:
+        P_conds_per_t = jax.vmap(lambda P: jnp.linalg.cond(P + 1e-12 * I_n))(P_arr)
+        max_P_cond = float(jnp.max(P_conds_per_t))
+    else:
+        max_P_cond = float("inf")
+
+    return RiccatiSolution(
+        P=P_arr,
+        K=K_arr,
+        admissible=admissible,
+        spectral_radii=spec_arr,
+        bracket_conditions=cond_arr,
+        max_P_cond=max_P_cond,
+        gamma=float(gamma),
+    )
+
+
+def solve_lqr(plant: PlantLinearization, schedule: CostSchedule) -> RiccatiSolution:
+    """Solve the finite-horizon discrete-time LQR (gamma -> infinity limit).
+
+    This is the standard discrete-time LQR backward recursion:
+
+    .. math::
+
+        P_t = Q_t + A^\\top P_{t+1} A
+        - A^\\top P_{t+1} B (R_t + B^\\top P_{t+1} B)^{-1} B^\\top P_{t+1} A,
+
+    initialised at :math:`P_T = Q_f`. Equivalent to ``solve_hinf_riccati`` in
+    the limit ``gamma -> infinity``.
+
+    Args:
+        plant: Linearised plant.
+        schedule: Cost schedule.
+
+    Returns:
+        A ``RiccatiSolution`` with ``admissible=True``, infinite ``gamma``,
+        zero ``spectral_radii``.
+    """
+    A = plant.A.astype(jnp.float64)
+    B = plant.B.astype(jnp.float64)
+    n = A.shape[0]
+    m_u = B.shape[1]
+    T = schedule.T
+
+    Q_f = schedule.Q_f.astype(jnp.float64)
+    Q_seq = schedule.Q.astype(jnp.float64)
+    R_seq = schedule.R.astype(jnp.float64)
+
+    P_list = [Q_f]
+    K_list: list[jnp.ndarray] = []
+    for k in range(T - 1, -1, -1):
+        P_next = P_list[-1]
+        Q_t = Q_seq[k]
+        R_t = R_seq[k]
+        BPA = B.T @ P_next @ A
+        K_lhs = R_t + B.T @ P_next @ B
+        K_t = jnp.linalg.solve(K_lhs, BPA)
+        P_t = Q_t + A.T @ P_next @ A - A.T @ P_next @ B @ K_t
+        P_t = 0.5 * (P_t + P_t.T)
+        K_list.append(K_t)
+        P_list.append(P_t)
+
+    P_arr = jnp.stack(list(reversed(P_list)), axis=0)
+    K_arr = jnp.stack(list(reversed(K_list)), axis=0)
+    return RiccatiSolution(
+        P=P_arr,
+        K=K_arr,
+        admissible=True,
+        spectral_radii=jnp.zeros((T,), dtype=jnp.float64),
+        bracket_conditions=jnp.ones((T,), dtype=jnp.float64),
+        max_P_cond=float(jnp.max(jax.vmap(jnp.linalg.cond)(P_arr))),
+        gamma=float("inf"),
+    )
+
+
+def find_gamma_star(
+    plant: PlantLinearization,
+    schedule: CostSchedule,
+    *,
+    gamma_lo: float = 1e-4,
+    gamma_hi: float = 1.0,
+    max_iter: int = 60,
+    tol: float = 1e-4,
+) -> float:
+    """Bisection for the smallest admissible gamma.
+
+    Finds the boundary gamma_star such that ``gamma > gamma_star`` is
+    admissible (the H-infinity Riccati has a finite, well-conditioned
+    solution) and ``gamma < gamma_star`` is not.
+
+    Args:
+        plant: Linearised plant.
+        schedule: Cost schedule.
+        gamma_lo: Initial lower bracket. The function expands ``gamma_lo``
+            downward by powers of 10 if it is admissible.
+        gamma_hi: Initial upper bracket. The function expands ``gamma_hi``
+            upward by powers of 10 if it is inadmissible.
+        max_iter: Maximum bisection iterations.
+        tol: Convergence tolerance on relative gamma width
+            ``(gamma_hi - gamma_lo) / gamma_hi``.
+
+    Returns:
+        Estimated gamma_star (rounded to the inadmissible side; returned
+        value is the smallest gamma still found admissible at the bisection
+        precision).
+
+    Raises:
+        RuntimeError: If the bracket cannot be established within reasonable
+            bounds.
+    """
+    # Expand gamma_hi upward until we get an admissible solution
+    expand_iter = 0
+    while expand_iter < 30:
+        sol = solve_hinf_riccati(plant, schedule, gamma_hi)
+        if sol.admissible:
+            break
+        gamma_hi *= 10.0
+        expand_iter += 1
+    else:
+        raise RuntimeError(
+            f"Could not find admissible gamma up to {gamma_hi}. "
+            "Cost schedule may be pathological."
+        )
+
+    # Expand gamma_lo downward until we get an inadmissible solution
+    expand_iter = 0
+    while expand_iter < 30:
+        sol = solve_hinf_riccati(plant, schedule, gamma_lo)
+        if not sol.admissible:
+            break
+        gamma_lo *= 0.1
+        expand_iter += 1
+    else:
+        raise RuntimeError(
+            f"Could not find inadmissible gamma down to {gamma_lo}. "
+            "The Riccati appears trivially solvable for all gamma."
+        )
+
+    # Bisection
+    for _ in range(max_iter):
+        gamma_mid = jnp.sqrt(gamma_lo * gamma_hi).item()  # geometric mean for log-scale
+        sol = solve_hinf_riccati(plant, schedule, gamma_mid)
+        if sol.admissible:
+            gamma_hi = gamma_mid
+        else:
+            gamma_lo = gamma_mid
+        if (gamma_hi - gamma_lo) / max(gamma_hi, 1e-30) < tol:
+            break
+
+    return float(gamma_hi)
+
+
+# =============================================================================
+# Closed-loop simulation
+# =============================================================================
+
+
+def simulate_closed_loop(
+    plant: PlantLinearization,
+    K: Float[Array, "T m_u n"],
+    x0: Float[Array, "n"],
+    *,
+    target_pos: Optional[Float[Array, "2"]] = None,
+    w: Optional[Float[Array, "T m_w"]] = None,
+) -> ClosedLoopRollout:
+    """Simulate the discrete-time linear closed loop with feedback ``K``.
+
+    The dynamics are
+
+    .. math::
+
+        x_{t+1} = A\\, x_t + B\\, u_t + B_w\\, w_t,
+        \\qquad u_t = -K_t\\, x_t.
+
+    The controller drives the state to zero. To represent a reach to a
+    nonzero target, pass ``x0`` in **goal-centred coordinates** (i.e.
+    ``init_pos - target_pos``) -- the simulator returns ``x`` in those same
+    goal-centred coordinates. ``target_pos`` is used only by the
+    lateral-deviation diagnostic to project absolute reach trajectories
+    onto the init-to-target line; ``terminal_position_error`` is the norm
+    of the goal-centred terminal position (i.e., distance from target).
+
+    Args:
+        plant: Linearised plant (must have the same ``n``, ``m_u``, ``m_w``
+            as the gain ``K``).
+        K: Time-varying feedback gain, shape (T, m_u, n).
+        x0: Initial state in goal-centred coordinates. Build via
+            ``make_reach_initial_state``.
+        target_pos: Position of the target in workspace coordinates. Used
+            for lateral-deviation diagnostic. If provided, lateral deviation
+            is computed by mapping the goal-centred trajectory back to
+            absolute coordinates (adding ``target_pos``) and projecting
+            onto the line from ``init_pos`` to ``target_pos``. If ``None``,
+            lateral deviation is computed in goal-centred coordinates with
+            target = origin.
+        w: Disturbance trajectory, shape (T, m_w). Default zero.
+
+    Returns:
+        A ``ClosedLoopRollout``. ``x`` is in goal-centred coordinates;
+        ``terminal_position_error`` is the norm of the terminal goal-centred
+        position (i.e., distance to target).
+    """
+    A = plant.A.astype(jnp.float64)
+    B = plant.B.astype(jnp.float64)
+    Bw = plant.Bw.astype(jnp.float64)
+    T = K.shape[0]
+    n = A.shape[0]
+    m_u = B.shape[1]
+    m_w = Bw.shape[1]
+    if w is None:
+        w_seq = jnp.zeros((T, m_w), dtype=jnp.float64)
+    else:
+        w_seq = w.astype(jnp.float64)
+
+    x_seq = [x0.astype(jnp.float64)]
+    u_seq: list[jnp.ndarray] = []
+    for t in range(T):
+        x_t = x_seq[-1]
+        u_t = -K[t] @ x_t
+        x_next = A @ x_t + B @ u_t + Bw @ w_seq[t]
+        u_seq.append(u_t)
+        x_seq.append(x_next)
+
+    x_arr = jnp.stack(x_seq, axis=0)
+    u_arr = jnp.stack(u_seq, axis=0)
+
+    pos_lo, pos_hi = plant.pos_slice
+    vel_lo, vel_hi = plant.vel_slice
+    # Goal-centred trajectories
+    pos_gc = x_arr[:, pos_lo:pos_hi]
+    vel_t = x_arr[:, vel_lo:vel_hi]
+    speed = jnp.linalg.norm(vel_t, axis=-1)
+    peak_velocity_idx = int(jnp.argmax(speed))
+    peak_velocity = float(jnp.max(speed))
+
+    # Lateral deviation: convert goal-centred position to absolute (if
+    # target_pos provided), then project onto the init-to-target line.
+    if target_pos is None:
+        target_abs = jnp.zeros((pos_hi - pos_lo,), dtype=jnp.float64)
+    else:
+        target_abs = target_pos.astype(jnp.float64)
+    pos_abs = pos_gc + target_abs[None, :]  # absolute positions
+    init_pos_abs = pos_abs[0]  # initial absolute position
+    line_vec = target_abs - init_pos_abs  # vector from init to target
+    line_len = jnp.linalg.norm(line_vec)
+    if float(line_len) < 1e-12:
+        peak_lat_dev = 0.0
+    else:
+        line_dir = line_vec / line_len
+        rel = pos_abs - init_pos_abs
+        proj = (rel @ line_dir)[:, None] * line_dir[None, :]
+        perp = rel - proj
+        peak_lat_dev = float(jnp.max(jnp.linalg.norm(perp, axis=-1)))
+
+    control_effort = float(jnp.sum(jnp.linalg.norm(u_arr, axis=-1) ** 2) * plant.dt)
+    # Terminal position error: distance from terminal absolute position to
+    # target. In goal-centred coordinates, the terminal state is
+    # ``pos_gc[-1]`` and the target is the origin, so the error is just
+    # ``||pos_gc[-1]||``.
+    terminal_pos_err = float(jnp.linalg.norm(pos_gc[-1]))
+
+    return ClosedLoopRollout(
+        x=x_arr,
+        u=u_arr,
+        peak_velocity=peak_velocity,
+        peak_velocity_idx=peak_velocity_idx,
+        peak_lateral_deviation=peak_lat_dev,
+        control_effort=control_effort,
+        terminal_position_error=terminal_pos_err,
+    )
+
+
+def make_reach_initial_state(
+    plant: PlantLinearization,
+    *,
+    init_pos: Float[Array, "2"],
+    target_pos: Float[Array, "2"],
+) -> Float[Array, "n"]:
+    """Build the goal-centred initial state vector for a reach.
+
+    The Riccati / LQR controller is designed to drive the state to zero.
+    For a reach from ``init_pos`` to ``target_pos``, the goal-centred
+    state at t=0 is ``[init_pos - target_pos, 0_vel, 0_force]``.
+
+    Args:
+        plant: The plant linearisation.
+        init_pos: Initial position in workspace coordinates, shape (2,).
+        target_pos: Target position in workspace coordinates, shape (2,).
+
+    Returns:
+        Initial goal-centred state vector, shape (n,).
+    """
+    x0 = jnp.zeros((plant.n,), dtype=jnp.float64)
+    pos_lo, pos_hi = plant.pos_slice
+    x0 = x0.at[pos_lo:pos_hi].set((init_pos - target_pos).astype(jnp.float64))
+    return x0
+
+
+# =============================================================================
+# High-level convenience: velocity inflation comparison
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class VelocityInflationResult:
+    """Result of an LQR-vs-H-infinity peak-velocity comparison.
+
+    Attributes:
+        gamma_star: Estimated boundary gamma*.
+        gamma_evaluated: The gamma used for the H-infinity comparison.
+        lqr_peak_velocity: Peak speed under the LQR controller.
+        hinf_peak_velocity: Peak speed under the H-infinity controller.
+        delta_v_percent: Percentage change ``(v_hinf - v_lqr) / v_lqr * 100``.
+        lqr_rollout: Full rollout under LQR.
+        hinf_rollout: Full rollout under H-infinity controller.
+        riccati: The H-infinity Riccati solution at ``gamma_evaluated``.
+    """
+
+    gamma_star: float
+    gamma_evaluated: float
+    lqr_peak_velocity: float
+    hinf_peak_velocity: float
+    delta_v_percent: float
+    lqr_rollout: ClosedLoopRollout
+    hinf_rollout: ClosedLoopRollout
+    riccati: RiccatiSolution
+
+
+def compute_velocity_inflation(
+    plant: PlantLinearization,
+    schedule: CostSchedule,
+    *,
+    init_pos: Float[Array, "2"],
+    target_pos: Float[Array, "2"],
+    gamma_factor: float = 1.5,
+    gamma_star: Optional[float] = None,
+) -> VelocityInflationResult:
+    """LQR vs H-infinity peak-velocity comparison on a single reach.
+
+    This is the headline sanity check from synthesis_review section 11 step 1.
+    Returns peak-velocity inflation Delta v % at the requested gamma.
+
+    Args:
+        plant: Linearised plant.
+        schedule: Cost schedule.
+        init_pos: Reach starting position, shape (2,).
+        target_pos: Reach target position, shape (2,).
+        gamma_factor: Multiplier on gamma_star at which to evaluate the
+            H-infinity controller. ``1.5`` matches synthesis_review's
+            headline number.
+        gamma_star: If provided, skip bisection and use this value. Useful
+            for batched comparisons across configs.
+
+    Returns:
+        A ``VelocityInflationResult``.
+    """
+    if gamma_star is None:
+        gamma_star = find_gamma_star(plant, schedule)
+    gamma_eval = gamma_factor * gamma_star
+
+    lqr_sol = solve_lqr(plant, schedule)
+    hinf_sol = solve_hinf_riccati(plant, schedule, gamma_eval)
+    if not hinf_sol.admissible:
+        raise RuntimeError(
+            f"H-infinity Riccati at gamma={gamma_eval} (factor={gamma_factor}) "
+            f"was inadmissible despite gamma_star={gamma_star}. "
+            "This usually indicates the bisection landed too close to the boundary."
+        )
+
+    x0 = make_reach_initial_state(plant, init_pos=init_pos, target_pos=target_pos)
+
+    lqr_rollout = simulate_closed_loop(plant, lqr_sol.K, x0, target_pos=target_pos)
+    # Note: simulate_closed_loop expects goal-centred x0; the controller drives
+    # state to zero, so target_pos is passed only for diagnostics.
+    hinf_rollout = simulate_closed_loop(plant, hinf_sol.K, x0, target_pos=target_pos)
+
+    delta = (
+        100.0 * (hinf_rollout.peak_velocity - lqr_rollout.peak_velocity)
+        / max(lqr_rollout.peak_velocity, 1e-12)
+    )
+
+    return VelocityInflationResult(
+        gamma_star=float(gamma_star),
+        gamma_evaluated=float(gamma_eval),
+        lqr_peak_velocity=lqr_rollout.peak_velocity,
+        hinf_peak_velocity=hinf_rollout.peak_velocity,
+        delta_v_percent=float(delta),
+        lqr_rollout=lqr_rollout,
+        hinf_rollout=hinf_rollout,
+        riccati=hinf_sol,
+    )
+
+
+# =============================================================================
+# Linearisation fidelity check
+# =============================================================================
+
+
+def linearization_fidelity(
+    plant: PlantLinearization,
+    *,
+    nonlinear_step_fn: Callable[[Float[Array, "n"], Float[Array, "m_u"]], Float[Array, "n"]],
+    x0: Float[Array, "n"],
+    u_seq: Float[Array, "T m_u"],
+) -> dict:
+    """Compare the linearised forward simulation to a nonlinear step function.
+
+    Useful for verifying that the rlrmp plant truly is LTI (which it is by
+    construction; this guards against parameter mismatches between
+    ``linearize_pointmass`` and the model). Returns the per-timestep state
+    error and a summary scalar.
+
+    Args:
+        plant: Linearised plant.
+        nonlinear_step_fn: A function ``(x, u) -> x_next`` corresponding to
+            one step of the nonlinear plant evolution. For an LTI rlrmp plant
+            this should equal ``A x + B u`` exactly.
+        x0: Initial state.
+        u_seq: Control trajectory, shape (T, m_u).
+
+    Returns:
+        A dict with keys ``"x_lin"``, ``"x_nl"``, ``"per_step_err"``,
+        ``"max_err"``, ``"final_err"``.
+    """
+    A = plant.A.astype(jnp.float64)
+    B = plant.B.astype(jnp.float64)
+    T = u_seq.shape[0]
+
+    x_lin = [x0.astype(jnp.float64)]
+    x_nl = [x0.astype(jnp.float64)]
+    for t in range(T):
+        x_lin.append(A @ x_lin[-1] + B @ u_seq[t])
+        x_nl.append(nonlinear_step_fn(x_nl[-1], u_seq[t]))
+
+    x_lin_arr = jnp.stack(x_lin, axis=0)
+    x_nl_arr = jnp.stack(x_nl, axis=0)
+    per_step_err = jnp.linalg.norm(x_lin_arr - x_nl_arr, axis=-1)
+    return {
+        "x_lin": x_lin_arr,
+        "x_nl": x_nl_arr,
+        "per_step_err": per_step_err,
+        "max_err": float(jnp.max(per_step_err)),
+        "final_err": float(per_step_err[-1]),
+    }
+
+
+__all__ = [
+    "PlantLinearization",
+    "CostSchedule",
+    "CostSpec",
+    "RiccatiSolution",
+    "ClosedLoopRollout",
+    "VelocityInflationResult",
+    "linearize_pointmass",
+    "linearize_from_model",
+    "cost_schedule_from_spec",
+    "cost_schedule_from_loss_config",
+    "solve_hinf_riccati",
+    "solve_lqr",
+    "find_gamma_star",
+    "simulate_closed_loop",
+    "make_reach_initial_state",
+    "compute_velocity_inflation",
+    "linearization_fidelity",
+]
