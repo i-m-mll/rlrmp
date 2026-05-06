@@ -218,5 +218,37 @@ dev.toml
 .claude-story/
 worktrees/
 
-# Cloud-GPU experiment outputs (model checkpoints, optimizer states, force profiles, logs)
-**/runpod/
+# === Role-based artifact policy (see CLAUDE.md "Experiment Artifacts: Tracked vs Ignored") ===
+#
+# `_artifacts/` mirrors `results/` and holds bulk reproducible outputs (.eqx
+# checkpoints, training logs, large arrays, full-DPI figure renders). Never tracked,
+# except for the top-level README that documents the directory's purpose.
+# (Use the `_artifacts/**` pattern, not `_artifacts/`, so we can re-include the README;
+# git can't re-include a file whose parent directory was excluded.)
+_artifacts/**
+!_artifacts/README.md
+#
+# Inside `results/`, ignore everything by default and whitelist specific kinds.
+# This makes tracking depend on the file's ROLE (spec/narrative/render-thumbnail),
+# not on the directory's NAME. New cloud providers (runpod/, modal/, etc.) and new
+# experiment phases never need a new ignore line.
+results/**
+# Keep directory structure traversable so nested whitelists apply:
+!results/**/
+# Narratives (long-form analyses, READMEs, per-run notes):
+!results/**/*.md
+# Run specs (canonical: run.json; legacy: config.json):
+!results/**/run.json
+!results/**/config.json
+# Figure / analysis specs (always committed, see threshold rule for renders):
+!results/**/spec.json
+# Small Plotly figure JSON (commit only when ≤ 2 MB; enforced by the saver helper):
+!results/**/figure.json
+# Typora-style markdown sidecar assets (results/<name>.assets/*.png) — keep tracked:
+!results/**/*.assets/**
+# Figure thumbnails (commit only when ≤ 300 KB at 100 DPI; enforced by the saver helper):
+!results/**/figures/**/figure.png
+# Empty-directory markers (rare; useful for placeholders):
+!results/**/.gitkeep
+# Note: bulk artifacts (.eqx, large .npz, .log, full-DPI renders, runpod/, modal/, etc.)
+# are NOT whitelisted above, so they fall through to the ignore. They belong under _artifacts/.
