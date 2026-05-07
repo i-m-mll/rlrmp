@@ -267,8 +267,18 @@ class ClosedLoopRollout(eqx.Module):
     Attributes:
         x: State trajectory, shape (T+1, n).
         u: Control trajectory, shape (T, m_u).
-        peak_velocity: Maximum :math:`\\lVert v_t \\rVert_2` over t.
-        peak_velocity_idx: Time index of peak velocity.
+        peak_velocity: Maximum :math:`\\lVert v_t \\rVert_2` over t (peak
+            *speed* — 2-norm of full 2D velocity). Retained for
+            backward-compatibility; the headline scalar for C&S comparisons is
+            ``peak_forward_velocity``.
+        peak_velocity_idx: Time index of peak speed.
+        peak_forward_velocity: Maximum signed projection of velocity onto the
+            reach axis (initial→target). Positive = motion toward target.
+            This is the metric reported by Crevecoeur & Scott (2019) Fig. 1e.
+        peak_forward_velocity_idx: Time index of ``peak_forward_velocity``.
+        peak_lateral_velocity: Maximum speed in the direction orthogonal to
+            the reach axis. C&S report suppression of this channel under the
+            robust controller.
         peak_lateral_deviation: Maximum perpendicular distance from the
             straight line connecting initial position to terminal target.
         control_effort: :math:`\\sum_t \\lVert u_t \\rVert_2^2 \\, dt`.
@@ -279,6 +289,9 @@ class ClosedLoopRollout(eqx.Module):
     u: Float[Array, "T m_u"]
     peak_velocity: float
     peak_velocity_idx: int
+    peak_forward_velocity: float
+    peak_forward_velocity_idx: int
+    peak_lateral_velocity: float
     peak_lateral_deviation: float
     control_effort: float
     terminal_position_error: float
@@ -1231,12 +1244,25 @@ def simulate_closed_loop(
     line_len = jnp.linalg.norm(line_vec)
     if float(line_len) < 1e-12:
         peak_lat_dev = 0.0
+        peak_forward_velocity = 0.0
+        peak_forward_velocity_idx = 0
+        peak_lateral_velocity = 0.0
     else:
         line_dir = line_vec / line_len
         rel = pos_abs - init_pos_abs
         proj = (rel @ line_dir)[:, None] * line_dir[None, :]
         perp = rel - proj
         peak_lat_dev = float(jnp.max(jnp.linalg.norm(perp, axis=-1)))
+        # Forward velocity: signed projection of velocity onto reach axis.
+        # Positive = motion toward target.
+        v_forward_t = vel_t @ line_dir  # shape (T+1,)
+        peak_forward_velocity = float(jnp.max(v_forward_t))
+        peak_forward_velocity_idx = int(jnp.argmax(v_forward_t))
+        # Lateral velocity: speed in the direction orthogonal to reach axis.
+        v_lateral_t = jnp.linalg.norm(
+            vel_t - v_forward_t[:, None] * line_dir[None, :], axis=-1
+        )
+        peak_lateral_velocity = float(jnp.max(v_lateral_t))
 
     control_effort = float(jnp.sum(jnp.linalg.norm(u_arr, axis=-1) ** 2) * plant.dt)
     # Terminal position error: distance from terminal absolute position to
@@ -1250,6 +1276,9 @@ def simulate_closed_loop(
         u=u_arr,
         peak_velocity=peak_velocity,
         peak_velocity_idx=peak_velocity_idx,
+        peak_forward_velocity=peak_forward_velocity,
+        peak_forward_velocity_idx=peak_forward_velocity_idx,
+        peak_lateral_velocity=peak_lateral_velocity,
         peak_lateral_deviation=peak_lat_dev,
         control_effort=control_effort,
         terminal_position_error=terminal_pos_err,
@@ -1291,12 +1320,31 @@ def make_reach_initial_state(
 class VelocityInflationResult:
     """Result of an LQR-vs-H-infinity peak-velocity comparison.
 
+    The headline metric ``delta_v_percent`` is based on **peak forward
+    velocity** — the signed projection of velocity onto the reach axis
+    (initial→target, positive = toward target). This matches the metric
+    reported by Crevecoeur & Scott (2019) Fig. 1e. C&S's robust-controller
+    signature is opposite-signed across channels: higher peak forward velocity
+    but lower peak lateral velocity relative to LQR.
+
     Attributes:
         gamma_star: Estimated boundary gamma*.
         gamma_evaluated: The gamma used for the H-infinity comparison.
-        lqr_peak_velocity: Peak speed under the LQR controller.
-        hinf_peak_velocity: Peak speed under the H-infinity controller.
-        delta_v_percent: Percentage change ``(v_hinf - v_lqr) / v_lqr * 100``.
+        lqr_peak_velocity: Peak speed (2-norm) under the LQR controller.
+            Retained for backward-compatibility; see ``lqr_peak_forward_velocity``
+            for the headline metric.
+        hinf_peak_velocity: Peak speed (2-norm) under the H-infinity controller.
+        delta_v_percent: Percentage change based on peak *forward* velocity:
+            ``(v_fwd_hinf - v_fwd_lqr) / max(v_fwd_lqr, 1e-12) * 100``.
+            Positive = H∞ reaches higher forward velocity than LQR.
+        lqr_peak_forward_velocity: Peak forward velocity under LQR.
+        hinf_peak_forward_velocity: Peak forward velocity under H-infinity.
+        lqr_peak_lateral_velocity: Peak lateral velocity under LQR.
+        hinf_peak_lateral_velocity: Peak lateral velocity under H-infinity.
+        delta_v_lateral_percent: Percentage change in peak lateral velocity:
+            ``(v_lat_hinf - v_lat_lqr) / max(v_lat_lqr, 1e-12) * 100``.
+            Negative = H∞ suppresses lateral velocity relative to LQR (C&S
+            signature).
         lqr_rollout: Full rollout under LQR.
         hinf_rollout: Full rollout under H-infinity controller.
         riccati: The H-infinity Riccati solution at ``gamma_evaluated``.
@@ -1307,6 +1355,11 @@ class VelocityInflationResult:
     lqr_peak_velocity: float
     hinf_peak_velocity: float
     delta_v_percent: float
+    lqr_peak_forward_velocity: float
+    hinf_peak_forward_velocity: float
+    lqr_peak_lateral_velocity: float
+    hinf_peak_lateral_velocity: float
+    delta_v_lateral_percent: float
     lqr_rollout: ClosedLoopRollout
     hinf_rollout: ClosedLoopRollout
     riccati: RiccatiSolution
@@ -1321,10 +1374,22 @@ def compute_velocity_inflation(
     gamma_factor: float = 1.5,
     gamma_star: Optional[float] = None,
 ) -> VelocityInflationResult:
-    """LQR vs H-infinity peak-velocity comparison on a single reach.
+    """LQR vs H-infinity peak-forward-velocity comparison on a single reach.
 
     This is the headline sanity check from synthesis_review section 11 step 1.
-    Returns peak-velocity inflation Delta v % at the requested gamma.
+    Returns peak-forward-velocity inflation Delta v % at the requested gamma.
+
+    The metric ``delta_v_percent`` is based on **peak forward velocity** —
+    the projection of velocity onto the reach axis (initial→target, positive
+    direction = toward target). This matches Crevecoeur & Scott (2019) Fig.
+    1e, which explicitly compares peak velocity *toward the target* rather
+    than peak speed (2-norm).
+
+    C&S's signature for robust vs LQG control: higher peak forward velocity
+    (+) and lower peak lateral velocity (−). Peak speed mixes both channels
+    and the cancellation can suppress the inflation signal.
+
+    ``delta_v_lateral_percent`` captures the lateral channel for diagnostics.
 
     Args:
         plant: Linearised plant.
@@ -1360,9 +1425,17 @@ def compute_velocity_inflation(
     # state to zero, so target_pos is passed only for diagnostics.
     hinf_rollout = simulate_closed_loop(plant, hinf_sol.K, x0, target_pos=target_pos)
 
+    # Headline metric: peak forward velocity (signed, positive = toward target).
+    # Bug: f90bf74 — switched from peak speed to peak forward velocity to match C&S 2019 Fig. 1e.
     delta = (
-        100.0 * (hinf_rollout.peak_velocity - lqr_rollout.peak_velocity)
-        / max(lqr_rollout.peak_velocity, 1e-12)
+        100.0
+        * (hinf_rollout.peak_forward_velocity - lqr_rollout.peak_forward_velocity)
+        / max(lqr_rollout.peak_forward_velocity, 1e-12)
+    )
+    delta_lateral = (
+        100.0
+        * (hinf_rollout.peak_lateral_velocity - lqr_rollout.peak_lateral_velocity)
+        / max(lqr_rollout.peak_lateral_velocity, 1e-12)
     )
 
     return VelocityInflationResult(
@@ -1371,6 +1444,11 @@ def compute_velocity_inflation(
         lqr_peak_velocity=lqr_rollout.peak_velocity,
         hinf_peak_velocity=hinf_rollout.peak_velocity,
         delta_v_percent=float(delta),
+        lqr_peak_forward_velocity=lqr_rollout.peak_forward_velocity,
+        hinf_peak_forward_velocity=hinf_rollout.peak_forward_velocity,
+        lqr_peak_lateral_velocity=lqr_rollout.peak_lateral_velocity,
+        hinf_peak_lateral_velocity=hinf_rollout.peak_lateral_velocity,
+        delta_v_lateral_percent=float(delta_lateral),
         lqr_rollout=lqr_rollout,
         hinf_rollout=hinf_rollout,
         riccati=hinf_sol,
