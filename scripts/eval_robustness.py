@@ -48,6 +48,7 @@ from eval_part2_5_figures import (  # noqa: E402
     N_REPLICATES,
 )
 from feedbax._io import load_with_hyperparameters  # noqa: E402
+from feedbax.plot.io import save_figure_with_spec  # noqa: E402
 from feedbax.train import init_task_trainer_history  # noqa: E402
 from rlrmp.modules.training.part2 import setup_task_model_pair  # noqa: E402
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL  # noqa: E402
@@ -942,48 +943,77 @@ def main() -> None:
             "perturbed evaluations will fall back to each model's own task."
         )
 
+    # All figures use the feedbax helper to also write a tracked spec.json.
+    # Bug: 0077b42 — Phase 2 completion: figure-spec wiring.
+    base_inputs = [
+        {"path": str(MODELS_BASE / model_dir / "config.json")}
+        for _, model_dir in CONDITIONS
+        if (MODELS_BASE / model_dir / "config.json").exists()
+    ]
+    common_kwargs = {
+        "conditions": [name for name, _ in CONDITIONS],
+        "sisu_levels": list(SISU_LEVELS),
+        "pert_amplitudes": list(PERT_AMPLITUDES),
+        "eval_sisu": EVAL_SISU,
+        "eval_pert_amp": EVAL_PERT_AMP,
+    }
+
+    def _save(fig, name: str, transform_name: str) -> None:
+        spec = {
+            "figure_kind": transform_name,
+            "inputs": base_inputs,
+            "transform": [{"name": transform_name, "kwargs": {}}],
+            "plot_kwargs": common_kwargs,
+        }
+        save_figure_with_spec(
+            fig, spec, FIGURES_DIR,
+            name=name, save_render=True, render_format="html",
+            extra_packages=["rlrmp"],
+        )
+        print(f"  Saved render+spec: {FIGURES_DIR / f'{name}.html'}")
+
     # --- Figure 1: Aligned trajectories ---
     print("Fig 1: Aligned trajectories...")
-    fig1 = make_fig1_aligned_trajectories(loaded, ref_task=ref_task)
-    out_path = FIGURES_DIR / "fig1_aligned_trajectories.html"
-    fig1.write_html(str(out_path))
-    print(f"  Saved: {out_path}")
+    _save(
+        make_fig1_aligned_trajectories(loaded, ref_task=ref_task),
+        "fig1_aligned_trajectories", "make_fig1_aligned_trajectories",
+    )
 
     # --- Figure 2: Lateral velocity profiles ---
     print("Fig 2: Lateral velocity profiles...")
-    fig2 = make_fig2_lateral_velocity(loaded, ref_task=ref_task)
-    out_path = FIGURES_DIR / "fig2_lateral_velocity.html"
-    fig2.write_html(str(out_path))
-    print(f"  Saved: {out_path}")
+    _save(
+        make_fig2_lateral_velocity(loaded, ref_task=ref_task),
+        "fig2_lateral_velocity", "make_fig2_lateral_velocity",
+    )
 
     # --- Figure 3: Lateral force profiles ---
     print("Fig 3: Lateral force profiles...")
-    fig3 = make_fig3_lateral_force(loaded, ref_task=ref_task)
-    out_path = FIGURES_DIR / "fig3_lateral_force.html"
-    fig3.write_html(str(out_path))
-    print(f"  Saved: {out_path}")
+    _save(
+        make_fig3_lateral_force(loaded, ref_task=ref_task),
+        "fig3_lateral_force", "make_fig3_lateral_force",
+    )
 
     # --- Figure 4: Forward velocity (no pert) ---
     # No perturbation: ref_task not needed, each model uses its own task.
     print("Fig 4: Forward velocity (no perturbation)...")
-    fig4 = make_fig4_forward_velocity_no_pert(loaded)
-    out_path = FIGURES_DIR / "fig4_forward_velocity_no_pert.html"
-    fig4.write_html(str(out_path))
-    print(f"  Saved: {out_path}")
+    _save(
+        make_fig4_forward_velocity_no_pert(loaded),
+        "fig4_forward_velocity_no_pert", "make_fig4_forward_velocity_no_pert",
+    )
 
     # --- Figure 5: Endpoint error violin ---
     print("Fig 5: Endpoint error violin plots...")
-    fig5 = make_fig5_endpoint_error_violin(loaded, ref_task=ref_task)
-    out_path = FIGURES_DIR / "fig5_endpoint_error_violin.html"
-    fig5.write_html(str(out_path))
-    print(f"  Saved: {out_path}")
+    _save(
+        make_fig5_endpoint_error_violin(loaded, ref_task=ref_task),
+        "fig5_endpoint_error_violin", "make_fig5_endpoint_error_violin",
+    )
 
     # --- Figure 6: Loss curves (all conditions in one figure) ---
     print("Fig 6: Loss curves (all conditions)...")
-    fig6 = make_fig6_all_loss_curves(loaded)
-    out_path = FIGURES_DIR / "fig6_all_loss_curves.html"
-    fig6.write_html(str(out_path))
-    print(f"  Saved: {out_path}")
+    _save(
+        make_fig6_all_loss_curves(loaded),
+        "fig6_all_loss_curves", "make_fig6_all_loss_curves",
+    )
 
     print(f"\nAll figures saved to: {FIGURES_DIR}")
 

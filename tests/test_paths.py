@@ -12,11 +12,18 @@ Bug: fd64bb4 — Phase 2 path-helper module. The helper tests verify that
 ``rlrmp.paths`` returns the correct absolute paths for the mirror-tree layout
 and that the two sides of the mirror are structurally consistent.
 
+Bug: 0077b42 — Phase 2 completion. Train scripts now split the tracked
+``run.json`` spec from the bulk-artifact outputs. Tests below verify that
+``derive_spec_dir`` (in both ``train_part2_5`` and ``train_minimax``) maps an
+``_artifacts/`` artifact path to the corresponding ``results/`` spec path
+under the mirror invariant.
+
 The gitignore tests shell out to `git check-ignore -q`, which is the
 authoritative oracle for whether a path would be tracked.
 """
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 from pathlib import Path
 
@@ -293,3 +300,89 @@ class TestFigureDirMirrorInvariant:
         spec = figure_spec_dir("part2_5", "peak_velocity")
         artifact = figure_artifact_dir("part2_5", "peak_velocity")
         assert spec.parts[-2] == artifact.parts[-2] == "figures"
+
+
+# ---------------------------------------------------------------------------
+# Train-script ``derive_spec_dir`` helpers (Bug: 0077b42)
+# ---------------------------------------------------------------------------
+
+def _load_module(module_name: str, file_path: Path):
+    """Import a script-style module by file path without executing as __main__.
+
+    Loading via importlib.util avoids ``sys.path`` collisions with the
+    ``scripts/`` directory and tolerates the heavy top-level imports those
+    files do (we only touch the small helper functions defined in them).
+    """
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load {module_name} from {file_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture(scope="module")
+def train_part2_5_module():
+    return _load_module(
+        "train_part2_5_under_test",
+        REPO_ROOT / "scripts" / "train_part2_5.py",
+    )
+
+
+@pytest.fixture(scope="module")
+def train_minimax_module():
+    return _load_module(
+        "train_minimax_under_test",
+        REPO_ROOT / "scripts" / "train_minimax.py",
+    )
+
+
+class TestDerivedSpecDirMirrorInvariant:
+    """``derive_spec_dir`` honours the mirror invariant for ``_artifacts/`` paths.
+
+    For an artifact path under ``_artifacts/<exp>/runs/<run>/`` the helper
+    must produce ``results/<exp>/runs/<run>/`` — the same path returned by
+    ``rlrmp.paths.run_spec_dir(exp, run)`` for the same ``(exp, run)``.
+    """
+
+    def test_part2_5_run_artifact_to_run_spec(self, train_part2_5_module) -> None:
+        artifact = run_artifact_dir("part2_5", "baseline__standard_12k")
+        spec = train_part2_5_module.derive_spec_dir(artifact)
+        assert spec == run_spec_dir("part2_5", "baseline__standard_12k")
+
+    def test_minimax_run_artifact_to_run_spec(self, train_minimax_module) -> None:
+        artifact = run_artifact_dir("minimax", "seed_0")
+        spec = train_minimax_module.derive_spec_dir(artifact)
+        assert spec == run_spec_dir("minimax", "seed_0")
+
+    def test_relative_artifact_path_resolves_correctly(
+        self, train_part2_5_module
+    ) -> None:
+        """A relative ``_artifacts/...`` path should still map under ``results/``."""
+        spec = train_part2_5_module.derive_spec_dir(
+            Path("_artifacts/part2_5/runs/foo")
+        )
+        assert spec == run_spec_dir("part2_5", "foo")
+
+
+class TestDerivedSpecDirFallback:
+    """When ``output_dir`` is outside ``_artifacts/``, fall back to a sibling."""
+
+    def test_out_of_tree_path_uses_sibling_spec(
+        self, tmp_path, train_part2_5_module
+    ) -> None:
+        """Paths outside the artifact tree map to ``<dir>_spec`` next to them."""
+        out = tmp_path / "myrun"
+        out.mkdir()
+        spec = train_part2_5_module.derive_spec_dir(out)
+        assert spec.name == "myrun_spec"
+        assert spec.parent == out.parent
+
+    def test_minimax_out_of_tree_path_uses_sibling_spec(
+        self, tmp_path, train_minimax_module
+    ) -> None:
+        out = tmp_path / "minirun"
+        out.mkdir()
+        spec = train_minimax_module.derive_spec_dir(out)
+        assert spec.name == "minirun_spec"
+        assert spec.parent == out.parent
