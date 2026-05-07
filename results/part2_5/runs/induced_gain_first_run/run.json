@@ -1,0 +1,66 @@
+{
+  "experiment": "part2_5",
+  "run": "induced_gain_first_run",
+  "spec_kind": "induced_gain_analysis",
+  "channels": [
+    {
+      "w": "additive_force",
+      "z": "qr_cost"
+    },
+    {
+      "w": "structural_da",
+      "z": "qr_cost"
+    },
+    {
+      "w": "sensory_perturbation",
+      "z": "qr_cost"
+    }
+  ],
+  "horizon": 200,
+  "plant": {
+    "kind": "linearize_pointmass",
+    "mass": 1.0,
+    "damping": 10.0,
+    "tau": 0.05,
+    "dt": 0.01
+  },
+  "schedule": {
+    "kind": "cost_schedule_from_spec",
+    "n_steps": 200
+  },
+  "init_pos": [
+    0.0,
+    0.0
+  ],
+  "target_pos": [
+    0.15,
+    0.0
+  ],
+  "sisu": 0.5,
+  "n_restarts": 3,
+  "max_iter": 600,
+  "rtol": 1e-05,
+  "seed": 0,
+  "groups_run": [
+    "baseline_standard_12k",
+    "vanilla_single",
+    "vanilla_pop5",
+    "minimax_single_seed0",
+    "minimax_single_seed1",
+    "minimax_single_seed2",
+    "mult_single",
+    "mult_pop5",
+    "ratio03_single",
+    "ratio03_pop5"
+  ],
+  "gamma_star_riccati": 0.013749127726403236,
+  "analyser_version": {
+    "rlrmp_branch": "feature/induced-gain-first-run",
+    "induced_gain_commit_refs": [
+      "aa60d3f",
+      "f0a1d44"
+    ],
+    "tracking_issue": "6fdf9a4",
+    "audit_issue": "b131510"
+  }
+}
