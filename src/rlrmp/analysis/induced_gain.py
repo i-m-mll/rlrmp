@@ -54,7 +54,7 @@ from typing import Callable, Optional, Protocol, Tuple
 
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, PyTree
 
 from rlrmp.analysis.hinf_riccati import (
     CostSchedule,
@@ -212,24 +212,68 @@ def lti_controller(K: Float[Array, "T m_u n"]) -> Controller:
 
 
 @dataclass(frozen=True)
-class _FeedbaxRNNController:
-    """Adapter wrapping a trained feedbax model as a ``Controller``.
+class _FeedbaxGraphController:
+    """Adapter wrapping a feedbax ``Graph`` as a ``Controller``.
+
+    The graph's state is an opaque ``equinox.nn.State`` pytree. The analyser's
+    ``Controller`` protocol expects ``h`` to be a 1D array (so it can stack
+    with ``x_plant`` into ``x_aug`` and feed Jacobians through it). This
+    adapter handles flatten/unflatten between the two representations:
+
+    - ``initial_state()`` calls ``graph.init_state(key=...)``, then flattens
+      the resulting State pytree's array leaves into a single 1D float64
+      array, captures the treedef + leaf shapes for round-tripping.
+    - ``step(h, obs, t)`` unflattens ``h`` back into a State, calls
+      ``graph._call_single_step(inputs={"input": obs}, state=state, key=key_t)``,
+      extracts ``u`` from outputs (default port ``"output"``), reflattens the
+      next State to ``h_next``.
+
+    Bug: b131510 -- replaces the legacy ``_FeedbaxRNNController`` adapter
+    which assumed the caller had pre-extracted a step closure (an old
+    staged-model API pattern). The new graph API exposes per-step evaluation
+    directly on the Graph, so no manual extraction is needed.
 
     Attributes:
-        step_fn: A function ``(h, obs, t) -> (h_next, u)`` extracted from the
-            model. The caller (``feedbax_rnn_controller``) is responsible for
-            this extraction; here we just store a closed-over thunk.
-        h0: Initial hidden state.
+        graph: The feedbax ``Graph`` to wrap. Must accept an ``"input"``
+            external input binding (the sensory observation channel) and emit
+            an ``"output"`` external output binding (the control vector).
+        h0_flat: Flattened initial state, shape ``(n_ctrl,)``.
+        treedef: PyTree treedef of the original ``State`` for round-tripping.
+        leaf_shapes: Per-leaf shapes for unflatten reshape.
+        leaf_sizes: Per-leaf flat sizes for slicing the 1D ``h``.
+        key: Base PRNGKey; per-step keys are derived by folding-in ``t``.
+        input_port: External input binding name (default ``"input"``).
+        output_port: External output binding name (default ``"output"``).
     """
 
-    step_fn: Callable[
-        [Float[Array, "n_ctrl"], Float[Array, "n_obs"], int],
-        Tuple[Float[Array, "n_ctrl"], Float[Array, "m_u"]],
-    ]
-    h0: Float[Array, "n_ctrl"]
+    graph: object  # feedbax.graph.Graph
+    h0_flat: Float[Array, "n_ctrl"]
+    treedef: object  # jax tree treedef
+    leaf_shapes: tuple
+    leaf_sizes: tuple
+    key: Array
+    input_port: str = "input"
+    output_port: str = "output"
 
     def initial_state(self) -> Float[Array, "n_ctrl"]:
-        return self.h0
+        return self.h0_flat
+
+    def _unflatten(self, h: Float[Array, "n_ctrl"]):
+        # Slice flat h back into per-leaf arrays of original shapes.
+        leaves = []
+        offset = 0
+        for shape, size in zip(self.leaf_shapes, self.leaf_sizes):
+            leaves.append(h[offset:offset + size].reshape(shape))
+            offset += size
+        return jax.tree.unflatten(self.treedef, leaves)
+
+    def _flatten(self, state) -> Float[Array, "n_ctrl"]:
+        leaves = jax.tree.leaves(state)
+        # Filter to array leaves matching our schema (size-keyed).
+        flat_parts = [jnp.asarray(leaf, dtype=jnp.float64).reshape(-1) for leaf in leaves]
+        if not flat_parts:
+            return jnp.zeros((0,), dtype=jnp.float64)
+        return jnp.concatenate(flat_parts, axis=0)
 
     def step(
         self,
@@ -237,37 +281,99 @@ class _FeedbaxRNNController:
         sensory_obs: Float[Array, "n_obs"],
         t: int,
     ) -> Tuple[Float[Array, "n_ctrl"], Float[Array, "m_u"]]:
-        return self.step_fn(h, sensory_obs, t)
+        state = self._unflatten(h)
+        # Per-step key: fold t in for determinism without leaking randomness
+        # across timesteps (analyser is deterministic given the key).
+        key_t = jax.random.fold_in(self.key, t)
+        outputs, state_next = self.graph._call_single_step(
+            inputs={self.input_port: sensory_obs},
+            state=state,
+            key=key_t,
+        )
+        u = outputs[self.output_port]
+        h_next = self._flatten(state_next)
+        return h_next, u
 
 
-def feedbax_rnn_controller(
-    step_fn: Callable[
-        [Float[Array, "n_ctrl"], Float[Array, "n_obs"], int],
-        Tuple[Float[Array, "n_ctrl"], Float[Array, "m_u"]],
-    ],
-    h0: Float[Array, "n_ctrl"],
+def feedbax_graph_controller(
+    graph,  # feedbax.graph.Graph
+    *,
+    key: Array,
+    input_port: str = "input",
+    output_port: str = "output",
 ) -> Controller:
-    """Wrap a feedbax-shaped step function as a ``Controller``.
+    """Wrap a feedbax ``Graph`` as a ``Controller`` for the induced-gain analyser.
 
-    The caller is responsible for extracting a pure ``(h, obs, t) -> (h_next, u)``
-    closure from the trained feedbax model. This decouples the analyser from
-    feedbax's specific iteration plumbing -- the analyser only requires the
-    minimal step interface.
+    The new feedbax eager-graph API (post-cutover, on ``develop``) exposes
+    per-step evaluation directly on ``Graph`` via ``_call_single_step``. The
+    induced-gain analyser only needs that single-step view; this adapter
+    bridges it to the analyser's ``(h, obs, t) -> (h_next, u)`` protocol.
 
-    Reference patterns for extracting ``step_fn`` from a feedbax model:
-    inspect the body of ``feedbax.iterations.Iterator`` or
-    ``feedbax.task.SimpleFeedback``; pull out the controller's ``__call__``
-    plus the sensory-observation map. Trained ``rlrmp`` models follow this
-    pattern -- see ``scripts/eval_*.py`` for end-to-end loading examples.
+    The graph's opaque ``State`` pytree is flattened to a 1D float64 array
+    (the adapter's ``h``), threading per-step keys via ``jax.random.fold_in``
+    on the supplied base ``key``.
+
+    Bug: b131510 -- replaces the legacy ``feedbax_rnn_controller(step_fn, h0)``
+    helper, which required the caller to manually extract a step closure
+    from staged-API plumbing. The graph API makes that extraction trivial,
+    so the adapter takes the graph directly.
 
     Args:
-        step_fn: Pure function ``(h, sensory_obs, t) -> (h_next, u)``.
-        h0: Initial hidden state, shape ``(n_ctrl,)``.
+        graph: A feedbax ``Graph``. Should expose an ``input_port`` external
+            input binding (the sensory observation) and an ``output_port``
+            external output binding (the control vector). For the rlrmp
+            ``SimpleFeedback`` family of trained models, the relevant
+            sub-graph is typically the network alone — see the test for a
+            minimal pass-through example.
+        key: Base PRNGKey. The adapter folds-in the discrete time index ``t``
+            to derive a per-step key, so the controller is deterministic
+            given ``key`` and ``t``.
+        input_port: External input binding name. Default ``"input"``.
+        output_port: External output binding name. Default ``"output"``.
 
     Returns:
-        A ``Controller``.
+        A ``Controller`` whose ``initial_state`` and ``step`` route through
+        ``graph.init_state`` and ``graph._call_single_step`` respectively.
     """
-    return _FeedbaxRNNController(step_fn=step_fn, h0=jnp.asarray(h0, dtype=jnp.float64))
+    init_state = graph.init_state(key=key)
+    leaves = jax.tree.leaves(init_state)
+    leaf_shapes = tuple(tuple(jnp.asarray(leaf).shape) for leaf in leaves)
+    leaf_sizes = tuple(int(jnp.asarray(leaf).size) for leaf in leaves)
+    treedef = jax.tree.structure(init_state)
+    if leaves:
+        h0_flat = jnp.concatenate(
+            [jnp.asarray(leaf, dtype=jnp.float64).reshape(-1) for leaf in leaves],
+            axis=0,
+        )
+    else:
+        h0_flat = jnp.zeros((0,), dtype=jnp.float64)
+    return _FeedbaxGraphController(
+        graph=graph,
+        h0_flat=h0_flat,
+        treedef=treedef,
+        leaf_shapes=leaf_shapes,
+        leaf_sizes=leaf_sizes,
+        key=key,
+        input_port=input_port,
+        output_port=output_port,
+    )
+
+
+# Deprecated alias kept for one cycle. Bug: b131510. The old signature
+# (step_fn, h0) doesn't match the graph API; new code must use
+# ``feedbax_graph_controller(graph, key=...)``.
+def feedbax_rnn_controller(*args, **kwargs):
+    """Deprecated. Use ``feedbax_graph_controller(graph, key=...)`` instead.
+
+    Bug: b131510 -- the old ``feedbax_rnn_controller(step_fn, h0)`` adapter
+    implicitly assumed feedbax's pre-eager-graph staged-model API. The new
+    graph API exposes per-step evaluation directly on ``Graph``; pass the
+    graph object instead of a hand-extracted step closure.
+    """
+    raise NotImplementedError(
+        "feedbax_rnn_controller is deprecated (Bug: b131510). "
+        "Use feedbax_graph_controller(graph, key=...) — see its docstring."
+    )
 
 
 # =============================================================================
@@ -1626,7 +1732,8 @@ __all__ = [
     "InducedGainResult",
     # Controller adapters
     "lti_controller",
-    "feedbax_rnn_controller",
+    "feedbax_graph_controller",
+    "feedbax_rnn_controller",  # deprecated; raises NotImplementedError
     # Linearisation
     "linearise_trajectory",
     "linearise_fixed_point",

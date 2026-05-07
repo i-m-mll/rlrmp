@@ -409,11 +409,15 @@ def linearize_from_model(model, *, dt: Optional[float] = None) -> PlantLineariza
     associated ``mass``, ``damping``, ``tau``, ``dt`` parameters. This
     accepts either:
 
-    - a feedbax ``Iterator`` wrapping ``SimpleFeedback`` (the standard
-      ``point_mass_nn`` model), or
-    - a ``SimpleFeedback`` body directly, or
+    - a feedbax ``SimpleFeedback`` graph (the standard ``point_mass_nn``
+      output, post eager-graph cutover; previously this would have been
+      wrapped in a now-removed ``Iterator``), or
     - a ``Mechanics`` instance, or
     - a ``PointMass`` instance directly.
+
+    Bug: b131510 — the legacy "Iterator" framing is stale; on feedbax
+    ``develop`` the SimpleFeedback Graph runs its own cycles internally
+    and there is no separate Iterator wrapper.
 
     The plant is *time-invariant* in the rlrmp setup, so this function does
     not require a nominal trajectory: linearisation around any state is
@@ -437,8 +441,7 @@ def linearize_from_model(model, *, dt: Optional[float] = None) -> PlantLineariza
     if pm is None:
         raise ValueError(
             "Could not find a PointMass skeleton inside the model. "
-            "Pass a feedbax Iterator/SimpleFeedback/Mechanics/PointMass "
-            "instance."
+            "Pass a feedbax SimpleFeedback/Mechanics/PointMass instance."
         )
     final_dt = float(dt) if dt is not None else found_dt
     if final_dt is None:
@@ -474,9 +477,10 @@ def _walk_model_for_plant_params(model) -> Tuple[Optional[PointMass], Optional[f
             pm = leaf
             break
 
-    # Best-effort attribute walk for dt and tau. The feedbax Iterator wraps
-    # SimpleFeedback which holds Mechanics with ``dt`` and a force filter with
-    # tau_rise/tau_decay. We don't depend on a specific shape; we search.
+    # Best-effort attribute walk for dt and tau. SimpleFeedback (a Graph)
+    # has nodes including Mechanics with ``dt`` and an optional first-order
+    # force filter with tau_rise/tau_decay. We don't depend on a specific
+    # shape; we search the tree.
     def _maybe_set(node):
         nonlocal dt, tau
         if dt is None and hasattr(node, "dt"):
