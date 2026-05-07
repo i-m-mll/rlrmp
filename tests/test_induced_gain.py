@@ -49,6 +49,8 @@ from rlrmp.analysis.hinf_riccati import (
 from rlrmp.analysis.induced_gain import (
     TrajectoryLinearisation,
     W_ADDITIVE_FORCE,
+    W_SENSORY_NOISE,
+    W_SENSORY_PERTURBATION,
     W_STRUCTURAL_DA,
     Z_CONTROL,
     Z_PEAK_VELOCITY,
@@ -182,20 +184,30 @@ def test_adjoint_correctness():
 
 
 def test_riccati_round_trip_qr_cost():
-    """Induced gain of an H-inf controller is bounded above by its design gamma.
+    """Induced gain of an H-inf controller lies in (gamma_star, gamma_design].
 
-    Verifies the analyser's gain on the LTV (qr_cost, additive_force) lies
-    below the design ``gamma`` (the H-inf saddle-point upper bound) and is
-    finite. This is the core round-trip sanity: dropping a Riccati controller
-    into the analyser yields a number consistent with H-inf theory.
+    The expected band is theoretical:
 
-    The exact equality ``analyser_gain == gamma_star`` is not expected at the
-    bisection's admissibility boundary -- ``find_gamma_star`` returns the
-    smallest numerically-admissible gamma, which is an upper bound on the
-    true H-inf optimum (boundary effects in finite-horizon LQ game). We
-    require the ratio to be in [0.5, 1.0].
+    - Upper bound ``||T||_PI <= gamma_design``: the controller is designed to
+      attenuate disturbances at level ``gamma_design = 1.5 * gamma_star``.
+    - Strict lower bound ``||T||_PI > gamma_star``: ``gamma_star`` is the
+      H-infinity *infimum*; no admissible finite-horizon LTI controller can
+      realise it exactly. A controller designed at ``gamma_design > gamma_star``
+      is suboptimal, so its actual closed-loop gain is strictly above
+      ``gamma_star`` and bounded by the design level.
+
+    Empirically (rlrmp point-mass regime, gamma_design=1.5*gamma_star) the
+    analyser gain plateaus at ~1.21 * gamma_star at long horizons (n>=200);
+    at short horizons (n<=100) the ratio dips below 1.0, which is an
+    artefact of the finite-horizon ``find_gamma_star`` bisection finding a
+    smaller infimum than the long-horizon limit. We therefore use a long
+    horizon (n=200) for this test to land cleanly in the (gamma_star,
+    gamma_design] band. See ``scripts/probe_round_trip_ratio.py`` and bug
+    ``3c74e3b``.
     """
-    plant, schedule = _rlrmp_setup()
+    plant = linearize_pointmass(mass=1.0, damping=10.0, tau=0.05, dt=0.01)
+    spec = CostSpec(n_steps=200)
+    schedule = cost_schedule_from_spec(spec, plant)
     g_star = find_gamma_star(plant, schedule)
     gamma_design = 1.5 * g_star
     hinf = solve_hinf_riccati(plant, schedule, gamma_design)
@@ -210,23 +222,23 @@ def test_riccati_round_trip_qr_cost():
         ctrl,
         init_pos=init_pos,
         target_pos=target_pos,
-        horizon=80,
+        horizon=200,
         w_channel=W_ADDITIVE_FORCE,
         z_channel=Z_QR_COST,
         schedule=schedule,
         methods=("power_iteration",),
         n_restarts=5,
-        max_iter=500,
-        rtol=1e-8,
+        max_iter=800,
+        rtol=1e-6,
     )
     pi = out["power_iteration"]
     assert pi.converged
-    # Upper bound: ||T||_inf < gamma_design (the design level is admissible).
-    assert pi.gamma < gamma_design
-    # Lower bound: > 0 (the closed loop has nonzero disturbance amplification).
-    assert pi.gamma > 0
-    # Sanity: the analyser gain is on the same order of magnitude as gamma_star.
-    assert 0.3 * g_star < pi.gamma < gamma_design
+    # Tightened band: strict above gamma_star, bounded above by gamma_design.
+    # Bug: 3c74e3b — was [0.3 * gamma_star, gamma_design]; the previous lower
+    # band was lax to accommodate short-horizon gamma_star artefacts. The
+    # n=200 horizon avoids those artefacts.
+    assert pi.gamma > g_star
+    assert pi.gamma <= gamma_design
 
 
 def test_lqr_round_trip_qr_cost():
@@ -493,3 +505,225 @@ def test_qr_cost_requires_schedule():
             z_channel=Z_QR_COST,
             schedule=None,
         )
+
+
+# -----------------------------------------------------------------------------
+# Sensory-perturbation rename + D_z feedthrough
+# -----------------------------------------------------------------------------
+
+
+def test_sensory_noise_alias_resolves_to_perturbation():
+    """The deprecated ``sensory_noise`` alias resolves to sensory_perturbation.
+
+    Bug: ec7710f. Verifies (a) the constant ``W_SENSORY_NOISE`` is an alias of
+    ``W_SENSORY_PERTURBATION``, and (b) the literal string ``"sensory_noise"``
+    still validates and produces the same operator.
+    """
+    assert W_SENSORY_NOISE == W_SENSORY_PERTURBATION == "sensory_perturbation"
+
+    plant, schedule = _rlrmp_setup()
+    lqr = solve_lqr(plant, schedule)
+    ctrl = lti_controller(lqr.K)
+    init_pos = jnp.array([0.0, 0.0])
+    target_pos = jnp.array([0.1, 0.0])
+
+    # Old string still works.
+    lin_old = linearise_trajectory(
+        plant, ctrl,
+        init_pos=init_pos, target_pos=target_pos, horizon=40,
+        w_channel="sensory_noise", z_channel=Z_STATE_ERROR,
+    )
+    lin_new = linearise_trajectory(
+        plant, ctrl,
+        init_pos=init_pos, target_pos=target_pos, horizon=40,
+        w_channel="sensory_perturbation", z_channel=Z_STATE_ERROR,
+    )
+    # Operator matrices should match exactly.
+    assert jnp.allclose(lin_old.A_t, lin_new.A_t)
+    assert jnp.allclose(lin_old.Bw_t, lin_new.Bw_t)
+    assert jnp.allclose(lin_old.Cz_t, lin_new.Cz_t)
+    assert jnp.allclose(lin_old.D_t, lin_new.D_t)
+    # The new linearisation reports the canonical name.
+    assert lin_new.w_channel == "sensory_perturbation"
+
+
+def test_dz_feedthrough_sensory_perturbation_qr_cost():
+    """Computing D_z exactly raises the gain over the zero-Dz approximation.
+
+    Bug: ec7710f. Builds an LTV operator with the production sensory-perturbation
+    × qr_cost feedthrough, then builds the same operator with D_t zeroed (the
+    pre-fix behaviour), and verifies the corrected gain is strictly larger.
+
+    For sensory_perturbation × qr_cost on full-state-feedback LQR, D_u = -K
+    (since u = -K(x + w_obs)) and D_z_ctrl = sqrt(R) @ (-K). On a 2D point
+    mass with R diagonal and a nonzero LQR gain, D_z is non-trivially nonzero.
+    """
+    plant, schedule = _rlrmp_setup()
+    lqr = solve_lqr(plant, schedule)
+    ctrl = lti_controller(lqr.K)
+    init_pos = jnp.array([0.0, 0.0])
+    target_pos = jnp.array([0.1, 0.0])
+
+    lin_corrected = linearise_trajectory(
+        plant, ctrl,
+        init_pos=init_pos, target_pos=target_pos, horizon=40,
+        w_channel=W_SENSORY_PERTURBATION,
+        z_channel=Z_QR_COST,
+        schedule=schedule,
+    )
+    # The corrected operator has nonzero D_t for this channel pair.
+    assert float(jnp.linalg.norm(lin_corrected.D_t)) > 0.0
+
+    # Construct the pre-fix variant: same A, B_w, C_z, but D_t zeroed.
+    lin_old = TrajectoryLinearisation(
+        A_t=lin_corrected.A_t,
+        Bw_t=lin_corrected.Bw_t,
+        Cz_t=lin_corrected.Cz_t,
+        D_t=jnp.zeros_like(lin_corrected.D_t),
+        x_nominal=lin_corrected.x_nominal,
+        u_nominal=lin_corrected.u_nominal,
+        dt=lin_corrected.dt,
+        n_plant=lin_corrected.n_plant,
+        n_ctrl=lin_corrected.n_ctrl,
+        w_channel=lin_corrected.w_channel,
+        z_channel=lin_corrected.z_channel,
+    )
+
+    g_corrected = induced_gain_power_iteration(
+        lin_corrected, n_restarts=4, max_iter=400, rtol=1e-7
+    ).gamma
+    g_old = induced_gain_power_iteration(
+        lin_old, n_restarts=4, max_iter=400, rtol=1e-7
+    ).gamma
+    # Strict inequality: D_z fix raised the operator's leading singular value.
+    assert g_corrected > g_old, (
+        f"D_z fix should raise the gain: corrected={g_corrected}, old={g_old}"
+    )
+    # Sanity: increase is meaningful (not just numerical noise).
+    assert (g_corrected - g_old) / max(g_old, 1e-30) > 1e-4
+
+
+def test_feedbax_graph_controller_smoke():
+    """Smoke test: ``feedbax_graph_controller`` wires up a minimal pass-through.
+
+    Bug: b131510. Builds a trivial feedbax ``Graph`` with one component that
+    multiplies its observation by a fixed gain, plus one ``StateIndex`` to
+    exercise the flatten/unflatten round-trip. Verifies that the adapter's
+    ``initial_state`` and ``step`` produce the expected output and that the
+    flat-state shape is consistent.
+    """
+    import equinox as eqx
+    from equinox.nn import State, StateIndex
+    from feedbax.graph import Component, Graph, Wire, init_state_from_component
+
+    from rlrmp.analysis.induced_gain import feedbax_graph_controller
+
+    class GainComponent(Component):
+        """y = -K @ x; carries a 1-element counter to exercise stateful flatten."""
+        input_ports = ("input",)
+        output_ports = ("output",)
+
+        K: jnp.ndarray
+        state_index: StateIndex
+
+        def __init__(self, K):
+            self.K = K
+            self.state_index = StateIndex(jnp.zeros((1,), dtype=jnp.float64))
+
+        def __call__(self, inputs, state, *, key):
+            x = inputs["input"]
+            counter = state.get(self.state_index)
+            state = state.set(self.state_index, counter + 1.0)
+            u = -self.K @ x
+            return {"output": u}, state
+
+    K = jnp.array([[1.0, 0.5]], dtype=jnp.float64)
+    node = GainComponent(K)
+    graph = Graph(
+        nodes={"net": node},
+        wires=(),
+        input_ports=("input",),
+        output_ports=("output",),
+        input_bindings={"input": ("net", "input")},
+        output_bindings={"output": ("net", "output")},
+    )
+
+    key = jax.random.PRNGKey(0)
+    ctrl = feedbax_graph_controller(graph, key=key)
+    h0 = ctrl.initial_state()
+    # The state contains a single 1-element float counter.
+    assert h0.shape == (1,)
+    assert float(h0[0]) == 0.0
+
+    obs = jnp.array([2.0, 4.0], dtype=jnp.float64)
+    h1, u1 = ctrl.step(h0, obs, 0)
+    # Output: u = -K @ obs = -[2.0 + 0.5*4.0] = -4.0
+    assert float(u1[0]) == pytest.approx(-4.0, abs=1e-12)
+    # Counter incremented from 0 to 1.
+    assert float(h1[0]) == 1.0
+
+    # Second step uses the new state.
+    h2, u2 = ctrl.step(h1, obs, 1)
+    assert float(h2[0]) == 2.0
+    assert float(u2[0]) == pytest.approx(-4.0, abs=1e-12)
+
+
+def test_feedbax_rnn_controller_deprecated_raises():
+    """The old ``feedbax_rnn_controller`` adapter raises with a migration message.
+
+    Bug: b131510. The old API assumed staged-model plumbing; new code must
+    use ``feedbax_graph_controller``.
+    """
+    from rlrmp.analysis.induced_gain import feedbax_rnn_controller
+
+    with pytest.raises(NotImplementedError, match="feedbax_graph_controller"):
+        feedbax_rnn_controller(lambda h, o, t: (h, o), jnp.zeros(3))
+
+
+def test_dz_feedthrough_lti_analytic():
+    """D_z feedthrough analytic check on a hand-rolled toy LTI controller.
+
+    Build a 1D plant with simple LQR-style feedback; verify the linearisation
+    matches the closed-form D_z = sqrt(R) * (-K) for sensory_perturbation x
+    qr_cost.
+    """
+    # Toy: build a TrajectoryLinearisation directly by walking through the
+    # autodiff path with a hand-rolled 1D controller. We instead construct
+    # an artificial linearisation by hand using the analyser's _qr_cost_Cz_Dz
+    # helper — this validates the math at the helper level.
+    from rlrmp.analysis.induced_gain import _qr_cost_Cz_Dz
+    from rlrmp.analysis.hinf_riccati import CostSchedule
+
+    horizon = 5
+    n_plant = 2
+    m_u = 1
+    n_w = 2
+    n_aug = n_plant  # stateless controller
+
+    # Simple Q = I, R = I.
+    Q = jnp.tile(jnp.eye(n_plant)[None], (horizon, 1, 1)).astype(jnp.float64)
+    R = jnp.tile(jnp.eye(m_u)[None], (horizon, 1, 1)).astype(jnp.float64)
+    Q_f = jnp.eye(n_plant, dtype=jnp.float64)
+    schedule = CostSchedule(Q=Q, R=R, Q_f=Q_f)
+
+    # Cu = -K (constant) where K = [1.0, 0.5]. So d u / d x = -K.
+    K = jnp.array([[1.0, 0.5]], dtype=jnp.float64)  # (m_u, n_plant)
+    Cu_arr = jnp.tile((-K)[None], (horizon, 1, 1))  # (T, m_u, n_aug=n_plant)
+
+    # Sensory perturbation: u = -K (x + w_obs); so d u / d w = -K.
+    Du_arr = jnp.tile((-K)[None], (horizon, 1, 1))  # (T, m_u, n_w)
+
+    # Plant — needs a small mock for plant.m_u
+    class _Mock:
+        m_u = 1
+    plant_mock = _Mock()
+
+    Cz, Dz = _qr_cost_Cz_Dz(
+        plant_mock, schedule, Cu_arr, Du_arr,
+        n_aug=n_aug, n_w=n_w, n_plant=n_plant, horizon=horizon,
+    )
+    # State half of D_z is zero.
+    assert jnp.allclose(Dz[:, :n_plant, :], 0.0)
+    # Control half of D_z = sqrt(R) @ Du = I @ (-K) = -K (R = I).
+    expected_Dz_ctrl = jnp.tile((-K)[None], (horizon, 1, 1))
+    assert jnp.allclose(Dz[:, n_plant:, :], expected_Dz_ctrl, atol=1e-12)
