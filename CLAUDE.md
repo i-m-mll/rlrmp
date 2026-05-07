@@ -27,6 +27,7 @@
 ### Feedbax Integration
 - rlrmp depends on feedbax. When fixing bugs or adding features that require changes to feedbax, make those changes directly in the feedbax repo (on the appropriate feature branch) rather than working around them in rlrmp. Maintain near-integration with feedbax at all times — do not deviate from feedbax's APIs or bypass its abstractions.
 - The feedbax repo is at `~/Main/10 Projects/10 PhD/20 Feedbax/feedbax/`. Use worktrees for feature work, following the same conventions as this repo.
+- Feedbax's protected branch is `develop`, not `main`. All canonical feedbax behaviour, APIs, and architectural patterns reside on `develop`. Feedbax-side feature branches must derive from `develop` (`wt feature/<name> develop`), not from `main`. When reading feedbax source code to understand current behaviour, check out develop or read files at the develop branch reference (`git show develop:path/to/file.py`). The feedbax `main` branch may lag develop substantially and should not be treated as authoritative.
 
 ## Feedbax Studio
 Feedbax Studio (web app) runs from the Feedbax repo. See Feedbax CLAUDE.md for server startup instructions.
