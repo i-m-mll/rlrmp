@@ -110,6 +110,50 @@ def test_ignored(path: str) -> None:
     assert_ignored(path)
 
 
+# --- config.json depth-restriction contract (Bug: 3577dee) ----------------
+# The broad `!results/**/config.json` whitelist was depth-blind and caused
+# bulk per-run configs from cloud providers to be tracked. It is now replaced
+# with three depth-specific patterns. These tests encode that contract.
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        # depth 2: results/<exp>/config.json — these are the top-level experiment stubs
+        "results/centerout_apt_pert1/config.json",
+        "results/part2_5/config.json",
+        # depth 3: results/<exp>/<subdir>/config.json — legacy running_cost_nn1e6 layout
+        "results/part2_5/running_cost_nn1e6/config.json",
+        # depth 4 via models/: results/<exp>/models/<run>/config.json
+        "results/part2_5/models/baseline_standard/config.json",
+        "results/part2_5/models/minimax_test2/config.json",
+    ],
+)
+def test_legacy_config_json_committable(path: str) -> None:
+    """Legacy config.json stubs at known depths remain committable."""
+    assert_committable(path)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        # depth 4, non-models subdir — the exact pattern that bit us (runpod)
+        "results/part2_5/modal/some_run/config.json",
+        "results/part2_5/coreweave/run/config.json",
+        # depth 5 — the actual runpod layout that caused the Phase 2 auth-merge issue
+        "results/part2_5/runpod/baseline/standard_12k/config.json",
+        # arbitrary deep nesting
+        "results/foo/bar/baz/config.json",
+    ],
+)
+def test_bulk_config_json_ignored(path: str) -> None:
+    """config.json files from bulk cloud-provider trees are ignored, not tracked.
+
+    This is the regression guard for the depth-blind `!results/**/config.json`
+    whitelist that allowed runpod bulk configs to slip into the index.
+    """
+    assert_ignored(path)
+
+
 # --- The _artifacts/README is the one tracked file under _artifacts/ ------
 
 def test_artifacts_readme_is_tracked() -> None:
