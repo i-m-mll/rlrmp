@@ -339,6 +339,12 @@ def test_rlrmp_smoke_velocity_inflation():
     factors, go_step, n_steps), so this is a directional/magnitude check, not
     a bit-exact replication. Phase 2's spec ('mid: Q_pos=1, Q_vel=0; late:
     Q_pos=4, Q_vel=0.4 with cosine ramp') is reproduced here.
+
+    Metric note: ``delta_v_percent`` is now based on peak *forward* velocity
+    (projection onto reach axis, Bug: f90bf74). For this unperturbed on-axis
+    reach (target along x), peak forward velocity = peak speed, so the
+    numerical values are identical to the old peak-speed metric.
+    Old peak-speed values: 1.5*gamma* → +5.44%, 1.05*gamma* → +12.82%.
     """
     plant = _rlrmp_plant()
     schedule = _rlrmp_schedule(plant)
@@ -348,6 +354,7 @@ def test_rlrmp_smoke_velocity_inflation():
         plant, schedule, init_pos=init, target_pos=target, gamma_factor=1.5
     )
     # Phase 2 prediction was +10.8%; with proper conditioning this can shift.
+    # Current value: ~+5.44% at 1.5*gamma* on the rlrmp regime.
     # Tolerance: between +1% and +20% (positive, non-trivial inflation).
     assert res.delta_v_percent > 1.0, (
         f"Δv {res.delta_v_percent}% smaller than +1%; Phase 2 reported +10.8%."
@@ -355,9 +362,9 @@ def test_rlrmp_smoke_velocity_inflation():
     assert res.delta_v_percent < 20.0, (
         f"Δv {res.delta_v_percent}% larger than +20%; suspiciously large."
     )
-    # Phase 2 LQR peak velocity ~1.86; ours should be in [1.0, 2.5]
-    assert 1.0 < res.lqr_peak_velocity < 2.5, (
-        f"LQR peak vel {res.lqr_peak_velocity} outside expected [1.0, 2.5]"
+    # LQR peak forward velocity on rlrmp regime ~1.74 m/s; check in [1.0, 2.5]
+    assert 1.0 < res.lqr_peak_forward_velocity < 2.5, (
+        f"LQR peak fwd vel {res.lqr_peak_forward_velocity} outside expected [1.0, 2.5]"
     )
 
 
@@ -377,6 +384,11 @@ def test_cs_sanity_velocity_inflation_magnitude():
     value) -- this is a magnitude check, not a bit-exact replication." We
     test the magnitude is below 5% (Phase 2's +2.4% was the largest reported
     value) at all points in the well-conditioned range.
+
+    Metric note: ``delta_v_percent`` is now based on peak *forward* velocity
+    (Bug: f90bf74). For unperturbed on-axis reaches, peak forward velocity =
+    peak speed, so the numbers are unchanged from the peak-speed era.
+    Typical values with rlrmp Q,R on C&S plant: 1.05→−2.1%, 1.5→−0.8%, all |Δv|<5%.
     """
     plant = _cs_plant()
     schedule = _rlrmp_schedule(plant)  # same Q,R as rlrmp for direct comparison
@@ -390,12 +402,13 @@ def test_cs_sanity_velocity_inflation_magnitude():
         # Magnitude bounded: synthesis_review reports |Δv%| <= 2.4 on C&S,
         # and the dominant sign depends on schedule details. Allow [-5, +5].
         assert abs(res.delta_v_percent) < 5.0, (
-            f"|Δv| at factor={factor} on C&S plant is {res.delta_v_percent}%; "
+            f"|Δv| (peak fwd vel) at factor={factor} on C&S plant is {res.delta_v_percent}%; "
             "expected magnitude <5% per synthesis_review section 2."
         )
-        # LQR peak velocity is consistent across gamma (only baseline)
-        assert 1.5 < res.lqr_peak_velocity < 3.0, (
-            f"C&S LQR peak vel {res.lqr_peak_velocity} outside [1.5, 3.0]"
+        # LQR peak forward velocity is consistent across gamma (only baseline).
+        # For on-axis reaches, peak forward vel ~= peak speed ~2.2-2.7 m/s on C&S plant.
+        assert 1.5 < res.lqr_peak_forward_velocity < 3.0, (
+            f"C&S LQR peak fwd vel {res.lqr_peak_forward_velocity} outside [1.5, 3.0]"
         )
 
 
@@ -538,12 +551,24 @@ def test_cs_faithful_qr_velocity_inflation():
     - Reach: 15 cm forward (matching C&S experimental geometry)
     - Evaluation: gamma_factor=1.5 (matching synthesis_review section 2)
 
+    The metric is ``delta_v_percent`` based on **peak forward velocity**
+    (velocity projected onto the reach axis), matching C&S Fig. 1e. For
+    unperturbed on-axis reaches, peak forward velocity equals peak speed
+    because the trajectory stays on axis. The metric correction (Bug: f90bf74)
+    did not flip the sign here.
+
+    Historical note: under peak speed, this test gave Δv = −0.04% (also
+    under peak forward velocity after Bug f90bf74 correction: −0.04%). Both
+    metrics are numerically identical for 1D unperturbed reaches. The
+    flavor-(a) finding stands: the C&S Riccati Δv requires channel-perturbation
+    context (as in the behavioural C&S data), not clean Riccati rollouts.
+
     If Δv > 0: Q-shape sensitivity confirmed; the faithful C&S Q,R produces
     the paper's claimed velocity inflation on the C&S plant.
 
     If Δv ≤ 0: xfailed with diagnosis — the faithful Q,R also fails to
-    produce velocity inflation, suggesting a Riccati implementation issue
-    rather than Q-shape sensitivity.
+    produce velocity inflation, pointing to a gap between Riccati theory
+    and the C&S behavioural result (which uses perturbed-channel trajectories).
     """
     # C&S plant: near-frictionless point mass with slow force filter
     plant = linearize_pointmass(mass=1.0, damping=0.1, tau=0.06, dt=0.01)
@@ -570,17 +595,23 @@ def test_cs_faithful_qr_velocity_inflation():
 
     # Failure handling: if Δv ≤ 0 even with faithful Q,R, mark as xfail
     # with a clear diagnosis rather than a hard failure. This distinguishes
-    # the Q-shape sensitivity hypothesis from a potential Riccati bug.
+    # the Q-shape sensitivity hypothesis from a potential Riccati / context gap.
     if delta_v <= 0.0:
         pytest.xfail(
-            f"Faithful C&S Eq. 15 Q,R gives Δv = {delta_v:.4f}% ≤ 0 on the C&S plant "
+            f"Faithful C&S Eq. 15 Q,R gives Δv (peak fwd vel) = {delta_v:.4f}% ≤ 0 on the C&S plant "
             f"(gamma_star={gamma_star:.6f}, gamma_eval={res.gamma_evaluated:.6f}, "
-            f"LQR v_peak={res.lqr_peak_velocity:.4f}, H∞ v_peak={res.hinf_peak_velocity:.4f}). "
-            "This suggests a potential Riccati implementation issue to investigate: "
-            "the faithful C&S Q,R should produce the paper's claimed velocity inflation "
-            "(Fig. 1e: 'robust controller always generated faster movement velocities toward the target'). "
-            "Investigate whether the (t/N)^6 ramp, the large Q diagonal magnitudes, or "
-            "the R=I cost produce an unexpected Riccati boundary or admissibility regime."
+            f"LQR fwd_v_peak={res.lqr_peak_forward_velocity:.4f}, "
+            f"H∞ fwd_v_peak={res.hinf_peak_forward_velocity:.4f}). "
+            "The peak-forward-velocity metric (Bug: f90bf74) was applied; for unperturbed "
+            "on-axis reaches, peak forward velocity equals peak speed — both give ~−0.04%. "
+            "The flavor-(a) interpretation stands: production Riccati B_w is most likely "
+            "additive force (flavor-a), not model-class delta-A (flavor-b). "
+            "C&S's reported +5-15% Δv comes from perturbed-channel (viscous curl-field) "
+            "trajectories, not clean Riccati rollouts — a context gap that is not resolved "
+            "by the metric correction alone. "
+            "Investigate: (a) simulate perturbed trajectories (curl-field w_t), "
+            "(b) check alpha_1 sensitivity (C&S used alpha_1 sweep), "
+            "(c) revisit B_w flavor choice."
         )
 
     # If we reach here, Δv > 0: Q-shape sensitivity is confirmed.
@@ -605,6 +636,12 @@ def test_cs_qr_vs_rlrmp_qr_on_cs_plant():
     specific ordering — the goal is to capture the numbers for the synthesis
     review section 10 analysis. A failure of either Riccati to be admissible
     will surface here as a RuntimeError rather than an assertion error.
+
+    Metric note: ``delta_v_percent`` is based on peak *forward* velocity
+    (Bug: f90bf74). For unperturbed on-axis reaches, forward vel = speed.
+    Both channels (forward + lateral) are logged for completeness.
+    Current values: C&S Q,R → −0.04%, rlrmp Q,R → −0.77% (forward channel);
+    old peak-speed era values were identical: −0.04% and −0.77%.
     """
     plant = linearize_pointmass(mass=1.0, damping=0.1, tau=0.06, dt=0.01)
     init_pos = jnp.array([0.0, 0.0], dtype=jnp.float64)
@@ -634,19 +671,20 @@ def test_cs_qr_vs_rlrmp_qr_on_cs_plant():
     import sys
     print(
         f"\n[Q-shape sensitivity] C&S plant (k=0.1, tau=0.06), gamma_factor=1.5:\n"
-        f"  Faithful C&S Q,R (Eq. 15):  Δv = {cs_res.delta_v_percent:+.4f}%  "
-        f"(LQR v_peak={cs_res.lqr_peak_velocity:.4f}, H∞ v_peak={cs_res.hinf_peak_velocity:.4f})\n"
-        f"  rlrmp Q,R (synthesis_review §2): Δv = {rlrmp_res.delta_v_percent:+.4f}%  "
-        f"(LQR v_peak={rlrmp_res.lqr_peak_velocity:.4f}, H∞ v_peak={rlrmp_res.hinf_peak_velocity:.4f})",
+        f"  Faithful C&S Q,R (Eq. 15):  Δv_fwd = {cs_res.delta_v_percent:+.4f}%  "
+        f"Δv_lat = {cs_res.delta_v_lateral_percent:+.4f}%  "
+        f"(LQR fwd_v={cs_res.lqr_peak_forward_velocity:.4f}, H∞ fwd_v={cs_res.hinf_peak_forward_velocity:.4f})\n"
+        f"  rlrmp Q,R (synthesis_review §2): Δv_fwd = {rlrmp_res.delta_v_percent:+.4f}%  "
+        f"Δv_lat = {rlrmp_res.delta_v_lateral_percent:+.4f}%  "
+        f"(LQR fwd_v={rlrmp_res.lqr_peak_forward_velocity:.4f}, H∞ fwd_v={rlrmp_res.hinf_peak_forward_velocity:.4f})",
         file=sys.stderr,
     )
 
-    # Structural check: both LQR peak velocities are plausible for a 15 cm reach
-    # on the C&S plant. The C&S plant is near-frictionless so baseline velocity
-    # can be higher than on the rlrmp plant.
-    assert 0.1 < cs_res.lqr_peak_velocity, (
-        f"C&S plant LQR peak velocity {cs_res.lqr_peak_velocity} implausibly low for 15 cm reach"
+    # Structural check: both LQR peak forward velocities are plausible for a
+    # 15 cm reach on the C&S plant. Near-frictionless → can be faster than rlrmp.
+    assert 0.1 < cs_res.lqr_peak_forward_velocity, (
+        f"C&S plant LQR peak fwd vel {cs_res.lqr_peak_forward_velocity} implausibly low for 15 cm reach"
     )
-    assert 0.1 < rlrmp_res.lqr_peak_velocity, (
-        f"rlrmp Q,R on C&S plant LQR peak velocity {rlrmp_res.lqr_peak_velocity} implausibly low"
+    assert 0.1 < rlrmp_res.lqr_peak_forward_velocity, (
+        f"rlrmp Q,R on C&S plant LQR peak fwd vel {rlrmp_res.lqr_peak_forward_velocity} implausibly low"
     )
