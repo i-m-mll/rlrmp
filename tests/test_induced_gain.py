@@ -668,6 +668,114 @@ def test_feedbax_graph_controller_smoke():
     assert float(u2[0]) == pytest.approx(-4.0, abs=1e-12)
 
 
+def test_feedbax_graph_controller_cyclic_smoke():
+    """Smoke test: ``feedbax_graph_controller`` works on a graph WITH a cycle.
+
+    Bug: 53b5fe5 — the previous adapter used ``Graph._call_single_step`` which
+    silently fails on cyclic graphs (cycle wires are not threaded). The
+    rewritten adapter uses ``Graph.step`` (feedbax 0ec8492) to thread cycle
+    port values through the augmented hidden state.
+
+    Builds a minimal 2-component graph with a back-edge: ``a`` produces
+    ``y = -K @ x``; the network output (``a.y``) feeds a delay node (``d``)
+    which echoes its input one step later (``d.y[t] = d.x[t-1]``); ``d.y``
+    feeds back into ``a`` via a recurrent input. The external "input" is the
+    sensory observation, also routed to ``a``. The cycle ``a.y -> d.x -> d.y
+    -> a.h`` makes ``_needs_iteration == True``.
+
+    Verifies:
+      * adapter does not raise on construction (cycle support).
+      * augmented ``h`` is wider than just the network State (carries cycle).
+      * three chained ``step`` calls run without error.
+    """
+    import equinox as eqx
+    from equinox.nn import State, StateIndex
+    from feedbax.graph import Component, Graph, Wire, init_state_from_component
+
+    from rlrmp.analysis.induced_gain import feedbax_graph_controller
+
+    class GainWithRecurrent(Component):
+        """y = -K @ x + h_in. Stateless component with two input ports."""
+        input_ports = ("x", "h_in")
+        output_ports = ("y",)
+
+        K: jnp.ndarray
+
+        def __init__(self, K):
+            self.K = K
+
+        def __call__(self, inputs, state, *, key):
+            x = inputs["x"]
+            h_in = inputs.get("h_in", jnp.zeros_like(self.K[:, 0]))
+            u = -self.K @ x + h_in
+            return {"y": u}, state
+
+    class OneStepDelay(Component):
+        """y[t] = x[t-1] (one-step delay). Carries one previous-x in StateIndex."""
+        input_ports = ("x",)
+        output_ports = ("y",)
+
+        state_index: StateIndex
+
+        def __init__(self, n: int):
+            self.state_index = StateIndex(jnp.zeros((n,), dtype=jnp.float64))
+
+        def __call__(self, inputs, state, *, key):
+            x = inputs["x"]
+            prev = state.get(self.state_index)
+            state = state.set(self.state_index, x)
+            return {"y": prev}, state
+
+        def initial_outputs(self, state_value):
+            # The default Component.initial_outputs() expects state_value to
+            # be a structured object with attributes named after output ports.
+            # Our state_value is a bare array, so override to expose
+            # ``y`` directly (cycle-target default at t=0).
+            if state_value is None:
+                return {}
+            return {"y": state_value}
+
+    K = jnp.array([[1.0, 0.5]], dtype=jnp.float64)
+    a = GainWithRecurrent(K)
+    d = OneStepDelay(n=1)  # output is 1D (matches a.K row count)
+
+    graph = Graph(
+        nodes={"a": a, "d": d},
+        wires=(
+            Wire("a", "y", "d", "x"),  # forward: a's output feeds delay
+            Wire("d", "y", "a", "h_in"),  # back-edge: delayed output -> a
+        ),
+        input_ports=("input",),
+        output_ports=("output",),
+        input_bindings={"input": ("a", "x")},
+        output_bindings={"output": ("a", "y")},
+    )
+    assert graph._needs_iteration  # sanity: cycle detected
+
+    key = jax.random.PRNGKey(0)
+    ctrl = feedbax_graph_controller(graph, key=key)
+    h0 = ctrl.initial_state()
+    # Augmented h carries (delay state) + (cycle port value for a.h_in).
+    # delay state is 1 element; cycle dict has one (1,) entry.
+    assert h0.shape == (2,)
+
+    obs = jnp.array([2.0, 4.0], dtype=jnp.float64)
+    # Step 0: cycle init: a.h_in = 0 (d.y at init = zeros).
+    #   a.y = -K @ obs + 0 = -4.0; d.y = prev = 0; cycle out: d.y = 0.
+    h1, u1 = ctrl.step(h0, obs, 0)
+    assert float(u1[0]) == pytest.approx(-4.0, abs=1e-12)
+
+    # Step 1: a.h_in = cycle from step 0 = 0.
+    #   a.y = -4.0; d state was -4.0 from step 0; d.y = -4.0; cycle out: d.y = -4.0.
+    h2, u2 = ctrl.step(h1, obs, 1)
+    assert float(u2[0]) == pytest.approx(-4.0, abs=1e-12)
+
+    # Step 2: a.h_in = cycle from step 1 = -4.0.
+    #   a.y = -4.0 + (-4.0) = -8.0; d state was -4.0; d.y = -4.0.
+    h3, u3 = ctrl.step(h2, obs, 2)
+    assert float(u3[0]) == pytest.approx(-8.0, abs=1e-12)
+
+
 def test_feedbax_rnn_controller_deprecated_raises():
     """The old ``feedbax_rnn_controller`` adapter raises with a migration message.
 
