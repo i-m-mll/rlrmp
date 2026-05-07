@@ -18,9 +18,11 @@ Three orthogonal axes
   auxiliary). Both code paths reuse this module's linearisers; the chosen
   algorithm decides which is needed.
 - **Disturbance channel ``w``.** ``additive_force`` (flavor-(a) point-mass
-  force, matches APT/minimax adversary), ``sensory_noise`` (perturbation to
-  the RNN's observation pathway), and ``structural_da`` (small-gain framing
-  for flavor-(b) ``Delta A`` plant uncertainty).
+  force, matches APT/minimax adversary), ``sensory_perturbation``
+  (deterministic L2-bounded perturbation on the RNN's observation pathway —
+  the H-inf framing makes no distinction between this and stochastic noise),
+  and ``structural_da`` (small-gain framing for flavor-(b) ``Delta A`` plant
+  uncertainty).
 - **Performance channel ``z``.** ``qr_cost`` (cost-matched to Riccati,
   literal-comparable to ``gamma_star``), ``control`` (gain to control effort),
   ``state_error`` (gain to state deviation), ``peak_velocity`` (behavioural,
@@ -77,19 +79,27 @@ logger = logging.getLogger(__name__)
 # layer of indirection.
 
 W_ADDITIVE_FORCE = "additive_force"
-W_SENSORY_NOISE = "sensory_noise"
+W_SENSORY_PERTURBATION = "sensory_perturbation"
 W_STRUCTURAL_DA = "structural_da"
+
+# Deprecated alias for one cycle. Bug: ec7710f — H-inf doesn't distinguish
+# stochastic noise from L2-bounded perturbation. New code should use
+# ``W_SENSORY_PERTURBATION`` / the literal ``"sensory_perturbation"``.
+W_SENSORY_NOISE = W_SENSORY_PERTURBATION  # deprecated alias
 
 Z_QR_COST = "qr_cost"
 Z_CONTROL = "control"
 Z_STATE_ERROR = "state_error"
 Z_PEAK_VELOCITY = "peak_velocity"
 
-_W_CHANNELS = frozenset({W_ADDITIVE_FORCE, W_SENSORY_NOISE, W_STRUCTURAL_DA})
+_W_CHANNELS = frozenset({W_ADDITIVE_FORCE, W_SENSORY_PERTURBATION, W_STRUCTURAL_DA})
 _Z_CHANNELS = frozenset({Z_QR_COST, Z_CONTROL, Z_STATE_ERROR, Z_PEAK_VELOCITY})
 
 
 def _validate_w_channel(name: str) -> str:
+    # Deprecated alias: "sensory_noise" -> "sensory_perturbation". Bug: ec7710f.
+    if name == "sensory_noise":
+        name = W_SENSORY_PERTURBATION
     if name not in _W_CHANNELS:
         raise ValueError(
             f"Unknown w channel {name!r}. Valid: {sorted(_W_CHANNELS)}."
@@ -478,8 +488,8 @@ def linearise_trajectory(
     Returns:
         A ``TrajectoryLinearisation``.
     """
-    _validate_w_channel(w_channel)
-    _validate_z_channel(z_channel)
+    w_channel = _validate_w_channel(w_channel)
+    z_channel = _validate_z_channel(z_channel)
     if z_channel == Z_QR_COST and schedule is None:
         raise ValueError("z_channel='qr_cost' requires a CostSchedule.")
     if schedule is not None and schedule.T < horizon:
@@ -545,11 +555,19 @@ def linearise_trajectory(
     Du_arr = jnp.stack(Du_list, axis=0)  # (T, m_u, m_w)
 
     # === w channel ===
+    # Also compute Du_in_w_basis = d u / d w in the lifted w basis. This is
+    # used by every z-channel branch below for the feedthrough D_z.
+    # Bug: ec7710f — D_u was previously dropped on the qr_cost path.
     if w_channel == W_ADDITIVE_FORCE:
         Bw_aug = Bw_raw  # (T, n_aug, m_w)
         n_w = m_w
-    elif w_channel == W_SENSORY_NOISE:
-        Bw_aug, n_w, _ = _sensory_noise_Bw(
+        # Force enters next-step state, not current control. Du_arr was
+        # computed against the force-w argument; it is zero by construction
+        # for any controller whose step does not read w directly. Pass it
+        # through unchanged (its computation already exercises autodiff).
+        Du_in_w_basis = Du_arr
+    elif w_channel == W_SENSORY_PERTURBATION:
+        Bw_aug, n_w, Du_in_w_basis = _sensory_perturbation_Bw(
             plant, controller, sensory_map, x_nominal, horizon
         )
     elif w_channel == W_STRUCTURAL_DA:
@@ -559,40 +577,24 @@ def linearise_trajectory(
         # we want is ||T_{w_struct -> z_struct}||_∞ with z_struct = x).
         Bw_aug = jnp.tile(jnp.eye(n_aug, dtype=jnp.float64)[None], (horizon, 1, 1))
         n_w = n_aug
+        # w_struct adds to next-step augmented state. Under full-state
+        # feedback at time t, u_t does not depend on w_t. D_u == 0 by
+        # construction. (We could autodiff to verify, but the structural-da
+        # step intentionally adds w only after the u computation.)
+        Du_in_w_basis = jnp.zeros((horizon, plant.m_u, n_w), dtype=jnp.float64)
     else:  # pragma: no cover -- already validated
         raise AssertionError(w_channel)
 
     # === z channel ===
     if z_channel == Z_QR_COST:
-        Cz, Dz = _qr_cost_Cz_Dz(plant, schedule, Cu_arr, n_aug, n_w, n_plant, horizon)
+        Cz, Dz = _qr_cost_Cz_Dz(
+            plant, schedule, Cu_arr, Du_in_w_basis, n_aug, n_w, n_plant, horizon
+        )
     elif z_channel == Z_CONTROL:
-        # z = u_t = Cu_t @ x_aug + Du_t @ w. Already have Cu_arr, Du_arr (raw,
-        # in plant-w basis); for non-additive_force channels Du needs lifting
-        # via the same Bw transformation. For sensory_noise: u depends on
-        # sensory_obs which depends on plant state -- d u / d w_sensory comes
-        # from controller.step's d u / d obs, which we capture below by
-        # rebuilding the Jacobian against the lifted w. Simpler: re-jacobian
-        # against the lifted w (run jac_wu against the lifted step for these
-        # channels). For now we compute via:  Du = Cu @ Bw_raw_or_lifted...
-        # Cleaner: the chain rule gives d u / d w = (d u / d x_aug) * 0 +
-        # direct; but for sensory_noise w enters obs and hence u. For
-        # structural_da, w doesn't enter u directly (no feedthrough in step).
-        # Implementation: rebuild the u-jacobian against the lifted w-step.
-        if w_channel == W_ADDITIVE_FORCE:
-            Cz = Cu_arr
-            Dz = Du_arr
-        elif w_channel == W_SENSORY_NOISE:
-            # Du_lifted = d u / d w_sensory
-            _, _, Du_sensory = _sensory_noise_Bw(
-                plant, controller, sensory_map, x_nominal, horizon
-            )
-            Cz = Cu_arr
-            Dz = Du_sensory
-        else:  # structural_da
-            # w_struct enters x_aug additively; u sees it only via x at next
-            # step (no direct feedthrough at time t).
-            Cz = Cu_arr
-            Dz = jnp.zeros((horizon, plant.m_u, n_w), dtype=jnp.float64)
+        # z = u_t = Cu_t @ x_aug + Du_t @ w. Same-time feedthrough is
+        # exactly Du_in_w_basis (by definition of w basis).
+        Cz = Cu_arr
+        Dz = Du_in_w_basis
     elif z_channel == Z_STATE_ERROR:
         # z = x_aug[plant slice]  (we measure plant state deviation only;
         # controller hidden state is internal)
@@ -632,17 +634,22 @@ def linearise_trajectory(
     )
 
 
-def _sensory_noise_Bw(
+def _sensory_perturbation_Bw(
     plant: PlantLinearization,
     controller: Controller,
     sensory_map: Callable[[Float[Array, "n"]], Float[Array, "n_obs"]],
     x_nominal: Float[Array, "T_plus_1 n_aug"],
     horizon: int,
 ) -> Tuple[Float[Array, "T n_aug n_w"], int, Float[Array, "T m_u n_w"]]:
-    """Build B_w and D_u for the sensory-noise channel.
+    """Build B_w and D_u for the sensory-perturbation channel.
 
-    Sensory noise enters as ``obs = sensory_map(x_plant) + w``. Lifts to the
-    augmented step's ``w`` via:
+    The H-infinity sensory channel takes a deterministic L2-bounded input
+    ``w_obs`` that enters as ``obs = sensory_map(x_plant) + w_obs``. (Note:
+    H-inf does not distinguish stochastic noise from deterministic
+    perturbation; the previous ``sensory_noise`` naming is a deprecated
+    alias. Bug: ec7710f.)
+
+    Lifts to the augmented step's ``w`` via:
 
     .. math::
 
@@ -725,6 +732,7 @@ def _qr_cost_Cz_Dz(
     plant: PlantLinearization,
     schedule: CostSchedule,
     Cu_arr: Float[Array, "T m_u n_aug"],
+    Du_arr: Float[Array, "T m_u n_w"],
     n_aug: int,
     n_w: int,
     n_plant: int,
@@ -740,23 +748,31 @@ def _qr_cost_Cz_Dz(
 
     so that ``||z||_2^2 = sum_t (x^T Q_t x + u^T R_t u)`` -- the running
     Riccati cost. The state half acts only on the plant slice of the
-    augmented state; the control half is feed-through via ``u = Cu_t @ x_aug``
-    (with ``D_u`` for the additive_force channel handled by the caller; for
-    other channels ``D_u`` is rebuilt against the lifted ``w``).
+    augmented state and has zero feedthrough (``x_t`` does not depend on
+    ``w_t``). The control half feeds through ``sqrt(R_t) @ D_u``, where
+    ``D_u = du/dw`` in the *lifted* ``w`` basis is provided by the caller.
 
-    Note:
-        For non-``additive_force`` channels, the ``D_z`` for the control half
-        is **not** filled in by this helper -- the caller composes it via
-        ``D_z = sqrt(R_t) @ D_u_lifted``. For the qr_cost channel we currently
-        only feed-through the additive_force branch's ``D_u`` (``D_u`` for
-        force-disturbance is zero by construction since force-w doesn't enter
-        ``u`` at time t). Callers using qr_cost on non-force channels should
-        verify the math on their channel.
+    Per-channel feedthrough ``D_u`` (computed by the caller via JAX autodiff):
+
+    - ``additive_force``: ``D_u == 0`` (force enters at the next state, not
+      the current control).
+    - ``sensory_perturbation``: ``D_u = ∂u/∂w_obs`` (controller observes
+      ``obs + w_obs`` and emits ``u_t`` at the same step).
+    - ``structural_da``: ``D_u == 0`` (``w_struct`` adds to the next-step
+      augmented state; with full-state feedback, ``u_t`` does not depend on
+      ``w_t`` at the same step).
+
+    Bug: ec7710f -- the previous implementation conservatively zeroed ``D_z``
+    for non-force channels; this was a strict underestimate of the induced
+    gain. Now ``D_z`` is composed exactly from the supplied ``D_u``.
 
     Args:
         plant: Linearised plant.
         schedule: Cost schedule.
         Cu_arr: ``d u / d x_aug``, shape ``(T, m_u, n_aug)``.
+        Du_arr: ``d u / d w`` in the lifted ``w`` basis, shape
+            ``(T, m_u, n_w)``. May be all zeros (e.g. ``additive_force``,
+            ``structural_da``).
         n_aug: Augmented state dimension.
         n_w: Disturbance dimension (after channel lift).
         n_plant: Plant state dimension.
@@ -793,14 +809,11 @@ def _qr_cost_Cz_Dz(
 
     Cz = jnp.concatenate([Cz_state, Cz_ctrl], axis=1)  # (T, n_plant + m_u, n_aug)
 
-    # D_z: state half has no feedthrough; control half feeds through
-    # sqrt(R_t) @ D_u, which depends on the w channel. The caller is expected
-    # to have computed D_u in the same w basis. For additive_force, D_u == 0
-    # at time t (force enters next-step state). For sensory_noise, D_u may be
-    # nonzero. For structural_da, D_u == 0.
-    # Conservative default: zeros. If the user wants exact qr_cost on
-    # sensory_noise they should rebuild via the high-level wrapper.
-    Dz = jnp.zeros((horizon, n_plant + plant.m_u, n_w), dtype=jnp.float64)
+    # D_z: state half has no feedthrough (x_t does not depend on w_t).
+    # Control half: D_z_ctrl = sqrt(R_t) @ D_u (in the lifted w basis).
+    Dz_state = jnp.zeros((horizon, n_plant, n_w), dtype=jnp.float64)
+    Dz_ctrl = jnp.einsum("tij,tjk->tik", R_sqrt, Du_arr)  # (T, m_u, n_w)
+    Dz = jnp.concatenate([Dz_state, Dz_ctrl], axis=1)  # (T, n_plant + m_u, n_w)
     return Cz, Dz
 
 
@@ -844,8 +857,8 @@ def linearise_fixed_point(
     Returns:
         A ``FixedPointLinearisation``.
     """
-    _validate_w_channel(w_channel)
-    _validate_z_channel(z_channel)
+    w_channel = _validate_w_channel(w_channel)
+    z_channel = _validate_z_channel(z_channel)
     if z_channel == Z_QR_COST and schedule is None:
         raise ValueError("z_channel='qr_cost' requires a CostSchedule.")
     if sensory_map is None:
@@ -899,11 +912,15 @@ def linearise_fixed_point(
     if w_channel == W_ADDITIVE_FORCE:
         Bw = Bw_force
         n_w = m_w_force
-    elif w_channel == W_SENSORY_NOISE:
-        Bw, n_w, Du = _sensory_noise_fp_Bw(plant, controller, sensory_map, x_star, t_idx)
+        Du_in_w_basis = Du_force
+    elif w_channel == W_SENSORY_PERTURBATION:
+        Bw, n_w, Du_in_w_basis = _sensory_perturbation_fp_Bw(
+            plant, controller, sensory_map, x_star, t_idx
+        )
     elif w_channel == W_STRUCTURAL_DA:
         Bw = jnp.eye(n_aug, dtype=jnp.float64)
         n_w = n_aug
+        Du_in_w_basis = jnp.zeros((plant.m_u, n_w), dtype=jnp.float64)
     else:  # pragma: no cover
         raise AssertionError(w_channel)
 
@@ -925,15 +942,14 @@ def linearise_fixed_point(
         )
         Cz_ctrl = R_sqrt @ Cu
         Cz = jnp.concatenate([Cz_state, Cz_ctrl], axis=0)
-        D = jnp.zeros((n_plant + plant.m_u, n_w), dtype=jnp.float64)
+        # D_z: state half is zero (state at fp does not depend on w),
+        # control half = sqrt(R) @ D_u_in_w_basis. Bug: ec7710f.
+        D_state = jnp.zeros((n_plant, n_w), dtype=jnp.float64)
+        D_ctrl = R_sqrt @ Du_in_w_basis
+        D = jnp.concatenate([D_state, D_ctrl], axis=0)
     elif z_channel == Z_CONTROL:
         Cz = Cu
-        if w_channel == W_ADDITIVE_FORCE:
-            D = Du_force
-        elif w_channel == W_SENSORY_NOISE:
-            D = Du
-        else:  # structural_da
-            D = jnp.zeros((plant.m_u, n_w), dtype=jnp.float64)
+        D = Du_in_w_basis
     elif z_channel == Z_STATE_ERROR:
         I_plant = jnp.eye(n_plant, dtype=jnp.float64)
         Cz = jnp.concatenate(
@@ -964,14 +980,14 @@ def linearise_fixed_point(
     )
 
 
-def _sensory_noise_fp_Bw(
+def _sensory_perturbation_fp_Bw(
     plant: PlantLinearization,
     controller: Controller,
     sensory_map: Callable[[Float[Array, "n"]], Float[Array, "n_obs"]],
     x_star: Float[Array, "n_aug"],
     t_idx: int,
 ) -> Tuple[Float[Array, "n_aug n_obs"], int, Float[Array, "m_u n_obs"]]:
-    """Sensory-noise B_w and D_u at a fixed point. See ``_sensory_noise_Bw``."""
+    """Sensory-perturbation B_w and D_u at a fixed point. See ``_sensory_perturbation_Bw``."""
     n_plant = plant.n
     A = plant.A.astype(jnp.float64)
     B = plant.B.astype(jnp.float64)
@@ -1489,8 +1505,8 @@ def induced_gain(
     Returns:
         A dict mapping method name to ``InducedGainResult``.
     """
-    _validate_w_channel(w_channel)
-    _validate_z_channel(z_channel)
+    w_channel = _validate_w_channel(w_channel)
+    z_channel = _validate_z_channel(z_channel)
 
     out: dict = {}
 
@@ -1596,7 +1612,8 @@ def _decorate_peak_velocity(
 __all__ = [
     # Channel sentinels
     "W_ADDITIVE_FORCE",
-    "W_SENSORY_NOISE",
+    "W_SENSORY_PERTURBATION",
+    "W_SENSORY_NOISE",  # deprecated alias for W_SENSORY_PERTURBATION
     "W_STRUCTURAL_DA",
     "Z_QR_COST",
     "Z_CONTROL",
