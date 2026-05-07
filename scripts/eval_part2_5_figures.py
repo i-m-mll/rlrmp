@@ -27,10 +27,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from train_part2_5 import build_hps
 from feedbax._io import load_with_hyperparameters
+from feedbax.plot.io import save_figure_with_spec
 from feedbax.train import init_task_trainer_history
 from rlrmp.modules.training.part2 import setup_task_model_pair
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
-from rlrmp.paths import figure_artifact_dir, run_artifact_dir
+from rlrmp.paths import figure_artifact_dir, figure_spec_dir, run_artifact_dir
 
 
 # ---------------------------------------------------------------------------
@@ -42,6 +43,9 @@ from rlrmp.paths import figure_artifact_dir, run_artifact_dir
 # Trained models and training histories are loaded from run_artifact_dir.
 # Bug: fd64bb4 — structure migration phase 2 (role-based path helpers)
 FIGURES_DIR = figure_artifact_dir("part2_5", "eval_by_sisu")
+# Tracked spec directory for the spec.json + thumbnail. Bug: 0077b42 — Phase 2
+# completion: figure-spec wiring via feedbax.plot.io.save_figure_with_spec.
+FIGURES_SPEC_DIR = figure_spec_dir("part2_5", "eval_by_sisu")
 
 CONDITIONS = {
     "running_cost": run_artifact_dir("part2_5", "running_cost__standard"),
@@ -393,11 +397,86 @@ def make_fig_metric_by_sisu(
 
 
 # ---------------------------------------------------------------------------
+# Figure-spec helpers (Bug: 0077b42)
+# ---------------------------------------------------------------------------
+
+def _condition_input_entries(loaded: dict) -> list[dict]:
+    """Build ``inputs`` entries (path strings) for ``save_figure_with_spec``.
+
+    Each loaded condition contributes its tracked ``run.json`` (or legacy
+    ``config.json``) plus the bulk ``train_history.eqx`` and
+    ``trained_model.eqx`` artifacts. SHA-256 digests are computed by the
+    feedbax helper if absent; we list only paths here.
+
+    Args:
+        loaded: Mapping from condition name to dict containing ``"config"``
+            (and the original artifact dir is recovered from the same
+            ``CONDITIONS`` mapping at module scope).
+
+    Returns:
+        List of dicts with ``"path"`` keys that exist on disk.
+    """
+    entries: list[dict] = []
+    for cond_name in loaded:
+        cond_dir = CONDITIONS[cond_name]
+        for fname in ("run.json", "config.json", "train_history.eqx",
+                      "trained_model.eqx"):
+            p = cond_dir / fname
+            if p.exists():
+                entries.append({"path": str(p)})
+    return entries
+
+
+def _save_figure(
+    fig,
+    name: str,
+    transform_name: str,
+    plot_kwargs: dict,
+    inputs: list[dict],
+) -> None:
+    """Write a Plotly figure plus its tracked spec via feedbax.plot.io.
+
+    Renders the heavy ``.html`` under ``FIGURES_DIR`` (gitignored mirror)
+    and writes the matching ``spec.json`` under ``FIGURES_SPEC_DIR``
+    (tracked). Two calls to ``save_figure_with_spec`` are made — once for
+    the spec (no render) and once for the render (no extra spec) — because
+    the helper writes both side-by-side; we want them in different roots.
+
+    Args:
+        fig: A Plotly Figure.
+        name: Base filename (no extension) used for both spec and render.
+        transform_name: Name of the data-transform pipeline that produced
+            the figure (recorded under ``spec["transform"]``).
+        plot_kwargs: The kwargs passed to the figure constructor (recorded
+            under ``spec["plot_kwargs"]``).
+        inputs: ``[{ "path": ... }, ...]`` listing input artifacts.
+    """
+    spec = {
+        "figure_kind": transform_name,
+        "inputs": inputs,
+        "transform": [{"name": transform_name, "kwargs": {}}],
+        "plot_kwargs": plot_kwargs,
+    }
+    # Spec under tracked results/<exp>/figures/<fig>/.
+    save_figure_with_spec(
+        fig, spec, FIGURES_SPEC_DIR,
+        name=name, save_render=False, extra_packages=["rlrmp"],
+    )
+    # Heavy render under _artifacts/<exp>/figures/<fig>/.
+    save_figure_with_spec(
+        fig, spec, FIGURES_DIR,
+        name=name, save_render=True, render_format="html",
+        extra_packages=["rlrmp"],
+    )
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 def main():
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+    FIGURES_SPEC_DIR.mkdir(parents=True, exist_ok=True)
 
     print("Loading conditions...")
     loaded = {}
@@ -413,12 +492,22 @@ def main():
             print(f"  {cond_name}: FAILED to load — {e}")
             continue
 
+    # Inputs registry shared across figures (paths to all loaded condition
+    # specs + bulk artifacts; SHA-256 digests are computed by the helper).
+    inputs = _condition_input_entries(loaded)
+    conditions_meta = {"conditions": list(loaded.keys()), "n_replicates": N_REPLICATES}
+
     # --- Loss curves figure ---
     print("\nGenerating loss curves figure...")
     all_histories = {name: d["history"] for name, d in loaded.items()}
     fig_loss = make_fig_loss_curves(all_histories)
-    fig_loss.write_html(str(FIGURES_DIR / "fig_loss_curves.html"))
-    print(f"  Saved: {FIGURES_DIR / 'fig_loss_curves.html'}")
+    _save_figure(
+        fig_loss, "fig_loss_curves",
+        transform_name="make_fig_loss_curves",
+        plot_kwargs=conditions_meta,
+        inputs=inputs,
+    )
+    print(f"  Saved render+spec: {FIGURES_DIR / 'fig_loss_curves.html'}")
 
     # --- Evaluate at SISU levels ---
     print("\nEvaluating at SISU levels (no evaluation perturbation)...")
@@ -434,6 +523,8 @@ def main():
             metrics_by_sisu[sisu_val] = metrics
         metrics_by_cond[cond_name] = metrics_by_sisu
 
+    sisu_meta = {**conditions_meta, "sisu_levels": list(SISU_LEVELS)}
+
     # --- Peak velocity figure ---
     print("\nGenerating peak velocity figure...")
     fig_vel = make_fig_metric_by_sisu(
@@ -442,8 +533,13 @@ def main():
         "Peak Parallel Velocity vs SISU Level",
         "Peak Speed (m/s)",
     )
-    fig_vel.write_html(str(FIGURES_DIR / "fig_peak_velocity_by_sisu.html"))
-    print(f"  Saved: {FIGURES_DIR / 'fig_peak_velocity_by_sisu.html'}")
+    _save_figure(
+        fig_vel, "fig_peak_velocity_by_sisu",
+        transform_name="make_fig_metric_by_sisu",
+        plot_kwargs={**sisu_meta, "metric": "peak_velocity"},
+        inputs=inputs,
+    )
+    print(f"  Saved render+spec: {FIGURES_DIR / 'fig_peak_velocity_by_sisu.html'}")
 
     # --- Endpoint error figure ---
     print("\nGenerating endpoint error figure...")
@@ -453,8 +549,13 @@ def main():
         "Endpoint Error vs SISU Level",
         "Endpoint Error (m)",
     )
-    fig_ee.write_html(str(FIGURES_DIR / "fig_endpoint_error_by_sisu.html"))
-    print(f"  Saved: {FIGURES_DIR / 'fig_endpoint_error_by_sisu.html'}")
+    _save_figure(
+        fig_ee, "fig_endpoint_error_by_sisu",
+        transform_name="make_fig_metric_by_sisu",
+        plot_kwargs={**sisu_meta, "metric": "endpoint_error"},
+        inputs=inputs,
+    )
+    print(f"  Saved render+spec: {FIGURES_DIR / 'fig_endpoint_error_by_sisu.html'}")
 
     # --- Lateral deviation figure (no perturbation, by SISU) ---
     print("\nGenerating lateral deviation figure (no perturbation)...")
@@ -464,10 +565,16 @@ def main():
         "Max Lateral Deviation vs SISU Level (No Perturbation)",
         "Max Lateral Deviation (m)",
     )
-    fig_lat.write_html(str(FIGURES_DIR / "fig_lateral_deviation_by_sisu.html"))
-    print(f"  Saved: {FIGURES_DIR / 'fig_lateral_deviation_by_sisu.html'}")
+    _save_figure(
+        fig_lat, "fig_lateral_deviation_by_sisu",
+        transform_name="make_fig_metric_by_sisu",
+        plot_kwargs={**sisu_meta, "metric": "max_lateral_deviation"},
+        inputs=inputs,
+    )
+    print(f"  Saved render+spec: {FIGURES_DIR / 'fig_lateral_deviation_by_sisu.html'}")
 
     print("\nAll figures saved to:", FIGURES_DIR)
+    print("All specs saved to:  ", FIGURES_SPEC_DIR)
 
 
 if __name__ == "__main__":
