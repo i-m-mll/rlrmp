@@ -239,7 +239,18 @@ results/**
 !results/**/*.md
 # Run specs (canonical: run.json; legacy: config.json):
 !results/**/run.json
-!results/**/config.json
+# config.json whitelisted at specific depths only — intentionally NOT `!results/**/config.json`.
+# The broad glob is depth-blind and would track bulk per-run configs from cloud providers
+# (runpod/, modal/, coreweave/, etc.) that land deep in the tree. Restrict to the three
+# legacy layouts that actually exist:
+#   depth 2: results/<exp>/config.json
+#   depth 3: results/<exp>/<subdir>/config.json  (e.g. running_cost_nn1e6/)
+#   depth 4 via models/: results/<exp>/models/<run>/config.json
+# If you find yourself wanting to add a new depth or path here, the config.json is probably
+# a bulk artifact — put it under _artifacts/ and use run.json for the spec.
+!results/*/config.json
+!results/*/*/config.json
+!results/*/models/*/config.json
 # Figure / analysis specs (always committed, see threshold rule for renders):
 !results/**/spec.json
 # Small Plotly figure JSON (commit only when ≤ 2 MB; enforced by the saver helper):
