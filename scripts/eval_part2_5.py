@@ -124,7 +124,10 @@ def evaluate_at_pert_std(
     # Evaluate using the task's built-in evaluation
     states, losses = task.eval_ensemble_with_loss(
         model,
-        n_replicates=model.step.net.hidden.cell.weight_hh.shape[0],  # infer from model
+        # Bug: b131510 — under feedbax's eager-graph API, the network sits
+        # at ``model.net`` (graph node), not ``model.step.net`` (legacy
+        # staged-model API). Original code referenced the latter.
+        n_replicates=model.net.hidden.cell.weight_hh.shape[0],  # infer from model
         key=key_eval,
     )
 
@@ -171,7 +174,8 @@ def apply_feedback_perturbation(
 
     states_base, _ = task.eval_ensemble_with_loss(
         model,
-        n_replicates=model.step.net.hidden.cell.weight_hh.shape[0],
+        # Bug: b131510 — see note on the prior call site.
+        n_replicates=model.net.hidden.cell.weight_hh.shape[0],
         key=key_base,
     )
     trial_specs = task.validation_trials

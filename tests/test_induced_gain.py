@@ -603,6 +603,83 @@ def test_dz_feedthrough_sensory_perturbation_qr_cost():
     assert (g_corrected - g_old) / max(g_old, 1e-30) > 1e-4
 
 
+def test_feedbax_graph_controller_smoke():
+    """Smoke test: ``feedbax_graph_controller`` wires up a minimal pass-through.
+
+    Bug: b131510. Builds a trivial feedbax ``Graph`` with one component that
+    multiplies its observation by a fixed gain, plus one ``StateIndex`` to
+    exercise the flatten/unflatten round-trip. Verifies that the adapter's
+    ``initial_state`` and ``step`` produce the expected output and that the
+    flat-state shape is consistent.
+    """
+    import equinox as eqx
+    from equinox.nn import State, StateIndex
+    from feedbax.graph import Component, Graph, Wire, init_state_from_component
+
+    from rlrmp.analysis.induced_gain import feedbax_graph_controller
+
+    class GainComponent(Component):
+        """y = -K @ x; carries a 1-element counter to exercise stateful flatten."""
+        input_ports = ("input",)
+        output_ports = ("output",)
+
+        K: jnp.ndarray
+        state_index: StateIndex
+
+        def __init__(self, K):
+            self.K = K
+            self.state_index = StateIndex(jnp.zeros((1,), dtype=jnp.float64))
+
+        def __call__(self, inputs, state, *, key):
+            x = inputs["input"]
+            counter = state.get(self.state_index)
+            state = state.set(self.state_index, counter + 1.0)
+            u = -self.K @ x
+            return {"output": u}, state
+
+    K = jnp.array([[1.0, 0.5]], dtype=jnp.float64)
+    node = GainComponent(K)
+    graph = Graph(
+        nodes={"net": node},
+        wires=(),
+        input_ports=("input",),
+        output_ports=("output",),
+        input_bindings={"input": ("net", "input")},
+        output_bindings={"output": ("net", "output")},
+    )
+
+    key = jax.random.PRNGKey(0)
+    ctrl = feedbax_graph_controller(graph, key=key)
+    h0 = ctrl.initial_state()
+    # The state contains a single 1-element float counter.
+    assert h0.shape == (1,)
+    assert float(h0[0]) == 0.0
+
+    obs = jnp.array([2.0, 4.0], dtype=jnp.float64)
+    h1, u1 = ctrl.step(h0, obs, 0)
+    # Output: u = -K @ obs = -[2.0 + 0.5*4.0] = -4.0
+    assert float(u1[0]) == pytest.approx(-4.0, abs=1e-12)
+    # Counter incremented from 0 to 1.
+    assert float(h1[0]) == 1.0
+
+    # Second step uses the new state.
+    h2, u2 = ctrl.step(h1, obs, 1)
+    assert float(h2[0]) == 2.0
+    assert float(u2[0]) == pytest.approx(-4.0, abs=1e-12)
+
+
+def test_feedbax_rnn_controller_deprecated_raises():
+    """The old ``feedbax_rnn_controller`` adapter raises with a migration message.
+
+    Bug: b131510. The old API assumed staged-model plumbing; new code must
+    use ``feedbax_graph_controller``.
+    """
+    from rlrmp.analysis.induced_gain import feedbax_rnn_controller
+
+    with pytest.raises(NotImplementedError, match="feedbax_graph_controller"):
+        feedbax_rnn_controller(lambda h, o, t: (h, o), jnp.zeros(3))
+
+
 def test_dz_feedthrough_lti_analytic():
     """D_z feedthrough analytic check on a hand-rolled toy LTI controller.
 
