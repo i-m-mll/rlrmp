@@ -1055,7 +1055,7 @@ def induced_gain_power_iteration(
     *,
     n_restarts: int = 5,
     rtol: float = 1e-6,
-    max_iter: int = 200,
+    max_iter: int = 500,
     seed: int = 0,
     return_trajectory: bool = True,
 ) -> InducedGainResult:
@@ -1071,6 +1071,22 @@ def induced_gain_power_iteration(
     or off-by-one indexing) and it works uniformly across all channels
     without per-channel adjoint code.
 
+    Round-trip band for an LTI Riccati controller designed at ``gamma_design``:
+        ``||T||_PI`` lies in ``(gamma_star, gamma_design]``. ``gamma_star`` is
+        the H-infinity *infimum* (no admissible LTI controller can hit it
+        exactly on a finite horizon), so the analyser gain is always strictly
+        above ``gamma_star`` and bounded above by the design level. Empirically
+        this band is regime-dependent: for the rlrmp point-mass regime
+        (mass=1, damping=10, tau=0.05, dt=0.01), with ``gamma_design = 1.5 *
+        gamma_star``, the long-horizon plateau is around ``1.21 * gamma_star``.
+        See ``scripts/probe_round_trip_ratio.py`` for the diagnostic sweep.
+
+    Note:
+        ``max_iter`` defaults to 500. Long horizons (T >= 200) frequently need
+        more than 200 iterations to satisfy ``rtol = 1e-6`` because the
+        operator's leading-singular-value gap shrinks; bumping the default is
+        cheaper than per-call surgery. See bug ``3c74e3b``.
+
     Args:
         lin: Trajectory linearisation.
         n_restarts: Number of random initial ``w`` vectors. The reported
@@ -1078,7 +1094,8 @@ def induced_gain_power_iteration(
             against converging to a non-leading singular value.
         rtol: Convergence tolerance: relative change in ``gamma`` below this
             for two consecutive iterations triggers convergence.
-        max_iter: Maximum iterations per restart.
+        max_iter: Maximum iterations per restart. Default 500 covers long
+            horizons; tighten for short horizons if needed.
         seed: Base RNG seed for restart initialisations.
         return_trajectory: If True, simulate and store the closed-loop
             augmented trajectory under the worst-case ``w``.
@@ -1432,13 +1449,20 @@ def induced_gain(
     sensory_map: Optional[Callable[[Float[Array, "n"]], Float[Array, "n_obs"]]] = None,
     n_restarts: int = 5,
     rtol: float = 1e-6,
-    max_iter: int = 200,
+    max_iter: int = 500,
     seed: int = 0,
 ) -> dict:
     """High-level induced-gain analyser combining linearise + algorithm.
 
     Returns a dict with one ``InducedGainResult`` per method requested. The
     keys are the method names (``"power_iteration"``, ``"hamiltonian"``).
+
+    Round-trip band for an LTI controller designed at ``gamma_design``:
+        ``||T||_PI in (gamma_star, gamma_design]`` (the H-inf optimum
+        ``gamma_star`` is an infimum, never reached by a finite-horizon
+        LTI controller; the actual closed-loop gain is strictly larger but
+        bounded above by the design level). Regime-dependent in practice;
+        see ``scripts/probe_round_trip_ratio.py`` and bug ``3c74e3b``.
 
     For the ``peak_velocity`` z channel: the power-iteration result on the
     velocity-norm channel is returned in ``InducedGainResult.gamma``, and the

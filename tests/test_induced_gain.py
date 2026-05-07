@@ -182,20 +182,30 @@ def test_adjoint_correctness():
 
 
 def test_riccati_round_trip_qr_cost():
-    """Induced gain of an H-inf controller is bounded above by its design gamma.
+    """Induced gain of an H-inf controller lies in (gamma_star, gamma_design].
 
-    Verifies the analyser's gain on the LTV (qr_cost, additive_force) lies
-    below the design ``gamma`` (the H-inf saddle-point upper bound) and is
-    finite. This is the core round-trip sanity: dropping a Riccati controller
-    into the analyser yields a number consistent with H-inf theory.
+    The expected band is theoretical:
 
-    The exact equality ``analyser_gain == gamma_star`` is not expected at the
-    bisection's admissibility boundary -- ``find_gamma_star`` returns the
-    smallest numerically-admissible gamma, which is an upper bound on the
-    true H-inf optimum (boundary effects in finite-horizon LQ game). We
-    require the ratio to be in [0.5, 1.0].
+    - Upper bound ``||T||_PI <= gamma_design``: the controller is designed to
+      attenuate disturbances at level ``gamma_design = 1.5 * gamma_star``.
+    - Strict lower bound ``||T||_PI > gamma_star``: ``gamma_star`` is the
+      H-infinity *infimum*; no admissible finite-horizon LTI controller can
+      realise it exactly. A controller designed at ``gamma_design > gamma_star``
+      is suboptimal, so its actual closed-loop gain is strictly above
+      ``gamma_star`` and bounded by the design level.
+
+    Empirically (rlrmp point-mass regime, gamma_design=1.5*gamma_star) the
+    analyser gain plateaus at ~1.21 * gamma_star at long horizons (n>=200);
+    at short horizons (n<=100) the ratio dips below 1.0, which is an
+    artefact of the finite-horizon ``find_gamma_star`` bisection finding a
+    smaller infimum than the long-horizon limit. We therefore use a long
+    horizon (n=200) for this test to land cleanly in the (gamma_star,
+    gamma_design] band. See ``scripts/probe_round_trip_ratio.py`` and bug
+    ``3c74e3b``.
     """
-    plant, schedule = _rlrmp_setup()
+    plant = linearize_pointmass(mass=1.0, damping=10.0, tau=0.05, dt=0.01)
+    spec = CostSpec(n_steps=200)
+    schedule = cost_schedule_from_spec(spec, plant)
     g_star = find_gamma_star(plant, schedule)
     gamma_design = 1.5 * g_star
     hinf = solve_hinf_riccati(plant, schedule, gamma_design)
@@ -210,23 +220,23 @@ def test_riccati_round_trip_qr_cost():
         ctrl,
         init_pos=init_pos,
         target_pos=target_pos,
-        horizon=80,
+        horizon=200,
         w_channel=W_ADDITIVE_FORCE,
         z_channel=Z_QR_COST,
         schedule=schedule,
         methods=("power_iteration",),
         n_restarts=5,
-        max_iter=500,
-        rtol=1e-8,
+        max_iter=800,
+        rtol=1e-6,
     )
     pi = out["power_iteration"]
     assert pi.converged
-    # Upper bound: ||T||_inf < gamma_design (the design level is admissible).
-    assert pi.gamma < gamma_design
-    # Lower bound: > 0 (the closed loop has nonzero disturbance amplification).
-    assert pi.gamma > 0
-    # Sanity: the analyser gain is on the same order of magnitude as gamma_star.
-    assert 0.3 * g_star < pi.gamma < gamma_design
+    # Tightened band: strict above gamma_star, bounded above by gamma_design.
+    # Bug: 3c74e3b — was [0.3 * gamma_star, gamma_design]; the previous lower
+    # band was lax to accommodate short-horizon gamma_star artefacts. The
+    # n=200 horizon avoids those artefacts.
+    assert pi.gamma > g_star
+    assert pi.gamma <= gamma_design
 
 
 def test_lqr_round_trip_qr_cost():
