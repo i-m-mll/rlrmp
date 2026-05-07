@@ -36,6 +36,7 @@ from feedbax.types import TaskModelPair, TreeNamespace, dict_to_namespace
 from jaxtyping import PyTree
 
 from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.paths import REPO_ROOT, mkdir_p
 
 logger = logging.getLogger(__name__)
 
@@ -621,6 +622,39 @@ class APTTrainingWrapper:
 
 
 # ---------------------------------------------------------------------------
+# Spec-dir / artifact-dir helpers
+# ---------------------------------------------------------------------------
+
+def derive_spec_dir(output_dir: Path) -> Path:
+    """Derive the run spec directory from the run artifact directory.
+
+    Applies the mirror invariant ``run_artifact_dir(exp, run)`` ↔
+    ``run_spec_dir(exp, run)``: paths under ``<repo>/_artifacts/...`` are
+    re-rooted under ``<repo>/results/...`` (and vice versa). Any path that
+    does not live under one of the two mirror roots is mapped to a sibling
+    ``_specs/`` directory next to ``output_dir`` so the script still has a
+    sensible default for ad-hoc / out-of-tree paths.
+
+    Args:
+        output_dir: Absolute or relative path to the bulk-artifact directory
+            (typically under ``_artifacts/<exp>/runs/<run>/``).
+
+    Returns:
+        Absolute path to the corresponding spec directory under
+        ``results/<exp>/runs/<run>/`` when ``output_dir`` is inside the
+        ``_artifacts/`` tree; otherwise a sibling ``<output_dir>_spec``.
+    """
+    out = Path(output_dir).resolve()
+    artifact_root = (REPO_ROOT / "_artifacts").resolve()
+    spec_root = (REPO_ROOT / "results").resolve()
+    try:
+        rel = out.relative_to(artifact_root)
+        return spec_root / rel
+    except ValueError:
+        return out.parent / (out.name + "_spec")
+
+
+# ---------------------------------------------------------------------------
 # Main training logic
 # ---------------------------------------------------------------------------
 
@@ -659,13 +693,23 @@ def run_training(args: argparse.Namespace) -> None:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save the full configuration for reproducibility
-    config_path = output_dir / "config.json"
+    # Spec dir holds tracked recipe/run.json; artifact dir holds bulk outputs.
+    # When --spec-dir is unset, derive it from --output-dir via the mirror
+    # invariant (paths.run_artifact_dir(exp, run) ↔ paths.run_spec_dir(exp, run)).
+    # Bug: 0077b42
+    spec_dir = (
+        Path(args.spec_dir) if args.spec_dir is not None
+        else derive_spec_dir(output_dir)
+    )
+    mkdir_p(spec_dir)
+
+    # Save the full configuration as a tracked spec at <spec_dir>/run.json.
     config_dict = vars(args)
     config_dict["git"] = _get_git_metadata()
-    with open(config_path, "w") as f:
+    spec_path = spec_dir / "run.json"
+    with open(spec_path, "w") as f:
         json.dump(config_dict, f, indent=2, default=str)
-    logger.info("Saved config to %s", config_path)
+    logger.info("Saved run spec to %s", spec_path)
 
     hps = build_hps(args)
 
@@ -926,6 +970,16 @@ def parse_args() -> argparse.Namespace:
             "Use rlrmp.paths.run_artifact_dir(exp, run) to construct this path "
             "programmatically. Write run.json to the sibling spec directory "
             "results/<exp>/runs/<run>/ via rlrmp.paths.run_spec_dir(exp, run)."
+        ),
+    )
+    parser.add_argument(
+        "--spec-dir", type=str, default=None,
+        help=(
+            "Spec directory for the tracked run.json recipe (default: derived "
+            "from --output-dir via the mirror invariant, mapping "
+            "_artifacts/<exp>/runs/<run>/ -> results/<exp>/runs/<run>/). "
+            "Use rlrmp.paths.run_spec_dir(exp, run) to construct this path "
+            "programmatically. Bug: 0077b42."
         ),
     )
     return parser.parse_args()

@@ -47,6 +47,7 @@ sys.path.insert(0, str(WORKTREE / "scripts"))
 
 from train_minimax import build_hps  # noqa: E402
 from eval_minimax import load_config, load_model, load_adversary  # noqa: E402
+from feedbax.plot.io import save_figure_with_spec  # noqa: E402
 from eval_part2_5_figures import (  # noqa: E402
     eval_ensemble_on_trials,
     compute_kinematics,
@@ -529,11 +530,35 @@ def plot_adversary_force_profiles(
     ax.set_ylim(bottom=0)
     ax.grid(True, alpha=0.3)
 
-    out_path = results_dir / "adversary_force_profiles.png"
     fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
+
+    # Write the figure plus a tracked spec.json via the feedbax helper.
+    # Bug: 0077b42 — Phase 2 completion: figure-spec wiring.
+    inputs: list[dict] = []
+    if profile_path.exists():
+        inputs.append({"path": str(profile_path)})
+    spec = {
+        "figure_kind": "adversary_force_profiles",
+        "inputs": inputs,
+        "transform": [
+            {"name": "plot_adversary_force_profiles", "kwargs": {}},
+        ],
+        "plot_kwargs": {
+            "n_replicates": int(n_replicates),
+            "n_timesteps": int(n_timesteps),
+            "dt": float(dt),
+        },
+    }
+    save_figure_with_spec(
+        fig, spec, results_dir,
+        name="adversary_force_profiles",
+        save_render=True, render_format="png",
+        extra_packages=["rlrmp"],
+    )
     plt.close(fig)
-    print(f"  Saved adversary force profile plot → {out_path}")
+    print(
+        f"  Saved adversary force profile plot + spec → {results_dir}"
+    )
 
 
 # ---------------------------------------------------------------------------
