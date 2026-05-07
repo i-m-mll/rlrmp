@@ -49,6 +49,8 @@ from rlrmp.analysis.hinf_riccati import (
 from rlrmp.analysis.induced_gain import (
     TrajectoryLinearisation,
     W_ADDITIVE_FORCE,
+    W_SENSORY_NOISE,
+    W_SENSORY_PERTURBATION,
     W_STRUCTURAL_DA,
     Z_CONTROL,
     Z_PEAK_VELOCITY,
@@ -503,3 +505,148 @@ def test_qr_cost_requires_schedule():
             z_channel=Z_QR_COST,
             schedule=None,
         )
+
+
+# -----------------------------------------------------------------------------
+# Sensory-perturbation rename + D_z feedthrough
+# -----------------------------------------------------------------------------
+
+
+def test_sensory_noise_alias_resolves_to_perturbation():
+    """The deprecated ``sensory_noise`` alias resolves to sensory_perturbation.
+
+    Bug: ec7710f. Verifies (a) the constant ``W_SENSORY_NOISE`` is an alias of
+    ``W_SENSORY_PERTURBATION``, and (b) the literal string ``"sensory_noise"``
+    still validates and produces the same operator.
+    """
+    assert W_SENSORY_NOISE == W_SENSORY_PERTURBATION == "sensory_perturbation"
+
+    plant, schedule = _rlrmp_setup()
+    lqr = solve_lqr(plant, schedule)
+    ctrl = lti_controller(lqr.K)
+    init_pos = jnp.array([0.0, 0.0])
+    target_pos = jnp.array([0.1, 0.0])
+
+    # Old string still works.
+    lin_old = linearise_trajectory(
+        plant, ctrl,
+        init_pos=init_pos, target_pos=target_pos, horizon=40,
+        w_channel="sensory_noise", z_channel=Z_STATE_ERROR,
+    )
+    lin_new = linearise_trajectory(
+        plant, ctrl,
+        init_pos=init_pos, target_pos=target_pos, horizon=40,
+        w_channel="sensory_perturbation", z_channel=Z_STATE_ERROR,
+    )
+    # Operator matrices should match exactly.
+    assert jnp.allclose(lin_old.A_t, lin_new.A_t)
+    assert jnp.allclose(lin_old.Bw_t, lin_new.Bw_t)
+    assert jnp.allclose(lin_old.Cz_t, lin_new.Cz_t)
+    assert jnp.allclose(lin_old.D_t, lin_new.D_t)
+    # The new linearisation reports the canonical name.
+    assert lin_new.w_channel == "sensory_perturbation"
+
+
+def test_dz_feedthrough_sensory_perturbation_qr_cost():
+    """Computing D_z exactly raises the gain over the zero-Dz approximation.
+
+    Bug: ec7710f. Builds an LTV operator with the production sensory-perturbation
+    × qr_cost feedthrough, then builds the same operator with D_t zeroed (the
+    pre-fix behaviour), and verifies the corrected gain is strictly larger.
+
+    For sensory_perturbation × qr_cost on full-state-feedback LQR, D_u = -K
+    (since u = -K(x + w_obs)) and D_z_ctrl = sqrt(R) @ (-K). On a 2D point
+    mass with R diagonal and a nonzero LQR gain, D_z is non-trivially nonzero.
+    """
+    plant, schedule = _rlrmp_setup()
+    lqr = solve_lqr(plant, schedule)
+    ctrl = lti_controller(lqr.K)
+    init_pos = jnp.array([0.0, 0.0])
+    target_pos = jnp.array([0.1, 0.0])
+
+    lin_corrected = linearise_trajectory(
+        plant, ctrl,
+        init_pos=init_pos, target_pos=target_pos, horizon=40,
+        w_channel=W_SENSORY_PERTURBATION,
+        z_channel=Z_QR_COST,
+        schedule=schedule,
+    )
+    # The corrected operator has nonzero D_t for this channel pair.
+    assert float(jnp.linalg.norm(lin_corrected.D_t)) > 0.0
+
+    # Construct the pre-fix variant: same A, B_w, C_z, but D_t zeroed.
+    lin_old = TrajectoryLinearisation(
+        A_t=lin_corrected.A_t,
+        Bw_t=lin_corrected.Bw_t,
+        Cz_t=lin_corrected.Cz_t,
+        D_t=jnp.zeros_like(lin_corrected.D_t),
+        x_nominal=lin_corrected.x_nominal,
+        u_nominal=lin_corrected.u_nominal,
+        dt=lin_corrected.dt,
+        n_plant=lin_corrected.n_plant,
+        n_ctrl=lin_corrected.n_ctrl,
+        w_channel=lin_corrected.w_channel,
+        z_channel=lin_corrected.z_channel,
+    )
+
+    g_corrected = induced_gain_power_iteration(
+        lin_corrected, n_restarts=4, max_iter=400, rtol=1e-7
+    ).gamma
+    g_old = induced_gain_power_iteration(
+        lin_old, n_restarts=4, max_iter=400, rtol=1e-7
+    ).gamma
+    # Strict inequality: D_z fix raised the operator's leading singular value.
+    assert g_corrected > g_old, (
+        f"D_z fix should raise the gain: corrected={g_corrected}, old={g_old}"
+    )
+    # Sanity: increase is meaningful (not just numerical noise).
+    assert (g_corrected - g_old) / max(g_old, 1e-30) > 1e-4
+
+
+def test_dz_feedthrough_lti_analytic():
+    """D_z feedthrough analytic check on a hand-rolled toy LTI controller.
+
+    Build a 1D plant with simple LQR-style feedback; verify the linearisation
+    matches the closed-form D_z = sqrt(R) * (-K) for sensory_perturbation x
+    qr_cost.
+    """
+    # Toy: build a TrajectoryLinearisation directly by walking through the
+    # autodiff path with a hand-rolled 1D controller. We instead construct
+    # an artificial linearisation by hand using the analyser's _qr_cost_Cz_Dz
+    # helper — this validates the math at the helper level.
+    from rlrmp.analysis.induced_gain import _qr_cost_Cz_Dz
+    from rlrmp.analysis.hinf_riccati import CostSchedule
+
+    horizon = 5
+    n_plant = 2
+    m_u = 1
+    n_w = 2
+    n_aug = n_plant  # stateless controller
+
+    # Simple Q = I, R = I.
+    Q = jnp.tile(jnp.eye(n_plant)[None], (horizon, 1, 1)).astype(jnp.float64)
+    R = jnp.tile(jnp.eye(m_u)[None], (horizon, 1, 1)).astype(jnp.float64)
+    Q_f = jnp.eye(n_plant, dtype=jnp.float64)
+    schedule = CostSchedule(Q=Q, R=R, Q_f=Q_f)
+
+    # Cu = -K (constant) where K = [1.0, 0.5]. So d u / d x = -K.
+    K = jnp.array([[1.0, 0.5]], dtype=jnp.float64)  # (m_u, n_plant)
+    Cu_arr = jnp.tile((-K)[None], (horizon, 1, 1))  # (T, m_u, n_aug=n_plant)
+
+    # Sensory perturbation: u = -K (x + w_obs); so d u / d w = -K.
+    Du_arr = jnp.tile((-K)[None], (horizon, 1, 1))  # (T, m_u, n_w)
+
+    # Plant — needs a small mock for plant.m_u
+    class _Mock:
+        m_u = 1
+    plant_mock = _Mock()
+
+    Cz, Dz = _qr_cost_Cz_Dz(
+        plant_mock, schedule, Cu_arr, Du_arr,
+        n_aug=n_aug, n_w=n_w, n_plant=n_plant, horizon=horizon,
+    )
+    # State half of D_z is zero.
+    assert jnp.allclose(Dz[:, :n_plant, :], 0.0)
+    # Control half of D_z = sqrt(R) @ Du = I @ (-K) = -K (R = I).
+    expected_Dz_ctrl = jnp.tile((-K)[None], (horizon, 1, 1))
+    assert jnp.allclose(Dz[:, n_plant:, :], expected_Dz_ctrl, atol=1e-12)
