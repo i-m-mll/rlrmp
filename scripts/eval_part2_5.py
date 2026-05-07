@@ -23,6 +23,7 @@ import jax.random as jr
 import jax.tree as jt
 import numpy as np
 from feedbax._io import load_with_hyperparameters
+from feedbax.plot.io import save_figure_with_spec
 from feedbax.types import TreeNamespace
 
 from rlrmp.modules.training.part2 import setup_task_model_pair
@@ -251,13 +252,25 @@ def generate_figures(
     for col in range(1, 4):
         fig.update_xaxes(title_text="Perturbation Std", row=1, col=col)
 
-    fig_path = output_dir / "kinematic_metrics.html"
-    fig.write_html(str(fig_path))
-    logger.info("Saved figure to %s", fig_path)
-
-    # Also save as JSON for programmatic access
-    fig_json_path = output_dir / "kinematic_metrics.json"
-    fig.write_json(str(fig_json_path))
+    # Save the figure plus a tracked spec.json via the feedbax helper.
+    # Bug: 0077b42 — Phase 2 completion: figure-spec wiring.
+    spec = {
+        "figure_kind": "kinematic_metrics_vs_pert_std",
+        "inputs": [],
+        "transform": [
+            {"name": "evaluate_at_pert_std", "kwargs": {"pert_stds": pert_stds}},
+        ],
+        "plot_kwargs": {
+            "pert_stds": [float(p) for p in pert_stds],
+            "metrics": metric_names,
+        },
+    }
+    save_figure_with_spec(
+        fig, spec, output_dir,
+        name="kinematic_metrics", save_render=True, render_format="html",
+        extra_packages=["rlrmp"],
+    )
+    logger.info("Saved figure + spec to %s", output_dir)
 
 
 def run_evaluation(args: argparse.Namespace) -> None:
