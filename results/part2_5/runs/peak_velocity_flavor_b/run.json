@@ -1,0 +1,25 @@
+{
+  "experiment": "part2_5",
+  "run": "peak_velocity_flavor_b",
+  "spec_kind": "peak_velocity_analysis",
+  "subject": "flavor_b_trained_controllers",
+  "tracking_issue": "c723082",
+  "metric": "peak_forward_velocity",
+  "delta_v_baseline": "baseline_standard_12k",
+  "init_pos": [
+    0.0,
+    0.0
+  ],
+  "target_pos": [
+    0.15000000596046448,
+    0.0
+  ],
+  "sisu": 0.5,
+  "pert_scale": 0.0,
+  "eval_seed": 42,
+  "input_artifacts": {
+    "flavor_b_root": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__part2_5-flavor-b-runs/_artifacts/part2_5/runpod/flavor_b",
+    "run_json_root": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__part2_5-flavor-b-runs/results/part2_5/runs",
+    "baseline_root": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/part2_5/runpod"
+  }
+}
