@@ -376,10 +376,13 @@ but *not* what C&S synthesise the controller against.
 
 The +1.00% on C&S regime grows toward C&S Fig 1e magnitudes as $\gamma$
 approaches $\gamma_*$: +2.13% at $\gamma_\mathrm{des}=1.05\gamma_*$,
-+2.35% at $1.001\gamma_*$. C&S Fig 1e itself shows ~10–15% peak-fwd-vel
-shift, but that is averaged across 100 simulation runs **with**
-disturbances applied (curl-field perturbations), not the clean
-unperturbed Riccati rollout we measure here. Order-of-magnitude
++2.35% at $1.001\gamma_*$. C&S Fig 1e itself shows **+7.76%** peak-fwd-vel
+shift (user-measured: 125 px robust vs 116 px LQG baseline in Fig 1e;
+note the C&S text never quotes a numerical Δv — it reports only cost-based
+comparisons: ~15% higher robust cost on p. 8139, <20% vs ~30%
+perturbation-cost increase). That figure is averaged across 100 simulation
+runs **with** disturbances applied (curl-field perturbations), not the
+clean unperturbed Riccati rollout we measure here. Order-of-magnitude
 consistency: yes, qualitative reproduction.
 
 **Implication.** The previously-xfailed
@@ -389,6 +392,39 @@ full-state $B_w = I_n$. With `cs_faithful_pointmass()` the test passes
 (Δv > 0 on C&S regime, monotone in $\gamma$). The training-side
 flavor-(a) ⊊ (b) thesis is **a separate question** — neither this
 $B_w$-channel fix nor the §7.2 S-procedure result speaks to it directly.
+
+**Structural analytical gaps (issue `9a0558e`).** Two deeper gaps between
+the rlrmp Riccati setup and C&S's remain unresolved:
+
+- **G6 — 8-state plant with disturbance-integrator coupling.** C&S use an
+  8-state plant; rows 7–8 are pure integrators driven by $D = I_8$, with
+  $A[3,7] = A[4,8] = 1$ coupling the integrated disturbance into velocity.
+  Our setup uses a 6-state plant with $B_w = I_6$ applied directly — a
+  structurally different H∞ game. The +7.76% C&S target and the Δv values
+  in the table above were measured from a simulation under this 8-state
+  formulation; our Riccati is not.
+- **G1 — 50 ms (5-step) sensorimotor delay augmentation.** Trained
+  controllers have `feedback_delay_steps=5`; the analytical Riccati has
+  none. Structurally inconsistent; the delay-augmented plant has a larger
+  state dimension and a different effective gain budget.
+
+These gaps are tracked jointly on `9a0558e`. The gap analysis is at
+`/tmp/flavor_ab_review/findings/cs2019_review.md`; the analyses coordination
+issue `4d38c15` carries the cross-cutting cross-reference.
+
+**Update (post-implementation):** the 8-state + 50 ms-delay lift was implemented (commits `1f75d9f`, `1c313b4` on `feature/cs-faithful-8state-delay`), and is mechanically correct, but does NOT change analytical Δv from the 6-state-no-delay form (still +1.0% at γ_des=1.5γ\*, +2.12% at γ_des=1.05γ\*). Diagnostic: the full-state-feedback Riccati on the augmented system finds the trivial solution — K assigns zero feedback through the lag states. The integrator states get nonzero K but remain near zero in unperturbed rollout because the worst-case ε is still driven by physical x. C&S's velocity inflation likely arises from their Kalman estimator with *delayed measurement*, constraining the controller to output-feedback through `y_{t-h}` only — see follow-up issue `83fc5b5`.
+
+**Correction (after recipe-bug audit, 2026-05-08):** the framing in the previous "Update (post-implementation)" paragraph is **superseded**. A line-by-line audit against the C&S released MATLAB code (ModelDB 258846) and a faithful Python port — `/tmp/flavor_ab_review/findings/cs_alignment_audit.md` and `/tmp/flavor_ab_review/cs_alignment/cs_matlab_port.py` (port reports Δv = +8.24% on the canonical 15 cm reach) — found that the first 8-state + delay implementation (commits `1f75d9f`, `1c313b4`) had **five recipe-level bugs in the C&S-faithful builder**, not a fundamental Kalman/output-feedback gap:
+
+  1. `_apply_delay_augmentation` zero-padded Q on the lag block instead of distributing per `AugRobustControl.m` (`1/(h+1)` weight per block, time-shifted Qaug). The lag chain was UNREACHABLE from u, UNDISTURBED by w, and UNCOSTED by Q, so the H∞ Riccati produced `P[lag, lag] = 0` identically — the lag states recorded history the controller had zero incentive to react to.
+  2. The lag chain tracked the **observation channel** (`n_obs = 4`: pos + vel) instead of the **full physical state** (`n = 8`) per `AugRobustControl.m` line 24.
+  3. `cs_eq15_cost_schedule(state_dim=8)` zero-padded entries 6,7 (integrators) instead of setting them to constant 1, and ramped *all* eight diagonal entries by `(t/N)^6` — the MATLAB code at `script_minmax_pointMass.m` line 30 ramps only entries 0-3 (pos, vel) and keeps entries 4-7 (force, integrator) at constant 1.
+  4. The ramp denominator was `T` not `(t+1)/T` at MATLAB-1-indexing, and `(t/N)^6` was uncapped instead of `min(1, ((t+1)/T)^6)`.
+  5. Default `tau = 0.06` instead of C&S's `tau = 0.066` (`minmaxfc_pointMass.m` line 23).
+
+Combined effect: the augmentation was mathematically inert and Δv stayed at +2.12% near boundary. After fixing all five (commits `215a06a`, `02cfdf7`, `e1cd78e` on `feature/cs-faithful-8state-delay`), the canonical 15 cm reach Δv reaches **+8.31% at γ_des → γ\*** and +7.49% at γ_des = 1.05γ\*, matching the MATLAB-faithful Python port (+8.24% at γ\*) within ~0.1 percentage points and matching the user's Fig 1e visual measurement (~+7.76%). The H∞-Riccati K_phys block matches the MATLAB port's K_phys to within ~9% relative error under matched discretisation (forward-Euler), with the residual driven by the rlrmp Joseph form vs. MATLAB's inverse form (algebraically equivalent, numerically slightly different).
+
+**The earlier "Kalman is the operative gap" framing on issue `83fc5b5` is therefore superseded.** Kalman / output-feedback Riccati is real (C&S's full simulation pipeline does use a Kalman estimator on delayed measurements with sensory + motor noise, and that affects the *noisy Monte Carlo* trajectories), but it is **not load-bearing for the analytical Fig 1e replication** under the deterministic Riccati pipeline. The analytical pipeline reproduces +Δv directly once the recipe is faithful to the MATLAB code. Kalman/output-feedback is demoted to a future investigation if/when we want to reproduce C&S's full noisy simulation pipeline (see issue `83fc5b5` updated comment).
 
 ### 4.3 Why this matters for the comparison
 
@@ -420,7 +456,7 @@ every converged condition (standard backprop, CVaR 10%, APT with 8
 hyperparameter variants, adaptive control cost, center-out task, and
 parametric `GaussianBumpAdversary` minimax), $|\Delta v_\mathrm{peak}^{
 \beta=0\to 1}| < 1.2\%$ at SISU=0 vs SISU=1 — at least 8–10$\times$ smaller
-than the C&S effect size of +10–25%. Phase 6 (parametric minimax) is the
+than the C&S effect size of +7.76% (Fig 1e, user-measured). Phase 6 (parametric minimax) is the
 flavor-A high-water-mark; the phase pivot was to the methodology-fix branch
 (umbrella `b557d4e`, now closed; child issues continue) which posed the
 flavor-A vs flavor-B reframing.
@@ -508,7 +544,7 @@ recovering the C&S signature requires the flavor-(b) $B_w$ formulation
 
 The peak-velocity ratio of trained controllers (Part 2.5 §5.1) was at most
 $|\Delta v| < 1.2\%$ across every flavor-A method, an order of magnitude
-short of the +10–25% prediction.
+short of the +7.76% C&S target (Fig 1e, user-measured).
 
 ### 5.4 The C&S-faithful Riccati test (resolved)
 
@@ -644,7 +680,8 @@ flavor-A baselines tabulated in §5.2.
   report observationally.
 - **Δv at $\gamma_\mathrm{des}$** on the trained controller (read off the
   worst-case $w^*$ trajectory from PI) should approach the analytical
-  Riccati prediction; the gap to +10–25% is the second-order test.
+  Riccati prediction; the gap to the +7.76% C&S target (Fig 1e,
+  user-measured) is the second-order test.
 
 **Method.** `src/rlrmp/analysis/induced_gain.py::induced_gain` for each
 checkpoint via `_NetworkController` adapter (the workaround used in the
