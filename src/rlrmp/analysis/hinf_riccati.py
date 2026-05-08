@@ -339,6 +339,7 @@ def linearize_pointmass(
     damping: float,
     tau: float,
     dt: float,
+    disturbance_channel: str = "velocity_force",
 ) -> PlantLinearization:
     """Linearise the rlrmp point-mass-plus-filter plant.
 
@@ -353,14 +354,26 @@ def linearize_pointmass(
         ``dot vel = -(damping/mass) vel + F/mass``
         ``dot F   = -F/tau + u/tau``                  (omitted if tau == 0)
 
-    The disturbance ``w`` is treated as an additive force on the velocity row,
-    matching the channel used by ``feedbax.intervene.CurlField`` /
-    ``FixedField`` (see ``rlrmp.disturbance``):
+    Two disturbance-channel conventions are supported:
 
-        ``dot vel += w / mass``.
+    - ``"velocity_force"`` (default): ``w`` is an additive force on the
+      velocity row, ``dot vel += w / mass``. ``B_w`` is shape ``(n, 2)``.
+      Matches the *physical* curl-field / fixed-field intervenor channel used
+      by ``feedbax.intervene`` and ``rlrmp.disturbance``. This is "flavor (a)"
+      in the synthesis-review framing.
+    - ``"full_state"``: ``w`` is a free additive disturbance on every state
+      coordinate, ``B_w_d = I_n``. Matches Crevecoeur & Scott (2019)
+      Eq. 13 in which the lumped disturbance ``ε_t = ΔA·x_t·dt + C·dw``
+      enters every component of the state. This is the natural ``B_w`` for
+      reproducing the C&S H-infinity Riccati design and the +Δv reaching
+      signature reported in C&S Fig. 1e. Bug: ``97c227a``.
 
-    For ``tau == 0`` the filter rows drop out and ``B = [0; I/mass]``,
-    ``Bw = [0; I/mass]``.
+      Because ``B_w_d = I_n`` is set directly (not constructed from a
+      continuous-time ``B_w_c`` via ZOH), the corresponding ``B_w_c`` is
+      stored as ``I_n`` for completeness; it is not used by the discrete-time
+      Riccati recursion. ``m_w = n`` in this mode.
+
+    For ``tau == 0`` the filter rows drop out and ``B = [0; I/mass]``.
 
     Args:
         mass: Effector mass (kg).
@@ -368,13 +381,15 @@ def linearize_pointmass(
         tau: First-order force-filter time constant (s). If ``0.0`` the filter
             is omitted and the plant is the bare 4-state point mass.
         dt: Discretisation time step (s).
+        disturbance_channel: ``"velocity_force"`` (default, physical curl-field
+            channel) or ``"full_state"`` (C&S Eq 13 lumped ε on all states).
 
     Returns:
         A ``PlantLinearization`` with continuous- and discrete-time matrices.
 
     Raises:
-        ValueError: If ``mass`` or ``dt`` is non-positive, or ``tau`` is
-            negative.
+        ValueError: If ``mass`` or ``dt`` is non-positive, ``tau`` is
+            negative, or ``disturbance_channel`` is unrecognised.
     """
     if mass <= 0:
         raise ValueError(f"mass must be positive, got {mass}")
@@ -382,6 +397,11 @@ def linearize_pointmass(
         raise ValueError(f"dt must be positive, got {dt}")
     if tau < 0:
         raise ValueError(f"tau must be non-negative, got {tau}")
+    if disturbance_channel not in ("velocity_force", "full_state"):
+        raise ValueError(
+            f"disturbance_channel must be 'velocity_force' or 'full_state', "
+            f"got {disturbance_channel!r}"
+        )
 
     I2 = jnp.eye(2, dtype=jnp.float64)
     Z2 = jnp.zeros((2, 2), dtype=jnp.float64)
@@ -396,8 +416,8 @@ def linearize_pointmass(
         )
         # control acts directly on velocity through (1/mass)
         B_c = jnp.concatenate([Z2, I2 / mass], axis=0)  # (4, 2)
-        # disturbance acts identically on velocity
-        Bw_c = jnp.concatenate([Z2, I2 / mass], axis=0)  # (4, 2)
+        # Velocity-force disturbance channel (physical curl-field)
+        Bw_c_vel = jnp.concatenate([Z2, I2 / mass], axis=0)  # (4, 2)
         pos_slice = (0, 2)
         vel_slice = (2, 4)
         force_slice = None
@@ -412,12 +432,24 @@ def linearize_pointmass(
         )
         B_c = jnp.concatenate([Z2, Z2, I2 / tau], axis=0)  # (6, 2)
         # disturbance bypasses the force filter, entering as additive force on velocity
-        Bw_c = jnp.concatenate([Z2, I2 / mass, Z2], axis=0)  # (6, 2)
+        Bw_c_vel = jnp.concatenate([Z2, I2 / mass, Z2], axis=0)  # (6, 2)
         pos_slice = (0, 2)
         vel_slice = (2, 4)
         force_slice = (4, 6)
 
-    A_d, B_d, Bw_d = _zoh_discretize(A_c, B_c, Bw_c, dt)
+    n_state = A_c.shape[0]
+
+    if disturbance_channel == "velocity_force":
+        Bw_c = Bw_c_vel
+        # ZOH discretise A, B, and Bw together
+        A_d, B_d, Bw_d = _zoh_discretize(A_c, B_c, Bw_c, dt)
+    else:
+        # disturbance_channel == "full_state": B_w_d = I_n directly
+        # (matches C&S Eq 13 ε formulation; one disturbance per state coord).
+        Bw_c = jnp.eye(n_state, dtype=jnp.float64)
+        # ZOH discretise A, B without Bw, then set Bw_d = I_n.
+        A_d, B_d, _ = _zoh_discretize(A_c, B_c, Bw_c_vel, dt)  # Bw_c_vel only used as placeholder
+        Bw_d = jnp.eye(n_state, dtype=jnp.float64)
 
     return PlantLinearization(
         A_c=A_c,
@@ -430,6 +462,35 @@ def linearize_pointmass(
         pos_slice=pos_slice,
         vel_slice=vel_slice,
         force_slice=force_slice,
+    )
+
+
+def cs_faithful_pointmass(
+    *,
+    mass: float = 1.0,
+    damping: float = 0.1,
+    tau: float = 0.06,
+    dt: float = 0.01,
+) -> PlantLinearization:
+    """Build the C&S 2019 plant with the faithful full-state disturbance channel.
+
+    Convenience wrapper around ``linearize_pointmass(...,
+    disturbance_channel='full_state')`` with C&S's reported parameter values
+    as defaults: mass=1 kg, k=0.1 Ns/m, tau=0.06 s, dt=0.01 s.
+
+    The full-state ``B_w = I_6`` matches C&S Eq 13 (lumped disturbance ε on
+    every state coordinate). This is the load-bearing fix that recovers the
+    Δv > 0 signature reported in C&S Fig. 1e — the velocity-channel-only
+    ``B_w`` (used by the rlrmp ``"velocity_force"`` default) gives Δv ≤ 0 on
+    this regime because it under-penalises the disturbance the H∞ controller
+    must hedge against.
+
+    Bug: ``97c227a`` — see the comment thread for the investigation that
+    surfaced the ``B_w`` channel mismatch.
+    """
+    return linearize_pointmass(
+        mass=mass, damping=damping, tau=tau, dt=dt,
+        disturbance_channel="full_state",
     )
 
 
@@ -1852,6 +1913,7 @@ __all__ = [
     "ClosedLoopRollout",
     "VelocityInflationResult",
     "linearize_pointmass",
+    "cs_faithful_pointmass",
     "linearize_from_model",
     "cost_schedule_from_spec",
     "cs_eq15_cost_schedule",
