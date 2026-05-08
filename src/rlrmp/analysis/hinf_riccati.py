@@ -488,22 +488,19 @@ def cs_faithful_pointmass(
       H∞-relevant disturbance is a smooth cumulative drift in velocity, not
       an impulsive force, and the worst-case adversary is structurally
       different (matches C&S's ``minmaxfc_pointMass.m``).
-    - **50 ms (5-step) sensorimotor delay augmentation** (Bug: ``9a0558e``,
-      default on): appends ``delay_steps × n_obs`` lag states implementing a
-      tap-delay shift register on the observation channel
-      ``y_t = [pos, vel] = C_obs · x_phys``. The shift register holds
-      ``[y_{t-1}, y_{t-2}, …, y_{t-h}]`` (newest at top, oldest at bottom),
-      with one block of ``n_obs = 4`` states per delay tap. Modelled after
-      C&S's ``AugRobustControl.m``. ``delay_steps=5`` at ``dt=0.01`` matches
-      the 50 ms sensorimotor delay used in C&S analytical Riccati and rlrmp's
-      trained controllers (`scripts/train_minimax.py` ``feedback_delay_steps=5``).
+    - **50 ms (5-step) full-state delay augmentation** (Bug: ``9a0558e``,
+      default on): appends ``delay_steps`` blocks of ``n_phys`` lag states
+      implementing a tap-delay shift register on the *full* physical state
+      (faithful port of C&S's ``AugRobustControl.m``). The augmented-state
+      vector is
+
+      ``x_{aug, t} = [x_t; x_{t-1}; x_{t-2}; …; x_{t-h}]``.
 
     The total state dimension is:
 
         n_phys = 6 (no integrators) or 8 (with integrators)
-        n_obs  = 4 (pos + vel)
-        n_aug  = n_phys + delay_steps · n_obs
-                = 8 + 5·4 = 28 (canonical defaults)
+        n_aug  = (delay_steps + 1) · n_phys
+                = 6 · 8 = 48 (canonical defaults: 8 phys + 5·8 lag)
 
     Args:
         mass: Effector mass (kg).
@@ -528,8 +525,7 @@ def cs_faithful_pointmass(
         regression tests and for comparing the pre/post-lift Δv numbers.
 
     Bug: ``9a0558e`` — structural lift to 8-state plant + delay augmentation,
-    matching C&S 2019. See ``/tmp/flavor_ab_review/findings/cs2019_review.md``
-    G6 (8-state) and G1 (delay) for the gap analysis.
+    matching C&S 2019.
     Bug: ``97c227a`` — the prior 6-state full-state-B_w version (now reachable
     via ``disturbance_integrator=False, delay_steps=0``).
     """
@@ -643,28 +639,22 @@ def _apply_delay_augmentation(
     *,
     delay_steps: int,
 ) -> PlantLinearization:
-    """Augment a plant with a tap-delay shift register on the observation channel.
+    """Augment a plant with a full-state tap-delay shift register.
 
-    Lifts the input plant from ``n_phys`` states to
-    ``n_phys + delay_steps · n_obs`` states, where ``n_obs = 4`` (pos + vel).
-    The lag states implement a discrete-time shift register
-
-    .. math::
-
-        y_{t-1}^{(new)} = C_{obs}\\, x_{phys, t},
-        \\qquad y_{t-(k+1)}^{(new)} = y_{t-k}^{(old)} \\quad k = 1, …, h-1.
-
-    Augmented-state ordering (newest at top):
+    Faithful port of Crevecoeur & Scott 2019 ``AugRobustControl.m`` (ModelDB
+    258846). Lifts the input plant from ``n_phys`` states to
+    ``(h+1) · n_phys`` states, where each lag block tracks a *full* delayed
+    copy of the physical state ``x_{t-k}``, ``k = 0, 1, …, h``:
 
     .. math::
 
         x_{aug, t} = \\begin{bmatrix}
             x_{phys, t} \\\\
-            y_{t-1} \\\\
-            y_{t-2} \\\\
+            x_{t-1} \\\\
+            x_{t-2} \\\\
             \\vdots \\\\
-            y_{t-h}
-        \\end{bmatrix} \\in \\mathbb{R}^{n_{phys} + h \\cdot n_{obs}}
+            x_{t-h}
+        \\end{bmatrix} \\in \\mathbb{R}^{(h+1) \\cdot n_{phys}}
 
     The augmented dynamics matrix has the block form
 
@@ -672,31 +662,50 @@ def _apply_delay_augmentation(
 
         A_{aug} = \\begin{bmatrix}
             A_{phys}      & 0       & 0       & \\cdots & 0 \\\\
-            C_{obs}       & 0       & 0       & \\cdots & 0 \\\\
+            I             & 0       & 0       & \\cdots & 0 \\\\
             0             & I       & 0       & \\cdots & 0 \\\\
-            0             & 0       & I       & \\cdots & 0 \\\\
-            \\vdots       & \\vdots & \\vdots & \\ddots & \\vdots \\\\
-            0             & 0       & 0       & \\cdots & 0
+            \\vdots       & \\vdots & \\ddots & \\vdots & \\vdots \\\\
+            0             & 0       & \\cdots & I       & 0
         \\end{bmatrix}
 
-    and ``B_aug``, ``B_w_aug`` are ``B_phys``, ``B_{w,phys}`` zero-padded
-    onto the physical block (control and disturbance affect physical states
-    only — lag states are pure shift registers).
+    i.e., MATLAB's ``A_aug(1:n, 1:n) = A_phys`` and
+    ``A_aug(n+1:end, 1:end-n) = eye(h·n)``. ``B_aug`` and ``B_{w, aug}`` are
+    zero-padded onto the physical block (control and disturbance affect
+    physical states only). The C&S delay convention places the *oldest*
+    delayed state at the bottom; the H feedback selects ``x_{t-h}`` as the
+    measurement (``H(:, end-n+1:end) = H0`` in MATLAB), but the analytical
+    Riccati pipeline here uses full-state feedback on the augmented state, so
+    H is not stored.
 
-    Modelled after C&S 2019 ``AugRobustControl.m`` (ModelDB 258846), with the
-    parsimonious modification that the shift register operates on the
-    observation channel (``[pos, vel]``, ``n_obs = 4``) rather than the full
-    physical state. This matches rlrmp's trained-controller setup, where the
-    network only "sees" pos+vel through ``feedback_delay_steps``.
+    .. note::
+
+        Earlier versions of this function (commits ``1f75d9f``, ``1c313b4``,
+        Bug: ``9a0558e``) stored the lag chain on the *observation* channel
+        only (``n_obs = 4``: pos + vel) instead of the full physical state.
+        Combined with zero-padded Q on the lag blocks (see audit at
+        ``/tmp/flavor_ab_review/findings/cs_alignment_audit.md``), this
+        rendered the augmentation mathematically inert — the lag block was
+        unreachable from u, undisturbed by w, and uncosted by Q, so the H∞
+        Riccati found ``P[lag, lag] = 0`` identically and ``K[lag] = 0``.
+        Switching to full-state lag matches ``AugRobustControl.m`` and
+        couples with the distributed Q (see
+        ``apply_delay_distribution_to_schedule``) to make the augmentation
+        load-bearing.
 
     Args:
         plant: Underlying physical plant (4-, 6-, or 8-state).
         delay_steps: Number of delay taps ``h ≥ 1``.
 
     Returns:
-        A new ``PlantLinearization`` with the augmented state size.
+        A new ``PlantLinearization`` with state dimension
+        ``(h+1) · n_phys``. The augmented disturbance matrix ``B_w`` has the
+        physical-block ``B_w`` in its top ``n_phys`` rows and zeros in the
+        lag blocks (matching MATLAB's ``D(1:8, 1:8) = eye(8)``,
+        ``D(9:end, :) = 0``).
 
-    Bug: ``9a0558e`` — see ``cs_faithful_pointmass`` docstring for context.
+    Bug: ``9a0558e`` — structural lift to 8-state + delay augmentation. See
+    audit ``/tmp/flavor_ab_review/findings/cs_alignment_audit.md`` for the
+    correctness argument behind the full-state lag.
     """
     if delay_steps < 1:
         raise ValueError(
@@ -706,48 +715,22 @@ def _apply_delay_augmentation(
     n_phys = plant.n
     m_u = plant.m_u
     m_w = plant.m_w
-    pos_lo, pos_hi = plant.pos_slice
-    vel_lo, vel_hi = plant.vel_slice
-    n_pos = pos_hi - pos_lo
-    n_vel = vel_hi - vel_lo
-    n_obs = n_pos + n_vel
 
     h = int(delay_steps)
-    n_aug = n_phys + h * n_obs
+    n_aug = (h + 1) * n_phys
 
-    # C_obs: extracts [pos, vel] from the physical state, shape (n_obs, n_phys).
-    C_obs = jnp.zeros((n_obs, n_phys), dtype=jnp.float64)
-    C_obs = C_obs.at[:n_pos, pos_lo:pos_hi].set(jnp.eye(n_pos, dtype=jnp.float64))
-    C_obs = C_obs.at[n_pos:n_pos + n_vel, vel_lo:vel_hi].set(
-        jnp.eye(n_vel, dtype=jnp.float64)
-    )
-
-    # Build augmented continuous-time A_c. The lag block-shift is intrinsically
-    # discrete — there is no clean continuous-time analogue. We construct the
-    # discrete-time A_aug directly from the discrete-time A_phys and the shift
-    # structure, then back out a "nominal" continuous-time A_aug via
-    # logm(A_aug)/dt for documentation only (the Riccati uses A_aug discrete).
-    #
-    # Concretely:
-    #   A_aug[0:n_phys, 0:n_phys] = A_phys                (physical dynamics)
-    #   A_aug[n_phys:n_phys+n_obs, 0:n_phys] = C_obs      (newest lag = C·x_phys)
-    #   A_aug[n_phys+n_obs:, n_phys:n_phys+(h-1)·n_obs] = I  (shift down)
     A_d_phys = plant.A.astype(jnp.float64)
     B_d_phys = plant.B.astype(jnp.float64)
     Bw_d_phys = plant.Bw.astype(jnp.float64)
 
+    # MATLAB AugRobustControl.m:
+    #   A(1:n, 1:n) = A0
+    #   A(n+1:end, 1:end-n) = eye(h·n)
     A_aug_d = jnp.zeros((n_aug, n_aug), dtype=jnp.float64)
     A_aug_d = A_aug_d.at[:n_phys, :n_phys].set(A_d_phys)
-    # Newest lag block (rows n_phys : n_phys + n_obs) takes C_obs · x_phys
-    A_aug_d = A_aug_d.at[n_phys:n_phys + n_obs, :n_phys].set(C_obs)
-    # Shift older lag blocks down: rows n_phys + n_obs onward read from
-    # rows n_phys : n_phys + (h-1)·n_obs (one delay slot earlier).
-    if h >= 2:
-        n_shift = (h - 1) * n_obs
-        A_aug_d = A_aug_d.at[
-            n_phys + n_obs : n_phys + h * n_obs,
-            n_phys : n_phys + n_shift,
-        ].set(jnp.eye(n_shift, dtype=jnp.float64))
+    A_aug_d = A_aug_d.at[n_phys:, : h * n_phys].set(
+        jnp.eye(h * n_phys, dtype=jnp.float64)
+    )
 
     # B_aug, Bw_aug: zero-pad onto physical block.
     B_aug_d = jnp.zeros((n_aug, m_u), dtype=jnp.float64)
@@ -755,15 +738,10 @@ def _apply_delay_augmentation(
     Bw_aug_d = jnp.zeros((n_aug, m_w), dtype=jnp.float64)
     Bw_aug_d = Bw_aug_d.at[:n_phys, :].set(Bw_d_phys)
 
-    # Continuous-time matrices: store nominal block structure for completeness.
-    # We do NOT round-trip through expm here because the lag shift is purely
-    # discrete; the augmented continuous-time A_c would not reconstitute via
-    # ZOH back to A_aug_d. Instead store a representative continuous-time
-    # A_c with the physical block embedded and zeros elsewhere — this is
-    # consistent with how the existing PlantLinearization treats Bw_c when
-    # ``disturbance_channel='full_state'`` (see ``linearize_pointmass``,
-    # which stores a placeholder when discrete-time matrices are set
-    # directly).
+    # Continuous-time matrices: representative block structure only.
+    # The lag shift is intrinsically discrete — there is no clean
+    # continuous-time analogue of A_aug, so we store a placeholder with the
+    # physical block embedded and zeros elsewhere.
     A_aug_c = jnp.zeros((n_aug, n_aug), dtype=jnp.float64)
     A_aug_c = A_aug_c.at[:n_phys, :n_phys].set(plant.A_c.astype(jnp.float64))
     B_aug_c = jnp.zeros((n_aug, m_u), dtype=jnp.float64)
@@ -784,6 +762,142 @@ def _apply_delay_augmentation(
         vel_slice=plant.vel_slice,
         force_slice=plant.force_slice,
     )
+
+
+def apply_delay_distribution_to_schedule(
+    schedule: CostSchedule,
+    *,
+    delay_steps: int,
+    n_phys: int,
+) -> CostSchedule:
+    """Distribute a physical-state Q schedule across a delay-augmented chain.
+
+    Faithful port of the C&S 2019 ``AugRobustControl.m`` Q-distribution
+    pattern (lines 38-51). Given a physical-state cost schedule with Q of
+    shape ``(T, n_phys, n_phys)``, produces an augmented schedule for the
+    state dimension ``(h+1) · n_phys`` that places a time-shifted, weighted
+    copy of the physical Q on each lag block:
+
+    .. math::
+
+        Q_{aug}[ii \\cdot n : (ii+1) \\cdot n,\\ ii \\cdot n : (ii+1) \\cdot n,\\ t]
+            = Q_0[\\,t + h - ii\\,] / (h + 1),
+            \\quad ii = 0, 1, \\ldots, h.
+
+    The "Qaug" pre-pad of length ``h`` (where indices below 0 are clamped to
+    ``Q_0[0]``) implements MATLAB's
+
+    .. code-block:: matlab
+
+        for i = 1:h, Qaug(:,:,i) = Q0(:,:,1); end
+        for i = 1:t, Qaug(:,:,i+h) = Q0(:,:,i); end
+
+    so the lag blocks at the start of the reach see the t=0 cost, not zero.
+
+    Why distribution matters:
+        Without this distribution, the lag blocks of Q are zero, and combined
+        with zero ``B[lag, :]`` and zero ``B_w[lag, :]`` the H∞ Riccati's
+        Joseph recursion produces ``P[lag, lag] = 0`` identically. Lag states
+        become dynamically inert — they record history the controller has
+        zero incentive to react to. The distribution makes lag states
+        cost-relevant (each block carries a shifted copy of the physical
+        cost), and the resulting K_phys matches MATLAB's. See audit
+        ``/tmp/flavor_ab_review/findings/cs_alignment_audit.md``.
+
+    Args:
+        schedule: Cost schedule with ``Q`` of shape ``(T, n_phys, n_phys)``,
+            ``R`` of shape ``(T, m_u, m_u)``, ``Q_f`` of shape
+            ``(n_phys, n_phys)``. Pass the *physical* schedule before delay
+            augmentation.
+        delay_steps: Number of delay taps ``h``. Must be ≥ 0; if 0, returns
+            the input schedule unchanged.
+        n_phys: Physical state dimension. Must equal ``schedule.Q.shape[-1]``.
+
+    Returns:
+        A new ``CostSchedule`` with ``Q`` of shape
+        ``(T, (h+1) · n_phys, (h+1) · n_phys)`` and ``Q_f`` analogously
+        distributed (using the terminal Q for all lag blocks). ``R`` is
+        unchanged.
+
+    Bug: ``9a0558e``.
+    """
+    if delay_steps < 0:
+        raise ValueError(f"delay_steps must be non-negative, got {delay_steps}")
+    if delay_steps == 0:
+        return schedule
+
+    h = int(delay_steps)
+    Q_phys = schedule.Q  # (T, n_phys, n_phys)
+    Q_f_phys = schedule.Q_f  # (n_phys, n_phys)
+    if Q_phys.shape[1] != n_phys or Q_phys.shape[2] != n_phys:
+        raise ValueError(
+            f"schedule.Q has shape {Q_phys.shape}; expected (T, {n_phys}, {n_phys})"
+        )
+    T = Q_phys.shape[0]
+    n_aug = (h + 1) * n_phys
+
+    # Build Qaug: (n_phys, n_phys, T+h) — first h slots filled with Q_phys[0],
+    # then T slots from Q_phys.
+    # MATLAB indexing (1-based):
+    #   Qaug(:,:,1..h) = Q0(:,:,1)   (replicate first cost h times)
+    #   Qaug(:,:,h+1..h+T) = Q0(:,:,1..T)
+    # In Python (0-based):
+    #   Qaug[:,:,0..h-1] = Q_phys[0]
+    #   Qaug[:,:,h..h+T-1] = Q_phys[0..T-1]
+    Q_first = Q_phys[0]  # (n_phys, n_phys)
+    Q_pad = jnp.broadcast_to(Q_first, (h, n_phys, n_phys))
+    Qaug = jnp.concatenate([Q_pad, Q_phys], axis=0)  # (T+h, n_phys, n_phys)
+
+    # Distribute: Q_aug[ii·n:(ii+1)·n, ii·n:(ii+1)·n, t] = Qaug[t+h-ii] / (h+1)
+    # for ii in 0..h, t in 0..T-1.
+    weight = 1.0 / float(h + 1)
+
+    def build_Q_at(t_idx):
+        # t_idx is a Python int in 0..T-1; this is unrolled at trace time.
+        Q_t = jnp.zeros((n_aug, n_aug), dtype=Q_phys.dtype)
+        for ii in range(h + 1):
+            row = ii * n_phys
+            t_shifted = t_idx + h - ii  # 0..T+h-1, valid index into Qaug
+            block = Qaug[t_shifted] * weight
+            Q_t = jax.lax.dynamic_update_slice(Q_t, block, (row, row))
+        return Q_t
+
+    # Build the time-stacked Q_aug. Use vmap over t_idx to leverage JAX
+    # tracing efficiency, but we have to pass t_idx as an array index.
+    def build_Q_at_t(t_idx):
+        Q_t = jnp.zeros((n_aug, n_aug), dtype=Q_phys.dtype)
+        for ii in range(h + 1):
+            row = ii * n_phys
+            t_shifted = t_idx + h - ii
+            block = jnp.take(Qaug, t_shifted, axis=0) * weight
+            Q_t = jax.lax.dynamic_update_slice(Q_t, block, (row, row))
+        return Q_t
+
+    Q_aug = jax.vmap(build_Q_at_t)(jnp.arange(T))  # (T, n_aug, n_aug)
+
+    # Q_f distribution: at the terminal step (one beyond t=T-1), the
+    # Riccati's terminal condition is M[:, :, -1] = Q_f. Per the MATLAB
+    # driver `script_minmax_pointMass.m`, the terminal cost is the same
+    # diagonal pattern at full ramp; we distribute Q_f across the lag chain
+    # with the same 1/(h+1) weighting using Qaug[T-1+h-ii] (or Q_f for ii=0).
+    # Concretely, the natural extrapolation past T-1 is Qaug[T+h-1]
+    # = Q_phys[T-1] (the last physical Q). For ii=0 we want Q_f_phys; for
+    # ii>0 we want Q_f shifted backwards in time: Qaug[T-ii] (still 1/(h+1)).
+    # Since Q_f_phys typically equals Q_phys[T-1] (terminal-ramp = 1), we
+    # simply distribute Q_f_phys uniformly across lag blocks too.
+    Q_f_aug = jnp.zeros((n_aug, n_aug), dtype=Q_f_phys.dtype)
+    for ii in range(h + 1):
+        row = ii * n_phys
+        # Use Q_f for newest lag (ii=0); use shifted Qaug for older lags.
+        if ii == 0:
+            block = Q_f_phys * weight
+        else:
+            t_shifted = (T - 1) + h - ii  # = T + h - 1 - ii
+            t_shifted = max(0, min(T + h - 1, t_shifted))
+            block = Qaug[t_shifted] * weight
+        Q_f_aug = jax.lax.dynamic_update_slice(Q_f_aug, block, (row, row))
+
+    return CostSchedule(Q=Q_aug, R=schedule.R, Q_f=Q_f_aug)
 
 
 def linearize_from_model(model, *, dt: Optional[float] = None) -> PlantLinearization:
@@ -2221,6 +2335,7 @@ __all__ = [
     "linearize_from_model",
     "cost_schedule_from_spec",
     "cs_eq15_cost_schedule",
+    "apply_delay_distribution_to_schedule",
     "cost_schedule_from_loss_config",
     "solve_hinf_riccati",
     "solve_hinf_riccati_modelclass",
