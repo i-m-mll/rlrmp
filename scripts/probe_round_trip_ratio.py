@@ -12,6 +12,37 @@ Plant: rlrmp regime (mass=1.0, damping=10.0, tau=0.05, dt=0.01).
 Cost schedule: CostSpec with n_steps=horizon (same shape as _rlrmp_setup in tests).
 Controller design: gamma_design = 1.5 * gamma_star (H-inf), or gamma -> inf (LQR).
 Analyser: induced_gain_power_iteration on qr_cost x additive_force.
+
+Reading the output (mechanisms documented in
+``test_riccati_round_trip_qr_cost`` and the ``Round-trip band`` docstring on
+``induced_gain_power_iteration``):
+
+- ``ratio < 1.0`` at short horizons (n <= 100): ``gamma_star`` itself is a
+  finite-horizon infimum that grows with horizon; short-horizon ``gamma*``
+  underestimates the long-horizon limit, so the controller designed at
+  ``1.5 * gamma_star_short`` is over-conservative and the actual gain falls
+  below ``gamma_star_long``. Not a bug; an ``find_gamma_star`` regime artefact.
+- ``ratio`` plateau ~1.21 at long horizons rather than 1.5: this is just
+  the suboptimality margin of an H-inf controller designed at
+  ``1.5 * gamma_star``. The design level is a *sufficient* bound on
+  closed-loop gain, not a tight one; the actual gain plateaus regime-
+  dependently below it (1.21 in the rlrmp regime). NOT a Q_f mismatch:
+  measured separately, adding ``sqrt(Q_f) x_T`` to the operator changes
+  gamma_PI by < 0.1% at qf_scale=1.0 (see scripts/diag_probe_anomalies.py).
+- ``conv: NO`` at long horizons: ``rtol`` here is loosened to ``1e-6`` to
+  match the test settings; the previous ``1e-9`` was unattainable inside the
+  ``max_iter`` cap because the leading-singular-value gap is small. Even at
+  ``1e-6`` some restarts hit the cap when the gap is very small; the
+  reported ``gamma_PI`` is still accurate to 3-4 decimals (it stops moving
+  long before the consecutive-iter gate trips). The ``conv`` flag is
+  diagnostic, not load-bearing.
+- ``ratio`` collapse at ``Q_f`` scale >> 1: at qf_scale ≤ 1.0, gamma_star
+  is essentially independent of Q_f (measured: 0.013721 at qf=0 vs 0.013749
+  at qf=1.0). At qf_scale=10, gamma_star jumps to 0.024 (1.8x); at qf=100,
+  to 0.060 (4.4x). In this regime the bisection's gamma_star is dominated
+  by terminal-state admissibility, while the LTV operator still measures
+  only running cost -- a real definition mismatch that the canonical
+  qf=1.0 regime avoids.
 """
 
 from __future__ import annotations
@@ -48,8 +79,14 @@ PLANT = linearize_pointmass(mass=1.0, damping=10.0, tau=0.05, dt=0.01)
 INIT_POS = jnp.array([0.0, 0.0], dtype=jnp.float64)
 TARGET_POS = jnp.array([0.1, 0.0], dtype=jnp.float64)
 
-# Power-iteration settings (tight to get a reliable estimate).
-PI_KWARGS = dict(n_restarts=8, max_iter=600, rtol=1e-9)
+# Power-iteration settings.
+#
+# rtol = 1e-6 matches the test's tolerance and is realistic for the
+# leading-singular-value gap of the canonical operator at T = 200..800.
+# Tighter tolerances (1e-9) hit the ``max_iter`` cap in every restart at
+# long horizons; the ratio-precision plateau is reached well before then.
+# See bug 74bfd86 for the diagnostic that established this.
+PI_KWARGS = dict(n_restarts=8, max_iter=600, rtol=1e-6)
 
 
 def _make_schedule(n_steps: int, qf_scale: float = 1.0) -> CostSchedule:
