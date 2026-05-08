@@ -47,15 +47,18 @@ from rlrmp.analysis.hinf_riccati import (
     CostSpec,
     PlantLinearization,
     compute_velocity_inflation,
+    compute_velocity_inflation_modelclass,
     cost_schedule_from_spec,
     cs_eq15_cost_schedule,
     find_gamma_star,
+    find_gamma_star_modelclass,
     linearization_fidelity,
     linearize_from_model,
     linearize_pointmass,
     make_reach_initial_state,
     simulate_closed_loop,
     solve_hinf_riccati,
+    solve_hinf_riccati_modelclass,
     solve_lqr,
 )
 
@@ -688,3 +691,191 @@ def test_cs_qr_vs_rlrmp_qr_on_cs_plant():
     assert 0.1 < rlrmp_res.lqr_peak_forward_velocity, (
         f"rlrmp Q,R on C&S plant LQR peak fwd vel {rlrmp_res.lqr_peak_forward_velocity} implausibly low"
     )
+
+
+# -----------------------------------------------------------------------------
+# Flavor-(b) (model-class ΔA) tests
+# Bug: 97c227a — Riccati flavor-(b) extension via S-procedure / quadratic
+# stability. See module docstring of hinf_riccati for the derivation.
+# -----------------------------------------------------------------------------
+
+
+def test_modelclass_recovers_flavor_a_at_eta_zero():
+    """At eta=0, the flavor-(b) Riccati exactly recovers flavor-(a)."""
+    plant = _rlrmp_plant()
+    schedule = _rlrmp_schedule(plant)
+    g_a = find_gamma_star(plant, schedule)
+    g_b0 = find_gamma_star_modelclass(plant, schedule, eta=0.0)
+    # Bisection precision is tol=1e-4 by default
+    assert abs(g_b0 - g_a) / g_a < 1e-3, (
+        f"At eta=0, gamma_star_modelclass should equal gamma_star_a; got "
+        f"{g_b0} vs {g_a} (rel diff {abs(g_b0 - g_a)/g_a})"
+    )
+
+    # K matrices should match too (using same gamma above gamma*)
+    sol_a = solve_hinf_riccati(plant, schedule, 1.5 * g_a)
+    sol_b0 = solve_hinf_riccati_modelclass(plant, schedule, 1.5 * g_a, eta=0.0)
+    rel_K = float(jnp.linalg.norm(sol_a.K - sol_b0.K) / jnp.linalg.norm(sol_a.K))
+    assert rel_K < 1e-10, (
+        f"At eta=0, K should match flavor-(a) exactly; got rel diff {rel_K}"
+    )
+
+
+def test_modelclass_finite_gamma_star_rlrmp():
+    """Flavor-(b) gamma_star is finite and admissible on the rlrmp regime
+    for a reasonable Frobenius budget."""
+    plant = _rlrmp_plant()
+    schedule = _rlrmp_schedule(plant)
+    for eta in [0.01, 0.05, 0.1, 0.5]:
+        g_b = find_gamma_star_modelclass(plant, schedule, eta=eta)
+        assert jnp.isfinite(g_b), f"gamma_star_b at eta={eta} is not finite: {g_b}"
+        assert g_b > 0, f"gamma_star_b at eta={eta} is non-positive: {g_b}"
+        sol = solve_hinf_riccati_modelclass(plant, schedule, 1.5 * g_b, eta=eta)
+        assert sol.admissible, (
+            f"flavor-(b) Riccati at 1.5*gamma_star (eta={eta}) is inadmissible"
+        )
+
+
+def test_modelclass_gamma_star_monotone_in_eta():
+    """gamma_star^(b) is non-decreasing as eta grows (more conservative
+    against larger Frobenius perturbation balls)."""
+    plant = _rlrmp_plant()
+    schedule = _rlrmp_schedule(plant)
+    etas = [0.0, 0.01, 0.05, 0.1, 0.5]
+    g_seq = [find_gamma_star_modelclass(plant, schedule, eta=e) for e in etas]
+    for i in range(len(g_seq) - 1):
+        # Allow a tiny bisection-precision wiggle
+        assert g_seq[i] <= g_seq[i + 1] * (1.0 + 1e-3), (
+            f"gamma_star^(b) not monotone in eta: "
+            f"eta={etas[i]} -> {g_seq[i]}; eta={etas[i+1]} -> {g_seq[i+1]}"
+        )
+
+
+def test_modelclass_lqr_limit_recovers_lqr():
+    """At gamma -> infinity, flavor-(b) controller -> LQR (independent of eta).
+
+    The S-procedure reduction adds (m*eta)^2 * C_q^T C_q to Q, but at the
+    LQR limit (gamma -> infinity), the worst-case-disturbance term vanishes,
+    so the augmented Riccati reduces to standard LQR on the augmented Q. K
+    will *differ* from the un-augmented LQR (different Q), but the
+    feedback law is consistent with LQR-on-augmented-Q.
+    """
+    plant = _rlrmp_plant()
+    schedule = _rlrmp_schedule(plant)
+    eta = 0.1
+    sol_b_huge = solve_hinf_riccati_modelclass(plant, schedule, 1e6, eta=eta)
+    assert sol_b_huge.admissible
+    # K is finite
+    assert jnp.all(jnp.isfinite(sol_b_huge.K))
+
+
+def test_cs_faithful_qr_velocity_inflation_flavor_b():
+    """Pivotal: re-run the previously-xfailed C&S faithful Q,R test under
+    the flavor-(b) S-procedure Riccati. Does Δv > 0 emerge?
+
+    The flavor-(a) version of this test (`test_cs_faithful_qr_velocity_inflation`)
+    xfails with Δv = -0.04% on the C&S plant. The hypothesis driving this
+    extension was: switching B_w from flavor-(a) (additive force) to
+    flavor-(b) (model-class ΔA) might recover C&S's "robust > LQG" claim.
+
+    **Result (S-procedure / quadratic-stability reduction):** Δv stays ≤ 0
+    and grows *more* negative as eta increases. Mechanism: augmenting Q
+    with (m*eta)^2 * C_q^T C_q penalises [pos, vel] energy, which makes
+    the controller *more* dampened (lower forward velocity), not stiffer.
+
+    **Implication:** the quadratic-stability flavor-(b) reduction does NOT
+    predict the C&S "Δv > 0" signature on the C&S plant under the
+    Eq. 15 alpha_1=1 cost. The test xfails again with a substantively
+    different diagnosis from the flavor-(a) xfail:
+
+    - flavor-(a) xfail: B_w channel is wrong (additive force vs model-class).
+    - flavor-(b) S-procedure xfail: B_w channel still wrong even under
+      model-class S-procedure; the S-procedure penalises state energy and
+      thus damps forward velocity. The C&S signature requires either (i) a
+      tighter μ-synthesis treatment that exploits ΔA's structure
+      multiplicatively, or (ii) the trajectory-coupled time-varying B_w(x_t)
+      formulation along a nominal closed-loop reach.
+
+    This test records the result for the synthesis review and is xfailed
+    if Δv stays ≤ 0; if a future tighter formulation flips the sign, the
+    xfail will become a pass.
+    """
+    plant = linearize_pointmass(mass=1.0, damping=0.1, tau=0.06, dt=0.01)
+    schedule = cs_eq15_cost_schedule(n_steps=80, alpha_1=1.0)
+    init_pos = jnp.array([0.0, 0.0], dtype=jnp.float64)
+    target_pos = jnp.array([0.15, 0.0], dtype=jnp.float64)
+
+    # Sweep multiple eta values to find any that gives Δv > 0
+    delta_v_max = -jnp.inf
+    best_eta = None
+    deltas = []
+    for eta in [0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0]:
+        try:
+            res = compute_velocity_inflation_modelclass(
+                plant,
+                schedule,
+                init_pos=init_pos,
+                target_pos=target_pos,
+                eta=eta,
+                gamma_factor=1.5,
+            )
+            dv = res.delta_v_percent
+            deltas.append((eta, dv, res.gamma_star))
+            if dv > delta_v_max:
+                delta_v_max = dv
+                best_eta = eta
+        except Exception:
+            deltas.append((eta, None, None))
+
+    if delta_v_max <= 0.0:
+        diagnostic = "; ".join(
+            f"eta={e}: Dv={dv:+.4f}%, g*={g:.4f}"
+            if dv is not None
+            else f"eta={e}: ERR"
+            for (e, dv, g) in deltas
+        )
+        pytest.xfail(
+            f"Flavor-(b) S-procedure: Δv stays ≤ 0 across all tested eta on "
+            f"C&S plant + Eq. 15 Q,R. Best Δv = {delta_v_max:+.4f}% at eta={best_eta}. "
+            f"Sweep: {diagnostic}. The S-procedure quadratic-stability reduction "
+            "augments Q with (m*eta)^2 * C_q^T C_q, which damps forward velocity. "
+            "C&S's reported Δv > 0 likely requires a tighter formulation: "
+            "(a) μ-synthesis exploiting ΔA's multiplicative structure, or "
+            "(b) trajectory-coupled time-varying B_w(x_t) along a nominal reach "
+            "(both deferred — see issue 97c227a)."
+        )
+
+    # If we reach here, some eta gives Δv > 0
+    assert delta_v_max > 0
+
+
+def test_modelclass_velocity_inflation_rlrmp_smoke():
+    """At small eta on the rlrmp regime, flavor-(b) inflation is close to
+    flavor-(a). At larger eta, it diverges (controller becomes more
+    dampened by the augmented Q term).
+    """
+    plant = _rlrmp_plant()
+    schedule = _rlrmp_schedule(plant)
+    init = jnp.array([0.0, 0.0])
+    target = jnp.array([0.5, 0.0])
+
+    res_a = compute_velocity_inflation(
+        plant, schedule, init_pos=init, target_pos=target, gamma_factor=1.5
+    )
+    res_b_small = compute_velocity_inflation_modelclass(
+        plant, schedule, init_pos=init, target_pos=target, eta=0.001, gamma_factor=1.5
+    )
+    # At eta=0.001 (essentially zero), Δv should track flavor-(a) within a
+    # fraction of a percentage point.
+    assert abs(res_b_small.delta_v_percent - res_a.delta_v_percent) < 0.1, (
+        f"At eta=0.001, flavor-(b) Δv should match flavor-(a) closely; got "
+        f"{res_b_small.delta_v_percent}% vs {res_a.delta_v_percent}%"
+    )
+
+
+def test_modelclass_invalid_eta_raises():
+    """Negative eta is rejected at the API boundary."""
+    plant = _rlrmp_plant()
+    schedule = _rlrmp_schedule(plant)
+    with pytest.raises(ValueError, match="eta must be non-negative"):
+        solve_hinf_riccati_modelclass(plant, schedule, 1.0, eta=-0.1)

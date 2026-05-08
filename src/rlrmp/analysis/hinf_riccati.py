@@ -104,19 +104,50 @@ Relationship to flavor (b) :math:`\\max_{\\Delta A}`
 The synthesis (``synthesis_review.md`` section 2 / 4.2) distinguishes:
 
 - **Flavor (a)**: additive force-trajectory disturbance ``w``. This is what
-  the H-infinity Riccati here directly computes -- ``B_w`` enters the bracket
-  with weight :math:`\\gamma^{-2}`.
+  the base ``solve_hinf_riccati`` directly computes -- ``B_w`` enters the
+  bracket with weight :math:`\\gamma^{-2}`.
 - **Flavor (b)**: structural perturbation :math:`\\Delta A` to the dynamics
-  matrix, constant over the trial.
+  matrix, constant over the trial. ``\\dot v \\mathrel{+}= \\Delta A\\,
+  [p, v]``, matching the feedbax ``DynamicsMatrixPerturb`` intervenor and
+  ``LinearDynamicsAdversary`` in ``rlrmp.adversary``.
 
-These are different worst-case classes. The H-infinity Riccati gives the
-optimal feedback law against flavor (a) at attenuation level :math:`\\gamma`.
-Section 4.2 of synthesis_review argues that flavor (b) is the natural target
-for the C&S signature; in practice the feedback K_t derived here is
-structurally the same kind of "robust gain" controller that a flavor-(b)
-adversary at the right amplitude would induce, and section 2's empirical table
-shows it produces the predicted +10 to +25% velocity inflation on the rlrmp
-parameter regime.
+The flavor-(b) extension is implemented by ``solve_hinf_riccati_modelclass``
+and ``find_gamma_star_modelclass``. It uses the **S-procedure / quadratic-
+stability** reduction: a structured perturbation ``\\Delta A`` with
+:math:`\\|\\Delta A\\|_F \\le \\eta` produces a closed-loop disturbance
+:math:`w_t = m \\, \\Delta A \\, C_q \\, x_t` (where ``m`` is the mass and
+:math:`C_q` selects ``[pos, vel]`` from the augmented state). By
+Cauchy-Schwarz on the Frobenius-induced operator norm,
+:math:`\\|w_t\\|_2 \\le m\\eta \\, \\|C_q x_t\\|_2`. A sufficient condition
+for robust stability of the LQ-game value function under any such
+``\\Delta A`` is that the H-infinity Riccati on the **same** force channel
+``B_w`` with **augmented** state cost
+:math:`Q_t \\to Q_t + (m\\eta)^2 \\, C_q^\\top C_q` is admissible. The
+smallest such :math:`\\gamma` is :math:`\\gamma_*^{(b)}(\\eta)`.
+
+This reduction is conservative: the true achievable robust-controller
+:math:`\\gamma` against the structured ``\\Delta A`` ball is bounded above
+by :math:`\\gamma_*^{(b)}(\\eta)` (full structured-singular-value /
+:math:`\\mu`-synthesis would give a tighter bound, but is not implemented).
+However, three reasons make quadratic stability the right starting point
+here:
+
+1. ``LinearDynamicsAdversary`` constrains :math:`\\|\\Delta A\\|_F \\le
+   \\eta` and holds it constant across the trial -- exactly the
+   parametric-uncertainty class quadratic stability handles.
+2. The induced-gain analyser's ``structural_da`` channel uses the same
+   small-gain framing, so empirical :math:`\\gamma_{sd}` (from the analyser)
+   and analytical :math:`\\gamma_*^{(b)}` (from this synthesis) live in the
+   same comparison space.
+3. The reduction preserves the LTI Riccati primitive -- bisection on
+   :math:`\\gamma` proceeds exactly as in flavor-(a); only the cost matrix
+   :math:`Q` changes.
+
+A tighter, time-varying ``B_w(x_t)`` formulation (where the disturbance
+literally tracks the closed-loop state along a nominal reach trajectory)
+is left as future work: it requires a finite-horizon differential Riccati
+along a closed-loop trajectory and is not directly comparable to a single
+:math:`\\gamma` scalar.
 
 Usage
 -----
@@ -1154,6 +1185,214 @@ def find_gamma_star(
 
 
 # =============================================================================
+# Flavor-(b) model-class disturbance: ΔA · [pos, vel]
+# Bug: 97c227a — Riccati flavor-(b) extension via S-procedure / quadratic
+# stability reduction. See module docstring for the mathematical derivation.
+# =============================================================================
+
+
+def _make_pos_vel_selector(plant: PlantLinearization) -> Float[Array, "n_q n"]:
+    """Build the ``C_q`` selector that extracts ``[pos, vel]`` from the augmented state.
+
+    For both the 4-state and 6-state plants, the ``[pos, vel]`` substate is
+    a contiguous prefix of the state vector. ``C_q`` is shape ``(n_q, n)``
+    with ``n_q = 4`` (2 position + 2 velocity), zeroing out any force-state
+    coupling.
+
+    Args:
+        plant: Linearised plant.
+
+    Returns:
+        ``C_q`` of shape ``(4, n)``.
+    """
+    pos_lo, pos_hi = plant.pos_slice
+    vel_lo, vel_hi = plant.vel_slice
+    n_q = (pos_hi - pos_lo) + (vel_hi - vel_lo)
+    n = plant.n
+    C_q = jnp.zeros((n_q, n), dtype=jnp.float64)
+    # Position block
+    n_pos = pos_hi - pos_lo
+    C_q = C_q.at[:n_pos, pos_lo:pos_hi].set(jnp.eye(n_pos, dtype=jnp.float64))
+    # Velocity block
+    n_vel = vel_hi - vel_lo
+    C_q = C_q.at[n_pos:n_pos + n_vel, vel_lo:vel_hi].set(jnp.eye(n_vel, dtype=jnp.float64))
+    return C_q
+
+
+def _augment_schedule_for_modelclass(
+    schedule: CostSchedule,
+    *,
+    eta: float,
+    mass: float,
+    C_q: Float[Array, "n_q n"],
+) -> CostSchedule:
+    """Augment ``Q_t`` and ``Q_f`` with the S-procedure ΔA penalty.
+
+    Adds :math:`(m\\eta)^2 \\, C_q^\\top C_q` to ``Q_t`` for every ``t`` and
+    to ``Q_f``. This is the minimum-conservatism quadratic-stability lift:
+    it converts the flavor-(b) structured-uncertainty problem into a
+    flavor-(a) Riccati on the augmented cost.
+
+    Args:
+        schedule: Original cost schedule (flavor-(a) or unperturbed LQ).
+        eta: Frobenius-norm budget on ``ΔA``. Must be ≥ 0.
+        mass: Effector mass. The factor ``mass`` arises because the force
+            applied by ``DynamicsMatrixPerturb`` is ``f = mass · ΔA · [p,v]``;
+            so the equivalent additive-force disturbance is bounded by
+            ``mass · eta · ‖[p,v]‖``.
+        C_q: ``[pos, vel]`` selector, shape ``(n_q, n)``.
+
+    Returns:
+        A new ``CostSchedule`` with ``Q_t`` and ``Q_f`` augmented.
+    """
+    if eta < 0:
+        raise ValueError(f"eta must be non-negative, got {eta}")
+    Q_aug_term = (mass * eta) ** 2 * (C_q.T @ C_q)
+    Q_new = schedule.Q + Q_aug_term[None]
+    Q_f_new = schedule.Q_f + Q_aug_term
+    return CostSchedule(Q=Q_new, R=schedule.R, Q_f=Q_f_new)
+
+
+def solve_hinf_riccati_modelclass(
+    plant: PlantLinearization,
+    schedule: CostSchedule,
+    gamma: float,
+    *,
+    eta: float,
+    C_q: Optional[Float[Array, "n_q n"]] = None,
+    mass: Optional[float] = None,
+) -> RiccatiSolution:
+    """Flavor-(b) H-infinity Riccati: model-class ΔA disturbance via S-procedure.
+
+    Solves the H-infinity LQ-game Riccati on the augmented cost
+    :math:`Q_t \\to Q_t + (m\\eta)^2 \\, C_q^\\top C_q` while keeping the
+    same force-channel ``B_w``. The result is a sufficient condition for
+    robust LQ performance under any structured perturbation
+    :math:`\\Delta A` with :math:`\\|\\Delta A\\|_F \\le \\eta` applied
+    uniformly along the rollout (matching ``LinearDynamicsAdversary``).
+
+    Mathematical derivation (S-procedure / quadratic-stability):
+    With ``f = mass · ΔA · [p,v]`` (feedbax ``DynamicsMatrixPerturb``), the
+    closed-loop disturbance entering the force channel is
+    :math:`w_t = m\\,\\Delta A\\,C_q x_t`. Cauchy-Schwarz:
+    :math:`\\|w_t\\|_2 \\le m\\eta\\,\\|C_q x_t\\|_2`. A sufficient
+    LMI/Riccati condition for the LQ-game value
+    :math:`x^\\top P x` to bound the worst-case cost-plus-perturbation
+    energy is to penalise :math:`(m\\eta)^2\\,\\|C_q x\\|^2` in :math:`Q`
+    while keeping :math:`B_w` unchanged. The resulting :math:`\\gamma_*^{(b)}`
+    is monotone in :math:`\\eta` and recovers :math:`\\gamma_*^{(a)}` at
+    :math:`\\eta = 0`.
+
+    Args:
+        plant: Linearised plant.
+        schedule: Cost schedule (flavor-(a) form). Will be augmented
+            internally; the input is not modified.
+        gamma: H-infinity disturbance attenuation level.
+        eta: Frobenius-norm budget on the structured ``ΔA``. Must be ≥ 0.
+            ``eta = 0`` recovers ``solve_hinf_riccati`` exactly.
+        C_q: State-selector matrix that extracts ``[pos, vel]`` from the
+            augmented state, shape ``(n_q, n)``. If ``None``, built from
+            ``plant.pos_slice`` and ``plant.vel_slice``.
+        mass: Effector mass. If ``None``, recovered from the plant's
+            continuous-time control matrix ``B_c`` (the velocity row scales
+            as ``1/mass``).
+
+    Returns:
+        A ``RiccatiSolution`` from the augmented Riccati. Per-step
+        diagnostics (``spectral_radii``, ``bracket_conditions``) are with
+        respect to the augmented Riccati, not the flavor-(a) one.
+
+    Raises:
+        ValueError: If ``eta`` is negative or ``gamma`` non-positive.
+    """
+    if eta < 0:
+        raise ValueError(f"eta must be non-negative, got {eta}")
+    if C_q is None:
+        C_q = _make_pos_vel_selector(plant)
+    if mass is None:
+        mass = _infer_mass_from_plant(plant)
+
+    schedule_aug = _augment_schedule_for_modelclass(
+        schedule, eta=float(eta), mass=float(mass), C_q=C_q.astype(jnp.float64)
+    )
+    return solve_hinf_riccati(plant, schedule_aug, gamma)
+
+
+def find_gamma_star_modelclass(
+    plant: PlantLinearization,
+    schedule: CostSchedule,
+    *,
+    eta: float,
+    C_q: Optional[Float[Array, "n_q n"]] = None,
+    mass: Optional[float] = None,
+    gamma_lo: float = 1e-4,
+    gamma_hi: float = 1.0,
+    max_iter: int = 60,
+    tol: float = 1e-4,
+) -> float:
+    """Bisect for the smallest admissible gamma under the flavor-(b) Riccati.
+
+    Same bisection scheme as ``find_gamma_star``, but on the augmented
+    Riccati. Monotone in ``eta``: ``find_gamma_star_modelclass(plant,
+    schedule, eta=0) == find_gamma_star(plant, schedule)`` (modulo
+    bisection precision), and ``find_gamma_star_modelclass`` increases as
+    ``eta`` increases.
+
+    Args:
+        plant: Linearised plant.
+        schedule: Cost schedule (flavor-(a) form).
+        eta: Frobenius-norm budget on ``ΔA``.
+        C_q: Optional state selector. See ``solve_hinf_riccati_modelclass``.
+        mass: Optional mass override. See ``solve_hinf_riccati_modelclass``.
+        gamma_lo: Initial lower bracket.
+        gamma_hi: Initial upper bracket.
+        max_iter: Maximum bisection iterations.
+        tol: Convergence tolerance on relative gamma width.
+
+    Returns:
+        Estimated :math:`\\gamma_*^{(b)}(\\eta)`.
+    """
+    if C_q is None:
+        C_q = _make_pos_vel_selector(plant)
+    if mass is None:
+        mass = _infer_mass_from_plant(plant)
+    schedule_aug = _augment_schedule_for_modelclass(
+        schedule, eta=float(eta), mass=float(mass), C_q=C_q.astype(jnp.float64)
+    )
+    return find_gamma_star(
+        plant,
+        schedule_aug,
+        gamma_lo=gamma_lo,
+        gamma_hi=gamma_hi,
+        max_iter=max_iter,
+        tol=tol,
+    )
+
+
+def _infer_mass_from_plant(plant: PlantLinearization) -> float:
+    """Recover effector mass from the continuous-time control matrix.
+
+    For the rlrmp plant, the velocity row of ``B_c`` is ``I/mass`` (4-state)
+    or the force row of ``B_c`` is ``I/tau`` and the velocity-to-force
+    coupling in ``A_c`` is ``I/mass`` (6-state). Either way, the disturbance
+    matrix ``Bw_c`` velocity row is ``I/mass``, so we read it off there.
+
+    Returns:
+        ``mass`` as a Python float.
+    """
+    vel_lo, vel_hi = plant.vel_slice
+    Bw_vel_block = plant.Bw_c[vel_lo:vel_hi, :]
+    # Bw_c velocity block is I/mass; pick the (0,0) entry (assumes isotropic).
+    diag_val = float(Bw_vel_block[0, 0])
+    if diag_val <= 0:
+        raise ValueError(
+            "Could not infer mass from plant: Bw_c velocity row has non-positive "
+            f"(0,0) entry {diag_val}. Pass mass explicitly."
+        )
+    return 1.0 / diag_val
+
+
+# =============================================================================
 # Closed-loop simulation
 # =============================================================================
 
@@ -1459,6 +1698,99 @@ def compute_velocity_inflation(
     )
 
 
+def compute_velocity_inflation_modelclass(
+    plant: PlantLinearization,
+    schedule: CostSchedule,
+    *,
+    init_pos: Float[Array, "2"],
+    target_pos: Float[Array, "2"],
+    eta: float,
+    gamma_factor: float = 1.5,
+    gamma_star: Optional[float] = None,
+    C_q: Optional[Float[Array, "n_q n"]] = None,
+    mass: Optional[float] = None,
+) -> VelocityInflationResult:
+    """LQR vs flavor-(b) H-infinity peak-forward-velocity comparison.
+
+    Same headline metric as ``compute_velocity_inflation`` but using the
+    model-class Riccati: the H-infinity controller is designed against a
+    structured ``ΔA`` perturbation with Frobenius bound ``eta``.
+
+    Bug: 97c227a — the flavor-(b) extension that the original
+    ``compute_velocity_inflation`` (flavor-(a)) does not implement.
+
+    Args:
+        plant: Linearised plant.
+        schedule: Cost schedule (flavor-(a) form; will be augmented).
+        init_pos: Reach starting position.
+        target_pos: Reach target position.
+        eta: Frobenius-norm budget on ``ΔA``.
+        gamma_factor: Multiplier on :math:`\\gamma_*^{(b)}` for the design
+            level. ``1.5`` matches synthesis_review section 2.
+        gamma_star: If provided, skip bisection and use this value as
+            :math:`\\gamma_*^{(b)}`.
+        C_q: Optional state selector.
+        mass: Optional mass override.
+
+    Returns:
+        A ``VelocityInflationResult`` whose ``riccati`` field carries the
+        flavor-(b) (augmented) Riccati solution at
+        :math:`\\gamma_{factor} \\cdot \\gamma_*^{(b)}`.
+    """
+    if C_q is None:
+        C_q = _make_pos_vel_selector(plant)
+    if mass is None:
+        mass = _infer_mass_from_plant(plant)
+
+    if gamma_star is None:
+        gamma_star = find_gamma_star_modelclass(
+            plant, schedule, eta=eta, C_q=C_q, mass=mass
+        )
+    gamma_eval = gamma_factor * gamma_star
+
+    lqr_sol = solve_lqr(plant, schedule)
+    hinf_sol = solve_hinf_riccati_modelclass(
+        plant, schedule, gamma_eval, eta=eta, C_q=C_q, mass=mass
+    )
+    if not hinf_sol.admissible:
+        raise RuntimeError(
+            f"Flavor-(b) H-infinity Riccati at gamma={gamma_eval} "
+            f"(factor={gamma_factor}, eta={eta}) was inadmissible despite "
+            f"gamma_star={gamma_star}. Check bisection precision."
+        )
+
+    x0 = make_reach_initial_state(plant, init_pos=init_pos, target_pos=target_pos)
+    lqr_rollout = simulate_closed_loop(plant, lqr_sol.K, x0, target_pos=target_pos)
+    hinf_rollout = simulate_closed_loop(plant, hinf_sol.K, x0, target_pos=target_pos)
+
+    delta = (
+        100.0
+        * (hinf_rollout.peak_forward_velocity - lqr_rollout.peak_forward_velocity)
+        / max(lqr_rollout.peak_forward_velocity, 1e-12)
+    )
+    delta_lateral = (
+        100.0
+        * (hinf_rollout.peak_lateral_velocity - lqr_rollout.peak_lateral_velocity)
+        / max(lqr_rollout.peak_lateral_velocity, 1e-12)
+    )
+
+    return VelocityInflationResult(
+        gamma_star=float(gamma_star),
+        gamma_evaluated=float(gamma_eval),
+        lqr_peak_velocity=lqr_rollout.peak_velocity,
+        hinf_peak_velocity=hinf_rollout.peak_velocity,
+        delta_v_percent=float(delta),
+        lqr_peak_forward_velocity=lqr_rollout.peak_forward_velocity,
+        hinf_peak_forward_velocity=hinf_rollout.peak_forward_velocity,
+        lqr_peak_lateral_velocity=lqr_rollout.peak_lateral_velocity,
+        hinf_peak_lateral_velocity=hinf_rollout.peak_lateral_velocity,
+        delta_v_lateral_percent=float(delta_lateral),
+        lqr_rollout=lqr_rollout,
+        hinf_rollout=hinf_rollout,
+        riccati=hinf_sol,
+    )
+
+
 # =============================================================================
 # Linearisation fidelity check
 # =============================================================================
@@ -1525,10 +1857,13 @@ __all__ = [
     "cs_eq15_cost_schedule",
     "cost_schedule_from_loss_config",
     "solve_hinf_riccati",
+    "solve_hinf_riccati_modelclass",
     "solve_lqr",
     "find_gamma_star",
+    "find_gamma_star_modelclass",
     "simulate_closed_loop",
     "make_reach_initial_state",
     "compute_velocity_inflation",
+    "compute_velocity_inflation_modelclass",
     "linearization_fidelity",
 ]
