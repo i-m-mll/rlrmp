@@ -238,7 +238,7 @@ def _resolve_hidden_type(hidden_type_str: str, dt: float):
 
     Args:
         hidden_type_str: One of "gru" or "vanilla_rnn".
-        dt: Simulation timestep (passed to VanillaRNNCell so that alpha=dt/tau=1.0).
+        dt: Simulation timestep.
 
     Returns:
         A class or partial-applied constructor compatible with point_mass_nn's
@@ -250,8 +250,9 @@ def _resolve_hidden_type(hidden_type_str: str, dt: float):
     elif hidden_type_str == "vanilla_rnn":
         from functools import partial as _partial
         from rlrmp.models import VanillaRNNCell
-        # dt=tau => alpha=1.0 (pure vanilla RNN, no leaky integration)
-        return _partial(VanillaRNNCell, dt=dt, tau=dt)
+        # tau=0.1 s (100 ms) => alpha=dt/tau=0.1 at dt=0.01 — matches cortical-neuron
+        # time constant in motor-control RNN literature (Yang 2019, Sussillo 2015).
+        return _partial(VanillaRNNCell, dt=dt, tau=0.1)
     else:
         raise ValueError(f"Unknown hidden_type: {hidden_type_str!r}")
 
@@ -1790,7 +1791,7 @@ def parse_args() -> argparse.Namespace:
         choices=["gru", "vanilla_rnn"],
         help=(
             "Recurrent network type: gru (default, GRUCell with gating) or "
-            "vanilla_rnn (LeakyRNNCell with dt=tau, no gating). "
+            "vanilla_rnn (LeakyRNNCell with tau=0.1 s => alpha=0.1, no gating). "
             "vanilla_rnn is a diagnostic for the gating-laziness hypothesis."
         ),
     )
