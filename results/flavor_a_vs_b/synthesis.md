@@ -487,7 +487,7 @@ formulation is. This is the empirical anchor for the open issue `97c227a`
 
 ---
 
-## 6. The new flavor-B training run (in flight)
+## 6. The new flavor-B training run
 
 ### 6.1 Setup
 
@@ -531,20 +531,52 @@ collapses to 0.
 - Heavy outputs (model `.eqx`, training logs, large `.npz`):
   `_artifacts/flavor_a_vs_b/runs/<run>/`.
 
-### 6.4 Loss trajectories — pending
+### 6.4 Loss trajectories
 
-<!-- PARENT: fill from training run results once warmup + adversarial phases
-complete. Expected fields per run: warmup loss curve, adversarial loss curve
-(with adversary loss as separate trace), final ‖ΔA‖_F vs eta_max
-saturation rate, replicate convergence flags. Reference earlier
-hygiene principle: cross-replicate sanity — pull ≥ 2 replicates per group
-for diagnostic pass; flag any replicate >10× from group median. -->
+All 9 training configurations (3 $\eta_\mathrm{max}$ × 3 seeds, 5 internal
+replicates each) converged. Warmup `ctrl_loss` plateaus at ≈ 14.2 across
+groups; the adversarial phase begins at ≈ 9.4 and descends to a final
+range of 4.10–5.34 by batch 5000 with zero NaN/Inf and zero >20% spikes
+across 90 phase transitions.
+
+Per-condition aggregate `ctrl_loss` (mean ± SD across 3 seeds × 5
+replicates):
+
+| $\eta_\mathrm{max}$ | warmup end | adv 0 | adv 1k | adv 2.5k | adv 5k (final) |
+|---|---|---|---|---|---|
+| 0.03 | 14.32 | 9.40 | 8.43 | 6.39 | **4.75 ± 0.26** |
+| 0.10 | 14.13 | 9.38 | 8.30 | 7.29 | **5.12 ± 0.22** |
+| 0.30 | 14.16 | 9.43 | 7.94 | 6.82 | **4.70 ± 0.18** |
+
+Stability of the per-batch trajectory is monotonic in $\eta_\mathrm{max}$:
+the $\eta=0.30$ runs are the cleanest (87% mean monotonicity), $\eta=0.03$
+is intermediate (81%), and $\eta=0.10$ shows transient oscillation in
+the batch 3000–4500 window with one seed dipping to 60% (group mean 70%).
+
+Final loss is **non-monotonic in $\eta_\mathrm{max}$** — a U-shape at
+4.75 → 5.12 → 4.70. The middle $\eta_\mathrm{max}$ trains *worse* than
+either extreme. This is unexpected if loss were a smooth proxy for the
+quantity of interest; we re-examine the U-shape against the induced-gain
+results in §7.1 (the U-shape does *not* appear there, suggesting it is a
+saddle-dynamics or fused-loss reporting artifact rather than a real
+robustness inversion).
+
+$\|\Delta A\|_F$ saturates at $\eta_\mathrm{max}$ in every run, confirming
+the inner PGD is at the budget bound and the Frobenius constraint is
+active throughout the adversarial phase.
+
+Cross-references:
+
+- Per-run hyperparameters: `results/part2_5/runs/flavor_b_eta{0.03,0.10,0.30}__seed_{0,1,2}/run.json`.
+- Parsed loss table: `results/part2_5/flavor_b_summary.json`.
+- Bulk artifacts (`.eqx`, `.npz`, training logs): `_artifacts/part2_5/runpod/flavor_b/`.
+- Issue thread: `c723082` comment from this work bundle.
 
 ---
 
-## 7. Two pending analyses
+## 7. The two follow-up analyses
 
-### 7.1 (A) Induced gain on flavor-B trained models — *Results pending*
+### 7.1 (A) Induced gain on flavor-B trained models
 
 **Goal.** Run the induced-gain analyser (§3) on each of the 9
 flavor-B-trained groups (3 $\eta_\mathrm{max}$ × 3 seeds, ≥ 2 replicates per
@@ -577,21 +609,64 @@ all three $w$ × `qr_cost` cells per group; ≥ 2 replicates per group; report
 median + range; document any replicate exclusions per the §5.2 hygiene
 comment (`4fd0388`).
 
-```
-<!-- PARENT: fill from subagent A's report (induced-gain on flavor-B models).
-Expected sections to populate:
-  - Cross-method headline table: 9 flavor-B groups + the Part 2.5 baselines
-    side-by-side, columns γ_af / γ_sd / γ_sp / γ_af/γ_*.
-  - Pre-registered prediction outcomes: γ_sd reduction confirmed/falsified
-    at each eta_max level.
-  - Replicate-spread reporting per hygiene rule (median + range; outlier
-    flags).
-  - Cross-cutting commentary for coord c99ad9d / 4d38c15.
-  - Direct comparison to the analytical γ_* (flavor-(b) version, if subagent
-    B has produced it; else flag as "to be compared once 7.2 lands"). -->
-```
+**Results.** The analyser was driven by `scripts/run_induced_gain_flavor_b.py`
+(mirrors `run_induced_gain_part2_5.py`); cross-method tabulation by
+`scripts/build_cross_method_comparison.py`. Per-replicate `gains.json`
+under `_artifacts/part2_5/runs/induced_gain_flavor_b/<group>/`; cross-group
+`summary.json` at the same root; tracked spec at
+`results/part2_5/runs/induced_gain_flavor_b/run.json` (+ `notes.md`); the
+side-by-side comparison against Part 2.5 flavor-A baselines is at
+`results/part2_5/induced_gain_flavor_b/cross_method_comparison.md`.
+Hygiene exclusions per §5.2: 0/45 $\gamma_\mathrm{sd}$ replicates flagged
+at the 10× rule; 5/45 $\gamma_\mathrm{af}$ flagged; 8/45 $\gamma_\mathrm{sp}$
+flagged (excluded from medians). One markedly elevated $\gamma_\mathrm{sd}$
+at $\eta=0.03$ seed_2 rep_4 ($\gamma_\mathrm{sd}=1001.7$) was within the
+10× envelope and retained; documented in `notes.md`.
 
-### 7.2 (B) Riccati flavor-(b) extension — *Results pending*
+**Headline.** $\gamma_\mathrm{sd}$ on flavor-B-trained controllers,
+median across 45 replicates: **154.78**. Flavor-A baseline median (9
+groups, excluding the known-degenerate `mult_single` rep_0): **163.39**.
+Ratio **0.947** — a ~5% reduction, **within methodological noise**.
+
+**Verdict.** The pre-registered "$\gamma_\mathrm{sd}$ reduction by 2× or
+more at $\eta_\mathrm{max} \ge 0.10$" prediction is **not supported**.
+Flavor-B-trained controllers and flavor-A-trained controllers are
+empirically indistinguishable on $\gamma_\mathrm{sd}$ at this canonical
+operating point.
+
+**$\eta_\mathrm{max}$ trend.** $\gamma_\mathrm{sd}$ is **flat** in
+$\eta_\mathrm{max}$:
+
+| $\eta_\mathrm{max}$ | $\gamma_\mathrm{sd}$ median | $\gamma_\mathrm{af}$ median | $\gamma_\mathrm{sp}$ median |
+|---|---|---|---|
+| 0.03 | 152.53 | (per `notes.md`) | 1.39 |
+| 0.10 | 156.22 | (per `notes.md`) | 0.95 |
+| 0.30 | 154.78 | (per `notes.md`) | 1.25 |
+
+No U-shape in $\gamma_\mathrm{sd}$. The U-shape observed in training
+`ctrl_loss` (§6.4: 4.75/5.12/4.70) therefore most likely reflects a
+saddle-dynamics or fused-loss reporting artifact, not a real robustness
+inversion.
+
+**Surprise positive on $\gamma_\mathrm{sp}$.** Sensory-perturbation
+$\gamma_\mathrm{sp}$ is also flat in $\eta_\mathrm{max}$ (1.39 / 0.95 /
+1.25), but markedly *lower* than the flavor-A vanilla baseline and
+comparable to flavor-A minimax. Flavor-B training appears to confer some
+sensory-perturbation robustness despite never training against that
+channel — auxiliary, but worth noting.
+
+**Cross-link to §7.2.** The flat-in-$\eta_\mathrm{max}$ behaviour of
+$\gamma_\mathrm{sd}$ is consistent with the small lift in $\gamma_*^{(b)}$
+predicted by the S-procedure quadratic-stability extension (§7.2:
+$\gamma_*^{(b)}$ at $\eta=0.1$ is +2.0% above $\gamma_*^{(a)}$ on the
+rlrmp regime). At this operating point, flavor-(a) and flavor-(b) are
+not clearly distinguishable by either the analyser or the analytical
+synthesiser — see §8 for the joint-result discussion.
+
+Issue thread: comment on `74bfd86` (induced-gain analyser) at comment
+`7344b34`.
+
+### 7.2 (B) Riccati flavor-(b) extension
 
 **Goal.** Extend `src/rlrmp/analysis/hinf_riccati.py` so that $B_w$ accepts
 flavor-(b) structural disturbance $\Delta A \cdot x$ rather than only the
@@ -623,21 +698,121 @@ existing xfailed `test_cs_faithful_qr_velocity_inflation` into a passing
 test under the new flavor; round-trip identity against the induced-gain
 analyser's `structural_da` channel.
 
-```
-<!-- PARENT: fill from subagent B's report (Riccati flavor-(b) extension).
-Expected sections to populate:
-  - γ_*^(b) on rlrmp plant + γ_*^(a) baseline, ratio.
-  - γ_*^(b) on C&S plant + faithful Eq. 15 Q,R; Δv at 1.5γ_*^(b) (with sign).
-  - Whether the existing xfailed C&S test now passes under flavor-(b) B_w.
-  - Any numerical-conditioning / well-posedness caveats at γ near γ_*^(b).
-  - Cross-link to subagent A: does γ_*^(b) on the rlrmp plant match the
-    median γ_sd from the flavor-B-trained controllers? (round-trip across
-    the full flavor-A ⊊ flavor-B story). -->
-```
+**Approach.** S-procedure / quadratic-stability lift. Treating
+$\Delta A \cdot x_t$ as a multiplicative state-coupled disturbance with
+$\|\Delta A\|_F \le \eta$, Cauchy–Schwarz on the Frobenius operator norm
+gives $\|w_t\| \le m\eta\|C_q x_t\|$. A sufficient condition for
+flavor-(b) closed-loop performance at level $\gamma$ is then the *same*
+flavor-(a) force-channel Riccati at level $\gamma$ but with the running
+state-cost $Q$ augmented by $(m\eta)^2 \cdot C_q^\top C_q$. This is a
+**conservative** lift: μ-synthesis would be tighter, and a trajectory-
+coupled time-varying $B_w(x_t)$ with $w_t = \Delta A \cdot x_t$ is a
+separate finite-horizon DRE problem deferred as future work.
+
+**API.** New entry points `solve_hinf_riccati_modelclass`,
+`find_gamma_star_modelclass`, `compute_velocity_inflation_modelclass`
+in `src/rlrmp/analysis/hinf_riccati.py`. The flavor-(a) interface is
+untouched.
+
+**$\gamma_*^{(b)}$ values.**
+
+| Plant | Q,R | $\eta$ | $\gamma_*$ |
+|---|---|---|---|
+| rlrmp ($k=10$) | rlrmp | 0 (= flavor-(a)) | 0.009427 |
+| rlrmp ($k=10$) | rlrmp | 0.1 | 0.009618 (+2.0%) |
+| rlrmp ($k=10$) | rlrmp | 0.5 | 0.013365 (+41.8%) |
+| C&S ($k=0.1$) | faithful Eq. 15, $\alpha_1=1$ | 0 | 5.898 |
+| C&S ($k=0.1$) | faithful Eq. 15, $\alpha_1=1$ | 1 | 5.898 (~0%) |
+| C&S ($k=0.1$) | faithful Eq. 15, $\alpha_1=1$ | 10 | 5.900 (+0.04%) |
+| C&S ($k=0.1$) | faithful Eq. 15, $\alpha_1=1$ | 100 | 6.103 (+3.5%) |
+
+The C&S regime is essentially flat in $\eta$ because the C&S Q places
+$10^6$ weight on position, dwarfing the augmented $(m\eta)^2 \cdot
+C_q^\top C_q$ term until $\eta$ reaches order $10^2$.
+
+**Pivotal headline (negative).** The previously-xfailed
+`test_cs_faithful_qr_velocity_inflation` does **not** become a passing
+test under flavor-(b). Δv at $1.5 \cdot \gamma_*^{(b)}$ on the C&S regime:
+
+| $\eta$ | Δv |
+|---|---|
+| 0 (flavor-(a)) | −0.039% |
+| 0.1 | −0.039% |
+| 1.0 | −0.083% |
+| 10.0 | −4.11% |
+| 100.0 | −52.93% |
+
+Δv stays $\le 0$ and grows **more negative** as $\eta$ increases.
+*Mechanism:* augmenting $Q$ by $(m\eta)^2 \cdot C_q^\top C_q$ adds energy
+penalty on $[p, v]$, which damps the controller and lowers forward
+velocity — the opposite of the C&S "robust = faster reach" signature.
+
+**Implication.** The S-procedure quadratic-stability lift is
+*insufficient* to recover the C&S signature on the C&S regime. This does
+not refute the flavor-(a) ⊊ (b) thesis broadly — the gap could still be
+real but finer than what quadratic stability captures. Tighter
+formulations (μ-synthesis, trajectory-coupled time-varying $B_w(x_t)$)
+remain candidates and are flagged as natural next steps in §8.
+
+**Tests.** 25 passed, 2 xfailed: the original flavor-(a) C&S xfail is
+unchanged, and a new flavor-(b) xfail captures the diagnosis above
+(table + mechanism + implication) in its xfail-reason string. All
+flavor-(a) tests pass unchanged.
+
+Issue thread: comment on `97c227a`. Cross-cutting comment on `c99ad9d`
+(training-methods coord).
 
 ---
 
-## 8. What we are testing / hoping to see
+## 8. Synthesis: what the two analyses jointly tell us
+
+### 8.0 Outcome at the canonical operating point
+
+Both pre-registered hypotheses are **not supported** at the
+canonical operating point evaluated here:
+
+- **§7.1 (induced gain on flavor-B trained models)**: $\gamma_\mathrm{sd}$
+  median 154.78 (flavor-B) vs 163.39 (flavor-A baseline), ratio 0.947 —
+  a ~5% reduction, within methodological noise. The "≥ 2× reduction at
+  $\eta_\mathrm{max} \ge 0.10$" prediction is falsified at this single
+  canonical reach.
+- **§7.2 (flavor-(b) Riccati synthesis)**: under the S-procedure
+  quadratic-stability lift, the previously-xfailed
+  `test_cs_faithful_qr_velocity_inflation` does *not* pass; Δv at
+  $1.5\gamma_*^{(b)}$ on the C&S regime stays $\le 0$ and grows more
+  negative with $\eta$ (mechanism: $Q$-augmentation damps the
+  controller). The "Δv > 0 on the C&S plant under flavor-(b) $B_w$"
+  prediction is falsified under quadratic stability.
+
+The joint reading is *not* that the flavor-(a) ⊊ (b) thesis is refuted.
+It is that the gap, if real, is finer than what either of these probes
+can detect — the analyser at one fixed canonical reach against a
+worst-case operator-norm $\Delta A$, and the synthesiser under a
+conservative quadratic-stability bound. Both negative results constrain
+where a positive (a)-vs-(b) signal can plausibly hide; neither rules
+the signal out.
+
+### 8.0.1 Plausible refinements (not yet filed as issues)
+
+- **Direction-projected induced gain.** Project the analyser onto the
+  $\Delta A$ directions actually trained against (per-group), rather than
+  taking a worst-case operator norm. This would test whether flavor-B
+  is more robust *in the directions it trained against*, even if not
+  worst-case. A natural follow-up analysis; not yet filed.
+- **Tighter analytical lifts.** μ-synthesis (structured singular value)
+  for the flavor-(b) Riccati would replace the conservative S-procedure
+  bound and may reverse the C&S Δv result. Trajectory-coupled
+  time-varying $B_w(x_t)$ is the finite-horizon DRE alternative. Not
+  yet filed.
+- **Operating-point sensitivity.** The induced-gain analyser was run at
+  one canonical reach (15 cm forward, SISU=0.5). Re-running across a
+  reach geometry / SISU sweep, or longer horizons, may surface
+  stratification masked by the single-point measurement.
+
+These are flagged here as natural next steps; per the coordination
+protocol they are *not* filed as placeholder issues. The cross-cutting
+comment on `4d38c15` records the empirical state and the candidate
+refinements without committing to any.
 
 ### 8.1 The "(a)-vs-(b) signal"
 
