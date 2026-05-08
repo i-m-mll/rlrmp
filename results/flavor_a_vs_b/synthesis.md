@@ -376,10 +376,13 @@ but *not* what C&S synthesise the controller against.
 
 The +1.00% on C&S regime grows toward C&S Fig 1e magnitudes as $\gamma$
 approaches $\gamma_*$: +2.13% at $\gamma_\mathrm{des}=1.05\gamma_*$,
-+2.35% at $1.001\gamma_*$. C&S Fig 1e itself shows ~10–15% peak-fwd-vel
-shift, but that is averaged across 100 simulation runs **with**
-disturbances applied (curl-field perturbations), not the clean
-unperturbed Riccati rollout we measure here. Order-of-magnitude
++2.35% at $1.001\gamma_*$. C&S Fig 1e itself shows **+7.76%** peak-fwd-vel
+shift (user-measured: 125 px robust vs 116 px LQG baseline in Fig 1e;
+note the C&S text never quotes a numerical Δv — it reports only cost-based
+comparisons: ~15% higher robust cost on p. 8139, <20% vs ~30%
+perturbation-cost increase). That figure is averaged across 100 simulation
+runs **with** disturbances applied (curl-field perturbations), not the
+clean unperturbed Riccati rollout we measure here. Order-of-magnitude
 consistency: yes, qualitative reproduction.
 
 **Implication.** The previously-xfailed
@@ -389,6 +392,25 @@ full-state $B_w = I_n$. With `cs_faithful_pointmass()` the test passes
 (Δv > 0 on C&S regime, monotone in $\gamma$). The training-side
 flavor-(a) ⊊ (b) thesis is **a separate question** — neither this
 $B_w$-channel fix nor the §7.2 S-procedure result speaks to it directly.
+
+**Structural analytical gaps (issue `9a0558e`).** Two deeper gaps between
+the rlrmp Riccati setup and C&S's remain unresolved:
+
+- **G6 — 8-state plant with disturbance-integrator coupling.** C&S use an
+  8-state plant; rows 7–8 are pure integrators driven by $D = I_8$, with
+  $A[3,7] = A[4,8] = 1$ coupling the integrated disturbance into velocity.
+  Our setup uses a 6-state plant with $B_w = I_6$ applied directly — a
+  structurally different H∞ game. The +7.76% C&S target and the Δv values
+  in the table above were measured from a simulation under this 8-state
+  formulation; our Riccati is not.
+- **G1 — 50 ms (5-step) sensorimotor delay augmentation.** Trained
+  controllers have `feedback_delay_steps=5`; the analytical Riccati has
+  none. Structurally inconsistent; the delay-augmented plant has a larger
+  state dimension and a different effective gain budget.
+
+These gaps are tracked jointly on `9a0558e`. The gap analysis is at
+`/tmp/flavor_ab_review/findings/cs2019_review.md`; the analyses coordination
+issue `4d38c15` carries the cross-cutting cross-reference.
 
 ### 4.3 Why this matters for the comparison
 
@@ -420,7 +442,7 @@ every converged condition (standard backprop, CVaR 10%, APT with 8
 hyperparameter variants, adaptive control cost, center-out task, and
 parametric `GaussianBumpAdversary` minimax), $|\Delta v_\mathrm{peak}^{
 \beta=0\to 1}| < 1.2\%$ at SISU=0 vs SISU=1 — at least 8–10$\times$ smaller
-than the C&S effect size of +10–25%. Phase 6 (parametric minimax) is the
+than the C&S effect size of +7.76% (Fig 1e, user-measured). Phase 6 (parametric minimax) is the
 flavor-A high-water-mark; the phase pivot was to the methodology-fix branch
 (umbrella `b557d4e`, now closed; child issues continue) which posed the
 flavor-A vs flavor-B reframing.
@@ -508,7 +530,7 @@ recovering the C&S signature requires the flavor-(b) $B_w$ formulation
 
 The peak-velocity ratio of trained controllers (Part 2.5 §5.1) was at most
 $|\Delta v| < 1.2\%$ across every flavor-A method, an order of magnitude
-short of the +10–25% prediction.
+short of the +7.76% C&S target (Fig 1e, user-measured).
 
 ### 5.4 The C&S-faithful Riccati test (resolved)
 
@@ -644,7 +666,8 @@ flavor-A baselines tabulated in §5.2.
   report observationally.
 - **Δv at $\gamma_\mathrm{des}$** on the trained controller (read off the
   worst-case $w^*$ trajectory from PI) should approach the analytical
-  Riccati prediction; the gap to +10–25% is the second-order test.
+  Riccati prediction; the gap to the +7.76% C&S target (Fig 1e,
+  user-measured) is the second-order test.
 
 **Method.** `src/rlrmp/analysis/induced_gain.py::induced_gain` for each
 checkpoint via `_NetworkController` adapter (the workaround used in the
