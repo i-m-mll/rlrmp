@@ -1,0 +1,179 @@
+{
+  "experiment": "part2_5",
+  "group": "flavor_b_eta0.10",
+  "variant": "seed_0",
+  "run_id": "flavor_b_eta0.10__seed_0",
+  "branch": "feature/part2_5-flavor-b-runs",
+  "git_sha": "d193d9e122392d4c7464ddbc45997811caaf508d",
+  "spec_kind": "adversarial_training_run",
+  "training_method": "minimax_adversarial",
+  "adversary": {
+    "type": "linear_dynamics",
+    "class": "LinearDynamicsAdversary",
+    "intervenor": "DynamicsMatrixPerturb",
+    "flavor": "b",
+    "eta_max": 0.1,
+    "lr": 0.01,
+    "n_steps": 5,
+    "n_adversary_steps_per_outer": 5,
+    "adversary_lr": 0.0003,
+    "n_adversaries": 1,
+    "constraint": "Frobenius-ball PGD"
+  },
+  "controller_params": {
+    "hidden_type": "gru",
+    "hidden_size": 180,
+    "population_structure": {
+      "n_input_only": 60,
+      "n_readout_only": 60,
+      "n_recurrent_only": 60
+    },
+    "controller_lr": 0.0001
+  },
+  "plant_params": {
+    "kind": "point_mass_2d",
+    "mass": 1.0,
+    "damping": 10.0,
+    "tau": 0.05,
+    "dt": 0.01
+  },
+  "training_schedule": {
+    "n_warmup_batches": 2000,
+    "n_adversary_batches": 5000,
+    "adv_batch_size": 250,
+    "checkpoint_every": 500,
+    "fused": true,
+    "loss_update_enabled": false,
+    "sisu_gating": "additive"
+  },
+  "n_replicates": 5,
+  "seed": 0,
+  "cli_args": {
+    "adversary-type": "linear_dynamics",
+    "linear-dynamics-eta-max": 0.1,
+    "linear-dynamics-lr": 0.01,
+    "linear-dynamics-pgd-steps": 5,
+    "n-warmup-batches": 2000,
+    "n-adversary-batches": 5000,
+    "adv-batch-size": 250,
+    "n-replicates": 5,
+    "hidden-type": "gru",
+    "seed": 0,
+    "checkpoint": true,
+    "fused": true
+  },
+  "input_artifacts": {
+    "warmup_model": "_artifacts/part2_5/runpod/flavor_b/eta0.10__seed_0/warmup_model.eqx",
+    "adversarial_model": "_artifacts/part2_5/runpod/flavor_b/eta0.10__seed_0/adversarial_model.eqx",
+    "trained_adversary": "_artifacts/part2_5/runpod/flavor_b/eta0.10__seed_0/trained_adversary.eqx",
+    "checkpoint_latest": "_artifacts/part2_5/runpod/flavor_b/eta0.10__seed_0/checkpoints_adversarial/checkpoint_latest/",
+    "adversarial_losses_npz": "_artifacts/part2_5/runpod/flavor_b/eta0.10__seed_0/adversarial_losses.npz",
+    "adversary_delta_A_npz": "_artifacts/part2_5/runpod/flavor_b/eta0.10__seed_0/adversary_delta_A.npz",
+    "log": "_artifacts/part2_5/runpod/flavor_b/logs/eta0.10_seed0.log"
+  },
+  "runpod_pod": {
+    "host": "82.221.170.242:31593",
+    "gpu": {
+      "device_kinds": [
+        "NVIDIA GeForce RTX 5090"
+      ],
+      "device_count": 1,
+      "device_memory_gb_total": [
+        31.8427734375
+      ]
+    }
+  },
+  "versions": {
+    "rlrmp_version": "unknown",
+    "feedbax_version": "0.1.2",
+    "jax_version": "0.10.0"
+  },
+  "timing": {
+    "started_at": "2026-05-08T03:24:21",
+    "warmup_done_at": "2026-05-08T03:34:11",
+    "adversarial_started_at": "2026-05-08T03:34:11",
+    "completed_at": "2026-05-08T05:28:51",
+    "wall_time_seconds": 7470.0,
+    "wall_time_warmup_seconds": 590.0,
+    "wall_time_adversarial_seconds": 6880.0
+  },
+  "loss_summary": {
+    "warmup_first_val_loss": 32.0,
+    "warmup_last_val_loss": 14.0,
+    "warmup_n_val_reports": 21,
+    "adversarial_loss_at_batch_0": 9.446,
+    "adversarial_final_ctrl_loss": 5.291,
+    "adversarial_final_ctrl_sd": 1.56,
+    "adversarial_final_adv_loss": 5.291,
+    "adversarial_final_adv_sd": 1.56,
+    "adv_loss_samples": {
+      "0": {
+        "ctrl_loss": 9.446,
+        "ctrl_sd": 0.3017,
+        "adv_loss": 9.446,
+        "adv_sd": 0.3017
+      },
+      "500": {
+        "ctrl_loss": 8.992,
+        "ctrl_sd": 1.318,
+        "adv_loss": 8.992,
+        "adv_sd": 1.318
+      },
+      "1000": {
+        "ctrl_loss": 8.606,
+        "ctrl_sd": 1.393,
+        "adv_loss": 8.606,
+        "adv_sd": 1.393
+      },
+      "1500": {
+        "ctrl_loss": 7.786,
+        "ctrl_sd": 1.845,
+        "adv_loss": 7.786,
+        "adv_sd": 1.845
+      },
+      "2000": {
+        "ctrl_loss": 7.166,
+        "ctrl_sd": 2.369,
+        "adv_loss": 7.166,
+        "adv_sd": 2.369
+      },
+      "2500": {
+        "ctrl_loss": 6.516,
+        "ctrl_sd": 2.688,
+        "adv_loss": 6.516,
+        "adv_sd": 2.688
+      },
+      "3000": {
+        "ctrl_loss": 6.182,
+        "ctrl_sd": 2.285,
+        "adv_loss": 6.182,
+        "adv_sd": 2.285
+      },
+      "3500": {
+        "ctrl_loss": 5.499,
+        "ctrl_sd": 2.0,
+        "adv_loss": 5.499,
+        "adv_sd": 2.0
+      },
+      "4000": {
+        "ctrl_loss": 6.076,
+        "ctrl_sd": 1.872,
+        "adv_loss": 6.076,
+        "adv_sd": 1.872
+      },
+      "4500": {
+        "ctrl_loss": 7.036,
+        "ctrl_sd": 3.936,
+        "adv_loss": 7.036,
+        "adv_sd": 3.936
+      },
+      "4999": {
+        "ctrl_loss": 5.291,
+        "ctrl_sd": 1.56,
+        "adv_loss": 5.291,
+        "adv_sd": 1.56
+      }
+    },
+    "n_non_finite_loss_steps": 0
+  }
+}
