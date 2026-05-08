@@ -35,9 +35,10 @@ packages = ["src/rlrmp"]
 config-settings = { editable-mode = "compat" }
 
 [tool.uv.sources.feedbax]
-# Point at feedbax develop worktree (the protected branch that has
-# save_figure_with_spec merged via 1b5daf70). Bug: 0077b42.
-path = "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax/worktrees/develop"
+# Point at feedbax feature worktree carrying the StateDerivativeLoss term
+# needed for the smoothness retrain A/B. Bug: efc4d68 (feedbax issue e8f3738).
+# Will revert to develop once the feedbax feature branch is merged back.
+path = "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax/worktrees/feature__loss-hidden-derivative"
 editable = true
 
 [tool.ruff]

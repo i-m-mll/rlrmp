@@ -11,6 +11,7 @@ from feedbax.loss import (
     AbstractLoss,
     CompositeLoss,
     FuncTermsLoss,
+    StateDerivativeLoss,
     StopAtGoalLoss,
     TargetSpec,
     TargetStateLoss,
@@ -164,6 +165,10 @@ DEFAULT_TOP_WEIGHTS: dict[str, float] = {
     "effector_pos_running": 0.0,
     "nn_output": 1e-5,
     "nn_hidden": 1e-5,
+    # Hidden-state smoothness penalty (Shahbazi et al. 2025 Eq. 1; weight 1e-3
+    # in their setup). Default 0.0 so existing configs are unchanged unless
+    # explicitly enabled. Bug: efc4d68
+    "nn_hidden_derivative": 0.0,
     # composite bundle (if enabled)
     "goal_hit_in_window": 1.0,
 }
@@ -408,6 +413,14 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
             "nn_hidden",
             where=lambda state: state.net.hidden,
             spec=target_zero,
+        ),
+        # Hidden-state smoothness regulariser (Shahbazi et al. 2025 Eq. 1).
+        # mean(||h_t - h_{t-1}||²) over rollout time axis; default weight 0
+        # leaves baseline behaviour unchanged unless explicitly enabled in
+        # `loss.weights.nn_hidden_derivative`. Bug: efc4d68
+        nn_hidden_derivative=StateDerivativeLoss(
+            label="nn_hidden_derivative",
+            where=lambda state: state.net.hidden,
         ),
     )
 

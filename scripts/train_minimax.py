@@ -327,6 +327,10 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
                 "effector_hold_vel": 10.0,
                 "nn_output": 1e-5,
                 "nn_hidden": 1e-5,
+                # Compositional ||h_t - h_{t-1}||² hidden-state smoothness
+                # term, off-by-default. Enable via --nn-hidden-derivative
+                # (e.g. 1e-3 per Shahbazi et al. 2025 Eq. 1). Bug: efc4d68
+                "nn_hidden_derivative": getattr(args, "nn_hidden_derivative", 0.0),
             },
             "effector_pos_late": {
                 "start_step_after_go": 80,
@@ -1775,6 +1779,15 @@ def parse_args() -> argparse.Namespace:
             "Recurrent network type: gru (default, GRUCell with gating) or "
             "vanilla_rnn (LeakyRNNCell with dt=tau, no gating). "
             "vanilla_rnn is a diagnostic for the gating-laziness hypothesis."
+        ),
+    )
+    parser.add_argument(
+        "--nn-hidden-derivative", type=float, default=0.0,
+        help=(
+            "Weight on the compositional hidden-state smoothness term "
+            "mean(||h_t - h_{t-1}||²) (default: 0.0 = disabled, baseline "
+            "behaviour). Set to 1e-3 to mirror Shahbazi et al. 2025 Eq. 1. "
+            "Bug: efc4d68."
         ),
     )
     parser.add_argument(
