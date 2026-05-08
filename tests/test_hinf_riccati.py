@@ -504,13 +504,14 @@ def test_full_state_disturbance_channel_shape():
     assert jnp.allclose(plant4.Bw, jnp.eye(4, dtype=jnp.float64), atol=1e-14)
 
 
-def test_cs_faithful_pointmass_defaults():
-    """``cs_faithful_pointmass()`` matches the C&S 2019 paper parameters.
+def test_cs_faithful_pointmass_legacy_defaults():
+    """Legacy 6-state, no-delay form: ``cs_faithful_pointmass(disturbance_integrator=False, delay_steps=0)``.
 
+    Backward-compatibility regression test for the pre-9a0558e form.
     Bug: ``97c227a`` — convenience constructor: mass=1, k=0.1, tau=0.06,
     dt=0.01, B_w = I_6.
     """
-    plant = cs_faithful_pointmass()
+    plant = cs_faithful_pointmass(disturbance_integrator=False, delay_steps=0)
     assert plant.n == 6
     assert plant.m_w == 6
     assert plant.dt == pytest.approx(0.01)
@@ -522,6 +523,84 @@ def test_cs_faithful_pointmass_defaults():
     )
     # B_w should be identity
     assert jnp.allclose(plant.Bw, jnp.eye(6, dtype=jnp.float64), atol=1e-14)
+
+
+def test_cs_faithful_pointmass_canonical_defaults():
+    """New canonical defaults (Bug: ``9a0558e``): 8-state plant + 5-step delay augmentation.
+
+    With ``disturbance_integrator=True`` (default) and ``delay_steps=5``
+    (default), the plant has:
+
+        n_phys = 8 (6 base + 2 disturbance integrators)
+        n_obs  = 4 (pos + vel)
+        n_aug  = 8 + 5 · 4 = 28
+
+    The integrator coupling is ``A_c[3, 7] = A_c[4, 8] = 1/mass``
+    (with mass=1, this is 1.0). Rows 7,8 of A_c (the integrator dynamics)
+    are zero.
+    """
+    plant = cs_faithful_pointmass()
+    assert plant.n == 28
+    assert plant.m_w == 8  # disturbance is 8-dim (one per physical state)
+    assert plant.m_u == 2
+    assert plant.dt == pytest.approx(0.01)
+    # Physical-block A_c: damping at rows 2,3; force filter at rows 4,5; integrators at rows 6,7
+    # A_c[2:4, 2:4] = -0.1 * I (damping)
+    assert jnp.allclose(plant.A_c[2:4, 2:4], -0.1 * jnp.eye(2), atol=1e-12)
+    # Integrator-to-velocity coupling: A_c[2:4, 6:8] = (1/mass) * I = I  (mass=1)
+    assert jnp.allclose(plant.A_c[2:4, 6:8], jnp.eye(2), atol=1e-12)
+    # Integrator dynamics: A_c[6:8, :] all zero (pure integrators)
+    assert jnp.allclose(plant.A_c[6:8, :8], 0.0, atol=1e-12)
+    # B_w in physical block: I_8 in the discrete-time matrix (top-left 8x8 block)
+    assert jnp.allclose(plant.Bw[:8, :], jnp.eye(8, dtype=jnp.float64), atol=1e-14)
+    # B_w lag block: zero (disturbance does not enter lag states directly)
+    assert jnp.allclose(plant.Bw[8:, :], 0.0, atol=1e-14)
+
+
+def test_cs_faithful_pointmass_8state_no_delay():
+    """8-state plant with disturbance integrators but no delay augmentation."""
+    plant = cs_faithful_pointmass(disturbance_integrator=True, delay_steps=0)
+    assert plant.n == 8
+    assert plant.m_w == 8
+    # Integrator coupling
+    assert jnp.allclose(plant.A_c[2:4, 6:8], jnp.eye(2), atol=1e-12)
+    # B_w = I_8
+    assert jnp.allclose(plant.Bw, jnp.eye(8, dtype=jnp.float64), atol=1e-14)
+
+
+def test_cs_faithful_pointmass_delay_shift_register_structure():
+    """Delay augmentation builds a tap-delay shift register on observation channel.
+
+    Verifies the augmented A_d structure:
+    - Newest lag block (rows 8:12) reads from physical state via C_obs.
+    - Older lag blocks (rows 12:28) shift down from the previous lag block.
+    """
+    plant = cs_faithful_pointmass(disturbance_integrator=True, delay_steps=5)
+    n_phys = 8
+    n_obs = 4
+    h = 5
+    # Newest lag block: rows 8:12, cols 0:8 should be C_obs (selects pos+vel).
+    expected_C = jnp.zeros((n_obs, n_phys), dtype=jnp.float64)
+    expected_C = expected_C.at[0:2, 0:2].set(jnp.eye(2))  # pos
+    expected_C = expected_C.at[2:4, 2:4].set(jnp.eye(2))  # vel
+    assert jnp.allclose(plant.A[8:12, :8], expected_C, atol=1e-14)
+    # Lag-to-lag shift: rows 12:28, cols 8:24 should be I_{16}
+    n_shift = (h - 1) * n_obs
+    assert jnp.allclose(
+        plant.A[n_phys + n_obs : n_phys + h * n_obs, n_phys : n_phys + n_shift],
+        jnp.eye(n_shift, dtype=jnp.float64),
+        atol=1e-14,
+    )
+    # Newest lag block does NOT read from older lag blocks (only from physical).
+    assert jnp.allclose(plant.A[8:12, 8:], 0.0, atol=1e-14)
+    # Control B does not affect lag states.
+    assert jnp.allclose(plant.B[8:, :], 0.0, atol=1e-14)
+
+
+def test_cs_faithful_pointmass_invalid_delay_raises():
+    """Negative delay_steps raises ValueError."""
+    with pytest.raises(ValueError, match="delay_steps must be non-negative"):
+        cs_faithful_pointmass(delay_steps=-1)
 
 
 # -----------------------------------------------------------------------------
@@ -594,45 +673,29 @@ def test_cs_eq15_ramp_boundary_values():
         )
 
 
-def test_cs_faithful_qr_velocity_inflation():
-    """Faithful C&S Eq. 15 Q,R + faithful B_w channel on the C&S plant: Δv > 0.
+def test_cs_faithful_qr_velocity_inflation_legacy_6state():
+    """Legacy 6-state, no-delay regression: faithful C&S Eq. 15 Q,R, full-state B_w → Δv > 0.
 
-    Crevecoeur & Scott (2019) report that "the robust controller always
-    generated faster movement velocities toward the target" (p. 8139, Fig. 1e).
-    This test reproduces the C&S setup faithfully:
-
-    - Plant: ``cs_faithful_pointmass()`` (mass=1 kg, k=0.1 Ns/m, tau=0.06 s,
-      dt=0.01 s, ``disturbance_channel='full_state'``) — the full-state
-      ``B_w = I_6`` matches C&S Eq 13's lumped disturbance ε on every
-      state coordinate. Bug: ``97c227a``.
-    - Cost: C&S Eq. 15 with alpha_1=1.0, n_steps=80 (0.8 s reach).
-    - Reach: 15 cm forward (matching C&S experimental geometry).
-    - Evaluation: gamma_factor=1.5 (matching synthesis_review section 2).
+    Backward-compatibility regression for the pre-9a0558e form
+    (``disturbance_integrator=False, delay_steps=0``). Pins the +0.3 < Δv < 5%
+    range that the prior 6-state full-state-B_w plant reproduces.
 
     Historical note: this test was xfailed for ~3 sessions with Δv = −0.04%
-    on the velocity-channel-only B_w (the previous default). The implementational
+    on the velocity-channel-only B_w (an earlier default). The implementational
     gap was the ``B_w`` channel: C&S's H∞ Riccati design treats the disturbance
-    ε as a free 6-vector (one component per state coord, per Eq 13), whereas
-    the rlrmp default B_w injects only on the 2D velocity row (matching the
-    physical curl-field intervenor channel). With B_w = I_6, the H∞ controller
-    hedges against position/force-channel disturbances too and emits stiffer
-    feedback that produces the +Δv signature C&S report. With the velocity-only
-    B_w, the disturbance is too benign and H∞ reduces toward LQR, giving
-    Δv → 0 from below.
+    ε as a free 6-vector (one component per state coord, per Eq 13). With
+    B_w = I_6, the H∞ controller hedges against position/force-channel
+    disturbances too and emits stiffer feedback that produces the +Δv
+    signature C&S report.
 
-    The metric is ``delta_v_percent`` based on peak forward velocity (velocity
-    projected onto the reach axis), matching C&S Fig. 1e.
-
-    Expected result: Δv > 0, magnitude in the +0.3% to +3% range (depending
-    on gamma factor and alpha_1) consistent with C&S Fig. 1e's ~10-15% peak-
-    velocity shift near the boundary; +1.0% at gamma_factor=1.5 with alpha_1=1.0.
+    Bug: ``97c227a`` — full-state B_w. Bug: ``9a0558e`` — kept as a regression
+    after the 8-state + delay default was introduced.
     """
-    # C&S plant: near-frictionless point mass with slow force filter,
-    # full-state disturbance channel (B_w = I_6) per C&S Eq 13.
-    plant = cs_faithful_pointmass()
+    # Legacy 6-state, no-delay form
+    plant = cs_faithful_pointmass(disturbance_integrator=False, delay_steps=0)
 
-    # C&S Eq. 15 cost: 80 steps = 0.8 s reach at 10 ms timestep
-    schedule = cs_eq15_cost_schedule(n_steps=80, alpha_1=1.0)
+    # C&S Eq. 15 cost: 80 steps = 0.8 s reach at 10 ms timestep, 6-dim Q
+    schedule = cs_eq15_cost_schedule(n_steps=80, alpha_1=1.0, state_dim=plant.n)
 
     # 15 cm forward reach (C&S experimental geometry: reaches of ~15 cm)
     init_pos = jnp.array([0.0, 0.0], dtype=jnp.float64)
@@ -664,16 +727,19 @@ def test_cs_faithful_qr_velocity_inflation():
     )
 
 
-def test_cs_faithful_velocity_inflation_grows_toward_boundary():
-    """On the C&S faithful setup, Δv grows monotonically as gamma → gamma*.
+def test_cs_faithful_velocity_inflation_grows_toward_boundary_legacy():
+    """Legacy 6-state, no-delay regression: Δv grows monotonically as gamma → gamma*.
 
     Structural property of H∞: closer to the boundary → more aggressive
     feedback → larger velocity inflation. Mirrors the rlrmp-side
     ``test_rlrmp_inflation_grows_toward_boundary`` but on the C&S regime
     with full-state B_w.
+
+    Backward-compatibility regression for the pre-9a0558e
+    (``disturbance_integrator=False, delay_steps=0``) form.
     """
-    plant = cs_faithful_pointmass()
-    schedule = cs_eq15_cost_schedule(n_steps=80, alpha_1=1.0)
+    plant = cs_faithful_pointmass(disturbance_integrator=False, delay_steps=0)
+    schedule = cs_eq15_cost_schedule(n_steps=80, alpha_1=1.0, state_dim=plant.n)
     init_pos = jnp.array([0.0, 0.0], dtype=jnp.float64)
     target_pos = jnp.array([0.15, 0.0], dtype=jnp.float64)
     gamma_star = find_gamma_star(plant, schedule)
@@ -721,8 +787,8 @@ def test_cs_disturbance_channel_flips_dv_sign():
         gamma_factor=1.5, gamma_star=gs_vf,
     )
 
-    # Full-state B_w — C&S Eq 13 faithful
-    plant_fs = cs_faithful_pointmass()
+    # Full-state B_w — C&S Eq 13 faithful (legacy 6-state, no-delay form)
+    plant_fs = cs_faithful_pointmass(disturbance_integrator=False, delay_steps=0)
     gs_fs = find_gamma_star(plant_fs, schedule)
     res_fs = compute_velocity_inflation(
         plant_fs, schedule, init_pos=init_pos, target_pos=target_pos,
@@ -820,6 +886,93 @@ def test_cs_qr_vs_rlrmp_qr_on_cs_plant():
     )
     assert 0.1 < rlrmp_res.lqr_peak_forward_velocity, (
         f"rlrmp Q,R on C&S plant LQR peak fwd vel {rlrmp_res.lqr_peak_forward_velocity} implausibly low"
+    )
+
+
+# -----------------------------------------------------------------------------
+# C&S 8-state + delay (canonical defaults, Bug: 9a0558e)
+# -----------------------------------------------------------------------------
+
+
+def test_cs_faithful_qr_velocity_inflation_8state_delay():
+    """Canonical defaults: 8-state plant with disturbance integrators + 50ms delay → Δv > 0.
+
+    Reproduces the C&S 2019 Fig. 1e setup as faithfully as the analytical
+    Riccati pipeline allows (Bug: ``9a0558e``):
+
+    - Plant: ``cs_faithful_pointmass()`` with new defaults
+      (``disturbance_integrator=True, delay_steps=5``). Total state dim = 28
+      (8 physical + 5·4 lag).
+    - Cost: C&S Eq. 15 with alpha_1=1.0, ``state_dim=plant.n``, padded with
+      zeros for integrator + lag states.
+    - Reach: 15 cm forward (canonical C&S geometry).
+    - Evaluation: gamma_factor=1.5 (matching synthesis_review section 2).
+
+    Target (user measurement of Fig. 1e): Δv ≈ +7.76% at γ_des → γ*. The
+    test asserts Δv > 0 and a magnitude bound consistent with the +5–10%
+    range the structural lift was designed to recover. Δv outside this
+    range is a substantive finding that warrants synthesis update.
+
+    Bug: ``9a0558e`` — structural lift to 8-state + delay. See gap analysis
+    G6 + G1 in ``/tmp/flavor_ab_review/findings/cs2019_review.md``.
+    """
+    plant = cs_faithful_pointmass()  # canonical defaults: 8-state + 5-step delay
+    schedule = cs_eq15_cost_schedule(n_steps=80, alpha_1=1.0, state_dim=plant.n)
+
+    init_pos = jnp.array([0.0, 0.0], dtype=jnp.float64)
+    target_pos = jnp.array([0.15, 0.0], dtype=jnp.float64)
+
+    gamma_star = find_gamma_star(plant, schedule)
+    res = compute_velocity_inflation(
+        plant,
+        schedule,
+        init_pos=init_pos,
+        target_pos=target_pos,
+        gamma_factor=1.5,
+        gamma_star=gamma_star,
+    )
+    delta_v = res.delta_v_percent
+
+    # Pin the +Δv signature: structural-lift Δv must be strictly positive on
+    # the canonical setup. If the Riccati produces Δv ≤ 0 here, the structural
+    # lift has failed to recover C&S's "robust > LQG" signature.
+    assert delta_v > 0, (
+        f"Δv = {delta_v:+.4f}% on canonical 8-state + delay setup; "
+        f"structural lift was meant to recover C&S +Δv signature. "
+        f"gamma_star={gamma_star}, LQR fwd_v={res.lqr_peak_forward_velocity}, "
+        f"H∞ fwd_v={res.hinf_peak_forward_velocity}"
+    )
+    # Magnitude bound: target ≈ +7.76% from Fig 1e measurement; allow a wide
+    # band for plant-parameter and γ-precision variation. Failure on the
+    # high side means stiffening is too aggressive; on the low side means the
+    # lift didn't fully recover the signature.
+    assert 0.5 < delta_v < 30.0, (
+        f"Δv = {delta_v:+.4f}% outside expected [0.5, 30] range for canonical "
+        f"8-state + delay setup. Target was +7.76% (Fig. 1e measurement)."
+    )
+
+
+def test_cs_faithful_qr_velocity_inflation_8state_no_delay():
+    """8-state plant with disturbance integrators but no delay (isolates G6 from G1).
+
+    Provides per-gap attribution: this test isolates the contribution of the
+    8-state disturbance-integrator coupling without the delay augmentation.
+    Δv should be > 0 (the C&S structural-disturbance signature) but typically
+    smaller in magnitude than the full 8-state + delay form.
+
+    Bug: ``9a0558e`` — gap-attribution sanity check.
+    """
+    plant = cs_faithful_pointmass(disturbance_integrator=True, delay_steps=0)
+    schedule = cs_eq15_cost_schedule(n_steps=80, alpha_1=1.0, state_dim=plant.n)
+    init_pos = jnp.array([0.0, 0.0], dtype=jnp.float64)
+    target_pos = jnp.array([0.15, 0.0], dtype=jnp.float64)
+    res = compute_velocity_inflation(
+        plant, schedule, init_pos=init_pos, target_pos=target_pos, gamma_factor=1.5
+    )
+    # Sign check: 8-state lift alone should still give Δv > 0
+    assert res.delta_v_percent > 0, (
+        f"Δv = {res.delta_v_percent:+.4f}% on 8-state, no-delay form; "
+        f"disturbance-integrator coupling alone should produce Δv > 0."
     )
 
 
