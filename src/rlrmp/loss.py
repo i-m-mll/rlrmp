@@ -11,6 +11,7 @@ from feedbax.loss import (
     AbstractLoss,
     CompositeLoss,
     FuncTermsLoss,
+    OutputJerkLoss,
     StateDerivativeLoss,
     StopAtGoalLoss,
     TargetSpec,
@@ -169,6 +170,11 @@ DEFAULT_TOP_WEIGHTS: dict[str, float] = {
     # in their setup). Default 0.0 so existing configs are unchanged unless
     # explicitly enabled. Bug: efc4d68
     "nn_hidden_derivative": 0.0,
+    # Output-jerk penalty mean(||v_{t+1} - 2 v_t + v_{t-1}||²) on effector
+    # velocity (= discrete jerk). Shahbazi et al. 2025 Eq. 1 use weight 1e5.
+    # Default 0.0 so existing configs are unchanged unless explicitly enabled.
+    # Bug: efc4d68 (feedbax 7e1d257)
+    "nn_output_jerk": 0.0,
     # composite bundle (if enabled)
     "goal_hit_in_window": 1.0,
 }
@@ -421,6 +427,15 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
         nn_hidden_derivative=StateDerivativeLoss(
             label="nn_hidden_derivative",
             where=lambda state: state.net.hidden,
+        ),
+        # Output-jerk regulariser (Shahbazi et al. 2025 Eq. 1, weight 1e5 in
+        # their setup). Discrete second-difference of effector velocity =
+        # discrete jerk. Default weight 0 leaves baseline behaviour unchanged
+        # unless explicitly enabled in `loss.weights.nn_output_jerk`.
+        # Bug: efc4d68 (feedbax 7e1d257)
+        nn_output_jerk=OutputJerkLoss(
+            label="nn_output_jerk",
+            where=lambda state: state.mechanics.effector.vel,
         ),
     )
 
