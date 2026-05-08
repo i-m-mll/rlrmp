@@ -916,11 +916,23 @@ def _qr_cost_Cz_Dz(
 
         z_t = \\begin{pmatrix} \\sqrt{Q_t} x_{plant,t} \\\\ \\sqrt{R_t} u_t \\end{pmatrix},
 
-    so that ``||z||_2^2 = sum_t (x^T Q_t x + u^T R_t u)`` -- the running
-    Riccati cost. The state half acts only on the plant slice of the
-    augmented state and has zero feedthrough (``x_t`` does not depend on
+    so that ``||z||_2^2 = sum_{t=0..T-1} (x^T Q_t x + u^T R_t u)`` -- the
+    *running* Riccati cost. The state half acts only on the plant slice of
+    the augmented state and has zero feedthrough (``x_t`` does not depend on
     ``w_t``). The control half feeds through ``sqrt(R_t) @ D_u``, where
     ``D_u = du/dw`` in the *lifted* ``w`` basis is provided by the caller.
+
+    Terminal-cost caveat:
+        This cost block does NOT include the Riccati's terminal
+        ``x_T^T Q_f x_T`` cost. In the canonical rlrmp regime (Q_f scaled
+        with the running cost) this is empirically negligible: zeroing Q_f
+        moves gamma_star by < 1% at n=200, and adding sqrt(Q_f) x_T to the
+        analyser's operator moves gamma_PI by < 0.1%. In a large-Q_f regime
+        (qf_scale >> 1) the mismatch becomes load-bearing -- the synthesis
+        side balances heavy terminal admissibility while the analyser still
+        measures only running cost, and the round-trip ratio collapses
+        well below 1.0. See ``induced_gain_power_iteration`` for the
+        regime-aware version of this caveat. Bug ``74bfd86``.
 
     Per-channel feedthrough ``D_u`` (computed by the caller via JAX autodiff):
 
@@ -1267,11 +1279,45 @@ def induced_gain_power_iteration(
         gamma_star``, the long-horizon plateau is around ``1.21 * gamma_star``.
         See ``scripts/probe_round_trip_ratio.py`` for the diagnostic sweep.
 
+    Operator-vs-Riccati cost mismatch:
+        The LTV operator that this routine takes the induced gain of measures
+        only the *running* QR cost ``sum_{t=0..T-1} (x^T Q_t x + u^T R_t u)``.
+        It does NOT include the terminal ``x_T^T Q_f x_T`` block that
+        ``solve_hinf_riccati`` balances when computing ``gamma_star``. The
+        practical impact is regime-dependent:
+
+        - **Canonical rlrmp regime** (``Q_f`` scaled with the running cost,
+          terminal weights of order 1): ``gamma_star`` is essentially
+          unchanged whether ``Q_f`` is included or zeroed (measured: 0.013721
+          vs 0.013749 at n=200, a 0.2% effect). Adding the terminal block
+          to the analyser's operator changes ``gamma_PI`` by less than 0.1%.
+          So the ratio plateau ~1.21 below the design ratio 1.5 is *not* a
+          Q_f mismatch -- it is just the standard suboptimality margin of an
+          H-inf controller designed at ``1.5 * gamma_star`` (the design level
+          is a sufficient bound, not a tight one).
+        - **Large ``Q_f`` regime** (terminal weights dominate, e.g. qf_scale
+          >> 1): ``gamma_star`` jumps strongly (4x at qf_scale=100), driven
+          by terminal-state admissibility. The LTV operator still measures
+          only running cost, so the round-trip ratio ``gamma_PI / gamma_star``
+          collapses well below 1.0 -- this is a genuine analyser/synthesis
+          definition mismatch, not a numerical issue. If you need ratios
+          comparable across Q_f scales, either (a) keep Q_f scaled with Q to
+          stay in the canonical regime, or (b) extend the operator with a
+          ``sqrt(Q_f) @ x_T`` terminal output (not currently exposed; the
+          probe in ``scripts/diag_probe_anomalies.py`` is the reference
+          implementation).
+
+        Bug ``74bfd86``.
+
     Note:
-        ``max_iter`` defaults to 500. Long horizons (T >= 200) frequently need
-        more than 200 iterations to satisfy ``rtol = 1e-6`` because the
-        operator's leading-singular-value gap shrinks; bumping the default is
-        cheaper than per-call surgery. See bug ``3c74e3b``.
+        ``max_iter`` defaults to 500 and ``rtol`` to ``1e-6``. Long horizons
+        (T >= 200) frequently need more than 200 iterations to satisfy
+        ``rtol = 1e-6`` because the operator's leading-singular-value gap
+        shrinks. Tightening ``rtol`` below ``~1e-7`` at long horizons exceeds
+        ``max_iter`` per restart and reports ``converged=False``; the
+        reported ``gamma`` is still accurate to several decimals well before
+        the consecutive-iter gate trips, so the flag is diagnostic rather
+        than load-bearing in that regime. See bug ``3c74e3b``.
 
     Args:
         lin: Trajectory linearisation.
@@ -1647,8 +1693,12 @@ def induced_gain(
         ``||T||_PI in (gamma_star, gamma_design]`` (the H-inf optimum
         ``gamma_star`` is an infimum, never reached by a finite-horizon
         LTI controller; the actual closed-loop gain is strictly larger but
-        bounded above by the design level). Regime-dependent in practice;
-        see ``scripts/probe_round_trip_ratio.py`` and bug ``3c74e3b``.
+        bounded above by the design level). Note: the LTV operator drops the
+        Riccati's terminal ``Q_f`` block, so the upper bound is empirical
+        (with margin); see ``induced_gain_power_iteration``'s
+        ``Operator-vs-Riccati cost mismatch`` note for the mechanism, bug
+        ``74bfd86``. Regime-dependent in practice; see
+        ``scripts/probe_round_trip_ratio.py`` and bug ``3c74e3b``.
 
     For the ``peak_velocity`` z channel: the power-iteration result on the
     velocity-norm channel is returned in ``InducedGainResult.gamma``, and the
