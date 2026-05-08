@@ -270,7 +270,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         # set to total training length so late-ramp terms are calibrated correctly.
         "n_batches_condition": args.n_warmup_batches + args.n_adversary_batches,
         "n_batches_baseline": 0,
-        "batch_size": 250,
+        "batch_size": getattr(args, "batch_size", 250),
         "learning_rate_0": args.controller_lr,
         "n_scaleup_batches": 0,
         "constant_lr_iterations": 0,
@@ -279,7 +279,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         "state_reset_iterations": [],
         "intervention_scaleup_batches": [0, 0],
         "model": {
-            "n_replicates": 5,
+            "n_replicates": getattr(args, "n_replicates", 5),
             "effector_mass": 1.0,
             "hidden_size": 180,
             "feedback_delay_steps": 5,
@@ -331,6 +331,11 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
                 # term, off-by-default. Enable via --nn-hidden-derivative
                 # (e.g. 1e-3 per Shahbazi et al. 2025 Eq. 1). Bug: efc4d68
                 "nn_hidden_derivative": getattr(args, "nn_hidden_derivative", 0.0),
+                # Compositional ||v_{t+1} - 2 v_t + v_{t-1}||² output-jerk
+                # term, off-by-default. Enable via --nn-output-jerk
+                # (e.g. 1e5 per Shahbazi et al. 2025 Eq. 1). Bug: efc4d68
+                # (feedbax 7e1d257)
+                "nn_output_jerk": getattr(args, "nn_output_jerk", 0.0),
             },
             "effector_pos_late": {
                 "start_step_after_go": 80,
@@ -1597,6 +1602,14 @@ def parse_args() -> argparse.Namespace:
         help="Number of warm-start batches before adversarial phase (default: 2000).",
     )
     parser.add_argument(
+        "--batch-size", type=int, default=250,
+        help="Per-batch trial count for warmup phase (default: 250).",
+    )
+    parser.add_argument(
+        "--n-replicates", type=int, default=5,
+        help="Number of vmapped controller replicates in the ensemble (default: 5).",
+    )
+    parser.add_argument(
         "--n-adversary-batches", type=int, default=8000,
         help="Number of adversarial training batches (default: 8000).",
     )
@@ -1788,6 +1801,15 @@ def parse_args() -> argparse.Namespace:
             "mean(||h_t - h_{t-1}||²) (default: 0.0 = disabled, baseline "
             "behaviour). Set to 1e-3 to mirror Shahbazi et al. 2025 Eq. 1. "
             "Bug: efc4d68."
+        ),
+    )
+    parser.add_argument(
+        "--nn-output-jerk", type=float, default=0.0,
+        help=(
+            "Weight on the compositional output-jerk term "
+            "mean(||v_{t+1} - 2 v_t + v_{t-1}||²) on effector velocity "
+            "(default: 0.0 = disabled, baseline behaviour). Set to 1e5 to "
+            "mirror Shahbazi et al. 2025 Eq. 1. Bug: efc4d68 (feedbax 7e1d257)."
         ),
     )
     parser.add_argument(

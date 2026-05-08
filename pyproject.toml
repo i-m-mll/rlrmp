@@ -35,11 +35,11 @@ packages = ["src/rlrmp"]
 config-settings = { editable-mode = "compat" }
 
 [tool.uv.sources.feedbax]
-# Point at feedbax develop worktree (the protected branch). The
-# StateDerivativeLoss term used by efc4d68 lands on develop via feedbax
-# auth-merge of feature/loss-hidden-derivative (feedbax issue e8f3738) —
-# the rlrmp auth-merge depends on that feedbax merge having landed first.
-path = "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax/worktrees/develop"
+# Point at feedbax feature worktree carrying the OutputJerkLoss term needed
+# for the 2×2×2 architecture × smoothness × jerk baseline matrix.
+# Bug: efc4d68 (feedbax issue 7e1d257). Will revert to develop once the
+# feedbax feature branch (feature/loss-output-jerk) is merged back.
+path = "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax/worktrees/feature__loss-output-jerk"
 editable = true
 
 [tool.ruff]
