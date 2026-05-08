@@ -1,15 +1,31 @@
-"""Parameterized adversary for minimax training.
+"""Parameterized adversaries for minimax training.
 
-The adversary generates perturbation force profiles as a sum of Gaussian
-bumps in time, with learnable timing, amplitude, and direction. This is
-the simplest adversary that captures temporal structure — a stepping stone
-to neural adversaries.
+Two flavours, both ``eqx.Module`` so they slot into ``train_minimax.py``'s
+vmap/JIT machinery interchangeably:
+
+- ``GaussianBumpAdversary`` (flavour-(a) input-instance): produces a
+  per-trial **force profile** via a sum of learnable Gaussian bumps. The
+  resulting force is injected into the trial-spec disturbance channel.
+
+- ``LinearDynamicsAdversary`` (flavour-(b) model-class): produces a
+  ``ΔA`` matrix mapping ``[pos, vel]`` to a velocity-row dynamics
+  perturbation. Constrained to a Frobenius ball ``||ΔA||_F ≤ η_max · SISU``
+  via PGD with Frobenius projection. The matrix parameterises the feedbax
+  ``DynamicsMatrixPerturb`` intervenor at each adversarial inner step.
+
+Both adversaries' learnable parameters are JAX arrays directly on the
+``eqx.Module`` so that ``eqx.filter`` and ``optax.adam`` can update them
+with the standard pattern. Bug: c723082.
 """
+
+from typing import Optional
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
+import jax.tree as jt
+import optax
 from jaxtyping import Array, Float
 
 
@@ -109,3 +125,103 @@ class GaussianBumpAdversary(eqx.Module):
         )
 
         return forces
+
+
+def _frobenius_project(M: Array, radius: Array) -> Array:
+    """Project ``M`` onto the Frobenius ball of given ``radius``.
+
+    Computes ``min(||M||_F, radius)`` and rescales ``M`` to that norm. Both
+    ``radius`` and ``||M||_F`` may be scalar JAX traced values.
+
+    Args:
+        M: Matrix to project.
+        radius: Non-negative scalar Frobenius-norm bound.
+
+    Returns:
+        Matrix with ``||M_proj||_F ≤ radius``, with sign and shape preserved.
+    """
+    norm = jnp.linalg.norm(M)
+    # Avoid division-by-zero; if norm == 0, the matrix is already zero.
+    scale = jnp.minimum(1.0, radius / (norm + 1e-12))
+    return scale * M
+
+
+class LinearDynamicsAdversary(eqx.Module):
+    """Model-class ``ΔA`` adversary with Frobenius-ball-bounded entries.
+
+    Parameterises an additive perturbation to the velocity-row dynamics:
+    ``dot v += ΔA @ [pos, vel]``. Wired into the plant via feedbax's
+    ``DynamicsMatrixPerturb`` intervenor. Constrained to
+    ``||ΔA||_F ≤ η(SISU) = eta_max · SISU`` and trained with projected
+    gradient ascent over ``n_inner_steps`` per outer batch.
+
+    The constraint applies *uniformly* in time across the rollout: the
+    same ``ΔA`` is applied at every timestep within a trial.
+
+    Args:
+        n_state: State dimension (``2 * n_dim``: ``[pos, vel]``).
+        n_dim: Spatial dimension (number of velocity rows; default 2).
+        eta_max: Maximum Frobenius norm at SISU=1.
+        n_inner_steps: PGD steps per outer batch (default 5).
+        learning_rate: PGD step size (default 1e-2).
+        key: PRNG key for initialising ``ΔA`` to small random values.
+    """
+
+    delta_A: Float[Array, "n_dim n_state"]
+    eta_max: float = eqx.field(static=True)
+    n_inner_steps: int = eqx.field(static=True)
+    learning_rate: float = eqx.field(static=True)
+    n_dim: int = eqx.field(static=True)
+    n_state: int = eqx.field(static=True)
+
+    def __init__(
+        self,
+        n_state: int = 4,
+        n_dim: int = 2,
+        eta_max: float = 0.1,
+        n_inner_steps: int = 5,
+        learning_rate: float = 1e-2,
+        *,
+        key: Optional[Array] = None,
+    ):
+        # Initialise to a tiny random matrix so the first projection is
+        # well-defined and gradients have non-trivial signal at SISU=0
+        # (where the ball collapses to {0}).
+        if key is None:
+            key = jr.PRNGKey(0)
+        # Small init scale so the initial projection is essentially clamping
+        # to within eta_max at SISU=1.
+        init_scale = min(1e-3, 0.1 * eta_max)
+        self.delta_A = init_scale * jr.normal(key, (n_dim, n_state), dtype=jnp.float32)
+        self.eta_max = float(eta_max)
+        self.n_inner_steps = int(n_inner_steps)
+        self.learning_rate = float(learning_rate)
+        self.n_dim = int(n_dim)
+        self.n_state = int(n_state)
+
+    def project(self) -> "LinearDynamicsAdversary":
+        """Return a copy with ``delta_A`` projected to the Frobenius ball.
+
+        Constrains ``||delta_A||_F ≤ eta_max``. SISU gating is applied
+        downstream via the intervenor's ``params.scale = SISU`` field, so
+        the projection itself is SISU-independent — the *budget* of the
+        adversary at full SISU=1 is ``eta_max``.
+
+        Returns:
+            A new ``LinearDynamicsAdversary`` whose ``delta_A`` satisfies
+            ``||delta_A||_F ≤ eta_max``.
+        """
+        new_delta_A = _frobenius_project(self.delta_A, jnp.asarray(self.eta_max))
+        return eqx.tree_at(lambda a: a.delta_A, self, new_delta_A)
+
+    def frobenius_norm(self) -> Array:
+        """Frobenius norm of the current ``delta_A`` (scalar)."""
+        return jnp.linalg.norm(self.delta_A)
+
+    def __call__(self) -> Float[Array, "n_dim n_state"]:
+        """Return the current ``ΔA`` matrix.
+
+        Provided for API symmetry with ``GaussianBumpAdversary.__call__``,
+        which returns its produced perturbation.
+        """
+        return self.delta_A
