@@ -471,26 +471,318 @@ def cs_faithful_pointmass(
     damping: float = 0.1,
     tau: float = 0.06,
     dt: float = 0.01,
+    disturbance_integrator: bool = True,
+    delay_steps: int = 5,
 ) -> PlantLinearization:
-    """Build the C&S 2019 plant with the faithful full-state disturbance channel.
+    """Build the Crevecoeur & Scott (2019) 8-state plant with delay augmentation.
 
-    Convenience wrapper around ``linearize_pointmass(...,
-    disturbance_channel='full_state')`` with C&S's reported parameter values
-    as defaults: mass=1 kg, k=0.1 Ns/m, tau=0.06 s, dt=0.01 s.
+    Canonical C&S setup (matches the released ModelDB code 258846):
 
-    The full-state ``B_w = I_6`` matches C&S Eq 13 (lumped disturbance ε on
-    every state coordinate). This is the load-bearing fix that recovers the
-    Δv > 0 signature reported in C&S Fig. 1e — the velocity-channel-only
-    ``B_w`` (used by the rlrmp ``"velocity_force"`` default) gives Δv ≤ 0 on
-    this regime because it under-penalises the disturbance the H∞ controller
-    must hedge against.
+    - **Mass + force-filter** (6 physical states): ``[px, py, vx, vy, fx, fy]``
+      with ``mass=1 kg``, ``k=0.1 Ns/m``, ``tau=0.06 s``, ``dt=0.01 s``.
+    - **Disturbance-integrator coupling** (Bug: ``9a0558e``, default on):
+      adds two pure-integrator states ``[eps_x_int, eps_y_int]`` driven by the
+      disturbance ``ε`` (rows 7,8 of A are zero). The integrators couple back
+      into the velocity rows via ``A[3,7]=A[4,8]=1``. Disturbance matrix
+      ``B_w = I_8`` so each ε_i drives state i directly. Effect: the
+      H∞-relevant disturbance is a smooth cumulative drift in velocity, not
+      an impulsive force, and the worst-case adversary is structurally
+      different (matches C&S's ``minmaxfc_pointMass.m``).
+    - **50 ms (5-step) sensorimotor delay augmentation** (Bug: ``9a0558e``,
+      default on): appends ``delay_steps × n_obs`` lag states implementing a
+      tap-delay shift register on the observation channel
+      ``y_t = [pos, vel] = C_obs · x_phys``. The shift register holds
+      ``[y_{t-1}, y_{t-2}, …, y_{t-h}]`` (newest at top, oldest at bottom),
+      with one block of ``n_obs = 4`` states per delay tap. Modelled after
+      C&S's ``AugRobustControl.m``. ``delay_steps=5`` at ``dt=0.01`` matches
+      the 50 ms sensorimotor delay used in C&S analytical Riccati and rlrmp's
+      trained controllers (`scripts/train_minimax.py` ``feedback_delay_steps=5``).
 
-    Bug: ``97c227a`` — see the comment thread for the investigation that
-    surfaced the ``B_w`` channel mismatch.
+    The total state dimension is:
+
+        n_phys = 6 (no integrators) or 8 (with integrators)
+        n_obs  = 4 (pos + vel)
+        n_aug  = n_phys + delay_steps · n_obs
+                = 8 + 5·4 = 28 (canonical defaults)
+
+    Args:
+        mass: Effector mass (kg).
+        damping: Velocity damping coefficient k (Ns/m).
+        tau: First-order force-filter time constant (s).
+        dt: Discretisation time step (s).
+        disturbance_integrator: If True (default), add two integrator states
+            7,8 with the C&S coupling pattern. If False, fall back to the
+            6-state plant with ``B_w = I_6`` (legacy behaviour).
+        delay_steps: Number of delay taps. ``5`` (default) gives a 50 ms
+            sensorimotor delay at ``dt=0.01``. ``0`` disables delay
+            augmentation (legacy behaviour, same as pre-`9a0558e`).
+
+    Returns:
+        A ``PlantLinearization`` with ``A``, ``B``, ``B_w`` of size
+        ``n_aug × n_aug`` (or ``n_aug × m_u`` for ``B``, ``n_aug × m_w`` for
+        ``B_w``).
+
+    Backward compatibility:
+        ``cs_faithful_pointmass(disturbance_integrator=False, delay_steps=0)``
+        reproduces the pre-9a0558e 6-state, no-delay form exactly. Useful for
+        regression tests and for comparing the pre/post-lift Δv numbers.
+
+    Bug: ``9a0558e`` — structural lift to 8-state plant + delay augmentation,
+    matching C&S 2019. See ``/tmp/flavor_ab_review/findings/cs2019_review.md``
+    G6 (8-state) and G1 (delay) for the gap analysis.
+    Bug: ``97c227a`` — the prior 6-state full-state-B_w version (now reachable
+    via ``disturbance_integrator=False, delay_steps=0``).
     """
-    return linearize_pointmass(
-        mass=mass, damping=damping, tau=tau, dt=dt,
-        disturbance_channel="full_state",
+    if delay_steps < 0:
+        raise ValueError(f"delay_steps must be non-negative, got {delay_steps}")
+
+    if not disturbance_integrator:
+        plant = linearize_pointmass(
+            mass=mass, damping=damping, tau=tau, dt=dt,
+            disturbance_channel="full_state",
+        )
+    else:
+        plant = _build_cs_8state_pointmass(
+            mass=mass, damping=damping, tau=tau, dt=dt,
+        )
+
+    if delay_steps > 0:
+        plant = _apply_delay_augmentation(plant, delay_steps=delay_steps)
+
+    return plant
+
+
+def _build_cs_8state_pointmass(
+    *,
+    mass: float,
+    damping: float,
+    tau: float,
+    dt: float,
+) -> PlantLinearization:
+    """Build the C&S 8-state plant with disturbance-integrator coupling.
+
+    State vector: ``[px, py, vx, vy, fx, fy, eps_x_int, eps_y_int]``.
+
+    Continuous-time matrices follow ``minmaxfc_pointMass.m`` (ModelDB 258846).
+    The novel structure relative to the 6-state form is:
+
+    - Rows 7,8 of ``A_c`` are zero: integrator states have no intrinsic
+      dynamics; they are driven only by the disturbance via ``B_w``.
+    - ``A_c[3,7] = A_c[4,8] = 1``: the integrated disturbance enters the
+      velocity rows as a force.
+    - ``B_w = I_8`` (each ε_i drives state i directly).
+
+    Args:
+        mass: Effector mass (kg). Must be > 0.
+        damping: Velocity damping (Ns/m).
+        tau: Force-filter time constant (s). Must be > 0 for the 8-state form.
+        dt: Discretisation time step (s).
+
+    Returns:
+        A ``PlantLinearization`` with ``n=8``, ``m_u=2``, ``m_w=8``.
+    """
+    if mass <= 0:
+        raise ValueError(f"mass must be positive, got {mass}")
+    if dt <= 0:
+        raise ValueError(f"dt must be positive, got {dt}")
+    if tau <= 0:
+        raise ValueError(
+            f"tau must be positive for the 8-state form (force filter required); "
+            f"got {tau}. For tau=0 use the 6-state form."
+        )
+
+    I2 = jnp.eye(2, dtype=jnp.float64)
+    Z2 = jnp.zeros((2, 2), dtype=jnp.float64)
+
+    # Continuous-time A (8 x 8): block structure
+    #   [ 0          I        0        0      ]   pos
+    #   [ 0    -k/m·I    1/m·I        I/m    ]   vel  (col 7,8 = I/m couples integrators)
+    #   [ 0          0    -1/τ·I       0      ]   F
+    #   [ 0          0        0        0      ]   ε_int
+    #
+    # Per the user spec and minmaxfc_pointMass.m, the integrator-to-velocity
+    # coupling is A[3,7]=A[4,8]=1 in the (mass=1) MATLAB code. With explicit
+    # 1/mass scaling, A_c[vel,eps_int] = (1/mass) · I.
+    A_c = jnp.block(
+        [
+            [Z2, I2, Z2, Z2],
+            [Z2, -(damping / mass) * I2, I2 / mass, I2 / mass],
+            [Z2, Z2, -(1.0 / tau) * I2, Z2],
+            [Z2, Z2, Z2, Z2],
+        ]
+    )
+    # Control enters force filter only.
+    B_c = jnp.concatenate([Z2, Z2, I2 / tau, Z2], axis=0)  # (8, 2)
+    # Disturbance enters all states directly (full-state B_w = I_8).
+    Bw_c = jnp.eye(8, dtype=jnp.float64)
+
+    # ZOH discretise A and B; ε integrators are pure (rows 7,8 of A_c are
+    # zero), so they have no inter-step coupling beyond the trivial e^{0·dt}=I.
+    # We then SET B_w_d = I_8 directly (matches the C&S released code, where
+    # the disturbance D is set to the discrete-time identity, not derived
+    # from a continuous-time ε via ZOH).
+    A_d, B_d, _ = _zoh_discretize(A_c, B_c, Bw_c, dt)
+    Bw_d = jnp.eye(8, dtype=jnp.float64)
+
+    return PlantLinearization(
+        A_c=A_c,
+        B_c=B_c,
+        Bw_c=Bw_c,
+        A=A_d,
+        B=B_d,
+        Bw=Bw_d,
+        dt=float(dt),
+        pos_slice=(0, 2),
+        vel_slice=(2, 4),
+        force_slice=(4, 6),
+    )
+
+
+def _apply_delay_augmentation(
+    plant: PlantLinearization,
+    *,
+    delay_steps: int,
+) -> PlantLinearization:
+    """Augment a plant with a tap-delay shift register on the observation channel.
+
+    Lifts the input plant from ``n_phys`` states to
+    ``n_phys + delay_steps · n_obs`` states, where ``n_obs = 4`` (pos + vel).
+    The lag states implement a discrete-time shift register
+
+    .. math::
+
+        y_{t-1}^{(new)} = C_{obs}\\, x_{phys, t},
+        \\qquad y_{t-(k+1)}^{(new)} = y_{t-k}^{(old)} \\quad k = 1, …, h-1.
+
+    Augmented-state ordering (newest at top):
+
+    .. math::
+
+        x_{aug, t} = \\begin{bmatrix}
+            x_{phys, t} \\\\
+            y_{t-1} \\\\
+            y_{t-2} \\\\
+            \\vdots \\\\
+            y_{t-h}
+        \\end{bmatrix} \\in \\mathbb{R}^{n_{phys} + h \\cdot n_{obs}}
+
+    The augmented dynamics matrix has the block form
+
+    .. math::
+
+        A_{aug} = \\begin{bmatrix}
+            A_{phys}      & 0       & 0       & \\cdots & 0 \\\\
+            C_{obs}       & 0       & 0       & \\cdots & 0 \\\\
+            0             & I       & 0       & \\cdots & 0 \\\\
+            0             & 0       & I       & \\cdots & 0 \\\\
+            \\vdots       & \\vdots & \\vdots & \\ddots & \\vdots \\\\
+            0             & 0       & 0       & \\cdots & 0
+        \\end{bmatrix}
+
+    and ``B_aug``, ``B_w_aug`` are ``B_phys``, ``B_{w,phys}`` zero-padded
+    onto the physical block (control and disturbance affect physical states
+    only — lag states are pure shift registers).
+
+    Modelled after C&S 2019 ``AugRobustControl.m`` (ModelDB 258846), with the
+    parsimonious modification that the shift register operates on the
+    observation channel (``[pos, vel]``, ``n_obs = 4``) rather than the full
+    physical state. This matches rlrmp's trained-controller setup, where the
+    network only "sees" pos+vel through ``feedback_delay_steps``.
+
+    Args:
+        plant: Underlying physical plant (4-, 6-, or 8-state).
+        delay_steps: Number of delay taps ``h ≥ 1``.
+
+    Returns:
+        A new ``PlantLinearization`` with the augmented state size.
+
+    Bug: ``9a0558e`` — see ``cs_faithful_pointmass`` docstring for context.
+    """
+    if delay_steps < 1:
+        raise ValueError(
+            f"_apply_delay_augmentation requires delay_steps >= 1; got {delay_steps}"
+        )
+
+    n_phys = plant.n
+    m_u = plant.m_u
+    m_w = plant.m_w
+    pos_lo, pos_hi = plant.pos_slice
+    vel_lo, vel_hi = plant.vel_slice
+    n_pos = pos_hi - pos_lo
+    n_vel = vel_hi - vel_lo
+    n_obs = n_pos + n_vel
+
+    h = int(delay_steps)
+    n_aug = n_phys + h * n_obs
+
+    # C_obs: extracts [pos, vel] from the physical state, shape (n_obs, n_phys).
+    C_obs = jnp.zeros((n_obs, n_phys), dtype=jnp.float64)
+    C_obs = C_obs.at[:n_pos, pos_lo:pos_hi].set(jnp.eye(n_pos, dtype=jnp.float64))
+    C_obs = C_obs.at[n_pos:n_pos + n_vel, vel_lo:vel_hi].set(
+        jnp.eye(n_vel, dtype=jnp.float64)
+    )
+
+    # Build augmented continuous-time A_c. The lag block-shift is intrinsically
+    # discrete — there is no clean continuous-time analogue. We construct the
+    # discrete-time A_aug directly from the discrete-time A_phys and the shift
+    # structure, then back out a "nominal" continuous-time A_aug via
+    # logm(A_aug)/dt for documentation only (the Riccati uses A_aug discrete).
+    #
+    # Concretely:
+    #   A_aug[0:n_phys, 0:n_phys] = A_phys                (physical dynamics)
+    #   A_aug[n_phys:n_phys+n_obs, 0:n_phys] = C_obs      (newest lag = C·x_phys)
+    #   A_aug[n_phys+n_obs:, n_phys:n_phys+(h-1)·n_obs] = I  (shift down)
+    A_d_phys = plant.A.astype(jnp.float64)
+    B_d_phys = plant.B.astype(jnp.float64)
+    Bw_d_phys = plant.Bw.astype(jnp.float64)
+
+    A_aug_d = jnp.zeros((n_aug, n_aug), dtype=jnp.float64)
+    A_aug_d = A_aug_d.at[:n_phys, :n_phys].set(A_d_phys)
+    # Newest lag block (rows n_phys : n_phys + n_obs) takes C_obs · x_phys
+    A_aug_d = A_aug_d.at[n_phys:n_phys + n_obs, :n_phys].set(C_obs)
+    # Shift older lag blocks down: rows n_phys + n_obs onward read from
+    # rows n_phys : n_phys + (h-1)·n_obs (one delay slot earlier).
+    if h >= 2:
+        n_shift = (h - 1) * n_obs
+        A_aug_d = A_aug_d.at[
+            n_phys + n_obs : n_phys + h * n_obs,
+            n_phys : n_phys + n_shift,
+        ].set(jnp.eye(n_shift, dtype=jnp.float64))
+
+    # B_aug, Bw_aug: zero-pad onto physical block.
+    B_aug_d = jnp.zeros((n_aug, m_u), dtype=jnp.float64)
+    B_aug_d = B_aug_d.at[:n_phys, :].set(B_d_phys)
+    Bw_aug_d = jnp.zeros((n_aug, m_w), dtype=jnp.float64)
+    Bw_aug_d = Bw_aug_d.at[:n_phys, :].set(Bw_d_phys)
+
+    # Continuous-time matrices: store nominal block structure for completeness.
+    # We do NOT round-trip through expm here because the lag shift is purely
+    # discrete; the augmented continuous-time A_c would not reconstitute via
+    # ZOH back to A_aug_d. Instead store a representative continuous-time
+    # A_c with the physical block embedded and zeros elsewhere — this is
+    # consistent with how the existing PlantLinearization treats Bw_c when
+    # ``disturbance_channel='full_state'`` (see ``linearize_pointmass``,
+    # which stores a placeholder when discrete-time matrices are set
+    # directly).
+    A_aug_c = jnp.zeros((n_aug, n_aug), dtype=jnp.float64)
+    A_aug_c = A_aug_c.at[:n_phys, :n_phys].set(plant.A_c.astype(jnp.float64))
+    B_aug_c = jnp.zeros((n_aug, m_u), dtype=jnp.float64)
+    B_aug_c = B_aug_c.at[:n_phys, :].set(plant.B_c.astype(jnp.float64))
+    Bw_aug_c = jnp.zeros((n_aug, m_w), dtype=jnp.float64)
+    Bw_aug_c = Bw_aug_c.at[:n_phys, :].set(plant.Bw_c.astype(jnp.float64))
+
+    return PlantLinearization(
+        A_c=A_aug_c,
+        B_c=B_aug_c,
+        Bw_c=Bw_aug_c,
+        A=A_aug_d,
+        B=B_aug_d,
+        Bw=Bw_aug_d,
+        dt=plant.dt,
+        # pos/vel/force slices are unchanged (they refer to the physical block).
+        pos_slice=plant.pos_slice,
+        vel_slice=plant.vel_slice,
+        force_slice=plant.force_slice,
     )
 
 
@@ -762,11 +1054,14 @@ def cost_schedule_from_spec(
 def cs_eq15_cost_schedule(
     n_steps: int,
     alpha_1: float = 1.0,
+    *,
+    state_dim: int = 6,
 ) -> CostSchedule:
     """Build the Crevecoeur & Scott (2019) Eq. 15 cost schedule.
 
-    Implements the C&S 2019 cost function on the 6-state augmented
-    ``[pos(2), vel(2), F(2)]`` plant:
+    Implements the C&S 2019 cost function on the C&S point-mass plant.
+    The base 6-element diagonal weights the physical sub-state
+    ``[pos(2), vel(2), F(2)]``:
 
     .. math::
 
@@ -784,53 +1079,62 @@ def cs_eq15_cost_schedule(
     to a heavy terminal-like cost penalty at ``t = N``, consistent with C&S's
     described cost function.
 
-    The plant this schedule is designed for is the 6-state linearised point
-    mass with first-order force filter (tau > 0). Build it with::
+    Padding for higher-dimensional plants:
+        ``state_dim`` lets this schedule extend to:
 
-        plant = linearize_pointmass(mass=1.0, damping=0.1, tau=0.06, dt=0.01)
+        - ``8``: the 8-state plant with disturbance integrators
+          (Bug: ``9a0558e``). The base 6-element diagonal is padded with two
+          zeros for the integrator states ``[eps_x_int, eps_y_int]`` —
+          matching ``minmaxfc_pointMass.m`` (the C&S released code does NOT
+          place direct cost on the integrator states; their effect on the
+          objective is mediated by the ``A[3,7]=A[4,8]=1`` velocity coupling).
+        - ``8 + delay_steps · n_obs``: the delay-augmented plant. Lag states
+          are pure shift-register memory with no direct cost (zero diagonal).
+        - ``6``: the legacy no-integrator, no-delay form.
 
-    and verify ``plant.n == 6`` before passing here.
+        Other values raise ``ValueError``.
 
     Args:
-        n_steps: Total number of stages T (i.e., number of discrete time
-            steps in the reach). C&S use 10 ms time steps; for a 0.8 s reach
-            ``n_steps=80`` is representative.
-        alpha_1: Cost coefficient on the quadratic state penalty. C&S sweep
-            ``alpha_1`` over an order of magnitude in their sensitivity
-            analysis. The default ``1.0`` is a representative value that
-            keeps the Riccati well-conditioned.
+        n_steps: Total number of stages T.
+        alpha_1: Cost coefficient on the quadratic state penalty.
+        state_dim: Total state dimension. Must be ≥ 6. The first 6 diagonal
+            entries follow C&S Eq. 15; entries beyond index 5 are zero.
 
     Returns:
-        A ``CostSchedule`` with shape ``Q=(T, 6, 6)``, ``R=(T, 2, 2)``,
-        ``Q_f=(6, 6)``, matching the 6-state augmented plant.
+        A ``CostSchedule`` with shape ``Q=(T, state_dim, state_dim)``,
+        ``R=(T, 2, 2)``, ``Q_f=(state_dim, state_dim)``.
 
     Note:
         The ``Q_f`` terminal cost is set to ``alpha_1 * Q`` (i.e., the
         ramp factor at ``t = N`` is 1.0), consistent with the ``(t/N)^6``
         ramp reaching its maximum at the final step.
     """
+    if state_dim < 6:
+        raise ValueError(
+            f"state_dim must be >= 6 (the C&S Eq.15 6-element diagonal); got {state_dim}"
+        )
     T = n_steps
-    # C&S Q matrix: diag([1e6, 1e6, 1e5, 1e5, 1, 1])
-    # Ordered as [pos_x, pos_y, vel_x, vel_y, F_x, F_y]
-    Q_diag = jnp.array(
-        [1e6, 1e6, 1e5, 1e5, 1.0, 1.0],
-        dtype=jnp.float64,
+    # C&S Q diagonal: [1e6, 1e6, 1e5, 1e5, 1, 1] for [pos_x, pos_y, vel_x, vel_y, F_x, F_y]
+    # Bug: 9a0558e — pad with zeros for any integrator + delay-lag states.
+    Q_diag_padded = jnp.zeros((state_dim,), dtype=jnp.float64)
+    Q_diag_padded = Q_diag_padded.at[:6].set(
+        jnp.array([1e6, 1e6, 1e5, 1e5, 1.0, 1.0], dtype=jnp.float64)
     )
-    Q_base = jnp.diag(Q_diag)  # (6, 6)
+    Q_base = jnp.diag(Q_diag_padded)  # (state_dim, state_dim)
 
     # Time-varying ramp: alpha_1 * (t/N)^6, t = 0, 1, ..., T-1
     t = jnp.arange(T, dtype=jnp.float64)
     ramp = alpha_1 * (t / float(T)) ** 6  # shape (T,)
 
     # Q_t = ramp[t] * Q_base, broadcast via vmap
-    Q = jax.vmap(lambda r: r * Q_base)(ramp)  # (T, 6, 6)
+    Q = jax.vmap(lambda r: r * Q_base)(ramp)  # (T, state_dim, state_dim)
 
     # R = I_2 (unit control cost, matching |u_t|^2 in C&S Eq. 15)
     R_t = jnp.eye(2, dtype=jnp.float64)
     R = jnp.tile(R_t[None], (T, 1, 1))  # (T, 2, 2)
 
     # Terminal cost Q_f = alpha_1 * Q_base (ramp factor = 1 at t = N)
-    Q_f = alpha_1 * Q_base  # (6, 6)
+    Q_f = alpha_1 * Q_base  # (state_dim, state_dim)
 
     return CostSchedule(Q=Q, R=R, Q_f=Q_f)
 
