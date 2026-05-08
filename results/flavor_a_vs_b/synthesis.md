@@ -412,6 +412,8 @@ These gaps are tracked jointly on `9a0558e`. The gap analysis is at
 `/tmp/flavor_ab_review/findings/cs2019_review.md`; the analyses coordination
 issue `4d38c15` carries the cross-cutting cross-reference.
 
+**Update (post-implementation):** the 8-state + 50 ms-delay lift was implemented (commits `1f75d9f`, `1c313b4` on `feature/cs-faithful-8state-delay`), and is mechanically correct, but does NOT change analytical Δv from the 6-state-no-delay form (still +1.0% at γ_des=1.5γ\*, +2.12% at γ_des=1.05γ\*). Diagnostic: the full-state-feedback Riccati on the augmented system finds the trivial solution — K assigns zero feedback through the lag states. The integrator states get nonzero K but remain near zero in unperturbed rollout because the worst-case ε is still driven by physical x. C&S's velocity inflation likely arises from their Kalman estimator with *delayed measurement*, constraining the controller to output-feedback through `y_{t-h}` only — see follow-up issue `83fc5b5`.
+
 ### 4.3 Why this matters for the comparison
 
 The corrected Riccati synthesis gives:
