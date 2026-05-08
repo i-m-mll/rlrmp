@@ -469,7 +469,7 @@ def cs_faithful_pointmass(
     *,
     mass: float = 1.0,
     damping: float = 0.1,
-    tau: float = 0.06,
+    tau: float = 0.066,
     dt: float = 0.01,
     disturbance_integrator: bool = True,
     delay_steps: int = 5,
@@ -479,22 +479,39 @@ def cs_faithful_pointmass(
     Canonical C&S setup (matches the released ModelDB code 258846):
 
     - **Mass + force-filter** (6 physical states): ``[px, py, vx, vy, fx, fy]``
-      with ``mass=1 kg``, ``k=0.1 Ns/m``, ``tau=0.06 s``, ``dt=0.01 s``.
+      with ``mass=1 kg``, ``k=0.1 Ns/m``, ``tau=0.066 s``, ``dt=0.01 s``.
     - **Disturbance-integrator coupling** (Bug: ``9a0558e``, default on):
       adds two pure-integrator states ``[eps_x_int, eps_y_int]`` driven by the
       disturbance ``ε`` (rows 7,8 of A are zero). The integrators couple back
       into the velocity rows via ``A[3,7]=A[4,8]=1``. Disturbance matrix
-      ``B_w = I_8`` so each ε_i drives state i directly. Effect: the
-      H∞-relevant disturbance is a smooth cumulative drift in velocity, not
-      an impulsive force, and the worst-case adversary is structurally
-      different (matches C&S's ``minmaxfc_pointMass.m``).
-    - **50 ms (5-step) full-state delay augmentation** (Bug: ``9a0558e``,
-      default on): appends ``delay_steps`` blocks of ``n_phys`` lag states
-      implementing a tap-delay shift register on the *full* physical state
-      (faithful port of C&S's ``AugRobustControl.m``). The augmented-state
-      vector is
+      ``B_w = I_8`` so each ε_i drives state i directly.
 
-      ``x_{aug, t} = [x_t; x_{t-1}; x_{t-2}; …; x_{t-h}]``.
+      Adversary-redundancy property: under ``B_w = I_8`` the worst-case H∞
+      adversary always finds a more efficient direct-velocity attack than
+      going through the integrator pathway, so the integrator columns of
+      ``B_w`` (``B_w[:, 6:8]``) do not change γ\\* or ``K_phys``. The
+      integrator states still affect the closed-loop response *because the
+      Riccati P couples them to velocity*, but they are dynamically inert
+      from the adversary's perspective. This is documented in the audit
+      ``/tmp/flavor_ab_review/findings/cs_alignment_audit.md`` and is the
+      correct C&S H∞ game behaviour, not a bug.
+    - **50 ms (5-step) full-state delay augmentation** (Bug: ``9a0558e``,
+      default on): appends ``delay_steps`` blocks of ``n_phys = 8`` lag
+      states implementing a tap-delay shift register on the *full* physical
+      state. The augmented-state vector is
+
+      ``x_{aug, t} = [x_t; x_{t-1}; x_{t-2}; …; x_{t-h}]``
+
+      Faithful port of C&S's ``AugRobustControl.m``. Combined with the
+      C&S-faithful Q distribution (``apply_delay_distribution_to_schedule``),
+      the lag chain becomes cost-relevant — each block carries a
+      time-shifted, ``1/(h+1)``-weighted copy of the physical Q. Without that
+      distribution the lag chain is mathematically inert.
+    - **Cost schedule**: Use ``cs_eq15_cost_schedule`` to build the *physical*
+      Q (state_dim=8), then apply ``apply_delay_distribution_to_schedule`` to
+      distribute it across the lag chain. The canonical C&S horizon is
+      ``n_steps = 60`` (0.6 s at dt=0.01), set explicitly when constructing
+      the schedule.
 
     The total state dimension is:
 
@@ -505,7 +522,9 @@ def cs_faithful_pointmass(
     Args:
         mass: Effector mass (kg).
         damping: Velocity damping coefficient k (Ns/m).
-        tau: First-order force-filter time constant (s).
+        tau: First-order force-filter time constant (s). C&S use 0.066 s
+            (``minmaxfc_pointMass.m`` line 23). Earlier rlrmp default was
+            0.06 — corrected per the audit.
         dt: Discretisation time step (s).
         disturbance_integrator: If True (default), add two integrator states
             7,8 with the C&S coupling pattern. If False, fall back to the
@@ -515,17 +534,22 @@ def cs_faithful_pointmass(
             augmentation (legacy behaviour, same as pre-`9a0558e`).
 
     Returns:
-        A ``PlantLinearization`` with ``A``, ``B``, ``B_w`` of size
-        ``n_aug × n_aug`` (or ``n_aug × m_u`` for ``B``, ``n_aug × m_w`` for
-        ``B_w``).
+        A ``PlantLinearization`` with ``A``, ``B``, ``B_w`` sized for the
+        augmented system.
 
     Backward compatibility:
-        ``cs_faithful_pointmass(disturbance_integrator=False, delay_steps=0)``
-        reproduces the pre-9a0558e 6-state, no-delay form exactly. Useful for
-        regression tests and for comparing the pre/post-lift Δv numbers.
+        ``cs_faithful_pointmass(disturbance_integrator=False, delay_steps=0,
+        tau=0.06)`` reproduces the pre-9a0558e 6-state, no-delay form
+        exactly. Useful for regression tests and for comparing the
+        pre/post-lift Δv numbers.
 
-    Bug: ``9a0558e`` — structural lift to 8-state plant + delay augmentation,
-    matching C&S 2019.
+    Bug: ``9a0558e`` — structural lift to 8-state plant + full-state delay
+    augmentation. The post-recipe-audit fix (full-state lag, tau=0.066,
+    distributed Q via ``apply_delay_distribution_to_schedule``) brings
+    analytical Δv on the canonical 15 cm reach to ~+7-8% (matches the
+    MATLAB-faithful Python port at
+    ``/tmp/flavor_ab_review/cs_alignment/cs_matlab_port.py`` and Fig 1e
+    measurement ~+7.76%).
     Bug: ``97c227a`` — the prior 6-state full-state-B_w version (now reachable
     via ``disturbance_integrator=False, delay_steps=0``).
     """
@@ -1169,86 +1193,122 @@ def cs_eq15_cost_schedule(
     n_steps: int,
     alpha_1: float = 1.0,
     *,
-    state_dim: int = 6,
+    state_dim: int = 8,
 ) -> CostSchedule:
     """Build the Crevecoeur & Scott (2019) Eq. 15 cost schedule.
 
-    Implements the C&S 2019 cost function on the C&S point-mass plant.
-    The base 6-element diagonal weights the physical sub-state
-    ``[pos(2), vel(2), F(2)]``:
+    Implements the C&S 2019 cost function on the C&S point-mass plant. Per
+    ``script_minmax_pointMass.m`` lines 25-32:
+
+    .. code-block:: matlab
+
+        runningalpha = zeros(8, nStep);
+        for i = 1:nStep
+            fact = min(1, (i*delta/time)^6);
+            runningalpha(:,i) = [fact*1e6  fact*1e6  fact*1e5  fact*1e5  1  1  1  1]';
+        end
+
+    The diagonal Q has the form
 
     .. math::
 
-        J(x, u) = \\sum_t \\alpha_1 \\left(\\frac{t}{N}\\right)^6 x_t^\\top Q\\, x_t
-                  + \\sum_t \\|u_t\\|^2,
+        Q_t = \\mathrm{diag}([\\mathrm{fact}_t \\cdot 10^6,\\ \\mathrm{fact}_t \\cdot 10^6,\\
+                              \\mathrm{fact}_t \\cdot 10^5,\\ \\mathrm{fact}_t \\cdot 10^5,\\
+                              1, 1, 1, 1]),
 
-    with
+    with the time-varying ramp factor
 
     .. math::
 
-        Q = \\mathrm{diag}([10^6, 10^6, 10^5, 10^5, 1, 1])
+        \\mathrm{fact}_t = \\min\\!\\Big(1, \\big((t+1) \\delta / T\\big)^6\\Big)
 
-    and ``R = I_2`` (identity on the 2-D control space). The ``(t/N)^6``
-    ramp ensures near-zero stage cost early in the reach and a smooth build-up
-    to a heavy terminal-like cost penalty at ``t = N``, consistent with C&S's
-    described cost function.
+    (MATLAB 1-indexed: ``i = 1, …, nStep``). The crucial detail is that
+    **entries 5-8 (force + integrator) are NOT scaled by ``fact``** — only
+    the position and velocity entries ramp. This was a bug in the earlier
+    rlrmp version, where the entire diagonal was uniformly scaled by the
+    ramp; see audit at
+    ``/tmp/flavor_ab_review/findings/cs_alignment_audit.md``.
 
     Padding for higher-dimensional plants:
-        ``state_dim`` lets this schedule extend to:
+        - ``6``: legacy no-integrator, no-delay form. Truncated to the first
+          six entries ``[fact·1e6, fact·1e6, fact·1e5, fact·1e5, 1, 1]``.
+        - ``8`` (default): canonical 8-state plant with disturbance
+          integrators. Integrator states 6,7 take constant weight 1.
+        - ``> 8``: extra entries are padded with zeros. For C&S-faithful
+          delay augmentation, prefer building the physical schedule
+          (``state_dim=8``) and applying
+          ``apply_delay_distribution_to_schedule`` to distribute the cost
+          across the lag chain per ``AugRobustControl.m``.
 
-        - ``8``: the 8-state plant with disturbance integrators
-          (Bug: ``9a0558e``). The base 6-element diagonal is padded with two
-          zeros for the integrator states ``[eps_x_int, eps_y_int]`` —
-          matching ``minmaxfc_pointMass.m`` (the C&S released code does NOT
-          place direct cost on the integrator states; their effect on the
-          objective is mediated by the ``A[3,7]=A[4,8]=1`` velocity coupling).
-        - ``8 + delay_steps · n_obs``: the delay-augmented plant. Lag states
-          are pure shift-register memory with no direct cost (zero diagonal).
-        - ``6``: the legacy no-integrator, no-delay form.
-
-        Other values raise ``ValueError``.
+    Bug: ``9a0558e`` — recipe-bug audit. Fixes vs. the prior implementation:
+    (1) entries 6,7 set to 1.0 (constant), not 0; (2) entries 4-7 not scaled
+    by ramp; (3) cap-at-1 applied to (t/N)^6 (matches ``min(1, ...)`` in
+    MATLAB).
 
     Args:
-        n_steps: Total number of stages T.
-        alpha_1: Cost coefficient on the quadratic state penalty.
-        state_dim: Total state dimension. Must be ≥ 6. The first 6 diagonal
-            entries follow C&S Eq. 15; entries beyond index 5 are zero.
+        n_steps: Total number of stages T (matches MATLAB ``simdata.nStep``,
+            inclusive of the terminal stage).
+        alpha_1: Multiplier on the entire Q schedule (default 1.0). Scales
+            both ramped and constant entries.
+        state_dim: Total state dimension. Must be ≥ 6. Default ``8`` matches
+            the canonical C&S plant.
 
     Returns:
         A ``CostSchedule`` with shape ``Q=(T, state_dim, state_dim)``,
         ``R=(T, 2, 2)``, ``Q_f=(state_dim, state_dim)``.
 
     Note:
-        The ``Q_f`` terminal cost is set to ``alpha_1 * Q`` (i.e., the
-        ramp factor at ``t = N`` is 1.0), consistent with the ``(t/N)^6``
-        ramp reaching its maximum at the final step.
+        ``Q_f`` is set to the t = T value of Q (saturated ramp), i.e.
+        ``alpha_1 * diag([1e6, 1e6, 1e5, 1e5, 1, 1, 1, 1])``.
     """
     if state_dim < 6:
         raise ValueError(
             f"state_dim must be >= 6 (the C&S Eq.15 6-element diagonal); got {state_dim}"
         )
     T = n_steps
-    # C&S Q diagonal: [1e6, 1e6, 1e5, 1e5, 1, 1] for [pos_x, pos_y, vel_x, vel_y, F_x, F_y]
-    # Bug: 9a0558e — pad with zeros for any integrator + delay-lag states.
-    Q_diag_padded = jnp.zeros((state_dim,), dtype=jnp.float64)
-    Q_diag_padded = Q_diag_padded.at[:6].set(
-        jnp.array([1e6, 1e6, 1e5, 1e5, 1.0, 1.0], dtype=jnp.float64)
+
+    # C&S Q diagonal split into ramped and constant components per
+    # script_minmax_pointMass.m line 30:
+    #   runningalpha(:,i) = [fact*1e6  fact*1e6  fact*1e5  fact*1e5  1  1  1  1]'
+    # Entries 0-3 (pos, vel) are ramped; entries 4-7 (force, integrator) are
+    # constant 1. Bug: 9a0558e — see audit at
+    # /tmp/flavor_ab_review/findings/cs_alignment_audit.md.
+    n_canonical = min(state_dim, 8)
+    ramped_full = jnp.array([1e6, 1e6, 1e5, 1e5, 0.0, 0.0, 0.0, 0.0], dtype=jnp.float64)
+    constant_full = jnp.array([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], dtype=jnp.float64)
+    ramped_diag = jnp.zeros((state_dim,), dtype=jnp.float64).at[:n_canonical].set(
+        ramped_full[:n_canonical]
     )
-    Q_base = jnp.diag(Q_diag_padded)  # (state_dim, state_dim)
+    constant_diag = jnp.zeros((state_dim,), dtype=jnp.float64).at[:n_canonical].set(
+        constant_full[:n_canonical]
+    )
 
-    # Time-varying ramp: alpha_1 * (t/N)^6, t = 0, 1, ..., T-1
-    t = jnp.arange(T, dtype=jnp.float64)
-    ramp = alpha_1 * (t / float(T)) ** 6  # shape (T,)
+    # Time-varying ramp matching MATLAB `script_minmax_pointMass.m` line 28:
+    #     fact = min(1, (i*delta/time)^6)
+    # where i = 1..nStep, delta is the timestep, and time is the reach
+    # duration. The C&S setup uses time = nStep * delta (the cost schedule
+    # has nStep entries from i=1 to i=nStep, with i=nStep being the terminal
+    # saturation point: fact_nStep = (nStep*delta/time)^6 = 1). Equivalently:
+    #     fact_i = min(1, (i / nStep)^6)
+    # In Python (0-indexed t = 0..T-1) this becomes
+    #     fact_t = min(1, ((t+1) / T)^6)
+    # so the terminal stage t = T-1 has fact = (T/T)^6 = 1 (full saturation).
+    # This matches MATLAB's `runningalpha(:, nStep)` at the terminal index.
+    i_plus_1 = jnp.arange(1, T + 1, dtype=jnp.float64)
+    fact = jnp.minimum(1.0, (i_plus_1 / float(T)) ** 6)  # shape (T,)
 
-    # Q_t = ramp[t] * Q_base, broadcast via vmap
-    Q = jax.vmap(lambda r: r * Q_base)(ramp)  # (T, state_dim, state_dim)
+    # Q_t = alpha_1 · (fact_t * diag(ramped) + diag(constant))
+    def Q_at_t(f):
+        return alpha_1 * (jnp.diag(f * ramped_diag) + jnp.diag(constant_diag))
+
+    Q = jax.vmap(Q_at_t)(fact)  # (T, state_dim, state_dim)
 
     # R = I_2 (unit control cost, matching |u_t|^2 in C&S Eq. 15)
     R_t = jnp.eye(2, dtype=jnp.float64)
     R = jnp.tile(R_t[None], (T, 1, 1))  # (T, 2, 2)
 
-    # Terminal cost Q_f = alpha_1 * Q_base (ramp factor = 1 at t = N)
-    Q_f = alpha_1 * Q_base  # (state_dim, state_dim)
+    # Terminal cost Q_f: ramp saturates to 1 → full diagonal active.
+    Q_f = alpha_1 * (jnp.diag(ramped_diag) + jnp.diag(constant_diag))
 
     return CostSchedule(Q=Q, R=R, Q_f=Q_f)
 
