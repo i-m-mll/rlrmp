@@ -50,6 +50,7 @@ from rlrmp.analysis.hinf_riccati import (
     compute_velocity_inflation_modelclass,
     cost_schedule_from_spec,
     cs_eq15_cost_schedule,
+    cs_faithful_pointmass,
     find_gamma_star,
     find_gamma_star_modelclass,
     linearization_fidelity,
@@ -465,11 +466,62 @@ def test_input_validation():
         linearize_pointmass(mass=1.0, damping=10.0, tau=0.05, dt=0.0)
     with pytest.raises(ValueError, match="tau must be non-negative"):
         linearize_pointmass(mass=1.0, damping=10.0, tau=-0.01, dt=0.01)
+    with pytest.raises(ValueError, match="disturbance_channel must be"):
+        linearize_pointmass(
+            mass=1.0, damping=10.0, tau=0.05, dt=0.01,
+            disturbance_channel="bogus",
+        )
 
     plant = _rlrmp_plant()
     schedule = _rlrmp_schedule(plant)
     with pytest.raises(ValueError, match="gamma must be positive"):
         solve_hinf_riccati(plant, schedule, 0.0)
+
+
+def test_full_state_disturbance_channel_shape():
+    """``disturbance_channel='full_state'`` gives B_w_d = I_n exactly.
+
+    Bug: ``97c227a`` — verifies the C&S Eq 13 ε channel is wired correctly:
+    every state coordinate gets its own disturbance dimension (m_w == n).
+    """
+    # 6-state plant
+    plant6 = linearize_pointmass(
+        mass=1.0, damping=0.1, tau=0.06, dt=0.01,
+        disturbance_channel="full_state",
+    )
+    assert plant6.n == 6
+    assert plant6.m_w == 6
+    assert jnp.allclose(plant6.Bw, jnp.eye(6, dtype=jnp.float64), atol=1e-14)
+    assert jnp.allclose(plant6.Bw_c, jnp.eye(6, dtype=jnp.float64), atol=1e-14)
+
+    # 4-state plant (no force filter)
+    plant4 = linearize_pointmass(
+        mass=1.0, damping=10.0, tau=0.0, dt=0.01,
+        disturbance_channel="full_state",
+    )
+    assert plant4.n == 4
+    assert plant4.m_w == 4
+    assert jnp.allclose(plant4.Bw, jnp.eye(4, dtype=jnp.float64), atol=1e-14)
+
+
+def test_cs_faithful_pointmass_defaults():
+    """``cs_faithful_pointmass()`` matches the C&S 2019 paper parameters.
+
+    Bug: ``97c227a`` — convenience constructor: mass=1, k=0.1, tau=0.06,
+    dt=0.01, B_w = I_6.
+    """
+    plant = cs_faithful_pointmass()
+    assert plant.n == 6
+    assert plant.m_w == 6
+    assert plant.dt == pytest.approx(0.01)
+    # Damping = 0.1 → A_c[2:4, 2:4] block is -0.1 * I
+    assert jnp.allclose(plant.A_c[2:4, 2:4], -0.1 * jnp.eye(2), atol=1e-12)
+    # tau=0.06 → A_c[4:6, 4:6] is -(1/0.06) * I
+    assert jnp.allclose(
+        plant.A_c[4:6, 4:6], -(1.0 / 0.06) * jnp.eye(2), atol=1e-12
+    )
+    # B_w should be identity
+    assert jnp.allclose(plant.Bw, jnp.eye(6, dtype=jnp.float64), atol=1e-14)
 
 
 # -----------------------------------------------------------------------------
@@ -543,41 +595,43 @@ def test_cs_eq15_ramp_boundary_values():
 
 
 def test_cs_faithful_qr_velocity_inflation():
-    """Faithful C&S Eq. 15 Q,R on the C&S plant: paper claims Δv > 0.
+    """Faithful C&S Eq. 15 Q,R + faithful B_w channel on the C&S plant: Δv > 0.
 
     Crevecoeur & Scott (2019) report that "the robust controller always
     generated faster movement velocities toward the target" (p. 8139, Fig. 1e).
     This test reproduces the C&S setup faithfully:
 
-    - Plant: mass=1 kg, k=0.1 Ns/m, tau=0.06 s, dt=0.01 s (10 ms steps)
-    - Cost: C&S Eq. 15 with alpha_1=1.0, n_steps=80 (0.8 s reach)
-    - Reach: 15 cm forward (matching C&S experimental geometry)
-    - Evaluation: gamma_factor=1.5 (matching synthesis_review section 2)
+    - Plant: ``cs_faithful_pointmass()`` (mass=1 kg, k=0.1 Ns/m, tau=0.06 s,
+      dt=0.01 s, ``disturbance_channel='full_state'``) — the full-state
+      ``B_w = I_6`` matches C&S Eq 13's lumped disturbance ε on every
+      state coordinate. Bug: ``97c227a``.
+    - Cost: C&S Eq. 15 with alpha_1=1.0, n_steps=80 (0.8 s reach).
+    - Reach: 15 cm forward (matching C&S experimental geometry).
+    - Evaluation: gamma_factor=1.5 (matching synthesis_review section 2).
 
-    The metric is ``delta_v_percent`` based on **peak forward velocity**
-    (velocity projected onto the reach axis), matching C&S Fig. 1e. For
-    unperturbed on-axis reaches, peak forward velocity equals peak speed
-    because the trajectory stays on axis. The metric correction (Bug: f90bf74)
-    did not flip the sign here.
+    Historical note: this test was xfailed for ~3 sessions with Δv = −0.04%
+    on the velocity-channel-only B_w (the previous default). The implementational
+    gap was the ``B_w`` channel: C&S's H∞ Riccati design treats the disturbance
+    ε as a free 6-vector (one component per state coord, per Eq 13), whereas
+    the rlrmp default B_w injects only on the 2D velocity row (matching the
+    physical curl-field intervenor channel). With B_w = I_6, the H∞ controller
+    hedges against position/force-channel disturbances too and emits stiffer
+    feedback that produces the +Δv signature C&S report. With the velocity-only
+    B_w, the disturbance is too benign and H∞ reduces toward LQR, giving
+    Δv → 0 from below.
 
-    Historical note: under peak speed, this test gave Δv = −0.04% (also
-    under peak forward velocity after Bug f90bf74 correction: −0.04%). Both
-    metrics are numerically identical for 1D unperturbed reaches. The
-    flavor-(a) finding stands: the C&S Riccati Δv requires channel-perturbation
-    context (as in the behavioural C&S data), not clean Riccati rollouts.
+    The metric is ``delta_v_percent`` based on peak forward velocity (velocity
+    projected onto the reach axis), matching C&S Fig. 1e.
 
-    If Δv > 0: Q-shape sensitivity confirmed; the faithful C&S Q,R produces
-    the paper's claimed velocity inflation on the C&S plant.
-
-    If Δv ≤ 0: xfailed with diagnosis — the faithful Q,R also fails to
-    produce velocity inflation, pointing to a gap between Riccati theory
-    and the C&S behavioural result (which uses perturbed-channel trajectories).
+    Expected result: Δv > 0, magnitude in the +0.3% to +3% range (depending
+    on gamma factor and alpha_1) consistent with C&S Fig. 1e's ~10-15% peak-
+    velocity shift near the boundary; +1.0% at gamma_factor=1.5 with alpha_1=1.0.
     """
-    # C&S plant: near-frictionless point mass with slow force filter
-    plant = linearize_pointmass(mass=1.0, damping=0.1, tau=0.06, dt=0.01)
+    # C&S plant: near-frictionless point mass with slow force filter,
+    # full-state disturbance channel (B_w = I_6) per C&S Eq 13.
+    plant = cs_faithful_pointmass()
 
     # C&S Eq. 15 cost: 80 steps = 0.8 s reach at 10 ms timestep
-    # alpha_1=1.0 is a representative value from the paper's sensitivity sweep
     schedule = cs_eq15_cost_schedule(n_steps=80, alpha_1=1.0)
 
     # 15 cm forward reach (C&S experimental geometry: reaches of ~15 cm)
@@ -596,30 +650,106 @@ def test_cs_faithful_qr_velocity_inflation():
 
     delta_v = res.delta_v_percent
 
-    # Failure handling: if Δv ≤ 0 even with faithful Q,R, mark as xfail
-    # with a clear diagnosis rather than a hard failure. This distinguishes
-    # the Q-shape sensitivity hypothesis from a potential Riccati / context gap.
-    if delta_v <= 0.0:
-        pytest.xfail(
-            f"Faithful C&S Eq. 15 Q,R gives Δv (peak fwd vel) = {delta_v:.4f}% ≤ 0 on the C&S plant "
-            f"(gamma_star={gamma_star:.6f}, gamma_eval={res.gamma_evaluated:.6f}, "
-            f"LQR fwd_v_peak={res.lqr_peak_forward_velocity:.4f}, "
-            f"H∞ fwd_v_peak={res.hinf_peak_forward_velocity:.4f}). "
-            "The peak-forward-velocity metric (Bug: f90bf74) was applied; for unperturbed "
-            "on-axis reaches, peak forward velocity equals peak speed — both give ~−0.04%. "
-            "The flavor-(a) interpretation stands: production Riccati B_w is most likely "
-            "additive force (flavor-a), not model-class delta-A (flavor-b). "
-            "C&S's reported +5-15% Δv comes from perturbed-channel (viscous curl-field) "
-            "trajectories, not clean Riccati rollouts — a context gap that is not resolved "
-            "by the metric correction alone. "
-            "Investigate: (a) simulate perturbed trajectories (curl-field w_t), "
-            "(b) check alpha_1 sensitivity (C&S used alpha_1 sweep), "
-            "(c) revisit B_w flavor choice."
-        )
+    assert delta_v > 0, (
+        f"Δv = {delta_v:.4f}%; faithful C&S Q,R + full-state B_w should give Δv > 0. "
+        f"gamma_star={gamma_star}, LQR={res.lqr_peak_forward_velocity}, "
+        f"H∞={res.hinf_peak_forward_velocity}"
+    )
+    # Magnitude bound: C&S Fig 1e shows ~few-% peak fwd vel shift near boundary;
+    # at gamma_factor=1.5 we expect roughly +1% (well above noise, not
+    # implausibly large).
+    assert 0.3 < delta_v < 5.0, (
+        f"Δv = {delta_v:.4f}% outside expected [0.3, 5.0] range for full-state B_w + "
+        f"C&S Q,R + alpha_1=1.0 + gamma_factor=1.5 on C&S plant."
+    )
 
-    # If we reach here, Δv > 0: Q-shape sensitivity is confirmed.
-    # The faithful C&S Q,R does produce velocity inflation on the C&S plant.
-    assert delta_v > 0, f"Δv = {delta_v:.4f}%; faithful C&S Q,R should give Δv > 0"
+
+def test_cs_faithful_velocity_inflation_grows_toward_boundary():
+    """On the C&S faithful setup, Δv grows monotonically as gamma → gamma*.
+
+    Structural property of H∞: closer to the boundary → more aggressive
+    feedback → larger velocity inflation. Mirrors the rlrmp-side
+    ``test_rlrmp_inflation_grows_toward_boundary`` but on the C&S regime
+    with full-state B_w.
+    """
+    plant = cs_faithful_pointmass()
+    schedule = cs_eq15_cost_schedule(n_steps=80, alpha_1=1.0)
+    init_pos = jnp.array([0.0, 0.0], dtype=jnp.float64)
+    target_pos = jnp.array([0.15, 0.0], dtype=jnp.float64)
+    gamma_star = find_gamma_star(plant, schedule)
+    deltas = []
+    for factor in [3.0, 2.0, 1.5, 1.2, 1.05]:
+        res = compute_velocity_inflation(
+            plant, schedule, init_pos=init_pos, target_pos=target_pos,
+            gamma_factor=factor, gamma_star=gamma_star,
+        )
+        deltas.append(res.delta_v_percent)
+    # Strictly monotone increase as gamma factor decreases (i.e., as we
+    # approach gamma*).
+    for i in range(len(deltas) - 1):
+        assert deltas[i] < deltas[i + 1], (
+            f"Δv should grow as gamma factor decreases on C&S faithful setup: "
+            f"{deltas} (factors 3, 2, 1.5, 1.2, 1.05)"
+        )
+    # All entries should be positive (the +Δv C&S signature)
+    assert all(d > 0 for d in deltas), (
+        f"All Δv values should be positive on C&S faithful setup: {deltas}"
+    )
+
+
+def test_cs_disturbance_channel_flips_dv_sign():
+    """Bug: ``97c227a`` — comparison test capturing the load-bearing finding.
+
+    On the C&S regime + Eq 15 Q,R + alpha_1=1 + gamma_factor=1.5:
+      - velocity-force B_w (default, physical curl-field channel) → Δv ≈ −0.04%
+      - full-state B_w = I_6 (C&S Eq 13 ε formulation)             → Δv ≈ +1.0%
+
+    This test pins the contrast as a regression guard: if either path's sign
+    or magnitude shifts unexpectedly, this test will surface it. The default
+    ``"velocity_force"`` B_w is a *correct* channel for the rlrmp curl-field
+    intervenor, but it is *not* what C&S use for the H∞ Riccati design.
+    """
+    init_pos = jnp.array([0.0, 0.0], dtype=jnp.float64)
+    target_pos = jnp.array([0.15, 0.0], dtype=jnp.float64)
+    schedule = cs_eq15_cost_schedule(n_steps=80, alpha_1=1.0)
+
+    # Velocity-force B_w (default) — matches the previous xfail diagnosis
+    plant_vf = linearize_pointmass(mass=1.0, damping=0.1, tau=0.06, dt=0.01)
+    gs_vf = find_gamma_star(plant_vf, schedule)
+    res_vf = compute_velocity_inflation(
+        plant_vf, schedule, init_pos=init_pos, target_pos=target_pos,
+        gamma_factor=1.5, gamma_star=gs_vf,
+    )
+
+    # Full-state B_w — C&S Eq 13 faithful
+    plant_fs = cs_faithful_pointmass()
+    gs_fs = find_gamma_star(plant_fs, schedule)
+    res_fs = compute_velocity_inflation(
+        plant_fs, schedule, init_pos=init_pos, target_pos=target_pos,
+        gamma_factor=1.5, gamma_star=gs_fs,
+    )
+
+    # Velocity-force path: Δv slightly negative (the historical xfail diagnosis)
+    assert res_vf.delta_v_percent < 0, (
+        f"velocity_force B_w Δv = {res_vf.delta_v_percent:+.4f}% should be "
+        "non-positive on C&S regime per the historical xfail diagnosis"
+    )
+    # Full-state path: Δv positive, the C&S signature
+    assert res_fs.delta_v_percent > 0, (
+        f"full_state B_w Δv = {res_fs.delta_v_percent:+.4f}% should be "
+        "strictly positive — the C&S Fig 1e signature"
+    )
+    # Sign flips by switching channel; magnitude shifts by an order
+    # (same alpha_1, same gamma_factor, only B_w changes).
+    assert res_fs.delta_v_percent - res_vf.delta_v_percent > 0.5, (
+        f"Channel switch should produce a non-trivial Δv shift; "
+        f"got {res_fs.delta_v_percent - res_vf.delta_v_percent:+.4f}% delta"
+    )
+    # gamma_star should be much larger under full-state B_w (more disturbance
+    # channels → harder to attenuate → larger gamma*).
+    assert gs_fs > 100.0 * gs_vf, (
+        f"full_state gamma* {gs_fs} should be >> velocity_force gamma* {gs_vf}"
+    )
 
 
 def test_cs_qr_vs_rlrmp_qr_on_cs_plant():
