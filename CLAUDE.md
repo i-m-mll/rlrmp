@@ -29,6 +29,89 @@
 - The feedbax repo is at `~/Main/10 Projects/10 PhD/20 Feedbax/feedbax/`. Use worktrees for feature work, following the same conventions as this repo.
 - Feedbax's protected branch is `develop`, not `main`. All canonical feedbax behaviour, APIs, and architectural patterns reside on `develop`. Feedbax-side feature branches must derive from `develop` (`wt feature/<name> develop`), not from `main`. When reading feedbax source code to understand current behaviour, check out develop or read files at the develop branch reference (`git show develop:path/to/file.py`). The feedbax `main` branch may lag develop substantially and should not be treated as authoritative.
 
+## RunPod Deploy Runbook for rlrmp Experiments
+
+### 1. Prerequisites
+- `runpodctl` binary from GitHub releases (the `install.sh` requires sudo; download the binary manually if sudo is unavailable).
+- SSH key at `~/.runpod/ssh/RunPod-Key-Go`.
+- API key configured: `runpodctl config --apiKey <key>` → writes `~/.runpod/config.toml`.
+
+### 2. Pre-flight checks
+(Cross-ref dotfiles `3602840` cost policy + verify-resources comment.)
+- Verify the Docker image tag exists on Docker Hub **before** `pod create` — stale tags cause silent deploy failures.
+- Check GPU availability per DC: `runpodctl datacenter list`.
+
+### 3. GPU choice
+(Cross-ref subagent GPU analysis, Part 2.5 session.)
+- **RTX 4090** (community cloud): cheapest validated option.
+- **RTX 5090** (Blackwell, EUR-IS-2 or similar): faster, but some templates carry stale image references.
+  - Use image `runpod/pytorch:1.0.3-cu1281-torch290-ubuntu2204` or newer (`cu1290`/`cu1300`) for Blackwell support.
+  - Skip the deprecated `runpod/pytorch:2.8.0-...` template.
+
+### 4. Deploy steps
+```bash
+# 4a. Create pod
+runpodctl pod create \
+  --image "runpod/pytorch:1.0.3-cu1281-torch290-ubuntu2204" \
+  --gpu-id "NVIDIA GeForce RTX 5090" \
+  --data-center-ids EUR-IS-2 \
+  --cloud-type SECURE \
+  --container-disk-in-gb 30 \
+  --volume-in-gb 30
+# (For 4090: use --gpu-id "NVIDIA GeForce RTX 4090" --cloud-type COMMUNITY, omit --data-center-ids)
+
+# 4b. Poll until SSH ready (~1–2 min)
+runpodctl pod get <POD_ID>   # wait for runtime.ports to populate; bail if >3 min
+
+# 4c. rsync 3 path-deps to /workspace (run from local machine)
+rsync -av --exclude='_artifacts' --exclude='worktrees' --exclude='.venv' \
+  "/Users/mll/Main/10 Projects/10 PhD/rlrmp/" root@<pod-ip>:/workspace/rlrmp/
+rsync -av --exclude='_artifacts' --exclude='worktrees' --exclude='.venv' \
+  "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax/worktrees/develop/" root@<pod-ip>:/workspace/feedbax/
+rsync -av --exclude='worktrees' \
+  "/Users/mll/Main/05 Utils/jax-cookbook/" root@<pod-ip>:/workspace/jax-cookbook/
+# Note: jax-cookbook is ~480 MB; omit worktrees/ to avoid transferring ~480 MB of duplicates.
+
+# 4d. Patch embedded local paths on the pod (SSH in, then run):
+sed -i 's|.*/feedbax[^"]*|/workspace/feedbax|g' /workspace/rlrmp/pyproject.toml
+sed -i 's|.*/feedbax[^"]*|/workspace/feedbax|g' /workspace/rlrmp/uv.lock
+sed -i 's|.*/jax.cookbook[^"]*|/workspace/jax-cookbook|g' /workspace/rlrmp/uv.lock
+sed -i 's|.*/jax.cookbook[^"]*|/workspace/jax-cookbook|g' /workspace/feedbax/pyproject.toml  # easy to forget
+sed -i 's|.*/jax.cookbook[^"]*|/workspace/jax-cookbook|g' /workspace/feedbax/uv.lock
+
+# 4e. Install (must survive SSH disconnect — use nohup; see §5)
+cd /workspace/rlrmp && nohup uv sync > /workspace/uv_sync.log 2>&1 &
+# After uv sync completes:
+nohup uv pip install -U "jax[cuda12]" > /workspace/jax_install.log 2>&1 && touch /workspace/install_done &
+# Poll: tail /workspace/jax_install.log; wait for /workspace/install_done (~3–5 min)
+```
+
+### 5. nohup pattern (mandatory for installs)
+SSH session killed mid-install → SIGHUP kills the process → wasted bandwidth and a broken env.
+Always run long setup commands as `nohup <cmd> > <logfile> 2>&1 &` and touch a sentinel file on completion. Poll the sentinel rather than the process.
+
+### 6. Smoke test
+```bash
+cd /workspace/rlrmp
+uv run python scripts/train_minimax.py \
+  --adversary-type linear_dynamics \
+  --n-warmup-batches 3 --n-adversary-batches 20 --adv-batch-size 250 \
+  --n-replicates 5 --hidden-type gru \
+  --output-dir /workspace/smoke_test --checkpoint --fused
+```
+Adjust flags to match the current script's CLI if it has changed.
+
+### 7. Monitoring cadence
+- **Smoke test**: check 1 min after start, then every 5 min.
+- **Full run**: check at 1 min (confirm JIT compilation visible), every 5 min during early loss decline, drop to every 30 min once loss is steadily descending.
+- Watch for `ptxas` warnings, `OOM`, and `Traceback` patterns alongside loss-progress signal.
+
+### 8. Cost discipline
+(Cross-ref dotfiles `3602840`.)
+- Pod billing starts on **creation**, not on container start.
+- Verify `uptimeSeconds > 0` within 2 min of creation; terminate and recreate if stuck.
+- Do not unilaterally upgrade cloud tier or GPU class — ask the user first.
+
 ## Feedbax Studio
 Feedbax Studio (web app) runs from the Feedbax repo. See Feedbax CLAUDE.md for server startup instructions.
 
