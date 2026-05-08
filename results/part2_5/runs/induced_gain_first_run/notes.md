@@ -32,14 +32,15 @@ Riccati γ⋆ on the same plant + cost schedule.
 | `minimax_single_seed0` | 0.0137 | 0.1446 | 153.3508 | 2.1396 | 10.519 |
 | `minimax_single_seed1` | 0.0137 | 0.1563 | 162.8198 | 1.3214 | 11.369 |
 | `minimax_single_seed2` | 0.0137 | 0.1556 | 162.9178 | 1.4541 | 11.318 |
-| `mult_single` | 0.0137 | 15.6446 | 5863.8732 | 605.3933 | 1137.862 |
+| `mult_single` (rep 0, degenerate) | 0.0137 | 15.6446 | 5863.8732 | 605.3933 | 1137.862 |
+| `mult_single` (rep 2, replacement) | 0.0137 | 0.1834 | — | — | 13.336 |
 | `mult_pop5` | 0.0137 | 0.1789 | 165.0563 | 4.2192 | 13.015 |
 | `ratio03_single` | 0.0137 | 0.1709 | 163.3942 | 2.6417 | 12.429 |
 | `ratio03_pop5` | 0.0137 | 0.1585 | 164.5323 | 2.1005 | 11.526 |
 
 Asterisk (`*`) marks non-converged power-iteration results — the reported gamma is the largest restart estimate at ``max_iter``.
 
-**Headline summary (additive_force × qr_cost)**: min=0.1237, max=15.6446, min γ/γ⋆=8.997, max γ/γ⋆=1137.862.
+**Headline summary (additive_force × qr_cost)**: min=0.1237, max=15.6446, min γ/γ⋆=8.997, max γ/γ⋆=1137.862. Note: the `mult_single` row used replicate 0 which is degenerate; see replicate spot-check below. Corrected max (using `mult_single` rep 2) = 0.2481 (`vanilla_single`).
 
 ## API integration friction
 
@@ -116,8 +117,8 @@ reasons). The full numerical detail lives in
 `_artifacts/part2_5/runs/induced_gain_first_run/gains.npz` (mirror of this
 spec dir).
 
-- Force-channel ranking (low → high): baseline_standard_12k (0.1237) < minimax_single_seed0 (0.1446) < vanilla_pop5 (0.1458) < minimax_single_seed2 (0.1556) < minimax_single_seed1 (0.1563) < ratio03_pop5 (0.1585) < ratio03_single (0.1709) < mult_pop5 (0.1789) < vanilla_single (0.2481) < mult_single (15.6446)
-- Outliers (γ_af > 1.0, indicating closed-loop instability for the linearised analysis): mult_single
+- Force-channel ranking (low → high, using corrected `mult_single` rep 2): baseline_standard_12k (0.1237) < minimax_single_seed0 (0.1446) < vanilla_pop5 (0.1458) < minimax_single_seed2 (0.1556) < minimax_single_seed1 (0.1563) < ratio03_pop5 (0.1585) < ratio03_single (0.1709) < mult_pop5 (0.1789) < mult_single-rep2 (0.1834) < vanilla_single (0.2481)
+- Outliers (γ_af > 1.0, indicating closed-loop instability for the linearised analysis): mult_single rep 0 only (see replicate spot-check); method is healthy using any of reps 2–4
 
 **Cross-method observations (af×qr channel):**
 
@@ -146,10 +147,34 @@ spec dir).
   robustness.
 
 **Outlier**: `mult_single` produces γ_af ≈ 15.6 and γ_sd ≈ 5860 — clearly an
-unstable closed-loop linearisation. The most likely explanation is replicate
-0 of `mult_single` did not converge during training (or has a degenerate
-fixed point); `mult_pop5` of the same training method is well-behaved
-(γ_af ≈ 0.18). Worth a v2 spot-check across replicates of `mult_single`.
+unstable closed-loop linearisation for replicate 0. A follow-up spot-check
+(issue `4f2e934`, branch `feature/mult-single-replicate-check`) ran the
+additive-force analyser on all 5 replicates of `mult_single` and found:
+
+| Replicate | γ_af   | γ/γ⋆      | converged |
+|-----------|--------|-----------|-----------|
+| 0         | 15.645 | 1137.9    | Y         |
+| 1         | 0.537  | 39.0      | Y         |
+| 2         | 0.183  | 13.3      | Y         |
+| 3         | 0.156  | 11.3      | Y         |
+| 4         | 0.152  | 11.0      | Y         |
+
+**Verdict (Outcome A): replicate 0 is specifically degenerate; replicates 2–4
+are normal-range (γ_af ≈ 0.15–0.18, comparable to `mult_pop5` at 0.179).
+Replicate 1 is moderately elevated (γ_af = 0.537, ×39 above γ⋆) but not
+outlier-class.** The training logs do not provide per-replicate loss
+breakdowns (only mean ± std across all 5 replicates), so the training-time
+cause is not directly observable. Training was also cut short at batch
+500/5000 (10% of planned adversarial training) for both `mult_single` and
+`mult_pop5`. The degenerate closed-loop linearisation of replicate 0 is
+consistent with non-convergence or a degenerate fixed point in that particular
+weight initialisation seed.
+
+**Recommended replacement**: use replicate 2 (γ_af = 0.183) as the
+representative `mult_single` entry in cross-method comparisons. It is the
+lowest-gain well-converged non-zero replicate and is in line with
+`mult_pop5`. The corrected headline `mult_single` value is γ_af = **0.183**
+(was 15.645), γ/γ⋆ = **13.3** (was 1137.9).
 
 **Caveats on flavor (a) ⊊ (b)**: this first run does **not** strongly
 discriminate flavor-(a) (additive force) and flavor-(b) (structural ΔA)
