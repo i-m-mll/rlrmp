@@ -329,46 +329,81 @@ $\gamma_*$ is the smallest $\gamma$ for which the Riccati is solvable
 every step). The production module bisects on $\gamma$ to find $\gamma_*$,
 then synthesises $K_t$ at $\gamma_\mathrm{des} = 1.5\, \gamma_*$.
 
-### 4.2 The flavor-(a) / flavor-(b) issue with $B_w$
+### 4.2 The $B_w$ design-channel issue (revised)
 
-Production's $B_w$ is the **flavor-(a) additive force channel**: $B_w = B$
-(or its velocity-row projection), so the disturbance $w$ enters via the
-same channel as the control $u$. This is mathematically clean and matches
-the APT/`GaussianBumpAdversary` training setup, but it does **not**
-correspond to C&S's structural disturbance $(A + \Delta A) x$, where the
-disturbance enters multiplicatively on the state. The two formulations
-yield different feedback gains and different velocity-inflation predictions.
+> **Reframing — May 2026** (issue `97c227a` follow-up). An earlier draft of
+> this section conflated two distinct things: (i) the *flavor-(a) vs
+> flavor-(b)* training-side framing — additive-force adversary vs
+> model-class $\Delta A$ adversary — and (ii) the *H∞ Riccati design*
+> $B_w$ chosen by C&S to *certify robustness against* either of those
+> adversary classes. C&S's H∞ Riccati is, in our framing, **already
+> flavor-(a)**: a free additive disturbance $\varepsilon$ entering the
+> Riccati with cost penalty $-\gamma^2 \varepsilon^\top \varepsilon$ and
+> $B_w = I_n$ (Eq 13: $x_{t+1} = A_d x_t + B_d u_t + \varepsilon_t$ with
+> $\varepsilon \in \mathbb{R}^n$). The "ΔA" of C&S Eq 7 is only the
+> *physical motivation* for considering arbitrary state-additive
+> disturbances; it does not appear as a state-coupled $B_w(x)$ in the
+> Riccati they actually solve. So the implementational gap was not
+> "flavor-(a) vs flavor-(b)" — it was the **dimension of $B_w$ within
+> flavor-(a)**.
 
-Empirical anchor for the diagnosis
-(`tests/test_hinf_riccati.py::test_cs_faithful_qr_velocity_inflation`,
-xfailed; documented in coord `c99ad9d` comment `cd979fa` and analyses coord
-`4d38c15` comment `4ad0368`):
+Two distinct $B_w$ choices live inside flavor-(a):
 
-| Q,R schedule | Plant | Δv at $1.5\gamma_*$ |
-|---|---|---|
-| Faithful C&S Eq. 15 | C&S ($k=0.1$) | **−0.04%** |
-| rlrmp Q,R | C&S ($k=0.1$) | −0.77% |
-| rlrmp Q,R | rlrmp ($k=10$) | +10.8% |
+- **Velocity-force $B_w$** (`disturbance_channel="velocity_force"` in
+  `linearize_pointmass`, the rlrmp default): $B_{w,c}$ has rows on the
+  velocity block only ($\partial \dot v / \partial w = I/m$), zero
+  elsewhere. $m_w = 2$. Matches the *physical* curl-field / fixed-field
+  intervenor channel (`feedbax.intervene.CurlField`,
+  `rlrmp.disturbance`).
+- **Full-state $B_w$** (`disturbance_channel="full_state"`,
+  `cs_faithful_pointmass()`): $B_{w,d} = I_n$ — the disturbance is a
+  free $n$-vector, one component per state coordinate. Matches C&S
+  Eq 13's lumped $\varepsilon_t$.
 
-**Implication: production Riccati's $B_w$ is most likely flavor-(a) additive
-force, not flavor-(b) `ΔA·x` model-class.** Reproducing the C&S "robust >
-LQG via gain inflation alone" finding on the unperturbed forward channel
-requires the multiplicative `ΔA` formulation. The flavor-(b) Riccati
-extension (issue `97c227a`) is the open analytic work item.
+C&S's H∞ design uses **full-state $B_w$**. The rlrmp default uses
+velocity-force $B_w$ — correct as a model of the curl-field intervenor,
+but *not* what C&S synthesise the controller against.
+
+**Empirical anchor (with the fix):**
+
+| Q,R schedule | Plant | $B_w$ channel | Δv at $1.5\gamma_*$ |
+|---|---|---|---|
+| Faithful C&S Eq. 15 | C&S ($k=0.1$) | velocity-force | **−0.04%** |
+| Faithful C&S Eq. 15 | C&S ($k=0.1$) | full-state ($I_6$) | **+1.00%** |
+| rlrmp Q,R           | C&S ($k=0.1$) | velocity-force | −0.77% |
+| rlrmp Q,R           | rlrmp ($k=10$) | velocity-force | +10.8% |
+| C&S Q,R             | rlrmp ($k=10$) | full-state ($I_6$) | +1.53% |
+
+The +1.00% on C&S regime grows toward C&S Fig 1e magnitudes as $\gamma$
+approaches $\gamma_*$: +2.13% at $\gamma_\mathrm{des}=1.05\gamma_*$,
++2.35% at $1.001\gamma_*$. C&S Fig 1e itself shows ~10–15% peak-fwd-vel
+shift, but that is averaged across 100 simulation runs **with**
+disturbances applied (curl-field perturbations), not the clean
+unperturbed Riccati rollout we measure here. Order-of-magnitude
+consistency: yes, qualitative reproduction.
+
+**Implication.** The previously-xfailed
+`test_cs_faithful_qr_velocity_inflation` was xfailing because the
+default $B_w$ was the velocity-force channel rather than C&S's
+full-state $B_w = I_n$. With `cs_faithful_pointmass()` the test passes
+(Δv > 0 on C&S regime, monotone in $\gamma$). The training-side
+flavor-(a) ⊊ (b) thesis is **a separate question** — neither this
+$B_w$-channel fix nor the §7.2 S-procedure result speaks to it directly.
 
 ### 4.3 Why this matters for the comparison
 
-A flavor-(b) Riccati gives:
+The corrected Riccati synthesis gives:
 
-1. The **analytic teacher** for a behavioural-cloning-style training
-   approach (issue `db35426` H&infin; Riccati teacher distillation).
-2. The **baseline** against which `LinearDynamicsAdversary`-trained
-   (flavor-B) controllers can be compared: does empirical
-   $\gamma_\mathrm{net}$ from the analyser approach the analytical
-   $\gamma_*$ under flavor-(b) $B_w$?
-3. The **bridge** to the C&S replication: closing the C&S Δv gap on the
-   $k=0.1$ plant requires switching from the flavor-(a) to the flavor-(b)
-   $B_w$ formulation in the Riccati synthesis.
+1. The **analytic teacher** for behavioural-cloning approaches (issue
+   `db35426` H∞ Riccati teacher distillation): use
+   `cs_faithful_pointmass()` for the C&S regime, the
+   `"velocity_force"` channel for the rlrmp curl-field regime.
+2. The **baseline** against which trained controllers are compared:
+   $\gamma_\mathrm{net}$ from the analyser vs analytical $\gamma_*$,
+   choosing the $B_w$ channel that matches the analyser's $w$ channel.
+3. The **C&S replication target** is now reproducible: with full-state
+   $B_w$ on the C&S regime, Δv > 0 emerges at design $\gamma$ near
+   $\gamma_*$. This was the open issue blocking §5.4.
 
 ---
 
@@ -475,15 +510,25 @@ The peak-velocity ratio of trained controllers (Part 2.5 §5.1) was at most
 $|\Delta v| < 1.2\%$ across every flavor-A method, an order of magnitude
 short of the +10–25% prediction.
 
-### 5.4 The xfailed C&S-faithful Riccati test
+### 5.4 The C&S-faithful Riccati test (resolved)
+
+> **Update — May 2026** (issue `97c227a` follow-up). This test was xfailed
+> for several sessions with Δv = −0.04% on the C&S regime + faithful
+> Eq 15 Q,R. The xfail-reason string blamed "flavor-(a) $B_w$ channel" —
+> a misdiagnosis. The actual gap was the **dimension of $B_w$ within
+> flavor-(a)**: the rlrmp default uses a 2D velocity-force $B_w$
+> (matching the physical curl-field channel), while C&S's H∞ design uses
+> the 6D full-state $B_w = I_6$ (per Eq 13). With
+> `cs_faithful_pointmass()` (`disturbance_channel="full_state"`), the
+> test passes with Δv = +1.00% at $1.5\gamma_*$, growing to +2.35% near
+> the boundary. See §4.2 for the reframing.
 
 `tests/test_hinf_riccati.py::test_cs_faithful_qr_velocity_inflation`
-(commit `cd22999`, merged via `cd229998` xfailed). The xfail reason string
-carries the full diagnosis: even with the paper's faithful Eq. 15 Q,R on
-the C&S plant, Δv at $1.5\gamma_*$ is −0.04% — squarely against C&S's +
-direction. Q,R-shape is *not* the variable; the disturbance channel
-formulation is. This is the empirical anchor for the open issue `97c227a`
-(Riccati flavor-(b) extension).
+now passes as a real assertion (not xfail). The companion
+`test_cs_disturbance_channel_flips_dv_sign` regression-guards the
+contrast (velocity-force gives Δv ≤ 0; full-state gives Δv > 0). The
+empirical anchor for "C&S Δv > 0 is reachable in our pipeline" is
+established.
 
 ---
 
@@ -667,6 +712,22 @@ Issue thread: comment on `74bfd86` (induced-gain analyser) at comment
 `7344b34`.
 
 ### 7.2 (B) Riccati flavor-(b) extension
+
+> **Note — May 2026** (issue `97c227a` follow-up). This subsection's
+> framing carried over the misdiagnosis described in §4.2: that
+> recovering the C&S Δv signature on the C&S regime would require
+> switching from "flavor-(a)" to "flavor-(b)" $B_w$. In fact,
+> recovering Δv > 0 on the C&S regime only required switching the $B_w$
+> *dimension within flavor-(a)* from velocity-force (2D) to full-state
+> ($I_6$) — see §4.2 and §5.4. The S-procedure / quadratic-stability
+> "flavor-(b)" extension *as a robustness lift against $\|\Delta A\|_F
+> \le \eta$* is still a meaningful and correct piece of work, and its
+> negative finding below (Δv stays $\le 0$ as $\eta$ grows on the C&S
+> regime) is still a valid statement about that specific formulation.
+> But the conclusion is **not** "C&S Δv requires flavor-(b)" — the
+> results in §4.2 show Δv > 0 on C&S regime under flavor-(a) full-state
+> $B_w$ alone. The S-procedure's job is robustness against structured
+> $\Delta A$, not C&S-Δv reproduction.
 
 **Goal.** Extend `src/rlrmp/analysis/hinf_riccati.py` so that $B_w$ accepts
 flavor-(b) structural disturbance $\Delta A \cdot x$ rather than only the
