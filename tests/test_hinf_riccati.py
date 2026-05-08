@@ -505,13 +505,20 @@ def test_full_state_disturbance_channel_shape():
 
 
 def test_cs_faithful_pointmass_legacy_defaults():
-    """Legacy 6-state, no-delay form: ``cs_faithful_pointmass(disturbance_integrator=False, delay_steps=0)``.
+    """Legacy 6-state, no-delay form: ``cs_faithful_pointmass(disturbance_integrator=False, delay_steps=0, tau=0.06)``.
 
     Backward-compatibility regression test for the pre-9a0558e form.
     Bug: ``97c227a`` — convenience constructor: mass=1, k=0.1, tau=0.06,
     dt=0.01, B_w = I_6.
+
+    Note: ``tau=0.06`` must be passed explicitly. Post recipe-bug audit
+    (Bug: ``9a0558e``) the canonical default is ``tau=0.066`` (matching
+    C&S's ``minmaxfc_pointMass.m`` line 23). The legacy form retains 0.06
+    here as the historical pre-audit value.
     """
-    plant = cs_faithful_pointmass(disturbance_integrator=False, delay_steps=0)
+    plant = cs_faithful_pointmass(
+        disturbance_integrator=False, delay_steps=0, tau=0.06
+    )
     assert plant.n == 6
     assert plant.m_w == 6
     assert plant.dt == pytest.approx(0.01)
@@ -526,27 +533,32 @@ def test_cs_faithful_pointmass_legacy_defaults():
 
 
 def test_cs_faithful_pointmass_canonical_defaults():
-    """New canonical defaults (Bug: ``9a0558e``): 8-state plant + 5-step delay augmentation.
+    """New canonical defaults (Bug: ``9a0558e``): 8-state plant + 5-step full-state delay.
 
-    With ``disturbance_integrator=True`` (default) and ``delay_steps=5``
-    (default), the plant has:
+    With ``disturbance_integrator=True`` (default), ``delay_steps=5`` (default),
+    and post-audit ``tau=0.066`` (default), the plant has:
 
         n_phys = 8 (6 base + 2 disturbance integrators)
-        n_obs  = 4 (pos + vel)
-        n_aug  = 8 + 5 · 4 = 28
+        n_aug  = (h+1) · n_phys = 6 · 8 = 48
 
-    The integrator coupling is ``A_c[3, 7] = A_c[4, 8] = 1/mass``
-    (with mass=1, this is 1.0). Rows 7,8 of A_c (the integrator dynamics)
-    are zero.
+    The integrator coupling is ``A_c[2:4, 6:8] = (1/mass) · I``
+    (with mass=1, this is I). Rows 6,7 of A_c (the integrator dynamics)
+    are zero. The delay augmentation tracks the *full* physical state per
+    block (matching C&S's ``AugRobustControl.m``), not just the observation
+    channel.
     """
     plant = cs_faithful_pointmass()
-    assert plant.n == 28
+    assert plant.n == 48  # full-state lag: (h+1) · n_phys = 6 · 8
     assert plant.m_w == 8  # disturbance is 8-dim (one per physical state)
     assert plant.m_u == 2
     assert plant.dt == pytest.approx(0.01)
     # Physical-block A_c: damping at rows 2,3; force filter at rows 4,5; integrators at rows 6,7
     # A_c[2:4, 2:4] = -0.1 * I (damping)
     assert jnp.allclose(plant.A_c[2:4, 2:4], -0.1 * jnp.eye(2), atol=1e-12)
+    # tau=0.066 → A_c[4:6, 4:6] = -(1/0.066) * I (post-audit canonical default)
+    assert jnp.allclose(
+        plant.A_c[4:6, 4:6], -(1.0 / 0.066) * jnp.eye(2), atol=1e-12
+    )
     # Integrator-to-velocity coupling: A_c[2:4, 6:8] = (1/mass) * I = I  (mass=1)
     assert jnp.allclose(plant.A_c[2:4, 6:8], jnp.eye(2), atol=1e-12)
     # Integrator dynamics: A_c[6:8, :] all zero (pure integrators)
@@ -569,32 +581,46 @@ def test_cs_faithful_pointmass_8state_no_delay():
 
 
 def test_cs_faithful_pointmass_delay_shift_register_structure():
-    """Delay augmentation builds a tap-delay shift register on observation channel.
+    """Full-state tap-delay shift register matches ``AugRobustControl.m``.
 
-    Verifies the augmented A_d structure:
-    - Newest lag block (rows 8:12) reads from physical state via C_obs.
-    - Older lag blocks (rows 12:28) shift down from the previous lag block.
+    Verifies the augmented A_d block structure (Bug: ``9a0558e``,
+    post-recipe-audit fix):
+
+    - Top-left ``n_phys × n_phys`` block is the discretised physical A.
+    - Below: the lag chain is a full-state shift register
+      ``A[n_phys:, : h·n_phys] = I_{h·n_phys}`` (MATLAB:
+      ``A(n+1:end, 1:end-n) = eye(h*n)``).
+    - Control B and disturbance Bw are zero on the lag block.
+
+    The earlier observation-channel lag (n_obs=4 per block) was structurally
+    inert; full-state lag matches MATLAB and is load-bearing when combined
+    with Q distribution.
     """
     plant = cs_faithful_pointmass(disturbance_integrator=True, delay_steps=5)
     n_phys = 8
-    n_obs = 4
     h = 5
-    # Newest lag block: rows 8:12, cols 0:8 should be C_obs (selects pos+vel).
-    expected_C = jnp.zeros((n_obs, n_phys), dtype=jnp.float64)
-    expected_C = expected_C.at[0:2, 0:2].set(jnp.eye(2))  # pos
-    expected_C = expected_C.at[2:4, 2:4].set(jnp.eye(2))  # vel
-    assert jnp.allclose(plant.A[8:12, :8], expected_C, atol=1e-14)
-    # Lag-to-lag shift: rows 12:28, cols 8:24 should be I_{16}
-    n_shift = (h - 1) * n_obs
+    n_aug = (h + 1) * n_phys
+    assert plant.n == n_aug
+
+    # Top-left n_phys × n_phys block is the discrete physical A. Sanity check
+    # against the same plant built without delay.
+    plant_phys = cs_faithful_pointmass(disturbance_integrator=True, delay_steps=0)
+    assert jnp.allclose(plant.A[:n_phys, :n_phys], plant_phys.A, atol=1e-14)
+
+    # Lag-to-lag shift: A[n_phys:, : h·n_phys] = I_{h·n_phys}
     assert jnp.allclose(
-        plant.A[n_phys + n_obs : n_phys + h * n_obs, n_phys : n_phys + n_shift],
-        jnp.eye(n_shift, dtype=jnp.float64),
+        plant.A[n_phys:, : h * n_phys],
+        jnp.eye(h * n_phys, dtype=jnp.float64),
         atol=1e-14,
     )
-    # Newest lag block does NOT read from older lag blocks (only from physical).
-    assert jnp.allclose(plant.A[8:12, 8:], 0.0, atol=1e-14)
+    # Top-right block of A (physical reading from lag) is zero — physical
+    # dynamics depend only on physical state, not on history.
+    assert jnp.allclose(plant.A[:n_phys, n_phys:], 0.0, atol=1e-14)
     # Control B does not affect lag states.
-    assert jnp.allclose(plant.B[8:, :], 0.0, atol=1e-14)
+    assert jnp.allclose(plant.B[n_phys:, :], 0.0, atol=1e-14)
+    # Disturbance Bw is zero on lag block (matches MATLAB
+    # ``D(n+1:end, :) = 0``).
+    assert jnp.allclose(plant.Bw[n_phys:, :], 0.0, atol=1e-14)
 
 
 def test_cs_faithful_pointmass_invalid_delay_raises():
@@ -612,19 +638,19 @@ def test_cs_faithful_pointmass_invalid_delay_raises():
 def test_cs_eq15_schedule_shape():
     """cs_eq15_cost_schedule returns correct shapes and Q diagonal values.
 
-    Verifies that the C&S Eq. 15 cost schedule:
-      - Q has shape (T, 6, 6) with the correct diagonal [1e6, 1e6, 1e5, 1e5, 1, 1]
-        scaled by alpha_1
-      - R has shape (T, 2, 2) as identity (unit control cost)
-      - Q_f has shape (6, 6) equalling alpha_1 * diag([1e6, 1e6, 1e5, 1e5, 1, 1])
+    Post-recipe-audit (Bug: ``9a0558e``) the canonical 8-state form is the
+    new default: ``state_dim=8``, with diagonal
+    ``[fact·1e6, fact·1e6, fact·1e5, fact·1e5, 1, 1, 1, 1]`` (entries 4-7
+    constant, not ramped). Q_f corresponds to the saturated ramp (fact=1).
     """
-    n_steps = 80
+    n_steps = 60
     alpha_1 = 1.0
     schedule = cs_eq15_cost_schedule(n_steps=n_steps, alpha_1=alpha_1)
 
-    assert schedule.Q.shape == (n_steps, 6, 6), f"Q shape {schedule.Q.shape} != (80, 6, 6)"
-    assert schedule.R.shape == (n_steps, 2, 2), f"R shape {schedule.R.shape} != (80, 2, 2)"
-    assert schedule.Q_f.shape == (6, 6), f"Q_f shape {schedule.Q_f.shape} != (6, 6)"
+    # Default state_dim is now 8 (canonical 8-state form).
+    assert schedule.Q.shape == (n_steps, 8, 8), f"Q shape {schedule.Q.shape} != (60, 8, 8)"
+    assert schedule.R.shape == (n_steps, 2, 2), f"R shape {schedule.R.shape} != (60, 2, 2)"
+    assert schedule.Q_f.shape == (8, 8), f"Q_f shape {schedule.Q_f.shape} != (8, 8)"
 
     # R must be identity (unit control cost per C&S Eq. 15 |u_t|^2)
     for t in range(n_steps):
@@ -632,8 +658,11 @@ def test_cs_eq15_schedule_shape():
             f"R[{t}] is not identity; expected unit control cost from C&S Eq. 15"
         )
 
-    # Q_f diagonal should be alpha_1 * [1e6, 1e6, 1e5, 1e5, 1, 1]
-    expected_q_diag = alpha_1 * jnp.array([1e6, 1e6, 1e5, 1e5, 1.0, 1.0], dtype=jnp.float64)
+    # Q_f diagonal should be alpha_1 * [1e6, 1e6, 1e5, 1e5, 1, 1, 1, 1] —
+    # ramp saturates to 1 at the terminal stage.
+    expected_q_diag = alpha_1 * jnp.array(
+        [1e6, 1e6, 1e5, 1e5, 1.0, 1.0, 1.0, 1.0], dtype=jnp.float64
+    )
     q_f_diag = jnp.diag(schedule.Q_f)
     assert jnp.allclose(q_f_diag, expected_q_diag, rtol=1e-12), (
         f"Q_f diagonal {q_f_diag} != expected {expected_q_diag}"
@@ -643,34 +672,61 @@ def test_cs_eq15_schedule_shape():
     off_diag = schedule.Q_f - jnp.diag(q_f_diag)
     assert jnp.allclose(off_diag, 0.0, atol=1e-14), "Q_f has non-zero off-diagonal entries"
 
+    # Legacy state_dim=6 form: diagonal stops at index 5.
+    schedule_6 = cs_eq15_cost_schedule(n_steps=n_steps, alpha_1=alpha_1, state_dim=6)
+    assert schedule_6.Q.shape == (n_steps, 6, 6)
+    expected_q6_diag = alpha_1 * jnp.array(
+        [1e6, 1e6, 1e5, 1e5, 1.0, 1.0], dtype=jnp.float64
+    )
+    assert jnp.allclose(jnp.diag(schedule_6.Q_f), expected_q6_diag, rtol=1e-12)
+
 
 def test_cs_eq15_ramp_boundary_values():
-    """(t/N)^6 ramp: Q[0] is near-zero, Q_f equals alpha_1 * Q_base.
+    """Q ramp: pos/vel entries scaled by ``min(1, ((t+1)/T)^6)``; force/integrator constant.
 
-    The ramp at t=0 is 0; at t=N-1 it is ((N-1)/N)^6 ≈ 1 for large N.
-    Q_f (at t=N) has ramp=1, giving alpha_1 * Q_base exactly.
+    Post recipe-bug audit (Bug: ``9a0558e``):
+    - The ramp is MATLAB-1-indexed: ``fact_t = min(1, ((t+1)/T)^6)`` for
+      ``t = 0..T-1`` (matches ``script_minmax_pointMass.m`` line 28).
+      The first stage is no longer zero — it's ``(1/T)^6`` (tiny but
+      nonzero), per MATLAB's convention.
+    - Only entries 0-3 (pos, vel) are ramped; entries 4-7 (force,
+      integrator) are constant 1.
+    - Cap-at-1 is enforced via ``min(1, ...)``.
     """
-    n_steps = 80
+    n_steps = 60
     alpha_1 = 2.5  # Non-default to test scaling
     schedule = cs_eq15_cost_schedule(n_steps=n_steps, alpha_1=alpha_1)
 
-    # At t=0: ramp = (0/80)^6 = 0 → Q[0] is the zero matrix
-    assert jnp.allclose(schedule.Q[0], 0.0, atol=1e-14), (
-        f"Q[0] should be zero (ramp=0 at t=0); got max {float(jnp.max(jnp.abs(schedule.Q[0])))}"
+    # At t=0: ramp = (1/60)^6 ≈ 2.14e-11 → Q[0] pos/vel near-zero, force/int = alpha_1.
+    pos_vel_diag_0 = jnp.diag(schedule.Q[0])[:4]
+    force_int_diag_0 = jnp.diag(schedule.Q[0])[4:8]
+    assert float(jnp.max(jnp.abs(pos_vel_diag_0))) < 1e-3, (
+        f"Q[0] pos/vel diagonal should be near-zero; got {pos_vel_diag_0}"
+    )
+    expected_force_int = alpha_1 * jnp.ones(4, dtype=jnp.float64)
+    assert jnp.allclose(force_int_diag_0, expected_force_int, atol=1e-14), (
+        f"Q[0] force/integrator diagonal should be alpha_1*[1,1,1,1]; got {force_int_diag_0}"
     )
 
-    # Q_f = alpha_1 * Q_base (ramp factor=1 at terminal step)
-    expected_q_f_diag = alpha_1 * jnp.array([1e6, 1e6, 1e5, 1e5, 1.0, 1.0], dtype=jnp.float64)
+    # Q_f = alpha_1 * [1e6, 1e6, 1e5, 1e5, 1, 1, 1, 1] (ramp saturates at 1)
+    expected_q_f_diag = alpha_1 * jnp.array(
+        [1e6, 1e6, 1e5, 1e5, 1.0, 1.0, 1.0, 1.0], dtype=jnp.float64
+    )
     assert jnp.allclose(jnp.diag(schedule.Q_f), expected_q_f_diag, rtol=1e-12), (
-        "Q_f diagonal does not match alpha_1 * [1e6, 1e6, 1e5, 1e5, 1, 1]"
+        "Q_f diagonal does not match alpha_1 * [1e6, 1e6, 1e5, 1e5, 1, 1, 1, 1]"
     )
 
-    # Ramp is monotonically non-decreasing (each Q[t] element >= Q[t-1])
-    q_trace = jax.vmap(jnp.trace)(schedule.Q)  # trace as a proxy for "total cost weight"
+    # Pos/vel ramp is monotonically non-decreasing.
+    pos_diag_t = jax.vmap(lambda Q: Q[0, 0])(schedule.Q)  # pos_x diagonal
     for t in range(1, n_steps):
-        assert float(q_trace[t]) >= float(q_trace[t - 1]) - 1e-14, (
-            f"Ramp not monotone at t={t}: trace[t]={q_trace[t]} < trace[t-1]={q_trace[t-1]}"
+        assert float(pos_diag_t[t]) >= float(pos_diag_t[t - 1]) - 1e-14, (
+            f"Pos ramp not monotone at t={t}: {pos_diag_t[t]} < {pos_diag_t[t - 1]}"
         )
+
+    # Terminal stage saturates: Q[T-1] equals Q_f (since fact_{T-1} = (T/T)^6 = 1).
+    assert jnp.allclose(schedule.Q[-1], schedule.Q_f, rtol=1e-12), (
+        "Q[T-1] should equal Q_f at the saturated ramp"
+    )
 
 
 def test_cs_faithful_qr_velocity_inflation_legacy_6state():
@@ -691,10 +747,12 @@ def test_cs_faithful_qr_velocity_inflation_legacy_6state():
     Bug: ``97c227a`` — full-state B_w. Bug: ``9a0558e`` — kept as a regression
     after the 8-state + delay default was introduced.
     """
-    # Legacy 6-state, no-delay form
-    plant = cs_faithful_pointmass(disturbance_integrator=False, delay_steps=0)
+    # Legacy 6-state, no-delay form (explicit pre-audit tau=0.06).
+    plant = cs_faithful_pointmass(
+        disturbance_integrator=False, delay_steps=0, tau=0.06
+    )
 
-    # C&S Eq. 15 cost: 80 steps = 0.8 s reach at 10 ms timestep, 6-dim Q
+    # C&S Eq. 15 cost: 80 steps, 6-dim Q
     schedule = cs_eq15_cost_schedule(n_steps=80, alpha_1=1.0, state_dim=plant.n)
 
     # 15 cm forward reach (C&S experimental geometry: reaches of ~15 cm)
@@ -738,7 +796,9 @@ def test_cs_faithful_velocity_inflation_grows_toward_boundary_legacy():
     Backward-compatibility regression for the pre-9a0558e
     (``disturbance_integrator=False, delay_steps=0``) form.
     """
-    plant = cs_faithful_pointmass(disturbance_integrator=False, delay_steps=0)
+    plant = cs_faithful_pointmass(
+        disturbance_integrator=False, delay_steps=0, tau=0.06
+    )
     schedule = cs_eq15_cost_schedule(n_steps=80, alpha_1=1.0, state_dim=plant.n)
     init_pos = jnp.array([0.0, 0.0], dtype=jnp.float64)
     target_pos = jnp.array([0.15, 0.0], dtype=jnp.float64)
@@ -777,7 +837,8 @@ def test_cs_disturbance_channel_flips_dv_sign():
     """
     init_pos = jnp.array([0.0, 0.0], dtype=jnp.float64)
     target_pos = jnp.array([0.15, 0.0], dtype=jnp.float64)
-    schedule = cs_eq15_cost_schedule(n_steps=80, alpha_1=1.0)
+    # Build 6-state schedule explicitly (post-audit default state_dim=8).
+    schedule = cs_eq15_cost_schedule(n_steps=80, alpha_1=1.0, state_dim=6)
 
     # Velocity-force B_w (default) — matches the previous xfail diagnosis
     plant_vf = linearize_pointmass(mass=1.0, damping=0.1, tau=0.06, dt=0.01)
@@ -787,8 +848,11 @@ def test_cs_disturbance_channel_flips_dv_sign():
         gamma_factor=1.5, gamma_star=gs_vf,
     )
 
-    # Full-state B_w — C&S Eq 13 faithful (legacy 6-state, no-delay form)
-    plant_fs = cs_faithful_pointmass(disturbance_integrator=False, delay_steps=0)
+    # Full-state B_w — C&S Eq 13 faithful (legacy 6-state, no-delay form,
+    # explicit tau=0.06 to match the velocity-force comparison plant).
+    plant_fs = cs_faithful_pointmass(
+        disturbance_integrator=False, delay_steps=0, tau=0.06
+    )
     gs_fs = find_gamma_star(plant_fs, schedule)
     res_fs = compute_velocity_inflation(
         plant_fs, schedule, init_pos=init_pos, target_pos=target_pos,
@@ -846,8 +910,9 @@ def test_cs_qr_vs_rlrmp_qr_on_cs_plant():
     init_pos = jnp.array([0.0, 0.0], dtype=jnp.float64)
     target_pos = jnp.array([0.15, 0.0], dtype=jnp.float64)
 
-    # Faithful C&S Eq. 15 cost
-    cs_schedule = cs_eq15_cost_schedule(n_steps=80, alpha_1=1.0)
+    # Faithful C&S Eq. 15 cost — 6-state schedule on 6-state plant
+    # (post-audit default state_dim=8, so pass state_dim=6 explicitly).
+    cs_schedule = cs_eq15_cost_schedule(n_steps=80, alpha_1=1.0, state_dim=6)
     cs_res = compute_velocity_inflation(
         plant, cs_schedule, init_pos=init_pos, target_pos=target_pos, gamma_factor=1.5
     )
@@ -895,75 +960,80 @@ def test_cs_qr_vs_rlrmp_qr_on_cs_plant():
 
 
 def test_cs_faithful_qr_velocity_inflation_8state_delay():
-    """Canonical defaults: 8-state plant with disturbance integrators + 50ms delay → Δv > 0.
+    r"""Canonical defaults: 8-state plant + 5-step full-state delay → Δv ≈ +7-8%.
 
     Reproduces the C&S 2019 Fig. 1e setup as faithfully as the analytical
-    Riccati pipeline allows (Bug: ``9a0558e``):
+    Riccati pipeline allows (Bug: ``9a0558e``, post recipe-bug audit):
 
-    - Plant: ``cs_faithful_pointmass()`` with new defaults
-      (``disturbance_integrator=True, delay_steps=5``). Total state dim = 28
-      (8 physical + 5·4 lag).
-    - Cost: C&S Eq. 15 with alpha_1=1.0, ``state_dim=plant.n``, padded with
-      zeros for integrator + lag states.
+    - Plant: ``cs_faithful_pointmass()`` with canonical defaults
+      (``tau=0.066``, ``disturbance_integrator=True``, ``delay_steps=5``).
+      Total state dim = (h+1)·n_phys = 6·8 = 48.
+    - Cost: physical 8-state schedule via ``cs_eq15_cost_schedule(n_steps=60,
+      state_dim=8)``, then distributed across the lag chain via
+      ``apply_delay_distribution_to_schedule``.
     - Reach: 15 cm forward (canonical C&S geometry).
-    - Evaluation: gamma_factor=1.5 (matching synthesis_review section 2).
+    - Evaluation: at γ_factor → 1.0 (boundary), Δv saturates near MATLAB
+      port +8.24%; at γ_factor=1.5, Δv ≈ +3.5%.
 
-    Target (user measurement of Fig. 1e): Δv ≈ +7.76% at γ_des → γ*. The
-    test asserts Δv > 0 and a magnitude bound consistent with the +5–10%
-    range the structural lift was designed to recover. Δv outside this
-    range is a substantive finding that warrants synthesis update.
+    Target: matches the MATLAB-faithful Python port at
+    ``/tmp/flavor_ab_review/cs_alignment/cs_matlab_port.py`` (+8.24% at γ\*)
+    and the user's Fig 1e measurement (~+7.76%).
 
-    Bug: ``9a0558e`` — structural lift to 8-state + delay. See gap analysis
-    G6 + G1 in ``/tmp/flavor_ab_review/findings/cs2019_review.md``.
+    Bug: ``9a0558e`` — structural lift to 8-state + delay; recipe-bug audit
+    fix (``/tmp/flavor_ab_review/findings/cs_alignment_audit.md``).
     """
-    plant = cs_faithful_pointmass()  # canonical defaults: 8-state + 5-step delay
-    schedule = cs_eq15_cost_schedule(n_steps=80, alpha_1=1.0, state_dim=plant.n)
+    from rlrmp.analysis.hinf_riccati import apply_delay_distribution_to_schedule
+
+    plant = cs_faithful_pointmass()  # canonical: 8-state + 5-step full-state lag
+    assert plant.n == 48, f"expected n=48 for canonical defaults; got {plant.n}"
+
+    # Build the physical-8-state schedule, then distribute across lag.
+    schedule_phys = cs_eq15_cost_schedule(n_steps=60, alpha_1=1.0, state_dim=8)
+    schedule = apply_delay_distribution_to_schedule(
+        schedule_phys, delay_steps=5, n_phys=8
+    )
 
     init_pos = jnp.array([0.0, 0.0], dtype=jnp.float64)
     target_pos = jnp.array([0.15, 0.0], dtype=jnp.float64)
 
     gamma_star = find_gamma_star(plant, schedule)
-    res = compute_velocity_inflation(
-        plant,
-        schedule,
-        init_pos=init_pos,
-        target_pos=target_pos,
-        gamma_factor=1.5,
-        gamma_star=gamma_star,
+    # Near-boundary Δv (γ_factor → 1.0) should match the MATLAB port +8.24%.
+    res_boundary = compute_velocity_inflation(
+        plant, schedule, init_pos=init_pos, target_pos=target_pos,
+        gamma_factor=1.001, gamma_star=gamma_star,
     )
-    delta_v = res.delta_v_percent
+    # Standard reporting point: γ_factor=1.05.
+    res_105 = compute_velocity_inflation(
+        plant, schedule, init_pos=init_pos, target_pos=target_pos,
+        gamma_factor=1.05, gamma_star=gamma_star,
+    )
 
-    # Pin the +Δv signature: structural-lift Δv must be strictly positive on
-    # the canonical setup. If the Riccati produces Δv ≤ 0 here, the structural
-    # lift has failed to recover C&S's "robust > LQG" signature.
-    assert delta_v > 0, (
-        f"Δv = {delta_v:+.4f}% on canonical 8-state + delay setup; "
-        f"structural lift was meant to recover C&S +Δv signature. "
-        f"gamma_star={gamma_star}, LQR fwd_v={res.lqr_peak_forward_velocity}, "
-        f"H∞ fwd_v={res.hinf_peak_forward_velocity}"
+    # At the boundary, Δv should be in the +7-9% range matching MATLAB port +8.24%.
+    assert 6.5 < res_boundary.delta_v_percent < 9.5, (
+        f"Δv at γ→γ* = {res_boundary.delta_v_percent:+.4f}%; expected near "
+        f"MATLAB port +8.24% (band [6.5, 9.5]). gamma_star={gamma_star}, "
+        f"LQR fwd_v={res_boundary.lqr_peak_forward_velocity}, "
+        f"H∞ fwd_v={res_boundary.hinf_peak_forward_velocity}."
     )
-    # Magnitude bound: target ≈ +7.76% from Fig 1e measurement; allow a wide
-    # band for plant-parameter and γ-precision variation. Failure on the
-    # high side means stiffening is too aggressive; on the low side means the
-    # lift didn't fully recover the signature.
-    assert 0.5 < delta_v < 30.0, (
-        f"Δv = {delta_v:+.4f}% outside expected [0.5, 30] range for canonical "
-        f"8-state + delay setup. Target was +7.76% (Fig. 1e measurement)."
+    # At γ_factor=1.05, Δv should still be solidly positive in the +6-8% band.
+    assert 5.5 < res_105.delta_v_percent < 9.0, (
+        f"Δv at γ=1.05γ* = {res_105.delta_v_percent:+.4f}%; expected band [5.5, 9.0]. "
+        f"gamma_star={gamma_star}."
     )
 
 
 def test_cs_faithful_qr_velocity_inflation_8state_no_delay():
     """8-state plant with disturbance integrators but no delay (isolates G6 from G1).
 
-    Provides per-gap attribution: this test isolates the contribution of the
-    8-state disturbance-integrator coupling without the delay augmentation.
-    Δv should be > 0 (the C&S structural-disturbance signature) but typically
-    smaller in magnitude than the full 8-state + delay form.
+    Provides per-gap attribution: isolates the contribution of the 8-state
+    disturbance-integrator coupling without the delay augmentation. Δv > 0
+    (the C&S structural-disturbance signature) but smaller in magnitude than
+    the full 8-state + delay form.
 
     Bug: ``9a0558e`` — gap-attribution sanity check.
     """
     plant = cs_faithful_pointmass(disturbance_integrator=True, delay_steps=0)
-    schedule = cs_eq15_cost_schedule(n_steps=80, alpha_1=1.0, state_dim=plant.n)
+    schedule = cs_eq15_cost_schedule(n_steps=60, alpha_1=1.0, state_dim=plant.n)
     init_pos = jnp.array([0.0, 0.0], dtype=jnp.float64)
     target_pos = jnp.array([0.15, 0.0], dtype=jnp.float64)
     res = compute_velocity_inflation(
@@ -973,6 +1043,73 @@ def test_cs_faithful_qr_velocity_inflation_8state_no_delay():
     assert res.delta_v_percent > 0, (
         f"Δv = {res.delta_v_percent:+.4f}% on 8-state, no-delay form; "
         f"disturbance-integrator coupling alone should produce Δv > 0."
+    )
+
+
+def test_cs_canonical_dv_matches_matlab_port():
+    r"""MATLAB-port equivalence (Bug: ``9a0558e``).
+
+    Cross-check that the canonical C&S-faithful pipeline reproduces the
+    MATLAB-faithful Python port at
+    ``/tmp/flavor_ab_review/cs_alignment/cs_matlab_port.py`` to within
+    numerical precision. The port reports Δv = +8.24% at γ\*; rlrmp's
+    bisection finds a slightly different boundary due to ZOH vs
+    forward-Euler discretisation (the audit notes this is ~0.02% effect on
+    Δv), so we assert near-boundary Δv lands within 1.0pp of +8.24%.
+
+    The schedule is built physically (state_dim=8) and then distributed
+    across the lag chain, matching ``AugRobustControl.m`` exactly:
+        Q[ii*n:(ii+1)*n, ..., t] = Qaug[..., t+h-ii] / (h+1)
+
+    where Qaug is the time-shifted physical Q with the first ``h``
+    timesteps padded as ``Q0[..., 0]``.
+    """
+    from rlrmp.analysis.hinf_riccati import apply_delay_distribution_to_schedule
+
+    plant = cs_faithful_pointmass()  # 48-state canonical
+    schedule_phys = cs_eq15_cost_schedule(n_steps=60, alpha_1=1.0, state_dim=8)
+    schedule = apply_delay_distribution_to_schedule(
+        schedule_phys, delay_steps=5, n_phys=8
+    )
+
+    # Verify the distributed Q matches MATLAB AugRobustControl.m at t=30
+    # (Python 0-indexed). The MATLAB code at MATLAB-1-indexed time=31, ii=0:
+    #   Q_aug[0:8, 0:8, 31] = Qaug[..., 31+5-0] / 6 = Qaug[..., 36] / 6
+    #                       = Q0[..., 31] / 6  (after h=5 padding offset)
+    # In Python (time=30, ii=0): Q[30, :8, :8] = Qaug[30+5-0] / 6 = Q0[30] / 6
+    # where Q0 is the 8-state physical schedule. fact_phys at i=t+1=31 is
+    #   ((30+1)/60)^6 = (31/60)^6 ≈ 0.01923
+    # so phys-pos diag = 0.01923 * 1e6 / 6 ≈ 3170.4.
+    Q30_phys_diag = jnp.diag(schedule.Q[30, :8, :8])
+    expected_phys_pos = (31.0 / 60.0) ** 6 * 1e6 / 6.0  # ≈ 3170.4
+    assert jnp.allclose(Q30_phys_diag[0], expected_phys_pos, rtol=1e-10), (
+        f"Q[30] phys-block pos diag {Q30_phys_diag[0]} != expected {expected_phys_pos}"
+    )
+    # Force/integrator entries at t=30 are constant 1/6 (1/(h+1) weight).
+    assert jnp.allclose(Q30_phys_diag[4:], 1.0 / 6.0, atol=1e-12)
+
+    init_pos = jnp.array([0.0, 0.0], dtype=jnp.float64)
+    target_pos = jnp.array([0.15, 0.0], dtype=jnp.float64)
+    gamma_star = find_gamma_star(plant, schedule)
+
+    # MATLAB port (FE discretisation) finds gamma_star ≈ 9206. rlrmp uses
+    # ZOH so the boundary differs slightly — we accept within 10%.
+    matlab_port_gamma = 9206.3
+    rel_gamma_diff = abs(gamma_star - matlab_port_gamma) / matlab_port_gamma
+    assert rel_gamma_diff < 0.10, (
+        f"rlrmp gamma_star {gamma_star} differs from MATLAB port "
+        f"{matlab_port_gamma} by {rel_gamma_diff:.2%}; expected < 10%."
+    )
+
+    # Near-boundary Δv: should match MATLAB port +8.24% within ~1.0pp.
+    res = compute_velocity_inflation(
+        plant, schedule, init_pos=init_pos, target_pos=target_pos,
+        gamma_factor=1.001, gamma_star=gamma_star,
+    )
+    matlab_port_dv = 8.24
+    assert abs(res.delta_v_percent - matlab_port_dv) < 1.0, (
+        f"Near-boundary Δv = {res.delta_v_percent:+.4f}% deviates from MATLAB "
+        f"port reference +{matlab_port_dv}% by more than 1.0pp."
     )
 
 
