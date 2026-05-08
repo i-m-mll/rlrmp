@@ -85,6 +85,42 @@ def _inject_adversary_forces(
     )
 
 
+def _inject_adversary_delta_A(
+    trial_specs: TaskTrialSpec,
+    delta_A: Float[Array, "n_dim n_state"],
+    batch_size: int,
+) -> TaskTrialSpec:
+    """Return new trial_specs with the adversary ``ΔA`` matrix substituted in.
+
+    Broadcasts a single ``delta_A`` matrix across the batch by stacking. The
+    plant intervenor at ``PLANT_INTERVENOR_LABEL`` must already be a
+    ``DynamicsMatrixPerturb`` (its params type is ``DynamicsMatrixPerturbParams``)
+    — typically wired up by ``swap_plant_intervenor_to_dynamics_matrix`` before
+    the adversarial phase begins. Bug: c723082.
+
+    Args:
+        trial_specs: Batched trial specifications.
+        delta_A: ``ΔA`` matrix, shape ``(n_dim, n_state)``.
+        batch_size: Number of trials in the batch.
+
+    Returns:
+        Modified trial_specs with the ``delta_A`` injected on every trial.
+    """
+    delta_A_batched = jnp.broadcast_to(
+        delta_A[None, ...], (batch_size,) + delta_A.shape
+    )
+    new_intervene = eqx.tree_at(
+        lambda spec: spec.delta_A,
+        trial_specs.intervene[PLANT_INTERVENOR_LABEL],
+        delta_A_batched,
+    )
+    return eqx.tree_at(
+        lambda ts: ts.intervene[PLANT_INTERVENOR_LABEL],
+        trial_specs,
+        new_intervene,
+    )
+
+
 def _adversary_loss(
     adversary: GaussianBumpAdversary,
     task,
