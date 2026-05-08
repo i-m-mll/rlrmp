@@ -339,7 +339,7 @@ wheels = [
 [[package]]
 name = "feedbax"
 version = "0.1.2"
-source = { editable = "../../../20 Feedbax/feedbax/worktrees/develop" }
+source = { editable = "../../../20 Feedbax/feedbax/worktrees/feature__loss-hidden-derivative" }
 dependencies = [
     { name = "alembic" },
     { name = "crc32c" },
@@ -1595,7 +1595,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "feedbax", editable = "../../../20 Feedbax/feedbax/worktrees/develop" },
+    { name = "feedbax", editable = "../../../20 Feedbax/feedbax/worktrees/feature__loss-hidden-derivative" },
     { name = "ipyfilechooser", specifier = ">=0.6.0" },
     { name = "ipywidgets", specifier = ">=8.1.8" },
     { name = "statsmodels", specifier = ">=0.14.5" },
