@@ -60,8 +60,15 @@ from feedbax.training.train import (
 from feedbax.types import TreeNamespace, dict_to_namespace
 from feedbax.intervene import TimeSeriesParam
 
-from rlrmp.adversarial_training import _inject_adversary_forces
-from rlrmp.adversary import GaussianBumpAdversary
+from rlrmp.adversarial_training import (
+    _inject_adversary_delta_A,
+    _inject_adversary_forces,
+)
+from rlrmp.adversary import GaussianBumpAdversary, LinearDynamicsAdversary
+from rlrmp.intervention_compat import (
+    swap_plant_intervenor_to_dynamics_matrix,
+    swap_task_intervention_to_dynamics_matrix,
+)
 from rlrmp.modules.training.part2 import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
@@ -167,6 +174,45 @@ def _get_git_metadata() -> dict:
     except ImportError:
         pass
     return meta
+
+
+def _collect_gpu_info() -> dict:
+    """Capture GPU/device info for run-config reproducibility.
+
+    Records JAX-visible device kinds, count, and (best-effort) per-device
+    total memory in GiB via ``nvidia-smi``. Never raises — failures are
+    caught and surfaced as ``nvidia_smi_error`` / ``device_memory_gb_total =
+    None`` so the surrounding training run is not blocked. Bug: c723082.
+
+    Returns:
+        Dict with keys ``device_kinds``, ``device_count``, optionally
+        ``device_memory_gb_total`` and ``nvidia_smi_error``. Safe to embed
+        directly in the run-config JSON written to disk.
+    """
+    info: dict = {}
+    try:
+        devices = jax.devices()
+        info["device_kinds"] = [d.device_kind for d in devices]
+        info["device_count"] = len(devices)
+    except Exception as e:
+        info["device_kinds"] = None
+        info["device_count"] = 0
+        info["jax_devices_error"] = str(e)
+
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5, check=True,
+        )
+        mem_csv = result.stdout.strip().split("\n")
+        info["device_memory_gb_total"] = [float(m) / 1024.0 for m in mem_csv if m]
+    except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.CalledProcessError) as e:
+        info["device_memory_gb_total"] = None
+        info["nvidia_smi_error"] = str(e)
+    except Exception as e:  # pragma: no cover — defensive
+        info["device_memory_gb_total"] = None
+        info["nvidia_smi_error"] = f"unexpected: {e}"
+    return info
 
 
 def _configure_jax_runtime(args: argparse.Namespace) -> None:
@@ -576,7 +622,11 @@ def run_training(args: argparse.Namespace) -> None:
     )
     mkdir_p(spec_dir)
 
-    config_dict = {**vars(args), "git": _get_git_metadata()}
+    config_dict = {
+        **vars(args),
+        "git": _get_git_metadata(),
+        "gpu_info": _collect_gpu_info(),
+    }
     spec_path = spec_dir / "run.json"
     with open(spec_path, "w") as f:
         json.dump(config_dict, f, indent=2, default=str)
@@ -714,18 +764,45 @@ def run_training(args: argparse.Namespace) -> None:
     logger.info("Saved warm-start model to %s", warmup_model_path)
 
     # -----------------------------------------------------------------------
+    # Optional: swap plant intervenor for the adversarial phase.
+    # When --adversary-type linear_dynamics, replace the warmup-phase
+    # FixedField/CurlField intervenor with DynamicsMatrixPerturb so the
+    # adversary can drive ΔA·x perturbations through the same disturbance
+    # channel. Bug: c723082.
+    # -----------------------------------------------------------------------
+    use_linear_dynamics = (args.adversary_type == "linear_dynamics")
+    if use_linear_dynamics:
+        from rlrmp.disturbance import PLANT_INTERVENOR_LABEL as _PLABEL
+        logger.info(
+            "Swapping plant intervenor at label %r to DynamicsMatrixPerturb "
+            "(eta_max=%g, pgd_steps=%d, pgd_lr=%g) for adversarial phase",
+            _PLABEL, args.linear_dynamics_eta_max,
+            args.linear_dynamics_pgd_steps, args.linear_dynamics_lr,
+        )
+        # Swap on the ensembled model (jt.map over the ensemble pytree).
+        warmup_model = jt.map(
+            lambda m: swap_plant_intervenor_to_dynamics_matrix(
+                m, _PLABEL, mass=hps.model.effector_mass,
+            ),
+            warmup_model,
+            is_leaf=lambda x: x is not None and hasattr(x, "nodes")
+                              and hasattr(x, "input_ports"),
+        )
+        # Swap on the task so trial_specs.intervene[label] has the right type.
+        task = swap_task_intervention_to_dynamics_matrix(task, _PLABEL)
+
+    # -----------------------------------------------------------------------
     # Phase 2 — adversarial training
     # -----------------------------------------------------------------------
     n_adversaries = args.n_adversaries
     n_reps = hps.model.n_replicates
     logger.info(
         "Phase 2: adversarial training for %d batches "
-        "(n_replicates=%d vmapped, n_adversaries=%d, n_adversary_steps=%d, "
-        "adversary_lr=%g, controller_lr=%g, n_bumps=%d, force_max=%g, "
+        "(adversary_type=%s, n_replicates=%d vmapped, n_adversaries=%d, "
+        "n_adversary_steps=%d, adversary_lr=%g, controller_lr=%g, "
         "loss_update_enabled=%s, loss_update_ratio=%g)",
-        args.n_adversary_batches, n_reps, n_adversaries, args.n_adversary_steps,
-        args.adversary_lr, args.controller_lr,
-        args.n_bumps, args.force_max,
+        args.n_adversary_batches, args.adversary_type, n_reps, n_adversaries,
+        args.n_adversary_steps, args.adversary_lr, args.controller_lr,
         args.loss_update_enabled, args.loss_update_ratio,
     )
 
@@ -735,21 +812,40 @@ def run_training(args: argparse.Namespace) -> None:
     n_timesteps = hps.task.n_steps - 1  # feedbax uses n_steps-1 as the sim length
 
     def _make_adversary_population(n_adversaries: int) -> list:
-        """Create K adversaries, each vmapped over n_reps replicates."""
+        """Create K adversaries, each vmapped over n_reps replicates.
+
+        Dispatches on ``args.adversary_type``:
+        - ``gaussian_bump``: ``GaussianBumpAdversary`` (force-profile).
+        - ``linear_dynamics``: ``LinearDynamicsAdversary`` (ΔA·x).
+        """
         pop = []
         for i in range(n_adversaries):
             # Each replicate within adversary i gets a unique key
             rep_keys = jr.split(jr.PRNGKey(7 + i), n_reps)
-            adv_vmapped = eqx.filter_vmap(
-                lambda k: GaussianBumpAdversary(
-                    n_bumps=args.n_bumps,
-                    n_timesteps=n_timesteps,
-                    n_force_dims=2,
-                    force_max=args.force_max,
-                    dt=hps.dt,
-                    key=k,
-                )
-            )(rep_keys)
+            if args.adversary_type == "gaussian_bump":
+                adv_vmapped = eqx.filter_vmap(
+                    lambda k: GaussianBumpAdversary(
+                        n_bumps=args.n_bumps,
+                        n_timesteps=n_timesteps,
+                        n_force_dims=2,
+                        force_max=args.force_max,
+                        dt=hps.dt,
+                        key=k,
+                    )
+                )(rep_keys)
+            elif args.adversary_type == "linear_dynamics":
+                adv_vmapped = eqx.filter_vmap(
+                    lambda k: LinearDynamicsAdversary(
+                        n_state=4,
+                        n_dim=2,
+                        eta_max=args.linear_dynamics_eta_max,
+                        n_inner_steps=args.n_adversary_steps,
+                        learning_rate=args.linear_dynamics_lr,
+                        key=k,
+                    )
+                )(rep_keys)
+            else:
+                raise ValueError(f"Unknown adversary_type: {args.adversary_type}")
             pop.append(adv_vmapped)
         return pop
 
@@ -758,7 +854,13 @@ def run_training(args: argparse.Namespace) -> None:
     # Adversary optimizers (one per adversary population member).
     # Init on a single-replicate adversary, then stack n_reps copies so ALL
     # state arrays (including step counters) carry a leading (n_reps,) axis.
-    adversary_optimizer = optax.adam(args.adversary_lr)
+    # The linear_dynamics adversary uses its own learning_rate (passed via
+    # CLI), distinct from the GaussianBump adversary's --adversary-lr.
+    adv_lr = (
+        args.linear_dynamics_lr if args.adversary_type == "linear_dynamics"
+        else args.adversary_lr
+    )
+    adversary_optimizer = optax.adam(adv_lr)
 
     def _init_vmapped_opt_state(vmapped_adv):
         """Init optimizer on one replicate's adversary, stack for all reps."""
@@ -1044,6 +1146,78 @@ def run_training(args: argparse.Namespace) -> None:
         return (_reflatten_model(new_model), adversary_new, adv_opt_st_new,
                 ctrl_opt_st_new, adv_loss, ctrl_loss_val)
 
+    def _single_rep_fused_batch_linear_dynamics(
+        per_rep_flat, adversary, adv_opt_st, ctrl_opt_st,
+        trial_specs, keys,
+    ):
+        """Fused inner-loop + controller step for ``LinearDynamicsAdversary``.
+
+        Mirrors ``_single_rep_fused_batch`` but injects the adversary's
+        ``ΔA`` matrix into trial_specs via ``_inject_adversary_delta_A``,
+        and applies a Frobenius-ball projection after each PGD step. Bug:
+        c723082.
+        """
+        model = _unflatten_model(per_rep_flat)
+        model_sg = jt.map(
+            lambda x: jax.lax.stop_gradient(x) if eqx.is_array(x) else x,
+            model, is_leaf=eqx.is_array,
+        )
+
+        def _adv_body(i, carry):
+            adv, opt_st, _last_loss = carry
+
+            # Loss as a function of ``adv.delta_A`` directly.
+            def _loss_fn(a):
+                ts = _inject_adversary_delta_A(
+                    trial_specs, a.delta_A, adv_batch_size,
+                )
+                return _compute_loss(model_sg, ts, keys)
+
+            loss_val, grads = eqx.filter_value_and_grad(_loss_fn)(adv)
+            # Negate for gradient ascent
+            neg_grads = jt.map(
+                lambda g: -g if eqx.is_array(g) else g, grads,
+            )
+            updates, new_opt_st = adversary_optimizer.update(
+                eqx.filter(neg_grads, eqx.is_array),
+                opt_st,
+                eqx.filter(adv, eqx.is_array),
+            )
+            new_adv = eqx.apply_updates(adv, updates)
+            # Project to Frobenius ball (||delta_A||_F ≤ eta_max)
+            new_adv = new_adv.project()
+            return new_adv, new_opt_st, loss_val
+
+        init_carry = (adversary, adv_opt_st, jnp.float32(0.0))
+        adversary_new, adv_opt_st_new, adv_loss = jax.lax.fori_loop(
+            0, n_adversary_steps, _adv_body, init_carry,
+        )
+
+        # --- Controller descent step (1 step) ---
+        adv_trial_specs = _inject_adversary_delta_A(
+            trial_specs, adversary_new.delta_A, adv_batch_size,
+        )
+
+        def _ctrl_loss(m):
+            return _compute_loss(m, adv_trial_specs, keys)
+
+        ctrl_loss_val, grads = eqx.filter_value_and_grad(_ctrl_loss)(model)
+        trainable_grads = eqx.filter(_get_trainable(grads), eqx.is_array)
+        updates, ctrl_opt_st_new = ctrl_optimizer.update(
+            trainable_grads,
+            ctrl_opt_st,
+            eqx.filter(_get_trainable(model), eqx.is_array),
+        )
+        updated_trainable = eqx.apply_updates(_get_trainable(model), updates)
+        new_model = eqx.tree_at(
+            lambda m: (m.nodes["net"].hidden, m.nodes["net"].readout),
+            model,
+            updated_trainable,
+        )
+
+        return (_reflatten_model(new_model), adversary_new, adv_opt_st_new,
+                ctrl_opt_st_new, adv_loss, ctrl_loss_val)
+
     # ---------------------------------------------------------------------------
     # Vmapped + JIT wrappers: vmap over replicate axis (0) for model, adversary,
     # and optimizer states; trial_specs and keys are broadcast (shared).
@@ -1073,6 +1247,17 @@ def run_training(args: argparse.Namespace) -> None:
         # per-replicate state (model, adversary, opt states) is vmapped.
         return eqx.filter_vmap(
             lambda fm, adv, aos, cos: _single_rep_fused_batch(
+                fm, adv, aos, cos, trial_specs, keys
+            )
+        )(flat_model, adversary, adv_opt_st, ctrl_opt_st)
+
+    @eqx.filter_jit
+    def _vmapped_fused_batch_linear_dynamics(
+        flat_model, adversary, adv_opt_st, ctrl_opt_st, trial_specs, keys,
+    ):
+        """Linear-dynamics fused adversary batch vmapped over replicates."""
+        return eqx.filter_vmap(
+            lambda fm, adv, aos, cos: _single_rep_fused_batch_linear_dynamics(
                 fm, adv, aos, cos, trial_specs, keys
             )
         )(flat_model, adversary, adv_opt_st, ctrl_opt_st)
@@ -1201,14 +1386,27 @@ def run_training(args: argparse.Namespace) -> None:
         if use_fused:
             # --- Single fused JIT call: K adversary steps + 1 controller step ---
             # Vmapped over replicates: each replicate trains independently.
+            # Dispatch on adversary type (Bug: c723082).
+            if use_linear_dynamics:
+                fused_call = _vmapped_fused_batch_linear_dynamics
+            else:
+                fused_call = _vmapped_fused_batch
             (flat_model, adversary, adv_opt_state, ctrl_opt_state,
-             adv_loss_vals, ctrl_loss_vals) = _vmapped_fused_batch(
+             adv_loss_vals, ctrl_loss_vals) = fused_call(
                 flat_model, adversary, adv_opt_state, ctrl_opt_state,
                 trial_specs, trial_keys,
             )
         else:
             # --- Decomposed: K×2 + 1 separate JIT calls per batch ---
-            # Vmapped over replicates.
+            # Vmapped over replicates. Decomposed mode is only supported for
+            # the gaussian_bump adversary; linear_dynamics requires the fused
+            # path (its inner step uses ``filter_value_and_grad`` over the
+            # adversary directly, not a separate force-grad VJP).
+            if use_linear_dynamics:
+                raise ValueError(
+                    "--no-fused is not supported with --adversary-type "
+                    "linear_dynamics; pass --fused (default)."
+                )
             adv_loss_vals = jnp.zeros(n_reps)
             for _ in range(args.n_adversary_steps):
                 adv_loss_vals, dL_dforces = _vmapped_loss_and_force_grad(
@@ -1294,6 +1492,10 @@ def run_training(args: argparse.Namespace) -> None:
     logger.info("Saved adversarial loss curves to %s", output_dir / "adversarial_losses.npz")
 
     # Final adversary/adversaries (each is vmapped across n_reps replicates)
+    log_fn = (
+        _log_linear_dynamics_adversary if use_linear_dynamics
+        else _log_adversary_force_profiles
+    )
     if n_adversaries == 1:
         # Single adversary population: save with original filename for backward compat
         fbx_save(output_dir / "trained_adversary.eqx", adversaries[0])
@@ -1301,7 +1503,7 @@ def run_training(args: argparse.Namespace) -> None:
             "Saved trained adversary (n_reps=%d) to %s",
             n_reps, output_dir / "trained_adversary.eqx",
         )
-        _log_adversary_force_profiles(adversaries[0], output_dir, n_reps=n_reps)
+        log_fn(adversaries[0], output_dir, n_reps=n_reps)
     else:
         adv_dir = output_dir / "adversaries"
         adv_dir.mkdir(parents=True, exist_ok=True)
@@ -1309,9 +1511,7 @@ def run_training(args: argparse.Namespace) -> None:
             adv_path = adv_dir / f"adversary_{i}.eqx"
             fbx_save(adv_path, adv)
             logger.info("Saved adversary %d to %s", i, adv_path)
-            _log_adversary_force_profiles(
-                adv, output_dir, suffix=f"_adv{i}", n_reps=n_reps,
-            )
+            log_fn(adv, output_dir, suffix=f"_adv{i}", n_reps=n_reps)
         logger.info("Saved %d adversaries (each n_reps=%d) to %s",
                      n_adversaries, n_reps, adv_dir)
 
@@ -1350,6 +1550,36 @@ def _log_adversary_force_profiles(
     logger.info("Saved adversary force profiles to %s", output_dir / filename)
 
 
+def _log_linear_dynamics_adversary(
+    adversary: LinearDynamicsAdversary,
+    output_dir: Path,
+    suffix: str = "",
+    n_reps: int = 1,
+) -> None:
+    """Log per-replicate ``ΔA`` matrices to a numpy archive.
+
+    Counterpart to ``_log_adversary_force_profiles`` for the
+    ``LinearDynamicsAdversary`` flavour. Bug: c723082.
+
+    Args:
+        adversary: Trained ``LinearDynamicsAdversary`` (vmapped over
+            replicates: ``delta_A`` has shape ``(n_reps, n_dim, n_state)``).
+        output_dir: Directory to write the archive into.
+        suffix: Optional filename suffix.
+        n_reps: Number of replicates (for logging).
+    """
+    deltas = eqx.filter_vmap(lambda a: a.delta_A)(adversary)
+    deltas_np = np.array(deltas)
+    norms = np.linalg.norm(deltas_np.reshape(n_reps, -1), axis=-1)
+    logger.info(
+        "Adversary%s ΔA Frobenius norms: mean=%.4g +/- %.4g (n_reps=%d)",
+        suffix, norms.mean(), norms.std(), n_reps,
+    )
+    filename = f"adversary_delta_A{suffix}.npz"
+    np.savez(output_dir / filename, delta_A=deltas_np)
+    logger.info("Saved adversary ΔA matrices to %s", output_dir / filename)
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -1377,6 +1607,45 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--controller-lr", type=float, default=1e-4,
         help="Controller learning rate during adversarial phase (default: 1e-4).",
+    )
+    parser.add_argument(
+        "--adversary-type", type=str, default="gaussian_bump",
+        choices=["gaussian_bump", "linear_dynamics"],
+        help=(
+            "Adversary class for the inner-loop maximisation. "
+            "'gaussian_bump' (default, flavour-(a) input-instance): produces "
+            "a per-trial force profile via a sum of learnable Gaussian bumps "
+            "injected through FixedField. 'linear_dynamics' (flavour-(b) "
+            "model-class): produces a ΔA matrix mapping [pos, vel] to a "
+            "velocity-row dynamics perturbation, constrained to a Frobenius "
+            "ball ||ΔA||_F ≤ eta_max via PGD; injected through "
+            "DynamicsMatrixPerturb. Bug: c723082."
+        ),
+    )
+    parser.add_argument(
+        "--linear-dynamics-eta-max", type=float, default=0.1,
+        help=(
+            "Frobenius-norm budget for LinearDynamicsAdversary at SISU=1 "
+            "(default: 0.1). SISU gating multiplies the resulting "
+            "perturbation force via the intervenor's `scale` field. Only "
+            "used with --adversary-type linear_dynamics."
+        ),
+    )
+    parser.add_argument(
+        "--linear-dynamics-pgd-steps", type=int, default=5,
+        help=(
+            "Number of inner PGD ascent steps for LinearDynamicsAdversary "
+            "(default: 5). Currently mirrors --n-adversary-steps; reserved "
+            "for future divergence."
+        ),
+    )
+    parser.add_argument(
+        "--linear-dynamics-lr", type=float, default=1e-2,
+        help=(
+            "Learning rate for the LinearDynamicsAdversary's PGD step "
+            "(default: 1e-2). Larger than the GaussianBump default since "
+            "ΔA values are O(eta_max) ≈ 0.1, vs O(1) for force amplitudes."
+        ),
     )
     parser.add_argument(
         "--n-bumps", type=int, default=3,

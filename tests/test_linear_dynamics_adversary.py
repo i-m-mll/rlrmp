@@ -145,24 +145,31 @@ class TestDynamicsMatrixPerturbIntegration:
             n_state=4, n_dim=2, eta_max=0.5, key=jr.PRNGKey(2),
         )
         # Set delta_A to a known matrix so the analytical answer is trivial.
+        # Use the state's default dtype so x64-mode (enabled elsewhere in the
+        # suite, e.g. by test_hinf_riccati) doesn't cause a dtype mismatch
+        # against the StateIndex's stored params.
+        comp = DynamicsMatrixPerturb(mass=1.0)
+        default_dtype = comp._initial_state.delta_A.dtype
         delta_A = jnp.array(
-            [[0.0, 0.0, 0.3, 0.0], [0.0, 0.0, 0.0, 0.3]], dtype=jnp.float32
+            [[0.0, 0.0, 0.3, 0.0], [0.0, 0.0, 0.0, 0.3]], dtype=default_dtype,
         )
         adv = eqx.tree_at(lambda a: a.delta_A, adv, delta_A)
 
-        comp = DynamicsMatrixPerturb(mass=1.0)
         from equinox.nn import State
         state = State(comp).set(
             comp.params_index,
             DynamicsMatrixPerturbParams(active=True, delta_A=adv()),
         )
-        eff = CartesianState(pos=jnp.zeros(2), vel=jnp.array([1.0, -2.0]))
+        eff = CartesianState(
+            pos=jnp.zeros(2, dtype=default_dtype),
+            vel=jnp.array([1.0, -2.0], dtype=default_dtype),
+        )
         out, _ = comp(
-            {"effector": eff, "force": jnp.zeros(2)},
+            {"effector": eff, "force": jnp.zeros(2, dtype=default_dtype)},
             state,
             key=jr.PRNGKey(0),
         )
         # delta_A on velocity rows × vel = [0.3 * 1, 0.3 * -2] = [0.3, -0.6]
         # f = mass * Δ(dot v) = 1.0 * [0.3, -0.6]
-        expected = jnp.array([0.3, -0.6])
+        expected = jnp.array([0.3, -0.6], dtype=default_dtype)
         assert jnp.allclose(out["force"], expected)
