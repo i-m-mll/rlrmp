@@ -36,8 +36,8 @@ config-settings = { editable-mode = "compat" }
 
 [tool.uv.sources.feedbax]
 # Point at feedbax develop worktree (the protected branch). The
-# StateDerivativeLoss term used by efc4d68 lands on develop via feedbax
-# auth-merge of feature/loss-hidden-derivative (feedbax issue e8f3738) —
+# OutputJerkLoss term used by efc4d68 lands on develop via feedbax
+# auth-merge of feature/loss-output-jerk (feedbax issue 7e1d257) —
 # the rlrmp auth-merge depends on that feedbax merge having landed first.
 path = "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax/worktrees/develop"
 editable = true
