@@ -10,6 +10,7 @@ from feedbax import AbstractModel
 from feedbax.loss import (
     AbstractLoss,
     CompositeLoss,
+    EpochMaskedLoss,
     FuncTermsLoss,
     OutputJerkLoss,
     StateDerivativeLoss,
@@ -175,6 +176,18 @@ DEFAULT_TOP_WEIGHTS: dict[str, float] = {
     # Default 0.0 so existing configs are unchanged unless explicitly enabled.
     # Bug: efc4d68 (feedbax 7e1d257)
     "nn_output_jerk": 0.0,
+    # Anti-anticipation: penalise controller force during the pre-go window
+    # (epochs 0+1 = hold + target_on, before the go cue). Wraps the existing
+    # `nn_output` term in an `EpochMaskedLoss`. Default 0.0 keeps baseline
+    # behaviour unchanged. Suggested initial weight 1e-2 (1000x the
+    # post-aggregated nn_output weight). Bug: efc4d68 (feedbax 50507a9)
+    "nn_output_pre_go": 0.0,
+    # Anti-preparation companion: same epoch mask wrapped around the
+    # hidden-state derivative term. Exposed for completeness — the user's
+    # primary intervention is the motor-pre-go term above; this exists so
+    # the comparator "suppress preparation too" run is one CLI flag away.
+    # Bug: efc4d68 (feedbax 50507a9)
+    "nn_hidden_derivative_pre_go": 0.0,
     # composite bundle (if enabled)
     "goal_hit_in_window": 1.0,
 }
@@ -436,6 +449,34 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
         nn_output_jerk=OutputJerkLoss(
             label="nn_output_jerk",
             where=lambda state: state.mechanics.effector.vel,
+        ),
+        # Anti-anticipation pre-go controller-output penalty. Wraps the
+        # standard `nn_output` term (squared L2 of the controller force) in
+        # an `EpochMaskedLoss` keyed to epochs 0+1 of the standard
+        # `DelayedReaches` timeline ("hold" + "target_on"). The mask is 1
+        # before the go cue and 0 after, so any non-zero contribution is
+        # purely a pre-go anticipatory force. Default 0.0; activate via
+        # `loss.weights.nn_output_pre_go` or `--nn-output-pre-go <w>` on
+        # `train_minimax.py`. Bug: efc4d68 (feedbax 50507a9)
+        nn_output_pre_go=EpochMaskedLoss(
+            label="nn_output_pre_go",
+            base_loss=TargetStateLoss(
+                label="nn_output_pre_go",
+                where=lambda state: state.efferent.output,
+                spec=target_zero,
+            ),
+            epoch_indices=(0, 1),
+        ),
+        # Anti-preparation companion: same epoch mask wrapped around the
+        # hidden-state first-difference term. Exposed so the comparator run
+        # is a single CLI flag away. Default 0.0. Bug: efc4d68 (feedbax 50507a9)
+        nn_hidden_derivative_pre_go=EpochMaskedLoss(
+            label="nn_hidden_derivative_pre_go",
+            base_loss=StateDerivativeLoss(
+                label="nn_hidden_derivative_pre_go",
+                where=lambda state: state.net.hidden,
+            ),
+            epoch_indices=(0, 1),
         ),
     )
 
