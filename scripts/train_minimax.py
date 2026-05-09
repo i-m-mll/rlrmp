@@ -321,13 +321,18 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "weights": {
                 "goal_hit_in_window": 0.0,
                 "effector_pos": 0.0,
-                "effector_pos_running": 1.0,
+                "effector_pos_running": getattr(args, "effector_pos_running", 1.0),
                 "effector_pos_mid": 0.0,
                 "effector_vel_mid": 0.0,
-                "effector_pos_late": 0.5,
-                "effector_vel_late": 0.1,
+                "effector_pos_late": getattr(args, "effector_pos_late_weight", 0.5),
+                "effector_vel_late": getattr(args, "effector_vel_late", 0.1),
                 "effector_hold_pos": 10.0,
                 "effector_hold_vel": 10.0,
+                # Terminal-step velocity penalty (historical simple_reach_loss
+                # shape). Fires only at t=T; strong "come-to-rest" signal.
+                # Default 0.0 = disabled (preserves baseline behaviour).
+                # Activate via --effector-final-vel 1.0. Bug: 2bc95fd
+                "effector_final_vel": getattr(args, "effector_final_vel", 0.0),
                 "nn_output": 1e-5,
                 "nn_hidden": 1e-5,
                 # Compositional ||h_t - h_{t-1}||² hidden-state smoothness
@@ -354,8 +359,12 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
                 ),
             },
             "effector_pos_late": {
-                "start_step_after_go": 80,
-                "final_scale_factor": 2.0,
+                "start_step_after_go": getattr(
+                    args, "effector_pos_late_start_step", 80
+                ),
+                "final_scale_factor": getattr(
+                    args, "effector_pos_late_final_scale", 2.0
+                ),
             },
             "effector_vel_late": {
                 "start_step_after_go": 80,
@@ -1859,6 +1868,70 @@ def parse_args() -> argparse.Namespace:
             "or multiplicative (post-hidden gain modulation h*(1+alpha*sisu), where "
             "alpha is a learned per-unit vector). Multiplicative forces SISU to act "
             "as neuromodulatory gain control rather than an ignorable input channel."
+        ),
+    )
+    # ---------------------------------------------------------------------------
+    # Loss-shape flags: restore historical simple_reach_loss structure.
+    # These expose the loss terms that existed before the running/late split so
+    # that variants A and B of the 6-cell anti-anticipation matrix can be run
+    # without changing loss.py defaults. Bug: 2bc95fd
+    # ---------------------------------------------------------------------------
+    parser.add_argument(
+        "--effector-final-vel", type=float, default=0.0,
+        help=(
+            "Weight on the terminal-step velocity penalty ||v(T)||² (fires only at "
+            "t=T, the last simulation step). Mirrors the historical "
+            "effector_final_velocity term in simple_reach_loss (feedbax commit "
+            "e985e0e). Default 0.0 = disabled (baseline behaviour unchanged). "
+            "Variant A: set to 1.0 combined with --effector-vel-late 0.0. "
+            "Bug: 2bc95fd."
+        ),
+    )
+    parser.add_argument(
+        "--effector-vel-late", type=float, default=0.1,
+        help=(
+            "Weight on the late-window velocity penalty (entire [go+80, T] window). "
+            "Default 0.1 (current production value). Set to 0.0 combined with "
+            "--effector-final-vel 1.0 to switch from a window penalty to a "
+            "terminal-step penalty (Variants A and B). Bug: 2bc95fd."
+        ),
+    )
+    parser.add_argument(
+        "--effector-pos-running", type=float, default=1.0,
+        help=(
+            "Weight on the running position penalty (uniform over the entire "
+            "post-go movement window [go, T]). Default 1.0 (current production "
+            "value). Set to 0.0 for Variant B, which drops the running position "
+            "term and relies entirely on the late cosine-ramped term. Bug: 2bc95fd."
+        ),
+    )
+    parser.add_argument(
+        "--effector-pos-late-weight", type=float, default=0.5,
+        help=(
+            "Outer weight on the late-window position penalty (cosine-ramped from "
+            "go+start_step to T). Default 0.5 (current production value). "
+            "Variant B: set to 1.0 to compensate for dropping the running term. "
+            "Bug: 2bc95fd."
+        ),
+    )
+    parser.add_argument(
+        "--effector-pos-late-final-scale", type=float, default=2.0,
+        help=(
+            "Final scale factor for the cosine ramp on the late position term "
+            "(ramps from 1.0 to this value over [go+start_step, T]). Default 2.0 "
+            "(current production value). Variant B: set to 6.0 to create a steeper "
+            "end-heavy profile approximating the historical (t/T)^6 discount. "
+            "Bug: 2bc95fd."
+        ),
+    )
+    parser.add_argument(
+        "--effector-pos-late-start-step", type=int, default=80,
+        help=(
+            "Start of the late position-error window, in steps after the go cue. "
+            "Default 80 (current production value, ~800 ms post-go at dt=0.01 s). "
+            "Variant B: set to 0 to start the cosine ramp immediately at the go "
+            "cue, approximating the historical (t/T)^6 full-trial discount. "
+            "Bug: 2bc95fd."
         ),
     )
     return parser.parse_args()
