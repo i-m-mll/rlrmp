@@ -1,0 +1,31 @@
+{
+  "cell_name": "gru__jerk",
+  "training_script": "scripts/train_minimax.py",
+  "cli_flags": {
+    "--hidden-type": "gru",
+    "--n-warmup-batches": 12000,
+    "--n-adversary-batches": 0,
+    "--batch-size": 250,
+    "--n-replicates": 5,
+    "--nn-output-jerk": 1e5,
+    "--seed": 42,
+    "--checkpoint": true,
+    "--fused": true,
+    "--no-streaming-loss": true,
+    "--output-dir": "_artifacts/part2_5/runs/gru__jerk",
+    "--checkpoint-every": 1000
+  },
+  "n_warmup_batches": 12000,
+  "n_adversary_batches": 0,
+  "batch_size": 250,
+  "n_replicates": 5,
+  "hidden_type": "gru",
+  "seed": 42,
+  "git_sha": "8d13b6251885c21264ef2acd0e665853f079729e",
+  "wall_clock_minutes": 40,
+  "pod_id": "3e10kb0by33r3w",
+  "gpu_type": "RTX 5090",
+  "datacenter": "EUR-IS-2",
+  "tracking_issue": "2bc95fd",
+  "notes": "Control cell — no anti-anticipation lever, current default loss shape"
+}
