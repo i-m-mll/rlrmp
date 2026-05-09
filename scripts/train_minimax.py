@@ -238,7 +238,7 @@ def _resolve_hidden_type(hidden_type_str: str, dt: float):
 
     Args:
         hidden_type_str: One of "gru" or "vanilla_rnn".
-        dt: Simulation timestep (passed to VanillaRNNCell so that alpha=dt/tau=1.0).
+        dt: Simulation timestep.
 
     Returns:
         A class or partial-applied constructor compatible with point_mass_nn's
@@ -250,8 +250,9 @@ def _resolve_hidden_type(hidden_type_str: str, dt: float):
     elif hidden_type_str == "vanilla_rnn":
         from functools import partial as _partial
         from rlrmp.models import VanillaRNNCell
-        # dt=tau => alpha=1.0 (pure vanilla RNN, no leaky integration)
-        return _partial(VanillaRNNCell, dt=dt, tau=dt)
+        # tau=0.1 s (100 ms) => alpha=dt/tau=0.1 at dt=0.01 — matches cortical-neuron
+        # time constant in motor-control RNN literature (Yang 2019, Sussillo 2015).
+        return _partial(VanillaRNNCell, dt=dt, tau=0.1)
     else:
         raise ValueError(f"Unknown hidden_type: {hidden_type_str!r}")
 
@@ -270,7 +271,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         # set to total training length so late-ramp terms are calibrated correctly.
         "n_batches_condition": args.n_warmup_batches + args.n_adversary_batches,
         "n_batches_baseline": 0,
-        "batch_size": 250,
+        "batch_size": getattr(args, "batch_size", 250),
         "learning_rate_0": args.controller_lr,
         "n_scaleup_batches": 0,
         "constant_lr_iterations": 0,
@@ -279,7 +280,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         "state_reset_iterations": [],
         "intervention_scaleup_batches": [0, 0],
         "model": {
-            "n_replicates": 5,
+            "n_replicates": getattr(args, "n_replicates", 5),
             "effector_mass": 1.0,
             "hidden_size": 180,
             "feedback_delay_steps": 5,
@@ -331,6 +332,11 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
                 # term, off-by-default. Enable via --nn-hidden-derivative
                 # (e.g. 1e-3 per Shahbazi et al. 2025 Eq. 1). Bug: efc4d68
                 "nn_hidden_derivative": getattr(args, "nn_hidden_derivative", 0.0),
+                # Compositional ||v_{t+1} - 2 v_t + v_{t-1}||² output-jerk
+                # term, off-by-default. Enable via --nn-output-jerk
+                # (e.g. 1e5 per Shahbazi et al. 2025 Eq. 1). Bug: efc4d68
+                # (feedbax 7e1d257)
+                "nn_output_jerk": getattr(args, "nn_output_jerk", 0.0),
             },
             "effector_pos_late": {
                 "start_step_after_go": 80,
@@ -1597,6 +1603,14 @@ def parse_args() -> argparse.Namespace:
         help="Number of warm-start batches before adversarial phase (default: 2000).",
     )
     parser.add_argument(
+        "--batch-size", type=int, default=250,
+        help="Per-batch trial count for warmup phase (default: 250).",
+    )
+    parser.add_argument(
+        "--n-replicates", type=int, default=5,
+        help="Number of vmapped controller replicates in the ensemble (default: 5).",
+    )
+    parser.add_argument(
         "--n-adversary-batches", type=int, default=8000,
         help="Number of adversarial training batches (default: 8000).",
     )
@@ -1777,7 +1791,7 @@ def parse_args() -> argparse.Namespace:
         choices=["gru", "vanilla_rnn"],
         help=(
             "Recurrent network type: gru (default, GRUCell with gating) or "
-            "vanilla_rnn (LeakyRNNCell with dt=tau, no gating). "
+            "vanilla_rnn (LeakyRNNCell with tau=0.1 s => alpha=0.1, no gating). "
             "vanilla_rnn is a diagnostic for the gating-laziness hypothesis."
         ),
     )
@@ -1788,6 +1802,15 @@ def parse_args() -> argparse.Namespace:
             "mean(||h_t - h_{t-1}||²) (default: 0.0 = disabled, baseline "
             "behaviour). Set to 1e-3 to mirror Shahbazi et al. 2025 Eq. 1. "
             "Bug: efc4d68."
+        ),
+    )
+    parser.add_argument(
+        "--nn-output-jerk", type=float, default=0.0,
+        help=(
+            "Weight on the compositional output-jerk term "
+            "mean(||v_{t+1} - 2 v_t + v_{t-1}||²) on effector velocity "
+            "(default: 0.0 = disabled, baseline behaviour). Set to 1e5 to "
+            "mirror Shahbazi et al. 2025 Eq. 1. Bug: efc4d68 (feedbax 7e1d257)."
         ),
     )
     parser.add_argument(
