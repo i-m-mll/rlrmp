@@ -112,6 +112,18 @@ Adjust flags to match the current script's CLI if it has changed.
 - Verify `uptimeSeconds > 0` within 2 min of creation; terminate and recreate if stuck.
 - Do not unilaterally upgrade cloud tier or GPU class — ask the user first.
 
+### 9. Post-training-run protocol
+
+After every remote training run completes, do all five steps before closing out the session:
+
+1. **Commit run-specs on a feature branch**: Move `run.json` spec files from `_artifacts/<exp>/<label>/` to `results/<exp>/runs/<group>__<variant>/run.json` and commit via `agent-commit --issue <tracking-issue>`.
+2. **Submit auth request**: `mandible auth request feature/<name> --issue <tracking-issue> --no-watch`.
+3. **Comment on tracking issue**: Key metrics table + winning condition + key findings.
+4. **Comment on `c99ad9d`** (training-methods coord) if the run reflects a training-method decision (new method, new loss term, new adversary class).
+5. **Comment on `4d38c15`** (analyses coord) if new analyses or tier shifts are motivated.
+
+(Relates to `efc4d68`. Codified after the 2026-05-08 baseline matrix session, where step 1 was deferred until a separate follow-up task.)
+
 ## Feedbax Studio
 Feedbax Studio (web app) runs from the Feedbax repo. See Feedbax CLAUDE.md for server startup instructions.
 
