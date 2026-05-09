@@ -35,11 +35,11 @@ packages = ["src/rlrmp"]
 config-settings = { editable-mode = "compat" }
 
 [tool.uv.sources.feedbax]
-# Point at feedbax develop worktree (the protected branch). The
-# OutputJerkLoss term used by efc4d68 lands on develop via feedbax
-# auth-merge of feature/loss-output-jerk (feedbax issue 7e1d257) —
-# the rlrmp auth-merge depends on that feedbax merge having landed first.
-path = "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax/worktrees/develop"
+# Point at feedbax feature/loss-epoch-masked worktree. Adds
+# `EpochMaskedLoss` (feedbax issue 50507a9) used by the rlrmp pre-go output
+# penalty wiring on this branch (efc4d68 consumer). When the feedbax-side
+# auth-merge lands, repoint this path back to the develop worktree.
+path = "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax/worktrees/feature__loss-epoch-masked"
 editable = true
 
 [tool.ruff]
