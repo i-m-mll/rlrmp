@@ -337,6 +337,19 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
                 # (e.g. 1e5 per Shahbazi et al. 2025 Eq. 1). Bug: efc4d68
                 # (feedbax 7e1d257)
                 "nn_output_jerk": getattr(args, "nn_output_jerk", 0.0),
+                # Pre-go controller-output penalty (epochs 0+1, before the go
+                # cue). Wraps the standard nn_output squared-L2 term in
+                # EpochMaskedLoss; off-by-default. Enable via
+                # --nn-output-pre-go (suggested 1e-2 ≈ 1000x the post-aggregated
+                # nn_output weight). Bug: efc4d68 (feedbax 50507a9)
+                "nn_output_pre_go": getattr(args, "nn_output_pre_go", 0.0),
+                # Pre-go hidden-state-derivative penalty (epochs 0+1).
+                # Companion to the motor-pre-go term — included so the
+                # "suppress preparation too" comparator is one flag away.
+                # Off-by-default. Bug: efc4d68 (feedbax 50507a9)
+                "nn_hidden_derivative_pre_go": getattr(
+                    args, "nn_hidden_derivative_pre_go", 0.0
+                ),
             },
             "effector_pos_late": {
                 "start_step_after_go": 80,
@@ -1811,6 +1824,29 @@ def parse_args() -> argparse.Namespace:
             "mean(||v_{t+1} - 2 v_t + v_{t-1}||²) on effector velocity "
             "(default: 0.0 = disabled, baseline behaviour). Set to 1e5 to "
             "mirror Shahbazi et al. 2025 Eq. 1. Bug: efc4d68 (feedbax 7e1d257)."
+        ),
+    )
+    parser.add_argument(
+        "--nn-output-pre-go", type=float, default=0.0,
+        help=(
+            "Weight on the pre-go controller-output penalty: "
+            "EpochMaskedLoss wrapping the squared-L2 controller force, "
+            "active during epochs 0+1 (hold + target_on, before the go cue) "
+            "and zero afterwards. Default 0.0 = disabled. Suggested initial "
+            "weight 1e-2 (≈ 1000x the post-aggregated nn_output weight) to "
+            "strongly penalise pre-go anticipatory motor output without "
+            "affecting post-go reach dynamics. Bug: efc4d68 (feedbax 50507a9)."
+        ),
+    )
+    parser.add_argument(
+        "--nn-hidden-derivative-pre-go", type=float, default=0.0,
+        help=(
+            "Weight on the pre-go hidden-state-derivative penalty: "
+            "EpochMaskedLoss wrapping mean(||h_t - h_{t-1}||²), active "
+            "during epochs 0+1 (before the go cue) and zero afterwards. "
+            "Default 0.0 = disabled. Companion to --nn-output-pre-go for "
+            "the 'suppress preparation too' comparator. "
+            "Bug: efc4d68 (feedbax 50507a9)."
         ),
     )
     parser.add_argument(
