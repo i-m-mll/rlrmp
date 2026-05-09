@@ -165,6 +165,12 @@ DEFAULT_TOP_WEIGHTS: dict[str, float] = {
     "effector_pos_late": 1.0,
     "effector_vel_late": 1.0,
     "effector_pos_running": 0.0,
+    # Terminal-step velocity penalty (historical simple_reach_loss shape).
+    # Fires only at the final timestep t=T; strong identifying constraint that
+    # funnels replicates to a single "come-to-rest at the goal" strategy.
+    # Default 0.0; enable via --effector-final-vel (suggested 1.0 to match the
+    # historical weight). Bug: 2bc95fd
+    "effector_final_vel": 0.0,
     "nn_output": 1e-5,
     "nn_hidden": 1e-5,
     # Hidden-state smoothness penalty (Shahbazi et al. 2025 Eq. 1; weight 1e-3
@@ -688,6 +694,21 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
                         ),
                     )
                 ),
+            )
+
+        # Terminal-step velocity penalty: fires only at t=T, the final timestep.
+        # This is the historical `simple_reach_loss` shape (commit 3eea931,
+        # feedbax e985e0e). A surgical "come-to-rest at the goal" signal that
+        # acts as an identifying constraint, funnelling replicates toward a
+        # single stopping strategy. In contrast, `effector_vel_late` spreads
+        # the velocity penalty across a window, which is more permissive.
+        # Default 0.0 preserves baseline behaviour; enable via
+        # --effector-final-vel (suggested 1.0). Bug: 2bc95fd
+        if getattr(user_outer_weights, "effector_final_vel", 0.0) != 0.0:
+            terms["effector_final_vel"] = TargetStateLoss(
+                "effector_final_vel",
+                where=lambda state: state.mechanics.effector.vel,
+                spec=target_zero & target_final_state,
             )
 
     # Defaults only for present terms
