@@ -346,7 +346,7 @@ When starting a new phase or work-bundle:
 3. **Children of the phase umbrella** reference the umbrella in **their bodies** (e.g. "Part of phase `b557d4e`."), not in their commit `Bug:` trailers. Their trailers reference themselves or their sub-features. The umbrella may auto-close when one of its children merges with a `Bug:` trailer pointing at the umbrella — that is fine and expected; the comment thread on `b33e8da` carries the live phase state regardless.
 4. **On phase end / pivot / abandonment**, comment on `b33e8da` with the outcome (one line: "merged via X", "pivoted to Y", "abandoned because Z").
 
-Past phases for orientation (see `b33e8da` comment thread for the live inventory): Part 1 (`297260c`), Part 2 (`0af472c`), Part 2.5 (no umbrella; `results/part2_5/README.md` is the artifact), Methodology-fix (`b557d4e`, currently active).
+Past phases for orientation (see `b33e8da` comment thread for the live inventory): Part 1 (`297260c`), Part 2 (`0af472c`), Part 2.5 (`844ef95`), Methodology-fix (`b557d4e`, currently active).
 
 ### Worked example: cross-cutting Riccati flavor-(a) finding
 
