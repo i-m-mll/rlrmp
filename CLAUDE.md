@@ -135,18 +135,40 @@ The repo separates artifacts by ROLE, not by directory name:
 - **`_artifacts/`** is gitignored. It mirrors `results/` and holds *bulk* outputs.
 - **Cloud-provider directory names (`runpod/`, `modal/`, etc.) are NOT meaningful** — they all go under `_artifacts/`. Never patch `.gitignore` with a new provider name.
 
+### Flat-by-hash layout (Bug: `f485c26`)
+
+Each top-level entry under `results/` and `_artifacts/` is a **directory named by its 7-character tracking-issue prefix** (e.g. `results/2bc95fd/`, `_artifacts/efc4d68/`). The issue is the atomic unit; no phase-level parent dirs in the directory tree (phase membership lives on the issue body / `b33e8da` coord).
+
+Inside each `<hash>/`:
+
+```
+<hash>/
+├── README.md                      one paragraph orienting context
+├── RUN_PLAN.md                    if the work involves training runs
+├── notes/<topic>.md               narrative + analysis writeups
+├── figures/<topic>/spec.json      figure specs (one dir per topic)
+└── runs/<variant>.json            per-run hyperparameters (flat, not nested)
+```
+
+The mirror `_artifacts/<hash>/...` follows the same structure (`runs/<variant>/` is a dir here, holding the bulk training outputs; `runs/<variant>.json` in `results/` is the corresponding spec file).
+
+### Run-folder convention
+
+- **`runs/<variant>.json`** flat by default — one JSON file per run, not a directory with a single file in it.
+- For complex sweeps where variant names balloon (~50+ chars), use `runs/<hash>.json` + `runs_index.json` mapping hash → human label + params.
+- Promote a run from file to directory (`runs/<variant>/` with `run.json` inside) only when additional per-run files accrue (notes, debug artifacts). Lazy promotion.
+
 ### If you produce X, put it at Y
 
 | You produce | Path |
 |---|---|
-| Model checkpoint, `.eqx`, training log, large `.npz` | `_artifacts/<exp>/runs/<run>/` |
-| Hyperparameters that produced a run | `results/<exp>/runs/<run>/run.json` |
-| Per-run commentary (optional) | `results/<exp>/runs/<run>/notes.md` |
-| Long-form analysis or post-mortem | `results/<exp>/<topic>_review.md` |
-| Figure spec (always) | `results/<exp>/figures/<fig>/spec.json` |
-| Figure JSON (only if ≤ 2 MB) | `results/<exp>/figures/<fig>/figure.json` |
-| Figure thumbnail (only if ≤ 300 KB at 100 DPI) | `results/<exp>/figures/<fig>/figure.png` |
-| Heavy figure render (HTML, full-DPI PNG, MP4) | `_artifacts/<exp>/figures/<fig>/` |
+| Model checkpoint, `.eqx`, training log, large `.npz` | `_artifacts/<hash>/runs/<variant>/` |
+| Hyperparameters that produced a run | `results/<hash>/runs/<variant>.json` (flat default) |
+| Per-run commentary (optional) | `results/<hash>/notes/<variant>.md` |
+| Long-form analysis or post-mortem | `results/<hash>/notes/<topic>.md` |
+| Figure spec (always) | `results/<hash>/figures/<topic>/spec.json` |
+| Figure render (HTML) — written automatically | `_artifacts/<hash>/figures/<topic>/figure.html` |
+| Symlink from spec dir to render — automatic | `results/<hash>/figures/<topic>/figure.html` -> `_artifacts/...` |
 | Final-cut paper figure | `manuscript/figures/<fig>/` (same rules) |
 
 Run identifier convention: `<group>__<variant>` (double underscore separator, matching the branch-naming convention). Examples: `baseline__standard_12k`, `minimax_single__seed_0`.
@@ -156,15 +178,53 @@ Run identifier convention: `<group>__<variant>` (double underscore separator, ma
 A `run.json` captures hyperparameters that produced model weights — stable, one per run.
 A `spec.json` captures plotting parameters and the data-transform pipeline — volatile, many per run, **references** input runs by path. Never inline run hyperparameters into a figure spec.
 
-### Figure-saving helper (when available)
+### Figure saving: use `feedbax.plot.save_figure`
 
-Use `feedbax.plot.io.save_figure_with_spec(fig, spec, dst_dir)` when it exists (tracking: feedbax issue `0eebc71`). Until then, hand-write `spec.json` next to the figure with at minimum: `figure_kind`, `input_artifacts` (paths + sha256), `plot_kwargs`, and `feedbax`/`jax`/`rlrmp` versions.
+```python
+from feedbax.plot import save_figure
+
+save_figure(
+    fig=fig, spec=spec,
+    package="rlrmp",
+    experiment="<7-char-hash>",   # e.g. "2bc95fd"
+    topic="<figure-topic>",        # e.g. "training_loss"
+    extra_packages=["rlrmp"],
+)
+```
+
+This reads rlrmp's registered `figure_routing` config (`src/rlrmp/__init__.py`) and writes:
+
+- `results/<experiment>/figures/<topic>/spec.json` (tracked spec)
+- `_artifacts/<experiment>/figures/<topic>/figure.html` (gitignored heavy render)
+- A relative symlink `results/<experiment>/figures/<topic>/figure.html` → the render (for one-tree local navigation)
+
+Bug: `f485c26`, feedbax `67bf476`. The dual-tree write + symlink is automatic per the routing config; do not hand-write per-figure dual paths.
+
+**When to use `save_figure_with_spec` instead.** Use the lower-level `feedbax.plot.io.save_figure_with_spec(fig, spec, dst_dir)` only when the destination is a dynamic per-run dir (e.g. `eval_diagnostics.py` writing to `<results_dir>/adversary_force_profiles/`), not a stable experiment topic.
 
 ### Adding a new experiment
 
-1. Create `results/<exp>/README.md` with one paragraph of context.
-2. Each run script writes `results/<exp>/runs/<run>/run.json` (spec) and all heavy outputs under `_artifacts/<exp>/runs/<run>/` (mirror).
-3. Never write `.eqx`, large `.npz`, full-DPI images, or training logs anywhere under `results/`.
+1. File or pick a tracking issue. Use its 7-char prefix as `<hash>`.
+2. Create `results/<hash>/README.md` with one paragraph of context.
+3. Run scripts write `results/<hash>/runs/<variant>.json` (spec, flat) and all heavy outputs under `_artifacts/<hash>/runs/<variant>/` (mirror).
+4. Figure scripts use `save_figure(package="rlrmp", experiment="<hash>", topic=...)`.
+5. Never write `.eqx`, large `.npz`, full-DPI images, or training logs anywhere under `results/`.
+
+### Reconstructed runs (orphan archaeology)
+
+When a run is committed without going through the post-training-run protocol (CLAUDE.md §9) and only the bulk `_artifacts/<orphan>/config.json` survives, reconstruct the `run.json` spec with a `reconstructed: true` marker:
+
+```json
+{
+  "reconstructed": true,
+  "reconstruction_sources": ["_artifacts/<orphan>/config.json", "..."],
+  "reconstruction_confidence": "high|medium|low",
+  "reconstruction_notes": "...",
+  ...
+}
+```
+
+The README for a reconstructed-run hash dir should begin with a "Reconstructed" preamble that lists the sources and confidence.
 
 ### What NOT to gitignore
 
@@ -172,7 +232,9 @@ Do not add directory-name patterns (`runpod/`, `modal/`, `coreweave/`, `tpu/`, `
 
 ### Legacy paths
 
-Pre-migration directories under `results/` (e.g., `centerout_apt_pert1/config.json`, `results/part2_5/models/<name>/config.json`) keep their existing layout for now. The new `<exp>/runs/<group>__<variant>/run.json` convention applies to new experiments; legacy directories migrate opportunistically when their experiments are revisited.
+Pre-migration directories under `results/` (e.g. the legacy `results/2ef67ca/models/<name>/config.json` block and the four top-level `centerout_*_pert1/` dirs prior to the f485c26 reorg) keep their existing internal structure (legacy `config.json`, no `run.json`). They are housed under the legacy-archive hash dir `2ef67ca`. Future agents touching these dirs may opportunistically migrate them.
+
+Out-of-scope for f485c26 (tracked separately on `e75ddd7`): the `1_general.assets/` and `2_general.assets/` PNG dumps at the top of `results/`, and the `1_general.md` / `2_general.md` / `2_training-methods.md` notebook narratives that embed them. These stay at `results/` top level until the asset-strip lands.
 
 ## Issue Coordination
 
