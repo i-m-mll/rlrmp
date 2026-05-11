@@ -326,8 +326,8 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
                 "effector_vel_mid": 0.0,
                 "effector_pos_late": getattr(args, "effector_pos_late_weight", 0.5),
                 "effector_vel_late": getattr(args, "effector_vel_late", 0.1),
-                "effector_hold_pos": 10.0,
-                "effector_hold_vel": 10.0,
+                "effector_hold_pos": getattr(args, "effector_hold_pos", 10.0),
+                "effector_hold_vel": getattr(args, "effector_hold_vel", 10.0),
                 # Terminal-step velocity penalty (historical simple_reach_loss
                 # shape). Fires only at t=T; strong "come-to-rest" signal.
                 # Default 0.0 = disabled (preserves baseline behaviour).
@@ -370,6 +370,15 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
                 "start_step_after_go": 80,
                 "final_scale_factor": 1.0,
             },
+            # Power-law schedule: "flat" (default) or "powerlaw" ((t/T-1)^power).
+            # Bug: 2e1a6ad
+            "effector_pos_running_schedule": getattr(
+                args, "effector_pos_running_schedule", "flat"
+            ),
+            "effector_hold_pos_schedule": getattr(
+                args, "effector_hold_pos_schedule", "flat"
+            ),
+            "position_powerlaw_power": getattr(args, "position_powerlaw_power", 6.0),
         },
         "loss_update": {
             "enabled": args.loss_update_enabled,
@@ -1877,6 +1886,23 @@ def parse_args() -> argparse.Namespace:
     # without changing loss.py defaults. Bug: 2bc95fd
     # ---------------------------------------------------------------------------
     parser.add_argument(
+        "--effector-hold-pos", type=float, default=10.0,
+        help=(
+            "Outer weight on the hold-period position penalty ||p(t) - p_0||² "
+            "(active during hold epoch). Default 10.0. Lowering to 0.0 disables "
+            "the hold-position constraint entirely. Bug: 2e1a6ad."
+        ),
+    )
+    parser.add_argument(
+        "--effector-hold-vel", type=float, default=10.0,
+        help=(
+            "Outer weight on the hold-period velocity penalty ||v(t)||² "
+            "(active during hold epoch). Default 10.0. Set to 0.0 to drop "
+            "the hold-velocity constraint (e.g. for lit-replication runs "
+            "matching C&S 2019 which only use position hold). Bug: 2e1a6ad."
+        ),
+    )
+    parser.add_argument(
         "--effector-final-vel", type=float, default=0.0,
         help=(
             "Weight on the terminal-step velocity penalty ||v(T)||² (fires only at "
@@ -1932,6 +1958,47 @@ def parse_args() -> argparse.Namespace:
             "Variant B: set to 0 to start the cosine ramp immediately at the go "
             "cue, approximating the historical (t/T)^6 full-trial discount. "
             "Bug: 2bc95fd."
+        ),
+    )
+    # ---------------------------------------------------------------------------
+    # Power-law position schedule flags (Bug: 2e1a6ad).
+    # These expose a faithful (t / (T-1))^power schedule for the position-error
+    # terms, replicating C&S 2019 Eq. 15.  Default "flat" keeps existing
+    # behaviour unchanged; "powerlaw" enables the ramp.
+    # ---------------------------------------------------------------------------
+    parser.add_argument(
+        "--effector-pos-running-schedule", type=str, default="flat",
+        choices=["flat", "powerlaw"],
+        help=(
+            "Time-weighting schedule for the running position-error term "
+            "(effector_pos_running, active post-go). 'flat' (default) applies "
+            "uniform weight across the movement window. 'powerlaw' multiplies "
+            "by (t / (T-1))^power where T is the full trial length and power "
+            "is set via --position-powerlaw-power (default 6.0, matching "
+            "C&S 2019 Eq. 15). Bug: 2e1a6ad."
+        ),
+    )
+    parser.add_argument(
+        "--effector-hold-pos-schedule", type=str, default="flat",
+        choices=["flat", "powerlaw"],
+        help=(
+            "Time-weighting schedule for the hold-period position-error term "
+            "(effector_hold_pos, active during hold epoch). 'flat' (default) "
+            "applies uniform weight during hold. 'powerlaw' multiplies by "
+            "(t / (T-1))^power using full-trial normalisation, so the hold "
+            "epoch (early in trial) receives very small weight — concentrating "
+            "the hold penalty on the final timesteps consistent with "
+            "C&S 2019 Eq. 15. Bug: 2e1a6ad."
+        ),
+    )
+    parser.add_argument(
+        "--position-powerlaw-power", type=float, default=6.0,
+        help=(
+            "Exponent for the (t/(T-1))^power position-error schedule. "
+            "Default 6.0 matches C&S 2019 Eq. 15 (puts ~98%% of weight in "
+            "the last 30%% of the trial). Only used when "
+            "--effector-pos-running-schedule powerlaw or "
+            "--effector-hold-pos-schedule powerlaw is set. Bug: 2e1a6ad."
         ),
     )
     return parser.parse_args()
