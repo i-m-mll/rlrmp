@@ -308,7 +308,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "target_on_epochs": [1, 2],
             "hold_epochs": [0, 1],
             "move_epochs": [2],
-            "p_catch_trial": 0.5,
+            "p_catch_trial": getattr(args, "p_catch_trial", 0.5),
         },
         "pert": {
             "type": "gusts",
@@ -333,8 +333,8 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
                 # Default 0.0 = disabled (preserves baseline behaviour).
                 # Activate via --effector-final-vel 1.0. Bug: 2bc95fd
                 "effector_final_vel": getattr(args, "effector_final_vel", 0.0),
-                "nn_output": 1e-5,
-                "nn_hidden": 1e-5,
+                "nn_output": getattr(args, "nn_output", 1e-5),
+                "nn_hidden": getattr(args, "nn_hidden", 1e-5),
                 # Compositional ||h_t - h_{t-1}||² hidden-state smoothness
                 # term, off-by-default. Enable via --nn-hidden-derivative
                 # (e.g. 1e-3 per Shahbazi et al. 2025 Eq. 1). Bug: efc4d68
@@ -1999,6 +1999,32 @@ def parse_args() -> argparse.Namespace:
             "the last 30%% of the trial). Only used when "
             "--effector-pos-running-schedule powerlaw or "
             "--effector-hold-pos-schedule powerlaw is set. Bug: 2e1a6ad."
+        ),
+    )
+    # ---------------------------------------------------------------------------
+    # Task and loss hyperparameters previously hardcoded in build_hps.
+    # Bug: 2e1a6ad
+    # ---------------------------------------------------------------------------
+    parser.add_argument(
+        "--p-catch-trial", type=float, default=0.5,
+        help=(
+            "Probability of a catch trial (no go cue) in center_out_delayed_reach. "
+            "Default 0.5 (Shahbazi 2025 §4.2). Bug: 2e1a6ad."
+        ),
+    )
+    parser.add_argument(
+        "--nn-output", type=float, default=1e-5,
+        help=(
+            "Weight on the squared L2 controller-output regularisation term "
+            "mean(||u_t||²) (active for all post-go timesteps). Default 1e-5. "
+            "Bug: 2e1a6ad."
+        ),
+    )
+    parser.add_argument(
+        "--nn-hidden", type=float, default=1e-5,
+        help=(
+            "Weight on the squared L2 hidden-state regularisation term "
+            "mean(||h_t||²). Default 1e-5. Bug: 2e1a6ad."
         ),
     )
     return parser.parse_args()
