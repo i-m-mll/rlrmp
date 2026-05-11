@@ -21,4 +21,11 @@ def register_experiment_package(registry):
         analysis_module_root="modules.analysis",
         training_module_root="modules.training",
         config_resource_root="config",
+        figure_routing={
+            "spec_dir_template": "results/{experiment}/figures/{topic}",
+            "render_dir_template": "_artifacts/{experiment}/figures/{topic}",
+            "spec_format": "json",
+            "render_format": "html",
+            "create_symlink_in_spec_dir": True,
+        },
     )
