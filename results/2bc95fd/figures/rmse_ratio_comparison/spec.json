@@ -1,0 +1,126 @@
+{
+  "experiment": "anti_anticipation_loss_shape_6cell",
+  "figure_kind": "rmse_ratio_comparison_bar",
+  "inputs": [
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk/adversarial_model.eqx",
+      "role": "adversarial_model:gru__jerk",
+      "sha256": "17d8cfbb723fdcb4f5812c6faf83d2435f6642e6afed109318165710a1cd2311"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_motor_pre/adversarial_model.eqx",
+      "role": "adversarial_model:gru__jerk_motor_pre",
+      "sha256": "94d33f270994376a03f067e11eb9545df2dc21dd41cc4c4418e580a4ae5eaafa"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_smooth_high/adversarial_model.eqx",
+      "role": "adversarial_model:gru__jerk_smooth_high",
+      "sha256": "d5f099c7849faaaf95d7cbe4f08121fdc2599a4aedc71744ae5f4a036be7d5a9"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_motor_smooth_combo/adversarial_model.eqx",
+      "role": "adversarial_model:gru__jerk_motor_smooth_combo",
+      "sha256": "ee2199dd9b90eb31412aeaebc36931fe66ea107f29cd834b7b19d807bdce07b6"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_loss_v_terminal/adversarial_model.eqx",
+      "role": "adversarial_model:gru__jerk_loss_v_terminal",
+      "sha256": "fcd9a246e18bc63c05187549bff24f44ab65b6e19a6d9d20b0056460ba90a940"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_loss_historical/adversarial_model.eqx",
+      "role": "adversarial_model:gru__jerk_loss_historical",
+      "sha256": "6dfe90be9ca6b2bc6d78bf002f65f4fda34c2d21262ddcb09ea5048fa1e3ecc5"
+    }
+  ],
+  "metric_description": "Primary: velocity-RMSE ratio = within-cell mean pairwise RMSE / nearest-across-cell mean pairwise RMSE on forward-velocity profiles. Secondary: same on forward-position profiles. Auxiliary: CV = SD(peak_vel) / mean(peak_vel) across replicates. Target threshold 0.5; prior best (baseline GRU/jerk matrix): 0.758.",
+  "plot_kwargs": {
+    "cells": [
+      "gru__jerk",
+      "gru__jerk_motor_pre",
+      "gru__jerk_smooth_high",
+      "gru__jerk_motor_smooth_combo",
+      "gru__jerk_loss_v_terminal",
+      "gru__jerk_loss_historical"
+    ],
+    "n_replicates": 5,
+    "pert_scale": 0.0,
+    "sisu": 0.5
+  },
+  "rmse_ratios": {
+    "gru__jerk": {
+      "pos_nearest_across_rmse": 0.05138498682528734,
+      "pos_rmse_ratio": 1.019695885636457,
+      "pos_within_rmse": 0.05239705964922905,
+      "vel_nearest_across_rmse": 0.11521034672856331,
+      "vel_rmse_ratio": 1.1293315154721553,
+      "vel_within_rmse": 0.13011067546904087
+    },
+    "gru__jerk_loss_historical": {
+      "pos_nearest_across_rmse": 0.043983739912509916,
+      "pos_rmse_ratio": 1.2488615327291421,
+      "pos_within_rmse": 0.054929600842297074,
+      "vel_nearest_across_rmse": 0.1168197150528431,
+      "vel_rmse_ratio": 1.1312999760217255,
+      "vel_within_rmse": 0.1321581408381462
+    },
+    "gru__jerk_loss_v_terminal": {
+      "pos_nearest_across_rmse": 0.04087802104651928,
+      "pos_rmse_ratio": 1.1623438245205195,
+      "pos_within_rmse": 0.04751431532204151,
+      "vel_nearest_across_rmse": 0.11521034672856331,
+      "vel_rmse_ratio": 0.8818682197083246,
+      "vel_within_rmse": 0.10160034336149693
+    },
+    "gru__jerk_motor_pre": {
+      "pos_nearest_across_rmse": 0.04087802104651928,
+      "pos_rmse_ratio": 0.4241242507085653,
+      "pos_within_rmse": 0.017337360046803953,
+      "vel_nearest_across_rmse": 0.1593525817990303,
+      "vel_rmse_ratio": 0.46053769406517003,
+      "vel_within_rmse": 0.0733878705650568
+    },
+    "gru__jerk_motor_smooth_combo": {
+      "pos_nearest_across_rmse": 0.04637298375368118,
+      "pos_rmse_ratio": 0.054998291914275826,
+      "pos_within_rmse": 0.002550434897420928,
+      "vel_nearest_across_rmse": 0.18887204945087432,
+      "vel_rmse_ratio": 0.03593371010016555,
+      "vel_within_rmse": 0.00678687347099185
+    },
+    "gru__jerk_smooth_high": {
+      "pos_nearest_across_rmse": 0.04637298375368118,
+      "pos_rmse_ratio": 0.03725915692148335,
+      "pos_within_rmse": 0.0017278182785958052,
+      "vel_nearest_across_rmse": 0.18887204945087432,
+      "vel_rmse_ratio": 0.03734289035278255,
+      "vel_within_rmse": 0.007053028233349324
+    }
+  },
+  "timestamp": "2026-05-11T18:56:25.336064+00:00",
+  "transform": [
+    {
+      "kwargs": {
+        "pert_scale": 0.0,
+        "sisu": 0.5
+      },
+      "name": "eval_ensemble"
+    },
+    {
+      "kwargs": {},
+      "name": "pairwise_profile_rmse_ratio_velocity"
+    },
+    {
+      "kwargs": {},
+      "name": "pairwise_profile_rmse_ratio_position"
+    }
+  ],
+  "versions": {
+    "equinox": "0.13.4",
+    "feedbax": "0.1.2",
+    "jax": "0.9.0",
+    "numpy": "2.4.1",
+    "plotly": "6.5.2",
+    "rlrmp": "0.1.0"
+  }
+}

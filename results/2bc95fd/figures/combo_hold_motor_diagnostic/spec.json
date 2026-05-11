@@ -1,0 +1,46 @@
+{
+  "cell": "gru__jerk_motor_smooth_combo",
+  "experiment": "anti_anticipation_loss_shape_6cell",
+  "figure_kind": "motor_magnitude_time_series_hold_diagnostic",
+  "inputs": [
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_motor_smooth_combo/adversarial_model.eqx",
+      "role": "adversarial_model:combo",
+      "sha256": "ee2199dd9b90eb31412aeaebc36931fe66ea107f29cd834b7b19d807bdce07b6"
+    }
+  ],
+  "plot_kwargs": {
+    "dt": 0.01,
+    "n_trial_examples": 4,
+    "pert_scale": 0.0,
+    "sisu": 0.5
+  },
+  "summary": {
+    "hold_motor_max_N": 1.2693512439727783,
+    "hold_motor_mean_N": 0.8160293698310852,
+    "hold_to_move_ratio": 0.17691540718078613,
+    "move_motor_mean_N": 4.587492942810059
+  },
+  "timestamp": "2026-05-11T18:56:40.551743+00:00",
+  "transform": [
+    {
+      "kwargs": {
+        "pert_scale": 0.0,
+        "sisu": 0.5
+      },
+      "name": "eval_ensemble"
+    },
+    {
+      "kwargs": {},
+      "name": "efferent_output_l2_norm"
+    }
+  ],
+  "versions": {
+    "equinox": "0.13.4",
+    "feedbax": "0.1.2",
+    "jax": "0.9.0",
+    "numpy": "2.4.1",
+    "plotly": "6.5.2",
+    "rlrmp": "0.1.0"
+  }
+}
