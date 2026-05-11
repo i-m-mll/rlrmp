@@ -70,15 +70,15 @@ def assert_ignored(path: str) -> None:
 @pytest.mark.parametrize(
     "path",
     [
-        "results/part2_5/README.md",
-        "results/part2_5/synthesis_review.md",
+        "results/2ef67ca/README.md",
+        "results/b557d4e/synthesis_review.md",
         "results/part2_5/runs/baseline__standard_12k/run.json",
         "results/part2_5/runs/baseline__standard_12k/notes.md",
         "results/part2_5/figures/peak_velocity/spec.json",
         "results/part2_5/figures/peak_velocity/figure.json",
         "results/part2_5/figures/peak_velocity/figure.png",
         # Legacy stub configs:
-        "results/centerout_apt_pert1/config.json",
+        "results/2ef67ca/models/centerout_apt_pert1/config.json",
         # Typora markdown sidecar PNGs stay tracked:
         "results/1_general.assets/some_image.png",
         "results/2_general.assets/file-20241126113220236.png",
@@ -126,13 +126,13 @@ def test_ignored(path: str) -> None:
     "path",
     [
         # depth 2: results/<exp>/config.json — these are the top-level experiment stubs
-        "results/centerout_apt_pert1/config.json",
-        "results/part2_5/config.json",
+        "results/2ef67ca/models/centerout_apt_pert1/config.json",
+        "results/2ef67ca/config.json",
         # depth 3: results/<exp>/<subdir>/config.json — legacy running_cost_nn1e6 layout
-        "results/part2_5/running_cost_nn1e6/config.json",
+        "results/2ef67ca/running_cost_nn1e6/config.json",
         # depth 4 via models/: results/<exp>/models/<run>/config.json
-        "results/part2_5/models/baseline_standard/config.json",
-        "results/part2_5/models/minimax_test2/config.json",
+        "results/2ef67ca/models/baseline_standard/config.json",
+        "results/2ef67ca/models/minimax_test2/config.json",
     ],
 )
 def test_legacy_config_json_committable(path: str) -> None:

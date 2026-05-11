@@ -1,0 +1,88 @@
+{
+  "figure_kind": "training_loss_per_term_multiline_errorbands",
+  "inputs": [
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk/warmup_history.eqx",
+      "role": "warmup_history:gru__jerk",
+      "sha256": "d1bac864a29ea337d8c030ca9e88f9c783ad061fd384786d3bd9b74fe566db7f"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_motor_pre/warmup_history.eqx",
+      "role": "warmup_history:gru__jerk_motor_pre",
+      "sha256": "0457fabe0066382ed98d945cbb61bdf608aef2d4f5010df056d146ba6a15acd7"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_smooth_high/warmup_history.eqx",
+      "role": "warmup_history:gru__jerk_smooth_high",
+      "sha256": "d414e2793fefd12cb31c620eda73fe09136619c8c600bc0c385d8d3936d6e478"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_motor_smooth_combo/warmup_history.eqx",
+      "role": "warmup_history:gru__jerk_motor_smooth_combo",
+      "sha256": "ee7df192e64ffa45d225a746a47d07b70e536a23e24a2315108ca60f10ad6fca"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_loss_v_terminal/warmup_history.eqx",
+      "role": "warmup_history:gru__jerk_loss_v_terminal",
+      "sha256": "dc954314d68b89c69c2df307b81536e529638c33d3f98659b290fcddb72b6aad"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_loss_historical/warmup_history.eqx",
+      "role": "warmup_history:gru__jerk_loss_historical",
+      "sha256": "d497e59d8d98ee3821993acea6795b2204da6f8a40cdc7cae5a7b7627360e059"
+    }
+  ],
+  "plot_kwargs": {
+    "cells": [
+      "gru__jerk",
+      "gru__jerk_motor_pre",
+      "gru__jerk_smooth_high",
+      "gru__jerk_motor_smooth_combo",
+      "gru__jerk_loss_v_terminal",
+      "gru__jerk_loss_historical"
+    ],
+    "error_band": "mean \u00b1 1std",
+    "n_replicates": 5,
+    "n_warmup_batches": 12000,
+    "terms": [
+      "effector_final_vel",
+      "effector_pos_late",
+      "effector_pos_running",
+      "effector_vel_late",
+      "nn_hidden",
+      "nn_hidden_derivative",
+      "nn_output",
+      "nn_output_jerk",
+      "nn_output_pre_go"
+    ]
+  },
+  "timestamp": "2026-05-09T16:43:38.322194+00:00",
+  "transform": [
+    {
+      "kwargs": {
+        "header_lines": 1
+      },
+      "name": "load_warmup_history_fbx"
+    },
+    {
+      "kwargs": {
+        "apply_weights": true
+      },
+      "name": "TermTree.flatten"
+    },
+    {
+      "kwargs": {
+        "axis": 1
+      },
+      "name": "mean_std_across_replicates"
+    }
+  ],
+  "versions": {
+    "equinox": "0.13.4",
+    "feedbax": "0.1.2",
+    "jax": "0.9.0",
+    "numpy": "2.4.1",
+    "plotly": "6.5.2",
+    "rlrmp": "0.1.0"
+  }
+}
