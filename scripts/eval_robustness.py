@@ -1,6 +1,6 @@
 """Robustness evaluation and publication-quality figure generation for Part 2.5.
 
-Loads trained models from results/part2_5/models/, evaluates under fixed gust
+Loads trained models from results/2ef67ca/models/, evaluates under fixed gust
 perturbations at multiple amplitudes and SISU levels, and produces Plotly figures.
 
 Figures produced:
@@ -57,7 +57,7 @@ from rlrmp.disturbance import PLANT_INTERVENOR_LABEL  # noqa: E402
 # Experiment configuration
 # ---------------------------------------------------------------------------
 
-RESULTS_BASE = WORKTREE / "results" / "part2_5"
+RESULTS_BASE = WORKTREE / "results" / "2ef67ca"  # legacy Part 2.5 archive (Bug: f485c26)
 MODELS_BASE = RESULTS_BASE / "models"
 FIGURES_DIR = RESULTS_BASE / "figures"
 

@@ -1,0 +1,149 @@
+{
+  "cell_stats": {
+    "gru__jerk": {
+      "mean_peak_velocity": 0.5768927335739136,
+      "peak_vel_per_rep": [
+        0.5074253082275391,
+        0.5688186883926392,
+        0.6628403067588806,
+        0.503138542175293,
+        0.6422407627105713
+      ],
+      "sd_peak_velocity": 0.07414166629314423,
+      "variance_ratio": 0.12851898104839785
+    },
+    "gru__jerk_loss_historical": {
+      "mean_peak_velocity": 0.6186123490333557,
+      "peak_vel_per_rep": [
+        0.6276140213012695,
+        0.6504999995231628,
+        0.44189050793647766,
+        0.6033881902694702,
+        0.7696688175201416
+      ],
+      "sd_peak_velocity": 0.11766296625137329,
+      "variance_ratio": 0.19020468381407768
+    },
+    "gru__jerk_loss_v_terminal": {
+      "mean_peak_velocity": 0.5979477167129517,
+      "peak_vel_per_rep": [
+        0.5439580678939819,
+        0.6678845882415771,
+        0.5863382816314697,
+        0.6968344449996948,
+        0.4947233200073242
+      ],
+      "sd_peak_velocity": 0.08422394096851349,
+      "variance_ratio": 0.14085502563921604
+    },
+    "gru__jerk_motor_pre": {
+      "mean_peak_velocity": 0.8404078483581543,
+      "peak_vel_per_rep": [
+        0.8175669312477112,
+        0.7710444927215576,
+        0.8659035563468933,
+        0.9327976107597351,
+        0.8147266507148743
+      ],
+      "sd_peak_velocity": 0.06160033494234085,
+      "variance_ratio": 0.07329814335109447
+    },
+    "gru__jerk_motor_smooth_combo": {
+      "mean_peak_velocity": 1.221550703048706,
+      "peak_vel_per_rep": [
+        1.2085477113723755,
+        1.23093581199646,
+        1.2225573062896729,
+        1.222527265548706,
+        1.2231857776641846
+      ],
+      "sd_peak_velocity": 0.008090093731880188,
+      "variance_ratio": 0.006622806332712345
+    },
+    "gru__jerk_smooth_high": {
+      "mean_peak_velocity": 1.071325659751892,
+      "peak_vel_per_rep": [
+        1.071098804473877,
+        1.0649702548980713,
+        1.0653510093688965,
+        1.0761003494262695,
+        1.0791082382202148
+      ],
+      "sd_peak_velocity": 0.0063147698529064655,
+      "variance_ratio": 0.0058943513537880726
+    }
+  },
+  "experiment": "anti_anticipation_loss_shape_6cell",
+  "figure_kind": "peak_velocity_distributions_violin",
+  "inputs": [
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk/adversarial_model.eqx",
+      "role": "adversarial_model:gru__jerk",
+      "sha256": "17d8cfbb723fdcb4f5812c6faf83d2435f6642e6afed109318165710a1cd2311"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_motor_pre/adversarial_model.eqx",
+      "role": "adversarial_model:gru__jerk_motor_pre",
+      "sha256": "94d33f270994376a03f067e11eb9545df2dc21dd41cc4c4418e580a4ae5eaafa"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_smooth_high/adversarial_model.eqx",
+      "role": "adversarial_model:gru__jerk_smooth_high",
+      "sha256": "d5f099c7849faaaf95d7cbe4f08121fdc2599a4aedc71744ae5f4a036be7d5a9"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_motor_smooth_combo/adversarial_model.eqx",
+      "role": "adversarial_model:gru__jerk_motor_smooth_combo",
+      "sha256": "ee2199dd9b90eb31412aeaebc36931fe66ea107f29cd834b7b19d807bdce07b6"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_loss_v_terminal/adversarial_model.eqx",
+      "role": "adversarial_model:gru__jerk_loss_v_terminal",
+      "sha256": "fcd9a246e18bc63c05187549bff24f44ab65b6e19a6d9d20b0056460ba90a940"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_loss_historical/adversarial_model.eqx",
+      "role": "adversarial_model:gru__jerk_loss_historical",
+      "sha256": "6dfe90be9ca6b2bc6d78bf002f65f4fda34c2d21262ddcb09ea5048fa1e3ecc5"
+    }
+  ],
+  "plot_kwargs": {
+    "cells": [
+      "gru__jerk",
+      "gru__jerk_motor_pre",
+      "gru__jerk_smooth_high",
+      "gru__jerk_motor_smooth_combo",
+      "gru__jerk_loss_v_terminal",
+      "gru__jerk_loss_historical"
+    ],
+    "n_replicates": 5,
+    "pert_scale": 0.0,
+    "sisu": 0.5
+  },
+  "timestamp": "2026-05-09T17:13:15.494440+00:00",
+  "transform": [
+    {
+      "kwargs": {
+        "pert_scale": 0.0,
+        "sisu": 0.5
+      },
+      "name": "eval_ensemble"
+    },
+    {
+      "kwargs": {},
+      "name": "compute_peak_forward_velocity"
+    },
+    {
+      "kwargs": {},
+      "name": "mean_over_trials_per_replicate"
+    }
+  ],
+  "versions": {
+    "equinox": "0.13.4",
+    "feedbax": "0.1.2",
+    "jax": "0.9.0",
+    "numpy": "2.4.1",
+    "plotly": "6.5.2",
+    "rlrmp": "0.1.0"
+  }
+}
