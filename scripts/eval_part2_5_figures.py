@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from train_part2_5 import build_hps
 from feedbax._io import load_with_hyperparameters
-from feedbax.plot.io import save_figure_with_spec
+from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 — project-config routing
 from feedbax.train import init_task_trainer_history
 from rlrmp.modules.training.part2 import setup_task_model_pair
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
@@ -434,17 +434,18 @@ def _save_figure(
     plot_kwargs: dict,
     inputs: list[dict],
 ) -> None:
-    """Write a Plotly figure plus its tracked spec via feedbax.plot.io.
+    """Write a Plotly figure plus its tracked spec via project-config routing.
 
-    Renders the heavy ``.html`` under ``FIGURES_DIR`` (gitignored mirror)
-    and writes the matching ``spec.json`` under ``FIGURES_SPEC_DIR``
-    (tracked). Two calls to ``save_figure_with_spec`` are made — once for
-    the spec (no render) and once for the render (no extra spec) — because
-    the helper writes both side-by-side; we want them in different roots.
+    Bug: f485c26, feedbax 67bf476 — migrated to ``feedbax.plot.save_figure``
+    which reads rlrmp's registered ``figure_routing`` config and writes the
+    spec to ``results/<exp>/figures/<topic>/spec.json`` and the heavy render
+    to ``_artifacts/<exp>/figures/<topic>/figure.html``, with a relative
+    symlink in the spec dir.
 
     Args:
         fig: A Plotly Figure.
-        name: Base filename (no extension) used for both spec and render.
+        name: Figure topic (e.g. ``"fig_loss_curves"``); used as the
+            ``topic`` segment in the routing-config templates.
         transform_name: Name of the data-transform pipeline that produced
             the figure (recorded under ``spec["transform"]``).
         plot_kwargs: The kwargs passed to the figure constructor (recorded
@@ -457,15 +458,9 @@ def _save_figure(
         "transform": [{"name": transform_name, "kwargs": {}}],
         "plot_kwargs": plot_kwargs,
     }
-    # Spec under tracked results/<exp>/figures/<fig>/.
-    save_figure_with_spec(
-        fig, spec, FIGURES_SPEC_DIR,
-        name=name, save_render=False, extra_packages=["rlrmp"],
-    )
-    # Heavy render under _artifacts/<exp>/figures/<fig>/.
-    save_figure_with_spec(
-        fig, spec, FIGURES_DIR,
-        name=name, save_render=True, render_format="html",
+    save_figure(
+        fig=fig, spec=spec,
+        package="rlrmp", experiment="2ef67ca", topic=name,
         extra_packages=["rlrmp"],
     )
 

@@ -1,6 +1,6 @@
 """Robustness evaluation and publication-quality figure generation for Part 2.5.
 
-Loads trained models from results/part2_5/models/, evaluates under fixed gust
+Loads trained models from results/2ef67ca/models/, evaluates under fixed gust
 perturbations at multiple amplitudes and SISU levels, and produces Plotly figures.
 
 Figures produced:
@@ -48,7 +48,7 @@ from eval_part2_5_figures import (  # noqa: E402
     N_REPLICATES,
 )
 from feedbax._io import load_with_hyperparameters  # noqa: E402
-from feedbax.plot.io import save_figure_with_spec  # noqa: E402
+from feedbax.plot import save_figure  # noqa: E402  # Bug: f485c26 — project-config routing
 from feedbax.train import init_task_trainer_history  # noqa: E402
 from rlrmp.modules.training.part2 import setup_task_model_pair  # noqa: E402
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL  # noqa: E402
@@ -57,7 +57,7 @@ from rlrmp.disturbance import PLANT_INTERVENOR_LABEL  # noqa: E402
 # Experiment configuration
 # ---------------------------------------------------------------------------
 
-RESULTS_BASE = WORKTREE / "results" / "part2_5"
+RESULTS_BASE = WORKTREE / "results" / "2ef67ca"  # legacy Part 2.5 archive (Bug: f485c26)
 MODELS_BASE = RESULTS_BASE / "models"
 FIGURES_DIR = RESULTS_BASE / "figures"
 
@@ -965,12 +965,13 @@ def main() -> None:
             "transform": [{"name": transform_name, "kwargs": {}}],
             "plot_kwargs": common_kwargs,
         }
-        save_figure_with_spec(
-            fig, spec, FIGURES_DIR,
-            name=name, save_render=True, render_format="html",
+        # Bug: f485c26 — migrated to project-config routing under issue 2ef67ca.
+        out = save_figure(
+            fig=fig, spec=spec,
+            package="rlrmp", experiment="2ef67ca", topic=name,
             extra_packages=["rlrmp"],
         )
-        print(f"  Saved render+spec: {FIGURES_DIR / f'{name}.html'}")
+        print(f"  Saved render+spec: {out['render_path']}")
 
     # --- Figure 1: Aligned trajectories ---
     print("Fig 1: Aligned trajectories...")

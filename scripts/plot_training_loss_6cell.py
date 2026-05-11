@@ -31,7 +31,7 @@ from plotly.subplots import make_subplots
 
 from train_minimax import build_hps
 from feedbax.train import init_task_trainer_history, TaskTrainerHistory
-from feedbax.plot.io import save_figure_with_spec
+from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 — project-config routing
 from rlrmp.modules.training.part2 import setup_task_model_pair
 
 
@@ -335,27 +335,12 @@ def main():
     repo_root = WORKTREE
     artifact_base = args.artifact_base or (repo_root / "_artifacts")
 
-    exp = "part2_5"
-    run_group = "anti_anticipation_loss_shape_6cell"
-
-    artifact_group_dir = artifact_base / exp / "runpod" / run_group
-    fig_artifact_dir = artifact_base / exp / "runpod" / run_group / "figures" / "training_loss"
-    fig_spec_dir = repo_root / "results" / exp / "runpod" / run_group / "figures" / "training_loss"
-    per_term_fig_artifact_dir = artifact_base / exp / "runpod" / run_group / "figures" / "training_loss_per_term"
-    per_term_fig_spec_dir = repo_root / "results" / exp / "runpod" / run_group / "figures" / "training_loss_per_term"
-    notes_dir = repo_root / "results" / exp / "runpod" / run_group / "notes"
-
-    fig_artifact_dir.mkdir(parents=True, exist_ok=True)
-    fig_spec_dir.mkdir(parents=True, exist_ok=True)
-    per_term_fig_artifact_dir.mkdir(parents=True, exist_ok=True)
-    per_term_fig_spec_dir.mkdir(parents=True, exist_ok=True)
+    # Bug: f485c26 — migrated from results/part2_5/runpod/anti_anticipation_loss_shape_6cell
+    # to flat-by-hash layout under issue 2bc95fd.
+    experiment = "2bc95fd"
+    artifact_group_dir = artifact_base / experiment
+    notes_dir = repo_root / "results" / experiment / "notes"
     notes_dir.mkdir(parents=True, exist_ok=True)
-
-    # Delete any existing figure.png in results (HTML only going forward)
-    old_png = fig_spec_dir / "figure.png"
-    if old_png.exists():
-        old_png.unlink()
-        print(f"Deleted old PNG: {old_png}")
 
     # Load all 6 cells
     histories = {}
@@ -451,19 +436,14 @@ def main():
         "end_of_training_stats": end_of_training_stats,
     }
 
-    # Save HTML to artifact dir
-    html_path = fig_artifact_dir / "figure.html"
-    fig.write_html(str(html_path))
-    print(f"\nSaved total-loss HTML: {html_path}")
-
-    # Save spec to results dir
-    spec_path, _ = save_figure_with_spec(
-        fig, spec_total, fig_spec_dir,
-        name="spec",
-        save_render=False,
+    # Save via project-config routing (writes spec + html, creates symlink).
+    total_out = save_figure(
+        fig=fig, spec=spec_total,
+        package="rlrmp", experiment=experiment, topic="training_loss",
         extra_packages=["rlrmp", "polars"],
     )
-    print(f"Saved spec: {spec_path}")
+    print(f"Saved total-loss spec: {total_out['spec_path']}")
+    print(f"Saved total-loss HTML: {total_out['render_path']}")
 
     # -----------------------------------------------------------------------
     # Figure 2: Per-term loss breakdown (if at least one cell loaded)
@@ -543,10 +523,6 @@ def main():
             fig_terms.update_yaxes(type="log", row=(i - 1) // n_cols + 1, col=(i - 1) % n_cols + 1)
             fig_terms.update_xaxes(type="log", row=(i - 1) // n_cols + 1, col=(i - 1) % n_cols + 1)
 
-        per_term_html = per_term_fig_artifact_dir / "figure.html"
-        fig_terms.write_html(str(per_term_html))
-        print(f"Saved per-term HTML: {per_term_html}")
-
         spec_per_term = {
             "figure_kind": "training_loss_per_term_multiline_errorbands",
             "inputs": input_artifacts,
@@ -564,13 +540,13 @@ def main():
             },
         }
 
-        spec_per_term_path, _ = save_figure_with_spec(
-            fig_terms, spec_per_term, per_term_fig_spec_dir,
-            name="spec",
-            save_render=False,
+        per_term_out = save_figure(
+            fig=fig_terms, spec=spec_per_term,
+            package="rlrmp", experiment=experiment, topic="training_loss_per_term",
             extra_packages=["rlrmp"],
         )
-        print(f"Saved per-term spec: {spec_per_term_path}")
+        print(f"Saved per-term spec: {per_term_out['spec_path']}")
+        print(f"Saved per-term HTML: {per_term_out['render_path']}")
 
     # -----------------------------------------------------------------------
     # Cell-2 spike investigation

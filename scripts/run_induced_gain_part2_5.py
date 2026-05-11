@@ -30,9 +30,9 @@ wrap **the network alone** and reconstruct the closed loop by hand:
   target position with hold/go cues set to (0, 1) and SISU = 0.5.
 
 Outputs:
-- ``_artifacts/part2_5/induced_gain_first_run/gains.npz`` — structured array.
-- ``results/part2_5/induced_gain_first_run/run.json`` — analysis spec.
-- ``results/part2_5/induced_gain_first_run/notes.md`` — narrative + headline table.
+- ``_artifacts/c723082/runs/induced_gain_first_run/gains.npz`` — structured array.
+- ``results/c723082/runs/induced_gain_first_run.json`` — analysis spec (flat, post-f485c26).
+- ``results/c723082/notes/induced_gain_first_run.md`` — narrative + headline table.
 
 Usage:
     uv run python scripts/run_induced_gain_part2_5.py

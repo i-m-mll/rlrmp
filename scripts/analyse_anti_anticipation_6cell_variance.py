@@ -45,7 +45,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from feedbax._io import load_with_hyperparameters
-from feedbax.plot.io import save_figure_with_spec
+from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 — project-config routing
 
 from train_minimax import build_hps
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
@@ -541,10 +541,13 @@ def main():
     )
     args = parser.parse_args()
 
+    # Bug: f485c26 — migrated from results/part2_5/runpod/anti_anticipation_loss_shape_6cell
+    # to flat-by-hash layout under issue 2bc95fd. Figure routing is now project-config-driven
+    # via feedbax.plot.save_figure (Bug: feedbax 67bf476).
     artifact_base = args.artifact_base or (
-        REPO_ROOT / "_artifacts" / "part2_5" / "runpod" / "anti_anticipation_loss_shape_6cell"
+        REPO_ROOT / "_artifacts" / "2bc95fd"
     )
-    results_base = REPO_ROOT / "results" / "part2_5" / "runpod" / "anti_anticipation_loss_shape_6cell"
+    results_base = REPO_ROOT / "results" / "2bc95fd"
 
     print(f"Artifact base: {artifact_base}")
     print(f"Results base:  {results_base}")
@@ -614,9 +617,6 @@ def main():
 
     # Figure 1: Peak velocity distributions
     fig_pv = make_peak_velocity_figure(cell_stats)
-    pv_html = artifact_base / "figures" / "peak_velocity_distributions" / "figure.html"
-    fig_pv.write_html(str(pv_html))
-    print(f"  Saved: {pv_html}")
 
     spec_pv = {
         "figure_kind": "peak_velocity_distributions_violin",
@@ -643,21 +643,17 @@ def main():
             for label, stats in cell_stats.items()
         },
     }
-    spec_pv_path, _ = save_figure_with_spec(
-        fig_pv, spec_pv,
-        results_base / "figures" / "peak_velocity_distributions",
-        name="spec",
-        save_render=False,
+    pv_out = save_figure(
+        fig=fig_pv, spec=spec_pv,
+        package="rlrmp", experiment="2bc95fd", topic="peak_velocity_distributions",
         extra_packages=["rlrmp"],
     )
-    print(f"  Spec: {spec_pv_path}")
+    print(f"  Spec: {pv_out['spec_path']}")
+    print(f"  Render: {pv_out['render_path']}")
 
     # Figure 2: Forward velocity profiles
     if cell_kms:
         fig_fv = make_forward_velocity_profile_figure(cell_kms)
-        fv_html = artifact_base / "figures" / "forward_velocity_profiles" / "figure.html"
-        fig_fv.write_html(str(fv_html))
-        print(f"  Saved: {fv_html}")
 
         spec_fv = {
             "figure_kind": "forward_velocity_profile_time_series",
@@ -676,21 +672,17 @@ def main():
                 "dt": 0.01,
             },
         }
-        spec_fv_path, _ = save_figure_with_spec(
-            fig_fv, spec_fv,
-            results_base / "figures" / "forward_velocity_profiles",
-            name="spec",
-            save_render=False,
+        fv_out = save_figure(
+            fig=fig_fv, spec=spec_fv,
+            package="rlrmp", experiment="2bc95fd", topic="forward_velocity_profiles",
             extra_packages=["rlrmp"],
         )
-        print(f"  Spec: {spec_fv_path}")
+        print(f"  Spec: {fv_out['spec_path']}")
+        print(f"  Render: {fv_out['render_path']}")
 
     # Figure 3: Hold drift profiles
     if cell_kms:
         fig_hd = make_hold_drift_figure(cell_kms)
-        hd_html = artifact_base / "figures" / "hold_drift_profiles" / "figure.html"
-        fig_hd.write_html(str(hd_html))
-        print(f"  Saved: {hd_html}")
 
         spec_hd = {
             "figure_kind": "hold_drift_profile_pre_go_position",
@@ -710,14 +702,13 @@ def main():
                 "dt": 0.01,
             },
         }
-        spec_hd_path, _ = save_figure_with_spec(
-            fig_hd, spec_hd,
-            results_base / "figures" / "hold_drift_profiles",
-            name="spec",
-            save_render=False,
+        hd_out = save_figure(
+            fig=fig_hd, spec=spec_hd,
+            package="rlrmp", experiment="2bc95fd", topic="hold_drift_profiles",
             extra_packages=["rlrmp"],
         )
-        print(f"  Spec: {spec_hd_path}")
+        print(f"  Spec: {hd_out['spec_path']}")
+        print(f"  Render: {hd_out['render_path']}")
 
     # -----------------------------------------------------------------------
     # Summary table + decision

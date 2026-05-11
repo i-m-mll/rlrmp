@@ -490,8 +490,7 @@ def _hygiene_flag(values: list[float], threshold: float = 10.0) -> list[bool]:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     default_flavor_b_root = (
-        "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/"
-        "feature__part2_5-flavor-b-runs/_artifacts/part2_5/runpod/flavor_b"
+        "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/c723082/runs"
     )
     default_run_json_root = (
         "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/"
