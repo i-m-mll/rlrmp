@@ -4,19 +4,27 @@ Computes per-(cell × replicate):
   - Peak forward velocity (m/s)
   - Hold-period / pre-go drift (mm): forward displacement during [0, go_cue)
   - Forward velocity profile over time (all 8 validation reach directions)
+  - Position profile over time (all 8 validation reach directions)
 
 Then per cell:
   - Mean ± SD peak forward velocity across replicates
-  - Variance ratio: SD / mean  (key decision criterion: any cell < 0.5?)
+  - CV (SD/mean of peak vel across replicates) — auxiliary metric only
+  - Within-cell velocity-profile RMSE ratio: within / nearest-across-cell — PRIMARY metric
+  - Within-cell position-profile RMSE ratio: same on position profiles — secondary
   - Mean hold drift
 
-Produces three HTML figures:
+The **primary** variance metric is the pairwise profile-RMSE ratio
+(within-cell / nearest-across-cell), which matches the prior
+``baseline_jerk_vrnn_matrix`` metric (GRU/jerk prior best: 0.758).
+CV (SD/mean of peak velocity scalar) is an auxiliary summary only.
+
+Decision criterion: velocity-RMSE ratio < 0.50 (prior best = 0.758 for GRU/jerk baseline).
+
+Produces four HTML figures:
   1. peak_velocity_distributions  — violin / box with all 6 cells (one replicate = one point)
   2. forward_velocity_profiles    — time-series per cell, one trace per replicate
   3. hold_drift_profiles          — pre-go position (forward direction) per cell
-
-Decision criterion: variance ratio (SD/mean of peak vel across replicates) < 0.5.
-Prior best (GRU/jerk baseline): 0.76.
+  4. rmse_ratio_comparison        — bar chart of velocity-RMSE and position-RMSE ratios
 
 Usage (from repo root):
     /path/to/.venv/bin/python scripts/analyse_anti_anticipation_6cell_variance.py
@@ -306,7 +314,11 @@ def compute_kinematics_per_replicate(states, trial_specs) -> dict[str, np.ndarra
 # ---------------------------------------------------------------------------
 
 def compute_cell_stats(km: dict[str, np.ndarray]) -> dict:
-    """Aggregate kinematics to per-replicate scalars then per-cell stats."""
+    """Aggregate kinematics to per-replicate scalars then per-cell stats.
+
+    Note: RMSE ratio (primary metric) is computed separately in
+    ``compute_rmse_ratios`` because it requires cross-cell data.
+    """
     # Mean over reach directions (8 validation trials) per replicate
     peak_vel_per_rep = km["peak_forward_velocity"].mean(axis=-1)   # (n_rep,)
     hold_drift_per_rep = km["hold_drift_mm"].mean(axis=-1)          # (n_rep,)
@@ -314,7 +326,8 @@ def compute_cell_stats(km: dict[str, np.ndarray]) -> dict:
 
     mean_pv = float(peak_vel_per_rep.mean())
     sd_pv = float(peak_vel_per_rep.std(ddof=1)) if len(peak_vel_per_rep) > 1 else 0.0
-    variance_ratio = sd_pv / mean_pv if mean_pv > 0 else float("nan")
+    # CV = SD/mean of peak velocity (scalar, auxiliary metric)
+    cv_peak_vel = sd_pv / mean_pv if mean_pv > 0 else float("nan")
 
     return {
         "peak_vel_per_rep": peak_vel_per_rep.tolist(),
@@ -322,11 +335,129 @@ def compute_cell_stats(km: dict[str, np.ndarray]) -> dict:
         "time_to_peak_per_rep": ttp_per_rep.tolist(),
         "mean_peak_velocity": mean_pv,
         "sd_peak_velocity": sd_pv,
-        "variance_ratio": variance_ratio,
+        "cv_peak_vel": cv_peak_vel,  # auxiliary; primary metric is vel_rmse_ratio
         "mean_hold_drift_mm": float(hold_drift_per_rep.mean()),
         "sd_hold_drift_mm": float(hold_drift_per_rep.std(ddof=1)) if len(hold_drift_per_rep) > 1 else 0.0,
         "mean_time_to_peak_steps": float(ttp_per_rep.mean()),
     }
+
+
+# ---------------------------------------------------------------------------
+# RMSE-ratio computation (primary variance metric)
+# ---------------------------------------------------------------------------
+
+def _mean_pairwise_rmse(profiles_a: np.ndarray, profiles_b: np.ndarray) -> float:
+    """Mean pairwise RMSE between every replicate in A and every in B.
+
+    Args:
+        profiles_a: (n_rep_a, n_steps) — mean-over-trials profile per replicate.
+        profiles_b: (n_rep_b, n_steps) — same.
+
+    Returns:
+        Scalar mean RMSE across all pairs.
+    """
+    n_a = profiles_a.shape[0]
+    n_b = profiles_b.shape[0]
+    rmse_vals = []
+    for i in range(n_a):
+        for j in range(n_b):
+            diff = profiles_a[i] - profiles_b[j]
+            rmse_vals.append(float(np.sqrt(np.mean(diff ** 2))))
+    return float(np.mean(rmse_vals)) if rmse_vals else float("nan")
+
+
+def _within_cell_mean_pairwise_rmse(profiles: np.ndarray) -> float:
+    """Mean pairwise RMSE between all distinct pairs within one cell.
+
+    Args:
+        profiles: (n_rep, n_steps) — mean-over-trials profile per replicate.
+
+    Returns:
+        Scalar mean RMSE across all C(n_rep, 2) pairs.
+    """
+    n_rep = profiles.shape[0]
+    rmse_vals = []
+    for i in range(n_rep):
+        for j in range(i + 1, n_rep):
+            diff = profiles[i] - profiles[j]
+            rmse_vals.append(float(np.sqrt(np.mean(diff ** 2))))
+    return float(np.mean(rmse_vals)) if rmse_vals else float("nan")
+
+
+def compute_rmse_ratios(
+    cell_kms: dict[str, dict],
+) -> dict[str, dict]:
+    """Compute per-cell pairwise profile-RMSE ratio (within / nearest-across).
+
+    For each cell i:
+      within_rmse_vel[i]  = mean pairwise RMSE of velocity profiles across
+                            all C(n_rep, 2) replicate pairs within cell i.
+      across_rmse_vel[i]  = mean pairwise RMSE between replicates of cell i
+                            and each other cell j; take the minimum over j ≠ i
+                            (nearest-neighbor across-cell RMSE).
+      vel_rmse_ratio[i]   = within_rmse_vel[i] / across_rmse_vel[i]  (PRIMARY)
+
+    Same computations for position profiles (pos_rmse_ratio, secondary).
+
+    Args:
+        cell_kms: dict mapping cell label → kinematics dict from
+            ``compute_kinematics_per_replicate``.
+
+    Returns:
+        dict mapping cell label → dict with keys:
+          - vel_within_rmse, vel_nearest_across_rmse, vel_rmse_ratio
+          - pos_within_rmse, pos_nearest_across_rmse, pos_rmse_ratio
+    """
+    labels = list(cell_kms.keys())
+
+    # Pre-compute mean-over-trials profiles per cell: (n_rep, n_steps)
+    vel_profiles: dict[str, np.ndarray] = {}
+    pos_profiles: dict[str, np.ndarray] = {}
+    for label in labels:
+        km = cell_kms[label]
+        # Mean over reach directions (axis 1 = trials)
+        vel_profiles[label] = km["forward_vel_profile"].mean(axis=1)   # (n_rep, n_steps)
+        pos_profiles[label] = km["pos_forward_profile"].mean(axis=1)   # (n_rep, n_steps)
+
+    results: dict[str, dict] = {}
+    for label in labels:
+        # Within-cell RMSE
+        vel_within = _within_cell_mean_pairwise_rmse(vel_profiles[label])
+        pos_within = _within_cell_mean_pairwise_rmse(pos_profiles[label])
+
+        # Nearest-across-cell RMSE (minimum over all other cells)
+        vel_across_all = []
+        pos_across_all = []
+        for other in labels:
+            if other == label:
+                continue
+            vel_across_all.append(
+                _mean_pairwise_rmse(vel_profiles[label], vel_profiles[other])
+            )
+            pos_across_all.append(
+                _mean_pairwise_rmse(pos_profiles[label], pos_profiles[other])
+            )
+
+        if vel_across_all:
+            vel_nearest_across = float(min(vel_across_all))
+            pos_nearest_across = float(min(pos_across_all))
+        else:
+            vel_nearest_across = float("nan")
+            pos_nearest_across = float("nan")
+
+        vel_rmse_ratio = vel_within / vel_nearest_across if vel_nearest_across > 0 else float("nan")
+        pos_rmse_ratio = pos_within / pos_nearest_across if pos_nearest_across > 0 else float("nan")
+
+        results[label] = {
+            "vel_within_rmse": vel_within,
+            "vel_nearest_across_rmse": vel_nearest_across,
+            "vel_rmse_ratio": vel_rmse_ratio,         # PRIMARY metric
+            "pos_within_rmse": pos_within,
+            "pos_nearest_across_rmse": pos_nearest_across,
+            "pos_rmse_ratio": pos_rmse_ratio,         # secondary
+        }
+
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -364,7 +495,8 @@ def make_peak_velocity_figure(
     fig.update_layout(
         title=(
             "Peak forward velocity per replicate — 6-cell anti-anticipation matrix<br>"
-            "<sup>Variance ratio (SD/mean) annotated per cell. Target: < 0.5</sup>"
+            "<sup>CV (SD/mean of peak vel scalar) annotated — auxiliary metric. "
+            "See rmse_ratio_comparison for primary metric.</sup>"
         ),
         yaxis_title="Peak forward velocity (m/s)",
         xaxis_title="Cell",
@@ -374,17 +506,16 @@ def make_peak_velocity_figure(
         margin=dict(l=70, r=40, t=80, b=60),
     )
 
-    # Annotate variance ratio above each violin
+    # Annotate CV above each violin (auxiliary metric)
     for i, label in enumerate(CELL_LABELS):
         if label not in cell_stats:
             continue
         stats = cell_stats[label]
-        vr = stats["variance_ratio"]
-        mean_pv = stats["mean_peak_velocity"]
+        cv = stats["cv_peak_vel"]
         fig.add_annotation(
             x=i,
             y=max(stats["peak_vel_per_rep"]) * 1.05,
-            text=f"VR={vr:.2f}",
+            text=f"CV={cv:.3f}",
             showarrow=False,
             font=dict(size=11, color="black"),
         )
@@ -516,6 +647,85 @@ def make_hold_drift_figure(
     return fig
 
 
+def make_rmse_ratio_figure(
+    rmse_ratios: dict[str, dict],
+    cell_stats: dict[str, dict],
+) -> go.Figure:
+    """Grouped bar chart: velocity-RMSE ratio and position-RMSE ratio per cell.
+
+    Primary metric (velocity-RMSE ratio) is the main bar; position-RMSE ratio
+    is a secondary bar. The 0.5 target threshold is annotated as a dashed line.
+    CV (SD/mean of peak vel) shown as a third bar for reference.
+    """
+    labels_present = [l for l in CELL_LABELS if l in rmse_ratios]
+    display_names = [CELL_DISPLAY_NAMES[l] for l in labels_present]
+
+    vel_ratios = [rmse_ratios[l]["vel_rmse_ratio"] for l in labels_present]
+    pos_ratios = [rmse_ratios[l]["pos_rmse_ratio"] for l in labels_present]
+    cv_vals = [cell_stats[l]["cv_peak_vel"] for l in labels_present if l in cell_stats]
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(
+        name="Vel-RMSE ratio (PRIMARY)",
+        x=display_names,
+        y=vel_ratios,
+        marker_color="#1f77b4",
+        text=[f"{v:.3f}" for v in vel_ratios],
+        textposition="outside",
+    ))
+    fig.add_trace(go.Bar(
+        name="Pos-RMSE ratio (secondary)",
+        x=display_names,
+        y=pos_ratios,
+        marker_color="#ff7f0e",
+        text=[f"{v:.3f}" for v in pos_ratios],
+        textposition="outside",
+    ))
+    if cv_vals and len(cv_vals) == len(labels_present):
+        fig.add_trace(go.Bar(
+            name="CV peak vel (auxiliary)",
+            x=display_names,
+            y=cv_vals,
+            marker_color="#2ca02c",
+            opacity=0.6,
+            text=[f"{v:.3f}" for v in cv_vals],
+            textposition="outside",
+        ))
+
+    # Threshold line at 0.5
+    fig.add_hline(
+        y=0.5,
+        line=dict(color="red", dash="dash", width=2),
+        annotation_text="threshold 0.5",
+        annotation_position="top right",
+    )
+    # Prior best line at 0.758
+    fig.add_hline(
+        y=0.758,
+        line=dict(color="grey", dash="dot", width=1.5),
+        annotation_text="prior best 0.758",
+        annotation_position="top right",
+    )
+
+    fig.update_layout(
+        title=(
+            "Pairwise profile-RMSE ratio per cell — 6-cell anti-anticipation matrix<br>"
+            "<sup>PRIMARY: velocity-RMSE ratio (within-cell / nearest-across-cell). "
+            "Target: < 0.5 | Prior best (baseline GRU/jerk): 0.758</sup>"
+        ),
+        barmode="group",
+        yaxis_title="RMSE ratio (within / nearest-across)",
+        xaxis_title="Cell",
+        width=1100,
+        height=550,
+        margin=dict(l=70, r=40, t=100, b=80),
+        legend=dict(x=0.01, y=0.99),
+    )
+
+    return fig
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -557,7 +767,10 @@ def main():
     notes_dir.mkdir(parents=True, exist_ok=True)
 
     # Figure paths: HTML to _artifacts, spec.json to results
-    for fig_name in ("peak_velocity_distributions", "forward_velocity_profiles", "hold_drift_profiles"):
+    for fig_name in (
+        "peak_velocity_distributions", "forward_velocity_profiles",
+        "hold_drift_profiles", "rmse_ratio_comparison",
+    ):
         (artifact_base / "figures" / fig_name).mkdir(parents=True, exist_ok=True)
         (results_base / "figures" / fig_name).mkdir(parents=True, exist_ok=True)
 
@@ -602,13 +815,33 @@ def main():
 
         print(
             f"  peak_vel: {stats['mean_peak_velocity']:.4f} ± {stats['sd_peak_velocity']:.4f} m/s  "
-            f"VR={stats['variance_ratio']:.3f}  "
+            f"CV={stats['cv_peak_vel']:.3f}  "
             f"hold_drift={stats['mean_hold_drift_mm']:.2f} ± {stats['sd_hold_drift_mm']:.2f} mm"
         )
 
     if not cell_stats:
         print("\nNo cells loaded — aborting.")
         return
+
+    # -----------------------------------------------------------------------
+    # RMSE ratios (primary variance metric — cross-cell computation)
+    # -----------------------------------------------------------------------
+    print("\n--- Computing pairwise RMSE ratios (primary metric) ---")
+    rmse_ratios: dict[str, dict] = {}
+    if len(cell_kms) >= 2:
+        rmse_ratios = compute_rmse_ratios(cell_kms)
+        for label in CELL_LABELS:
+            if label not in rmse_ratios:
+                continue
+            r = rmse_ratios[label]
+            print(
+                f"  [{label}] vel-RMSE-ratio={r['vel_rmse_ratio']:.3f}  "
+                f"(within={r['vel_within_rmse']:.4f}, "
+                f"nearest-across={r['vel_nearest_across_rmse']:.4f})  "
+                f"pos-RMSE-ratio={r['pos_rmse_ratio']:.3f}"
+            )
+    else:
+        print("  Less than 2 cells loaded — cannot compute cross-cell RMSE ratios.")
 
     # -----------------------------------------------------------------------
     # Figures
@@ -633,11 +866,15 @@ def main():
             "sisu": args.sisu,
             "pert_scale": 0.0,
         },
+        "metric_note": (
+            "Annotation shows CV (SD/mean of peak vel scalar) — auxiliary metric. "
+            "Primary metric is vel_rmse_ratio in rmse_ratio_comparison figure."
+        ),
         "cell_stats": {
             label: {
                 "mean_peak_velocity": stats["mean_peak_velocity"],
                 "sd_peak_velocity": stats["sd_peak_velocity"],
-                "variance_ratio": stats["variance_ratio"],
+                "cv_peak_vel": stats["cv_peak_vel"],
                 "peak_vel_per_rep": stats["peak_vel_per_rep"],
             }
             for label, stats in cell_stats.items()
@@ -710,15 +947,67 @@ def main():
         print(f"  Spec: {hd_out['spec_path']}")
         print(f"  Render: {hd_out['render_path']}")
 
+    # Figure 4: RMSE ratio comparison (PRIMARY metric)
+    if rmse_ratios and cell_stats:
+        fig_rmse = make_rmse_ratio_figure(rmse_ratios, cell_stats)
+
+        spec_rmse = {
+            "figure_kind": "rmse_ratio_comparison_bar",
+            "experiment": "anti_anticipation_loss_shape_6cell",
+            "metric_description": (
+                "Primary: velocity-RMSE ratio = within-cell mean pairwise RMSE / "
+                "nearest-across-cell mean pairwise RMSE on forward-velocity profiles. "
+                "Secondary: same on forward-position profiles. "
+                "Auxiliary: CV = SD(peak_vel) / mean(peak_vel) across replicates. "
+                "Target threshold 0.5; prior best (baseline GRU/jerk matrix): 0.758."
+            ),
+            "inputs": input_artifacts,
+            "transform": [
+                {"name": "eval_ensemble", "kwargs": {"sisu": args.sisu, "pert_scale": 0.0}},
+                {"name": "pairwise_profile_rmse_ratio_velocity", "kwargs": {}},
+                {"name": "pairwise_profile_rmse_ratio_position", "kwargs": {}},
+            ],
+            "plot_kwargs": {
+                "cells": CELL_LABELS,
+                "n_replicates": N_REPLICATES,
+                "sisu": args.sisu,
+                "pert_scale": 0.0,
+            },
+            "rmse_ratios": {
+                label: {
+                    "vel_within_rmse": r["vel_within_rmse"],
+                    "vel_nearest_across_rmse": r["vel_nearest_across_rmse"],
+                    "vel_rmse_ratio": r["vel_rmse_ratio"],
+                    "pos_within_rmse": r["pos_within_rmse"],
+                    "pos_nearest_across_rmse": r["pos_nearest_across_rmse"],
+                    "pos_rmse_ratio": r["pos_rmse_ratio"],
+                }
+                for label, r in rmse_ratios.items()
+            },
+        }
+        (results_base / "figures" / "rmse_ratio_comparison").mkdir(parents=True, exist_ok=True)
+        (artifact_base / "figures" / "rmse_ratio_comparison").mkdir(parents=True, exist_ok=True)
+        rmse_out = save_figure(
+            fig=fig_rmse, spec=spec_rmse,
+            package="rlrmp", experiment="2bc95fd", topic="rmse_ratio_comparison",
+            extra_packages=["rlrmp"],
+        )
+        print(f"  Spec: {rmse_out['spec_path']}")
+        print(f"  Render: {rmse_out['render_path']}")
+
     # -----------------------------------------------------------------------
     # Summary table + decision
     # -----------------------------------------------------------------------
     print("\n=== VARIANCE ANALYSIS SUMMARY ===\n")
-    prior_best_vr = 0.76
+    # Primary: velocity-RMSE ratio (matches prior baseline_jerk_vrnn_matrix metric)
+    prior_best_vr = 0.758  # GRU/jerk baseline_jerk_vrnn_matrix (pairwise RMSE ratio)
     winner_threshold = 0.5
     winners = []
 
-    header = f"{'Cell':42s} {'Mean PV (m/s)':>14} {'SD PV (m/s)':>12} {'VR (SD/mean)':>13} {'Hold drift (mm)':>16} {'TTP (steps)':>12}"
+    header = (
+        f"{'Cell':42s} {'Vel-RMSE-ratio':>15} {'Pos-RMSE-ratio':>15} "
+        f"{'CV (peak vel)':>14} {'Mean PV (m/s)':>14} {'Hold drift (mm)':>16} {'TTP':>6}"
+    )
     sep = "-" * len(header)
     print(header)
     print(sep)
@@ -728,36 +1017,54 @@ def main():
             print(f"  {CELL_DISPLAY_NAMES[label]:42s} SKIPPED")
             continue
         stats = cell_stats[label]
-        vr = stats["variance_ratio"]
-        if vr < winner_threshold:
+        r = rmse_ratios.get(label, {})
+        vel_rr = r.get("vel_rmse_ratio", float("nan"))
+        pos_rr = r.get("pos_rmse_ratio", float("nan"))
+        cv = stats["cv_peak_vel"]
+        if not np.isnan(vel_rr) and vel_rr < winner_threshold:
             winners.append(label)
-        flag = " <-- WINNER" if vr < winner_threshold else (" (prior best)" if label == "gru__jerk" else "")
+        flag = " <-- WINNER" if (not np.isnan(vel_rr) and vel_rr < winner_threshold) else (
+            " (prior best)" if label == "gru__jerk" else ""
+        )
         print(
             f"  {CELL_DISPLAY_NAMES[label]:42s} "
+            f"{vel_rr:>15.3f} "
+            f"{pos_rr:>15.3f} "
+            f"{cv:>14.3f} "
             f"{stats['mean_peak_velocity']:>14.4f} "
-            f"{stats['sd_peak_velocity']:>12.4f} "
-            f"{vr:>13.3f} "
             f"{stats['mean_hold_drift_mm']:>16.3f} "
-            f"{stats['mean_time_to_peak_steps']:>12.1f}"
+            f"{stats['mean_time_to_peak_steps']:>6.1f}"
             f"{flag}"
         )
 
     print(sep)
-    print(f"\nDecision criterion: variance ratio < {winner_threshold} (prior best = {prior_best_vr})")
+    print(f"\nPrimary decision criterion: vel-RMSE-ratio < {winner_threshold} "
+          f"(prior best = {prior_best_vr} from baseline_jerk_vrnn_matrix GRU/jerk)")
     if winners:
         print(f"WINNERS ({len(winners)} cells beat threshold):")
         for w in winners:
-            print(f"  {CELL_DISPLAY_NAMES[w]}: VR = {cell_stats[w]['variance_ratio']:.3f}")
+            r = rmse_ratios.get(w, {})
+            print(f"  {CELL_DISPLAY_NAMES[w]}: vel-RMSE-ratio = {r.get('vel_rmse_ratio', float('nan')):.3f}")
     else:
+        # Fall back to best by vel_rmse_ratio
+        candidate_labels = [l for l in cell_stats if l in rmse_ratios]
         best_label = min(
-            (l for l in cell_stats),
-            key=lambda l: cell_stats[l]["variance_ratio"],
+            candidate_labels,
+            key=lambda l: rmse_ratios[l].get("vel_rmse_ratio", float("inf")),
             default=None,
         )
+        if best_label is None:
+            best_label = min(
+                (l for l in cell_stats),
+                key=lambda l: cell_stats[l]["cv_peak_vel"],
+                default=None,
+            )
         if best_label:
+            r = rmse_ratios.get(best_label, {})
             print(
-                f"No cell met threshold. Best: {CELL_DISPLAY_NAMES[best_label]} "
-                f"VR={cell_stats[best_label]['variance_ratio']:.3f} "
+                f"No cell met threshold (vel-RMSE ratio < {winner_threshold}). "
+                f"Best: {CELL_DISPLAY_NAMES[best_label]} "
+                f"vel-RMSE-ratio={r.get('vel_rmse_ratio', float('nan')):.3f} "
                 f"(target was <{winner_threshold}, prior best was {prior_best_vr})"
             )
         else:
@@ -774,37 +1081,78 @@ def main():
         f"- SISU: {args.sisu}",
         "- Perturbation: 0 (clean reach)",
         "- Validation trials: 8 center-out reach directions",
-        "- Per-replicate metric: mean peak forward velocity across 8 directions",
-        "- Variance ratio: SD(peak_vel across replicates) / mean(peak_vel across replicates)",
-        "- Decision criterion: variance ratio < 0.50 (prior best = 0.76 for gru__jerk baseline)",
+        "",
+        "## Metrics",
+        "",
+        "**Primary: velocity-RMSE ratio** — within-cell mean pairwise RMSE on the",
+        "forward-velocity profile / nearest-neighbor across-cell mean pairwise RMSE.",
+        "Matches the prior `baseline_jerk_vrnn_matrix` metric. Prior best (GRU/jerk): 0.758.",
+        "Decision threshold: < 0.50.",
+        "",
+        "**Secondary: position-RMSE ratio** — same computation on the forward-position profile.",
+        "May be more sensitive to hold-drift differences.",
+        "",
+        "**Auxiliary: CV (SD/mean of peak vel)** — scalar summary of replicate spread on",
+        "peak velocity. Was incorrectly used as the primary metric in earlier writeups.",
+        "Reported here for completeness; does NOT drive the decision.",
         "",
         "## Results Table",
         "",
-        f"| Cell | Display Name | Mean PV (m/s) | SD PV (m/s) | Variance Ratio | Hold Drift (mm) | TTP (steps) | Per-rep PV |",
-        f"|------|------|---------|---------|---------|---------|---------|---------|",
+        "| Cell | Display Name | Vel-RMSE ratio (PRIMARY) | Pos-RMSE ratio | "
+        "CV (peak vel) | Mean PV (m/s) | SD PV (m/s) | Hold Drift (mm) | TTP (steps) |",
+        "|------|------|---------|---------|---------|---------|---------|---------|---------|",
     ]
     for label in CELL_LABELS:
         if label not in cell_stats:
-            lines.append(f"| {label} | {CELL_DISPLAY_NAMES[label]} | SKIPPED | - | - | - | - | - |")
+            lines.append(f"| {label} | {CELL_DISPLAY_NAMES[label]} | SKIPPED | - | - | - | - | - | - |")
             continue
         stats = cell_stats[label]
-        pvs_str = " / ".join(f"{v:.4f}" for v in stats["peak_vel_per_rep"])
+        r = rmse_ratios.get(label, {})
+        vel_rr = r.get("vel_rmse_ratio", float("nan"))
+        pos_rr = r.get("pos_rmse_ratio", float("nan"))
+        cv = stats["cv_peak_vel"]
+        winner_flag = " *" if (not np.isnan(vel_rr) and vel_rr < winner_threshold) else ""
+        vel_rr_str = f"{vel_rr:.3f}{winner_flag}" if not np.isnan(vel_rr) else "n/a"
+        pos_rr_str = f"{pos_rr:.3f}" if not np.isnan(pos_rr) else "n/a"
         lines.append(
             f"| {label} | {CELL_DISPLAY_NAMES[label]} "
+            f"| {vel_rr_str} "
+            f"| {pos_rr_str} "
+            f"| {cv:.3f} "
             f"| {stats['mean_peak_velocity']:.4f} "
             f"| {stats['sd_peak_velocity']:.4f} "
-            f"| {stats['variance_ratio']:.3f} "
             f"| {stats['mean_hold_drift_mm']:.3f} ± {stats['sd_hold_drift_mm']:.3f} "
-            f"| {stats['mean_time_to_peak_steps']:.1f} "
-            f"| {pvs_str} |"
+            f"| {stats['mean_time_to_peak_steps']:.1f} |"
+        )
+
+    lines += [
+        "",
+        "\\* = beats primary threshold (vel-RMSE ratio < 0.50).",
+        "",
+        "## RMSE Detail (within vs across)",
+        "",
+        "| Cell | Vel within-RMSE (m/s) | Vel nearest-across-RMSE (m/s) | "
+        "Pos within-RMSE (m) | Pos nearest-across-RMSE (m) |",
+        "|------|---------|---------|---------|---------|",
+    ]
+    for label in CELL_LABELS:
+        if label not in rmse_ratios:
+            continue
+        r = rmse_ratios[label]
+        lines.append(
+            f"| {label} "
+            f"| {r['vel_within_rmse']:.4f} "
+            f"| {r['vel_nearest_across_rmse']:.4f} "
+            f"| {r['pos_within_rmse']:.4f} "
+            f"| {r['pos_nearest_across_rmse']:.4f} |"
         )
 
     lines += [
         "",
         "## Decision",
         "",
-        f"Threshold: variance ratio < {winner_threshold}",
-        f"Prior best (gru__jerk): ~{prior_best_vr}",
+        f"**Primary threshold**: vel-RMSE ratio < {winner_threshold}",
+        f"Prior best (GRU/jerk, baseline_jerk_vrnn_matrix): {prior_best_vr}",
         "",
     ]
 
@@ -813,23 +1161,27 @@ def main():
         lines.append("")
         for w in winners:
             stats = cell_stats[w]
+            r = rmse_ratios.get(w, {})
             lines.append(
                 f"- **{CELL_DISPLAY_NAMES[w]}** (`{w}`): "
-                f"VR = {stats['variance_ratio']:.3f}, "
+                f"vel-RMSE-ratio = {r.get('vel_rmse_ratio', float('nan')):.3f}, "
+                f"CV = {stats['cv_peak_vel']:.3f}, "
                 f"mean PV = {stats['mean_peak_velocity']:.4f} m/s"
             )
     else:
+        candidate_labels = [l for l in cell_stats if l in rmse_ratios]
         best_label = min(
-            (l for l in cell_stats),
-            key=lambda l: cell_stats[l]["variance_ratio"],
+            candidate_labels,
+            key=lambda l: rmse_ratios[l].get("vel_rmse_ratio", float("inf")),
             default=None,
         )
         if best_label:
+            r = rmse_ratios.get(best_label, {})
             lines.append("**No cell met the threshold.**")
             lines.append("")
             lines.append(
                 f"Best cell: **{CELL_DISPLAY_NAMES[best_label]}** (`{best_label}`) "
-                f"with VR = {cell_stats[best_label]['variance_ratio']:.3f}"
+                f"with vel-RMSE-ratio = {r.get('vel_rmse_ratio', float('nan')):.3f}"
             )
         else:
             lines.append("No cells evaluated.")
@@ -855,7 +1207,8 @@ def main():
         "",
         "## Figures",
         "",
-        "- `figures/peak_velocity_distributions/` — Violin/strip plot, one replicate per data point",
+        "- `figures/rmse_ratio_comparison/` — Bar chart of RMSE ratios (PRIMARY)",
+        "- `figures/peak_velocity_distributions/` — Violin/strip plot (CV annotated, auxiliary)",
         "- `figures/forward_velocity_profiles/` — Forward velocity time series per cell",
         "- `figures/hold_drift_profiles/` — Pre-go forward position (anticipation drift)",
     ]
@@ -868,10 +1221,16 @@ def main():
     stats_json_path = notes_dir / "variance_analysis_data.json"
     json_data = {
         "sisu": args.sisu,
-        "prior_best_variance_ratio": prior_best_vr,
+        "primary_metric": "vel_rmse_ratio",
+        "prior_best_vel_rmse_ratio": prior_best_vr,
         "winner_threshold": winner_threshold,
         "winners": winners,
         "cells": cell_stats,
+        "rmse_ratios": {
+            label: {k: (v if not (isinstance(v, float) and np.isnan(v)) else None)
+                    for k, v in r.items()}
+            for label, r in rmse_ratios.items()
+        },
     }
     with open(stats_json_path, "w") as f:
         json.dump(json_data, f, indent=2)
