@@ -309,6 +309,49 @@ def make_late_discount_from_epoch(
     return discount
 
 
+def make_power_law_schedule(power: float = 6.0, normalization: str = "trial_end"):
+    """Return a callable ``(spec_i) -> (T,) array`` computing ``(t / N) ** power``.
+
+    The schedule assigns increasing weight to later timesteps, concentrating the
+    loss signal near the end of the trial.  ``power=6`` matches C&S 2019 Eq. 15.
+
+    Args:
+        power: Exponent of the power law.  ``power=1`` is linear; ``power=6``
+            puts ~98 % of the weight in the last 30 % of the trial.  Default 6.0.
+        normalization: Denominator for the time fraction:
+            - ``"trial_end"`` (default): divide by ``T - 1`` (the index of the
+              final timestep), so the schedule runs exactly from ``0`` at
+              ``t = 0`` to ``1`` at ``t = T - 1``.  Matches C&S Eq. 15.
+            - ``"epoch_end"``: divide by the last timestep of the movement
+              epoch (epoch -1 start, i.e. the final epoch boundary).  Less
+              common; produces a scale that peaks earlier for long post-target
+              hold periods.
+
+    Returns:
+        Callable ``(spec_i) -> (T,) float32 array`` shaped to the trial length.
+    """
+
+    def schedule(spec):
+        T = spec.timeline.n_steps - 1
+        t = jnp.arange(T, dtype=jnp.float32)
+
+        if normalization == "trial_end":
+            N = jnp.asarray(T - 1, jnp.float32)
+        elif normalization == "epoch_end":
+            # Use the start of the final epoch as the normalisation denominator.
+            bounds = spec.timeline.epoch_bounds
+            N = jnp.asarray(bounds[-1], jnp.float32) - 1.0
+        else:
+            raise ValueError(
+                f"normalization must be 'trial_end' or 'epoch_end', got {normalization!r}"
+            )
+
+        N = jnp.maximum(N, 1.0)  # avoid divide-by-zero for very short trials
+        return (t / N) ** power  # (T,)
+
+    return schedule
+
+
 def make_mid_period_ramp(
     start_step: int,
     end_step: int,
@@ -486,12 +529,33 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
         ),
     )
 
-    if hps.task.type == "delayed_reach":
+    # Power-law schedule parameters (Bug: 2e1a6ad).
+    # "flat" (default) keeps existing uniform weighting; "powerlaw" applies
+    # (t / (T-1))^power to each term's timestep weights.
+    _pos_running_sched = _nsget(hps, "loss.effector_pos_running_schedule", "flat") or "flat"
+    _hold_pos_sched = _nsget(hps, "loss.effector_hold_pos_schedule", "flat") or "flat"
+    _powerlaw_power = float(_nsget(hps, "loss.position_powerlaw_power", 6.0) or 6.0)
+
+    # "center_out_delayed_reach" is a subclass of DelayedReaches and shares the
+    # same hold-period structure — match on suffix. Bug: 2e1a6ad.
+    if "delayed_reach" in getattr(hps.task, "type", ""):
+        if _hold_pos_sched == "powerlaw":
+            # (t/T-1)^power applied over the entire trial; the epoch mask still
+            # comes from `during_hold` (time_mask), but the weight rises with t.
+            # The hold epoch is early in the trial so the power-law weight is
+            # very small there (<<1), placing essentially all the position-hold
+            # emphasis on the late-trial timesteps — matching C&S 2019 Eq. 15.
+            hold_pos_spec = during_hold & TargetSpec(
+                discount=make_power_law_schedule(power=_powerlaw_power)
+            )
+        else:
+            hold_pos_spec = during_hold
+
         terms["effector_hold_pos"] = TargetStateLoss(
             "effector_hold_pos",
             where=lambda state: state.mechanics.effector.pos,
             # norm=lambda x: jnp.sum(x**2, axis=-1),
-            spec=during_hold,
+            spec=hold_pos_spec,
         )
         terms["effector_hold_vel"] = TargetStateLoss(
             "effector_hold_vel",
@@ -636,13 +700,23 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
             )
 
         # Running position cost: penalizes position error during the entire movement period.
-        # Unlike mid-period terms (which ramp), this applies a uniform penalty from
-        # go cue to trial end, encouraging the effector to track the target throughout.
+        # Unlike mid-period terms (which ramp), this applies a penalty from
+        # go cue to trial end, with the time-profile determined by the schedule.
+        # Bug: 2e1a6ad
         if getattr(user_outer_weights, "effector_pos_running", 0.0) != 0.0:
+            if _pos_running_sched == "powerlaw":
+                # Multiply the epoch mask (1 during movement, 0 before) by the
+                # power-law discount (rises as (t/T-1)^power over the whole trial).
+                running_spec = during_movement & TargetSpec(
+                    discount=make_power_law_schedule(power=_powerlaw_power)
+                )
+            else:
+                running_spec = during_movement
+
             terms["effector_pos_running"] = TargetStateLoss(
                 "effector_pos_running",
                 where=lambda state: state.mechanics.effector.pos,
-                spec=during_movement,
+                spec=running_spec,
             )
 
         # Late-period position term (optional, active in goal_hit or structured modes)
