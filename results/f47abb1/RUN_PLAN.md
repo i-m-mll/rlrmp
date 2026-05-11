@@ -5,6 +5,20 @@ Power-law schedule implementation: 2e1a6ad
 Training-methods coord: c99ad9d
 Phase umbrella: b33e8da (methodology-fix, b557d4e)
 
+## Background context
+
+The prior 6-cell matrix (`2bc95fd`) was run with `--effector-hold-pos 10.0` and
+`--effector-hold-vel 10.0`, but the hold-term construction silently failed for
+`center_out_delayed_reach` because the task-type check used `==` instead of `in`.  The bug
+was fixed in commit `22153e4` of this branch.  As a result the `2bc95fd` hold-drift values
+reflect "no kinematic hold penalty" baseline behaviour, not "hold_pos=10 baseline"; the hold
+weights listed there were cosmetically applied but never computed.
+
+Position weight `1.0` is chosen here because equal weighting between hold and running matches
+Shahbazi's uniform-time mechanism, and `1.0` is the historical rlrmp default for the running
+term.  With the bug fix, this weight will now actually be applied to both hold and running
+epochs for the first time.
+
 ## Background
 
 This 6-cell matrix tests whether a faithful replication of the Chaisanguanthum & Shenoy 2019
@@ -44,8 +58,9 @@ Notes:
   during hold, not velocity.
 - `effector_pos_late`, `effector_vel_late`, and `effector_final_vel` are all 0.0: the
   `(t/T)^6` schedule subsumes the function of the late-window terms.
-- `effector_pos_running` weight 10.0 (same as `effector_hold_pos`) for all cells —
-  the schedule shape does the heavy lifting; the outer weights balance hold vs reach.
+- `effector_pos_running` weight 1.0 (same as `effector_hold_pos`) for all cells —
+  equal weight matches the Shahbazi uniform-time mechanism; the schedule shape does the heavy
+  lifting.
 - `p_catch_trial 0.5` maintains the Shahbazi 2025 §4.2 catch-trial protocol.
 - `--adversary-type linear_dynamics` is kept for consistency with the current production
   pipeline; `--n-adversary-batches 0` means no actual adversarial phase runs.
@@ -61,12 +76,15 @@ These are common across all six cells:
 --batch-size 250
 --n-replicates 5
 --seed 42
---effector-hold-pos 10.0
+--effector-hold-pos 1.0
 --effector-hold-vel 0.0
---effector-pos-running 10.0
+--effector-pos-running 1.0
 --effector-pos-late-weight 0.0
 --effector-vel-late 0.0
 --effector-final-vel 0.0
+--p-catch-trial 0.5
+--nn-output 1e-5
+--nn-hidden 1e-5
 --nn-output-pre-go 0.0
 --nn-hidden-derivative-pre-go 0.0
 --no-loss-update-enabled
@@ -75,9 +93,6 @@ These are common across all six cells:
 --checkpoint --fused --no-streaming-loss
 --checkpoint-every 1000
 ```
-
-Note: `p_catch_trial = 0.5`, `nn_output = 1e-5`, and `nn_hidden = 1e-5` are hardcoded
-defaults in `build_hps` and do not have separate CLI flags.
 
 ## Production CLI invocations
 
@@ -93,12 +108,15 @@ nohup uv run python scripts/train_minimax.py \
   --batch-size 250 \
   --n-replicates 5 \
   --seed 42 \
-  --effector-hold-pos 10.0 \
+  --effector-hold-pos 1.0 \
   --effector-hold-vel 0.0 \
-  --effector-pos-running 10.0 \
+  --effector-pos-running 1.0 \
   --effector-pos-late-weight 0.0 \
   --effector-vel-late 0.0 \
   --effector-final-vel 0.0 \
+  --p-catch-trial 0.5 \
+  --nn-output 1e-5 \
+  --nn-hidden 1e-5 \
   --nn-output-jerk 1e5 \
   --nn-output-pre-go 0.0 \
   --nn-hidden-derivative-pre-go 0.0 \
@@ -125,12 +143,15 @@ nohup uv run python scripts/train_minimax.py \
   --batch-size 250 \
   --n-replicates 5 \
   --seed 42 \
-  --effector-hold-pos 10.0 \
+  --effector-hold-pos 1.0 \
   --effector-hold-vel 0.0 \
-  --effector-pos-running 10.0 \
+  --effector-pos-running 1.0 \
   --effector-pos-late-weight 0.0 \
   --effector-vel-late 0.0 \
   --effector-final-vel 0.0 \
+  --p-catch-trial 0.5 \
+  --nn-output 1e-5 \
+  --nn-hidden 1e-5 \
   --nn-output-jerk 1e5 \
   --nn-output-pre-go 0.0 \
   --nn-hidden-derivative-pre-go 0.0 \
@@ -157,12 +178,15 @@ nohup uv run python scripts/train_minimax.py \
   --batch-size 250 \
   --n-replicates 5 \
   --seed 42 \
-  --effector-hold-pos 10.0 \
+  --effector-hold-pos 1.0 \
   --effector-hold-vel 0.0 \
-  --effector-pos-running 10.0 \
+  --effector-pos-running 1.0 \
   --effector-pos-late-weight 0.0 \
   --effector-vel-late 0.0 \
   --effector-final-vel 0.0 \
+  --p-catch-trial 0.5 \
+  --nn-output 1e-5 \
+  --nn-hidden 1e-5 \
   --nn-output-jerk 1e5 \
   --nn-output-pre-go 0.0 \
   --nn-hidden-derivative-pre-go 0.0 \
@@ -189,12 +213,15 @@ nohup uv run python scripts/train_minimax.py \
   --batch-size 250 \
   --n-replicates 5 \
   --seed 42 \
-  --effector-hold-pos 10.0 \
+  --effector-hold-pos 1.0 \
   --effector-hold-vel 0.0 \
-  --effector-pos-running 10.0 \
+  --effector-pos-running 1.0 \
   --effector-pos-late-weight 0.0 \
   --effector-vel-late 0.0 \
   --effector-final-vel 0.0 \
+  --p-catch-trial 0.5 \
+  --nn-output 1e-5 \
+  --nn-hidden 1e-5 \
   --nn-output-jerk 0.0 \
   --nn-output-pre-go 0.0 \
   --nn-hidden-derivative-pre-go 0.0 \
@@ -219,12 +246,15 @@ nohup uv run python scripts/train_minimax.py \
   --batch-size 250 \
   --n-replicates 5 \
   --seed 42 \
-  --effector-hold-pos 10.0 \
+  --effector-hold-pos 1.0 \
   --effector-hold-vel 0.0 \
-  --effector-pos-running 10.0 \
+  --effector-pos-running 1.0 \
   --effector-pos-late-weight 0.0 \
   --effector-vel-late 0.0 \
   --effector-final-vel 0.0 \
+  --p-catch-trial 0.5 \
+  --nn-output 1e-5 \
+  --nn-hidden 1e-5 \
   --nn-output-jerk 0.0 \
   --nn-output-pre-go 0.0 \
   --nn-hidden-derivative-pre-go 0.0 \
@@ -249,12 +279,15 @@ nohup uv run python scripts/train_minimax.py \
   --batch-size 250 \
   --n-replicates 5 \
   --seed 42 \
-  --effector-hold-pos 10.0 \
+  --effector-hold-pos 1.0 \
   --effector-hold-vel 0.0 \
-  --effector-pos-running 10.0 \
+  --effector-pos-running 1.0 \
   --effector-pos-late-weight 0.0 \
   --effector-vel-late 0.0 \
   --effector-final-vel 0.0 \
+  --p-catch-trial 0.5 \
+  --nn-output 1e-5 \
+  --nn-hidden 1e-5 \
   --nn-output-jerk 0.0 \
   --nn-output-pre-go 0.0 \
   --nn-hidden-derivative-pre-go 0.0 \
