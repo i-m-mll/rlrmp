@@ -1,6 +1,6 @@
 """Evaluate all center-out models for the experiment log update.
 
-Ten models (all in results/part2_5/models/):
+Ten models (all in results/2ef67ca/models/):
   1.  centerout_baseline_std_pert0       — std, pert_std=0, no update
   2.  centerout_baseline_std_pert1       — std, pert_std=1, no update
   3.  centerout_std_update_r03_pert0     — std+update r=0.3, pert_std=0
@@ -49,7 +49,7 @@ from feedbax._io import load_with_hyperparameters  # noqa: E402
 from rlrmp.modules.training.part2 import setup_task_model_pair  # noqa: E402
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL  # noqa: E402
 
-RESULTS_BASE = WORKTREE / "results" / "part2_5"
+RESULTS_BASE = WORKTREE / "results" / "2ef67ca"  # legacy Part 2.5 archive (Bug: f485c26)
 MODELS_BASE = RESULTS_BASE / "models"
 
 # (index, method, pert_std, update, ratio, model_dir)

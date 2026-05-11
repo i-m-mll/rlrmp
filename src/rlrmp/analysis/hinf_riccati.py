@@ -8,7 +8,7 @@ gain K_t, and a closed-loop simulator for comparing peak velocity against the
 LQR baseline (gamma -> infinity).
 
 Bug: 5a44bd3 - production reimplementation of the H-infinity Riccati sanity
-check. See ``results/part2_5/synthesis_review.md`` section 2 for the
+check. See ``results/b557d4e/synthesis_review.md`` section 2 for the
 mathematical spec, the Q,R schedule, and the predicted velocity inflation
 magnitude on the rlrmp parameter regime.
 

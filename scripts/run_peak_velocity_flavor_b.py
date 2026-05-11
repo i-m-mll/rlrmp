@@ -1,7 +1,7 @@
 """Empirical peak-forward-velocity Δv on flavor-(b) trained controllers vs baseline.
 
 Bug: c723082 — fills the "operating-point sensitivity" gap flagged in
-``results/flavor_a_vs_b/synthesis.md`` §8.0.1 / §5.3. Empirical analogue of
+``results/72fb8d9/synthesis.md`` §8.0.1 / §5.3. Empirical analogue of
 the analytical Δv comparison: rolls out trained controllers on a clean
 (no-perturbation) canonical reach and measures peak forward velocity, then
 compares flavor-(b) trained controllers against the no-perturbation GRU
@@ -549,15 +549,13 @@ def eval_baseline(
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     default_flavor_b_root = (
-        "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/"
-        "feature__part2_5-flavor-b-runs/_artifacts/part2_5/runpod/flavor_b"
+        "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/c723082/runs"
     )
     default_run_json_root = (
-        "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/"
-        "feature__part2_5-flavor-b-runs/results/part2_5/runs"
+        "/Users/mll/Main/10 Projects/10 PhD/rlrmp/results/c723082/runs"
     )
     default_baseline_root = (
-        "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/part2_5/runpod"
+        "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/e81f491/runs"
     )
     parser.add_argument("--flavor-b-root", type=str, default=default_flavor_b_root)
     parser.add_argument("--run-json-root", type=str, default=default_run_json_root)

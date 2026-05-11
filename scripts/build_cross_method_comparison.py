@@ -3,13 +3,13 @@
 Bug: 74bfd86 — companion to ``run_induced_gain_flavor_b.py``.
 
 Reads:
-- ``_artifacts/part2_5/runs/induced_gain_flavor_b/summary.json`` (this run)
+- ``_artifacts/c723082/runs/induced_gain_flavor_b/summary.json`` (this run)
 - First-run baselines hard-coded from
-  ``results/part2_5/runs/induced_gain_first_run/notes.md`` (since the corresponding
+  ``results/c723082/notes/induced_gain_first_run.md`` (since the corresponding
   ``gains.npz`` is on a separate branch and not present in this worktree).
 
 Writes:
-- ``results/part2_5/induced_gain_flavor_b/cross_method_comparison.md``
+- ``results/c723082/notes/induced_gain_cross_method_comparison.md``
 
 Usage:
     uv run python scripts/build_cross_method_comparison.py
@@ -24,7 +24,7 @@ from pathlib import Path
 import numpy as np
 
 
-# Hard-coded from results/part2_5/runs/induced_gain_first_run/notes.md.
+# Hard-coded from results/c723082/notes/induced_gain_first_run.md.
 # Single replicate (replicate 0) per group. The mult_single rep-0 row is the
 # documented degenerate replicate; the corrected rep-2 value is also recorded
 # for reference.
@@ -134,7 +134,7 @@ def render(summary_path: Path, out_path: Path):
     lines.append("")
     lines.append("## Table 1 — Headline `gamma_sd x qr_cost`")
     lines.append("")
-    lines.append("Flavor-A first-run values from `results/part2_5/runs/induced_gain_first_run/notes.md`")
+    lines.append("Flavor-A first-run values from `results/c723082/notes/induced_gain_first_run.md`")
     lines.append("(single replicate per group, replicate 0). Flavor-B values from this run; per-eta")
     lines.append("median + MAD across **non-outlier** replicates (3 seeds × 5 reps − flagged).")
     lines.append("")
@@ -244,11 +244,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--summary-path", type=Path,
-        default=Path("_artifacts/part2_5/runs/induced_gain_flavor_b/summary.json"),
+        default=Path("_artifacts/c723082/runs/induced_gain_flavor_b/summary.json"),
     )
     parser.add_argument(
         "--out-path", type=Path,
-        default=Path("results/part2_5/induced_gain_flavor_b/cross_method_comparison.md"),
+        default=Path("results/c723082/notes/induced_gain_cross_method_comparison.md"),
     )
     args = parser.parse_args()
     render(args.summary_path, args.out_path)

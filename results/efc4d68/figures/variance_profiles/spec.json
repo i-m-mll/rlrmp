@@ -1,0 +1,83 @@
+{
+  "figure_kind": "forward_lateral_velocity_profiles_by_condition",
+  "description": "Forward and lateral mean velocity profiles (post-go, t in [0, 1.0 s]) for 8 conditions in the 2x2x2 baseline matrix. Each condition: 5 replicates, direction-averaged over 8 validation targets. Plotted to show within-condition replicate variance.",
+  "input_artifacts": [
+    {
+      "role": "run_spec",
+      "label": "baseline_gru__none",
+      "path": "results/efc4d68/runs/baseline_gru__none.json",
+      "sha256_prefix": "5cf0ad7995873d4e"
+    },
+    {
+      "role": "run_spec",
+      "label": "baseline_gru__smooth",
+      "path": "results/efc4d68/runs/baseline_gru__smooth.json",
+      "sha256_prefix": "f8272d7261c3f6e8"
+    },
+    {
+      "role": "run_spec",
+      "label": "baseline_gru__jerk",
+      "path": "results/efc4d68/runs/baseline_gru__jerk.json",
+      "sha256_prefix": "dd0a1181fd434d8d"
+    },
+    {
+      "role": "run_spec",
+      "label": "baseline_gru__smooth_jerk",
+      "path": "results/efc4d68/runs/baseline_gru__smooth_jerk.json",
+      "sha256_prefix": "2680c56435d234d7"
+    },
+    {
+      "role": "run_spec",
+      "label": "baseline_vrnn__none",
+      "path": "results/efc4d68/runs/baseline_vrnn__none.json",
+      "sha256_prefix": "1a1d0836ec558830"
+    },
+    {
+      "role": "run_spec",
+      "label": "baseline_vrnn__smooth",
+      "path": "results/efc4d68/runs/baseline_vrnn__smooth.json",
+      "sha256_prefix": "380c5af6db9d8069"
+    },
+    {
+      "role": "run_spec",
+      "label": "baseline_vrnn__jerk",
+      "path": "results/efc4d68/runs/baseline_vrnn__jerk.json",
+      "sha256_prefix": "d9b481d6aaa6326d"
+    },
+    {
+      "role": "run_spec",
+      "label": "baseline_vrnn__smooth_jerk",
+      "path": "results/efc4d68/runs/baseline_vrnn__smooth_jerk.json",
+      "sha256_prefix": "35c435770e701813"
+    }
+  ],
+  "plot_kwargs": {
+    "eval_sisu": 0.5,
+    "eval_pert_scale": 0.0,
+    "geometry": "0.5 m centre-out reach (8 directions)",
+    "time_alignment": "per-trial go-cue aligned; window [-200 ms, +1000 ms]",
+    "trial_average": "per-replicate, averaged over 8 directions after per-trial go-cue alignment"
+  },
+  "output_artifacts": [
+    {
+      "role": "figure_html",
+      "label": "forward_velocity_baseline_matrix",
+      "path": "_artifacts/part2_5/figures/baseline_jerk_vrnn_matrix__variance_profiles/forward_velocity_baseline_matrix.html",
+      "sha256_prefix": "6411bd99a86fdcb8",
+      "note": "original at /tmp/flavor_ab_review/plots/forward_velocity_baseline_matrix.html"
+    },
+    {
+      "role": "figure_html",
+      "label": "lateral_velocity_baseline_matrix",
+      "path": "_artifacts/part2_5/figures/baseline_jerk_vrnn_matrix__variance_profiles/lateral_velocity_baseline_matrix.html",
+      "sha256_prefix": "5b203bb0275ffc5e",
+      "note": "original at /tmp/flavor_ab_review/plots/lateral_velocity_baseline_matrix.html"
+    }
+  ],
+  "versions": {
+    "feedbax": "0.1.2",
+    "jax": "0.9.0",
+    "rlrmp_commit": "d59bad7"
+  },
+  "generated": "2026-05-09T01:07Z"
+}
