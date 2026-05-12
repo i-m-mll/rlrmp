@@ -1,21 +1,21 @@
 {
-  "description": "\u0394v per disturbance scale per architecture, mean \u00b1 SD across 5 replicates.",
+  "description": "Corrected 4-model \u0394v comparison: forward-velocity profile of baseline (warmup-only) vs adversarial (warmup + 500 adversarial batches) for both LinearController (regulator) and LinearTrackerController. \u0394v = (peak_v(adv) - peak_v(base)) / peak_v(base), evaluated at pert_scale=0 (the controller's designed-against threat is the only structural difference).",
+  "eval_pert_scales": [
+    0.0,
+    1.0
+  ],
   "experiment": "410d7ac",
+  "headline_pert_scale": 0.0,
   "inputs": [],
   "n_replicates": 5,
-  "pert_scales": [
-    0.0,
-    0.5,
-    1.0,
-    1.5
-  ],
   "runs": [
-    "linear_regulator",
-    "linear_tracker",
-    "gru_baseline_lit_post_nojerk"
+    "linear_regulator__baseline",
+    "linear_regulator__adversarial",
+    "linear_tracker__baseline",
+    "linear_tracker__adversarial"
   ],
   "seed_eval": 42,
-  "timestamp": "2026-05-12T03:13:31.848094+00:00",
+  "timestamp": "2026-05-12T03:38:25.269117+00:00",
   "topic": "delta_v_signature",
   "versions": {
     "equinox": "0.13.4",
