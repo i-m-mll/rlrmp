@@ -1,21 +1,49 @@
-"""Linear-controller decoupling acid test — MVP analysis (Bug: 410d7ac).
+"""Linear-controller decoupling acid test — corrected MVP analysis (Bug: 410d7ac).
 
-Loads the two warmup-trained linear-controller models (regulator + tracker)
-alongside the f47abb1 ``lit__post_nojerk`` GRU baseline, evaluates each at a
-sweep of plant-disturbance scales, and reports the velocity-inflation signature:
+This is the **corrected** version of the linear regulator-vs-tracker decoupling
+acid test. The prior version (commit 20ae797) trained warmup-only models and
+measured test-time perturbation response, which is NOT Δv. See the retraction
+comment on issue 410d7ac.
 
-    Δv(scale) = (peak_fwd_vel(scale) - peak_fwd_vel(0)) / peak_fwd_vel(0)
+What Δv actually means
+----------------------
+Δv is the **peak forward velocity inflation between an adversarially-trained
+model and the warmup-only baseline of the SAME architecture**, signed and
+projected on the reach axis:
 
-Hypothesis (Bug: 410d7ac): the **regulator** parameterisation gives Δv > 0
-(velocity inflates under disturbance) while the **tracker** parameterisation
-gives Δv ≈ 0 because the independent ``u_ff(t)`` channel decouples open-loop
-drive from closed-loop stiffness.
+    Δv_arch = (peak_v(arch_adversarial) - peak_v(arch_baseline)) / peak_v(arch_baseline)
 
-Outputs:
-  - stdout report with per-model (Δv mean ± SD across replicates)
-  - JSON summary at ``results/410d7ac/notes/delta_v_summary.json``
-  - HTML figure at ``_artifacts/410d7ac/figures/delta_v_signature/figure.html``
-    via ``feedbax.plot.save_figure``.
+This is a training-method comparison, not a test-time perturbation response.
+Both models are evaluated under the *same* conditions; the difference between
+them lies in whether adversarial training was applied. This matches Crevecoeur
+& Scott's signature for robust control: H-infinity controllers (adversarially
+optimal) inflate peak forward velocity relative to LQR controllers (baseline-
+optimal).
+
+Discriminator prediction (d448c9d)
+----------------------------------
+- ``Δv_regulator > 0`` — the regulator parameterisation has no decoupled
+  feedforward channel, so adversarial training inflates peak velocity.
+- ``Δv_tracker ≈ 0`` — the tracker's independent ``u_ff(t)`` channel can
+  absorb the disturbance threat without changing the forward motion plan, so
+  adversarial training leaves peak velocity untouched.
+
+Four trained models are required for this comparison; this script loads all
+four and computes Δv for each architecture pair.
+
+Inputs (run directories)
+------------------------
+- ``_artifacts/410d7ac/runs/linear_regulator__baseline/warmup_model.eqx``
+- ``_artifacts/410d7ac/runs/linear_regulator__adversarial/adversarial_model.eqx``
+- ``_artifacts/410d7ac/runs/linear_tracker__baseline/warmup_model.eqx``
+- ``_artifacts/410d7ac/runs/linear_tracker__adversarial/adversarial_model.eqx``
+
+Outputs
+-------
+- stdout report with Δv per architecture (mean ± SEM across replicates)
+- JSON summary at ``results/410d7ac/notes/delta_v_summary.json``
+- HTML figure at ``_artifacts/410d7ac/figures/delta_v_signature/figure.html``
+  via ``feedbax.plot.save_figure`` (auto-mirrored into ``results/...``).
 
 Usage (from feature worktree):
     JAX_PLATFORMS=cpu uv run python scripts/analyse_linear_decoupling_mvp.py
@@ -28,7 +56,6 @@ import json
 import sys
 import warnings
 from pathlib import Path
-from typing import Optional
 
 warnings.filterwarnings("ignore")
 
@@ -39,43 +66,63 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-import jax.tree as jt
 import numpy as np
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+import jax.tree as jt
 
 from feedbax._io import load_with_hyperparameters
 from feedbax.plot import save_figure
 
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
+from rlrmp.intervention_compat import (
+    swap_plant_intervenor_to_dynamics_matrix,
+    swap_task_intervention_to_dynamics_matrix,
+)
 from rlrmp.modules.training.part2 import setup_task_model_pair
 from train_minimax import build_hps
 
 
 EXPERIMENT = "410d7ac"
 N_REPLICATES = 5
-PERT_SCALES = (0.0, 0.5, 1.0, 1.5)
 SEED_EVAL = 42
 
+# Evaluation conditions. Δv is computed at pert_scale=0 (the C&S-style analytical
+# baseline: the controller has been *designed* against a disturbance, but is
+# evaluated on a clean reach). pert_scale=1.0 is included as a secondary check.
+EVAL_PERT_SCALES = (0.0, 1.0)
+HEADLINE_PERT_SCALE = 0.0
+
 
 # ---------------------------------------------------------------------------
-# Configuration of the runs to compare
+# Configuration of the 4 runs to compare
 # ---------------------------------------------------------------------------
 
 
-def _linear_args(hidden_type: str) -> argparse.Namespace:
-    """Reconstruct the CLI namespace used to train the linear MVP runs."""
-    return argparse.Namespace(
+def _common_linear_args() -> dict:
+    """Shared CLI namespace fields for both regulator + tracker variants."""
+    return dict(
         method="pai-asf",
-        hidden_type=hidden_type,
         sisu_gating="additive",
         n_warmup_batches=1000,
-        n_adversary_batches=0,
         batch_size=64,
         n_replicates=N_REPLICATES,
         controller_lr=5e-3,
         seed=42,
         adversary_type="linear_dynamics",
-        # loss flags matching the lit__post_nojerk shape
+        # adversarial-phase hyperparameters (used only for namespace completeness;
+        # setup_task_model_pair does not consult these for model construction)
+        n_adversary_steps=5,
+        adversary_lr=3e-4,
+        linear_dynamics_eta_max=0.1,
+        linear_dynamics_pgd_steps=5,
+        linear_dynamics_lr=1e-2,
+        n_bumps=3,
+        force_max=1.0,
+        n_adversaries=1,
+        adv_batch_size=None,
+        # loss flags
         effector_hold_pos=1.0,
         effector_hold_vel=0.0,
         effector_pos_running=1.0,
@@ -99,40 +146,44 @@ def _linear_args(hidden_type: str) -> argparse.Namespace:
     )
 
 
-def _baseline_args() -> argparse.Namespace:
-    """CLI namespace for the f47abb1 lit__post_nojerk GRU baseline."""
-    return argparse.Namespace(
-        method="pai-asf",
-        hidden_type="gru",
-        sisu_gating="additive",
-        n_warmup_batches=12000,
-        n_adversary_batches=0,
-        batch_size=250,
-        n_replicates=N_REPLICATES,
-        controller_lr=1e-4,
-        seed=42,
-        adversary_type="linear_dynamics",
-        effector_hold_pos=1.0,
-        effector_hold_vel=0.0,
-        effector_pos_running=1.0,
-        effector_pos_late_weight=0.0,
-        effector_pos_late_final_scale=2.0,
-        effector_pos_late_start_step=80,
-        effector_vel_late=0.0,
-        effector_final_vel=0.0,
-        nn_output=1e-5,
-        nn_hidden=1e-5,
-        nn_output_jerk=0.0,
-        nn_hidden_derivative=0.001,
-        nn_output_pre_go=0.0,
-        nn_hidden_derivative_pre_go=0.0,
-        effector_pos_running_schedule="powerlaw",
-        effector_hold_pos_schedule="flat",
-        position_powerlaw_power=6.0,
-        p_catch_trial=0.5,
-        loss_update_enabled=False,
-        loss_update_ratio=0.5,
-    )
+def _linear_args(hidden_type: str, n_adversary_batches: int) -> argparse.Namespace:
+    """Reconstruct the CLI namespace used to train a linear-controller run."""
+    kw = _common_linear_args()
+    kw["hidden_type"] = hidden_type
+    kw["n_adversary_batches"] = n_adversary_batches
+    return argparse.Namespace(**kw)
+
+
+# Four-run config table.
+# Each entry: (label, eqx_relative_path, args)
+# eqx_relative_path is relative to _artifacts/<experiment>/runs/<dir>/.
+RUNS = {
+    "linear_regulator__baseline": (
+        "linear_regulator__baseline",
+        "warmup_model.eqx",
+        _linear_args("linear", n_adversary_batches=0),
+    ),
+    "linear_regulator__adversarial": (
+        "linear_regulator__adversarial",
+        "adversarial_model.eqx",
+        _linear_args("linear", n_adversary_batches=500),
+    ),
+    "linear_tracker__baseline": (
+        "linear_tracker__baseline",
+        "warmup_model.eqx",
+        _linear_args("linear_tracker", n_adversary_batches=0),
+    ),
+    "linear_tracker__adversarial": (
+        "linear_tracker__adversarial",
+        "adversarial_model.eqx",
+        _linear_args("linear_tracker", n_adversary_batches=500),
+    ),
+}
+
+ARCH_PAIRS = (
+    ("linear_regulator", "linear_regulator__baseline", "linear_regulator__adversarial"),
+    ("linear_tracker", "linear_tracker__baseline", "linear_tracker__adversarial"),
+)
 
 
 # ---------------------------------------------------------------------------
@@ -141,14 +192,40 @@ def _baseline_args() -> argparse.Namespace:
 
 
 def load_model(eqx_path: Path, args: argparse.Namespace):
-    """Load a model by reconstructing the skeleton via setup_task_model_pair."""
+    """Load a model by reconstructing the skeleton via setup_task_model_pair.
+
+    For adversarial-phase models (those saved as ``adversarial_model.eqx``),
+    the saved PyTree carries a DynamicsMatrixPerturb intervenor (swapped in
+    during training). The default skeleton produced by
+    ``setup_task_model_pair`` has the warmup-phase FixedField intervenor.
+    Apply the same swap to the skeleton before deserialising so the
+    structures match. Bug: 410d7ac.
+    """
     hps = build_hps(args)
-    pair = setup_task_model_pair(hps, key=jr.PRNGKey(args.seed))
-    model, _ = load_with_hyperparameters(
-        eqx_path,
-        setup_func=lambda key, **kwargs: setup_task_model_pair(hps, key=key).model,
+    is_adversarial = (
+        args.n_adversary_batches > 0 and eqx_path.name == "adversarial_model.eqx"
     )
-    return model, pair.task
+
+    def _setup_func(key, **kwargs):
+        m = setup_task_model_pair(hps, key=key).model
+        if is_adversarial:
+            m = jt.map(
+                lambda x: swap_plant_intervenor_to_dynamics_matrix(
+                    x, PLANT_INTERVENOR_LABEL, mass=hps.model.effector_mass,
+                ),
+                m,
+                is_leaf=lambda x: x is not None and hasattr(x, "nodes")
+                                  and hasattr(x, "input_ports"),
+            )
+        return m
+
+    model, _ = load_with_hyperparameters(eqx_path, setup_func=_setup_func)
+
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(args.seed))
+    task = pair.task
+    if is_adversarial:
+        task = swap_task_intervention_to_dynamics_matrix(task, PLANT_INTERVENOR_LABEL)
+    return model, task
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +234,7 @@ def load_model(eqx_path: Path, args: argparse.Namespace):
 
 
 def make_trials(task, pert_scale: float, sisu: float = 0.5):
-    """Validation trials with the disturbance scale and SISU pinned."""
+    """Validation trials with disturbance scale and SISU pinned."""
     val = task.validation_trials
     n_trials = val.intervene[PLANT_INTERVENOR_LABEL].scale.shape[0]
     trials = eqx.tree_at(
@@ -165,7 +242,6 @@ def make_trials(task, pert_scale: float, sisu: float = 0.5):
         val,
         jnp.full((n_trials,), pert_scale),
     )
-    # Pin SISU iff the input dict carries it (it does — added by part2).
     if "sisu" in trials.inputs:
         trials = eqx.tree_at(
             lambda t: t.inputs["sisu"],
@@ -194,188 +270,323 @@ def eval_ensemble(task, model, trial_specs, *, key, n_replicates: int):
 
 
 def peak_forward_velocity(states, trial_specs) -> np.ndarray:
-    """Compute peak forward (along reach-axis) velocity per (replicate, trial).
+    """Per-trial peak forward velocity projected on the reach axis.
 
-    Returns ``(n_rep, n_trials)`` array of peak forward speeds (m/s).
+    Returns ``(n_rep, n_trials)`` array of peak forward speeds.
     """
-    pos = states.mechanics.effector.pos  # (n_rep, n_trials, n_steps, 2)
-    vel = states.mechanics.effector.vel  # same shape
+    pos = states.mechanics.effector.pos
+    vel = states.mechanics.effector.vel
 
     target_key = list(trial_specs.targets.keys())[0]
-    goal_seq = trial_specs.targets[target_key].value  # (n_trials, n_steps, 2)
-    goal = goal_seq[:, -1, :]  # (n_trials, 2)
+    goal_seq = trial_specs.targets[target_key].value
+    goal = goal_seq[:, -1, :]
 
-    go_idx = trial_specs.timeline.epoch_bounds[:, 2]  # (n_trials,)
+    go_idx = trial_specs.timeline.epoch_bounds[:, 2]
     n_rep, n_trials, n_steps, _ = pos.shape
 
-    # Init pos at go cue, per replicate per trial
     def _gather_init(pos_rep, go_idx_arr):
-        # pos_rep: (n_trials, n_steps, 2); go_idx_arr: (n_trials,)
         return jax.vmap(lambda p, idx: p[idx])(pos_rep, go_idx_arr)
 
-    init_pos = jax.vmap(_gather_init, in_axes=(0, None))(pos, go_idx)  # (n_rep, n_trials, 2)
-    direction = goal[None, :, :] - init_pos  # (n_rep, n_trials, 2)
-    direction_unit = direction / jnp.maximum(jnp.linalg.norm(direction, axis=-1, keepdims=True), 1e-12)
+    init_pos = jax.vmap(_gather_init, in_axes=(0, None))(pos, go_idx)
+    direction = goal[None, :, :] - init_pos
+    direction_unit = direction / jnp.maximum(
+        jnp.linalg.norm(direction, axis=-1, keepdims=True), 1e-12
+    )
 
-    # Forward velocity projection: dot(vel_t, direction_unit) per step
-    fwd_vel = jnp.sum(vel * direction_unit[:, :, None, :], axis=-1)  # (n_rep, n_trials, n_steps)
-    # Mask to post-go window
+    fwd_vel = jnp.sum(vel * direction_unit[:, :, None, :], axis=-1)
     t_idx = jnp.arange(n_steps)
     after_go = t_idx[None, None, :] >= go_idx[None, :, None]
-    fwd_vel = jnp.where(after_go, fwd_vel, -jnp.inf)
-    return np.asarray(jnp.max(fwd_vel, axis=-1))  # (n_rep, n_trials)
+    fwd_vel_masked = jnp.where(after_go, fwd_vel, -jnp.inf)
+    peak = jnp.max(fwd_vel_masked, axis=-1)
+    return np.asarray(peak), np.asarray(fwd_vel), np.asarray(after_go)
+
+
+def forward_velocity_profile(states, trial_specs) -> np.ndarray:
+    """Per-step forward velocity (n_rep, n_trials, n_steps)."""
+    peak, fwd_vel, _ = peak_forward_velocity(states, trial_specs)
+    return fwd_vel
+
+
+def u_ff_diagnostic(model, args: argparse.Namespace) -> dict | None:
+    """If model is a LinearTrackerController ensemble, return |u_ff| stats.
+
+    Reads ``model.nodes["net"].u_ff`` directly. The ensembled model has
+    a leading ``(n_replicates,)`` axis on the array.
+    """
+    if args.hidden_type != "linear_tracker":
+        return None
+    try:
+        u_ff_arr = np.asarray(model.nodes["net"].u_ff)
+    except (AttributeError, KeyError):
+        return None
+    return {
+        "u_ff_shape": list(u_ff_arr.shape),
+        "u_ff_abs_max": float(np.abs(u_ff_arr).max()),
+        "u_ff_l2_mean": float(np.sqrt((u_ff_arr ** 2).sum(axis=-1)).mean()),
+        "u_ff_per_rep_abs_max": [
+            float(np.abs(u_ff_arr[i]).max()) for i in range(u_ff_arr.shape[0])
+        ],
+    }
+
+
+def K_diagnostic(model) -> dict | None:
+    """Return |K| stats for both LinearController and LinearTrackerController."""
+    try:
+        K_arr = np.asarray(model.nodes["net"].K)
+    except (AttributeError, KeyError):
+        return None
+    return {
+        "K_shape": list(K_arr.shape),
+        "K_frobenius_mean": float(np.sqrt((K_arr ** 2).sum(axis=(-1, -2))).mean()),
+        "K_abs_max": float(np.abs(K_arr).max()),
+    }
 
 
 # ---------------------------------------------------------------------------
-# Top-level: sweep + report
+# Top-level
 # ---------------------------------------------------------------------------
 
 
-def sweep_model(
-    label: str,
-    eqx_path: Path,
-    args: argparse.Namespace,
-    pert_scales: tuple[float, ...] = PERT_SCALES,
-) -> dict[str, np.ndarray]:
+def evaluate_one_run(label: str, dir_name: str, eqx_filename: str,
+                     args: argparse.Namespace) -> dict:
+    """Load a single trained model and compute peak fwd vel at each pert scale."""
+    artifact_dir = REPO_ROOT / "_artifacts" / EXPERIMENT / "runs" / dir_name
+    eqx_path = artifact_dir / eqx_filename
+    if not eqx_path.exists():
+        print(f"[{label}] MISSING artifact: {eqx_path}")
+        return {"missing": True, "eqx_path": str(eqx_path)}
+
     print(f"\n[{label}] loading {eqx_path}")
     model, task = load_model(eqx_path, args)
 
-    per_scale_peak_vel = {}
+    out: dict = {
+        "eqx_path": str(eqx_path),
+        "peak_velocity_per_scale": {},
+        "fwd_velocity_profile_per_scale": {},
+    }
     key = jr.PRNGKey(SEED_EVAL)
-    for s in pert_scales:
+    for s in EVAL_PERT_SCALES:
         trials = make_trials(task, pert_scale=float(s), sisu=0.5)
         key, k = jr.split(key)
         states = eval_ensemble(task, model, trials, key=k, n_replicates=N_REPLICATES)
-        peak = peak_forward_velocity(states, trials)  # (n_rep, n_trials)
-        per_scale_peak_vel[float(s)] = peak
-        print(f"  pert_scale={s:.2f}  peak_vel mean={peak.mean():.4f}  sd={peak.std():.4f}")
-    return per_scale_peak_vel
+        peak, fwd_vel, after_go = peak_forward_velocity(states, trials)
+        out["peak_velocity_per_scale"][float(s)] = {
+            "per_rep_trial": peak,  # (n_rep, n_trials)
+            "rep_means": peak.mean(axis=-1),  # (n_rep,)
+            "overall_mean": float(peak.mean()),
+            "overall_sd": float(peak.std()),
+        }
+        # Trial-mean profile per replicate. For plotting only.
+        prof = np.where(after_go, fwd_vel, np.nan)
+        # mean over trials (axis=1) ignoring nans
+        out["fwd_velocity_profile_per_scale"][float(s)] = np.nanmean(prof, axis=1)  # (n_rep, n_steps)
+        print(f"  pert_scale={s:.2f}  peak_vel mean={peak.mean():.4f}  "
+              f"sd_across_reps={peak.mean(axis=-1).std():.4f}")
+
+    u_ff_diag = u_ff_diagnostic(model, args)
+    if u_ff_diag is not None:
+        out["u_ff_diagnostic"] = u_ff_diag
+        print(f"  |u_ff|_max = {u_ff_diag['u_ff_abs_max']:.4f}  "
+              f"|u_ff|_L2 mean = {u_ff_diag['u_ff_l2_mean']:.4f}")
+    k_diag = K_diagnostic(model)
+    if k_diag is not None:
+        out["K_diagnostic"] = k_diag
+        print(f"  |K|_frob_mean = {k_diag['K_frobenius_mean']:.4f}  "
+              f"|K|_max = {k_diag['K_abs_max']:.4f}")
+    return out
 
 
-def delta_v(per_scale_peak_vel: dict[float, np.ndarray]) -> dict[float, dict[str, float]]:
-    """Compute Δv = (peak(s) - peak(0)) / peak(0) per scale."""
-    baseline = per_scale_peak_vel[0.0]  # (n_rep, n_trials)
+def compute_delta_v(baseline_result: dict, adversarial_result: dict) -> dict:
+    """Compute Δv at each pert scale.
+
+    Returns a dict keyed by pert_scale, with mean / SEM across replicates.
+    Uses per-replicate trial-mean peak velocities (n_rep,) as the unit of
+    variation.
+    """
     out = {}
-    for s, peak in per_scale_peak_vel.items():
-        if s == 0.0:
-            continue
-        # Per-replicate Δv: trial-mean(peak) / trial-mean(baseline) - 1
-        # Use replicate-level means so SD across replicates is meaningful.
-        peak_rep = peak.mean(axis=-1)         # (n_rep,)
-        base_rep = baseline.mean(axis=-1)     # (n_rep,)
-        dv_rep = (peak_rep - base_rep) / np.maximum(base_rep, 1e-12)
-        out[s] = {
+    for s in EVAL_PERT_SCALES:
+        peak_b = baseline_result["peak_velocity_per_scale"][float(s)]["rep_means"]
+        peak_a = adversarial_result["peak_velocity_per_scale"][float(s)]["rep_means"]
+        # Per-replicate Δv (paired by replicate index — same seed implies same
+        # warmup initialisation, so the pairing is meaningful).
+        dv_rep = (peak_a - peak_b) / np.maximum(peak_b, 1e-12)
+        out[float(s)] = {
             "mean": float(dv_rep.mean()),
-            "sd": float(dv_rep.std()),
+            "sem": float(dv_rep.std(ddof=1) / np.sqrt(len(dv_rep))) if len(dv_rep) > 1 else 0.0,
+            "sd": float(dv_rep.std(ddof=1)) if len(dv_rep) > 1 else 0.0,
             "per_rep": dv_rep.tolist(),
+            "peak_v_baseline_mean": float(peak_b.mean()),
+            "peak_v_adversarial_mean": float(peak_a.mean()),
         }
     return out
 
 
 def main():
-    artifact_base_410 = REPO_ROOT / "_artifacts" / EXPERIMENT / "runs"
-    artifact_base_f47 = REPO_ROOT / "_artifacts" / "f47abb1" / "runs"
+    # 1. Evaluate all four runs
+    results: dict = {}
+    for label, (dir_name, eqx_filename, args) in RUNS.items():
+        results[label] = evaluate_one_run(label, dir_name, eqx_filename, args)
 
-    runs = {
-        "linear_regulator": (
-            artifact_base_410 / "linear_regulator" / "warmup_model.eqx",
-            _linear_args("linear"),
-        ),
-        "linear_tracker": (
-            artifact_base_410 / "linear_tracker" / "warmup_model.eqx",
-            _linear_args("linear_tracker"),
-        ),
-        "gru_baseline_lit_post_nojerk": (
-            artifact_base_f47 / "lit__post_nojerk" / "warmup_model.eqx",
-            _baseline_args(),
-        ),
-    }
-
-    results: dict[str, dict] = {}
-    for label, (eqx_path, args) in runs.items():
-        if not eqx_path.exists():
-            print(f"[{label}] WARN: artifact {eqx_path} missing — skipping")
+    # 2. Compute Δv per architecture pair
+    delta_v_by_arch: dict = {}
+    for arch, baseline_label, adv_label in ARCH_PAIRS:
+        if results[baseline_label].get("missing") or results[adv_label].get("missing"):
+            print(f"\n[{arch}] skipped — missing artifact(s)")
             continue
-        per_scale = sweep_model(label, eqx_path, args)
-        dv = delta_v(per_scale)
-        results[label] = {
-            "peak_velocity": {
-                str(s): {
-                    "mean": float(p.mean()),
-                    "sd": float(p.std()),
-                    "rep_means": p.mean(axis=-1).tolist(),
-                }
-                for s, p in per_scale.items()
-            },
-            "delta_v": {str(s): v for s, v in dv.items()},
-        }
+        dv = compute_delta_v(results[baseline_label], results[adv_label])
+        delta_v_by_arch[arch] = dv
 
-    # Report
+    # 3. Report
     print("\n" + "=" * 80)
-    print("Δv signature (peak forward velocity inflation under disturbance)")
-    print("Convention: Δv > 0  => velocity inflates under perturbation (regulator-like)")
-    print("            Δv ≈ 0  => decoupled feedforward/feedback (tracker-like)")
+    print("Δv signature — peak forward velocity inflation, adversarial vs baseline")
+    print("Definition: Δv = (peak_v(adv) - peak_v(base)) / peak_v(base)")
+    print("Discriminator: regulator → Δv > 0;  tracker → Δv ≈ 0")
     print("=" * 80)
-    header = f"  {'model':>32} | " + " | ".join(
-        f"{f'Δv@{s:.1f}':>14}" for s in PERT_SCALES if s > 0.0
+
+    header = f"  {'architecture':>20} | " + " | ".join(
+        f"{f'Δv @ pert={s:.1f}':>18}" for s in EVAL_PERT_SCALES
     )
     print(header)
     print("  " + "-" * (len(header) - 2))
-    for label, res in results.items():
-        dv = res["delta_v"]
+    for arch, dv in delta_v_by_arch.items():
         cells = " | ".join(
-            f"{dv[str(s)]['mean']:+.3f} ± {dv[str(s)]['sd']:.3f}"
-            for s in PERT_SCALES if s > 0.0
+            f"{dv[float(s)]['mean']:+.4f} ± {dv[float(s)]['sem']:.4f} (SEM)"
+            for s in EVAL_PERT_SCALES
         )
-        print(f"  {label:>32} | {cells}")
+        print(f"  {arch:>20} | {cells}")
+    print()
 
-    # Save JSON summary
+    # 4. u_ff diagnostic
+    print("u_ff utilization (tracker only):")
+    for label in ("linear_tracker__baseline", "linear_tracker__adversarial"):
+        diag = results[label].get("u_ff_diagnostic") if label in results else None
+        if diag:
+            print(f"  {label:>28}: |u_ff|_max={diag['u_ff_abs_max']:.4f}, "
+                  f"|u_ff|_L2 mean={diag['u_ff_l2_mean']:.4f}")
+
+    # 5. Save JSON summary
+    summary = {
+        "experiment": EXPERIMENT,
+        "definition": "Δv = (peak_v(adversarial) - peak_v(baseline)) / peak_v(baseline)",
+        "eval_pert_scales": list(EVAL_PERT_SCALES),
+        "headline_pert_scale": HEADLINE_PERT_SCALE,
+        "n_replicates": N_REPLICATES,
+        "seed_eval": SEED_EVAL,
+        "discriminator_prediction": {
+            "regulator": "Δv > 0",
+            "tracker": "Δv ≈ 0",
+        },
+        "per_run": {
+            label: {
+                "eqx_path": r.get("eqx_path"),
+                "peak_velocity": {
+                    str(s): {
+                        "overall_mean": r["peak_velocity_per_scale"][s]["overall_mean"],
+                        "overall_sd": r["peak_velocity_per_scale"][s]["overall_sd"],
+                        "rep_means": r["peak_velocity_per_scale"][s]["rep_means"].tolist(),
+                    }
+                    for s in EVAL_PERT_SCALES
+                    if not r.get("missing")
+                } if not r.get("missing") else None,
+                "u_ff_diagnostic": r.get("u_ff_diagnostic"),
+                "missing": r.get("missing", False),
+            }
+            for label, r in results.items()
+        },
+        "delta_v_by_arch": {
+            arch: {str(s): v for s, v in dv.items()}
+            for arch, dv in delta_v_by_arch.items()
+        },
+    }
     notes_dir = REPO_ROOT / "results" / EXPERIMENT / "notes"
     notes_dir.mkdir(parents=True, exist_ok=True)
     summary_path = notes_dir / "delta_v_summary.json"
     with open(summary_path, "w") as f:
-        json.dump(results, f, indent=2, default=float)
+        json.dump(summary, f, indent=2, default=float)
     print(f"\nSaved summary JSON: {summary_path}")
 
-    # Build figure
-    fig = go.Figure()
-    color_map = {
-        "linear_regulator": "#d62728",  # red — predicted Δv > 0
-        "linear_tracker": "#2ca02c",     # green — predicted Δv ≈ 0
-        "gru_baseline_lit_post_nojerk": "#1f77b4",  # blue — reference
-    }
-    scales_pos = [s for s in PERT_SCALES if s > 0.0]
-    for label, res in results.items():
-        means = [res["delta_v"][str(s)]["mean"] for s in scales_pos]
-        sds = [res["delta_v"][str(s)]["sd"] for s in scales_pos]
-        fig.add_trace(
-            go.Scatter(
-                x=scales_pos, y=means,
-                error_y=dict(type="data", array=sds),
-                mode="lines+markers",
-                name=label,
-                line=dict(color=color_map.get(label, None), width=2),
-                marker=dict(size=10),
-            )
-        )
-    fig.add_hline(y=0.0, line_dash="dash", line_color="grey")
-    fig.update_layout(
-        title="Velocity-inflation signature Δv under LinearDynamics disturbance — 410d7ac MVP",
-        xaxis_title="Disturbance scale (relative units)",
-        yaxis_title="Δv = (peak_vel(scale) − peak_vel(0)) / peak_vel(0)",
-        legend_title="Architecture",
-        template="plotly_white",
+    # 6. Figure: side-by-side velocity profiles (regulator vs tracker, baseline vs adv)
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=("Linear regulator", "Linear tracker"),
+        shared_yaxes=True,
     )
+    color_map = {"baseline": "#1f77b4", "adversarial": "#d62728"}
+    pert_idx_for_plot = HEADLINE_PERT_SCALE
+    for col, (arch, base_label, adv_label) in enumerate(ARCH_PAIRS, start=1):
+        for role, label in (("baseline", base_label), ("adversarial", adv_label)):
+            r = results.get(label, {})
+            if r.get("missing"):
+                continue
+            profile = r["fwd_velocity_profile_per_scale"].get(pert_idx_for_plot)
+            if profile is None:
+                continue
+            mean = np.nanmean(profile, axis=0)
+            sem = np.nanstd(profile, axis=0, ddof=1) / np.sqrt(profile.shape[0])
+            x = np.arange(mean.shape[0])
+            fig.add_trace(
+                go.Scatter(
+                    x=x, y=mean, mode="lines",
+                    line=dict(color=color_map[role], width=2),
+                    name=f"{arch} {role}",
+                    legendgroup=role,
+                    showlegend=(col == 1),
+                ),
+                row=1, col=col,
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=np.concatenate([x, x[::-1]]),
+                    y=np.concatenate([mean + sem, (mean - sem)[::-1]]),
+                    fill="toself",
+                    fillcolor=color_map[role],
+                    opacity=0.15,
+                    line=dict(width=0),
+                    showlegend=False,
+                    hoverinfo="skip",
+                    legendgroup=role,
+                ),
+                row=1, col=col,
+            )
+    fig.update_layout(
+        title=(f"Forward velocity profile — adversarial vs baseline "
+               f"(at pert_scale={HEADLINE_PERT_SCALE}) — 410d7ac corrected MVP"),
+        template="plotly_white",
+        legend_title="Training method",
+    )
+    fig.update_xaxes(title_text="time step", row=1, col=1)
+    fig.update_xaxes(title_text="time step", row=1, col=2)
+    fig.update_yaxes(title_text="forward velocity (toward target)", row=1, col=1)
+
+    # Annotate Δv on each subplot
+    for col, (arch, _, _) in enumerate(ARCH_PAIRS, start=1):
+        if arch in delta_v_by_arch:
+            dv0 = delta_v_by_arch[arch][HEADLINE_PERT_SCALE]
+            axis_suffix = "" if col == 1 else str(col)
+            fig.add_annotation(
+                xref=f"x{axis_suffix} domain",
+                yref=f"y{axis_suffix} domain",
+                x=0.95, y=0.95, xanchor="right", yanchor="top",
+                text=f"Δv @ {HEADLINE_PERT_SCALE} = {dv0['mean']:+.3f} ± {dv0['sem']:.3f}",
+                showarrow=False,
+                font=dict(size=12),
+            )
+
     spec = {
         "experiment": EXPERIMENT,
         "topic": "delta_v_signature",
-        "pert_scales": list(PERT_SCALES),
+        "eval_pert_scales": list(EVAL_PERT_SCALES),
+        "headline_pert_scale": HEADLINE_PERT_SCALE,
         "n_replicates": N_REPLICATES,
         "seed_eval": SEED_EVAL,
-        "runs": list(results.keys()),
+        "runs": list(RUNS.keys()),
         "description": (
-            "Δv per disturbance scale per architecture, mean ± SD across "
-            f"{N_REPLICATES} replicates."
+            "Corrected 4-model Δv comparison: forward-velocity profile of "
+            "baseline (warmup-only) vs adversarial (warmup + 500 adversarial "
+            "batches) for both LinearController (regulator) and "
+            "LinearTrackerController. Δv = (peak_v(adv) - peak_v(base)) / "
+            "peak_v(base), evaluated at pert_scale=0 (the controller's "
+            "designed-against threat is the only structural difference)."
         ),
     }
     save_figure(
@@ -385,8 +596,9 @@ def main():
         topic="delta_v_signature",
         extra_packages=["rlrmp"],
     )
-    print(f"\nFigure saved (see results/{EXPERIMENT}/figures/delta_v_signature/)")
-    return results
+    print(f"\nFigure saved to results/{EXPERIMENT}/figures/delta_v_signature/")
+
+    return summary
 
 
 if __name__ == "__main__":
