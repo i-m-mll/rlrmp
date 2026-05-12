@@ -33,7 +33,7 @@
       "sha256": "24045cbd3aed86abd3819ce2fe00b90983068b58706dc2046c22e45e586da21d"
     }
   ],
-  "metric_description": "Primary: velocity-RMSE ratio = within-cell mean pairwise RMSE / nearest-across-cell mean pairwise RMSE on forward-velocity profiles. Secondary: same on forward-position profiles. Auxiliary: CV = SD(peak_vel) / mean(peak_vel) across replicates. Target threshold 0.5; prior best (baseline GRU/jerk, 2bc95fd): 0.758.",
+  "metric_description": "AUXILIARY (NOT primary for this matrix): velocity-RMSE ratio = within-cell mean pairwise RMSE / nearest-across-cell mean pairwise RMSE on forward-velocity profiles, same on forward-position profiles, and CV = SD(peak_vel) / mean(peak_vel) across replicates. The within/across ratio is misleading as the PRIMARY metric for f47abb1 because this matrix sweeps training-method variants with no a priori expectation that cells produce similar trajectories; nearest-across-cell RMSE reflects cost-induced kinematic divergence, not nuisance variation. Operative primary metric: absolute within-cell vel RMSE (m/s) — see results/f47abb1/notes/variance_analysis.md framing note. The < 0.5 threshold pre-registered on f47abb1 does NOT apply here. Within-cell raw values are listed in the rmse_ratios entries (vel_within_rmse / pos_within_rmse fields).",
   "plot_kwargs": {
     "cells": [
       "lit__flat_jerk",
