@@ -221,12 +221,16 @@ worktrees/
 # === Role-based artifact policy (see CLAUDE.md "Experiment Artifacts: Tracked vs Ignored") ===
 #
 # `_artifacts/` mirrors `results/` and holds bulk reproducible outputs (.eqx
-# checkpoints, training logs, large arrays, full-DPI figure renders). Never tracked,
-# except for the top-level README that documents the directory's purpose.
-# (Use the `_artifacts/**` pattern, not `_artifacts/`, so we can re-include the README;
-# git can't re-include a file whose parent directory was excluded.)
-_artifacts/**
-!_artifacts/README.md
+# checkpoints, training logs, large arrays, full-DPI figure renders). Nothing inside
+# is tracked. The directory is shared across worktrees via `.worktree.yaml` (see
+# Bug: 0887e3e) — `wt` symlinks `_artifacts` from the main worktree into every
+# feature worktree at creation time, so all worktrees write to the same location.
+# The pattern is written without a trailing slash so it also matches the symlink
+# itself (a symlink is not a directory from git's perspective). For the symlink to
+# be created cleanly at worktree creation, no files under `_artifacts/` may be
+# tracked (a tracked file would be materialized by `git checkout` and conflict
+# with the symlink replacement that `wt` performs).
+_artifacts
 #
 # Inside `results/`, ignore everything by default and whitelist specific kinds.
 # This makes tracking depend on the file's ROLE (spec/narrative/render-thumbnail),

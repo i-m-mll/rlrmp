@@ -210,6 +210,18 @@ Bug: `f485c26`, feedbax `67bf476`. The dual-tree write + symlink is automatic pe
 4. Figure scripts use `save_figure(package="rlrmp", experiment="<hash>", topic=...)`.
 5. Never write `.eqx`, large `.npz`, full-DPI images, or training logs anywhere under `results/`.
 
+### Worktree symlink convention for `_artifacts/` (Bug: `0887e3e`)
+
+rlrmp's `.worktree.yaml` adds `_artifacts` to its `shared:` list, so `~/.dotfiles/bin/wt` symlinks the directory from the main worktree's repo root into every feature worktree at creation time. All writes to `_artifacts/` from a worktree therefore go to the main repo's `_artifacts/`, regardless of which worktree the script runs from. This prevents gitignored bulk outputs (figure HTML renders, training checkpoints, etc.) from being silently deleted when `dwt` removes the worktree post-merge — the original failure mode that motivated this convention (see issue `0887e3e` for the design discussion).
+
+- **New worktrees** inherit the symlink automatically via `wt` (it processes `.worktree.yaml` at creation time).
+- **Pre-existing worktrees** can pick up the symlink by running `~/.dotfiles/bin/wt-sync` from inside the worktree.
+- **`.worktree.yaml` also declares `setup: mkdir -p _artifacts`** so the directory exists on fresh clones (otherwise `wt` would warn "not found in repo root, skipping" and no symlink would be created).
+
+Constraint: nothing under `_artifacts/` may be tracked in git. A tracked file would be materialized by `git checkout` when the worktree is created, then conflict with the symlink replacement that `wt` performs. The `.gitignore` pattern is therefore `_artifacts` (no trailing slash, no re-include exceptions) — see Bug: `0887e3e` for why the prior `!_artifacts/README.md` exception had to be removed.
+
+Caveat: parallel worktrees share one `_artifacts/`. Concurrent writes to the same `_artifacts/<hash>/...` subtree from two worktrees could collide; in practice, hash-keyed experiment directories make collisions unlikely.
+
 ### Reconstructed runs (orphan archaeology)
 
 When a run is committed without going through the post-training-run protocol (CLAUDE.md §9) and only the bulk `_artifacts/<orphan>/config.json` survives, reconstruct the `run.json` spec with a `reconstructed: true` marker:
