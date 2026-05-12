@@ -1516,12 +1516,22 @@ def run_training(args: argparse.Namespace) -> None:
     # -----------------------------------------------------------------------
     # Save outputs
     # -----------------------------------------------------------------------
-    # Final adversarially-trained model (ensembled: arrays have leading n_reps axis)
-    final_model_path = output_dir / "adversarial_model.eqx"
-    fbx_save(final_model_path, adv_model, hyperparameters=config_dict)
-    logger.info(
-        "Saved adversarial model (n_reps=%d ensembled) to %s", n_reps, final_model_path
-    )
+    # Final adversarially-trained model (ensembled: arrays have leading n_reps axis).
+    # Bug: a517040 — skip when n_adversary_batches=0: the adversarial phase did not
+    # run, and the saved PyTree's adversary state does not match the local skeleton
+    # produced by `setup_task_model_pair` at load time, breaking deserialization.
+    # Downstream loaders fall back to `warmup_model.eqx` (the correct final model).
+    if args.n_adversary_batches > 0:
+        final_model_path = output_dir / "adversarial_model.eqx"
+        fbx_save(final_model_path, adv_model, hyperparameters=config_dict)
+        logger.info(
+            "Saved adversarial model (n_reps=%d ensembled) to %s", n_reps, final_model_path
+        )
+    else:
+        logger.info(
+            "Skipping adversarial_model.eqx save (n_adversary_batches=0); "
+            "warmup_model.eqx is the canonical final model for this run."
+        )
 
     # Training histories (warmup from TaskTrainer; adversarial phase as numpy arrays)
     if warmup_history is not None:
