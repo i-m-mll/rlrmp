@@ -1,0 +1,28 @@
+{
+  "description": "\u0394v per disturbance scale per architecture, mean \u00b1 SD across 5 replicates.",
+  "experiment": "410d7ac",
+  "inputs": [],
+  "n_replicates": 5,
+  "pert_scales": [
+    0.0,
+    0.5,
+    1.0,
+    1.5
+  ],
+  "runs": [
+    "linear_regulator",
+    "linear_tracker",
+    "gru_baseline_lit_post_nojerk"
+  ],
+  "seed_eval": 42,
+  "timestamp": "2026-05-12T03:13:31.848094+00:00",
+  "topic": "delta_v_signature",
+  "versions": {
+    "equinox": "0.13.4",
+    "feedbax": "0.1.2",
+    "jax": "0.9.0",
+    "numpy": "2.4.1",
+    "plotly": "6.5.2",
+    "rlrmp": "0.1.0"
+  }
+}

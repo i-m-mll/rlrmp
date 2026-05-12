@@ -26,7 +26,11 @@ from rlrmp.disturbance import (
 from rlrmp.disturbances import get_gusts_fn
 from rlrmp.intervention_compat import add_plant_intervention_to_ensemble
 from rlrmp.loss import get_loss_update_func
-from rlrmp.models import create_point_mass_nn_ensemble
+from rlrmp.models import (
+    LINEAR_HIDDEN_TYPES,
+    create_point_mass_linear_ensemble,
+    create_point_mass_nn_ensemble,
+)
 from rlrmp.task import TASK_TYPES
 
 TrainingMethodLabel: TypeAlias = L["bcs", "dai", "pai-asf", "pai-n"]
@@ -174,15 +178,29 @@ def setup_task_model_pair(
     # Resolve SISU gating mode; default "additive" preserves existing behavior
     sisu_gating = getattr(hps, 'sisu_gating', 'additive')
 
-    # Create base models with extra input for SISU
-    models_base = create_point_mass_nn_ensemble(
-        hps,
-        task_base,
-        n_extra_inputs=1,  # for SISU (even when multiplicative, task still provides it)
-        hidden_type=hidden_type,
-        sisu_gating=sisu_gating,
-        key=key,
-    )
+    # Dispatch: linear-controller MVP variants (Bug: 410d7ac) bypass
+    # ``create_point_mass_nn_ensemble`` entirely because they replace
+    # ``SimpleStagedNetwork`` with a purpose-built ``Component``. Detected via
+    # the sentinel strings ``"linear"`` / ``"linear_tracker"``; for these,
+    # hidden_type is a str (not a class), and SISU is still threaded through
+    # the task input pipeline (controller ignores it) so n_extra_inputs is 0.
+    if isinstance(hidden_type, str) and hidden_type in LINEAR_HIDDEN_TYPES:
+        models_base = create_point_mass_linear_ensemble(
+            hps,
+            task_base,
+            controller_type=hidden_type,
+            key=key,
+        )
+    else:
+        # Create base models with extra input for SISU
+        models_base = create_point_mass_nn_ensemble(
+            hps,
+            task_base,
+            n_extra_inputs=1,  # for SISU (even when multiplicative, task still provides it)
+            hidden_type=hidden_type,
+            sisu_gating=sisu_gating,
+            key=key,
+        )
 
     # Insert intervention components into models via graph surgery
     models = add_plant_intervention_to_ensemble(

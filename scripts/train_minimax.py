@@ -253,6 +253,11 @@ def _resolve_hidden_type(hidden_type_str: str, dt: float):
         # tau=0.1 s (100 ms) => alpha=dt/tau=0.1 at dt=0.01 — matches cortical-neuron
         # time constant in motor-control RNN literature (Yang 2019, Sussillo 2015).
         return _partial(VanillaRNNCell, dt=dt, tau=0.1)
+    elif hidden_type_str in ("linear", "linear_tracker"):
+        # Sentinel string forwarded to setup_task_model_pair, which dispatches to
+        # create_point_mass_linear_ensemble. Linear controllers have no recurrent
+        # cell — they replace SimpleStagedNetwork entirely. Bug: 410d7ac.
+        return hidden_type_str
     else:
         raise ValueError(f"Unknown hidden_type: {hidden_type_str!r}")
 
@@ -552,8 +557,19 @@ def _load_adversarial_checkpoint(
 # ---------------------------------------------------------------------------
 
 def _get_trainable(model):
-    """Return the trainable leaves of the model (net hidden + readout)."""
+    """Return the trainable leaves of the model.
+
+    Default (SimpleStagedNetwork): (net.hidden, net.readout). Linear-controller
+    MVP variants (Bug: 410d7ac) carry their parameters as ``K`` (and ``u_ff``
+    for the tracker) directly on the net Component — branch on Module class
+    name to keep this single function compatible with both code paths.
+    """
     net = model.nodes["net"]
+    cls_name = type(net).__name__
+    if cls_name == "LinearController":
+        return (net.K,)
+    if cls_name == "LinearTrackerController":
+        return (net.K, net.u_ff)
     return (net.hidden, net.readout)
 
 
@@ -640,6 +656,13 @@ def _make_where_train(sisu_gating: str = "additive"):
     """Return the where_train dict for the controller optimizer."""
     def where_train_fn(model):
         net = model.nodes["net"]
+        cls_name = type(net).__name__
+        # Linear-controller MVP variants (Bug: 410d7ac) carry their parameters
+        # directly on the net Component as K (+ u_ff for the tracker).
+        if cls_name == "LinearController":
+            return (net.K,)
+        if cls_name == "LinearTrackerController":
+            return (net.K, net.u_ff)
         params = [net.hidden, net.readout]
         # Include sisu_alpha in trainable params when using multiplicative gating
         if sisu_gating == "multiplicative" and net.sisu_alpha is not None:
@@ -1831,11 +1854,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--hidden-type", type=str, default="gru",
-        choices=["gru", "vanilla_rnn"],
+        choices=["gru", "vanilla_rnn", "linear", "linear_tracker"],
         help=(
-            "Recurrent network type: gru (default, GRUCell with gating) or "
-            "vanilla_rnn (LeakyRNNCell with tau=0.1 s => alpha=0.1, no gating). "
-            "vanilla_rnn is a diagnostic for the gating-laziness hypothesis."
+            "Controller architecture. RNNs: 'gru' (default, GRUCell with gating) "
+            "or 'vanilla_rnn' (LeakyRNNCell with tau=0.1 s => alpha=0.1, no gating, "
+            "diagnostic for the gating-laziness hypothesis). Linear-controller MVP "
+            "variants (Bug: 410d7ac): 'linear' is a pure LTV regulator "
+            "u_t=-K_t·e_t on the target-relative error state; 'linear_tracker' adds "
+            "an independent LTV feedforward channel u_ff(t) for the decoupling acid "
+            "test. With either linear variant, nn_hidden_size, population_structure "
+            "config, and the SISU-gating mode are ignored on the model side."
         ),
     )
     parser.add_argument(
