@@ -1,0 +1,14 @@
+# rlrmp worktree shared-files config. Consumed by `wt` and `wt-sync` from dotfiles/bin.
+#
+# Entries in `shared:` are symlinked from the repo root into every new worktree,
+# so all worktrees write to the SAME location. This is critical for `_artifacts/`
+# because gitignored bulk outputs (figure HTMLs, training checkpoints, etc.)
+# would otherwise live inside the feature worktree and be silently deleted when
+# `dwt` removes the worktree post-merge.
+#
+# See issue 0887e3e for the design discussion.
+
+setup: mkdir -p _artifacts
+
+shared:
+  - _artifacts
