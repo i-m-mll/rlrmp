@@ -369,3 +369,4 @@ The protocol followed:
 - **Don't index every commit on the coord.** Only commits that change cross-cutting state (a tier, a method choice, a phase boundary) merit a coord comment. Ordinary work-on-a-child does not.
 
 
+
