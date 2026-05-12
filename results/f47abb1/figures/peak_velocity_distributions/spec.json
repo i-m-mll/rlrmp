@@ -1,0 +1,150 @@
+{
+  "cell_stats": {
+    "lit__flat_jerk": {
+      "cv_peak_vel": 0.09163960128569927,
+      "mean_peak_velocity": 0.5898809432983398,
+      "peak_vel_per_rep": [
+        0.5642188787460327,
+        0.5326015949249268,
+        0.6529846787452698,
+        0.6420494914054871,
+        0.5575498938560486
+      ],
+      "sd_peak_velocity": 0.054056454449892044
+    },
+    "lit__flat_nojerk": {
+      "cv_peak_vel": 0.08937692470684128,
+      "mean_peak_velocity": 0.6056405901908875,
+      "peak_vel_per_rep": [
+        0.573126494884491,
+        0.6467636823654175,
+        0.6783678531646729,
+        0.551278829574585,
+        0.578666090965271
+      ],
+      "sd_peak_velocity": 0.05413029342889786
+    },
+    "lit__full_jerk": {
+      "cv_peak_vel": 0.041269651216196766,
+      "mean_peak_velocity": 0.7904595732688904,
+      "peak_vel_per_rep": [
+        0.764268696308136,
+        0.7700495719909668,
+        0.8269921541213989,
+        0.7657537460327148,
+        0.8252336978912354
+      ],
+      "sd_peak_velocity": 0.03262199088931084
+    },
+    "lit__full_nojerk": {
+      "cv_peak_vel": 0.02564270991509111,
+      "mean_peak_velocity": 0.9638093709945679,
+      "peak_vel_per_rep": [
+        0.953307032585144,
+        0.967888355255127,
+        0.9960670471191406,
+        0.9725954532623291,
+        0.9291889667510986
+      ],
+      "sd_peak_velocity": 0.02471468411386013
+    },
+    "lit__post_jerk": {
+      "cv_peak_vel": 0.040352717558414,
+      "mean_peak_velocity": 0.7908987998962402,
+      "peak_vel_per_rep": [
+        0.7675738334655762,
+        0.7678223252296448,
+        0.8269251585006714,
+        0.7673988342285156,
+        0.824773907661438
+      ],
+      "sd_peak_velocity": 0.03191491588950157
+    },
+    "lit__post_nojerk": {
+      "cv_peak_vel": 0.026002527882383768,
+      "mean_peak_velocity": 0.9685674905776978,
+      "peak_vel_per_rep": [
+        0.9586642980575562,
+        0.9783675670623779,
+        0.9986948370933533,
+        0.9757442474365234,
+        0.9313666820526123
+      ],
+      "sd_peak_velocity": 0.025185203179717064
+    }
+  },
+  "experiment": "f47abb1",
+  "figure_kind": "peak_velocity_distributions_violin",
+  "inputs": [
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/f47abb1/runs/lit__flat_jerk/adversarial_model.eqx",
+      "role": "adversarial_model:lit__flat_jerk",
+      "sha256": "d04f91db8957a5df760daefa1171fb807c534062d5627ca14b70aa9a7a3eb7c5"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/f47abb1/runs/lit__post_jerk/adversarial_model.eqx",
+      "role": "adversarial_model:lit__post_jerk",
+      "sha256": "fe54e19cf8b09375aeeafeae2333edd4965f7a4c07e4b6db04e709c2e9a85bad"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/f47abb1/runs/lit__full_jerk/adversarial_model.eqx",
+      "role": "adversarial_model:lit__full_jerk",
+      "sha256": "c1d107af0e832aee1705aedee2f824a8af78ac4819dc83de8497ba1559b5b665"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/f47abb1/runs/lit__flat_nojerk/adversarial_model.eqx",
+      "role": "adversarial_model:lit__flat_nojerk",
+      "sha256": "13b74acca5423d57c7e073302e624bb08f332397fe7af31f34e250c82a26eae0"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/f47abb1/runs/lit__post_nojerk/adversarial_model.eqx",
+      "role": "adversarial_model:lit__post_nojerk",
+      "sha256": "51af53a62ee1ade1e20adba30593914163df8e460d0682d4387713a3775c48cd"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/f47abb1/runs/lit__full_nojerk/adversarial_model.eqx",
+      "role": "adversarial_model:lit__full_nojerk",
+      "sha256": "24045cbd3aed86abd3819ce2fe00b90983068b58706dc2046c22e45e586da21d"
+    }
+  ],
+  "metric_note": "Annotation shows CV (SD/mean of peak vel scalar) -- auxiliary metric. Primary metric is vel_rmse_ratio in rmse_ratio_comparison figure.",
+  "plot_kwargs": {
+    "cells": [
+      "lit__flat_jerk",
+      "lit__post_jerk",
+      "lit__full_jerk",
+      "lit__flat_nojerk",
+      "lit__post_nojerk",
+      "lit__full_nojerk"
+    ],
+    "n_replicates": 5,
+    "pert_scale": 0.0,
+    "sisu": 0.5
+  },
+  "timestamp": "2026-05-12T01:00:36.381246+00:00",
+  "transform": [
+    {
+      "kwargs": {
+        "pert_scale": 0.0,
+        "sisu": 0.5
+      },
+      "name": "eval_ensemble"
+    },
+    {
+      "kwargs": {},
+      "name": "compute_peak_forward_velocity"
+    },
+    {
+      "kwargs": {},
+      "name": "mean_over_trials_per_replicate"
+    }
+  ],
+  "versions": {
+    "equinox": "0.13.4",
+    "feedbax": "0.1.2",
+    "jax": "0.9.0",
+    "numpy": "2.4.1",
+    "plotly": "6.5.2",
+    "rlrmp": "0.1.0"
+  }
+}

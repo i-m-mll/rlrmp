@@ -151,7 +151,11 @@ def _make_args_namespace(label: str) -> argparse.Namespace:
         p_catch_trial=0.5,
         nn_output=1e-5,
         nn_hidden=1e-5,
-        nn_hidden_derivative=0.0,
+        # Bug: f47abb1 — actual training-time weight (inspected from saved
+        # warmup_history.eqx); run.json under-reports this. Without it the
+        # skeleton is 5-term, but saved tree is 6-term, causing
+        # eqx.tree_deserialise_leaves to fail at the loss/weight slot.
+        nn_hidden_derivative=0.001,
         nn_output_pre_go=0.0,
         nn_hidden_derivative_pre_go=0.0,
         # Power-law schedule (per-cell overrides)
