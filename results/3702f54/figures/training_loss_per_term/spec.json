@@ -1,0 +1,102 @@
+{
+  "experiment": "3702f54",
+  "figure_kind": "training_loss_per_term_multiline",
+  "inputs": [
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__3702f54-analysis/_artifacts/f47abb1/runs/lit__post_nojerk/warmup_history.eqx",
+      "role": "warmup_history:lit__post_nojerk",
+      "sha256": "b4c900cbe65f01d653d38b5a9aea03a98b172b61833bf60d5afa2463e774a500"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__3702f54-analysis/_artifacts/f47abb1/runs/lit__full_nojerk/warmup_history.eqx",
+      "role": "warmup_history:lit__full_nojerk",
+      "sha256": "8fc59f5214137a190315eedc3936e95e2261f4bdd6ee6a21e5988683ea7bf78a"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__3702f54-analysis/_artifacts/3702f54/runs/post_go_pl__pos10/warmup_history.eqx",
+      "role": "warmup_history:post_go_pl__pos10",
+      "sha256": "ed8fbdcfb349b0888009bbf90e2047f4264962fbb84305db749f215c9a9b9507"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__3702f54-analysis/_artifacts/3702f54/runs/full_trial_pl__pos10/warmup_history.eqx",
+      "role": "warmup_history:full_trial_pl__pos10",
+      "sha256": "9684dc92617662c7f6eaeacd84b547db32b343b615e1147de703d8b15dfa8cfc"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__3702f54-analysis/_artifacts/3702f54/runs/full_trial_pl__prego_1e-3/warmup_history.eqx",
+      "role": "warmup_history:full_trial_pl__prego_1e-3",
+      "sha256": "a717ee57c28f1d38dfdbe9e76f9d2cc40509362adf98944c4db8ebff06e14db4"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__3702f54-analysis/_artifacts/3702f54/runs/full_trial_pl__prego_5e-2/warmup_history.eqx",
+      "role": "warmup_history:full_trial_pl__prego_5e-2",
+      "sha256": "6e96e1e07ac056c0370217088add02f7659d88527fc66c081bc1176592f838bd"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__3702f54-analysis/_artifacts/3702f54/runs/full_trial_pl__prego_1/warmup_history.eqx",
+      "role": "warmup_history:full_trial_pl__prego_1",
+      "sha256": "7ffc050e835d546f28eca5f03c0e0bf9172bf7fdc874417243e2c2cc189e8a82"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__3702f54-analysis/_artifacts/3702f54/runs/full_trial_pl__pos10_prego_1e-3/warmup_history.eqx",
+      "role": "warmup_history:full_trial_pl__pos10_prego_1e-3",
+      "sha256": "44a1d1195cc611ddb8cfa985a705441efcf798ecbcc5228acd7d4481a0e8756d"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__3702f54-analysis/_artifacts/3702f54/runs/full_trial_pl__pos10_prego_5e-2/warmup_history.eqx",
+      "role": "warmup_history:full_trial_pl__pos10_prego_5e-2",
+      "sha256": "aafdb2c0725c949b42baa8ef2212c2b73f3ce8342ccf1c80f66c0081d252cc71"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__3702f54-analysis/_artifacts/3702f54/runs/full_trial_pl__pos10_prego_1/warmup_history.eqx",
+      "role": "warmup_history:full_trial_pl__pos10_prego_1",
+      "sha256": "2f0c0815ff0ae256a531560f616455ae97f2d8377cd4e66d98dcbe4bc05c2b04"
+    }
+  ],
+  "plot_kwargs": {
+    "cells": [
+      "lit__post_nojerk",
+      "lit__full_nojerk",
+      "post_go_pl__pos10",
+      "full_trial_pl__pos10",
+      "full_trial_pl__prego_1e-3",
+      "full_trial_pl__prego_5e-2",
+      "full_trial_pl__prego_1",
+      "full_trial_pl__pos10_prego_1e-3",
+      "full_trial_pl__pos10_prego_5e-2",
+      "full_trial_pl__pos10_prego_1"
+    ],
+    "n_replicates": 5,
+    "n_warmup_batches": 12000,
+    "note": "nn_output_pre_go term present only for cells with prego > 0 (cells 3-8 of 3702f54). Baselines and prego=0 cells lack that term."
+  },
+  "timestamp": "2026-05-12T04:34:10.025849+00:00",
+  "transform": [
+    {
+      "kwargs": {
+        "header_lines": 1
+      },
+      "name": "load_warmup_history_fbx"
+    },
+    {
+      "kwargs": {
+        "apply_weights": true
+      },
+      "name": "TermTree.flatten"
+    },
+    {
+      "kwargs": {
+        "axis": 1
+      },
+      "name": "mean_across_replicates"
+    }
+  ],
+  "versions": {
+    "equinox": "0.13.4",
+    "feedbax": "0.1.2",
+    "jax": "0.9.0",
+    "numpy": "2.4.1",
+    "plotly": "6.5.2",
+    "rlrmp": "0.1.0"
+  }
+}
