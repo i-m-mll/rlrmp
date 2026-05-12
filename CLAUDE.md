@@ -367,6 +367,3 @@ The protocol followed:
 - **Don't create a new coordination issue when an existing one's scope covers the concern.** Comment on the existing one. New coordination issues are project-lifetime commitments — adding one is a structural change that should be discussed first.
 - **Don't paste subagent output or raw analysis into a coord body.** Move it to the child issue (or to a `results/<exp>/` doc) and replace with a one-line cross-ref.
 - **Don't index every commit on the coord.** Only commits that change cross-cutting state (a tier, a method choice, a phase boundary) merit a coord comment. Ordinary work-on-a-child does not.
-
-
-
