@@ -17,6 +17,7 @@
     "nn_output": 1e-05,
     "nn_hidden": 1e-05,
     "nn_output_jerk": 0.0,
+    "nn_hidden_derivative": 0.001,
     "nn_output_pre_go": 0.0,
     "nn_hidden_derivative_pre_go": 0.0,
     "loss_update_enabled": false,
@@ -43,5 +44,12 @@
   "gpu_type": "RTX 4090",
   "datacenter": "CZ",
   "tracking_issue": "f47abb1",
-  "notes": "Jerk off (0.0), full-trial (t/T)^6 powerlaw on both hold and running — most faithful C&S 2019 replication"
+  "notes": "Jerk off (0.0), full-trial (t/T)^6 powerlaw on both hold and running \u2014 most faithful C&S 2019 replication",
+  "cli_flags_reconstruction": {
+    "reconstructed_keys": [
+      "nn_hidden_derivative"
+    ],
+    "note": "Reconstructed nn_hidden_derivative=0.001 weight from saved warmup_history.eqx tree structure. The original on-pod CLI invocation passed --nn-hidden-derivative 0.001 but this flag was omitted when the run-spec subagent populated run.json. Bug: f47abb1.",
+    "source": "saved warmup_history.eqx weight at TermTree position 7"
+  }
 }

@@ -184,7 +184,11 @@ def _make_args_namespace(label: str) -> argparse.Namespace:
         p_catch_trial=0.5,
         nn_output=1e-5,
         nn_hidden=1e-5,
-        nn_hidden_derivative=0.0,
+        # Bug: f47abb1 — actual training-time weight (inspected from saved
+        # warmup_history.eqx). run.json under-reports this CLI flag.
+        # Affects only loss_func structure (not model weights), but kept here
+        # for consistency with plot_training_loss_lit_replication.py.
+        nn_hidden_derivative=0.001,
         nn_output_pre_go=0.0,
         nn_hidden_derivative_pre_go=0.0,
         # Power-law schedule (per-cell overrides)
@@ -202,14 +206,29 @@ def _make_args_namespace(label: str) -> argparse.Namespace:
 # ---------------------------------------------------------------------------
 
 def load_cell_model(label: str, artifact_base: Path):
-    """Load adversarial_model.eqx for a lit-replication 6-cell label.
+    """Load the trained model for a lit-replication 6-cell label.
+
+    For the f47abb1 matrix `n_adversary_batches=0`, so the adversarial phase
+    did not actually run and `adversarial_model.eqx` is the warmup model
+    re-wrapped with adversary state (which doesn't match the local skeleton
+    after the warmup_model save). Prefer `warmup_model.eqx`, which loads
+    cleanly against the current skeleton. Bug: f47abb1.
 
     Returns (model, task, n_replicates).
     """
     cell_dir = artifact_base / label
-    eqx_path = cell_dir / "adversarial_model.eqx"
-    if not eqx_path.exists():
-        raise FileNotFoundError(f"adversarial_model.eqx not found: {eqx_path}")
+    # Prefer warmup_model.eqx (clean PyTree). Fall back to adversarial_model.eqx
+    # only if warmup is missing (would never be the case for this matrix).
+    warmup_path = cell_dir / "warmup_model.eqx"
+    adv_path = cell_dir / "adversarial_model.eqx"
+    if warmup_path.exists():
+        eqx_path = warmup_path
+    elif adv_path.exists():
+        eqx_path = adv_path
+    else:
+        raise FileNotFoundError(
+            f"Neither warmup_model.eqx nor adversarial_model.eqx in {cell_dir}"
+        )
 
     args = _make_args_namespace(label)
     hps = build_hps(args)
