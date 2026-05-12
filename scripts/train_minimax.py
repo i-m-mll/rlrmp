@@ -573,6 +573,26 @@ def _get_trainable(model):
     return (net.hidden, net.readout)
 
 
+def _trainable_where(model):
+    """Return the ``eqx.tree_at``-compatible selector lambda for trainable leaves.
+
+    Mirrors ``_get_trainable`` but returns a ``where`` function (mapping a model
+    to its trainable subtrees) instead of the subtrees themselves. Required by
+    ``eqx.tree_at`` to splice updated parameters back into the model PyTree.
+    Bug: 410d7ac — the linear-controller MVP variants do not have
+    ``net.hidden`` / ``net.readout`` attributes, so the default selector
+    triggers an AttributeError during the adversarial controller step. This
+    helper centralises the architecture branch.
+    """
+    net = model.nodes["net"]
+    cls_name = type(net).__name__
+    if cls_name == "LinearController":
+        return lambda m: (m.nodes["net"].K,)
+    if cls_name == "LinearTrackerController":
+        return lambda m: (m.nodes["net"].K, m.nodes["net"].u_ff)
+    return lambda m: (m.nodes["net"].hidden, m.nodes["net"].readout)
+
+
 def _eval_trials_streaming(task, model, trial_specs, keys, loss_func):
     """Evaluate trials with streaming loss — no trajectory stored.
 
@@ -1111,7 +1131,7 @@ def run_training(args: argparse.Namespace) -> None:
         )
         updated_trainable = eqx.apply_updates(_get_trainable(model), updates)
         new_model = eqx.tree_at(
-            lambda m: (m.nodes["net"].hidden, m.nodes["net"].readout),
+            _trainable_where(model),
             model,
             updated_trainable,
         )
@@ -1204,7 +1224,7 @@ def run_training(args: argparse.Namespace) -> None:
         )
         updated_trainable = eqx.apply_updates(_get_trainable(model), updates)
         new_model = eqx.tree_at(
-            lambda m: (m.nodes["net"].hidden, m.nodes["net"].readout),
+            _trainable_where(model),
             model,
             updated_trainable,
         )
@@ -1276,7 +1296,7 @@ def run_training(args: argparse.Namespace) -> None:
         )
         updated_trainable = eqx.apply_updates(_get_trainable(model), updates)
         new_model = eqx.tree_at(
-            lambda m: (m.nodes["net"].hidden, m.nodes["net"].readout),
+            _trainable_where(model),
             model,
             updated_trainable,
         )
