@@ -17,6 +17,13 @@ from feedbax.types import TreeNamespace
 from jax_cookbook.tree import get_ensemble
 from jaxtyping import Array, PRNGKeyArray
 
+# Sentinel ``hidden_type`` strings that select linear-controller MVP variants
+# instead of an RNN cell class. ``setup_task_model_pair`` dispatches to
+# ``rlrmp.networks.linear_controllers.point_mass_linear_controller`` when one
+# of these is passed; ``create_point_mass_nn_ensemble`` is bypassed because the
+# linear controllers do not use ``SimpleStagedNetwork``. Bug: 410d7ac.
+LINEAR_HIDDEN_TYPES = ("linear", "linear_tracker")
+
 
 class VanillaRNNCell(eqx.Module):
     """Wrapper around `LeakyRNNCell` with a 2-arg `__call__(input, state)` interface.
@@ -144,5 +151,51 @@ def create_point_mass_nn_ensemble(
         population_structure=population_structure,
         hidden_type=hidden_type,
         sisu_gating=sisu_gating,
+        key=key,
+    )
+
+
+def create_point_mass_linear_ensemble(
+    hps: TreeNamespace,
+    task,
+    controller_type: str = "linear",
+    *,
+    key: PRNGKeyArray,
+):
+    """Create an ensemble of point-mass plants controlled by linear (LTV) controllers.
+
+    Mirrors :func:`create_point_mass_nn_ensemble` but instantiates
+    :class:`rlrmp.networks.linear_controllers.LinearController` or
+    :class:`rlrmp.networks.linear_controllers.LinearTrackerController` instead
+    of ``SimpleStagedNetwork``. Used by the linear-controller MVP for the
+    decoupling acid test (Bug: 410d7ac).
+
+    Args:
+        hps: Hyperparameters namespace (same shape as for the NN case).
+        task: The task instance.
+        controller_type: ``"linear"`` (regulator) or ``"linear_tracker"``.
+        key: PRNG key for initialization.
+
+    Returns:
+        An ensemble of ``SimpleFeedback`` models.
+    """
+    # Local import to avoid circular module dependency at package init time.
+    from rlrmp.networks.linear_controllers import point_mass_linear_controller
+
+    return get_ensemble(
+        point_mass_linear_controller,
+        task,
+        controller_type=controller_type,
+        n_extra_inputs=0,  # task inputs reach the controller via inputs["input"]
+        n=hps.model.n_replicates,
+        dt=hps.dt,
+        mass=hps.model.effector_mass,
+        damping=hps.model.damping,
+        n_steps=hps.task.n_steps,
+        feedback_delay_steps=hps.model.feedback_delay_steps,
+        feedback_noise_std=hps.model.feedback_noise_std,
+        motor_noise_std=hps.model.motor_noise_std,
+        tau_rise=hps.model.tau_rise,
+        tau_decay=hps.model.tau_rise,  # match point_mass_nn convention
         key=key,
     )
