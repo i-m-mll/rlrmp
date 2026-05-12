@@ -368,3 +368,4 @@ The protocol followed:
 - **Don't paste subagent output or raw analysis into a coord body.** Move it to the child issue (or to a `results/<exp>/` doc) and replace with a one-line cross-ref.
 - **Don't index every commit on the coord.** Only commits that change cross-cutting state (a tier, a method choice, a phase boundary) merit a coord comment. Ordinary work-on-a-child does not.
 
+
