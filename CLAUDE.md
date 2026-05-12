@@ -57,11 +57,16 @@ runpodctl pod create \
   --data-center-ids EUR-IS-2 \
   --cloud-type SECURE \
   --container-disk-in-gb 30 \
-  --volume-in-gb 30
+  --volume-in-gb 30 \
+  --ports "22/tcp,8080/http"   # REQUIRED: default exposes no ports → direct TCP SSH unreachable
 # (For 4090: use --gpu-id "NVIDIA GeForce RTX 4090" --cloud-type COMMUNITY, omit --data-center-ids)
 
 # 4b. Poll until SSH ready (~1–2 min)
 runpodctl pod get <POD_ID>   # wait for runtime.ports to populate; bail if >3 min
+# NOTE: `uptimeSeconds` is NOT a reliable liveness signal — without exposed ports it stays at 0
+# indefinitely on a fully-running pod. Use a functional SSH probe (e.g. `ssh ... true`) instead.
+# If `--ports` is omitted, the pod boots without public TCP; proxy SSH (ssh.runpod.io) uses
+# account-level keys, not the `PUBLIC_KEY` injected at creation, so the `RunPod-Key-Go` key fails.
 
 # 4c. rsync 3 path-deps to /workspace (run from local machine)
 rsync -av --exclude='_artifacts' --exclude='worktrees' --exclude='.venv' \
@@ -69,8 +74,9 @@ rsync -av --exclude='_artifacts' --exclude='worktrees' --exclude='.venv' \
 rsync -av --exclude='_artifacts' --exclude='worktrees' --exclude='.venv' \
   "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax/worktrees/develop/" root@<pod-ip>:/workspace/feedbax/
 rsync -av --exclude='worktrees' \
-  "/Users/mll/Main/05 Utils/jax-cookbook/" root@<pod-ip>:/workspace/jax-cookbook/
-# Note: jax-cookbook is ~480 MB; omit worktrees/ to avoid transferring ~480 MB of duplicates.
+  "/Users/mll/Main/10 Projects/05 Utils/jax-cookbook/" root@<pod-ip>:/workspace/jax-cookbook/
+# Note: jax-cookbook including `worktrees/` is ~480 MB; with the exclude it transfers <1 MB.
+# Always exclude `worktrees/`.
 
 # 4d. Patch embedded local paths on the pod (SSH in, then run):
 sed -i 's|.*/feedbax[^"]*|/workspace/feedbax|g' /workspace/rlrmp/pyproject.toml
@@ -109,7 +115,7 @@ Adjust flags to match the current script's CLI if it has changed.
 ### 8. Cost discipline
 (Cross-ref dotfiles `3602840`.)
 - Pod billing starts on **creation**, not on container start.
-- Verify `uptimeSeconds > 0` within 2 min of creation; terminate and recreate if stuck.
+- Verify the pod is reachable within ~2 min via a functional SSH probe (e.g. `ssh ... true`); terminate and recreate if stuck. Do NOT rely on `uptimeSeconds > 0` as a liveness signal — without exposed ports (see §4a) it stays at 0 on fully-running pods, and even with ports it can lag behind actual container start.
 - Do not unilaterally upgrade cloud tier or GPU class — ask the user first.
 
 ### 9. Post-training-run protocol
