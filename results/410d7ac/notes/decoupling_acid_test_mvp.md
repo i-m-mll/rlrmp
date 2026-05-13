@@ -3,6 +3,16 @@
 Tracking issue: `410d7ac` · parent `d448c9d` · phase umbrella `f695729` ·
 training-methods coord `c99ad9d`.
 
+> **No quantitative correction needed after the go-cue alignment fix
+> (Bug: 06f7faf).** The primary `Δv` metric here is computed from peak
+> forward velocity, which uses per-trial `after_go` masking before the
+> `max` reduction — it never collapsed the trial axis in absolute time.
+> The fix re-rendered the side-by-side velocity-profile figure with the
+> x-axis recentred on the go cue (t=0), but the Δv numbers reported in
+> this note are unchanged. The figure spec / render under
+> `results/410d7ac/figures/delta_v_signature/` was regenerated post-fix
+> for visual accuracy only.
+
 This is the **corrected** MVP. The prior MVP (commit `20ae797`, results
 reported on `410d7ac` comment 3) trained warmup-only models and measured
 test-time perturbation response, which is NOT Δv. The retraction is documented

@@ -1,39 +1,41 @@
 {
   "experiment": "anti_anticipation_loss_shape_6cell",
-  "figure_kind": "hold_drift_profile_pre_go_position",
+  "figure_kind": "hold_drift_profile_pre_go_position_go_aligned",
+  "fix_note": "Bug: 06f7faf \u2014 go-cue alignment fix + shared y-axes across cells.",
   "inputs": [
     {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk/adversarial_model.eqx",
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/2bc95fd/gru__jerk/adversarial_model.eqx",
       "role": "adversarial_model:gru__jerk",
       "sha256": "17d8cfbb723fdcb4f5812c6faf83d2435f6642e6afed109318165710a1cd2311"
     },
     {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_motor_pre/adversarial_model.eqx",
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/2bc95fd/gru__jerk_motor_pre/adversarial_model.eqx",
       "role": "adversarial_model:gru__jerk_motor_pre",
       "sha256": "94d33f270994376a03f067e11eb9545df2dc21dd41cc4c4418e580a4ae5eaafa"
     },
     {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_smooth_high/adversarial_model.eqx",
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/2bc95fd/gru__jerk_smooth_high/adversarial_model.eqx",
       "role": "adversarial_model:gru__jerk_smooth_high",
       "sha256": "d5f099c7849faaaf95d7cbe4f08121fdc2599a4aedc71744ae5f4a036be7d5a9"
     },
     {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_motor_smooth_combo/adversarial_model.eqx",
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/2bc95fd/gru__jerk_motor_smooth_combo/adversarial_model.eqx",
       "role": "adversarial_model:gru__jerk_motor_smooth_combo",
       "sha256": "ee2199dd9b90eb31412aeaebc36931fe66ea107f29cd834b7b19d807bdce07b6"
     },
     {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_loss_v_terminal/adversarial_model.eqx",
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/2bc95fd/gru__jerk_loss_v_terminal/adversarial_model.eqx",
       "role": "adversarial_model:gru__jerk_loss_v_terminal",
       "sha256": "fcd9a246e18bc63c05187549bff24f44ab65b6e19a6d9d20b0056460ba90a940"
     },
     {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_loss_historical/adversarial_model.eqx",
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/2bc95fd/gru__jerk_loss_historical/adversarial_model.eqx",
       "role": "adversarial_model:gru__jerk_loss_historical",
       "sha256": "6dfe90be9ca6b2bc6d78bf002f65f4fda34c2d21262ddcb09ea5048fa1e3ecc5"
     }
   ],
   "plot_kwargs": {
+    "alignment": "go_cue_per_trial",
     "cells": [
       "gru__jerk",
       "gru__jerk_motor_pre",
@@ -45,9 +47,10 @@
     "dt": 0.01,
     "n_replicates": 5,
     "pert_scale": 0.0,
+    "shared_yaxes": "all",
     "sisu": 0.5
   },
-  "timestamp": "2026-05-11T18:56:25.312579+00:00",
+  "timestamp": "2026-05-13T18:50:58.018130+00:00",
   "transform": [
     {
       "kwargs": {
@@ -61,8 +64,20 @@
       "name": "forward_position_projection_onto_reach_axis"
     },
     {
+      "kwargs": {
+        "pad": "nan"
+      },
+      "name": "align_trials_to_go_cue"
+    },
+    {
+      "kwargs": {
+        "min_coverage": 1.0
+      },
+      "name": "trim_to_full_support"
+    },
+    {
       "kwargs": {},
-      "name": "mean_over_trials"
+      "name": "replicate_nanmean_over_trials"
     },
     {
       "kwargs": {},
