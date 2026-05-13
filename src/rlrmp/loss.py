@@ -352,6 +352,45 @@ def make_power_law_schedule(power: float = 6.0, normalization: str = "trial_end"
     return schedule
 
 
+def make_epoch_locked_ramp(
+    *,
+    duration_steps: int,
+    start_epoch: int = -2,
+    shape: str = "linear",
+    power: float = 2.0,
+):
+    """Return a fixed-duration ramp starting at an epoch boundary.
+
+    The returned weights are zero before the selected epoch starts, ramp from
+    zero to one over ``duration_steps``, and remain one after the ramp completes.
+    This is useful for movement-locked position costs because it does not leak
+    position-error weight into the target-on/pre-go period.
+    """
+    if duration_steps <= 0:
+        raise ValueError(f"duration_steps must be positive, got {duration_steps}")
+    if shape not in {"linear", "cosine", "power"}:
+        raise ValueError(f"shape must be 'linear', 'cosine', or 'power', got {shape!r}")
+
+    def schedule(spec):
+        T = spec.timeline.n_steps - 1
+        bounds = spec.timeline.epoch_bounds
+        if bounds is None:
+            raise ValueError("Trial spec supplies no epoch_bounds")
+
+        t = jnp.arange(T, dtype=jnp.float32)
+        start = jnp.asarray(bounds[start_epoch], dtype=jnp.float32)
+        frac = jnp.clip((t - start) / float(duration_steps), 0.0, 1.0)
+
+        if shape == "cosine":
+            frac = 0.5 - 0.5 * jnp.cos(jnp.pi * frac)
+        elif shape == "power":
+            frac = frac**power
+
+        return frac.astype(jnp.float32)
+
+    return schedule
+
+
 def make_mid_period_ramp(
     start_step: int,
     end_step: int,
@@ -535,6 +574,9 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
     _pos_running_sched = _nsget(hps, "loss.effector_pos_running_schedule", "flat") or "flat"
     _hold_pos_sched = _nsget(hps, "loss.effector_hold_pos_schedule", "flat") or "flat"
     _powerlaw_power = float(_nsget(hps, "loss.position_powerlaw_power", 6.0) or 6.0)
+    _movement_ramp_shape = _nsget(hps, "loss.movement_ramp_shape", "linear") or "linear"
+    _movement_ramp_duration = int(_nsget(hps, "loss.movement_ramp_duration_steps", 60) or 60)
+    _movement_ramp_power = float(_nsget(hps, "loss.movement_ramp_power", 2.0) or 2.0)
 
     # "center_out_delayed_reach" is a subclass of DelayedReaches and shares the
     # same hold-period structure — match on suffix. Bug: 2e1a6ad.
@@ -709,6 +751,15 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
                 # power-law discount (rises as (t/T-1)^power over the whole trial).
                 running_spec = during_movement & TargetSpec(
                     discount=make_power_law_schedule(power=_powerlaw_power)
+                )
+            elif _pos_running_sched == "movement_ramp":
+                running_spec = TargetSpec(
+                    discount=make_epoch_locked_ramp(
+                        duration_steps=_movement_ramp_duration,
+                        start_epoch=-2,
+                        shape=_movement_ramp_shape,
+                        power=_movement_ramp_power,
+                    )
                 )
             else:
                 running_spec = during_movement
