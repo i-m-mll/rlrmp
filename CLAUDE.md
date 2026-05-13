@@ -227,6 +227,18 @@ The mirror `_artifacts/<hash>/...` follows the same structure (`runs/<variant>/`
 
 Run identifier convention: `<group>__<variant>` (double underscore separator, matching the branch-naming convention). Examples: `baseline__standard_12k`, `minimax_single__seed_0`.
 
+### Script placement: experiment-specific vs reusable
+
+The top-level `scripts/` directory is for cross-cutting tooling — scripts that operate generically across experiments (e.g. `train_minimax.py`, `eval_diagnostics.py`, infrastructure shell scripts). It is NOT a dumping ground for experiment-specific analysis code.
+
+**Going forward:**
+
+- **Experiment-specific scripts** (analysis pipelines, plotting code, one-off diagnostics tied to a single tracking issue) must live with the experiment: `results/<hash>/scripts/<name>.py`. Commit them alongside the experiment's `runs/`, `notes/`, and `figures/` content under the same `Bug: <hash>` trailer.
+- **Reusable components** (utility functions, plotting primitives, analysis routines that several experiments will call) must be refactored into `src/rlrmp/` (or `feedbax/` if the abstraction is plant- or task-general) and submitted via an auth request to that package. Do not let a reusable helper accrete inside an experiment-specific script.
+- **Mixed scripts** (experiment-specific driver that uses generic helpers) should split: the driver under `results/<hash>/scripts/`, the helpers in `src/rlrmp/`. Both can land in the same auth request — the driver carries the `Bug: <hash>` trailer; the library change carries its own feature issue if it's substantial.
+
+The flat `scripts/` dir is hard to navigate once experiment-specific code accumulates; this convention keeps it small and meaningful. Pre-existing scripts in `scripts/` that violate the convention are tracked separately and may be relocated opportunistically — do not auto-relocate them as part of unrelated work.
+
 ### Run-spec vs figure-spec
 
 A `run.json` captures hyperparameters that produced model weights — stable, one per run.
