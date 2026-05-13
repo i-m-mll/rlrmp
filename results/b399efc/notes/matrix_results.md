@@ -45,3 +45,56 @@ The prior best from `3702f54` (`full_trial_pl__prego_1`, full-trial powerlaw-6) 
 - Run-spec commit: `69c91eb`
 - RUN_PLAN: `results/b399efc/RUN_PLAN.md`
 - Auth request branch: `feature/b399efc-matrix-run` (request ID in issue `b399efc` comment thread)
+
+<!-- AUTO-GENERATED: variance_analysis -->
+## Headline metrics (auto-generated, b399efc)
+
+All quantities computed on `warmup_model.eqx` for each cell, evaluated on 8-direction center-out validation trials at SISU=0.5 with zero perturbation.
+
+### Headline scalar metrics
+
+| Cell | Within-cell vel-RMSE (m/s) | Peak vel (m/s) | Time-to-peak (steps) | Hold drift (mm) | Training loss (final) |
+|------|---:|---:|---:|---:|---:|
+| linear (dur=60, prego=1) | 0.0867 | 1.938 ± 0.128 | 27.4 ± 1.3 | 0.02 ± 0.01 | 7.225e-01 ± 8.99e-02 |
+| cosine (dur=60, prego=1) | 0.0974 | 1.983 ± 0.120 | 27.4 ± 1.3 | 0.02 ± 0.02 | 5.127e-01 ± 6.39e-02 |
+| power² (dur=60, prego=1) | 0.0910 | 1.716 ± 0.128 | 30.2 ± 1.7 | 0.01 ± 0.01 | 3.619e-01 ± 5.79e-02 |
+| power⁴ (dur=60, prego=1) | 0.0990 | 1.506 ± 0.129 | 34.0 ± 2.0 | 0.02 ± 0.02 | 1.811e-01 ± 3.52e-02 |
+| power⁶ (dur=60, prego=1) | 0.1287 | 1.397 ± 0.087 | 37.1 ± 2.6 | 0.02 ± 0.02 | 1.509e-01 ± 4.16e-02 |
+| power⁶ (dur=60, prego=5) | 0.1724 | 1.205 ± 0.177 | 39.4 ± 4.6 | 0.03 ± 0.01 | 2.383e-01 ± 8.94e-02 |
+| power⁶ (dur=80, prego=1) | 0.0969 | 1.157 ± 0.090 | 40.9 ± 2.9 | 0.02 ± 0.01 | 1.021e-01 ± 2.19e-02 |
+
+### Per-replicate peak forward velocity
+
+| Cell | Rep 0 | Rep 1 | Rep 2 | Rep 3 | Rep 4 |
+|------|---:|---:|---:|---:|---:|
+| linear (dur=60, prego=1) | 1.927 | 1.727 | 1.957 | 2.021 | 2.057 |
+| cosine (dur=60, prego=1) | 1.780 | 2.025 | 1.979 | 2.073 | 2.060 |
+| power² (dur=60, prego=1) | 1.659 | 1.622 | 1.592 | 1.860 | 1.847 |
+| power⁴ (dur=60, prego=1) | 1.299 | 1.543 | 1.475 | 1.627 | 1.586 |
+| power⁶ (dur=60, prego=1) | 1.319 | 1.492 | 1.317 | 1.372 | 1.488 |
+| power⁶ (dur=60, prego=5) | 0.952 | 1.174 | 1.401 | 1.153 | 1.344 |
+| power⁶ (dur=80, prego=1) | 1.257 | 1.217 | 1.185 | 1.070 | 1.053 |
+
+### Per-replicate hold drift (mm)
+
+| Cell | Rep 0 | Rep 1 | Rep 2 | Rep 3 | Rep 4 |
+|------|---:|---:|---:|---:|---:|
+| linear (dur=60, prego=1) | 0.014 | 0.036 | 0.005 | 0.009 | 0.015 |
+| cosine (dur=60, prego=1) | 0.008 | 0.056 | 0.004 | 0.012 | 0.015 |
+| power² (dur=60, prego=1) | 0.011 | 0.034 | 0.000 | 0.009 | 0.009 |
+| power⁴ (dur=60, prego=1) | 0.006 | 0.053 | 0.001 | 0.005 | 0.016 |
+| power⁶ (dur=60, prego=1) | 0.011 | 0.045 | 0.000 | 0.004 | 0.022 |
+| power⁶ (dur=60, prego=5) | 0.025 | 0.038 | 0.018 | 0.022 | 0.024 |
+| power⁶ (dur=80, prego=1) | 0.019 | 0.041 | 0.008 | 0.007 | 0.026 |
+
+### Figures
+
+- `results/b399efc/figures/forward_velocity_profiles/` — forward velocity per cell, go-cue-aligned
+- `results/b399efc/figures/hold_drift_profiles/` — pre-go forward position per cell, go-cue-aligned
+- `results/b399efc/figures/peak_velocity_distributions/` — per-replicate peak velocity (violin)
+- `results/b399efc/figures/summary_metrics/` — 2×2 scalar-metric bar panel
+- `results/b399efc/figures/training_loss/` — total weighted training loss per cell
+- `results/b399efc/figures/training_loss_per_term/` — per-term decomposition per cell
+
+HTML renders in `_artifacts/b399efc/figures/<topic>/figure.html`.
+<!-- /AUTO-GENERATED -->

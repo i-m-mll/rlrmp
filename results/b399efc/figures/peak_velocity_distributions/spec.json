@@ -1,0 +1,195 @@
+{
+  "cell_stats": {
+    "movement_ramp__cosine": {
+      "mean_peak_velocity": 1.9832851886749268,
+      "peak_vel_per_rep": [
+        1.779704213142395,
+        2.0254178047180176,
+        1.9786304235458374,
+        2.0731143951416016,
+        2.0595593452453613
+      ],
+      "sd_peak_velocity": 0.11950843781232834
+    },
+    "movement_ramp__linear": {
+      "mean_peak_velocity": 1.9377167224884033,
+      "peak_vel_per_rep": [
+        1.9269018173217773,
+        1.7273547649383545,
+        1.9569836854934692,
+        2.0208396911621094,
+        2.0565030574798584
+      ],
+      "sd_peak_velocity": 0.12821851670742035
+    },
+    "movement_ramp__power2": {
+      "mean_peak_velocity": 1.7159440517425537,
+      "peak_vel_per_rep": [
+        1.6589484214782715,
+        1.6222021579742432,
+        1.5915849208831787,
+        1.859893798828125,
+        1.8470914363861084
+      ],
+      "sd_peak_velocity": 0.127889022231102
+    },
+    "movement_ramp__power4": {
+      "mean_peak_velocity": 1.5060207843780518,
+      "peak_vel_per_rep": [
+        1.2993171215057373,
+        1.5432243347167969,
+        1.4748196601867676,
+        1.6267805099487305,
+        1.585962176322937
+      ],
+      "sd_peak_velocity": 0.1285083293914795
+    },
+    "movement_ramp__power6": {
+      "mean_peak_velocity": 1.3973475694656372,
+      "peak_vel_per_rep": [
+        1.318778395652771,
+        1.491530179977417,
+        1.3169952630996704,
+        1.3719196319580078,
+        1.4875143766403198
+      ],
+      "sd_peak_velocity": 0.08700086921453476
+    },
+    "movement_ramp__power6_dur80": {
+      "mean_peak_velocity": 1.1567398309707642,
+      "peak_vel_per_rep": [
+        1.2571544647216797,
+        1.2173802852630615,
+        1.185366153717041,
+        1.0703489780426025,
+        1.053449273109436
+      ],
+      "sd_peak_velocity": 0.09043249487876892
+    },
+    "movement_ramp__power6_prego5": {
+      "mean_peak_velocity": 1.2047302722930908,
+      "peak_vel_per_rep": [
+        0.9521366357803345,
+        1.1737157106399536,
+        1.4012681245803833,
+        1.1528533697128296,
+        1.343677043914795
+      ],
+      "sd_peak_velocity": 0.17705224454402924
+    }
+  },
+  "experiment": "b399efc",
+  "figure_kind": "peak_velocity_distributions_violin",
+  "inputs": [
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__b399efc-matrix-figures/_artifacts/b399efc/runs/movement_ramp__linear/warmup_model.eqx",
+      "role": "warmup_model:movement_ramp__linear",
+      "sha256": "508978176455a927bb8f9b7f484ebd59a8f8eab7b5c1bf9d1ea317380691b6a8"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__b399efc-matrix-figures/_artifacts/b399efc/runs/movement_ramp__linear/warmup_history.eqx",
+      "role": "warmup_history:movement_ramp__linear",
+      "sha256": "6cdde289d0bdd1aec1ad458b825d61226a66c4a1150dd756a830b3a29a4d49d5"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__b399efc-matrix-figures/_artifacts/b399efc/runs/movement_ramp__cosine/warmup_model.eqx",
+      "role": "warmup_model:movement_ramp__cosine",
+      "sha256": "afae55a3985730d64fa6c8baf49b5463e0206b9be522757b013418db98cb363b"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__b399efc-matrix-figures/_artifacts/b399efc/runs/movement_ramp__cosine/warmup_history.eqx",
+      "role": "warmup_history:movement_ramp__cosine",
+      "sha256": "49f2dae2c7237087ee7f156e0d98b038895753f0b355ec8561adac81b0edd2a2"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__b399efc-matrix-figures/_artifacts/b399efc/runs/movement_ramp__power2/warmup_model.eqx",
+      "role": "warmup_model:movement_ramp__power2",
+      "sha256": "d8623544475d77b42967fe6eb06c4ae2b81be99df9239bda7addbb1dde69dcf0"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__b399efc-matrix-figures/_artifacts/b399efc/runs/movement_ramp__power2/warmup_history.eqx",
+      "role": "warmup_history:movement_ramp__power2",
+      "sha256": "d38d8ec4e330cdf55d03d029a310d2e97d32eb540f70245a66d98fd615d84290"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__b399efc-matrix-figures/_artifacts/b399efc/runs/movement_ramp__power4/warmup_model.eqx",
+      "role": "warmup_model:movement_ramp__power4",
+      "sha256": "c362d22efe1c9e75680ac5fc4e4807e37ac14eda05266945978152d8979e5dfc"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__b399efc-matrix-figures/_artifacts/b399efc/runs/movement_ramp__power4/warmup_history.eqx",
+      "role": "warmup_history:movement_ramp__power4",
+      "sha256": "0cd5c7efb596858da9d0fd0f2a52ab6a80f6f09e46bcfda9a7f3448abbc19017"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__b399efc-matrix-figures/_artifacts/b399efc/runs/movement_ramp__power6/warmup_model.eqx",
+      "role": "warmup_model:movement_ramp__power6",
+      "sha256": "2c4ed0e6dc48762bd687db66aa47649fed630cdd94e0a8c20efbb0d81225c831"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__b399efc-matrix-figures/_artifacts/b399efc/runs/movement_ramp__power6/warmup_history.eqx",
+      "role": "warmup_history:movement_ramp__power6",
+      "sha256": "65c5ac2b24980a2b49268366c8b4f36fb6fffa1f64c6816f15e29f0387082a49"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__b399efc-matrix-figures/_artifacts/b399efc/runs/movement_ramp__power6_prego5/warmup_model.eqx",
+      "role": "warmup_model:movement_ramp__power6_prego5",
+      "sha256": "638844fc3eb2802d0425c7b370ce1751c9ec586ecf784b5c455456195faaaef2"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__b399efc-matrix-figures/_artifacts/b399efc/runs/movement_ramp__power6_prego5/warmup_history.eqx",
+      "role": "warmup_history:movement_ramp__power6_prego5",
+      "sha256": "65502f8210a7f1d0cdc9e5432fe4883909c2318d9bd3eea2e3b49f1b886e151b"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__b399efc-matrix-figures/_artifacts/b399efc/runs/movement_ramp__power6_dur80/warmup_model.eqx",
+      "role": "warmup_model:movement_ramp__power6_dur80",
+      "sha256": "f8a3a629b812d68a67d4f346666c1e647fcbe31d1f909ecaf0447fb93a8beba8"
+    },
+    {
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__b399efc-matrix-figures/_artifacts/b399efc/runs/movement_ramp__power6_dur80/warmup_history.eqx",
+      "role": "warmup_history:movement_ramp__power6_dur80",
+      "sha256": "0f9b56ef129b17d26446bc2957a649c58950870a0d5505f575288ce061166ca1"
+    }
+  ],
+  "plot_kwargs": {
+    "cells": [
+      "movement_ramp__linear",
+      "movement_ramp__cosine",
+      "movement_ramp__power2",
+      "movement_ramp__power4",
+      "movement_ramp__power6",
+      "movement_ramp__power6_prego5",
+      "movement_ramp__power6_dur80"
+    ],
+    "n_replicates": 5,
+    "pert_scale": 0.0,
+    "sisu": 0.5
+  },
+  "timestamp": "2026-05-13T23:17:31.154203+00:00",
+  "transform": [
+    {
+      "kwargs": {
+        "pert_scale": 0.0,
+        "sisu": 0.5
+      },
+      "name": "eval_ensemble"
+    },
+    {
+      "kwargs": {},
+      "name": "compute_peak_forward_velocity"
+    },
+    {
+      "kwargs": {},
+      "name": "mean_over_trials_per_replicate"
+    }
+  ],
+  "versions": {
+    "equinox": "0.13.4",
+    "feedbax": "0.1.2",
+    "jax": "0.9.0",
+    "numpy": "2.4.1",
+    "plotly": "6.5.2",
+    "rlrmp": "0.1.0"
+  }
+}
