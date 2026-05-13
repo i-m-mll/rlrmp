@@ -1,4 +1,10 @@
+# TODO: relocate to results/f47abb1/scripts/ — per CLAUDE.md script-placement convention
 """Variance + anticipation analysis for the lit-replication 6-cell matrix (f47abb1).
+
+Bug: 06f7faf — go-cue alignment fix. Velocity-RMSE-ratio and position-RMSE-ratio
+(primary + secondary metrics) and the velocity/hold-drift profile figures now
+use per-trial go-cue alignment via `rlrmp.analysis.trial_alignment`.
+
 
 Tests whether faithful Chaisanguanthum & Shenoy 2019 (C&S) loss schedule gives
 better velocity-RMSE ratios than the production loss.
@@ -68,6 +74,11 @@ from feedbax._io import load_with_hyperparameters
 from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 -- project-config routing
 
 from train_minimax import build_hps
+from rlrmp.analysis.trial_alignment import (
+    align_trials,
+    pooled_trial_mean_with_band,
+    replicate_mean_curves,
+)
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.modules.training.part2 import setup_task_model_pair
 
@@ -405,25 +416,33 @@ def compute_cell_stats(km: dict[str, np.ndarray]) -> dict:
 # ---------------------------------------------------------------------------
 
 def _mean_pairwise_rmse(profiles_a: np.ndarray, profiles_b: np.ndarray) -> float:
-    """Mean pairwise RMSE between every replicate in A and every in B."""
+    """Mean pairwise RMSE between every replicate in A and every in B.
+
+    Uses nanmean so NaN-padded columns from `align_trials` are ignored
+    (Bug: 06f7faf).
+    """
     n_a = profiles_a.shape[0]
     n_b = profiles_b.shape[0]
     rmse_vals = []
     for i in range(n_a):
         for j in range(n_b):
             diff = profiles_a[i] - profiles_b[j]
-            rmse_vals.append(float(np.sqrt(np.mean(diff ** 2))))
+            rmse_vals.append(float(np.sqrt(np.nanmean(diff ** 2))))
     return float(np.mean(rmse_vals)) if rmse_vals else float("nan")
 
 
 def _within_cell_mean_pairwise_rmse(profiles: np.ndarray) -> float:
-    """Mean pairwise RMSE between all distinct pairs within one cell."""
+    """Mean pairwise RMSE between all distinct pairs within one cell.
+
+    Uses nanmean so NaN-padded columns from `align_trials` are ignored
+    (Bug: 06f7faf).
+    """
     n_rep = profiles.shape[0]
     rmse_vals = []
     for i in range(n_rep):
         for j in range(i + 1, n_rep):
             diff = profiles[i] - profiles[j]
-            rmse_vals.append(float(np.sqrt(np.mean(diff ** 2))))
+            rmse_vals.append(float(np.sqrt(np.nanmean(diff ** 2))))
     return float(np.mean(rmse_vals)) if rmse_vals else float("nan")
 
 
@@ -442,12 +461,24 @@ def compute_rmse_ratios(cell_kms: dict[str, dict]) -> dict[str, dict]:
     """
     labels = list(cell_kms.keys())
 
+    # Bug: 06f7faf — align per-trial profiles to each trial's go cue BEFORE
+    # the trial-axis collapse. Replicate-mean curves are computed via
+    # `replicate_mean_curves` (nanmean over trial axis) so NaN padding from
+    # trials with shorter pre/post windows doesn't bias the per-rep curve.
     vel_profiles: dict[str, np.ndarray] = {}
     pos_profiles: dict[str, np.ndarray] = {}
     for label in labels:
         km = cell_kms[label]
-        vel_profiles[label] = km["forward_vel_profile"].mean(axis=1)   # (n_rep, n_steps)
-        pos_profiles[label] = km["pos_forward_profile"].mean(axis=1)   # (n_rep, n_steps)
+        aligned_v, _c = align_trials(km["forward_vel_profile"], km["go_idx"])
+        aligned_p, _c = align_trials(km["pos_forward_profile"], km["go_idx"])
+        vel_profiles[label] = replicate_mean_curves(aligned_v)  # (n_rep, n_aligned_steps)
+        pos_profiles[label] = replicate_mean_curves(aligned_p)
+
+    # NaN handling: replicate_mean_curves may leave NaN at extreme columns where
+    # no trial contributed. _mean_pairwise_rmse uses (a-b)**2 and np.mean; mask
+    # NaN columns to avoid propagating them through the RMSE calculation.
+    def _finite_pair_mask(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+        return np.isfinite(a) & np.isfinite(b)
 
     results: dict[str, dict] = {}
     for label in labels:
@@ -570,16 +601,18 @@ def make_forward_velocity_profile_figure(
         v_fwd = km["forward_vel_profile"]  # (n_rep, n_trials, n_steps)
         go_idx = km["go_idx"]               # (n_trials,)
         n_rep, n_trials, n_steps = v_fwd.shape
-        t = np.arange(n_steps) * dt  # seconds
         color = CELL_COLORS[CELL_LABELS.index(label) % len(CELL_COLORS)]
 
-        v_mean_over_trials = v_fwd.mean(axis=1)  # (n_rep, n_steps)
-        mean_go = int(go_idx.mean())
+        # Bug: 06f7faf — go-cue alignment per trial; one curve per replicate
+        # (replicate-level nanmean over aligned trials).
+        aligned_v, center = align_trials(v_fwd, go_idx)
+        per_rep_curves = replicate_mean_curves(aligned_v)  # (n_rep, n_aligned_steps)
+        t = (np.arange(aligned_v.shape[-1]) - center) * dt
 
         for rep in range(n_rep):
             fig.add_trace(go.Scatter(
                 x=t,
-                y=v_mean_over_trials[rep],
+                y=per_rep_curves[rep],
                 mode="lines",
                 name=f"Rep {rep}",
                 line=dict(color=_color_rgba(color, 0.7), width=1.5),
@@ -587,21 +620,25 @@ def make_forward_velocity_profile_figure(
                 legendgroup=f"rep{rep}",
             ), row=row, col=1)
 
+        # Go cue lives at t=0 by construction
         fig.add_vline(
-            x=float(mean_go) * dt,
+            x=0.0,
             line=dict(color="black", dash="dash", width=1),
             row=row,
             col=1,
         )
 
     fig.update_layout(
-        title="Forward velocity profiles (mean over 8 reach directions) — lit-replication 6-cell (f47abb1)",
+        title=(
+            "Forward velocity profiles (go-cue-aligned, replicate-mean curves) — "
+            "lit-replication 6-cell (f47abb1)"
+        ),
         width=900,
         height=220 * n_cells + 100,
         margin=dict(l=70, r=60, t=80, b=60),
         hovermode="x unified",
     )
-    fig.update_xaxes(title_text="Time (s)", row=n_cells, col=1)
+    fig.update_xaxes(title_text="Time relative to go cue (s)", row=n_cells, col=1)
     for row in range(1, n_cells + 1):
         fig.update_yaxes(title_text="Fwd vel (m/s)", row=row, col=1)
 
@@ -633,11 +670,14 @@ def make_hold_drift_figure(
         n_rep, n_trials, n_steps = pos_fwd.shape
         color = CELL_COLORS[CELL_LABELS.index(label) % len(CELL_COLORS)]
 
-        max_go = int(go_idx.max())
-        t_pre = np.arange(max_go) * dt  # seconds
-
-        pos_mean_over_trials = pos_fwd[:, :, :max_go].mean(axis=1)  # (n_rep, max_go)
-        pos_mm = pos_mean_over_trials * 1000.0  # convert to mm
+        # Bug: 06f7faf — go-cue alignment per trial; replicate-mean curves.
+        # Clip to [t <= 0] for the pre-go drift figure.
+        aligned_p, center = align_trials(pos_fwd, go_idx)
+        per_rep_curves = replicate_mean_curves(aligned_p) * 1000.0  # mm
+        t_rel = (np.arange(aligned_p.shape[-1]) - center) * dt
+        keep = t_rel <= 0.0
+        t_pre = t_rel[keep]
+        pos_mm = per_rep_curves[:, keep]
 
         for rep in range(n_rep):
             fig.add_trace(go.Scatter(
@@ -653,13 +693,16 @@ def make_hold_drift_figure(
         fig.add_hline(y=0, line=dict(color="grey", dash="dot", width=1), row=row, col=1)
 
     fig.update_layout(
-        title="Pre-go forward position drift (anticipation) — lit-replication 6-cell (f47abb1)",
+        title=(
+            "Pre-go forward position drift (go-cue-aligned, per-replicate) — "
+            "lit-replication 6-cell (f47abb1)"
+        ),
         width=900,
         height=220 * n_cells + 100,
         margin=dict(l=70, r=60, t=80, b=60),
         hovermode="x unified",
     )
-    fig.update_xaxes(title_text="Time (s, pre-go)", row=n_cells, col=1)
+    fig.update_xaxes(title_text="Time relative to go cue (s)", row=n_cells, col=1)
     for row in range(1, n_cells + 1):
         fig.update_yaxes(title_text="Fwd pos (mm)", row=row, col=1)
 
@@ -899,13 +942,14 @@ def main():
     if cell_kms:
         fig_fv = make_forward_velocity_profile_figure(cell_kms)
         spec_fv = {
-            "figure_kind": "forward_velocity_profile_time_series",
+            "figure_kind": "forward_velocity_profile_time_series_go_aligned",
             "experiment": EXPERIMENT,
             "inputs": input_artifacts,
             "transform": [
                 {"name": "eval_ensemble", "kwargs": {"sisu": args.sisu, "pert_scale": 0.0}},
                 {"name": "forward_velocity_projection_onto_reach_axis", "kwargs": {}},
-                {"name": "mean_over_trials", "kwargs": {}},
+                {"name": "align_trials_to_go_cue", "kwargs": {"pad": "nan"}},
+                {"name": "replicate_nanmean_over_trials", "kwargs": {}},
             ],
             "plot_kwargs": {
                 "cells": CELL_LABELS,
@@ -913,7 +957,9 @@ def main():
                 "sisu": args.sisu,
                 "pert_scale": 0.0,
                 "dt": 0.01,
+                "alignment": "go_cue_per_trial",
             },
+            "fix_note": "Bug: 06f7faf — go-cue alignment fix.",
         }
         fv_out = save_figure(
             fig=fig_fv, spec=spec_fv,
@@ -927,13 +973,14 @@ def main():
     if cell_kms:
         fig_hd = make_hold_drift_figure(cell_kms)
         spec_hd = {
-            "figure_kind": "hold_drift_profile_pre_go_position",
+            "figure_kind": "hold_drift_profile_pre_go_position_go_aligned",
             "experiment": EXPERIMENT,
             "inputs": input_artifacts,
             "transform": [
                 {"name": "eval_ensemble", "kwargs": {"sisu": args.sisu, "pert_scale": 0.0}},
                 {"name": "forward_position_projection_onto_reach_axis", "kwargs": {}},
-                {"name": "mean_over_trials", "kwargs": {}},
+                {"name": "align_trials_to_go_cue", "kwargs": {"pad": "nan"}},
+                {"name": "replicate_nanmean_over_trials", "kwargs": {}},
                 {"name": "clip_to_pre_go_window", "kwargs": {}},
             ],
             "plot_kwargs": {
@@ -942,7 +989,9 @@ def main():
                 "sisu": args.sisu,
                 "pert_scale": 0.0,
                 "dt": 0.01,
+                "alignment": "go_cue_per_trial",
             },
+            "fix_note": "Bug: 06f7faf — go-cue alignment fix.",
         }
         hd_out = save_figure(
             fig=fig_hd, spec=spec_hd,
@@ -968,9 +1017,12 @@ def main():
             "inputs": input_artifacts,
             "transform": [
                 {"name": "eval_ensemble", "kwargs": {"sisu": args.sisu, "pert_scale": 0.0}},
+                {"name": "align_trials_to_go_cue", "kwargs": {"pad": "nan"}},
+                {"name": "replicate_nanmean_over_trials", "kwargs": {}},
                 {"name": "pairwise_profile_rmse_ratio_velocity", "kwargs": {}},
                 {"name": "pairwise_profile_rmse_ratio_position", "kwargs": {}},
             ],
+            "fix_note": "Bug: 06f7faf — go-cue alignment fix; RMSE now computed on go-aligned per-rep curves.",
             "plot_kwargs": {
                 "cells": CELL_LABELS,
                 "n_replicates": N_REPLICATES,
