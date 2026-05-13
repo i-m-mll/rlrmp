@@ -41,14 +41,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import warnings
 from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "scripts"))
+from rlrmp.paths import REPO_ROOT  # Bug: 8404108 — was __file__-relative
 
 import equinox as eqx
 import jax
@@ -64,7 +62,7 @@ from feedbax._io import load_with_hyperparameters
 from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 -- project-config routing
 from feedbax.train import init_task_trainer_history, TaskTrainerHistory
 
-from train_minimax import build_hps
+from rlrmp.train.minimax import build_hps
 from rlrmp.analysis.trial_alignment import (
     align_trials,
     pooled_trial_mean_with_band,

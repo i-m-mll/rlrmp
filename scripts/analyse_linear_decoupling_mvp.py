@@ -59,14 +59,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import warnings
 from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "scripts"))
+from rlrmp.paths import REPO_ROOT  # Bug: 8404108 — was __file__-relative
 
 import equinox as eqx
 import jax
@@ -88,7 +86,7 @@ from rlrmp.intervention_compat import (
     swap_task_intervention_to_dynamics_matrix,
 )
 from rlrmp.modules.training.part2 import setup_task_model_pair
-from train_minimax import build_hps
+from rlrmp.train.minimax import build_hps
 
 
 EXPERIMENT = "410d7ac"

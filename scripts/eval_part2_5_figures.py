@@ -12,26 +12,24 @@ warnings.filterwarnings("ignore")
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 import equinox as eqx
-import jax
-import jax.numpy as jnp
 import jax.random as jr
-import jax.tree as jt
 import numpy as np
 
-# Add scripts/ to path for train_part2_5 import
-sys.path.insert(0, str(Path(__file__).parent))
-
-from train_part2_5 import build_hps
 from feedbax._io import load_with_hyperparameters
 from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 — project-config routing
 from feedbax.train import init_task_trainer_history
+from rlrmp.eval import (
+    N_REPLICATES,
+    compute_kinematics,
+    eval_ensemble_on_trials,
+    set_sisu,
+)
 from rlrmp.modules.training.part2 import setup_task_model_pair
-from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.paths import figure_artifact_dir, figure_spec_dir, run_artifact_dir
+from rlrmp.train.standard import build_hps
 
 
 # ---------------------------------------------------------------------------
@@ -58,7 +56,7 @@ CONDITIONS = {
 }
 
 SISU_LEVELS = [0.0, 0.25, 0.5, 0.75, 1.0]
-N_REPLICATES = 5
+# N_REPLICATES is now defined in rlrmp.eval.ensemble; imported above. Bug: 8404108.
 
 
 def load_condition(cond_name: str, cond_dir: Path):
@@ -94,142 +92,6 @@ def load_condition(cond_name: str, cond_dir: Path):
     )
 
     return pair.task, trained_model, history, config
-
-
-def set_sisu(val_trials, sisu_val: float):
-    """Return a copy of val_trials with fixed SISU level."""
-    n_trials = val_trials.intervene[PLANT_INTERVENOR_LABEL].scale.shape[0]
-    new_trials = eqx.tree_at(
-        lambda t: t.intervene[PLANT_INTERVENOR_LABEL].scale,
-        val_trials,
-        jnp.full((n_trials,), sisu_val),
-    )
-    new_trials = eqx.tree_at(
-        lambda t: t.inputs["sisu"],
-        new_trials,
-        jnp.full((n_trials,), sisu_val),
-    )
-    return new_trials
-
-
-def eval_ensemble_on_trials(task, model, trial_specs, *, key):
-    """Evaluate all N_REPLICATES on the given trial_specs.
-
-    Uses the same partitioning strategy as feedbax's _eval_ensemble to handle
-    model leaves that don't have the ensemble dimension (e.g. StateIndex.init.field).
-
-    Returns states with leading replicate dimension: (n_replicates, n_trials, n_steps, ...).
-    """
-    n_trials = trial_specs.intervene[PLANT_INTERVENOR_LABEL].scale.shape[0]
-
-    def _is_batched_array(x):
-        return eqx.is_array(x) and x.ndim >= 1 and x.shape[0] == N_REPLICATES
-
-    models_arrays, models_other = eqx.partition(model, _is_batched_array)
-
-    def eval_one_replicate(model_arrays, model_other, rep_key):
-        rep_model = eqx.combine(model_arrays, model_other)
-        keys = jr.split(rep_key, n_trials)
-        return task.eval_trials(rep_model, trial_specs, keys)
-
-    rep_keys = jr.split(key, N_REPLICATES)
-    states = eqx.filter_vmap(
-        eval_one_replicate,
-        in_axes=(0, None, 0),
-    )(models_arrays, models_other, rep_keys)
-    return states
-
-
-def compute_kinematics(states, trial_specs):
-    """Compute kinematic metrics from states.
-
-    Arguments:
-        states: Shape (n_replicates, n_trials, n_steps, ...) or (n_trials, n_steps, ...).
-        trial_specs: TaskTrialSpec for the trials.
-
-    Returns:
-        Dict of arrays, each shape (n_replicates, n_trials) or (n_trials,).
-    """
-    pos = states.mechanics.effector.pos  # (..., n_trials, n_steps, 2)
-    vel = states.mechanics.effector.vel  # (..., n_trials, n_steps, 2)
-
-    # Goal position: targets has shape (n_trials, n_steps, 2); take final step
-    # as the endpoint target. The target key is a lambda function (WhereDict).
-    target_key = list(trial_specs.targets.keys())[0]
-    goal_seq = trial_specs.targets[target_key].value  # (n_trials, n_steps, 2)
-    goal = goal_seq[:, -1, :]  # (n_trials, 2) — final timestep target
-
-    # Go cue step: epoch_bounds[:, 2] = start of movement epoch
-    go_idx = trial_specs.timeline.epoch_bounds[:, 2]  # (n_trials,)
-
-    # Handle optional leading replicate dim
-    has_rep_dim = pos.ndim == 4  # (n_rep, n_trials, n_steps, 2)
-
-    if has_rep_dim:
-        n_rep, n_trials, n_steps, _ = pos.shape
-        t = jnp.arange(n_steps)
-        # after_go: (n_trials, n_steps) broadcast to (n_rep, n_trials, n_steps)
-        after_go = t[None, None, :] >= go_idx[None, :, None]
-
-        speed = jnp.linalg.norm(vel, axis=-1)  # (n_rep, n_trials, n_steps)
-        masked_speed = jnp.where(after_go, speed, 0.0)
-        peak_velocity = jnp.max(masked_speed, axis=-1)  # (n_rep, n_trials)
-
-        final_pos = pos[:, :, -1, :]  # (n_rep, n_trials, 2)
-        endpoint_error = jnp.linalg.norm(
-            final_pos - goal[None, :, :], axis=-1
-        )  # (n_rep, n_trials)
-
-        # Lateral deviation: per trial, get initial pos at go cue
-        def get_init_pos_rep(pos_rep, go_idx_arr):
-            # pos_rep: (n_trials, n_steps, 2), go_idx_arr: (n_trials,)
-            return jax.vmap(lambda p, idx: p[idx])(pos_rep, go_idx_arr)
-
-        init_pos = jax.vmap(get_init_pos_rep, in_axes=(0, None))(
-            pos, go_idx
-        )  # (n_rep, n_trials, 2)
-
-        direction = goal[None, :, :] - init_pos  # (n_rep, n_trials, 2)
-        direction_norm = jnp.linalg.norm(direction, axis=-1, keepdims=True)
-        direction_unit = direction / jnp.maximum(direction_norm, 1e-12)
-
-        displacement = pos - init_pos[:, :, None, :]  # (n_rep, n_trials, n_steps, 2)
-        along = jnp.sum(
-            displacement * direction_unit[:, :, None, :], axis=-1, keepdims=True
-        )
-        lateral = displacement - along * direction_unit[:, :, None, :]
-        lateral_dist = jnp.linalg.norm(lateral, axis=-1)  # (n_rep, n_trials, n_steps)
-        masked_lateral = jnp.where(after_go, lateral_dist, 0.0)
-        max_lateral_deviation = jnp.max(masked_lateral, axis=-1)  # (n_rep, n_trials)
-
-    else:
-        n_trials, n_steps, _ = pos.shape
-        t = jnp.arange(n_steps)
-        after_go = t[None, :] >= go_idx[:, None]
-
-        speed = jnp.linalg.norm(vel, axis=-1)
-        masked_speed = jnp.where(after_go, speed, 0.0)
-        peak_velocity = jnp.max(masked_speed, axis=-1)
-
-        final_pos = pos[:, -1, :]
-        endpoint_error = jnp.linalg.norm(final_pos - goal, axis=-1)
-
-        init_pos = jax.vmap(lambda p, idx: p[idx])(pos, go_idx)
-        direction = goal - init_pos
-        direction_norm = jnp.linalg.norm(direction, axis=-1, keepdims=True)
-        direction_unit = direction / jnp.maximum(direction_norm, 1e-12)
-        displacement = pos - init_pos[:, None, :]
-        along = jnp.sum(displacement * direction_unit[:, None, :], axis=-1, keepdims=True)
-        lateral = displacement - along * direction_unit[:, None, :]
-        lateral_dist = jnp.linalg.norm(lateral, axis=-1)
-        masked_lateral = jnp.where(after_go, lateral_dist, 0.0)
-        max_lateral_deviation = jnp.max(masked_lateral, axis=-1)
-
-    return {
-        "peak_velocity": np.array(peak_velocity),
-        "endpoint_error": np.array(endpoint_error),
-        "max_lateral_deviation": np.array(max_lateral_deviation),
-    }
 
 
 def evaluate_at_sisu(task, model, sisu_val: float, *, key):

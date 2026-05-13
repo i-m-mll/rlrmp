@@ -31,7 +31,6 @@ warnings.filterwarnings("ignore")
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 import equinox as eqx
@@ -42,21 +41,17 @@ import jax.tree as jt
 import matplotlib.pyplot as plt
 import numpy as np
 
-WORKTREE = Path(__file__).parent.parent
-sys.path.insert(0, str(WORKTREE / "scripts"))
-
-from train_minimax import build_hps  # noqa: E402
-from eval_minimax import load_config, load_model, load_adversary  # noqa: E402
-from feedbax.plot.io import save_figure_with_spec  # noqa: E402
-from eval_part2_5_figures import (  # noqa: E402
-    eval_ensemble_on_trials,
+from feedbax.plot.io import save_figure_with_spec
+from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
+from rlrmp.eval import (
+    N_REPLICATES,
     compute_kinematics,
+    eval_ensemble_on_trials,
     set_sisu,
 )
-from rlrmp.disturbance import PLANT_INTERVENOR_LABEL  # noqa: E402
-from rlrmp.modules.training.part2 import setup_task_model_pair  # noqa: E402
-
-N_REPLICATES = 5
+from rlrmp.eval.minimax_io import load_adversary, load_config, load_model
+from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.minimax import build_hps
 
 
 # ---------------------------------------------------------------------------

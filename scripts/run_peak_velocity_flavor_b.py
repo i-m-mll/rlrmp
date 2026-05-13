@@ -30,7 +30,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import sys
 import time
 import warnings
 from dataclasses import dataclass
@@ -45,8 +44,6 @@ import jax.random as jr
 import jax.tree as jt
 import numpy as np
 
-WORKTREE = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(WORKTREE / "scripts"))
 
 from feedbax._io import load_with_hyperparameters
 
@@ -184,7 +181,7 @@ def _count_replicates(model) -> int:
 
 
 def _build_hps_from_run_json(run_json: dict):
-    from train_minimax import build_hps as build_hps_fn
+    from rlrmp.train.minimax import build_hps as build_hps_fn
 
     cli = run_json.get("cli_args", {})
     schedule = run_json.get("training_schedule", {})
@@ -205,7 +202,7 @@ def _build_hps_from_run_json(run_json: dict):
 
 def _build_hps_from_baseline_config(config: dict):
     """Build hps for a baseline config.json (train_minimax.py format)."""
-    from train_minimax import build_hps as build_hps_fn
+    from rlrmp.train.minimax import build_hps as build_hps_fn
 
     cfg_filtered = {
         k: v for k, v in config.items()
