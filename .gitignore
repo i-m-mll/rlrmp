@@ -263,6 +263,8 @@ results/**
 !results/**/*.assets/**
 # Figure thumbnails (commit only when ≤ 300 KB at 100 DPI; enforced by the saver helper):
 !results/**/figures/**/figure.png
+# Render symlinks (relative symlink from results/<exp>/figures/<topic>/ → _artifacts/...; Bug: aaafc55):
+!results/**/figures/**/figure.html
 # Empty-directory markers (rare; useful for placeholders):
 !results/**/.gitkeep
 # Experiment-specific Python scripts (per CLAUDE.md "Script placement", Bug: 8404108).
