@@ -265,5 +265,9 @@ results/**
 !results/**/figures/**/figure.png
 # Empty-directory markers (rare; useful for placeholders):
 !results/**/.gitkeep
+# Experiment-specific Python scripts (per CLAUDE.md "Script placement", Bug: 8404108).
+# Only under results/<exp>/scripts/ — keeps the whitelist tight so bulk .py files
+# elsewhere under results/ (e.g. accidentally-saved repls) don't get tracked.
+!results/**/scripts/*.py
 # Note: bulk artifacts (.eqx, large .npz, .log, full-DPI renders, runpod/, modal/, etc.)
 # are NOT whitelisted above, so they fall through to the ignore. They belong under _artifacts/.
