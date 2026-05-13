@@ -63,6 +63,7 @@ from rlrmp.viz import profile_comparison_grid
 from feedbax._io import load_with_hyperparameters
 from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 — project-config routing
 
+from rlrmp.io import update_marked_section
 from train_minimax import build_hps
 from rlrmp.analysis.trial_alignment import (
     align_trials,
@@ -1235,8 +1236,9 @@ def main():
         "- `figures/hold_drift_profiles/` — Pre-go forward position (anticipation drift)",
     ]
 
-    with open(notes_path, "w") as f:
-        f.write("\n".join(lines) + "\n")
+    # Bug: 06f7faf — use update_marked_section so hand-edited preambles (e.g.
+    # "Corrected after go-cue alignment fix") are preserved on re-run.
+    update_marked_section(notes_path, "variance_analysis", "\n".join(lines) + "\n")
     print(f"\nSaved analysis notes: {notes_path}")
 
     # Save per-cell stats as JSON for downstream use
