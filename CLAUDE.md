@@ -44,8 +44,10 @@
 ### 3. GPU choice
 (Cross-ref subagent GPU analysis, Part 2.5 session.)
 - **RTX 4090** (community cloud): cheapest validated option.
+- **RTX 4090 secure cloud**: acceptable when the user requests secure cloud; availability can be low, but do not infer failure from `uptimeSeconds: 0` (see §4b).
 - **RTX 5090** (Blackwell, EUR-IS-2 or similar): faster, but some templates carry stale image references.
-  - Use image `runpod/pytorch:1.0.3-cu1281-torch290-ubuntu2204` or newer (`cu1290`/`cu1300`) for Blackwell support.
+  - Template `runpod-torch-v280` / image `runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404` has been observed to boot and expose SSH on a 5090 (driver 570.124.06). After `uv sync`, install `jax[cuda12]`; this upgrades to CUDA 12.9 wheels (`jax==0.10.0`) and exposes `CudaDevice(id=0)`.
+  - Image `runpod/pytorch:1.0.3-cu1281-torch290-ubuntu2204` or newer (`cu1290`/`cu1300`) should also support Blackwell — verify the Docker tag exists before creating the pod.
   - Skip the deprecated `runpod/pytorch:2.8.0-...` template.
 
 ### 4. Deploy steps
@@ -61,35 +63,80 @@ runpodctl pod create \
   --ports "22/tcp,8080/http"   # REQUIRED: default exposes no ports → direct TCP SSH unreachable
 # (For 4090: use --gpu-id "NVIDIA GeForce RTX 4090" --cloud-type COMMUNITY, omit --data-center-ids)
 
-# 4b. Poll until SSH ready (~1–2 min)
-runpodctl pod get <POD_ID>   # wait for runtime.ports to populate; bail if >3 min
-# NOTE: `uptimeSeconds` is NOT a reliable liveness signal — without exposed ports it stays at 0
-# indefinitely on a fully-running pod. Use a functional SSH probe (e.g. `ssh ... true`) instead.
-# If `--ports` is omitted, the pod boots without public TCP; proxy SSH (ssh.runpod.io) uses
-# account-level keys, not the `PUBLIC_KEY` injected at creation, so the `RunPod-Key-Go` key fails.
+# 4b. Poll until SSH ready (~1–3 min). Bug: b399efc.
+runpodctl pod get <POD_ID>
+# Correct readiness criterion:
+#   1. `runpodctl pod get <POD_ID>` output contains an `.ssh` object with `ip`,
+#      `port`, and `ssh_command`.
+#   2. That SSH command succeeds with a functional probe:
+#        ssh -i ~/.runpod/ssh/RunPod-Key-Go -p <port> root@<ip> \
+#            'nvidia-smi --query-gpu=name --format=csv,noheader'
+# Do NOT use `.runtime`, `.runtime.ports`, or `uptimeSeconds` as the primary
+# readiness signal. Observed counterexample: a healthy RTX 5090 pod had
+# `uptimeSeconds: 0` and no `.runtime` object, but `.ssh.ssh_command` was valid
+# and SSH worked. Following the old `runtime.ports`-populated heuristic
+# terminated ~5 healthy pods. Keep polling within the normal boot window;
+# stop/recreate only if `.ssh` never populates or the functional probe fails.
 
-# 4c. rsync 3 path-deps to /workspace (run from local machine)
-rsync -av --exclude='_artifacts' --exclude='worktrees' --exclude='.venv' \
+# 4c. rsync 3 path-deps to /workspace (run from local machine). Bug: b399efc.
+# Notes:
+# - Use inline excludes; do not stash flags in a shell variable (word-splitting
+#   in zsh has caused oversized transfers).
+# - --no-owner --no-group: RunPod volumes reject chown, so without these flags
+#   rsync exits 23 even when data transferred successfully.
+# - macOS ships old Apple-patched rsync that rejects --info=stats2,progress2.
+#   Use --stats for a portable transfer summary.
+# - Exclude tracked legacy *.assets image dumps (~100 MB) — not needed for
+#   training.
+rsync -az --stats --no-owner --no-group \
+  --exclude='_artifacts' --exclude='worktrees' --exclude='.venv' --exclude='.git' \
+  --exclude='__pycache__' --exclude='.pytest_cache' --exclude='*.assets' \
+  --exclude='results/*.assets' --exclude='manuscript/results.assets' \
+  --exclude='TODO.assets' \
   "/Users/mll/Main/10 Projects/10 PhD/rlrmp/" root@<pod-ip>:/workspace/rlrmp/
-rsync -av --exclude='_artifacts' --exclude='worktrees' --exclude='.venv' \
-  "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax/worktrees/develop/" root@<pod-ip>:/workspace/feedbax/
-rsync -av --exclude='worktrees' \
-  "/Users/mll/Main/10 Projects/05 Utils/jax-cookbook/" root@<pod-ip>:/workspace/jax-cookbook/
-# Note: jax-cookbook including `worktrees/` is ~480 MB; with the exclude it transfers <1 MB.
-# Always exclude `worktrees/`.
 
-# 4d. Patch embedded local paths on the pod (SSH in, then run):
-sed -i 's|.*/feedbax[^"]*|/workspace/feedbax|g' /workspace/rlrmp/pyproject.toml
-sed -i 's|.*/feedbax[^"]*|/workspace/feedbax|g' /workspace/rlrmp/uv.lock
-sed -i 's|.*/jax.cookbook[^"]*|/workspace/jax-cookbook|g' /workspace/rlrmp/uv.lock
-sed -i 's|.*/jax.cookbook[^"]*|/workspace/jax-cookbook|g' /workspace/feedbax/pyproject.toml  # easy to forget
-sed -i 's|.*/jax.cookbook[^"]*|/workspace/jax-cookbook|g' /workspace/feedbax/uv.lock
+rsync -az --stats --no-owner --no-group \
+  --exclude='_artifacts' --exclude='worktrees' --exclude='.venv' --exclude='.git' \
+  --exclude='__pycache__' --exclude='.pytest_cache' --exclude='web' \
+  "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax/worktrees/develop/" root@<pod-ip>:/workspace/feedbax/
+
+rsync -az --stats --no-owner --no-group \
+  --exclude='worktrees' --exclude='.venv' --exclude='.git' \
+  --exclude='__pycache__' --exclude='.pytest_cache' \
+  "/Users/mll/Main/10 Projects/05 Utils/jax-cookbook/" root@<pod-ip>:/workspace/jax-cookbook/
+# jax-cookbook including worktrees/ is ~480 MB; the exclude keeps it <1 MB.
+
+# 4d. Patch embedded local paths on the pod (SSH in, then run). Bug: b399efc.
+# Use perl with \Q...\E (literal-string quoting) rather than broad sed globs.
+# The old `sed -i 's|.*/feedbax[^"]*|...|g'` form matched too broadly and
+# corrupted unrelated TOML fields and lockfile metadata.
+perl -0pi -e \
+  's|\Q/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax/worktrees/develop\E|/workspace/feedbax|g;
+   s|\Q../../../20 Feedbax/feedbax/worktrees/develop\E|/workspace/feedbax|g' \
+  /workspace/rlrmp/pyproject.toml /workspace/rlrmp/uv.lock
+
+perl -0pi -e \
+  's|\Q/Users/mll/Main/10 Projects/05 Utils/jax-cookbook\E|/workspace/jax-cookbook|g;
+   s|\Q../../../../05 Utils/jax-cookbook\E|/workspace/jax-cookbook|g;
+   s|\Q../../../../../05 Utils/jax-cookbook\E|/workspace/jax-cookbook|g' \
+  /workspace/rlrmp/uv.lock /workspace/feedbax/pyproject.toml /workspace/feedbax/uv.lock
+
+# Verify no local editable paths remain before proceeding:
+grep -RIn '/Users\|10 Projects\|\.\./\.\./.*jax-cookbook\|\.\./\.\./.*feedbax' \
+  /workspace/rlrmp/pyproject.toml /workspace/rlrmp/uv.lock \
+  /workspace/feedbax/pyproject.toml /workspace/feedbax/uv.lock || true
 
 # 4e. Install (must survive SSH disconnect — use nohup; see §5)
 cd /workspace/rlrmp && nohup uv sync > /workspace/uv_sync.log 2>&1 &
 # After uv sync completes:
-nohup uv pip install -U "jax[cuda12]" > /workspace/jax_install.log 2>&1 && touch /workspace/install_done &
+nohup uv pip install -U "jax[cuda12]" > /workspace/jax_install.log 2>&1 \
+  && touch /workspace/install_done &
 # Poll: tail /workspace/jax_install.log; wait for /workspace/install_done (~3–5 min)
+# Do NOT run `uv sync` again after the CUDA JAX install — it can revert to the
+# lockfile's CPU JAX wheels. Use `uv run --no-sync` for all subsequent commands.
+# Verify before training:
+#   XLA_PYTHON_CLIENT_PREALLOCATE=false uv run --no-sync python -c \
+#     'import jax; print(jax.__version__); print(jax.devices())'
 ```
 
 ### 5. nohup pattern (mandatory for installs)
@@ -99,7 +146,7 @@ Always run long setup commands as `nohup <cmd> > <logfile> 2>&1 &` and touch a s
 ### 6. Smoke test
 ```bash
 cd /workspace/rlrmp
-uv run python scripts/train_minimax.py \
+uv run --no-sync python scripts/train_minimax.py \
   --adversary-type linear_dynamics \
   --n-warmup-batches 3 --n-adversary-batches 20 --adv-batch-size 250 \
   --n-replicates 5 --hidden-type gru \
@@ -111,11 +158,12 @@ Adjust flags to match the current script's CLI if it has changed.
 - **Smoke test**: check 1 min after start, then every 5 min.
 - **Full run**: check at 1 min (confirm JIT compilation visible), every 5 min during early loss decline, drop to every 30 min once loss is steadily descending.
 - Watch for `ptxas` warnings, `OOM`, and `Traceback` patterns alongside loss-progress signal.
+- For 1k warmup-only smoke tests on a 5090, first compilation takes ~30 s and the whole run completes in a few minutes. Pause after the smoke test and do not launch the main matrix until the user confirms.
 
 ### 8. Cost discipline
 (Cross-ref dotfiles `3602840`.)
 - Pod billing starts on **creation**, not on container start.
-- Verify the pod is reachable within ~2 min via a functional SSH probe (e.g. `ssh ... true`); terminate and recreate if stuck. Do NOT rely on `uptimeSeconds > 0` as a liveness signal — without exposed ports (see §4a) it stays at 0 on fully-running pods, and even with ports it can lag behind actual container start.
+- Verify the pod is reachable via the `.ssh.ssh_command` from `runpodctl pod get`, confirmed by a functional SSH probe (`ssh ... 'true'` or `ssh ... 'nvidia-smi'`). Do NOT rely on `uptimeSeconds > 0`, `.runtime`, or `.runtime.ports` as the primary liveness signal — a working pod can show `uptimeSeconds: 0` and no `.runtime` object while `.ssh` is valid (Bug: b399efc).
 - Do not unilaterally upgrade cloud tier or GPU class — ask the user first.
 
 ### 9. Post-training-run protocol
@@ -178,6 +226,18 @@ The mirror `_artifacts/<hash>/...` follows the same structure (`runs/<variant>/`
 | Final-cut paper figure | `manuscript/figures/<fig>/` (same rules) |
 
 Run identifier convention: `<group>__<variant>` (double underscore separator, matching the branch-naming convention). Examples: `baseline__standard_12k`, `minimax_single__seed_0`.
+
+### Script placement: experiment-specific vs reusable
+
+The top-level `scripts/` directory is for cross-cutting tooling — scripts that operate generically across experiments (e.g. `train_minimax.py`, `eval_diagnostics.py`, infrastructure shell scripts). It is NOT a dumping ground for experiment-specific analysis code.
+
+**Going forward:**
+
+- **Experiment-specific scripts** (analysis pipelines, plotting code, one-off diagnostics tied to a single tracking issue) must live with the experiment: `results/<hash>/scripts/<name>.py`. Commit them alongside the experiment's `runs/`, `notes/`, and `figures/` content under the same `Bug: <hash>` trailer.
+- **Reusable components** (utility functions, plotting primitives, analysis routines that several experiments will call) must be refactored into `src/rlrmp/` (or `feedbax/` if the abstraction is plant- or task-general) and submitted via an auth request to that package. Do not let a reusable helper accrete inside an experiment-specific script.
+- **Mixed scripts** (experiment-specific driver that uses generic helpers) should split: the driver under `results/<hash>/scripts/`, the helpers in `src/rlrmp/`. Both can land in the same auth request — the driver carries the `Bug: <hash>` trailer; the library change carries its own feature issue if it's substantial.
+
+The flat `scripts/` dir is hard to navigate once experiment-specific code accumulates; this convention keeps it small and meaningful. Pre-existing scripts in `scripts/` that violate the convention are tracked separately and may be relocated opportunistically — do not auto-relocate them as part of unrelated work.
 
 ### Run-spec vs figure-spec
 
