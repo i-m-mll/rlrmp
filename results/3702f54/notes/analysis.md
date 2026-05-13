@@ -1,5 +1,23 @@
 # Pre-go Motor Mask Matrix — Analysis (3702f54)
 
+> **Corrected after go-cue alignment fix (Bug: 06f7faf).** The
+> within-cell vel-RMSE values were originally computed by averaging
+> trial-mean profiles in *absolute trial time* before the pairwise
+> RMSE step. Because `centerout`'s target-on duration is randomized
+> per trial, this smeared the go cue across ~150 ms and produced
+> biased RMSE values. The forward-velocity and hold-drift figures
+> were also drawn in absolute time. The fix re-locks each trial to
+> its own go cue before the trial-axis collapse.
+>
+> **Effect on conclusions:** *the headline is unchanged.*
+> `full_trial_pl__prego_1` still wins decisively. Vel-RMSE values
+> shift modestly (most cells shift up by ~5–40 %, with the largest
+> shifts on the unstable `__pos10` cells); the winner ordering, the
+> ~50× pre-go-RMS suppression, and the verdict "discard __pos10,
+> adopt prego_1" are all preserved. Hold drift, pre-go RMS, peak vel,
+> and TTP are scalar per-trial metrics that already used per-trial
+> go-cue indexing and are unchanged.
+
 ## Headline
 
 `full_trial_pl__prego_1` wins decisively. The `--nn-output-pre-go` lever at
@@ -60,18 +78,37 @@ not exercised, only the supervised loss components.
 
 ## Per-cell metrics
 
+### Post-fix table (after Bug: 06f7faf)
+
 | Cell | Vel-RMSE (m/s) | Hold drift (mm) | Pre-go RMS (mm) | Peak vel (m/s) | TTP (steps) |
 |---|---:|---:|---:|---:|---:|
-| **lit__post_nojerk** (baseline) | 0.0361 | 2.34 ± 0.56 | 1.02 ± 0.19 | 0.969 ± 0.025 | 34.3 ± 1.8 |
-| **lit__full_nojerk** (baseline) | 0.0414 | 2.74 ± 0.55 | 1.15 ± 0.17 | 0.964 ± 0.025 | 34.2 ± 2.1 |
-| post_go_pl__pos10 | 0.1394 | 3.60 ± 4.44 | 1.51 ± 1.88 | 0.653 ± 0.110 | 59.0 ± 7.5 |
-| full_trial_pl__pos10 | 0.1047 | 4.40 ± 5.63 | 1.89 ± 2.46 | 0.630 ± 0.057 | 59.7 ± 9.0 |
-| full_trial_pl__prego_1e-3 | 0.0221 | 0.00 | 0.40 ± 0.15 | 1.010 ± 0.022 | 37.2 ± 1.0 |
-| full_trial_pl__prego_5e-2 | 0.0244 | 0.002 | 0.05 ± 0.01 | 1.086 ± 0.017 | 37.2 ± 0.9 |
-| **full_trial_pl__prego_1** | **0.0176** | **0.02** | **0.02 ± 0.01** | **1.087 ± 0.010** | **36.8 ± 0.6** |
-| full_trial_pl__pos10_prego_1e-3 | 0.1272 | 3.54 ± 4.33 | 1.65 ± 2.21 | 0.638 ± 0.035 | 64.9 ± 9.2 |
-| full_trial_pl__pos10_prego_5e-2 | 0.0520 | 0.12 ± 0.04 | 0.09 ± 0.02 | 0.603 ± 0.026 | 73.0 ± 8.1 |
-| full_trial_pl__pos10_prego_1 | 0.1511 | 0.001 | 0.08 ± 0.02 | 0.711 ± 0.133 | 71.0 ± 14.5 |
+| **lit__post_nojerk** (baseline) | 0.0383 | 2.34 ± 0.56 | 1.02 ± 0.19 | 0.969 ± 0.025 | 34.3 ± 1.8 |
+| **lit__full_nojerk** (baseline) | 0.0428 | 2.74 ± 0.55 | 1.15 ± 0.17 | 0.964 ± 0.025 | 34.2 ± 2.1 |
+| post_go_pl__pos10 | 0.1824 | 3.60 ± 4.44 | 1.51 ± 1.88 | 0.653 ± 0.110 | 59.0 ± 7.5 |
+| full_trial_pl__pos10 | 0.1426 | 4.40 ± 5.63 | 1.89 ± 2.46 | 0.630 ± 0.057 | 59.7 ± 9.0 |
+| full_trial_pl__prego_1e-3 | 0.0299 | 0.00 | 0.40 ± 0.15 | 1.010 ± 0.022 | 37.2 ± 1.0 |
+| full_trial_pl__prego_5e-2 | 0.0311 | 0.002 | 0.05 ± 0.01 | 1.086 ± 0.017 | 37.2 ± 0.9 |
+| **full_trial_pl__prego_1** | **0.0255** | **0.02** | **0.02 ± 0.01** | **1.087 ± 0.010** | **36.8 ± 0.6** |
+| full_trial_pl__pos10_prego_1e-3 | 0.1780 | 3.54 ± 4.33 | 1.65 ± 2.21 | 0.638 ± 0.035 | 64.9 ± 9.2 |
+| full_trial_pl__pos10_prego_5e-2 | 0.1109 | 0.12 ± 0.04 | 0.09 ± 0.02 | 0.603 ± 0.026 | 73.0 ± 8.1 |
+| full_trial_pl__pos10_prego_1 | 0.1841 | 0.001 | 0.08 ± 0.02 | 0.711 ± 0.133 | 71.0 ± 14.5 |
+
+### Pre-fix table (deprecated, kept for traceability)
+
+Original numbers before the go-cue alignment fix:
+
+| Cell | Vel-RMSE (m/s, deprecated) |
+|---|---:|
+| lit__post_nojerk (baseline) | 0.0361 |
+| lit__full_nojerk (baseline) | 0.0414 |
+| post_go_pl__pos10 | 0.1394 |
+| full_trial_pl__pos10 | 0.1047 |
+| full_trial_pl__prego_1e-3 | 0.0221 |
+| full_trial_pl__prego_5e-2 | 0.0244 |
+| full_trial_pl__prego_1 | 0.0176 |
+| full_trial_pl__pos10_prego_1e-3 | 0.1272 |
+| full_trial_pl__pos10_prego_5e-2 | 0.0520 |
+| full_trial_pl__pos10_prego_1 | 0.1511 |
 
 Bold = winning cell + the two baseline anchors. Vel-RMSE is reported as
 the absolute within-cell number per the corrective comments on

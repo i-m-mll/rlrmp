@@ -11,7 +11,7 @@
       "sd_pre_go_drift_mm": 1.6862800121307373,
       "sd_pre_go_rms_mm": 2.462867498397827,
       "sd_time_to_peak_steps": 8.98288302829331,
-      "within_cell_vel_rmse": 0.1047065133228898
+      "within_cell_vel_rmse": 0.14260766431689262
     },
     "full_trial_pl__pos10_prego_1": {
       "mean_hold_drift_mm": 0.0009635469759814441,
@@ -24,7 +24,7 @@
       "sd_pre_go_drift_mm": 0.016543520614504814,
       "sd_pre_go_rms_mm": 0.020917454734444618,
       "sd_time_to_peak_steps": 14.4793495192291,
-      "within_cell_vel_rmse": 0.15110618202015758
+      "within_cell_vel_rmse": 0.18411043724045156
     },
     "full_trial_pl__pos10_prego_1e-3": {
       "mean_hold_drift_mm": 3.542644500732422,
@@ -37,7 +37,7 @@
       "sd_pre_go_drift_mm": 1.4637612104415894,
       "sd_pre_go_rms_mm": 2.2122693061828613,
       "sd_time_to_peak_steps": 9.239267422258107,
-      "within_cell_vel_rmse": 0.12724427860230209
+      "within_cell_vel_rmse": 0.1779741868376732
     },
     "full_trial_pl__pos10_prego_5e-2": {
       "mean_hold_drift_mm": 0.11644931137561798,
@@ -50,7 +50,7 @@
       "sd_pre_go_drift_mm": 0.0199220459908247,
       "sd_pre_go_rms_mm": 0.014802808873355389,
       "sd_time_to_peak_steps": 8.082581580163605,
-      "within_cell_vel_rmse": 0.05195633582770824
+      "within_cell_vel_rmse": 0.11087468285113573
     },
     "full_trial_pl__prego_1": {
       "mean_hold_drift_mm": 0.02138991840183735,
@@ -63,7 +63,7 @@
       "sd_pre_go_drift_mm": 0.004021044820547104,
       "sd_pre_go_rms_mm": 0.004877180326730013,
       "sd_time_to_peak_steps": 0.5955564624785797,
-      "within_cell_vel_rmse": 0.01758362716063857
+      "within_cell_vel_rmse": 0.025533041451126337
     },
     "full_trial_pl__prego_1e-3": {
       "mean_hold_drift_mm": 0.0,
@@ -76,7 +76,7 @@
       "sd_pre_go_drift_mm": 0.1260446459054947,
       "sd_pre_go_rms_mm": 0.1467665731906891,
       "sd_time_to_peak_steps": 1.039831717154271,
-      "within_cell_vel_rmse": 0.022094462858513
+      "within_cell_vel_rmse": 0.029884564550593497
     },
     "full_trial_pl__prego_5e-2": {
       "mean_hold_drift_mm": 0.00225633243098855,
@@ -89,7 +89,7 @@
       "sd_pre_go_drift_mm": 0.005099665839225054,
       "sd_pre_go_rms_mm": 0.006622545421123505,
       "sd_time_to_peak_steps": 0.8596874432024699,
-      "within_cell_vel_rmse": 0.02440542997792363
+      "within_cell_vel_rmse": 0.03110519926995039
     },
     "lit__full_nojerk": {
       "mean_hold_drift_mm": 2.7421462535858154,
@@ -102,7 +102,7 @@
       "sd_pre_go_drift_mm": 0.2803179919719696,
       "sd_pre_go_rms_mm": 0.17284654080867767,
       "sd_time_to_peak_steps": 2.146217603133475,
-      "within_cell_vel_rmse": 0.041401103837415576
+      "within_cell_vel_rmse": 0.04275543186813593
     },
     "lit__post_nojerk": {
       "mean_hold_drift_mm": 2.3366737365722656,
@@ -115,7 +115,7 @@
       "sd_pre_go_drift_mm": 0.3223891258239746,
       "sd_pre_go_rms_mm": 0.18782052397727966,
       "sd_time_to_peak_steps": 1.7664406301939501,
-      "within_cell_vel_rmse": 0.0361164310015738
+      "within_cell_vel_rmse": 0.038329378608614205
     },
     "post_go_pl__pos10": {
       "mean_hold_drift_mm": 3.595442295074463,
@@ -128,59 +128,59 @@
       "sd_pre_go_drift_mm": 1.2837965488433838,
       "sd_pre_go_rms_mm": 1.8826864957809448,
       "sd_time_to_peak_steps": 7.468370806273614,
-      "within_cell_vel_rmse": 0.1393585789948702
+      "within_cell_vel_rmse": 0.1824183315038681
     }
   },
   "experiment": "3702f54",
   "figure_kind": "summary_metrics_bar_panel",
   "inputs": [
     {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__3702f54-analysis/_artifacts/f47abb1/runs/lit__post_nojerk/warmup_model.eqx",
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/f47abb1/runs/lit__post_nojerk/warmup_model.eqx",
       "role": "warmup_model:lit__post_nojerk",
       "sha256": "f059caf28ad8ab4745a78a3b5966277b44c21fe6e7e4234afc18e0a045c6725c"
     },
     {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__3702f54-analysis/_artifacts/f47abb1/runs/lit__full_nojerk/warmup_model.eqx",
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/f47abb1/runs/lit__full_nojerk/warmup_model.eqx",
       "role": "warmup_model:lit__full_nojerk",
       "sha256": "5074ac928cbd4e3b035442bd89f5f91ebf8f6bff1f457f506881dd31de3642be"
     },
     {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__3702f54-analysis/_artifacts/3702f54/runs/post_go_pl__pos10/warmup_model.eqx",
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/3702f54/runs/post_go_pl__pos10/warmup_model.eqx",
       "role": "warmup_model:post_go_pl__pos10",
       "sha256": "df92512ff8687795d993bdccdb384bb65a9495c0842e560e6b6ea283ea275fb2"
     },
     {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__3702f54-analysis/_artifacts/3702f54/runs/full_trial_pl__pos10/warmup_model.eqx",
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/3702f54/runs/full_trial_pl__pos10/warmup_model.eqx",
       "role": "warmup_model:full_trial_pl__pos10",
       "sha256": "136a88d9a83a27491b5f00a23b80990d934c6ce83c70032190d565542389f6ed"
     },
     {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__3702f54-analysis/_artifacts/3702f54/runs/full_trial_pl__prego_1e-3/warmup_model.eqx",
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/3702f54/runs/full_trial_pl__prego_1e-3/warmup_model.eqx",
       "role": "warmup_model:full_trial_pl__prego_1e-3",
       "sha256": "45755ef6698207988d4287571926e92981f8d2fb99e088eb5cabfa6e3a87e8cf"
     },
     {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__3702f54-analysis/_artifacts/3702f54/runs/full_trial_pl__prego_5e-2/warmup_model.eqx",
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/3702f54/runs/full_trial_pl__prego_5e-2/warmup_model.eqx",
       "role": "warmup_model:full_trial_pl__prego_5e-2",
       "sha256": "eecbee03350707df86061d5767e91a8762d2c63a4fa619e134f6ecfe62266f6c"
     },
     {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__3702f54-analysis/_artifacts/3702f54/runs/full_trial_pl__prego_1/warmup_model.eqx",
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/3702f54/runs/full_trial_pl__prego_1/warmup_model.eqx",
       "role": "warmup_model:full_trial_pl__prego_1",
       "sha256": "9ab29e9dc3a5e6c3dec660bc36b5a228c3cd3179197fb8595f7a24873a51a651"
     },
     {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__3702f54-analysis/_artifacts/3702f54/runs/full_trial_pl__pos10_prego_1e-3/warmup_model.eqx",
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/3702f54/runs/full_trial_pl__pos10_prego_1e-3/warmup_model.eqx",
       "role": "warmup_model:full_trial_pl__pos10_prego_1e-3",
       "sha256": "302bb9351db0024bb68f0515c38886d8b1578c4732eef46411bdc774b6d15386"
     },
     {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__3702f54-analysis/_artifacts/3702f54/runs/full_trial_pl__pos10_prego_5e-2/warmup_model.eqx",
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/3702f54/runs/full_trial_pl__pos10_prego_5e-2/warmup_model.eqx",
       "role": "warmup_model:full_trial_pl__pos10_prego_5e-2",
       "sha256": "f1a9b64efa5c5c3499e5256549f2affb36fe1f9722fd9a79217090bc0bce1cc3"
     },
     {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__3702f54-analysis/_artifacts/3702f54/runs/full_trial_pl__pos10_prego_1/warmup_model.eqx",
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/3702f54/runs/full_trial_pl__pos10_prego_1/warmup_model.eqx",
       "role": "warmup_model:full_trial_pl__pos10_prego_1",
       "sha256": "660f5183beda13a83cad143291cf5bcfdd98ba183ed46dbb0910eea8416f1a97"
     }
@@ -210,7 +210,7 @@
     "pre_go_window_steps": 20,
     "sisu": 0.5
   },
-  "timestamp": "2026-05-12T04:34:08.131004+00:00",
+  "timestamp": "2026-05-13T18:09:01.871067+00:00",
   "transform": [
     {
       "kwargs": {
