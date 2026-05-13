@@ -29,6 +29,30 @@
 - The feedbax repo is at `~/Main/10 Projects/10 PhD/20 Feedbax/feedbax/`. Use worktrees for feature work, following the same conventions as this repo.
 - Feedbax's protected branch is `develop`, not `main`. All canonical feedbax behaviour, APIs, and architectural patterns reside on `develop`. Feedbax-side feature branches must derive from `develop` (`wt feature/<name> develop`), not from `main`. When reading feedbax source code to understand current behaviour, check out develop or read files at the develop branch reference (`git show develop:path/to/file.py`). The feedbax `main` branch may lag develop substantially and should not be treated as authoritative.
 
+## Plotting Conventions
+
+### Profile-comparison subplots share y-axes (Bug: 06f7faf)
+
+Multi-panel profile-comparison figures — one subplot per condition (cell, regime, perturbation, etc.) where each panel plots the same kind of quantity on the same x-axis semantics — MUST share y-axes across panels. Without shared y-axes each panel auto-scales independently, hiding the cross-condition magnitude differences the panel layout is meant to expose.
+
+Affected figure families include `forward_velocity_profiles`, `hold_drift_profiles`, and any per-replicate variants of these.
+
+**This is enforced at the plot-helper level, not per-script.** Analysis scripts must build profile-comparison grids via `rlrmp.viz.profile_comparison_grid` (the default is `shared_yaxes='all'`). Do not call `plotly.subplots.make_subplots` directly for profile-comparison figures, and do not pass `shared_yaxes` as a per-call override unless there is a documented reason to deviate (in which case file a follow-up issue capturing why).
+
+```python
+from rlrmp.viz import profile_comparison_grid
+
+fig = profile_comparison_grid(
+    n_panels=n_cells,
+    subplot_titles=[CELL_DISPLAY_NAMES[l] for l in labels_present],
+    vertical_spacing=0.025,
+)
+```
+
+### Aligned-profile aggregators trim by default
+
+The `pooled_trial_mean_with_band` and `replicate_mean_curves` helpers in `rlrmp.analysis.trial_alignment` trim aligned profiles to the strict full-support column window (`min_coverage=1.0`) before reducing. Callers receive the trim slice alongside the curves so companion time axes can be sliced consistently (`t = ((np.arange(n) - center) * dt)[sl]`). Pass `trim=False` only when downstream code needs identical step axes across multiple invocations (e.g. cross-cell pairwise RMSE) and the reducer is already NaN-tolerant.
+
 ## RunPod Deploy Runbook for rlrmp Experiments
 
 ### 1. Prerequisites
