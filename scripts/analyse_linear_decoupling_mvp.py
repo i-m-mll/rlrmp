@@ -389,8 +389,11 @@ def evaluate_one_run(label: str, dir_name: str, eqx_filename: str,
         # unaffected because it uses per-trial after_go masking before max.
         go_idx = np.asarray(trials.timeline.epoch_bounds[:, 2])
         aligned_fv, center = align_trials(np.asarray(fwd_vel), go_idx)
+        # trim=False because the downstream plot computes its own time axis
+        # from a stored `center` and the array's column count; the trim slice
+        # would have to be persisted alongside to apply consistently.
         out["fwd_velocity_profile_per_scale"][float(s)] = replicate_mean_curves(
-            aligned_fv
+            aligned_fv, trim=False
         )  # (n_rep, n_aligned_steps)
         out.setdefault("go_align_center_per_scale", {})[float(s)] = int(center)
         print(f"  pert_scale={s:.2f}  peak_vel mean={peak.mean():.4f}  "

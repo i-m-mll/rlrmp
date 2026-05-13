@@ -69,6 +69,7 @@ import jax.tree as jt
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from rlrmp.viz import profile_comparison_grid
 
 from feedbax._io import load_with_hyperparameters
 from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 -- project-config routing
@@ -465,14 +466,18 @@ def compute_rmse_ratios(cell_kms: dict[str, dict]) -> dict[str, dict]:
     # the trial-axis collapse. Replicate-mean curves are computed via
     # `replicate_mean_curves` (nanmean over trial axis) so NaN padding from
     # trials with shorter pre/post windows doesn't bias the per-rep curve.
+    # Use trim=False here because the cross-cell pairwise RMSE downstream
+    # already handles NaN columns via nanmean and requires identical step
+    # axes across cells (which a per-cell trim could disturb if go_idx
+    # distributions differ).
     vel_profiles: dict[str, np.ndarray] = {}
     pos_profiles: dict[str, np.ndarray] = {}
     for label in labels:
         km = cell_kms[label]
         aligned_v, _c = align_trials(km["forward_vel_profile"], km["go_idx"])
         aligned_p, _c = align_trials(km["pos_forward_profile"], km["go_idx"])
-        vel_profiles[label] = replicate_mean_curves(aligned_v)  # (n_rep, n_aligned_steps)
-        pos_profiles[label] = replicate_mean_curves(aligned_p)
+        vel_profiles[label] = replicate_mean_curves(aligned_v, trim=False)
+        pos_profiles[label] = replicate_mean_curves(aligned_p, trim=False)
 
     # NaN handling: replicate_mean_curves may leave NaN at extreme columns where
     # no trial contributed. _mean_pairwise_rmse uses (a-b)**2 and np.mean; mask
@@ -588,11 +593,11 @@ def make_forward_velocity_profile_figure(
     if n_cells == 0:
         return go.Figure()
 
-    fig = make_subplots(
-        rows=n_cells,
-        cols=1,
+    # Bug: 06f7faf — shared y-axes via profile_comparison_grid so per-replicate
+    # traces are directly comparable across cells.
+    fig = profile_comparison_grid(
+        n_panels=n_cells,
         subplot_titles=[CELL_DISPLAY_NAMES[l] for l in labels_present],
-        shared_xaxes=True,
         vertical_spacing=0.06,
     )
 
@@ -604,10 +609,11 @@ def make_forward_velocity_profile_figure(
         color = CELL_COLORS[CELL_LABELS.index(label) % len(CELL_COLORS)]
 
         # Bug: 06f7faf — go-cue alignment per trial; one curve per replicate
-        # (replicate-level nanmean over aligned trials).
+        # (replicate-level nanmean over aligned trials, trimmed to the
+        # full-support column window).
         aligned_v, center = align_trials(v_fwd, go_idx)
-        per_rep_curves = replicate_mean_curves(aligned_v)  # (n_rep, n_aligned_steps)
-        t = (np.arange(aligned_v.shape[-1]) - center) * dt
+        per_rep_curves, sl = replicate_mean_curves(aligned_v)  # (n_rep, n_kept_steps)
+        t = ((np.arange(aligned_v.shape[-1]) - center) * dt)[sl]
 
         for rep in range(n_rep):
             fig.add_trace(go.Scatter(
@@ -655,11 +661,10 @@ def make_hold_drift_figure(
     if n_cells == 0:
         return go.Figure()
 
-    fig = make_subplots(
-        rows=n_cells,
-        cols=1,
+    # Bug: 06f7faf — shared y-axes via profile_comparison_grid.
+    fig = profile_comparison_grid(
+        n_panels=n_cells,
         subplot_titles=[CELL_DISPLAY_NAMES[l] for l in labels_present],
-        shared_xaxes=True,
         vertical_spacing=0.06,
     )
 
@@ -670,11 +675,13 @@ def make_hold_drift_figure(
         n_rep, n_trials, n_steps = pos_fwd.shape
         color = CELL_COLORS[CELL_LABELS.index(label) % len(CELL_COLORS)]
 
-        # Bug: 06f7faf — go-cue alignment per trial; replicate-mean curves.
-        # Clip to [t <= 0] for the pre-go drift figure.
+        # Bug: 06f7faf — go-cue alignment per trial; replicate-mean curves on
+        # the full-support window. Then clip to [t <= 0] for the pre-go drift
+        # figure.
         aligned_p, center = align_trials(pos_fwd, go_idx)
-        per_rep_curves = replicate_mean_curves(aligned_p) * 1000.0  # mm
-        t_rel = (np.arange(aligned_p.shape[-1]) - center) * dt
+        per_rep_curves, sl = replicate_mean_curves(aligned_p)
+        per_rep_curves = per_rep_curves * 1000.0  # mm
+        t_rel = ((np.arange(aligned_p.shape[-1]) - center) * dt)[sl]
         keep = t_rel <= 0.0
         t_pre = t_rel[keep]
         pos_mm = per_rep_curves[:, keep]

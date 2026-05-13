@@ -58,6 +58,7 @@ import jax.tree as jt
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from rlrmp.viz import profile_comparison_grid
 
 from feedbax._io import load_with_hyperparameters
 from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 -- project-config routing
@@ -484,10 +485,10 @@ def compute_cell_stats(km: dict[str, np.ndarray]) -> dict:
 
     # Within-cell pairwise velocity-RMSE (absolute m/s, primary metric per issue request).
     # Bug: 06f7faf — align per-trial profiles to each trial's go cue BEFORE
-    # averaging across trials. Earlier code averaged in absolute time which
-    # smeared the go cue across ~150 ms.
+    # averaging across trials, and trim to the full-support window so the
+    # NaN-edge columns do not contaminate the RMSE.
     aligned_vel, _center = align_trials(km["forward_vel_profile"], km["go_idx"])
-    vel_profiles = replicate_mean_curves(aligned_vel)  # (n_rep, n_aligned_steps)
+    vel_profiles, _sl = replicate_mean_curves(aligned_vel)  # (n_rep, n_kept_steps)
     within_rmse_vel = _within_cell_mean_pairwise_rmse(vel_profiles)
 
     mean_pv = float(peak_vel_per_rep.mean())
@@ -527,11 +528,11 @@ def make_forward_velocity_profile_figure(
     if n_cells == 0:
         return go.Figure()
 
-    fig = make_subplots(
-        rows=n_cells,
-        cols=1,
+    # Bug: 06f7faf — profile_comparison_grid applies shared y-axes by default
+    # so cells are visually comparable across panels.
+    fig = profile_comparison_grid(
+        n_panels=n_cells,
         subplot_titles=[CELL_DISPLAY_NAMES[l] for l in labels_present],
-        shared_xaxes=True,
         vertical_spacing=0.025,
     )
 
@@ -545,12 +546,12 @@ def make_forward_velocity_profile_figure(
         # Bug: 06f7faf — go-cue alignment + pooled (replicate, trial) band.
         # Each trial is re-locked to its own go cue (column = center); the
         # plotted band represents inter-trial variability over the full pooled
-        # (n_rep * n_trials) population, NOT pre-averaged within-replicate
-        # variance.
+        # (n_rep * n_trials) population. Aggregator trims the choppy NaN-edge
+        # columns to the strict full-support window and returns the slice.
         aligned_v, center = align_trials(v_fwd, go_idx)
-        mean, lower, upper = pooled_trial_mean_with_band(aligned_v, band="sd")
-        # Time axis relative to go cue (t=0 at go)
-        t = (np.arange(aligned_v.shape[-1]) - center) * dt
+        mean, lower, upper, sl = pooled_trial_mean_with_band(aligned_v, band="sd")
+        # Time axis relative to go cue (t=0 at go), trimmed to match the curve.
+        t = ((np.arange(aligned_v.shape[-1]) - center) * dt)[sl]
 
         # Upper band
         fig.add_trace(go.Scatter(
@@ -607,11 +608,12 @@ def make_hold_drift_figure(
     if n_cells == 0:
         return go.Figure()
 
-    fig = make_subplots(
-        rows=n_cells,
-        cols=1,
+    # Bug: 06f7faf — shared y-axes via profile_comparison_grid; hold-drift
+    # plots compare anticipation amplitude across cells, so visual comparability
+    # is essential.
+    fig = profile_comparison_grid(
+        n_panels=n_cells,
         subplot_titles=[CELL_DISPLAY_NAMES[l] for l in labels_present],
-        shared_xaxes=True,
         vertical_spacing=0.025,
     )
 
@@ -623,16 +625,17 @@ def make_hold_drift_figure(
         color = CELL_COLORS[label]
 
         # Bug: 06f7faf — align to go cue, then clip to the pre-go window
-        # (t in [-window, 0]). Pooled-trial band as in the velocity profile.
+        # (t in [-window, 0]). Pooled-trial band; aggregator trims the
+        # choppy NaN-edge columns to full-support before reducing.
         aligned_pos, center = align_trials(pos_fwd, go_idx)
-        mean_m, lower_m, upper_m = pooled_trial_mean_with_band(aligned_pos, band="sd")
+        mean_m, lower_m, upper_m, sl = pooled_trial_mean_with_band(aligned_pos, band="sd")
         # Convert to mm
         mean = mean_m * 1000.0
         lower = lower_m * 1000.0
         upper = upper_m * 1000.0
 
-        # Time axis relative to go cue
-        t_rel = (np.arange(aligned_pos.shape[-1]) - center) * dt
+        # Time axis relative to go cue, trimmed to the full-support window.
+        t_rel = ((np.arange(aligned_pos.shape[-1]) - center) * dt)[sl]
         # Clip to pre-go window (-PRE_GO_WINDOW_STEPS to 0)
         keep = (t_rel >= -PRE_GO_WINDOW_STEPS * dt) & (t_rel <= 0.0)
         t_pre = t_rel[keep]

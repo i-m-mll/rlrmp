@@ -58,6 +58,7 @@ import jax.tree as jt
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from rlrmp.viz import profile_comparison_grid
 
 from feedbax._io import load_with_hyperparameters
 from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 — project-config routing
@@ -416,16 +417,16 @@ def compute_rmse_ratios(
     labels = list(cell_kms.keys())
 
     # Bug: 06f7faf — go-cue alignment per trial BEFORE the trial-axis collapse.
-    # replicate_mean_curves uses nanmean so NaN-padded columns don't bias the
-    # per-replicate curves.
+    # trim=False preserves identical step axes across cells (needed for the
+    # cross-cell pairwise RMSE downstream); _mean_pairwise_rmse uses nanmean.
     vel_profiles: dict[str, np.ndarray] = {}
     pos_profiles: dict[str, np.ndarray] = {}
     for label in labels:
         km = cell_kms[label]
         aligned_v, _c = align_trials(km["forward_vel_profile"], km["go_idx"])
         aligned_p, _c = align_trials(km["pos_forward_profile"], km["go_idx"])
-        vel_profiles[label] = replicate_mean_curves(aligned_v)  # (n_rep, n_aligned_steps)
-        pos_profiles[label] = replicate_mean_curves(aligned_p)
+        vel_profiles[label] = replicate_mean_curves(aligned_v, trim=False)
+        pos_profiles[label] = replicate_mean_curves(aligned_p, trim=False)
 
     results: dict[str, dict] = {}
     for label in labels:
@@ -541,11 +542,10 @@ def make_forward_velocity_profile_figure(
     if n_cells == 0:
         return go.Figure()
 
-    fig = make_subplots(
-        rows=n_cells,
-        cols=1,
+    # Bug: 06f7faf — shared y-axes via profile_comparison_grid.
+    fig = profile_comparison_grid(
+        n_panels=n_cells,
         subplot_titles=[CELL_DISPLAY_NAMES[l] for l in labels_present],
-        shared_xaxes=True,
         vertical_spacing=0.06,
     )
 
@@ -556,10 +556,11 @@ def make_forward_velocity_profile_figure(
         n_rep, n_trials, n_steps = v_fwd.shape
         color = CELL_COLORS[CELL_LABELS.index(label) % len(CELL_COLORS)]
 
-        # Bug: 06f7faf — go-cue alignment per trial; replicate-mean curves.
+        # Bug: 06f7faf — go-cue alignment per trial; replicate-mean curves on
+        # the full-support window.
         aligned_v, center = align_trials(v_fwd, go_idx)
-        per_rep_curves = replicate_mean_curves(aligned_v)  # (n_rep, n_aligned_steps)
-        t = (np.arange(aligned_v.shape[-1]) - center) * dt
+        per_rep_curves, sl = replicate_mean_curves(aligned_v)
+        t = ((np.arange(aligned_v.shape[-1]) - center) * dt)[sl]
 
         for rep in range(n_rep):
             fig.add_trace(go.Scatter(
@@ -604,11 +605,10 @@ def make_hold_drift_figure(
     if n_cells == 0:
         return go.Figure()
 
-    fig = make_subplots(
-        rows=n_cells,
-        cols=1,
+    # Bug: 06f7faf — shared y-axes via profile_comparison_grid.
+    fig = profile_comparison_grid(
+        n_panels=n_cells,
         subplot_titles=[CELL_DISPLAY_NAMES[l] for l in labels_present],
-        shared_xaxes=True,
         vertical_spacing=0.06,
     )
 
@@ -621,8 +621,9 @@ def make_hold_drift_figure(
 
         # Bug: 06f7faf — go-cue alignment; clip to [t <= 0] for pre-go drift.
         aligned_p, center = align_trials(pos_fwd, go_idx)
-        per_rep_curves = replicate_mean_curves(aligned_p) * 1000.0  # mm
-        t_rel = (np.arange(aligned_p.shape[-1]) - center) * dt
+        per_rep_curves, sl = replicate_mean_curves(aligned_p)
+        per_rep_curves = per_rep_curves * 1000.0  # mm
+        t_rel = ((np.arange(aligned_p.shape[-1]) - center) * dt)[sl]
         keep = t_rel <= 0.0
         t_pre = t_rel[keep]
         pos_mm = per_rep_curves[:, keep]
