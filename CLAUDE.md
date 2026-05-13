@@ -273,17 +273,45 @@ The mirror `_artifacts/<hash>/...` follows the same structure (`runs/<variant>/`
 
 Run identifier convention: `<group>__<variant>` (double underscore separator, matching the branch-naming convention). Examples: `baseline__standard_12k`, `minimax_single__seed_0`.
 
-### Script placement: experiment-specific vs reusable
+### Script placement: experiment-specific vs reusable (Bug: 8404108)
 
-The top-level `scripts/` directory is for cross-cutting tooling — scripts that operate generically across experiments (e.g. `train_minimax.py`, `eval_diagnostics.py`, infrastructure shell scripts). It is NOT a dumping ground for experiment-specific analysis code.
+The top-level `scripts/` directory is for cross-cutting tooling — scripts that operate generically across experiments (e.g. `train_minimax.py`, `train_part2_5.py`, `eval_minimax.py`, `eval_diagnostics.py`, infrastructure shell scripts). It is NOT a dumping ground for experiment-specific analysis code.
 
-**Going forward:**
+**Why this matters.** Pre-`8404108`, `scripts/` had accumulated 36 files mixing CLI entry-points, shared library code, experiment-specific drivers, and one-off analyses — with 25 of those scripts pulling each other in via `sys.path.insert(...)`-style injection. That made the directory unsearchable (no role separation), made the code untestable (sibling imports only resolve at execute time), and made every analysis script silently depend on the order in which `scripts/` happened to be on `PYTHONPATH`. The rules below prevent that recurrence.
 
-- **Experiment-specific scripts** (analysis pipelines, plotting code, one-off diagnostics tied to a single tracking issue) must live with the experiment: `results/<hash>/scripts/<name>.py`. Commit them alongside the experiment's `runs/`, `notes/`, and `figures/` content under the same `Bug: <hash>` trailer.
-- **Reusable components** (utility functions, plotting primitives, analysis routines that several experiments will call) must be refactored into `src/rlrmp/` (or `feedbax/` if the abstraction is plant- or task-general) and submitted via an auth request to that package. Do not let a reusable helper accrete inside an experiment-specific script.
-- **Mixed scripts** (experiment-specific driver that uses generic helpers) should split: the driver under `results/<hash>/scripts/`, the helpers in `src/rlrmp/`. Both can land in the same auth request — the driver carries the `Bug: <hash>` trailer; the library change carries its own feature issue if it's substantial.
+**Hard rules:**
 
-The flat `scripts/` dir is hard to navigate once experiment-specific code accumulates; this convention keeps it small and meaningful. Pre-existing scripts in `scripts/` that violate the convention are tracked separately and may be relocated opportunistically — do not auto-relocate them as part of unrelated work.
+1. **Capability-named library modules.** Modules under `src/rlrmp/` MUST be named by capability — `eval`, `train`, `plot`/`viz`, `analysis`, `lme`, etc. They MUST NOT be named by experiment, phase, or paper (no `part2_5`, no `methodology_fix`, no `shahbazi`, no `tier1`). When you find yourself wanting to call a new module `<phase>_helpers.py` or `<paper>_metrics.py`, that's a signal to identify the underlying capability and use that name instead. Within a capability module, training-method-specific sub-modules ARE allowed (e.g. `rlrmp.train.minimax`, `rlrmp.eval.minimax_io`) because training methods are stable concepts that span experiments. Sub-modules named by experiment are still forbidden.
+
+2. **Experiment-specific scripts** (analysis pipelines, plotting code, one-off diagnostics tied to a single tracking issue) live with the experiment: `results/<hash>/scripts/<name>.py`. Commit them alongside the experiment's `runs/`, `notes/`, and `figures/` content under the same `Bug: <hash>` trailer.
+
+3. **Reusable components** (utility functions, plotting primitives, analysis routines that several experiments will call) MUST be refactored into the capability-named library module BEFORE the experiment script lands. If you're tempted to put a helper inside an experiment-specific script "for now," extract it now — it will outlast the script. Submit the library change via an auth request to `src/rlrmp/` (or `feedbax/` if the abstraction is plant- or task-general).
+
+4. **Mixed scripts** (experiment-specific driver that uses generic helpers) split: the driver under `results/<hash>/scripts/`, the helpers in `src/rlrmp/`. Both can land in the same auth request — the driver carries the `Bug: <hash>` trailer; the library change carries its own feature issue if it's substantial.
+
+5. **Cross-cutting CLI entry-points** (training/eval launchers that operate generically across experiments) stay in `scripts/`. Examples: `scripts/train_minimax.py`, `scripts/train_part2_5.py`, `scripts/eval_minimax.py`, `scripts/eval_diagnostics.py`. These scripts MUST import their reusable helpers from `src/rlrmp/` (capability-named modules), not from each other.
+
+6. **No `sys.path.insert(...)` anywhere.** Use absolute imports (`from rlrmp.eval import ...`, `from rlrmp.train.minimax import build_hps`). If you catch yourself reaching for `sys.path.insert`, stop and extract the dependency into `src/rlrmp/` instead. Sibling-script imports between two files under `scripts/` (e.g. `eval_diagnostics.py` pulling from `eval_minimax.py`) are also forbidden — extract the shared piece to `src/rlrmp/`. Within a single `results/<hash>/scripts/` directory, sibling imports DO work natively (Python auto-adds the executing script's directory to `sys.path`) and are fine for tightly-coupled experiment code that doesn't generalise.
+
+**Concrete examples (from the 8404108 refactor):**
+
+| Right placement | Why |
+|---|---|
+| `src/rlrmp/eval/{ensemble,kinematics,sisu,pert,minimax_io}.py` | Generic eval primitives — used across 14+ scripts. Capability-named modules under `rlrmp.eval`. |
+| `src/rlrmp/train/{minimax,standard}.py` | Hyperparameter constructors for two training methods. Module names are training methods, not phases. |
+| `results/2bc95fd/scripts/analyse_anti_anticipation_6cell_variance.py` | Experiment-specific analysis tied to issue `2bc95fd`. Lives with its experiment. |
+| `scripts/train_minimax.py` | Generic minimax-training CLI. Stays in `scripts/` as a cross-cutting entry-point. Imports `build_hps` from `rlrmp.train.minimax`. |
+
+| Wrong placement | Why it's wrong |
+|---|---|
+| `src/rlrmp/part2_5_eval.py` | Module name encodes a phase. Use `src/rlrmp/eval/` instead. |
+| `src/rlrmp/methodology_fix_helpers.py` | Module name encodes a phase. Use the underlying capability name. |
+| `scripts/analyse_pregomatrix.py` | Experiment-specific analysis. Belongs under `results/3702f54/scripts/`. |
+| `scripts/eval_part2_5_figures.py` exporting `eval_ensemble_on_trials` | Sibling-script import of a generic primitive. Extract to `src/rlrmp/eval/`. |
+
+**Promotion case (script-specific → reusable).** When a function or pattern starts being reused by multiple experiments — e.g. a kinematics helper written for experiment A is being copy-pasted into experiment B's script — promote it to the relevant capability-named library module in `src/rlrmp/` in a dedicated feature issue. Update both call sites in the same auth request. Don't let the same helper drift in two `results/<hash>/scripts/` directories.
+
+**Re-use audit cadence.** When opening a new experiment's analysis script that imports anything from `src/rlrmp/eval/` or `src/rlrmp/train/`, take a moment to scan the imports for "things that should be in the library but aren't yet" — usually surface as `from rlrmp.eval import ...` followed by a long block of private helper functions in the script. Those private helpers are the next promotion candidates.
 
 ### Run-spec vs figure-spec
 
