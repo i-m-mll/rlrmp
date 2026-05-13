@@ -25,11 +25,9 @@ Usage (from repo root):
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
-WORKTREE = Path(__file__).parent.parent
-sys.path.insert(0, str(WORKTREE / "scripts"))
+from rlrmp.paths import REPO_ROOT as WORKTREE  # Bug: 8404108
 
 import equinox as eqx
 import jax.random as jr
@@ -38,7 +36,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from train_minimax import build_hps
+from rlrmp.train.minimax import build_hps
 from feedbax.train import init_task_trainer_history, TaskTrainerHistory
 from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 -- project-config routing
 from rlrmp.modules.training.part2 import setup_task_model_pair

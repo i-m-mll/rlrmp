@@ -25,24 +25,16 @@ warnings.filterwarnings("ignore")
 
 import argparse
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
 import jax.random as jr
 import numpy as np
 
-WORKTREE = Path(__file__).parent.parent
-sys.path.insert(0, str(WORKTREE / "scripts"))
-
-# Helpers re-used from the single-replicate eval script.
-from eval_minimax import (  # noqa: E402
-    build_hps,
-    eval_at_pert0,
-    load_config,
-    load_model,
-)
-from rlrmp.modules.training.part2 import setup_task_model_pair  # noqa: E402
+from rlrmp.eval import eval_at_pert0
+from rlrmp.eval.minimax_io import load_config, load_model
+from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.minimax import build_hps
 
 
 # ---------------------------------------------------------------------------

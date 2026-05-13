@@ -32,7 +32,6 @@ warnings.filterwarnings("ignore")
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 import equinox as eqx
@@ -42,21 +41,20 @@ import jax.random as jr
 import jax.tree as jt
 import numpy as np
 
-WORKTREE = Path(__file__).parent.parent
-sys.path.insert(0, str(WORKTREE / "scripts"))
 
-from train_part2_5 import build_hps  # noqa: E402
-from eval_part2_5_figures import (  # noqa: E402
-    eval_ensemble_on_trials,
-    compute_kinematics,
-    set_sisu,
+from rlrmp.train.standard import build_hps
+from rlrmp.eval import (
     N_REPLICATES,
+    compute_kinematics,
+    eval_ensemble_on_trials,
+    set_sisu,
 )
-from feedbax._io import load_with_hyperparameters  # noqa: E402
-from feedbax.train import init_task_trainer_history  # noqa: E402
-from rlrmp.modules.training.part2 import setup_task_model_pair  # noqa: E402
-from rlrmp.disturbance import PLANT_INTERVENOR_LABEL  # noqa: E402
+from feedbax._io import load_with_hyperparameters
+from feedbax.train import init_task_trainer_history
+from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 
+WORKTREE = Path(__file__).parent.parent
 RESULTS_BASE = WORKTREE / "results" / "part2_5"
 MODELS_BASE = RESULTS_BASE / "models"
 

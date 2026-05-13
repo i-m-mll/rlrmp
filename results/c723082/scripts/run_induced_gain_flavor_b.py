@@ -32,7 +32,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import sys
 import time
 import warnings
 from dataclasses import dataclass
@@ -47,8 +46,6 @@ import jax.random as jr
 import jax.tree as jt
 import numpy as np
 
-WORKTREE = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(WORKTREE / "scripts"))
 
 from feedbax._io import load_with_hyperparameters
 
@@ -182,7 +179,7 @@ def _cast_to_float32(tree):
 
 def _build_hps_from_run_json(run_json: dict):
     """Construct train_minimax build_hps namespace from flavor-B run.json."""
-    from train_minimax import build_hps as build_hps_fn
+    from rlrmp.train.minimax import build_hps as build_hps_fn
 
     cli = run_json.get("cli_args", {})
     schedule = run_json.get("training_schedule", {})
