@@ -27,172 +27,17 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
-import equinox as eqx
-import jax
-import jax.numpy as jnp
 import jax.random as jr
-import jax.tree as jt
 import numpy as np
 
-WORKTREE = Path(__file__).parent.parent
-sys.path.insert(0, str(WORKTREE / "scripts"))
-
-from train_minimax import build_hps  # noqa: E402
-from eval_part2_5_figures import (  # noqa: E402
-    eval_ensemble_on_trials,
-    compute_kinematics,
-    set_sisu,
-)
-from feedbax._io import load_with_hyperparameters  # noqa: E402
-from rlrmp.adversary import GaussianBumpAdversary  # noqa: E402
-from rlrmp.disturbance import PLANT_INTERVENOR_LABEL  # noqa: E402
-from rlrmp.modules.training.part2 import setup_task_model_pair  # noqa: E402
-
-
-# ---------------------------------------------------------------------------
-# Loading helpers
-# ---------------------------------------------------------------------------
-
-
-def load_config(results_dir: Path) -> dict:
-    """Load config.json from results directory."""
-    config_path = results_dir / "config.json"
-    if not config_path.exists():
-        raise FileNotFoundError(f"config.json not found in {results_dir}")
-    with open(config_path) as f:
-        return json.load(f)
-
-
-def load_model(results_dir: Path, filename: str, hps, config: dict):
-    """Load a model by filename from the results directory.
-
-    Tries two templates: first with the unsqueezed [1, ...] replicate axis
-    (warmup_model.eqx is saved directly from train_pair), then with a squeezed
-    template (adversarial_model.eqx is saved after squeezing). Returns the loaded
-    model with any replicate axis already removed (i.e., always returns a squeezed model).
-
-    Returns:
-        The loaded model (squeezed), or None if the file is not present.
-    """
-    model_path = results_dir / filename
-    if not model_path.exists():
-        return None
-
-    def _make_template(key):
-        return setup_task_model_pair(hps, key=key).model
-
-    def _make_squeezed_template(key):
-        template = setup_task_model_pair(hps, key=key).model
-        return jt.map(
-            lambda x: x[0] if (hasattr(x, "ndim") and x.ndim > 0 and x.shape[0] == 1) else x,
-            template,
-            is_leaf=eqx.is_array,
-        )
-
-    # Try unsqueezed template first (warmup model), then squeezed (adversarial model).
-    for make_template, already_squeezed in [
-        (_make_template, False),
-        (_make_squeezed_template, True),
-    ]:
-        try:
-            model, _ = load_with_hyperparameters(
-                model_path,
-                setup_func=lambda key, **kwargs: make_template(key),
-            )
-            # If loaded with unsqueezed template, squeeze it now for eval.
-            if not already_squeezed:
-                model = jt.map(
-                    lambda x: x[0] if (hasattr(x, "ndim") and x.ndim > 0 and x.shape[0] == 1) else x,
-                    model,
-                    is_leaf=eqx.is_array,
-                )
-            return model
-        except (RuntimeError, ValueError):
-            continue
-
-    raise RuntimeError(f"Could not load model from {model_path} with either squeezed or unsqueezed template.")
-
-
-def _squeeze_replicate_axis(model):
-    """Remove a leading singleton replicate axis (shape [1, ...] → [...]).
-
-    train_minimax.py uses n_replicates=1, so the model saved by TaskTrainer has
-    a leading [1, ...] axis on all array leaves. For evaluation we want a single
-    model without that axis.
-    """
-    return jt.map(
-        lambda x: x[0] if (hasattr(x, "ndim") and x.ndim > 0 and x.shape[0] == 1) else x,
-        model,
-        is_leaf=eqx.is_array,
-    )
-
-
-def load_adversary(results_dir: Path, hps) -> GaussianBumpAdversary | None:
-    """Load the trained adversary from results_dir/trained_adversary.eqx."""
-    adv_path = results_dir / "trained_adversary.eqx"
-    if not adv_path.exists():
-        return None
-
-    n_timesteps = hps.task.n_steps - 1
-    adversary_template = GaussianBumpAdversary(
-        n_bumps=3,  # default; overridden by loaded weights
-        n_timesteps=n_timesteps,
-        n_force_dims=2,
-        force_max=1.0,
-        dt=hps.dt,
-        key=jr.PRNGKey(0),
-    )
-    try:
-        adversary = eqx.tree_deserialise_leaves(adv_path, adversary_template)
-    except Exception as e:
-        print(f"WARNING: could not deserialise adversary ({e}); will use pre-saved force profiles only.")
-        return None
-    return adversary
-
-
-# ---------------------------------------------------------------------------
-# Evaluation helpers
-# ---------------------------------------------------------------------------
-
-
-def eval_at_pert0(task, model, sisu: float, *, key):
-    """Evaluate with pert_scale=0 at a given SISU level.
-
-    Returns:
-        km: dict with "peak_velocity", "endpoint_error", "max_lateral_deviation"
-    """
-    val_trials = task.validation_trials
-    trial_specs = set_sisu(val_trials, sisu)
-    pert_shape = trial_specs.intervene[PLANT_INTERVENOR_LABEL].scale.shape
-    trial_specs = eqx.tree_at(
-        lambda t: t.intervene[PLANT_INTERVENOR_LABEL].scale,
-        trial_specs,
-        jnp.zeros(pert_shape),
-    )
-    states = eval_ensemble_on_trials(task, model, trial_specs, key=key)
-    return compute_kinematics(states, trial_specs)
-
-
-def eval_at_pert_scale(task, model, sisu: float, pert_scale: float, *, key):
-    """Evaluate a model at given pert_scale and SISU.
-
-    Returns:
-        km: dict with "peak_velocity", "endpoint_error", "max_lateral_deviation"
-    """
-    val_trials = task.validation_trials
-    trial_specs = set_sisu(val_trials, sisu)
-    pert_shape = trial_specs.intervene[PLANT_INTERVENOR_LABEL].scale.shape
-    trial_specs = eqx.tree_at(
-        lambda t: t.intervene[PLANT_INTERVENOR_LABEL].scale,
-        trial_specs,
-        jnp.full(pert_shape, pert_scale),
-    )
-    states = eval_ensemble_on_trials(task, model, trial_specs, key=key)
-    return compute_kinematics(states, trial_specs)
+from rlrmp.adversary import GaussianBumpAdversary
+from rlrmp.eval import eval_at_pert0, eval_at_pert_scale
+from rlrmp.eval.minimax_io import load_adversary, load_config, load_model
+from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.minimax import build_hps
 
 
 # ---------------------------------------------------------------------------

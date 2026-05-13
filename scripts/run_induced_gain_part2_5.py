@@ -44,7 +44,6 @@ import argparse
 import dataclasses
 import json
 import logging
-import sys
 import time
 import warnings
 from dataclasses import dataclass
@@ -60,8 +59,6 @@ import jax.random as jr
 import jax.tree as jt
 import numpy as np
 
-WORKTREE = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(WORKTREE / "scripts"))
 
 from feedbax._io import load_with_hyperparameters
 
@@ -241,9 +238,9 @@ def _cast_to_float32(tree):
 def _build_hps_for_group(group: GroupSpec, config: dict):
     """Resolve the build_hps callable for a group and return populated hps."""
     if group.build_hps_module == "train_minimax":
-        from train_minimax import build_hps as build_hps_fn
+        from rlrmp.train.minimax import build_hps as build_hps_fn
     elif group.build_hps_module == "train_part2_5":
-        from train_part2_5 import build_hps as build_hps_fn
+        from rlrmp.train.standard import build_hps as build_hps_fn
     else:
         raise ValueError(f"Unknown build_hps_module: {group.build_hps_module}")
     config_filtered = {k: v for k, v in config.items() if k not in ("git", "output_dir")}

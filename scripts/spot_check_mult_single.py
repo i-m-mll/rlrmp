@@ -14,12 +14,8 @@ from __future__ import annotations
 
 import json
 import logging
-import sys
 import time
 from pathlib import Path
-
-WORKTREE = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(WORKTREE / "scripts"))
 
 import equinox as eqx
 import jax
@@ -46,13 +42,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Import helpers from the main runner.
+# Import helpers from the main runner (sibling module in the same directory).
 from run_induced_gain_part2_5 import (
     GroupSpec,
     analyse_group,
     load_group_model,
     build_network_controller,
 )
+
+# Repo root, used to construct paths into _artifacts/. Bug: 8404108 — switched
+# from a manual __file__-relative computation to the canonical rlrmp.paths.REPO_ROOT
+# so this script works regardless of its location in the repo (top-level scripts/
+# or results/<hash>/scripts/).
+from rlrmp.paths import REPO_ROOT as WORKTREE  # noqa: E402
 
 
 RUNPOD_ROOT = Path("/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/part2_5/runpod")
