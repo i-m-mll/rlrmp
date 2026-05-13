@@ -13,7 +13,7 @@ hiding cross-cell differences that the panel layout was meant to expose.
 
 from __future__ import annotations
 
-from typing import Literal, Sequence
+from typing import Any, Literal, Sequence
 
 from plotly.subplots import make_subplots
 from plotly.graph_objects import Figure
@@ -71,7 +71,7 @@ def profile_comparison_grid(
             f"subplot_titles length ({len(subplot_titles)}) must equal n_panels "
             f"({n_panels})"
         )
-    kwargs = dict(
+    kwargs: dict[str, Any] = dict(
         rows=rows,
         cols=cols,
         shared_xaxes=shared_xaxes,
