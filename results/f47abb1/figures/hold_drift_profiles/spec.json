@@ -1,7 +1,7 @@
 {
   "experiment": "f47abb1",
   "figure_kind": "hold_drift_profile_pre_go_position_go_aligned",
-  "fix_note": "Bug: 06f7faf \u2014 go-cue alignment fix.",
+  "fix_note": "Bug: 06f7faf \u2014 go-cue alignment fix + shared y-axes across cells (per-replicate variant retains full aligned window).",
   "inputs": [
     {
       "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/f47abb1/runs/lit__flat_jerk/adversarial_model.eqx",
@@ -47,9 +47,10 @@
     "dt": 0.01,
     "n_replicates": 5,
     "pert_scale": 0.0,
+    "shared_yaxes": "all",
     "sisu": 0.5
   },
-  "timestamp": "2026-05-13T18:09:30.282392+00:00",
+  "timestamp": "2026-05-13T18:50:57.932617+00:00",
   "transform": [
     {
       "kwargs": {
@@ -67,6 +68,12 @@
         "pad": "nan"
       },
       "name": "align_trials_to_go_cue"
+    },
+    {
+      "kwargs": {
+        "min_coverage": 1.0
+      },
+      "name": "trim_to_full_support"
     },
     {
       "kwargs": {},

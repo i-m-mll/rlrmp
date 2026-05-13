@@ -1,7 +1,7 @@
 {
   "experiment": "3702f54",
   "figure_kind": "hold_drift_profile_pre_go_position_go_aligned",
-  "fix_note": "Bug: 06f7faf \u2014 go-cue alignment fix; prior figure used absolute-time trial mean.",
+  "fix_note": "Bug: 06f7faf \u2014 go-cue alignment fix + trim-to-full-support + shared y-axes across cells.",
   "inputs": [
     {
       "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/f47abb1/runs/lit__post_nojerk/warmup_model.eqx",
@@ -74,9 +74,10 @@
     "ordering_note": "Baselines (lit__post_nojerk, lit__full_nojerk) at top",
     "pert_scale": 0.0,
     "pre_go_window_steps": 20,
+    "shared_yaxes": "all",
     "sisu": 0.5
   },
-  "timestamp": "2026-05-13T18:09:01.792683+00:00",
+  "timestamp": "2026-05-13T18:51:02.080220+00:00",
   "transform": [
     {
       "kwargs": {
@@ -94,6 +95,12 @@
         "pad": "nan"
       },
       "name": "align_trials_to_go_cue"
+    },
+    {
+      "kwargs": {
+        "min_coverage": 1.0
+      },
+      "name": "trim_to_full_support"
     },
     {
       "kwargs": {},

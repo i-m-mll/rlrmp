@@ -956,6 +956,7 @@ def main():
                 {"name": "eval_ensemble", "kwargs": {"sisu": args.sisu, "pert_scale": 0.0}},
                 {"name": "forward_velocity_projection_onto_reach_axis", "kwargs": {}},
                 {"name": "align_trials_to_go_cue", "kwargs": {"pad": "nan"}},
+                {"name": "trim_to_full_support", "kwargs": {"min_coverage": 1.0}},
                 {"name": "replicate_nanmean_over_trials", "kwargs": {}},
             ],
             "plot_kwargs": {
@@ -965,8 +966,9 @@ def main():
                 "pert_scale": 0.0,
                 "dt": 0.01,
                 "alignment": "go_cue_per_trial",
+                "shared_yaxes": "all",
             },
-            "fix_note": "Bug: 06f7faf — go-cue alignment fix.",
+            "fix_note": "Bug: 06f7faf — go-cue alignment + trim-to-full-support + shared y-axes across cells.",
         }
         fv_out = save_figure(
             fig=fig_fv, spec=spec_fv,
@@ -987,6 +989,7 @@ def main():
                 {"name": "eval_ensemble", "kwargs": {"sisu": args.sisu, "pert_scale": 0.0}},
                 {"name": "forward_position_projection_onto_reach_axis", "kwargs": {}},
                 {"name": "align_trials_to_go_cue", "kwargs": {"pad": "nan"}},
+                {"name": "trim_to_full_support", "kwargs": {"min_coverage": 1.0}},
                 {"name": "replicate_nanmean_over_trials", "kwargs": {}},
                 {"name": "clip_to_pre_go_window", "kwargs": {}},
             ],
@@ -997,8 +1000,9 @@ def main():
                 "pert_scale": 0.0,
                 "dt": 0.01,
                 "alignment": "go_cue_per_trial",
+                "shared_yaxes": "all",
             },
-            "fix_note": "Bug: 06f7faf — go-cue alignment fix.",
+            "fix_note": "Bug: 06f7faf — go-cue alignment fix + shared y-axes across cells (per-replicate variant retains full aligned window).",
         }
         hd_out = save_figure(
             fig=fig_hd, spec=spec_hd,

@@ -981,6 +981,7 @@ def main():
             {"name": "eval_ensemble", "kwargs": {"sisu": args.sisu, "pert_scale": 0.0}},
             {"name": "forward_velocity_projection_onto_reach_axis", "kwargs": {}},
             {"name": "align_trials_to_go_cue", "kwargs": {"pad": "nan"}},
+            {"name": "trim_to_full_support", "kwargs": {"min_coverage": 1.0}},
             {"name": "pooled_trial_nanmean_with_sd_band", "kwargs": {}},
         ],
         "plot_kwargs": {
@@ -992,8 +993,9 @@ def main():
             "ordering_note": "Baselines (lit__post_nojerk, lit__full_nojerk) at top",
             "alignment": "go_cue_per_trial",
             "band_semantic": "pooled_replicate_trial_sd",
+            "shared_yaxes": "all",
         },
-        "fix_note": "Bug: 06f7faf — go-cue alignment fix; prior figure used absolute-time trial mean.",
+        "fix_note": "Bug: 06f7faf — go-cue alignment fix + trim-to-full-support + shared y-axes across cells.",
     }
     fv_out = save_figure(
         fig=fig_fv, spec=spec_fv,
@@ -1013,6 +1015,7 @@ def main():
             {"name": "eval_ensemble", "kwargs": {"sisu": args.sisu, "pert_scale": 0.0}},
             {"name": "forward_position_projection_onto_reach_axis", "kwargs": {}},
             {"name": "align_trials_to_go_cue", "kwargs": {"pad": "nan"}},
+            {"name": "trim_to_full_support", "kwargs": {"min_coverage": 1.0}},
             {"name": "pooled_trial_nanmean_with_sd_band", "kwargs": {}},
             {"name": "clip_to_pre_go_window", "kwargs": {"window_steps": PRE_GO_WINDOW_STEPS}},
         ],
@@ -1026,8 +1029,9 @@ def main():
             "ordering_note": "Baselines (lit__post_nojerk, lit__full_nojerk) at top",
             "alignment": "go_cue_per_trial",
             "band_semantic": "pooled_replicate_trial_sd",
+            "shared_yaxes": "all",
         },
-        "fix_note": "Bug: 06f7faf — go-cue alignment fix; prior figure used absolute-time trial mean.",
+        "fix_note": "Bug: 06f7faf — go-cue alignment fix + trim-to-full-support + shared y-axes across cells.",
     }
     hd_out = save_figure(
         fig=fig_hd, spec=spec_hd,
