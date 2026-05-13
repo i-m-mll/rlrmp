@@ -384,6 +384,11 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
                 args, "effector_hold_pos_schedule", "flat"
             ),
             "position_powerlaw_power": getattr(args, "position_powerlaw_power", 6.0),
+            "movement_ramp_shape": getattr(args, "movement_ramp_shape", "linear"),
+            "movement_ramp_duration_steps": getattr(
+                args, "movement_ramp_duration_steps", 60
+            ),
+            "movement_ramp_power": getattr(args, "movement_ramp_power", 2.0),
         },
         "loss_update": {
             "enabled": args.loss_update_enabled,
@@ -2026,14 +2031,16 @@ def parse_args() -> argparse.Namespace:
     # ---------------------------------------------------------------------------
     parser.add_argument(
         "--effector-pos-running-schedule", type=str, default="flat",
-        choices=["flat", "powerlaw"],
+        choices=["flat", "powerlaw", "movement_ramp"],
         help=(
             "Time-weighting schedule for the running position-error term "
             "(effector_pos_running, active post-go). 'flat' (default) applies "
             "uniform weight across the movement window. 'powerlaw' multiplies "
             "by (t / (T-1))^power where T is the full trial length and power "
             "is set via --position-powerlaw-power (default 6.0, matching "
-            "C&S 2019 Eq. 15). Bug: 2e1a6ad."
+            "C&S 2019 Eq. 15). 'movement_ramp' starts at the movement epoch, "
+            "is zero before movement, ramps for --movement-ramp-duration-steps, "
+            "and then stays at one. Bug: 2e1a6ad; b399efc."
         ),
     )
     parser.add_argument(
@@ -2057,6 +2064,29 @@ def parse_args() -> argparse.Namespace:
             "the last 30%% of the trial). Only used when "
             "--effector-pos-running-schedule powerlaw or "
             "--effector-hold-pos-schedule powerlaw is set. Bug: 2e1a6ad."
+        ),
+    )
+    parser.add_argument(
+        "--movement-ramp-shape", type=str, default="linear",
+        choices=["linear", "cosine", "power"],
+        help=(
+            "Shape for --effector-pos-running-schedule movement_ramp. The ramp "
+            "starts at the movement epoch, is zero before movement, and stays "
+            "at one after --movement-ramp-duration-steps. Bug: b399efc."
+        ),
+    )
+    parser.add_argument(
+        "--movement-ramp-duration-steps", type=int, default=60,
+        help=(
+            "Fixed number of timesteps over which the movement-locked position "
+            "ramp rises from zero to one. Default 60. Bug: b399efc."
+        ),
+    )
+    parser.add_argument(
+        "--movement-ramp-power", type=float, default=2.0,
+        help=(
+            "Exponent used when --movement-ramp-shape power is selected. "
+            "Ignored for linear and cosine ramps. Bug: b399efc."
         ),
     )
     # ---------------------------------------------------------------------------
