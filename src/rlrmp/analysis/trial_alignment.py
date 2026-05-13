@@ -130,9 +130,101 @@ def align_trials(
     return aligned, center
 
 
+def trim_to_full_support(
+    aligned: np.ndarray,
+    trial_axis: int = -2,
+    step_axis: int = -1,
+    min_coverage: float = 1.0,
+) -> Tuple[np.ndarray, slice]:
+    """Trim aligned profiles to columns with (thresholded) trial coverage.
+
+    After ``align_trials`` re-locks each trial to a per-trial event, columns
+    near the array edges contain NaN for some trials and not others. Reducing
+    over those columns with ``np.nanmean`` / ``np.nanstd`` produces choppy
+    edges as different trials drop in/out across columns.
+
+    This helper finds the largest contiguous window of columns whose per-column
+    non-NaN coverage (fraction of trials contributing a real sample) is at
+    least ``min_coverage``, and returns the trimmed array together with the
+    ``slice`` applied to ``step_axis``. Callers should apply the same slice to
+    any companion time axis or x-coords.
+
+    Note: NaN-coverage is computed by reducing across *all* axes except
+    ``step_axis`` (so trials, replicates, perturbation scales, etc. all count
+    toward the per-column coverage). For the typical
+    ``(n_rep, n_trials, n_aligned_steps)`` layout that gives exactly the
+    "fraction of (replicate, trial) samples contributing" semantics.
+
+    Args:
+        aligned: Shape ``(..., n_trials, n_aligned_steps)`` (any number of
+            leading axes; ``trial_axis`` and ``step_axis`` need not be the last
+            two — defaults match ``align_trials`` output).
+        trial_axis: Axis indexing trials. Kept for explicit-naming clarity; the
+            implementation treats every non-``step_axis`` axis as a
+            sample axis, so this argument is informational only.
+        step_axis: Axis indexing aligned time steps. Default ``-1``.
+        min_coverage: Minimum fraction (in ``[0.0, 1.0]``) of samples that
+            must contribute a non-NaN value per column. ``1.0`` (default)
+            requires every sample to contribute — i.e. trim to the strict
+            full-support window.
+
+    Returns:
+        Tuple ``(trimmed, sl)``:
+            ``trimmed``: ``aligned[..., sl]`` (sliced along ``step_axis``).
+            ``sl``: the ``slice`` object applied — useful for trimming a
+                companion time axis (``t[sl]``) so plotted x-coords match.
+
+    Raises:
+        ValueError: if no columns meet ``min_coverage`` (the whole array is
+            below threshold).
+    """
+    del trial_axis  # informational; not used by the implementation
+    aligned = np.asarray(aligned)
+    if not (0.0 <= min_coverage <= 1.0):
+        raise ValueError(f"min_coverage must be in [0, 1]; got {min_coverage}")
+
+    n_steps = aligned.shape[step_axis]
+    # Count non-NaN samples per column, reducing across every axis except step_axis.
+    if np.issubdtype(aligned.dtype, np.floating):
+        valid = ~np.isnan(aligned)
+    else:
+        # Non-float arrays have no NaN concept — every column is fully supported.
+        valid = np.ones_like(aligned, dtype=bool)
+
+    # Move step_axis to the back, flatten the rest, count per column.
+    moved = np.moveaxis(valid, step_axis, -1)
+    flat = moved.reshape(-1, n_steps)  # (n_samples, n_steps)
+    n_samples = flat.shape[0]
+    per_col_count = flat.sum(axis=0)
+    coverage = per_col_count / max(n_samples, 1)
+
+    mask = coverage >= min_coverage
+    if not mask.any():
+        raise ValueError(
+            f"No columns meet min_coverage={min_coverage} (max coverage="
+            f"{coverage.max():.3f})"
+        )
+
+    # Largest *contiguous* fully-supported window. The aligned-then-padded
+    # geometry guarantees that NaN padding only appears at the leading and
+    # trailing edges, so the True-region is itself contiguous; if it isn't
+    # (e.g. internal NaNs from upstream), we pick the [first_true, last_true]
+    # span and warn would-be callers via the explicit slice they get back.
+    where = np.nonzero(mask)[0]
+    first, last = int(where[0]), int(where[-1])
+    sl = slice(first, last + 1)
+
+    # Apply the slice along step_axis.
+    idx = [slice(None)] * aligned.ndim
+    idx[step_axis] = sl
+    trimmed = aligned[tuple(idx)]
+    return trimmed, sl
+
+
 def replicate_mean_curves(
     aligned: np.ndarray,
-) -> np.ndarray:
+    trim: bool | float = True,
+) -> np.ndarray | Tuple[np.ndarray, slice]:
     """Per-replicate, trial-averaged curve from an already-aligned profile.
 
     Purpose: produce the curve set used to compute *inter-replicate variance*
@@ -140,26 +232,44 @@ def replicate_mean_curves(
     across the trial axis using ``np.nanmean``, so the padded columns from
     ``align_trials`` (where some trials have no sample) do not bias the mean.
 
+    If ``trim`` is truthy, the aligned array is first trimmed to columns with
+    full (or thresholded) per-column trial coverage via
+    ``trim_to_full_support``; the returned slice is then surfaced as part of
+    the result so the caller can clip their companion time axis.
+
     Args:
         aligned: Shape ``(..., n_trials, n_aligned_steps)`` as returned by
             ``align_trials``.
+        trim: If ``True`` (default) trim to the strict full-support window
+            (``min_coverage=1.0``) before averaging. If a ``float`` in
+            ``[0, 1]``, pass it as ``min_coverage`` (e.g. ``0.5`` keeps any
+            column with ≥50% trial coverage). If ``False``, no trim — the
+            return value reverts to a single array (legacy behaviour).
 
     Returns:
-        Shape ``(..., n_aligned_steps)`` with the trial axis collapsed via
-        ``nanmean``.
+        If ``trim`` is truthy: ``(curves, sl)`` where ``curves`` has shape
+        ``(..., n_kept_steps)`` and ``sl`` is the trim slice. If ``trim`` is
+        ``False``, returns the curves array alone (legacy shape).
     """
     aligned = np.asarray(aligned)
     if aligned.ndim < 2:
         raise ValueError(
             f"aligned must have at least 2 dims (trials, steps); got {aligned.shape}"
         )
-    return np.nanmean(aligned, axis=-2)
+
+    if trim is False:
+        return np.nanmean(aligned, axis=-2)
+
+    min_coverage = 1.0 if trim is True else float(trim)
+    trimmed, sl = trim_to_full_support(aligned, min_coverage=min_coverage)
+    return np.nanmean(trimmed, axis=-2), sl
 
 
 def pooled_trial_mean_with_band(
     aligned: np.ndarray,
     band: str = "sd",
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    trim: bool | float = True,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray] | Tuple[np.ndarray, np.ndarray, np.ndarray, slice]:
     """Pool all (replicate, trial) samples and reduce to a single curve + band.
 
     Purpose: produce the curve used in velocity / hold-drift *plots* where the
@@ -168,6 +278,11 @@ def pooled_trial_mean_with_band(
     a ``nanmean`` over the flattened ``(replicate, trial)`` axis; the band is
     computed across the same flattened axis.
 
+    If ``trim`` is truthy, the aligned array is first trimmed to columns with
+    full (or thresholded) per-column sample coverage via
+    ``trim_to_full_support``; the returned slice is surfaced so the caller can
+    clip their companion time axis.
+
     Args:
         aligned: Shape ``(..., n_trials, n_aligned_steps)`` with leading axes
             that all index distinct samples (e.g. ``(n_rep, n_trials, n_steps)``
@@ -175,17 +290,27 @@ def pooled_trial_mean_with_band(
         band: One of ``"sd"``, ``"sem"``, or ``"none"``. ``"sem"`` divides
             ``nanstd`` by ``sqrt(n_effective)`` per step. ``"none"`` returns a
             zero array of the right shape.
+        trim: If ``True`` (default) trim to the strict full-support window
+            before reducing. If a ``float`` in ``[0, 1]``, pass it as
+            ``min_coverage``. If ``False``, no trim — the return value reverts
+            to the legacy ``(mean, lower, upper)`` triple.
 
     Returns:
-        Tuple ``(mean, lower, upper)`` each of shape ``(n_aligned_steps,)``.
-        ``lower`` and ``upper`` are ``mean - band`` and ``mean + band``
-        respectively.
+        If ``trim`` is truthy: ``(mean, lower, upper, sl)`` where each curve
+        has shape ``(n_kept_steps,)`` and ``sl`` is the trim slice. If ``trim``
+        is ``False``, returns ``(mean, lower, upper)`` (legacy shape) over the
+        full input column range.
     """
     aligned = np.asarray(aligned)
     if aligned.ndim < 2:
         raise ValueError(
             f"aligned must have at least 2 dims; got shape {aligned.shape}"
         )
+
+    sl: slice | None = None
+    if trim is not False:
+        min_coverage = 1.0 if trim is True else float(trim)
+        aligned, sl = trim_to_full_support(aligned, min_coverage=min_coverage)
 
     # Flatten everything except the time axis.
     n_steps = aligned.shape[-1]
@@ -206,4 +331,6 @@ def pooled_trial_mean_with_band(
     else:
         raise ValueError(f"band must be 'sd', 'sem', or 'none'; got {band!r}")
 
-    return mean, mean - spread, mean + spread
+    if sl is None:
+        return mean, mean - spread, mean + spread
+    return mean, mean - spread, mean + spread, sl
