@@ -53,6 +53,28 @@ fig = profile_comparison_grid(
 
 The `pooled_trial_mean_with_band` and `replicate_mean_curves` helpers in `rlrmp.analysis.trial_alignment` trim aligned profiles to the strict full-support column window (`min_coverage=1.0`) before reducing. Callers receive the trim slice alongside the curves so companion time axes can be sliced consistently (`t = ((np.arange(n) - center) * dt)[sl]`). Pass `trim=False` only when downstream code needs identical step axes across multiple invocations (e.g. cross-cell pairwise RMSE) and the reducer is already NaN-tolerant.
 
+### Auto-generated note sections (Bug: 06f7faf)
+
+Analysis scripts that write Markdown narrative files under `results/<exp>/notes/` MUST use `rlrmp.io.update_marked_section` instead of overwriting the whole file. This preserves hand-edited preambles (e.g. a "Corrected after go-cue alignment fix" note) across re-runs.
+
+Auto-generated content is wrapped in named HTML comment markers:
+
+```markdown
+<!-- AUTO-GENERATED: <marker_name> -->
+... script-written content ...
+<!-- /AUTO-GENERATED -->
+```
+
+On re-run, `update_marked_section` replaces only the content between the markers; everything outside is untouched. If the file does not exist, it is created. If the markers are absent in an existing file, the block is appended.
+
+```python
+from rlrmp.io import update_marked_section
+
+update_marked_section(notes_path, "variance_analysis", "\n".join(lines) + "\n")
+```
+
+**`marker_name`** should be a short, stable, underscore-delimited identifier matching the logical content of the block (e.g. `"variance_analysis"`, `"results_table"`, `"delta_v_summary"`). New analysis scripts must follow this convention; do not open notes files with `open(..., "w")`.
+
 ## RunPod Deploy Runbook for rlrmp Experiments
 
 ### 1. Prerequisites
