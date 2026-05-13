@@ -255,7 +255,7 @@ def test_pooled_trial_mean_with_band_trims_by_default():
     profile = np.zeros((len(go_idx), 30))
     for t, g in enumerate(go_idx):
         profile[t, g:] = 1.0  # ramp-like — post-go is 1, pre-go is 0
-    aligned, center = align_trials(profile, go_idx)
+    aligned, _ = align_trials(profile, go_idx)
 
     out = pooled_trial_mean_with_band(aligned, band="sd")
     assert len(out) == 4, "trim=True should return (mean, lower, upper, slice)"
@@ -278,7 +278,7 @@ def test_replicate_mean_curves_trims_by_default():
     for r in range(2):
         for t, g in enumerate(go_idx):
             profile[r, t, g:] = 1.0
-    aligned, center = align_trials(profile, go_idx)
+    aligned, _ = align_trials(profile, go_idx)
 
     out = replicate_mean_curves(aligned)
     assert isinstance(out, tuple) and len(out) == 2

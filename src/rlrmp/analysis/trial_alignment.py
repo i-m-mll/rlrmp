@@ -91,6 +91,7 @@ def align_trials(
     if n_aligned_steps is None:
         max_post = n_steps - int(idx.min())  # most samples any trial has post-event
         n_aligned_steps = center + max_post
+    assert n_aligned_steps is not None  # always set above; assertion narrows type
 
     leading_shape = profile.shape[:-2]
     aligned = np.full(
@@ -117,7 +118,6 @@ def align_trials(
     # iterate over them with np.ndindex (number of leading combos is typically
     # small: n_replicates ≤ ~10 in our use cases).
     flat_profile = profile.reshape(-1, n_trials, n_steps)
-    flat_idx = idx_per_trial.reshape(-1, n_trials)
     flat_aligned = aligned.reshape(-1, n_trials, n_aligned_steps)
     flat_dest = dest.reshape(-1, n_trials, n_steps)
     flat_in_range = in_range.reshape(-1, n_trials, n_steps)
