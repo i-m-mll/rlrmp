@@ -1,8 +1,13 @@
+# TODO: relocate to results/3702f54/scripts/ — per CLAUDE.md script-placement convention
 """Pre-go motor mask follow-up matrix analysis (3702f54).
 
 Tests whether (a) scaling position weight 10x or (b) the `--nn-output-pre-go` lever
 can suppress the residual ~2-3 mm pre-go anticipation observed in f47abb1's leading
 no-jerk powerlaw cells (`lit__post_nojerk`, `lit__full_nojerk`).
+
+Bug: 06f7faf — go-cue alignment fix. Forward velocity profiles, hold drift
+profiles, and the within-cell vel-RMSE metric are now computed on
+per-trial go-cue-aligned profiles using `rlrmp.analysis.trial_alignment`.
 
 Loads 10 models:
   - 8 new cells from `_artifacts/3702f54/runs/<cell>/warmup_model.eqx`
@@ -53,12 +58,18 @@ import jax.tree as jt
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from rlrmp.viz import profile_comparison_grid
 
 from feedbax._io import load_with_hyperparameters
 from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 -- project-config routing
 from feedbax.train import init_task_trainer_history, TaskTrainerHistory
 
 from train_minimax import build_hps
+from rlrmp.analysis.trial_alignment import (
+    align_trials,
+    pooled_trial_mean_with_band,
+    replicate_mean_curves,
+)
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.modules.training.part2 import setup_task_model_pair
 
@@ -473,7 +484,11 @@ def compute_cell_stats(km: dict[str, np.ndarray]) -> dict:
     ttp_per_rep = km["time_to_peak_after_go"].mean(axis=-1)
 
     # Within-cell pairwise velocity-RMSE (absolute m/s, primary metric per issue request).
-    vel_profiles = km["forward_vel_profile"].mean(axis=1)  # (n_rep, n_steps)
+    # Bug: 06f7faf — align per-trial profiles to each trial's go cue BEFORE
+    # averaging across trials, and trim to the full-support window so the
+    # NaN-edge columns do not contaminate the RMSE.
+    aligned_vel, _center = align_trials(km["forward_vel_profile"], km["go_idx"])
+    vel_profiles, _sl = replicate_mean_curves(aligned_vel)  # (n_rep, n_kept_steps)
     within_rmse_vel = _within_cell_mean_pairwise_rmse(vel_profiles)
 
     mean_pv = float(peak_vel_per_rep.mean())
@@ -513,11 +528,11 @@ def make_forward_velocity_profile_figure(
     if n_cells == 0:
         return go.Figure()
 
-    fig = make_subplots(
-        rows=n_cells,
-        cols=1,
+    # Bug: 06f7faf — profile_comparison_grid applies shared y-axes by default
+    # so cells are visually comparable across panels.
+    fig = profile_comparison_grid(
+        n_panels=n_cells,
         subplot_titles=[CELL_DISPLAY_NAMES[l] for l in labels_present],
-        shared_xaxes=True,
         vertical_spacing=0.025,
     )
 
@@ -526,23 +541,27 @@ def make_forward_velocity_profile_figure(
         v_fwd = km["forward_vel_profile"]  # (n_rep, n_trials, n_steps)
         go_idx = km["go_idx"]
         n_rep, n_trials, n_steps = v_fwd.shape
-        t = np.arange(n_steps) * dt
         color = CELL_COLORS[label]
 
-        v_mean_over_trials = v_fwd.mean(axis=1)  # (n_rep, n_steps)
-        mean = v_mean_over_trials.mean(axis=0)
-        sd = v_mean_over_trials.std(axis=0, ddof=1) if n_rep > 1 else np.zeros_like(mean)
-        mean_go = int(go_idx.mean())
+        # Bug: 06f7faf — go-cue alignment + pooled (replicate, trial) band.
+        # Each trial is re-locked to its own go cue (column = center); the
+        # plotted band represents inter-trial variability over the full pooled
+        # (n_rep * n_trials) population. Aggregator trims the choppy NaN-edge
+        # columns to the strict full-support window and returns the slice.
+        aligned_v, center = align_trials(v_fwd, go_idx)
+        mean, lower, upper, sl = pooled_trial_mean_with_band(aligned_v, band="sd")
+        # Time axis relative to go cue (t=0 at go), trimmed to match the curve.
+        t = ((np.arange(aligned_v.shape[-1]) - center) * dt)[sl]
 
         # Upper band
         fig.add_trace(go.Scatter(
-            x=t, y=mean + sd, mode="lines",
+            x=t, y=upper, mode="lines",
             line=dict(color="rgba(0,0,0,0)"),
             hoverinfo="skip", showlegend=False,
         ), row=row, col=1)
         # Lower band w/ fill
         fig.add_trace(go.Scatter(
-            x=t, y=mean - sd, mode="lines",
+            x=t, y=lower, mode="lines",
             line=dict(color="rgba(0,0,0,0)"),
             fill="tonexty", fillcolor=_color_rgba(color, 0.25),
             hoverinfo="skip", showlegend=False,
@@ -554,23 +573,25 @@ def make_forward_velocity_profile_figure(
             name=CELL_DISPLAY_NAMES[label], showlegend=False,
         ), row=row, col=1)
 
+        # Go cue is now at t=0 by construction (per-trial alignment).
         fig.add_vline(
-            x=float(mean_go) * dt,
+            x=0.0,
             line=dict(color="black", dash="dash", width=1),
             row=row, col=1,
         )
 
     fig.update_layout(
         title=(
-            "Forward velocity profiles (mean +/- SD across replicates) — pre-go matrix (3702f54)<br>"
-            "<sup>Baselines (lit__post_nojerk, lit__full_nojerk) at top. Dashed line = mean go cue.</sup>"
+            "Forward velocity profiles (go-cue-aligned, pooled trial mean ± SD) — pre-go matrix (3702f54)<br>"
+            "<sup>Each trial re-locked to its go cue (t=0). Band is across pooled "
+            "(replicate × trial) samples. Baselines at top. Bug: 06f7faf.</sup>"
         ),
         width=1000,
         height=180 * n_cells + 100,
         margin=dict(l=70, r=60, t=80, b=60),
         hovermode="x unified",
     )
-    fig.update_xaxes(title_text="Time (s)", row=n_cells, col=1)
+    fig.update_xaxes(title_text="Time relative to go cue (s)", row=n_cells, col=1)
     for row in range(1, n_cells + 1):
         fig.update_yaxes(title_text="Fwd vel (m/s)", row=row, col=1)
 
@@ -587,11 +608,12 @@ def make_hold_drift_figure(
     if n_cells == 0:
         return go.Figure()
 
-    fig = make_subplots(
-        rows=n_cells,
-        cols=1,
+    # Bug: 06f7faf — shared y-axes via profile_comparison_grid; hold-drift
+    # plots compare anticipation amplitude across cells, so visual comparability
+    # is essential.
+    fig = profile_comparison_grid(
+        n_panels=n_cells,
         subplot_titles=[CELL_DISPLAY_NAMES[l] for l in labels_present],
-        shared_xaxes=True,
         vertical_spacing=0.025,
     )
 
@@ -602,21 +624,32 @@ def make_hold_drift_figure(
         n_rep, n_trials, n_steps = pos_fwd.shape
         color = CELL_COLORS[label]
 
-        max_go = int(go_idx.max())
-        t_pre = np.arange(max_go) * dt
+        # Bug: 06f7faf — align to go cue, then clip to the pre-go window
+        # (t in [-window, 0]). Pooled-trial band; aggregator trims the
+        # choppy NaN-edge columns to full-support before reducing.
+        aligned_pos, center = align_trials(pos_fwd, go_idx)
+        mean_m, lower_m, upper_m, sl = pooled_trial_mean_with_band(aligned_pos, band="sd")
+        # Convert to mm
+        mean = mean_m * 1000.0
+        lower = lower_m * 1000.0
+        upper = upper_m * 1000.0
 
-        pos_mean_over_trials = pos_fwd[:, :, :max_go].mean(axis=1)
-        pos_mm = pos_mean_over_trials * 1000.0  # mm
-        mean = pos_mm.mean(axis=0)
-        sd = pos_mm.std(axis=0, ddof=1) if n_rep > 1 else np.zeros_like(mean)
+        # Time axis relative to go cue, trimmed to the full-support window.
+        t_rel = ((np.arange(aligned_pos.shape[-1]) - center) * dt)[sl]
+        # Clip to pre-go window (-PRE_GO_WINDOW_STEPS to 0)
+        keep = (t_rel >= -PRE_GO_WINDOW_STEPS * dt) & (t_rel <= 0.0)
+        t_pre = t_rel[keep]
+        mean = mean[keep]
+        lower = lower[keep]
+        upper = upper[keep]
 
         fig.add_trace(go.Scatter(
-            x=t_pre, y=mean + sd, mode="lines",
+            x=t_pre, y=upper, mode="lines",
             line=dict(color="rgba(0,0,0,0)"),
             hoverinfo="skip", showlegend=False,
         ), row=row, col=1)
         fig.add_trace(go.Scatter(
-            x=t_pre, y=mean - sd, mode="lines",
+            x=t_pre, y=lower, mode="lines",
             line=dict(color="rgba(0,0,0,0)"),
             fill="tonexty", fillcolor=_color_rgba(color, 0.25),
             hoverinfo="skip", showlegend=False,
@@ -628,25 +661,25 @@ def make_hold_drift_figure(
         ), row=row, col=1)
 
         fig.add_hline(y=0, line=dict(color="grey", dash="dot", width=1), row=row, col=1)
-        # Mark pre-go window onset
+        # Mark pre-go window onset (-PRE_GO_WINDOW_STEPS*dt)
         fig.add_vline(
-            x=(max_go - PRE_GO_WINDOW_STEPS) * dt,
+            x=-PRE_GO_WINDOW_STEPS * dt,
             line=dict(color="red", dash="dot", width=1),
             row=row, col=1,
         )
 
     fig.update_layout(
         title=(
-            "Pre-go forward position drift (anticipation) — pre-go matrix (3702f54)<br>"
-            "<sup>Mean +/- SD over replicates. Red dotted line = pre-go window onset (-200 ms). "
-            "Baselines at top. Target: < 0.5 mm at the pre-go window.</sup>"
+            "Pre-go forward position drift (anticipation, go-cue-aligned) — pre-go matrix (3702f54)<br>"
+            "<sup>Pooled (replicate × trial) mean ± SD. Red dotted = pre-go window onset (-200 ms). "
+            "t=0 is the go cue per trial. Baselines at top. Bug: 06f7faf.</sup>"
         ),
         width=1000,
         height=180 * n_cells + 100,
         margin=dict(l=70, r=60, t=80, b=60),
         hovermode="x unified",
     )
-    fig.update_xaxes(title_text="Time (s, pre-go)", row=n_cells, col=1)
+    fig.update_xaxes(title_text="Time relative to go cue (s)", row=n_cells, col=1)
     for row in range(1, n_cells + 1):
         fig.update_yaxes(title_text="Fwd pos (mm)", row=row, col=1)
 
@@ -941,14 +974,15 @@ def main():
     # Figure 1: Forward velocity profiles
     fig_fv = make_forward_velocity_profile_figure(cell_kms)
     spec_fv = {
-        "figure_kind": "forward_velocity_profile_time_series",
+        "figure_kind": "forward_velocity_profile_time_series_go_aligned",
         "experiment": EXPERIMENT,
         "inputs": input_artifacts,
         "transform": [
             {"name": "eval_ensemble", "kwargs": {"sisu": args.sisu, "pert_scale": 0.0}},
             {"name": "forward_velocity_projection_onto_reach_axis", "kwargs": {}},
-            {"name": "mean_over_trials", "kwargs": {}},
-            {"name": "mean_sd_across_replicates", "kwargs": {}},
+            {"name": "align_trials_to_go_cue", "kwargs": {"pad": "nan"}},
+            {"name": "trim_to_full_support", "kwargs": {"min_coverage": 1.0}},
+            {"name": "pooled_trial_nanmean_with_sd_band", "kwargs": {}},
         ],
         "plot_kwargs": {
             "cells": CELL_LABELS,
@@ -957,7 +991,11 @@ def main():
             "pert_scale": 0.0,
             "dt": 0.01,
             "ordering_note": "Baselines (lit__post_nojerk, lit__full_nojerk) at top",
+            "alignment": "go_cue_per_trial",
+            "band_semantic": "pooled_replicate_trial_sd",
+            "shared_yaxes": "all",
         },
+        "fix_note": "Bug: 06f7faf — go-cue alignment fix + trim-to-full-support + shared y-axes across cells.",
     }
     fv_out = save_figure(
         fig=fig_fv, spec=spec_fv,
@@ -970,15 +1008,16 @@ def main():
     # Figure 2: Hold drift profiles
     fig_hd = make_hold_drift_figure(cell_kms)
     spec_hd = {
-        "figure_kind": "hold_drift_profile_pre_go_position",
+        "figure_kind": "hold_drift_profile_pre_go_position_go_aligned",
         "experiment": EXPERIMENT,
         "inputs": input_artifacts,
         "transform": [
             {"name": "eval_ensemble", "kwargs": {"sisu": args.sisu, "pert_scale": 0.0}},
             {"name": "forward_position_projection_onto_reach_axis", "kwargs": {}},
-            {"name": "mean_over_trials", "kwargs": {}},
-            {"name": "mean_sd_across_replicates", "kwargs": {}},
-            {"name": "clip_to_pre_go_window", "kwargs": {}},
+            {"name": "align_trials_to_go_cue", "kwargs": {"pad": "nan"}},
+            {"name": "trim_to_full_support", "kwargs": {"min_coverage": 1.0}},
+            {"name": "pooled_trial_nanmean_with_sd_band", "kwargs": {}},
+            {"name": "clip_to_pre_go_window", "kwargs": {"window_steps": PRE_GO_WINDOW_STEPS}},
         ],
         "plot_kwargs": {
             "cells": CELL_LABELS,
@@ -988,7 +1027,11 @@ def main():
             "dt": 0.01,
             "pre_go_window_steps": PRE_GO_WINDOW_STEPS,
             "ordering_note": "Baselines (lit__post_nojerk, lit__full_nojerk) at top",
+            "alignment": "go_cue_per_trial",
+            "band_semantic": "pooled_replicate_trial_sd",
+            "shared_yaxes": "all",
         },
+        "fix_note": "Bug: 06f7faf — go-cue alignment fix + trim-to-full-support + shared y-axes across cells.",
     }
     hd_out = save_figure(
         fig=fig_hd, spec=spec_hd,

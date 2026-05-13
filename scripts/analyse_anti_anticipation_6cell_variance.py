@@ -1,4 +1,11 @@
+# TODO: relocate to results/2bc95fd/scripts/ — per CLAUDE.md script-placement convention
 """Variance + anticipation analysis for the 6-cell anti-anticipation matrix.
+
+Bug: 06f7faf — go-cue alignment fix. The primary `vel_rmse_ratio` /
+`pos_rmse_ratio` metrics and the velocity/hold-drift profile figures are now
+computed on per-trial go-cue-aligned profiles via
+`rlrmp.analysis.trial_alignment`.
+
 
 Computes per-(cell × replicate):
   - Peak forward velocity (m/s)
@@ -51,11 +58,18 @@ import jax.tree as jt
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from rlrmp.viz import profile_comparison_grid
 
 from feedbax._io import load_with_hyperparameters
 from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 — project-config routing
 
+from rlrmp.io import update_marked_section
 from train_minimax import build_hps
+from rlrmp.analysis.trial_alignment import (
+    align_trials,
+    pooled_trial_mean_with_band,
+    replicate_mean_curves,
+)
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.modules.training.part2 import setup_task_model_pair
 
@@ -349,12 +363,8 @@ def compute_cell_stats(km: dict[str, np.ndarray]) -> dict:
 def _mean_pairwise_rmse(profiles_a: np.ndarray, profiles_b: np.ndarray) -> float:
     """Mean pairwise RMSE between every replicate in A and every in B.
 
-    Args:
-        profiles_a: (n_rep_a, n_steps) — mean-over-trials profile per replicate.
-        profiles_b: (n_rep_b, n_steps) — same.
-
-    Returns:
-        Scalar mean RMSE across all pairs.
+    Uses nanmean so NaN-padded columns from `align_trials` are ignored
+    (Bug: 06f7faf).
     """
     n_a = profiles_a.shape[0]
     n_b = profiles_b.shape[0]
@@ -362,25 +372,22 @@ def _mean_pairwise_rmse(profiles_a: np.ndarray, profiles_b: np.ndarray) -> float
     for i in range(n_a):
         for j in range(n_b):
             diff = profiles_a[i] - profiles_b[j]
-            rmse_vals.append(float(np.sqrt(np.mean(diff ** 2))))
+            rmse_vals.append(float(np.sqrt(np.nanmean(diff ** 2))))
     return float(np.mean(rmse_vals)) if rmse_vals else float("nan")
 
 
 def _within_cell_mean_pairwise_rmse(profiles: np.ndarray) -> float:
     """Mean pairwise RMSE between all distinct pairs within one cell.
 
-    Args:
-        profiles: (n_rep, n_steps) — mean-over-trials profile per replicate.
-
-    Returns:
-        Scalar mean RMSE across all C(n_rep, 2) pairs.
+    Uses nanmean so NaN-padded columns from `align_trials` are ignored
+    (Bug: 06f7faf).
     """
     n_rep = profiles.shape[0]
     rmse_vals = []
     for i in range(n_rep):
         for j in range(i + 1, n_rep):
             diff = profiles[i] - profiles[j]
-            rmse_vals.append(float(np.sqrt(np.mean(diff ** 2))))
+            rmse_vals.append(float(np.sqrt(np.nanmean(diff ** 2))))
     return float(np.mean(rmse_vals)) if rmse_vals else float("nan")
 
 
@@ -410,14 +417,17 @@ def compute_rmse_ratios(
     """
     labels = list(cell_kms.keys())
 
-    # Pre-compute mean-over-trials profiles per cell: (n_rep, n_steps)
+    # Bug: 06f7faf — go-cue alignment per trial BEFORE the trial-axis collapse.
+    # trim=False preserves identical step axes across cells (needed for the
+    # cross-cell pairwise RMSE downstream); _mean_pairwise_rmse uses nanmean.
     vel_profiles: dict[str, np.ndarray] = {}
     pos_profiles: dict[str, np.ndarray] = {}
     for label in labels:
         km = cell_kms[label]
-        # Mean over reach directions (axis 1 = trials)
-        vel_profiles[label] = km["forward_vel_profile"].mean(axis=1)   # (n_rep, n_steps)
-        pos_profiles[label] = km["pos_forward_profile"].mean(axis=1)   # (n_rep, n_steps)
+        aligned_v, _c = align_trials(km["forward_vel_profile"], km["go_idx"])
+        aligned_p, _c = align_trials(km["pos_forward_profile"], km["go_idx"])
+        vel_profiles[label] = replicate_mean_curves(aligned_v, trim=False)
+        pos_profiles[label] = replicate_mean_curves(aligned_p, trim=False)
 
     results: dict[str, dict] = {}
     for label in labels:
@@ -533,11 +543,10 @@ def make_forward_velocity_profile_figure(
     if n_cells == 0:
         return go.Figure()
 
-    fig = make_subplots(
-        rows=n_cells,
-        cols=1,
+    # Bug: 06f7faf — shared y-axes via profile_comparison_grid.
+    fig = profile_comparison_grid(
+        n_panels=n_cells,
         subplot_titles=[CELL_DISPLAY_NAMES[l] for l in labels_present],
-        shared_xaxes=True,
         vertical_spacing=0.06,
     )
 
@@ -546,17 +555,18 @@ def make_forward_velocity_profile_figure(
         v_fwd = km["forward_vel_profile"]  # (n_rep, n_trials, n_steps)
         go_idx = km["go_idx"]               # (n_trials,)
         n_rep, n_trials, n_steps = v_fwd.shape
-        t = np.arange(n_steps) * dt  # seconds
         color = CELL_COLORS[CELL_LABELS.index(label) % len(CELL_COLORS)]
 
-        # Mean over trials, then one trace per replicate
-        v_mean_over_trials = v_fwd.mean(axis=1)  # (n_rep, n_steps)
-        mean_go = int(go_idx.mean())
+        # Bug: 06f7faf — go-cue alignment per trial; replicate-mean curves on
+        # the full-support window.
+        aligned_v, center = align_trials(v_fwd, go_idx)
+        per_rep_curves, sl = replicate_mean_curves(aligned_v)
+        t = ((np.arange(aligned_v.shape[-1]) - center) * dt)[sl]
 
         for rep in range(n_rep):
             fig.add_trace(go.Scatter(
                 x=t,
-                y=v_mean_over_trials[rep],
+                y=per_rep_curves[rep],
                 mode="lines",
                 name=f"Rep {rep}",
                 line=dict(color=_color_rgba(color, 0.7), width=1.5),
@@ -564,22 +574,22 @@ def make_forward_velocity_profile_figure(
                 legendgroup=f"rep{rep}",
             ), row=row, col=1)
 
-        # Mark go cue
+        # Go cue lives at t=0 by construction
         fig.add_vline(
-            x=float(mean_go) * dt,
+            x=0.0,
             line=dict(color="black", dash="dash", width=1),
             row=row,
             col=1,
         )
 
     fig.update_layout(
-        title="Forward velocity profiles (mean over 8 reach directions) — 6-cell matrix",
+        title="Forward velocity profiles (go-cue-aligned, replicate-mean curves) — 6-cell matrix",
         width=900,
         height=220 * n_cells + 100,
         margin=dict(l=70, r=60, t=80, b=60),
         hovermode="x unified",
     )
-    fig.update_xaxes(title_text="Time (s)", row=n_cells, col=1)
+    fig.update_xaxes(title_text="Time relative to go cue (s)", row=n_cells, col=1)
     for row in range(1, n_cells + 1):
         fig.update_yaxes(title_text="Fwd vel (m/s)", row=row, col=1)
 
@@ -596,11 +606,10 @@ def make_hold_drift_figure(
     if n_cells == 0:
         return go.Figure()
 
-    fig = make_subplots(
-        rows=n_cells,
-        cols=1,
+    # Bug: 06f7faf — shared y-axes via profile_comparison_grid.
+    fig = profile_comparison_grid(
+        n_panels=n_cells,
         subplot_titles=[CELL_DISPLAY_NAMES[l] for l in labels_present],
-        shared_xaxes=True,
         vertical_spacing=0.06,
     )
 
@@ -611,13 +620,14 @@ def make_hold_drift_figure(
         n_rep, n_trials, n_steps = pos_fwd.shape
         color = CELL_COLORS[CELL_LABELS.index(label) % len(CELL_COLORS)]
 
-        # Clip to pre-go window: steps up to max(go_idx)
-        max_go = int(go_idx.max())
-        t_pre = np.arange(max_go) * dt  # seconds
-
-        # Mean over trials first
-        pos_mean_over_trials = pos_fwd[:, :, :max_go].mean(axis=1)  # (n_rep, max_go)
-        pos_mm = pos_mean_over_trials * 1000.0  # convert to mm
+        # Bug: 06f7faf — go-cue alignment; clip to [t <= 0] for pre-go drift.
+        aligned_p, center = align_trials(pos_fwd, go_idx)
+        per_rep_curves, sl = replicate_mean_curves(aligned_p)
+        per_rep_curves = per_rep_curves * 1000.0  # mm
+        t_rel = ((np.arange(aligned_p.shape[-1]) - center) * dt)[sl]
+        keep = t_rel <= 0.0
+        t_pre = t_rel[keep]
+        pos_mm = per_rep_curves[:, keep]
 
         for rep in range(n_rep):
             fig.add_trace(go.Scatter(
@@ -634,13 +644,13 @@ def make_hold_drift_figure(
         fig.add_hline(y=0, line=dict(color="grey", dash="dot", width=1), row=row, col=1)
 
     fig.update_layout(
-        title="Pre-go forward position drift (anticipation) — 6-cell matrix",
+        title="Pre-go forward position drift (go-cue-aligned, per-replicate) — 6-cell matrix",
         width=900,
         height=220 * n_cells + 100,
         margin=dict(l=70, r=60, t=80, b=60),
         hovermode="x unified",
     )
-    fig.update_xaxes(title_text="Time (s, pre-go)", row=n_cells, col=1)
+    fig.update_xaxes(title_text="Time relative to go cue (s)", row=n_cells, col=1)
     for row in range(1, n_cells + 1):
         fig.update_yaxes(title_text="Fwd pos (mm)", row=row, col=1)
 
@@ -893,13 +903,15 @@ def main():
         fig_fv = make_forward_velocity_profile_figure(cell_kms)
 
         spec_fv = {
-            "figure_kind": "forward_velocity_profile_time_series",
+            "figure_kind": "forward_velocity_profile_time_series_go_aligned",
             "experiment": "anti_anticipation_loss_shape_6cell",
             "inputs": input_artifacts,
             "transform": [
                 {"name": "eval_ensemble", "kwargs": {"sisu": args.sisu, "pert_scale": 0.0}},
                 {"name": "forward_velocity_projection_onto_reach_axis", "kwargs": {}},
-                {"name": "mean_over_trials", "kwargs": {}},
+                {"name": "align_trials_to_go_cue", "kwargs": {"pad": "nan"}},
+                {"name": "trim_to_full_support", "kwargs": {"min_coverage": 1.0}},
+                {"name": "replicate_nanmean_over_trials", "kwargs": {}},
             ],
             "plot_kwargs": {
                 "cells": CELL_LABELS,
@@ -907,7 +919,10 @@ def main():
                 "sisu": args.sisu,
                 "pert_scale": 0.0,
                 "dt": 0.01,
+                "alignment": "go_cue_per_trial",
+                "shared_yaxes": "all",
             },
+            "fix_note": "Bug: 06f7faf — go-cue alignment + trim-to-full-support + shared y-axes across cells.",
         }
         fv_out = save_figure(
             fig=fig_fv, spec=spec_fv,
@@ -922,13 +937,15 @@ def main():
         fig_hd = make_hold_drift_figure(cell_kms)
 
         spec_hd = {
-            "figure_kind": "hold_drift_profile_pre_go_position",
+            "figure_kind": "hold_drift_profile_pre_go_position_go_aligned",
             "experiment": "anti_anticipation_loss_shape_6cell",
             "inputs": input_artifacts,
             "transform": [
                 {"name": "eval_ensemble", "kwargs": {"sisu": args.sisu, "pert_scale": 0.0}},
                 {"name": "forward_position_projection_onto_reach_axis", "kwargs": {}},
-                {"name": "mean_over_trials", "kwargs": {}},
+                {"name": "align_trials_to_go_cue", "kwargs": {"pad": "nan"}},
+                {"name": "trim_to_full_support", "kwargs": {"min_coverage": 1.0}},
+                {"name": "replicate_nanmean_over_trials", "kwargs": {}},
                 {"name": "clip_to_pre_go_window", "kwargs": {}},
             ],
             "plot_kwargs": {
@@ -937,7 +954,10 @@ def main():
                 "sisu": args.sisu,
                 "pert_scale": 0.0,
                 "dt": 0.01,
+                "alignment": "go_cue_per_trial",
+                "shared_yaxes": "all",
             },
+            "fix_note": "Bug: 06f7faf — go-cue alignment fix + shared y-axes across cells.",
         }
         hd_out = save_figure(
             fig=fig_hd, spec=spec_hd,
@@ -964,6 +984,8 @@ def main():
             "inputs": input_artifacts,
             "transform": [
                 {"name": "eval_ensemble", "kwargs": {"sisu": args.sisu, "pert_scale": 0.0}},
+                {"name": "align_trials_to_go_cue", "kwargs": {"pad": "nan"}},
+                {"name": "replicate_nanmean_over_trials", "kwargs": {}},
                 {"name": "pairwise_profile_rmse_ratio_velocity", "kwargs": {}},
                 {"name": "pairwise_profile_rmse_ratio_position", "kwargs": {}},
             ],
@@ -973,6 +995,7 @@ def main():
                 "sisu": args.sisu,
                 "pert_scale": 0.0,
             },
+            "fix_note": "Bug: 06f7faf — go-cue alignment fix.",
             "rmse_ratios": {
                 label: {
                     "vel_within_rmse": r["vel_within_rmse"],
@@ -1213,8 +1236,9 @@ def main():
         "- `figures/hold_drift_profiles/` — Pre-go forward position (anticipation drift)",
     ]
 
-    with open(notes_path, "w") as f:
-        f.write("\n".join(lines) + "\n")
+    # Bug: 06f7faf — use update_marked_section so hand-edited preambles (e.g.
+    # "Corrected after go-cue alignment fix") are preserved on re-run.
+    update_marked_section(notes_path, "variance_analysis", "\n".join(lines) + "\n")
     print(f"\nSaved analysis notes: {notes_path}")
 
     # Save per-cell stats as JSON for downstream use

@@ -14,7 +14,7 @@
   },
   "per_run": {
     "linear_regulator__baseline": {
-      "eqx_path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__linear-controller-mvp/_artifacts/410d7ac/runs/linear_regulator__baseline/warmup_model.eqx",
+      "eqx_path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/410d7ac/runs/linear_regulator__baseline/warmup_model.eqx",
       "peak_velocity": {
         "0.0": {
           "overall_mean": 0.15821976959705353,
@@ -43,28 +43,28 @@
       "missing": false
     },
     "linear_regulator__adversarial": {
-      "eqx_path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__linear-controller-mvp/_artifacts/410d7ac/runs/linear_regulator__adversarial/adversarial_model.eqx",
+      "eqx_path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/410d7ac/runs/linear_regulator__adversarial/adversarial_model.eqx",
       "peak_velocity": {
         "0.0": {
-          "overall_mean": 0.280487060546875,
-          "overall_sd": 0.02344696596264839,
+          "overall_mean": 0.3629482686519623,
+          "overall_sd": 0.008102625608444214,
           "rep_means": [
-            0.2835769057273865,
-            0.2851024866104126,
-            0.276940256357193,
-            0.2871229946613312,
-            0.269692599773407
+            0.3664041757583618,
+            0.3617711067199707,
+            0.3607533574104309,
+            0.36504679918289185,
+            0.3607659637928009
           ]
         },
         "1.0": {
-          "overall_mean": 0.28064218163490295,
-          "overall_sd": 0.022920969873666763,
+          "overall_mean": 0.3631831407546997,
+          "overall_sd": 0.00797332264482975,
           "rep_means": [
-            0.28373128175735474,
-            0.28465157747268677,
-            0.2775692343711853,
-            0.28642964363098145,
-            0.2708292007446289
+            0.3681762218475342,
+            0.36084413528442383,
+            0.3615879416465759,
+            0.36478912830352783,
+            0.36051833629608154
           ]
         }
       },
@@ -72,7 +72,7 @@
       "missing": false
     },
     "linear_tracker__baseline": {
-      "eqx_path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__linear-controller-mvp/_artifacts/410d7ac/runs/linear_tracker__baseline/warmup_model.eqx",
+      "eqx_path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/410d7ac/runs/linear_tracker__baseline/warmup_model.eqx",
       "peak_velocity": {
         "0.0": {
           "overall_mean": 0.15765134990215302,
@@ -116,7 +116,7 @@
       "missing": false
     },
     "linear_tracker__adversarial": {
-      "eqx_path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__linear-controller-mvp/_artifacts/410d7ac/runs/linear_tracker__adversarial/adversarial_model.eqx",
+      "eqx_path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/410d7ac/runs/linear_tracker__adversarial/adversarial_model.eqx",
       "peak_velocity": {
         "0.0": {
           "overall_mean": 0.2796289026737213,
@@ -163,32 +163,32 @@
   "delta_v_by_arch": {
     "linear_regulator": {
       "0.0": {
-        "mean": 0.7747201919555664,
-        "sem": 0.03433958166793729,
-        "sd": 0.07678563892841339,
+        "mean": 1.2969253063201904,
+        "sem": 0.04319087222586022,
+        "sd": 0.0965777263045311,
         "per_rep": [
-          0.8513728380203247,
-          0.7700583338737488,
-          0.6542012095451355,
-          0.8304839730262756,
-          0.7674846649169922
+          1.3921226263046265,
+          1.2460553646087646,
+          1.1548280715942383,
+          1.3272686004638672,
+          1.3643523454666138
         ],
         "peak_v_baseline_mean": 0.15821976959705353,
-        "peak_v_adversarial_mean": 0.280487060546875
+        "peak_v_adversarial_mean": 0.3629482686519623
       },
       "1.0": {
-        "mean": 0.7178287506103516,
-        "sem": 0.03669356369412703,
-        "sd": 0.08204930275678635,
+        "mean": 1.2230408191680908,
+        "sem": 0.0423067224451434,
+        "sd": 0.09460070729255676,
         "per_rep": [
-          0.7607042193412781,
-          0.7404115200042725,
-          0.585168719291687,
-          0.8000266551971436,
-          0.7028325200080872
+          1.2847301959991455,
+          1.2062667608261108,
+          1.064990758895874,
+          1.2924658060073853,
+          1.2667509317398071
         ],
         "peak_v_baseline_mean": 0.16359521448612213,
-        "peak_v_adversarial_mean": 0.28064218163490295
+        "peak_v_adversarial_mean": 0.3631831705570221
       }
     },
     "linear_tracker": {

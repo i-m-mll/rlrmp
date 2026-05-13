@@ -1,34 +1,35 @@
 {
   "experiment": "anti_anticipation_loss_shape_6cell",
   "figure_kind": "rmse_ratio_comparison_bar",
+  "fix_note": "Bug: 06f7faf \u2014 go-cue alignment fix.",
   "inputs": [
     {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk/adversarial_model.eqx",
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/2bc95fd/gru__jerk/adversarial_model.eqx",
       "role": "adversarial_model:gru__jerk",
       "sha256": "17d8cfbb723fdcb4f5812c6faf83d2435f6642e6afed109318165710a1cd2311"
     },
     {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_motor_pre/adversarial_model.eqx",
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/2bc95fd/gru__jerk_motor_pre/adversarial_model.eqx",
       "role": "adversarial_model:gru__jerk_motor_pre",
       "sha256": "94d33f270994376a03f067e11eb9545df2dc21dd41cc4c4418e580a4ae5eaafa"
     },
     {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_smooth_high/adversarial_model.eqx",
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/2bc95fd/gru__jerk_smooth_high/adversarial_model.eqx",
       "role": "adversarial_model:gru__jerk_smooth_high",
       "sha256": "d5f099c7849faaaf95d7cbe4f08121fdc2599a4aedc71744ae5f4a036be7d5a9"
     },
     {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_motor_smooth_combo/adversarial_model.eqx",
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/2bc95fd/gru__jerk_motor_smooth_combo/adversarial_model.eqx",
       "role": "adversarial_model:gru__jerk_motor_smooth_combo",
       "sha256": "ee2199dd9b90eb31412aeaebc36931fe66ea107f29cd834b7b19d807bdce07b6"
     },
     {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_loss_v_terminal/adversarial_model.eqx",
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/2bc95fd/gru__jerk_loss_v_terminal/adversarial_model.eqx",
       "role": "adversarial_model:gru__jerk_loss_v_terminal",
       "sha256": "fcd9a246e18bc63c05187549bff24f44ab65b6e19a6d9d20b0056460ba90a940"
     },
     {
-      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/_artifacts/2bc95fd/gru__jerk_loss_historical/adversarial_model.eqx",
+      "path": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__go-cue-alignment-fix/_artifacts/2bc95fd/gru__jerk_loss_historical/adversarial_model.eqx",
       "role": "adversarial_model:gru__jerk_loss_historical",
       "sha256": "6dfe90be9ca6b2bc6d78bf002f65f4fda34c2d21262ddcb09ea5048fa1e3ecc5"
     }
@@ -49,55 +50,55 @@
   },
   "rmse_ratios": {
     "gru__jerk": {
-      "pos_nearest_across_rmse": 0.05138498682528734,
-      "pos_rmse_ratio": 1.019695885636457,
-      "pos_within_rmse": 0.05239705964922905,
-      "vel_nearest_across_rmse": 0.11521034672856331,
-      "vel_rmse_ratio": 1.1293315154721553,
-      "vel_within_rmse": 0.13011067546904087
+      "pos_nearest_across_rmse": 0.05728831171989441,
+      "pos_rmse_ratio": 1.0466791472836616,
+      "pos_within_rmse": 0.05996248126029968,
+      "vel_nearest_across_rmse": 0.13425488278269768,
+      "vel_rmse_ratio": 1.053855952447266,
+      "vel_within_rmse": 0.1414853073656559
     },
     "gru__jerk_loss_historical": {
-      "pos_nearest_across_rmse": 0.043983739912509916,
-      "pos_rmse_ratio": 1.2488615327291421,
-      "pos_within_rmse": 0.054929600842297074,
-      "vel_nearest_across_rmse": 0.1168197150528431,
-      "vel_rmse_ratio": 1.1312999760217255,
-      "vel_within_rmse": 0.1321581408381462
+      "pos_nearest_across_rmse": 0.05613261315971613,
+      "pos_rmse_ratio": 1.2822083697501447,
+      "pos_within_rmse": 0.07197370640933513,
+      "vel_nearest_across_rmse": 0.13830105140805243,
+      "vel_rmse_ratio": 1.1326731447221612,
+      "vel_within_rmse": 0.15664988681674002
     },
     "gru__jerk_loss_v_terminal": {
-      "pos_nearest_across_rmse": 0.04087802104651928,
-      "pos_rmse_ratio": 1.1623438245205195,
-      "pos_within_rmse": 0.04751431532204151,
-      "vel_nearest_across_rmse": 0.11521034672856331,
-      "vel_rmse_ratio": 0.8818682197083246,
-      "vel_within_rmse": 0.10160034336149693
+      "pos_nearest_across_rmse": 0.04625109076499939,
+      "pos_rmse_ratio": 1.1038631876464355,
+      "pos_within_rmse": 0.051054876483976844,
+      "vel_nearest_across_rmse": 0.13425488278269768,
+      "vel_rmse_ratio": 0.9885390741080627,
+      "vel_within_rmse": 0.13271619752049446
     },
     "gru__jerk_motor_pre": {
-      "pos_nearest_across_rmse": 0.04087802104651928,
-      "pos_rmse_ratio": 0.4241242507085653,
-      "pos_within_rmse": 0.017337360046803953,
-      "vel_nearest_across_rmse": 0.1593525817990303,
-      "vel_rmse_ratio": 0.46053769406517003,
-      "vel_within_rmse": 0.0733878705650568
+      "pos_nearest_across_rmse": 0.04625109076499939,
+      "pos_rmse_ratio": 0.5809685038088209,
+      "pos_within_rmse": 0.026870427001267672,
+      "vel_nearest_across_rmse": 0.1798200523853302,
+      "vel_rmse_ratio": 0.5518380047457375,
+      "vel_within_rmse": 0.09923153892159461
     },
     "gru__jerk_motor_smooth_combo": {
-      "pos_nearest_across_rmse": 0.04637298375368118,
-      "pos_rmse_ratio": 0.054998291914275826,
-      "pos_within_rmse": 0.002550434897420928,
-      "vel_nearest_across_rmse": 0.18887204945087432,
-      "vel_rmse_ratio": 0.03593371010016555,
-      "vel_within_rmse": 0.00678687347099185
+      "pos_nearest_across_rmse": 0.043832911998033526,
+      "pos_rmse_ratio": 0.06277607577307183,
+      "pos_within_rmse": 0.0027516582049429417,
+      "vel_nearest_across_rmse": 0.17552969753742217,
+      "vel_rmse_ratio": 0.042346216916084055,
+      "vel_within_rmse": 0.007433018647134304
     },
     "gru__jerk_smooth_high": {
-      "pos_nearest_across_rmse": 0.04637298375368118,
-      "pos_rmse_ratio": 0.03725915692148335,
-      "pos_within_rmse": 0.0017278182785958052,
-      "vel_nearest_across_rmse": 0.18887204945087432,
-      "vel_rmse_ratio": 0.03734289035278255,
-      "vel_within_rmse": 0.007053028233349324
+      "pos_nearest_across_rmse": 0.043832911998033526,
+      "pos_rmse_ratio": 0.03839979157561077,
+      "pos_within_rmse": 0.001683174684876576,
+      "vel_nearest_across_rmse": 0.17552969753742217,
+      "vel_rmse_ratio": 0.03956210119714945,
+      "vel_within_rmse": 0.006944323657080531
     }
   },
-  "timestamp": "2026-05-11T18:56:25.336064+00:00",
+  "timestamp": "2026-05-13T18:50:58.046979+00:00",
   "transform": [
     {
       "kwargs": {
@@ -105,6 +106,16 @@
         "sisu": 0.5
       },
       "name": "eval_ensemble"
+    },
+    {
+      "kwargs": {
+        "pad": "nan"
+      },
+      "name": "align_trials_to_go_cue"
+    },
+    {
+      "kwargs": {},
+      "name": "replicate_nanmean_over_trials"
     },
     {
       "kwargs": {},

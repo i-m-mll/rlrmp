@@ -1,4 +1,10 @@
+# TODO: relocate to results/410d7ac/scripts/ — per CLAUDE.md script-placement convention
 """Linear-controller decoupling acid test — corrected MVP analysis (Bug: 410d7ac).
+
+Bug: 06f7faf — the primary Δv metric is unaffected (it uses per-trial after-go
+masking before computing peak), but the velocity-profile figure is now plotted
+in go-aligned coordinates so the visual onset of motion lines up with t=0.
+
 
 This is the **corrected** version of the linear regulator-vs-tracker decoupling
 acid test. The prior version (commit 20ae797) trained warmup-only models and
@@ -75,6 +81,7 @@ import jax.tree as jt
 from feedbax._io import load_with_hyperparameters
 from feedbax.plot import save_figure
 
+from rlrmp.analysis.trial_alignment import align_trials, replicate_mean_curves
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.intervention_compat import (
     swap_plant_intervenor_to_dynamics_matrix,
@@ -377,9 +384,18 @@ def evaluate_one_run(label: str, dir_name: str, eqx_filename: str,
             "overall_sd": float(peak.std()),
         }
         # Trial-mean profile per replicate. For plotting only.
-        prof = np.where(after_go, fwd_vel, np.nan)
-        # mean over trials (axis=1) ignoring nans
-        out["fwd_velocity_profile_per_scale"][float(s)] = np.nanmean(prof, axis=1)  # (n_rep, n_steps)
+        # Bug: 06f7faf — align per-trial profiles to each trial's go cue BEFORE
+        # the trial-axis collapse. The primary Δv metric (peak above) is
+        # unaffected because it uses per-trial after_go masking before max.
+        go_idx = np.asarray(trials.timeline.epoch_bounds[:, 2])
+        aligned_fv, center = align_trials(np.asarray(fwd_vel), go_idx)
+        # trim=False because the downstream plot computes its own time axis
+        # from a stored `center` and the array's column count; the trim slice
+        # would have to be persisted alongside to apply consistently.
+        out["fwd_velocity_profile_per_scale"][float(s)] = replicate_mean_curves(
+            aligned_fv, trim=False
+        )  # (n_rep, n_aligned_steps)
+        out.setdefault("go_align_center_per_scale", {})[float(s)] = int(center)
         print(f"  pert_scale={s:.2f}  peak_vel mean={peak.mean():.4f}  "
               f"sd_across_reps={peak.mean(axis=-1).std():.4f}")
 
@@ -523,7 +539,9 @@ def main():
                 continue
             mean = np.nanmean(profile, axis=0)
             sem = np.nanstd(profile, axis=0, ddof=1) / np.sqrt(profile.shape[0])
-            x = np.arange(mean.shape[0])
+            # Bug: 06f7faf — center x-axis on the go cue (t=0 at go).
+            center = r.get("go_align_center_per_scale", {}).get(pert_idx_for_plot, 0)
+            x = np.arange(mean.shape[0]) - center
             fig.add_trace(
                 go.Scatter(
                     x=x, y=mean, mode="lines",
@@ -554,8 +572,8 @@ def main():
         template="plotly_white",
         legend_title="Training method",
     )
-    fig.update_xaxes(title_text="time step", row=1, col=1)
-    fig.update_xaxes(title_text="time step", row=1, col=2)
+    fig.update_xaxes(title_text="time step (go cue at 0)", row=1, col=1)
+    fig.update_xaxes(title_text="time step (go cue at 0)", row=1, col=2)
     fig.update_yaxes(title_text="forward velocity (toward target)", row=1, col=1)
 
     # Annotate Δv on each subplot

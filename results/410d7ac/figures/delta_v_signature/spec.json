@@ -15,7 +15,7 @@
     "linear_tracker__adversarial"
   ],
   "seed_eval": 42,
-  "timestamp": "2026-05-12T03:38:25.269117+00:00",
+  "timestamp": "2026-05-13T18:10:07.087244+00:00",
   "topic": "delta_v_signature",
   "versions": {
     "equinox": "0.13.4",

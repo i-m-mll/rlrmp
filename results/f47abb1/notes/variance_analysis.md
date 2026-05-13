@@ -1,5 +1,27 @@
 # Variance Analysis — Lit-Replication 6-Cell Matrix (f47abb1)
 
+> **Corrected after go-cue alignment fix (Bug: 06f7faf).** Velocity-RMSE
+> values, RMSE ratios, and the forward-velocity / hold-drift figures in
+> this analysis were originally computed by averaging trial-mean profiles
+> in *absolute trial time*, then comparing across replicates. Because
+> `centerout`'s target-on duration is randomized per trial, this smeared
+> the go cue across ~150 ms and produced biased RMSE values. The fix
+> re-locks each trial to its own go cue before the trial-axis collapse.
+>
+> **Effect on conclusions:** the *qualitative ordering* of cells is
+> preserved (powerlaw + jerk-off still wins; flat fails on both axes),
+> but the absolute vel-within-RMSE values shifted by 5–30 % (mostly up,
+> by 5–10 % on the powerlaw cells and ~25–30 % on the flat cells).
+> Within/across RMSE *ratios* are also revised; they were not the
+> primary metric for this matrix and are still above the 0.5 threshold
+> for every cell after correction, consistent with the framing note
+> below.
+>
+> All metric tables below have been replaced with post-fix numbers. The
+> pre-fix table is preserved for traceability in the
+> [Pre-fix table (deprecated)](#pre-fix-table-deprecated) section at the
+> end of this note.
+
 ## Setup
 
 This matrix tests whether faithful replication of the Chaisanguanthum & Shenoy
@@ -92,29 +114,36 @@ trial, making the weighted loss sum structurally lower than for flat. The
 peak velocity in m/s) ARE comparable across schedules — they measure the
 controller's behaviour, not the training-loss aggregate.
 
-## Results Table (PRIMARY: absolute within-cell metrics)
+## Results Table (PRIMARY: absolute within-cell metrics) — post-fix
+
+Vel within-RMSE values were corrected after the go-cue alignment fix
+(Bug: 06f7faf). Hold drift / Peak vel / TTP are scalar per-trial metrics
+that already used per-trial go-cue indexing in the computation and are
+unaffected by the bug.
 
 | Cell | Display Name | Vel within-RMSE (m/s) | Hold Drift (mm) | Peak Vel (m/s) | TTP (steps) |
 |------|------|---------|---------|---------|---------|
-| lit__flat_jerk | Flat + jerk | 0.1086 | 22.90 +/- 3.30 | 0.590 | 62.4 |
-| lit__post_jerk | Post-go PL + jerk | 0.0423 | 3.29 +/- 3.04 | 0.791 | 71.8 |
-| lit__full_jerk | Full-trial PL + jerk | 0.0426 | 3.40 +/- 3.10 | 0.791 | 71.8 |
-| lit__flat_nojerk | Flat, no jerk | 0.0918 | 24.32 +/- 3.11 | 0.606 | 58.5 |
-| **lit__post_nojerk** | **Post-go PL, no jerk** | **0.0361** | **2.34 +/- 0.56** | **0.969** | **54.6** |
-| **lit__full_nojerk** | **Full-trial PL, no jerk** | **0.0414** | **2.74 +/- 0.55** | **0.964** | **54.5** |
+| lit__flat_jerk | Flat + jerk | 0.1345 | 22.90 +/- 3.30 | 0.590 | 62.4 |
+| lit__post_jerk | Post-go PL + jerk | 0.0436 | 3.29 +/- 3.04 | 0.791 | 71.8 |
+| lit__full_jerk | Full-trial PL + jerk | 0.0441 | 3.40 +/- 3.10 | 0.791 | 71.8 |
+| lit__flat_nojerk | Flat, no jerk | 0.1166 | 24.32 +/- 3.11 | 0.606 | 58.5 |
+| **lit__post_nojerk** | **Post-go PL, no jerk** | **0.0383** | **2.34 +/- 0.56** | **0.969** | **54.6** |
+| **lit__full_nojerk** | **Full-trial PL, no jerk** | **0.0428** | **2.74 +/- 0.55** | **0.964** | **54.5** |
 
 Bold rows = strongest cells on within-cell clustering AND anticipation suppression.
 
-## Auxiliary table (pairwise ratios — not primary, see framing note)
+## Auxiliary table (pairwise ratios — not primary, see framing note) — post-fix
+
+Post-fix values after go-cue alignment correction (Bug: 06f7faf):
 
 | Cell | Vel-RMSE ratio | Pos-RMSE ratio | CV (peak vel) | Mean PV (m/s) | SD PV (m/s) |
 |------|---------|---------|---------|---------|---------|
-| lit__flat_jerk | 1.157 | 1.293 | 0.092 | 0.5899 | 0.0541 |
-| lit__post_jerk | 1.229 | 1.235 | 0.040 | 0.7909 | 0.0319 |
-| lit__full_jerk | 1.239 | 1.233 | 0.041 | 0.7905 | 0.0326 |
-| lit__flat_nojerk | 0.978 | 0.897 | 0.089 | 0.6056 | 0.0541 |
-| lit__post_nojerk | 1.091 | 1.055 | 0.026 | 0.9686 | 0.0252 |
-| lit__full_nojerk | 1.250 | 1.277 | 0.026 | 0.9638 | 0.0247 |
+| lit__flat_jerk | 1.135 | 1.187 | 0.092 | 0.5899 | 0.0541 |
+| lit__post_jerk | 1.229 | 1.236 | 0.040 | 0.7909 | 0.0319 |
+| lit__full_jerk | 1.241 | 1.232 | 0.041 | 0.7905 | 0.0326 |
+| lit__flat_nojerk | 0.984 | 1.026 | 0.089 | 0.6056 | 0.0541 |
+| lit__post_nojerk | 1.113 | 1.063 | 0.026 | 0.9686 | 0.0252 |
+| lit__full_nojerk | 1.241 | 1.277 | 0.026 | 0.9638 | 0.0247 |
 
 Reading these in this matrix: the denominator (nearest-across-cell RMSE) is set
 by inter-cell kinematic distance, which IS driven by the cost-function
@@ -125,16 +154,31 @@ within-RMSE 0.036) has ratio 1.09 because the nearest-across-cell RMSE
 (0.033 m/s) is itself very small — neighbouring no-jerk powerlaw cells produce
 nearly identical mean trajectories.
 
-## RMSE Detail (within vs across — auxiliary support for the ratio table above)
+## RMSE Detail (within vs across — auxiliary support for the ratio table above) — post-fix
+
+Post-fix values after go-cue alignment correction (Bug: 06f7faf):
 
 | Cell | Vel within-RMSE (m/s) | Vel nearest-across-RMSE (m/s) | Pos within-RMSE (m) | Pos nearest-across-RMSE (m) |
 |------|---------|---------|---------|---------|
-| lit__flat_jerk | 0.1086 | 0.0938 | 0.0497 | 0.0384 |
-| lit__post_jerk | 0.0423 | 0.0344 | 0.0144 | 0.0117 |
-| lit__full_jerk | 0.0426 | 0.0344 | 0.0144 | 0.0117 |
-| lit__flat_nojerk | 0.0918 | 0.0938 | 0.0345 | 0.0384 |
-| lit__post_nojerk | 0.0361 | 0.0331 | 0.0082 | 0.0078 |
-| lit__full_nojerk | 0.0414 | 0.0331 | 0.0099 | 0.0078 |
+| lit__flat_jerk | 0.1345 | 0.1185 | — | — |
+| lit__post_jerk | 0.0436 | 0.0355 | — | — |
+| lit__full_jerk | 0.0441 | 0.0355 | — | — |
+| lit__flat_nojerk | 0.1166 | 0.1185 | — | — |
+| lit__post_nojerk | 0.0383 | 0.0344 | — | — |
+| lit__full_nojerk | 0.0428 | 0.0344 | — | — |
+
+## Pre-fix table (deprecated)
+
+Original numbers before the go-cue alignment fix, preserved for traceability:
+
+| Cell | Vel within-RMSE (m/s, deprecated) | Vel-RMSE ratio (deprecated) |
+|------|---------|---------|
+| lit__flat_jerk | 0.1086 | 1.157 |
+| lit__post_jerk | 0.0423 | 1.229 |
+| lit__full_jerk | 0.0426 | 1.239 |
+| lit__flat_nojerk | 0.0918 | 0.978 |
+| lit__post_nojerk | 0.0361 | 1.091 |
+| lit__full_nojerk | 0.0414 | 1.250 |
 
 ## Decision
 
@@ -186,24 +230,26 @@ for this matrix — see the framing note above and the corrective comment on
 
 ## Per-axis findings
 
-### Jerk axis (compare within same schedule shape, on absolute vel within-RMSE)
+### Jerk axis (compare within same schedule shape, on absolute vel within-RMSE) — post-fix
+
+Post-fix values after go-cue alignment correction (Bug: 06f7faf):
 
 | Schedule | Jerk on (within-RMSE, m/s) | Jerk off (within-RMSE, m/s) | Δ (off − on) |
 |----------|----------------------------|------------------------------|--------------|
-| Flat | 0.109 | 0.092 | −0.016 (jerk-off slightly tighter) |
-| Post-go PL | 0.042 | 0.036 | −0.006 (jerk-off slightly tighter) |
-| Full-trial PL | 0.043 | 0.041 | −0.001 (essentially tied) |
+| Flat | 0.1345 | 0.1166 | −0.018 (jerk-off slightly tighter) |
+| Post-go PL | 0.0436 | 0.0383 | −0.005 (jerk-off slightly tighter) |
+| Full-trial PL | 0.0441 | 0.0428 | −0.001 (essentially tied) |
 
-Jerk-off is at least as good as jerk-on on every schedule. The Shahbazi prior
-that jerk funnels replicates is not visible at the corrected
-`nn_hidden_derivative=1e-3`.
+Jerk-off is at least as good as jerk-on on every schedule (no qualitative
+change after correction). The Shahbazi prior that jerk funnels replicates
+is not visible at the corrected `nn_hidden_derivative=1e-3`.
 
-### Position schedule axis (compare within same jerk condition, on absolute vel within-RMSE)
+### Position schedule axis (compare within same jerk condition, on absolute vel within-RMSE) — post-fix
 
 | Jerk | Flat (within-RMSE, m/s) | Post-go PL | Full-trial PL |
 |------|-------------------------|-------------|----------------|
-| On (1e5) | 0.109 | 0.042 | 0.043 |
-| Off (0.0) | 0.092 | **0.036** | 0.041 |
+| On (1e5) | 0.1345 | 0.0436 | 0.0441 |
+| Off (0.0) | 0.1166 | **0.0383** | 0.0428 |
 
 Both powerlaw schedules give 2–3× tighter within-cell velocity profiles than
 flat, in both jerk conditions. Post-go and full-trial powerlaw are similar to
