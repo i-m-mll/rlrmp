@@ -3,7 +3,8 @@
 You will be given three main materials:
 
 1. `external_review_packet.md`, a methodological brief summarizing the current
-   rlrmp plan around issue `0b1f109`.
+   rlrmp plan for connecting cs2019's induced-robustness finding to trained
+   recurrent neural controllers.
 2. `/Users/mll/Documents/Claude/Projects/clench/synthesis-5.md`, a broader
    theoretical and motivational backdrop for the project.
 3. `/Users/mll/Main/10 Projects/10 PhD/cs2019.pdf`, the motor-control paper most
@@ -33,8 +34,8 @@ Treatment of `synthesis-5.md`:
   plan.
 - Please separately flag any mathematical errors, conceptual confusions, or
   overclaims in `synthesis-5.md`.
-- If anything in `synthesis-5.md` is cross-cutting with the `0b1f109` plan, please
-  surface that connection in the main review.
+- If anything in `synthesis-5.md` is cross-cutting with the methodological plan,
+  please surface that connection in the main review.
 
 Useful response structure, if it fits your analysis:
 
@@ -42,7 +43,8 @@ Useful response structure, if it fits your analysis:
 2. Best-case interpretation of what the plan is trying to test.
 3. Major formal or methodological risks.
 4. Whether the cs2019-to-RNN mapping is well-posed.
-5. Whether the curl-field versus broad-epsilon contrast is the right comparison.
+5. Whether the restricted-field versus broad-epsilon contrast is the right
+   comparison.
 6. Whether the linear same-game gate is sufficient and properly specified.
 7. Suggested modifications or alternative decisive experiments.
 8. Separate notes on `synthesis-5.md`.
