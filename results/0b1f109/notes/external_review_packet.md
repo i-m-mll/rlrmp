@@ -2,18 +2,17 @@
 
 Date: 2026-05-25
 
-Primary issue: `0b1f109` - "Synthesis: bridging cs2019 induction to RNN training methods"
-
 Companion materials expected for review:
 
 - `/Users/mll/Documents/Claude/Projects/clench/synthesis-5.md`
 - `/Users/mll/Main/10 Projects/10 PhD/cs2019.pdf`
 - Optional source-code access to `rlrmp` and `feedbax`
 
-This packet summarizes the current rlrmp plan that grew out of issue `0b1f109`.
-It is meant to support an external conceptual, formal, and methodological review.
-It is not intended to absorb the separate `synthesis-5.md` backdrop, and it is not
-an implementation ticket. The goal is to represent the plan as it currently stands
+This packet summarizes the current rlrmp plan for connecting cs2019's
+induced-robustness finding to trained recurrent neural controllers. It is meant to
+support an external conceptual, formal, and methodological review. It is not
+intended to absorb the separate `synthesis-5.md` backdrop, and it is not an
+implementation ticket. The goal is to represent the plan as it currently stands
 and make its assumptions, intended comparisons, and possible weak points explicit.
 
 ## Executive Summary
@@ -34,23 +33,23 @@ velocity increase seen in cs2019.
 
 The current plan is:
 
-1. Treat `0b1f109` as the canonical synthesis and brainstorming home.
-2. First certify the broad epsilon H-infinity training game against a known
+1. First certify the broad epsilon H-infinity training game against a known
    analytical target, using a linear regulator round-trip gate.
-3. Only after the linear gate succeeds, train a GRU under the same broad epsilon
+2. Only after the linear gate succeeds, train a GRU under the same broad epsilon
    game and ask whether it couples speed and feedback gain, behaviorally
    dissociates them, partially couples them, or collapses.
-4. Treat curl-field / distributional training as an essential contrast to broad
-   epsilon training, but design that contrast cleanly: same plant, task, cost,
-   architecture, training budget, and evaluation suite, with only the uncertainty
-   class changed.
-5. Bridge gradually from the cs2019-faithful gate to the production delayed-reach
+3. Treat restricted physical-field / distributional training as an essential
+   contrast to broad epsilon training, but design that contrast cleanly: same
+   plant, task, cost, architecture, training budget, and evaluation suite, with
+   only the uncertainty class changed.
+4. Bridge gradually from the cs2019-faithful gate to the production delayed-reach
    setting before doing internal-dynamics interpretability work.
 
 The plan is not claiming that humans explicitly solve the H-infinity game. The more
 cautious framing is that humans may behave as if they have a broad-defense prior or
-policy, while a GRU trained only on narrow curl-field exposure may not acquire that
-broad policy unless the broader adversary class is supplied explicitly.
+policy, while a GRU trained only on a narrower perturbation distribution may not
+acquire that broad policy unless the broader adversary class is supplied
+explicitly.
 
 ## Review Posture
 
@@ -84,13 +83,16 @@ the source of the concrete experimental plan in this packet.
 The most important empirical and formal reference is cs2019. The high-level facts
 used by the current plan are:
 
-- Humans are physically exposed to curl-field-like disturbances on a subset of
-  trials.
+- Humans are physically exposed to restricted physical perturbation fields on a
+  subset of trials. The planning discussion has often abbreviated this as
+  "curl-field exposure," but the human studies should be checked for lateral-field
+  or other field variants before committing to the exact restricted-field
+  baseline.
 - The cs2019 behavioral signature includes both increased movement speed and
   increased feedback gain under uncertainty.
 - The analytical model is a robust-control model that predicts this coupled
   speed/gain signature.
-- The model's disturbance game is broader than a single narrow curl-field
+- The model's disturbance game is broader than any single narrow physical-field
   distribution. In the current rlrmp framing, the relevant game is a free
   time-varying additive epsilon disturbance entering the current physical state,
   with an H-infinity budget.
@@ -100,14 +102,15 @@ This creates a methodological tension:
 - The human experimental perturbation class is narrow and physical.
 - The analytical model's robust disturbance class is broader.
 - The human behavior matches the broad robust model better than a literal narrow
-  "train only on the exact curl distribution" story might suggest.
+  "train only on the exact restricted perturbation distribution" story might
+  suggest.
 
 The current project framing calls this a possible broad-defense prior or
 adversary-class broadening. It should not be taken as proven human
 "generalization" unless the evaluation defines and tests generalization as an
 observable transfer property.
 
-## Current Core Reframe From `0b1f109`
+## Current Core Reframe
 
 The initial worry was that a learned fixed adversary might not really be
 adversarial because the controller and adversary could co-adapt. The synthesis
@@ -135,8 +138,9 @@ about the H-infinity hypothesis.
 
 The plan distinguishes at least four disturbance or uncertainty classes:
 
-- Narrow stochastic curl-field exposure, close to the physical perturbations in
-  cs2019 human experiments.
+- Narrow stochastic physical-field exposure, close to the perturbations used in
+  cs2019 human experiments. Curl fields are the main shorthand used in the current
+  planning discussion, but lateral-field or other variants should be verified.
 - Force-channel perturbations such as Gaussian bumps or fixed force fields.
 - State-multiplicative dynamics perturbations, such as a Delta-A / flavor-B
   adversary.
@@ -156,21 +160,21 @@ The word "decoupling" has been overloaded. The current plan distinguishes:
 - Structural separability: the learned policy internally separates something like
   a feedforward nominal trajectory generator from a local feedback law.
 
-Behavioral dissociation does not prove structural separability. A narrow curl-field
-training objective could produce high feedback gain and flat nominal speed for many
-reasons unrelated to an explicit feedforward/feedback decomposition. Structural
-separability is a later interpretability question, not something established by
-Delta v alone.
+Behavioral dissociation does not prove structural separability. A narrow
+physical-field training objective could produce high feedback gain and flat nominal
+speed for many reasons unrelated to an explicit feedforward/feedback decomposition.
+Structural separability is a later interpretability question, not something
+established by Delta v alone.
 
 ### Model-Matched Versus Human-Protocol-Matched
 
 Broad epsilon training is model-matched to the cs2019 analytical H-infinity
 controller. It is not the literal human-protocol-matched exposure.
 
-Curl-field distributional training is closer to the human experimental perturbation
-class. It is not expected to automatically reproduce the analytical H-infinity
-signature unless the trained controller acquires a broader defense policy than the
-training distribution directly requires.
+Restricted physical-field distributional training is closer to the human
+experimental perturbation class. It is not expected to automatically reproduce the
+analytical H-infinity signature unless the trained controller acquires a broader
+defense policy than the training distribution directly requires.
 
 The contrast between these two training regimes is scientifically meaningful only
 if it is designed cleanly.
@@ -179,7 +183,7 @@ if it is designed cleanly.
 
 A prior rlrmp adversarial training condition using `LinearDynamicsAdversary`
 produced a negative or mixed Delta-v pattern rather than the cs2019-like speed
-increase. The issue thread records a rough interpretation:
+increase. The current planning discussion records a rough interpretation:
 
 - A Delta-A / state-multiplicative adversary applies stronger effective disturbance
   when the state is large.
@@ -192,9 +196,9 @@ This does not make the Delta-A adversary "wrong." It means it is a different
 training method with its own signature. The current plan deprioritizes more
 flavor-B sweeps until the model-matched broad-epsilon game is validated.
 
-The issue thread also notes that group means can be misleading: some trained
-replicates may show different qualitative solutions. Replicate-conditioned
-reporting is therefore part of the plan.
+The current planning discussion also notes that group means can be misleading:
+some trained replicates may show different qualitative solutions.
+Replicate-conditioned reporting is therefore part of the plan.
 
 ## Plan Overview
 
@@ -204,17 +208,15 @@ The current plan has three layers:
    the analytical broad-epsilon H-infinity solution.
 2. A GRU architecture test: train a GRU under the same certified broad-epsilon game
    and observe whether it couples speed and gain.
-3. A bridge-and-contrast program: compare broad-epsilon and curl-field-trained GRUs
-   under matched conditions, then bridge toward the production delayed-reach task
-   where internal-dynamics analysis is meaningful.
+3. A bridge-and-contrast program: compare broad-epsilon and restricted-field-trained
+   GRUs under matched conditions, then bridge toward the production delayed-reach
+   task where internal-dynamics analysis is meaningful.
 
-The gate is first because a curl-field baseline or GRU interpretation is much less
-informative without knowing whether the broad-epsilon machinery can reproduce the
-known analytical game.
+The gate is first because a restricted-field baseline or GRU interpretation is
+much less informative without knowing whether the broad-epsilon machinery can
+reproduce the known analytical game.
 
 ## Phase 0: Tier-0 Audit of Existing Comparisons
-
-Issue: `b6084c7`
 
 Before launching new training, the plan calls for a cheap audit of existing
 controllers and artifacts. The reason is that several numbers have been compared
@@ -271,7 +273,7 @@ The target materialization should include:
 - induced-gain values;
 - the analytical Delta-v signature.
 
-The latest issue comment adds an important practical decision. cs2019's eight
+A later refinement adds an important practical decision. cs2019's eight
 physical-state model includes two disturbance-mediator / integrator states. rlrmp's
 audit suggests those integrator pathways are dynamically inert for the H-infinity
 worst-case solution because direct velocity attack is more efficient. The current
@@ -292,8 +294,6 @@ primary gate. The primary gate keeps delay because delay is part of the cs2019
 reference.
 
 ## Phase 1: Full-State Epsilon Adversary and State Injection
-
-Issue: `020a65b`
 
 The new adversary class is a free time-varying epsilon disturbance rather than a
 fixed Delta-A matrix. The intended high-level properties are:
@@ -409,19 +409,22 @@ interesting path is to identify real constraints that might suppress decoupling 
 human motor control, such as nonlinear damping, two-link arm dynamics, muscle
 activation, or delay/biomechanical coupling.
 
-## Curl-Field / Distributional Contrast
+## Restricted-Field / Distributional Contrast
 
-The issue thread later adds an important framing from critique: humans were exposed
-to curl fields, not directly to full-state epsilon disturbances. Therefore the
-broad-epsilon GRU is not the human-protocol-matched condition. It is the
-model-matched broad-class condition.
+Later critique adds an important framing: humans were exposed to restricted
+physical perturbation fields, not directly to full-state epsilon disturbances.
+The planning discussion has often abbreviated these restricted perturbations as
+curl fields, but cs2019 should be checked for lateral fields or other physical-field
+conditions before choosing the exact baseline. Therefore the broad-epsilon GRU is
+not the human-protocol-matched condition. It is the model-matched broad-class
+condition.
 
-A curl-field-trained GRU is therefore an essential contrast. Its role is to ask:
-what does broadening the uncertainty class buy, holding everything else fixed?
+A restricted-field-trained GRU is therefore an essential contrast. Its role is to
+ask: what does broadening the uncertainty class buy, holding everything else fixed?
 
 The clean contrast should not be:
 
-- curl-field GRU on the production delayed-reach task;
+- restricted-field GRU on the production delayed-reach task;
 - versus epsilon GRU on the cs2019-faithful movement-only gate.
 
 That comparison would confound adversary class with plant, task, cost, delay,
@@ -435,20 +438,25 @@ The cleaner contrast should be:
 - same architecture;
 - same training budget;
 - same evaluation suite;
-- uncertainty class changed: curl-field / distributional exposure versus broad
-  full-state epsilon exposure.
+- uncertainty class changed: restricted physical-field / distributional exposure
+  versus broad full-state epsilon exposure.
 
-The curl arm should probably be distributional exposure to physical curl fields,
-not necessarily a learned minimax Delta-A adversary, unless the explicit question
-is "what happens if curl fields are made adversarial?"
+The restricted-field arm should probably be distributional exposure to physical
+fields, not necessarily a learned minimax Delta-A adversary, unless the explicit
+question is "what happens if these restricted physical fields are made
+adversarial?" Curl fields alone may be enough for a clean induction test if a
+particular cs2019 experiment uses them as the relevant restricted perturbation
+class. If lateral fields or other field types are important to the human result,
+the baseline may need to include or separately test them.
 
-This contrast is central to the "broad-defense prior" framing. If curl-field
+This contrast is central to the "broad-defense prior" framing. If restricted-field
 training yields gain-only or no-speed behavior, while broad-epsilon training yields
 the coupled cs2019 signature under matched conditions, that supports a narrower
 claim:
 
 > Broad adversary-class training is sufficient to induce the cs2019-like signature
-> in GRUs under this task and objective; curl-distribution training is not.
+> in GRUs under this task and objective; restricted-field distributional training
+> is not.
 
 It would not by itself prove that humans generalize in that exact way. It would
 instead identify what the model needs in order to reproduce the human-like
@@ -520,9 +528,10 @@ The plan currently commits to the following modest claims:
 - Feedback-gain modulation is easier and broader than speed inflation; speed
   inflation is a narrower signature.
 - Broad epsilon training is model-matched to cs2019's analytical controller.
-- Curl-field distributional training is closer to the human perturbation protocol.
-- The contrast between broad-epsilon and curl-field training should be designed
-  cleanly and not interpreted from mismatched task settings.
+- Restricted physical-field distributional training is closer to the human
+  perturbation protocol.
+- The contrast between broad-epsilon and restricted-field training should be
+  designed cleanly and not interpreted from mismatched task settings.
 - Matching the cs2019 Riccati model behaviorally does not prove that humans solve
   or represent the H-infinity game.
 
@@ -538,9 +547,9 @@ The following assumptions are known to matter:
 - The trained adversary may not be worst-case unless held-out searches confirm it.
 - The six-state simplification must be justified by the eight-state equivalence
   demonstration.
-- The curl-field contrast needs a precise protocol: perturbation probability,
-  direction distribution, sign distribution, catch trials, block context, and
-  whether evaluation is on clean, perturbed, or mixed trials.
+- The restricted-field contrast needs a precise protocol: field family, perturbation
+  probability, direction distribution, sign distribution, catch trials, block
+  context, and whether evaluation is on clean, perturbed, or mixed trials.
 - "Generalization" needs an observable definition, likely robustness transfer to
   perturbation families not seen during training.
 - A speed increase can arise from robust control, urgency, cost misspecification,
@@ -561,8 +570,8 @@ of them are the wrong questions, or that a more central issue has been missed.
 5. Is the linear same-game gate sufficient, too strict, or missing a key criterion?
 6. Is the proposed six-state simplification after an eight-state equivalence demo
    methodologically defensible?
-7. Is the curl-field versus broad-epsilon contrast the right operational test of
-   "broad-defense policy" or "adversary-class broadening"?
+7. Is the restricted-field versus broad-epsilon contrast the right operational test
+   of "broad-defense policy" or "adversary-class broadening"?
 8. What would be a cleaner definition of generalization in this setting?
 9. Does the bridge chain add complications in the right order?
 10. Are there alternative experiments that would more decisively separate
@@ -577,30 +586,7 @@ of them are the wrong questions, or that a more central issue has been missed.
     disturbance intervention, the training inner loop, the evaluation metrics, or
     the task construction?
 
-## Appendix A: Issue Lineage
-
-- `0b1f109`: canonical synthesis / brainstorming home for the cs2019-to-RNN
-  robustness plan.
-- `35f64be`: v1 implementation plan. Still open as historical record, but not the
-  final plan.
-- `6f783fa`: richer v2 snapshot. Closed as premature and subsumed back into
-  `0b1f109`; useful for details such as analytical target materialization,
-  multi-criterion gate, and bridge chain.
-- `b6084c7`: Tier-0 audit of existing non-comparable controller comparisons.
-- `020a65b`: full-state epsilon adversary class.
-- `89891ab`: adversary strategy / held-out worst-case verification.
-- `6ec6b19`: cost-schedule sweep; folded into the gate insofar as the cs2019
-  schedule defines the target game.
-- `daa48c8`: bimodal-replicate analysis and cluster-conditioned reporting.
-- `f695729`: broader phase umbrella for regulator-coupling and biomechanical
-  decoupling.
-- `0c95d6b`: later GRU affine decomposition / internal-structure analysis, to be
-  updated so feedback is measured under standardized perturbations.
-- `c723082`: existing LinearDynamicsAdversary / Delta-A flavor-B work.
-- `b399efc`: production movement-ramp warmup schedule work; relevant to later
-  production bridges, not the first cs2019-faithful gate.
-
-## Appendix B: Technical Notes Believed Current
+## Appendix A: Technical Notes Believed Current
 
 These notes are included to avoid confusion. They should not dominate the review
 unless a reviewer thinks they affect the plan's substance.
@@ -619,7 +605,7 @@ unless a reviewer thinks they affect the plan's substance.
 - SISU is not required for the first round-trip gate. It is a later conditioning
   axis if the project wants one network spanning robustness levels.
 
-## Appendix C: What This Packet Does Not Try to Do
+## Appendix B: What This Packet Does Not Try to Do
 
 This packet does not:
 
@@ -632,4 +618,4 @@ This packet does not:
 - claim that broad epsilon training is the literal human experimental protocol.
 
 Its purpose is to make the current plan clear enough that a stronger reviewer can
-critique it without reconstructing the issue thread.
+critique it without reconstructing the internal planning history.
