@@ -34,6 +34,9 @@ Treatment of `synthesis-5.md`:
   plan.
 - Please separately flag any mathematical errors, conceptual confusions, or
   overclaims in `synthesis-5.md`.
+- The methodological packet may reflect later or narrower planning choices than
+  `synthesis-5.md`. If the two documents conflict, do not silently reconcile them;
+  identify the tension and say which version seems better supported.
 - If anything in `synthesis-5.md` is cross-cutting with the methodological plan,
   please surface that connection in the main review.
 
