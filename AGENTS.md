@@ -334,11 +334,11 @@ Out-of-scope for f485c26 (tracked separately on `e75ddd7`): the `1_general.asset
 
 This project uses a small set of long-lived **coordination issues** (label: `coordination`) as decision-tracking surfaces. They are distinct from `umbrella` issues (which bundle a specific phase of work) and from ordinary `feature` / `error` issues (which carry the substantive work). Future agents working in rlrmp must know which coordination issue to comment on when, what to file as a new issue vs. a comment, and how the project keeps these surfaces from becoming a dumping ground.
 
-For git-bug / `mandible issue` command syntax, see the global `~/.Codex/AGENTS.md` **Issue Tracking Commands** convention. This section covers only project-specific coordination protocol.
+For Mandible issue command syntax, see the global `~/.Codex/AGENTS.md` issue-tracking convention. This section covers only project-specific coordination protocol.
 
 ### The four coordination issues
 
-Each coordination issue has the `coordination` label and is project-lifetime (no auto-close, no phase scope).
+Each coordination issue has the `coordination` label and is project-lifetime (no closure-on-merge intent, no phase scope).
 
 | ID | Name | Scope |
 |---|---|---|
@@ -383,8 +383,8 @@ Each coordination issue has the `coordination` label and is project-lifetime (no
 
 Both labels mark issues that don't carry direct work, but they behave differently:
 
-- **`umbrella`** — phase-tied or work-bundle-tied. **May auto-close** when associated commits merge (this is by design — when the bundle is done, the umbrella closes). Example: `b557d4e` (methodology-fix phase umbrella) auto-closed when its synthesis-review commit merged. The phase work continues on its children; the umbrella's job was just to mark the bundle.
-- **`coordination`** — project-spanning decision-tracking surface. **Never auto-closes** — Mandible's commit hook explicitly skips auto-close for `coordination`-labeled issues (implemented in mandible commit `34e6e9c`). These persist for the project's lifetime.
+- **`umbrella`** — phase-tied or work-bundle-tied. **May close deliberately** when the bundle is done, via an auth request `--closes-issue` field, explicit `Closes:` / `Resolves:` trailer, or user action. Example: `b557d4e` (methodology-fix phase umbrella) closed when its synthesis-review work merged. The phase work continues on its children; the umbrella's job was just to mark the bundle.
+- **`coordination`** — project-spanning decision-tracking surface. **Should not close on merge** and should not be referenced as the completed work unit in `Bug:` trailers. These persist for the project's lifetime.
 
 **Decision rule:** "Should this issue close when the work it tracks merges?" — Yes → `umbrella`. No → `coordination`.
 
@@ -427,7 +427,7 @@ When the table doesn't cover your case: ask "is this a project-lifetime decision
 
 ### Commit `Bug:` trailers — never reference coordination issues
 
-Even though Mandible's auto-close hook now skips `coordination`-labeled issues (`34e6e9c`), **the convention remains: do not reference coordination issues in commit `Bug:` trailers.** Trailers are for the relevant child / feature / bug issue — the unit of work the commit completes. Coordination issues are decision-tracking surfaces, not commit destinations. The auto-close skip is a safety net, not a green light.
+Even though `Bug:` trailers are reference links rather than closure signals, **the convention remains: do not reference coordination issues in commit `Bug:` trailers.** Trailers are for the relevant child / feature / bug issue — the unit of work the commit completes. Coordination issues are decision-tracking surfaces, not commit destinations.
 
 This means `agent-commit --issue <id>` should always take a child / feature / bug issue ID, never `4d38c15` / `c99ad9d` / `b33e8da` / `1d9ae6f`.
 
@@ -437,7 +437,7 @@ When starting a new phase or work-bundle:
 
 1. **Create a phase umbrella** — a new issue labeled `umbrella` (and `feature` if appropriate). Body: minimal — motivating question, scope, links to phase artifacts (e.g. a `results/<exp>/README.md`).
 2. **Comment on `b33e8da`** with the phase umbrella ID + one-line motivating question. This is what makes `b33e8da` a discovery surface for "what umbrellas are active right now."
-3. **Children of the phase umbrella** reference the umbrella in **their bodies** (e.g. "Part of phase `b557d4e`."), not in their commit `Bug:` trailers. Their trailers reference themselves or their sub-features. The umbrella may auto-close when one of its children merges with a `Bug:` trailer pointing at the umbrella — that is fine and expected; the comment thread on `b33e8da` carries the live phase state regardless.
+3. **Children of the phase umbrella** reference the umbrella in **their bodies** (e.g. "Part of phase `b557d4e`."), not in their commit `Bug:` trailers. Their trailers reference themselves or their sub-features. Close the umbrella only deliberately when the phase is done; the comment thread on `b33e8da` carries the live phase state regardless.
 4. **On phase end / pivot / abandonment**, comment on `b33e8da` with the outcome (one line: "merged via X", "pivoted to Y", "abandoned because Z").
 
 Past phases for orientation (see `b33e8da` comment thread for the live inventory): Part 1 (`297260c`), Part 2 (`0af472c`), Part 2.5 (`844ef95`), Methodology-fix (`b557d4e`, currently active).
@@ -457,7 +457,7 @@ The protocol followed:
 
 - **Don't comment tier opinions on individual analysis issues.** Tier shifts are cross-cutting; they go on `4d38c15`. Polluting the analysis issue's thread with tier debate makes the analysis issue harder to use as a working ledger.
 - **Don't put long-form discussion in coordination issue bodies.** Bodies are tables of contents. Discussion goes in comments (timestamped, threaded) or on the relevant child issue.
-- **Don't reference `coordination`-labeled issues in commit `Bug:` trailers.** Use the child / feature / bug issue. The auto-close skip is a safety net, not a substitute for convention.
+- **Don't reference `coordination`-labeled issues in commit `Bug:` trailers.** Use the child / feature / bug issue. `Bug:` is a reference link, and the convention keeps coordination issues out of ordinary commit destinations.
 - **Don't create a new coordination issue when an existing one's scope covers the concern.** Comment on the existing one. New coordination issues are project-lifetime commitments — adding one is a structural change that should be discussed first.
 - **Don't paste subagent output or raw analysis into a coord body.** Move it to the child issue (or to a `results/<exp>/` doc) and replace with a one-line cross-ref.
 - **Don't index every commit on the coord.** Only commits that change cross-cutting state (a tier, a method choice, a phase boundary) merit a coord comment. Ordinary work-on-a-child does not.
