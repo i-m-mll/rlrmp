@@ -1,0 +1,351 @@
+{
+  "artifact_npz": "_artifacts/a7dad8a/adversary_equivalence/adversary_equivalence.npz",
+  "artifact_npz_keys": [
+    "open_loop_200_epsilon",
+    "open_loop_200_u",
+    "open_loop_200_x",
+    "open_loop_50_epsilon",
+    "open_loop_50_u",
+    "open_loop_50_x",
+    "open_loop_800_epsilon",
+    "open_loop_800_u",
+    "open_loop_800_x",
+    "riccati_F_policy",
+    "riccati_epsilon",
+    "riccati_u",
+    "riccati_x"
+  ],
+  "budget": 5.615094989314044e-06,
+  "budget_l2": 0.0023696191654597252,
+  "game_card_issue": "cb98e58",
+  "game_card_summary": {
+    "cost": {
+      "R": "I_2",
+      "fact_t": "((t + 1) / T)^6, capped at 1",
+      "force_and_integrator_weight": "1.0",
+      "position_weight": "fact_t * 1e6",
+      "schedule": "C&S Eq. 15 physical 8-state schedule with 5-step delay distribution",
+      "velocity_weight": "fact_t * 1e5"
+    },
+    "diagnostic_gamma_factor": 1.5,
+    "epsilon_metric": {
+      "dt_scaled": false,
+      "norm": "sum_t ||epsilon_t||_2^2 over the 8 physical epsilon coordinates",
+      "note": "Gamma is an H-infinity attenuation parameter, not an epsilon budget. Any PGD budget must be derived explicitly from a realized Riccati epsilon sequence and treated as an open-loop surrogate budget."
+    },
+    "frontier": [
+      {
+        "closed_loop_epsilon_energy": 5.615094989314044e-06,
+        "closed_loop_epsilon_l2": 0.0023696191654597252,
+        "delta_v_percent": 7.487741449616711,
+        "epsilon_on_nominal_energy": 2.5299496451124823e-06,
+        "epsilon_on_nominal_l2": 0.0015905815430566526,
+        "factor": 1.05,
+        "factor_key": "1p05",
+        "gamma": 9493.516117275487,
+        "hinf_peak_forward_velocity": 0.7709338997192813,
+        "nominal_total_cost": 4507.444127385286,
+        "terminal_position_error_m": 7.070682797671043e-06,
+        "time_to_peak_step": 16,
+        "worst_case_h_infinity_objective": 4730.069808050793,
+        "worst_case_total_cost_without_penalty": 5236.14062216855
+      }
+    ],
+    "gamma_star": 9041.44392121475,
+    "issue": "cb98e58",
+    "lqr": {
+      "peak_forward_velocity": 0.7172296015547458,
+      "terminal_position_error_m": 0.0030967011901701963,
+      "time_to_peak_step": 16,
+      "total_cost": 4288.752027096607
+    },
+    "plant": {
+      "bw_contract": "top physical 8x8 block is identity; lag rows are zero",
+      "bw_shape": [
+        48,
+        8
+      ],
+      "damping": 0.1,
+      "delay_steps": 5,
+      "disturbance_dim": 8,
+      "dt": 0.01,
+      "mass": 1.0,
+      "name": "cs_faithful_pointmass",
+      "physical_state_dim": 8,
+      "state_dim": 48,
+      "state_order": [
+        "px",
+        "py",
+        "vx",
+        "vy",
+        "fx",
+        "fy",
+        "eps_x_int",
+        "eps_y_int",
+        "lag1_px",
+        "...",
+        "lag5_eps_y_int"
+      ],
+      "tau": 0.066
+    },
+    "primary_gamma_factor": 1.05,
+    "regeneration_command": "PYTHONPATH=src python scripts/materialize_analytical_game_card.py",
+    "task": {
+      "duration_s": 0.6,
+      "hold_free": true,
+      "horizon_steps": 60,
+      "init_pos_m": [
+        0.0,
+        0.0
+      ],
+      "single_reach": true,
+      "target_pos_m": [
+        0.15,
+        0.0
+      ]
+    },
+    "umbrella": "43e8728"
+  },
+  "gamma": 9493.516117275487,
+  "gamma_factor": 1.05,
+  "issue": "a7dad8a",
+  "open_loop": [
+    {
+      "best_cost": {
+        "control_stage": 2057.537306675728,
+        "disturbance_energy": 5.615094989314044e-06,
+        "h_infinity_objective": 4730.069808050793,
+        "state_stage": 3161.9201865766795,
+        "terminal_state": 16.683128916143065,
+        "total_without_disturbance_penalty": 5236.14062216855
+      },
+      "best_energies": [
+        5.615094989314044e-06,
+        5.6150949893140436e-06,
+        5.615094989314043e-06,
+        5.6150949893140436e-06,
+        5.615094989314045e-06,
+        5.6150949893140436e-06,
+        5.6150949893140436e-06,
+        5.615094989314045e-06
+      ],
+      "best_objectives": [
+        5236.140622168554,
+        4745.783212949505,
+        4752.422343969162,
+        4735.868734738503,
+        4752.8854070683565,
+        4738.133475972033,
+        4747.947187297522,
+        4751.03794109919
+      ],
+      "best_peak_forward_velocity": 0.7924621769867776,
+      "best_restart_idx": 0,
+      "best_terminal_position_error_m": 0.004659039768253,
+      "best_time_to_peak_step": 16,
+      "epsilon_l2_distance_to_riccati": 0.0,
+      "final_energies": [
+        5.615094989314045e-06,
+        5.615094989314043e-06,
+        5.615094989314045e-06,
+        5.6150949893140436e-06,
+        5.615094989314043e-06,
+        5.615094989314048e-06,
+        5.615094989314044e-06,
+        5.615094989314045e-06
+      ],
+      "final_objectives": [
+        4797.702027608722,
+        4729.078783849447,
+        4739.48225446894,
+        4726.967244385377,
+        4742.2407005842015,
+        4723.766302621953,
+        4736.8193061901675,
+        4742.244121191008
+      ],
+      "initial_objectives": [
+        5236.14062216855,
+        4494.966310391721,
+        4530.378256648423,
+        4492.052329468494,
+        4484.117670269212,
+        4508.716393368148,
+        4527.361622570808,
+        4510.217525237393
+      ],
+      "learning_rate": 0.03,
+      "n_restarts": 8,
+      "n_steps": 50,
+      "seed": 0,
+      "total_cost_minus_riccati": 0.0,
+      "total_cost_ratio_to_riccati": 1.0
+    },
+    {
+      "best_cost": {
+        "control_stage": 2057.537306675728,
+        "disturbance_energy": 5.615094989314044e-06,
+        "h_infinity_objective": 4730.069808050793,
+        "state_stage": 3161.9201865766795,
+        "terminal_state": 16.683128916143065,
+        "total_without_disturbance_penalty": 5236.14062216855
+      },
+      "best_energies": [
+        5.615094989314044e-06,
+        5.615094989314044e-06,
+        5.6150949893140436e-06,
+        5.6150949893140436e-06,
+        5.615094989314049e-06,
+        5.615094989314048e-06,
+        5.615094989314047e-06,
+        5.615094989314044e-06
+      ],
+      "best_objectives": [
+        5236.140622168554,
+        4749.542356344071,
+        4754.3080375931795,
+        4753.477656887755,
+        4742.867866691514,
+        4733.970367612199,
+        4765.277635027345,
+        4752.567688214973
+      ],
+      "best_peak_forward_velocity": 0.7924621769867776,
+      "best_restart_idx": 0,
+      "best_terminal_position_error_m": 0.004659039768253,
+      "best_time_to_peak_step": 16,
+      "epsilon_l2_distance_to_riccati": 0.0,
+      "final_energies": [
+        5.615094989314042e-06,
+        5.615094989314046e-06,
+        5.61509498931404e-06,
+        5.6150949893140436e-06,
+        5.615094989314044e-06,
+        5.615094989314049e-06,
+        5.615094989314052e-06,
+        5.615094989314041e-06
+      ],
+      "final_objectives": [
+        4796.855599501816,
+        4738.350523933552,
+        4738.193512001799,
+        4753.477656887755,
+        4710.6751302066905,
+        4724.241848734115,
+        4764.815530995186,
+        4752.544359973398
+      ],
+      "initial_objectives": [
+        5236.14062216855,
+        4523.802422987102,
+        4560.353671345862,
+        4509.195079629976,
+        4490.529384830138,
+        4513.062148990951,
+        4557.336681544133,
+        4497.104199421112
+      ],
+      "learning_rate": 0.03,
+      "n_restarts": 8,
+      "n_steps": 200,
+      "seed": 1009,
+      "total_cost_minus_riccati": 0.0,
+      "total_cost_ratio_to_riccati": 1.0
+    },
+    {
+      "best_cost": {
+        "control_stage": 2057.537306675728,
+        "disturbance_energy": 5.615094989314044e-06,
+        "h_infinity_objective": 4730.069808050793,
+        "state_stage": 3161.9201865766795,
+        "terminal_state": 16.683128916143065,
+        "total_without_disturbance_penalty": 5236.14062216855
+      },
+      "best_energies": [
+        5.615094989314044e-06,
+        5.615094989314047e-06,
+        5.615094989314045e-06,
+        5.615094989314042e-06,
+        5.615094989314048e-06,
+        5.615094989314047e-06,
+        5.615094989314049e-06,
+        5.615094989314047e-06
+      ],
+      "best_objectives": [
+        5236.140622168554,
+        4767.8159634097165,
+        4753.323887141164,
+        4763.165157015863,
+        4769.224457077761,
+        4754.187018518184,
+        4750.585003359981,
+        4755.155073704159
+      ],
+      "best_peak_forward_velocity": 0.7924621769867776,
+      "best_restart_idx": 0,
+      "best_terminal_position_error_m": 0.004659039768253,
+      "best_time_to_peak_step": 16,
+      "epsilon_l2_distance_to_riccati": 0.0,
+      "final_energies": [
+        5.615094989314047e-06,
+        5.615094989314046e-06,
+        5.6150949893140436e-06,
+        5.615094989314049e-06,
+        5.6150949893140436e-06,
+        5.615094989314046e-06,
+        5.615094989314047e-06,
+        5.615094989314046e-06
+      ],
+      "final_objectives": [
+        4811.050876754654,
+        4762.742756498929,
+        4709.590324089256,
+        4749.569573220977,
+        4731.62891268983,
+        4718.4699655373415,
+        4744.870716807685,
+        4723.4991846006105
+      ],
+      "initial_objectives": [
+        5236.14062216855,
+        4476.3527757166585,
+        4531.330227725231,
+        4514.064490585917,
+        4487.702624103517,
+        4536.164083840703,
+        4515.538830887934,
+        4466.56060631649
+      ],
+      "learning_rate": 0.03,
+      "n_restarts": 8,
+      "n_steps": 800,
+      "seed": 2018,
+      "total_cost_minus_riccati": 0.0,
+      "total_cost_ratio_to_riccati": 1.0
+    }
+  ],
+  "predeclared_tolerances": {
+    "deterministic_replay_atol": 1e-11,
+    "deterministic_replay_rtol": 1e-09,
+    "equivalence_relative_tolerance": 0.01,
+    "pgd_convergence_relative_improvement": 0.001,
+    "restart_stability_top3_relative_span": 0.002
+  },
+  "primary_gamma_factor": 1.05,
+  "riccati_feedback": {
+    "cost": {
+      "control_stage": 2057.537306675728,
+      "disturbance_energy": 5.615094989314044e-06,
+      "h_infinity_objective": 4730.069808050793,
+      "state_stage": 3161.9201865766795,
+      "terminal_state": 16.683128916143065,
+      "total_without_disturbance_penalty": 5236.14062216855
+    },
+    "peak_forward_velocity": 0.7924621769867776,
+    "terminal_position_error_m": 0.004659039768253,
+    "time_to_peak_step": 16
+  },
+  "tracked_manifest": "results/a7dad8a/notes/adversary_equivalence_manifest.json",
+  "tracked_note": "results/a7dad8a/notes/adversary_equivalence.md",
+  "umbrella": "43e8728"
+}
