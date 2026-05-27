@@ -57,7 +57,6 @@ from feedbax.training.train import (
     make_delayed_cosine_schedule,
     train_pair,
 )
-from feedbax.types import TreeNamespace, dict_to_namespace
 from feedbax.intervene import TimeSeriesParam
 
 from rlrmp.adversarial_training import (
@@ -68,6 +67,10 @@ from rlrmp.adversary import GaussianBumpAdversary, LinearDynamicsAdversary
 from rlrmp.intervention_compat import (
     swap_plant_intervenor_to_dynamics_matrix,
     swap_task_intervention_to_dynamics_matrix,
+)
+from rlrmp.feedbax_graph import (
+    build_rlrmp_feedbax_graph_bundle,
+    write_graph_spec_bundle,
 )
 from rlrmp.modules.training.part2 import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
@@ -487,7 +490,6 @@ def _eval_trials_streaming(task, model, trial_specs, keys, loss_func):
         # Build per-step streaming loss closure (single trial, no batch dim)
         streaming_fn = make_streaming_loss_fn(loss_func, trial_spec, model, n_steps)
 
-        checkpoint = getattr(model, 'checkpoint', False)
         _outputs, _final_state, total_loss = run_component(
             model,
             inputs,
@@ -538,17 +540,23 @@ def run_training(args: argparse.Namespace) -> None:
     )
     mkdir_p(spec_dir)
 
+    hps = build_hps(args)
+    graph_bundle = build_rlrmp_feedbax_graph_bundle(hps)
+    graph_path = write_graph_spec_bundle(graph_bundle, spec_dir)
+
     config_dict = {
         **vars(args),
         "git": _get_git_metadata(),
         "gpu_info": _collect_gpu_info(),
+        "feedbax_graph": graph_bundle.to_run_metadata(
+            graph_spec_path=graph_path.name,
+        ),
     }
     spec_path = spec_dir / "run.json"
     with open(spec_path, "w") as f:
         json.dump(config_dict, f, indent=2, default=str)
     logger.info("Saved run spec to %s", spec_path)
-
-    hps = build_hps(args)
+    logger.info("Saved Feedbax GraphSpec to %s", graph_path)
 
     key = jr.PRNGKey(args.seed)
     key_init, key_warmup, key_adv = jr.split(key, 3)
