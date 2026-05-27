@@ -58,9 +58,7 @@ from rlrmp.analysis.induced_gain import (
     Z_STATE_ERROR,
     _ltv_forward_sweep,
     induced_gain,
-    induced_gain_hamiltonian,
     induced_gain_power_iteration,
-    linearise_fixed_point,
     linearise_trajectory,
     lti_controller,
 )
@@ -612,9 +610,8 @@ def test_feedbax_graph_controller_smoke():
     ``initial_state`` and ``step`` produce the expected output and that the
     flat-state shape is consistent.
     """
-    import equinox as eqx
-    from equinox.nn import State, StateIndex
-    from feedbax.graph import Component, Graph, Wire, init_state_from_component
+    from equinox.nn import StateIndex
+    from feedbax.graph import Component, Graph
 
     from rlrmp.analysis.induced_gain import feedbax_graph_controller
 
@@ -688,9 +685,8 @@ def test_feedbax_graph_controller_cyclic_smoke():
       * augmented ``h`` is wider than just the network State (carries cycle).
       * three chained ``step`` calls run without error.
     """
-    import equinox as eqx
-    from equinox.nn import State, StateIndex
-    from feedbax.graph import Component, Graph, Wire, init_state_from_component
+    from equinox.nn import StateIndex
+    from feedbax.graph import Component, Graph, Wire
 
     from rlrmp.analysis.induced_gain import feedbax_graph_controller
 
@@ -743,7 +739,7 @@ def test_feedbax_graph_controller_cyclic_smoke():
         nodes={"a": a, "d": d},
         wires=(
             Wire("a", "y", "d", "x"),  # forward: a's output feeds delay
-            Wire("d", "y", "a", "h_in"),  # back-edge: delayed output -> a
+            Wire("d", "y", "a", "h_in", temporality="recurrent"),  # delayed back-edge
         ),
         input_ports=("input",),
         output_ports=("output",),
