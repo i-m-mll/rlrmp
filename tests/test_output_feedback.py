@@ -11,14 +11,21 @@ from rlrmp.analysis.output_feedback import (
     TARGET_POS,
     OutputFeedbackConfig,
     delayed_observation_matrix,
+    exact_output_feedback_adversary_audit,
+    kalman_estimator_joint_matrices,
     make_cs_output_feedback_initial_state,
+    output_feedback_cost,
+    output_feedback_lqr_bellman_objective,
     robust_estimator_covariances,
     robust_estimator_fixed_adversary_policy,
+    robust_estimator_joint_matrices,
     robust_output_feedback_gains,
     rollout_with_kalman_estimator,
     rollout_with_robust_estimator,
     rollout_with_robust_estimator_policy,
+    train_output_feedback_lqr_bellman_controller,
 )
+from rlrmp.analysis.linear_round_trip import LinearTrainingConfig, ensemble_initial_states
 
 
 def test_output_feedback_initial_history_matches_cs_kron() -> None:
@@ -118,3 +125,125 @@ def test_joint_estimator_adversary_policy_is_finite_and_uses_two_state_blocks() 
     assert jnp.all(jnp.isfinite(policy))
     assert rollout.epsilon.shape == (reference.schedule.T, reference.plant.m_w)
     assert float(jnp.sum(rollout.epsilon**2)) > 0.0
+
+
+def test_kalman_joint_matrices_reproduce_rollout_for_nonzero_epsilon() -> None:
+    reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
+    x0 = make_cs_output_feedback_initial_state(reference.plant)
+    epsilon = jnp.ones((reference.schedule.T, reference.plant.m_w), dtype=jnp.float64) * 1e-5
+    rollout = rollout_with_kalman_estimator(
+        reference.plant,
+        reference.lqr_solution.K,
+        x0,
+        epsilon,
+    )
+    A_joint, G_joint = kalman_estimator_joint_matrices(
+        reference.plant,
+        reference.lqr_solution.K,
+    )
+    z = jnp.concatenate([x0, x0], axis=0)
+    zs = [z]
+    for t in range(reference.schedule.T):
+        z = A_joint[t] @ z + G_joint @ epsilon[t]
+        zs.append(z)
+    z_stack = jnp.stack(zs, axis=0)
+
+    assert jnp.allclose(z_stack[:, : reference.plant.n], rollout.x)
+    assert jnp.allclose(z_stack[:, reference.plant.n :], rollout.x_hat)
+
+
+def test_robust_joint_matrices_reproduce_rollout_for_nonzero_epsilon() -> None:
+    reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
+    gamma_ref = reference.gamma_references[0]
+    x0 = make_cs_output_feedback_initial_state(reference.plant)
+    covs = robust_estimator_covariances(
+        reference.plant,
+        reference.schedule,
+        gamma_ref.gamma,
+    )
+    gains = robust_output_feedback_gains(
+        reference.plant,
+        reference.schedule,
+        gamma_ref.solution,
+        covs,
+    )
+    epsilon = jnp.ones((reference.schedule.T, reference.plant.m_w), dtype=jnp.float64) * 1e-5
+    rollout = rollout_with_robust_estimator(
+        reference.plant,
+        reference.schedule,
+        gamma_ref.solution,
+        x0,
+        epsilon,
+        gains=gains,
+    )
+    A_joint, G_joint = robust_estimator_joint_matrices(
+        reference.plant,
+        reference.schedule,
+        gamma_ref.solution,
+        gains,
+        covs,
+    )
+    z = jnp.concatenate([x0, x0], axis=0)
+    zs = [z]
+    for t in range(reference.schedule.T):
+        z = A_joint[t] @ z + G_joint @ epsilon[t]
+        zs.append(z)
+    z_stack = jnp.stack(zs, axis=0)
+
+    assert jnp.allclose(z_stack[:, : reference.plant.n], rollout.x)
+    assert jnp.allclose(z_stack[:, reference.plant.n :], rollout.x_hat)
+
+
+def test_exact_output_feedback_audit_matches_rollout_and_uses_budget() -> None:
+    reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
+    x0 = make_cs_output_feedback_initial_state(reference.plant)
+    audit = exact_output_feedback_adversary_audit(
+        label="lqr_smoke",
+        plant=reference.plant,
+        schedule=reference.schedule,
+        controller_gains=reference.lqr_solution.K,
+        x0=x0,
+        budget=1e-8,
+        estimator_kind="kalman",
+    )
+    rollout_cost = output_feedback_cost(reference.schedule, audit["rollout"])
+
+    assert audit["boundary_active"]
+    assert jnp.isclose(audit["epsilon_energy"], 1e-8, rtol=1e-8, atol=1e-12)
+    assert abs(audit["quadratic_total"] - rollout_cost.total_without_disturbance_penalty) < 1e-6
+
+
+def test_output_feedback_bellman_objective_prefers_reference_to_zero() -> None:
+    reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
+    K_ref = reference.lqr_solution.K
+    states, weights = ensemble_initial_states(
+        reference.plant,
+        LinearTrainingConfig(n_random_states=4),
+    )
+    reference_objective = output_feedback_lqr_bellman_objective(
+        reference.plant,
+        reference.schedule,
+        reference.lqr_solution.P[1:],
+        K_ref,
+        states,
+        weights,
+    )
+    zero_objective = output_feedback_lqr_bellman_objective(
+        reference.plant,
+        reference.schedule,
+        reference.lqr_solution.P[1:],
+        jnp.zeros_like(K_ref),
+        states,
+        weights,
+    )
+
+    assert reference_objective < zero_objective
+
+
+def test_output_feedback_bellman_training_recovers_lqr_gain_smoke() -> None:
+    reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
+    result = train_output_feedback_lqr_bellman_controller(reference)
+
+    assert result.label == "of_bellman_lbfgsb_lqr_fit"
+    assert result.best_objective / result.reference_objective < 1.000001
+    assert result.gain_relative_error < 1e-3
