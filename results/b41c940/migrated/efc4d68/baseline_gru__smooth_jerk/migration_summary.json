@@ -1,0 +1,23 @@
+{
+  "array_count": 44,
+  "array_store": "_artifacts/b41c940/migrated/efc4d68/baseline_gru__smooth_jerk/model.arrays.npz",
+  "model_artifact_manifest": "results/b41c940/migrated/efc4d68/baseline_gru__smooth_jerk/model.artifact.manifest.json",
+  "run_label": "baseline_gru__smooth_jerk",
+  "schema_version": "rlrmp.feedbax_artifact_migration.v1",
+  "source_checkpoint": "_artifacts/efc4d68/runs/baseline_gru__smooth_jerk/warmup_model.eqx",
+  "source_issue": "efc4d68",
+  "source_run_spec": "results/efc4d68/runs/baseline_gru__smooth_jerk.json",
+  "total_array_nbytes": 2102588,
+  "validation": {
+    "checked_at": "1970-01-01T00:00:00Z",
+    "details": {
+      "array_count": 44,
+      "mismatched_roles": [],
+      "missing_roles": [],
+      "unexpected_roles": []
+    },
+    "name": "array_store_roundtrip",
+    "schema_version": "feedbax.array_store.v1",
+    "status": "passed"
+  }
+}
