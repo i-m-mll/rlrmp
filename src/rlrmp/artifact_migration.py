@@ -17,8 +17,10 @@ from pathlib import Path
 from typing import Any, Iterable, Literal
 
 import equinox as eqx
+import jax.random as jr
 import jax.tree_util as jtu
 import numpy as np
+from feedbax.artifact_materialize import materialize_model_artifact
 from feedbax.artifact_schema import (
     ArrayStoreValidationError,
     array_store_ref,
@@ -43,6 +45,7 @@ from rlrmp.feedbax_graph import (
     build_rlrmp_feedbax_graph_bundle,
     graph_spec_payload,
 )
+from rlrmp.modules.training.part2 import setup_task_model_pair
 from rlrmp.train.minimax import build_hps
 
 
@@ -371,6 +374,55 @@ def validate_array_store_roundtrip(
             "mismatched_roles": mismatched,
         },
     )
+
+
+def load_migrated_model_artifact(
+    manifest_path: Path | str,
+    *,
+    repo_root: Path | str = Path("."),
+    key=None,
+) -> Any:
+    """Load an RLRMP migrated model artifact from its Feedbax manifest.
+
+    The artifacts produced for ``b41c940`` declare the execution backend as
+    ``rlrmp.legacy_simple_feedback_compat``. Rehydration therefore uses the
+    legacy run spec recorded in the manifest to rebuild the executable template,
+    then fills that template from the Feedbax role-addressed array store.
+    """
+
+    root = Path(repo_root)
+    path = Path(manifest_path)
+    if not path.is_absolute():
+        path = root / path
+    manifest = ModelArtifactManifest.model_validate_json(path.read_text(encoding="utf-8"))
+
+    backend = (manifest.graph_spec.metadata or {}).get("execution_backend")
+    if backend != LEGACY_EXECUTION_BACKEND:
+        raise ValueError(
+            f"Unsupported migrated artifact execution backend {backend!r}; "
+            f"expected {LEGACY_EXECUTION_BACKEND!r}."
+        )
+
+    run_spec_parent = _manifest_parent(manifest, "legacy_run_spec")
+    run_spec_path = root / run_spec_parent.uri
+    run_spec = json.loads(run_spec_path.read_text(encoding="utf-8"))
+    hps = build_hps(minimax_args_from_run_spec(run_spec))
+
+    template_key = jr.PRNGKey(0) if key is None else key
+    template = setup_task_model_pair(hps, key=template_key).model
+
+    if manifest.parameter_store is None:
+        raise ValueError(f"Manifest {path} has no parameter_store.")
+    return materialize_model_artifact(path, template, root=root, root_role="model")
+
+
+def _manifest_parent(manifest: ModelArtifactManifest, kind: str) -> ParentRef:
+    matches = [parent for parent in manifest.provenance.parents if parent.kind == kind]
+    if len(matches) != 1:
+        raise ValueError(
+            f"Expected exactly one {kind!r} parent in manifest {manifest.id}; found {len(matches)}."
+        )
+    return matches[0]
 
 
 def _iter_run_specs(root: Path, issue_id: str) -> Iterable[Path]:
