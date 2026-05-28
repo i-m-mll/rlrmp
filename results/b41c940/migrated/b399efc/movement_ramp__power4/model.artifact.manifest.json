@@ -1,0 +1,441 @@
+{
+  "kind": "ModelArtifactManifest",
+  "schema_version": "feedbax.manifest.v1",
+  "id": "rlrmp-model-artifact:b399efc/movement_ramp__power4/model",
+  "created_at": "1970-01-01T00:00:00Z",
+  "feedbax_version": "0.1.2",
+  "provider_version": "feedbax-provider.v1",
+  "status": "completed",
+  "provenance": {
+    "issues": [
+      "b41c940",
+      "b399efc"
+    ],
+    "parents": [
+      {
+        "kind": "legacy_run_spec",
+        "id": "rlrmp-run-spec:b399efc/movement_ramp__power4",
+        "uri": "results/b399efc/runs/movement_ramp__power4/run.json",
+        "metadata": {}
+      },
+      {
+        "kind": "legacy_checkpoint",
+        "id": "rlrmp-eqx:b399efc/movement_ramp__power4/warmup",
+        "uri": "_artifacts/b399efc/runs/movement_ramp__power4/warmup_model.eqx",
+        "metadata": {
+          "format": "feedbax._io.save",
+          "canonical_model_filename": "warmup_model.eqx"
+        }
+      }
+    ],
+    "metadata": {
+      "migration_schema_version": "rlrmp.feedbax_artifact_migration.v1",
+      "run_label": "movement_ramp__power4",
+      "source_issue": "b399efc"
+    }
+  },
+  "artifacts": [],
+  "metadata": {
+    "source_run_spec_digest": "e1c78827c067b8c116ec02ccbc642f9ecdd0dcd17358be7ac1957b35852841ca",
+    "source_checkpoint_digest": "c362d22efe1c9e75680ac5fc4e4807e37ac14eda05266945978152d8979e5dfc",
+    "array_count": 44,
+    "total_array_nbytes": 2102588,
+    "checkpoint_policy": "warmup_model.eqx is the canonical legacy source checkpoint for this migration. The migrated model artifact is model.graph.json plus model.arrays.npz; adversary/intervention artifacts remain provenance because n_adversary_batches=0 for the B-set runs."
+  },
+  "graph_spec": {
+    "kind": "GraphSpec",
+    "inline": {
+      "nodes": {
+        "feedback": {
+          "type": "RLRMPFeedbackChannels",
+          "params": {
+            "where": [
+              "plant.skeleton.pos",
+              "plant.skeleton.vel"
+            ],
+            "delay": 5,
+            "noise_std": 0.01
+          },
+          "input_ports": [
+            "mechanics"
+          ],
+          "output_ports": [
+            "feedback"
+          ]
+        },
+        "net": {
+          "type": "RLRMPSimpleStagedNetwork",
+          "params": {
+            "controller_kind": "gru",
+            "input_size": null,
+            "input_size_source": "SimpleFeedback.get_nn_input_size(task, mechanics, feedback_spec) + n_extra_inputs",
+            "hidden_size": 180,
+            "out_size": 2,
+            "encoding_size": null,
+            "sisu_gating": "additive",
+            "n_extra_inputs": 1,
+            "population_structure": {
+              "n_input_only": 60,
+              "n_readout_only": 60,
+              "n_recurrent_only": 60,
+              "n_input_readout": 0
+            }
+          },
+          "input_ports": [
+            "input",
+            "feedback"
+          ],
+          "output_ports": [
+            "output",
+            "hidden"
+          ]
+        },
+        "efferent": {
+          "type": "Channel",
+          "params": {
+            "delay": 0,
+            "noise_std": 0.01,
+            "add_noise": true,
+            "noise_model": "multiplicative_plus_constant",
+            "constant_noise_scale": 1.8,
+            "input_shape": [
+              2
+            ]
+          },
+          "input_ports": [
+            "input"
+          ],
+          "output_ports": [
+            "output"
+          ]
+        },
+        "mechanics": {
+          "type": "PointMass",
+          "params": {
+            "dt": 0.01,
+            "mass": 1.0,
+            "damping": 10.0
+          },
+          "input_ports": [
+            "force"
+          ],
+          "output_ports": [
+            "effector",
+            "state"
+          ]
+        },
+        "force_filter": {
+          "type": "FirstOrderFilter",
+          "params": {
+            "tau_rise": 0.05,
+            "tau_decay": 0.05,
+            "dt": 0.01,
+            "init_value": 0.0,
+            "input_shape": [
+              2
+            ]
+          },
+          "input_ports": [
+            "input"
+          ],
+          "output_ports": [
+            "output"
+          ]
+        },
+        "plant_intervenor": {
+          "type": "FixedField",
+          "params": {
+            "active": false,
+            "scale": 1.0,
+            "amplitude": 1.0,
+            "field": [
+              0.0,
+              0.0
+            ]
+          },
+          "input_ports": [
+            "force",
+            "params_override"
+          ],
+          "output_ports": [
+            "force"
+          ]
+        }
+      },
+      "wires": [
+        {
+          "source_node": "feedback",
+          "source_port": "feedback",
+          "target_node": "net",
+          "target_port": "feedback",
+          "temporality": "instant"
+        },
+        {
+          "source_node": "net",
+          "source_port": "output",
+          "target_node": "efferent",
+          "target_port": "input",
+          "temporality": "instant"
+        },
+        {
+          "source_node": "mechanics",
+          "source_port": "state",
+          "target_node": "feedback",
+          "target_port": "mechanics",
+          "temporality": "recurrent",
+          "recurrent_initializer": {
+            "kind": "state_output",
+            "scope": "trial",
+            "source": "state_initializer",
+            "state_slot": "mechanics"
+          }
+        },
+        {
+          "source_node": "efferent",
+          "source_port": "output",
+          "target_node": "force_filter",
+          "target_port": "input",
+          "temporality": "instant"
+        },
+        {
+          "source_node": "force_filter",
+          "source_port": "output",
+          "target_node": "plant_intervenor",
+          "target_port": "force",
+          "temporality": "instant"
+        },
+        {
+          "source_node": "plant_intervenor",
+          "source_port": "force",
+          "target_node": "mechanics",
+          "target_port": "force",
+          "temporality": "instant"
+        }
+      ],
+      "input_ports": [
+        "input",
+        "intervene:plant_intervenor"
+      ],
+      "output_ports": [
+        "effector"
+      ],
+      "input_bindings": {
+        "input": [
+          "net",
+          "input"
+        ],
+        "intervene:plant_intervenor": [
+          "plant_intervenor",
+          "params_override"
+        ]
+      },
+      "output_bindings": {
+        "effector": [
+          "mechanics",
+          "effector"
+        ]
+      },
+      "retained_observables": [
+        {
+          "id": "observable:mechanics.effector",
+          "label": "mechanics.effector",
+          "selector": "mechanics.effector",
+          "target": {
+            "kind": "port",
+            "selector": "mechanics.effector",
+            "node_id": "mechanics",
+            "port": "effector",
+            "timing": "output",
+            "metadata": {}
+          },
+          "retention": {
+            "mode": "trajectory",
+            "metadata": {}
+          },
+          "metadata": {}
+        },
+        {
+          "id": "observable:mechanics.state",
+          "label": "mechanics.state",
+          "selector": "mechanics.state",
+          "target": {
+            "kind": "port",
+            "selector": "mechanics.state",
+            "node_id": "mechanics",
+            "port": "state",
+            "timing": "output",
+            "metadata": {}
+          },
+          "retention": {
+            "mode": "trajectory",
+            "metadata": {}
+          },
+          "metadata": {}
+        },
+        {
+          "id": "observable:net.output",
+          "label": "net.output",
+          "selector": "net.output",
+          "target": {
+            "kind": "port",
+            "selector": "net.output",
+            "node_id": "net",
+            "port": "output",
+            "timing": "output",
+            "metadata": {}
+          },
+          "retention": {
+            "mode": "trajectory",
+            "metadata": {}
+          },
+          "metadata": {}
+        },
+        {
+          "id": "observable:net.hidden",
+          "label": "net.hidden",
+          "selector": "net.hidden",
+          "target": {
+            "kind": "port",
+            "selector": "net.hidden",
+            "node_id": "net",
+            "port": "hidden",
+            "timing": "output",
+            "metadata": {}
+          },
+          "retention": {
+            "mode": "trajectory",
+            "metadata": {}
+          },
+          "metadata": {}
+        },
+        {
+          "id": "observable:efferent.output",
+          "label": "efferent.output",
+          "selector": "efferent.output",
+          "target": {
+            "kind": "port",
+            "selector": "efferent.output",
+            "node_id": "efferent",
+            "port": "output",
+            "timing": "output",
+            "metadata": {}
+          },
+          "retention": {
+            "mode": "trajectory",
+            "metadata": {}
+          },
+          "metadata": {}
+        },
+        {
+          "id": "observable:plant_intervenor.force",
+          "label": "plant_intervenor.force",
+          "selector": "plant_intervenor.force",
+          "target": {
+            "kind": "port",
+            "selector": "plant_intervenor.force",
+            "node_id": "plant_intervenor",
+            "port": "force",
+            "timing": "output",
+            "metadata": {}
+          },
+          "retention": {
+            "mode": "trajectory",
+            "metadata": {}
+          },
+          "metadata": {}
+        }
+      ],
+      "metadata": {
+        "name": "RLRMP point-mass sensorimotor loop",
+        "description": "GraphSpec contract for RLRMP minimax training. Executed via legacy SimpleFeedback compatibility until Feedbax worker supports batched/ensembled minimax training.",
+        "created_at": "1970-01-01T00:00:00",
+        "updated_at": "1970-01-01T00:00:00",
+        "version": "rlrmp.feedbax_graph.v1",
+        "tags": [
+          "rlrmp",
+          "feedbax",
+          "graphspec",
+          "minimax"
+        ]
+      }
+    },
+    "ref": "results/b41c940/migrated/b399efc/movement_ramp__power4/model.graph.json",
+    "sha256": "eb404decd6efe5fa2c5eae4aa86c03c51512d10c3b2b1f943773e45ea40e6f54",
+    "metadata": {
+      "rlrmp_graph_schema_version": "rlrmp.feedbax_graph.v1",
+      "execution_backend": "rlrmp.legacy_simple_feedback_compat"
+    }
+  },
+  "parameter_store": {
+    "role": "params",
+    "schema_version": "feedbax.array_store.v1",
+    "storage_backend": "npz.v1",
+    "logical_name": "model.arrays.npz",
+    "artifact_id": "rlrmp-array-store:b399efc/movement_ramp__power4/model",
+    "sha256": "ec8b4fed90990a9f41b71085312dc553618f9e5a77189a7b143dc92dad468a4e",
+    "uri": "_artifacts/b41c940/migrated/b399efc/movement_ramp__power4/model.arrays.npz",
+    "array_count": 44,
+    "roles": [
+      "model.nodes.DisturbanceField.params_index.init.field",
+      "model.nodes.efferent.input_proto",
+      "model.nodes.efferent.state_index.init.noise",
+      "model.nodes.efferent.state_index.init.output",
+      "model.nodes.feedback.channels.input_proto.0000",
+      "model.nodes.feedback.channels.input_proto.0001",
+      "model.nodes.feedback.channels.state_index.init.noise.0000",
+      "model.nodes.feedback.channels.state_index.init.noise.0001",
+      "model.nodes.feedback.channels.state_index.init.output.0000",
+      "model.nodes.feedback.channels.state_index.init.output.0001",
+      "model.nodes.feedback.channels.state_index.init.queue.0000.0000",
+      "model.nodes.feedback.channels.state_index.init.queue.0000.0001",
+      "model.nodes.feedback.channels.state_index.init.queue.0001.0000",
+      "model.nodes.feedback.channels.state_index.init.queue.0001.0001",
+      "model.nodes.feedback.channels.state_index.init.queue.0002.0000",
+      "model.nodes.feedback.channels.state_index.init.queue.0002.0001",
+      "model.nodes.feedback.channels.state_index.init.queue.0003.0000",
+      "model.nodes.feedback.channels.state_index.init.queue.0003.0001",
+      "model.nodes.feedback.channels.state_index.init.queue.0004.0000",
+      "model.nodes.feedback.channels.state_index.init.queue.0004.0001",
+      "model.nodes.force_filter.input_proto",
+      "model.nodes.force_filter.state_index.init.output",
+      "model.nodes.mechanics.state_index.init.effector.force",
+      "model.nodes.mechanics.state_index.init.effector.pos",
+      "model.nodes.mechanics.state_index.init.effector.vel",
+      "model.nodes.mechanics.state_index.init.plant.skeleton.force",
+      "model.nodes.mechanics.state_index.init.plant.skeleton.pos",
+      "model.nodes.mechanics.state_index.init.plant.skeleton.vel",
+      "model.nodes.net.hidden.bias",
+      "model.nodes.net.hidden.bias_n",
+      "model.nodes.net.hidden.weight_hh",
+      "model.nodes.net.hidden.weight_ih",
+      "model.nodes.net.population_structure.input_indices",
+      "model.nodes.net.population_structure.input_only_indices",
+      "model.nodes.net.population_structure.input_readout_indices",
+      "model.nodes.net.population_structure.readout_indices",
+      "model.nodes.net.population_structure.readout_only_indices",
+      "model.nodes.net.population_structure.recurrent_only_indices",
+      "model.nodes.net.readout.linear.bias",
+      "model.nodes.net.readout.linear.weight",
+      "model.nodes.net.readout.mask",
+      "model.nodes.net.state_index.init.hidden",
+      "model.nodes.net.state_index.init.input",
+      "model.nodes.net.state_index.init.output"
+    ],
+    "metadata": {}
+  },
+  "validation_records": [
+    {
+      "name": "array_store_roundtrip",
+      "status": "passed",
+      "checked_at": "1970-01-01T00:00:00Z",
+      "schema_version": "feedbax.array_store.v1",
+      "details": {
+        "array_count": 44,
+        "missing_roles": [],
+        "unexpected_roles": [],
+        "mismatched_roles": []
+      }
+    }
+  ],
+  "migration_records": []
+}
