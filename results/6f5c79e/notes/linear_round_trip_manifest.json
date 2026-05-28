@@ -2,6 +2,14 @@
   "adversary_equivalence_issue": "a7dad8a",
   "artifact_npz": "_artifacts/6f5c79e/linear_round_trip/linear_round_trip.npz",
   "artifact_npz_keys": [
+    "adam_lqr_K",
+    "adam_lqr_fit_clean_u",
+    "adam_lqr_fit_clean_x",
+    "adam_lqr_fit_heldout_epsilon",
+    "adam_lqr_fit_heldout_u",
+    "adam_lqr_fit_heldout_x",
+    "adam_lqr_u",
+    "adam_lqr_x",
     "analytical_hinf_reference_clean_u",
     "analytical_hinf_reference_clean_x",
     "analytical_hinf_reference_heldout_epsilon",
@@ -12,15 +20,15 @@
     "analytical_lqr_reference_heldout_epsilon",
     "analytical_lqr_reference_heldout_u",
     "analytical_lqr_reference_heldout_x",
-    "gradient_lqr_K",
-    "gradient_lqr_fit_clean_u",
-    "gradient_lqr_fit_clean_x",
-    "gradient_lqr_fit_heldout_epsilon",
-    "gradient_lqr_fit_heldout_u",
-    "gradient_lqr_fit_heldout_x",
-    "gradient_lqr_u",
-    "gradient_lqr_x",
     "hinf_reference_K",
+    "lbfgsb_after_adam_lqr_K",
+    "lbfgsb_after_adam_lqr_fit_clean_u",
+    "lbfgsb_after_adam_lqr_fit_clean_x",
+    "lbfgsb_after_adam_lqr_fit_heldout_epsilon",
+    "lbfgsb_after_adam_lqr_fit_heldout_u",
+    "lbfgsb_after_adam_lqr_fit_heldout_x",
+    "lbfgsb_after_adam_lqr_u",
+    "lbfgsb_after_adam_lqr_x",
     "lqr_reference_K",
     "teacher_hinf_K",
     "teacher_hinf_fit_clean_u",
@@ -141,9 +149,62 @@
         "time_to_peak_step": 16,
         "total_cost": 5654.485571424525
       },
-      "label": "gradient_lqr_fit",
+      "label": "adam_lqr_fit",
       "peak_forward_velocity": 0.7275051010968807,
       "terminal_position_error_m": 0.0033697861558782197,
+      "time_to_peak_step": 16
+    },
+    {
+      "clean_cost": 4290.390476927154,
+      "control_effort": 16.84850475888018,
+      "delta_v_percent_vs_lqr_reference": 0.041172149373430514,
+      "gain_relative_error": 0.989122404737048,
+      "heldout": {
+        "best_energies": [
+          5.615094989314046e-06,
+          5.615094989314049e-06,
+          5.615094989314048e-06,
+          5.61509498931405e-06
+        ],
+        "best_objectives": [
+          5257.90219790227,
+          5213.610026588068,
+          5193.485549648493,
+          5266.175047504256
+        ],
+        "best_restart_idx": 3,
+        "disturbance_energy": 5.61509498931405e-06,
+        "final_energies": [
+          5.6150949893140436e-06,
+          5.615094989314042e-06,
+          5.615094989314049e-06,
+          5.6150949893140436e-06
+        ],
+        "final_objectives": [
+          5041.6026795729085,
+          5081.33638466559,
+          5081.760353447354,
+          5085.397599764406
+        ],
+        "h_infinity_objective": 4760.104233386499,
+        "initial_objectives": [
+          4265.610505980033,
+          4303.350404513773,
+          4310.949169730851,
+          4318.626660780949
+        ],
+        "learning_rate": 0.03,
+        "n_restarts": 4,
+        "n_steps": 200,
+        "peak_forward_velocity": 0.7159998862044605,
+        "seed": 1040,
+        "terminal_position_error_m": 0.013018481636394696,
+        "time_to_peak_step": 16,
+        "total_cost": 5266.175047504257
+      },
+      "label": "lbfgsb_after_adam_lqr_fit",
+      "peak_forward_velocity": 0.7175249003976484,
+      "terminal_position_error_m": 0.003096890579838618,
       "time_to_peak_step": 16
     },
     {
@@ -306,31 +367,63 @@
       "time_to_peak_step": 16
     }
   ],
+  "best_objective_training": "lbfgsb_after_adam_lqr_fit",
   "game_card_issue": "cb98e58",
   "gamma": 9493.516117275487,
   "gamma_factor": 1.05,
   "graphspec_execution_conversion_out_of_scope": true,
-  "interpretation": "The analytical replay/audit and teacher-fit representational paths are in place, but naive objective-gradient training of the clean LQR gain did not meet the predeclared gain/objective pass band from zero initialization.",
+  "interpretation": "Adam-warm-started L-BFGS-B recovered the clean LQR objective/behavior gate, but the raw gain tensor remains far from the analytical Riccati gain. Phase 3 is therefore blocked on whether gain-relative-error is the right certificate or whether a structured/identifiable linear policy objective is needed.",
   "issue": "6f5c79e",
-  "lqr_training": {
-    "best_objective": 341.99728939060134,
-    "canonical_clean_cost": 4638.018569571829,
-    "canonical_peak_forward_velocity": 0.7275051010968807,
-    "canonical_terminal_position_error_m": 0.0033697861558782197,
-    "canonical_time_to_peak_step": 16,
-    "final_objective": 341.99728939060134,
-    "gain_relative_error": 0.9896556733114712,
-    "objective_ratio_to_reference": 1.0839927557308597,
-    "reference_objective": 315.49776286098586,
-    "zero_objective": 13326.344322174029
-  },
   "matrix_generalization_out_of_scope": true,
-  "phase3_status": "blocked_on_optimizer",
+  "objective_trainings": {
+    "adam_lqr_fit": {
+      "best_objective": 341.99728939060134,
+      "canonical_clean_cost": 4638.018569571829,
+      "canonical_peak_forward_velocity": 0.7275051010968807,
+      "canonical_terminal_position_error_m": 0.0033697861558782197,
+      "canonical_time_to_peak_step": 16,
+      "final_objective": 341.99728939060134,
+      "gain_relative_error": 0.9896556733114712,
+      "label": "adam_lqr_fit",
+      "n_function_evaluations": 2500,
+      "n_iterations": 2500,
+      "objective_ratio_to_reference": 1.0839927557308597,
+      "optimizer_status": "completed",
+      "reference_objective": 315.49776286098586,
+      "zero_objective": 13326.344322174029
+    },
+    "lbfgsb_after_adam_lqr_fit": {
+      "best_objective": 318.2843964315453,
+      "canonical_clean_cost": 4290.390476927154,
+      "canonical_peak_forward_velocity": 0.7175249003976484,
+      "canonical_terminal_position_error_m": 0.003096890579838618,
+      "canonical_time_to_peak_step": 16,
+      "final_objective": 318.2843964315453,
+      "gain_relative_error": 0.989122404737048,
+      "label": "lbfgsb_after_adam_lqr_fit",
+      "n_function_evaluations": 549,
+      "n_iterations": 500,
+      "objective_ratio_to_reference": 1.008832498669055,
+      "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+      "reference_objective": 315.49776286098586,
+      "zero_objective": 13326.344322174029
+    }
+  },
+  "phase3_status": "blocked_on_gain_recovery",
   "predeclared_tolerances": {
     "delta_v_absolute_percentage_points": 1.0,
     "gain_relative_error": 0.05,
     "lqr_objective_ratio": 1.01,
     "terminal_error_m": 0.0001
+  },
+  "quasi_newton_config": {
+    "basis_scale": 0.01,
+    "learning_rate": 0.3,
+    "n_random_states": 64,
+    "n_steps": 500,
+    "random_state_scale": 0.02,
+    "reach_weight": 10.0,
+    "seed": 0
   },
   "reference": {
     "cost": {

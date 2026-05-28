@@ -18,6 +18,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
 import optax
+import scipy.optimize as scipy_opt
 from jaxtyping import Array, Float
 
 from rlrmp.analysis.adversary_equivalence import (
@@ -75,6 +76,7 @@ class LinearTrainingConfig:
 class LinearTrainingResult:
     """Result of one gradient-based linear-controller fit."""
 
+    label: str
     config: LinearTrainingConfig
     K: Float[Array, "T m_u n"]
     best_objective: float
@@ -83,6 +85,9 @@ class LinearTrainingResult:
     zero_objective: float
     gain_relative_error: float
     canonical_rollout: ClosedLoopRollout
+    optimizer_status: str
+    n_iterations: int
+    n_function_evaluations: int
 
 
 @dataclass(frozen=True)
@@ -126,6 +131,7 @@ class Phase3LinearRoundTripResult:
     reference: GameCardReference
     gamma_ref: GammaReference
     lqr_training: LinearTrainingResult
+    lqr_quasi_newton_training: LinearTrainingResult
     lqr_teacher_fit: TeacherFitResult
     hinf_teacher_fit: TeacherFitResult
     audits: tuple[ControllerAudit, ...]
@@ -263,6 +269,7 @@ def train_lqr_gradient_controller(
     zero_objective = float(objective(jnp.zeros_like(K_ref)))
     gain_error = float(jnp.linalg.norm(best_K - K_ref) / jnp.linalg.norm(K_ref))
     return LinearTrainingResult(
+        label="adam_lqr_fit",
         config=config,
         K=best_K,
         best_objective=float(best_value),
@@ -271,6 +278,81 @@ def train_lqr_gradient_controller(
         zero_objective=zero_objective,
         gain_relative_error=gain_error,
         canonical_rollout=rollout,
+        optimizer_status="completed",
+        n_iterations=config.n_steps,
+        n_function_evaluations=config.n_steps,
+    )
+
+
+def train_lqr_quasi_newton_controller(
+    reference: GameCardReference,
+    config: LinearTrainingConfig = LinearTrainingConfig(n_steps=200),
+    *,
+    initial_K: Float[Array, "T m_u n"] | None = None,
+    label: str = "lbfgsb_lqr_fit",
+) -> LinearTrainingResult:
+    """Fit a clean LQR linear controller with SciPy L-BFGS-B.
+
+    This is the direct quasi-Newton comparator for the Adam gate. It uses the
+    same full-rank objective and can either start from zero or refine an
+    existing objective-trained gain tensor.
+    """
+
+    plant = reference.plant
+    schedule = reference.schedule
+    states, weights = ensemble_initial_states(plant, config)
+    K_ref = reference.lqr_solution.K
+    shape = K_ref.shape
+    if initial_K is None:
+        theta0 = np.zeros(int(np.prod(shape)), dtype=np.float64)
+    else:
+        theta0 = np.asarray(initial_K, dtype=np.float64).reshape(-1)
+
+    def objective(gains: Float[Array, "T m_u n"]) -> Float[Array, ""]:
+        return ensemble_clean_objective(plant, schedule, gains, states, weights)
+
+    @jax.jit
+    def value_and_grad_flat(theta: Float[Array, " flat"]) -> tuple[Float[Array, ""], Array]:
+        K = theta.reshape(shape)
+        value, grads = jax.value_and_grad(objective)(K)
+        return value, grads.reshape(-1)
+
+    def scipy_value_and_grad(theta: np.ndarray) -> tuple[float, np.ndarray]:
+        value, grads = value_and_grad_flat(jnp.asarray(theta, dtype=jnp.float64))
+        return float(value), np.asarray(grads, dtype=np.float64)
+
+    scipy_result = scipy_opt.minimize(
+        scipy_value_and_grad,
+        theta0,
+        jac=True,
+        method="L-BFGS-B",
+        options={
+            "maxiter": config.n_steps,
+            "ftol": 1e-12,
+            "gtol": 1e-8,
+            "maxls": 50,
+        },
+    )
+    K = jnp.asarray(scipy_result.x, dtype=jnp.float64).reshape(shape)
+    x0 = canonical_initial_state(plant)
+    rollout = simulate_closed_loop(plant, K, x0, target_pos=TARGET_POS)
+    reference_objective = float(objective(K_ref))
+    zero_objective = float(objective(jnp.zeros_like(K_ref)))
+    final_objective = float(objective(K))
+    gain_error = float(jnp.linalg.norm(K - K_ref) / jnp.linalg.norm(K_ref))
+    return LinearTrainingResult(
+        label=label,
+        config=config,
+        K=K,
+        best_objective=float(min(scipy_result.fun, final_objective)),
+        final_objective=final_objective,
+        reference_objective=reference_objective,
+        zero_objective=zero_objective,
+        gain_relative_error=gain_error,
+        canonical_rollout=rollout,
+        optimizer_status=str(scipy_result.message),
+        n_iterations=int(scipy_result.nit),
+        n_function_evaluations=int(scipy_result.nfev),
     )
 
 
@@ -402,6 +484,7 @@ def audit_controller(
 def run_phase3_linear_round_trip(
     *,
     training_config: LinearTrainingConfig = LinearTrainingConfig(),
+    quasi_newton_config: LinearTrainingConfig = LinearTrainingConfig(n_steps=500),
     heldout_step_sweep: tuple[int, ...] = (50, 200),
     heldout_restarts: int = 4,
 ) -> Phase3LinearRoundTripResult:
@@ -410,6 +493,12 @@ def run_phase3_linear_round_trip(
     reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
     gamma_ref = reference.gamma_references[0]
     lqr_training = train_lqr_gradient_controller(reference, training_config)
+    lqr_quasi_newton = train_lqr_quasi_newton_controller(
+        reference,
+        quasi_newton_config,
+        initial_K=lqr_training.K,
+        label="lbfgsb_after_adam_lqr_fit",
+    )
     lqr_teacher = train_teacher_gain(
         reference,
         label="teacher_lqr_fit",
@@ -438,7 +527,7 @@ def run_phase3_linear_round_trip(
             seed=11,
         ),
         audit_controller(
-            label="gradient_lqr_fit",
+            label=lqr_training.label,
             reference=reference,
             K=lqr_training.K,
             K_reference=reference.lqr_solution.K,
@@ -447,6 +536,17 @@ def run_phase3_linear_round_trip(
             step_sweep=heldout_step_sweep,
             n_restarts=heldout_restarts,
             seed=23,
+        ),
+        audit_controller(
+            label=lqr_quasi_newton.label,
+            reference=reference,
+            K=lqr_quasi_newton.K,
+            K_reference=reference.lqr_solution.K,
+            budget=budget,
+            gamma=gamma_ref.gamma,
+            step_sweep=heldout_step_sweep,
+            n_restarts=heldout_restarts,
+            seed=31,
         ),
         audit_controller(
             label="teacher_lqr_fit",
@@ -488,6 +588,7 @@ def run_phase3_linear_round_trip(
         reference=reference,
         gamma_ref=gamma_ref,
         lqr_training=lqr_training,
+        lqr_quasi_newton_training=lqr_quasi_newton,
         lqr_teacher_fit=lqr_teacher,
         hinf_teacher_fit=hinf_teacher,
         audits=audits,
@@ -515,15 +616,54 @@ def _heldout_summary(heldout: OpenLoopOptimizationResult) -> dict[str, Any]:
     }
 
 
+def _linear_training_summary(
+    training: LinearTrainingResult,
+    reference: GameCardReference,
+) -> dict[str, Any]:
+    return {
+        "label": training.label,
+        "best_objective": training.best_objective,
+        "final_objective": training.final_objective,
+        "reference_objective": training.reference_objective,
+        "zero_objective": training.zero_objective,
+        "objective_ratio_to_reference": training.best_objective / training.reference_objective,
+        "gain_relative_error": training.gain_relative_error,
+        "canonical_clean_cost": float(
+            rollout_task_cost(
+                reference.schedule,
+                training.canonical_rollout.x,
+                training.canonical_rollout.u,
+            )
+        ),
+        "canonical_peak_forward_velocity": training.canonical_rollout.peak_forward_velocity,
+        "canonical_time_to_peak_step": training.canonical_rollout.peak_forward_velocity_idx,
+        "canonical_terminal_position_error_m": training.canonical_rollout.terminal_position_error,
+        "optimizer_status": training.optimizer_status,
+        "n_iterations": training.n_iterations,
+        "n_function_evaluations": training.n_function_evaluations,
+    }
+
+
 def result_summary(result: Phase3LinearRoundTripResult) -> dict[str, Any]:
     """Return a JSON-serializable Phase 3 summary."""
 
-    lqr = result.lqr_training
     reference = result.reference
     gamma_ref = result.gamma_ref
-    objective_training_pass = (
-        lqr.best_objective / lqr.reference_objective <= 1.01 and lqr.gain_relative_error <= 0.05
+    objective_trainings = (result.lqr_training, result.lqr_quasi_newton_training)
+    best_objective_training = min(
+        objective_trainings,
+        key=lambda training: training.best_objective / training.reference_objective,
     )
+    objective_ratio_pass = (
+        best_objective_training.best_objective / best_objective_training.reference_objective <= 1.01
+    )
+    gain_recovery_pass = best_objective_training.gain_relative_error <= 0.05
+    if objective_ratio_pass and gain_recovery_pass:
+        phase3_status = "passed"
+    elif objective_ratio_pass:
+        phase3_status = "blocked_on_gain_recovery"
+    else:
+        phase3_status = "blocked_on_optimizer"
     teacher_pass = (
         result.lqr_teacher_fit.gain_relative_error <= 0.01
         and result.hinf_teacher_fit.gain_relative_error <= 0.01
@@ -552,13 +692,24 @@ def result_summary(result: Phase3LinearRoundTripResult) -> dict[str, Any]:
         "regeneration_command": "PYTHONPATH=src python scripts/materialize_linear_round_trip.py",
         "graphspec_execution_conversion_out_of_scope": True,
         "matrix_generalization_out_of_scope": True,
-        "phase3_status": "blocked_on_optimizer" if not objective_training_pass else "passed",
+        "phase3_status": phase3_status,
         "interpretation": (
-            "The analytical replay/audit and teacher-fit representational paths are in "
-            "place, but naive objective-gradient training of the clean LQR gain did "
-            "not meet the predeclared gain/objective pass band from zero initialization."
-            if not objective_training_pass
-            else "The local gradient-trained LQR controller met the predeclared pass band."
+            "The local objective-trained LQR controller met the predeclared pass band."
+            if phase3_status == "passed"
+            else (
+                "Adam-warm-started L-BFGS-B recovered the clean LQR objective/behavior "
+                "gate, but the raw gain tensor remains far from the analytical Riccati "
+                "gain. Phase 3 is therefore blocked on whether gain-relative-error is "
+                "the right certificate or whether a structured/identifiable linear "
+                "policy objective is needed."
+                if phase3_status == "blocked_on_gain_recovery"
+                else (
+                    "The analytical replay/audit and teacher-fit representational paths "
+                    "are in place, but the tested objective-gradient optimizers for the "
+                    "clean LQR gain did not meet the predeclared gain/objective pass band "
+                    "from zero initialization."
+                )
+            )
         ),
         "teacher_fit_status": "passed" if teacher_pass else "failed",
         "predeclared_tolerances": {
@@ -567,22 +718,15 @@ def result_summary(result: Phase3LinearRoundTripResult) -> dict[str, Any]:
             "delta_v_absolute_percentage_points": 1.0,
             "terminal_error_m": 1e-4,
         },
-        "training_config": lqr.config.__dict__,
-        "lqr_training": {
-            "best_objective": lqr.best_objective,
-            "final_objective": lqr.final_objective,
-            "reference_objective": lqr.reference_objective,
-            "zero_objective": lqr.zero_objective,
-            "objective_ratio_to_reference": lqr.best_objective / lqr.reference_objective,
-            "gain_relative_error": lqr.gain_relative_error,
-            "canonical_clean_cost": float(
-                rollout_task_cost(
-                    reference.schedule, lqr.canonical_rollout.x, lqr.canonical_rollout.u
-                )
+        "training_config": result.lqr_training.config.__dict__,
+        "quasi_newton_config": result.lqr_quasi_newton_training.config.__dict__,
+        "best_objective_training": best_objective_training.label,
+        "objective_trainings": {
+            result.lqr_training.label: _linear_training_summary(result.lqr_training, reference),
+            result.lqr_quasi_newton_training.label: _linear_training_summary(
+                result.lqr_quasi_newton_training,
+                reference,
             ),
-            "canonical_peak_forward_velocity": lqr.canonical_rollout.peak_forward_velocity,
-            "canonical_time_to_peak_step": lqr.canonical_rollout.peak_forward_velocity_idx,
-            "canonical_terminal_position_error_m": lqr.canonical_rollout.terminal_position_error,
         },
         "teacher_fits": {
             result.lqr_teacher_fit.label: {
@@ -632,7 +776,22 @@ def result_summary(result: Phase3LinearRoundTripResult) -> dict[str, Any]:
 def render_markdown(summary: dict[str, Any]) -> str:
     """Render the tracked Phase 3 note."""
 
-    lqr = summary["lqr_training"]
+    objective_rows = [
+        "| optimizer | objective ratio | gain rel err | clean cost | peak forward v | terminal err | iterations | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---|",
+    ]
+    for training in summary["objective_trainings"].values():
+        objective_rows.append(
+            "| "
+            f"`{training['label']}` | "
+            f"{training['objective_ratio_to_reference']:.8g} | "
+            f"{training['gain_relative_error']:.8g} | "
+            f"{training['canonical_clean_cost']:.8g} | "
+            f"{training['canonical_peak_forward_velocity']:.8g} | "
+            f"{training['canonical_terminal_position_error_m']:.8g} | "
+            f"{training['n_iterations']} | "
+            f"{training['optimizer_status']} |"
+        )
     audit_rows = [
         "| controller | clean cost | Delta-v vs LQR | gain rel err | held-out cost | held-out steps | terminal err |",
         "|---|---:|---:|---:|---:|---:|---:|",
@@ -667,24 +826,20 @@ generalization; those remain the next workup after the local certificate.
 - Cost: C&S 60-step `(t/T)^6` schedule from Phase 0.
 - Primary robust target: `gamma = 1.05 * gamma_star`.
 
-## Local Gradient-Training Result
+## Local Objective-Training Result
 
 Status: `{summary["phase3_status"]}`.
 
 {summary["interpretation"]}
 
-The clean LQR trainer optimizes time-varying full-state gains `K[t]` by Adam
-descent over a deterministic full-rank initial-state ensemble. The full-rank
-ensemble is necessary because a single reach trajectory can match behavior
-while leaving many gain columns underdetermined.
+The clean LQR trainers optimize time-varying full-state gains `K[t]` over a
+deterministic full-rank initial-state ensemble. The full-rank ensemble is
+necessary because a single reach trajectory can match behavior while leaving
+many gain columns underdetermined.
 
-- Best objective: `{lqr["best_objective"]:.8g}`.
-- Reference objective: `{lqr["reference_objective"]:.8g}`.
-- Objective ratio: `{lqr["objective_ratio_to_reference"]:.8g}`.
-- Gain relative error: `{lqr["gain_relative_error"]:.8g}`.
-- Canonical clean cost: `{lqr["canonical_clean_cost"]:.8g}`.
-- Canonical peak forward velocity: `{lqr["canonical_peak_forward_velocity"]:.8g}`.
-- Canonical terminal error: `{lqr["canonical_terminal_position_error_m"]:.8g}`.
+Best objective-trained controller: `{summary["best_objective_training"]}`.
+
+{"\n".join(objective_rows)}
 
 ## Teacher-Fit Representational Check
 
@@ -712,13 +867,16 @@ the final endpoint, following the Phase 1 `89891ab`/`a7dad8a` lesson.
 
 This pass should not be treated as a successful Phase 3 exit certificate unless
 `phase3_status` is `passed`. A failed clean LQR gain recovery means the local
-training optimizer still needs work before GRU same-game interpretation.
+linear certificate still needs work before GRU same-game interpretation.
 
 The important positive result is narrower: the analytical replay, metric, and
 held-out adversary audit surfaces now exist locally and are tied to the exact
-Phase 0-2 game. The next decision is whether to improve the local optimizer
-directly or use a more structured linear-policy optimization method before
-attempting the GRU phase.
+Phase 0-2 game. Adam-warm-started L-BFGS-B can recover the clean objective and
+canonical behavior, but not the raw analytical gain tensor under the current
+full-rank ensemble certificate. The next decision is whether to replace the raw
+gain-error gate with a behaviorally equivalent certificate or introduce a more
+structured identifiable linear-policy optimization method before attempting the
+GRU phase.
 """
 
 
@@ -726,11 +884,14 @@ def _npz_arrays(result: Phase3LinearRoundTripResult) -> dict[str, np.ndarray]:
     arrays: dict[str, np.ndarray] = {
         "lqr_reference_K": np.asarray(result.reference.lqr_solution.K),
         "hinf_reference_K": np.asarray(result.gamma_ref.solution.K),
-        "gradient_lqr_K": np.asarray(result.lqr_training.K),
+        "adam_lqr_K": np.asarray(result.lqr_training.K),
+        "lbfgsb_after_adam_lqr_K": np.asarray(result.lqr_quasi_newton_training.K),
         "teacher_lqr_K": np.asarray(result.lqr_teacher_fit.K),
         "teacher_hinf_K": np.asarray(result.hinf_teacher_fit.K),
-        "gradient_lqr_x": np.asarray(result.lqr_training.canonical_rollout.x),
-        "gradient_lqr_u": np.asarray(result.lqr_training.canonical_rollout.u),
+        "adam_lqr_x": np.asarray(result.lqr_training.canonical_rollout.x),
+        "adam_lqr_u": np.asarray(result.lqr_training.canonical_rollout.u),
+        "lbfgsb_after_adam_lqr_x": np.asarray(result.lqr_quasi_newton_training.canonical_rollout.x),
+        "lbfgsb_after_adam_lqr_u": np.asarray(result.lqr_quasi_newton_training.canonical_rollout.u),
         "teacher_lqr_x": np.asarray(result.lqr_teacher_fit.canonical_rollout.x),
         "teacher_lqr_u": np.asarray(result.lqr_teacher_fit.canonical_rollout.u),
         "teacher_hinf_x": np.asarray(result.hinf_teacher_fit.canonical_rollout.x),
@@ -799,5 +960,6 @@ __all__ = [
     "rollout_task_cost",
     "run_phase3_linear_round_trip",
     "train_lqr_gradient_controller",
+    "train_lqr_quasi_newton_controller",
     "write_outputs",
 ]
