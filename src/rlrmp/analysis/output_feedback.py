@@ -18,6 +18,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
 import optax
+import scipy.optimize as scipy_opt
 from jaxtyping import Array, Float
 
 from rlrmp.analysis.cs_game_card import (
@@ -34,6 +35,13 @@ from rlrmp.analysis.hinf_riccati import (
     CostSchedule,
     PlantLinearization,
     RiccatiSolution,
+    simulate_closed_loop,
+)
+from rlrmp.analysis.linear_round_trip import (
+    LinearTrainingConfig,
+    LinearTrainingResult,
+    ensemble_initial_states,
+    rollout_task_cost,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
@@ -46,6 +54,8 @@ DETERMINISTIC_PHASE0_ISSUE_ID = "cb98e58"
 DETERMINISTIC_PHASE1_ISSUE_ID = "a7dad8a"
 DETERMINISTIC_PHASE3_ISSUE_ID = "6f5c79e"
 DETERMINISTIC_CERTIFICATE_ISSUE_ID = "d01c35a"
+EXACT_OUTPUT_FEEDBACK_PHASE1_ISSUE_ID = "60d105d"
+OUTPUT_FEEDBACK_PHASE3_TRAINING_ISSUE_ID = "4008843"
 
 
 @dataclass(frozen=True)
@@ -87,6 +97,7 @@ class OutputFeedbackPhase1Result:
     fixed_policy: Float[Array, "T m_w two_n"]
     riccati_rollout: OutputFeedbackRollout
     riccati_cost: CostBreakdown
+    exact_audits: tuple[dict[str, Any], ...]
     open_loop_results: tuple[dict[str, Any], ...]
 
 
@@ -103,6 +114,8 @@ class OutputFeedbackPhase3Result:
     lqr_reference_under_riccati_cost: CostBreakdown
     hinf_reference_rollout: OutputFeedbackRollout
     hinf_reference_cost: CostBreakdown
+    output_feedback_trainings: tuple[LinearTrainingResult, ...]
+    output_feedback_training_audits: tuple[dict[str, Any], ...]
     fitted_controller_evaluations: tuple[dict[str, Any], ...]
 
 
@@ -160,11 +173,7 @@ def measurement_covariance(
     """Return the C&S sensory covariance proxy."""
 
     Q_proc = process_covariance(plant, config)
-    return (
-        jnp.eye(config.n_phys, dtype=jnp.float64)
-        * Q_proc[4, 4]
-        * config.sensory_noise_scale
-    )
+    return jnp.eye(config.n_phys, dtype=jnp.float64) * Q_proc[4, 4] * config.sensory_noise_scale
 
 
 def robust_estimator_covariances(
@@ -184,17 +193,12 @@ def robust_estimator_covariances(
     Q_proc = plant.Bw @ plant.Bw.T
     gamma_arr = jnp.asarray(gamma, dtype=jnp.float64)
     inv_gamma2 = jnp.where(jnp.isfinite(gamma_arr), 1.0 / (gamma_arr * gamma_arr), 0.0)
-    Sigma = (
-        jnp.eye(plant.n, dtype=jnp.float64)
-        * jnp.asarray(config.estimator_initial_covariance, dtype=jnp.float64)
+    Sigma = jnp.eye(plant.n, dtype=jnp.float64) * jnp.asarray(
+        config.estimator_initial_covariance, dtype=jnp.float64
     )
     covariances = [Sigma]
     for t in range(schedule.T):
-        precision = (
-            jnp.linalg.inv(Sigma)
-            + H.T @ H
-            - inv_gamma2 * schedule.Q[t].astype(jnp.float64)
-        )
+        precision = jnp.linalg.inv(Sigma) + H.T @ H - inv_gamma2 * schedule.Q[t].astype(jnp.float64)
         middle = jnp.linalg.inv(precision)
         Sigma = A @ middle @ A.T + Q_proc
         Sigma = 0.5 * (Sigma + Sigma.T)
@@ -219,9 +223,8 @@ def kalman_estimator_gains(
     H = delayed_observation_matrix(plant, config)
     Q_proc = process_covariance(plant, config)
     R_obs = measurement_covariance(plant, config)
-    Sigma_e = (
-        jnp.eye(plant.n, dtype=jnp.float64)
-        * jnp.asarray(config.estimator_initial_covariance, dtype=jnp.float64)
+    Sigma_e = jnp.eye(plant.n, dtype=jnp.float64) * jnp.asarray(
+        config.estimator_initial_covariance, dtype=jnp.float64
     )
     Sigma_x = Sigma_e
     Sigma_ex = jnp.zeros((plant.n, plant.n), dtype=jnp.float64)
@@ -236,10 +239,7 @@ def kalman_estimator_gains(
         Sigma_e = Q_proc + (A - K_est @ H) @ Sigma_e @ A.T
         term = (A - B @ L) @ Sigma_ex @ H.T @ K_est.T
         Sigma_x = (
-            K_est @ H @ Sigma_e_prev @ A.T
-            + (A - B @ L) @ Sigma_x @ (A - B @ L).T
-            + term
-            + term.T
+            K_est @ H @ Sigma_e_prev @ A.T + (A - B @ L) @ Sigma_x @ (A - B @ L).T + term + term.T
         )
         Sigma_ex = (A - B @ L) @ Sigma_ex @ (A - K_est @ H).T
         Sigma_e = 0.5 * (Sigma_e + Sigma_e.T)
@@ -267,7 +267,9 @@ def robust_output_feedback_gains(
         P_next = solution.P[t + 1]
         base = B.T @ jnp.linalg.inv(jnp.linalg.inv(P_next) + B @ B.T - inv_gamma2 * BwBwT) @ A
         p_idx = 0 if config.use_matlab_persistent_m_index else t
-        correction = jnp.linalg.inv(eye_n - inv_gamma2 * estimator_covariances[t] @ solution.P[p_idx])
+        correction = jnp.linalg.inv(
+            eye_n - inv_gamma2 * estimator_covariances[t] @ solution.P[p_idx]
+        )
         gains.append(base @ correction)
     return jnp.stack(gains, axis=0)
 
@@ -298,9 +300,7 @@ def robust_estimator_joint_matrices(
         Sigma = estimator_covariances[t]
         middle = jnp.linalg.inv(jnp.linalg.inv(Sigma) + HH - inv_gamma2 * schedule.Q[t])
         estimator_from_x = A @ middle @ HH
-        estimator_from_xhat = (
-            A - B @ gains[t] + A @ middle @ (inv_gamma2 * schedule.Q[t] - HH)
-        )
+        estimator_from_xhat = A - B @ gains[t] + A @ middle @ (inv_gamma2 * schedule.Q[t] - HH)
         top = jnp.concatenate([A, -B @ gains[t]], axis=1)
         bottom = jnp.concatenate([estimator_from_x, estimator_from_xhat], axis=1)
         matrices.append(jnp.concatenate([top, bottom], axis=0))
@@ -358,6 +358,210 @@ def robust_estimator_fixed_adversary_policy(
     return jnp.stack(list(reversed(policies)), axis=0)
 
 
+def kalman_estimator_joint_matrices(
+    plant: PlantLinearization,
+    controller_gains: Float[Array, "T m_u n"],
+    config: OutputFeedbackConfig = OutputFeedbackConfig(),
+) -> tuple[Float[Array, "T two_n two_n"], Float[Array, "two_n m_w"]]:
+    """Return joint true/estimated-state dynamics for fixed Kalman feedback."""
+
+    A = plant.A.astype(jnp.float64)
+    B = plant.B.astype(jnp.float64)
+    Bw = plant.Bw.astype(jnp.float64)
+    H = delayed_observation_matrix(plant, config)
+    estimator_gains = kalman_estimator_gains(plant, controller_gains, config)
+    matrices = []
+    for t in range(controller_gains.shape[0]):
+        K_t = controller_gains[t].astype(jnp.float64)
+        G_t = estimator_gains[t].astype(jnp.float64)
+        top = jnp.concatenate([A, -B @ K_t], axis=1)
+        bottom = jnp.concatenate([G_t @ H, A - B @ K_t - G_t @ H], axis=1)
+        matrices.append(jnp.concatenate([top, bottom], axis=0))
+    G = jnp.concatenate([Bw, jnp.zeros_like(Bw)], axis=0)
+    return jnp.stack(matrices, axis=0), G
+
+
+def _joint_cost_matrices(
+    schedule: CostSchedule,
+    controller_gains: Float[Array, "T m_u n"],
+) -> tuple[Float[Array, "T two_n two_n"], Float[Array, "two_n two_n"]]:
+    """Return quadratic cost matrices over ``z_t = [x_t, xhat_t]``."""
+
+    n = schedule.Q.shape[-1]
+    zeros = jnp.zeros((n, n), dtype=jnp.float64)
+    stage = []
+    for t in range(schedule.T):
+        K_t = controller_gains[t].astype(jnp.float64)
+        state_block = schedule.Q[t].astype(jnp.float64)
+        control_block = K_t.T @ schedule.R[t].astype(jnp.float64) @ K_t
+        stage.append(jnp.block([[state_block, zeros], [zeros, control_block]]))
+    terminal = jnp.block([[schedule.Q_f.astype(jnp.float64), zeros], [zeros, zeros]])
+    return jnp.stack(stage, axis=0), terminal
+
+
+def _flattened_epsilon_quadratic(
+    A_joint: Float[Array, "T z z"],
+    G_joint: Float[Array, "z m_w"],
+    stage_costs: Float[Array, "T z z"],
+    terminal_cost: Float[Array, "z z"],
+    z0: Float[Array, " z"],
+) -> tuple[np.ndarray, np.ndarray, float]:
+    """Return ``H, g, c`` for ``cost(eps) = eps^T H eps + 2 g^T eps + c``."""
+
+    T = A_joint.shape[0]
+    z_dim = A_joint.shape[1]
+    m_w = G_joint.shape[1]
+    flat_dim = T * m_w
+    S = jnp.zeros((z_dim, flat_dim), dtype=jnp.float64)
+    c = z0.astype(jnp.float64)
+    H_acc = jnp.zeros((flat_dim, flat_dim), dtype=jnp.float64)
+    g_acc = jnp.zeros((flat_dim,), dtype=jnp.float64)
+    const = jnp.asarray(0.0, dtype=jnp.float64)
+    for t in range(T):
+        M_t = stage_costs[t].astype(jnp.float64)
+        H_acc = H_acc + S.T @ M_t @ S
+        g_acc = g_acc + S.T @ M_t @ c
+        const = const + c @ M_t @ c
+        S_next = A_joint[t] @ S
+        S_next = S_next.at[:, t * m_w : (t + 1) * m_w].add(G_joint)
+        c = A_joint[t] @ c
+        S = S_next
+    H_acc = H_acc + S.T @ terminal_cost @ S
+    g_acc = g_acc + S.T @ terminal_cost @ c
+    const = const + c @ terminal_cost @ c
+    H_np = np.asarray(0.5 * (H_acc + H_acc.T), dtype=np.float64)
+    return H_np, np.asarray(g_acc, dtype=np.float64), float(const)
+
+
+def _maximize_quadratic_on_l2_ball(
+    H: np.ndarray,
+    g: np.ndarray,
+    *,
+    radius: float,
+) -> tuple[np.ndarray, float, float, bool]:
+    """Solve ``max eps^T H eps + 2 g^T eps`` subject to ``||eps|| <= radius``."""
+
+    if radius <= 0.0:
+        eps = np.zeros_like(g)
+        return eps, 0.0, float(np.max(np.linalg.eigvalsh(H))), False
+    eigvals, eigvecs = np.linalg.eigh(0.5 * (H + H.T))
+    h = eigvecs.T @ g
+    d_max = float(eigvals[-1])
+    tol = 1e-12
+    if np.linalg.norm(g) <= tol:
+        eps = radius * eigvecs[:, -1]
+        value = float(eps @ H @ eps + 2.0 * g @ eps)
+        return eps, value, d_max, True
+
+    def norm_at(lam: float) -> float:
+        return float(np.linalg.norm(h / (lam - eigvals)))
+
+    lo = d_max + max(1e-12, abs(d_max) * 1e-12)
+    if norm_at(lo) < radius:
+        # Hard case: the linear term has no component in the top eigenspace.
+        non_top = np.abs(eigvals - d_max) > 1e-10
+        y = np.zeros_like(h)
+        y[non_top] = h[non_top] / (d_max - eigvals[non_top])
+        remaining = max(0.0, radius * radius - float(y @ y))
+        top = np.flatnonzero(~non_top)
+        y[top[0]] = np.sqrt(remaining)
+        eps = eigvecs @ y
+        value = float(eps @ H @ eps + 2.0 * g @ eps)
+        return eps, value, d_max, True
+    hi = max(lo + 1.0, 2.0 * abs(d_max) + 1.0)
+    while norm_at(hi) > radius:
+        hi = 2.0 * hi + 1.0
+    for _ in range(200):
+        mid = 0.5 * (lo + hi)
+        if norm_at(mid) > radius:
+            lo = mid
+        else:
+            hi = mid
+    lam = hi
+    eps = eigvecs @ (h / (lam - eigvals))
+    value = float(eps @ H @ eps + 2.0 * g @ eps)
+    return eps, value, lam, True
+
+
+def exact_output_feedback_adversary_audit(
+    *,
+    label: str,
+    plant: PlantLinearization,
+    schedule: CostSchedule,
+    controller_gains: Float[Array, "T m_u n"],
+    x0: Float[Array, " n"],
+    budget: float,
+    estimator_kind: str,
+    solution: RiccatiSolution | None = None,
+    config: OutputFeedbackConfig = OutputFeedbackConfig(),
+) -> dict[str, Any]:
+    """Maximize fixed-controller output-feedback task cost under an L2 epsilon budget."""
+
+    if estimator_kind == "kalman":
+        A_joint, G_joint = kalman_estimator_joint_matrices(plant, controller_gains, config)
+    elif estimator_kind == "robust":
+        if solution is None:
+            raise ValueError("solution is required for robust estimator audit.")
+        covs = robust_estimator_covariances(plant, schedule, solution.gamma, config)
+        A_joint, G_joint = robust_estimator_joint_matrices(
+            plant,
+            schedule,
+            solution,
+            controller_gains,
+            covs,
+            config,
+        )
+    else:
+        raise ValueError(f"Unknown estimator_kind={estimator_kind!r}.")
+    stage_costs, terminal_cost = _joint_cost_matrices(schedule, controller_gains)
+    z0 = jnp.concatenate([x0.astype(jnp.float64), x0.astype(jnp.float64)], axis=0)
+    H_quad, g_quad, constant = _flattened_epsilon_quadratic(
+        A_joint, G_joint, stage_costs, terminal_cost, z0
+    )
+    radius = float(np.sqrt(max(budget, 0.0)))
+    eps_flat, variable_value, kkt_lambda, boundary_active = _maximize_quadratic_on_l2_ball(
+        H_quad,
+        g_quad,
+        radius=radius,
+    )
+    epsilon = jnp.asarray(eps_flat.reshape((schedule.T, plant.m_w)), dtype=jnp.float64)
+    if estimator_kind == "kalman":
+        rollout = rollout_with_kalman_estimator(plant, controller_gains, x0, epsilon, config)
+        gamma = None
+    else:
+        assert solution is not None
+        rollout = rollout_with_robust_estimator(
+            plant,
+            schedule,
+            solution,
+            x0,
+            epsilon,
+            gains=controller_gains,
+            config=config,
+        )
+        gamma = solution.gamma
+    cost = output_feedback_cost(schedule, rollout, gamma=gamma)
+    quadratic_total = constant + variable_value
+    return {
+        "label": label,
+        "estimator_kind": estimator_kind,
+        "epsilon": epsilon,
+        "rollout": rollout,
+        "cost": cost,
+        "budget": budget,
+        "budget_l2": radius,
+        "epsilon_energy": float(jnp.sum(epsilon**2)),
+        "quadratic_total": quadratic_total,
+        "rollout_total": cost.total_without_disturbance_penalty,
+        "quadratic_rollout_abs_error": abs(
+            quadratic_total - cost.total_without_disturbance_penalty
+        ),
+        "kkt_lambda": kkt_lambda,
+        "boundary_active": boundary_active,
+        "max_eigenvalue": float(np.max(np.linalg.eigvalsh(H_quad))),
+    }
+
+
 def _rollout_summary_fields(
     plant: PlantLinearization,
     x: Float[Array, "T_plus_1 n"],
@@ -386,7 +590,13 @@ def _robust_estimator_rollout_arrays(
     *,
     gains: Float[Array, "T m_u n"] | None = None,
     config: OutputFeedbackConfig = OutputFeedbackConfig(),
-) -> tuple[Float[Array, "T_plus_1 n"], Float[Array, "T_plus_1 n"], Float[Array, "T n_phys"], Float[Array, "T m_u"], Float[Array, "T_plus_1 n n"]]:
+) -> tuple[
+    Float[Array, "T_plus_1 n"],
+    Float[Array, "T_plus_1 n"],
+    Float[Array, "T n_phys"],
+    Float[Array, "T m_u"],
+    Float[Array, "T_plus_1 n n"],
+]:
     """Return robust estimator-loop arrays without Python scalar conversion."""
 
     H = delayed_observation_matrix(plant, config)
@@ -421,6 +631,50 @@ def _robust_estimator_rollout_arrays(
     return x, x_hat, y, u, covs
 
 
+def _kalman_estimator_rollout_arrays(
+    plant: PlantLinearization,
+    K: Float[Array, "T m_u n"],
+    x0: Float[Array, " n"],
+    epsilon: Float[Array, "T m_w"],
+    config: OutputFeedbackConfig = OutputFeedbackConfig(),
+) -> tuple[
+    Float[Array, "T_plus_1 n"],
+    Float[Array, "T_plus_1 n"],
+    Float[Array, "T n_phys"],
+    Float[Array, "T m_u"],
+    Float[Array, "T_plus_1 n n"],
+]:
+    """Return Kalman estimator-loop arrays without Python scalar conversion."""
+
+    H = delayed_observation_matrix(plant, config)
+    gains = kalman_estimator_gains(plant, K, config)
+    Q_proc = process_covariance(plant, config)
+    Sigma0 = jnp.eye(plant.n, dtype=jnp.float64) * jnp.asarray(
+        config.estimator_initial_covariance, dtype=jnp.float64
+    )
+
+    def step(carry, inputs):
+        x_t, xhat_t, Sigma_t = carry
+        eps_t, K_t, G_t = inputs
+        y_t = H @ x_t
+        u_t = -K_t @ xhat_t
+        xhat_next = plant.A @ xhat_t + plant.B @ u_t + G_t @ (y_t - H @ xhat_t)
+        x_next = plant.A @ x_t + plant.B @ u_t + plant.Bw @ eps_t
+        Sigma_next = (plant.A - G_t @ H) @ Sigma_t @ plant.A.T + Q_proc
+        Sigma_next = 0.5 * (Sigma_next + Sigma_next.T)
+        return (x_next, xhat_next, Sigma_next), (x_next, xhat_next, y_t, u_t, Sigma_next)
+
+    (_, _, _), (x_tail, xhat_tail, y, u, cov_tail) = jax.lax.scan(
+        step,
+        (x0.astype(jnp.float64), x0.astype(jnp.float64), Sigma0),
+        (epsilon.astype(jnp.float64), K.astype(jnp.float64), gains),
+    )
+    x = jnp.concatenate([x0[None].astype(jnp.float64), x_tail], axis=0)
+    x_hat = jnp.concatenate([x0[None].astype(jnp.float64), xhat_tail], axis=0)
+    covs = jnp.concatenate([Sigma0[None], cov_tail], axis=0)
+    return x, x_hat, y, u, covs
+
+
 def rollout_with_kalman_estimator(
     plant: PlantLinearization,
     K: Float[Array, "T m_u n"],
@@ -434,9 +688,8 @@ def rollout_with_kalman_estimator(
     eps = jnp.zeros((T, plant.m_w), dtype=jnp.float64) if epsilon is None else epsilon
     H = delayed_observation_matrix(plant, config)
     gains = kalman_estimator_gains(plant, K, config)
-    Sigma = (
-        jnp.eye(plant.n, dtype=jnp.float64)
-        * jnp.asarray(config.estimator_initial_covariance, dtype=jnp.float64)
+    Sigma = jnp.eye(plant.n, dtype=jnp.float64) * jnp.asarray(
+        config.estimator_initial_covariance, dtype=jnp.float64
     )
     covariances = [Sigma]
     x_seq = [x0.astype(jnp.float64)]
@@ -602,6 +855,279 @@ def output_feedback_cost(
     )
 
 
+def output_feedback_clean_objective(
+    plant: PlantLinearization,
+    schedule: CostSchedule,
+    K: Float[Array, "T m_u n"],
+    states: Float[Array, "batch n"],
+    weights: Float[Array, " batch"],
+    config: OutputFeedbackConfig = OutputFeedbackConfig(),
+) -> Float[Array, ""]:
+    """Mean weighted clean cost through the output-feedback estimator loop."""
+
+    epsilon = jnp.zeros((schedule.T, plant.m_w), dtype=jnp.float64)
+
+    def one_cost(x0: Float[Array, " n"]) -> Float[Array, ""]:
+        x, _x_hat, _y, u, _covs = _kalman_estimator_rollout_arrays(
+            plant,
+            K,
+            x0,
+            epsilon,
+            config,
+        )
+        return rollout_task_cost(schedule, x, u)
+
+    costs = jax.vmap(one_cost)(states)
+    return jnp.mean(costs * weights)
+
+
+def train_output_feedback_lqr_controller(
+    reference: GameCardReference,
+    training_config: LinearTrainingConfig = LinearTrainingConfig(),
+    *,
+    quasi_newton_config: LinearTrainingConfig = LinearTrainingConfig(n_steps=500),
+    config: OutputFeedbackConfig = OutputFeedbackConfig(),
+) -> tuple[LinearTrainingResult, LinearTrainingResult, LinearTrainingResult]:
+    """Train clean LQR gains through the estimator-in-loop rollout from zero.
+
+    With clean dynamics and ``xhat_0 = x_0``, the estimator innovation remains
+    zero, so this objective is algebraically equivalent to the deterministic
+    full-state clean objective. Keeping it explicit prevents later code from
+    accidentally replaying old deterministic gains as the canonical
+    output-feedback Phase 3 run.
+    """
+
+    plant = reference.plant
+    schedule = reference.schedule
+    states, weights = ensemble_initial_states(plant, training_config)
+    K_ref = reference.lqr_solution.K
+
+    def objective(gains: Float[Array, "T m_u n"]) -> Float[Array, ""]:
+        return output_feedback_clean_objective(plant, schedule, gains, states, weights, config)
+
+    K = jnp.zeros_like(K_ref)
+    optimizer = optax.adam(training_config.learning_rate)
+    opt_state = optimizer.init(K)
+    value_and_grad = jax.value_and_grad(objective)
+
+    @jax.jit
+    def run_adam(
+        K: Float[Array, "T m_u n"],
+        opt_state: optax.OptState,
+    ) -> tuple[Float[Array, "T m_u n"], Float[Array, ""], Float[Array, ""]]:
+        best_K = K
+        best_value = objective(K)
+
+        def step(carry, _):
+            K, opt_state, best_K, best_value = carry
+            _value, grads = value_and_grad(K)
+            updates, opt_state = optimizer.update(grads, opt_state, K)
+            K = optax.apply_updates(K, updates)
+            value = objective(K)
+            improved = value < best_value
+            best_K = jnp.where(improved, K, best_K)
+            best_value = jnp.minimum(best_value, value)
+            return (K, opt_state, best_K, best_value), value
+
+        (_K, _opt_state, best_K, best_value), values = jax.lax.scan(
+            step,
+            (K, opt_state, best_K, best_value),
+            None,
+            length=training_config.n_steps,
+        )
+        return best_K, best_value, values[-1]
+
+    best_K, best_value, final_value = run_adam(K, opt_state)
+    x0 = make_cs_output_feedback_initial_state(plant, config)
+    reference_objective = float(objective(K_ref))
+    zero_objective = float(objective(jnp.zeros_like(K_ref)))
+    adam_rollout = simulate_closed_loop(plant, best_K, x0, target_pos=TARGET_POS)
+    adam_result = LinearTrainingResult(
+        label="of_adam_lqr_fit",
+        config=training_config,
+        K=best_K,
+        best_objective=float(best_value),
+        final_objective=float(final_value),
+        reference_objective=reference_objective,
+        zero_objective=zero_objective,
+        gain_relative_error=float(jnp.linalg.norm(best_K - K_ref) / jnp.linalg.norm(K_ref)),
+        canonical_rollout=adam_rollout,
+        optimizer_status="completed",
+        n_iterations=training_config.n_steps,
+        n_function_evaluations=training_config.n_steps,
+    )
+
+    states_qn, weights_qn = ensemble_initial_states(plant, quasi_newton_config)
+
+    def qn_objective(gains: Float[Array, "T m_u n"]) -> Float[Array, ""]:
+        return output_feedback_clean_objective(
+            plant,
+            schedule,
+            gains,
+            states_qn,
+            weights_qn,
+            config,
+        )
+
+    shape = K_ref.shape
+
+    @jax.jit
+    def value_and_grad_flat(theta: Float[Array, " flat"]) -> tuple[Float[Array, ""], Array]:
+        gains = theta.reshape(shape)
+        value, grads = jax.value_and_grad(qn_objective)(gains)
+        return value, grads.reshape(-1)
+
+    def scipy_value_and_grad(theta: np.ndarray) -> tuple[float, np.ndarray]:
+        value, grads = value_and_grad_flat(jnp.asarray(theta, dtype=jnp.float64))
+        return float(value), np.asarray(grads, dtype=np.float64)
+
+    def run_lbfgsb(theta0: np.ndarray, label: str) -> LinearTrainingResult:
+        scipy_result = scipy_opt.minimize(
+            scipy_value_and_grad,
+            theta0,
+            jac=True,
+            method="L-BFGS-B",
+            options={
+                "maxiter": quasi_newton_config.n_steps,
+                "ftol": 1e-12,
+                "gtol": 1e-8,
+                "maxls": 50,
+            },
+        )
+        K_qn = jnp.asarray(scipy_result.x, dtype=jnp.float64).reshape(shape)
+        qn_reference_objective = float(qn_objective(K_ref))
+        qn_zero_objective = float(qn_objective(jnp.zeros_like(K_ref)))
+        qn_final_objective = float(qn_objective(K_qn))
+        return LinearTrainingResult(
+            label=label,
+            config=quasi_newton_config,
+            K=K_qn,
+            best_objective=float(min(scipy_result.fun, qn_final_objective)),
+            final_objective=qn_final_objective,
+            reference_objective=qn_reference_objective,
+            zero_objective=qn_zero_objective,
+            gain_relative_error=float(jnp.linalg.norm(K_qn - K_ref) / jnp.linalg.norm(K_ref)),
+            canonical_rollout=simulate_closed_loop(plant, K_qn, x0, target_pos=TARGET_POS),
+            optimizer_status=str(scipy_result.message),
+            n_iterations=int(scipy_result.nit),
+            n_function_evaluations=int(scipy_result.nfev),
+        )
+
+    qn_zero_result = run_lbfgsb(
+        np.zeros(int(np.prod(shape)), dtype=np.float64),
+        "of_lbfgsb_zero_lqr_fit",
+    )
+    qn_after_adam_result = run_lbfgsb(
+        np.asarray(adam_result.K, dtype=np.float64).reshape(-1),
+        "of_lbfgsb_after_of_adam_lqr_fit",
+    )
+    return adam_result, qn_zero_result, qn_after_adam_result
+
+
+def output_feedback_lqr_bellman_objective(
+    plant: PlantLinearization,
+    schedule: CostSchedule,
+    P_next: Float[Array, "T n n"],
+    K: Float[Array, "T m_u n"],
+    states: Float[Array, "batch n"],
+    weights: Float[Array, " batch"],
+) -> Float[Array, ""]:
+    """Return the one-step finite-horizon LQR Bellman objective for gains.
+
+    This diagnostic objective asks whether optimization can recover the
+    analytical Riccati feedback when trained against the dynamic-programming
+    local objective, rather than against a finite rollout ensemble. It uses the
+    clean output-feedback condition ``xhat=x`` and paired full-rank state
+    samples, not an independent joint covariance over ``[x, xhat]``.
+    """
+
+    states = states.astype(jnp.float64)
+    weights = weights.astype(jnp.float64)
+
+    def one_time_loss(inputs):
+        K_t, Q_t, R_t, P_t_next = inputs
+        u = -states @ K_t.T
+        x_next = states @ (plant.A - plant.B @ K_t).T
+        state_terms = jnp.einsum("bi,ij,bj->b", states, Q_t, states)
+        control_terms = jnp.einsum("bi,ij,bj->b", u, R_t, u)
+        next_terms = jnp.einsum("bi,ij,bj->b", x_next, P_t_next, x_next)
+        return jnp.mean(weights * (state_terms + control_terms + next_terms))
+
+    losses = jax.vmap(one_time_loss)((K, schedule.Q, schedule.R, P_next))
+    return jnp.mean(losses)
+
+
+def train_output_feedback_lqr_bellman_controller(
+    reference: GameCardReference,
+    config: LinearTrainingConfig = LinearTrainingConfig(n_steps=200),
+) -> LinearTrainingResult:
+    """Train an output-feedback LQR controller with the one-step Bellman objective."""
+
+    plant = reference.plant
+    schedule = reference.schedule
+    K_ref = reference.lqr_solution.K
+    shape = K_ref.shape
+    P_next = reference.lqr_solution.P[1:].astype(jnp.float64)
+    states, weights = ensemble_initial_states(plant, config)
+    gain_scale = jnp.asarray(500.0, dtype=jnp.float64)
+
+    def objective(z: Float[Array, "T m_u n"]) -> Float[Array, ""]:
+        gains = gain_scale * z
+        return output_feedback_lqr_bellman_objective(
+            plant, schedule, P_next, gains, states, weights
+        )
+
+    @jax.jit
+    def value_and_grad_flat(theta: Float[Array, " flat"]) -> tuple[Float[Array, ""], Array]:
+        z = theta.reshape(shape)
+        value, grads = jax.value_and_grad(objective)(z)
+        return value, grads.reshape(-1)
+
+    def scipy_value_and_grad(theta: np.ndarray) -> tuple[float, np.ndarray]:
+        value, grads = value_and_grad_flat(jnp.asarray(theta, dtype=jnp.float64))
+        return float(value), np.asarray(grads, dtype=np.float64)
+
+    scipy_result = scipy_opt.minimize(
+        scipy_value_and_grad,
+        np.zeros(int(np.prod(shape)), dtype=np.float64),
+        jac=True,
+        method="L-BFGS-B",
+        options={
+            "maxiter": config.n_steps,
+            "ftol": 1e-12,
+            "gtol": 1e-10,
+            "maxls": 50,
+        },
+    )
+    K = gain_scale * jnp.asarray(scipy_result.x, dtype=jnp.float64).reshape(shape)
+    x0 = make_cs_output_feedback_initial_state(plant)
+    final_objective = float(
+        output_feedback_lqr_bellman_objective(plant, schedule, P_next, K, states, weights)
+    )
+    reference_objective = float(
+        output_feedback_lqr_bellman_objective(plant, schedule, P_next, K_ref, states, weights)
+    )
+    zero_objective = float(
+        output_feedback_lqr_bellman_objective(
+            plant, schedule, P_next, jnp.zeros_like(K_ref), states, weights
+        )
+    )
+    return LinearTrainingResult(
+        label="of_bellman_lbfgsb_lqr_fit",
+        config=config,
+        K=K,
+        best_objective=float(min(scipy_result.fun, final_objective)),
+        final_objective=final_objective,
+        reference_objective=reference_objective,
+        zero_objective=zero_objective,
+        gain_relative_error=float(jnp.linalg.norm(K - K_ref) / jnp.linalg.norm(K_ref)),
+        canonical_rollout=simulate_closed_loop(plant, K, x0, target_pos=TARGET_POS),
+        optimizer_status=str(scipy_result.message),
+        n_iterations=int(scipy_result.nit),
+        n_function_evaluations=int(scipy_result.nfev),
+    )
+
+
 def analyze_phase0b_output_feedback(
     config: OutputFeedbackConfig = OutputFeedbackConfig(),
 ) -> dict[str, Any]:
@@ -681,8 +1207,12 @@ def optimize_open_loop_output_feedback(
     shape = (solution.K.shape[0], plant.m_w)
     n_random = max(0, n_restarts - len(initial_candidates))
     keys = jr.split(jr.PRNGKey(seed), n_random)
-    starts = [_project_l2_ball(candidate.astype(jnp.float64), radius) for candidate in initial_candidates]
-    starts.extend(_project_l2_ball(jr.normal(key, shape, dtype=jnp.float64), radius) for key in keys)
+    starts = [
+        _project_l2_ball(candidate.astype(jnp.float64), radius) for candidate in initial_candidates
+    ]
+    starts.extend(
+        _project_l2_ball(jr.normal(key, shape, dtype=jnp.float64), radius) for key in keys
+    )
     if not starts:
         starts = [jnp.zeros(shape, dtype=jnp.float64)]
     optimizer = optax.adam(learning_rate)
@@ -723,16 +1253,24 @@ def optimize_open_loop_output_feedback(
     best_energies = []
     best_epsilons = []
     for start in starts:
-        initial_objectives.append(float(_objective_value_output_feedback(plant, schedule, solution, x0, start, config)))
+        initial_objectives.append(
+            float(_objective_value_output_feedback(plant, schedule, solution, x0, start, config))
+        )
         best_eps, final_eps, best_value = run(start)
         best_epsilons.append(best_eps)
-        final_objectives.append(float(_objective_value_output_feedback(plant, schedule, solution, x0, final_eps, config)))
+        final_objectives.append(
+            float(
+                _objective_value_output_feedback(plant, schedule, solution, x0, final_eps, config)
+            )
+        )
         best_objectives.append(float(best_value))
         final_energies.append(float(jnp.sum(final_eps**2)))
         best_energies.append(float(jnp.sum(best_eps**2)))
     best_idx = int(jnp.argmax(jnp.asarray(best_objectives)))
     best_epsilon = best_epsilons[best_idx]
-    best_rollout = rollout_with_robust_estimator(plant, schedule, solution, x0, best_epsilon, config=config)
+    best_rollout = rollout_with_robust_estimator(
+        plant, schedule, solution, x0, best_epsilon, config=config
+    )
     best_cost = output_feedback_cost(schedule, best_rollout, gamma=solution.gamma)
     return {
         "n_steps": n_steps,
@@ -789,6 +1327,52 @@ def analyze_phase1_output_feedback(
     )
     riccati_cost = output_feedback_cost(reference.schedule, riccati_rollout, gamma=gamma_ref.gamma)
     budget = riccati_cost.disturbance_energy
+    exact_audits = [
+        exact_output_feedback_adversary_audit(
+            label="analytical_lqr_kalman",
+            plant=reference.plant,
+            schedule=reference.schedule,
+            controller_gains=reference.lqr_solution.K,
+            x0=x0,
+            budget=budget,
+            estimator_kind="kalman",
+            config=config,
+        ),
+        exact_output_feedback_adversary_audit(
+            label="analytical_hinf_robust",
+            plant=reference.plant,
+            schedule=reference.schedule,
+            controller_gains=gains,
+            x0=x0,
+            budget=budget,
+            estimator_kind="robust",
+            solution=gamma_ref.solution,
+            config=config,
+        ),
+    ]
+    round_trip_artifact = (
+        REPO_ROOT
+        / "_artifacts"
+        / DETERMINISTIC_PHASE3_ISSUE_ID
+        / "linear_round_trip"
+        / "linear_round_trip.npz"
+    )
+    if round_trip_artifact.exists():
+        with np.load(round_trip_artifact) as arrays:
+            for label in ("adam_lqr_fit", "lbfgsb_after_adam_lqr_fit"):
+                K = jnp.asarray(arrays[f"{label.replace('_fit', '')}_K"], dtype=jnp.float64)
+                exact_audits.append(
+                    exact_output_feedback_adversary_audit(
+                        label=f"{label}_kalman",
+                        plant=reference.plant,
+                        schedule=reference.schedule,
+                        controller_gains=K,
+                        x0=x0,
+                        budget=budget,
+                        estimator_kind="kalman",
+                        config=config,
+                    )
+                )
     results = []
     for idx, n_steps in enumerate(step_sweep):
         results.append(
@@ -813,12 +1397,15 @@ def analyze_phase1_output_feedback(
         fixed_policy=F,
         riccati_rollout=riccati_rollout,
         riccati_cost=riccati_cost,
+        exact_audits=tuple(exact_audits),
         open_loop_results=tuple(results),
     )
 
 
 def analyze_phase3_output_feedback(
     config: OutputFeedbackConfig = OutputFeedbackConfig(),
+    training_config: LinearTrainingConfig = LinearTrainingConfig(),
+    quasi_newton_config: LinearTrainingConfig = LinearTrainingConfig(n_steps=500),
 ) -> OutputFeedbackPhase3Result:
     """Compute Phase 3 estimator-in-loop reference audits."""
 
@@ -870,10 +1457,37 @@ def analyze_phase3_output_feedback(
         riccati_epsilon,
         config=config,
     )
+    output_feedback_trainings = train_output_feedback_lqr_controller(
+        reference,
+        training_config,
+        quasi_newton_config=quasi_newton_config,
+        config=config,
+    )
+    bellman_training = train_output_feedback_lqr_bellman_controller(
+        reference,
+        LinearTrainingConfig(n_steps=200),
+    )
+    output_feedback_trainings = (*output_feedback_trainings, bellman_training)
+    output_feedback_training_audits = tuple(
+        exact_output_feedback_adversary_audit(
+            label=f"{training.label}_exact_kalman",
+            plant=reference.plant,
+            schedule=reference.schedule,
+            controller_gains=training.K,
+            x0=x0,
+            budget=float(jnp.sum(riccati_epsilon**2)),
+            estimator_kind="kalman",
+            config=config,
+        )
+        for training in output_feedback_trainings
+    )
     fitted_evaluations = []
     round_trip_artifact = (
-        REPO_ROOT / "_artifacts" / DETERMINISTIC_PHASE3_ISSUE_ID
-        / "linear_round_trip" / "linear_round_trip.npz"
+        REPO_ROOT
+        / "_artifacts"
+        / DETERMINISTIC_PHASE3_ISSUE_ID
+        / "linear_round_trip"
+        / "linear_round_trip.npz"
     )
     if round_trip_artifact.exists():
         with np.load(round_trip_artifact) as arrays:
@@ -922,7 +1536,11 @@ def analyze_phase3_output_feedback(
             gamma=gamma_ref.gamma,
         ),
         hinf_reference_rollout=hinf_rollout,
-        hinf_reference_cost=output_feedback_cost(reference.schedule, hinf_rollout, gamma=gamma_ref.gamma),
+        hinf_reference_cost=output_feedback_cost(
+            reference.schedule, hinf_rollout, gamma=gamma_ref.gamma
+        ),
+        output_feedback_trainings=output_feedback_trainings,
+        output_feedback_training_audits=output_feedback_training_audits,
         fitted_controller_evaluations=tuple(fitted_evaluations),
     )
 
@@ -949,6 +1567,27 @@ def _rollout_summary(rollout: OutputFeedbackRollout) -> dict[str, float | int]:
     }
 
 
+def _training_summary(training: LinearTrainingResult, schedule: CostSchedule) -> dict[str, Any]:
+    canonical_clean_cost = float(
+        rollout_task_cost(schedule, training.canonical_rollout.x, training.canonical_rollout.u)
+    )
+    return {
+        "label": training.label,
+        "optimizer_status": training.optimizer_status,
+        "n_iterations": training.n_iterations,
+        "n_function_evaluations": training.n_function_evaluations,
+        "best_objective": training.best_objective,
+        "final_objective": training.final_objective,
+        "reference_objective": training.reference_objective,
+        "zero_objective": training.zero_objective,
+        "objective_ratio_to_reference": training.best_objective / training.reference_objective,
+        "gain_relative_error": training.gain_relative_error,
+        "canonical_clean_cost": canonical_clean_cost,
+        "canonical_peak_forward_velocity": training.canonical_rollout.peak_forward_velocity,
+        "canonical_terminal_position_error_m": training.canonical_rollout.terminal_position_error,
+    }
+
+
 def result_summary(
     phase0b: dict[str, Any],
     phase1: OutputFeedbackPhase1Result,
@@ -961,6 +1600,41 @@ def result_summary(
     hinf_cost = phase3.hinf_reference_cost.total_without_disturbance_penalty
     phase1_rows = []
     ric_total = phase1.riccati_cost.total_without_disturbance_penalty
+    exact_rows = []
+    for audit in phase1.exact_audits:
+        total = audit["cost"].total_without_disturbance_penalty
+        exact_rows.append(
+            {
+                "label": audit["label"],
+                "estimator_kind": audit["estimator_kind"],
+                "cost": _cost_summary(audit["cost"]),
+                "total_cost_ratio_to_riccati": total / ric_total,
+                "total_cost_ratio_to_lqr_exact": None,
+                "epsilon_energy": audit["epsilon_energy"],
+                "budget": audit["budget"],
+                "budget_l2": audit["budget_l2"],
+                "quadratic_total": audit["quadratic_total"],
+                "rollout_total": audit["rollout_total"],
+                "quadratic_rollout_abs_error": audit["quadratic_rollout_abs_error"],
+                "kkt_lambda": audit["kkt_lambda"],
+                "boundary_active": audit["boundary_active"],
+                "max_eigenvalue": audit["max_eigenvalue"],
+                "rollout": _rollout_summary(audit["rollout"]),
+            }
+        )
+    lqr_exact_total = next(
+        (
+            row["cost"]["total_without_disturbance_penalty"]
+            for row in exact_rows
+            if row["label"] == "analytical_lqr_kalman"
+        ),
+        None,
+    )
+    if lqr_exact_total is not None:
+        for row in exact_rows:
+            row["total_cost_ratio_to_lqr_exact"] = (
+                row["cost"]["total_without_disturbance_penalty"] / lqr_exact_total
+            )
     for result in phase1.open_loop_results:
         total = result["cost"].total_without_disturbance_penalty
         phase1_rows.append(
@@ -982,6 +1656,38 @@ def result_summary(
             }
         )
     fitted_rows = []
+    training_rows = []
+    for training in phase3.output_feedback_trainings:
+        training_rows.append(_training_summary(training, phase3.reference.schedule))
+    training_audit_rows = []
+    for audit in phase3.output_feedback_training_audits:
+        total = audit["cost"].total_without_disturbance_penalty
+        training_audit_rows.append(
+            {
+                "label": audit["label"],
+                "estimator_kind": audit["estimator_kind"],
+                "cost": _cost_summary(audit["cost"]),
+                "total_cost_ratio_to_lqr_exact": (
+                    total
+                    / next(
+                        row["cost"]["total_without_disturbance_penalty"]
+                        for row in exact_rows
+                        if row["label"] == "analytical_lqr_kalman"
+                    )
+                ),
+                "total_cost_ratio_to_hinf_exact": (
+                    total
+                    / next(
+                        row["cost"]["total_without_disturbance_penalty"]
+                        for row in exact_rows
+                        if row["label"] == "analytical_hinf_robust"
+                    )
+                ),
+                "epsilon_energy": audit["epsilon_energy"],
+                "quadratic_rollout_abs_error": audit["quadratic_rollout_abs_error"],
+                "rollout": _rollout_summary(audit["rollout"]),
+            }
+        )
     for evaluation in phase3.fitted_controller_evaluations:
         action_ref = evaluation["clean_action_reference_rms"]
         fitted_rows.append(
@@ -1016,6 +1722,10 @@ def result_summary(
     return {
         "issue": ISSUE_ID,
         "umbrella": UMBRELLA_ID,
+        "follow_up_issues": {
+            "exact_output_feedback_phase1": EXACT_OUTPUT_FEEDBACK_PHASE1_ISSUE_ID,
+            "output_feedback_phase3_training": OUTPUT_FEEDBACK_PHASE3_TRAINING_ISSUE_ID,
+        },
         "supersedes_prior_disposition": (
             "83fc5b5 was previously demoted for reproducing Delta-v, but is now "
             "canonical for C&S information-structure fidelity."
@@ -1029,8 +1739,7 @@ def result_summary(
             "status": "canonical_for_cs2019_information_structure",
             "config": phase0b["config"].__dict__,
             "initial_condition": (
-                "C&S-compatible repeated physical initial state in every "
-                "delay-history block."
+                "C&S-compatible repeated physical initial state in every delay-history block."
             ),
             "robust_controller_indexing": (
                 "MATLAB-compatible: released C&S code applies M(:,:,k) after "
@@ -1050,7 +1759,13 @@ def result_summary(
                 "cost": _cost_summary(phase1.riccati_cost),
                 "rollout": _rollout_summary(phase1.riccati_rollout),
             },
+            "exact_fixed_controller_audits": exact_rows,
             "open_loop": phase1_rows,
+            "open_loop_interpretation": (
+                "The PGD rows include the Riccati epsilon as an initial candidate. "
+                "They are retained as diagnostics only; exact_fixed_controller_audits "
+                "is the strengthened evidence-bearing Phase 1 audit."
+            ),
         },
         "phase3_output_feedback_linear_gate": {
             "deterministic_phase3_issue": DETERMINISTIC_PHASE3_ISSUE_ID,
@@ -1087,7 +1802,18 @@ def result_summary(
                 - phase3.lqr_reference_under_riccati_epsilon.peak_forward_velocity
             )
             / phase3.lqr_reference_under_riccati_epsilon.peak_forward_velocity,
-            "clean_hinf_vs_lqr_cost_ratio": hinf_cost / lqr_cost,
+            "hinf_under_riccati_epsilon_vs_clean_lqr_cost_ratio": hinf_cost / lqr_cost,
+            "output_feedback_training_note": (
+                "Clean estimator-in-loop training starts from zero. Because xhat_0=x_0 "
+                "and clean innovations remain zero, the clean objective is algebraically "
+                "equivalent to full-state clean training; the estimator-loop distinction "
+                "is tested by the exact disturbance audits. The Bellman row is a "
+                "diagnostic one-step LQR dynamic-programming objective using the "
+                "analytical P[t+1] value matrices; it tests recoverability when the "
+                "objective identifies the Riccati law, not robust/H-infinity training."
+            ),
+            "output_feedback_trainings": training_rows,
+            "output_feedback_training_exact_audits": training_audit_rows,
             "fitted_controller_replays": fitted_rows,
         },
         "phase4_implication": (
@@ -1118,6 +1844,20 @@ def render_markdown(summary: dict[str, Any]) -> str:
             f"{row['total_cost_ratio_to_riccati']:.8g} | "
             f"{row['epsilon_l2_distance_to_riccati']:.8g} |"
         )
+    exact_rows = [
+        "| controller | estimator | exact cost | ratio to LQR exact | ratio to Riccati feedback | quadratic error |",
+        "|---|---|---:|---:|---:|---:|",
+    ]
+    for row in p1["exact_fixed_controller_audits"]:
+        exact_rows.append(
+            "| "
+            f"{row['label']} | "
+            f"{row['estimator_kind']} | "
+            f"{row['cost']['total_without_disturbance_penalty']:.8g} | "
+            f"{row['total_cost_ratio_to_lqr_exact']:.8g} | "
+            f"{row['total_cost_ratio_to_riccati']:.8g} | "
+            f"{row['quadratic_rollout_abs_error']:.3g} |"
+        )
     fitted_rows = [
         "| controller | clean cost ratio | under-epsilon cost ratio | action mismatch ratio |",
         "|---|---:|---:|---:|",
@@ -1129,6 +1869,25 @@ def render_markdown(summary: dict[str, Any]) -> str:
             f"{row['clean_cost_ratio_to_lqr_reference']:.8g} | "
             f"{row['under_epsilon_cost_ratio_to_lqr_reference']:.8g} | "
             f"{row['clean_action_mismatch_ratio']:.8g} |"
+        )
+    training_rows = [
+        "| optimizer | objective ratio | gain rel err | clean cost | exact cost ratio to LQR | exact cost ratio to H-inf |",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
+    audits_by_prefix = {
+        row["label"].replace("_exact_kalman", ""): row
+        for row in p3["output_feedback_training_exact_audits"]
+    }
+    for row in p3["output_feedback_trainings"]:
+        audit = audits_by_prefix[row["label"]]
+        training_rows.append(
+            "| "
+            f"{row['label']} | "
+            f"{row['objective_ratio_to_reference']:.8g} | "
+            f"{row['gain_relative_error']:.8g} | "
+            f"{row['canonical_clean_cost']:.8g} | "
+            f"{audit['total_cost_ratio_to_lqr_exact']:.8g} | "
+            f"{audit['total_cost_ratio_to_hinf_exact']:.8g} |"
         )
     return f"""# C&S Output-Feedback / Estimator-In-Loop Lane
 
@@ -1166,6 +1925,14 @@ Riccati realized disturbance budget:
 Riccati feedback cost:
 `{p1["riccati_feedback"]["cost"]["total_without_disturbance_penalty"]:.8g}`.
 
+Exact fixed-controller L2-budget audits:
+
+{"\n".join(exact_rows)}
+
+The projected-gradient rows below are retained as diagnostics. They include the
+Riccati epsilon as an initial candidate, so they should not be read as an
+independent proof that unseeded open-loop ascent recovered the same sequence.
+
 {"\n".join(rows)}
 
 ## Phase 3 Output-Feedback Linear Gate
@@ -1187,6 +1954,13 @@ LQR comparator scope: {p3["lqr_comparator_scope"]}.
   `{p3["hinf_vs_lqr_cost_ratio_under_riccati_epsilon"]:.8g}`.
 - H-infinity vs LQR peak-velocity delta under Riccati epsilon:
   `{p3["hinf_vs_lqr_peak_velocity_delta_percent"]:.8g}%`.
+
+Canonical output-feedback retraining starts from zero, not from the old
+deterministic fit:
+
+{p3["output_feedback_training_note"]}
+
+{"\n".join(training_rows)}
 
 Fitted deterministic Phase 3 controllers replayed through the output-feedback
 estimator loop:
@@ -1225,21 +1999,34 @@ def _npz_arrays(
         arrays[f"{key}_clean_x"] = np.asarray(evaluation["clean_rollout"].x)
         arrays[f"{key}_clean_x_hat"] = np.asarray(evaluation["clean_rollout"].x_hat)
         arrays[f"{key}_clean_u"] = np.asarray(evaluation["clean_rollout"].u)
-        arrays[f"{key}_under_eps_x"] = np.asarray(
-            evaluation["under_riccati_epsilon_rollout"].x
-        )
+        arrays[f"{key}_under_eps_x"] = np.asarray(evaluation["under_riccati_epsilon_rollout"].x)
         arrays[f"{key}_under_eps_x_hat"] = np.asarray(
             evaluation["under_riccati_epsilon_rollout"].x_hat
         )
-        arrays[f"{key}_under_eps_u"] = np.asarray(
-            evaluation["under_riccati_epsilon_rollout"].u
-        )
+        arrays[f"{key}_under_eps_u"] = np.asarray(evaluation["under_riccati_epsilon_rollout"].u)
+    for training in phase3.output_feedback_trainings:
+        key = f"phase3_{training.label}"
+        arrays[f"{key}_K"] = np.asarray(training.K)
+        arrays[f"{key}_clean_x"] = np.asarray(training.canonical_rollout.x)
+        arrays[f"{key}_clean_u"] = np.asarray(training.canonical_rollout.u)
+    for audit in phase3.output_feedback_training_audits:
+        key = f"phase3_{audit['label']}"
+        arrays[f"{key}_exact_x"] = np.asarray(audit["rollout"].x)
+        arrays[f"{key}_exact_x_hat"] = np.asarray(audit["rollout"].x_hat)
+        arrays[f"{key}_exact_u"] = np.asarray(audit["rollout"].u)
+        arrays[f"{key}_exact_epsilon"] = np.asarray(audit["epsilon"])
     for result in phase1.open_loop_results:
         key = f"phase1_open_loop_{result['n_steps']}"
         arrays[f"{key}_x"] = np.asarray(result["rollout"].x)
         arrays[f"{key}_x_hat"] = np.asarray(result["rollout"].x_hat)
         arrays[f"{key}_u"] = np.asarray(result["rollout"].u)
         arrays[f"{key}_epsilon"] = np.asarray(result["epsilon"])
+    for audit in phase1.exact_audits:
+        key = f"phase1_exact_{audit['label']}"
+        arrays[f"{key}_x"] = np.asarray(audit["rollout"].x)
+        arrays[f"{key}_x_hat"] = np.asarray(audit["rollout"].x_hat)
+        arrays[f"{key}_u"] = np.asarray(audit["rollout"].u)
+        arrays[f"{key}_epsilon"] = np.asarray(audit["epsilon"])
     return arrays
 
 
