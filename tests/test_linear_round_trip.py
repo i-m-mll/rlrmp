@@ -12,6 +12,7 @@ from rlrmp.analysis.linear_round_trip import (
     result_summary,
     rollout_task_cost,
     run_phase3_linear_round_trip,
+    train_lqr_quasi_newton_controller,
 )
 
 
@@ -64,6 +65,7 @@ def test_rollout_task_cost_matches_reference_lqr_cost() -> None:
 def test_phase3_smoke_reports_optimizer_status() -> None:
     result = run_phase3_linear_round_trip(
         training_config=LinearTrainingConfig(n_steps=3, n_random_states=2),
+        quasi_newton_config=LinearTrainingConfig(n_steps=1, n_random_states=2),
         heldout_step_sweep=(0,),
         heldout_restarts=1,
     )
@@ -72,12 +74,39 @@ def test_phase3_smoke_reports_optimizer_status() -> None:
     assert summary["issue"] == "6f5c79e"
     assert summary["graphspec_execution_conversion_out_of_scope"] is True
     assert summary["matrix_generalization_out_of_scope"] is True
-    assert summary["phase3_status"] in {"passed", "blocked_on_optimizer"}
+    assert summary["phase3_status"] in {
+        "passed",
+        "blocked_on_gain_recovery",
+        "blocked_on_optimizer",
+    }
+    assert summary["best_objective_training"] in {
+        "adam_lqr_fit",
+        "lbfgsb_after_adam_lqr_fit",
+    }
     assert summary["teacher_fit_status"] in {"passed", "failed"}
+    assert set(summary["objective_trainings"]) == {
+        "adam_lqr_fit",
+        "lbfgsb_after_adam_lqr_fit",
+    }
     assert {audit["label"] for audit in summary["audits"]} == {
         "analytical_lqr_reference",
-        "gradient_lqr_fit",
+        "adam_lqr_fit",
+        "lbfgsb_after_adam_lqr_fit",
         "teacher_lqr_fit",
         "analytical_hinf_reference",
         "teacher_hinf_fit",
     }
+
+
+def test_quasi_newton_smoke_runs_same_objective_contract() -> None:
+    reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
+
+    result = train_lqr_quasi_newton_controller(
+        reference,
+        LinearTrainingConfig(n_steps=1, n_random_states=2),
+    )
+
+    assert result.label == "lbfgsb_lqr_fit"
+    assert result.zero_objective > result.reference_objective
+    assert result.best_objective <= result.zero_objective
+    assert result.n_function_evaluations >= 1
