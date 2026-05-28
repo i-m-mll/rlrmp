@@ -1,0 +1,463 @@
+{
+  "artifact_npz": "_artifacts/83fc5b5/output_feedback_lane/output_feedback_lane.npz",
+  "artifact_npz_keys": [
+    "phase0b_hinf_u",
+    "phase0b_hinf_x",
+    "phase0b_hinf_x_hat",
+    "phase0b_lqr_u",
+    "phase0b_lqr_x",
+    "phase0b_lqr_x_hat",
+    "phase1_open_loop_200_epsilon",
+    "phase1_open_loop_200_u",
+    "phase1_open_loop_200_x",
+    "phase1_open_loop_200_x_hat",
+    "phase1_open_loop_50_epsilon",
+    "phase1_open_loop_50_u",
+    "phase1_open_loop_50_x",
+    "phase1_open_loop_50_x_hat",
+    "phase1_riccati_epsilon",
+    "phase1_riccati_u",
+    "phase1_riccati_x",
+    "phase1_riccati_x_hat",
+    "phase3_adam_lqr_fit_clean_u",
+    "phase3_adam_lqr_fit_clean_x",
+    "phase3_adam_lqr_fit_clean_x_hat",
+    "phase3_adam_lqr_fit_under_eps_u",
+    "phase3_adam_lqr_fit_under_eps_x",
+    "phase3_adam_lqr_fit_under_eps_x_hat",
+    "phase3_hinf_x",
+    "phase3_lbfgsb_after_adam_lqr_fit_clean_u",
+    "phase3_lbfgsb_after_adam_lqr_fit_clean_x",
+    "phase3_lbfgsb_after_adam_lqr_fit_clean_x_hat",
+    "phase3_lbfgsb_after_adam_lqr_fit_under_eps_u",
+    "phase3_lbfgsb_after_adam_lqr_fit_under_eps_x",
+    "phase3_lbfgsb_after_adam_lqr_fit_under_eps_x_hat",
+    "phase3_lqr_under_eps_x",
+    "phase3_lqr_x",
+    "phase3_lqr_x_hat"
+  ],
+  "issue": "83fc5b5",
+  "phase0a_deterministic_reference": {
+    "issue": "cb98e58",
+    "status": "preserved_as_full_augmented_true_state_replay",
+    "summary": {
+      "cost": {
+        "R": "I_2",
+        "fact_t": "((t + 1) / T)^6, capped at 1",
+        "force_and_integrator_weight": "1.0",
+        "position_weight": "fact_t * 1e6",
+        "schedule": "C&S Eq. 15 physical 8-state schedule with 5-step delay distribution",
+        "velocity_weight": "fact_t * 1e5"
+      },
+      "diagnostic_gamma_factor": 1.5,
+      "epsilon_metric": {
+        "dt_scaled": false,
+        "norm": "sum_t ||epsilon_t||_2^2 over the 8 physical epsilon coordinates",
+        "note": "Gamma is an H-infinity attenuation parameter, not an epsilon budget. Any PGD budget must be derived explicitly from a realized Riccati epsilon sequence and treated as an open-loop surrogate budget."
+      },
+      "frontier": [
+        {
+          "closed_loop_epsilon_energy": 5.615094989314044e-06,
+          "closed_loop_epsilon_l2": 0.0023696191654597252,
+          "delta_v_percent": 7.487741449616711,
+          "epsilon_on_nominal_energy": 2.5299496451124823e-06,
+          "epsilon_on_nominal_l2": 0.0015905815430566526,
+          "factor": 1.05,
+          "factor_key": "1p05",
+          "gamma": 9493.516117275487,
+          "hinf_peak_forward_velocity": 0.7709338997192813,
+          "nominal_total_cost": 4507.444127385286,
+          "terminal_position_error_m": 7.070682797671043e-06,
+          "time_to_peak_step": 16,
+          "worst_case_h_infinity_objective": 4730.069808050793,
+          "worst_case_total_cost_without_penalty": 5236.14062216855
+        }
+      ],
+      "gamma_star": 9041.44392121475,
+      "issue": "cb98e58",
+      "lqr": {
+        "peak_forward_velocity": 0.7172296015547458,
+        "terminal_position_error_m": 0.0030967011901701963,
+        "time_to_peak_step": 16,
+        "total_cost": 4288.752027096607
+      },
+      "plant": {
+        "bw_contract": "top physical 8x8 block is identity; lag rows are zero",
+        "bw_shape": [
+          48,
+          8
+        ],
+        "damping": 0.1,
+        "delay_steps": 5,
+        "disturbance_dim": 8,
+        "dt": 0.01,
+        "mass": 1.0,
+        "name": "cs_faithful_pointmass",
+        "physical_state_dim": 8,
+        "state_dim": 48,
+        "state_order": [
+          "px",
+          "py",
+          "vx",
+          "vy",
+          "fx",
+          "fy",
+          "eps_x_int",
+          "eps_y_int",
+          "lag1_px",
+          "...",
+          "lag5_eps_y_int"
+        ],
+        "tau": 0.066
+      },
+      "primary_gamma_factor": 1.05,
+      "regeneration_command": "PYTHONPATH=src python scripts/materialize_analytical_game_card.py",
+      "task": {
+        "duration_s": 0.6,
+        "hold_free": true,
+        "horizon_steps": 60,
+        "init_pos_m": [
+          0.0,
+          0.0
+        ],
+        "single_reach": true,
+        "target_pos_m": [
+          0.15,
+          0.0
+        ]
+      },
+      "umbrella": "43e8728"
+    }
+  },
+  "phase0b_output_feedback_reference": {
+    "config": {
+      "delay_steps": 5,
+      "denominator_floor": 1e-12,
+      "estimator_initial_covariance": 0.01,
+      "n_phys": 8,
+      "process_covariance_scale": 0.001,
+      "sensory_noise_scale": 1.0,
+      "use_matlab_persistent_m_index": true
+    },
+    "hinf_cost": {
+      "control_stage": 2085.1096640143223,
+      "disturbance_energy": 0.0,
+      "h_infinity_objective": null,
+      "state_stage": 2411.6752302416317,
+      "terminal_state": 0.00012246690517394456,
+      "total_without_disturbance_penalty": 4496.785016722859
+    },
+    "hinf_rollout": {
+      "control_effort": 2085.1096640143223,
+      "estimation_error_final_l2": 2.051027799957185e-06,
+      "estimation_error_rms": 4.576342308576999e-06,
+      "peak_forward_velocity": 0.7704641650095194,
+      "terminal_position_error_m": 1.224533756796764e-05,
+      "time_to_peak_step": 15
+    },
+    "initial_condition": "C&S-compatible repeated physical initial state in every delay-history block.",
+    "lqr_cost": {
+      "control_stage": 1689.2634969089427,
+      "disturbance_energy": 0.0,
+      "h_infinity_objective": null,
+      "state_stage": 2591.87935186074,
+      "terminal_state": 7.6091795325569445,
+      "total_without_disturbance_penalty": 4288.75202830224
+    },
+    "lqr_rollout": {
+      "control_effort": 1689.2634969089427,
+      "estimation_error_final_l2": 0.0,
+      "estimation_error_rms": 0.0,
+      "peak_forward_velocity": 0.7172296015547458,
+      "terminal_position_error_m": 0.0030967011901701924,
+      "time_to_peak_step": 16
+    },
+    "observation": "H selects delayed x_(t-5) physical block; gain acts on x_hat_aug.",
+    "robust_controller_indexing": "MATLAB-compatible: released C&S code applies M(:,:,k) after the backward loop, so k is the first Riccati slice.",
+    "status": "canonical_for_cs2019_information_structure"
+  },
+  "phase1_output_feedback_adversary_equivalence": {
+    "budget": 3.154052119982121e-06,
+    "budget_l2": 0.0017759651235263942,
+    "deterministic_phase1_issue": "a7dad8a",
+    "open_loop": [
+      {
+        "best_cost": {
+          "control_stage": 2011.4733132950964,
+          "disturbance_energy": 3.154052119982121e-06,
+          "h_infinity_objective": 4660.484494042073,
+          "state_stage": 2932.533719809553,
+          "terminal_state": 0.7422377874729699,
+          "total_without_disturbance_penalty": 4944.749270892123
+        },
+        "best_energies": [
+          3.154052119982121e-06,
+          3.154052119982121e-06,
+          3.1540521199821233e-06,
+          3.154052119982118e-06
+        ],
+        "best_objectives": [
+          4944.74927089212,
+          4659.326780742417,
+          4673.166662226947,
+          4663.464157859888
+        ],
+        "best_restart_idx": 0,
+        "epsilon_l2_distance_to_riccati": 0.0,
+        "final_energies": [
+          3.1540521199821195e-06,
+          3.1540521199821216e-06,
+          3.154052119982121e-06,
+          3.154052119982119e-06
+        ],
+        "final_objectives": [
+          4686.8627964689595,
+          4649.779196728911,
+          4651.927477407188,
+          4651.504446266778
+        ],
+        "initial_objectives": [
+          4944.749270892123,
+          4488.044601146053,
+          4513.506249706924,
+          4489.844010789289
+        ],
+        "n_restarts": 4,
+        "n_steps": 50,
+        "rollout": {
+          "control_effort": 2011.4733132950964,
+          "estimation_error_final_l2": 7.555058301902651e-05,
+          "estimation_error_rms": 0.00034860898761351726,
+          "peak_forward_velocity": 0.7789413585601977,
+          "terminal_position_error_m": 0.0009848152081807227,
+          "time_to_peak_step": 16
+        },
+        "total_cost_ratio_to_riccati": 1.0
+      },
+      {
+        "best_cost": {
+          "control_stage": 2011.4733132950964,
+          "disturbance_energy": 3.154052119982121e-06,
+          "h_infinity_objective": 4660.484494042073,
+          "state_stage": 2932.533719809553,
+          "terminal_state": 0.7422377874729699,
+          "total_without_disturbance_penalty": 4944.749270892123
+        },
+        "best_energies": [
+          3.154052119982121e-06,
+          3.1540521199821216e-06,
+          3.154052119982119e-06,
+          3.1540521199821183e-06
+        ],
+        "best_objectives": [
+          4944.74927089212,
+          4662.859426658762,
+          4662.948156773384,
+          4668.577615966381
+        ],
+        "best_restart_idx": 0,
+        "epsilon_l2_distance_to_riccati": 0.0,
+        "final_energies": [
+          3.1540521199821216e-06,
+          3.15405211998212e-06,
+          3.15405211998212e-06,
+          3.154052119982121e-06
+        ],
+        "final_objectives": [
+          4674.311092026244,
+          4645.502113555959,
+          4655.364379977213,
+          4642.853930228761
+        ],
+        "initial_objectives": [
+          4944.749270892123,
+          4506.47283055593,
+          4527.704570864694,
+          4497.817189792316
+        ],
+        "n_restarts": 4,
+        "n_steps": 200,
+        "rollout": {
+          "control_effort": 2011.4733132950964,
+          "estimation_error_final_l2": 7.555058301902651e-05,
+          "estimation_error_rms": 0.00034860898761351726,
+          "peak_forward_velocity": 0.7789413585601977,
+          "terminal_position_error_m": 0.0009848152081807227,
+          "time_to_peak_step": 16
+        },
+        "total_cost_ratio_to_riccati": 1.0
+      }
+    ],
+    "riccati_feedback": {
+      "cost": {
+        "control_stage": 2011.4733132950964,
+        "disturbance_energy": 3.154052119982121e-06,
+        "h_infinity_objective": 4660.484494042073,
+        "state_stage": 2932.533719809553,
+        "terminal_state": 0.7422377874729699,
+        "total_without_disturbance_penalty": 4944.749270892123
+      },
+      "rollout": {
+        "control_effort": 2011.4733132950964,
+        "estimation_error_final_l2": 7.555058301902651e-05,
+        "estimation_error_rms": 0.00034860898761351726,
+        "peak_forward_velocity": 0.7789413585601977,
+        "terminal_position_error_m": 0.0009848152081807227,
+        "time_to_peak_step": 16
+      }
+    }
+  },
+  "phase3_output_feedback_linear_gate": {
+    "clean_hinf_vs_lqr_cost_ratio": 1.1529576059097937,
+    "deterministic_certificate_issue": "d01c35a",
+    "deterministic_phase3_issue": "6f5c79e",
+    "fitted_controller_replays": [
+      {
+        "clean_action_mismatch_ratio": 0.45198345115561234,
+        "clean_action_mismatch_rms_vs_lqr_reference": 1.6958233454844593,
+        "clean_action_reference_rms": 3.7519589293560403,
+        "clean_cost": {
+          "control_stage": 1777.0882563899665,
+          "disturbance_energy": 0.0,
+          "h_infinity_objective": null,
+          "state_stage": 2874.505071679046,
+          "terminal_state": 10.24712896557273,
+          "total_without_disturbance_penalty": 4661.840457034585
+        },
+        "clean_cost_ratio_to_lqr_reference": 1.086992305983248,
+        "clean_rollout": {
+          "control_effort": 1777.0882563899668,
+          "estimation_error_final_l2": 0.0,
+          "estimation_error_rms": 0.0,
+          "peak_forward_velocity": 0.7268122848478177,
+          "terminal_position_error_m": 0.0035371567697734738,
+          "time_to_peak_step": 16
+        },
+        "label": "adam_lqr_fit",
+        "source_artifact": "_artifacts/6f5c79e/linear_round_trip/linear_round_trip.npz",
+        "under_epsilon_cost_ratio_to_lqr_reference": 1.1470836972395262,
+        "under_riccati_epsilon_cost": {
+          "control_stage": 1776.6570974904157,
+          "disturbance_energy": 3.154052119982121e-06,
+          "h_infinity_objective": 5406.224021410037,
+          "state_stage": 3816.9886439699417,
+          "terminal_state": 96.84305679972888,
+          "total_without_disturbance_penalty": 5690.488798260087
+        },
+        "under_riccati_epsilon_rollout": {
+          "control_effort": 1776.657097490415,
+          "estimation_error_final_l2": 0.0034550307000802364,
+          "estimation_error_rms": 0.0010996831899869196,
+          "peak_forward_velocity": 0.7267285180401575,
+          "terminal_position_error_m": 0.011025184937421792,
+          "time_to_peak_step": 16
+        }
+      },
+      {
+        "clean_action_mismatch_ratio": 0.03817765431715157,
+        "clean_action_mismatch_rms_vs_lqr_reference": 0.143240991017105,
+        "clean_action_reference_rms": 3.7519589293560403,
+        "clean_cost": {
+          "control_stage": 1680.4459250293044,
+          "disturbance_energy": 0.0,
+          "h_infinity_objective": null,
+          "state_stage": 2604.400785178345,
+          "terminal_state": 8.556812892197572,
+          "total_without_disturbance_penalty": 4293.403523099847
+        },
+        "clean_cost_ratio_to_lqr_reference": 1.0010845800286214,
+        "clean_rollout": {
+          "control_effort": 1680.4459250293044,
+          "estimation_error_final_l2": 0.0,
+          "estimation_error_rms": 0.0,
+          "peak_forward_velocity": 0.7170149487049996,
+          "terminal_position_error_m": 0.003265052497943954,
+          "time_to_peak_step": 16
+        },
+        "label": "lbfgsb_after_adam_lqr_fit",
+        "source_artifact": "_artifacts/6f5c79e/linear_round_trip/linear_round_trip.npz",
+        "under_epsilon_cost_ratio_to_lqr_reference": 1.0627963885927483,
+        "under_riccati_epsilon_cost": {
+          "control_stage": 1679.9204216684338,
+          "disturbance_energy": 3.154052119982121e-06,
+          "h_infinity_objective": 4988.088895922479,
+          "state_stage": 3500.9044857696535,
+          "terminal_state": 91.5287653344425,
+          "total_without_disturbance_penalty": 5272.3536727725295
+        },
+        "under_riccati_epsilon_rollout": {
+          "control_effort": 1679.920421668434,
+          "estimation_error_final_l2": 0.003455030700080277,
+          "estimation_error_rms": 0.0010996831899869326,
+          "peak_forward_velocity": 0.7169391580992045,
+          "terminal_position_error_m": 0.010759390225369843,
+          "time_to_peak_step": 16
+        }
+      }
+    ],
+    "hinf_under_riccati_epsilon": {
+      "cost": {
+        "control_stage": 2011.4733132950964,
+        "disturbance_energy": 3.154052119982121e-06,
+        "h_infinity_objective": 4660.484494042073,
+        "state_stage": 2932.533719809553,
+        "terminal_state": 0.7422377874729699,
+        "total_without_disturbance_penalty": 4944.749270892123
+      },
+      "rollout": {
+        "control_effort": 2011.4733132950964,
+        "estimation_error_final_l2": 7.555058301902651e-05,
+        "estimation_error_rms": 0.00034860898761351726,
+        "peak_forward_velocity": 0.7789413585601977,
+        "terminal_position_error_m": 0.0009848152081807227,
+        "time_to_peak_step": 16
+      }
+    },
+    "hinf_vs_lqr_cost_ratio_under_riccati_epsilon": 0.9967581831127864,
+    "hinf_vs_lqr_peak_velocity_delta_percent": 8.054142120639389,
+    "interpretation": "The linear gate now evaluates controllers through x_hat_aug. The full fitted-controller certificate from d01c35a remains the deterministic Phase 0A check; this lane additionally replays the fitted LQR controllers through the C&S output-feedback estimator dynamics when the Phase 3 artifact is available.",
+    "lqr_comparator_scope": "simplified delayed Kalman baseline, not a full extLQG parity implementation with signal-dependent estimator noise terms",
+    "lqr_reference": {
+      "cost": {
+        "control_stage": 1689.2634969089427,
+        "disturbance_energy": 0.0,
+        "h_infinity_objective": null,
+        "state_stage": 2591.87935186074,
+        "terminal_state": 7.6091795325569445,
+        "total_without_disturbance_penalty": 4288.75202830224
+      },
+      "rollout": {
+        "control_effort": 1689.2634969089427,
+        "estimation_error_final_l2": 0.0,
+        "estimation_error_rms": 0.0,
+        "peak_forward_velocity": 0.7172296015547458,
+        "terminal_position_error_m": 0.0030967011901701924,
+        "time_to_peak_step": 16
+      }
+    },
+    "lqr_under_riccati_epsilon": {
+      "cost": {
+        "control_stage": 1673.1555681617738,
+        "disturbance_energy": 3.154052119982121e-06,
+        "h_infinity_objective": 4676.566600977332,
+        "state_stage": 3246.6722641997867,
+        "terminal_state": 41.00354546582229,
+        "total_without_disturbance_penalty": 4960.831377827382
+      },
+      "rollout": {
+        "control_effort": 1673.1555681617738,
+        "estimation_error_final_l2": 0.003455030700080234,
+        "estimation_error_rms": 0.0010996831899869211,
+        "peak_forward_velocity": 0.720880609732232,
+        "terminal_position_error_m": 0.007154970002897304,
+        "time_to_peak_step": 16
+      }
+    },
+    "status": "output_feedback_reference_gate_materialized"
+  },
+  "phase4_implication": "Phase 4 should preserve the output-feedback information structure: Feedbax/GraphSpec should feed delayed observations and let hidden state serve as an implicit estimator, rather than exposing true x_aug. The deterministic and output-feedback linear certificates should be treated as separate gates.",
+  "supersedes_prior_disposition": "83fc5b5 was previously demoted for reproducing Delta-v, but is now canonical for C&S information-structure fidelity.",
+  "tracked_manifest": "results/83fc5b5/notes/output_feedback_lane_manifest.json",
+  "tracked_note": "results/83fc5b5/notes/output_feedback_lane.md",
+  "umbrella": "43e8728"
+}
