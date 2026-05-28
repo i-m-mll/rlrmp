@@ -35,11 +35,8 @@ packages = ["src/rlrmp"]
 config-settings = { editable-mode = "compat" }
 
 [tool.uv.sources.feedbax]
-# Point at feedbax develop worktree. The previous merge spec promised this
-# revert when the feedbax-side feature/loss-epoch-masked auth-merge landed
-# (it has — develop now contains EpochMaskedLoss); this corrects an
-# overlooked stale reference on rlrmp main.
-path = "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax/worktrees/develop"
+# Feedbax's repo root now carries develop.
+path = "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax"
 editable = true
 
 [tool.ruff]
