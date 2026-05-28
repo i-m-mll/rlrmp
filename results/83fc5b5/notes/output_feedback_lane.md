@@ -34,6 +34,19 @@ Riccati realized disturbance budget:
 Riccati feedback cost:
 `4944.7493`.
 
+Exact fixed-controller L2-budget audits:
+
+| controller | estimator | exact cost | ratio to LQR exact | ratio to Riccati feedback | quadratic error |
+|---|---|---:|---:|---:|---:|
+| analytical_lqr_kalman | kalman | 5709.1549 | 1 | 1.1545894 | 1e-11 |
+| analytical_hinf_robust | robust | 5005.3995 | 0.87673213 | 1.0122656 | 1.18e-11 |
+| adam_lqr_fit_kalman | kalman | 6556.8816 | 1.1484855 | 1.3260291 | 1.64e-11 |
+| lbfgsb_after_adam_lqr_fit_kalman | kalman | 6122.5098 | 1.0724021 | 1.2381841 | 5.73e-11 |
+
+The projected-gradient rows below are retained as diagnostics. They include the
+Riccati epsilon as an initial candidate, so they should not be read as an
+independent proof that unseeded open-loop ascent recovered the same sequence.
+
 | PGD steps | best cost | ratio to Riccati | epsilon L2 distance |
 |---:|---:|---:|---:|
 | 50 | 4944.7493 | 1 | 0 |
@@ -58,6 +71,18 @@ LQR comparator scope: simplified delayed Kalman baseline, not a full extLQG pari
   `0.99675818`.
 - H-infinity vs LQR peak-velocity delta under Riccati epsilon:
   `8.0541421%`.
+
+Canonical output-feedback retraining starts from zero, not from the old
+deterministic fit:
+
+Clean estimator-in-loop training starts from zero. Because xhat_0=x_0 and clean innovations remain zero, the clean objective is algebraically equivalent to full-state clean training; the estimator-loop distinction is tested by the exact disturbance audits. The Bellman row is a diagnostic one-step LQR dynamic-programming objective using the analytical P[t+1] value matrices; it tests recoverability when the objective identifies the Riccati law, not robust/H-infinity training.
+
+| optimizer | objective ratio | gain rel err | clean cost | exact cost ratio to LQR | exact cost ratio to H-inf |
+|---|---:|---:|---:|---:|---:|
+| of_adam_lqr_fit | 1.0845942 | 0.98936579 | 4661.8353 | 1.1479793 | 1.3093843 |
+| of_lbfgsb_zero_lqr_fit | 1.4284263 | 0.99476252 | 5859.154 | 1.3712741 | 1.5640742 |
+| of_lbfgsb_after_of_adam_lqr_fit | 1.0086626 | 0.98880891 | 4295.3733 | 1.0637975 | 1.2133666 |
+| of_bellman_lbfgsb_lqr_fit | 1 | 0.00016594268 | 4288.8359 | 1.0002233 | 1.140854 |
 
 Fitted deterministic Phase 3 controllers replayed through the output-feedback
 estimator loop:
