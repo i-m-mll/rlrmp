@@ -1,0 +1,329 @@
+{
+  "migrated": [
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/2bc95fd/gru__jerk/model.arrays.npz",
+      "issue_id": "2bc95fd",
+      "manifest": "results/b41c940/migrated/2bc95fd/gru__jerk/model.artifact.manifest.json",
+      "run_label": "gru__jerk",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/2bc95fd/gru__jerk_loss_historical/model.arrays.npz",
+      "issue_id": "2bc95fd",
+      "manifest": "results/b41c940/migrated/2bc95fd/gru__jerk_loss_historical/model.artifact.manifest.json",
+      "run_label": "gru__jerk_loss_historical",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/2bc95fd/gru__jerk_loss_v_terminal/model.arrays.npz",
+      "issue_id": "2bc95fd",
+      "manifest": "results/b41c940/migrated/2bc95fd/gru__jerk_loss_v_terminal/model.artifact.manifest.json",
+      "run_label": "gru__jerk_loss_v_terminal",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/2bc95fd/gru__jerk_motor_pre/model.arrays.npz",
+      "issue_id": "2bc95fd",
+      "manifest": "results/b41c940/migrated/2bc95fd/gru__jerk_motor_pre/model.artifact.manifest.json",
+      "run_label": "gru__jerk_motor_pre",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/2bc95fd/gru__jerk_motor_smooth_combo/model.arrays.npz",
+      "issue_id": "2bc95fd",
+      "manifest": "results/b41c940/migrated/2bc95fd/gru__jerk_motor_smooth_combo/model.artifact.manifest.json",
+      "run_label": "gru__jerk_motor_smooth_combo",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/2bc95fd/gru__jerk_smooth_high/model.arrays.npz",
+      "issue_id": "2bc95fd",
+      "manifest": "results/b41c940/migrated/2bc95fd/gru__jerk_smooth_high/model.artifact.manifest.json",
+      "run_label": "gru__jerk_smooth_high",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/3702f54/full_trial_pl__pos10/model.arrays.npz",
+      "issue_id": "3702f54",
+      "manifest": "results/b41c940/migrated/3702f54/full_trial_pl__pos10/model.artifact.manifest.json",
+      "run_label": "full_trial_pl__pos10",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/3702f54/full_trial_pl__pos10_prego_1/model.arrays.npz",
+      "issue_id": "3702f54",
+      "manifest": "results/b41c940/migrated/3702f54/full_trial_pl__pos10_prego_1/model.artifact.manifest.json",
+      "run_label": "full_trial_pl__pos10_prego_1",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/3702f54/full_trial_pl__pos10_prego_1e-3/model.arrays.npz",
+      "issue_id": "3702f54",
+      "manifest": "results/b41c940/migrated/3702f54/full_trial_pl__pos10_prego_1e-3/model.artifact.manifest.json",
+      "run_label": "full_trial_pl__pos10_prego_1e-3",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/3702f54/full_trial_pl__pos10_prego_5e-2/model.arrays.npz",
+      "issue_id": "3702f54",
+      "manifest": "results/b41c940/migrated/3702f54/full_trial_pl__pos10_prego_5e-2/model.artifact.manifest.json",
+      "run_label": "full_trial_pl__pos10_prego_5e-2",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/3702f54/full_trial_pl__prego_1/model.arrays.npz",
+      "issue_id": "3702f54",
+      "manifest": "results/b41c940/migrated/3702f54/full_trial_pl__prego_1/model.artifact.manifest.json",
+      "run_label": "full_trial_pl__prego_1",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/3702f54/full_trial_pl__prego_1e-3/model.arrays.npz",
+      "issue_id": "3702f54",
+      "manifest": "results/b41c940/migrated/3702f54/full_trial_pl__prego_1e-3/model.artifact.manifest.json",
+      "run_label": "full_trial_pl__prego_1e-3",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/3702f54/full_trial_pl__prego_5e-2/model.arrays.npz",
+      "issue_id": "3702f54",
+      "manifest": "results/b41c940/migrated/3702f54/full_trial_pl__prego_5e-2/model.artifact.manifest.json",
+      "run_label": "full_trial_pl__prego_5e-2",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/3702f54/post_go_pl__pos10/model.arrays.npz",
+      "issue_id": "3702f54",
+      "manifest": "results/b41c940/migrated/3702f54/post_go_pl__pos10/model.artifact.manifest.json",
+      "run_label": "post_go_pl__pos10",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/b399efc/movement_ramp__cosine/model.arrays.npz",
+      "issue_id": "b399efc",
+      "manifest": "results/b41c940/migrated/b399efc/movement_ramp__cosine/model.artifact.manifest.json",
+      "run_label": "movement_ramp__cosine",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/b399efc/movement_ramp__linear/model.arrays.npz",
+      "issue_id": "b399efc",
+      "manifest": "results/b41c940/migrated/b399efc/movement_ramp__linear/model.artifact.manifest.json",
+      "run_label": "movement_ramp__linear",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/b399efc/movement_ramp__power2/model.arrays.npz",
+      "issue_id": "b399efc",
+      "manifest": "results/b41c940/migrated/b399efc/movement_ramp__power2/model.artifact.manifest.json",
+      "run_label": "movement_ramp__power2",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/b399efc/movement_ramp__power4/model.arrays.npz",
+      "issue_id": "b399efc",
+      "manifest": "results/b41c940/migrated/b399efc/movement_ramp__power4/model.artifact.manifest.json",
+      "run_label": "movement_ramp__power4",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/b399efc/movement_ramp__power6/model.arrays.npz",
+      "issue_id": "b399efc",
+      "manifest": "results/b41c940/migrated/b399efc/movement_ramp__power6/model.artifact.manifest.json",
+      "run_label": "movement_ramp__power6",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/b399efc/movement_ramp__power6_dur80/model.arrays.npz",
+      "issue_id": "b399efc",
+      "manifest": "results/b41c940/migrated/b399efc/movement_ramp__power6_dur80/model.artifact.manifest.json",
+      "run_label": "movement_ramp__power6_dur80",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/b399efc/movement_ramp__power6_prego5/model.arrays.npz",
+      "issue_id": "b399efc",
+      "manifest": "results/b41c940/migrated/b399efc/movement_ramp__power6_prego5/model.artifact.manifest.json",
+      "run_label": "movement_ramp__power6_prego5",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/b399efc/smoke__movement_ramp_power6_1k/model.arrays.npz",
+      "issue_id": "b399efc",
+      "manifest": "results/b41c940/migrated/b399efc/smoke__movement_ramp_power6_1k/model.artifact.manifest.json",
+      "run_label": "smoke__movement_ramp_power6_1k",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/efc4d68/baseline_gru__jerk/model.arrays.npz",
+      "issue_id": "efc4d68",
+      "manifest": "results/b41c940/migrated/efc4d68/baseline_gru__jerk/model.artifact.manifest.json",
+      "run_label": "baseline_gru__jerk",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/efc4d68/baseline_gru__none/model.arrays.npz",
+      "issue_id": "efc4d68",
+      "manifest": "results/b41c940/migrated/efc4d68/baseline_gru__none/model.artifact.manifest.json",
+      "run_label": "baseline_gru__none",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/efc4d68/baseline_gru__smooth/model.arrays.npz",
+      "issue_id": "efc4d68",
+      "manifest": "results/b41c940/migrated/efc4d68/baseline_gru__smooth/model.artifact.manifest.json",
+      "run_label": "baseline_gru__smooth",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/efc4d68/baseline_gru__smooth_jerk/model.arrays.npz",
+      "issue_id": "efc4d68",
+      "manifest": "results/b41c940/migrated/efc4d68/baseline_gru__smooth_jerk/model.artifact.manifest.json",
+      "run_label": "baseline_gru__smooth_jerk",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 43,
+      "array_store": "_artifacts/b41c940/migrated/efc4d68/baseline_vrnn__jerk/model.arrays.npz",
+      "issue_id": "efc4d68",
+      "manifest": "results/b41c940/migrated/efc4d68/baseline_vrnn__jerk/model.artifact.manifest.json",
+      "run_label": "baseline_vrnn__jerk",
+      "total_array_nbytes": 716588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 43,
+      "array_store": "_artifacts/b41c940/migrated/efc4d68/baseline_vrnn__none/model.arrays.npz",
+      "issue_id": "efc4d68",
+      "manifest": "results/b41c940/migrated/efc4d68/baseline_vrnn__none/model.artifact.manifest.json",
+      "run_label": "baseline_vrnn__none",
+      "total_array_nbytes": 716588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 43,
+      "array_store": "_artifacts/b41c940/migrated/efc4d68/baseline_vrnn__smooth/model.arrays.npz",
+      "issue_id": "efc4d68",
+      "manifest": "results/b41c940/migrated/efc4d68/baseline_vrnn__smooth/model.artifact.manifest.json",
+      "run_label": "baseline_vrnn__smooth",
+      "total_array_nbytes": 716588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 43,
+      "array_store": "_artifacts/b41c940/migrated/efc4d68/baseline_vrnn__smooth_jerk/model.arrays.npz",
+      "issue_id": "efc4d68",
+      "manifest": "results/b41c940/migrated/efc4d68/baseline_vrnn__smooth_jerk/model.artifact.manifest.json",
+      "run_label": "baseline_vrnn__smooth_jerk",
+      "total_array_nbytes": 716588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/f47abb1/lit__flat_jerk/model.arrays.npz",
+      "issue_id": "f47abb1",
+      "manifest": "results/b41c940/migrated/f47abb1/lit__flat_jerk/model.artifact.manifest.json",
+      "run_label": "lit__flat_jerk",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/f47abb1/lit__flat_nojerk/model.arrays.npz",
+      "issue_id": "f47abb1",
+      "manifest": "results/b41c940/migrated/f47abb1/lit__flat_nojerk/model.artifact.manifest.json",
+      "run_label": "lit__flat_nojerk",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/f47abb1/lit__full_jerk/model.arrays.npz",
+      "issue_id": "f47abb1",
+      "manifest": "results/b41c940/migrated/f47abb1/lit__full_jerk/model.artifact.manifest.json",
+      "run_label": "lit__full_jerk",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/f47abb1/lit__full_nojerk/model.arrays.npz",
+      "issue_id": "f47abb1",
+      "manifest": "results/b41c940/migrated/f47abb1/lit__full_nojerk/model.artifact.manifest.json",
+      "run_label": "lit__full_nojerk",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/f47abb1/lit__post_jerk/model.arrays.npz",
+      "issue_id": "f47abb1",
+      "manifest": "results/b41c940/migrated/f47abb1/lit__post_jerk/model.artifact.manifest.json",
+      "run_label": "lit__post_jerk",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    },
+    {
+      "array_count": 44,
+      "array_store": "_artifacts/b41c940/migrated/f47abb1/lit__post_nojerk/model.arrays.npz",
+      "issue_id": "f47abb1",
+      "manifest": "results/b41c940/migrated/f47abb1/lit__post_nojerk/model.artifact.manifest.json",
+      "run_label": "lit__post_nojerk",
+      "total_array_nbytes": 2102588,
+      "validation_status": "passed"
+    }
+  ],
+  "schema_version": "rlrmp.feedbax_artifact_migration.v1"
+}
