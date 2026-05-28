@@ -4,16 +4,27 @@ import json
 from pathlib import Path
 
 import equinox as eqx
+import jax.random as jr
+import jax.tree_util as jtu
 import jax.numpy as jnp
+import numpy as np
+import pytest
 
 from feedbax.artifact_schema import read_npz_array_store, write_npz_array_store
 
 from rlrmp.artifact_migration import (
     discover_b_set_runs,
     extract_role_addressed_arrays,
+    load_migrated_model_artifact,
     minimax_args_from_run_spec,
     validate_array_store_roundtrip,
 )
+from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
+from rlrmp.eval.ensemble import eval_ensemble_on_trials
+from rlrmp.eval.kinematics import compute_kinematics
+from rlrmp.eval.minimax_io import load_model
+from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.minimax import build_hps
 
 
 class _Nested(eqx.Module):
@@ -87,3 +98,72 @@ def test_discover_b_set_runs_handles_flat_and_nested_layouts(tmp_path: Path) -> 
 
     assert by_id[("2bc95fd", "gru__jerk")].artifact_dir == flat_artifact
     assert by_id[("f47abb1", "lit__full_nojerk")].artifact_dir == nested_artifact
+
+
+@pytest.mark.parametrize(
+    "manifest_path",
+    [
+        Path("results/b41c940/migrated/2bc95fd/gru__jerk/model.artifact.manifest.json"),
+        Path("results/b41c940/migrated/f47abb1/lit__flat_nojerk/model.artifact.manifest.json"),
+        Path("results/b41c940/migrated/efc4d68/baseline_vrnn__none/model.artifact.manifest.json"),
+    ],
+)
+def test_migrated_artifact_behavior_matches_legacy_eqx(manifest_path: Path) -> None:
+    if not manifest_path.exists():
+        pytest.skip("b41c940 migrated artifact records are not present")
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    legacy_run_spec_path = Path(manifest["provenance"]["parents"][0]["uri"])
+    legacy_checkpoint_path = Path(manifest["provenance"]["parents"][1]["uri"])
+    array_store_path = Path(manifest["parameter_store"]["uri"])
+    if not legacy_checkpoint_path.exists() or not array_store_path.exists():
+        pytest.skip("b41c940 bulk legacy/migrated artifacts are not present")
+
+    run_spec = json.loads(legacy_run_spec_path.read_text(encoding="utf-8"))
+    hps = build_hps(minimax_args_from_run_spec(run_spec))
+    task_model_pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    legacy_model = load_model(
+        legacy_checkpoint_path.parent,
+        legacy_checkpoint_path.name,
+        hps,
+        run_spec,
+    )
+    migrated_model = load_migrated_model_artifact(manifest_path, key=jr.PRNGKey(0))
+
+    n_validation_trials = task_model_pair.task.validation_trials.intervene[
+        PLANT_INTERVENOR_LABEL
+    ].scale.shape[0]
+    trial_specs = jtu.tree_map(
+        lambda x: (
+            x[:2] if eqx.is_array(x) and x.ndim > 0 and x.shape[0] == n_validation_trials else x
+        ),
+        task_model_pair.task.validation_trials,
+    )
+
+    eval_key = jr.PRNGKey(123)
+    legacy_states = eval_ensemble_on_trials(
+        task_model_pair.task,
+        legacy_model,
+        trial_specs,
+        key=eval_key,
+        n_replicates=5,
+    )
+    migrated_states = eval_ensemble_on_trials(
+        task_model_pair.task,
+        migrated_model,
+        trial_specs,
+        key=eval_key,
+        n_replicates=5,
+    )
+
+    legacy_leaves = jtu.tree_leaves(eqx.filter(legacy_states, eqx.is_array))
+    migrated_leaves = jtu.tree_leaves(eqx.filter(migrated_states, eqx.is_array))
+    assert len(legacy_leaves) == len(migrated_leaves)
+    for legacy_leaf, migrated_leaf in zip(legacy_leaves, migrated_leaves, strict=True):
+        np.testing.assert_array_equal(np.asarray(migrated_leaf), np.asarray(legacy_leaf))
+
+    legacy_kinematics = compute_kinematics(legacy_states, trial_specs)
+    migrated_kinematics = compute_kinematics(migrated_states, trial_specs)
+    assert legacy_kinematics.keys() == migrated_kinematics.keys()
+    for name in legacy_kinematics:
+        np.testing.assert_array_equal(migrated_kinematics[name], legacy_kinematics[name])
