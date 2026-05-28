@@ -7,6 +7,22 @@
     "phase0b_lqr_u",
     "phase0b_lqr_x",
     "phase0b_lqr_x_hat",
+    "phase1_exact_adam_lqr_fit_kalman_epsilon",
+    "phase1_exact_adam_lqr_fit_kalman_u",
+    "phase1_exact_adam_lqr_fit_kalman_x",
+    "phase1_exact_adam_lqr_fit_kalman_x_hat",
+    "phase1_exact_analytical_hinf_robust_epsilon",
+    "phase1_exact_analytical_hinf_robust_u",
+    "phase1_exact_analytical_hinf_robust_x",
+    "phase1_exact_analytical_hinf_robust_x_hat",
+    "phase1_exact_analytical_lqr_kalman_epsilon",
+    "phase1_exact_analytical_lqr_kalman_u",
+    "phase1_exact_analytical_lqr_kalman_x",
+    "phase1_exact_analytical_lqr_kalman_x_hat",
+    "phase1_exact_lbfgsb_after_adam_lqr_fit_kalman_epsilon",
+    "phase1_exact_lbfgsb_after_adam_lqr_fit_kalman_u",
+    "phase1_exact_lbfgsb_after_adam_lqr_fit_kalman_x",
+    "phase1_exact_lbfgsb_after_adam_lqr_fit_kalman_x_hat",
     "phase1_open_loop_200_epsilon",
     "phase1_open_loop_200_u",
     "phase1_open_loop_200_x",
@@ -34,8 +50,40 @@
     "phase3_lbfgsb_after_adam_lqr_fit_under_eps_x_hat",
     "phase3_lqr_under_eps_x",
     "phase3_lqr_x",
-    "phase3_lqr_x_hat"
+    "phase3_lqr_x_hat",
+    "phase3_of_adam_lqr_fit_K",
+    "phase3_of_adam_lqr_fit_clean_u",
+    "phase3_of_adam_lqr_fit_clean_x",
+    "phase3_of_adam_lqr_fit_exact_kalman_exact_epsilon",
+    "phase3_of_adam_lqr_fit_exact_kalman_exact_u",
+    "phase3_of_adam_lqr_fit_exact_kalman_exact_x",
+    "phase3_of_adam_lqr_fit_exact_kalman_exact_x_hat",
+    "phase3_of_bellman_lbfgsb_lqr_fit_K",
+    "phase3_of_bellman_lbfgsb_lqr_fit_clean_u",
+    "phase3_of_bellman_lbfgsb_lqr_fit_clean_x",
+    "phase3_of_bellman_lbfgsb_lqr_fit_exact_kalman_exact_epsilon",
+    "phase3_of_bellman_lbfgsb_lqr_fit_exact_kalman_exact_u",
+    "phase3_of_bellman_lbfgsb_lqr_fit_exact_kalman_exact_x",
+    "phase3_of_bellman_lbfgsb_lqr_fit_exact_kalman_exact_x_hat",
+    "phase3_of_lbfgsb_after_of_adam_lqr_fit_K",
+    "phase3_of_lbfgsb_after_of_adam_lqr_fit_clean_u",
+    "phase3_of_lbfgsb_after_of_adam_lqr_fit_clean_x",
+    "phase3_of_lbfgsb_after_of_adam_lqr_fit_exact_kalman_exact_epsilon",
+    "phase3_of_lbfgsb_after_of_adam_lqr_fit_exact_kalman_exact_u",
+    "phase3_of_lbfgsb_after_of_adam_lqr_fit_exact_kalman_exact_x",
+    "phase3_of_lbfgsb_after_of_adam_lqr_fit_exact_kalman_exact_x_hat",
+    "phase3_of_lbfgsb_zero_lqr_fit_K",
+    "phase3_of_lbfgsb_zero_lqr_fit_clean_u",
+    "phase3_of_lbfgsb_zero_lqr_fit_clean_x",
+    "phase3_of_lbfgsb_zero_lqr_fit_exact_kalman_exact_epsilon",
+    "phase3_of_lbfgsb_zero_lqr_fit_exact_kalman_exact_u",
+    "phase3_of_lbfgsb_zero_lqr_fit_exact_kalman_exact_x",
+    "phase3_of_lbfgsb_zero_lqr_fit_exact_kalman_exact_x_hat"
   ],
+  "follow_up_issues": {
+    "exact_output_feedback_phase1": "60d105d",
+    "output_feedback_phase3_training": "4008843"
+  },
   "issue": "83fc5b5",
   "phase0a_deterministic_reference": {
     "issue": "cb98e58",
@@ -180,6 +228,132 @@
     "budget": 3.154052119982121e-06,
     "budget_l2": 0.0017759651235263942,
     "deterministic_phase1_issue": "a7dad8a",
+    "exact_fixed_controller_audits": [
+      {
+        "boundary_active": true,
+        "budget": 3.154052119982121e-06,
+        "budget_l2": 0.0017759651235263942,
+        "cost": {
+          "control_stage": 1678.39655866092,
+          "disturbance_energy": 3.154052119982113e-06,
+          "h_infinity_objective": null,
+          "state_stage": 3877.4192364416413,
+          "terminal_state": 153.33911787009347,
+          "total_without_disturbance_penalty": 5709.1549129726545
+        },
+        "epsilon_energy": 3.154052119982113e-06,
+        "estimator_kind": "kalman",
+        "kkt_lambda": 349807443.77118766,
+        "label": "analytical_lqr_kalman",
+        "max_eigenvalue": 253196508.5091352,
+        "quadratic_rollout_abs_error": 1.000444171950221e-11,
+        "quadratic_total": 5709.1549129726645,
+        "rollout": {
+          "control_effort": 1678.39655866092,
+          "estimation_error_final_l2": 0.016424349986981477,
+          "estimation_error_rms": 0.0015752916817586924,
+          "peak_forward_velocity": 0.7182551031934982,
+          "terminal_position_error_m": 0.014009851531326334,
+          "time_to_peak_step": 16
+        },
+        "rollout_total": 5709.1549129726545,
+        "total_cost_ratio_to_lqr_exact": 1.0,
+        "total_cost_ratio_to_riccati": 1.1545893634244107
+      },
+      {
+        "boundary_active": true,
+        "budget": 3.154052119982121e-06,
+        "budget_l2": 0.0017759651235263942,
+        "cost": {
+          "control_stage": 2043.5336644080217,
+          "disturbance_energy": 3.1540521199821127e-06,
+          "h_infinity_objective": 4721.134755349977,
+          "state_stage": 2930.39262622284,
+          "terminal_state": 31.47324156916514,
+          "total_without_disturbance_penalty": 5005.399532200026
+        },
+        "epsilon_energy": 3.1540521199821127e-06,
+        "estimator_kind": "robust",
+        "kkt_lambda": 129224932.60267718,
+        "label": "analytical_hinf_robust",
+        "max_eigenvalue": 127313398.72994342,
+        "quadratic_rollout_abs_error": 1.1823431123048067e-11,
+        "quadratic_total": 5005.399532200038,
+        "rollout": {
+          "control_effort": 2043.5336644080217,
+          "estimation_error_final_l2": 4.6769093008954656e-05,
+          "estimation_error_rms": 0.0003420856176009402,
+          "peak_forward_velocity": 0.7760654362630566,
+          "terminal_position_error_m": 0.006376184239019367,
+          "time_to_peak_step": 16
+        },
+        "rollout_total": 5005.399532200026,
+        "total_cost_ratio_to_lqr_exact": 0.8767321273462879,
+        "total_cost_ratio_to_riccati": 1.0122655888064798
+      },
+      {
+        "boundary_active": true,
+        "budget": 3.154052119982121e-06,
+        "budget_l2": 0.0017759651235263942,
+        "cost": {
+          "control_stage": 1776.3655133716984,
+          "disturbance_energy": 3.1540521199821183e-06,
+          "h_infinity_objective": null,
+          "state_stage": 4564.109271570692,
+          "terminal_state": 216.40681954424568,
+          "total_without_disturbance_penalty": 6556.881604486636
+        },
+        "epsilon_energy": 3.1540521199821183e-06,
+        "estimator_kind": "kalman",
+        "kkt_lambda": 481858349.12212914,
+        "label": "adam_lqr_fit_kalman",
+        "max_eigenvalue": 365201736.06978744,
+        "quadratic_rollout_abs_error": 1.6370904631912708e-11,
+        "quadratic_total": 6556.88160448662,
+        "rollout": {
+          "control_effort": 1776.3655133716986,
+          "estimation_error_final_l2": 0.015038011187254183,
+          "estimation_error_rms": 0.0015234199315444302,
+          "peak_forward_velocity": 0.7261548636377998,
+          "terminal_position_error_m": 0.016634646740207742,
+          "time_to_peak_step": 16
+        },
+        "rollout_total": 6556.881604486636,
+        "total_cost_ratio_to_lqr_exact": 1.1484854946898937,
+        "total_cost_ratio_to_riccati": 1.3260291362161738
+      },
+      {
+        "boundary_active": true,
+        "budget": 3.154052119982121e-06,
+        "budget_l2": 0.0017759651235263942,
+        "cost": {
+          "control_stage": 1679.519141115501,
+          "disturbance_energy": 3.1540521199821216e-06,
+          "h_infinity_objective": null,
+          "state_stage": 4233.521789299266,
+          "terminal_state": 209.46883208116427,
+          "total_without_disturbance_penalty": 6122.509762495932
+        },
+        "epsilon_energy": 3.1540521199821216e-06,
+        "estimator_kind": "kalman",
+        "kkt_lambda": 471459359.78178215,
+        "label": "lbfgsb_after_adam_lqr_fit_kalman",
+        "max_eigenvalue": 363948242.5594808,
+        "quadratic_rollout_abs_error": 5.729816621169448e-11,
+        "quadratic_total": 6122.509762495989,
+        "rollout": {
+          "control_effort": 1679.5191411155008,
+          "estimation_error_final_l2": 0.015063701049514771,
+          "estimation_error_rms": 0.0015244757868078157,
+          "peak_forward_velocity": 0.7163711080449955,
+          "terminal_position_error_m": 0.016394046808346132,
+          "time_to_peak_step": 16
+        },
+        "rollout_total": 6122.509762495932,
+        "total_cost_ratio_to_lqr_exact": 1.0724021078117936,
+        "total_cost_ratio_to_riccati": 1.238184066993415
+      }
+    ],
     "open_loop": [
       {
         "best_cost": {
@@ -288,6 +462,7 @@
         "total_cost_ratio_to_riccati": 1.0
       }
     ],
+    "open_loop_interpretation": "The PGD rows include the Riccati epsilon as an initial candidate. They are retained as diagnostics only; exact_fixed_controller_audits is the strengthened evidence-bearing Phase 1 audit.",
     "riccati_feedback": {
       "cost": {
         "control_stage": 2011.4733132950964,
@@ -308,7 +483,6 @@
     }
   },
   "phase3_output_feedback_linear_gate": {
-    "clean_hinf_vs_lqr_cost_ratio": 1.1529576059097937,
     "deterministic_certificate_issue": "d01c35a",
     "deterministic_phase3_issue": "6f5c79e",
     "fitted_controller_replays": [
@@ -413,6 +587,7 @@
         "time_to_peak_step": 16
       }
     },
+    "hinf_under_riccati_epsilon_vs_clean_lqr_cost_ratio": 1.1529576059097937,
     "hinf_vs_lqr_cost_ratio_under_riccati_epsilon": 0.9967581831127864,
     "hinf_vs_lqr_peak_velocity_delta_percent": 8.054142120639389,
     "interpretation": "The linear gate now evaluates controllers through x_hat_aug. The full fitted-controller certificate from d01c35a remains the deterministic Phase 0A check; this lane additionally replays the fitted LQR controllers through the C&S output-feedback estimator dynamics when the Phase 3 artifact is available.",
@@ -453,6 +628,167 @@
         "time_to_peak_step": 16
       }
     },
+    "output_feedback_training_exact_audits": [
+      {
+        "cost": {
+          "control_stage": 1776.5206410336768,
+          "disturbance_energy": 3.154052119982119e-06,
+          "h_infinity_objective": null,
+          "state_stage": 4562.006416603008,
+          "terminal_state": 215.4645257154159,
+          "total_without_disturbance_penalty": 6553.991583352101
+        },
+        "epsilon_energy": 3.154052119982119e-06,
+        "estimator_kind": "kalman",
+        "label": "of_adam_lqr_fit_exact_kalman",
+        "quadratic_rollout_abs_error": 9.094947017729282e-13,
+        "rollout": {
+          "control_effort": 1776.5206410336766,
+          "estimation_error_final_l2": 0.015037040481700565,
+          "estimation_error_rms": 0.001523359872719992,
+          "peak_forward_velocity": 0.7264831024789387,
+          "terminal_position_error_m": 0.016596347765645163,
+          "time_to_peak_step": 16
+        },
+        "total_cost_ratio_to_hinf_exact": 1.3093843041279505,
+        "total_cost_ratio_to_lqr_exact": 1.147979286471937
+      },
+      {
+        "cost": {
+          "control_stage": 1686.2157259899986,
+          "disturbance_energy": 3.15405211998212e-06,
+          "h_infinity_objective": null,
+          "state_stage": 5916.876280341572,
+          "terminal_state": 225.7240858121394,
+          "total_without_disturbance_penalty": 7828.81609214371
+        },
+        "epsilon_energy": 3.15405211998212e-06,
+        "estimator_kind": "kalman",
+        "label": "of_lbfgsb_zero_lqr_fit_exact_kalman",
+        "quadratic_rollout_abs_error": 1.0913936421275139e-11,
+        "rollout": {
+          "control_effort": 1686.215725989998,
+          "estimation_error_final_l2": 0.015132233962087668,
+          "estimation_error_rms": 0.0015339947654059228,
+          "peak_forward_velocity": 0.659271940139608,
+          "terminal_position_error_m": 0.01697752636253737,
+          "time_to_peak_step": 21
+        },
+        "total_cost_ratio_to_hinf_exact": 1.5640741646656737,
+        "total_cost_ratio_to_lqr_exact": 1.3712740697147043
+      },
+      {
+        "cost": {
+          "control_stage": 1683.9685641189076,
+          "disturbance_energy": 3.154052119982123e-06,
+          "h_infinity_objective": null,
+          "state_stage": 4187.165986972932,
+          "terminal_state": 202.2498955019908,
+          "total_without_disturbance_penalty": 6073.384446593831
+        },
+        "epsilon_energy": 3.154052119982123e-06,
+        "estimator_kind": "kalman",
+        "label": "of_lbfgsb_after_of_adam_lqr_fit_exact_kalman",
+        "quadratic_rollout_abs_error": 4.3655745685100555e-11,
+        "rollout": {
+          "control_effort": 1683.9685641189078,
+          "estimation_error_final_l2": 0.015071819458445344,
+          "estimation_error_rms": 0.0015247681516690388,
+          "peak_forward_velocity": 0.7185699620323068,
+          "terminal_position_error_m": 0.01610409879286337,
+          "time_to_peak_step": 16
+        },
+        "total_cost_ratio_to_hinf_exact": 1.2133665669490308,
+        "total_cost_ratio_to_lqr_exact": 1.0637974514920858
+      },
+      {
+        "cost": {
+          "control_stage": 1677.0747932332572,
+          "disturbance_energy": 3.1540521199821216e-06,
+          "h_infinity_objective": null,
+          "state_stage": 3879.915614624613,
+          "terminal_state": 153.43953748683185,
+          "total_without_disturbance_penalty": 5710.429945344702
+        },
+        "epsilon_energy": 3.1540521199821216e-06,
+        "estimator_kind": "kalman",
+        "label": "of_bellman_lbfgsb_lqr_fit_exact_kalman",
+        "quadratic_rollout_abs_error": 1.8189894035458565e-11,
+        "rollout": {
+          "control_effort": 1677.074793233257,
+          "estimation_error_final_l2": 0.01642333978628725,
+          "estimation_error_rms": 0.001575292788833891,
+          "peak_forward_velocity": 0.717957411823931,
+          "terminal_position_error_m": 0.014014259644859958,
+          "time_to_peak_step": 16
+        },
+        "total_cost_ratio_to_hinf_exact": 1.140853973515835,
+        "total_cost_ratio_to_lqr_exact": 1.0002233311920037
+      }
+    ],
+    "output_feedback_training_note": "Clean estimator-in-loop training starts from zero. Because xhat_0=x_0 and clean innovations remain zero, the clean objective is algebraically equivalent to full-state clean training; the estimator-loop distinction is tested by the exact disturbance audits. The Bellman row is a diagnostic one-step LQR dynamic-programming objective using the analytical P[t+1] value matrices; it tests recoverability when the objective identifies the Riccati law, not robust/H-infinity training.",
+    "output_feedback_trainings": [
+      {
+        "best_objective": 342.1870440452862,
+        "canonical_clean_cost": 4661.835303148982,
+        "canonical_peak_forward_velocity": 0.727152735931829,
+        "canonical_terminal_position_error_m": 0.0035163331753832864,
+        "final_objective": 342.2367407757619,
+        "gain_relative_error": 0.9893657901851417,
+        "label": "of_adam_lqr_fit",
+        "n_function_evaluations": 2500,
+        "n_iterations": 2500,
+        "objective_ratio_to_reference": 1.08459420105638,
+        "optimizer_status": "completed",
+        "reference_objective": 315.49776286098586,
+        "zero_objective": 13326.344322174029
+      },
+      {
+        "best_objective": 450.66529407604503,
+        "canonical_clean_cost": 5859.153975916154,
+        "canonical_peak_forward_velocity": 0.6596367074341879,
+        "canonical_terminal_position_error_m": 0.00401664621149786,
+        "final_objective": 450.66529407604503,
+        "gain_relative_error": 0.994762515094479,
+        "label": "of_lbfgsb_zero_lqr_fit",
+        "n_function_evaluations": 561,
+        "n_iterations": 500,
+        "objective_ratio_to_reference": 1.4284262746884087,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "reference_objective": 315.49776286098586,
+        "zero_objective": 13326.344322174029
+      },
+      {
+        "best_objective": 318.2307920086662,
+        "canonical_clean_cost": 4295.373270238379,
+        "canonical_peak_forward_velocity": 0.7192125208290734,
+        "canonical_terminal_position_error_m": 0.003001108133902909,
+        "final_objective": 318.2307920086662,
+        "gain_relative_error": 0.9888089086689802,
+        "label": "of_lbfgsb_after_of_adam_lqr_fit",
+        "n_function_evaluations": 545,
+        "n_iterations": 500,
+        "objective_ratio_to_reference": 1.0086625943806915,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "reference_objective": 315.49776286098586,
+        "zero_objective": 13326.344322174029
+      },
+      {
+        "best_objective": 5114.452774366517,
+        "canonical_clean_cost": 4288.835893008886,
+        "canonical_peak_forward_velocity": 0.7169317648983913,
+        "canonical_terminal_position_error_m": 0.0031018661745184175,
+        "final_objective": 5114.452774366517,
+        "gain_relative_error": 0.00016594268005450206,
+        "label": "of_bellman_lbfgsb_lqr_fit",
+        "n_function_evaluations": 117,
+        "n_iterations": 111,
+        "objective_ratio_to_reference": 1.000000000011582,
+        "optimizer_status": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+        "reference_objective": 5114.452774307281,
+        "zero_objective": 5323.533158593108
+      }
+    ],
     "status": "output_feedback_reference_gate_materialized"
   },
   "phase4_implication": "Phase 4 should preserve the output-feedback information structure: Feedbax/GraphSpec should feed delayed observations and let hidden state serve as an implicit estimator, rather than exposing true x_aug. The deterministic and output-feedback linear certificates should be treated as separate gates.",
