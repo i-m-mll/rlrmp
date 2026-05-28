@@ -243,6 +243,11 @@ results/**
 !results/**/*.md
 # Run specs (canonical: run.json; legacy: config.json):
 !results/**/run.json
+# Durable model-artifact migration specs/manifests:
+!results/**/model.graph.json
+!results/**/model.artifact.manifest.json
+!results/**/migration_summary.json
+!results/**/migration_index.json
 # config.json whitelisted at specific depths only — intentionally NOT `!results/**/config.json`.
 # The broad glob is depth-blind and would track bulk per-run configs from cloud providers
 # (runpod/, modal/, coreweave/, etc.) that land deep in the tree. Restrict to the three
