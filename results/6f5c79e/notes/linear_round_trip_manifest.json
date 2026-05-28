@@ -1,0 +1,455 @@
+{
+  "adversary_equivalence_issue": "a7dad8a",
+  "artifact_npz": "_artifacts/6f5c79e/linear_round_trip/linear_round_trip.npz",
+  "artifact_npz_keys": [
+    "analytical_hinf_reference_clean_u",
+    "analytical_hinf_reference_clean_x",
+    "analytical_hinf_reference_heldout_epsilon",
+    "analytical_hinf_reference_heldout_u",
+    "analytical_hinf_reference_heldout_x",
+    "analytical_lqr_reference_clean_u",
+    "analytical_lqr_reference_clean_x",
+    "analytical_lqr_reference_heldout_epsilon",
+    "analytical_lqr_reference_heldout_u",
+    "analytical_lqr_reference_heldout_x",
+    "gradient_lqr_K",
+    "gradient_lqr_fit_clean_u",
+    "gradient_lqr_fit_clean_x",
+    "gradient_lqr_fit_heldout_epsilon",
+    "gradient_lqr_fit_heldout_u",
+    "gradient_lqr_fit_heldout_x",
+    "gradient_lqr_u",
+    "gradient_lqr_x",
+    "hinf_reference_K",
+    "lqr_reference_K",
+    "teacher_hinf_K",
+    "teacher_hinf_fit_clean_u",
+    "teacher_hinf_fit_clean_x",
+    "teacher_hinf_fit_heldout_epsilon",
+    "teacher_hinf_fit_heldout_u",
+    "teacher_hinf_fit_heldout_x",
+    "teacher_hinf_u",
+    "teacher_hinf_x",
+    "teacher_lqr_K",
+    "teacher_lqr_fit_clean_u",
+    "teacher_lqr_fit_clean_x",
+    "teacher_lqr_fit_heldout_epsilon",
+    "teacher_lqr_fit_heldout_u",
+    "teacher_lqr_fit_heldout_x",
+    "teacher_lqr_u",
+    "teacher_lqr_x"
+  ],
+  "audits": [
+    {
+      "clean_cost": 4288.752027096607,
+      "control_effort": 16.89263496908943,
+      "delta_v_percent_vs_lqr_reference": 0.0,
+      "gain_relative_error": 0.0,
+      "heldout": {
+        "best_energies": [
+          5.61509498931405e-06,
+          5.615094989314044e-06,
+          5.615094989314044e-06,
+          5.615094989314042e-06
+        ],
+        "best_objectives": [
+          4774.740978678374,
+          4781.613749289646,
+          4789.86339182168,
+          4772.972531031142
+        ],
+        "best_restart_idx": 2,
+        "disturbance_energy": 5.615094989314044e-06,
+        "final_energies": [
+          5.615094989314045e-06,
+          5.6150949893140436e-06,
+          5.615094989314049e-06,
+          5.615094989314044e-06
+        ],
+        "final_objectives": [
+          4726.621177047636,
+          4723.89391490576,
+          4730.692999029952,
+          4724.605960523302
+        ],
+        "h_infinity_objective": 4283.7925777039245,
+        "initial_objectives": [
+          4257.4894790712615,
+          4364.512264464172,
+          4283.172298508398,
+          4228.710562117257
+        ],
+        "learning_rate": 0.03,
+        "n_restarts": 4,
+        "n_steps": 50,
+        "peak_forward_velocity": 0.7231607959462846,
+        "seed": 11,
+        "terminal_position_error_m": 0.00783598300170888,
+        "time_to_peak_step": 16,
+        "total_cost": 4789.863391821682
+      },
+      "label": "analytical_lqr_reference",
+      "peak_forward_velocity": 0.7172296015547458,
+      "terminal_position_error_m": 0.0030967011901701963,
+      "time_to_peak_step": 16
+    },
+    {
+      "clean_cost": 4638.018569571829,
+      "control_effort": 17.65806332434273,
+      "delta_v_percent_vs_lqr_reference": 1.4326652887528082,
+      "gain_relative_error": 0.9896556733114712,
+      "heldout": {
+        "best_energies": [
+          5.6150949893140436e-06,
+          5.61509498931405e-06,
+          5.6150949893140436e-06,
+          5.615094989314049e-06
+        ],
+        "best_objectives": [
+          5654.485571424523,
+          5610.714457138129,
+          5596.40184468313,
+          5589.389338671767
+        ],
+        "best_restart_idx": 0,
+        "disturbance_energy": 5.6150949893140436e-06,
+        "final_energies": [
+          5.61509498931405e-06,
+          5.6150949893140436e-06,
+          5.615094989314047e-06,
+          5.615094989314045e-06
+        ],
+        "final_objectives": [
+          5473.549135367949,
+          5433.648884391355,
+          5423.106766918543,
+          5436.279387822602
+        ],
+        "h_infinity_objective": 5148.414757306768,
+        "initial_objectives": [
+          4604.545067345268,
+          4633.873694125457,
+          4668.66581445169,
+          4634.240990805943
+        ],
+        "learning_rate": 0.03,
+        "n_restarts": 4,
+        "n_steps": 50,
+        "peak_forward_velocity": 0.7263146680482965,
+        "seed": 23,
+        "terminal_position_error_m": 0.013216864103194906,
+        "time_to_peak_step": 16,
+        "total_cost": 5654.485571424525
+      },
+      "label": "gradient_lqr_fit",
+      "peak_forward_velocity": 0.7275051010968807,
+      "terminal_position_error_m": 0.0033697861558782197,
+      "time_to_peak_step": 16
+    },
+    {
+      "clean_cost": 4288.752027096608,
+      "control_effort": 16.89263496908943,
+      "delta_v_percent_vs_lqr_reference": 1.547932520100279e-14,
+      "gain_relative_error": 1.2225762418256184e-16,
+      "heldout": {
+        "best_energies": [
+          5.61509498931405e-06,
+          5.615094989314044e-06,
+          5.615094989314047e-06,
+          5.615094989314042e-06
+        ],
+        "best_objectives": [
+          4776.9427033570955,
+          4769.472946995742,
+          4784.077736015067,
+          4777.4754953419115
+        ],
+        "best_restart_idx": 2,
+        "disturbance_energy": 5.615094989314047e-06,
+        "final_energies": [
+          5.615094989314045e-06,
+          5.615094989314049e-06,
+          5.6150949893140385e-06,
+          5.615094989314045e-06
+        ],
+        "final_objectives": [
+          4728.32585538281,
+          4732.693474118906,
+          4728.185349014166,
+          4727.965259368973
+        ],
+        "h_infinity_objective": 4278.006921897311,
+        "initial_objectives": [
+          4388.93363486606,
+          4323.986684187618,
+          4317.970808767205,
+          4329.638428669161
+        ],
+        "learning_rate": 0.03,
+        "n_restarts": 4,
+        "n_steps": 200,
+        "peak_forward_velocity": 0.7233237880231425,
+        "seed": 1038,
+        "terminal_position_error_m": 0.007601419297966097,
+        "time_to_peak_step": 16,
+        "total_cost": 4784.077736015069
+      },
+      "label": "teacher_lqr_fit",
+      "peak_forward_velocity": 0.7172296015547459,
+      "terminal_position_error_m": 0.0030967011901701976,
+      "time_to_peak_step": 16
+    },
+    {
+      "clean_cost": 4507.444127385286,
+      "control_effort": 20.84359283227471,
+      "delta_v_percent_vs_lqr_reference": 7.487741449616711,
+      "gain_relative_error": 0.0,
+      "heldout": {
+        "best_energies": [
+          5.615094989314044e-06,
+          5.615094989314041e-06,
+          5.615094989314047e-06,
+          5.615094989314042e-06
+        ],
+        "best_objectives": [
+          5236.140622168554,
+          4755.6195778640695,
+          4744.500716146023,
+          4743.679172149317
+        ],
+        "best_restart_idx": 0,
+        "disturbance_energy": 5.615094989314044e-06,
+        "final_energies": [
+          5.615094989314045e-06,
+          5.615094989314047e-06,
+          5.615094989314042e-06,
+          5.615094989314045e-06
+        ],
+        "final_objectives": [
+          4797.702027608722,
+          4747.0896085590875,
+          4734.038492996122,
+          4731.337069654834
+        ],
+        "h_infinity_objective": 4730.069808050793,
+        "initial_objectives": [
+          5236.14062216855,
+          4492.413291218736,
+          4519.680509884863,
+          4494.272658904498
+        ],
+        "learning_rate": 0.03,
+        "n_restarts": 4,
+        "n_steps": 50,
+        "peak_forward_velocity": 0.7924621769867776,
+        "seed": 37,
+        "terminal_position_error_m": 0.004659039768253,
+        "time_to_peak_step": 16,
+        "total_cost": 5236.14062216855
+      },
+      "label": "analytical_hinf_reference",
+      "peak_forward_velocity": 0.7709338997192813,
+      "terminal_position_error_m": 7.070682797671043e-06,
+      "time_to_peak_step": 16
+    },
+    {
+      "clean_cost": 4507.444127385286,
+      "control_effort": 20.84359283227471,
+      "delta_v_percent_vs_lqr_reference": 7.487741449616725,
+      "gain_relative_error": 2.314203605940808e-17,
+      "heldout": {
+        "best_energies": [
+          5.615094989314044e-06,
+          5.615094989314045e-06,
+          5.615094989314046e-06,
+          5.615094989314042e-06
+        ],
+        "best_objectives": [
+          5236.140622168554,
+          4754.931949483431,
+          4747.035088499065,
+          4746.914877147832
+        ],
+        "best_restart_idx": 0,
+        "disturbance_energy": 5.615094989314044e-06,
+        "final_energies": [
+          5.615094989314045e-06,
+          5.615094989314045e-06,
+          5.615094989314047e-06,
+          5.615094989314042e-06
+        ],
+        "final_objectives": [
+          4797.702027608724,
+          4730.542899670491,
+          4737.220996514088,
+          4742.209163102673
+        ],
+        "h_infinity_objective": 4730.069808050793,
+        "initial_objectives": [
+          5236.14062216855,
+          4523.951807076854,
+          4511.266888356564,
+          4533.158101539715
+        ],
+        "learning_rate": 0.03,
+        "n_restarts": 4,
+        "n_steps": 50,
+        "peak_forward_velocity": 0.7924621769867776,
+        "seed": 41,
+        "terminal_position_error_m": 0.004659039768252999,
+        "time_to_peak_step": 16,
+        "total_cost": 5236.14062216855
+      },
+      "label": "teacher_hinf_fit",
+      "peak_forward_velocity": 0.7709338997192814,
+      "terminal_position_error_m": 7.07068279767063e-06,
+      "time_to_peak_step": 16
+    }
+  ],
+  "game_card_issue": "cb98e58",
+  "gamma": 9493.516117275487,
+  "gamma_factor": 1.05,
+  "graphspec_execution_conversion_out_of_scope": true,
+  "interpretation": "The analytical replay/audit and teacher-fit representational paths are in place, but naive objective-gradient training of the clean LQR gain did not meet the predeclared gain/objective pass band from zero initialization.",
+  "issue": "6f5c79e",
+  "lqr_training": {
+    "best_objective": 341.99728939060134,
+    "canonical_clean_cost": 4638.018569571829,
+    "canonical_peak_forward_velocity": 0.7275051010968807,
+    "canonical_terminal_position_error_m": 0.0033697861558782197,
+    "canonical_time_to_peak_step": 16,
+    "final_objective": 341.99728939060134,
+    "gain_relative_error": 0.9896556733114712,
+    "objective_ratio_to_reference": 1.0839927557308597,
+    "reference_objective": 315.49776286098586,
+    "zero_objective": 13326.344322174029
+  },
+  "matrix_generalization_out_of_scope": true,
+  "phase3_status": "blocked_on_optimizer",
+  "predeclared_tolerances": {
+    "delta_v_absolute_percentage_points": 1.0,
+    "gain_relative_error": 0.05,
+    "lqr_objective_ratio": 1.01,
+    "terminal_error_m": 0.0001
+  },
+  "reference": {
+    "cost": {
+      "R": "I_2",
+      "fact_t": "((t + 1) / T)^6, capped at 1",
+      "force_and_integrator_weight": "1.0",
+      "position_weight": "fact_t * 1e6",
+      "schedule": "C&S Eq. 15 physical 8-state schedule with 5-step delay distribution",
+      "velocity_weight": "fact_t * 1e5"
+    },
+    "diagnostic_gamma_factor": 1.5,
+    "epsilon_metric": {
+      "dt_scaled": false,
+      "norm": "sum_t ||epsilon_t||_2^2 over the 8 physical epsilon coordinates",
+      "note": "Gamma is an H-infinity attenuation parameter, not an epsilon budget. Any PGD budget must be derived explicitly from a realized Riccati epsilon sequence and treated as an open-loop surrogate budget."
+    },
+    "frontier": [
+      {
+        "closed_loop_epsilon_energy": 5.615094989314044e-06,
+        "closed_loop_epsilon_l2": 0.0023696191654597252,
+        "delta_v_percent": 7.487741449616711,
+        "epsilon_on_nominal_energy": 2.5299496451124823e-06,
+        "epsilon_on_nominal_l2": 0.0015905815430566526,
+        "factor": 1.05,
+        "factor_key": "1p05",
+        "gamma": 9493.516117275487,
+        "hinf_peak_forward_velocity": 0.7709338997192813,
+        "nominal_total_cost": 4507.444127385286,
+        "terminal_position_error_m": 7.070682797671043e-06,
+        "time_to_peak_step": 16,
+        "worst_case_h_infinity_objective": 4730.069808050793,
+        "worst_case_total_cost_without_penalty": 5236.14062216855
+      }
+    ],
+    "gamma_star": 9041.44392121475,
+    "issue": "cb98e58",
+    "lqr": {
+      "peak_forward_velocity": 0.7172296015547458,
+      "terminal_position_error_m": 0.0030967011901701963,
+      "time_to_peak_step": 16,
+      "total_cost": 4288.752027096607
+    },
+    "plant": {
+      "bw_contract": "top physical 8x8 block is identity; lag rows are zero",
+      "bw_shape": [
+        48,
+        8
+      ],
+      "damping": 0.1,
+      "delay_steps": 5,
+      "disturbance_dim": 8,
+      "dt": 0.01,
+      "mass": 1.0,
+      "name": "cs_faithful_pointmass",
+      "physical_state_dim": 8,
+      "state_dim": 48,
+      "state_order": [
+        "px",
+        "py",
+        "vx",
+        "vy",
+        "fx",
+        "fy",
+        "eps_x_int",
+        "eps_y_int",
+        "lag1_px",
+        "...",
+        "lag5_eps_y_int"
+      ],
+      "tau": 0.066
+    },
+    "primary_gamma_factor": 1.05,
+    "regeneration_command": "PYTHONPATH=src python scripts/materialize_analytical_game_card.py",
+    "task": {
+      "duration_s": 0.6,
+      "hold_free": true,
+      "horizon_steps": 60,
+      "init_pos_m": [
+        0.0,
+        0.0
+      ],
+      "single_reach": true,
+      "target_pos_m": [
+        0.15,
+        0.0
+      ]
+    },
+    "umbrella": "43e8728"
+  },
+  "regeneration_command": "PYTHONPATH=src python scripts/materialize_linear_round_trip.py",
+  "teacher_fit_status": "passed",
+  "teacher_fits": {
+    "teacher_hinf_fit": {
+      "best_loss": 1.2979753584256656e-35,
+      "canonical_clean_cost": 4507.444127385286,
+      "canonical_peak_forward_velocity": 0.7709338997192814,
+      "canonical_terminal_position_error_m": 7.07068279767063e-06,
+      "final_loss": 9.305313927557193e-07,
+      "gain_relative_error": 2.314203605940808e-17
+    },
+    "teacher_lqr_fit": {
+      "best_loss": 2.741080309311563e-35,
+      "canonical_clean_cost": 4288.752027096608,
+      "canonical_peak_forward_velocity": 0.7172296015547459,
+      "canonical_terminal_position_error_m": 0.0030967011901701976,
+      "final_loss": 1.0672619589964032e-06,
+      "gain_relative_error": 1.2225762418256184e-16
+    }
+  },
+  "tracked_manifest": "results/6f5c79e/notes/linear_round_trip_manifest.json",
+  "tracked_note": "results/6f5c79e/notes/linear_round_trip.md",
+  "training_config": {
+    "basis_scale": 0.01,
+    "learning_rate": 0.3,
+    "n_random_states": 64,
+    "n_steps": 2500,
+    "random_state_scale": 0.02,
+    "reach_weight": 10.0,
+    "seed": 0
+  },
+  "umbrella": "43e8728"
+}
