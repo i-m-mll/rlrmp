@@ -24,6 +24,7 @@ from rlrmp.analysis.output_feedback import (
     make_cs_output_feedback_initial_state,
     output_feedback_clean_objective,
     output_feedback_cost,
+    output_feedback_lqr_bellman_objective,
     robust_estimator_covariances,
     robust_estimator_fixed_adversary_policy,
     robust_output_feedback_gains,
@@ -49,10 +50,13 @@ class RolloutRecoveryCondition:
 
     label: str
     use_whitening: bool = False
+    use_time_block_preconditioning: bool = False
     maxiter: int = 500
     ftol: float = 1e-12
     gtol: float = 1e-8
     maxls: int = 50
+    initializations: tuple[str, ...] = ("scratch", "bellman_init")
+    auxiliary_bellman_weights: tuple[float, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -115,6 +119,25 @@ DEFAULT_CONDITIONS: tuple[RolloutRecoveryCondition, ...] = (
         ftol=1e-14,
         gtol=1e-10,
         maxls=100,
+    ),
+    RolloutRecoveryCondition(
+        label="strong_optimizer_whitened_block_time",
+        use_whitening=True,
+        use_time_block_preconditioning=True,
+        maxiter=2000,
+        ftol=1e-14,
+        gtol=1e-10,
+        maxls=100,
+    ),
+    RolloutRecoveryCondition(
+        label="strong_optimizer_whitened_bellman_aux",
+        use_whitening=True,
+        maxiter=500,
+        ftol=1e-14,
+        gtol=1e-10,
+        maxls=100,
+        initializations=("scratch",),
+        auxiliary_bellman_weights=(0.1, 0.03, 0.01, 0.0),
     ),
 )
 
@@ -185,6 +208,43 @@ def _rollout_xhat_coverage(
     return _effective_rank_from_covariance(cov)
 
 
+def _time_block_scales(
+    plant: PlantLinearization,
+    horizon: int,
+    states: Float[Array, "batch n"],
+    weights: Float[Array, " batch"],
+    config: OutputFeedbackConfig,
+    *,
+    floor: float = 1e-4,
+) -> Float[Array, "T n"]:
+    """Return per-time, per-physical-block xhat scales under zero control."""
+
+    weights = weights.astype(jnp.float64)
+    weights = weights / jnp.sum(weights)
+    zero_K = jnp.zeros((horizon, plant.m_u, plant.n), dtype=jnp.float64)
+    epsilon = jnp.zeros((zero_K.shape[0], plant.m_w), dtype=jnp.float64)
+
+    def one_rollout(x0):
+        _x, x_hat, _y, _u, _covs = _kalman_estimator_rollout_arrays(
+            plant,
+            zero_K,
+            x0,
+            epsilon,
+            config,
+        )
+        return x_hat[:-1]
+
+    xhats = jax.vmap(one_rollout)(states)
+    mean = jnp.sum(xhats * weights[:, None, None], axis=0)
+    var = jnp.sum(weights[:, None, None] * (xhats - mean[None]) ** 2, axis=0)
+    state_scale = jnp.maximum(jnp.sqrt(var), floor)
+    blocks = state_scale.reshape((state_scale.shape[0], config.delay_steps + 1, config.n_phys))
+    block_scale = jnp.mean(blocks, axis=-1, keepdims=True)
+    expanded = jnp.broadcast_to(block_scale, blocks.shape).reshape(state_scale.shape)
+    median = jnp.maximum(jnp.median(expanded), floor)
+    return jnp.maximum(expanded / median, floor)
+
+
 def _training_ensemble(
     plant: PlantLinearization,
     training_config: LinearTrainingConfig,
@@ -216,18 +276,25 @@ def _make_parameter_maps(
     condition: RolloutRecoveryCondition,
     K_ref: Float[Array, "T m_u n"],
     state_scales: Float[Array, " n"],
+    time_block_scales: Float[Array, "T n"] | None = None,
 ):
-    scales = state_scales.astype(jnp.float64)
+    scales = jnp.ones_like(K_ref, dtype=jnp.float64)
+    if condition.use_whitening:
+        scales = scales * state_scales.astype(jnp.float64)[None, None, :]
+    if condition.use_time_block_preconditioning:
+        if time_block_scales is None:
+            raise ValueError("time_block_scales is required for time-block preconditioning")
+        scales = scales * time_block_scales.astype(jnp.float64)[:, None, :]
 
     def to_theta(K: Float[Array, "T m_u n"]) -> Float[Array, "T m_u n"]:
-        if not condition.use_whitening:
+        if not condition.use_whitening and not condition.use_time_block_preconditioning:
             return K.astype(jnp.float64)
-        return K.astype(jnp.float64) * scales[None, None, :]
+        return K.astype(jnp.float64) * scales
 
     def to_K(theta: Float[Array, "T m_u n"]) -> Float[Array, "T m_u n"]:
-        if not condition.use_whitening:
+        if not condition.use_whitening and not condition.use_time_block_preconditioning:
             return theta.astype(jnp.float64)
-        return theta.astype(jnp.float64) / scales[None, None, :]
+        return theta.astype(jnp.float64) / scales
 
     return to_theta, to_K, to_theta(K_ref)
 
@@ -264,6 +331,9 @@ def _fit_one_condition(
     states: Float[Array, "batch n"],
     weights: Float[Array, " batch"],
     state_scales: Float[Array, " n"],
+    time_block_scales: Float[Array, "T n"],
+    bellman_p_next: Float[Array, "T n n"],
+    bellman_reference_objective: float,
     x0: Float[Array, " n"],
     riccati_epsilon: Float[Array, "T m_w"],
     budget: float,
@@ -274,9 +344,24 @@ def _fit_one_condition(
     hinf_exact_cost: float,
     output_config: OutputFeedbackConfig,
 ) -> RolloutRecoveryFit:
-    to_theta, to_K, K_ref_theta = _make_parameter_maps(condition, K_ref, state_scales)
+    to_theta, to_K, _K_ref_theta = _make_parameter_maps(
+        condition,
+        K_ref,
+        state_scales,
+        time_block_scales,
+    )
     theta0 = np.asarray(to_theta(initial_K), dtype=np.float64).reshape(-1)
     shape = K_ref.shape
+    reference_objective = float(
+        output_feedback_clean_objective(
+            plant,
+            schedule,
+            K_ref,
+            states,
+            weights,
+            output_config,
+        )
+    )
 
     def objective_theta(theta_tree: Float[Array, "T m_u n"]) -> Float[Array, ""]:
         gains = to_K(theta_tree)
@@ -289,49 +374,113 @@ def _fit_one_condition(
             output_config,
         )
 
+    def composite_objective_theta(
+        theta_tree: Float[Array, "T m_u n"],
+        bellman_weight: Float[Array, ""],
+    ) -> Float[Array, ""]:
+        gains = to_K(theta_tree)
+        rollout_ratio = (
+            output_feedback_clean_objective(
+                plant,
+                schedule,
+                gains,
+                states,
+                weights,
+                output_config,
+            )
+            / reference_objective
+        )
+        bellman_ratio = (
+            output_feedback_lqr_bellman_objective(
+                plant,
+                schedule,
+                bellman_p_next,
+                gains,
+                states,
+                weights,
+            )
+            / bellman_reference_objective
+        )
+        return rollout_ratio + bellman_weight * bellman_ratio
+
     @jax.jit
-    def value_and_grad_flat(theta: Float[Array, " flat"]) -> tuple[Float[Array, ""], Array]:
+    def clean_value_and_grad_flat(
+        theta: Float[Array, " flat"],
+    ) -> tuple[Float[Array, ""], Array]:
         theta_tree = theta.reshape(shape)
         value, grads = jax.value_and_grad(objective_theta)(theta_tree)
         return value, grads.reshape(-1)
 
-    def scipy_value_and_grad(theta: np.ndarray) -> tuple[float, np.ndarray]:
-        value, grads = value_and_grad_flat(jnp.asarray(theta, dtype=jnp.float64))
-        return float(value), np.asarray(grads, dtype=np.float64)
+    @jax.jit
+    def composite_value_and_grad_flat(
+        theta: Float[Array, " flat"],
+        bellman_weight: Float[Array, ""],
+    ) -> tuple[Float[Array, ""], Array]:
+        theta_tree = theta.reshape(shape)
+        value, grads = jax.value_and_grad(composite_objective_theta)(
+            theta_tree,
+            bellman_weight,
+        )
+        return value, grads.reshape(-1)
+
+    def scipy_value_and_grad_for_weight(bellman_weight: float):
+        def scipy_value_and_grad(theta: np.ndarray) -> tuple[float, np.ndarray]:
+            if not condition.auxiliary_bellman_weights:
+                value, grads = clean_value_and_grad_flat(jnp.asarray(theta, dtype=jnp.float64))
+                return float(value), np.asarray(grads, dtype=np.float64)
+            value, grads = composite_value_and_grad_flat(
+                jnp.asarray(theta, dtype=jnp.float64),
+                jnp.asarray(bellman_weight, dtype=jnp.float64),
+            )
+            return float(value), np.asarray(grads, dtype=np.float64)
+
+        return scipy_value_and_grad
 
     initial_objective = float(
         objective_theta(jnp.asarray(theta0, dtype=jnp.float64).reshape(shape))
     )
-    initial_grad_norm, _ = _gradient_norms(value_and_grad_flat, theta0)
-    scipy_result = scipy_opt.minimize(
-        scipy_value_and_grad,
-        theta0,
-        jac=True,
-        method="L-BFGS-B",
-        options={
-            "maxiter": condition.maxiter,
-            "ftol": condition.ftol,
-            "gtol": condition.gtol,
-            "maxls": condition.maxls,
-        },
-    )
-    theta_final = jnp.asarray(scipy_result.x, dtype=jnp.float64).reshape(shape)
+    initial_grad_norm, _ = _gradient_norms(clean_value_and_grad_flat, theta0)
+    theta_current = theta0
+    stage_weights = condition.auxiliary_bellman_weights or (0.0,)
+    stage_messages = []
+    total_iterations = 0
+    total_evaluations = 0
+    optimizer_success = True
+    projected_gradient_norm = None
+    for bellman_weight in stage_weights:
+        scipy_result = scipy_opt.minimize(
+            scipy_value_and_grad_for_weight(bellman_weight),
+            theta_current,
+            jac=True,
+            method="L-BFGS-B",
+            options={
+                "maxiter": condition.maxiter,
+                "ftol": condition.ftol,
+                "gtol": condition.gtol,
+                "maxls": condition.maxls,
+            },
+        )
+        theta_current = np.asarray(scipy_result.x, dtype=np.float64)
+        total_iterations += int(scipy_result.nit)
+        total_evaluations += int(scipy_result.nfev)
+        optimizer_success = optimizer_success and bool(scipy_result.success)
+        projected_gradient = getattr(scipy_result, "jac", None)
+        projected_gradient_norm = (
+            None
+            if projected_gradient is None
+            else float(np.linalg.norm(np.asarray(projected_gradient, dtype=np.float64)))
+        )
+        if condition.auxiliary_bellman_weights:
+            stage_messages.append(f"bellman_weight={bellman_weight:g}: {scipy_result.message}")
+        else:
+            stage_messages.append(str(scipy_result.message))
+    theta_final = jnp.asarray(theta_current, dtype=jnp.float64).reshape(shape)
     K_final = to_K(theta_final)
     final_objective = float(
         output_feedback_clean_objective(
             plant,
             schedule,
             K_final,
-            states,
-            weights,
-            output_config,
-        )
-    )
-    reference_objective = float(
-        output_feedback_clean_objective(
-            plant,
-            schedule,
-            K_ref,
             states,
             weights,
             output_config,
@@ -348,14 +497,8 @@ def _fit_one_condition(
         )
     )
     final_grad_norm, _final_grad = _gradient_norms(
-        value_and_grad_flat,
+        clean_value_and_grad_flat,
         np.asarray(theta_final, dtype=np.float64).reshape(-1),
-    )
-    projected_gradient = getattr(scipy_result, "jac", None)
-    projected_gradient_norm = (
-        None
-        if projected_gradient is None
-        else float(np.linalg.norm(np.asarray(projected_gradient, dtype=np.float64)))
     )
     clean = rollout_with_kalman_estimator(plant, K_final, x0, config=output_config)
     under_eps = rollout_with_kalman_estimator(
@@ -392,10 +535,10 @@ def _fit_one_condition(
         gradient_norm_initial=initial_grad_norm,
         gradient_norm_final=final_grad_norm,
         projected_gradient_norm_final=projected_gradient_norm,
-        optimizer_status=str(scipy_result.message),
-        optimizer_success=bool(scipy_result.success),
-        n_iterations=int(scipy_result.nit),
-        n_function_evaluations=int(scipy_result.nfev),
+        optimizer_status="; ".join(stage_messages),
+        optimizer_success=optimizer_success,
+        n_iterations=total_iterations,
+        n_function_evaluations=total_evaluations,
         clean_rollout=clean,
         clean_cost=clean_cost,
         clean_action_mismatch_ratio=_action_mismatch_ratio(
@@ -446,6 +589,24 @@ def run_output_feedback_rollout_recovery(
     x0 = make_cs_output_feedback_initial_state(plant, output_config)
     states, weights = _training_ensemble(plant, training_config, output_config)
     scales = _state_scales(states, weights)
+    time_block_scales = _time_block_scales(
+        plant,
+        schedule.T,
+        states,
+        weights,
+        output_config,
+    )
+    bellman_p_next = reference.lqr_solution.P[1:].astype(jnp.float64)
+    bellman_reference_objective = float(
+        output_feedback_lqr_bellman_objective(
+            plant,
+            schedule,
+            bellman_p_next,
+            K_ref,
+            states,
+            weights,
+        )
+    )
     bellman = train_output_feedback_lqr_bellman_controller(
         reference,
         LinearTrainingConfig(n_steps=200, seed=training_config.seed),
@@ -511,10 +672,12 @@ def run_output_feedback_rollout_recovery(
 
     fits = []
     for condition in conditions:
-        for initialization, initial_K in (
-            ("scratch", jnp.zeros_like(K_ref)),
-            ("bellman_init", bellman.K),
-        ):
+        initial_K_by_name = {
+            "scratch": jnp.zeros_like(K_ref),
+            "bellman_init": bellman.K,
+        }
+        for initialization in condition.initializations:
+            initial_K = initial_K_by_name[initialization]
             fits.append(
                 _fit_one_condition(
                     condition=condition,
@@ -526,6 +689,9 @@ def run_output_feedback_rollout_recovery(
                     states=states,
                     weights=weights,
                     state_scales=scales,
+                    time_block_scales=time_block_scales,
+                    bellman_p_next=bellman_p_next,
+                    bellman_reference_objective=bellman_reference_objective,
                     x0=x0,
                     riccati_epsilon=riccati_epsilon,
                     budget=budget,
@@ -552,6 +718,22 @@ def run_output_feedback_rollout_recovery(
             "max": float(jnp.max(scales)),
             "median": float(jnp.median(scales)),
             "condition": float(jnp.max(scales) / jnp.min(scales)),
+        },
+        "time_block_scales": {
+            "min": float(jnp.min(time_block_scales)),
+            "max": float(jnp.max(time_block_scales)),
+            "median": float(jnp.median(time_block_scales)),
+            "condition": float(jnp.max(time_block_scales) / jnp.min(time_block_scales)),
+        },
+        "bellman_auxiliary": {
+            "objective": "clean_rollout_ratio + weight * one_step_lqr_bellman_ratio",
+            "reference_objective": bellman_reference_objective,
+            "schedules": {
+                condition.label: condition.auxiliary_bellman_weights
+                for condition in conditions
+                if condition.auxiliary_bellman_weights
+            },
+            "anchor_to_known_controller": False,
         },
         "initial_state_ensemble": _effective_rank_from_covariance(ensemble_cov),
         "lqr_clean": {
@@ -582,6 +764,7 @@ def run_output_feedback_rollout_recovery(
     }
     arrays: dict[str, np.ndarray] = {
         "state_scales": np.asarray(scales),
+        "time_block_scales": np.asarray(time_block_scales),
         "initial_states": np.asarray(states),
         "initial_state_weights": np.asarray(weights),
         "bellman_initial_K": np.asarray(bellman.K),
@@ -657,13 +840,17 @@ def result_summary(result: RolloutRecoveryResult) -> dict[str, Any]:
             "gamma_sweep": GAMMA_SWEEP_ISSUE_ID,
         },
         "scope": (
-            "Objective-preserving clean output-feedback LQR rollout recovery only: "
+            "Clean output-feedback LQR rollout recovery: "
             "clean, stronger optimizer, whitening/scaling, and stronger optimizer "
-            "plus whitening/scaling; each from scratch and Bellman-initialized."
+            "plus whitening/scaling are objective-preserving; block/time "
+            "preconditioning is objective-preserving and unscaled before reporting; "
+            "Bellman-auxiliary guidance is noncanonical, scratch-only, and annealed "
+            "off before final clean-rollout continuation."
         ),
         "non_goals": (
-            "No weak Bellman/proximal anchor, coverage perturbations, robust rollout, "
-            "or GRU training in this materialization."
+            "No weak Bellman/proximal anchor, no action/gain matching to the known "
+            "controller, no coverage perturbations, no robust rollout, and no GRU "
+            "training in this materialization."
         ),
         "bellman_initialization_gain_relative_error": (
             result.bellman_initialization_gain_relative_error
@@ -703,9 +890,10 @@ def render_markdown(summary: dict[str, Any]) -> str:
 
 Issue: `{summary["issue"]}`. Umbrella: `{summary["umbrella"]}`.
 
-This note materializes the first `7a459bb` matrix: clean output-feedback LQR
-rollout recovery with objective-preserving optimizer/conditioning changes only.
-Each condition is run twice: from scratch and from a Bellman-initialized gain.
+This note extends the first `7a459bb` matrix with two rescue conditions:
+objective-preserving block/time preconditioning and noncanonical Bellman-objective
+auxiliary guidance. Objective-preserving rows are run from scratch and from a
+Bellman-initialized gain; the Bellman-auxiliary row is scratch-only.
 
 Scope: {summary["scope"]}
 
@@ -716,6 +904,12 @@ Bellman initialization gain relative error:
 
 Training-state scale condition:
 `{diag["state_scales"]["condition"]:.8g}`.
+
+Time/block preconditioner scale condition:
+`{diag["time_block_scales"]["condition"]:.8g}`.
+
+Bellman auxiliary schedule:
+`{diag["bellman_auxiliary"]["schedules"]}`.
 
 Initial-state ensemble effective rank:
 `{diag["initial_state_ensemble"]["effective_rank_entropy"]:.8g}` entropy /
