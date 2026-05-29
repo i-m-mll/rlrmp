@@ -1,0 +1,161 @@
+{
+  "deterministic_full_state": {
+    "fits": [
+      {
+        "best_objective": 7675.223307895798,
+        "clean_cost": 4381.137718626704,
+        "clean_peak_forward_velocity": 0.7485679145838483,
+        "final_objective": 7675.223307895798,
+        "gain_relative_error": 0.00011785518479777218,
+        "gamma": 12205.949293639913,
+        "gamma_factor": 1.35,
+        "label": "deterministic_full_state_gamma_1.35",
+        "n_function_evaluations": 113,
+        "n_iterations": 109,
+        "objective_ratio_to_reference": 1.000000000011147,
+        "optimizer_status": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+        "reference_objective": 7675.223307810241,
+        "zero_objective": 8289.929775137303
+      },
+      {
+        "best_objective": 7370.333534560149,
+        "clean_cost": 4369.8437918198615,
+        "clean_peak_forward_velocity": 0.7463432926006284,
+        "final_objective": 7370.333534560149,
+        "gain_relative_error": 0.0001032210627650459,
+        "gamma": 12658.02148970065,
+        "gamma_factor": 1.4,
+        "label": "deterministic_full_state_gamma_1.4",
+        "n_function_evaluations": 122,
+        "n_iterations": 115,
+        "objective_ratio_to_reference": 1.0000000000067393,
+        "optimizer_status": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+        "reference_objective": 7370.333534510478,
+        "zero_objective": 7920.593922627331
+      },
+      {
+        "best_objective": 6919.8655642158,
+        "clean_cost": 4351.521758000717,
+        "clean_peak_forward_velocity": 0.7419948368056083,
+        "final_objective": 6919.8655642158,
+        "gain_relative_error": 0.00018547660716124607,
+        "gamma": 13562.165881822126,
+        "gamma_factor": 1.5,
+        "label": "deterministic_full_state_gamma_1.5",
+        "n_function_evaluations": 113,
+        "n_iterations": 106,
+        "objective_ratio_to_reference": 1.0000000000234068,
+        "optimizer_status": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+        "reference_objective": 6919.865564053827,
+        "zero_objective": 7383.7505229258395
+      }
+    ],
+    "inner_max_min_margins": {
+      "1.35": 138374516.83449572,
+      "1.4": 150223723.06141254,
+      "1.5": 174789882.99544385
+    }
+  },
+  "gamma_factors": [
+    1.35,
+    1.4,
+    1.5
+  ],
+  "gamma_star": 9041.44392121475,
+  "gamma_sweep_issue": "97604a8",
+  "issue": "583d764",
+  "output_feedback_joint_diagnostic": {
+    "fits": [
+      {
+        "best_objective": 4414.071172431521,
+        "clean_cost": 23367.09465471232,
+        "clean_peak_forward_velocity": 1.0838278549391591,
+        "final_objective": 4414.071172431521,
+        "gain_relative_error": 0.649583947283119,
+        "gamma": 12205.949293639913,
+        "gamma_factor": 1.35,
+        "label": "output_feedback_joint_gamma_1.35",
+        "n_function_evaluations": 98,
+        "n_iterations": 93,
+        "objective_ratio_to_reference": 0.986907824168451,
+        "optimizer_status": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+        "reference_objective": 4472.627599391797,
+        "zero_objective": 4438.6901024668205
+      },
+      {
+        "best_objective": 2977.0070455563696,
+        "clean_cost": 5766.162525038638,
+        "clean_peak_forward_velocity": 0.7972785274357632,
+        "final_objective": 2977.0070455563696,
+        "gain_relative_error": 0.5507820965558409,
+        "gamma": 12658.02148970065,
+        "gamma_factor": 1.4,
+        "label": "output_feedback_joint_gamma_1.4",
+        "n_function_evaluations": 102,
+        "n_iterations": 99,
+        "objective_ratio_to_reference": 0.9874162928731594,
+        "optimizer_status": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+        "reference_objective": 3014.9462461207204,
+        "zero_objective": 3003.1815468990417
+      },
+      {
+        "best_objective": 2419.271005947497,
+        "clean_cost": 5953.610912463754,
+        "clean_peak_forward_velocity": 0.7630539989938494,
+        "final_objective": 2419.271005947497,
+        "gain_relative_error": 0.5265660480639456,
+        "gamma": 13562.165881822126,
+        "gamma_factor": 1.5,
+        "label": "output_feedback_joint_gamma_1.5",
+        "n_function_evaluations": 109,
+        "n_iterations": 103,
+        "objective_ratio_to_reference": 0.9881158362318105,
+        "optimizer_status": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+        "reference_objective": 2448.367809965895,
+        "zero_objective": 2442.974145440064
+      }
+    ],
+    "rows": [
+      {
+        "clean_cost": 4377.904099482429,
+        "clean_peak_forward_velocity": 0.7486937420786381,
+        "gamma": 12205.949293639913,
+        "gamma_factor": 1.35,
+        "gamma_penalized_feasible": true,
+        "lambda_over_gamma_squared": 0.9947516687224096,
+        "note": "Output-feedback row is a feasibility diagnostic for the C&S released-code command law, not an independent robust Bellman fit."
+      },
+      {
+        "clean_cost": 4366.998005110136,
+        "clean_peak_forward_velocity": 0.7464162350352305,
+        "gamma": 12658.02148970065,
+        "gamma_factor": 1.4,
+        "gamma_penalized_feasible": true,
+        "lambda_over_gamma_squared": 0.9372295724902847,
+        "note": "Output-feedback row is a feasibility diagnostic for the C&S released-code command law, not an independent robust Bellman fit."
+      },
+      {
+        "clean_cost": 4349.59827152103,
+        "clean_peak_forward_velocity": 0.7425484221299729,
+        "gamma": 13562.165881822126,
+        "gamma_factor": 1.5,
+        "gamma_penalized_feasible": true,
+        "lambda_over_gamma_squared": 0.8341074953341588,
+        "note": "Output-feedback row is a feasibility diagnostic for the C&S released-code command law, not an independent robust Bellman fit."
+      }
+    ],
+    "status": "joint_policy_improvement_diagnostic; value sequence is policy-evaluated from the C&S released-code output-feedback gains"
+  },
+  "tracked_manifest": "results/583d764/notes/robust_bellman_manifest.json",
+  "tracked_note": "results/583d764/notes/robust_bellman.md",
+  "training_config": {
+    "basis_scale": 0.01,
+    "learning_rate": 0.3,
+    "n_random_states": 64,
+    "n_steps": 250,
+    "random_state_scale": 0.02,
+    "reach_weight": 10.0,
+    "seed": 0
+  },
+  "umbrella": "43e8728"
+}
