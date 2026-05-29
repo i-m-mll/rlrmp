@@ -18,6 +18,26 @@ Gamma star: `9041.4439`.
 | 1.4 | 1 | 0.00010322106 | 0.74634329 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
 | 1.5 | 1 | 0.00018547661 | 0.74199484 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
 
+## Deterministic Numerical Min-Max Smoke
+
+| gamma factor | t | objective ratio | gain rel err | margin | outer nfev | inner nfev | status |
+|---:|---:|---:|---:|---:|---:|---:|---|
+| 1.35 | 0 | 1 | 1.21946e-05 | 1.4875542e+08 | 24 | 233 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.35 | 1 | 1 | 3.2876022e-05 | 1.4872874e+08 | 24 | 236 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.35 | 10 | 1 | 1.1681114e-05 | 1.4822452e+08 | 23 | 277 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.35 | 30 | 1 | 0.00014553818 | 1.4023952e+08 | 24 | 379 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.35 | 59 | 1 | 8.2670822e-05 | 1.4881853e+08 | 24 | 114 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.4 | 0 | 1 | 9.1946327e-06 | 1.5999678e+08 | 24 | 219 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.4 | 1 | 1 | 4.1781544e-06 | 1.5997034e+08 | 22 | 220 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.4 | 10 | 1 | 1.2147597e-05 | 1.5947397e+08 | 23 | 278 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.4 | 30 | 1 | 2.4757589e-05 | 1.5205526e+08 | 30 | 374 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.4 | 59 | 1 | 0.00026897644 | 1.6005884e+08 | 23 | 111 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.5 | 0 | 1 | 4.7652483e-05 | 1.8370538e+08 | 29 | 262 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.5 | 1 | 1 | 2.1082872e-05 | 1.8367933e+08 | 23 | 229 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.5 | 10 | 1 | 1.8047552e-05 | 1.8319584e+08 | 23 | 272 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.5 | 30 | 1 | 0.00010588003 | 1.7658008e+08 | 25 | 333 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.5 | 59 | 1 | 0.00019327896 | 1.8376568e+08 | 22 | 108 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+
 ## Output-Feedback Joint Diagnostic
 
 | gamma factor | lambda/gamma^2 | penalized feasible | clean peak vel |
@@ -36,6 +56,36 @@ Gamma star: `9041.4439`.
 
 Status: joint_policy_improvement_diagnostic; value sequence is policy-evaluated from the C&S released-code output-feedback gains.
 
+## Output-Feedback Information-State Numerical Min-Max
+
+| gamma factor | target | recovers formal | max gain err | mean gain err | min margin | C&S persistent err |
+|---:|---|---|---:|---:|---:|---:|
+| 1.35 | formal_time_indexed_information_state | false | 1 | 0.32854558 | 4447647.9 | 0.37438561 |
+| 1.4 | formal_time_indexed_information_state | false | 1 | 0.32841376 | 5214854.9 | 0.319575 |
+| 1.5 | formal_time_indexed_information_state | false | 1 | 0.32763943 | 6666588.5 | 0.24411647 |
+
+Status: formal_time_indexed_target; controller u=-K xhat and adversarial hidden-state selector x_adv=M xhat optimized by nested inner-outer L-BFGS-B.
+
+Per-time fits:
+
+| gamma factor | t | objective ratio | gain rel err | margin | outer nfev | inner nfev | status |
+|---:|---:|---:|---:|---:|---:|---:|---|
+| 1.35 | 0 | 1 | 5.0298594e-06 | 1.4898289e+10 | 24 | 119 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.35 | 1 | 1 | 2.5704363e-05 | 1.4723269e+08 | 29 | 731 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.35 | 10 | 0.99999998 | 0.00093966346 | 6909478.1 | 22 | 1612 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.35 | 30 | 1.0001436 | 0.64175748 | 4447647.9 | 12 | 977 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.35 | 59 | 1.0000082 | 1 | 6680890.5 | 8 | 710 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.4 | 0 | 1 | 6.1000076e-06 | 1.6022321e+10 | 23 | 115 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.4 | 1 | 1 | 1.3007256e-05 | 1.5836148e+08 | 30 | 655 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.4 | 10 | 1.0000001 | 0.0046070861 | 7444513.3 | 22 | 1629 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.4 | 30 | 1.0001185 | 0.63744262 | 5214854.9 | 12 | 972 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.4 | 59 | 1.0000079 | 1 | 7219762.3 | 8 | 703 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.5 | 0 | 1 | 2.5768118e-05 | 1.8393006e+10 | 29 | 135 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.5 | 1 | 1 | 9.8301008e-05 | 1.818325e+08 | 24 | 695 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.5 | 10 | 1 | 0.0018415339 | 8570857.9 | 22 | 1607 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.5 | 30 | 1.000102 | 0.63623154 | 6666588.5 | 13 | 1037 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.5 | 59 | 1.0000083 | 1 | 8354659.5 | 8 | 710 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+
 The output-feedback fit is a diagnostic, not a proof of the C&S robust
 separation theorem. It policy-evaluates the released-code-compatible
 output-feedback gains into a joint value sequence over `z=[x,xhat]`, then asks
@@ -46,3 +96,11 @@ the fitted objectives are lower than the released-code-compatible reference
 objectives. This suggests the C&S output-feedback command law is not a fixed
 point of this simple joint policy-improvement objective, or that the objective
 is still underconstrained relative to the released-code robust estimator law.
+
+The information-state numerical min-max section is the formal time-indexed
+target, not the C&S persistent-index target. It optimizes `u=-K xhat` and
+`x_adv=M xhat` with nested inner-outer L-BFGS-B and reports the persistent-index
+gain mismatch separately. On the default time grid it does not recover the full
+formal target: early steps recover tightly, while later steps find nearly
+reference-valued objectives with large gain mismatch, so this remains a
+diagnostic rather than a success claim.
