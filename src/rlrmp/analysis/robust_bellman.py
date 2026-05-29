@@ -94,6 +94,7 @@ class ExactInnerBellmanFit:
     gamma_factor: float
     gamma: float
     time_index: int
+    K: Float[Array, "m_u n"] | None
     final_objective: float | None
     reference_objective: float | None
     zero_objective: float | None
@@ -232,6 +233,38 @@ def information_state_bellman_matrices(
         blocks_n.append(plant.A.T @ lambda_t @ plant.B)
         blocks_m.append(schedule.R[t].astype(jnp.float64) + plant.B.T @ lambda_t @ plant.B)
     return jnp.stack(blocks_l), jnp.stack(blocks_n), jnp.stack(blocks_m)
+
+
+def information_state_persistent_index_bellman_matrices(
+    plant: PlantLinearization,
+    schedule: CostSchedule,
+    solution,
+) -> tuple[
+    Float[Array, "T n n"],
+    Float[Array, "T n m_u"],
+    Float[Array, "T m_u m_u"],
+]:
+    """Return a C&S-code-fidelity persistent-index Bellman block variant.
+
+    This keeps the formal one-step control Hessian/cross terms implied by
+    ``P[t + 1]`` but replaces the hidden-state Schur complement with the
+    released C&S persistent Riccati slice ``P[0]``. The resulting objective is a
+    code-fidelity bridge for the released persistent-index controller, not a
+    formal finite-horizon theorem.
+    """
+
+    formal_l, blocks_n, blocks_m = information_state_bellman_matrices(
+        plant,
+        schedule,
+        solution,
+    )
+    del formal_l
+    persistent_p = solution.P[0].astype(jnp.float64)
+    blocks_l = []
+    for N_t, M_t in zip(blocks_n, blocks_m, strict=True):
+        schur_lift = N_t @ jnp.linalg.solve(M_t, N_t.T)
+        blocks_l.append(persistent_p + schur_lift)
+    return jnp.stack(blocks_l), blocks_n, blocks_m
 
 
 def information_state_numerical_minmax_bellman_objective(
@@ -481,6 +514,7 @@ def _fit_one_step_exact_inner_bellman(
             gamma_factor=gamma_factor,
             gamma=gamma,
             time_index=time_index,
+            K=None,
             final_objective=None,
             reference_objective=None,
             zero_objective=None,
@@ -528,6 +562,7 @@ def _fit_one_step_exact_inner_bellman(
         gamma_factor=gamma_factor,
         gamma=gamma,
         time_index=time_index,
+        K=K,
         final_objective=final_objective,
         reference_objective=reference_objective,
         zero_objective=zero_objective,
@@ -1115,6 +1150,136 @@ def train_output_feedback_information_state_exact_inner_bellman(
     }
 
 
+def train_output_feedback_information_state_exact_inner_persistent_index(
+    reference: GameCardReference,
+    *,
+    gamma_factor: float,
+    time_indices: tuple[int, ...] = EXACT_INNER_TIME_INDICES,
+    config: LinearTrainingConfig = LinearTrainingConfig(n_steps=80, n_random_states=8),
+    output_feedback_config: OutputFeedbackConfig = OutputFeedbackConfig(),
+) -> dict[str, Any]:
+    """Fit the C&S-code-fidelity persistent-index exact-inner objective."""
+
+    gamma_ref = next(ref for ref in reference.gamma_references if ref.factor == gamma_factor)
+    plant = reference.plant
+    schedule = reference.schedule
+    formal_config = replace(output_feedback_config, use_matlab_persistent_m_index=False)
+    persistent_config = replace(output_feedback_config, use_matlab_persistent_m_index=True)
+    covs = robust_estimator_covariances(
+        plant,
+        schedule,
+        gamma_ref.gamma,
+        persistent_config,
+    )
+    formal_K_ref = robust_output_feedback_gains(
+        plant,
+        schedule,
+        gamma_ref.solution,
+        covs,
+        formal_config,
+    )
+    persistent_K_ref = robust_output_feedback_gains(
+        plant,
+        schedule,
+        gamma_ref.solution,
+        covs,
+        persistent_config,
+    )
+    L, N, M_u = information_state_persistent_index_bellman_matrices(
+        plant,
+        schedule,
+        gamma_ref.solution,
+    )
+    estimates, weights = ensemble_initial_states(plant, config)
+    fits = []
+    fitted_gains = []
+    for t in _selected_time_indices(schedule.T, time_indices):
+
+        def objective(K_t, *, t=t):
+            return information_state_exact_inner_bellman_objective(
+                L[t],
+                N[t],
+                M_u[t],
+                covs[t],
+                K_t,
+                estimates,
+                weights,
+                gamma_ref.gamma,
+            )
+
+        margin = information_state_feasibility_margin(L[t], covs[t], gamma_ref.gamma)
+        fit = _fit_one_step_exact_inner_bellman(
+            label=(
+                "output_feedback_information_state_exact_inner_persistent_index_"
+                f"gamma_{gamma_factor:g}_t{t}"
+            ),
+            gamma_factor=gamma_factor,
+            gamma=gamma_ref.gamma,
+            time_index=t,
+            objective=objective,
+            K_ref=persistent_K_ref[t].astype(jnp.float64),
+            feasibility_margin=margin,
+            max_iterations=config.n_steps,
+        )
+        fits.append(fit)
+        if fit.K is not None:
+            fitted_gains.append(
+                {
+                    "time_index": t,
+                    "gain_error_to_formal_target": float(
+                        jnp.linalg.norm(fit.K - formal_K_ref[t]) / jnp.linalg.norm(formal_K_ref[t])
+                    ),
+                }
+            )
+        else:
+            fitted_gains.append({"time_index": t, "gain_error_to_formal_target": None})
+    persistent_errors = [
+        fit.gain_relative_error for fit in fits if fit.gain_relative_error is not None
+    ]
+    margins = jnp.asarray([fit.feasibility_margin for fit in fits], dtype=jnp.float64)
+    formal_persistent_error = float(
+        jnp.linalg.norm(formal_K_ref - persistent_K_ref) / jnp.linalg.norm(formal_K_ref)
+    )
+    formal_errors = [
+        row["gain_error_to_formal_target"]
+        for row in fitted_gains
+        if row["gain_error_to_formal_target"] is not None
+    ]
+    max_persistent_error = None if not persistent_errors else float(max(persistent_errors))
+    mean_persistent_error = None if not persistent_errors else float(np.mean(persistent_errors))
+    max_formal_error = None if not formal_errors else float(max(formal_errors))
+    mean_formal_error = None if not formal_errors else float(np.mean(formal_errors))
+    fit_rows = []
+    formal_error_by_t = {
+        row["time_index"]: row["gain_error_to_formal_target"] for row in fitted_gains
+    }
+    for fit in fits:
+        row = _exact_inner_summary(fit)
+        row["gain_error_to_persistent_target"] = row.pop("gain_relative_error")
+        row["gain_error_to_formal_target"] = formal_error_by_t[fit.time_index]
+        fit_rows.append(row)
+    return {
+        "label": (
+            f"output_feedback_information_state_exact_inner_persistent_index_gamma_{gamma_factor:g}"
+        ),
+        "gamma_factor": gamma_factor,
+        "gamma": gamma_ref.gamma,
+        "target": "cs_code_fidelity_persistent_index_exact_hidden_state_inner",
+        "formal_target": "formal_time_indexed_information_state_exact_hidden_state_inner",
+        "formal_vs_persistent_reference_gain_relative_error": formal_persistent_error,
+        "recovers_persistent_target": bool(
+            max_persistent_error is not None and max_persistent_error < 2e-2
+        ),
+        "max_gain_error_to_persistent_target": max_persistent_error,
+        "mean_gain_error_to_persistent_target": mean_persistent_error,
+        "max_gain_error_to_formal_target": max_formal_error,
+        "mean_gain_error_to_formal_target": mean_formal_error,
+        "min_feasibility_margin": float(jnp.min(margins)),
+        "all_feasible": all(fit.feasible for fit in fits),
+        "fits": fit_rows,
+    }
+
+
 def flattened_epsilon_penalized_objective(
     plant: PlantLinearization,
     schedule: CostSchedule,
@@ -1526,6 +1691,16 @@ def analyze_robust_bellman(
         )
         for factor in exact_inner_gamma_factors
     )
+    output_feedback_information_persistent_index = tuple(
+        train_output_feedback_information_state_exact_inner_persistent_index(
+            reference,
+            gamma_factor=factor,
+            time_indices=exact_inner_time_indices,
+            config=exact_inner_config,
+            output_feedback_config=output_feedback_config,
+        )
+        for factor in exact_inner_gamma_factors
+    )
     output_feedback_flattened_epsilon = tuple(
         train_output_feedback_flattened_epsilon_exact_inner(
             reference,
@@ -1587,6 +1762,13 @@ def analyze_robust_bellman(
             "status": (
                 "formal_time_indexed_target; hidden true state is maximized analytically "
                 "when gamma^2 Sigma^-1 - L is positive definite"
+            ),
+        },
+        "output_feedback_information_state_exact_inner_persistent_index": {
+            "fits": list(output_feedback_information_persistent_index),
+            "status": (
+                "cs_code_fidelity_target; control Hessian/cross terms remain tied to P[t+1] "
+                "but the hidden-state Schur complement uses the released persistent P[0] slice"
             ),
         },
         "output_feedback_flattened_epsilon_exact_inner": {
@@ -1742,6 +1924,71 @@ def render_markdown(summary: dict[str, Any]) -> str:
                 f"{row['n_function_evaluations']} | "
                 f"{row['optimizer_status']} |"
             )
+    persistent_rows = [
+        "| gamma factor | target | all feasible | recovers persistent | max err to persistent | mean err to persistent | max err to formal | formal-persistent ref err | min margin |",
+        "|---:|---|---|---|---:|---:|---:|---:|---:|",
+    ]
+    for row in summary["output_feedback_information_state_exact_inner_persistent_index"]["fits"]:
+        max_persistent = (
+            "n/a"
+            if row["max_gain_error_to_persistent_target"] is None
+            else f"{row['max_gain_error_to_persistent_target']:.8g}"
+        )
+        mean_persistent = (
+            "n/a"
+            if row["mean_gain_error_to_persistent_target"] is None
+            else f"{row['mean_gain_error_to_persistent_target']:.8g}"
+        )
+        max_formal = (
+            "n/a"
+            if row["max_gain_error_to_formal_target"] is None
+            else f"{row['max_gain_error_to_formal_target']:.8g}"
+        )
+        persistent_rows.append(
+            "| "
+            f"{row['gamma_factor']:.6g} | "
+            f"{row['target']} | "
+            f"{str(row['all_feasible']).lower()} | "
+            f"{str(row['recovers_persistent_target']).lower()} | "
+            f"{max_persistent} | "
+            f"{mean_persistent} | "
+            f"{max_formal} | "
+            f"{row['formal_vs_persistent_reference_gain_relative_error']:.8g} | "
+            f"{row['min_feasibility_margin']:.8g} |"
+        )
+    persistent_detail_rows = [
+        "| gamma factor | t | feasible | objective ratio | err to persistent | err to formal | margin | nfev | status |",
+        "|---:|---:|---|---:|---:|---:|---:|---:|---|",
+    ]
+    for group in summary["output_feedback_information_state_exact_inner_persistent_index"]["fits"]:
+        for row in group["fits"]:
+            ratio = (
+                "n/a"
+                if row["objective_ratio_to_reference"] is None
+                else f"{row['objective_ratio_to_reference']:.8g}"
+            )
+            persistent_gain = (
+                "n/a"
+                if row["gain_error_to_persistent_target"] is None
+                else f"{row['gain_error_to_persistent_target']:.8g}"
+            )
+            formal_gain = (
+                "n/a"
+                if row["gain_error_to_formal_target"] is None
+                else f"{row['gain_error_to_formal_target']:.8g}"
+            )
+            persistent_detail_rows.append(
+                "| "
+                f"{row['gamma_factor']:.6g} | "
+                f"{row['time_index']} | "
+                f"{str(row['feasible']).lower()} | "
+                f"{ratio} | "
+                f"{persistent_gain} | "
+                f"{formal_gain} | "
+                f"{row['feasibility_margin']:.8g} | "
+                f"{row['n_function_evaluations']} | "
+                f"{row['optimizer_status']} |"
+            )
     flat_rows = [
         "| gamma factor | feasible | objective ratio | gain rel err | margin | lambda/gamma^2 | ref margin | ref lambda/gamma^2 | C&S persistent err | status |",
         "|---:|---|---:|---:|---:|---:|---:|---:|---:|---|",
@@ -1767,6 +2014,9 @@ def render_markdown(summary: dict[str, Any]) -> str:
             f"{row['optimizer_status']} |"
         )
     exact_primary = summary["output_feedback_information_state_exact_inner"]["fits"][0]
+    persistent_primary = summary["output_feedback_information_state_exact_inner_persistent_index"][
+        "fits"
+    ][0]
     flat_primary = summary["output_feedback_flattened_epsilon_exact_inner"]["fits"][0]
     return f"""# Robust Bellman Diagnostics
 
@@ -1818,6 +2068,16 @@ Per-time fits:
 
 {"\n".join(of_exact_detail_rows)}
 
+## Output-Feedback Information-State Exact Inner C&S Persistent-Index
+
+{"\n".join(persistent_rows)}
+
+Status: {summary["output_feedback_information_state_exact_inner_persistent_index"]["status"]}.
+
+Per-time fits:
+
+{"\n".join(persistent_detail_rows)}
+
 ## Output-Feedback Flattened Epsilon Exact Inner
 
 {"\n".join(flat_rows)}
@@ -1864,6 +2124,19 @@ learned controller stays essentially at the formal time-indexed target
 (`gain_relative_error = {flat_primary["gain_relative_error"]:.8g}`) rather than
 moving toward the C&S persistent-index target
 (`C&S persistent error = {flat_primary["cs_persistent_index_gain_relative_error"]:.8g}`).
+
+The persistent-index exact-inner section is intentionally labeled
+C&S-code-fidelity. It changes the information-state Bellman block only enough
+to make the hidden-state Schur complement use the released persistent Riccati
+slice `P[0]`; the one-step control Hessian/cross terms still come from the
+formal `P[t+1]` robust control step. At gamma factor
+`{persistent_primary["gamma_factor"]:.6g}`, this code-fidelity objective
+recovers the released persistent-index target with max gain relative error
+`{persistent_primary["max_gain_error_to_persistent_target"]:.8g}`. The same
+fitted gains remain separated from the formal time-indexed target with max
+relative error `{persistent_primary["max_gain_error_to_formal_target"]:.8g}`,
+matching the reference-level formal-vs-persistent split
+`{persistent_primary["formal_vs_persistent_reference_gain_relative_error"]:.8g}`.
 """
 
 
@@ -1900,6 +2173,7 @@ __all__ = [
     "information_state_exact_inner_bellman_objective",
     "information_state_feasibility_margin",
     "information_state_numerical_minmax_bellman_objective",
+    "information_state_persistent_index_bellman_matrices",
     "joint_state_ensemble",
     "output_feedback_joint_robust_bellman_objective",
     "output_feedback_joint_value_sequence",
@@ -1908,6 +2182,7 @@ __all__ = [
     "train_deterministic_robust_bellman",
     "train_output_feedback_flattened_epsilon_exact_inner",
     "train_output_feedback_information_state_exact_inner_bellman",
+    "train_output_feedback_information_state_exact_inner_persistent_index",
     "train_output_feedback_information_state_numerical_minmax_bellman",
     "train_output_feedback_joint_robust_bellman",
     "write_outputs",
