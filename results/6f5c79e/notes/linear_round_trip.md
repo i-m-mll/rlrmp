@@ -2,6 +2,12 @@
 
 Issue: `6f5c79e`. Umbrella: `43e8728`.
 
+Rerun metadata:
+
+- Discretization: `zoh`.
+- Lane: `deterministic_analytical`.
+- Lane scope: Deterministic analytical lane: exact recursions and deterministic rollouts/audits with no sampled sensory, motor/process, or signal-dependent control noise.
+
 This note records the first local analytical Phase 3 certificate attempt for
 the cs2019-to-RNN game-equivalence programme. It intentionally does not perform
 the Feedbax GraphSpec execution conversion or the full `63cec06` matrix-analysis

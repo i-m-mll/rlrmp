@@ -2,9 +2,15 @@
 
 Issue: `cb98e58`. Umbrella: `43e8728`.
 
-This note is the auditable C&S-faithful H-infinity target for the first
-cs2019-to-RNN game-equivalence gate. It fixes the analytical game that later
-feedbax and trained-controller work must match.
+This note is the auditable C&S-style deterministic H-infinity target for the
+first cs2019-to-RNN game-equivalence gate. It fixes the analytical game that
+later feedbax and trained-controller work must match.
+
+Rerun metadata:
+
+- Discretization: `zoh`.
+- Lane: `deterministic_analytical`.
+- Lane scope: Deterministic analytical lane: exact recursions and deterministic rollouts/audits with no sampled sensory, motor/process, or signal-dependent control noise.
 
 ## Game Definition
 

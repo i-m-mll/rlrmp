@@ -37,6 +37,8 @@ def test_gamma_frontier_marks_105_as_primary_target(reference):
     summary = reference_summary(reference)
     by_factor = {row["factor"]: row for row in summary["frontier"]}
 
+    assert summary["rerun_metadata"]["discretization"] == "zoh"
+    assert summary["rerun_metadata"]["lane"] == "deterministic_analytical"
     assert summary["primary_gamma_factor"] == PRIMARY_GAMMA_FACTOR
     assert PRIMARY_GAMMA_FACTOR in by_factor
     assert DIAGNOSTIC_GAMMA_FACTOR in by_factor

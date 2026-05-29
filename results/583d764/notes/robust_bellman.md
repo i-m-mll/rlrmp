@@ -8,6 +8,12 @@ retraining. The deterministic full-state rows fit time-varying gains against
 the one-step finite-horizon H-infinity Bellman objective with the inner
 disturbance maximized in closed form.
 
+Rerun metadata:
+
+- Discretization: `zoh`.
+- Lane: `deterministic_analytical`.
+- Lane scope: Deterministic analytical lane: exact recursions and deterministic rollouts/audits with no sampled sensory, motor/process, or signal-dependent control noise.
+
 Gamma star: `9041.4439`.
 
 ## Deterministic Full-State Robust Bellman

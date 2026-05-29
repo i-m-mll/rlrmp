@@ -109,6 +109,14 @@
   "gamma": 9493.516117275487,
   "gamma_factor": 1.05,
   "issue": "a7dad8a",
+  "rerun_metadata": {
+    "discretization": "zoh",
+    "discretization_description": "Zero-order-hold discretization retained as a sensitivity/historical variant.",
+    "lane": "deterministic_analytical",
+    "lane_description": "Deterministic analytical lane: exact recursions and deterministic rollouts/audits with no sampled sensory, motor/process, or signal-dependent control noise.",
+    "materializer": "adversary_equivalence",
+    "phase_label_policy": "Phase 1 and Phase 3 reruns must report both discretization and lane. Euler deterministic analytical results are canonical after the Euler card lands; ZOH results remain sensitivity/historical unless explicitly promoted."
+  },
   "open_loop": [
     {
       "best_cost": {

@@ -826,6 +826,14 @@
     }
   ],
   "issue": "7a459bb",
+  "rerun_metadata": {
+    "discretization": "zoh",
+    "discretization_description": "Zero-order-hold discretization retained as a sensitivity/historical variant.",
+    "lane": "deterministic_analytical",
+    "lane_description": "Deterministic analytical lane: exact recursions and deterministic rollouts/audits with no sampled sensory, motor/process, or signal-dependent control noise.",
+    "materializer": "output_feedback_rollout_recovery",
+    "phase_label_policy": "Phase 1 and Phase 3 reruns must report both discretization and lane. Euler deterministic analytical results are canonical after the Euler card lands; ZOH results remain sensitivity/historical unless explicitly promoted."
+  },
   "non_goals": "No weak Bellman/proximal anchor, no action/gain matching to the known controller, no coverage perturbations, no robust rollout, and no GRU training in this materialization.",
   "related_issues": {
     "bellman_diagnostics": "583d764",
