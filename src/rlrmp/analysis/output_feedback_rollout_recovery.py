@@ -32,6 +32,11 @@ from rlrmp.analysis.output_feedback import (
     rollout_with_robust_estimator_policy,
     train_output_feedback_lqr_bellman_controller,
 )
+from rlrmp.analysis.rerun_metadata import (
+    DEFAULT_DISCRETIZATION,
+    DEFAULT_LANE,
+    build_rerun_metadata,
+)
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
@@ -828,12 +833,22 @@ def _fit_summary(fit: RolloutRecoveryFit) -> dict[str, Any]:
     }
 
 
-def result_summary(result: RolloutRecoveryResult) -> dict[str, Any]:
+def result_summary(
+    result: RolloutRecoveryResult,
+    *,
+    discretization: str = DEFAULT_DISCRETIZATION,
+    lane: str = DEFAULT_LANE,
+) -> dict[str, Any]:
     """Return JSON-serializable rollout-recovery summary."""
 
     return {
         "issue": result.issue_id,
         "umbrella": UMBRELLA_ID,
+        "rerun_metadata": build_rerun_metadata(
+            discretization=discretization,
+            lane=lane,
+            materializer="output_feedback_rollout_recovery",
+        ),
         "related_issues": {
             "output_feedback_lane": OUTPUT_FEEDBACK_LANE_ISSUE_ID,
             "bellman_diagnostics": BELLMAN_DIAGNOSTIC_ISSUE_ID,
@@ -894,6 +909,12 @@ This note extends the first `7a459bb` matrix with two rescue conditions:
 objective-preserving block/time preconditioning and noncanonical Bellman-objective
 auxiliary guidance. Objective-preserving rows are run from scratch and from a
 Bellman-initialized gain; the Bellman-auxiliary row is scratch-only.
+
+Rerun metadata:
+
+- Discretization: `{summary["rerun_metadata"]["discretization"]}`.
+- Lane: `{summary["rerun_metadata"]["lane"]}`.
+- Lane scope: {summary["rerun_metadata"]["lane_description"]}
 
 Scope: {summary["scope"]}
 
@@ -984,11 +1005,16 @@ def _rollout_recovery_verdict(summary: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def write_outputs(issue_id: str = ISSUE_ID) -> dict[str, Any]:
+def write_outputs(
+    issue_id: str = ISSUE_ID,
+    *,
+    discretization: str = DEFAULT_DISCRETIZATION,
+    lane: str = DEFAULT_LANE,
+) -> dict[str, Any]:
     """Write tracked rollout-recovery note/manifest and bulk arrays."""
 
     result = run_output_feedback_rollout_recovery()
-    summary = result_summary(result)
+    summary = result_summary(result, discretization=discretization, lane=lane)
     results_dir = mkdir_p(REPO_ROOT / "results" / issue_id)
     notes_dir = mkdir_p(results_dir / "notes")
     artifact_dir = mkdir_p(REPO_ROOT / "_artifacts" / issue_id / "output_feedback_rollout_recovery")

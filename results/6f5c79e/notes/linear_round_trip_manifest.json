@@ -374,6 +374,14 @@
   "graphspec_execution_conversion_out_of_scope": true,
   "interpretation": "Adam-warm-started L-BFGS-B recovered the clean LQR objective/behavior gate, but the raw gain tensor remains far from the analytical Riccati gain. Phase 3 is therefore blocked on whether gain-relative-error is the right certificate or whether a structured/identifiable linear policy objective is needed.",
   "issue": "6f5c79e",
+  "rerun_metadata": {
+    "discretization": "zoh",
+    "discretization_description": "Zero-order-hold discretization retained as a sensitivity/historical variant.",
+    "lane": "deterministic_analytical",
+    "lane_description": "Deterministic analytical lane: exact recursions and deterministic rollouts/audits with no sampled sensory, motor/process, or signal-dependent control noise.",
+    "materializer": "linear_round_trip",
+    "phase_label_policy": "Phase 1 and Phase 3 reruns must report both discretization and lane. Euler deterministic analytical results are canonical after the Euler card lands; ZOH results remain sensitivity/historical unless explicitly promoted."
+  },
   "matrix_generalization_out_of_scope": true,
   "objective_trainings": {
     "adam_lqr_fit": {

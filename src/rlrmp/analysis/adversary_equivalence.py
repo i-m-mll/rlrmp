@@ -40,6 +40,11 @@ from rlrmp.analysis.hinf_riccati import (
     make_reach_initial_state,
     simulate_closed_loop,
 )
+from rlrmp.analysis.rerun_metadata import (
+    DEFAULT_DISCRETIZATION,
+    DEFAULT_LANE,
+    build_rerun_metadata,
+)
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
@@ -388,7 +393,12 @@ def _cost_dict(cost: RolloutCost) -> dict[str, float]:
     }
 
 
-def result_summary(result: AdversaryEquivalenceResult) -> dict[str, Any]:
+def result_summary(
+    result: AdversaryEquivalenceResult,
+    *,
+    discretization: str = DEFAULT_DISCRETIZATION,
+    lane: str = DEFAULT_LANE,
+) -> dict[str, Any]:
     """Return a JSON-serializable summary of one Phase 1 comparison."""
 
     riccati_total = result.riccati_cost.total_without_disturbance_penalty
@@ -423,6 +433,11 @@ def result_summary(result: AdversaryEquivalenceResult) -> dict[str, Any]:
         "issue": ISSUE_ID,
         "umbrella": UMBRELLA_ID,
         "game_card_issue": GAME_CARD_ISSUE_ID,
+        "rerun_metadata": build_rerun_metadata(
+            discretization=discretization,
+            lane=lane,
+            materializer="adversary_equivalence",
+        ),
         "primary_gamma_factor": PRIMARY_GAMMA_FACTOR,
         "gamma_factor": result.gamma_factor,
         "gamma": result.gamma,
@@ -484,8 +499,15 @@ def render_markdown(summary: dict[str, Any]) -> str:
 
 Issue: `{ISSUE_ID}`. Umbrella: `{UMBRELLA_ID}`. Game card: `{GAME_CARD_ISSUE_ID}`.
 
-This note compares the C&S-faithful Riccati state-dependent disturbance against
-an open-loop epsilon surrogate under the Phase 0 game-card budget.
+Rerun metadata:
+
+- Discretization: `{summary["rerun_metadata"]["discretization"]}`.
+- Lane: `{summary["rerun_metadata"]["lane"]}`.
+- Lane scope: {summary["rerun_metadata"]["lane_description"]}
+
+This note compares the C&S-style deterministic Riccati state-dependent
+disturbance against an open-loop epsilon surrogate under the Phase 0 game-card
+budget.
 
 ## Fixed Contract
 
@@ -556,14 +578,23 @@ def _npz_arrays(result: AdversaryEquivalenceResult) -> dict[str, np.ndarray]:
     return arrays
 
 
-def write_outputs(issue_id: str = ISSUE_ID) -> dict[str, Any]:
+def write_outputs(
+    issue_id: str = ISSUE_ID,
+    *,
+    discretization: str = DEFAULT_DISCRETIZATION,
+    lane: str = DEFAULT_LANE,
+) -> dict[str, Any]:
     """Write tracked Phase 1 summary outputs and bulk arrays."""
 
     reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
     result = analyze_reference_adversary_equivalence(reference, reference.gamma_references[0])
     summary = {
-        **result_summary(result),
-        "game_card_summary": reference_summary(reference),
+        **result_summary(result, discretization=discretization, lane=lane),
+        "game_card_summary": reference_summary(
+            reference,
+            discretization=discretization,
+            lane=lane,
+        ),
     }
 
     results_dir = mkdir_p(REPO_ROOT / "results" / issue_id)

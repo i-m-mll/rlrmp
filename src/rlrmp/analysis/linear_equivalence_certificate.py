@@ -29,6 +29,11 @@ from rlrmp.analysis.linear_round_trip import (
     run_phase3_linear_round_trip,
 )
 from rlrmp.analysis.hinf_riccati import CostSchedule, PlantLinearization
+from rlrmp.analysis.rerun_metadata import (
+    DEFAULT_DISCRETIZATION,
+    DEFAULT_LANE,
+    build_rerun_metadata,
+)
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
@@ -218,7 +223,9 @@ def policy_evaluation_matrices(
     return jnp.stack(list(reversed(matrices)), axis=0)
 
 
-def _safe_ratio(numerator: Float[Array, ""], denominator: Float[Array, ""], floor: float) -> Float[Array, ""]:
+def _safe_ratio(
+    numerator: Float[Array, ""], denominator: Float[Array, ""], floor: float
+) -> Float[Array, ""]:
     return numerator / jnp.maximum(denominator, floor)
 
 
@@ -246,7 +253,9 @@ def _distribution_metrics(
     transition_delta = jnp.einsum("tij,tbj->tbi", delta_M, states)
     transition_ref = jnp.einsum("tij,tbj->tbi", M_ref, states)
 
-    action_num = jnp.mean(jnp.einsum("tbi,tij,tbj->tb", action_delta, schedule.R, action_delta), axis=1)
+    action_num = jnp.mean(
+        jnp.einsum("tbi,tij,tbj->tb", action_delta, schedule.R, action_delta), axis=1
+    )
     action_den = jnp.mean(jnp.einsum("tbi,tij,tbj->tb", action_ref, schedule.R, action_ref), axis=1)
     transition_num = jnp.mean(jnp.sum(transition_delta**2, axis=-1), axis=1)
     transition_den = jnp.mean(jnp.sum(transition_ref**2, axis=-1), axis=1)
@@ -259,13 +268,21 @@ def _distribution_metrics(
 
     singular_values = jax.vmap(lambda cov: jnp.linalg.svd(cov, compute_uv=False))(covariances)
     max_s = singular_values[:, :1]
-    identifiable = singular_values > jnp.maximum(max_s * config.covariance_rank_rtol, config.denominator_floor)
+    identifiable = singular_values > jnp.maximum(
+        max_s * config.covariance_rank_rtol, config.denominator_floor
+    )
     identifiable_rank = jnp.sum(identifiable, axis=1)
-    normalized_s = singular_values / jnp.maximum(jnp.sum(singular_values, axis=1, keepdims=True), config.denominator_floor)
-    entropy = -jnp.sum(jnp.where(normalized_s > 0, normalized_s * jnp.log(normalized_s), 0.0), axis=1)
+    normalized_s = singular_values / jnp.maximum(
+        jnp.sum(singular_values, axis=1, keepdims=True), config.denominator_floor
+    )
+    entropy = -jnp.sum(
+        jnp.where(normalized_s > 0, normalized_s * jnp.log(normalized_s), 0.0), axis=1
+    )
     effective_rank = jnp.exp(entropy)
 
-    def error_fractions(cov: Float[Array, "n n"], dK: Float[Array, "m_u n"]) -> Float[Array, " two"]:
+    def error_fractions(
+        cov: Float[Array, "n n"], dK: Float[Array, "m_u n"]
+    ) -> Float[Array, " two"]:
         u, s, _vh = jnp.linalg.svd(cov, full_matrices=False)
         keep = s > jnp.maximum(jnp.max(s) * config.covariance_rank_rtol, config.denominator_floor)
         basis = u * keep[None, :]
@@ -321,16 +338,25 @@ def _interpolation_objective_ratios(
     K_ref: Float[Array, "T m_u n"],
 ) -> tuple[float, ...]:
     states, weights = ensemble_initial_states(reference.plant, LinearTrainingConfig())
-    ref_objective = ensemble_clean_objective(reference.plant, reference.schedule, K_ref, states, weights)
+    ref_objective = ensemble_clean_objective(
+        reference.plant, reference.schedule, K_ref, states, weights
+    )
     ratios = []
     for alpha in (0.0, 0.25, 0.5, 0.75, 1.0):
         K_alpha = (1.0 - alpha) * K + alpha * K_ref
-        value = ensemble_clean_objective(reference.plant, reference.schedule, K_alpha, states, weights)
+        value = ensemble_clean_objective(
+            reference.plant, reference.schedule, K_alpha, states, weights
+        )
         ratios.append(float(value / ref_objective))
     return tuple(ratios)
 
 
-def _value_gap_ratio(P: Float[Array, "T_plus_1 n n"], P_ref: Float[Array, "T_plus_1 n n"], sigma0: Float[Array, "n n"], floor: float) -> float:
+def _value_gap_ratio(
+    P: Float[Array, "T_plus_1 n n"],
+    P_ref: Float[Array, "T_plus_1 n n"],
+    sigma0: Float[Array, "n n"],
+    floor: float,
+) -> float:
     numerator = jnp.trace((P[0] - P_ref[0]) @ sigma0)
     denominator = jnp.trace(P_ref[0] @ sigma0)
     return float(_safe_ratio(numerator, denominator, floor))
@@ -345,8 +371,14 @@ def _classify_controller(
     gradient_norm: float,
     config: CertificateConfig,
 ) -> str:
-    if heldout_cost_ratio <= config.heldout_cost_ratio_tol and adversary_action_mismatch <= config.adversary_action_mismatch_tol:
-        if clean_cost_ratio <= config.behavior_cost_ratio_tol and clean_action_mismatch <= config.clean_action_mismatch_tol:
+    if (
+        heldout_cost_ratio <= config.heldout_cost_ratio_tol
+        and adversary_action_mismatch <= config.adversary_action_mismatch_tol
+    ):
+        if (
+            clean_cost_ratio <= config.behavior_cost_ratio_tol
+            and clean_action_mismatch <= config.clean_action_mismatch_tol
+        ):
             return "disturbance_equivalent"
     if gradient_norm > 1e-2:
         return "optimizer_uncertain_not_disturbance_equivalent"
@@ -370,7 +402,10 @@ def _controller_certificate(
     clean = next(audit for audit in result.audits if audit.label == label)
     lqr_clean = next(audit for audit in result.audits if audit.label == "analytical_lqr_reference")
     clean_cost_ratio = clean.clean_cost / lqr_clean.clean_cost
-    heldout_cost_ratio = clean.heldout.cost.total_without_disturbance_penalty / lqr_clean.heldout.cost.total_without_disturbance_penalty
+    heldout_cost_ratio = (
+        clean.heldout.cost.total_without_disturbance_penalty
+        / lqr_clean.heldout.cost.total_without_disturbance_penalty
+    )
     distributions = _state_distributions(result, label, K, config)
     distribution_metrics = tuple(
         _distribution_metrics(
@@ -388,7 +423,9 @@ def _controller_certificate(
         metric for metric in distribution_metrics if metric.label == "canonical_clean_reference"
     )
     adversary_metric = next(
-        metric for metric in distribution_metrics if metric.label == "candidate_heldout_adversary_states"
+        metric
+        for metric in distribution_metrics
+        if metric.label == "candidate_heldout_adversary_states"
     )
     training_states, _weights = ensemble_initial_states(plant, LinearTrainingConfig())
     training_sigma0 = training_states.T @ training_states / training_states.shape[0]
@@ -494,15 +531,29 @@ def _controller_summary(controller: ControllerCertificate) -> dict[str, Any]:
     }
 
 
-def result_summary(result: LinearEquivalenceCertificateResult) -> dict[str, Any]:
+def result_summary(
+    result: LinearEquivalenceCertificateResult,
+    *,
+    discretization: str = DEFAULT_DISCRETIZATION,
+    lane: str = DEFAULT_LANE,
+) -> dict[str, Any]:
     """Return JSON-serializable certificate summary."""
 
-    phase3_summary = round_trip_summary(result.phase3)
+    phase3_summary = round_trip_summary(
+        result.phase3,
+        discretization=discretization,
+        lane=lane,
+    )
     return {
         "issue": ISSUE_ID,
         "phase3_issue": PHASE3_ISSUE_ID,
         "umbrella": UMBRELLA_ID,
         "regeneration_command": "PYTHONPATH=src python scripts/materialize_linear_equivalence_certificate.py",
+        "rerun_metadata": build_rerun_metadata(
+            discretization=discretization,
+            lane=lane,
+            materializer="linear_equivalence_certificate",
+        ),
         "phase3_status_before_certificate": phase3_summary["phase3_status"],
         "phase3_best_objective_training": phase3_summary["best_objective_training"],
         "certificate_config": result.config.__dict__,
@@ -559,14 +610,18 @@ def render_markdown(summary: dict[str, Any]) -> str:
                 f"{metric['mean_effective_rank']:.6g} | "
                 f"{metric['gain_error_parallel_fraction_mean']:.6g} |"
             )
-        distribution_sections.append(
-            f"### `{controller['label']}`\n\n" + "\n".join(metric_rows)
-        )
+        distribution_sections.append(f"### `{controller['label']}`\n\n" + "\n".join(metric_rows))
 
     return f"""# State-Weighted Linear Equivalence Certificate
 
 Issue: `{summary["issue"]}`. Phase 3 issue: `{summary["phase3_issue"]}`.
 Umbrella: `{summary["umbrella"]}`.
+
+Rerun metadata:
+
+- Discretization: `{summary["rerun_metadata"]["discretization"]}`.
+- Lane: `{summary["rerun_metadata"]["lane"]}`.
+- Lane scope: {summary["rerun_metadata"]["lane_description"]}
 
 This note applies the GPT 5.5 Pro critique imported under `6f5c79e` by testing
 whether the objective-trained Phase 3 linear controllers are disturbance-
@@ -614,11 +669,16 @@ def _npz_arrays(result: LinearEquivalenceCertificateResult) -> dict[str, np.ndar
     return arrays
 
 
-def write_outputs(issue_id: str = ISSUE_ID) -> dict[str, Any]:
+def write_outputs(
+    issue_id: str = ISSUE_ID,
+    *,
+    discretization: str = DEFAULT_DISCRETIZATION,
+    lane: str = DEFAULT_LANE,
+) -> dict[str, Any]:
     """Write tracked certificate outputs and small array sidecar."""
 
     result = run_linear_equivalence_certificate()
-    summary = result_summary(result)
+    summary = result_summary(result, discretization=discretization, lane=lane)
     results_dir = mkdir_p(REPO_ROOT / "results" / issue_id)
     notes_dir = mkdir_p(results_dir / "notes")
     artifact_dir = mkdir_p(REPO_ROOT / "_artifacts" / issue_id / "linear_equivalence_certificate")
@@ -637,7 +697,9 @@ def write_outputs(issue_id: str = ISSUE_ID) -> dict[str, Any]:
     summary["tracked_manifest"] = (
         f"results/{issue_id}/notes/linear_equivalence_certificate_manifest.json"
     )
-    summary["artifact_npz"] = f"_artifacts/{issue_id}/linear_equivalence_certificate/{npz_path.name}"
+    summary["artifact_npz"] = (
+        f"_artifacts/{issue_id}/linear_equivalence_certificate/{npz_path.name}"
+    )
     summary["artifact_npz_keys"] = sorted(arrays.keys())
 
     note_path = notes_dir / "linear_equivalence_certificate.md"

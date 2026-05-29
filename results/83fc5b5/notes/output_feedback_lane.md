@@ -4,7 +4,13 @@ Issue: `83fc5b5`. Umbrella: `43e8728`.
 
 This note adds the C&S information-structure lane while preserving the older
 deterministic full augmented-state replay as Phase 0A. The canonical C&S
-fidelity card is now Phase 0B:
+deterministic estimator-in-loop card is now Phase 0B:
+
+Rerun metadata:
+
+- Discretization: `zoh`.
+- Lane: `deterministic_analytical`.
+- Lane scope: Deterministic analytical lane: exact recursions and deterministic rollouts/audits with no sampled sensory, motor/process, or signal-dependent control noise.
 
 ```text
 y_t = H x_aug,t

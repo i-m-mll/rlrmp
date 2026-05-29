@@ -3,6 +3,12 @@
 Issue: `d01c35a`. Phase 3 issue: `6f5c79e`.
 Umbrella: `43e8728`.
 
+Rerun metadata:
+
+- Discretization: `zoh`.
+- Lane: `deterministic_analytical`.
+- Lane scope: Deterministic analytical lane: exact recursions and deterministic rollouts/audits with no sampled sensory, motor/process, or signal-dependent control noise.
+
 This note applies the GPT 5.5 Pro critique imported under `6f5c79e` by testing
 whether the objective-trained Phase 3 linear controllers are disturbance-
 relevant equivalents of analytical LQR, not merely clean canonical reach
