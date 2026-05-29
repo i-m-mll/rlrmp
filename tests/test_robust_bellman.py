@@ -9,6 +9,8 @@ from rlrmp.analysis.linear_round_trip import LinearTrainingConfig, ensemble_init
 from rlrmp.analysis.robust_bellman import (
     deterministic_inner_max_margin,
     deterministic_robust_bellman_objective,
+    train_deterministic_numerical_minmax_bellman,
+    train_output_feedback_information_state_numerical_minmax_bellman,
     train_output_feedback_joint_robust_bellman,
     train_deterministic_robust_bellman,
 )
@@ -57,6 +59,35 @@ def test_deterministic_robust_bellman_training_recovers_reference_smoke() -> Non
 
     assert result.objective_ratio_to_reference < 1.000001
     assert result.gain_relative_error < 1e-3
+
+
+def test_deterministic_numerical_minmax_bellman_recovers_reference_smoke() -> None:
+    reference = materialize_reference(gamma_factors=(1.4,))
+    fits = train_deterministic_numerical_minmax_bellman(
+        reference,
+        gamma_factor=1.4,
+        time_indices=(10,),
+        config=LinearTrainingConfig(n_steps=80, n_random_states=8),
+    )
+
+    assert fits[0].objective_ratio_to_reference < 1.000001
+    assert fits[0].gain_relative_error < 1e-3
+
+
+def test_output_feedback_information_state_numerical_minmax_recovers_formal_target() -> None:
+    reference = materialize_reference(gamma_factors=(1.4,))
+    result = train_output_feedback_information_state_numerical_minmax_bellman(
+        reference,
+        gamma_factor=1.4,
+        time_indices=(10,),
+        config=LinearTrainingConfig(n_steps=80, n_random_states=8),
+    )
+
+    assert result["target"] == "formal_time_indexed_information_state"
+    assert result["recovers_formal_target"]
+    assert result["max_gain_relative_error"] < 2e-2
+    assert result["min_feasibility_margin"] > 0.0
+    assert result["cs_persistent_index_gain_relative_error"] > 1e-2
 
 
 def test_output_feedback_joint_robust_bellman_training_recovers_reference_smoke() -> None:
