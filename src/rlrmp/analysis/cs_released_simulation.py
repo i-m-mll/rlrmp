@@ -42,19 +42,21 @@ class CSNoiseCovariances:
     Attributes:
         sensory: Observation covariance for the delayed physical measurement,
             shape ``(n_obs, n_obs)``.
-        motor: Additive motor-command covariance before multiplication by
-            ``B``, shape ``(m_u, m_u)``.
+        motor: Additive state-space motor covariance, shape ``(n, n)``. This
+            mirrors C&S ``motorNoise`` sampled from ``Oxi`` and added directly
+            to ``currentX``.
         process: Additive state/process covariance after plant propagation,
-            shape ``(n, n)``. This is the local analogue of C&S ``Oxi``.
-        signal_dependent_control: Linear map in the C&S ``Csdn * u`` term,
-            shape ``(m_u, m_u)``. The sampled signal-dependent control noise is
-            elementwise standard normal noise times this mapped command.
+            shape ``(n, n)``.
+        signal_dependent_state: C&S ``Csdn`` tensor, shape ``(n, m_u, m_u)``.
+            The sampled term is
+            ``sum_j standard_j * signal_dependent_state[:, :, j] @ u`` and is
+            added directly to the state update.
     """
 
     sensory: Float[Array, "n_obs n_obs"]
-    motor: Float[Array, "m_u m_u"]
+    motor: Float[Array, "n n"]
     process: Float[Array, "n n"]
-    signal_dependent_control: Float[Array, "m_u m_u"]
+    signal_dependent_state: Float[Array, "n m_u m_u"]
 
 
 @dataclass(frozen=True)
@@ -62,9 +64,9 @@ class CSForwardNoiseDraws:
     """Concrete sampled noise sequences for one stochastic forward pass."""
 
     sensory: Float[Array, "T n_obs"]
-    motor: Float[Array, "T m_u"]
+    motor: Float[Array, "T n"]
     process: Float[Array, "T n"]
-    signal_dependent: Float[Array, "T m_u"]
+    signal_dependent_standard: Float[Array, "T m_u"]
 
 
 @dataclass(frozen=True)
@@ -89,8 +91,9 @@ class CSStochasticRollout:
     y: Float[Array, "T n_obs"]
     u_command: Float[Array, "T m_u"]
     u_applied: Float[Array, "T m_u"]
-    motor_noise: Float[Array, "T m_u"]
-    signal_dependent_noise: Float[Array, "T m_u"]
+    motor_noise: Float[Array, "T n"]
+    signal_dependent_standard: Float[Array, "T m_u"]
+    signal_dependent_noise: Float[Array, "T n"]
     process_noise: Float[Array, "T n"]
     sensory_noise: Float[Array, "T n_obs"]
     adversary_epsilon: Float[Array, "T m_w"]
@@ -136,9 +139,9 @@ def zero_noise_covariances(
 
     return CSNoiseCovariances(
         sensory=jnp.zeros((config.n_phys, config.n_phys), dtype=jnp.float64),
-        motor=jnp.zeros((plant.m_u, plant.m_u), dtype=jnp.float64),
+        motor=jnp.zeros((plant.n, plant.n), dtype=jnp.float64),
         process=jnp.zeros((plant.n, plant.n), dtype=jnp.float64),
-        signal_dependent_control=jnp.zeros((plant.m_u, plant.m_u), dtype=jnp.float64),
+        signal_dependent_state=jnp.zeros((plant.n, plant.m_u, plant.m_u), dtype=jnp.float64),
     )
 
 
@@ -163,15 +166,28 @@ def default_cs_noise_covariances(
     return CSNoiseCovariances(
         sensory=measurement_covariance(plant, config),
         motor=(
-            jnp.eye(plant.m_u, dtype=jnp.float64)
+            jnp.eye(plant.n, dtype=jnp.float64)
             * jnp.asarray(motor_covariance_scale, dtype=jnp.float64)
         ),
         process=process,
-        signal_dependent_control=(
-            jnp.eye(plant.m_u, dtype=jnp.float64)
-            * jnp.asarray(signal_dependent_scale, dtype=jnp.float64)
+        signal_dependent_state=cs_signal_dependent_state_tensor(
+            plant,
+            scale=signal_dependent_scale,
         ),
     )
+
+
+def cs_signal_dependent_state_tensor(
+    plant: PlantLinearization,
+    *,
+    scale: float = 0.1,
+) -> Float[Array, "n m_u m_u"]:
+    """Return C&S ``Csdn`` with ``Csdn[:, i, i] = scale * B[:, i]``."""
+
+    tensor = jnp.zeros((plant.n, plant.m_u, plant.m_u), dtype=jnp.float64)
+    for i in range(plant.m_u):
+        tensor = tensor.at[:, i, i].set(jnp.asarray(scale, dtype=jnp.float64) * plant.B[:, i])
+    return tensor
 
 
 def sample_forward_noise_draws(
@@ -191,9 +207,9 @@ def sample_forward_noise_draws(
         sensory=_sample_zero_mean_gaussian(keys[0], T, covariances.sensory),
         motor=_sample_zero_mean_gaussian(keys[1], T, covariances.motor),
         process=_sample_zero_mean_gaussian(keys[2], T, covariances.process),
-        signal_dependent=jr.normal(
+        signal_dependent_standard=jr.normal(
             keys[3],
-            (T, covariances.signal_dependent_control.shape[0]),
+            (T, covariances.signal_dependent_state.shape[2]),
             dtype=jnp.float64,
         ),
     )
@@ -209,9 +225,9 @@ def zero_forward_noise_draws(
 
     return CSForwardNoiseDraws(
         sensory=jnp.zeros((T, config.n_phys), dtype=jnp.float64),
-        motor=jnp.zeros((T, plant.m_u), dtype=jnp.float64),
+        motor=jnp.zeros((T, plant.n), dtype=jnp.float64),
         process=jnp.zeros((T, plant.n), dtype=jnp.float64),
-        signal_dependent=jnp.zeros((T, plant.m_u), dtype=jnp.float64),
+        signal_dependent_standard=jnp.zeros((T, plant.m_u), dtype=jnp.float64),
     )
 
 
@@ -429,16 +445,21 @@ def _simulate_released_forward(
         y_t = y_clean + sensory
         u_command = -controller_gains[t] @ xhat_t
         motor = draws.motor[t]
-        signal_dependent = (
-            draws.signal_dependent[t] * (covariances.signal_dependent_control @ u_command)
+        signal_dependent = jnp.einsum(
+            "j,nmj,m->n",
+            draws.signal_dependent_standard[t],
+            covariances.signal_dependent_state,
+            u_command,
         )
-        u_applied = u_command + motor + signal_dependent
+        u_applied = u_command
         process = draws.process[t]
         xhat_next = estimator_update(t, x_t, xhat_t, y_t, u_command)
         x_next = (
             plant.A @ x_t
-            + plant.B @ u_applied
+            + plant.B @ u_command
             + plant.Bw @ eps[t]
+            + motor
+            + signal_dependent
             + process
             + perturb[t]
         )
@@ -464,6 +485,7 @@ def _simulate_released_forward(
         u_command=jnp.stack(u_command_seq, axis=0),
         u_applied=u_applied,
         motor_noise=jnp.stack(motor_seq, axis=0),
+        signal_dependent_standard=draws.signal_dependent_standard,
         signal_dependent_noise=jnp.stack(sdn_seq, axis=0),
         process_noise=jnp.stack(process_seq, axis=0),
         sensory_noise=jnp.stack(sensory_seq, axis=0),
