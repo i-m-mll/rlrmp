@@ -88,12 +88,18 @@ commanded force ``u`` with rise/decay time constant ``tau``). Stacked state
 
 where the disturbance ``w`` enters as an additive force on the velocity row
 (matching feedbax's effector-force intervenor channel; see
-``rlrmp.disturbance``). Discretisation uses zero-order hold via
+``rlrmp.disturbance``). Generic rlrmp plants use zero-order hold by default,
+while the C&S released-code card uses forward Euler to match the ModelDB
+MATLAB update ``A_d = I + dt A_c``, ``B_d = dt B_c``. The ZOH construction uses
 ``jax.scipy.linalg.expm`` on the augmented 9x9 block
 
 .. math::
 
-    \\exp\\!\\left(\\begin{bmatrix} A_c & B_c & B_{w,c} \\\\ 0 & 0 & 0 \\\\ 0 & 0 & 0 \\end{bmatrix} dt\\right)
+    \\exp\\!\\left(
+        \\begin{bmatrix} A_c & B_c & B_{w,c} \\\\
+        0 & 0 & 0 \\\\ 0 & 0 & 0
+        \\end{bmatrix} dt
+    \\right)
     = \\begin{bmatrix} A_d & B_d & B_{w,d} \\\\ 0 & I & 0 \\\\ 0 & 0 & I \\end{bmatrix}.
 
 For ``tau == 0`` (no filter) we bypass the filter rows and return the bare
@@ -171,7 +177,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Literal, Optional, Tuple
 
 import equinox as eqx
 import jax
@@ -194,6 +200,9 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 
+Discretization = Literal["zoh", "euler"]
+
+
 class PlantLinearization(eqx.Module):
     """Continuous- and discrete-time LTI matrices for the linearised plant.
 
@@ -205,6 +214,7 @@ class PlantLinearization(eqx.Module):
         B: Discrete-time control matrix, shape (n, m_u).
         Bw: Discrete-time disturbance matrix, shape (n, m_w).
         dt: Time step (seconds).
+        discretization: Named discretization used for ``A`` and ``B``.
         state_indices: Dict mapping subspace name to slice (``"pos"``, ``"vel"``,
             ``"force"``).
         n: Total state dimension.
@@ -222,6 +232,7 @@ class PlantLinearization(eqx.Module):
     pos_slice: tuple[int, int]
     vel_slice: tuple[int, int]
     force_slice: Optional[tuple[int, int]]
+    discretization: Discretization = eqx.field(default="zoh", static=True)
 
     @property
     def n(self) -> int:
@@ -340,13 +351,14 @@ def linearize_pointmass(
     tau: float,
     dt: float,
     disturbance_channel: str = "velocity_force",
+    discretization: Discretization = "zoh",
 ) -> PlantLinearization:
     """Linearise the rlrmp point-mass-plus-filter plant.
 
     Builds the continuous-time LTI matrices for the augmented state
     ``[pos(2), vel(2), F(2)]`` (or ``[pos(2), vel(2)]`` if ``tau == 0``) and
-    discretises via zero-order hold using ``jax.scipy.linalg.expm`` on the
-    augmented (state | inputs) block.
+    discretises via the named scheme. Generic rlrmp analyses default to
+    zero-order hold; C&S released-code fidelity passes ``"euler"`` explicitly.
 
     The plant is the one used in ``feedbax.xabdeef.models.point_mass_nn``:
 
@@ -383,13 +395,16 @@ def linearize_pointmass(
         dt: Discretisation time step (s).
         disturbance_channel: ``"velocity_force"`` (default, physical curl-field
             channel) or ``"full_state"`` (C&S Eq 13 lumped ε on all states).
+        discretization: ``"zoh"`` for zero-order hold or ``"euler"`` for
+            forward Euler ``A_d = I + dt A_c``, ``B_d = dt B_c``.
 
     Returns:
         A ``PlantLinearization`` with continuous- and discrete-time matrices.
 
     Raises:
         ValueError: If ``mass`` or ``dt`` is non-positive, ``tau`` is
-            negative, or ``disturbance_channel`` is unrecognised.
+            negative, or ``disturbance_channel``/``discretization`` is
+            unrecognised.
     """
     if mass <= 0:
         raise ValueError(f"mass must be positive, got {mass}")
@@ -401,6 +416,10 @@ def linearize_pointmass(
         raise ValueError(
             f"disturbance_channel must be 'velocity_force' or 'full_state', "
             f"got {disturbance_channel!r}"
+        )
+    if discretization not in ("zoh", "euler"):
+        raise ValueError(
+            f"discretization must be 'zoh' or 'euler', got {discretization!r}"
         )
 
     I2 = jnp.eye(2, dtype=jnp.float64)
@@ -441,14 +460,15 @@ def linearize_pointmass(
 
     if disturbance_channel == "velocity_force":
         Bw_c = Bw_c_vel
-        # ZOH discretise A, B, and Bw together
-        A_d, B_d, Bw_d = _zoh_discretize(A_c, B_c, Bw_c, dt)
+        A_d, B_d, Bw_d = _discretize_lti(A_c, B_c, Bw_c, dt, discretization)
     else:
         # disturbance_channel == "full_state": B_w_d = I_n directly
         # (matches C&S Eq 13 ε formulation; one disturbance per state coord).
         Bw_c = jnp.eye(n_state, dtype=jnp.float64)
-        # ZOH discretise A, B without Bw, then set Bw_d = I_n.
-        A_d, B_d, _ = _zoh_discretize(A_c, B_c, Bw_c_vel, dt)  # Bw_c_vel only used as placeholder
+        # Discretise A, B without using Bw, then set Bw_d = I_n.
+        A_d, B_d, _ = _discretize_lti(
+            A_c, B_c, Bw_c_vel, dt, discretization
+        )  # Bw_c_vel only used as placeholder
         Bw_d = jnp.eye(n_state, dtype=jnp.float64)
 
     return PlantLinearization(
@@ -462,6 +482,7 @@ def linearize_pointmass(
         pos_slice=pos_slice,
         vel_slice=vel_slice,
         force_slice=force_slice,
+        discretization=discretization,
     )
 
 
@@ -473,6 +494,7 @@ def cs_faithful_pointmass(
     dt: float = 0.01,
     disturbance_integrator: bool = True,
     delay_steps: int = 5,
+    discretization: Discretization = "euler",
 ) -> PlantLinearization:
     """Build the Crevecoeur & Scott (2019) 8-state plant with delay augmentation.
 
@@ -512,6 +534,11 @@ def cs_faithful_pointmass(
       distribute it across the lag chain. The canonical C&S horizon is
       ``n_steps = 60`` (0.6 s at dt=0.01), set explicitly when constructing
       the schedule.
+    - **Discretization** (Bug: ``dd232cd``): canonical C&S released-code
+      fidelity uses forward Euler, matching the ModelDB MATLAB formulas
+      ``A = I + dt*A_c`` and ``B = dt*B_c``. Pass ``discretization="zoh"``
+      for the named higher-order sensitivity variant; it is not the canonical
+      released-code path.
 
     The total state dimension is:
 
@@ -532,6 +559,8 @@ def cs_faithful_pointmass(
         delay_steps: Number of delay taps. ``5`` (default) gives a 50 ms
             sensorimotor delay at ``dt=0.01``. ``0`` disables delay
             augmentation (legacy behaviour, same as pre-`9a0558e`).
+        discretization: ``"euler"`` (default) for C&S released-code fidelity,
+            or ``"zoh"`` for a named sensitivity variant.
 
     Returns:
         A ``PlantLinearization`` with ``A``, ``B``, ``B_w`` sized for the
@@ -539,9 +568,10 @@ def cs_faithful_pointmass(
 
     Backward compatibility:
         ``cs_faithful_pointmass(disturbance_integrator=False, delay_steps=0,
-        tau=0.06)`` reproduces the pre-9a0558e 6-state, no-delay form
-        exactly. Useful for regression tests and for comparing the
-        pre/post-lift Δv numbers.
+        tau=0.06)`` retains the pre-9a0558e 6-state, no-delay shape and
+        physical parameters under the current default Euler discretization.
+        Add ``discretization="zoh"`` when comparing to the older higher-order
+        sensitivity dynamics.
 
     Bug: ``9a0558e`` — structural lift to 8-state plant + full-state delay
     augmentation. The post-recipe-audit fix (full-state lag, tau=0.066,
@@ -555,15 +585,20 @@ def cs_faithful_pointmass(
     """
     if delay_steps < 0:
         raise ValueError(f"delay_steps must be non-negative, got {delay_steps}")
+    if discretization not in ("zoh", "euler"):
+        raise ValueError(
+            f"discretization must be 'zoh' or 'euler', got {discretization!r}"
+        )
 
     if not disturbance_integrator:
         plant = linearize_pointmass(
             mass=mass, damping=damping, tau=tau, dt=dt,
-            disturbance_channel="full_state",
+            disturbance_channel="full_state", discretization=discretization,
         )
     else:
         plant = _build_cs_8state_pointmass(
             mass=mass, damping=damping, tau=tau, dt=dt,
+            discretization=discretization,
         )
 
     if delay_steps > 0:
@@ -578,6 +613,7 @@ def _build_cs_8state_pointmass(
     damping: float,
     tau: float,
     dt: float,
+    discretization: Discretization,
 ) -> PlantLinearization:
     """Build the C&S 8-state plant with disturbance-integrator coupling.
 
@@ -636,12 +672,11 @@ def _build_cs_8state_pointmass(
     # Disturbance enters all states directly (full-state B_w = I_8).
     Bw_c = jnp.eye(8, dtype=jnp.float64)
 
-    # ZOH discretise A and B; ε integrators are pure (rows 7,8 of A_c are
-    # zero), so they have no inter-step coupling beyond the trivial e^{0·dt}=I.
-    # We then SET B_w_d = I_8 directly (matches the C&S released code, where
-    # the disturbance D is set to the discrete-time identity, not derived
-    # from a continuous-time ε via ZOH).
-    A_d, B_d, _ = _zoh_discretize(A_c, B_c, Bw_c, dt)
+    # Discretise A and B by the selected named scheme. We then SET B_w_d = I_8
+    # directly, matching the C&S released code where the disturbance D is a
+    # discrete-time identity rather than a continuous-time channel integrated
+    # by either Euler or ZOH.
+    A_d, B_d, _ = _discretize_lti(A_c, B_c, Bw_c, dt, discretization)
     Bw_d = jnp.eye(8, dtype=jnp.float64)
 
     return PlantLinearization(
@@ -655,6 +690,7 @@ def _build_cs_8state_pointmass(
         pos_slice=(0, 2),
         vel_slice=(2, 4),
         force_slice=(4, 6),
+        discretization=discretization,
     )
 
 
@@ -785,6 +821,7 @@ def _apply_delay_augmentation(
         pos_slice=plant.pos_slice,
         vel_slice=plant.vel_slice,
         force_slice=plant.force_slice,
+        discretization=plant.discretization,
     )
 
 
@@ -979,7 +1016,9 @@ def linearize_from_model(model, *, dt: Optional[float] = None) -> PlantLineariza
     )
 
 
-def _walk_model_for_plant_params(model) -> Tuple[Optional[PointMass], Optional[float], Optional[float]]:
+def _walk_model_for_plant_params(
+    model,
+) -> Tuple[Optional[PointMass], Optional[float], Optional[float]]:
     """Find PointMass instance, dt, tau in a feedbax-shaped model.
 
     Returns ``(pointmass_or_none, dt_or_none, tau_or_none)``. If the model is
@@ -1047,6 +1086,39 @@ def _zoh_discretize(
     B_d = expM[:n, n : n + m_u]
     Bw_d = expM[:n, n + m_u :]
     return A_d, B_d, Bw_d
+
+
+def _euler_discretize(
+    A_c: Float[Array, "n n"],
+    B_c: Float[Array, "n m_u"],
+    Bw_c: Float[Array, "n m_w"],
+    dt: float,
+) -> Tuple[Float[Array, "n n"], Float[Array, "n m_u"], Float[Array, "n m_w"]]:
+    """Forward Euler discretisation used by the C&S released MATLAB code."""
+
+    n = A_c.shape[0]
+    A_d = jnp.eye(n, dtype=jnp.float64) + dt * A_c
+    B_d = dt * B_c
+    Bw_d = dt * Bw_c
+    return A_d, B_d, Bw_d
+
+
+def _discretize_lti(
+    A_c: Float[Array, "n n"],
+    B_c: Float[Array, "n m_u"],
+    Bw_c: Float[Array, "n m_w"],
+    dt: float,
+    discretization: Discretization,
+) -> Tuple[Float[Array, "n n"], Float[Array, "n m_u"], Float[Array, "n m_w"]]:
+    """Dispatch to a named LTI discretization scheme."""
+
+    if discretization == "zoh":
+        return _zoh_discretize(A_c, B_c, Bw_c, dt)
+    if discretization == "euler":
+        return _euler_discretize(A_c, B_c, Bw_c, dt)
+    raise ValueError(
+        f"discretization must be 'zoh' or 'euler', got {discretization!r}"
+    )
 
 
 # =============================================================================
@@ -2385,6 +2457,7 @@ def linearization_fidelity(
 
 __all__ = [
     "PlantLinearization",
+    "Discretization",
     "CostSchedule",
     "CostSpec",
     "RiccatiSolution",
