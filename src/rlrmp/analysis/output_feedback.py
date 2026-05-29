@@ -43,6 +43,11 @@ from rlrmp.analysis.linear_round_trip import (
     ensemble_initial_states,
     rollout_task_cost,
 )
+from rlrmp.analysis.rerun_metadata import (
+    DEFAULT_DISCRETIZATION,
+    DEFAULT_LANE,
+    build_rerun_metadata,
+)
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
@@ -1997,6 +2002,9 @@ def result_summary(
     phase0b: dict[str, Any],
     phase1: OutputFeedbackPhase1Result,
     phase3: OutputFeedbackPhase3Result,
+    *,
+    discretization: str = DEFAULT_DISCRETIZATION,
+    lane: str = DEFAULT_LANE,
 ) -> dict[str, Any]:
     """Return JSON-serializable combined output-feedback lane summary."""
 
@@ -2127,6 +2135,11 @@ def result_summary(
     return {
         "issue": ISSUE_ID,
         "umbrella": UMBRELLA_ID,
+        "rerun_metadata": build_rerun_metadata(
+            discretization=discretization,
+            lane=lane,
+            materializer="output_feedback_lane",
+        ),
         "follow_up_issues": {
             "exact_output_feedback_phase1": EXACT_OUTPUT_FEEDBACK_PHASE1_ISSUE_ID,
             "output_feedback_phase3_training": OUTPUT_FEEDBACK_PHASE3_TRAINING_ISSUE_ID,
@@ -2300,7 +2313,13 @@ Issue: `{summary["issue"]}`. Umbrella: `{summary["umbrella"]}`.
 
 This note adds the C&S information-structure lane while preserving the older
 deterministic full augmented-state replay as Phase 0A. The canonical C&S
-fidelity card is now Phase 0B:
+deterministic estimator-in-loop card is now Phase 0B:
+
+Rerun metadata:
+
+- Discretization: `{summary["rerun_metadata"]["discretization"]}`.
+- Lane: `{summary["rerun_metadata"]["lane"]}`.
+- Lane scope: {summary["rerun_metadata"]["lane_description"]}
 
 ```text
 y_t = H x_aug,t
@@ -2453,6 +2472,12 @@ def render_gamma_sweep_markdown(summary: dict[str, Any]) -> str:
 Issue: `{summary["issue"]}`. Output-feedback lane: `{summary["output_feedback_issue"]}`.
 Umbrella: `{summary["umbrella"]}`.
 
+Rerun metadata:
+
+- Discretization: `{summary["rerun_metadata"]["discretization"]}`.
+- Lane: `{summary["rerun_metadata"]["lane"]}`.
+- Lane scope: {summary["rerun_metadata"]["lane_description"]}
+
 This note extends the exact output-feedback Phase 1 audit from an L2-budget
 trust-region check to a gamma-penalized H-infinity feasibility check. For each
 gamma factor, the robust output-feedback controller is built in the C&S
@@ -2485,11 +2510,19 @@ Phase 3 training and certification.
 def write_gamma_sweep_outputs(
     issue_id: str = GAMMA_FEASIBILITY_SWEEP_ISSUE_ID,
     gamma_factors: tuple[float, ...] = GAMMA_SWEEP_FACTORS,
+    *,
+    discretization: str = DEFAULT_DISCRETIZATION,
+    lane: str = DEFAULT_LANE,
 ) -> dict[str, Any]:
     """Write gamma-penalized output-feedback robust sweep artifacts."""
 
     sweep = analyze_output_feedback_gamma_sweep(gamma_factors=gamma_factors)
     summary = gamma_sweep_summary(sweep)
+    summary["rerun_metadata"] = build_rerun_metadata(
+        discretization=discretization,
+        lane=lane,
+        materializer="output_feedback_gamma_sweep",
+    )
     results_dir = mkdir_p(REPO_ROOT / "results" / issue_id)
     notes_dir = mkdir_p(results_dir / "notes")
     artifact_dir = mkdir_p(REPO_ROOT / "_artifacts" / issue_id / "output_feedback_gamma_sweep")
@@ -2572,20 +2605,31 @@ def _npz_arrays(
     return arrays
 
 
-def write_outputs(issue_id: str = ISSUE_ID) -> dict[str, Any]:
+def write_outputs(
+    issue_id: str = ISSUE_ID,
+    *,
+    discretization: str = DEFAULT_DISCRETIZATION,
+    lane: str = DEFAULT_LANE,
+) -> dict[str, Any]:
     """Write combined Phase 0B/1/3 output-feedback lane artifacts."""
 
     phase0b = analyze_phase0b_output_feedback()
     phase1 = analyze_phase1_output_feedback()
     phase3 = analyze_phase3_output_feedback()
-    summary = result_summary(phase0b, phase1, phase3)
+    summary = result_summary(
+        phase0b,
+        phase1,
+        phase3,
+        discretization=discretization,
+        lane=lane,
+    )
     results_dir = mkdir_p(REPO_ROOT / "results" / issue_id)
     notes_dir = mkdir_p(results_dir / "notes")
     artifact_dir = mkdir_p(REPO_ROOT / "_artifacts" / issue_id / "output_feedback_lane")
     readme = results_dir / "README.md"
     if not readme.exists():
         readme.write_text(
-            "C&S output-feedback / estimator-in-loop fidelity lane for phases 0B, 1, and 3. "
+            "C&S output-feedback / estimator-in-loop deterministic lane for phases 0B, 1, and 3. "
             "See `notes/output_feedback_lane.md`.\n",
             encoding="utf-8",
         )

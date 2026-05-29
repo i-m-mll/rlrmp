@@ -32,6 +32,11 @@ from rlrmp.analysis.hinf_riccati import (
     solve_hinf_riccati,
     solve_lqr,
 )
+from rlrmp.analysis.rerun_metadata import (
+    DEFAULT_DISCRETIZATION,
+    DEFAULT_LANE,
+    build_rerun_metadata,
+)
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
@@ -297,7 +302,12 @@ def materialize_reference(
     )
 
 
-def reference_summary(reference: GameCardReference) -> dict[str, Any]:
+def reference_summary(
+    reference: GameCardReference,
+    *,
+    discretization: str = DEFAULT_DISCRETIZATION,
+    lane: str = DEFAULT_LANE,
+) -> dict[str, Any]:
     """Return a JSON-serializable summary of the reference bundle."""
 
     lqr = reference.lqr_rollout
@@ -331,6 +341,11 @@ def reference_summary(reference: GameCardReference) -> dict[str, Any]:
         "issue": ISSUE_ID,
         "umbrella": UMBRELLA_ID,
         "regeneration_command": "PYTHONPATH=src python scripts/materialize_analytical_game_card.py",
+        "rerun_metadata": build_rerun_metadata(
+            discretization=discretization,
+            lane=lane,
+            materializer="analytical_game_card",
+        ),
         "primary_gamma_factor": PRIMARY_GAMMA_FACTOR,
         "diagnostic_gamma_factor": DIAGNOSTIC_GAMMA_FACTOR,
         "plant": {
@@ -431,6 +446,12 @@ Issue: `{ISSUE_ID}`. Umbrella: `{UMBRELLA_ID}`.
 This note is the auditable C&S released-code-aligned H-infinity target for the
 first cs2019-to-RNN game-equivalence gate. It fixes the analytical game that
 later feedbax and trained-controller work must match.
+
+Rerun metadata:
+
+- Discretization: `{summary["rerun_metadata"]["discretization"]}`.
+- Lane: `{summary["rerun_metadata"]["lane"]}`.
+- Lane scope: {summary["rerun_metadata"]["lane_description"]}
 
 ## Game Definition
 
@@ -568,11 +589,16 @@ def _npz_arrays(reference: GameCardReference) -> dict[str, np.ndarray]:
     return arrays
 
 
-def write_outputs(issue_id: str = ISSUE_ID) -> dict[str, Any]:
+def write_outputs(
+    issue_id: str = ISSUE_ID,
+    *,
+    discretization: str = DEFAULT_DISCRETIZATION,
+    lane: str = DEFAULT_LANE,
+) -> dict[str, Any]:
     """Write tracked and untracked game-card outputs."""
 
     reference = materialize_reference()
-    summary = reference_summary(reference)
+    summary = reference_summary(reference, discretization=discretization, lane=lane)
     results_dir = mkdir_p(REPO_ROOT / "results" / issue_id)
     notes_dir = mkdir_p(results_dir / "notes")
     artifact_dir = mkdir_p(REPO_ROOT / "_artifacts" / issue_id / "analytical_game_card")
