@@ -52,6 +52,28 @@
     "strong_optimizer_whitened__scratch_under_eps_u",
     "strong_optimizer_whitened__scratch_under_eps_x",
     "strong_optimizer_whitened__scratch_under_eps_x_hat",
+    "strong_optimizer_whitened_bellman_aux__scratch_K",
+    "strong_optimizer_whitened_bellman_aux__scratch_clean_u",
+    "strong_optimizer_whitened_bellman_aux__scratch_clean_x",
+    "strong_optimizer_whitened_bellman_aux__scratch_clean_x_hat",
+    "strong_optimizer_whitened_bellman_aux__scratch_under_eps_u",
+    "strong_optimizer_whitened_bellman_aux__scratch_under_eps_x",
+    "strong_optimizer_whitened_bellman_aux__scratch_under_eps_x_hat",
+    "strong_optimizer_whitened_block_time__bellman_init_K",
+    "strong_optimizer_whitened_block_time__bellman_init_clean_u",
+    "strong_optimizer_whitened_block_time__bellman_init_clean_x",
+    "strong_optimizer_whitened_block_time__bellman_init_clean_x_hat",
+    "strong_optimizer_whitened_block_time__bellman_init_under_eps_u",
+    "strong_optimizer_whitened_block_time__bellman_init_under_eps_x",
+    "strong_optimizer_whitened_block_time__bellman_init_under_eps_x_hat",
+    "strong_optimizer_whitened_block_time__scratch_K",
+    "strong_optimizer_whitened_block_time__scratch_clean_u",
+    "strong_optimizer_whitened_block_time__scratch_clean_x",
+    "strong_optimizer_whitened_block_time__scratch_clean_x_hat",
+    "strong_optimizer_whitened_block_time__scratch_under_eps_u",
+    "strong_optimizer_whitened_block_time__scratch_under_eps_x",
+    "strong_optimizer_whitened_block_time__scratch_under_eps_x_hat",
+    "time_block_scales",
     "whitened__bellman_init_K",
     "whitened__bellman_init_clean_u",
     "whitened__bellman_init_clean_x",
@@ -79,6 +101,19 @@
         "cost": 5709.1549129726545,
         "gamma_penalized_feasible": false,
         "lambda_over_gamma_squared": 2.80933499142797
+      }
+    },
+    "bellman_auxiliary": {
+      "anchor_to_known_controller": false,
+      "objective": "clean_rollout_ratio + weight * one_step_lqr_bellman_ratio",
+      "reference_objective": 5485.0639729638015,
+      "schedules": {
+        "strong_optimizer_whitened_bellman_aux": [
+          0.1,
+          0.03,
+          0.01,
+          0.0
+        ]
       }
     },
     "budget": 3.154052119982121e-06,
@@ -141,6 +176,12 @@
       "median": 0.012259003773189964,
       "min": 0.009660506138686588
     },
+    "time_block_scales": {
+      "condition": 1.3342736500677712,
+      "max": 1.3130128481711347,
+      "median": 1.0,
+      "min": 0.984065636089301
+    },
     "training_config": {
       "basis_scale": 0.01,
       "learning_rate": 0.3,
@@ -164,11 +205,17 @@
         "time_to_peak_step": 20
       },
       "condition": {
+        "auxiliary_bellman_weights": [],
         "ftol": 1e-12,
         "gtol": 1e-08,
+        "initializations": [
+          "scratch",
+          "bellman_init"
+        ],
         "label": "clean",
         "maxiter": 500,
         "maxls": 50,
+        "use_time_block_preconditioning": false,
         "use_whitening": false
       },
       "exact_l2_cost": 6831.59370237362,
@@ -215,11 +262,17 @@
         "time_to_peak_step": 16
       },
       "condition": {
+        "auxiliary_bellman_weights": [],
         "ftol": 1e-12,
         "gtol": 1e-08,
+        "initializations": [
+          "scratch",
+          "bellman_init"
+        ],
         "label": "clean",
         "maxiter": 500,
         "maxls": 50,
+        "use_time_block_preconditioning": false,
         "use_whitening": false
       },
       "exact_l2_cost": 5709.139544154233,
@@ -266,11 +319,17 @@
         "time_to_peak_step": 17
       },
       "condition": {
+        "auxiliary_bellman_weights": [],
         "ftol": 1e-14,
         "gtol": 1e-10,
+        "initializations": [
+          "scratch",
+          "bellman_init"
+        ],
         "label": "strong_optimizer",
         "maxiter": 2000,
         "maxls": 100,
+        "use_time_block_preconditioning": false,
         "use_whitening": false
       },
       "exact_l2_cost": 6181.224171282066,
@@ -317,11 +376,17 @@
         "time_to_peak_step": 16
       },
       "condition": {
+        "auxiliary_bellman_weights": [],
         "ftol": 1e-14,
         "gtol": 1e-10,
+        "initializations": [
+          "scratch",
+          "bellman_init"
+        ],
         "label": "strong_optimizer",
         "maxiter": 2000,
         "maxls": 100,
+        "use_time_block_preconditioning": false,
         "use_whitening": false
       },
       "exact_l2_cost": 5709.14005931998,
@@ -368,11 +433,17 @@
         "time_to_peak_step": 16
       },
       "condition": {
+        "auxiliary_bellman_weights": [],
         "ftol": 1e-12,
         "gtol": 1e-08,
+        "initializations": [
+          "scratch",
+          "bellman_init"
+        ],
         "label": "whitened",
         "maxiter": 500,
         "maxls": 50,
+        "use_time_block_preconditioning": false,
         "use_whitening": true
       },
       "exact_l2_cost": 6093.055159378418,
@@ -419,11 +490,17 @@
         "time_to_peak_step": 16
       },
       "condition": {
+        "auxiliary_bellman_weights": [],
         "ftol": 1e-12,
         "gtol": 1e-08,
+        "initializations": [
+          "scratch",
+          "bellman_init"
+        ],
         "label": "whitened",
         "maxiter": 500,
         "maxls": 50,
+        "use_time_block_preconditioning": false,
         "use_whitening": true
       },
       "exact_l2_cost": 5709.138015853441,
@@ -470,11 +547,17 @@
         "time_to_peak_step": 16
       },
       "condition": {
+        "auxiliary_bellman_weights": [],
         "ftol": 1e-14,
         "gtol": 1e-10,
+        "initializations": [
+          "scratch",
+          "bellman_init"
+        ],
         "label": "strong_optimizer_whitened",
         "maxiter": 2000,
         "maxls": 100,
+        "use_time_block_preconditioning": false,
         "use_whitening": true
       },
       "exact_l2_cost": 5989.961389974221,
@@ -521,11 +604,17 @@
         "time_to_peak_step": 16
       },
       "condition": {
+        "auxiliary_bellman_weights": [],
         "ftol": 1e-14,
         "gtol": 1e-10,
+        "initializations": [
+          "scratch",
+          "bellman_init"
+        ],
         "label": "strong_optimizer_whitened",
         "maxiter": 2000,
         "maxls": 100,
+        "use_time_block_preconditioning": false,
         "use_whitening": true
       },
       "exact_l2_cost": 5709.139893895751,
@@ -559,16 +648,191 @@
         "terminal_position_error_m": 0.0071547925856594065,
         "time_to_peak_step": 16
       }
+    },
+    {
+      "clean_action_mismatch_ratio": 0.013309228542563325,
+      "clean_cost": 4289.0784859479445,
+      "clean_rollout": {
+        "control_effort": 1694.9578919960118,
+        "estimation_error_final_l2": 0.0,
+        "estimation_error_rms": 0.0,
+        "peak_forward_velocity": 0.7170553688779803,
+        "terminal_position_error_m": 0.00307444428513585,
+        "time_to_peak_step": 16
+      },
+      "condition": {
+        "auxiliary_bellman_weights": [],
+        "ftol": 1e-14,
+        "gtol": 1e-10,
+        "initializations": [
+          "scratch",
+          "bellman_init"
+        ],
+        "label": "strong_optimizer_whitened_block_time",
+        "maxiter": 2000,
+        "maxls": 100,
+        "use_time_block_preconditioning": true,
+        "use_whitening": true
+      },
+      "exact_l2_cost": 5978.24087090986,
+      "exact_l2_cost_ratio_to_hinf": 1.1943583788769485,
+      "exact_l2_cost_ratio_to_lqr": 1.0471323623266509,
+      "gain_relative_error": 0.9759876837184237,
+      "gamma_penalized_feasible": false,
+      "gamma_penalized_lambda_over_gamma_squared": 3.750678088576505,
+      "gradient_norm_final": 56.62910922211328,
+      "gradient_norm_initial": 25841.41451421555,
+      "initialization": "scratch",
+      "label": "strong_optimizer_whitened_block_time__scratch",
+      "n_function_evaluations": 2197,
+      "n_iterations": 2000,
+      "objective_final": 319.58407505228905,
+      "objective_initial": 13326.344322248913,
+      "objective_ratio_to_reference": 1.012951952744114,
+      "objective_reference": 315.49776293586996,
+      "objective_zero": 13326.344322248913,
+      "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+      "optimizer_success": false,
+      "projected_gradient_norm_final": 56.62910922211328,
+      "under_epsilon_action_mismatch_ratio": 0.019570233976768287,
+      "under_epsilon_cost": 5164.392111651944,
+      "under_epsilon_cost_ratio_to_lqr": 1.0410335926220722,
+      "under_epsilon_rollout": {
+        "control_effort": 1690.0438487703893,
+        "estimation_error_final_l2": 0.003455030700080282,
+        "estimation_error_rms": 0.0010996831899869211,
+        "peak_forward_velocity": 0.7176313672717499,
+        "terminal_position_error_m": 0.009574602266561176,
+        "time_to_peak_step": 16
+      }
+    },
+    {
+      "clean_action_mismatch_ratio": 8.66336436872557e-07,
+      "clean_cost": 4288.752028304008,
+      "clean_rollout": {
+        "control_effort": 1689.263446970736,
+        "estimation_error_final_l2": 0.0,
+        "estimation_error_rms": 0.0,
+        "peak_forward_velocity": 0.7172295933682235,
+        "terminal_position_error_m": 0.003096699592926371,
+        "time_to_peak_step": 16
+      },
+      "condition": {
+        "auxiliary_bellman_weights": [],
+        "ftol": 1e-14,
+        "gtol": 1e-10,
+        "initializations": [
+          "scratch",
+          "bellman_init"
+        ],
+        "label": "strong_optimizer_whitened_block_time",
+        "maxiter": 2000,
+        "maxls": 100,
+        "use_time_block_preconditioning": true,
+        "use_whitening": true
+      },
+      "exact_l2_cost": 5709.140028555088,
+      "exact_l2_cost_ratio_to_hinf": 1.1405962684552668,
+      "exact_l2_cost_ratio_to_lqr": 0.9999973928860237,
+      "gain_relative_error": 0.00015809285612283205,
+      "gamma_penalized_feasible": false,
+      "gamma_penalized_lambda_over_gamma_squared": 2.8093240493759075,
+      "gradient_norm_final": 0.0014359532668226467,
+      "gradient_norm_initial": 41.32066758701251,
+      "initialization": "bellman_init",
+      "label": "strong_optimizer_whitened_block_time__bellman_init",
+      "n_function_evaluations": 2069,
+      "n_iterations": 2000,
+      "objective_final": 315.49776297366066,
+      "objective_initial": 315.5041476394604,
+      "objective_ratio_to_reference": 1.0000000001197813,
+      "objective_reference": 315.49776293586996,
+      "objective_zero": 13326.344322248913,
+      "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+      "optimizer_success": false,
+      "projected_gradient_norm_final": 0.0014359532668226467,
+      "under_epsilon_action_mismatch_ratio": 2.5945145806932686e-05,
+      "under_epsilon_cost": 4960.822705646576,
+      "under_epsilon_cost_ratio_to_lqr": 0.9999982518694658,
+      "under_epsilon_rollout": {
+        "control_effort": 1673.154828747996,
+        "estimation_error_final_l2": 0.003455030700080302,
+        "estimation_error_rms": 0.0010996831899869274,
+        "peak_forward_velocity": 0.7208807461922826,
+        "terminal_position_error_m": 0.007154793171163759,
+        "time_to_peak_step": 16
+      }
+    },
+    {
+      "clean_action_mismatch_ratio": 0.047768719249940264,
+      "clean_cost": 4292.8953002196595,
+      "clean_rollout": {
+        "control_effort": 1668.675190659836,
+        "estimation_error_final_l2": 0.0,
+        "estimation_error_rms": 0.0,
+        "peak_forward_velocity": 0.717748409899372,
+        "terminal_position_error_m": 0.003161773009817254,
+        "time_to_peak_step": 16
+      },
+      "condition": {
+        "auxiliary_bellman_weights": [
+          0.1,
+          0.03,
+          0.01,
+          0.0
+        ],
+        "ftol": 1e-14,
+        "gtol": 1e-10,
+        "initializations": [
+          "scratch"
+        ],
+        "label": "strong_optimizer_whitened_bellman_aux",
+        "maxiter": 500,
+        "maxls": 100,
+        "use_time_block_preconditioning": false,
+        "use_whitening": true
+      },
+      "exact_l2_cost": 6008.681016559211,
+      "exact_l2_cost_ratio_to_hinf": 1.2004398405971424,
+      "exact_l2_cost_ratio_to_lqr": 1.0524641751979713,
+      "gain_relative_error": 0.9829597102830359,
+      "gamma_penalized_feasible": false,
+      "gamma_penalized_lambda_over_gamma_squared": 3.780362819781213,
+      "gradient_norm_final": 383.2274588139185,
+      "gradient_norm_initial": 27844.183546638076,
+      "initialization": "scratch",
+      "label": "strong_optimizer_whitened_bellman_aux__scratch",
+      "n_function_evaluations": 2178,
+      "n_iterations": 2000,
+      "objective_final": 320.3571036044137,
+      "objective_initial": 13326.344322248913,
+      "objective_ratio_to_reference": 1.0154021398545747,
+      "objective_reference": 315.49776293586996,
+      "objective_zero": 13326.344322248913,
+      "optimizer_status": "bellman_weight=0.1: STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT; bellman_weight=0.03: STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT; bellman_weight=0.01: STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT; bellman_weight=0: STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+      "optimizer_success": false,
+      "projected_gradient_norm_final": 1.2146756770880949,
+      "under_epsilon_action_mismatch_ratio": 0.04965862133163192,
+      "under_epsilon_cost": 5186.850220842216,
+      "under_epsilon_cost_ratio_to_lqr": 1.0455606784026228,
+      "under_epsilon_rollout": {
+        "control_effort": 1665.1237813354344,
+        "estimation_error_final_l2": 0.003455030700080355,
+        "estimation_error_rms": 0.0010996831899869283,
+        "peak_forward_velocity": 0.7184312150679408,
+        "terminal_position_error_m": 0.009750404022647182,
+        "time_to_peak_step": 16
+      }
     }
   ],
   "issue": "7a459bb",
-  "non_goals": "No weak Bellman/proximal anchor, coverage perturbations, robust rollout, or GRU training in this materialization.",
+  "non_goals": "No weak Bellman/proximal anchor, no action/gain matching to the known controller, no coverage perturbations, no robust rollout, and no GRU training in this materialization.",
   "related_issues": {
     "bellman_diagnostics": "583d764",
     "gamma_sweep": "97604a8",
     "output_feedback_lane": "83fc5b5"
   },
-  "scope": "Objective-preserving clean output-feedback LQR rollout recovery only: clean, stronger optimizer, whitening/scaling, and stronger optimizer plus whitening/scaling; each from scratch and Bellman-initialized.",
+  "scope": "Clean output-feedback LQR rollout recovery: clean, stronger optimizer, whitening/scaling, and stronger optimizer plus whitening/scaling are objective-preserving; block/time preconditioning is objective-preserving and unscaled before reporting; Bellman-auxiliary guidance is noncanonical, scratch-only, and annealed off before final clean-rollout continuation.",
   "tracked_manifest": "results/7a459bb/notes/output_feedback_rollout_recovery_manifest.json",
   "tracked_note": "results/7a459bb/notes/output_feedback_rollout_recovery.md",
   "umbrella": "43e8728"
