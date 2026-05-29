@@ -10,13 +10,16 @@ from rlrmp.analysis.output_feedback import (
     INIT_POS,
     TARGET_POS,
     OutputFeedbackConfig,
+    analyze_output_feedback_gamma_sweep,
     delayed_observation_matrix,
     exact_output_feedback_adversary_audit,
+    gamma_sweep_summary,
     kalman_estimator_joint_matrices,
     make_cs_output_feedback_initial_state,
     output_feedback_cost,
     output_feedback_lqr_bellman_objective,
     robust_estimator_covariances,
+    robust_output_feedback_feasibility_diagnostics,
     robust_estimator_fixed_adversary_policy,
     robust_estimator_joint_matrices,
     robust_output_feedback_gains,
@@ -211,6 +214,67 @@ def test_exact_output_feedback_audit_matches_rollout_and_uses_budget() -> None:
     assert audit["boundary_active"]
     assert jnp.isclose(audit["epsilon_energy"], 1e-8, rtol=1e-8, atol=1e-12)
     assert abs(audit["quadratic_total"] - rollout_cost.total_without_disturbance_penalty) < 1e-6
+
+
+def test_exact_output_feedback_audit_reports_gamma_penalized_status() -> None:
+    reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
+    gamma_ref = reference.gamma_references[0]
+    x0 = make_cs_output_feedback_initial_state(reference.plant)
+    audit = exact_output_feedback_adversary_audit(
+        label="lqr_smoke",
+        plant=reference.plant,
+        schedule=reference.schedule,
+        controller_gains=reference.lqr_solution.K,
+        x0=x0,
+        budget=1e-8,
+        estimator_kind="kalman",
+        penalty_gamma=gamma_ref.gamma,
+    )
+
+    penalized = audit["gamma_penalized"]
+    assert penalized["gamma"] == gamma_ref.gamma
+    assert penalized["gamma_squared"] > 0.0
+    assert penalized["max_eigenvalue_over_gamma_squared"] > 0.0
+    assert penalized["feasible"] != penalized["unbounded"]
+
+
+def test_robust_output_feedback_feasibility_diagnostics_are_finite() -> None:
+    reference = materialize_reference(gamma_factors=(1.5,))
+    gamma_ref = reference.gamma_references[0]
+    covs = robust_estimator_covariances(
+        reference.plant,
+        reference.schedule,
+        gamma_ref.gamma,
+    )
+    gains = robust_output_feedback_gains(
+        reference.plant,
+        reference.schedule,
+        gamma_ref.solution,
+        covs,
+    )
+    diagnostics = robust_output_feedback_feasibility_diagnostics(
+        reference.plant,
+        reference.schedule,
+        gamma_ref.solution,
+        gains,
+        covs,
+    )
+
+    assert jnp.isfinite(jnp.asarray(diagnostics["estimator_precision_min_eig"]))
+    assert jnp.isfinite(jnp.asarray(diagnostics["gain_correction_min_eig"]))
+    assert jnp.isfinite(jnp.asarray(diagnostics["fixed_policy_lhs_min_eig"]))
+
+
+def test_output_feedback_gamma_sweep_smoke() -> None:
+    sweep = analyze_output_feedback_gamma_sweep(gamma_factors=(1.5,))
+    summary = gamma_sweep_summary(sweep)
+    row = summary["rows"][0]
+
+    assert "arrays" not in summary
+    assert row["status"] == "ok"
+    assert row["gamma_factor"] == 1.5
+    assert "robust_lambda_over_gamma_squared" in row
+    assert row["exact_fixed_controller_audits"][0]["gamma_penalized"]["gamma"] == row["gamma"]
 
 
 def test_output_feedback_bellman_objective_prefers_reference_to_zero() -> None:
