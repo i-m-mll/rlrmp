@@ -56,6 +56,7 @@ DETERMINISTIC_PHASE3_ISSUE_ID = "6f5c79e"
 DETERMINISTIC_CERTIFICATE_ISSUE_ID = "d01c35a"
 EXACT_OUTPUT_FEEDBACK_PHASE1_ISSUE_ID = "60d105d"
 OUTPUT_FEEDBACK_PHASE3_TRAINING_ISSUE_ID = "4008843"
+GAMMA_FEASIBILITY_SWEEP_ISSUE_ID = "97604a8"
 
 
 @dataclass(frozen=True)
@@ -433,6 +434,57 @@ def _flattened_epsilon_quadratic(
     return H_np, np.asarray(g_acc, dtype=np.float64), float(const)
 
 
+def _gamma_penalized_quadratic_diagnostic(
+    H: np.ndarray,
+    g: np.ndarray,
+    constant: float,
+    *,
+    gamma: float,
+) -> dict[str, Any]:
+    """Return exact diagnostics for ``max cost(eps) - gamma^2 ||eps||^2``.
+
+    The flattened rollout cost is ``eps.T @ H @ eps + 2 g.T @ eps + c``.
+    The gamma-penalized H-infinity maximization is finite only when
+    ``gamma^2 I - H`` is positive definite.
+    """
+
+    H_sym = 0.5 * (H + H.T)
+    eigvals = np.linalg.eigvalsh(H_sym)
+    max_eig = float(eigvals[-1])
+    gamma2 = float(gamma * gamma)
+    margin = gamma2 - max_eig
+    ratio = max_eig / gamma2 if gamma2 > 0.0 else float("inf")
+    tol = max(1e-9, 1e-10 * max(1.0, abs(gamma2), abs(max_eig)))
+    feasible = bool(margin > tol)
+    result: dict[str, Any] = {
+        "gamma": float(gamma),
+        "gamma_squared": gamma2,
+        "max_eigenvalue": max_eig,
+        "max_eigenvalue_over_gamma_squared": ratio,
+        "feasibility_margin": margin,
+        "feasible": feasible,
+        "unbounded": not feasible,
+        "tolerance": tol,
+    }
+    if not feasible:
+        return result
+
+    lhs = gamma2 * np.eye(H_sym.shape[0], dtype=np.float64) - H_sym
+    epsilon = np.linalg.solve(lhs, g)
+    total_without_penalty = float(epsilon @ H_sym @ epsilon + 2.0 * g @ epsilon + constant)
+    energy = float(epsilon @ epsilon)
+    result.update(
+        {
+            "epsilon": jnp.asarray(epsilon.reshape((-1,)), dtype=jnp.float64),
+            "epsilon_energy": energy,
+            "epsilon_l2": float(np.sqrt(max(energy, 0.0))),
+            "total_without_disturbance_penalty": total_without_penalty,
+            "h_infinity_objective": total_without_penalty - gamma2 * energy,
+        }
+    )
+    return result
+
+
 def _maximize_quadratic_on_l2_ball(
     H: np.ndarray,
     g: np.ndarray,
@@ -493,6 +545,7 @@ def exact_output_feedback_adversary_audit(
     budget: float,
     estimator_kind: str,
     solution: RiccatiSolution | None = None,
+    penalty_gamma: float | None = None,
     config: OutputFeedbackConfig = OutputFeedbackConfig(),
 ) -> dict[str, Any]:
     """Maximize fixed-controller output-feedback task cost under an L2 epsilon budget."""
@@ -542,7 +595,7 @@ def exact_output_feedback_adversary_audit(
         gamma = solution.gamma
     cost = output_feedback_cost(schedule, rollout, gamma=gamma)
     quadratic_total = constant + variable_value
-    return {
+    result = {
         "label": label,
         "estimator_kind": estimator_kind,
         "epsilon": epsilon,
@@ -560,6 +613,49 @@ def exact_output_feedback_adversary_audit(
         "boundary_active": boundary_active,
         "max_eigenvalue": float(np.max(np.linalg.eigvalsh(H_quad))),
     }
+    if penalty_gamma is not None:
+        penalized = _gamma_penalized_quadratic_diagnostic(
+            H_quad,
+            g_quad,
+            constant,
+            gamma=float(penalty_gamma),
+        )
+        if penalized.get("feasible"):
+            eps_star = jnp.asarray(
+                np.asarray(penalized["epsilon"]).reshape((schedule.T, plant.m_w)),
+                dtype=jnp.float64,
+            )
+            if estimator_kind == "kalman":
+                penalized_rollout = rollout_with_kalman_estimator(
+                    plant, controller_gains, x0, eps_star, config
+                )
+                rollout_gamma = None
+            else:
+                assert solution is not None
+                penalized_rollout = rollout_with_robust_estimator(
+                    plant,
+                    schedule,
+                    solution,
+                    x0,
+                    eps_star,
+                    gains=controller_gains,
+                    config=config,
+                )
+                rollout_gamma = solution.gamma
+            penalized_cost = output_feedback_cost(
+                schedule,
+                penalized_rollout,
+                gamma=rollout_gamma,
+            )
+            penalized["rollout"] = penalized_rollout
+            penalized["rollout_cost"] = penalized_cost
+            penalized["quadratic_rollout_abs_error"] = abs(
+                penalized["total_without_disturbance_penalty"]
+                - penalized_cost.total_without_disturbance_penalty
+            )
+            penalized["epsilon"] = eps_star
+        result["gamma_penalized"] = penalized
+    return result
 
 
 def _rollout_summary_fields(
@@ -1402,6 +1498,315 @@ def analyze_phase1_output_feedback(
     )
 
 
+GAMMA_SWEEP_FACTORS = (
+    1.001,
+    1.005,
+    1.01,
+    1.02,
+    1.05,
+    1.1,
+    1.2,
+    1.25,
+    1.3,
+    1.32,
+    1.33,
+    1.34,
+    1.345,
+    1.35,
+    1.4,
+    1.45,
+    1.5,
+    2.0,
+    3.0,
+)
+
+
+def _min_symmetric_eig(matrix: Float[Array, "n n"]) -> float:
+    return float(jnp.min(jnp.linalg.eigvalsh(0.5 * (matrix + matrix.T))))
+
+
+def robust_output_feedback_feasibility_diagnostics(
+    plant: PlantLinearization,
+    schedule: CostSchedule,
+    solution: RiccatiSolution,
+    gains: Float[Array, "T m_u n"],
+    estimator_covariances: Float[Array, "T_plus_1 n n"],
+    config: OutputFeedbackConfig = OutputFeedbackConfig(),
+) -> dict[str, Any]:
+    """Return matrix-condition diagnostics for the robust output-feedback lane."""
+
+    H_obs = delayed_observation_matrix(plant, config)
+    HH = H_obs.T @ H_obs
+    inv_gamma2 = 1.0 / (solution.gamma * solution.gamma)
+    eye_n = jnp.eye(plant.n, dtype=jnp.float64)
+    estimator_precision_min_eigs = []
+    gain_correction_min_eigs = []
+    for t in range(schedule.T):
+        estimator_precision = (
+            jnp.linalg.inv(estimator_covariances[t])
+            + HH
+            - inv_gamma2 * schedule.Q[t].astype(jnp.float64)
+        )
+        estimator_precision_min_eigs.append(_min_symmetric_eig(estimator_precision))
+        p_idx = 0 if config.use_matlab_persistent_m_index else t
+        correction_lhs = eye_n - inv_gamma2 * estimator_covariances[t] @ solution.P[p_idx]
+        gain_correction_min_eigs.append(_min_symmetric_eig(correction_lhs))
+
+    A_joint, G_joint = robust_estimator_joint_matrices(
+        plant,
+        schedule,
+        solution,
+        gains,
+        estimator_covariances,
+        config,
+    )
+    stage_costs, terminal_cost = _joint_cost_matrices(schedule, gains)
+    P_next = terminal_cost
+    gamma2 = solution.gamma * solution.gamma
+    eye_w = jnp.eye(plant.m_w, dtype=jnp.float64)
+    fixed_policy_lhs_min_eigs = []
+    for t in range(schedule.T - 1, -1, -1):
+        lhs = gamma2 * eye_w - G_joint.T @ P_next @ G_joint
+        fixed_policy_lhs_min_eigs.append(_min_symmetric_eig(lhs))
+        rhs = G_joint.T @ P_next @ A_joint[t]
+        F_t = jnp.linalg.solve(lhs, rhs)
+        P_t = stage_costs[t] + A_joint[t].T @ P_next @ A_joint[t] + rhs.T @ F_t
+        P_next = 0.5 * (P_t + P_t.T)
+    fixed_policy_lhs_min_eigs = list(reversed(fixed_policy_lhs_min_eigs))
+    return {
+        "estimator_precision_min_eigs": estimator_precision_min_eigs,
+        "estimator_precision_min_eig": float(min(estimator_precision_min_eigs)),
+        "gain_correction_min_eigs": gain_correction_min_eigs,
+        "gain_correction_min_eig": float(min(gain_correction_min_eigs)),
+        "fixed_policy_lhs_min_eigs": fixed_policy_lhs_min_eigs,
+        "fixed_policy_lhs_min_eig": float(min(fixed_policy_lhs_min_eigs)),
+    }
+
+
+def _factor_key(factor: float) -> str:
+    return str(factor).replace(".", "p").replace("-", "m")
+
+
+def _penalized_summary(penalized: dict[str, Any]) -> dict[str, Any]:
+    summary = {
+        key: value
+        for key, value in penalized.items()
+        if key not in {"epsilon", "rollout", "rollout_cost"}
+    }
+    if "rollout" in penalized:
+        summary["rollout"] = _rollout_summary(penalized["rollout"])
+    if "rollout_cost" in penalized:
+        summary["rollout_cost"] = _cost_summary(penalized["rollout_cost"])
+    return summary
+
+
+def _gamma_sweep_audit_summary(audit: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "label": audit["label"],
+        "estimator_kind": audit["estimator_kind"],
+        "cost": _cost_summary(audit["cost"]),
+        "epsilon_energy": audit["epsilon_energy"],
+        "budget": audit["budget"],
+        "budget_l2": audit["budget_l2"],
+        "quadratic_total": audit["quadratic_total"],
+        "rollout_total": audit["rollout_total"],
+        "quadratic_rollout_abs_error": audit["quadratic_rollout_abs_error"],
+        "kkt_lambda": audit["kkt_lambda"],
+        "boundary_active": audit["boundary_active"],
+        "max_eigenvalue": audit["max_eigenvalue"],
+        "gamma_penalized": _penalized_summary(audit["gamma_penalized"]),
+        "rollout": _rollout_summary(audit["rollout"]),
+    }
+
+
+def analyze_output_feedback_gamma_sweep(
+    gamma_factors: tuple[float, ...] = GAMMA_SWEEP_FACTORS,
+    config: OutputFeedbackConfig = OutputFeedbackConfig(),
+) -> dict[str, Any]:
+    """Sweep gamma factors for robust output-feedback feasibility and audit metrics."""
+
+    reference = materialize_reference(gamma_factors=tuple(gamma_factors))
+    x0 = make_cs_output_feedback_initial_state(reference.plant, config)
+    rows = []
+    arrays: dict[str, np.ndarray] = {}
+    for gamma_ref in reference.gamma_references:
+        factor = gamma_ref.factor
+        key = f"gamma_{_factor_key(factor)}"
+        row: dict[str, Any] = {
+            "gamma_factor": factor,
+            "gamma": gamma_ref.gamma,
+            "gamma_star": reference.gamma_star,
+            "riccati_solution_admissible": bool(gamma_ref.solution.admissible),
+        }
+        try:
+            covs = robust_estimator_covariances(
+                reference.plant,
+                reference.schedule,
+                gamma_ref.gamma,
+                config,
+            )
+            gains = robust_output_feedback_gains(
+                reference.plant,
+                reference.schedule,
+                gamma_ref.solution,
+                covs,
+                config,
+            )
+            feasibility = robust_output_feedback_feasibility_diagnostics(
+                reference.plant,
+                reference.schedule,
+                gamma_ref.solution,
+                gains,
+                covs,
+                config,
+            )
+            clean_rollout = rollout_with_robust_estimator(
+                reference.plant,
+                reference.schedule,
+                gamma_ref.solution,
+                x0,
+                gains=gains,
+                config=config,
+            )
+            clean_cost = output_feedback_cost(
+                reference.schedule,
+                clean_rollout,
+                gamma=gamma_ref.gamma,
+            )
+            fixed_policy = robust_estimator_fixed_adversary_policy(
+                reference.plant,
+                reference.schedule,
+                gamma_ref.solution,
+                gains,
+                covs,
+                config,
+            )
+            riccati_rollout = rollout_with_robust_estimator_policy(
+                reference.plant,
+                reference.schedule,
+                gamma_ref.solution,
+                x0,
+                fixed_policy,
+                gains=gains,
+                config=config,
+            )
+            riccati_cost = output_feedback_cost(
+                reference.schedule,
+                riccati_rollout,
+                gamma=gamma_ref.gamma,
+            )
+            budget = riccati_cost.disturbance_energy
+            robust_audit = exact_output_feedback_adversary_audit(
+                label="analytical_hinf_robust",
+                plant=reference.plant,
+                schedule=reference.schedule,
+                controller_gains=gains,
+                x0=x0,
+                budget=budget,
+                estimator_kind="robust",
+                solution=gamma_ref.solution,
+                penalty_gamma=gamma_ref.gamma,
+                config=config,
+            )
+            lqr_audit = exact_output_feedback_adversary_audit(
+                label="analytical_lqr_kalman",
+                plant=reference.plant,
+                schedule=reference.schedule,
+                controller_gains=reference.lqr_solution.K,
+                x0=x0,
+                budget=budget,
+                estimator_kind="kalman",
+                penalty_gamma=gamma_ref.gamma,
+                config=config,
+            )
+            lqr_total = lqr_audit["cost"].total_without_disturbance_penalty
+            robust_total = robust_audit["cost"].total_without_disturbance_penalty
+            row.update(
+                {
+                    "status": "ok",
+                    "feasibility": feasibility,
+                    "clean_rollout": _rollout_summary(clean_rollout),
+                    "clean_cost": _cost_summary(clean_cost),
+                    "riccati_feedback": {
+                        "cost": _cost_summary(riccati_cost),
+                        "rollout": _rollout_summary(riccati_rollout),
+                    },
+                    "budget": budget,
+                    "budget_l2": float(jnp.sqrt(jnp.asarray(budget))),
+                    "exact_fixed_controller_audits": [
+                        _gamma_sweep_audit_summary(lqr_audit),
+                        _gamma_sweep_audit_summary(robust_audit),
+                    ],
+                    "robust_exact_cost_ratio_to_lqr": robust_total / lqr_total,
+                    "robust_exact_cost_ratio_to_riccati_feedback": (
+                        robust_total / riccati_cost.total_without_disturbance_penalty
+                    ),
+                    "robust_gamma_penalized_feasible": robust_audit["gamma_penalized"]["feasible"],
+                    "robust_lambda_over_gamma_squared": robust_audit["gamma_penalized"][
+                        "max_eigenvalue_over_gamma_squared"
+                    ],
+                    "lqr_lambda_over_gamma_squared": lqr_audit["gamma_penalized"][
+                        "max_eigenvalue_over_gamma_squared"
+                    ],
+                }
+            )
+            arrays[f"{key}_clean_x"] = np.asarray(clean_rollout.x)
+            arrays[f"{key}_clean_x_hat"] = np.asarray(clean_rollout.x_hat)
+            arrays[f"{key}_clean_u"] = np.asarray(clean_rollout.u)
+            arrays[f"{key}_riccati_x"] = np.asarray(riccati_rollout.x)
+            arrays[f"{key}_riccati_x_hat"] = np.asarray(riccati_rollout.x_hat)
+            arrays[f"{key}_riccati_u"] = np.asarray(riccati_rollout.u)
+            arrays[f"{key}_riccati_epsilon"] = np.asarray(riccati_rollout.epsilon)
+            for audit in (lqr_audit, robust_audit):
+                audit_key = f"{key}_{audit['label']}"
+                arrays[f"{audit_key}_l2_epsilon"] = np.asarray(audit["epsilon"])
+                if audit["gamma_penalized"].get("feasible"):
+                    arrays[f"{audit_key}_penalized_epsilon"] = np.asarray(
+                        audit["gamma_penalized"]["epsilon"]
+                    )
+        except Exception as exc:  # noqa: BLE001 - sweep rows should record failures.
+            row.update({"status": "failed", "error": repr(exc)})
+        rows.append(row)
+
+    ok_rows = [row for row in rows if row["status"] == "ok"]
+    eligible = [
+        row
+        for row in ok_rows
+        if row["robust_gamma_penalized_feasible"]
+        and row["feasibility"]["estimator_precision_min_eig"] > 0.0
+        and row["feasibility"]["gain_correction_min_eig"] > 0.0
+        and row["feasibility"]["fixed_policy_lhs_min_eig"] > 0.0
+    ]
+    recommendation = None
+    if eligible:
+        chosen = min(eligible, key=lambda row: row["gamma_factor"])
+        recommendation = {
+            "chosen_gamma_factor": chosen["gamma_factor"],
+            "chosen_gamma": chosen["gamma"],
+            "reason": (
+                "Smallest swept gamma ratio with positive estimator, gain-correction, "
+                "fixed-policy, and gamma-penalized exact-audit margins."
+            ),
+        }
+    return {
+        "issue": GAMMA_FEASIBILITY_SWEEP_ISSUE_ID,
+        "output_feedback_issue": ISSUE_ID,
+        "umbrella": UMBRELLA_ID,
+        "gamma_factors": list(gamma_factors),
+        "gamma_star": reference.gamma_star,
+        "config": config.__dict__,
+        "rows": rows,
+        "recommendation": recommendation,
+        "arrays": arrays,
+    }
+
+
+def gamma_sweep_summary(sweep: dict[str, Any]) -> dict[str, Any]:
+    """Return a JSON-serializable gamma-sweep summary without bulk arrays."""
+
+    return {key: value for key, value in sweep.items() if key != "arrays"}
+
+
 def analyze_phase3_output_feedback(
     config: OutputFeedbackConfig = OutputFeedbackConfig(),
     training_config: LinearTrainingConfig = LinearTrainingConfig(),
@@ -1973,6 +2378,143 @@ estimator loop:
 """
 
 
+def render_gamma_sweep_markdown(summary: dict[str, Any]) -> str:
+    """Render the gamma-penalized output-feedback robust sweep note."""
+
+    rows = [
+        "| gamma factor | status | robust lambda/gamma^2 | robust penalized feasible | "
+        "min estimator eig | min gain-correction eig | min fixed-policy eig | "
+        "robust exact/LQR exact | H-inf peak velocity |",
+        "|---:|---|---:|---|---:|---:|---:|---:|---:|",
+    ]
+    for row in summary["rows"]:
+        if row["status"] != "ok":
+            rows.append(
+                "| "
+                f"{row['gamma_factor']:.6g} | failed | nan | false | nan | nan | nan | nan | nan |"
+            )
+            continue
+        feasibility = row["feasibility"]
+        rows.append(
+            "| "
+            f"{row['gamma_factor']:.6g} | ok | "
+            f"{row['robust_lambda_over_gamma_squared']:.8g} | "
+            f"{str(row['robust_gamma_penalized_feasible']).lower()} | "
+            f"{feasibility['estimator_precision_min_eig']:.8g} | "
+            f"{feasibility['gain_correction_min_eig']:.8g} | "
+            f"{feasibility['fixed_policy_lhs_min_eig']:.8g} | "
+            f"{row['robust_exact_cost_ratio_to_lqr']:.8g} | "
+            f"{row['clean_rollout']['peak_forward_velocity']:.8g} |"
+        )
+
+    recommendation = summary["recommendation"]
+    if recommendation is None:
+        recommendation_text = (
+            "No swept gamma ratio passed all positive-margin feasibility checks. "
+            "Do not promote this robust output-feedback lane as a formal H-infinity "
+            "same-game target without either sweeping larger gamma ratios or changing "
+            "the formal target."
+        )
+    else:
+        chosen_row = next(
+            row
+            for row in summary["rows"]
+            if row["status"] == "ok"
+            and row["gamma_factor"] == recommendation["chosen_gamma_factor"]
+        )
+        chosen_ratio = chosen_row["robust_lambda_over_gamma_squared"]
+        next_safer = next(
+            (
+                row
+                for row in summary["rows"]
+                if row["status"] == "ok"
+                and row["gamma_factor"] > recommendation["chosen_gamma_factor"]
+                and row["robust_gamma_penalized_feasible"]
+            ),
+            None,
+        )
+        safety_sentence = ""
+        if next_safer is not None and chosen_ratio > 0.99:
+            safety_sentence = (
+                f" The margin at `{recommendation['chosen_gamma_factor']:.6g}` is thin "
+                f"(`lambda/gamma^2={chosen_ratio:.8g}`), so `{next_safer['gamma_factor']:.6g}` "
+                "is the nearest more conservative swept fallback if we want numerical slack."
+            )
+        recommendation_text = (
+            f"Choose gamma factor `{recommendation['chosen_gamma_factor']:.6g}` "
+            f"(`gamma={recommendation['chosen_gamma']:.8g}`) for the next robust "
+            "linear target, subject to external-review interpretation. This is the "
+            "smallest swept ratio with positive estimator, gain-correction, "
+            f"fixed-policy, and gamma-penalized exact-audit margins.{safety_sentence}"
+        )
+
+    return f"""# Gamma-Penalized Output-Feedback Robust Feasibility Sweep
+
+Issue: `{summary["issue"]}`. Output-feedback lane: `{summary["output_feedback_issue"]}`.
+Umbrella: `{summary["umbrella"]}`.
+
+This note extends the exact output-feedback Phase 1 audit from an L2-budget
+trust-region check to a gamma-penalized H-infinity feasibility check. For each
+gamma factor, the robust output-feedback controller is built in the C&S
+estimator-in-loop lane, the coupled `[x, xhat]` closed-loop quadratic is
+flattened over the whole epsilon trajectory, and the condition
+`gamma^2 I - Q_epsilon` is checked.
+
+`robust lambda/gamma^2` below is `lambda_max(Q_epsilon) / gamma^2` for the
+analytical H-infinity robust controller. Values below 1 are finite for the
+penalized maximization; values at or above 1 indicate an unbounded penalized
+open-loop epsilon objective for that frozen controller.
+
+Gamma star: `{summary["gamma_star"]:.8g}`.
+
+{"\n".join(rows)}
+
+## Recommendation
+
+{recommendation_text}
+
+## Interpretation
+
+The sweep is a Phase 1/0B certificate step. It does not train Phase 3
+controllers and does not implement robust Bellman. Its purpose is to identify
+which robust analytical output-feedback target is coherent enough for later
+Phase 3 training and certification.
+"""
+
+
+def write_gamma_sweep_outputs(
+    issue_id: str = GAMMA_FEASIBILITY_SWEEP_ISSUE_ID,
+    gamma_factors: tuple[float, ...] = GAMMA_SWEEP_FACTORS,
+) -> dict[str, Any]:
+    """Write gamma-penalized output-feedback robust sweep artifacts."""
+
+    sweep = analyze_output_feedback_gamma_sweep(gamma_factors=gamma_factors)
+    summary = gamma_sweep_summary(sweep)
+    results_dir = mkdir_p(REPO_ROOT / "results" / issue_id)
+    notes_dir = mkdir_p(results_dir / "notes")
+    artifact_dir = mkdir_p(REPO_ROOT / "_artifacts" / issue_id / "output_feedback_gamma_sweep")
+    readme = results_dir / "README.md"
+    if not readme.exists():
+        readme.write_text(
+            "Gamma-penalized feasibility sweep for the C&S output-feedback robust lane. "
+            "See `notes/output_feedback_gamma_sweep.md`.\n",
+            encoding="utf-8",
+        )
+    npz_path = artifact_dir / "output_feedback_gamma_sweep.npz"
+    np.savez_compressed(npz_path, **sweep["arrays"])
+    summary["tracked_note"] = f"results/{issue_id}/notes/output_feedback_gamma_sweep.md"
+    summary["tracked_manifest"] = (
+        f"results/{issue_id}/notes/output_feedback_gamma_sweep_manifest.json"
+    )
+    summary["artifact_npz"] = f"_artifacts/{issue_id}/output_feedback_gamma_sweep/{npz_path.name}"
+    summary["artifact_npz_keys"] = sorted(sweep["arrays"].keys())
+    note_path = notes_dir / "output_feedback_gamma_sweep.md"
+    manifest_path = notes_dir / "output_feedback_gamma_sweep_manifest.json"
+    note_path.write_text(render_gamma_sweep_markdown(summary), encoding="utf-8")
+    manifest_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return summary
+
+
 def _npz_arrays(
     phase0b: dict[str, Any],
     phase1: OutputFeedbackPhase1Result,
@@ -2069,7 +2611,9 @@ __all__ = [
     "analyze_phase0b_output_feedback",
     "analyze_phase1_output_feedback",
     "analyze_phase3_output_feedback",
+    "analyze_output_feedback_gamma_sweep",
     "delayed_observation_matrix",
+    "gamma_sweep_summary",
     "kalman_estimator_gains",
     "make_cs_output_feedback_initial_state",
     "measurement_covariance",
@@ -2077,12 +2621,15 @@ __all__ = [
     "process_covariance",
     "render_markdown",
     "result_summary",
+    "render_gamma_sweep_markdown",
     "robust_estimator_covariances",
     "robust_estimator_fixed_adversary_policy",
     "robust_estimator_joint_matrices",
+    "robust_output_feedback_feasibility_diagnostics",
     "robust_output_feedback_gains",
     "rollout_with_kalman_estimator",
     "rollout_with_robust_estimator",
     "rollout_with_robust_estimator_policy",
+    "write_gamma_sweep_outputs",
     "write_outputs",
 ]
