@@ -29,6 +29,11 @@ from rlrmp.analysis.output_feedback import (
     robust_output_feedback_gains,
     rollout_with_robust_estimator,
 )
+from rlrmp.analysis.rerun_metadata import (
+    DEFAULT_DISCRETIZATION,
+    DEFAULT_LANE,
+    build_rerun_metadata,
+)
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
@@ -1584,6 +1589,8 @@ def analyze_robust_bellman(
     exact_inner_config: LinearTrainingConfig = LinearTrainingConfig(n_steps=80, n_random_states=8),
     flattened_config: LinearTrainingConfig = LinearTrainingConfig(n_steps=25),
     output_feedback_config: OutputFeedbackConfig = OutputFeedbackConfig(),
+    discretization: str = DEFAULT_DISCRETIZATION,
+    lane: str = DEFAULT_LANE,
 ) -> dict[str, Any]:
     """Run deterministic and output-feedback robust Bellman diagnostics."""
 
@@ -1714,6 +1721,11 @@ def analyze_robust_bellman(
         "issue": ISSUE_ID,
         "umbrella": UMBRELLA_ID,
         "gamma_sweep_issue": GAMMA_SWEEP_ISSUE_ID,
+        "rerun_metadata": build_rerun_metadata(
+            discretization=discretization,
+            lane=lane,
+            materializer="robust_bellman",
+        ),
         "gamma_factors": list(gamma_factors),
         "gamma_star": reference.gamma_star,
         "training_config": config.__dict__,
@@ -2028,6 +2040,12 @@ retraining. The deterministic full-state rows fit time-varying gains against
 the one-step finite-horizon H-infinity Bellman objective with the inner
 disturbance maximized in closed form.
 
+Rerun metadata:
+
+- Discretization: `{summary["rerun_metadata"]["discretization"]}`.
+- Lane: `{summary["rerun_metadata"]["lane"]}`.
+- Lane scope: {summary["rerun_metadata"]["lane_description"]}
+
 Gamma star: `{summary["gamma_star"]:.8g}`.
 
 ## Deterministic Full-State Robust Bellman
@@ -2140,10 +2158,15 @@ matching the reference-level formal-vs-persistent split
 """
 
 
-def write_outputs(issue_id: str = ISSUE_ID) -> dict[str, Any]:
+def write_outputs(
+    issue_id: str = ISSUE_ID,
+    *,
+    discretization: str = DEFAULT_DISCRETIZATION,
+    lane: str = DEFAULT_LANE,
+) -> dict[str, Any]:
     """Write robust Bellman diagnostics."""
 
-    summary = analyze_robust_bellman()
+    summary = analyze_robust_bellman(discretization=discretization, lane=lane)
     results_dir = mkdir_p(REPO_ROOT / "results" / issue_id)
     notes_dir = mkdir_p(results_dir / "notes")
     readme = results_dir / "README.md"

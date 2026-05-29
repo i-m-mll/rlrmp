@@ -3,6 +3,12 @@
 Issue: `97604a8`. Output-feedback lane: `83fc5b5`.
 Umbrella: `43e8728`.
 
+Rerun metadata:
+
+- Discretization: `zoh`.
+- Lane: `deterministic_analytical`.
+- Lane scope: Deterministic analytical lane: exact recursions and deterministic rollouts/audits with no sampled sensory, motor/process, or signal-dependent control noise.
+
 This note extends the exact output-feedback Phase 1 audit from an L2-budget
 trust-region check to a gamma-penalized H-infinity feasibility check. For each
 gamma factor, the robust output-feedback controller is built in the C&S

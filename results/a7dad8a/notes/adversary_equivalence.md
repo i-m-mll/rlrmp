@@ -2,8 +2,15 @@
 
 Issue: `a7dad8a`. Umbrella: `43e8728`. Game card: `cb98e58`.
 
-This note compares the C&S-faithful Riccati state-dependent disturbance against
-an open-loop epsilon surrogate under the Phase 0 game-card budget.
+Rerun metadata:
+
+- Discretization: `zoh`.
+- Lane: `deterministic_analytical`.
+- Lane scope: Deterministic analytical lane: exact recursions and deterministic rollouts/audits with no sampled sensory, motor/process, or signal-dependent control noise.
+
+This note compares the C&S-style deterministic Riccati state-dependent
+disturbance against an open-loop epsilon surrogate under the Phase 0 game-card
+budget.
 
 ## Fixed Contract
 

@@ -296,6 +296,14 @@
   ],
   "interpretation": "The richer certificate treats clean behavior as insufficient. Controllers must also match analytical LQR on state-weighted action, closed-loop transition, value, and held-out disturbance-relevant metrics.",
   "issue": "d01c35a",
+  "rerun_metadata": {
+    "discretization": "zoh",
+    "discretization_description": "Zero-order-hold discretization retained as a sensitivity/historical variant.",
+    "lane": "deterministic_analytical",
+    "lane_description": "Deterministic analytical lane: exact recursions and deterministic rollouts/audits with no sampled sensory, motor/process, or signal-dependent control noise.",
+    "materializer": "linear_equivalence_certificate",
+    "phase_label_policy": "Phase 1 and Phase 3 reruns must report both discretization and lane. Euler deterministic analytical results are canonical after the Euler card lands; ZOH results remain sensitivity/historical unless explicitly promoted."
+  },
   "overall_status": "blocked_not_disturbance_equivalent",
   "phase3_best_objective_training": "lbfgsb_after_adam_lqr_fit",
   "phase3_issue": "6f5c79e",
