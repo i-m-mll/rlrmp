@@ -39,6 +39,8 @@ UMBRELLA_ID = "43e8728"
 GAMMA_SWEEP_ISSUE_ID = "97604a8"
 GAMMA_FACTORS = (1.35, 1.4, 1.5)
 NUMERICAL_MINMAX_TIME_INDICES = (0, 1, 10, 30, -1)
+EXACT_INNER_TIME_INDICES = (0, 1, 10, 30, -1)
+PRIMARY_EXACT_INNER_GAMMA_FACTORS = (1.4,)
 
 
 @dataclass(frozen=True)
@@ -82,6 +84,51 @@ class NumericalMinmaxFit:
     n_outer_iterations: int
     n_outer_function_evaluations: int
     n_inner_function_evaluations: int
+
+
+@dataclass(frozen=True)
+class ExactInnerBellmanFit:
+    """One per-time information-state Bellman fit with the inner max eliminated."""
+
+    label: str
+    gamma_factor: float
+    gamma: float
+    time_index: int
+    final_objective: float | None
+    reference_objective: float | None
+    zero_objective: float | None
+    objective_ratio_to_reference: float | None
+    gain_relative_error: float | None
+    feasibility_margin: float
+    feasible: bool
+    optimizer_status: str
+    n_iterations: int
+    n_function_evaluations: int
+
+
+@dataclass(frozen=True)
+class FlattenedEpsilonFit:
+    """Full-horizon exact epsilon fit with the disturbance trajectory eliminated."""
+
+    label: str
+    gamma_factor: float
+    gamma: float
+    target: str
+    final_objective: float | None
+    reference_objective: float | None
+    cs_persistent_reference_objective: float | None
+    zero_objective: float | None
+    objective_ratio_to_reference: float | None
+    gain_relative_error: float | None
+    cs_persistent_index_gain_relative_error: float
+    feasibility_margin: float
+    lambda_over_gamma_squared: float
+    reference_feasibility_margin: float
+    reference_lambda_over_gamma_squared: float
+    feasible: bool
+    optimizer_status: str
+    n_iterations: int
+    n_function_evaluations: int
 
 
 def deterministic_robust_bellman_objective(
@@ -214,6 +261,38 @@ def information_state_numerical_minmax_bellman_objective(
     )
     penalty_terms = gamma2 * jnp.einsum("bi,ij,bj->b", deviation, sigma_inv, deviation)
     return jnp.mean(weights * (cost_terms - penalty_terms))
+
+
+def information_state_exact_inner_bellman_objective(
+    L_t: Float[Array, "n n"],
+    N_t: Float[Array, "n m_u"],
+    M_u_t: Float[Array, "m_u m_u"],
+    sigma_t: Float[Array, "n n"],
+    K_t: Float[Array, "m_u n"],
+    estimates: Float[Array, "batch n"],
+    weights: Float[Array, " batch"],
+    gamma: float,
+) -> Float[Array, ""]:
+    """Return information-state Bellman loss after analytic max over hidden state.
+
+    For each estimate ``h`` and action ``u=-K h`` this maximizes
+    ``x.T L x + 2 x.T N u + u.T M u - gamma^2 (x-h).T Sigma^-1 (x-h)``.
+    The expression is finite only when ``gamma^2 Sigma^-1 - L`` is positive
+    definite; callers should check :func:`information_state_feasibility_margin`
+    before using this objective.
+    """
+
+    estimates = estimates.astype(jnp.float64)
+    weights = weights.astype(jnp.float64)
+    sigma_inv = jnp.linalg.inv(sigma_t.astype(jnp.float64))
+    gamma2 = jnp.asarray(gamma * gamma, dtype=jnp.float64)
+    D_t = gamma2 * sigma_inv - L_t.astype(jnp.float64)
+    u = -estimates @ K_t.T
+    b = u @ N_t.T + gamma2 * estimates @ sigma_inv.T
+    maximized_terms = jnp.einsum("bi,ij,bj->b", b, jnp.linalg.inv(D_t), b)
+    control_terms = jnp.einsum("bi,ij,bj->b", u, M_u_t, u)
+    estimate_penalty = gamma2 * jnp.einsum("bi,ij,bj->b", estimates, sigma_inv, estimates)
+    return jnp.mean(weights * (maximized_terms + control_terms - estimate_penalty))
 
 
 def information_state_feasibility_margin(
@@ -379,6 +458,86 @@ def _fit_one_step_numerical_minmax(
         n_outer_iterations=int(outer.nit),
         n_outer_function_evaluations=int(outer.nfev),
         n_inner_function_evaluations=inner_stats["nfev"],
+    )
+
+
+def _fit_one_step_exact_inner_bellman(
+    *,
+    label: str,
+    gamma_factor: float,
+    gamma: float,
+    time_index: int,
+    objective,
+    K_ref: Float[Array, "m_u n"],
+    feasibility_margin: float,
+    K_scale: float = 500.0,
+    max_iterations: int = 80,
+) -> ExactInnerBellmanFit:
+    """Fit one information-state Bellman objective with an analytic inner max."""
+
+    if feasibility_margin <= 0.0:
+        return ExactInnerBellmanFit(
+            label=label,
+            gamma_factor=gamma_factor,
+            gamma=gamma,
+            time_index=time_index,
+            final_objective=None,
+            reference_objective=None,
+            zero_objective=None,
+            objective_ratio_to_reference=None,
+            gain_relative_error=None,
+            feasibility_margin=feasibility_margin,
+            feasible=False,
+            optimizer_status="unbounded: gamma^2 Sigma^-1 - L is not positive definite",
+            n_iterations=0,
+            n_function_evaluations=0,
+        )
+
+    k_shape = tuple(K_ref.shape)
+    k_size = int(np.prod(k_shape))
+
+    @jax.jit
+    def scaled_objective(theta_k: Float[Array, " k_flat"]) -> Float[Array, ""]:
+        K_t = K_scale * theta_k.reshape(k_shape)
+        return objective(K_t)
+
+    value_and_grad = jax.jit(jax.value_and_grad(scaled_objective))
+
+    def scipy_value_and_grad(theta_k: np.ndarray) -> tuple[float, np.ndarray]:
+        value, grads = value_and_grad(jnp.asarray(theta_k, dtype=jnp.float64))
+        return float(value), np.asarray(grads, dtype=np.float64)
+
+    result = scipy_opt.minimize(
+        scipy_value_and_grad,
+        np.zeros(k_size, dtype=np.float64),
+        jac=True,
+        method="L-BFGS-B",
+        options={
+            "maxiter": max_iterations,
+            "ftol": 1e-11,
+            "gtol": 1e-8,
+            "maxls": 50,
+        },
+    )
+    K = K_scale * jnp.asarray(result.x, dtype=jnp.float64).reshape(k_shape)
+    final_objective = float(objective(K))
+    reference_objective = float(objective(K_ref))
+    zero_objective = float(objective(jnp.zeros_like(K_ref)))
+    return ExactInnerBellmanFit(
+        label=label,
+        gamma_factor=gamma_factor,
+        gamma=gamma,
+        time_index=time_index,
+        final_objective=final_objective,
+        reference_objective=reference_objective,
+        zero_objective=zero_objective,
+        objective_ratio_to_reference=final_objective / reference_objective,
+        gain_relative_error=float(jnp.linalg.norm(K - K_ref) / jnp.linalg.norm(K_ref)),
+        feasibility_margin=feasibility_margin,
+        feasible=True,
+        optimizer_status=str(result.message),
+        n_iterations=int(result.nit),
+        n_function_evaluations=int(result.nfev),
     )
 
 
@@ -872,6 +1031,301 @@ def train_output_feedback_information_state_numerical_minmax_bellman(
     }
 
 
+def train_output_feedback_information_state_exact_inner_bellman(
+    reference: GameCardReference,
+    *,
+    gamma_factor: float,
+    time_indices: tuple[int, ...] = EXACT_INNER_TIME_INDICES,
+    config: LinearTrainingConfig = LinearTrainingConfig(n_steps=80, n_random_states=8),
+    output_feedback_config: OutputFeedbackConfig = OutputFeedbackConfig(),
+) -> dict[str, Any]:
+    """Fit the information-state Bellman objective with exact hidden-state max."""
+
+    gamma_ref = next(ref for ref in reference.gamma_references if ref.factor == gamma_factor)
+    plant = reference.plant
+    schedule = reference.schedule
+    formal_config = replace(output_feedback_config, use_matlab_persistent_m_index=False)
+    covs = robust_estimator_covariances(
+        plant,
+        schedule,
+        gamma_ref.gamma,
+        formal_config,
+    )
+    formal_K_ref = robust_output_feedback_gains(
+        plant,
+        schedule,
+        gamma_ref.solution,
+        covs,
+        formal_config,
+    )
+    cs_K_ref = robust_output_feedback_gains(
+        plant,
+        schedule,
+        gamma_ref.solution,
+        covs,
+        output_feedback_config,
+    )
+    L, N, M_u = information_state_bellman_matrices(plant, schedule, gamma_ref.solution)
+    estimates, weights = ensemble_initial_states(plant, config)
+    fits = []
+    for t in _selected_time_indices(schedule.T, time_indices):
+
+        def objective(K_t, *, t=t):
+            return information_state_exact_inner_bellman_objective(
+                L[t],
+                N[t],
+                M_u[t],
+                covs[t],
+                K_t,
+                estimates,
+                weights,
+                gamma_ref.gamma,
+            )
+
+        margin = information_state_feasibility_margin(L[t], covs[t], gamma_ref.gamma)
+        fits.append(
+            _fit_one_step_exact_inner_bellman(
+                label=f"output_feedback_information_state_exact_inner_gamma_{gamma_factor:g}_t{t}",
+                gamma_factor=gamma_factor,
+                gamma=gamma_ref.gamma,
+                time_index=t,
+                objective=objective,
+                K_ref=formal_K_ref[t].astype(jnp.float64),
+                feasibility_margin=margin,
+                max_iterations=config.n_steps,
+            )
+        )
+    gain_errors = [fit.gain_relative_error for fit in fits if fit.gain_relative_error is not None]
+    margins = jnp.asarray([fit.feasibility_margin for fit in fits], dtype=jnp.float64)
+    cs_error = float(jnp.linalg.norm(formal_K_ref - cs_K_ref) / jnp.linalg.norm(formal_K_ref))
+    max_gain_error = None if not gain_errors else float(max(gain_errors))
+    mean_gain_error = None if not gain_errors else float(np.mean(gain_errors))
+    return {
+        "label": f"output_feedback_information_state_exact_inner_gamma_{gamma_factor:g}",
+        "gamma_factor": gamma_factor,
+        "gamma": gamma_ref.gamma,
+        "target": "formal_time_indexed_information_state_exact_hidden_state_inner",
+        "cs_persistent_index_gain_relative_error": cs_error,
+        "recovers_formal_target": bool(max_gain_error is not None and max_gain_error < 2e-2),
+        "max_gain_relative_error": max_gain_error,
+        "mean_gain_relative_error": mean_gain_error,
+        "min_feasibility_margin": float(jnp.min(margins)),
+        "all_feasible": all(fit.feasible for fit in fits),
+        "fits": [_exact_inner_summary(fit) for fit in fits],
+    }
+
+
+def flattened_epsilon_penalized_objective(
+    plant: PlantLinearization,
+    schedule: CostSchedule,
+    solution,
+    estimator_covariances: Float[Array, "T_plus_1 n n"],
+    K: Float[Array, "T m_u n"],
+    x0: Float[Array, " n"],
+    config: OutputFeedbackConfig = OutputFeedbackConfig(),
+) -> tuple[Float[Array, ""], Float[Array, ""], Float[Array, ""]]:
+    """Return exact closed-loop ``max_epsilon cost - gamma^2 ||epsilon||^2``.
+
+    The returned tuple is ``(objective, margin, lambda_over_gamma_squared)``.
+    ``margin`` is the minimum eigenvalue of ``gamma^2 I - H_epsilon``. The
+    maximization is finite only when the margin is positive.
+    """
+
+    A_joint, G_joint = robust_estimator_joint_matrices(
+        plant,
+        schedule,
+        solution,
+        K,
+        estimator_covariances,
+        config,
+    )
+    n = plant.n
+    zeros = jnp.zeros((n, n), dtype=jnp.float64)
+    z_dim = 2 * n
+    flat_dim = schedule.T * plant.m_w
+    z0 = jnp.concatenate([x0.astype(jnp.float64), x0.astype(jnp.float64)], axis=0)
+    S = jnp.zeros((z_dim, flat_dim), dtype=jnp.float64)
+    c = z0
+    H_acc = jnp.zeros((flat_dim, flat_dim), dtype=jnp.float64)
+    g_acc = jnp.zeros((flat_dim,), dtype=jnp.float64)
+    const = jnp.asarray(0.0, dtype=jnp.float64)
+    for t in range(schedule.T):
+        K_t = K[t].astype(jnp.float64)
+        M_t = jnp.block(
+            [
+                [schedule.Q[t].astype(jnp.float64), zeros],
+                [zeros, K_t.T @ schedule.R[t].astype(jnp.float64) @ K_t],
+            ]
+        )
+        H_acc = H_acc + S.T @ M_t @ S
+        g_acc = g_acc + S.T @ M_t @ c
+        const = const + c @ M_t @ c
+        S_next = A_joint[t] @ S
+        S_next = S_next.at[:, t * plant.m_w : (t + 1) * plant.m_w].add(G_joint)
+        c = A_joint[t] @ c
+        S = S_next
+    terminal = jnp.block([[schedule.Q_f.astype(jnp.float64), zeros], [zeros, zeros]])
+    H_acc = H_acc + S.T @ terminal @ S
+    g_acc = g_acc + S.T @ terminal @ c
+    const = const + c @ terminal @ c
+    H_sym = 0.5 * (H_acc + H_acc.T)
+    eigvals = jnp.linalg.eigvalsh(H_sym)
+    max_eig = eigvals[-1]
+    gamma2 = jnp.asarray(solution.gamma * solution.gamma, dtype=jnp.float64)
+    margin = gamma2 - max_eig
+    lhs = gamma2 * jnp.eye(flat_dim, dtype=jnp.float64) - H_sym
+    epsilon_star = jnp.linalg.solve(lhs, g_acc)
+    objective = const + g_acc @ epsilon_star
+    return objective, margin, max_eig / gamma2
+
+
+def _flattened_objective_with_barrier(
+    plant: PlantLinearization,
+    schedule: CostSchedule,
+    solution,
+    estimator_covariances: Float[Array, "T_plus_1 n n"],
+    K: Float[Array, "T m_u n"],
+    x0: Float[Array, " n"],
+    config: OutputFeedbackConfig,
+) -> Float[Array, ""]:
+    """Return flattened objective plus a large penalty when the inner max fails."""
+
+    objective, margin, _ratio = flattened_epsilon_penalized_objective(
+        plant,
+        schedule,
+        solution,
+        estimator_covariances,
+        K,
+        x0,
+        config,
+    )
+    gamma2 = jnp.asarray(solution.gamma * solution.gamma, dtype=jnp.float64)
+    tolerance = jnp.maximum(1e-9, 1e-10 * gamma2)
+    violation = jnp.maximum(tolerance - margin, 0.0)
+    return objective + 1e10 * (violation / tolerance) ** 2
+
+
+def train_output_feedback_flattened_epsilon_exact_inner(
+    reference: GameCardReference,
+    *,
+    gamma_factor: float = 1.4,
+    config: LinearTrainingConfig = LinearTrainingConfig(n_steps=25),
+    output_feedback_config: OutputFeedbackConfig = OutputFeedbackConfig(),
+) -> FlattenedEpsilonFit:
+    """Minimize the full-horizon exact flattened epsilon objective over gains."""
+
+    gamma_ref = next(ref for ref in reference.gamma_references if ref.factor == gamma_factor)
+    plant = reference.plant
+    schedule = reference.schedule
+    formal_config = replace(output_feedback_config, use_matlab_persistent_m_index=False)
+    covs = robust_estimator_covariances(plant, schedule, gamma_ref.gamma, formal_config)
+    formal_K_ref = robust_output_feedback_gains(
+        plant,
+        schedule,
+        gamma_ref.solution,
+        covs,
+        formal_config,
+    )
+    cs_K_ref = robust_output_feedback_gains(
+        plant,
+        schedule,
+        gamma_ref.solution,
+        covs,
+        output_feedback_config,
+    )
+    x0 = make_cs_output_feedback_initial_state(plant, output_feedback_config)
+    gain_scale = jnp.asarray(500.0, dtype=jnp.float64)
+    shape = tuple(formal_K_ref.shape)
+
+    @jax.jit
+    def scaled_objective(theta: Float[Array, " flat"]) -> Float[Array, ""]:
+        K = gain_scale * theta.reshape(shape)
+        return _flattened_objective_with_barrier(
+            plant,
+            schedule,
+            gamma_ref.solution,
+            covs,
+            K,
+            x0,
+            formal_config,
+        )
+
+    value_and_grad = jax.jit(jax.value_and_grad(scaled_objective))
+
+    def scipy_value_and_grad(theta: np.ndarray) -> tuple[float, np.ndarray]:
+        value, grads = value_and_grad(jnp.asarray(theta, dtype=jnp.float64))
+        return float(value), np.asarray(grads, dtype=np.float64)
+
+    starts = (
+        np.asarray(formal_K_ref, dtype=np.float64).reshape(-1) / float(gain_scale),
+        np.asarray(cs_K_ref, dtype=np.float64).reshape(-1) / float(gain_scale),
+    )
+    results = []
+    for theta0 in starts:
+        results.append(
+            scipy_opt.minimize(
+                scipy_value_and_grad,
+                theta0,
+                jac=True,
+                method="L-BFGS-B",
+                options={
+                    "maxiter": config.n_steps,
+                    "ftol": 1e-10,
+                    "gtol": 1e-7,
+                    "maxls": 30,
+                },
+            )
+        )
+    result = min(results, key=lambda res: float(res.fun))
+    K = gain_scale * jnp.asarray(result.x, dtype=jnp.float64).reshape(shape)
+
+    def evaluate(K_eval) -> tuple[float, float, float]:
+        objective, margin, ratio = flattened_epsilon_penalized_objective(
+            plant,
+            schedule,
+            gamma_ref.solution,
+            covs,
+            K_eval,
+            x0,
+            formal_config,
+        )
+        return float(objective), float(margin), float(ratio)
+
+    final_objective, final_margin, final_ratio = evaluate(K)
+    reference_objective, reference_margin, reference_ratio = evaluate(formal_K_ref)
+    cs_objective, _cs_margin, _cs_ratio = evaluate(cs_K_ref)
+    zero_objective, _zero_margin, _zero_ratio = evaluate(jnp.zeros_like(formal_K_ref))
+    tolerance = max(1e-9, 1e-10 * gamma_ref.gamma * gamma_ref.gamma)
+    feasible = final_margin > tolerance
+    return FlattenedEpsilonFit(
+        label=f"output_feedback_flattened_epsilon_exact_inner_gamma_{gamma_factor:g}",
+        gamma_factor=gamma_factor,
+        gamma=gamma_ref.gamma,
+        target="formal_time_indexed_closed_loop_flattened_epsilon",
+        final_objective=final_objective if feasible else None,
+        reference_objective=reference_objective,
+        cs_persistent_reference_objective=cs_objective,
+        zero_objective=zero_objective,
+        objective_ratio_to_reference=(final_objective / reference_objective if feasible else None),
+        gain_relative_error=(
+            float(jnp.linalg.norm(K - formal_K_ref) / jnp.linalg.norm(formal_K_ref))
+            if feasible
+            else None
+        ),
+        cs_persistent_index_gain_relative_error=float(
+            jnp.linalg.norm(formal_K_ref - cs_K_ref) / jnp.linalg.norm(formal_K_ref)
+        ),
+        feasibility_margin=final_margin,
+        lambda_over_gamma_squared=final_ratio,
+        reference_feasibility_margin=reference_margin,
+        reference_lambda_over_gamma_squared=reference_ratio,
+        feasible=feasible,
+        optimizer_status=str(result.message) if feasible else "unbounded/infeasible margin",
+        n_iterations=int(result.nit),
+        n_function_evaluations=int(result.nfev),
+    )
+
+
 def _fit_summary(fit: RobustBellmanFit) -> dict[str, Any]:
     return {
         "label": fit.label,
@@ -912,11 +1366,58 @@ def _numerical_minmax_summary(fit: NumericalMinmaxFit) -> dict[str, Any]:
     }
 
 
+def _exact_inner_summary(fit: ExactInnerBellmanFit) -> dict[str, Any]:
+    return {
+        "label": fit.label,
+        "gamma_factor": fit.gamma_factor,
+        "gamma": fit.gamma,
+        "time_index": fit.time_index,
+        "final_objective": fit.final_objective,
+        "reference_objective": fit.reference_objective,
+        "zero_objective": fit.zero_objective,
+        "objective_ratio_to_reference": fit.objective_ratio_to_reference,
+        "gain_relative_error": fit.gain_relative_error,
+        "feasibility_margin": fit.feasibility_margin,
+        "feasible": fit.feasible,
+        "optimizer_status": fit.optimizer_status,
+        "n_iterations": fit.n_iterations,
+        "n_function_evaluations": fit.n_function_evaluations,
+    }
+
+
+def _flattened_epsilon_summary(fit: FlattenedEpsilonFit) -> dict[str, Any]:
+    return {
+        "label": fit.label,
+        "gamma_factor": fit.gamma_factor,
+        "gamma": fit.gamma,
+        "target": fit.target,
+        "final_objective": fit.final_objective,
+        "reference_objective": fit.reference_objective,
+        "cs_persistent_reference_objective": fit.cs_persistent_reference_objective,
+        "zero_objective": fit.zero_objective,
+        "objective_ratio_to_reference": fit.objective_ratio_to_reference,
+        "gain_relative_error": fit.gain_relative_error,
+        "cs_persistent_index_gain_relative_error": fit.cs_persistent_index_gain_relative_error,
+        "feasibility_margin": fit.feasibility_margin,
+        "lambda_over_gamma_squared": fit.lambda_over_gamma_squared,
+        "reference_feasibility_margin": fit.reference_feasibility_margin,
+        "reference_lambda_over_gamma_squared": fit.reference_lambda_over_gamma_squared,
+        "feasible": fit.feasible,
+        "optimizer_status": fit.optimizer_status,
+        "n_iterations": fit.n_iterations,
+        "n_function_evaluations": fit.n_function_evaluations,
+    }
+
+
 def analyze_robust_bellman(
     gamma_factors: tuple[float, ...] = GAMMA_FACTORS,
     config: LinearTrainingConfig = LinearTrainingConfig(n_steps=250),
     numerical_config: LinearTrainingConfig = LinearTrainingConfig(n_steps=80, n_random_states=8),
     numerical_time_indices: tuple[int, ...] = NUMERICAL_MINMAX_TIME_INDICES,
+    exact_inner_gamma_factors: tuple[float, ...] = PRIMARY_EXACT_INNER_GAMMA_FACTORS,
+    exact_inner_time_indices: tuple[int, ...] = EXACT_INNER_TIME_INDICES,
+    exact_inner_config: LinearTrainingConfig = LinearTrainingConfig(n_steps=80, n_random_states=8),
+    flattened_config: LinearTrainingConfig = LinearTrainingConfig(n_steps=25),
     output_feedback_config: OutputFeedbackConfig = OutputFeedbackConfig(),
 ) -> dict[str, Any]:
     """Run deterministic and output-feedback robust Bellman diagnostics."""
@@ -1015,6 +1516,25 @@ def analyze_robust_bellman(
         )
         for factor in gamma_factors
     )
+    output_feedback_information_exact_inner = tuple(
+        train_output_feedback_information_state_exact_inner_bellman(
+            reference,
+            gamma_factor=factor,
+            time_indices=exact_inner_time_indices,
+            config=exact_inner_config,
+            output_feedback_config=output_feedback_config,
+        )
+        for factor in exact_inner_gamma_factors
+    )
+    output_feedback_flattened_epsilon = tuple(
+        train_output_feedback_flattened_epsilon_exact_inner(
+            reference,
+            gamma_factor=factor,
+            config=flattened_config,
+            output_feedback_config=output_feedback_config,
+        )
+        for factor in exact_inner_gamma_factors
+    )
     return {
         "issue": ISSUE_ID,
         "umbrella": UMBRELLA_ID,
@@ -1024,6 +1544,10 @@ def analyze_robust_bellman(
         "training_config": config.__dict__,
         "numerical_minmax_config": numerical_config.__dict__,
         "numerical_minmax_time_indices": list(numerical_time_indices),
+        "exact_inner_gamma_factors": list(exact_inner_gamma_factors),
+        "exact_inner_time_indices": list(exact_inner_time_indices),
+        "exact_inner_config": exact_inner_config.__dict__,
+        "flattened_config": flattened_config.__dict__,
         "deterministic_full_state": {
             "fits": [_fit_summary(fit) for fit in deterministic_fits],
             "numerical_minmax_fits": [
@@ -1056,6 +1580,20 @@ def analyze_robust_bellman(
             "status": (
                 "formal_time_indexed_target; controller u=-K xhat and adversarial "
                 "hidden-state selector x_adv=M xhat optimized by nested inner-outer L-BFGS-B"
+            ),
+        },
+        "output_feedback_information_state_exact_inner": {
+            "fits": list(output_feedback_information_exact_inner),
+            "status": (
+                "formal_time_indexed_target; hidden true state is maximized analytically "
+                "when gamma^2 Sigma^-1 - L is positive definite"
+            ),
+        },
+        "output_feedback_flattened_epsilon_exact_inner": {
+            "fits": [_flattened_epsilon_summary(fit) for fit in output_feedback_flattened_epsilon],
+            "status": (
+                "full_horizon_closed_loop_target; flattened epsilon trajectory is maximized "
+                "analytically when gamma^2 I - H_epsilon is positive definite"
             ),
         },
     }
@@ -1153,6 +1691,83 @@ def render_markdown(summary: dict[str, Any]) -> str:
                 f"{row['n_inner_function_evaluations']} | "
                 f"{row['optimizer_status']} |"
             )
+    of_exact_rows = [
+        "| gamma factor | target | all feasible | recovers formal | max gain err | mean gain err | min margin | C&S persistent err |",
+        "|---:|---|---|---|---:|---:|---:|---:|",
+    ]
+    for row in summary["output_feedback_information_state_exact_inner"]["fits"]:
+        max_gain = (
+            "n/a"
+            if row["max_gain_relative_error"] is None
+            else f"{row['max_gain_relative_error']:.8g}"
+        )
+        mean_gain = (
+            "n/a"
+            if row["mean_gain_relative_error"] is None
+            else f"{row['mean_gain_relative_error']:.8g}"
+        )
+        of_exact_rows.append(
+            "| "
+            f"{row['gamma_factor']:.6g} | "
+            f"{row['target']} | "
+            f"{str(row['all_feasible']).lower()} | "
+            f"{str(row['recovers_formal_target']).lower()} | "
+            f"{max_gain} | "
+            f"{mean_gain} | "
+            f"{row['min_feasibility_margin']:.8g} | "
+            f"{row['cs_persistent_index_gain_relative_error']:.8g} |"
+        )
+    of_exact_detail_rows = [
+        "| gamma factor | t | feasible | objective ratio | gain rel err | margin | nfev | status |",
+        "|---:|---:|---|---:|---:|---:|---:|---|",
+    ]
+    for group in summary["output_feedback_information_state_exact_inner"]["fits"]:
+        for row in group["fits"]:
+            ratio = (
+                "n/a"
+                if row["objective_ratio_to_reference"] is None
+                else f"{row['objective_ratio_to_reference']:.8g}"
+            )
+            gain = (
+                "n/a" if row["gain_relative_error"] is None else f"{row['gain_relative_error']:.8g}"
+            )
+            of_exact_detail_rows.append(
+                "| "
+                f"{row['gamma_factor']:.6g} | "
+                f"{row['time_index']} | "
+                f"{str(row['feasible']).lower()} | "
+                f"{ratio} | "
+                f"{gain} | "
+                f"{row['feasibility_margin']:.8g} | "
+                f"{row['n_function_evaluations']} | "
+                f"{row['optimizer_status']} |"
+            )
+    flat_rows = [
+        "| gamma factor | feasible | objective ratio | gain rel err | margin | lambda/gamma^2 | ref margin | ref lambda/gamma^2 | C&S persistent err | status |",
+        "|---:|---|---:|---:|---:|---:|---:|---:|---:|---|",
+    ]
+    for row in summary["output_feedback_flattened_epsilon_exact_inner"]["fits"]:
+        ratio = (
+            "n/a"
+            if row["objective_ratio_to_reference"] is None
+            else f"{row['objective_ratio_to_reference']:.8g}"
+        )
+        gain = "n/a" if row["gain_relative_error"] is None else f"{row['gain_relative_error']:.8g}"
+        flat_rows.append(
+            "| "
+            f"{row['gamma_factor']:.6g} | "
+            f"{str(row['feasible']).lower()} | "
+            f"{ratio} | "
+            f"{gain} | "
+            f"{row['feasibility_margin']:.8g} | "
+            f"{row['lambda_over_gamma_squared']:.8g} | "
+            f"{row['reference_feasibility_margin']:.8g} | "
+            f"{row['reference_lambda_over_gamma_squared']:.8g} | "
+            f"{row['cs_persistent_index_gain_relative_error']:.8g} | "
+            f"{row['optimizer_status']} |"
+        )
+    exact_primary = summary["output_feedback_information_state_exact_inner"]["fits"][0]
+    flat_primary = summary["output_feedback_flattened_epsilon_exact_inner"]["fits"][0]
     return f"""# Robust Bellman Diagnostics
 
 Issue: `{summary["issue"]}`. Umbrella: `{summary["umbrella"]}`.
@@ -1193,6 +1808,22 @@ Per-time fits:
 
 {"\n".join(of_info_detail_rows)}
 
+## Output-Feedback Information-State Exact Inner
+
+{"\n".join(of_exact_rows)}
+
+Status: {summary["output_feedback_information_state_exact_inner"]["status"]}.
+
+Per-time fits:
+
+{"\n".join(of_exact_detail_rows)}
+
+## Output-Feedback Flattened Epsilon Exact Inner
+
+{"\n".join(flat_rows)}
+
+Status: {summary["output_feedback_flattened_epsilon_exact_inner"]["status"]}.
+
 The output-feedback fit is a diagnostic, not a proof of the C&S robust
 separation theorem. It policy-evaluates the released-code-compatible
 output-feedback gains into a joint value sequence over `z=[x,xhat]`, then asks
@@ -1211,6 +1842,28 @@ gain mismatch separately. On the default time grid it does not recover the full
 formal target: early steps recover tightly, while later steps find nearly
 reference-valued objectives with large gain mismatch, so this remains a
 diagnostic rather than a success claim.
+
+The exact-inner information-state section removes the numerical inner optimizer
+and directly maximizes over the hidden true state. It is only meaningful when
+the positive-definite margin is positive; otherwise the row is reported as
+unbounded/infeasible. The flattened epsilon section is a separate whole-horizon
+closed-loop objective. It checks `gamma^2 I - H_epsilon` directly and reports
+infeasible/unbounded instead of coercing a finite value when the margin fails.
+
+Interpretation for the exact-inner comparison at gamma factor
+`{exact_primary["gamma_factor"]:.6g}`: the GPT-style exact hidden-state inner
+objective recovers the formal time-indexed output-feedback target on the tested
+grid, with max gain relative error
+`{exact_primary["max_gain_relative_error"]:.8g}` and positive minimum margin
+`{exact_primary["min_feasibility_margin"]:.8g}`. This is a strict improvement
+over the numerical inner-outer optimizer, whose later time slices retained
+large gain mismatch despite near-reference objective ratios. The Gemini-style
+flattened epsilon objective is numerically stable and feasible
+(`lambda/gamma^2 = {flat_primary["lambda_over_gamma_squared"]:.8g}`), but its
+learned controller stays essentially at the formal time-indexed target
+(`gain_relative_error = {flat_primary["gain_relative_error"]:.8g}`) rather than
+moving toward the C&S persistent-index target
+(`C&S persistent error = {flat_primary["cs_persistent_index_gain_relative_error"]:.8g}`).
 """
 
 
@@ -1242,7 +1895,9 @@ __all__ = [
     "deterministic_inner_max_margin",
     "deterministic_numerical_minmax_bellman_objective",
     "deterministic_robust_bellman_objective",
+    "flattened_epsilon_penalized_objective",
     "information_state_bellman_matrices",
+    "information_state_exact_inner_bellman_objective",
     "information_state_feasibility_margin",
     "information_state_numerical_minmax_bellman_objective",
     "joint_state_ensemble",
@@ -1251,6 +1906,8 @@ __all__ = [
     "render_markdown",
     "train_deterministic_numerical_minmax_bellman",
     "train_deterministic_robust_bellman",
+    "train_output_feedback_flattened_epsilon_exact_inner",
+    "train_output_feedback_information_state_exact_inner_bellman",
     "train_output_feedback_information_state_numerical_minmax_bellman",
     "train_output_feedback_joint_robust_bellman",
     "write_outputs",

@@ -86,6 +86,32 @@ Per-time fits:
 | 1.5 | 30 | 1.000102 | 0.63623154 | 6666588.5 | 13 | 1037 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
 | 1.5 | 59 | 1.0000083 | 1 | 8354659.5 | 8 | 710 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
 
+## Output-Feedback Information-State Exact Inner
+
+| gamma factor | target | all feasible | recovers formal | max gain err | mean gain err | min margin | C&S persistent err |
+|---:|---|---|---|---:|---:|---:|---:|
+| 1.4 | formal_time_indexed_information_state_exact_hidden_state_inner | true | true | 0.00056880316 | 0.00013645885 | 5214854.9 | 0.319575 |
+
+Status: formal_time_indexed_target; hidden true state is maximized analytically when gamma^2 Sigma^-1 - L is positive definite.
+
+Per-time fits:
+
+| gamma factor | t | feasible | objective ratio | gain rel err | margin | nfev | status |
+|---:|---:|---|---:|---:|---:|---:|---|
+| 1.4 | 0 | true | 1 | 5.7609668e-05 | 1.6022321e+10 | 19 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.4 | 1 | true | 1 | 1.0379354e-05 | 1.5836148e+08 | 21 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.4 | 10 | true | 1 | 3.2672997e-05 | 7444513.3 | 24 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.4 | 30 | true | 1 | 1.282908e-05 | 5214854.9 | 23 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.4 | 59 | true | 1 | 0.00056880316 | 7219762.3 | 19 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+
+## Output-Feedback Flattened Epsilon Exact Inner
+
+| gamma factor | feasible | objective ratio | gain rel err | margin | lambda/gamma^2 | ref margin | ref lambda/gamma^2 | C&S persistent err | status |
+|---:|---|---:|---:|---:|---:|---:|---:|---:|---|
+| 1.4 | true | 1 | 8.2645264e-09 | 24611867 | 0.84639233 | 24611867 | 0.84639233 | 0.319575 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+
+Status: full_horizon_closed_loop_target; flattened epsilon trajectory is maximized analytically when gamma^2 I - H_epsilon is positive definite.
+
 The output-feedback fit is a diagnostic, not a proof of the C&S robust
 separation theorem. It policy-evaluates the released-code-compatible
 output-feedback gains into a joint value sequence over `z=[x,xhat]`, then asks
@@ -104,3 +130,25 @@ gain mismatch separately. On the default time grid it does not recover the full
 formal target: early steps recover tightly, while later steps find nearly
 reference-valued objectives with large gain mismatch, so this remains a
 diagnostic rather than a success claim.
+
+The exact-inner information-state section removes the numerical inner optimizer
+and directly maximizes over the hidden true state. It is only meaningful when
+the positive-definite margin is positive; otherwise the row is reported as
+unbounded/infeasible. The flattened epsilon section is a separate whole-horizon
+closed-loop objective. It checks `gamma^2 I - H_epsilon` directly and reports
+infeasible/unbounded instead of coercing a finite value when the margin fails.
+
+Interpretation for the exact-inner comparison at gamma factor
+`1.4`: the GPT-style exact hidden-state inner
+objective recovers the formal time-indexed output-feedback target on the tested
+grid, with max gain relative error
+`0.00056880316` and positive minimum margin
+`5214854.9`. This is a strict improvement
+over the numerical inner-outer optimizer, whose later time slices retained
+large gain mismatch despite near-reference objective ratios. The Gemini-style
+flattened epsilon objective is numerically stable and feasible
+(`lambda/gamma^2 = 0.84639233`), but its
+learned controller stays essentially at the formal time-indexed target
+(`gain_relative_error = 8.2645264e-09`) rather than
+moving toward the C&S persistent-index target
+(`C&S persistent error = 0.319575`).
