@@ -1,4 +1,4 @@
-"""Materialize the C&S-faithful H-infinity analytical game card.
+"""Materialize the C&S released-code-aligned H-infinity analytical game card.
 
 This module is intentionally narrow: it builds the canonical Phase 0 game for
 issue ``cb98e58`` / umbrella ``43e8728`` and computes the analytical reference
@@ -20,6 +20,7 @@ from jaxtyping import Array, Float
 from rlrmp.analysis.hinf_riccati import (
     ClosedLoopRollout,
     CostSchedule,
+    Discretization,
     PlantLinearization,
     RiccatiSolution,
     apply_delay_distribution_to_schedule,
@@ -92,8 +93,14 @@ class GameCardReference:
     gamma_references: tuple[GammaReference, ...]
 
 
-def build_canonical_game() -> tuple[PlantLinearization, CostSchedule]:
+def build_canonical_game(
+    discretization: Discretization = "euler",
+) -> tuple[PlantLinearization, CostSchedule]:
     """Build the canonical C&S 2019 analytical game.
+
+    Canonical released-code fidelity uses forward Euler discretization, as in
+    the ModelDB MATLAB implementation. ``discretization="zoh"`` is retained as
+    a named higher-order sensitivity variant, not the canonical C&S path.
 
     The disturbance channel is the physically supported C&S channel on the
     delay-augmented state:
@@ -105,7 +112,7 @@ def build_canonical_game() -> tuple[PlantLinearization, CostSchedule]:
     ``I_48``.
     """
 
-    plant = cs_faithful_pointmass()
+    plant = cs_faithful_pointmass(discretization=discretization)
     schedule_phys = cs_eq15_cost_schedule(n_steps=60, alpha_1=1.0, state_dim=8)
     schedule = apply_delay_distribution_to_schedule(
         schedule_phys,
@@ -113,6 +120,12 @@ def build_canonical_game() -> tuple[PlantLinearization, CostSchedule]:
         n_phys=8,
     )
     return plant, schedule
+
+
+def build_zoh_sensitivity_game() -> tuple[PlantLinearization, CostSchedule]:
+    """Build the named ZOH sensitivity variant of the C&S card."""
+
+    return build_canonical_game(discretization="zoh")
 
 
 def assert_physical_selector_bw(plant: PlantLinearization) -> None:
@@ -322,6 +335,7 @@ def reference_summary(reference: GameCardReference) -> dict[str, Any]:
         "diagnostic_gamma_factor": DIAGNOSTIC_GAMMA_FACTOR,
         "plant": {
             "name": "cs_faithful_pointmass",
+            "discretization": reference.plant.discretization,
             "mass": 1.0,
             "damping": 0.1,
             "tau": 0.066,
@@ -394,7 +408,8 @@ def render_markdown(summary: dict[str, Any]) -> str:
     diagnostic = next(row for row in frontier if row["factor"] == DIAGNOSTIC_GAMMA_FACTOR)
 
     rows = [
-        "| gamma factor | gamma | Delta-v fwd | peak fwd v | t_peak | terminal error | closed-loop epsilon L2 |",
+        "| gamma factor | gamma | Delta-v fwd | peak fwd v | t_peak | "
+        "terminal error | closed-loop epsilon L2 |",
         "|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in frontier:
@@ -413,13 +428,15 @@ def render_markdown(summary: dict[str, Any]) -> str:
 
 Issue: `{ISSUE_ID}`. Umbrella: `{UMBRELLA_ID}`.
 
-This note is the auditable C&S-faithful H-infinity target for the first
-cs2019-to-RNN game-equivalence gate. It fixes the analytical game that later
-feedbax and trained-controller work must match.
+This note is the auditable C&S released-code-aligned H-infinity target for the
+first cs2019-to-RNN game-equivalence gate. It fixes the analytical game that
+later feedbax and trained-controller work must match.
 
 ## Game Definition
 
 - Plant: `cs_faithful_pointmass()`.
+- Discretization: `{summary["plant"]["discretization"]}`. The canonical
+  released-code path is forward Euler; ZOH is a named sensitivity variant.
 - State: 8 physical states plus 5 full-state lag blocks, total `n = 48`.
 - Physical state order: `[px, py, vx, vy, fx, fy, eps_x_int, eps_y_int]`.
 - Delay state order: `[x_t, x_(t-1), x_(t-2), x_(t-3), x_(t-4), x_(t-5)]`,
@@ -565,7 +582,7 @@ def write_outputs(issue_id: str = ISSUE_ID) -> dict[str, Any]:
         readme.write_text(
             "Phase 0 analytical game-card artifacts for the cs2019-to-RNN "
             "game-equivalence programme. See `notes/analytical_game_card.md` "
-            "for the tracked C&S-faithful reference target.\n",
+            "for the tracked C&S released-code-aligned reference target.\n",
             encoding="utf-8",
         )
 
@@ -599,6 +616,7 @@ __all__ = [
     "WorstCaseRollout",
     "assert_physical_selector_bw",
     "build_canonical_game",
+    "build_zoh_sensitivity_game",
     "materialize_reference",
     "reference_summary",
     "render_markdown",
