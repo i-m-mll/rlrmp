@@ -104,6 +104,24 @@ Per-time fits:
 | 1.4 | 30 | true | 1 | 1.282908e-05 | 5214854.9 | 23 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
 | 1.4 | 59 | true | 1 | 0.00056880316 | 7219762.3 | 19 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
 
+## Output-Feedback Information-State Exact Inner C&S Persistent-Index
+
+| gamma factor | target | all feasible | recovers persistent | max err to persistent | mean err to persistent | max err to formal | formal-persistent ref err | min margin |
+|---:|---|---|---|---:|---:|---:|---:|---:|
+| 1.4 | cs_code_fidelity_persistent_index_exact_hidden_state_inner | true | true | 0.00035479325 | 8.7095144e-05 | 0.30951553 | 0.319575 | 7330367.2 |
+
+Status: cs_code_fidelity_target; control Hessian/cross terms remain tied to P[t+1] but the hidden-state Schur complement uses the released persistent P[0] slice.
+
+Per-time fits:
+
+| gamma factor | t | feasible | objective ratio | err to persistent | err to formal | margin | nfev | status |
+|---:|---:|---|---:|---:|---:|---:|---:|---|
+| 1.4 | 0 | true | 1 | 5.7609668e-05 | 5.7609668e-05 | 1.6022321e+10 | 19 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.4 | 1 | true | 1 | 1.2824815e-05 | 0.00014943683 | 1.5838448e+08 | 23 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.4 | 10 | true | 1 | 8.3451852e-06 | 0.019133361 | 7520900.2 | 27 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.4 | 30 | true | 1 | 1.9028026e-06 | 0.30951553 | 7330367.2 | 27 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+| 1.4 | 59 | true | 1 | 0.00035479325 | 0.0025902753 | 7422951 | 24 | CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH |
+
 ## Output-Feedback Flattened Epsilon Exact Inner
 
 | gamma factor | feasible | objective ratio | gain rel err | margin | lambda/gamma^2 | ref margin | ref lambda/gamma^2 | C&S persistent err | status |
@@ -152,3 +170,16 @@ learned controller stays essentially at the formal time-indexed target
 (`gain_relative_error = 8.2645264e-09`) rather than
 moving toward the C&S persistent-index target
 (`C&S persistent error = 0.319575`).
+
+The persistent-index exact-inner section is intentionally labeled
+C&S-code-fidelity. It changes the information-state Bellman block only enough
+to make the hidden-state Schur complement use the released persistent Riccati
+slice `P[0]`; the one-step control Hessian/cross terms still come from the
+formal `P[t+1]` robust control step. At gamma factor
+`1.4`, this code-fidelity objective
+recovers the released persistent-index target with max gain relative error
+`0.00035479325`. The same
+fitted gains remain separated from the formal time-indexed target with max
+relative error `0.30951553`,
+matching the reference-level formal-vs-persistent split
+`0.319575`.

@@ -506,6 +506,113 @@
     ],
     "status": "formal_time_indexed_target; hidden true state is maximized analytically when gamma^2 Sigma^-1 - L is positive definite"
   },
+  "output_feedback_information_state_exact_inner_persistent_index": {
+    "fits": [
+      {
+        "all_feasible": true,
+        "fits": [
+          {
+            "feasibility_margin": 16022321075.563032,
+            "feasible": true,
+            "final_objective": 437.2585279405339,
+            "gain_error_to_formal_target": 5.760966812054028e-05,
+            "gain_error_to_persistent_target": 5.760966812054028e-05,
+            "gamma": 12658.02148970065,
+            "gamma_factor": 1.4,
+            "label": "output_feedback_information_state_exact_inner_persistent_index_gamma_1.4_t0",
+            "n_function_evaluations": 19,
+            "n_iterations": 16,
+            "objective_ratio_to_reference": 1.0000000000254068,
+            "optimizer_status": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+            "reference_objective": 437.2585279294246,
+            "time_index": 0,
+            "zero_objective": 488.0375447070493
+          },
+          {
+            "feasibility_margin": 158384479.22731885,
+            "feasible": true,
+            "final_objective": 437.8199162503587,
+            "gain_error_to_formal_target": 0.00014943683086258584,
+            "gain_error_to_persistent_target": 1.2824814634042641e-05,
+            "gamma": 12658.02148970065,
+            "gamma_factor": 1.4,
+            "label": "output_feedback_information_state_exact_inner_persistent_index_gamma_1.4_t1",
+            "n_function_evaluations": 23,
+            "n_iterations": 18,
+            "objective_ratio_to_reference": 1.0000000000009472,
+            "optimizer_status": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+            "reference_objective": 437.81991624994396,
+            "time_index": 1,
+            "zero_objective": 495.8785802329353
+          },
+          {
+            "feasibility_margin": 7520900.160344844,
+            "feasible": true,
+            "final_objective": 441.03023051588644,
+            "gain_error_to_formal_target": 0.01913336091120109,
+            "gain_error_to_persistent_target": 8.345185172475757e-06,
+            "gamma": 12658.02148970065,
+            "gamma_factor": 1.4,
+            "label": "output_feedback_information_state_exact_inner_persistent_index_gamma_1.4_t10",
+            "n_function_evaluations": 27,
+            "n_iterations": 22,
+            "objective_ratio_to_reference": 1.0000000000014857,
+            "optimizer_status": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+            "reference_objective": 441.0302305152312,
+            "time_index": 10,
+            "zero_objective": 648.0225764459698
+          },
+          {
+            "feasibility_margin": 7330367.174383151,
+            "feasible": true,
+            "final_objective": 441.03149052617425,
+            "gain_error_to_formal_target": 0.3095155342204651,
+            "gain_error_to_persistent_target": 1.90280262456176e-06,
+            "gamma": 12658.02148970065,
+            "gamma_factor": 1.4,
+            "label": "output_feedback_information_state_exact_inner_persistent_index_gamma_1.4_t30",
+            "n_function_evaluations": 27,
+            "n_iterations": 23,
+            "objective_ratio_to_reference": 1.000000000000794,
+            "optimizer_status": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+            "reference_objective": 441.03149052582404,
+            "time_index": 30,
+            "zero_objective": 2824.0451623768295
+          },
+          {
+            "feasibility_margin": 7422951.006031563,
+            "feasible": true,
+            "final_objective": 441.1024716400171,
+            "gain_error_to_formal_target": 0.0025902752824868004,
+            "gain_error_to_persistent_target": 0.00035479324768050117,
+            "gamma": 12658.02148970065,
+            "gamma_factor": 1.4,
+            "label": "output_feedback_information_state_exact_inner_persistent_index_gamma_1.4_t59",
+            "n_function_evaluations": 24,
+            "n_iterations": 19,
+            "objective_ratio_to_reference": 1.000000000001888,
+            "optimizer_status": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+            "reference_objective": 441.1024716391843,
+            "time_index": 59,
+            "zero_objective": 441.11313905075747
+          }
+        ],
+        "formal_target": "formal_time_indexed_information_state_exact_hidden_state_inner",
+        "formal_vs_persistent_reference_gain_relative_error": 0.3195750037159591,
+        "gamma": 12658.02148970065,
+        "gamma_factor": 1.4,
+        "label": "output_feedback_information_state_exact_inner_persistent_index_gamma_1.4",
+        "max_gain_error_to_formal_target": 0.3095155342204651,
+        "max_gain_error_to_persistent_target": 0.00035479324768050117,
+        "mean_gain_error_to_formal_target": 0.06628924338262723,
+        "mean_gain_error_to_persistent_target": 8.709514364642432e-05,
+        "min_feasibility_margin": 7330367.174383151,
+        "recovers_persistent_target": true,
+        "target": "cs_code_fidelity_persistent_index_exact_hidden_state_inner"
+      }
+    ],
+    "status": "cs_code_fidelity_target; control Hessian/cross terms remain tied to P[t+1] but the hidden-state Schur complement uses the released persistent P[0] slice"
+  },
   "output_feedback_information_state_numerical_minmax": {
     "fits": [
       {
