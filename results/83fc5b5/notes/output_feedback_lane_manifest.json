@@ -85,14 +85,6 @@
     "output_feedback_phase3_training": "4008843"
   },
   "issue": "83fc5b5",
-  "rerun_metadata": {
-    "discretization": "zoh",
-    "discretization_description": "Zero-order-hold discretization retained as a sensitivity/historical variant.",
-    "lane": "deterministic_analytical",
-    "lane_description": "Deterministic analytical lane: exact recursions and deterministic rollouts/audits with no sampled sensory, motor/process, or signal-dependent control noise.",
-    "materializer": "output_feedback_lane",
-    "phase_label_policy": "Phase 1 and Phase 3 reruns must report both discretization and lane. Euler deterministic analytical results are canonical after the Euler card lands; ZOH results remain sensitivity/historical unless explicitly promoted."
-  },
   "phase0a_deterministic_reference": {
     "issue": "cb98e58",
     "status": "preserved_as_full_augmented_true_state_replay",
@@ -113,29 +105,29 @@
       },
       "frontier": [
         {
-          "closed_loop_epsilon_energy": 5.615094989314044e-06,
-          "closed_loop_epsilon_l2": 0.0023696191654597252,
-          "delta_v_percent": 7.487741449616711,
-          "epsilon_on_nominal_energy": 2.5299496451124823e-06,
-          "epsilon_on_nominal_l2": 0.0015905815430566526,
+          "closed_loop_epsilon_energy": 5.421868381615368e-06,
+          "closed_loop_epsilon_l2": 0.0023284905801002004,
+          "delta_v_percent": 7.460371202249536,
+          "epsilon_on_nominal_energy": 2.4614862445624304e-06,
+          "epsilon_on_nominal_l2": 0.0015689124400559869,
           "factor": 1.05,
           "factor_key": "1p05",
-          "gamma": 9493.516117275487,
-          "hinf_peak_forward_velocity": 0.7709338997192813,
-          "nominal_total_cost": 4507.444127385286,
-          "terminal_position_error_m": 7.070682797671043e-06,
+          "gamma": 9625.172849747514,
+          "hinf_peak_forward_velocity": 0.7855454302704938,
+          "nominal_total_cost": 4580.631255161967,
+          "terminal_position_error_m": 6.551959065377899e-06,
           "time_to_peak_step": 16,
-          "worst_case_h_infinity_objective": 4730.069808050793,
-          "worst_case_total_cost_without_penalty": 5236.14062216855
+          "worst_case_h_infinity_objective": 4803.289292860973,
+          "worst_case_total_cost_without_penalty": 5305.592609058729
         }
       ],
-      "gamma_star": 9041.44392121475,
+      "gamma_star": 9166.831285473823,
       "issue": "cb98e58",
       "lqr": {
-        "peak_forward_velocity": 0.7172296015547458,
-        "terminal_position_error_m": 0.0030967011901701963,
+        "peak_forward_velocity": 0.7310094144305818,
+        "terminal_position_error_m": 0.0031107800086920224,
         "time_to_peak_step": 16,
-        "total_cost": 4288.752027096607
+        "total_cost": 4363.509943825159
       },
       "plant": {
         "bw_contract": "top physical 8x8 block is identity; lag rows are zero",
@@ -145,6 +137,7 @@
         ],
         "damping": 0.1,
         "delay_steps": 5,
+        "discretization": "euler",
         "disturbance_dim": 8,
         "dt": 0.01,
         "mass": 1.0,
@@ -168,6 +161,14 @@
       },
       "primary_gamma_factor": 1.05,
       "regeneration_command": "PYTHONPATH=src python scripts/materialize_analytical_game_card.py",
+      "rerun_metadata": {
+        "discretization": "euler",
+        "discretization_description": "Forward Euler C&S released-code discretization.",
+        "lane": "deterministic_analytical",
+        "lane_description": "Deterministic analytical lane: exact recursions and deterministic rollouts/audits with no sampled sensory, motor/process, or signal-dependent control noise.",
+        "materializer": "analytical_game_card",
+        "phase_label_policy": "Phase 1 and Phase 3 reruns must report both discretization and lane. Euler deterministic analytical results are canonical after the Euler card lands; ZOH results remain sensitivity/historical unless explicitly promoted."
+      },
       "task": {
         "duration_s": 0.6,
         "hold_free": true,
@@ -196,36 +197,36 @@
       "use_matlab_persistent_m_index": true
     },
     "hinf_cost": {
-      "control_stage": 2085.1096640143223,
+      "control_stage": 2066.5363597083187,
       "disturbance_energy": 0.0,
       "h_infinity_objective": null,
-      "state_stage": 2411.6752302416317,
-      "terminal_state": 0.00012246690517394456,
-      "total_without_disturbance_penalty": 4496.785016722859
+      "state_stage": 2503.7514894999167,
+      "terminal_state": 7.421192002041098e-05,
+      "total_without_disturbance_penalty": 4570.2879234201555
     },
     "hinf_rollout": {
-      "control_effort": 2085.1096640143223,
-      "estimation_error_final_l2": 2.051027799957185e-06,
-      "estimation_error_rms": 4.576342308576999e-06,
-      "peak_forward_velocity": 0.7704641650095194,
-      "terminal_position_error_m": 1.224533756796764e-05,
-      "time_to_peak_step": 15
+      "control_effort": 2066.5363597083187,
+      "estimation_error_final_l2": 1.5586451076151018e-06,
+      "estimation_error_rms": 4.533064580549075e-06,
+      "peak_forward_velocity": 0.7852027478892613,
+      "terminal_position_error_m": 9.631640582374867e-06,
+      "time_to_peak_step": 16
     },
     "initial_condition": "C&S-compatible repeated physical initial state in every delay-history block.",
     "lqr_cost": {
-      "control_stage": 1689.2634969089427,
+      "control_stage": 1681.322504233146,
       "disturbance_energy": 0.0,
       "h_infinity_objective": null,
-      "state_stage": 2591.87935186074,
-      "terminal_state": 7.6091795325569445,
-      "total_without_disturbance_penalty": 4288.75202830224
+      "state_stage": 2674.5249987326333,
+      "terminal_state": 7.66244206501191,
+      "total_without_disturbance_penalty": 4363.509945030792
     },
     "lqr_rollout": {
-      "control_effort": 1689.2634969089427,
+      "control_effort": 1681.322504233146,
       "estimation_error_final_l2": 0.0,
       "estimation_error_rms": 0.0,
-      "peak_forward_velocity": 0.7172296015547458,
-      "terminal_position_error_m": 0.0030967011901701924,
+      "peak_forward_velocity": 0.7310094144305818,
+      "terminal_position_error_m": 0.0031107800086920268,
       "time_to_peak_step": 16
     },
     "observation": "H selects delayed x_(t-5) physical block; gain acts on x_hat_aug.",
@@ -233,238 +234,238 @@
     "status": "canonical_for_cs2019_information_structure"
   },
   "phase1_output_feedback_adversary_equivalence": {
-    "budget": 3.154052119982121e-06,
-    "budget_l2": 0.0017759651235263942,
+    "budget": 3.0673628724462454e-06,
+    "budget_l2": 0.0017513888410191055,
     "deterministic_phase1_issue": "a7dad8a",
     "exact_fixed_controller_audits": [
       {
         "boundary_active": true,
-        "budget": 3.154052119982121e-06,
-        "budget_l2": 0.0017759651235263942,
+        "budget": 3.0673628724462454e-06,
+        "budget_l2": 0.0017513888410191055,
         "cost": {
-          "control_stage": 1678.39655866092,
-          "disturbance_energy": 3.154052119982113e-06,
+          "control_stage": 1670.9542485968732,
+          "disturbance_energy": 3.0673628724462454e-06,
           "h_infinity_objective": null,
-          "state_stage": 3877.4192364416413,
-          "terminal_state": 153.33911787009347,
-          "total_without_disturbance_penalty": 5709.1549129726545
+          "state_stage": 3948.8000161428326,
+          "terminal_state": 151.48842865447884,
+          "total_without_disturbance_penalty": 5771.242693394184
         },
-        "epsilon_energy": 3.154052119982113e-06,
+        "epsilon_energy": 3.0673628724462454e-06,
         "estimator_kind": "kalman",
-        "kkt_lambda": 349807443.77118766,
+        "kkt_lambda": 355509603.11612666,
         "label": "analytical_lqr_kalman",
-        "max_eigenvalue": 253196508.5091352,
-        "quadratic_rollout_abs_error": 1.000444171950221e-11,
-        "quadratic_total": 5709.1549129726645,
+        "max_eigenvalue": 256128543.9390701,
+        "quadratic_rollout_abs_error": 1.8189894035458565e-12,
+        "quadratic_total": 5771.242693394182,
         "rollout": {
-          "control_effort": 1678.39655866092,
-          "estimation_error_final_l2": 0.016424349986981477,
-          "estimation_error_rms": 0.0015752916817586924,
-          "peak_forward_velocity": 0.7182551031934982,
-          "terminal_position_error_m": 0.014009851531326334,
+          "control_effort": 1670.9542485968732,
+          "estimation_error_final_l2": 0.01615088970178997,
+          "estimation_error_rms": 0.001553776843369552,
+          "peak_forward_velocity": 0.731903285873305,
+          "terminal_position_error_m": 0.013930038640667691,
           "time_to_peak_step": 16
         },
-        "rollout_total": 5709.1549129726545,
+        "rollout_total": 5771.242693394184,
         "total_cost_ratio_to_lqr_exact": 1.0,
-        "total_cost_ratio_to_riccati": 1.1545893634244107
+        "total_cost_ratio_to_riccati": 1.1500599541004801
       },
       {
         "boundary_active": true,
-        "budget": 3.154052119982121e-06,
-        "budget_l2": 0.0017759651235263942,
+        "budget": 3.0673628724462454e-06,
+        "budget_l2": 0.0017513888410191055,
         "cost": {
-          "control_stage": 2043.5336644080217,
-          "disturbance_energy": 3.1540521199821127e-06,
-          "h_infinity_objective": 4721.134755349977,
-          "state_stage": 2930.39262622284,
-          "terminal_state": 31.47324156916514,
-          "total_without_disturbance_penalty": 5005.399532200026
+          "control_stage": 2026.5866885854907,
+          "disturbance_energy": 3.0673628724462356e-06,
+          "h_infinity_objective": 4794.365469696248,
+          "state_stage": 3020.914608134497,
+          "terminal_state": 31.036792886405742,
+          "total_without_disturbance_penalty": 5078.538089606393
         },
-        "epsilon_energy": 3.1540521199821127e-06,
+        "epsilon_energy": 3.0673628724462356e-06,
         "estimator_kind": "robust",
-        "kkt_lambda": 129224932.60267718,
+        "kkt_lambda": 132494811.18356094,
         "label": "analytical_hinf_robust",
-        "max_eigenvalue": 127313398.72994342,
-        "quadratic_rollout_abs_error": 1.1823431123048067e-11,
-        "quadratic_total": 5005.399532200038,
+        "max_eigenvalue": 130341870.45056471,
+        "quadratic_rollout_abs_error": 6.366462912410498e-12,
+        "quadratic_total": 5078.5380896064,
         "rollout": {
-          "control_effort": 2043.5336644080217,
-          "estimation_error_final_l2": 4.6769093008954656e-05,
-          "estimation_error_rms": 0.0003420856176009402,
-          "peak_forward_velocity": 0.7760654362630566,
-          "terminal_position_error_m": 0.006376184239019367,
+          "control_effort": 2026.5866885854907,
+          "estimation_error_final_l2": 4.673717045803517e-05,
+          "estimation_error_rms": 0.0003374864190375666,
+          "peak_forward_velocity": 0.7904326997163701,
+          "terminal_position_error_m": 0.006336027637544095,
           "time_to_peak_step": 16
         },
-        "rollout_total": 5005.399532200026,
-        "total_cost_ratio_to_lqr_exact": 0.8767321273462879,
-        "total_cost_ratio_to_riccati": 1.0122655888064798
+        "rollout_total": 5078.538089606393,
+        "total_cost_ratio_to_lqr_exact": 0.8799730594277959,
+        "total_cost_ratio_to_riccati": 1.0120217763351902
       },
       {
         "boundary_active": true,
-        "budget": 3.154052119982121e-06,
-        "budget_l2": 0.0017759651235263942,
+        "budget": 3.0673628724462454e-06,
+        "budget_l2": 0.0017513888410191055,
         "cost": {
-          "control_stage": 1776.3655133716984,
-          "disturbance_energy": 3.1540521199821183e-06,
+          "control_stage": 1955.0392978340367,
+          "disturbance_energy": 3.0673628724462424e-06,
           "h_infinity_objective": null,
-          "state_stage": 4564.109271570692,
-          "terminal_state": 216.40681954424568,
-          "total_without_disturbance_penalty": 6556.881604486636
+          "state_stage": 5156.482526843916,
+          "terminal_state": 248.47813130592857,
+          "total_without_disturbance_penalty": 7359.999955983882
         },
-        "epsilon_energy": 3.1540521199821183e-06,
+        "epsilon_energy": 3.0673628724462424e-06,
         "estimator_kind": "kalman",
-        "kkt_lambda": 481858349.12212914,
+        "kkt_lambda": 500198200.1977049,
         "label": "adam_lqr_fit_kalman",
-        "max_eigenvalue": 365201736.06978744,
-        "quadratic_rollout_abs_error": 1.6370904631912708e-11,
-        "quadratic_total": 6556.88160448662,
+        "max_eigenvalue": 365085072.1526049,
+        "quadratic_rollout_abs_error": 1.8189894035458565e-12,
+        "quadratic_total": 7359.999955983883,
         "rollout": {
-          "control_effort": 1776.3655133716986,
-          "estimation_error_final_l2": 0.015038011187254183,
-          "estimation_error_rms": 0.0015234199315444302,
-          "peak_forward_velocity": 0.7261548636377998,
-          "terminal_position_error_m": 0.016634646740207742,
-          "time_to_peak_step": 16
+          "control_effort": 1955.0392978340367,
+          "estimation_error_final_l2": 0.015214671106451976,
+          "estimation_error_rms": 0.0015220661775542693,
+          "peak_forward_velocity": 0.7770950182955246,
+          "terminal_position_error_m": 0.017874914204339988,
+          "time_to_peak_step": 17
         },
-        "rollout_total": 6556.881604486636,
-        "total_cost_ratio_to_lqr_exact": 1.1484854946898937,
-        "total_cost_ratio_to_riccati": 1.3260291362161738
+        "rollout_total": 7359.999955983882,
+        "total_cost_ratio_to_lqr_exact": 1.2752885898228128,
+        "total_cost_ratio_to_riccati": 1.4666583370764903
       },
       {
         "boundary_active": true,
-        "budget": 3.154052119982121e-06,
-        "budget_l2": 0.0017759651235263942,
+        "budget": 3.0673628724462454e-06,
+        "budget_l2": 0.0017513888410191055,
         "cost": {
-          "control_stage": 1679.519141115501,
-          "disturbance_energy": 3.1540521199821216e-06,
+          "control_stage": 1814.2588619084095,
+          "disturbance_energy": 3.0673628724462437e-06,
           "h_infinity_objective": null,
-          "state_stage": 4233.521789299266,
-          "terminal_state": 209.46883208116427,
-          "total_without_disturbance_penalty": 6122.509762495932
+          "state_stage": 4422.159777724486,
+          "terminal_state": 195.38842235606506,
+          "total_without_disturbance_penalty": 6431.80706198896
         },
-        "epsilon_energy": 3.1540521199821216e-06,
+        "epsilon_energy": 3.0673628724462437e-06,
         "estimator_kind": "kalman",
-        "kkt_lambda": 471459359.78178215,
+        "kkt_lambda": 449632780.9689229,
         "label": "lbfgsb_after_adam_lqr_fit_kalman",
-        "max_eigenvalue": 363948242.5594808,
-        "quadratic_rollout_abs_error": 5.729816621169448e-11,
-        "quadratic_total": 6122.509762495989,
+        "max_eigenvalue": 363965720.7623655,
+        "quadratic_rollout_abs_error": 3.637978807091713e-12,
+        "quadratic_total": 6431.807061988957,
         "rollout": {
-          "control_effort": 1679.5191411155008,
-          "estimation_error_final_l2": 0.015063701049514771,
-          "estimation_error_rms": 0.0015244757868078157,
-          "peak_forward_velocity": 0.7163711080449955,
-          "terminal_position_error_m": 0.016394046808346132,
+          "control_effort": 1814.258861908409,
+          "estimation_error_final_l2": 0.015092913503829321,
+          "estimation_error_rms": 0.0015132400805779184,
+          "peak_forward_velocity": 0.7675740323681044,
+          "terminal_position_error_m": 0.015835497021415988,
           "time_to_peak_step": 16
         },
-        "rollout_total": 6122.509762495932,
-        "total_cost_ratio_to_lqr_exact": 1.0724021078117936,
-        "total_cost_ratio_to_riccati": 1.238184066993415
+        "rollout_total": 6431.80706198896,
+        "total_cost_ratio_to_lqr_exact": 1.1144579085802204,
+        "total_cost_ratio_to_riccati": 1.2816934111886853
       }
     ],
     "open_loop": [
       {
         "best_cost": {
-          "control_stage": 2011.4733132950964,
-          "disturbance_energy": 3.154052119982121e-06,
-          "h_infinity_objective": 4660.484494042073,
-          "state_stage": 2932.533719809553,
-          "terminal_state": 0.7422377874729699,
-          "total_without_disturbance_penalty": 4944.749270892123
+          "control_stage": 1996.7391113184362,
+          "disturbance_energy": 3.0673628724462454e-06,
+          "h_infinity_objective": 4734.037668011898,
+          "state_stage": 3020.653913721294,
+          "terminal_state": 0.8172628823153536,
+          "total_without_disturbance_penalty": 5018.210287922045
         },
         "best_energies": [
-          3.154052119982121e-06,
-          3.154052119982121e-06,
-          3.1540521199821233e-06,
-          3.154052119982118e-06
+          3.0673628724462454e-06,
+          3.067362872446247e-06,
+          3.0673628724462467e-06,
+          3.067362872446248e-06
         ],
         "best_objectives": [
-          4944.74927089212,
-          4659.326780742417,
-          4673.166662226947,
-          4663.464157859888
+          5018.210287922041,
+          4734.783661683294,
+          4746.289048848927,
+          4739.08799855628
         ],
         "best_restart_idx": 0,
         "epsilon_l2_distance_to_riccati": 0.0,
         "final_energies": [
-          3.1540521199821195e-06,
-          3.1540521199821216e-06,
-          3.154052119982121e-06,
-          3.154052119982119e-06
+          3.067362872446247e-06,
+          3.067362872446243e-06,
+          3.0673628724462454e-06,
+          3.0673628724462445e-06
         ],
         "final_objectives": [
-          4686.8627964689595,
-          4649.779196728911,
-          4651.927477407188,
-          4651.504446266778
+          4761.583709195282,
+          4723.525128920847,
+          4727.330467883931,
+          4726.6418913243815
         ],
         "initial_objectives": [
-          4944.749270892123,
-          4488.044601146053,
-          4513.506249706924,
-          4489.844010789289
+          5018.210287922045,
+          4561.385421811323,
+          4587.048111494817,
+          4563.31314995138
         ],
         "n_restarts": 4,
         "n_steps": 50,
         "rollout": {
-          "control_effort": 2011.4733132950964,
-          "estimation_error_final_l2": 7.555058301902651e-05,
-          "estimation_error_rms": 0.00034860898761351726,
-          "peak_forward_velocity": 0.7789413585601977,
-          "terminal_position_error_m": 0.0009848152081807227,
+          "control_effort": 1996.7391113184362,
+          "estimation_error_final_l2": 7.70431569456997e-05,
+          "estimation_error_rms": 0.0003437163866189503,
+          "peak_forward_velocity": 0.7930014746647199,
+          "terminal_position_error_m": 0.0010337834597044238,
           "time_to_peak_step": 16
         },
         "total_cost_ratio_to_riccati": 1.0
       },
       {
         "best_cost": {
-          "control_stage": 2011.4733132950964,
-          "disturbance_energy": 3.154052119982121e-06,
-          "h_infinity_objective": 4660.484494042073,
-          "state_stage": 2932.533719809553,
-          "terminal_state": 0.7422377874729699,
-          "total_without_disturbance_penalty": 4944.749270892123
+          "control_stage": 1996.7391113184362,
+          "disturbance_energy": 3.0673628724462454e-06,
+          "h_infinity_objective": 4734.037668011898,
+          "state_stage": 3020.653913721294,
+          "terminal_state": 0.8172628823153536,
+          "total_without_disturbance_penalty": 5018.210287922045
         },
         "best_energies": [
-          3.154052119982121e-06,
-          3.1540521199821216e-06,
-          3.154052119982119e-06,
-          3.1540521199821183e-06
+          3.0673628724462454e-06,
+          3.067362872446247e-06,
+          3.0673628724462462e-06,
+          3.0673628724462454e-06
         ],
         "best_objectives": [
-          4944.74927089212,
-          4662.859426658762,
-          4662.948156773384,
-          4668.577615966381
+          5018.210287922041,
+          4735.717029244285,
+          4738.234780834926,
+          4742.586480244661
         ],
         "best_restart_idx": 0,
         "epsilon_l2_distance_to_riccati": 0.0,
         "final_energies": [
-          3.1540521199821216e-06,
-          3.15405211998212e-06,
-          3.15405211998212e-06,
-          3.154052119982121e-06
+          3.0673628724462454e-06,
+          3.0673628724462445e-06,
+          3.0673628724462462e-06,
+          3.0673628724462462e-06
         ],
         "final_objectives": [
-          4674.311092026244,
-          4645.502113555959,
-          4655.364379977213,
-          4642.853930228761
+          4750.061348169079,
+          4720.411014572592,
+          4729.309157830072,
+          4716.810098759062
         ],
         "initial_objectives": [
-          4944.749270892123,
-          4506.47283055593,
-          4527.704570864694,
-          4497.817189792316
+          5018.210287922045,
+          4579.972449012984,
+          4601.274925750873,
+          4571.418235932279
         ],
         "n_restarts": 4,
         "n_steps": 200,
         "rollout": {
-          "control_effort": 2011.4733132950964,
-          "estimation_error_final_l2": 7.555058301902651e-05,
-          "estimation_error_rms": 0.00034860898761351726,
-          "peak_forward_velocity": 0.7789413585601977,
-          "terminal_position_error_m": 0.0009848152081807227,
+          "control_effort": 1996.7391113184362,
+          "estimation_error_final_l2": 7.70431569456997e-05,
+          "estimation_error_rms": 0.0003437163866189503,
+          "peak_forward_velocity": 0.7930014746647199,
+          "terminal_position_error_m": 0.0010337834597044238,
           "time_to_peak_step": 16
         },
         "total_cost_ratio_to_riccati": 1.0
@@ -473,19 +474,19 @@
     "open_loop_interpretation": "The PGD rows include the Riccati epsilon as an initial candidate. They are retained as diagnostics only; exact_fixed_controller_audits is the strengthened evidence-bearing Phase 1 audit.",
     "riccati_feedback": {
       "cost": {
-        "control_stage": 2011.4733132950964,
-        "disturbance_energy": 3.154052119982121e-06,
-        "h_infinity_objective": 4660.484494042073,
-        "state_stage": 2932.533719809553,
-        "terminal_state": 0.7422377874729699,
-        "total_without_disturbance_penalty": 4944.749270892123
+        "control_stage": 1996.7391113184362,
+        "disturbance_energy": 3.0673628724462454e-06,
+        "h_infinity_objective": 4734.037668011898,
+        "state_stage": 3020.653913721294,
+        "terminal_state": 0.8172628823153536,
+        "total_without_disturbance_penalty": 5018.210287922045
       },
       "rollout": {
-        "control_effort": 2011.4733132950964,
-        "estimation_error_final_l2": 7.555058301902651e-05,
-        "estimation_error_rms": 0.00034860898761351726,
-        "peak_forward_velocity": 0.7789413585601977,
-        "terminal_position_error_m": 0.0009848152081807227,
+        "control_effort": 1996.7391113184362,
+        "estimation_error_final_l2": 7.70431569456997e-05,
+        "estimation_error_rms": 0.0003437163866189503,
+        "peak_forward_velocity": 0.7930014746647199,
+        "terminal_position_error_m": 0.0010337834597044238,
         "time_to_peak_step": 16
       }
     }
@@ -495,311 +496,319 @@
     "deterministic_phase3_issue": "6f5c79e",
     "fitted_controller_replays": [
       {
-        "clean_action_mismatch_ratio": 0.45198345115561234,
-        "clean_action_mismatch_rms_vs_lqr_reference": 1.6958233454844593,
-        "clean_action_reference_rms": 3.7519589293560403,
+        "clean_action_mismatch_ratio": 0.5089877337660155,
+        "clean_action_mismatch_rms_vs_lqr_reference": 1.905207165581663,
+        "clean_action_reference_rms": 3.74312982256955,
         "clean_cost": {
-          "control_stage": 1777.0882563899665,
+          "control_stage": 1948.2880570930483,
           "disturbance_energy": 0.0,
           "h_infinity_objective": null,
-          "state_stage": 2874.505071679046,
-          "terminal_state": 10.24712896557273,
-          "total_without_disturbance_penalty": 4661.840457034585
+          "state_stage": 3388.275425740657,
+          "terminal_state": 21.439578366994397,
+          "total_without_disturbance_penalty": 5358.003061200699
         },
-        "clean_cost_ratio_to_lqr_reference": 1.086992305983248,
+        "clean_cost_ratio_to_lqr_reference": 1.2279112752573067,
         "clean_rollout": {
-          "control_effort": 1777.0882563899668,
+          "control_effort": 1948.2880570930477,
           "estimation_error_final_l2": 0.0,
           "estimation_error_rms": 0.0,
-          "peak_forward_velocity": 0.7268122848478177,
-          "terminal_position_error_m": 0.0035371567697734738,
-          "time_to_peak_step": 16
+          "peak_forward_velocity": 0.7762851244155424,
+          "terminal_position_error_m": 0.005186129957417672,
+          "time_to_peak_step": 17
         },
         "label": "adam_lqr_fit",
         "source_artifact": "_artifacts/6f5c79e/linear_round_trip/linear_round_trip.npz",
-        "under_epsilon_cost_ratio_to_lqr_reference": 1.1470836972395262,
+        "under_epsilon_cost_ratio_to_lqr_reference": 1.1023267717813872,
         "under_riccati_epsilon_cost": {
-          "control_stage": 1776.6570974904157,
-          "disturbance_energy": 3.154052119982121e-06,
-          "h_infinity_objective": 5406.224021410037,
-          "state_stage": 3816.9886439699417,
-          "terminal_state": 96.84305679972888,
-          "total_without_disturbance_penalty": 5690.488798260087
+          "control_stage": 1946.029005923104,
+          "disturbance_energy": 3.0673628724462454e-06,
+          "h_infinity_objective": 5256.09472045146,
+          "state_stage": 3564.835866140642,
+          "terminal_state": 29.402468297861088,
+          "total_without_disturbance_penalty": 5540.267340361606
         },
         "under_riccati_epsilon_rollout": {
-          "control_effort": 1776.657097490415,
-          "estimation_error_final_l2": 0.0034550307000802364,
-          "estimation_error_rms": 0.0010996831899869196,
-          "peak_forward_velocity": 0.7267285180401575,
-          "terminal_position_error_m": 0.011025184937421792,
-          "time_to_peak_step": 16
+          "control_effort": 1946.0290059231047,
+          "estimation_error_final_l2": 0.003256093736093542,
+          "estimation_error_rms": 0.0010757265555393861,
+          "peak_forward_velocity": 0.7761928048066834,
+          "terminal_position_error_m": 0.006058603357894692,
+          "time_to_peak_step": 17
         }
       },
       {
-        "clean_action_mismatch_ratio": 0.03817765431715157,
-        "clean_action_mismatch_rms_vs_lqr_reference": 0.143240991017105,
-        "clean_action_reference_rms": 3.7519589293560403,
+        "clean_action_mismatch_ratio": 0.10793336546957386,
+        "clean_action_mismatch_rms_vs_lqr_reference": 0.40400859913946036,
+        "clean_action_reference_rms": 3.74312982256955,
         "clean_cost": {
-          "control_stage": 1680.4459250293044,
+          "control_stage": 1810.8975257466063,
           "disturbance_energy": 0.0,
           "h_infinity_objective": null,
-          "state_stage": 2604.400785178345,
-          "terminal_state": 8.556812892197572,
-          "total_without_disturbance_penalty": 4293.403523099847
+          "state_stage": 2956.289084384389,
+          "terminal_state": 7.269774643965556,
+          "total_without_disturbance_penalty": 4774.4563847749605
         },
-        "clean_cost_ratio_to_lqr_reference": 1.0010845800286214,
+        "clean_cost_ratio_to_lqr_reference": 1.0941779541976657,
         "clean_rollout": {
-          "control_effort": 1680.4459250293044,
+          "control_effort": 1810.8975257466063,
           "estimation_error_final_l2": 0.0,
           "estimation_error_rms": 0.0,
-          "peak_forward_velocity": 0.7170149487049996,
-          "terminal_position_error_m": 0.003265052497943954,
+          "peak_forward_velocity": 0.7666073563048765,
+          "terminal_position_error_m": 0.002990046883173058,
           "time_to_peak_step": 16
         },
         "label": "lbfgsb_after_adam_lqr_fit",
         "source_artifact": "_artifacts/6f5c79e/linear_round_trip/linear_round_trip.npz",
-        "under_epsilon_cost_ratio_to_lqr_reference": 1.0627963885927483,
+        "under_epsilon_cost_ratio_to_lqr_reference": 0.9807069201196496,
         "under_riccati_epsilon_cost": {
-          "control_stage": 1679.9204216684338,
-          "disturbance_energy": 3.154052119982121e-06,
-          "h_infinity_objective": 4988.088895922479,
-          "state_stage": 3500.9044857696535,
-          "terminal_state": 91.5287653344425,
-          "total_without_disturbance_penalty": 5272.3536727725295
+          "control_stage": 1808.2976374480636,
+          "disturbance_energy": 3.0673628724462454e-06,
+          "h_infinity_objective": 4644.836326525074,
+          "state_stage": 3103.61644280212,
+          "terminal_state": 17.094866185036267,
+          "total_without_disturbance_penalty": 4929.00894643522
         },
         "under_riccati_epsilon_rollout": {
-          "control_effort": 1679.920421668434,
-          "estimation_error_final_l2": 0.003455030700080277,
-          "estimation_error_rms": 0.0010996831899869326,
-          "peak_forward_velocity": 0.7169391580992045,
-          "terminal_position_error_m": 0.010759390225369843,
+          "control_effort": 1808.297637448064,
+          "estimation_error_final_l2": 0.0032560937360935284,
+          "estimation_error_rms": 0.0010757265555393978,
+          "peak_forward_velocity": 0.7664914253599888,
+          "terminal_position_error_m": 0.004654627541367117,
           "time_to_peak_step": 16
         }
       }
     ],
     "hinf_under_riccati_epsilon": {
       "cost": {
-        "control_stage": 2011.4733132950964,
-        "disturbance_energy": 3.154052119982121e-06,
-        "h_infinity_objective": 4660.484494042073,
-        "state_stage": 2932.533719809553,
-        "terminal_state": 0.7422377874729699,
-        "total_without_disturbance_penalty": 4944.749270892123
+        "control_stage": 1996.7391113184362,
+        "disturbance_energy": 3.0673628724462454e-06,
+        "h_infinity_objective": 4734.037668011898,
+        "state_stage": 3020.653913721294,
+        "terminal_state": 0.8172628823153536,
+        "total_without_disturbance_penalty": 5018.210287922045
       },
       "rollout": {
-        "control_effort": 2011.4733132950964,
-        "estimation_error_final_l2": 7.555058301902651e-05,
-        "estimation_error_rms": 0.00034860898761351726,
-        "peak_forward_velocity": 0.7789413585601977,
-        "terminal_position_error_m": 0.0009848152081807227,
+        "control_effort": 1996.7391113184362,
+        "estimation_error_final_l2": 7.70431569456997e-05,
+        "estimation_error_rms": 0.0003437163866189503,
+        "peak_forward_velocity": 0.7930014746647199,
+        "terminal_position_error_m": 0.0010337834597044238,
         "time_to_peak_step": 16
       }
     },
-    "hinf_under_riccati_epsilon_vs_clean_lqr_cost_ratio": 1.1529576059097937,
-    "hinf_vs_lqr_cost_ratio_under_riccati_epsilon": 0.9967581831127864,
-    "hinf_vs_lqr_peak_velocity_delta_percent": 8.054142120639389,
+    "hinf_under_riccati_epsilon_vs_clean_lqr_cost_ratio": 1.1500398420397397,
+    "hinf_vs_lqr_cost_ratio_under_riccati_epsilon": 0.9984549854672186,
+    "hinf_vs_lqr_peak_velocity_delta_percent": 7.990517838859219,
     "interpretation": "The linear gate now evaluates controllers through x_hat_aug. The full fitted-controller certificate from d01c35a remains the deterministic Phase 0A check; this lane additionally replays the fitted LQR controllers through the C&S output-feedback estimator dynamics when the Phase 3 artifact is available.",
     "lqr_comparator_scope": "simplified delayed Kalman baseline, not a full extLQG parity implementation with signal-dependent estimator noise terms",
     "lqr_reference": {
       "cost": {
-        "control_stage": 1689.2634969089427,
+        "control_stage": 1681.322504233146,
         "disturbance_energy": 0.0,
         "h_infinity_objective": null,
-        "state_stage": 2591.87935186074,
-        "terminal_state": 7.6091795325569445,
-        "total_without_disturbance_penalty": 4288.75202830224
+        "state_stage": 2674.5249987326333,
+        "terminal_state": 7.66244206501191,
+        "total_without_disturbance_penalty": 4363.509945030792
       },
       "rollout": {
-        "control_effort": 1689.2634969089427,
+        "control_effort": 1681.322504233146,
         "estimation_error_final_l2": 0.0,
         "estimation_error_rms": 0.0,
-        "peak_forward_velocity": 0.7172296015547458,
-        "terminal_position_error_m": 0.0030967011901701924,
+        "peak_forward_velocity": 0.7310094144305818,
+        "terminal_position_error_m": 0.0031107800086920268,
         "time_to_peak_step": 16
       }
     },
     "lqr_under_riccati_epsilon": {
       "cost": {
-        "control_stage": 1673.1555681617738,
-        "disturbance_energy": 3.154052119982121e-06,
-        "h_infinity_objective": 4676.566600977332,
-        "state_stage": 3246.6722641997867,
-        "terminal_state": 41.00354546582229,
-        "total_without_disturbance_penalty": 4960.831377827382
+        "control_stage": 1665.888889256675,
+        "disturbance_energy": 3.0673628724462454e-06,
+        "h_infinity_objective": 4741.802873190141,
+        "state_stage": 3320.0630631472613,
+        "terminal_state": 40.02354069635201,
+        "total_without_disturbance_penalty": 5025.975493100288
       },
       "rollout": {
-        "control_effort": 1673.1555681617738,
-        "estimation_error_final_l2": 0.003455030700080234,
-        "estimation_error_rms": 0.0010996831899869211,
-        "peak_forward_velocity": 0.720880609732232,
-        "terminal_position_error_m": 0.007154970002897304,
+        "control_effort": 1665.888889256675,
+        "estimation_error_final_l2": 0.0032560937360935046,
+        "estimation_error_rms": 0.0010757265555393753,
+        "peak_forward_velocity": 0.7343250968089783,
+        "terminal_position_error_m": 0.007075641187756276,
         "time_to_peak_step": 16
       }
     },
     "output_feedback_training_exact_audits": [
       {
         "cost": {
-          "control_stage": 1776.5206410336768,
-          "disturbance_energy": 3.154052119982119e-06,
+          "control_stage": 1941.314901486746,
+          "disturbance_energy": 3.067362872446238e-06,
           "h_infinity_objective": null,
-          "state_stage": 4562.006416603008,
-          "terminal_state": 215.4645257154159,
-          "total_without_disturbance_penalty": 6553.991583352101
+          "state_stage": 5105.078373040882,
+          "terminal_state": 226.31535883559584,
+          "total_without_disturbance_penalty": 7272.708633363224
         },
-        "epsilon_energy": 3.154052119982119e-06,
+        "epsilon_energy": 3.067362872446238e-06,
         "estimator_kind": "kalman",
         "label": "of_adam_lqr_fit_exact_kalman",
-        "quadratic_rollout_abs_error": 9.094947017729282e-13,
+        "quadratic_rollout_abs_error": 4.547473508864641e-12,
         "rollout": {
-          "control_effort": 1776.5206410336766,
-          "estimation_error_final_l2": 0.015037040481700565,
-          "estimation_error_rms": 0.001523359872719992,
-          "peak_forward_velocity": 0.7264831024789387,
-          "terminal_position_error_m": 0.016596347765645163,
-          "time_to_peak_step": 16
+          "control_effort": 1941.3149014867452,
+          "estimation_error_final_l2": 0.014637362963731632,
+          "estimation_error_rms": 0.0014943054360294528,
+          "peak_forward_velocity": 0.7555707719771115,
+          "terminal_position_error_m": 0.017015144325255523,
+          "time_to_peak_step": 17
         },
-        "total_cost_ratio_to_hinf_exact": 1.3093843041279505,
-        "total_cost_ratio_to_lqr_exact": 1.147979286471937
+        "total_cost_ratio_to_hinf_exact": 1.432047669042271,
+        "total_cost_ratio_to_lqr_exact": 1.260163368573571
       },
       {
         "cost": {
-          "control_stage": 1686.2157259899986,
-          "disturbance_energy": 3.15405211998212e-06,
+          "control_stage": 1951.6407618008243,
+          "disturbance_energy": 3.0673628724462454e-06,
           "h_infinity_objective": null,
-          "state_stage": 5916.876280341572,
-          "terminal_state": 225.7240858121394,
-          "total_without_disturbance_penalty": 7828.81609214371
+          "state_stage": 6086.655407007174,
+          "terminal_state": 206.2713983370897,
+          "total_without_disturbance_penalty": 8244.567567145088
         },
-        "epsilon_energy": 3.15405211998212e-06,
+        "epsilon_energy": 3.0673628724462454e-06,
         "estimator_kind": "kalman",
         "label": "of_lbfgsb_zero_lqr_fit_exact_kalman",
-        "quadratic_rollout_abs_error": 1.0913936421275139e-11,
+        "quadratic_rollout_abs_error": 7.275957614183426e-11,
         "rollout": {
-          "control_effort": 1686.215725989998,
-          "estimation_error_final_l2": 0.015132233962087668,
-          "estimation_error_rms": 0.0015339947654059228,
-          "peak_forward_velocity": 0.659271940139608,
-          "terminal_position_error_m": 0.01697752636253737,
-          "time_to_peak_step": 21
+          "control_effort": 1951.640761800824,
+          "estimation_error_final_l2": 0.01511571290188982,
+          "estimation_error_rms": 0.0015250259666259587,
+          "peak_forward_velocity": 0.6587947084331186,
+          "terminal_position_error_m": 0.016117938723735434,
+          "time_to_peak_step": 23
         },
-        "total_cost_ratio_to_hinf_exact": 1.5640741646656737,
-        "total_cost_ratio_to_lqr_exact": 1.3712740697147043
+        "total_cost_ratio_to_hinf_exact": 1.6234135536008305,
+        "total_cost_ratio_to_lqr_exact": 1.428560191478673
       },
       {
         "cost": {
-          "control_stage": 1683.9685641189076,
-          "disturbance_energy": 3.154052119982123e-06,
+          "control_stage": 1835.6393210698013,
+          "disturbance_energy": 3.0673628724462433e-06,
           "h_infinity_objective": null,
-          "state_stage": 4187.165986972932,
-          "terminal_state": 202.2498955019908,
-          "total_without_disturbance_penalty": 6073.384446593831
+          "state_stage": 4497.978432431066,
+          "terminal_state": 191.49343829829306,
+          "total_without_disturbance_penalty": 6525.11119179916
         },
-        "epsilon_energy": 3.154052119982123e-06,
+        "epsilon_energy": 3.0673628724462433e-06,
         "estimator_kind": "kalman",
         "label": "of_lbfgsb_after_of_adam_lqr_fit_exact_kalman",
-        "quadratic_rollout_abs_error": 4.3655745685100555e-11,
+        "quadratic_rollout_abs_error": 1.6370904631912708e-11,
         "rollout": {
-          "control_effort": 1683.9685641189078,
-          "estimation_error_final_l2": 0.015071819458445344,
-          "estimation_error_rms": 0.0015247681516690388,
-          "peak_forward_velocity": 0.7185699620323068,
-          "terminal_position_error_m": 0.01610409879286337,
-          "time_to_peak_step": 16
+          "control_effort": 1835.6393210698016,
+          "estimation_error_final_l2": 0.01466751916220057,
+          "estimation_error_rms": 0.001495427032486631,
+          "peak_forward_velocity": 0.7487547025925158,
+          "terminal_position_error_m": 0.01565153339786551,
+          "time_to_peak_step": 17
         },
-        "total_cost_ratio_to_hinf_exact": 1.2133665669490308,
-        "total_cost_ratio_to_lqr_exact": 1.0637974514920858
+        "total_cost_ratio_to_hinf_exact": 1.2848404553966597,
+        "total_cost_ratio_to_lqr_exact": 1.130624986412001
       },
       {
         "cost": {
-          "control_stage": 1677.0747932332572,
-          "disturbance_energy": 3.1540521199821216e-06,
+          "control_stage": 1670.357147936784,
+          "disturbance_energy": 3.0673628724462437e-06,
           "h_infinity_objective": null,
-          "state_stage": 3879.915614624613,
-          "terminal_state": 153.43953748683185,
-          "total_without_disturbance_penalty": 5710.429945344702
+          "state_stage": 3950.4041435256354,
+          "terminal_state": 151.58689961270704,
+          "total_without_disturbance_penalty": 5772.348191075127
         },
-        "epsilon_energy": 3.1540521199821216e-06,
+        "epsilon_energy": 3.0673628724462437e-06,
         "estimator_kind": "kalman",
         "label": "of_bellman_lbfgsb_lqr_fit_exact_kalman",
-        "quadratic_rollout_abs_error": 1.8189894035458565e-11,
+        "quadratic_rollout_abs_error": 1.4551915228366852e-11,
         "rollout": {
-          "control_effort": 1677.074793233257,
-          "estimation_error_final_l2": 0.01642333978628725,
-          "estimation_error_rms": 0.001575292788833891,
-          "peak_forward_velocity": 0.717957411823931,
-          "terminal_position_error_m": 0.014014259644859958,
+          "control_effort": 1670.357147936784,
+          "estimation_error_final_l2": 0.016150414814242033,
+          "estimation_error_rms": 0.0015537864909540371,
+          "peak_forward_velocity": 0.7317375952100327,
+          "terminal_position_error_m": 0.013934450634984778,
           "time_to_peak_step": 16
         },
-        "total_cost_ratio_to_hinf_exact": 1.140853973515835,
-        "total_cost_ratio_to_lqr_exact": 1.0002233311920037
+        "total_cost_ratio_to_hinf_exact": 1.136616106687999,
+        "total_cost_ratio_to_lqr_exact": 1.0001915527971486
       }
     ],
     "output_feedback_training_note": "Clean estimator-in-loop training starts from zero. Because xhat_0=x_0 and clean innovations remain zero, the clean objective is algebraically equivalent to full-state clean training; the estimator-loop distinction is tested by the exact disturbance audits. The Bellman row is a diagnostic one-step LQR dynamic-programming objective using the analytical P[t+1] value matrices; it tests recoverability when the objective identifies the Riccati law, not robust/H-infinity training.",
     "output_feedback_trainings": [
       {
-        "best_objective": 342.1870440452862,
-        "canonical_clean_cost": 4661.835303148982,
-        "canonical_peak_forward_velocity": 0.727152735931829,
-        "canonical_terminal_position_error_m": 0.0035163331753832864,
-        "final_objective": 342.2367407757619,
-        "gain_relative_error": 0.9893657901851417,
+        "best_objective": 398.894483905097,
+        "canonical_clean_cost": 5318.873595406491,
+        "canonical_peak_forward_velocity": 0.7563450773593542,
+        "canonical_terminal_position_error_m": 0.003723138861951295,
+        "final_objective": 398.894483905097,
+        "gain_relative_error": 0.9896992966997253,
         "label": "of_adam_lqr_fit",
         "n_function_evaluations": 2500,
         "n_iterations": 2500,
-        "objective_ratio_to_reference": 1.08459420105638,
+        "objective_ratio_to_reference": 1.242405880003286,
         "optimizer_status": "completed",
-        "reference_objective": 315.49776286098586,
-        "zero_objective": 13326.344322174029
+        "reference_objective": 321.06615907519847,
+        "zero_objective": 13326.207688163537
       },
       {
-        "best_objective": 450.66529407604503,
-        "canonical_clean_cost": 5859.153975916154,
-        "canonical_peak_forward_velocity": 0.6596367074341879,
-        "canonical_terminal_position_error_m": 0.00401664621149786,
-        "final_objective": 450.66529407604503,
-        "gain_relative_error": 0.994762515094479,
+        "best_objective": 496.9139775547867,
+        "canonical_clean_cost": 6420.672448748441,
+        "canonical_peak_forward_velocity": 0.6592788676831243,
+        "canonical_terminal_position_error_m": 0.0036099363231324156,
+        "final_objective": 496.9139775547867,
+        "gain_relative_error": 0.9951856743525794,
         "label": "of_lbfgsb_zero_lqr_fit",
-        "n_function_evaluations": 561,
+        "n_function_evaluations": 565,
         "n_iterations": 500,
-        "objective_ratio_to_reference": 1.4284262746884087,
+        "objective_ratio_to_reference": 1.5476996360690947,
         "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
-        "reference_objective": 315.49776286098586,
-        "zero_objective": 13326.344322174029
+        "reference_objective": 321.06615907519847,
+        "zero_objective": 13326.207688163537
       },
       {
-        "best_objective": 318.2307920086662,
-        "canonical_clean_cost": 4295.373270238379,
-        "canonical_peak_forward_velocity": 0.7192125208290734,
-        "canonical_terminal_position_error_m": 0.003001108133902909,
-        "final_objective": 318.2307920086662,
-        "gain_relative_error": 0.9888089086689802,
+        "best_objective": 361.6178599904885,
+        "canonical_clean_cost": 4827.57493622866,
+        "canonical_peak_forward_velocity": 0.7495251956289166,
+        "canonical_terminal_position_error_m": 0.0024082472598443453,
+        "final_objective": 361.6178599904885,
+        "gain_relative_error": 0.9892802565490857,
         "label": "of_lbfgsb_after_of_adam_lqr_fit",
-        "n_function_evaluations": 545,
+        "n_function_evaluations": 549,
         "n_iterations": 500,
-        "objective_ratio_to_reference": 1.0086625943806915,
+        "objective_ratio_to_reference": 1.1263032548559322,
         "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
-        "reference_objective": 315.49776286098586,
-        "zero_objective": 13326.344322174029
+        "reference_objective": 321.06615907519847,
+        "zero_objective": 13326.207688163537
       },
       {
-        "best_objective": 5114.452774366517,
-        "canonical_clean_cost": 4288.835893008886,
-        "canonical_peak_forward_velocity": 0.7169317648983913,
-        "canonical_terminal_position_error_m": 0.0031018661745184175,
-        "final_objective": 5114.452774366517,
-        "gain_relative_error": 0.00016594268005450206,
+        "best_objective": 5218.415431488829,
+        "canonical_clean_cost": 4363.590303541002,
+        "canonical_peak_forward_velocity": 0.7308437425073291,
+        "canonical_terminal_position_error_m": 0.0031157495979251245,
+        "final_objective": 5218.415431488829,
+        "gain_relative_error": 0.00013943432046537618,
         "label": "of_bellman_lbfgsb_lqr_fit",
-        "n_function_evaluations": 117,
-        "n_iterations": 111,
-        "objective_ratio_to_reference": 1.000000000011582,
+        "n_function_evaluations": 120,
+        "n_iterations": 115,
+        "objective_ratio_to_reference": 1.0000000000069391,
         "optimizer_status": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
-        "reference_objective": 5114.452774307281,
-        "zero_objective": 5323.533158593108
+        "reference_objective": 5218.415431452619,
+        "zero_objective": 5427.524092402726
       }
     ],
     "status": "output_feedback_reference_gate_materialized"
   },
   "phase4_implication": "Phase 4 should preserve the output-feedback information structure: Feedbax/GraphSpec should feed delayed observations and let hidden state serve as an implicit estimator, rather than exposing true x_aug. The deterministic and output-feedback linear certificates should be treated as separate gates.",
+  "rerun_metadata": {
+    "discretization": "euler",
+    "discretization_description": "Forward Euler C&S released-code discretization.",
+    "lane": "deterministic_analytical",
+    "lane_description": "Deterministic analytical lane: exact recursions and deterministic rollouts/audits with no sampled sensory, motor/process, or signal-dependent control noise.",
+    "materializer": "output_feedback_lane",
+    "phase_label_policy": "Phase 1 and Phase 3 reruns must report both discretization and lane. Euler deterministic analytical results are canonical after the Euler card lands; ZOH results remain sensitivity/historical unless explicitly promoted."
+  },
   "supersedes_prior_disposition": "83fc5b5 was previously demoted for reproducing Delta-v, but is now canonical for C&S information-structure fidelity.",
   "tracked_manifest": "results/83fc5b5/notes/output_feedback_lane_manifest.json",
   "tracked_note": "results/83fc5b5/notes/output_feedback_lane.md",
