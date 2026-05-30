@@ -88,4 +88,14 @@ def test_phase1_stochastic_manifest_metadata_has_no_bellman_claim() -> None:
     assert "fixed_point" in summary["extlqg_comparator"]["parity_status"]
     assert summary["arms"]["output_feedback_lqg_extlqg"]["estimator_rms_error"]["mean"] is not None
     assert summary["arms"]["full_state_lqr"]["estimator_rms_error"]["mean"] is None
+    assert set(summary["deterministic_certificate_sidecar"]) == {
+        "full_state_lqr",
+        "full_state_hinf",
+        "output_feedback_lqg_extlqg",
+        "output_feedback_hinf",
+    }
+    assert (
+        summary["deterministic_certificate_sidecar"]["full_state_hinf"]["lambda_over_gamma_squared"]
+        < 1.0
+    )
     json.dumps(summary)

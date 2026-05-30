@@ -33,6 +33,19 @@ Trials: `12`. Seeds: `[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]`.
 | `output_feedback_lqg_extlqg` | output_feedback | fixed_point: local port of extLQG/computeOFC/computeExtKalman | 4379.075 | 21.002769 | 0.7263866 | 0.0033047811 | 0.0096668309 |
 | `output_feedback_hinf` | output_feedback | C&S-style robust output-feedback gains under sampled stochastic plant | 7052.1616 | 597.66387 | 0.78604528 | 0.0008793739 | 0.014443941 |
 
+## Deterministic Certificate Sidecar
+
+These values audit the exact controller gains used by the stochastic forward
+simulation under the deterministic finite-gamma quadratic checks. They are not
+Monte Carlo stochastic induced-gain certificates.
+
+| Arm | Certificate type | lambda/gamma^2 | finite-gamma feasible | Notes |
+|---|---|---:|---|---|
+| `full_state_lqr` | full_state_riccati_value_sidecar | 0.068637524 | True | computed from LQR value matrices at the finite H-infinity gamma |
+| `full_state_hinf` | full_state_hinf_riccati_admissibility | 0.35366235 | True | max stored Riccati spectral radius for the H-infinity solution |
+| `output_feedback_lqg_extlqg` | output_feedback_flattened_epsilon_sidecar | 2.7647966 | False | Kalman/extLQG fixed-gain deterministic flattened-epsilon audit |
+| `output_feedback_hinf` | output_feedback_flattened_epsilon_sidecar | 1.4069118 | False | robust-estimator deterministic flattened-epsilon audit |
+
 ## Noise Contract
 
 - Motor covariance scale: `1e-10`.

@@ -35,9 +35,12 @@ from rlrmp.analysis.cs_released_simulation import (
 from rlrmp.analysis.hinf_riccati import CostSchedule, PlantLinearization
 from rlrmp.analysis.output_feedback import (
     OutputFeedbackConfig,
+    exact_output_feedback_adversary_audit,
     make_cs_output_feedback_initial_state,
     robust_estimator_covariances,
+    robust_estimator_fixed_adversary_policy,
     robust_output_feedback_gains,
+    rollout_with_robust_estimator_policy,
 )
 from rlrmp.analysis.rerun_metadata import (
     DEFAULT_DISCRETIZATION,
@@ -98,6 +101,7 @@ class Phase1StochasticResult:
     extlqg_expected_cost: float | None
     robust_gamma_factor: float
     robust_gamma: float
+    deterministic_certificate_sidecar: dict[str, dict[str, float | bool | str]]
 
 
 def simulate_full_state_released_forward(
@@ -200,6 +204,17 @@ def analyze_phase1_stochastic(
         estimator_covariances,
         config,
     )
+    certificate_sidecar = _deterministic_certificate_sidecar(
+        plant=plant,
+        schedule=schedule,
+        x0=x0,
+        gamma=gamma_ref.gamma,
+        lqr_value_matrices=reference.lqr_solution.P,
+        hinf_solution=gamma_ref.solution,
+        extlqg_gains=comparator.controller_gains,
+        output_feedback_hinf_gains=robust_gains,
+        config=config,
+    )
 
     trials = []
     for seed in seeds:
@@ -260,6 +275,7 @@ def analyze_phase1_stochastic(
         ),
         robust_gamma_factor=gamma_ref.factor,
         robust_gamma=gamma_ref.gamma,
+        deterministic_certificate_sidecar=certificate_sidecar,
     )
 
 
@@ -327,6 +343,7 @@ def result_summary(
                 "output-feedback H-infinity arms."
             ),
         },
+        "deterministic_certificate_sidecar": result.deterministic_certificate_sidecar,
         "extlqg_comparator": {
             "label": "local_extlqg_fixed_point",
             "matlab_function_chain": ["extLQG", "computeOFC", "computeExtKalman"],
@@ -373,6 +390,20 @@ def render_markdown(summary: dict[str, Any]) -> str:
             f"{estimator_text} |"
         )
 
+    certificate_rows = [
+        "| Arm | Certificate type | lambda/gamma^2 | finite-gamma feasible | Notes |",
+        "|---|---|---:|---|---|",
+    ]
+    for label, cert in summary["deterministic_certificate_sidecar"].items():
+        certificate_rows.append(
+            "| "
+            f"`{label}` | "
+            f"{cert['certificate_type']} | "
+            f"{cert['lambda_over_gamma_squared']:.8g} | "
+            f"{cert['gamma_penalized_feasible']} | "
+            f"{cert['notes']} |"
+        )
+
     return f"""# Phase 1 Released Stochastic Evaluation
 
 Issue: `{summary["issue"]}`. Umbrella: `{summary["umbrella"]}`. Deterministic
@@ -402,6 +433,14 @@ Bellman objective or Bellman parity is claimed in this lane.
 Trials: `{summary["n_trials"]}`. Seeds: `{summary["seeds"]}`.
 
 {"\n".join(rows)}
+
+## Deterministic Certificate Sidecar
+
+These values audit the exact controller gains used by the stochastic forward
+simulation under the deterministic finite-gamma quadratic checks. They are not
+Monte Carlo stochastic induced-gain certificates.
+
+{"\n".join(certificate_rows)}
 
 ## Noise Contract
 
@@ -481,9 +520,7 @@ def _arm_summary(
         "comparator_status": comparator_status,
         "n_trials": len(metrics),
         "task_cost": _mean_std([metric["task_cost"] for metric in metrics]),
-        "peak_forward_velocity": _mean_std(
-            [metric["peak_forward_velocity"] for metric in metrics]
-        ),
+        "peak_forward_velocity": _mean_std([metric["peak_forward_velocity"] for metric in metrics]),
         "terminal_position_error_m": _mean_std(
             [metric["terminal_position_error_m"] for metric in metrics]
         ),
@@ -516,6 +553,119 @@ def _build_extlqg_comparator_path(
         if "schedule" not in str(exc):
             raise
         return build_extlqg_comparator_path(plant, controller_gains, covariances, config)
+
+
+def _deterministic_certificate_sidecar(
+    *,
+    plant: PlantLinearization,
+    schedule: CostSchedule,
+    x0: Float[Array, " n"],
+    gamma: float,
+    lqr_value_matrices: Float[Array, "T_plus_1 n n"],
+    hinf_solution,
+    extlqg_gains: Float[Array, "T m_u n"],
+    output_feedback_hinf_gains: Float[Array, "T m_u n"],
+    config: OutputFeedbackConfig,
+) -> dict[str, dict[str, float | bool | str]]:
+    """Audit the stochastic-lane exact gains with deterministic gamma checks."""
+
+    robust_policy = robust_estimator_fixed_adversary_policy(
+        plant,
+        schedule,
+        hinf_solution,
+        output_feedback_hinf_gains,
+        robust_estimator_covariances(plant, schedule, gamma, config),
+        config,
+    )
+    robust_rollout = rollout_with_robust_estimator_policy(
+        plant,
+        schedule,
+        hinf_solution,
+        x0,
+        robust_policy,
+        gains=output_feedback_hinf_gains,
+        config=config,
+    )
+    budget = float(jnp.sum(robust_rollout.epsilon**2))
+    lqg_audit = exact_output_feedback_adversary_audit(
+        label="phase1_stochastic_extlqg_sidecar",
+        plant=plant,
+        schedule=schedule,
+        controller_gains=extlqg_gains,
+        x0=x0,
+        budget=budget,
+        estimator_kind="kalman",
+        penalty_gamma=gamma,
+        config=config,
+    )
+    output_hinf_audit = exact_output_feedback_adversary_audit(
+        label="phase1_stochastic_output_feedback_hinf_sidecar",
+        plant=plant,
+        schedule=schedule,
+        controller_gains=output_feedback_hinf_gains,
+        x0=x0,
+        budget=budget,
+        estimator_kind="robust",
+        solution=hinf_solution,
+        penalty_gamma=gamma,
+        config=config,
+    )
+    full_lqr_ratio = _full_state_lambda_over_gamma_squared(
+        plant,
+        lqr_value_matrices,
+        gamma,
+    )
+    full_hinf_ratio = float(jnp.max(hinf_solution.spectral_radii))
+    return {
+        "full_state_lqr": {
+            "certificate_type": "full_state_riccati_value_sidecar",
+            "lambda_over_gamma_squared": full_lqr_ratio,
+            "gamma_penalized_feasible": full_lqr_ratio < 1.0,
+            "notes": "computed from LQR value matrices at the finite H-infinity gamma",
+        },
+        "full_state_hinf": {
+            "certificate_type": "full_state_hinf_riccati_admissibility",
+            "lambda_over_gamma_squared": full_hinf_ratio,
+            "gamma_penalized_feasible": bool(hinf_solution.admissible and full_hinf_ratio < 1.0),
+            "notes": "max stored Riccati spectral radius for the H-infinity solution",
+        },
+        "output_feedback_lqg_extlqg": _output_feedback_certificate_row(
+            lqg_audit,
+            notes="Kalman/extLQG fixed-gain deterministic flattened-epsilon audit",
+        ),
+        "output_feedback_hinf": _output_feedback_certificate_row(
+            output_hinf_audit,
+            notes="robust-estimator deterministic flattened-epsilon audit",
+        ),
+    }
+
+
+def _full_state_lambda_over_gamma_squared(
+    plant: PlantLinearization,
+    value_matrices: Float[Array, "T_plus_1 n n"],
+    gamma: float,
+) -> float:
+    gamma2 = float(gamma * gamma)
+    ratios = []
+    for P_next in value_matrices[1:]:
+        block = plant.Bw.T @ P_next @ plant.Bw
+        ratios.append(float(jnp.linalg.eigvalsh(0.5 * (block + block.T))[-1]) / gamma2)
+    return max(ratios)
+
+
+def _output_feedback_certificate_row(
+    audit: dict[str, Any],
+    *,
+    notes: str,
+) -> dict[str, float | bool | str]:
+    return {
+        "certificate_type": "output_feedback_flattened_epsilon_sidecar",
+        "lambda_over_gamma_squared": float(
+            audit["gamma_penalized"]["max_eigenvalue_over_gamma_squared"]
+        ),
+        "gamma_penalized_feasible": bool(audit["gamma_penalized"]["feasible"]),
+        "notes": notes,
+    }
 
 
 def _rollout_metric_dict(

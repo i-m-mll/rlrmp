@@ -118,6 +118,32 @@
     "seeds"
   ],
   "bellman_claim": "none; stochastic Bellman parity is explicitly out of scope",
+  "deterministic_certificate_sidecar": {
+    "full_state_hinf": {
+      "certificate_type": "full_state_hinf_riccati_admissibility",
+      "gamma_penalized_feasible": true,
+      "lambda_over_gamma_squared": 0.3536623507365209,
+      "notes": "max stored Riccati spectral radius for the H-infinity solution"
+    },
+    "full_state_lqr": {
+      "certificate_type": "full_state_riccati_value_sidecar",
+      "gamma_penalized_feasible": true,
+      "lambda_over_gamma_squared": 0.06863752426495849,
+      "notes": "computed from LQR value matrices at the finite H-infinity gamma"
+    },
+    "output_feedback_hinf": {
+      "certificate_type": "output_feedback_flattened_epsilon_sidecar",
+      "gamma_penalized_feasible": false,
+      "lambda_over_gamma_squared": 1.4069118068858173,
+      "notes": "robust-estimator deterministic flattened-epsilon audit"
+    },
+    "output_feedback_lqg_extlqg": {
+      "certificate_type": "output_feedback_flattened_epsilon_sidecar",
+      "gamma_penalized_feasible": false,
+      "lambda_over_gamma_squared": 2.76479660326073,
+      "notes": "Kalman/extLQG fixed-gain deterministic flattened-epsilon audit"
+    }
+  },
   "deterministic_phase1_issue": "a7dad8a",
   "extlqg_comparator": {
     "expected_cost": 12150.622423244211,
