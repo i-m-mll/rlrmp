@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -118,6 +118,26 @@ class Phase3StochasticResult:
     arrays: dict[str, np.ndarray]
 
 
+@dataclass(frozen=True)
+class Phase3ProcessNoiseSweepCell:
+    """One released-stochastic process-noise scale cell."""
+
+    label: str
+    process_covariance_scale: float
+    result: Phase3StochasticResult
+
+
+@dataclass(frozen=True)
+class Phase3ProcessNoiseSweepResult:
+    """Released-stochastic Phase 3 process-noise scale sweep bundle."""
+
+    issue_id: str
+    phase3_issue_id: str
+    base_config: Phase3StochasticConfig
+    process_covariance_scales: tuple[float, ...]
+    cells: tuple[Phase3ProcessNoiseSweepCell, ...]
+
+
 def load_default_controller_specs(
     *,
     npz_path: Path = DEFAULT_SOURCE_NPZ,
@@ -173,6 +193,45 @@ def load_default_controller_specs(
             deterministic_gain_relative_error=None,
             deterministic_objective_ratio_to_reference=None,
         ),
+    )
+
+
+def run_phase3_process_noise_sweep(
+    *,
+    config: Phase3StochasticConfig = Phase3StochasticConfig(),
+    process_covariance_scales: tuple[float, ...] = (0.0, 0.3, 1.0, 3.0),
+    controllers: tuple[Phase3ControllerSpec, ...] | None = None,
+    output_config: OutputFeedbackConfig = OutputFeedbackConfig(),
+) -> Phase3ProcessNoiseSweepResult:
+    """Evaluate Phase 3 controllers across released-stochastic process-noise scales."""
+
+    if not process_covariance_scales:
+        raise ValueError("At least one process covariance scale is required.")
+
+    controller_specs = load_default_controller_specs() if controllers is None else controllers
+    cells = []
+    normalized_scales = tuple(float(scale) for scale in process_covariance_scales)
+    for scale in normalized_scales:
+        cell_config = replace(config, process_covariance_scale=scale)
+        result = run_phase3_stochastic_evaluation(
+            config=cell_config,
+            controllers=controller_specs,
+            output_config=output_config,
+        )
+        cells.append(
+            Phase3ProcessNoiseSweepCell(
+                label=str(scale),
+                process_covariance_scale=scale,
+                result=result,
+            )
+        )
+
+    return Phase3ProcessNoiseSweepResult(
+        issue_id=ISSUE_ID,
+        phase3_issue_id=PHASE3_ISSUE_ID,
+        base_config=config,
+        process_covariance_scales=normalized_scales,
+        cells=tuple(cells),
     )
 
 
@@ -299,6 +358,44 @@ def run_phase3_stochastic_evaluation(
     )
 
 
+def process_noise_sweep_summary(result: Phase3ProcessNoiseSweepResult) -> dict[str, Any]:
+    """Return a JSON-serializable process-noise sweep summary."""
+
+    return {
+        "issue": result.issue_id,
+        "phase3_issue": result.phase3_issue_id,
+        "umbrella": UMBRELLA_ID,
+        "rerun_metadata": build_rerun_metadata(
+            discretization="euler",
+            lane="released_stochastic",
+            materializer="cs_stochastic_phase3_process_noise_sweep",
+        ),
+        "base_monte_carlo": result.base_config.__dict__,
+        "process_covariance_scales": list(result.process_covariance_scales),
+        "scope": (
+            "Released-code stochastic evaluation sweep over explicit process "
+            "covariance scales. Controllers and common-random-number seeds are "
+            "held fixed across cells; no stochastic training objective is added."
+        ),
+        "non_goals": (
+            "No deterministic rollout-recovery objective change, no stochastic "
+            "training, no robust Bellman objective, and no GRU evaluation."
+        ),
+        "cells": [
+            {
+                "label": cell.label,
+                "process_covariance_scale": cell.process_covariance_scale,
+                "monte_carlo": cell.result.config.__dict__,
+                "evaluations": [
+                    _evaluation_summary(evaluation) for evaluation in cell.result.evaluations
+                ],
+                "verdict": _verdict(cell.result),
+            }
+            for cell in result.cells
+        ],
+    }
+
+
 def result_summary(result: Phase3StochasticResult) -> dict[str, Any]:
     """Return a JSON-serializable released stochastic Phase 3 summary."""
 
@@ -334,7 +431,7 @@ def result_summary(result: Phase3StochasticResult) -> dict[str, Any]:
             "state-space motor/process, and signal-dependent state noise."
         ),
         "non_goals": (
-            "No initial-state jitter sweep, no process-noise scale sweep, and no "
+            "No initial-state jitter sweep, no stochastic training, and no "
             "stochastic Bellman parity claim."
         ),
         "evaluations": [_evaluation_summary(evaluation) for evaluation in result.evaluations],
@@ -726,12 +823,16 @@ __all__ = [
     "ISSUE_ID",
     "PHASE3_ISSUE_ID",
     "Phase3ControllerSpec",
+    "Phase3ProcessNoiseSweepCell",
+    "Phase3ProcessNoiseSweepResult",
     "Phase3StochasticConfig",
     "Phase3StochasticEvaluation",
     "Phase3StochasticResult",
     "load_default_controller_specs",
+    "process_noise_sweep_summary",
     "render_markdown",
     "result_summary",
+    "run_phase3_process_noise_sweep",
     "run_phase3_stochastic_evaluation",
     "write_outputs",
 ]

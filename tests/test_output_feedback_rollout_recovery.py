@@ -18,8 +18,12 @@ from rlrmp.analysis.output_feedback import (
     rollout_with_kalman_estimator,
 )
 from rlrmp.analysis.output_feedback_rollout_recovery import (
+    EigenspectrumCoverageConfig,
     RolloutRecoveryCondition,
+    _eigenspectrum_coverage_samples,
     _make_parameter_maps,
+    _scale_initial_state_config,
+    eigenspectrum_coverage_conditions,
     _state_scales,
     _time_block_scales,
     _training_ensemble,
@@ -141,6 +145,67 @@ def test_bellman_auxiliary_condition_emits_scratch_only_with_schedule() -> None:
     assert summary["diagnostics"]["bellman_auxiliary"]["schedules"] == {"aux_smoke": (0.1, 0.0)}
     assert "bellman_weight=0.1" in summary["fits"][0]["optimizer_status"]
     assert "bellman_weight=0" in summary["fits"][0]["optimizer_status"]
+
+
+def test_eigenspectrum_coverage_samples_are_time_indexed_signed_pairs() -> None:
+    reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
+    gamma_ref = reference.gamma_references[0]
+    x0 = make_cs_output_feedback_initial_state(reference.plant)
+    (
+        epsilons,
+        trajectory_weights,
+        coverage_x,
+        coverage_xhat,
+        times,
+        state_weights,
+        metadata,
+        arrays,
+    ) = _eigenspectrum_coverage_samples(
+        plant=reference.plant,
+        schedule=reference.schedule,
+        K_ref=reference.lqr_solution.K,
+        x0=x0,
+        budget_l2=1.0,
+        gamma=gamma_ref.gamma,
+        output_config=OutputFeedbackConfig(),
+        coverage_config=EigenspectrumCoverageConfig(n_modes=1, scale=0.1, weight=0.05),
+    )
+
+    assert metadata["enabled"] is True
+    assert metadata["n_trajectories"] == 2
+    assert metadata["n_state_samples_for_diagnostics"] == 2 * reference.schedule.T
+    assert epsilons.shape == (2, reference.schedule.T, reference.plant.m_w)
+    assert trajectory_weights.shape == (2,)
+    assert coverage_x.shape == coverage_xhat.shape == (2 * reference.schedule.T, reference.plant.n)
+    assert times.shape == state_weights.shape == (2 * reference.schedule.T,)
+    assert arrays["coverage_epsilon_modes"].shape == (1, reference.schedule.T, reference.plant.m_w)
+
+
+def test_initial_state_scale_sweep_preserves_reach_weight() -> None:
+    base = LinearTrainingConfig(basis_scale=0.01, random_state_scale=0.02, reach_weight=10.0)
+    scaled = _scale_initial_state_config(base, 0.3)
+
+    assert scaled.basis_scale == 0.003
+    assert scaled.random_state_scale == 0.006
+    assert scaled.n_random_states == base.n_random_states
+    assert scaled.reach_weight == base.reach_weight
+
+
+def test_eigenspectrum_conditions_use_strong_optimizer_whitening() -> None:
+    conditions = eigenspectrum_coverage_conditions(
+        objectives=("trajectory", "state"),
+        modes=(1,),
+        scales=(0.3,),
+        weight=0.1,
+    )
+
+    assert [condition.eigenspectrum_coverage.objective for condition in conditions] == [
+        "trajectory",
+        "state",
+    ]
+    assert all(condition.use_whitening for condition in conditions)
+    assert all(condition.maxiter == 2000 for condition in conditions)
+    assert all(condition.initializations == ("scratch",) for condition in conditions)
 
 
 def test_rollout_recovery_clean_rollout_has_estimator_fields() -> None:
