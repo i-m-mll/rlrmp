@@ -5,10 +5,10 @@ Issue: `7a459bb`. Standard certificate cross-reference: `d01c35a`.
 This materialization applies the bridge standard-certificate row contract to the
 recent output-feedback coverage/noise sweep outputs. It is intentionally a
 partial certificate report: the saved no-coverage/reference artifact contains
-gains and clean rollout arrays, while the newer sweep manifests mostly preserve
-small scalar summaries.
+gains plus nominal-clean/Riccati-epsilon rollout arrays, while the newer sweep
+manifests mostly preserve small scalar summaries.
 
-Result: Full standard-certificate components are available only for the saved no-coverage/reference rows backed by the rollout-recovery NPZ. The recent compact sweep manifests provide deterministic behavioral, optimizer, gain-diagnostic, exact-L2/gamma, and coverage-rank sidecars where those summaries were saved, but they do not include enough raw gains, rollout state/action arrays, covariances, or value matrices to recompute every standard component.
+Result: Full standard-certificate components are available only for the saved no-coverage/reference rows backed by the rollout-recovery NPZ; those rows are now evaluated on both nominal-clean and Riccati-epsilon state lenses. The recent compact sweep manifests provide deterministic behavioral, optimizer, gain-diagnostic, exact-L2/gamma, and coverage-rank sidecars where those summaries were saved, but they do not include enough raw gains, rollout state/action arrays, covariances, or value matrices to recompute every standard component.
 
 Raw gain recovery is reported only in `gain_diagnostic_sidecar` rows and is not
 used as the certificate gate.
@@ -28,16 +28,19 @@ used as the certificate gate.
 | eigenspectrum state coverage | 6 | missing | missing/missing/missing | behavioral_action_sidecar, deterministic_exact_l2_and_gamma_sidecar, gain_diagnostic_sidecar, rollout_behavior_sidecar |
 | eigenspectrum trajectory coverage | 6 | missing | missing/missing/missing | behavioral_action_sidecar, deterministic_exact_l2_and_gamma_sidecar, gain_diagnostic_sidecar, rollout_behavior_sidecar |
 | initial-state coverage | 4 | missing | missing/missing/missing | behavioral_action_sidecar, deterministic_exact_l2_and_gamma_sidecar, gain_diagnostic_sidecar, rollout_behavior_sidecar |
-| no-coverage/reference | 3 | available | available/available/available | behavioral_action_sidecar, deterministic_exact_l2_and_gamma_sidecar, gain_diagnostic_sidecar, rollout_behavior_sidecar |
+| no-coverage/reference | 6 | available | available/available/available | behavioral_action_sidecar, deterministic_exact_l2_and_gamma_sidecar, gain_diagnostic_sidecar, rollout_behavior_sidecar |
 | process-noise stochastic | 20 | missing | missing/missing/missing | behavioral_action_sidecar, deterministic_exact_l2_and_gamma_sidecar, gain_diagnostic_sidecar, rollout_behavior_sidecar |
 
 ## Key Rows
 
-| run | status | distribution | objective ratio | gain sidecar | action sidecar | exact L2 sidecar | lambda/gamma^2 |
+| run | status | distribution | objective ratio | gain sidecar | action mismatch | exact L2 sidecar | lambda/gamma^2 |
 |---|---|---|---:|---:|---:|---:|---:|
 | no_coverage__analytical_lqr_reference__nominal_clean | full_standard_certificate | no-coverage/reference | n/a | 0 | 0 | 1 | 1.55512 |
-| no_coverage__strong_optimizer_whitened__scratch__nominal_clean | full_standard_certificate | no-coverage/reference | 1.01317 | 0.979472 | 0.0119778 | 1.15587 | 2.09679 |
-| no_coverage__strong_optimizer_whitened__bellman_init__nominal_clean | full_standard_certificate | no-coverage/reference | 1 | 0.000130853 | 1.20487e-06 | 0.999992 | 1.55511 |
+| no_coverage__analytical_lqr_reference__riccati_epsilon_response | full_standard_certificate | no-coverage/reference | n/a | 0 | 0 | 1 | 1.55512 |
+| no_coverage__strong_optimizer_whitened__scratch__nominal_clean | full_standard_certificate | no-coverage/reference | 1.01317 | 0.979472 | 0.481571 | 1.15587 | 2.09679 |
+| no_coverage__strong_optimizer_whitened__scratch__riccati_epsilon_response | full_standard_certificate | no-coverage/reference | 1.01317 | 0.979472 | 1.21589 | 1.15587 | 2.09679 |
+| no_coverage__strong_optimizer_whitened__bellman_init__nominal_clean | full_standard_certificate | no-coverage/reference | 1 | 0.000130853 | 1.42474e-05 | 0.999992 | 1.55511 |
+| no_coverage__strong_optimizer_whitened__bellman_init__riccati_epsilon_response | full_standard_certificate | no-coverage/reference | 1 | 0.000130853 | 0.000631263 | 0.999992 | 1.55511 |
 | initial_state_coverage__initial_state_scale_0x__strong_optimizer_whitened__scratch | partial_summary_certificate | initial-state coverage | 1.34926 | 0.995752 | 0.833172 | 725.745 | 2396.6 |
 | initial_state_coverage__initial_state_scale_0.3x__strong_optimizer_whitened__scratch | partial_summary_certificate | initial-state coverage | 1.02388 | 0.984132 | 0.209065 | 1.17134 | 2.07104 |
 | initial_state_coverage__initial_state_scale_1x__strong_optimizer_whitened__scratch | partial_summary_certificate | initial-state coverage | 1.01317 | 0.979472 | 0.0119778 | 1.15587 | 2.09679 |
@@ -77,7 +80,8 @@ used as the certificate gate.
 ## Verdict
 
 The standard certificate application does not rescue the bridge. The only rows
-with full component availability are the saved no-coverage/reference rows. The
-recent initial-state, process-noise, and eigenspectrum rows remain
-partial/sidecar-only from current tracked artifacts, and their saved sidecars
-continue to show behaviorally close but certificate-poor from-scratch recovery.
+with full component availability are the saved no-coverage/reference rows on
+nominal-clean and Riccati-epsilon evaluation lenses. The recent initial-state,
+process-noise, and eigenspectrum rows remain partial/sidecar-only from current
+tracked artifacts, and their saved sidecars continue to show behaviorally close
+but certificate-poor from-scratch recovery.
