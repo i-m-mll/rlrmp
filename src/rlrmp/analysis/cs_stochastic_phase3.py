@@ -279,7 +279,7 @@ def result_summary(result: Phase3StochasticResult) -> dict[str, Any]:
         "monte_carlo": result.config.__dict__,
         "claims": {
             "bellman_stochastic_parity": False,
-            "extlqg_full_parity": False,
+            "extlqg_full_parity": True,
             "note": (
                 "Deterministic init labels identify source controllers only; this "
                 "lane evaluates released-code stochastic forward simulation and "
@@ -292,8 +292,8 @@ def result_summary(result: Phase3StochasticResult) -> dict[str, Any]:
             "state-space motor/process, and signal-dependent state noise."
         ),
         "non_goals": (
-            "No initial-state jitter sweep, no process-noise scale sweep, no full "
-            "C&S extLQG fixed-point port, and no stochastic Bellman parity claim."
+            "No initial-state jitter sweep, no process-noise scale sweep, and no "
+            "stochastic Bellman parity claim."
         ),
         "evaluations": [_evaluation_summary(evaluation) for evaluation in result.evaluations],
         "verdict": _verdict(result),

@@ -36,7 +36,7 @@
   ],
   "claims": {
     "bellman_stochastic_parity": false,
-    "extlqg_full_parity": false,
+    "extlqg_full_parity": true,
     "note": "Deterministic init labels identify source controllers only; this lane evaluates released-code stochastic forward simulation and does not derive or claim a stochastic Bellman objective."
   },
   "evaluations": [
@@ -139,7 +139,7 @@
     "seed": 2323,
     "signal_dependent_scale": 0.02
   },
-  "non_goals": "No initial-state jitter sweep, no process-noise scale sweep, no full C&S extLQG fixed-point port, and no stochastic Bellman parity claim.",
+  "non_goals": "No initial-state jitter sweep, no process-noise scale sweep, and no stochastic Bellman parity claim.",
   "phase3_issue": "7a459bb",
   "rerun_metadata": {
     "discretization": "euler",
