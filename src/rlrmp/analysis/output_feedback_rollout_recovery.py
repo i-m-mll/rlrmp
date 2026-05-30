@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import jax
@@ -23,7 +23,9 @@ from rlrmp.analysis.output_feedback import (
     OutputFeedbackRollout,
     _kalman_estimator_rollout_arrays,
     _rollout_summary,
+    delayed_observation_matrix,
     exact_output_feedback_adversary_audit,
+    kalman_estimator_gains,
     make_cs_output_feedback_initial_state,
     output_feedback_clean_objective,
     output_feedback_cost,
@@ -53,6 +55,17 @@ GAMMA_SWEEP_ISSUE_ID = "97604a8"
 
 
 @dataclass(frozen=True)
+class EigenspectrumCoverageConfig:
+    """Coverage samples generated from leading exact-audit epsilon eigenmodes."""
+
+    n_modes: int = 0
+    scale: float = 1.0
+    weight: float = 0.1
+    objective: str = "trajectory"
+    reference: str = "lqr_exact_budget_l2"
+
+
+@dataclass(frozen=True)
 class RolloutRecoveryCondition:
     """One objective-preserving rollout optimizer condition."""
 
@@ -65,6 +78,7 @@ class RolloutRecoveryCondition:
     maxls: int = 50
     initializations: tuple[str, ...] = ("scratch", "bellman_init")
     auxiliary_bellman_weights: tuple[float, ...] = ()
+    eigenspectrum_coverage: EigenspectrumCoverageConfig | None = None
 
 
 @dataclass(frozen=True)
@@ -148,6 +162,29 @@ DEFAULT_CONDITIONS: tuple[RolloutRecoveryCondition, ...] = (
         auxiliary_bellman_weights=(0.1, 0.03, 0.01, 0.0),
     ),
 )
+
+STRONG_OPTIMIZER_WHITENED = RolloutRecoveryCondition(
+    label="strong_optimizer_whitened",
+    use_whitening=True,
+    maxiter=2000,
+    ftol=1e-14,
+    gtol=1e-10,
+    maxls=100,
+    initializations=("scratch",),
+)
+
+
+def strong_optimizer_whitened_with_coverage(
+    label: str,
+    coverage: EigenspectrumCoverageConfig,
+) -> RolloutRecoveryCondition:
+    """Return the standard sweep optimizer with one named coverage condition."""
+
+    return replace(
+        STRONG_OPTIMIZER_WHITENED,
+        label=label,
+        eigenspectrum_coverage=coverage,
+    )
 
 
 def _weighted_covariance(
@@ -280,6 +317,227 @@ def _training_ensemble(
     return states, weights
 
 
+def _coverage_trajectory_objective(
+    plant: PlantLinearization,
+    schedule: CostSchedule,
+    K: Float[Array, "T m_u n"],
+    x0: Float[Array, " n"],
+    coverage_epsilons: Float[Array, "samples T m_w"],
+    coverage_weights: Float[Array, " samples"],
+    config: OutputFeedbackConfig,
+) -> Float[Array, ""]:
+    """Mean full-trial task cost under eigenspectrum perturbation trajectories."""
+
+    if coverage_epsilons.shape[0] == 0:
+        return jnp.asarray(0.0, dtype=jnp.float64)
+
+    def one_cost(epsilon):
+        x, _xhat, _y, u, _covs = _kalman_estimator_rollout_arrays(
+            plant,
+            K,
+            x0,
+            epsilon,
+            config,
+        )
+        return rollout_task_cost(schedule, x, u)
+
+    costs = jax.vmap(one_cost)(coverage_epsilons)
+    return jnp.sum(coverage_weights * costs) / jnp.maximum(jnp.sum(coverage_weights), 1e-30)
+
+
+def _kalman_masked_suffix_task_cost(
+    plant: PlantLinearization,
+    schedule: CostSchedule,
+    K: Float[Array, "T m_u n"],
+    gains: Float[Array, "T n obs"],
+    x0: Float[Array, " n"],
+    xhat0: Float[Array, " n"],
+    start_time: Float[Array, ""],
+    config: OutputFeedbackConfig,
+) -> Float[Array, ""]:
+    """Return remaining clean task cost with JAX-scalar start time."""
+
+    H = delayed_observation_matrix(plant, config)
+    x_t = x0.astype(jnp.float64)
+    xhat_t = xhat0.astype(jnp.float64)
+    cost = jnp.asarray(0.0, dtype=jnp.float64)
+    for t in range(schedule.T):
+        active = jnp.asarray(t, dtype=jnp.int32) >= start_time
+        u_t = -K[t] @ xhat_t
+        y_t = H @ x_t
+        stage = x_t @ schedule.Q[t] @ x_t + u_t @ schedule.R[t] @ u_t
+        xhat_next = plant.A @ xhat_t + plant.B @ u_t + gains[t] @ (y_t - H @ xhat_t)
+        x_next = plant.A @ x_t + plant.B @ u_t
+        cost = cost + jnp.where(active, stage, 0.0)
+        x_t = jnp.where(active, x_next, x_t)
+        xhat_t = jnp.where(active, xhat_next, xhat_t)
+    return cost + x_t @ schedule.Q_f @ x_t
+
+
+def _coverage_state_objective(
+    plant: PlantLinearization,
+    schedule: CostSchedule,
+    K: Float[Array, "T m_u n"],
+    coverage_x: Float[Array, "samples n"],
+    coverage_xhat: Float[Array, "samples n"],
+    coverage_times: Float[Array, " samples"],
+    coverage_state_weights: Float[Array, " samples"],
+    config: OutputFeedbackConfig,
+) -> Float[Array, ""]:
+    """Mean remaining-horizon task cost on time-indexed coverage states."""
+
+    if coverage_x.shape[0] == 0:
+        return jnp.asarray(0.0, dtype=jnp.float64)
+    gains = kalman_estimator_gains(plant, K, config)
+
+    def one_cost(x, xhat, start_time):
+        return _kalman_masked_suffix_task_cost(
+            plant,
+            schedule,
+            K,
+            gains,
+            x,
+            xhat,
+            start_time,
+            config,
+        )
+
+    costs = jax.vmap(one_cost)(coverage_x, coverage_xhat, coverage_times)
+    return jnp.sum(coverage_state_weights * costs) / jnp.maximum(
+        jnp.sum(coverage_state_weights), 1e-30
+    )
+
+
+def _empty_coverage_samples(
+    plant: PlantLinearization,
+) -> tuple[
+    Float[Array, "samples T m_w"],
+    Float[Array, " samples"],
+    Float[Array, "state_samples n"],
+    Float[Array, "state_samples n"],
+    Float[Array, " state_samples"],
+    Float[Array, " state_samples"],
+]:
+    _ = plant
+    return (
+        jnp.zeros((0, 0, 0), dtype=jnp.float64),
+        jnp.zeros((0,), dtype=jnp.float64),
+        jnp.zeros((0, plant.n), dtype=jnp.float64),
+        jnp.zeros((0, plant.n), dtype=jnp.float64),
+        jnp.zeros((0,), dtype=jnp.int32),
+        jnp.zeros((0,), dtype=jnp.float64),
+    )
+
+
+def _eigenspectrum_coverage_samples(
+    *,
+    plant: PlantLinearization,
+    schedule: CostSchedule,
+    K_ref: Float[Array, "T m_u n"],
+    x0: Float[Array, " n"],
+    budget_l2: float,
+    gamma: float,
+    output_config: OutputFeedbackConfig,
+    coverage_config: EigenspectrumCoverageConfig,
+) -> tuple[
+    Float[Array, "samples T m_w"],
+    Float[Array, " samples"],
+    Float[Array, "state_samples n"],
+    Float[Array, "state_samples n"],
+    Float[Array, " state_samples"],
+    Float[Array, " state_samples"],
+    dict[str, Any],
+    dict[str, np.ndarray],
+]:
+    """Create signed full-trial perturbation trajectories from leading epsilon modes."""
+
+    if coverage_config.n_modes <= 0 or coverage_config.weight <= 0.0:
+        empty = _empty_coverage_samples(plant)
+        return (*empty, {"enabled": False}, {})
+
+    audit = exact_output_feedback_adversary_audit(
+        label="lqr_eigenspectrum_coverage_source",
+        plant=plant,
+        schedule=schedule,
+        controller_gains=K_ref,
+        x0=x0,
+        budget=budget_l2 * budget_l2,
+        estimator_kind="kalman",
+        penalty_gamma=gamma,
+        eigenspectrum_modes=coverage_config.n_modes,
+        config=output_config,
+    )
+    modes = audit["eigenspectrum"]["epsilon_modes"]
+    eigenvalues = audit["eigenspectrum"]["eigenvalues"]
+    alpha = jnp.asarray(coverage_config.scale * budget_l2, dtype=jnp.float64)
+    xs = []
+    xhats = []
+    times = []
+    epsilons = []
+    weights = []
+    for mode_idx in range(modes.shape[0]):
+        for sign in (-1.0, 1.0):
+            epsilon = sign * alpha * modes[mode_idx]
+            rollout = rollout_with_kalman_estimator(
+                plant,
+                K_ref,
+                x0,
+                epsilon,
+                config=output_config,
+            )
+            xs.append(rollout.x[:-1])
+            xhats.append(rollout.x_hat[:-1])
+            times.append(jnp.arange(schedule.T, dtype=jnp.int32))
+            epsilons.append(epsilon)
+            weights.append(jnp.asarray(coverage_config.weight, dtype=jnp.float64))
+    coverage_epsilons = jnp.stack(epsilons, axis=0)
+    coverage_weights = jnp.stack(weights, axis=0)
+    coverage_x = jnp.concatenate(xs, axis=0)
+    coverage_xhat = jnp.concatenate(xhats, axis=0)
+    coverage_times = jnp.concatenate(times, axis=0)
+    state_weights = jnp.repeat(
+        coverage_weights / jnp.sum(coverage_weights),
+        schedule.T,
+        total_repeat_length=coverage_xhat.shape[0],
+    )
+    coverage_state_weights = state_weights * coverage_config.weight
+    coverage_cov = _weighted_covariance(coverage_xhat, state_weights)
+    metadata = {
+        "enabled": True,
+        "n_modes": coverage_config.n_modes,
+        "scale": coverage_config.scale,
+        "alpha": float(alpha),
+        "weight": coverage_config.weight,
+        "objective": coverage_config.objective,
+        "reference": coverage_config.reference,
+        "source": "signed leading exact-audit epsilon eigenmodes of the analytical LQR controller",
+        "n_trajectories": int(coverage_epsilons.shape[0]),
+        "n_state_samples_for_diagnostics": int(coverage_x.shape[0]),
+        "eigenvalues": [float(value) for value in eigenvalues],
+        "xhat_coverage": _effective_rank_from_covariance(coverage_cov),
+    }
+    arrays = {
+        "coverage_epsilon_modes": np.asarray(modes),
+        "coverage_eigenvalues": np.asarray(eigenvalues),
+        "coverage_epsilons": np.asarray(coverage_epsilons),
+        "coverage_x": np.asarray(coverage_x),
+        "coverage_x_hat": np.asarray(coverage_xhat),
+        "coverage_times": np.asarray(coverage_times),
+        "coverage_state_weights": np.asarray(coverage_state_weights),
+        "coverage_weights": np.asarray(coverage_weights),
+    }
+    return (
+        coverage_epsilons,
+        coverage_weights,
+        coverage_x,
+        coverage_xhat,
+        coverage_times,
+        coverage_state_weights,
+        metadata,
+        arrays,
+    )
+
+
 def _make_parameter_maps(
     condition: RolloutRecoveryCondition,
     K_ref: Float[Array, "T m_u n"],
@@ -338,6 +596,12 @@ def _fit_one_condition(
     K_ref: Float[Array, "T m_u n"],
     states: Float[Array, "batch n"],
     weights: Float[Array, " batch"],
+    coverage_epsilons: Float[Array, "coverage T m_w"],
+    coverage_trajectory_weights: Float[Array, " coverage"],
+    coverage_x: Float[Array, "coverage n"],
+    coverage_xhat: Float[Array, "coverage n"],
+    coverage_times: Float[Array, " coverage"],
+    coverage_state_weights: Float[Array, " coverage"],
     state_scales: Float[Array, " n"],
     time_block_scales: Float[Array, "T n"],
     bellman_p_next: Float[Array, "T n n"],
@@ -360,6 +624,34 @@ def _fit_one_condition(
     )
     theta0 = np.asarray(to_theta(initial_K), dtype=np.float64).reshape(-1)
     shape = K_ref.shape
+
+    def coverage_objective(gains: Float[Array, "T m_u n"]) -> Float[Array, ""]:
+        coverage = condition.eigenspectrum_coverage
+        if coverage is None:
+            return jnp.asarray(0.0, dtype=jnp.float64)
+        if coverage.objective == "trajectory":
+            return _coverage_trajectory_objective(
+                plant,
+                schedule,
+                gains,
+                x0,
+                coverage_epsilons,
+                coverage_trajectory_weights,
+                output_config,
+            )
+        if coverage.objective == "state":
+            return _coverage_state_objective(
+                plant,
+                schedule,
+                gains,
+                coverage_x,
+                coverage_xhat,
+                coverage_times,
+                coverage_state_weights,
+                output_config,
+            )
+        raise ValueError(f"Unknown eigenspectrum coverage objective={coverage.objective!r}.")
+
     reference_objective = float(
         output_feedback_clean_objective(
             plant,
@@ -369,11 +661,12 @@ def _fit_one_condition(
             weights,
             output_config,
         )
+        + coverage_objective(K_ref)
     )
 
     def objective_theta(theta_tree: Float[Array, "T m_u n"]) -> Float[Array, ""]:
         gains = to_K(theta_tree)
-        return output_feedback_clean_objective(
+        objective = output_feedback_clean_objective(
             plant,
             schedule,
             gains,
@@ -381,23 +674,16 @@ def _fit_one_condition(
             weights,
             output_config,
         )
+        if condition.eigenspectrum_coverage is not None:
+            objective = objective + coverage_objective(gains)
+        return objective
 
     def composite_objective_theta(
         theta_tree: Float[Array, "T m_u n"],
         bellman_weight: Float[Array, ""],
     ) -> Float[Array, ""]:
         gains = to_K(theta_tree)
-        rollout_ratio = (
-            output_feedback_clean_objective(
-                plant,
-                schedule,
-                gains,
-                states,
-                weights,
-                output_config,
-            )
-            / reference_objective
-        )
+        rollout_ratio = objective_theta(theta_tree) / reference_objective
         bellman_ratio = (
             output_feedback_lqr_bellman_objective(
                 plant,
@@ -484,26 +770,8 @@ def _fit_one_condition(
             stage_messages.append(str(scipy_result.message))
     theta_final = jnp.asarray(theta_current, dtype=jnp.float64).reshape(shape)
     K_final = to_K(theta_final)
-    final_objective = float(
-        output_feedback_clean_objective(
-            plant,
-            schedule,
-            K_final,
-            states,
-            weights,
-            output_config,
-        )
-    )
-    zero_objective = float(
-        output_feedback_clean_objective(
-            plant,
-            schedule,
-            jnp.zeros_like(K_ref),
-            states,
-            weights,
-            output_config,
-        )
-    )
+    final_objective = float(objective_theta(theta_final))
+    zero_objective = float(objective_theta(to_theta(jnp.zeros_like(K_ref))))
     final_grad_norm, _final_grad = _gradient_norms(
         clean_value_and_grad_flat,
         np.asarray(theta_final, dtype=np.float64).reshape(-1),
@@ -679,7 +947,41 @@ def run_output_feedback_rollout_recovery(
     )
 
     fits = []
+    coverage_by_label: dict[str, dict[str, Any]] = {}
+    coverage_arrays: dict[str, np.ndarray] = {}
     for condition in conditions:
+        if condition.eigenspectrum_coverage is None:
+            (
+                coverage_epsilons,
+                coverage_trajectory_weights,
+                coverage_x,
+                coverage_xhat,
+                coverage_times,
+                coverage_state_weights,
+            ) = _empty_coverage_samples(plant)
+        else:
+            (
+                coverage_epsilons,
+                coverage_trajectory_weights,
+                coverage_x,
+                coverage_xhat,
+                coverage_times,
+                coverage_state_weights,
+                coverage_metadata,
+                condition_arrays,
+            ) = _eigenspectrum_coverage_samples(
+                plant=plant,
+                schedule=schedule,
+                K_ref=K_ref,
+                x0=x0,
+                budget_l2=float(jnp.sqrt(jnp.asarray(budget))),
+                gamma=gamma_ref.gamma,
+                output_config=output_config,
+                coverage_config=condition.eigenspectrum_coverage,
+            )
+            coverage_by_label[condition.label] = coverage_metadata
+            for key, value in condition_arrays.items():
+                coverage_arrays[f"{condition.label}_{key}"] = value
         initial_K_by_name = {
             "scratch": jnp.zeros_like(K_ref),
             "bellman_init": bellman.K,
@@ -696,6 +998,12 @@ def run_output_feedback_rollout_recovery(
                     K_ref=K_ref,
                     states=states,
                     weights=weights,
+                    coverage_epsilons=coverage_epsilons,
+                    coverage_trajectory_weights=coverage_trajectory_weights,
+                    coverage_x=coverage_x,
+                    coverage_xhat=coverage_xhat,
+                    coverage_times=coverage_times,
+                    coverage_state_weights=coverage_state_weights,
                     state_scales=scales,
                     time_block_scales=time_block_scales,
                     bellman_p_next=bellman_p_next,
@@ -743,6 +1051,7 @@ def run_output_feedback_rollout_recovery(
             },
             "anchor_to_known_controller": False,
         },
+        "eigenspectrum_coverage": coverage_by_label,
         "initial_state_ensemble": _effective_rank_from_covariance(ensemble_cov),
         "lqr_clean": {
             "cost": output_feedback_cost(schedule, lqr_clean).total_without_disturbance_penalty,
@@ -791,6 +1100,7 @@ def run_output_feedback_rollout_recovery(
         arrays[f"{key}_under_eps_x"] = np.asarray(fit.under_epsilon_rollout.x)
         arrays[f"{key}_under_eps_x_hat"] = np.asarray(fit.under_epsilon_rollout.x_hat)
         arrays[f"{key}_under_eps_u"] = np.asarray(fit.under_epsilon_rollout.u)
+    arrays.update(coverage_arrays)
     return RolloutRecoveryResult(
         issue_id=ISSUE_ID,
         conditions=conditions,
@@ -802,9 +1112,12 @@ def run_output_feedback_rollout_recovery(
 
 
 def _fit_summary(fit: RolloutRecoveryFit) -> dict[str, Any]:
+    condition = fit.condition.__dict__.copy()
+    if fit.condition.eigenspectrum_coverage is not None:
+        condition["eigenspectrum_coverage"] = fit.condition.eigenspectrum_coverage.__dict__
     return {
         "label": fit.label,
-        "condition": fit.condition.__dict__,
+        "condition": condition,
         "initialization": fit.initialization,
         "optimizer_status": fit.optimizer_status,
         "optimizer_success": fit.optimizer_success,
@@ -876,6 +1189,92 @@ def result_summary(
         "diagnostics": result.diagnostics,
         "fits": [_fit_summary(fit) for fit in result.fits],
     }
+
+
+def _scale_initial_state_config(
+    config: LinearTrainingConfig,
+    factor: float,
+) -> LinearTrainingConfig:
+    """Scale synthetic basis/random initial-state coverage while preserving reach state."""
+
+    return replace(
+        config,
+        basis_scale=config.basis_scale * factor,
+        random_state_scale=config.random_state_scale * factor,
+    )
+
+
+def run_initial_state_variability_sweep(
+    *,
+    scale_factors: tuple[float, ...] = (0.0, 0.3, 1.0, 3.0),
+    base_training_config: LinearTrainingConfig = LinearTrainingConfig(),
+    conditions: tuple[RolloutRecoveryCondition, ...] = (STRONG_OPTIMIZER_WHITENED,),
+    output_config: OutputFeedbackConfig = OutputFeedbackConfig(),
+) -> dict[str, Any]:
+    """Run the coupled basis/random synthetic initial-state scale sweep."""
+
+    cells = []
+    for factor in scale_factors:
+        training_config = _scale_initial_state_config(base_training_config, factor)
+        result = run_output_feedback_rollout_recovery(
+            conditions=conditions,
+            training_config=training_config,
+            output_config=output_config,
+        )
+        summary = result_summary(result)
+        cells.append(
+            {
+                "label": f"initial_state_scale_{factor:g}x",
+                "scale_factor": factor,
+                "basis_scale": training_config.basis_scale,
+                "random_state_scale": training_config.random_state_scale,
+                "n_random_states": training_config.n_random_states,
+                "reach_weight": training_config.reach_weight,
+                "diagnostics": summary["diagnostics"],
+                "fits": summary["fits"],
+            }
+        )
+    return {
+        "issue": ISSUE_ID,
+        "umbrella": UMBRELLA_ID,
+        "sweep": "coupled_initial_state_variability",
+        "scale_factors": scale_factors,
+        "base_training_config": base_training_config.__dict__,
+        "interpretation": (
+            "Coupled sweep over existing synthetic basis/random augmented-state coverage. "
+            "The canonical reach state and its weight are preserved; physical start-jitter "
+            "is intentionally separate. All rows use strong optimizer plus whitening."
+        ),
+        "cells": cells,
+    }
+
+
+def eigenspectrum_coverage_conditions(
+    *,
+    objectives: tuple[str, ...] = ("trajectory", "state"),
+    modes: tuple[int, ...] = (1, 4),
+    scales: tuple[float, ...] = (0.3, 1.0, 3.0),
+    weight: float = 0.1,
+) -> tuple[RolloutRecoveryCondition, ...]:
+    """Return strong-optimizer-whitened coverage rows for the planned first sweep."""
+
+    conditions = []
+    for objective in objectives:
+        for n_modes in modes:
+            for scale in scales:
+                label = f"strong_optimizer_whitened_eigen_{objective}_m{n_modes}_s{scale:g}"
+                conditions.append(
+                    strong_optimizer_whitened_with_coverage(
+                        label,
+                        EigenspectrumCoverageConfig(
+                            n_modes=n_modes,
+                            scale=scale,
+                            weight=weight,
+                            objective=objective,
+                        ),
+                    )
+                )
+    return tuple(conditions)
 
 
 def render_markdown(summary: dict[str, Any]) -> str:
@@ -1050,10 +1449,14 @@ def write_outputs(
 
 __all__ = [
     "DEFAULT_CONDITIONS",
+    "EigenspectrumCoverageConfig",
     "RolloutRecoveryCondition",
     "RolloutRecoveryFit",
     "RolloutRecoveryResult",
+    "STRONG_OPTIMIZER_WHITENED",
+    "eigenspectrum_coverage_conditions",
     "render_markdown",
+    "run_initial_state_variability_sweep",
     "result_summary",
     "run_output_feedback_rollout_recovery",
     "write_outputs",

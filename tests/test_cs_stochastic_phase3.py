@@ -12,7 +12,9 @@ from rlrmp.analysis.cs_game_card import (
 from rlrmp.analysis.cs_stochastic_phase3 import (
     Phase3ControllerSpec,
     Phase3StochasticConfig,
+    process_noise_sweep_summary,
     result_summary,
+    run_phase3_process_noise_sweep,
     run_phase3_stochastic_evaluation,
 )
 
@@ -103,3 +105,43 @@ def test_phase3_stochastic_result_reports_required_metrics() -> None:
 
     assert row["deterministic_exact_l2_cost_ratio_to_lqr"] > 0.0
     assert row["deterministic_lambda_over_gamma_squared"] > 0.0
+
+
+def test_phase3_process_noise_sweep_propagates_explicit_scale_cells() -> None:
+    result = run_phase3_process_noise_sweep(
+        config=Phase3StochasticConfig(
+            n_trials=1,
+            seed=7,
+            process_covariance_scale=None,
+        ),
+        process_covariance_scales=(0.0, 0.3),
+        controllers=_small_controller_specs(),
+    )
+
+    assert result.process_covariance_scales == (0.0, 0.3)
+    assert [cell.label for cell in result.cells] == ["0.0", "0.3"]
+    assert [cell.process_covariance_scale for cell in result.cells] == [0.0, 0.3]
+    assert [cell.result.config.process_covariance_scale for cell in result.cells] == [0.0, 0.3]
+    assert result.base_config.process_covariance_scale is None
+
+
+def test_phase3_process_noise_sweep_summary_reports_cell_scales_and_shape() -> None:
+    result = run_phase3_process_noise_sweep(
+        config=Phase3StochasticConfig(n_trials=1, seed=11),
+        process_covariance_scales=(0.0, 1.0, 3.0),
+        controllers=_small_controller_specs(),
+    )
+    summary = process_noise_sweep_summary(result)
+
+    assert summary["process_covariance_scales"] == [0.0, 1.0, 3.0]
+    assert summary["base_monte_carlo"]["process_covariance_scale"] is None
+    assert [cell["label"] for cell in summary["cells"]] == ["0.0", "1.0", "3.0"]
+    assert [cell["process_covariance_scale"] for cell in summary["cells"]] == [0.0, 1.0, 3.0]
+    assert [cell["monte_carlo"]["process_covariance_scale"] for cell in summary["cells"]] == [
+        0.0,
+        1.0,
+        3.0,
+    ]
+    assert all(
+        len(cell["evaluations"]) == len(_small_controller_specs()) for cell in summary["cells"]
+    )

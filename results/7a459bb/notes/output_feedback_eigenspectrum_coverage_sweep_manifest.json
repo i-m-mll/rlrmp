@@ -1,0 +1,1181 @@
+{
+  "bellman_initialization_gain_relative_error": 0.00013943432046537618,
+  "diagnostics": {
+    "analytical_exact_audits": {
+      "hinf": {
+        "cost": 8147.2089745901885,
+        "gamma_penalized_feasible": true,
+        "lambda_over_gamma_squared": 0.9331253588863058
+      },
+      "lqr": {
+        "cost": 11245.971880342271,
+        "gamma_penalized_feasible": false,
+        "lambda_over_gamma_squared": 1.5551183024132287
+      }
+    },
+    "bellman_auxiliary": {
+      "anchor_to_known_controller": false,
+      "objective": "clean_rollout_ratio + weight * one_step_lqr_bellman_ratio",
+      "reference_objective": 5589.026630109139,
+      "schedules": {}
+    },
+    "budget": 2.0661571053308635e-05,
+    "budget_l2": 0.004545500088363065,
+    "eigenspectrum_coverage": {
+      "strong_optimizer_whitened_eigen_state_m1_s0.3": {
+        "alpha": 0.0013636500265089195,
+        "eigenvalues": [
+          256128543.93907008
+        ],
+        "enabled": true,
+        "n_modes": 1,
+        "n_state_samples_for_diagnostics": 120,
+        "n_trajectories": 2,
+        "objective": "state",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 0.3,
+        "source": "signed leading exact-audit epsilon eigenmodes of the analytical LQR controller",
+        "weight": 0.1,
+        "xhat_coverage": {
+          "condition_number": 6.32584769732361e+31,
+          "effective_rank_entropy": 1.4189431006224265,
+          "effective_rank_participation": 1.2062763391777929,
+          "max_eigenvalue": 63.25847697323611,
+          "min_eigenvalue": 0.0,
+          "numerical_rank": 8,
+          "trace": 69.78123949170633
+        }
+      },
+      "strong_optimizer_whitened_eigen_state_m1_s1": {
+        "alpha": 0.004545500088363065,
+        "eigenvalues": [
+          256128543.93907008
+        ],
+        "enabled": true,
+        "n_modes": 1,
+        "n_state_samples_for_diagnostics": 120,
+        "n_trajectories": 2,
+        "objective": "state",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 1.0,
+        "source": "signed leading exact-audit epsilon eigenmodes of the analytical LQR controller",
+        "weight": 0.1,
+        "xhat_coverage": {
+          "condition_number": 6.328470434527169e+31,
+          "effective_rank_entropy": 1.4189280317254807,
+          "effective_rank_participation": 1.2062480067084211,
+          "max_eigenvalue": 63.28470434527169,
+          "min_eigenvalue": 0.0,
+          "numerical_rank": 9,
+          "trace": 69.80923007393736
+        }
+      },
+      "strong_optimizer_whitened_eigen_state_m1_s3": {
+        "alpha": 0.013636500265089196,
+        "eigenvalues": [
+          256128543.93907008
+        ],
+        "enabled": true,
+        "n_modes": 1,
+        "n_state_samples_for_diagnostics": 120,
+        "n_trajectories": 2,
+        "objective": "state",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 3.0,
+        "source": "signed leading exact-audit epsilon eigenmodes of the analytical LQR controller",
+        "weight": 0.1,
+        "xhat_coverage": {
+          "condition_number": 6.351527601750647e+31,
+          "effective_rank_entropy": 1.4187914081375914,
+          "effective_rank_participation": 1.2059998506965968,
+          "max_eigenvalue": 63.51527601750647,
+          "min_eigenvalue": 0.0,
+          "numerical_rank": 9,
+          "trace": 70.05530112651809
+        }
+      },
+      "strong_optimizer_whitened_eigen_state_m4_s0.3": {
+        "alpha": 0.0013636500265089195,
+        "eigenvalues": [
+          256128543.93907008,
+          256128543.9390698,
+          19484142.760295287,
+          19484142.760295272
+        ],
+        "enabled": true,
+        "n_modes": 4,
+        "n_state_samples_for_diagnostics": 480,
+        "n_trajectories": 8,
+        "objective": "state",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 0.3,
+        "source": "signed leading exact-audit epsilon eigenmodes of the analytical LQR controller",
+        "weight": 0.1,
+        "xhat_coverage": {
+          "condition_number": 6.325754643861142e+31,
+          "effective_rank_entropy": 1.419356767559755,
+          "effective_rank_participation": 1.2063384703707754,
+          "max_eigenvalue": 63.25754643861143,
+          "min_eigenvalue": 0.0,
+          "numerical_rank": 14,
+          "trace": 69.78201472840865
+        }
+      },
+      "strong_optimizer_whitened_eigen_state_m4_s1": {
+        "alpha": 0.004545500088363065,
+        "eigenvalues": [
+          256128543.93907008,
+          256128543.9390698,
+          19484142.760295287,
+          19484142.760295272
+        ],
+        "enabled": true,
+        "n_modes": 4,
+        "n_state_samples_for_diagnostics": 480,
+        "n_trajectories": 8,
+        "objective": "state",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 1.0,
+        "source": "signed leading exact-audit epsilon eigenmodes of the analytical LQR controller",
+        "weight": 0.1,
+        "xhat_coverage": {
+          "condition_number": 6.327436505791568e+31,
+          "effective_rank_entropy": 1.4225627186011964,
+          "effective_rank_participation": 1.2069381552371492,
+          "max_eigenvalue": 63.27436505791568,
+          "min_eigenvalue": 0.0,
+          "numerical_rank": 17,
+          "trace": 69.81784381507423
+        }
+      },
+      "strong_optimizer_whitened_eigen_state_m4_s3": {
+        "alpha": 0.013636500265089196,
+        "eigenvalues": [
+          256128543.93907008,
+          256128543.9390698,
+          19484142.760295287,
+          19484142.760295272
+        ],
+        "enabled": true,
+        "n_modes": 4,
+        "n_state_samples_for_diagnostics": 480,
+        "n_trajectories": 8,
+        "objective": "state",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 3.0,
+        "source": "signed leading exact-audit epsilon eigenmodes of the analytical LQR controller",
+        "weight": 0.1,
+        "xhat_coverage": {
+          "condition_number": 6.342222134837389e+31,
+          "effective_rank_entropy": 1.4436682846206175,
+          "effective_rank_participation": 1.2121955249042917,
+          "max_eigenvalue": 63.422221348373895,
+          "min_eigenvalue": 0.0,
+          "numerical_rank": 18,
+          "trace": 70.13282479674983
+        }
+      },
+      "strong_optimizer_whitened_eigen_trajectory_m1_s0.3": {
+        "alpha": 0.0013636500265089195,
+        "eigenvalues": [
+          256128543.93907008
+        ],
+        "enabled": true,
+        "n_modes": 1,
+        "n_state_samples_for_diagnostics": 120,
+        "n_trajectories": 2,
+        "objective": "trajectory",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 0.3,
+        "source": "signed leading exact-audit epsilon eigenmodes of the analytical LQR controller",
+        "weight": 0.1,
+        "xhat_coverage": {
+          "condition_number": 6.32584769732361e+31,
+          "effective_rank_entropy": 1.4189431006224265,
+          "effective_rank_participation": 1.2062763391777929,
+          "max_eigenvalue": 63.25847697323611,
+          "min_eigenvalue": 0.0,
+          "numerical_rank": 8,
+          "trace": 69.78123949170633
+        }
+      },
+      "strong_optimizer_whitened_eigen_trajectory_m1_s1": {
+        "alpha": 0.004545500088363065,
+        "eigenvalues": [
+          256128543.93907008
+        ],
+        "enabled": true,
+        "n_modes": 1,
+        "n_state_samples_for_diagnostics": 120,
+        "n_trajectories": 2,
+        "objective": "trajectory",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 1.0,
+        "source": "signed leading exact-audit epsilon eigenmodes of the analytical LQR controller",
+        "weight": 0.1,
+        "xhat_coverage": {
+          "condition_number": 6.328470434527169e+31,
+          "effective_rank_entropy": 1.4189280317254807,
+          "effective_rank_participation": 1.2062480067084211,
+          "max_eigenvalue": 63.28470434527169,
+          "min_eigenvalue": 0.0,
+          "numerical_rank": 9,
+          "trace": 69.80923007393736
+        }
+      },
+      "strong_optimizer_whitened_eigen_trajectory_m1_s3": {
+        "alpha": 0.013636500265089196,
+        "eigenvalues": [
+          256128543.93907008
+        ],
+        "enabled": true,
+        "n_modes": 1,
+        "n_state_samples_for_diagnostics": 120,
+        "n_trajectories": 2,
+        "objective": "trajectory",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 3.0,
+        "source": "signed leading exact-audit epsilon eigenmodes of the analytical LQR controller",
+        "weight": 0.1,
+        "xhat_coverage": {
+          "condition_number": 6.351527601750647e+31,
+          "effective_rank_entropy": 1.4187914081375914,
+          "effective_rank_participation": 1.2059998506965968,
+          "max_eigenvalue": 63.51527601750647,
+          "min_eigenvalue": 0.0,
+          "numerical_rank": 9,
+          "trace": 70.05530112651809
+        }
+      },
+      "strong_optimizer_whitened_eigen_trajectory_m4_s0.3": {
+        "alpha": 0.0013636500265089195,
+        "eigenvalues": [
+          256128543.93907008,
+          256128543.9390698,
+          19484142.760295287,
+          19484142.760295272
+        ],
+        "enabled": true,
+        "n_modes": 4,
+        "n_state_samples_for_diagnostics": 480,
+        "n_trajectories": 8,
+        "objective": "trajectory",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 0.3,
+        "source": "signed leading exact-audit epsilon eigenmodes of the analytical LQR controller",
+        "weight": 0.1,
+        "xhat_coverage": {
+          "condition_number": 6.325754643861142e+31,
+          "effective_rank_entropy": 1.419356767559755,
+          "effective_rank_participation": 1.2063384703707754,
+          "max_eigenvalue": 63.25754643861143,
+          "min_eigenvalue": 0.0,
+          "numerical_rank": 14,
+          "trace": 69.78201472840865
+        }
+      },
+      "strong_optimizer_whitened_eigen_trajectory_m4_s1": {
+        "alpha": 0.004545500088363065,
+        "eigenvalues": [
+          256128543.93907008,
+          256128543.9390698,
+          19484142.760295287,
+          19484142.760295272
+        ],
+        "enabled": true,
+        "n_modes": 4,
+        "n_state_samples_for_diagnostics": 480,
+        "n_trajectories": 8,
+        "objective": "trajectory",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 1.0,
+        "source": "signed leading exact-audit epsilon eigenmodes of the analytical LQR controller",
+        "weight": 0.1,
+        "xhat_coverage": {
+          "condition_number": 6.327436505791568e+31,
+          "effective_rank_entropy": 1.4225627186011964,
+          "effective_rank_participation": 1.2069381552371492,
+          "max_eigenvalue": 63.27436505791568,
+          "min_eigenvalue": 0.0,
+          "numerical_rank": 17,
+          "trace": 69.81784381507423
+        }
+      },
+      "strong_optimizer_whitened_eigen_trajectory_m4_s3": {
+        "alpha": 0.013636500265089196,
+        "eigenvalues": [
+          256128543.93907008,
+          256128543.9390698,
+          19484142.760295287,
+          19484142.760295272
+        ],
+        "enabled": true,
+        "n_modes": 4,
+        "n_state_samples_for_diagnostics": 480,
+        "n_trajectories": 8,
+        "objective": "trajectory",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 3.0,
+        "source": "signed leading exact-audit epsilon eigenmodes of the analytical LQR controller",
+        "weight": 0.1,
+        "xhat_coverage": {
+          "condition_number": 6.342222134837389e+31,
+          "effective_rank_entropy": 1.4436682846206175,
+          "effective_rank_participation": 1.2121955249042917,
+          "max_eigenvalue": 63.422221348373895,
+          "min_eigenvalue": 0.0,
+          "numerical_rank": 18,
+          "trace": 70.13282479674983
+        }
+      }
+    },
+    "gamma": 12833.563799663352,
+    "gamma_factor": 1.4,
+    "gamma_star": 9166.831285473823,
+    "initial_state_ensemble": {
+      "condition_number": 1790.8120187354489,
+      "effective_rank_entropy": 10.542072619554624,
+      "effective_rank_participation": 3.5615010850720674,
+      "max_eigenvalue": 0.007620508424181629,
+      "min_eigenvalue": 4.255336877604116e-06,
+      "numerical_rank": 48,
+      "trace": 0.014604025450581561
+    },
+    "lqr_clean": {
+      "cost": 4363.509945030792,
+      "rollout": {
+        "control_effort": 1681.322504233146,
+        "estimation_error_final_l2": 0.0,
+        "estimation_error_rms": 0.0,
+        "peak_forward_velocity": 0.7310094144305818,
+        "terminal_position_error_m": 0.0031107800086920268,
+        "time_to_peak_step": 16
+      },
+      "xhat_coverage": {
+        "condition_number": 4255080.421917933,
+        "effective_rank_entropy": 1.8567949412065476,
+        "effective_rank_participation": 1.3883943538897938,
+        "max_eigenvalue": 4.130254562319159,
+        "min_eigenvalue": 9.706642772353267e-07,
+        "numerical_rank": 48,
+        "trace": 4.900071905292246
+      }
+    },
+    "lqr_under_riccati_epsilon": {
+      "cost": 10810.220551162882,
+      "rollout": {
+        "control_effort": 1668.5895346385919,
+        "estimation_error_final_l2": 0.04561678912920648,
+        "estimation_error_rms": 0.0038739085971828064,
+        "peak_forward_velocity": 0.7329387986678687,
+        "terminal_position_error_m": 0.031351028519136404,
+        "time_to_peak_step": 16
+      }
+    },
+    "output_config": {
+      "delay_steps": 5,
+      "denominator_floor": 1e-12,
+      "estimator_initial_covariance": 0.01,
+      "n_phys": 8,
+      "process_covariance_scale": 0.001,
+      "sensory_noise_scale": 1.0,
+      "use_matlab_persistent_m_index": true
+    },
+    "state_scales": {
+      "condition": 3.9276054247775134,
+      "max": 0.03794265631640191,
+      "median": 0.012259003773189964,
+      "min": 0.009660506138686588
+    },
+    "time_block_scales": {
+      "condition": 1.336053247473033,
+      "max": 1.3146376074369281,
+      "median": 1.0,
+      "min": 0.9839709681656703
+    },
+    "training_config": {
+      "basis_scale": 0.01,
+      "learning_rate": 0.3,
+      "n_random_states": 64,
+      "n_steps": 500,
+      "random_state_scale": 0.02,
+      "reach_weight": 10.0,
+      "seed": 0
+    }
+  },
+  "fits": [
+    {
+      "clean_action_mismatch_ratio": 0.6892520420422369,
+      "clean_cost": 5351.437521234898,
+      "clean_rollout": {
+        "control_effort": 2131.586582273986,
+        "estimation_error_final_l2": 0.0,
+        "estimation_error_rms": 0.0,
+        "peak_forward_velocity": 0.6450308642604421,
+        "terminal_position_error_m": 0.0035018159872327475,
+        "time_to_peak_step": 15
+      },
+      "condition": {
+        "auxiliary_bellman_weights": [],
+        "eigenspectrum_coverage": {
+          "n_modes": 1,
+          "objective": "trajectory",
+          "reference": "lqr_exact_budget_l2",
+          "scale": 0.3,
+          "weight": 0.1
+        },
+        "ftol": 1e-14,
+        "gtol": 1e-10,
+        "initializations": [
+          "scratch"
+        ],
+        "label": "strong_optimizer_whitened_eigen_trajectory_m1_s0.3",
+        "maxiter": 2000,
+        "maxls": 100,
+        "use_time_block_preconditioning": false,
+        "use_whitening": true
+      },
+      "exact_l2_cost": 95633.47301234546,
+      "exact_l2_cost_ratio_to_hinf": 11.738188293759325,
+      "exact_l2_cost_ratio_to_lqr": 8.503797984726498,
+      "gain_relative_error": 0.9889602460226773,
+      "gamma_penalized_feasible": false,
+      "gamma_penalized_lambda_over_gamma_squared": 26.312147423133528,
+      "gradient_norm_final": 96609.635586562,
+      "gradient_norm_initial": 398835.48812848225,
+      "initialization": "scratch",
+      "label": "strong_optimizer_whitened_eigen_trajectory_m1_s0.3__scratch",
+      "n_function_evaluations": 2249,
+      "n_iterations": 2000,
+      "objective_final": 6258.759789732165,
+      "objective_initial": 186451.8397521236,
+      "objective_ratio_to_reference": 1.2127363535849864,
+      "objective_reference": 5160.857734024844,
+      "objective_zero": 186451.8397521236,
+      "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+      "optimizer_success": false,
+      "projected_gradient_norm_final": 96609.635586562,
+      "under_epsilon_action_mismatch_ratio": 0.6627793797317104,
+      "under_epsilon_cost": 10672.632710870159,
+      "under_epsilon_cost_ratio_to_lqr": 0.9872724298600992,
+      "under_epsilon_rollout": {
+        "control_effort": 2029.5484324768145,
+        "estimation_error_final_l2": 0.045616789129206525,
+        "estimation_error_rms": 0.003873908597182814,
+        "peak_forward_velocity": 0.6450346113628637,
+        "terminal_position_error_m": 0.0217561422615598,
+        "time_to_peak_step": 15
+      }
+    },
+    {
+      "clean_action_mismatch_ratio": 0.7756726892435577,
+      "clean_cost": 5709.74448818936,
+      "clean_rollout": {
+        "control_effort": 2278.102306308303,
+        "estimation_error_final_l2": 0.0,
+        "estimation_error_rms": 0.0,
+        "peak_forward_velocity": 0.618009005234339,
+        "terminal_position_error_m": 0.004455963805539973,
+        "time_to_peak_step": 15
+      },
+      "condition": {
+        "auxiliary_bellman_weights": [],
+        "eigenspectrum_coverage": {
+          "n_modes": 1,
+          "objective": "trajectory",
+          "reference": "lqr_exact_budget_l2",
+          "scale": 1.0,
+          "weight": 0.1
+        },
+        "ftol": 1e-14,
+        "gtol": 1e-10,
+        "initializations": [
+          "scratch"
+        ],
+        "label": "strong_optimizer_whitened_eigen_trajectory_m1_s1",
+        "maxiter": 2000,
+        "maxls": 100,
+        "use_time_block_preconditioning": false,
+        "use_whitening": true
+      },
+      "exact_l2_cost": 135829.56612104803,
+      "exact_l2_cost_ratio_to_hinf": 16.671913847389728,
+      "exact_l2_cost_ratio_to_lqr": 12.078063822876468,
+      "gain_relative_error": 0.9892989873773916,
+      "gamma_penalized_feasible": false,
+      "gamma_penalized_lambda_over_gamma_squared": 38.005607475598204,
+      "gradient_norm_final": 236998.0265830602,
+      "gradient_norm_initial": 399296.2328853789,
+      "initialization": "scratch",
+      "label": "strong_optimizer_whitened_eigen_trajectory_m1_s1__scratch",
+      "n_function_evaluations": 2358,
+      "n_iterations": 2000,
+      "objective_final": 9183.63931846528,
+      "objective_initial": 193056.2475209451,
+      "objective_ratio_to_reference": 0.9205184777370692,
+      "objective_reference": 9976.594213558454,
+      "objective_zero": 193056.2475209451,
+      "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+      "optimizer_success": false,
+      "projected_gradient_norm_final": 236998.0265830602,
+      "under_epsilon_action_mismatch_ratio": 0.7466690677947067,
+      "under_epsilon_cost": 10418.156164729024,
+      "under_epsilon_cost_ratio_to_lqr": 0.9637320640612015,
+      "under_epsilon_rollout": {
+        "control_effort": 2059.796079317372,
+        "estimation_error_final_l2": 0.04561678912920656,
+        "estimation_error_rms": 0.0038739085971828146,
+        "peak_forward_velocity": 0.618178933590664,
+        "terminal_position_error_m": 0.01946001387049873,
+        "time_to_peak_step": 15
+      }
+    },
+    {
+      "clean_action_mismatch_ratio": 0.739044982071929,
+      "clean_cost": 5709.447588910438,
+      "clean_rollout": {
+        "control_effort": 1782.505825907472,
+        "estimation_error_final_l2": 0.0,
+        "estimation_error_rms": 0.0,
+        "peak_forward_velocity": 0.6260846572021442,
+        "terminal_position_error_m": 0.0043772460980486365,
+        "time_to_peak_step": 16
+      },
+      "condition": {
+        "auxiliary_bellman_weights": [],
+        "eigenspectrum_coverage": {
+          "n_modes": 1,
+          "objective": "trajectory",
+          "reference": "lqr_exact_budget_l2",
+          "scale": 3.0,
+          "weight": 0.1
+        },
+        "ftol": 1e-14,
+        "gtol": 1e-10,
+        "initializations": [
+          "scratch"
+        ],
+        "label": "strong_optimizer_whitened_eigen_trajectory_m1_s3",
+        "maxiter": 2000,
+        "maxls": 100,
+        "use_time_block_preconditioning": false,
+        "use_whitening": true
+      },
+      "exact_l2_cost": 345447.8841517205,
+      "exact_l2_cost_ratio_to_hinf": 42.400763897073944,
+      "exact_l2_cost_ratio_to_lqr": 30.717477140019916,
+      "gain_relative_error": 0.9947077203331848,
+      "gamma_penalized_feasible": false,
+      "gamma_penalized_lambda_over_gamma_squared": 99.49078709598707,
+      "gradient_norm_final": 1766412.2259941825,
+      "gradient_norm_initial": 403485.05708524544,
+      "initialization": "scratch",
+      "label": "strong_optimizer_whitened_eigen_trajectory_m1_s3__scratch",
+      "n_function_evaluations": 2527,
+      "n_iterations": 2000,
+      "objective_final": 27691.807316444363,
+      "objective_initial": 251116.97515893533,
+      "objective_ratio_to_reference": 0.5293511255366488,
+      "objective_reference": 52312.73908857905,
+      "objective_zero": 251116.97515893533,
+      "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+      "optimizer_success": false,
+      "projected_gradient_norm_final": 1766412.2259941825,
+      "under_epsilon_action_mismatch_ratio": 0.6697350056588649,
+      "under_epsilon_cost": 9895.390912895553,
+      "under_epsilon_cost_ratio_to_lqr": 0.9153736379440549,
+      "under_epsilon_rollout": {
+        "control_effort": 1383.8391734515571,
+        "estimation_error_final_l2": 0.045616789129206574,
+        "estimation_error_rms": 0.003873908597182821,
+        "peak_forward_velocity": 0.6261500009840716,
+        "terminal_position_error_m": 0.013222666895146892,
+        "time_to_peak_step": 16
+      }
+    },
+    {
+      "clean_action_mismatch_ratio": 0.6317598494006952,
+      "clean_cost": 5247.398342740341,
+      "clean_rollout": {
+        "control_effort": 1958.8096983480368,
+        "estimation_error_final_l2": 0.0,
+        "estimation_error_rms": 0.0,
+        "peak_forward_velocity": 0.645944191396679,
+        "terminal_position_error_m": 0.004051223493856227,
+        "time_to_peak_step": 16
+      },
+      "condition": {
+        "auxiliary_bellman_weights": [],
+        "eigenspectrum_coverage": {
+          "n_modes": 4,
+          "objective": "trajectory",
+          "reference": "lqr_exact_budget_l2",
+          "scale": 0.3,
+          "weight": 0.1
+        },
+        "ftol": 1e-14,
+        "gtol": 1e-10,
+        "initializations": [
+          "scratch"
+        ],
+        "label": "strong_optimizer_whitened_eigen_trajectory_m4_s0.3",
+        "maxiter": 2000,
+        "maxls": 100,
+        "use_time_block_preconditioning": false,
+        "use_whitening": true
+      },
+      "exact_l2_cost": 14215.812804795964,
+      "exact_l2_cost_ratio_to_hinf": 1.7448690525961414,
+      "exact_l2_cost_ratio_to_lqr": 1.2640804152858423,
+      "gain_relative_error": 0.9898953738533781,
+      "gamma_penalized_feasible": false,
+      "gamma_penalized_lambda_over_gamma_squared": 2.293583642582638,
+      "gradient_norm_final": 66773.32272989315,
+      "gradient_norm_initial": 398799.12753406615,
+      "initialization": "scratch",
+      "label": "strong_optimizer_whitened_eigen_trajectory_m4_s0.3__scratch",
+      "n_function_evaluations": 2344,
+      "n_iterations": 2000,
+      "objective_final": 6141.789941036737,
+      "objective_initial": 186147.52594349883,
+      "objective_ratio_to_reference": 1.24306778003909,
+      "objective_reference": 4940.832704105323,
+      "objective_zero": 186147.52594349883,
+      "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+      "optimizer_success": false,
+      "projected_gradient_norm_final": 66773.32272989315,
+      "under_epsilon_action_mismatch_ratio": 0.6227739211841136,
+      "under_epsilon_cost": 12651.522595229686,
+      "under_epsilon_cost_ratio_to_lqr": 1.1703297389125638,
+      "under_epsilon_rollout": {
+        "control_effort": 1925.7718478201368,
+        "estimation_error_final_l2": 0.04561678912920655,
+        "estimation_error_rms": 0.0038739085971828137,
+        "peak_forward_velocity": 0.6461232342641304,
+        "terminal_position_error_m": 0.03386687013696168,
+        "time_to_peak_step": 16
+      }
+    },
+    {
+      "clean_action_mismatch_ratio": 0.7124600965412622,
+      "clean_cost": 5468.469629764438,
+      "clean_rollout": {
+        "control_effort": 2024.8100702355703,
+        "estimation_error_final_l2": 0.0,
+        "estimation_error_rms": 0.0,
+        "peak_forward_velocity": 0.6399523841892988,
+        "terminal_position_error_m": 0.003861881677468072,
+        "time_to_peak_step": 15
+      },
+      "condition": {
+        "auxiliary_bellman_weights": [],
+        "eigenspectrum_coverage": {
+          "n_modes": 4,
+          "objective": "trajectory",
+          "reference": "lqr_exact_budget_l2",
+          "scale": 1.0,
+          "weight": 0.1
+        },
+        "ftol": 1e-14,
+        "gtol": 1e-10,
+        "initializations": [
+          "scratch"
+        ],
+        "label": "strong_optimizer_whitened_eigen_trajectory_m4_s1",
+        "maxiter": 2000,
+        "maxls": 100,
+        "use_time_block_preconditioning": false,
+        "use_whitening": true
+      },
+      "exact_l2_cost": 29194.7575284299,
+      "exact_l2_cost_ratio_to_hinf": 3.583406000690981,
+      "exact_l2_cost_ratio_to_lqr": 2.596019075902345,
+      "gain_relative_error": 0.9912117118431739,
+      "gamma_penalized_feasible": false,
+      "gamma_penalized_lambda_over_gamma_squared": 6.769987866122246,
+      "gradient_norm_final": 113249.09241503221,
+      "gradient_norm_initial": 398891.01947182603,
+      "initialization": "scratch",
+      "label": "strong_optimizer_whitened_eigen_trajectory_m4_s1__scratch",
+      "n_function_evaluations": 2374,
+      "n_iterations": 2000,
+      "objective_final": 9563.508705472126,
+      "objective_initial": 189674.98298066962,
+      "objective_ratio_to_reference": 1.2697386703576234,
+      "objective_reference": 7531.8716588969855,
+      "objective_zero": 189674.98298066962,
+      "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+      "optimizer_success": false,
+      "projected_gradient_norm_final": 113249.09241503221,
+      "under_epsilon_action_mismatch_ratio": 0.707489075667497,
+      "under_epsilon_cost": 13108.00446274804,
+      "under_epsilon_cost_ratio_to_lqr": 1.2125566172040754,
+      "under_epsilon_rollout": {
+        "control_effort": 2001.5440906701306,
+        "estimation_error_final_l2": 0.04561678912920658,
+        "estimation_error_rms": 0.00387390859718282,
+        "peak_forward_velocity": 0.6398919423076069,
+        "terminal_position_error_m": 0.034237079117089564,
+        "time_to_peak_step": 15
+      }
+    },
+    {
+      "clean_action_mismatch_ratio": 0.8734798448181449,
+      "clean_cost": 6018.900653295832,
+      "clean_rollout": {
+        "control_effort": 2536.297144232646,
+        "estimation_error_final_l2": 0.0,
+        "estimation_error_rms": 0.0,
+        "peak_forward_velocity": 0.641920675687433,
+        "terminal_position_error_m": 0.0038690142314894704,
+        "time_to_peak_step": 22
+      },
+      "condition": {
+        "auxiliary_bellman_weights": [],
+        "eigenspectrum_coverage": {
+          "n_modes": 4,
+          "objective": "trajectory",
+          "reference": "lqr_exact_budget_l2",
+          "scale": 3.0,
+          "weight": 0.1
+        },
+        "ftol": 1e-14,
+        "gtol": 1e-10,
+        "initializations": [
+          "scratch"
+        ],
+        "label": "strong_optimizer_whitened_eigen_trajectory_m4_s3",
+        "maxiter": 2000,
+        "maxls": 100,
+        "use_time_block_preconditioning": false,
+        "use_whitening": true
+      },
+      "exact_l2_cost": 361997.0682661567,
+      "exact_l2_cost_ratio_to_hinf": 44.43203425800987,
+      "exact_l2_cost_ratio_to_lqr": 32.18904262946986,
+      "gain_relative_error": 0.988380326549108,
+      "gamma_penalized_feasible": false,
+      "gamma_penalized_lambda_over_gamma_squared": 104.57863189557584,
+      "gradient_norm_final": 1314978.2395196771,
+      "gradient_norm_initial": 399744.1512918832,
+      "initialization": "scratch",
+      "label": "strong_optimizer_whitened_eigen_trajectory_m4_s3__scratch",
+      "n_function_evaluations": 2402,
+      "n_iterations": 2000,
+      "objective_final": 32748.53680278231,
+      "objective_initial": 220685.59429645684,
+      "objective_ratio_to_reference": 1.0804447942399178,
+      "objective_reference": 30310.236096625908,
+      "objective_zero": 220685.59429645684,
+      "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+      "optimizer_success": false,
+      "projected_gradient_norm_final": 1314978.2395196771,
+      "under_epsilon_action_mismatch_ratio": 0.8530560904294728,
+      "under_epsilon_cost": 12765.081858468715,
+      "under_epsilon_cost_ratio_to_lqr": 1.1808345443142272,
+      "under_epsilon_rollout": {
+        "control_effort": 2388.0610518869166,
+        "estimation_error_final_l2": 0.0456167891292065,
+        "estimation_error_rms": 0.003873908597182811,
+        "peak_forward_velocity": 0.6414361366950433,
+        "terminal_position_error_m": 0.03228370702422231,
+        "time_to_peak_step": 22
+      }
+    },
+    {
+      "clean_action_mismatch_ratio": 0.06025112168797791,
+      "clean_cost": 4370.236499389854,
+      "clean_rollout": {
+        "control_effort": 1650.1785549205017,
+        "estimation_error_final_l2": 0.0,
+        "estimation_error_rms": 0.0,
+        "peak_forward_velocity": 0.7310929404741342,
+        "terminal_position_error_m": 0.003203255015157413,
+        "time_to_peak_step": 16
+      },
+      "condition": {
+        "auxiliary_bellman_weights": [],
+        "eigenspectrum_coverage": {
+          "n_modes": 1,
+          "objective": "state",
+          "reference": "lqr_exact_budget_l2",
+          "scale": 0.3,
+          "weight": 0.1
+        },
+        "ftol": 1e-14,
+        "gtol": 1e-10,
+        "initializations": [
+          "scratch"
+        ],
+        "label": "strong_optimizer_whitened_eigen_state_m1_s0.3",
+        "maxiter": 2000,
+        "maxls": 100,
+        "use_time_block_preconditioning": false,
+        "use_whitening": true
+      },
+      "exact_l2_cost": 12381.764208139482,
+      "exact_l2_cost_ratio_to_hinf": 1.5197553231733933,
+      "exact_l2_cost_ratio_to_lqr": 1.1009954799711488,
+      "gain_relative_error": 0.9908946742055667,
+      "gamma_penalized_feasible": false,
+      "gamma_penalized_lambda_over_gamma_squared": 2.131934646316092,
+      "gradient_norm_final": 853.2233721274556,
+      "gradient_norm_initial": 10700978.312970705,
+      "initialization": "scratch",
+      "label": "strong_optimizer_whitened_eigen_state_m1_s0.3__scratch",
+      "n_function_evaluations": 2148,
+      "n_iterations": 2000,
+      "objective_final": 1888.3914538668464,
+      "objective_initial": 211174.0477114512,
+      "objective_ratio_to_reference": 1.0081118707937906,
+      "objective_reference": 1873.196327288479,
+      "objective_zero": 211174.0477114512,
+      "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+      "optimizer_success": false,
+      "projected_gradient_norm_final": 853.2233721274556,
+      "under_epsilon_action_mismatch_ratio": 0.061372078807267215,
+      "under_epsilon_cost": 11469.598776787694,
+      "under_epsilon_cost_ratio_to_lqr": 1.0609958161819262,
+      "under_epsilon_rollout": {
+        "control_effort": 1639.9882749194794,
+        "estimation_error_final_l2": 0.045616789129206546,
+        "estimation_error_rms": 0.003873908597182811,
+        "peak_forward_velocity": 0.7307296264042591,
+        "terminal_position_error_m": 0.033081066927109035,
+        "time_to_peak_step": 16
+      }
+    },
+    {
+      "clean_action_mismatch_ratio": 0.060346779789655136,
+      "clean_cost": 4370.403053634468,
+      "clean_rollout": {
+        "control_effort": 1652.0802036446514,
+        "estimation_error_final_l2": 0.0,
+        "estimation_error_rms": 0.0,
+        "peak_forward_velocity": 0.7326407450293133,
+        "terminal_position_error_m": 0.003095553363543914,
+        "time_to_peak_step": 16
+      },
+      "condition": {
+        "auxiliary_bellman_weights": [],
+        "eigenspectrum_coverage": {
+          "n_modes": 1,
+          "objective": "state",
+          "reference": "lqr_exact_budget_l2",
+          "scale": 1.0,
+          "weight": 0.1
+        },
+        "ftol": 1e-14,
+        "gtol": 1e-10,
+        "initializations": [
+          "scratch"
+        ],
+        "label": "strong_optimizer_whitened_eigen_state_m1_s1",
+        "maxiter": 2000,
+        "maxls": 100,
+        "use_time_block_preconditioning": false,
+        "use_whitening": true
+      },
+      "exact_l2_cost": 12449.616424795,
+      "exact_l2_cost_ratio_to_hinf": 1.5280836006076826,
+      "exact_l2_cost_ratio_to_lqr": 1.1070289484323428,
+      "gain_relative_error": 0.9909953423892932,
+      "gamma_penalized_feasible": false,
+      "gamma_penalized_lambda_over_gamma_squared": 2.175016194206231,
+      "gradient_norm_final": 732.2643135572068,
+      "gradient_norm_initial": 10700919.837945083,
+      "initialization": "scratch",
+      "label": "strong_optimizer_whitened_eigen_state_m1_s1__scratch",
+      "n_function_evaluations": 2163,
+      "n_iterations": 2000,
+      "objective_final": 3213.1311393897868,
+      "objective_initial": 212551.7745989901,
+      "objective_ratio_to_reference": 0.9933852916414918,
+      "objective_reference": 3234.5265894568843,
+      "objective_zero": 212551.7745989901,
+      "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+      "optimizer_success": false,
+      "projected_gradient_norm_final": 732.2643135572068,
+      "under_epsilon_action_mismatch_ratio": 0.07018892179384704,
+      "under_epsilon_cost": 11446.89088324141,
+      "under_epsilon_cost_ratio_to_lqr": 1.0588952213384806,
+      "under_epsilon_rollout": {
+        "control_effort": 1640.7216020858957,
+        "estimation_error_final_l2": 0.04561678912920659,
+        "estimation_error_rms": 0.00387390859718282,
+        "peak_forward_velocity": 0.7322906215301006,
+        "terminal_position_error_m": 0.033148091326996316,
+        "time_to_peak_step": 16
+      }
+    },
+    {
+      "clean_action_mismatch_ratio": 0.176387390814617,
+      "clean_cost": 4420.879154042112,
+      "clean_rollout": {
+        "control_effort": 1634.5072329174052,
+        "estimation_error_final_l2": 0.0,
+        "estimation_error_rms": 0.0,
+        "peak_forward_velocity": 0.7336462077425783,
+        "terminal_position_error_m": 0.0034604194650319237,
+        "time_to_peak_step": 16
+      },
+      "condition": {
+        "auxiliary_bellman_weights": [],
+        "eigenspectrum_coverage": {
+          "n_modes": 1,
+          "objective": "state",
+          "reference": "lqr_exact_budget_l2",
+          "scale": 3.0,
+          "weight": 0.1
+        },
+        "ftol": 1e-14,
+        "gtol": 1e-10,
+        "initializations": [
+          "scratch"
+        ],
+        "label": "strong_optimizer_whitened_eigen_state_m1_s3",
+        "maxiter": 2000,
+        "maxls": 100,
+        "use_time_block_preconditioning": false,
+        "use_whitening": true
+      },
+      "exact_l2_cost": 12588.667386369612,
+      "exact_l2_cost_ratio_to_hinf": 1.5451509131079866,
+      "exact_l2_cost_ratio_to_lqr": 1.119393461082216,
+      "gain_relative_error": 0.9919760639519921,
+      "gamma_penalized_feasible": false,
+      "gamma_penalized_lambda_over_gamma_squared": 2.21507796077222,
+      "gradient_norm_final": 6299.369576641837,
+      "gradient_norm_initial": 10700407.842304533,
+      "initialization": "scratch",
+      "label": "strong_optimizer_whitened_eigen_state_m1_s3__scratch",
+      "n_function_evaluations": 2183,
+      "n_iterations": 2000,
+      "objective_final": 14691.299630593914,
+      "objective_initial": 224663.65932460758,
+      "objective_ratio_to_reference": 0.9663888557351927,
+      "objective_reference": 15202.265157970307,
+      "objective_zero": 224663.65932460758,
+      "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+      "optimizer_success": false,
+      "projected_gradient_norm_final": 6299.369576641837,
+      "under_epsilon_action_mismatch_ratio": 0.18018739419522495,
+      "under_epsilon_cost": 11546.05048620796,
+      "under_epsilon_cost_ratio_to_lqr": 1.0680679854367932,
+      "under_epsilon_rollout": {
+        "control_effort": 1622.7617861652368,
+        "estimation_error_final_l2": 0.04561678912920648,
+        "estimation_error_rms": 0.0038739085971828055,
+        "peak_forward_velocity": 0.7333024509416484,
+        "terminal_position_error_m": 0.03327269309596909,
+        "time_to_peak_step": 16
+      }
+    },
+    {
+      "clean_action_mismatch_ratio": 0.1275401380925106,
+      "clean_cost": 4394.6336513165215,
+      "clean_rollout": {
+        "control_effort": 1619.6241592806039,
+        "estimation_error_final_l2": 0.0,
+        "estimation_error_rms": 0.0,
+        "peak_forward_velocity": 0.7366283275377548,
+        "terminal_position_error_m": 0.00313828301624771,
+        "time_to_peak_step": 16
+      },
+      "condition": {
+        "auxiliary_bellman_weights": [],
+        "eigenspectrum_coverage": {
+          "n_modes": 4,
+          "objective": "state",
+          "reference": "lqr_exact_budget_l2",
+          "scale": 0.3,
+          "weight": 0.1
+        },
+        "ftol": 1e-14,
+        "gtol": 1e-10,
+        "initializations": [
+          "scratch"
+        ],
+        "label": "strong_optimizer_whitened_eigen_state_m4_s0.3",
+        "maxiter": 2000,
+        "maxls": 100,
+        "use_time_block_preconditioning": false,
+        "use_whitening": true
+      },
+      "exact_l2_cost": 13127.289512691303,
+      "exact_l2_cost_ratio_to_hinf": 1.611262157830144,
+      "exact_l2_cost_ratio_to_lqr": 1.1672881323523079,
+      "gain_relative_error": 0.9921147132655904,
+      "gamma_penalized_feasible": false,
+      "gamma_penalized_lambda_over_gamma_squared": 2.1301903729155334,
+      "gradient_norm_final": 1432.3418827394723,
+      "gradient_norm_initial": 10700986.50787348,
+      "initialization": "scratch",
+      "label": "strong_optimizer_whitened_eigen_state_m4_s0.3__scratch",
+      "n_function_evaluations": 2178,
+      "n_iterations": 2000,
+      "objective_final": 1840.5488248086033,
+      "objective_initial": 211119.80657143708,
+      "objective_ratio_to_reference": 1.0140665403707454,
+      "objective_reference": 1815.0178036006332,
+      "objective_zero": 211119.80657143708,
+      "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+      "optimizer_success": false,
+      "projected_gradient_norm_final": 1432.3418827394723,
+      "under_epsilon_action_mismatch_ratio": 0.12836885011071444,
+      "under_epsilon_cost": 11807.330438612751,
+      "under_epsilon_cost_ratio_to_lqr": 1.0922377006769401,
+      "under_epsilon_rollout": {
+        "control_effort": 1615.2110612351012,
+        "estimation_error_final_l2": 0.04561678912920652,
+        "estimation_error_rms": 0.003873908597182812,
+        "peak_forward_velocity": 0.7362899229206008,
+        "terminal_position_error_m": 0.03396543221415249,
+        "time_to_peak_step": 16
+      }
+    },
+    {
+      "clean_action_mismatch_ratio": 0.24190124780446973,
+      "clean_cost": 4476.122956808354,
+      "clean_rollout": {
+        "control_effort": 1603.5552431394672,
+        "estimation_error_final_l2": 0.0,
+        "estimation_error_rms": 0.0,
+        "peak_forward_velocity": 0.7342487178260998,
+        "terminal_position_error_m": 0.003576418279899561,
+        "time_to_peak_step": 16
+      },
+      "condition": {
+        "auxiliary_bellman_weights": [],
+        "eigenspectrum_coverage": {
+          "n_modes": 4,
+          "objective": "state",
+          "reference": "lqr_exact_budget_l2",
+          "scale": 1.0,
+          "weight": 0.1
+        },
+        "ftol": 1e-14,
+        "gtol": 1e-10,
+        "initializations": [
+          "scratch"
+        ],
+        "label": "strong_optimizer_whitened_eigen_state_m4_s1",
+        "maxiter": 2000,
+        "maxls": 100,
+        "use_time_block_preconditioning": false,
+        "use_whitening": true
+      },
+      "exact_l2_cost": 12843.04638735462,
+      "exact_l2_cost_ratio_to_hinf": 1.5763737529514683,
+      "exact_l2_cost_ratio_to_lqr": 1.1420130268868982,
+      "gain_relative_error": 0.9935962581516794,
+      "gamma_penalized_feasible": false,
+      "gamma_penalized_lambda_over_gamma_squared": 2.040811704084638,
+      "gradient_norm_final": 6677.9720322866215,
+      "gradient_norm_initial": 10701010.933820153,
+      "initialization": "scratch",
+      "label": "strong_optimizer_whitened_eigen_state_m4_s1__scratch",
+      "n_function_evaluations": 2187,
+      "n_iterations": 2000,
+      "objective_final": 2631.222794734901,
+      "objective_initial": 211949.09526549993,
+      "objective_ratio_to_reference": 1.0166625209381748,
+      "objective_reference": 2588.09854848078,
+      "objective_zero": 211949.09526549993,
+      "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+      "optimizer_success": false,
+      "projected_gradient_norm_final": 6677.9720322866215,
+      "under_epsilon_action_mismatch_ratio": 0.2423240716071836,
+      "under_epsilon_cost": 11827.707560525345,
+      "under_epsilon_cost_ratio_to_lqr": 1.0941226873722765,
+      "under_epsilon_rollout": {
+        "control_effort": 1593.5907192485404,
+        "estimation_error_final_l2": 0.04561678912920648,
+        "estimation_error_rms": 0.0038739085971828055,
+        "peak_forward_velocity": 0.733888334170136,
+        "terminal_position_error_m": 0.03379015195308669,
+        "time_to_peak_step": 16
+      }
+    },
+    {
+      "clean_action_mismatch_ratio": 0.2562405281125474,
+      "clean_cost": 4485.168929771681,
+      "clean_rollout": {
+        "control_effort": 1642.8872307751592,
+        "estimation_error_final_l2": 0.0,
+        "estimation_error_rms": 0.0,
+        "peak_forward_velocity": 0.7384931076788283,
+        "terminal_position_error_m": 0.0034749211484069575,
+        "time_to_peak_step": 16
+      },
+      "condition": {
+        "auxiliary_bellman_weights": [],
+        "eigenspectrum_coverage": {
+          "n_modes": 4,
+          "objective": "state",
+          "reference": "lqr_exact_budget_l2",
+          "scale": 3.0,
+          "weight": 0.1
+        },
+        "ftol": 1e-14,
+        "gtol": 1e-10,
+        "initializations": [
+          "scratch"
+        ],
+        "label": "strong_optimizer_whitened_eigen_state_m4_s3",
+        "maxiter": 2000,
+        "maxls": 100,
+        "use_time_block_preconditioning": false,
+        "use_whitening": true
+      },
+      "exact_l2_cost": 12651.265570481655,
+      "exact_l2_cost_ratio_to_hinf": 1.5528343031262464,
+      "exact_l2_cost_ratio_to_lqr": 1.1249597371478235,
+      "gain_relative_error": 0.9930904252115617,
+      "gamma_penalized_feasible": false,
+      "gamma_penalized_lambda_over_gamma_squared": 1.9324805169920398,
+      "gradient_norm_final": 4992.504801744946,
+      "gradient_norm_initial": 10701230.980538094,
+      "initialization": "scratch",
+      "label": "strong_optimizer_whitened_eigen_state_m4_s3__scratch",
+      "n_function_evaluations": 2199,
+      "n_iterations": 2000,
+      "objective_final": 9310.249582289744,
+      "objective_initial": 219239.5453231948,
+      "objective_ratio_to_reference": 0.9920971925935426,
+      "objective_reference": 9384.412789185371,
+      "objective_zero": 219239.5453231948,
+      "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+      "optimizer_success": false,
+      "projected_gradient_norm_final": 4992.504801744946,
+      "under_epsilon_action_mismatch_ratio": 0.25697504915025404,
+      "under_epsilon_cost": 11683.911688946038,
+      "under_epsilon_cost_ratio_to_lqr": 1.080820842983557,
+      "under_epsilon_rollout": {
+        "control_effort": 1634.432338255657,
+        "estimation_error_final_l2": 0.04561678912920657,
+        "estimation_error_rms": 0.003873908597182819,
+        "peak_forward_velocity": 0.73815975910828,
+        "terminal_position_error_m": 0.03331629553864331,
+        "time_to_peak_step": 16
+      }
+    }
+  ],
+  "issue": "7a459bb",
+  "non_goals": "No weak Bellman/proximal anchor, no action/gain matching to the known controller, no coverage perturbations, no robust rollout, and no GRU training in this materialization.",
+  "related_issues": {
+    "bellman_diagnostics": "583d764",
+    "gamma_sweep": "97604a8",
+    "output_feedback_lane": "83fc5b5"
+  },
+  "rerun_metadata": {
+    "discretization": "euler",
+    "discretization_description": "Forward Euler C&S released-code discretization.",
+    "lane": "deterministic_analytical",
+    "lane_description": "Deterministic analytical lane: exact recursions and deterministic rollouts/audits with no sampled sensory, motor/process, or signal-dependent control noise.",
+    "materializer": "output_feedback_rollout_recovery",
+    "phase_label_policy": "Phase 1 and Phase 3 reruns must report both discretization and lane. Euler deterministic analytical results are canonical after the Euler card lands; ZOH results remain sensitivity/historical unless explicitly promoted."
+  },
+  "scope": "Clean output-feedback LQR rollout recovery: clean, stronger optimizer, whitening/scaling, and stronger optimizer plus whitening/scaling are objective-preserving; block/time preconditioning is objective-preserving and unscaled before reporting; Bellman-auxiliary guidance is noncanonical, scratch-only, and annealed off before final clean-rollout continuation.",
+  "umbrella": "43e8728"
+}
