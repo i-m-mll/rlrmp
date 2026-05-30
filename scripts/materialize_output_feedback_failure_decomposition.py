@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -30,7 +31,13 @@ from rlrmp.analysis.failure_decomposition import (
 )
 from rlrmp.analysis.linear_round_trip import LinearTrainingConfig
 from rlrmp.analysis.output_feedback import OutputFeedbackConfig, output_feedback_clean_objective
-from rlrmp.analysis.output_feedback_rollout_recovery import _training_ensemble
+from rlrmp.analysis.output_feedback_rollout_recovery import (
+    STRONG_OPTIMIZER_WHITENED,
+    _training_ensemble,
+    eigenspectrum_coverage_conditions,
+    result_summary as rollout_result_summary,
+    run_output_feedback_rollout_recovery,
+)
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
@@ -61,6 +68,25 @@ SOURCE_STANDARD_MANIFEST = (
     / "notes"
     / "output_feedback_sweep_standard_certificates_manifest.json"
 )
+SOURCE_OBSERVER_MANIFEST = (
+    REPO_ROOT
+    / "results"
+    / SOURCE_ISSUE_ID
+    / "notes"
+    / "output_feedback_observer_error_coverage_manifest.json"
+)
+SOURCE_OBSERVER_ARTIFACT = (
+    REPO_ROOT
+    / "_artifacts"
+    / SOURCE_ISSUE_ID
+    / "output_feedback_observer_error_coverage"
+    / "output_feedback_observer_error_coverage.npz"
+)
+COVERAGE_CACHE_DIR = (
+    REPO_ROOT / "_artifacts" / SOURCE_ISSUE_ID / "output_feedback_failure_decomposition"
+)
+COVERAGE_ARRAY_CACHE = COVERAGE_CACHE_DIR / "deterministic_coverage_arrays.npz"
+COVERAGE_SUMMARY_CACHE = COVERAGE_CACHE_DIR / "deterministic_coverage_summary.json"
 NOTE_PATH = (
     REPO_ROOT / "results" / SOURCE_ISSUE_ID / "notes" / "output_feedback_failure_decomposition.md"
 )
@@ -88,6 +114,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-artifact", type=Path, default=SOURCE_ARTIFACT)
     parser.add_argument("--rollout-manifest", type=Path, default=SOURCE_ROLLOUT_MANIFEST)
     parser.add_argument("--standard-manifest", type=Path, default=SOURCE_STANDARD_MANIFEST)
+    parser.add_argument("--observer-manifest", type=Path, default=SOURCE_OBSERVER_MANIFEST)
+    parser.add_argument("--observer-artifact", type=Path, default=SOURCE_OBSERVER_ARTIFACT)
     parser.add_argument("--note-output", type=Path, default=NOTE_PATH)
     parser.add_argument("--manifest-output", type=Path, default=MANIFEST_PATH)
     return parser.parse_args()
@@ -99,6 +127,8 @@ def main() -> None:
         source_artifact=args.source_artifact,
         rollout_manifest_path=args.rollout_manifest,
         standard_manifest_path=args.standard_manifest,
+        observer_manifest_path=args.observer_manifest,
+        observer_artifact=args.observer_artifact,
     )
     write_result(result, note_path=args.note_output, manifest_path=args.manifest_output)
     print(f"Wrote {args.note_output}")
@@ -110,13 +140,18 @@ def materialize(
     source_artifact: Path = SOURCE_ARTIFACT,
     rollout_manifest_path: Path = SOURCE_ROLLOUT_MANIFEST,
     standard_manifest_path: Path = SOURCE_STANDARD_MANIFEST,
+    observer_manifest_path: Path = SOURCE_OBSERVER_MANIFEST,
+    observer_artifact: Path = SOURCE_OBSERVER_ARTIFACT,
 ) -> dict[str, Any]:
-    """Return the failure-decomposition bundle for saved no-coverage key rows."""
+    """Return the failure-decomposition bundle for current output-feedback rows."""
 
     rollout_manifest = _read_json(rollout_manifest_path)
     standard_manifest = _read_json(standard_manifest_path)
+    observer_manifest = _read_json(observer_manifest_path)
     with np.load(source_artifact) as archive:
         arrays = {name: np.asarray(archive[name]) for name in archive.files}
+    with np.load(observer_artifact) as archive:
+        observer_arrays = {name: np.asarray(archive[name]) for name in archive.files}
 
     reference = materialize_reference()
     output_config = OutputFeedbackConfig(**rollout_manifest["diagnostics"]["output_config"])
@@ -134,6 +169,9 @@ def materialize(
         training_weights=training_weights,
     )
     standard_by_id = {row["spec"]["run_id"]: row for row in standard_manifest["rows"]}
+    standard_by_id.update(
+        {row["spec"]["run_id"]: row for row in observer_manifest["standard_certificate"]["rows"]}
+    )
     fit_by_label = {fit["label"]: fit for fit in rollout_manifest["fits"]}
     rows = []
     for label in KEY_LABELS:
@@ -146,6 +184,44 @@ def materialize(
                 objective=objective,
             )
         )
+    coverage_summaries, coverage_arrays = _load_or_run_coverage_cache(
+        output_config=output_config,
+    )
+    rows.extend(
+        _initial_state_rows_from_cache(
+            summaries=coverage_summaries["initial_state"],
+            arrays=coverage_arrays,
+            standard_by_id=standard_by_id,
+        )
+    )
+    rows.extend(
+        _rollout_summary_rows(
+            summary=coverage_summaries["eigenspectrum"],
+            arrays=coverage_arrays,
+            standard_by_id=standard_by_id,
+            run_id_prefix=lambda fit: (
+                "eigenspectrum",
+                fit["condition"]["eigenspectrum_coverage"]["objective"],
+                fit["label"],
+            ),
+            array_prefix=lambda fit: f"eigenspectrum__{fit['label']}",
+            source_group="eigenspectrum_coverage",
+        )
+    )
+    rows.extend(
+        _rollout_summary_rows(
+            summary=observer_manifest["rollout_summary"],
+            arrays=observer_arrays,
+            standard_by_id=standard_by_id,
+            run_id_prefix=lambda fit: (
+                "observer_error",
+                fit["condition"]["observer_error_coverage"]["objective"],
+                fit["label"],
+            ),
+            array_prefix=lambda fit: fit["label"],
+            source_group="observer_error_coverage",
+        )
+    )
 
     classifications = Counter(row["classification"]["classification"] for row in rows)
     return {
@@ -157,23 +233,99 @@ def materialize(
         "source_manifests": {
             "rollout_recovery": _repo_relative(rollout_manifest_path),
             "standard_certificate": _repo_relative(standard_manifest_path),
+            "observer_error_coverage": _repo_relative(observer_manifest_path),
         },
-        "source_artifacts": {"saved_rollout_arrays": _repo_relative(source_artifact)},
+        "source_artifacts": {
+            "saved_rollout_arrays": _repo_relative(source_artifact),
+            "observer_error_arrays": _repo_relative(observer_artifact),
+            "deterministic_coverage_arrays": _repo_relative(COVERAGE_ARRAY_CACHE),
+            "deterministic_coverage_summary": _repo_relative(COVERAGE_SUMMARY_CACHE),
+        },
         "scope": (
-            "Saved no-coverage output-feedback key rows. The materializer reuses "
-            "stored gains and rollout arrays, evaluates the same clean training "
-            "objective at learned/reference gains, and projects gain error through "
-            "the standard-certificate evaluation state distributions."
+            "Current output-feedback no-coverage, initial-state coverage, "
+            "eigenspectrum coverage, and observer-error coverage rows. Saved "
+            "arrays are reused where available; deterministic coverage reruns are "
+            "cached under ignored artifacts so future applications do not lose "
+            "the controller and rollout arrays required for the decomposition."
         ),
         "summary": {
             "n_rows": len(rows),
-            "n_controller_labels": len(KEY_LABELS),
+            "n_controller_labels": len({row["controller_label"] for row in rows}),
             "classification_counts": dict(sorted(classifications.items())),
-            "labels": list(KEY_LABELS),
+            "source_groups": sorted({row["source_group"] for row in rows}),
             "evaluation_lenses": [lens for lens, _suffix in EVALUATION_LENSES],
         },
         "rows": rows,
     }
+
+
+def _load_or_run_coverage_cache(
+    *,
+    output_config: OutputFeedbackConfig,
+) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
+    if COVERAGE_SUMMARY_CACHE.exists() and COVERAGE_ARRAY_CACHE.exists():
+        with np.load(COVERAGE_ARRAY_CACHE) as archive:
+            arrays = {name: np.asarray(archive[name]) for name in archive.files}
+        _normalize_cached_common_arrays(arrays)
+        return _read_json(COVERAGE_SUMMARY_CACHE), arrays
+
+    initial_manifest = _read_json(
+        REPO_ROOT
+        / "results"
+        / SOURCE_ISSUE_ID
+        / "notes"
+        / "output_feedback_initial_state_variability_sweep_manifest.json"
+    )
+    base_config = LinearTrainingConfig(**initial_manifest["base_training_config"])
+    summaries: dict[str, Any] = {"initial_state": [], "eigenspectrum": None}
+    arrays: dict[str, np.ndarray] = {}
+
+    for cell in initial_manifest["cells"]:
+        training_config = replace(
+            base_config,
+            basis_scale=cell["basis_scale"],
+            random_state_scale=cell["random_state_scale"],
+        )
+        result = run_output_feedback_rollout_recovery(
+            conditions=(STRONG_OPTIMIZER_WHITENED,),
+            training_config=training_config,
+            output_config=output_config,
+        )
+        summary = rollout_result_summary(result)
+        summaries["initial_state"].append({"cell": cell, "summary": summary})
+        prefix = f"initial_state_coverage__{cell['label']}"
+        for key, value in result.arrays.items():
+            arrays[f"{prefix}__{key}"] = value
+
+    eigen_result = run_output_feedback_rollout_recovery(
+        conditions=eigenspectrum_coverage_conditions(),
+        training_config=LinearTrainingConfig(),
+        output_config=output_config,
+    )
+    summaries["eigenspectrum"] = rollout_result_summary(eigen_result)
+    for key, value in eigen_result.arrays.items():
+        arrays[f"eigenspectrum__{key}"] = value
+    _normalize_cached_common_arrays(arrays)
+
+    mkdir_p(COVERAGE_CACHE_DIR)
+    np.savez_compressed(COVERAGE_ARRAY_CACHE, **arrays)
+    COVERAGE_SUMMARY_CACHE.write_text(
+        json.dumps(summaries, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return summaries, arrays
+
+
+def _normalize_cached_common_arrays(arrays: dict[str, np.ndarray]) -> None:
+    """Expose common reference arrays independent of the cached sweep prefix."""
+
+    for key in ("lqr_reference_K",):
+        if key in arrays:
+            continue
+        for candidate, value in arrays.items():
+            if candidate.endswith(f"__{key}"):
+                arrays[key] = value
+                break
 
 
 def _make_objective_bundle(
@@ -293,8 +445,10 @@ def _label_rows(
         rows.append(
             {
                 "run_id": run_id,
+                "source_group": "no_coverage",
                 "controller_label": label,
                 "evaluation_lens": lens,
+                "row_parameters": {},
                 "source_standard_status": standard_row["status"],
                 "source_standard_distribution": standard_row["spec"]["parameters"][
                     "distribution_family"
@@ -333,6 +487,161 @@ def _label_rows(
             }
         )
     return rows
+
+
+def _initial_state_rows_from_cache(
+    *,
+    summaries: list[dict[str, Any]],
+    arrays: dict[str, np.ndarray],
+    standard_by_id: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows = []
+    for entry in summaries:
+        cell = entry["cell"]
+        rows.extend(
+            _rollout_summary_rows(
+                summary=entry["summary"],
+                arrays=arrays,
+                standard_by_id=standard_by_id,
+                run_id_prefix=lambda fit, cell=cell: (
+                    "initial_state_coverage",
+                    cell["label"],
+                    fit["label"],
+                ),
+                array_prefix=lambda fit, cell=cell: (
+                    f"initial_state_coverage__{cell['label']}__{fit['label']}"
+                ),
+                source_group="initial_state_coverage",
+                row_parameters={
+                    "scale_factor": cell["scale_factor"],
+                    "basis_scale": cell["basis_scale"],
+                    "random_state_scale": cell["random_state_scale"],
+                },
+            )
+        )
+    return rows
+
+
+def _rollout_summary_rows(
+    *,
+    summary: dict[str, Any],
+    arrays: dict[str, np.ndarray],
+    standard_by_id: dict[str, dict[str, Any]],
+    run_id_prefix: Any,
+    array_prefix: Any,
+    source_group: str,
+    row_parameters: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    reference_gain = arrays["lqr_reference_K"]
+    action_weight = np.asarray(materialize_reference().schedule.R)
+    rows = []
+    for fit in summary["fits"]:
+        label = fit["label"]
+        prefix = array_prefix(fit)
+        learned_gain = arrays[f"{prefix}_K"]
+        objective_summary = _fit_objective_summary(fit)
+        for lens, suffix in EVALUATION_LENSES:
+            run_id = "__".join((*run_id_prefix(fit), lens))
+            standard_row = standard_by_id[run_id]
+            x_hat = arrays[f"{prefix}_{suffix}_x_hat"]
+            decomposition = gain_error_subspace_decomposition(
+                gain_delta=learned_gain - reference_gain,
+                state_covariances=covariances_from_states(x_hat[None, :, :]),
+            )
+            interpolation = interpolation_curve(
+                learned=learned_gain,
+                reference=reference_gain,
+                metric_fns={
+                    "state_weighted_action_mismatch": lambda gains, x_hat=x_hat: _action_mismatch(
+                        gains=gains,
+                        reference_gain=reference_gain,
+                        x_hat=x_hat,
+                        action_weight=action_weight,
+                    ),
+                },
+                alphas=INTERPOLATION_ALPHAS,
+            )
+            certificate_mismatch = _component_summary(
+                standard_row,
+                STATE_WEIGHTED_ACTION_MISMATCH,
+                "mismatch_ratio_mean",
+            )
+            classification = classify_failure(
+                objective_ratio=objective_summary["learned_to_reference_objective_ratio"],
+                learned_gradient_norm=objective_summary["learned_projected_gradient_norm"],
+                reference_gradient_norm=objective_summary["reference_projected_gradient_norm"],
+                certificate_mismatch_ratio=certificate_mismatch,
+                subspace_decomposition=decomposition,
+            )
+            rows.append(
+                {
+                    "run_id": run_id,
+                    "source_group": source_group,
+                    "controller_label": label,
+                    "evaluation_lens": lens,
+                    "row_parameters": row_parameters
+                    or _coverage_parameters(fit.get("condition", {})),
+                    "source_standard_status": standard_row["status"],
+                    "source_standard_distribution": standard_row["spec"]["parameters"][
+                        "distribution_family"
+                    ],
+                    "objective": objective_summary,
+                    "source_optimizer": {
+                        key: fit.get(key)
+                        for key in (
+                            "optimizer_status",
+                            "optimizer_success",
+                            "n_iterations",
+                            "n_function_evaluations",
+                        )
+                    },
+                    "certificate": {
+                        "state_weighted_action_mismatch": certificate_mismatch,
+                        "bellman_hessian_residual": _component_summary(
+                            standard_row,
+                            "bellman_hessian_residual",
+                            "residual_ratio_mean",
+                        ),
+                        "closed_loop_transition_mismatch": _component_summary(
+                            standard_row,
+                            "closed_loop_transition_mismatch",
+                            "mismatch_ratio_mean",
+                        ),
+                        "value_gap": _component_summary(
+                            standard_row,
+                            "value_policy_gap",
+                            "gap_ratio_mean",
+                        ),
+                    },
+                    "gain_error_decomposition": decomposition,
+                    "interpolation": interpolation,
+                    "classification": classification,
+                }
+            )
+    return rows
+
+
+def _fit_objective_summary(fit: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "learned_objective": fit.get("objective_final"),
+        "reference_objective": fit.get("objective_reference"),
+        "learned_to_reference_objective_ratio": fit.get("objective_ratio_to_reference"),
+        "learned_gradient_norm": fit.get("gradient_norm_final"),
+        "reference_gradient_norm": None,
+        "learned_projected_gradient_norm": fit.get("projected_gradient_norm_final")
+        if fit.get("projected_gradient_norm_final") is not None
+        else fit.get("gradient_norm_final"),
+        "reference_projected_gradient_norm": None,
+        "source": "rollout_fit_summary",
+    }
+
+
+def _coverage_parameters(condition: dict[str, Any]) -> dict[str, Any]:
+    return (
+        condition.get("eigenspectrum_coverage")
+        or condition.get("observer_error_coverage")
+        or {}
+    )
 
 
 def _objective_for_gain(gains: np.ndarray, objective: dict[str, Any]) -> float:
@@ -386,7 +695,10 @@ Scope: {result["scope"]}
 
 - Rollout-recovery manifest: `{result["source_manifests"]["rollout_recovery"]}`
 - Standard-certificate manifest: `{result["source_manifests"]["standard_certificate"]}`
+- Observer-error manifest: `{result["source_manifests"]["observer_error_coverage"]}`
 - Saved no-coverage arrays: `{result["source_artifacts"]["saved_rollout_arrays"]}`
+- Observer-error arrays: `{result["source_artifacts"]["observer_error_arrays"]}`
+- Deterministic coverage array cache: `{result["source_artifacts"]["deterministic_coverage_arrays"]}`
 
 ## Key Rows
 
@@ -394,10 +706,12 @@ Scope: {result["scope"]}
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 {_table_rows(result["rows"])}
 
-<sup>1</sup> Objective and projected-gradient diagnostics are evaluated in the
-same whitened L-BFGS-B theta parameterization used by the saved
-`strong_optimizer_whitened` no-coverage fits. There are no active box
-constraints, so projected-gradient norm equals gradient norm for these rows.
+<sup>1</sup> Objective and projected-gradient diagnostics are evaluated in each
+row's training objective and optimizer parameterization. For no-coverage rows,
+the materializer recomputes learned/reference gradients directly from the
+saved objective. For coverage rows, the final optimizer gradient is taken from
+the saved or cached fit summary because the optimizer closure itself is not
+stored in tracked results.
 
 <sup>2</sup> The visited/weakly visited decomposition projects gain error
 through the evaluation-lens estimated-state covariance used by the standard
@@ -418,20 +732,28 @@ it is not the certificate gate.
 
 ## Interpretation
 
-The no-coverage from-scratch key row is an optimizer-basin failure under this
-diagnostic: moving along the straight line toward the analytical reference
-reduces the clean training objective, and the learned projected gradient remains
-large. The Bellman-initialized key row is not a substantive failure: objective,
-gradient, and certificate residuals are all near the reference.
+The from-scratch key rows remain optimizer-basin failures under this diagnostic:
+their learned controllers are not stationary under the objective that trained
+them, and the standard-certificate mismatches remain large. Coverage changes
+the training distribution, but it does not rescue this free time-varying
+architecture. The Bellman-initialized no-coverage key row remains the sanity
+check: objective, gradient, and certificate residuals are all near the
+reference.
 """
 
 
 def _table_rows(rows: list[dict[str, Any]]) -> str:
     lines = []
     for row in rows:
-        best = min(
-            row["interpolation"],
-            key=lambda record: record["training_objective_ratio_to_reference"],
+        objective_records = [
+            record
+            for record in row["interpolation"]
+            if "training_objective_ratio_to_reference" in record
+        ]
+        best = (
+            min(objective_records, key=lambda record: record["training_objective_ratio_to_reference"])
+            if objective_records
+            else None
         )
         lines.append(
             "| "
@@ -444,8 +766,8 @@ def _table_rows(rows: list[dict[str, Any]]) -> str:
             f"{_fmt(row['certificate']['bellman_hessian_residual'])} | "
             f"{_fmt(row['gain_error_decomposition']['strong_fraction_mean'])} | "
             f"{_fmt(row['gain_error_decomposition']['weak_or_unvisited_fraction_mean'])} | "
-            f"{_fmt(best['alpha'])} | "
-            f"{_fmt(best['training_objective_ratio_to_reference'])} |"
+            f"{_fmt(None if best is None else best['alpha'])} | "
+            f"{_fmt(None if best is None else best['training_objective_ratio_to_reference'])} |"
         )
     return "\n".join(lines)
 
