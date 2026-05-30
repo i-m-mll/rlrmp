@@ -19,11 +19,14 @@ from rlrmp.analysis.output_feedback import (
 )
 from rlrmp.analysis.output_feedback_rollout_recovery import (
     EigenspectrumCoverageConfig,
+    ObserverErrorCoverageConfig,
     RolloutRecoveryCondition,
     _eigenspectrum_coverage_samples,
     _make_parameter_maps,
+    _observer_error_coverage_samples,
     _scale_initial_state_config,
     eigenspectrum_coverage_conditions,
+    observer_error_coverage_conditions,
     _state_scales,
     _time_block_scales,
     _training_ensemble,
@@ -181,6 +184,43 @@ def test_eigenspectrum_coverage_samples_are_time_indexed_signed_pairs() -> None:
     assert arrays["coverage_epsilon_modes"].shape == (1, reference.schedule.T, reference.plant.m_w)
 
 
+def test_observer_error_coverage_samples_are_time_indexed_signed_pairs() -> None:
+    reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
+    x0 = make_cs_output_feedback_initial_state(reference.plant)
+    (
+        epsilons,
+        trajectory_weights,
+        coverage_x,
+        coverage_xhat,
+        times,
+        state_weights,
+        metadata,
+        arrays,
+    ) = _observer_error_coverage_samples(
+        plant=reference.plant,
+        schedule=reference.schedule,
+        K_ref=reference.lqr_solution.K,
+        x0=x0,
+        budget_l2=1.0,
+        output_config=OutputFeedbackConfig(),
+        coverage_config=ObserverErrorCoverageConfig(n_modes=1, scale=0.1, weight=0.05),
+    )
+
+    assert metadata["enabled"] is True
+    assert metadata["n_trajectories"] == 2
+    assert metadata["n_state_samples_for_diagnostics"] == 2 * reference.schedule.T
+    assert epsilons.shape == (2, reference.schedule.T, reference.plant.m_w)
+    assert trajectory_weights.shape == (2,)
+    assert coverage_x.shape == coverage_xhat.shape == (2 * reference.schedule.T, reference.plant.n)
+    assert times.shape == state_weights.shape == (2 * reference.schedule.T,)
+    assert arrays["coverage_observer_error_epsilon_modes"].shape == (
+        1,
+        reference.schedule.T,
+        reference.plant.m_w,
+    )
+    assert arrays["coverage_observer_error"].shape == coverage_x.shape
+
+
 def test_initial_state_scale_sweep_preserves_reach_weight() -> None:
     base = LinearTrainingConfig(basis_scale=0.01, random_state_scale=0.02, reach_weight=10.0)
     scaled = _scale_initial_state_config(base, 0.3)
@@ -200,6 +240,23 @@ def test_eigenspectrum_conditions_use_strong_optimizer_whitening() -> None:
     )
 
     assert [condition.eigenspectrum_coverage.objective for condition in conditions] == [
+        "trajectory",
+        "state",
+    ]
+    assert all(condition.use_whitening for condition in conditions)
+    assert all(condition.maxiter == 2000 for condition in conditions)
+    assert all(condition.initializations == ("scratch",) for condition in conditions)
+
+
+def test_observer_error_conditions_use_strong_optimizer_whitening() -> None:
+    conditions = observer_error_coverage_conditions(
+        objectives=("trajectory", "state"),
+        modes=(1,),
+        scales=(0.3,),
+        weight=0.1,
+    )
+
+    assert [condition.observer_error_coverage.objective for condition in conditions] == [
         "trajectory",
         "state",
     ]
