@@ -1,0 +1,2050 @@
+{
+  "artifact_npz": "_artifacts/7a459bb/output_feedback_observer_error_coverage/output_feedback_observer_error_coverage.npz",
+  "artifact_npz_keys": [
+    "bellman_initial_K",
+    "initial_state_weights",
+    "initial_states",
+    "lqr_clean_u",
+    "lqr_clean_x",
+    "lqr_clean_x_hat",
+    "lqr_reference_K",
+    "riccati_epsilon",
+    "state_scales",
+    "strong_optimizer_whitened_observer_error_state_m1_s0.3__scratch_K",
+    "strong_optimizer_whitened_observer_error_state_m1_s0.3__scratch_clean_u",
+    "strong_optimizer_whitened_observer_error_state_m1_s0.3__scratch_clean_x",
+    "strong_optimizer_whitened_observer_error_state_m1_s0.3__scratch_clean_x_hat",
+    "strong_optimizer_whitened_observer_error_state_m1_s0.3__scratch_under_eps_u",
+    "strong_optimizer_whitened_observer_error_state_m1_s0.3__scratch_under_eps_x",
+    "strong_optimizer_whitened_observer_error_state_m1_s0.3__scratch_under_eps_x_hat",
+    "strong_optimizer_whitened_observer_error_state_m1_s0.3_coverage_epsilons",
+    "strong_optimizer_whitened_observer_error_state_m1_s0.3_coverage_observer_error",
+    "strong_optimizer_whitened_observer_error_state_m1_s0.3_coverage_observer_error_epsilon_modes",
+    "strong_optimizer_whitened_observer_error_state_m1_s0.3_coverage_observer_error_singular_values",
+    "strong_optimizer_whitened_observer_error_state_m1_s0.3_coverage_state_weights",
+    "strong_optimizer_whitened_observer_error_state_m1_s0.3_coverage_times",
+    "strong_optimizer_whitened_observer_error_state_m1_s0.3_coverage_weights",
+    "strong_optimizer_whitened_observer_error_state_m1_s0.3_coverage_x",
+    "strong_optimizer_whitened_observer_error_state_m1_s0.3_coverage_x_hat",
+    "strong_optimizer_whitened_observer_error_state_m1_s1__scratch_K",
+    "strong_optimizer_whitened_observer_error_state_m1_s1__scratch_clean_u",
+    "strong_optimizer_whitened_observer_error_state_m1_s1__scratch_clean_x",
+    "strong_optimizer_whitened_observer_error_state_m1_s1__scratch_clean_x_hat",
+    "strong_optimizer_whitened_observer_error_state_m1_s1__scratch_under_eps_u",
+    "strong_optimizer_whitened_observer_error_state_m1_s1__scratch_under_eps_x",
+    "strong_optimizer_whitened_observer_error_state_m1_s1__scratch_under_eps_x_hat",
+    "strong_optimizer_whitened_observer_error_state_m1_s1_coverage_epsilons",
+    "strong_optimizer_whitened_observer_error_state_m1_s1_coverage_observer_error",
+    "strong_optimizer_whitened_observer_error_state_m1_s1_coverage_observer_error_epsilon_modes",
+    "strong_optimizer_whitened_observer_error_state_m1_s1_coverage_observer_error_singular_values",
+    "strong_optimizer_whitened_observer_error_state_m1_s1_coverage_state_weights",
+    "strong_optimizer_whitened_observer_error_state_m1_s1_coverage_times",
+    "strong_optimizer_whitened_observer_error_state_m1_s1_coverage_weights",
+    "strong_optimizer_whitened_observer_error_state_m1_s1_coverage_x",
+    "strong_optimizer_whitened_observer_error_state_m1_s1_coverage_x_hat",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3__scratch_K",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3__scratch_clean_u",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3__scratch_clean_x",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3__scratch_clean_x_hat",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3__scratch_under_eps_u",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3__scratch_under_eps_x",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3__scratch_under_eps_x_hat",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3_coverage_epsilons",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3_coverage_observer_error",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3_coverage_observer_error_epsilon_modes",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3_coverage_observer_error_singular_values",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3_coverage_state_weights",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3_coverage_times",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3_coverage_weights",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3_coverage_x",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3_coverage_x_hat",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s1__scratch_K",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s1__scratch_clean_u",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s1__scratch_clean_x",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s1__scratch_clean_x_hat",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s1__scratch_under_eps_u",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s1__scratch_under_eps_x",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s1__scratch_under_eps_x_hat",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s1_coverage_epsilons",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s1_coverage_observer_error",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s1_coverage_observer_error_epsilon_modes",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s1_coverage_observer_error_singular_values",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s1_coverage_state_weights",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s1_coverage_times",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s1_coverage_weights",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s1_coverage_x",
+    "strong_optimizer_whitened_observer_error_trajectory_m1_s1_coverage_x_hat",
+    "time_block_scales"
+  ],
+  "comparison": [
+    {
+      "exact_l2_cost_ratio_to_lqr": 1.1558730549410647,
+      "gain_relative_error": 0.979471963294728,
+      "gamma_penalized_lambda_over_gamma_squared": 2.0967915659667837,
+      "modes": null,
+      "objective": "none",
+      "objective_ratio_to_reference": 1.0131700438496394,
+      "scale": null,
+      "source": "no coverage"
+    },
+    {
+      "exact_l2_cost_ratio_to_lqr": 1.2640804152858423,
+      "gain_relative_error": 0.9898953738533781,
+      "gamma_penalized_lambda_over_gamma_squared": 2.293583642582638,
+      "modes": 4,
+      "objective": "trajectory",
+      "objective_ratio_to_reference": 1.24306778003909,
+      "scale": 0.3,
+      "source": "eigenspectrum best exact-L2"
+    },
+    {
+      "exact_l2_cost_ratio_to_lqr": 1.873923586296607,
+      "gain_relative_error": 0.9909202473902298,
+      "gamma_penalized_lambda_over_gamma_squared": 4.316579207615177,
+      "modes": 1,
+      "objective": "trajectory",
+      "objective_ratio_to_reference": 1.301883733341305,
+      "scale": 0.3,
+      "source": "observer-error best exact-L2"
+    },
+    {
+      "exact_l2_cost_ratio_to_lqr": 1.1009954799711488,
+      "gain_relative_error": 0.9908946742055667,
+      "gamma_penalized_lambda_over_gamma_squared": 2.131934646316092,
+      "modes": 1,
+      "objective": "state",
+      "objective_ratio_to_reference": 1.0081118707937906,
+      "scale": 0.3,
+      "source": "eigenspectrum best exact-L2"
+    },
+    {
+      "exact_l2_cost_ratio_to_lqr": 1.146285015713596,
+      "gain_relative_error": 0.9914867974882768,
+      "gamma_penalized_lambda_over_gamma_squared": 2.1440828120919444,
+      "modes": 1,
+      "objective": "state",
+      "objective_ratio_to_reference": 1.009209119697578,
+      "scale": 0.3,
+      "source": "observer-error best exact-L2"
+    }
+  ],
+  "format": "rlrmp.output_feedback_observer_error_coverage.v1",
+  "grid": {
+    "initialization": "scratch",
+    "modes": [
+      1
+    ],
+    "objectives": [
+      "trajectory",
+      "state"
+    ],
+    "optimizer": "strong_optimizer_whitened",
+    "scales": [
+      0.3,
+      1.0
+    ],
+    "weight": 0.1
+  },
+  "interpretation": "Observer-error coverage uses leading singular disturbance directions of the analytical LQR disturbance-to-observer-error map. Trajectory rows train on signed full-trial disturbance samples; state rows train on the time-indexed (x, xhat) states induced by those samples.",
+  "issue": "3becdec",
+  "parent_issue": "7a459bb",
+  "rollout_summary": {
+    "bellman_initialization_gain_relative_error": 0.00013943432046537618,
+    "diagnostics": {
+      "analytical_exact_audits": {
+        "hinf": {
+          "cost": 8147.2089745901885,
+          "gamma_penalized_feasible": true,
+          "lambda_over_gamma_squared": 0.9331253588863058
+        },
+        "lqr": {
+          "cost": 11245.971880342271,
+          "gamma_penalized_feasible": false,
+          "lambda_over_gamma_squared": 1.5551183024132287
+        }
+      },
+      "bellman_auxiliary": {
+        "anchor_to_known_controller": false,
+        "objective": "clean_rollout_ratio + weight * one_step_lqr_bellman_ratio",
+        "reference_objective": 5589.026630109139,
+        "schedules": {}
+      },
+      "budget": 2.0661571053308635e-05,
+      "budget_l2": 0.004545500088363065,
+      "eigenspectrum_coverage": {},
+      "gamma": 12833.563799663352,
+      "gamma_factor": 1.4,
+      "gamma_star": 9166.831285473823,
+      "initial_state_ensemble": {
+        "condition_number": 1790.8120187354489,
+        "effective_rank_entropy": 10.542072619554624,
+        "effective_rank_participation": 3.5615010850720674,
+        "max_eigenvalue": 0.007620508424181629,
+        "min_eigenvalue": 4.255336877604116e-06,
+        "numerical_rank": 48,
+        "trace": 0.014604025450581561
+      },
+      "lqr_clean": {
+        "cost": 4363.509945030792,
+        "rollout": {
+          "control_effort": 1681.322504233146,
+          "estimation_error_final_l2": 0.0,
+          "estimation_error_rms": 0.0,
+          "peak_forward_velocity": 0.7310094144305818,
+          "terminal_position_error_m": 0.0031107800086920268,
+          "time_to_peak_step": 16
+        },
+        "xhat_coverage": {
+          "condition_number": 4255080.421917933,
+          "effective_rank_entropy": 1.8567949412065476,
+          "effective_rank_participation": 1.3883943538897938,
+          "max_eigenvalue": 4.130254562319159,
+          "min_eigenvalue": 9.706642772353267e-07,
+          "numerical_rank": 48,
+          "trace": 4.900071905292246
+        }
+      },
+      "lqr_under_riccati_epsilon": {
+        "cost": 10810.220551162882,
+        "rollout": {
+          "control_effort": 1668.5895346385919,
+          "estimation_error_final_l2": 0.04561678912920648,
+          "estimation_error_rms": 0.0038739085971828064,
+          "peak_forward_velocity": 0.7329387986678687,
+          "terminal_position_error_m": 0.031351028519136404,
+          "time_to_peak_step": 16
+        }
+      },
+      "observer_error_coverage": {
+        "strong_optimizer_whitened_observer_error_state_m1_s0.3": {
+          "alpha": 0.0013636500265089195,
+          "enabled": true,
+          "n_modes": 1,
+          "n_state_samples_for_diagnostics": 120,
+          "n_trajectories": 2,
+          "objective": "state",
+          "observer_error_coverage": {
+            "condition_number": 7.1707999399012256e+25,
+            "effective_rank_entropy": 1.0347184657122372,
+            "effective_rank_participation": 1.0108519975359025,
+            "max_eigenvalue": 7.170799939901226e-05,
+            "min_eigenvalue": 0.0,
+            "numerical_rank": 9,
+            "trace": 7.209705371928523e-05
+          },
+          "reference": "kalman_observer_error_svd",
+          "scale": 0.3,
+          "singular_values": [
+            48.23157662393119
+          ],
+          "source": "signed leading right singular vectors of the analytical LQR disturbance-to-observer-error map",
+          "weight": 0.1
+        },
+        "strong_optimizer_whitened_observer_error_state_m1_s1": {
+          "alpha": 0.004545500088363065,
+          "enabled": true,
+          "n_modes": 1,
+          "n_state_samples_for_diagnostics": 120,
+          "n_trajectories": 2,
+          "objective": "state",
+          "observer_error_coverage": {
+            "condition_number": 7.967555488778468e+26,
+            "effective_rank_entropy": 1.034718465712225,
+            "effective_rank_participation": 1.0108519975358976,
+            "max_eigenvalue": 0.0007967555488778468,
+            "min_eigenvalue": 0.0,
+            "numerical_rank": 9,
+            "trace": 0.0008010783746586553
+          },
+          "reference": "kalman_observer_error_svd",
+          "scale": 1.0,
+          "singular_values": [
+            48.23157662393119
+          ],
+          "source": "signed leading right singular vectors of the analytical LQR disturbance-to-observer-error map",
+          "weight": 0.1
+        },
+        "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3": {
+          "alpha": 0.0013636500265089195,
+          "enabled": true,
+          "n_modes": 1,
+          "n_state_samples_for_diagnostics": 120,
+          "n_trajectories": 2,
+          "objective": "trajectory",
+          "observer_error_coverage": {
+            "condition_number": 7.1707999399012256e+25,
+            "effective_rank_entropy": 1.0347184657122372,
+            "effective_rank_participation": 1.0108519975359025,
+            "max_eigenvalue": 7.170799939901226e-05,
+            "min_eigenvalue": 0.0,
+            "numerical_rank": 9,
+            "trace": 7.209705371928523e-05
+          },
+          "reference": "kalman_observer_error_svd",
+          "scale": 0.3,
+          "singular_values": [
+            48.23157662393119
+          ],
+          "source": "signed leading right singular vectors of the analytical LQR disturbance-to-observer-error map",
+          "weight": 0.1
+        },
+        "strong_optimizer_whitened_observer_error_trajectory_m1_s1": {
+          "alpha": 0.004545500088363065,
+          "enabled": true,
+          "n_modes": 1,
+          "n_state_samples_for_diagnostics": 120,
+          "n_trajectories": 2,
+          "objective": "trajectory",
+          "observer_error_coverage": {
+            "condition_number": 7.967555488778468e+26,
+            "effective_rank_entropy": 1.034718465712225,
+            "effective_rank_participation": 1.0108519975358976,
+            "max_eigenvalue": 0.0007967555488778468,
+            "min_eigenvalue": 0.0,
+            "numerical_rank": 9,
+            "trace": 0.0008010783746586553
+          },
+          "reference": "kalman_observer_error_svd",
+          "scale": 1.0,
+          "singular_values": [
+            48.23157662393119
+          ],
+          "source": "signed leading right singular vectors of the analytical LQR disturbance-to-observer-error map",
+          "weight": 0.1
+        }
+      },
+      "output_config": {
+        "delay_steps": 5,
+        "denominator_floor": 1e-12,
+        "estimator_initial_covariance": 0.01,
+        "n_phys": 8,
+        "process_covariance_scale": 0.001,
+        "sensory_noise_scale": 1.0,
+        "use_matlab_persistent_m_index": true
+      },
+      "state_scales": {
+        "condition": 3.9276054247775134,
+        "max": 0.03794265631640191,
+        "median": 0.012259003773189964,
+        "min": 0.009660506138686588
+      },
+      "time_block_scales": {
+        "condition": 1.336053247473033,
+        "max": 1.3146376074369281,
+        "median": 1.0,
+        "min": 0.9839709681656703
+      },
+      "training_config": {
+        "basis_scale": 0.01,
+        "learning_rate": 0.3,
+        "n_random_states": 64,
+        "n_steps": 2500,
+        "random_state_scale": 0.02,
+        "reach_weight": 10.0,
+        "seed": 0
+      }
+    },
+    "fits": [
+      {
+        "clean_action_mismatch_ratio": 0.761871458666048,
+        "clean_cost": 5616.8239039264845,
+        "clean_rollout": {
+          "control_effort": 2244.8182512006524,
+          "estimation_error_final_l2": 0.0,
+          "estimation_error_rms": 0.0,
+          "peak_forward_velocity": 0.6409880573467879,
+          "terminal_position_error_m": 0.00386495974098117,
+          "time_to_peak_step": 15
+        },
+        "condition": {
+          "auxiliary_bellman_weights": [],
+          "eigenspectrum_coverage": null,
+          "ftol": 1e-14,
+          "gtol": 1e-10,
+          "initializations": [
+            "scratch"
+          ],
+          "label": "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3",
+          "maxiter": 2000,
+          "maxls": 100,
+          "observer_error_coverage": {
+            "n_modes": 1,
+            "objective": "trajectory",
+            "reference": "kalman_observer_error_svd",
+            "scale": 0.3,
+            "weight": 0.1
+          },
+          "use_time_block_preconditioning": false,
+          "use_whitening": true
+        },
+        "exact_l2_cost": 21074.091957401786,
+        "exact_l2_cost_ratio_to_hinf": 2.5866639757404566,
+        "exact_l2_cost_ratio_to_lqr": 1.873923586296607,
+        "gain_relative_error": 0.9909202473902298,
+        "gamma_penalized_feasible": false,
+        "gamma_penalized_lambda_over_gamma_squared": 4.316579207615177,
+        "gradient_norm_final": 329198.1751016381,
+        "gradient_norm_initial": 398837.6627898278,
+        "initialization": "scratch",
+        "label": "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3__scratch",
+        "n_function_evaluations": 2313,
+        "n_iterations": 2000,
+        "objective_final": 6598.831139008316,
+        "objective_initial": 186380.36531334915,
+        "objective_ratio_to_reference": 1.301883733341305,
+        "objective_reference": 5068.679306770592,
+        "objective_zero": 186380.36531334915,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false,
+        "projected_gradient_norm_final": 329198.1751016381,
+        "under_epsilon_action_mismatch_ratio": 0.7448980106716784,
+        "under_epsilon_cost": 12339.009745671901,
+        "under_epsilon_cost_ratio_to_lqr": 1.141420721924546,
+        "under_epsilon_rollout": {
+          "control_effort": 2188.6481914815363,
+          "estimation_error_final_l2": 0.04561678912920655,
+          "estimation_error_rms": 0.0038739085971828137,
+          "peak_forward_velocity": 0.6409858274708957,
+          "terminal_position_error_m": 0.029059122414705957,
+          "time_to_peak_step": 15
+        }
+      },
+      {
+        "clean_action_mismatch_ratio": 0.6537459195644356,
+        "clean_cost": 5285.564923442916,
+        "clean_rollout": {
+          "control_effort": 2072.3387128810537,
+          "estimation_error_final_l2": 0.0,
+          "estimation_error_rms": 0.0,
+          "peak_forward_velocity": 0.6555761692849974,
+          "terminal_position_error_m": 0.003929682642491852,
+          "time_to_peak_step": 20
+        },
+        "condition": {
+          "auxiliary_bellman_weights": [],
+          "eigenspectrum_coverage": null,
+          "ftol": 1e-14,
+          "gtol": 1e-10,
+          "initializations": [
+            "scratch"
+          ],
+          "label": "strong_optimizer_whitened_observer_error_trajectory_m1_s1",
+          "maxiter": 2000,
+          "maxls": 100,
+          "observer_error_coverage": {
+            "n_modes": 1,
+            "objective": "trajectory",
+            "reference": "kalman_observer_error_svd",
+            "scale": 1.0,
+            "weight": 0.1
+          },
+          "use_time_block_preconditioning": false,
+          "use_whitening": true
+        },
+        "exact_l2_cost": 144042.02130835864,
+        "exact_l2_cost_ratio_to_hinf": 17.679922260200044,
+        "exact_l2_cost_ratio_to_lqr": 12.808321311930465,
+        "gain_relative_error": 0.9871401075831163,
+        "gamma_penalized_feasible": false,
+        "gamma_penalized_lambda_over_gamma_squared": 40.665969625062125,
+        "gradient_norm_final": 816567.7530849011,
+        "gradient_norm_initial": 399327.13878844236,
+        "initialization": "scratch",
+        "label": "strong_optimizer_whitened_observer_error_trajectory_m1_s1__scratch",
+        "n_function_evaluations": 2299,
+        "n_iterations": 2000,
+        "objective_final": 7760.601930470886,
+        "objective_initial": 192262.08709011792,
+        "objective_ratio_to_reference": 0.8668749231358172,
+        "objective_reference": 8952.389466288665,
+        "objective_zero": 192262.08709011792,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false,
+        "projected_gradient_norm_final": 816567.7530849011,
+        "under_epsilon_action_mismatch_ratio": 0.6718523222016078,
+        "under_epsilon_cost": 9665.611721888537,
+        "under_epsilon_cost_ratio_to_lqr": 0.8941179022336213,
+        "under_epsilon_rollout": {
+          "control_effort": 1931.1834266755789,
+          "estimation_error_final_l2": 0.04561678912920654,
+          "estimation_error_rms": 0.003873908597182813,
+          "peak_forward_velocity": 0.6567583998358314,
+          "terminal_position_error_m": 0.018781735086708388,
+          "time_to_peak_step": 20
+        }
+      },
+      {
+        "clean_action_mismatch_ratio": 0.11322322997810262,
+        "clean_cost": 4387.210318056186,
+        "clean_rollout": {
+          "control_effort": 1638.1947814429002,
+          "estimation_error_final_l2": 0.0,
+          "estimation_error_rms": 0.0,
+          "peak_forward_velocity": 0.73325550669143,
+          "terminal_position_error_m": 0.003315013229244725,
+          "time_to_peak_step": 16
+        },
+        "condition": {
+          "auxiliary_bellman_weights": [],
+          "eigenspectrum_coverage": null,
+          "ftol": 1e-14,
+          "gtol": 1e-10,
+          "initializations": [
+            "scratch"
+          ],
+          "label": "strong_optimizer_whitened_observer_error_state_m1_s0.3",
+          "maxiter": 2000,
+          "maxls": 100,
+          "observer_error_coverage": {
+            "n_modes": 1,
+            "objective": "state",
+            "reference": "kalman_observer_error_svd",
+            "scale": 0.3,
+            "weight": 0.1
+          },
+          "use_time_block_preconditioning": false,
+          "use_whitening": true
+        },
+        "exact_l2_cost": 12891.0890535728,
+        "exact_l2_cost_ratio_to_hinf": 1.5822705780320594,
+        "exact_l2_cost_ratio_to_lqr": 1.146285015713596,
+        "gain_relative_error": 0.9914867974882768,
+        "gamma_penalized_feasible": false,
+        "gamma_penalized_lambda_over_gamma_squared": 2.1440828120919444,
+        "gradient_norm_final": 517.8562754279217,
+        "gradient_norm_initial": 10700974.118607307,
+        "initialization": "scratch",
+        "label": "strong_optimizer_whitened_observer_error_state_m1_s0.3__scratch",
+        "n_function_evaluations": 2184,
+        "n_iterations": 2000,
+        "objective_final": 1878.7510670679173,
+        "objective_initial": 211161.06279370454,
+        "objective_ratio_to_reference": 1.009209119697578,
+        "objective_reference": 1861.6073025884943,
+        "objective_zero": 211161.06279370454,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false,
+        "projected_gradient_norm_final": 517.8562754279217,
+        "under_epsilon_action_mismatch_ratio": 0.11520541902140767,
+        "under_epsilon_cost": 11681.053917688982,
+        "under_epsilon_cost_ratio_to_lqr": 1.0805564847085771,
+        "under_epsilon_rollout": {
+          "control_effort": 1628.4583062428835,
+          "estimation_error_final_l2": 0.04561678912920645,
+          "estimation_error_rms": 0.0038739085971828046,
+          "peak_forward_velocity": 0.7328992656132379,
+          "terminal_position_error_m": 0.03367175021757064,
+          "time_to_peak_step": 16
+        }
+      },
+      {
+        "clean_action_mismatch_ratio": 0.22305482034007332,
+        "clean_cost": 4458.753982246898,
+        "clean_rollout": {
+          "control_effort": 1611.7504176058867,
+          "estimation_error_final_l2": 0.0,
+          "estimation_error_rms": 0.0,
+          "peak_forward_velocity": 0.7390635053029415,
+          "terminal_position_error_m": 0.0034232585444759684,
+          "time_to_peak_step": 16
+        },
+        "condition": {
+          "auxiliary_bellman_weights": [],
+          "eigenspectrum_coverage": null,
+          "ftol": 1e-14,
+          "gtol": 1e-10,
+          "initializations": [
+            "scratch"
+          ],
+          "label": "strong_optimizer_whitened_observer_error_state_m1_s1",
+          "maxiter": 2000,
+          "maxls": 100,
+          "observer_error_coverage": {
+            "n_modes": 1,
+            "objective": "state",
+            "reference": "kalman_observer_error_svd",
+            "scale": 1.0,
+            "weight": 0.1
+          },
+          "use_time_block_preconditioning": false,
+          "use_whitening": true
+        },
+        "exact_l2_cost": 13303.26531646519,
+        "exact_l2_cost_ratio_to_hinf": 1.632861677901708,
+        "exact_l2_cost_ratio_to_lqr": 1.1829360288299338,
+        "gain_relative_error": 0.9933873560916837,
+        "gamma_penalized_feasible": false,
+        "gamma_penalized_lambda_over_gamma_squared": 2.1300948608638657,
+        "gradient_norm_final": 3889.778802810017,
+        "gradient_norm_initial": 10700873.238677174,
+        "initialization": "scratch",
+        "label": "strong_optimizer_whitened_observer_error_state_m1_s1__scratch",
+        "n_function_evaluations": 2182,
+        "n_iterations": 2000,
+        "objective_final": 3111.391186924478,
+        "objective_initial": 212407.49773513863,
+        "objective_ratio_to_reference": 1.001813256406252,
+        "objective_reference": 3105.7596483458356,
+        "objective_zero": 212407.49773513863,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false,
+        "projected_gradient_norm_final": 3889.778802810017,
+        "under_epsilon_action_mismatch_ratio": 0.2244338573464302,
+        "under_epsilon_cost": 11968.314853046497,
+        "under_epsilon_cost_ratio_to_lqr": 1.1071295720936087,
+        "under_epsilon_rollout": {
+          "control_effort": 1607.9798690342677,
+          "estimation_error_final_l2": 0.04561678912920648,
+          "estimation_error_rms": 0.0038739085971828046,
+          "peak_forward_velocity": 0.7387240675611328,
+          "terminal_position_error_m": 0.034211475849285716,
+          "time_to_peak_step": 16
+        }
+      }
+    ],
+    "issue": "7a459bb",
+    "non_goals": "No weak Bellman/proximal anchor, no action/gain matching to the known controller, no coverage perturbations, no robust rollout, and no GRU training in this materialization.",
+    "related_issues": {
+      "bellman_diagnostics": "583d764",
+      "gamma_sweep": "97604a8",
+      "output_feedback_lane": "83fc5b5"
+    },
+    "rerun_metadata": {
+      "discretization": "euler",
+      "discretization_description": "Forward Euler C&S released-code discretization.",
+      "lane": "deterministic_analytical",
+      "lane_description": "Deterministic analytical lane: exact recursions and deterministic rollouts/audits with no sampled sensory, motor/process, or signal-dependent control noise.",
+      "materializer": "output_feedback_rollout_recovery",
+      "phase_label_policy": "Phase 1 and Phase 3 reruns must report both discretization and lane. Euler deterministic analytical results are canonical after the Euler card lands; ZOH results remain sensitivity/historical unless explicitly promoted."
+    },
+    "scope": "Clean output-feedback LQR rollout recovery: clean, stronger optimizer, whitening/scaling, and stronger optimizer plus whitening/scaling are objective-preserving; block/time preconditioning is objective-preserving and unscaled before reporting; Bellman-auxiliary guidance is noncanonical, scratch-only, and annealed off before final clean-rollout continuation.",
+    "umbrella": "43e8728"
+  },
+  "runtime_seconds": 213.184477917006,
+  "source_manifests": {
+    "eigenspectrum": "results/7a459bb/notes/output_feedback_eigenspectrum_coverage_sweep_manifest.json",
+    "no_coverage": "results/7a459bb/notes/output_feedback_rollout_recovery_manifest.json",
+    "prior_standard_certificates": "results/7a459bb/notes/output_feedback_sweep_standard_certificates_manifest.json"
+  },
+  "standard_certificate": {
+    "full_standard_certificate_rows": [
+      "observer_error__trajectory__strong_optimizer_whitened_observer_error_trajectory_m1_s0.3__scratch__nominal_clean",
+      "observer_error__trajectory__strong_optimizer_whitened_observer_error_trajectory_m1_s0.3__scratch__riccati_epsilon_response",
+      "observer_error__trajectory__strong_optimizer_whitened_observer_error_trajectory_m1_s1__scratch__nominal_clean",
+      "observer_error__trajectory__strong_optimizer_whitened_observer_error_trajectory_m1_s1__scratch__riccati_epsilon_response",
+      "observer_error__state__strong_optimizer_whitened_observer_error_state_m1_s0.3__scratch__nominal_clean",
+      "observer_error__state__strong_optimizer_whitened_observer_error_state_m1_s0.3__scratch__riccati_epsilon_response",
+      "observer_error__state__strong_optimizer_whitened_observer_error_state_m1_s1__scratch__nominal_clean",
+      "observer_error__state__strong_optimizer_whitened_observer_error_state_m1_s1__scratch__riccati_epsilon_response"
+    ],
+    "rows": [
+      {
+        "arrays": [],
+        "artifacts": {
+          "source_manifest": "results/7a459bb/notes/output_feedback_observer_error_coverage_manifest.json"
+        },
+        "certificate_components": [
+          {
+            "name": "state_weighted_action_mismatch",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "action_label": "control",
+              "delta_rms": 3.816953671773965,
+              "mismatch_ratio_max": 59.66637411448142,
+              "mismatch_ratio_mean": 2.6002131532124713,
+              "n_samples": 60,
+              "reference_rms": 5.970156747911129,
+              "state_label": "observer-error trajectory coverage nominal-clean_estimated_state"
+            }
+          },
+          {
+            "name": "visited_subspace_diagnostics",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "mean_effective_rank": 1.000000000000006,
+              "mean_identifiable_rank": 1.0,
+              "min_effective_rank": 1.0000000000000009,
+              "min_identifiable_rank": 1.0,
+              "state_label": "observer-error trajectory coverage nominal-clean_coupled_state",
+              "time_steps": 61
+            }
+          },
+          {
+            "name": "optimizer_metadata",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "gradient_norm_final": 329198.1751016381,
+              "gradient_norm_initial": 398837.6627898278,
+              "n_function_evaluations": 2313,
+              "n_iterations": 2000,
+              "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+              "optimizer_success": false,
+              "projected_gradient_norm_final": 329198.1751016381
+            }
+          },
+          {
+            "name": "closed_loop_transition_mismatch",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "delta_rms": 0.8178769166018975,
+              "mismatch_ratio_max": 0.24437032478444712,
+              "mismatch_ratio_mean": 0.025042238297440737,
+              "reference_rms": 11.315833966609128,
+              "state_label": "observer-error trajectory coverage nominal-clean_coupled_state"
+            }
+          },
+          {
+            "name": "value_policy_gap",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "gap_ratio_max": 0.3437160170088184,
+              "gap_ratio_max_abs": 0.3437160170088184,
+              "gap_ratio_mean": 0.1568136795335549,
+              "state_label": "observer-error trajectory coverage nominal-clean_coupled_state"
+            }
+          },
+          {
+            "name": "bellman_hessian_residual",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "reference_rms": 6.9132021384893285,
+              "residual_max": 164.08890491151527,
+              "residual_mean": 20.888565981594947,
+              "residual_ratio_max": 59.666374114480924,
+              "residual_ratio_mean": 2.6002131532123838,
+              "residual_rms": 4.570401074478578,
+              "state_label": "observer-error trajectory coverage nominal-clean_estimated_state"
+            }
+          },
+          {
+            "name": "behavioral_action_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "clean_action_mismatch_ratio": 0.761871458666048,
+              "clean_cost": 5616.8239039264845,
+              "evaluation_distribution": "deterministic clean plus Riccati-epsilon sidecar",
+              "under_epsilon_action_mismatch_ratio": 0.7448980106716784,
+              "under_epsilon_cost_ratio_to_lqr": 1.141420721924546
+            }
+          },
+          {
+            "name": "deterministic_exact_l2_and_gamma_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "exact_l2_cost_ratio_to_hinf": 2.5866639757404566,
+              "exact_l2_cost_ratio_to_lqr": 1.873923586296607,
+              "gamma_penalized_feasible": false,
+              "lambda_over_gamma_squared": 4.316579207615177
+            }
+          },
+          {
+            "name": "gain_diagnostic_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "diagnostic_only": true,
+              "gain_relative_error": 0.9909202473902298,
+              "gate": "not_used_as_certificate_gate"
+            }
+          },
+          {
+            "name": "rollout_behavior_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "control_effort": 2244.8182512006524,
+              "peak_forward_velocity": 0.6409880573467879,
+              "terminal_position_error_m": 0.00386495974098117
+            }
+          }
+        ],
+        "metrics": {
+          "certificate_evaluation_lens": "nominal_clean",
+          "clean_action_mismatch_ratio": 0.761871458666048,
+          "clean_rollout": {
+            "control_effort": 2244.8182512006524,
+            "estimation_error_final_l2": 0.0,
+            "estimation_error_rms": 0.0,
+            "peak_forward_velocity": 0.6409880573467879,
+            "terminal_position_error_m": 0.00386495974098117,
+            "time_to_peak_step": 15
+          },
+          "exact_l2_cost_ratio_to_hinf": 2.5866639757404566,
+          "exact_l2_cost_ratio_to_lqr": 1.873923586296607,
+          "gain_relative_error": 0.9909202473902298,
+          "gamma_penalized_feasible": false,
+          "gamma_penalized_lambda_over_gamma_squared": 4.316579207615177,
+          "label": "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3__scratch",
+          "n_iterations": 2000,
+          "objective_ratio_to_reference": 1.301883733341305,
+          "optimizer_success": false,
+          "under_epsilon_action_mismatch_ratio": 0.7448980106716784
+        },
+        "spec": {
+          "architecture": "time_constrained_free_gain",
+          "controller_label": "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3__scratch",
+          "evaluation_lane": "deterministic",
+          "gamma_factor": 1.4,
+          "issue_id": "7a459bb",
+          "notes": "Full standard bundle computed from the deterministic observer-error trajectory coverage row.",
+          "objective": "optimal",
+          "optimizer_label": "lbfgsb_strong_optimizer_whitened",
+          "parameters": {
+            "coverage_reference": "kalman_observer_error_svd",
+            "distribution_family": "observer-error trajectory coverage",
+            "evaluation_distribution": "observer-error trajectory coverage nominal-clean",
+            "n_modes": 1,
+            "scale": 0.3,
+            "source_manifest": "results/7a459bb/notes/output_feedback_observer_error_coverage_manifest.json",
+            "weight": 0.1
+          },
+          "reference_controller": "analytical_lqr_kalman",
+          "run_id": "observer_error__trajectory__strong_optimizer_whitened_observer_error_trajectory_m1_s0.3__scratch__nominal_clean",
+          "seed": null,
+          "training_distribution": "observer_error_trajectory"
+        },
+        "status": "full_standard_certificate"
+      },
+      {
+        "arrays": [],
+        "artifacts": {
+          "source_manifest": "results/7a459bb/notes/output_feedback_observer_error_coverage_manifest.json"
+        },
+        "certificate_components": [
+          {
+            "name": "state_weighted_action_mismatch",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "action_label": "control",
+              "delta_rms": 4.102131306953807,
+              "mismatch_ratio_max": 111.69144067652616,
+              "mismatch_ratio_mean": 3.9187445543397135,
+              "n_samples": 60,
+              "reference_rms": 6.064718100269395,
+              "state_label": "observer-error trajectory coverage Riccati-epsilon response_estimated_state"
+            }
+          },
+          {
+            "name": "visited_subspace_diagnostics",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "mean_effective_rank": 1.0000000000000084,
+              "mean_identifiable_rank": 1.0,
+              "min_effective_rank": 1.0000000000000018,
+              "min_identifiable_rank": 1.0,
+              "state_label": "observer-error trajectory coverage Riccati-epsilon response_coupled_state",
+              "time_steps": 61
+            }
+          },
+          {
+            "name": "optimizer_metadata",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "gradient_norm_final": 329198.1751016381,
+              "gradient_norm_initial": 398837.6627898278,
+              "n_function_evaluations": 2313,
+              "n_iterations": 2000,
+              "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+              "optimizer_success": false,
+              "projected_gradient_norm_final": 329198.1751016381
+            }
+          },
+          {
+            "name": "closed_loop_transition_mismatch",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "delta_rms": 0.8789832922620219,
+              "mismatch_ratio_max": 0.9051621451899731,
+              "mismatch_ratio_mean": 0.09936723246897644,
+              "reference_rms": 11.189310672581254,
+              "state_label": "observer-error trajectory coverage Riccati-epsilon response_coupled_state"
+            }
+          },
+          {
+            "name": "value_policy_gap",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "gap_ratio_max": 0.38067336354700254,
+              "gap_ratio_max_abs": 0.38067336354700254,
+              "gap_ratio_mean": 0.15645673996975068,
+              "state_label": "observer-error trajectory coverage Riccati-epsilon response_coupled_state"
+            }
+          },
+          {
+            "name": "bellman_hessian_residual",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "reference_rms": 7.131055985211106,
+              "residual_max": 142.57691536211124,
+              "residual_mean": 25.584145343269924,
+              "residual_ratio_max": 111.69144067652543,
+              "residual_ratio_mean": 3.9187445543396735,
+              "residual_rms": 5.058077237772267,
+              "state_label": "observer-error trajectory coverage Riccati-epsilon response_estimated_state"
+            }
+          },
+          {
+            "name": "behavioral_action_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "clean_action_mismatch_ratio": 0.761871458666048,
+              "clean_cost": 5616.8239039264845,
+              "evaluation_distribution": "deterministic clean plus Riccati-epsilon sidecar",
+              "under_epsilon_action_mismatch_ratio": 0.7448980106716784,
+              "under_epsilon_cost_ratio_to_lqr": 1.141420721924546
+            }
+          },
+          {
+            "name": "deterministic_exact_l2_and_gamma_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "exact_l2_cost_ratio_to_hinf": 2.5866639757404566,
+              "exact_l2_cost_ratio_to_lqr": 1.873923586296607,
+              "gamma_penalized_feasible": false,
+              "lambda_over_gamma_squared": 4.316579207615177
+            }
+          },
+          {
+            "name": "gain_diagnostic_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "diagnostic_only": true,
+              "gain_relative_error": 0.9909202473902298,
+              "gate": "not_used_as_certificate_gate"
+            }
+          },
+          {
+            "name": "rollout_behavior_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "control_effort": 2244.8182512006524,
+              "peak_forward_velocity": 0.6409880573467879,
+              "terminal_position_error_m": 0.00386495974098117
+            }
+          }
+        ],
+        "metrics": {
+          "certificate_evaluation_lens": "riccati_epsilon_response",
+          "clean_action_mismatch_ratio": 0.761871458666048,
+          "clean_rollout": {
+            "control_effort": 2244.8182512006524,
+            "estimation_error_final_l2": 0.0,
+            "estimation_error_rms": 0.0,
+            "peak_forward_velocity": 0.6409880573467879,
+            "terminal_position_error_m": 0.00386495974098117,
+            "time_to_peak_step": 15
+          },
+          "exact_l2_cost_ratio_to_hinf": 2.5866639757404566,
+          "exact_l2_cost_ratio_to_lqr": 1.873923586296607,
+          "gain_relative_error": 0.9909202473902298,
+          "gamma_penalized_feasible": false,
+          "gamma_penalized_lambda_over_gamma_squared": 4.316579207615177,
+          "label": "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3__scratch",
+          "n_iterations": 2000,
+          "objective_ratio_to_reference": 1.301883733341305,
+          "optimizer_success": false,
+          "under_epsilon_action_mismatch_ratio": 0.7448980106716784
+        },
+        "spec": {
+          "architecture": "time_constrained_free_gain",
+          "controller_label": "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3__scratch",
+          "evaluation_lane": "deterministic",
+          "gamma_factor": 1.4,
+          "issue_id": "7a459bb",
+          "notes": "Full standard bundle computed from the deterministic observer-error trajectory coverage row.",
+          "objective": "optimal",
+          "optimizer_label": "lbfgsb_strong_optimizer_whitened",
+          "parameters": {
+            "coverage_reference": "kalman_observer_error_svd",
+            "distribution_family": "observer-error trajectory coverage",
+            "evaluation_distribution": "observer-error trajectory coverage Riccati-epsilon response",
+            "n_modes": 1,
+            "scale": 0.3,
+            "source_manifest": "results/7a459bb/notes/output_feedback_observer_error_coverage_manifest.json",
+            "weight": 0.1
+          },
+          "reference_controller": "analytical_lqr_kalman",
+          "run_id": "observer_error__trajectory__strong_optimizer_whitened_observer_error_trajectory_m1_s0.3__scratch__riccati_epsilon_response",
+          "seed": null,
+          "training_distribution": "observer_error_trajectory"
+        },
+        "status": "full_standard_certificate"
+      },
+      {
+        "arrays": [],
+        "artifacts": {
+          "source_manifest": "results/7a459bb/notes/output_feedback_observer_error_coverage_manifest.json"
+        },
+        "certificate_components": [
+          {
+            "name": "state_weighted_action_mismatch",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "action_label": "control",
+              "delta_rms": 3.270389012010784,
+              "mismatch_ratio_max": 42.88045969186177,
+              "mismatch_ratio_mean": 2.1879049444641137,
+              "n_samples": 60,
+              "reference_rms": 5.8978921233248505,
+              "state_label": "observer-error trajectory coverage nominal-clean_estimated_state"
+            }
+          },
+          {
+            "name": "visited_subspace_diagnostics",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "mean_effective_rank": 1.0000000000000058,
+              "mean_identifiable_rank": 1.0,
+              "min_effective_rank": 1.0000000000000007,
+              "min_identifiable_rank": 1.0,
+              "state_label": "observer-error trajectory coverage nominal-clean_coupled_state",
+              "time_steps": 61
+            }
+          },
+          {
+            "name": "optimizer_metadata",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "gradient_norm_final": 816567.7530849011,
+              "gradient_norm_initial": 399327.13878844236,
+              "n_function_evaluations": 2299,
+              "n_iterations": 2000,
+              "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+              "optimizer_success": false,
+              "projected_gradient_norm_final": 816567.7530849011
+            }
+          },
+          {
+            "name": "closed_loop_transition_mismatch",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "delta_rms": 0.7007618931850903,
+              "mismatch_ratio_max": 0.11287000237289378,
+              "mismatch_ratio_mean": 0.008883255774478025,
+              "reference_rms": 11.433729365327697,
+              "state_label": "observer-error trajectory coverage nominal-clean_coupled_state"
+            }
+          },
+          {
+            "name": "value_policy_gap",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "gap_ratio_max": 0.26377800471647966,
+              "gap_ratio_max_abs": 0.26377800471647966,
+              "gap_ratio_mean": 0.11643826564598543,
+              "state_label": "observer-error trajectory coverage nominal-clean_coupled_state"
+            }
+          },
+          {
+            "name": "bellman_hessian_residual",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "reference_rms": 6.800654657729953,
+              "residual_max": 136.70273983594058,
+              "residual_mean": 15.367582973535415,
+              "residual_ratio_max": 42.88045969186182,
+              "residual_ratio_mean": 2.1879049444641208,
+              "residual_rms": 3.9201508865776344,
+              "state_label": "observer-error trajectory coverage nominal-clean_estimated_state"
+            }
+          },
+          {
+            "name": "behavioral_action_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "clean_action_mismatch_ratio": 0.6537459195644356,
+              "clean_cost": 5285.564923442916,
+              "evaluation_distribution": "deterministic clean plus Riccati-epsilon sidecar",
+              "under_epsilon_action_mismatch_ratio": 0.6718523222016078,
+              "under_epsilon_cost_ratio_to_lqr": 0.8941179022336213
+            }
+          },
+          {
+            "name": "deterministic_exact_l2_and_gamma_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "exact_l2_cost_ratio_to_hinf": 17.679922260200044,
+              "exact_l2_cost_ratio_to_lqr": 12.808321311930465,
+              "gamma_penalized_feasible": false,
+              "lambda_over_gamma_squared": 40.665969625062125
+            }
+          },
+          {
+            "name": "gain_diagnostic_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "diagnostic_only": true,
+              "gain_relative_error": 0.9871401075831163,
+              "gate": "not_used_as_certificate_gate"
+            }
+          },
+          {
+            "name": "rollout_behavior_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "control_effort": 2072.3387128810537,
+              "peak_forward_velocity": 0.6555761692849974,
+              "terminal_position_error_m": 0.003929682642491852
+            }
+          }
+        ],
+        "metrics": {
+          "certificate_evaluation_lens": "nominal_clean",
+          "clean_action_mismatch_ratio": 0.6537459195644356,
+          "clean_rollout": {
+            "control_effort": 2072.3387128810537,
+            "estimation_error_final_l2": 0.0,
+            "estimation_error_rms": 0.0,
+            "peak_forward_velocity": 0.6555761692849974,
+            "terminal_position_error_m": 0.003929682642491852,
+            "time_to_peak_step": 20
+          },
+          "exact_l2_cost_ratio_to_hinf": 17.679922260200044,
+          "exact_l2_cost_ratio_to_lqr": 12.808321311930465,
+          "gain_relative_error": 0.9871401075831163,
+          "gamma_penalized_feasible": false,
+          "gamma_penalized_lambda_over_gamma_squared": 40.665969625062125,
+          "label": "strong_optimizer_whitened_observer_error_trajectory_m1_s1__scratch",
+          "n_iterations": 2000,
+          "objective_ratio_to_reference": 0.8668749231358172,
+          "optimizer_success": false,
+          "under_epsilon_action_mismatch_ratio": 0.6718523222016078
+        },
+        "spec": {
+          "architecture": "time_constrained_free_gain",
+          "controller_label": "strong_optimizer_whitened_observer_error_trajectory_m1_s1__scratch",
+          "evaluation_lane": "deterministic",
+          "gamma_factor": 1.4,
+          "issue_id": "7a459bb",
+          "notes": "Full standard bundle computed from the deterministic observer-error trajectory coverage row.",
+          "objective": "optimal",
+          "optimizer_label": "lbfgsb_strong_optimizer_whitened",
+          "parameters": {
+            "coverage_reference": "kalman_observer_error_svd",
+            "distribution_family": "observer-error trajectory coverage",
+            "evaluation_distribution": "observer-error trajectory coverage nominal-clean",
+            "n_modes": 1,
+            "scale": 1.0,
+            "source_manifest": "results/7a459bb/notes/output_feedback_observer_error_coverage_manifest.json",
+            "weight": 0.1
+          },
+          "reference_controller": "analytical_lqr_kalman",
+          "run_id": "observer_error__trajectory__strong_optimizer_whitened_observer_error_trajectory_m1_s1__scratch__nominal_clean",
+          "seed": null,
+          "training_distribution": "observer_error_trajectory"
+        },
+        "status": "full_standard_certificate"
+      },
+      {
+        "arrays": [],
+        "artifacts": {
+          "source_manifest": "results/7a459bb/notes/output_feedback_observer_error_coverage_manifest.json"
+        },
+        "certificate_components": [
+          {
+            "name": "state_weighted_action_mismatch",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "action_label": "control",
+              "delta_rms": 5.965236572388416,
+              "mismatch_ratio_max": 21.54436859561973,
+              "mismatch_ratio_mean": 1.3041249309113814,
+              "n_samples": 60,
+              "reference_rms": 8.351927715071225,
+              "state_label": "observer-error trajectory coverage Riccati-epsilon response_estimated_state"
+            }
+          },
+          {
+            "name": "visited_subspace_diagnostics",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "mean_effective_rank": 1.0000000000000075,
+              "mean_identifiable_rank": 1.0,
+              "min_effective_rank": 1.0000000000000018,
+              "min_identifiable_rank": 1.0,
+              "state_label": "observer-error trajectory coverage Riccati-epsilon response_coupled_state",
+              "time_steps": 61
+            }
+          },
+          {
+            "name": "optimizer_metadata",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "gradient_norm_final": 816567.7530849011,
+              "gradient_norm_initial": 399327.13878844236,
+              "n_function_evaluations": 2299,
+              "n_iterations": 2000,
+              "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+              "optimizer_success": false,
+              "projected_gradient_norm_final": 816567.7530849011
+            }
+          },
+          {
+            "name": "closed_loop_transition_mismatch",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "delta_rms": 1.278199767187226,
+              "mismatch_ratio_max": 0.2601592889287133,
+              "mismatch_ratio_mean": 0.030057768652331354,
+              "reference_rms": 11.094034607165684,
+              "state_label": "observer-error trajectory coverage Riccati-epsilon response_coupled_state"
+            }
+          },
+          {
+            "name": "value_policy_gap",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "gap_ratio_max": 0.961862974182527,
+              "gap_ratio_max_abs": 0.961862974182527,
+              "gap_ratio_mean": 0.35870429086896033,
+              "state_label": "observer-error trajectory coverage Riccati-epsilon response_coupled_state"
+            }
+          },
+          {
+            "name": "bellman_hessian_residual",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "reference_rms": 10.182964995291094,
+              "residual_max": 416.6985276348182,
+              "residual_mean": 56.0737476917031,
+              "residual_ratio_max": 21.544368595619677,
+              "residual_ratio_mean": 1.3041249309113851,
+              "residual_rms": 7.488240627257053,
+              "state_label": "observer-error trajectory coverage Riccati-epsilon response_estimated_state"
+            }
+          },
+          {
+            "name": "behavioral_action_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "clean_action_mismatch_ratio": 0.6537459195644356,
+              "clean_cost": 5285.564923442916,
+              "evaluation_distribution": "deterministic clean plus Riccati-epsilon sidecar",
+              "under_epsilon_action_mismatch_ratio": 0.6718523222016078,
+              "under_epsilon_cost_ratio_to_lqr": 0.8941179022336213
+            }
+          },
+          {
+            "name": "deterministic_exact_l2_and_gamma_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "exact_l2_cost_ratio_to_hinf": 17.679922260200044,
+              "exact_l2_cost_ratio_to_lqr": 12.808321311930465,
+              "gamma_penalized_feasible": false,
+              "lambda_over_gamma_squared": 40.665969625062125
+            }
+          },
+          {
+            "name": "gain_diagnostic_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "diagnostic_only": true,
+              "gain_relative_error": 0.9871401075831163,
+              "gate": "not_used_as_certificate_gate"
+            }
+          },
+          {
+            "name": "rollout_behavior_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "control_effort": 2072.3387128810537,
+              "peak_forward_velocity": 0.6555761692849974,
+              "terminal_position_error_m": 0.003929682642491852
+            }
+          }
+        ],
+        "metrics": {
+          "certificate_evaluation_lens": "riccati_epsilon_response",
+          "clean_action_mismatch_ratio": 0.6537459195644356,
+          "clean_rollout": {
+            "control_effort": 2072.3387128810537,
+            "estimation_error_final_l2": 0.0,
+            "estimation_error_rms": 0.0,
+            "peak_forward_velocity": 0.6555761692849974,
+            "terminal_position_error_m": 0.003929682642491852,
+            "time_to_peak_step": 20
+          },
+          "exact_l2_cost_ratio_to_hinf": 17.679922260200044,
+          "exact_l2_cost_ratio_to_lqr": 12.808321311930465,
+          "gain_relative_error": 0.9871401075831163,
+          "gamma_penalized_feasible": false,
+          "gamma_penalized_lambda_over_gamma_squared": 40.665969625062125,
+          "label": "strong_optimizer_whitened_observer_error_trajectory_m1_s1__scratch",
+          "n_iterations": 2000,
+          "objective_ratio_to_reference": 0.8668749231358172,
+          "optimizer_success": false,
+          "under_epsilon_action_mismatch_ratio": 0.6718523222016078
+        },
+        "spec": {
+          "architecture": "time_constrained_free_gain",
+          "controller_label": "strong_optimizer_whitened_observer_error_trajectory_m1_s1__scratch",
+          "evaluation_lane": "deterministic",
+          "gamma_factor": 1.4,
+          "issue_id": "7a459bb",
+          "notes": "Full standard bundle computed from the deterministic observer-error trajectory coverage row.",
+          "objective": "optimal",
+          "optimizer_label": "lbfgsb_strong_optimizer_whitened",
+          "parameters": {
+            "coverage_reference": "kalman_observer_error_svd",
+            "distribution_family": "observer-error trajectory coverage",
+            "evaluation_distribution": "observer-error trajectory coverage Riccati-epsilon response",
+            "n_modes": 1,
+            "scale": 1.0,
+            "source_manifest": "results/7a459bb/notes/output_feedback_observer_error_coverage_manifest.json",
+            "weight": 0.1
+          },
+          "reference_controller": "analytical_lqr_kalman",
+          "run_id": "observer_error__trajectory__strong_optimizer_whitened_observer_error_trajectory_m1_s1__scratch__riccati_epsilon_response",
+          "seed": null,
+          "training_distribution": "observer_error_trajectory"
+        },
+        "status": "full_standard_certificate"
+      },
+      {
+        "arrays": [],
+        "artifacts": {
+          "source_manifest": "results/7a459bb/notes/output_feedback_observer_error_coverage_manifest.json"
+        },
+        "certificate_components": [
+          {
+            "name": "state_weighted_action_mismatch",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "action_label": "control",
+              "delta_rms": 0.558920496496535,
+              "mismatch_ratio_max": 13.407865954770042,
+              "mismatch_ratio_mean": 0.46727339051209243,
+              "n_samples": 60,
+              "reference_rms": 5.4311119790683,
+              "state_label": "observer-error state coverage nominal-clean_estimated_state"
+            }
+          },
+          {
+            "name": "visited_subspace_diagnostics",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "mean_effective_rank": 1.000000000000006,
+              "mean_identifiable_rank": 1.0,
+              "min_effective_rank": 1.0000000000000007,
+              "min_identifiable_rank": 1.0,
+              "state_label": "observer-error state coverage nominal-clean_coupled_state",
+              "time_steps": 61
+            }
+          },
+          {
+            "name": "optimizer_metadata",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "gradient_norm_final": 517.8562754279217,
+              "gradient_norm_initial": 10700974.118607307,
+              "n_function_evaluations": 2184,
+              "n_iterations": 2000,
+              "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+              "optimizer_success": false,
+              "projected_gradient_norm_final": 517.8562754279217
+            }
+          },
+          {
+            "name": "closed_loop_transition_mismatch",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "delta_rms": 0.11976256764147038,
+              "mismatch_ratio_max": 0.02932677349083769,
+              "mismatch_ratio_mean": 0.0006157427324633764,
+              "reference_rms": 11.884696409831243,
+              "state_label": "observer-error state coverage nominal-clean_coupled_state"
+            }
+          },
+          {
+            "name": "value_policy_gap",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "gap_ratio_max": 0.005431492840307143,
+              "gap_ratio_max_abs": 0.005431492840307143,
+              "gap_ratio_mean": 0.00038556463747092714,
+              "state_label": "observer-error state coverage nominal-clean_coupled_state"
+            }
+          },
+          {
+            "name": "bellman_hessian_residual",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "reference_rms": 6.201029390529874,
+              "residual_max": 14.35989114640259,
+              "residual_mean": 0.39500621708982064,
+              "residual_ratio_max": 13.40786595476441,
+              "residual_ratio_mean": 0.4672733905118548,
+              "residual_rms": 0.628495200530458,
+              "state_label": "observer-error state coverage nominal-clean_estimated_state"
+            }
+          },
+          {
+            "name": "behavioral_action_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "clean_action_mismatch_ratio": 0.11322322997810262,
+              "clean_cost": 4387.210318056186,
+              "evaluation_distribution": "deterministic clean plus Riccati-epsilon sidecar",
+              "under_epsilon_action_mismatch_ratio": 0.11520541902140767,
+              "under_epsilon_cost_ratio_to_lqr": 1.0805564847085771
+            }
+          },
+          {
+            "name": "deterministic_exact_l2_and_gamma_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "exact_l2_cost_ratio_to_hinf": 1.5822705780320594,
+              "exact_l2_cost_ratio_to_lqr": 1.146285015713596,
+              "gamma_penalized_feasible": false,
+              "lambda_over_gamma_squared": 2.1440828120919444
+            }
+          },
+          {
+            "name": "gain_diagnostic_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "diagnostic_only": true,
+              "gain_relative_error": 0.9914867974882768,
+              "gate": "not_used_as_certificate_gate"
+            }
+          },
+          {
+            "name": "rollout_behavior_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "control_effort": 1638.1947814429002,
+              "peak_forward_velocity": 0.73325550669143,
+              "terminal_position_error_m": 0.003315013229244725
+            }
+          }
+        ],
+        "metrics": {
+          "certificate_evaluation_lens": "nominal_clean",
+          "clean_action_mismatch_ratio": 0.11322322997810262,
+          "clean_rollout": {
+            "control_effort": 1638.1947814429002,
+            "estimation_error_final_l2": 0.0,
+            "estimation_error_rms": 0.0,
+            "peak_forward_velocity": 0.73325550669143,
+            "terminal_position_error_m": 0.003315013229244725,
+            "time_to_peak_step": 16
+          },
+          "exact_l2_cost_ratio_to_hinf": 1.5822705780320594,
+          "exact_l2_cost_ratio_to_lqr": 1.146285015713596,
+          "gain_relative_error": 0.9914867974882768,
+          "gamma_penalized_feasible": false,
+          "gamma_penalized_lambda_over_gamma_squared": 2.1440828120919444,
+          "label": "strong_optimizer_whitened_observer_error_state_m1_s0.3__scratch",
+          "n_iterations": 2000,
+          "objective_ratio_to_reference": 1.009209119697578,
+          "optimizer_success": false,
+          "under_epsilon_action_mismatch_ratio": 0.11520541902140767
+        },
+        "spec": {
+          "architecture": "time_constrained_free_gain",
+          "controller_label": "strong_optimizer_whitened_observer_error_state_m1_s0.3__scratch",
+          "evaluation_lane": "deterministic",
+          "gamma_factor": 1.4,
+          "issue_id": "7a459bb",
+          "notes": "Full standard bundle computed from the deterministic observer-error state coverage row.",
+          "objective": "optimal",
+          "optimizer_label": "lbfgsb_strong_optimizer_whitened",
+          "parameters": {
+            "coverage_reference": "kalman_observer_error_svd",
+            "distribution_family": "observer-error state coverage",
+            "evaluation_distribution": "observer-error state coverage nominal-clean",
+            "n_modes": 1,
+            "scale": 0.3,
+            "source_manifest": "results/7a459bb/notes/output_feedback_observer_error_coverage_manifest.json",
+            "weight": 0.1
+          },
+          "reference_controller": "analytical_lqr_kalman",
+          "run_id": "observer_error__state__strong_optimizer_whitened_observer_error_state_m1_s0.3__scratch__nominal_clean",
+          "seed": null,
+          "training_distribution": "observer_error_state"
+        },
+        "status": "full_standard_certificate"
+      },
+      {
+        "arrays": [],
+        "artifacts": {
+          "source_manifest": "results/7a459bb/notes/output_feedback_observer_error_coverage_manifest.json"
+        },
+        "certificate_components": [
+          {
+            "name": "state_weighted_action_mismatch",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "action_label": "control",
+              "delta_rms": 0.8567609422926561,
+              "mismatch_ratio_max": 8.551059407106912,
+              "mismatch_ratio_mean": 0.6292217680978971,
+              "n_samples": 60,
+              "reference_rms": 5.330442284192045,
+              "state_label": "observer-error state coverage Riccati-epsilon response_estimated_state"
+            }
+          },
+          {
+            "name": "visited_subspace_diagnostics",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "mean_effective_rank": 1.0000000000000082,
+              "mean_identifiable_rank": 1.0,
+              "min_effective_rank": 1.0000000000000018,
+              "min_identifiable_rank": 1.0,
+              "state_label": "observer-error state coverage Riccati-epsilon response_coupled_state",
+              "time_steps": 61
+            }
+          },
+          {
+            "name": "optimizer_metadata",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "gradient_norm_final": 517.8562754279217,
+              "gradient_norm_initial": 10700974.118607307,
+              "n_function_evaluations": 2184,
+              "n_iterations": 2000,
+              "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+              "optimizer_success": false,
+              "projected_gradient_norm_final": 517.8562754279217
+            }
+          },
+          {
+            "name": "closed_loop_transition_mismatch",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "delta_rms": 0.18358226428815574,
+              "mismatch_ratio_max": 0.12320275160597932,
+              "mismatch_ratio_mean": 0.013310873042344509,
+              "reference_rms": 11.820341927666254,
+              "state_label": "observer-error state coverage Riccati-epsilon response_coupled_state"
+            }
+          },
+          {
+            "name": "value_policy_gap",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "gap_ratio_max": 0.06788634804597772,
+              "gap_ratio_max_abs": 0.06788634804597772,
+              "gap_ratio_mean": 0.020942954987119528,
+              "state_label": "observer-error state coverage Riccati-epsilon response_coupled_state"
+            }
+          },
+          {
+            "name": "bellman_hessian_residual",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "reference_rms": 6.08558352190521,
+              "residual_max": 14.35989114640259,
+              "residual_mean": 1.1090683249143583,
+              "residual_ratio_max": 8.551059407117068,
+              "residual_ratio_mean": 0.6292217680980569,
+              "residual_rms": 1.053123129037796,
+              "state_label": "observer-error state coverage Riccati-epsilon response_estimated_state"
+            }
+          },
+          {
+            "name": "behavioral_action_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "clean_action_mismatch_ratio": 0.11322322997810262,
+              "clean_cost": 4387.210318056186,
+              "evaluation_distribution": "deterministic clean plus Riccati-epsilon sidecar",
+              "under_epsilon_action_mismatch_ratio": 0.11520541902140767,
+              "under_epsilon_cost_ratio_to_lqr": 1.0805564847085771
+            }
+          },
+          {
+            "name": "deterministic_exact_l2_and_gamma_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "exact_l2_cost_ratio_to_hinf": 1.5822705780320594,
+              "exact_l2_cost_ratio_to_lqr": 1.146285015713596,
+              "gamma_penalized_feasible": false,
+              "lambda_over_gamma_squared": 2.1440828120919444
+            }
+          },
+          {
+            "name": "gain_diagnostic_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "diagnostic_only": true,
+              "gain_relative_error": 0.9914867974882768,
+              "gate": "not_used_as_certificate_gate"
+            }
+          },
+          {
+            "name": "rollout_behavior_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "control_effort": 1638.1947814429002,
+              "peak_forward_velocity": 0.73325550669143,
+              "terminal_position_error_m": 0.003315013229244725
+            }
+          }
+        ],
+        "metrics": {
+          "certificate_evaluation_lens": "riccati_epsilon_response",
+          "clean_action_mismatch_ratio": 0.11322322997810262,
+          "clean_rollout": {
+            "control_effort": 1638.1947814429002,
+            "estimation_error_final_l2": 0.0,
+            "estimation_error_rms": 0.0,
+            "peak_forward_velocity": 0.73325550669143,
+            "terminal_position_error_m": 0.003315013229244725,
+            "time_to_peak_step": 16
+          },
+          "exact_l2_cost_ratio_to_hinf": 1.5822705780320594,
+          "exact_l2_cost_ratio_to_lqr": 1.146285015713596,
+          "gain_relative_error": 0.9914867974882768,
+          "gamma_penalized_feasible": false,
+          "gamma_penalized_lambda_over_gamma_squared": 2.1440828120919444,
+          "label": "strong_optimizer_whitened_observer_error_state_m1_s0.3__scratch",
+          "n_iterations": 2000,
+          "objective_ratio_to_reference": 1.009209119697578,
+          "optimizer_success": false,
+          "under_epsilon_action_mismatch_ratio": 0.11520541902140767
+        },
+        "spec": {
+          "architecture": "time_constrained_free_gain",
+          "controller_label": "strong_optimizer_whitened_observer_error_state_m1_s0.3__scratch",
+          "evaluation_lane": "deterministic",
+          "gamma_factor": 1.4,
+          "issue_id": "7a459bb",
+          "notes": "Full standard bundle computed from the deterministic observer-error state coverage row.",
+          "objective": "optimal",
+          "optimizer_label": "lbfgsb_strong_optimizer_whitened",
+          "parameters": {
+            "coverage_reference": "kalman_observer_error_svd",
+            "distribution_family": "observer-error state coverage",
+            "evaluation_distribution": "observer-error state coverage Riccati-epsilon response",
+            "n_modes": 1,
+            "scale": 0.3,
+            "source_manifest": "results/7a459bb/notes/output_feedback_observer_error_coverage_manifest.json",
+            "weight": 0.1
+          },
+          "reference_controller": "analytical_lqr_kalman",
+          "run_id": "observer_error__state__strong_optimizer_whitened_observer_error_state_m1_s0.3__scratch__riccati_epsilon_response",
+          "seed": null,
+          "training_distribution": "observer_error_state"
+        },
+        "status": "full_standard_certificate"
+      },
+      {
+        "arrays": [],
+        "artifacts": {
+          "source_manifest": "results/7a459bb/notes/output_feedback_observer_error_coverage_manifest.json"
+        },
+        "certificate_components": [
+          {
+            "name": "state_weighted_action_mismatch",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "action_label": "control",
+              "delta_rms": 1.1184944885762484,
+              "mismatch_ratio_max": 10.748891338961545,
+              "mismatch_ratio_mean": 0.584814995256077,
+              "n_samples": 60,
+              "reference_rms": 5.666925622859459,
+              "state_label": "observer-error state coverage nominal-clean_estimated_state"
+            }
+          },
+          {
+            "name": "visited_subspace_diagnostics",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "mean_effective_rank": 1.0000000000000058,
+              "mean_identifiable_rank": 1.0,
+              "min_effective_rank": 1.000000000000001,
+              "min_identifiable_rank": 1.0,
+              "state_label": "observer-error state coverage nominal-clean_coupled_state",
+              "time_steps": 61
+            }
+          },
+          {
+            "name": "optimizer_metadata",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "gradient_norm_final": 3889.778802810017,
+              "gradient_norm_initial": 10700873.238677174,
+              "n_function_evaluations": 2182,
+              "n_iterations": 2000,
+              "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+              "optimizer_success": false,
+              "projected_gradient_norm_final": 3889.778802810017
+            }
+          },
+          {
+            "name": "closed_loop_transition_mismatch",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "delta_rms": 0.23966516290668022,
+              "mismatch_ratio_max": 0.11899419814981307,
+              "mismatch_ratio_mean": 0.0028302284804293445,
+              "reference_rms": 11.947771403004424,
+              "state_label": "observer-error state coverage nominal-clean_coupled_state"
+            }
+          },
+          {
+            "name": "value_policy_gap",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "gap_ratio_max": 0.021827390888449535,
+              "gap_ratio_max_abs": 0.021827390888449535,
+              "gap_ratio_mean": 0.0022906731287851358,
+              "state_label": "observer-error state coverage nominal-clean_coupled_state"
+            }
+          },
+          {
+            "name": "bellman_hessian_residual",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "reference_rms": 6.467253659388792,
+              "residual_max": 58.26565725065614,
+              "residual_mean": 1.5874006202684547,
+              "residual_ratio_max": 10.748891338824881,
+              "residual_ratio_mean": 0.5848149952537783,
+              "residual_rms": 1.2599208785747043,
+              "state_label": "observer-error state coverage nominal-clean_estimated_state"
+            }
+          },
+          {
+            "name": "behavioral_action_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "clean_action_mismatch_ratio": 0.22305482034007332,
+              "clean_cost": 4458.753982246898,
+              "evaluation_distribution": "deterministic clean plus Riccati-epsilon sidecar",
+              "under_epsilon_action_mismatch_ratio": 0.2244338573464302,
+              "under_epsilon_cost_ratio_to_lqr": 1.1071295720936087
+            }
+          },
+          {
+            "name": "deterministic_exact_l2_and_gamma_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "exact_l2_cost_ratio_to_hinf": 1.632861677901708,
+              "exact_l2_cost_ratio_to_lqr": 1.1829360288299338,
+              "gamma_penalized_feasible": false,
+              "lambda_over_gamma_squared": 2.1300948608638657
+            }
+          },
+          {
+            "name": "gain_diagnostic_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "diagnostic_only": true,
+              "gain_relative_error": 0.9933873560916837,
+              "gate": "not_used_as_certificate_gate"
+            }
+          },
+          {
+            "name": "rollout_behavior_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "control_effort": 1611.7504176058867,
+              "peak_forward_velocity": 0.7390635053029415,
+              "terminal_position_error_m": 0.0034232585444759684
+            }
+          }
+        ],
+        "metrics": {
+          "certificate_evaluation_lens": "nominal_clean",
+          "clean_action_mismatch_ratio": 0.22305482034007332,
+          "clean_rollout": {
+            "control_effort": 1611.7504176058867,
+            "estimation_error_final_l2": 0.0,
+            "estimation_error_rms": 0.0,
+            "peak_forward_velocity": 0.7390635053029415,
+            "terminal_position_error_m": 0.0034232585444759684,
+            "time_to_peak_step": 16
+          },
+          "exact_l2_cost_ratio_to_hinf": 1.632861677901708,
+          "exact_l2_cost_ratio_to_lqr": 1.1829360288299338,
+          "gain_relative_error": 0.9933873560916837,
+          "gamma_penalized_feasible": false,
+          "gamma_penalized_lambda_over_gamma_squared": 2.1300948608638657,
+          "label": "strong_optimizer_whitened_observer_error_state_m1_s1__scratch",
+          "n_iterations": 2000,
+          "objective_ratio_to_reference": 1.001813256406252,
+          "optimizer_success": false,
+          "under_epsilon_action_mismatch_ratio": 0.2244338573464302
+        },
+        "spec": {
+          "architecture": "time_constrained_free_gain",
+          "controller_label": "strong_optimizer_whitened_observer_error_state_m1_s1__scratch",
+          "evaluation_lane": "deterministic",
+          "gamma_factor": 1.4,
+          "issue_id": "7a459bb",
+          "notes": "Full standard bundle computed from the deterministic observer-error state coverage row.",
+          "objective": "optimal",
+          "optimizer_label": "lbfgsb_strong_optimizer_whitened",
+          "parameters": {
+            "coverage_reference": "kalman_observer_error_svd",
+            "distribution_family": "observer-error state coverage",
+            "evaluation_distribution": "observer-error state coverage nominal-clean",
+            "n_modes": 1,
+            "scale": 1.0,
+            "source_manifest": "results/7a459bb/notes/output_feedback_observer_error_coverage_manifest.json",
+            "weight": 0.1
+          },
+          "reference_controller": "analytical_lqr_kalman",
+          "run_id": "observer_error__state__strong_optimizer_whitened_observer_error_state_m1_s1__scratch__nominal_clean",
+          "seed": null,
+          "training_distribution": "observer_error_state"
+        },
+        "status": "full_standard_certificate"
+      },
+      {
+        "arrays": [],
+        "artifacts": {
+          "source_manifest": "results/7a459bb/notes/output_feedback_observer_error_coverage_manifest.json"
+        },
+        "certificate_components": [
+          {
+            "name": "state_weighted_action_mismatch",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "action_label": "control",
+              "delta_rms": 1.351658841767309,
+              "mismatch_ratio_max": 7.344463934666833,
+              "mismatch_ratio_mean": 0.8195061052566179,
+              "n_samples": 60,
+              "reference_rms": 5.5688873744965806,
+              "state_label": "observer-error state coverage Riccati-epsilon response_estimated_state"
+            }
+          },
+          {
+            "name": "visited_subspace_diagnostics",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "mean_effective_rank": 1.000000000000008,
+              "mean_identifiable_rank": 1.0,
+              "min_effective_rank": 1.0000000000000013,
+              "min_identifiable_rank": 1.0,
+              "state_label": "observer-error state coverage Riccati-epsilon response_coupled_state",
+              "time_steps": 61
+            }
+          },
+          {
+            "name": "optimizer_metadata",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "gradient_norm_final": 3889.778802810017,
+              "gradient_norm_initial": 10700873.238677174,
+              "n_function_evaluations": 2182,
+              "n_iterations": 2000,
+              "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+              "optimizer_success": false,
+              "projected_gradient_norm_final": 3889.778802810017
+            }
+          },
+          {
+            "name": "closed_loop_transition_mismatch",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "delta_rms": 0.28962640389830874,
+              "mismatch_ratio_max": 0.11899419814981307,
+              "mismatch_ratio_mean": 0.016011534781614076,
+              "reference_rms": 11.899317668698854,
+              "state_label": "observer-error state coverage Riccati-epsilon response_coupled_state"
+            }
+          },
+          {
+            "name": "value_policy_gap",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "gap_ratio_max": 0.07411652717006587,
+              "gap_ratio_max_abs": 0.07411652717006587,
+              "gap_ratio_mean": 0.024751830450680325,
+              "state_label": "observer-error state coverage Riccati-epsilon response_coupled_state"
+            }
+          },
+          {
+            "name": "bellman_hessian_residual",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "reference_rms": 6.355396112216542,
+              "residual_max": 58.26565725065614,
+              "residual_mean": 2.5388946808543493,
+              "residual_ratio_max": 7.344463934665297,
+              "residual_ratio_mean": 0.8195061052566486,
+              "residual_rms": 1.5933909378599933,
+              "state_label": "observer-error state coverage Riccati-epsilon response_estimated_state"
+            }
+          },
+          {
+            "name": "behavioral_action_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "clean_action_mismatch_ratio": 0.22305482034007332,
+              "clean_cost": 4458.753982246898,
+              "evaluation_distribution": "deterministic clean plus Riccati-epsilon sidecar",
+              "under_epsilon_action_mismatch_ratio": 0.2244338573464302,
+              "under_epsilon_cost_ratio_to_lqr": 1.1071295720936087
+            }
+          },
+          {
+            "name": "deterministic_exact_l2_and_gamma_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "exact_l2_cost_ratio_to_hinf": 1.632861677901708,
+              "exact_l2_cost_ratio_to_lqr": 1.1829360288299338,
+              "gamma_penalized_feasible": false,
+              "lambda_over_gamma_squared": 2.1300948608638657
+            }
+          },
+          {
+            "name": "gain_diagnostic_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "diagnostic_only": true,
+              "gain_relative_error": 0.9933873560916837,
+              "gate": "not_used_as_certificate_gate"
+            }
+          },
+          {
+            "name": "rollout_behavior_sidecar",
+            "reason": "",
+            "status": "available",
+            "summary": {
+              "control_effort": 1611.7504176058867,
+              "peak_forward_velocity": 0.7390635053029415,
+              "terminal_position_error_m": 0.0034232585444759684
+            }
+          }
+        ],
+        "metrics": {
+          "certificate_evaluation_lens": "riccati_epsilon_response",
+          "clean_action_mismatch_ratio": 0.22305482034007332,
+          "clean_rollout": {
+            "control_effort": 1611.7504176058867,
+            "estimation_error_final_l2": 0.0,
+            "estimation_error_rms": 0.0,
+            "peak_forward_velocity": 0.7390635053029415,
+            "terminal_position_error_m": 0.0034232585444759684,
+            "time_to_peak_step": 16
+          },
+          "exact_l2_cost_ratio_to_hinf": 1.632861677901708,
+          "exact_l2_cost_ratio_to_lqr": 1.1829360288299338,
+          "gain_relative_error": 0.9933873560916837,
+          "gamma_penalized_feasible": false,
+          "gamma_penalized_lambda_over_gamma_squared": 2.1300948608638657,
+          "label": "strong_optimizer_whitened_observer_error_state_m1_s1__scratch",
+          "n_iterations": 2000,
+          "objective_ratio_to_reference": 1.001813256406252,
+          "optimizer_success": false,
+          "under_epsilon_action_mismatch_ratio": 0.2244338573464302
+        },
+        "spec": {
+          "architecture": "time_constrained_free_gain",
+          "controller_label": "strong_optimizer_whitened_observer_error_state_m1_s1__scratch",
+          "evaluation_lane": "deterministic",
+          "gamma_factor": 1.4,
+          "issue_id": "7a459bb",
+          "notes": "Full standard bundle computed from the deterministic observer-error state coverage row.",
+          "objective": "optimal",
+          "optimizer_label": "lbfgsb_strong_optimizer_whitened",
+          "parameters": {
+            "coverage_reference": "kalman_observer_error_svd",
+            "distribution_family": "observer-error state coverage",
+            "evaluation_distribution": "observer-error state coverage Riccati-epsilon response",
+            "n_modes": 1,
+            "scale": 1.0,
+            "source_manifest": "results/7a459bb/notes/output_feedback_observer_error_coverage_manifest.json",
+            "weight": 0.1
+          },
+          "reference_controller": "analytical_lqr_kalman",
+          "run_id": "observer_error__state__strong_optimizer_whitened_observer_error_state_m1_s1__scratch__riccati_epsilon_response",
+          "seed": null,
+          "training_distribution": "observer_error_state"
+        },
+        "status": "full_standard_certificate"
+      }
+    ],
+    "status_counts": {
+      "full_standard_certificate": 8
+    }
+  },
+  "tracked_manifest": "results/7a459bb/notes/output_feedback_observer_error_coverage_manifest.json",
+  "tracked_note": "results/7a459bb/notes/output_feedback_observer_error_coverage.md",
+  "umbrella": "43e8728",
+  "verdict": "Best observer-error gain error is `0.98714` (strong_optimizer_whitened_observer_error_trajectory_m1_s1__scratch).\nBest observer-error exact-L2 ratio is `1.14629` (strong_optimizer_whitened_observer_error_state_m1_s0.3__scratch).\nObserver-error coverage does not rescue the free time-varying output-feedback rollout bridge in this small grid."
+}

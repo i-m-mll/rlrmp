@@ -66,6 +66,17 @@ class EigenspectrumCoverageConfig:
 
 
 @dataclass(frozen=True)
+class ObserverErrorCoverageConfig:
+    """Coverage samples generated from leading observer-error disturbance modes."""
+
+    n_modes: int = 0
+    scale: float = 1.0
+    weight: float = 0.1
+    objective: str = "trajectory"
+    reference: str = "kalman_observer_error_svd"
+
+
+@dataclass(frozen=True)
 class RolloutRecoveryCondition:
     """One objective-preserving rollout optimizer condition."""
 
@@ -79,6 +90,7 @@ class RolloutRecoveryCondition:
     initializations: tuple[str, ...] = ("scratch", "bellman_init")
     auxiliary_bellman_weights: tuple[float, ...] = ()
     eigenspectrum_coverage: EigenspectrumCoverageConfig | None = None
+    observer_error_coverage: ObserverErrorCoverageConfig | None = None
 
 
 @dataclass(frozen=True)
@@ -184,6 +196,19 @@ def strong_optimizer_whitened_with_coverage(
         STRONG_OPTIMIZER_WHITENED,
         label=label,
         eigenspectrum_coverage=coverage,
+    )
+
+
+def strong_optimizer_whitened_with_observer_error_coverage(
+    label: str,
+    coverage: ObserverErrorCoverageConfig,
+) -> RolloutRecoveryCondition:
+    """Return the standard sweep optimizer with observer-error coverage."""
+
+    return replace(
+        STRONG_OPTIMIZER_WHITENED,
+        label=label,
+        observer_error_coverage=coverage,
     )
 
 
@@ -538,6 +563,147 @@ def _eigenspectrum_coverage_samples(
     )
 
 
+def _observer_error_epsilon_modes(
+    *,
+    plant: PlantLinearization,
+    K_ref: Float[Array, "T m_u n"],
+    x0: Float[Array, " n"],
+    output_config: OutputFeedbackConfig,
+    n_modes: int,
+) -> tuple[Float[Array, "modes T m_w"], Float[Array, " modes"]]:
+    """Return disturbance directions ranked by induced Kalman observer-error energy."""
+
+    horizon = K_ref.shape[0]
+    n_inputs = horizon * plant.m_w
+    basis = jnp.eye(n_inputs, dtype=jnp.float64)
+
+    def one_error(epsilon_flat: Float[Array, " input"]) -> Float[Array, " flat"]:
+        epsilon = epsilon_flat.reshape((horizon, plant.m_w))
+        x, xhat, _y, _u, _covs = _kalman_estimator_rollout_arrays(
+            plant,
+            K_ref,
+            x0,
+            epsilon,
+            output_config,
+        )
+        observer_error = x[:-1] - xhat[:-1]
+        return observer_error.reshape(-1)
+
+    observer_error_map = jax.vmap(one_error)(basis).T
+    _left, singular_values, right_t = jnp.linalg.svd(observer_error_map, full_matrices=False)
+    n_kept = min(int(n_modes), right_t.shape[0])
+    modes = right_t[:n_kept].reshape((n_kept, horizon, plant.m_w))
+    return modes, singular_values[:n_kept]
+
+
+def _observer_error_coverage_samples(
+    *,
+    plant: PlantLinearization,
+    schedule: CostSchedule,
+    K_ref: Float[Array, "T m_u n"],
+    x0: Float[Array, " n"],
+    budget_l2: float,
+    output_config: OutputFeedbackConfig,
+    coverage_config: ObserverErrorCoverageConfig,
+) -> tuple[
+    Float[Array, "samples T m_w"],
+    Float[Array, " samples"],
+    Float[Array, "state_samples n"],
+    Float[Array, "state_samples n"],
+    Float[Array, " state_samples"],
+    Float[Array, " state_samples"],
+    dict[str, Any],
+    dict[str, np.ndarray],
+]:
+    """Create signed coverage samples from leading observer-error disturbance modes."""
+
+    if coverage_config.n_modes <= 0 or coverage_config.weight <= 0.0:
+        empty = _empty_coverage_samples(plant)
+        return (*empty, {"enabled": False}, {})
+
+    modes, singular_values = _observer_error_epsilon_modes(
+        plant=plant,
+        K_ref=K_ref,
+        x0=x0,
+        output_config=output_config,
+        n_modes=coverage_config.n_modes,
+    )
+    alpha = jnp.asarray(coverage_config.scale * budget_l2, dtype=jnp.float64)
+    xs = []
+    xhats = []
+    errors = []
+    times = []
+    epsilons = []
+    weights = []
+    for mode_idx in range(modes.shape[0]):
+        for sign in (-1.0, 1.0):
+            epsilon = sign * alpha * modes[mode_idx]
+            rollout = rollout_with_kalman_estimator(
+                plant,
+                K_ref,
+                x0,
+                epsilon,
+                config=output_config,
+            )
+            xs.append(rollout.x[:-1])
+            xhats.append(rollout.x_hat[:-1])
+            errors.append(rollout.x[:-1] - rollout.x_hat[:-1])
+            times.append(jnp.arange(schedule.T, dtype=jnp.int32))
+            epsilons.append(epsilon)
+            weights.append(jnp.asarray(coverage_config.weight, dtype=jnp.float64))
+    coverage_epsilons = jnp.stack(epsilons, axis=0)
+    coverage_weights = jnp.stack(weights, axis=0)
+    coverage_x = jnp.concatenate(xs, axis=0)
+    coverage_xhat = jnp.concatenate(xhats, axis=0)
+    coverage_errors = jnp.concatenate(errors, axis=0)
+    coverage_times = jnp.concatenate(times, axis=0)
+    state_weights = jnp.repeat(
+        coverage_weights / jnp.sum(coverage_weights),
+        schedule.T,
+        total_repeat_length=coverage_xhat.shape[0],
+    )
+    coverage_state_weights = state_weights * coverage_config.weight
+    coverage_cov = _weighted_covariance(coverage_errors, state_weights)
+    metadata = {
+        "enabled": True,
+        "n_modes": int(modes.shape[0]),
+        "scale": coverage_config.scale,
+        "alpha": float(alpha),
+        "weight": coverage_config.weight,
+        "objective": coverage_config.objective,
+        "reference": coverage_config.reference,
+        "source": (
+            "signed leading right singular vectors of the analytical LQR "
+            "disturbance-to-observer-error map"
+        ),
+        "n_trajectories": int(coverage_epsilons.shape[0]),
+        "n_state_samples_for_diagnostics": int(coverage_x.shape[0]),
+        "singular_values": [float(value) for value in singular_values],
+        "observer_error_coverage": _effective_rank_from_covariance(coverage_cov),
+    }
+    arrays = {
+        "coverage_observer_error_epsilon_modes": np.asarray(modes),
+        "coverage_observer_error_singular_values": np.asarray(singular_values),
+        "coverage_epsilons": np.asarray(coverage_epsilons),
+        "coverage_x": np.asarray(coverage_x),
+        "coverage_x_hat": np.asarray(coverage_xhat),
+        "coverage_observer_error": np.asarray(coverage_errors),
+        "coverage_times": np.asarray(coverage_times),
+        "coverage_state_weights": np.asarray(coverage_state_weights),
+        "coverage_weights": np.asarray(coverage_weights),
+    }
+    return (
+        coverage_epsilons,
+        coverage_weights,
+        coverage_x,
+        coverage_xhat,
+        coverage_times,
+        coverage_state_weights,
+        metadata,
+        arrays,
+    )
+
+
 def _make_parameter_maps(
     condition: RolloutRecoveryCondition,
     K_ref: Float[Array, "T m_u n"],
@@ -626,7 +792,7 @@ def _fit_one_condition(
     shape = K_ref.shape
 
     def coverage_objective(gains: Float[Array, "T m_u n"]) -> Float[Array, ""]:
-        coverage = condition.eigenspectrum_coverage
+        coverage = condition.eigenspectrum_coverage or condition.observer_error_coverage
         if coverage is None:
             return jnp.asarray(0.0, dtype=jnp.float64)
         if coverage.objective == "trajectory":
@@ -650,7 +816,7 @@ def _fit_one_condition(
                 coverage_state_weights,
                 output_config,
             )
-        raise ValueError(f"Unknown eigenspectrum coverage objective={coverage.objective!r}.")
+        raise ValueError(f"Unknown coverage objective={coverage.objective!r}.")
 
     reference_objective = float(
         output_feedback_clean_objective(
@@ -674,7 +840,10 @@ def _fit_one_condition(
             weights,
             output_config,
         )
-        if condition.eigenspectrum_coverage is not None:
+        if (
+            condition.eigenspectrum_coverage is not None
+            or condition.observer_error_coverage is not None
+        ):
             objective = objective + coverage_objective(gains)
         return objective
 
@@ -947,10 +1116,19 @@ def run_output_feedback_rollout_recovery(
     )
 
     fits = []
-    coverage_by_label: dict[str, dict[str, Any]] = {}
+    eigenspectrum_coverage_by_label: dict[str, dict[str, Any]] = {}
+    observer_error_coverage_by_label: dict[str, dict[str, Any]] = {}
     coverage_arrays: dict[str, np.ndarray] = {}
     for condition in conditions:
-        if condition.eigenspectrum_coverage is None:
+        if (
+            condition.eigenspectrum_coverage is not None
+            and condition.observer_error_coverage is not None
+        ):
+            raise ValueError(
+                f"Condition {condition.label!r} cannot combine eigenspectrum and "
+                "observer-error coverage."
+            )
+        if condition.eigenspectrum_coverage is None and condition.observer_error_coverage is None:
             (
                 coverage_epsilons,
                 coverage_trajectory_weights,
@@ -959,7 +1137,7 @@ def run_output_feedback_rollout_recovery(
                 coverage_times,
                 coverage_state_weights,
             ) = _empty_coverage_samples(plant)
-        else:
+        elif condition.eigenspectrum_coverage is not None:
             (
                 coverage_epsilons,
                 coverage_trajectory_weights,
@@ -979,7 +1157,30 @@ def run_output_feedback_rollout_recovery(
                 output_config=output_config,
                 coverage_config=condition.eigenspectrum_coverage,
             )
-            coverage_by_label[condition.label] = coverage_metadata
+            eigenspectrum_coverage_by_label[condition.label] = coverage_metadata
+            for key, value in condition_arrays.items():
+                coverage_arrays[f"{condition.label}_{key}"] = value
+        else:
+            assert condition.observer_error_coverage is not None
+            (
+                coverage_epsilons,
+                coverage_trajectory_weights,
+                coverage_x,
+                coverage_xhat,
+                coverage_times,
+                coverage_state_weights,
+                coverage_metadata,
+                condition_arrays,
+            ) = _observer_error_coverage_samples(
+                plant=plant,
+                schedule=schedule,
+                K_ref=K_ref,
+                x0=x0,
+                budget_l2=float(jnp.sqrt(jnp.asarray(budget))),
+                output_config=output_config,
+                coverage_config=condition.observer_error_coverage,
+            )
+            observer_error_coverage_by_label[condition.label] = coverage_metadata
             for key, value in condition_arrays.items():
                 coverage_arrays[f"{condition.label}_{key}"] = value
         initial_K_by_name = {
@@ -1051,7 +1252,8 @@ def run_output_feedback_rollout_recovery(
             },
             "anchor_to_known_controller": False,
         },
-        "eigenspectrum_coverage": coverage_by_label,
+        "eigenspectrum_coverage": eigenspectrum_coverage_by_label,
+        "observer_error_coverage": observer_error_coverage_by_label,
         "initial_state_ensemble": _effective_rank_from_covariance(ensemble_cov),
         "lqr_clean": {
             "cost": output_feedback_cost(schedule, lqr_clean).total_without_disturbance_penalty,
@@ -1115,6 +1317,8 @@ def _fit_summary(fit: RolloutRecoveryFit) -> dict[str, Any]:
     condition = fit.condition.__dict__.copy()
     if fit.condition.eigenspectrum_coverage is not None:
         condition["eigenspectrum_coverage"] = fit.condition.eigenspectrum_coverage.__dict__
+    if fit.condition.observer_error_coverage is not None:
+        condition["observer_error_coverage"] = fit.condition.observer_error_coverage.__dict__
     return {
         "label": fit.label,
         "condition": condition,
@@ -1267,6 +1471,36 @@ def eigenspectrum_coverage_conditions(
                     strong_optimizer_whitened_with_coverage(
                         label,
                         EigenspectrumCoverageConfig(
+                            n_modes=n_modes,
+                            scale=scale,
+                            weight=weight,
+                            objective=objective,
+                        ),
+                    )
+                )
+    return tuple(conditions)
+
+
+def observer_error_coverage_conditions(
+    *,
+    objectives: tuple[str, ...] = ("trajectory", "state"),
+    modes: tuple[int, ...] = (1,),
+    scales: tuple[float, ...] = (0.3, 1.0),
+    weight: float = 0.1,
+) -> tuple[RolloutRecoveryCondition, ...]:
+    """Return strong-optimizer-whitened rows for observer-error coverage."""
+
+    conditions = []
+    for objective in objectives:
+        for n_modes in modes:
+            for scale in scales:
+                label = (
+                    f"strong_optimizer_whitened_observer_error_{objective}_m{n_modes}_s{scale:g}"
+                )
+                conditions.append(
+                    strong_optimizer_whitened_with_observer_error_coverage(
+                        label,
+                        ObserverErrorCoverageConfig(
                             n_modes=n_modes,
                             scale=scale,
                             weight=weight,
@@ -1450,14 +1684,17 @@ def write_outputs(
 __all__ = [
     "DEFAULT_CONDITIONS",
     "EigenspectrumCoverageConfig",
+    "ObserverErrorCoverageConfig",
     "RolloutRecoveryCondition",
     "RolloutRecoveryFit",
     "RolloutRecoveryResult",
     "STRONG_OPTIMIZER_WHITENED",
     "eigenspectrum_coverage_conditions",
+    "observer_error_coverage_conditions",
     "render_markdown",
     "run_initial_state_variability_sweep",
     "result_summary",
     "run_output_feedback_rollout_recovery",
+    "strong_optimizer_whitened_with_observer_error_coverage",
     "write_outputs",
 ]
