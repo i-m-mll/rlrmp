@@ -23,7 +23,7 @@ from jaxtyping import Array, Float
 
 from rlrmp.analysis.cs_game_card import (
     INIT_POS,
-    PRIMARY_GAMMA_FACTOR,
+    OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     TARGET_POS,
     CostBreakdown,
     GameCardReference,
@@ -1234,7 +1234,7 @@ def analyze_phase0b_output_feedback(
 ) -> dict[str, Any]:
     """Materialize Phase 0B output-feedback reference metrics."""
 
-    reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
+    reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
     gamma_ref = reference.gamma_references[0]
     x0 = make_cs_output_feedback_initial_state(reference.plant, config)
     lqr_rollout = rollout_with_kalman_estimator(
@@ -1400,7 +1400,7 @@ def analyze_phase1_output_feedback(
 ) -> OutputFeedbackPhase1Result:
     """Rerun Phase 1 under C&S estimator-in-loop dynamics."""
 
-    reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
+    reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
     gamma_ref = reference.gamma_references[0]
     x0 = make_cs_output_feedback_initial_state(reference.plant, config)
     covs = robust_estimator_covariances(
@@ -1799,6 +1799,7 @@ def analyze_output_feedback_gamma_sweep(
         "umbrella": UMBRELLA_ID,
         "gamma_factors": list(gamma_factors),
         "gamma_star": reference.gamma_star,
+        "selected_output_feedback_gamma_factor": OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
         "config": config.__dict__,
         "rows": rows,
         "recommendation": recommendation,
@@ -1819,7 +1820,7 @@ def analyze_phase3_output_feedback(
 ) -> OutputFeedbackPhase3Result:
     """Compute Phase 3 estimator-in-loop reference audits."""
 
-    reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
+    reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
     gamma_ref = reference.gamma_references[0]
     x0 = make_cs_output_feedback_initial_state(reference.plant, config)
     covs = robust_estimator_covariances(
@@ -2155,6 +2156,7 @@ def result_summary(
         },
         "phase0b_output_feedback_reference": {
             "status": "canonical_for_cs2019_information_structure",
+            "gamma_factor": phase0b["gamma_ref"].factor,
             "config": phase0b["config"].__dict__,
             "initial_condition": (
                 "C&S-compatible repeated physical initial state in every delay-history block."
@@ -2171,6 +2173,7 @@ def result_summary(
         },
         "phase1_output_feedback_adversary_equivalence": {
             "deterministic_phase1_issue": DETERMINISTIC_PHASE1_ISSUE_ID,
+            "gamma_factor": phase1.gamma_ref.factor,
             "budget": phase1.riccati_cost.disturbance_energy,
             "budget_l2": float(jnp.sqrt(jnp.asarray(phase1.riccati_cost.disturbance_energy))),
             "riccati_feedback": {
@@ -2188,6 +2191,7 @@ def result_summary(
         "phase3_output_feedback_linear_gate": {
             "deterministic_phase3_issue": DETERMINISTIC_PHASE3_ISSUE_ID,
             "deterministic_certificate_issue": DETERMINISTIC_CERTIFICATE_ISSUE_ID,
+            "gamma_factor": phase3.gamma_ref.factor,
             "status": "output_feedback_reference_gate_materialized",
             "interpretation": (
                 "The linear gate now evaluates controllers through x_hat_aug. "
@@ -2332,6 +2336,7 @@ augmented state, not directly on the true augmented state.
 
 ## Phase 0B Reference
 
+- Gamma factor: `{p0["gamma_factor"]:.6g}`.
 - Observation: {p0["observation"]}
 - Initial condition: {p0["initial_condition"]}
 - Robust command indexing: {p0["robust_controller_indexing"]}
@@ -2342,6 +2347,8 @@ augmented state, not directly on the true augmented state.
 - H-infinity estimator RMS error: `{p0["hinf_rollout"]["estimation_error_rms"]:.8g}`.
 
 ## Phase 1 Output-Feedback Adversary Equivalence
+
+Gamma factor: `{p1["gamma_factor"]:.6g}`.
 
 Riccati realized disturbance budget:
 `{p1["budget"]:.8g}` (`L2={p1["budget_l2"]:.8g}`).
@@ -2360,6 +2367,8 @@ independent proof that unseeded open-loop ascent recovered the same sequence.
 {"\n".join(rows)}
 
 ## Phase 3 Output-Feedback Linear Gate
+
+Gamma factor for disturbance/audit comparisons: `{p3["gamma_factor"]:.6g}`.
 
 The output-feedback reference gate evaluates action and cost through
 `x_hat_aug`. The existing fitted-controller certificate remains the Phase 0A
@@ -2427,6 +2436,15 @@ def render_gamma_sweep_markdown(summary: dict[str, Any]) -> str:
         )
 
     recommendation = summary["recommendation"]
+    selected_factor = summary["selected_output_feedback_gamma_factor"]
+    selected_row = next(
+        (
+            row
+            for row in summary["rows"]
+            if row["status"] == "ok" and row["gamma_factor"] == selected_factor
+        ),
+        None,
+    )
     if recommendation is None:
         recommendation_text = (
             "No swept gamma ratio passed all positive-margin feasibility checks. "
@@ -2459,12 +2477,22 @@ def render_gamma_sweep_markdown(summary: dict[str, Any]) -> str:
                 f"(`lambda/gamma^2={chosen_ratio:.8g}`), so `{next_safer['gamma_factor']:.6g}` "
                 "is the nearest more conservative swept fallback if we want numerical slack."
             )
+        selected_sentence = ""
+        if selected_row is not None:
+            selected_sentence = (
+                f" The current working output-feedback gamma factor is "
+                f"`{selected_factor:.6g}` because it keeps additional slack "
+                f"(`lambda/gamma^2="
+                f"{selected_row['robust_lambda_over_gamma_squared']:.8g}`)."
+            )
         recommendation_text = (
-            f"Choose gamma factor `{recommendation['chosen_gamma_factor']:.6g}` "
-            f"(`gamma={recommendation['chosen_gamma']:.8g}`) for the next robust "
-            "linear target, subject to external-review interpretation. This is the "
-            "smallest swept ratio with positive estimator, gain-correction, "
-            f"fixed-policy, and gamma-penalized exact-audit margins.{safety_sentence}"
+            f"The smallest swept passing gamma factor is "
+            f"`{recommendation['chosen_gamma_factor']:.6g}` "
+            f"(`gamma={recommendation['chosen_gamma']:.8g}`). This identifies the "
+            "boundary of feasibility for this sweep, not the mandatory working "
+            "default. The working default for later output-feedback Phase 1/3 "
+            f"diagnostics is selected separately as `{selected_factor:.6g}` from "
+            f"this sweep.{selected_sentence}{safety_sentence}"
         )
 
     return f"""# Gamma-Penalized Output-Feedback Robust Feasibility Sweep
@@ -2491,6 +2519,9 @@ penalized maximization; values at or above 1 indicate an unbounded penalized
 open-loop epsilon objective for that frozen controller.
 
 Gamma star: `{summary["gamma_star"]:.8g}`.
+
+Selected working output-feedback gamma factor:
+`{summary["selected_output_feedback_gamma_factor"]:.6g}`.
 
 {"\n".join(rows)}
 

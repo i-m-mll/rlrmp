@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import jax.numpy as jnp
 
-from rlrmp.analysis.cs_game_card import PRIMARY_GAMMA_FACTOR, materialize_reference
+from rlrmp.analysis.cs_game_card import (
+    OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+    PRIMARY_GAMMA_FACTOR,
+    materialize_reference,
+)
 from rlrmp.analysis.cs_stochastic_phase3 import (
     Phase3ControllerSpec,
     Phase3StochasticConfig,
@@ -68,6 +72,10 @@ def test_phase3_stochastic_manifest_marks_lane_and_no_bellman_parity_claim() -> 
 
     assert summary["rerun_metadata"]["discretization"] == "euler"
     assert summary["rerun_metadata"]["lane"] == "released_stochastic"
+    assert (
+        summary["output_feedback_certificate_gamma_factor"]
+        == OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR
+    )
     assert summary["claims"]["bellman_stochastic_parity"] is False
     assert "stochastic Bellman objective" in summary["claims"]["note"]
     assert "Bellman parity claim" in summary["non_goals"]
@@ -87,5 +95,11 @@ def test_phase3_stochastic_result_reports_required_metrics() -> None:
         "peak_forward_velocity_mean",
         "terminal_error_mean",
         "action_mismatch_to_reference_mean",
+        "deterministic_exact_l2_cost_ratio_to_lqr",
+        "deterministic_lambda_over_gamma_squared",
+        "deterministic_gamma_penalized_feasible",
     ):
         assert key in row
+
+    assert row["deterministic_exact_l2_cost_ratio_to_lqr"] > 0.0
+    assert row["deterministic_lambda_over_gamma_squared"] > 0.0

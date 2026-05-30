@@ -6480,6 +6480,7 @@
       "status": "ok"
     }
   ],
+  "selected_output_feedback_gamma_factor": 1.4,
   "tracked_manifest": "results/97604a8/notes/output_feedback_gamma_sweep_manifest.json",
   "tracked_note": "results/97604a8/notes/output_feedback_gamma_sweep.md",
   "umbrella": "43e8728"

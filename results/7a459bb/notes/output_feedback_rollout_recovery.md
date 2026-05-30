@@ -20,6 +20,9 @@ Non-goals: No weak Bellman/proximal anchor, no action/gain matching to the known
 Bellman initialization gain relative error:
 `0.00013943432`.
 
+Output-feedback certificate gamma factor:
+`1.4`.
+
 Training-state scale condition:
 `3.9276054`.
 
@@ -38,27 +41,27 @@ Reference clean LQR cost:
 `4363.5099`.
 
 Reference LQR under Riccati epsilon cost:
-`5025.9755`.
+`10810.221`.
 
 Analytical exact L2 audit costs:
-- LQR: `5771.2427`
-- H-infinity: `5078.5381`
+- LQR: `11245.972`
+- H-infinity: `8147.209`
 
 ## Run Matrix
 
 | condition | init | objective ratio | gain rel err | clean cost | clean action mismatch | under-epsilon ratio | exact L2 ratio | lambda/gamma^2 | iters | status |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| clean | scratch | 1.2624981 | 0.99509618 | 5144.3938 | 0.55574985 | 1.2170376 | 1.2183541 | 4.3218789 | 500 | STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT |
-| clean | bellman_init | 1 | 0.00013279667 | 4363.5099 | 7.0199537e-06 | 0.99999804 | 0.9999973 | 2.764652 | 500 | STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT |
-| strong_optimizer | scratch | 1.0633372 | 0.9946863 | 4420.9592 | 0.17702762 | 1.0502037 | 1.0621865 | 4.342722 | 2000 | STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT |
-| strong_optimizer | bellman_init | 1 | 0.00013073821 | 4363.5099 | 9.5254627e-07 | 0.99999842 | 0.99999774 | 2.7646402 | 2000 | STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT |
-| whitened | scratch | 1.0728253 | 0.98329875 | 4469.8601 | 0.24134247 | 1.0680869 | 1.0743109 | 3.6933511 | 500 | STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT |
-| whitened | bellman_init | 1 | 0.00013298907 | 4363.5099 | 8.245961e-06 | 0.99999808 | 0.99999755 | 2.7646512 | 500 | STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT |
-| strong_optimizer_whitened | scratch | 1.01317 | 0.97947196 | 4363.7893 | 0.011977817 | 1.0398783 | 1.0468251 | 3.7276295 | 2000 | STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT |
-| strong_optimizer_whitened | bellman_init | 1 | 0.00013085276 | 4363.5099 | 1.2048652e-06 | 0.99999838 | 0.99999764 | 2.7646392 | 2000 | STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT |
-| strong_optimizer_whitened_block_time | scratch | 1.0154345 | 0.97960462 | 4370.3992 | 0.061795456 | 1.0434659 | 1.0498504 | 3.6682684 | 2000 | STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT |
-| strong_optimizer_whitened_block_time | bellman_init | 1 | 0.00013125818 | 4363.5099 | 1.0261665e-06 | 0.99999841 | 0.99999766 | 2.7646383 | 2000 | STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT |
-| strong_optimizer_whitened_bellman_aux | scratch | 1.0156766 | 0.98076856 | 4366.9939 | 0.044121808 | 1.0414101 | 1.048149 | 3.7019404 | 2000 | bellman_weight=0.1: STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT; bellman_weight=0.03: STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT; bellman_weight=0.01: STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT; bellman_weight=0: STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT |
+| clean | scratch | 1.2624981 | 0.99509618 | 5144.3938 | 0.55574985 | 1.1880185 | 1.3119629 | 2.4310569 | 500 | STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT |
+| clean | bellman_init | 1 | 0.00013279667 | 4363.5099 | 7.0199537e-06 | 0.999995 | 0.99999159 | 1.5551168 | 500 | STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT |
+| strong_optimizer | scratch | 1.0633372 | 0.9946863 | 4420.9592 | 0.17702762 | 1.0920076 | 1.2059417 | 2.4427811 | 2000 | STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT |
+| strong_optimizer | bellman_init | 1 | 0.00013073821 | 4363.5099 | 9.5254627e-07 | 0.99999554 | 0.99999267 | 1.5551101 | 2000 | STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT |
+| whitened | scratch | 1.0728253 | 0.98329875 | 4469.8601 | 0.24134247 | 1.1046796 | 1.1769393 | 2.07751 | 500 | STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT |
+| whitened | bellman_init | 1 | 0.00013298907 | 4363.5099 | 8.245961e-06 | 0.99999535 | 0.99999189 | 1.5551163 | 500 | STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT |
+| strong_optimizer_whitened | scratch | 1.01317 | 0.97947196 | 4363.7893 | 0.011977817 | 1.0831466 | 1.1558731 | 2.0967916 | 2000 | STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT |
+| strong_optimizer_whitened | bellman_init | 1 | 0.00013085276 | 4363.5099 | 1.2048652e-06 | 0.9999954 | 0.99999243 | 1.5551095 | 2000 | STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT |
+| strong_optimizer_whitened_block_time | scratch | 1.0154345 | 0.97960462 | 4370.3992 | 0.061795456 | 1.0859043 | 1.158585 | 2.063401 | 2000 | STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT |
+| strong_optimizer_whitened_block_time | bellman_init | 1 | 0.00013125818 | 4363.5099 | 1.0261665e-06 | 0.99999542 | 0.99999251 | 1.555109 | 2000 | STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT |
+| strong_optimizer_whitened_bellman_aux | scratch | 1.0156766 | 0.98076856 | 4366.9939 | 0.044121808 | 1.0842369 | 1.1562768 | 2.0823415 | 2000 | bellman_weight=0.1: STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT; bellman_weight=0.03: STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT; bellman_weight=0.01: STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT; bellman_weight=0: STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT |
 
 ## Current Verdict
 

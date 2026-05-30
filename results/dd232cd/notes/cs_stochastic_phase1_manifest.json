@@ -3,8 +3,8 @@
     "full_state_hinf": {
       "comparator_status": "exact deterministic H-infinity gains under sampled stochastic plant",
       "control_effort": {
-        "mean": 20.60747787549445,
-        "std": 0.1393666794755947
+        "mean": 18.667785494279077,
+        "std": 0.12466111653762982
       },
       "controller_family": "H-infinity",
       "estimator_rms_error": {
@@ -14,16 +14,16 @@
       "information_structure": "full_state",
       "n_trials": 12,
       "peak_forward_velocity": {
-        "mean": 0.7856989801728576,
-        "std": 0.0006175668912373057
+        "mean": 0.7607044645896779,
+        "std": 0.0005651048110578423
       },
       "task_cost": {
-        "mean": 4576.690922924764,
-        "std": 19.314304281488024
+        "mean": 4440.62108802448,
+        "std": 18.280141774929984
       },
       "terminal_position_error_m": {
-        "mean": 5.4246591314254724e-05,
-        "std": 2.8741560845662634e-05
+        "mean": 0.0006956916143126191,
+        "std": 4.2984282256787266e-05
       }
     },
     "full_state_lqr": {
@@ -55,27 +55,27 @@
     "output_feedback_hinf": {
       "comparator_status": "C&S-style robust output-feedback gains under sampled stochastic plant",
       "control_effort": {
-        "mean": 42.52179723657829,
-        "std": 5.868729747783408
+        "mean": 21.81255057072511,
+        "std": 0.6646384173380026
       },
       "controller_family": "H-infinity",
       "estimator_rms_error": {
-        "mean": 0.0144439405216334,
-        "std": 0.002308632800667793
+        "mean": 0.010903787253816374,
+        "std": 0.0016592352264659558
       },
       "information_structure": "output_feedback",
       "n_trials": 12,
       "peak_forward_velocity": {
-        "mean": 0.7860452837726964,
-        "std": 0.006451391193880349
+        "mean": 0.7608041257524057,
+        "std": 0.006138349728647005
       },
       "task_cost": {
-        "mean": 7052.161573858769,
-        "std": 597.6638705555412
+        "mean": 4838.137217048799,
+        "std": 69.04224230538807
       },
       "terminal_position_error_m": {
-        "mean": 0.0008793739005767497,
-        "std": 0.0005150172600161939
+        "mean": 0.0008384015763376589,
+        "std": 0.00030183765125416285
       }
     },
     "output_feedback_lqg_extlqg": {
@@ -118,6 +118,32 @@
     "seeds"
   ],
   "bellman_claim": "none; stochastic Bellman parity is explicitly out of scope",
+  "deterministic_certificate_sidecar": {
+    "full_state_hinf": {
+      "certificate_type": "full_state_hinf_riccati_admissibility",
+      "gamma_penalized_feasible": true,
+      "lambda_over_gamma_squared": 0.06205041627105965,
+      "notes": "max stored Riccati spectral radius for the H-infinity solution"
+    },
+    "full_state_lqr": {
+      "certificate_type": "full_state_riccati_value_sidecar",
+      "gamma_penalized_feasible": true,
+      "lambda_over_gamma_squared": 0.038608607399039145,
+      "notes": "computed from LQR value matrices at the finite H-infinity gamma"
+    },
+    "output_feedback_hinf": {
+      "certificate_type": "output_feedback_flattened_epsilon_sidecar",
+      "gamma_penalized_feasible": true,
+      "lambda_over_gamma_squared": 0.9331253588863058,
+      "notes": "robust-estimator deterministic flattened-epsilon audit"
+    },
+    "output_feedback_lqg_extlqg": {
+      "certificate_type": "output_feedback_flattened_epsilon_sidecar",
+      "gamma_penalized_feasible": false,
+      "lambda_over_gamma_squared": 1.5551980893341604,
+      "notes": "Kalman/extLQG fixed-gain deterministic flattened-epsilon audit"
+    }
+  },
   "deterministic_phase1_issue": "a7dad8a",
   "extlqg_comparator": {
     "expected_cost": 12150.622423244211,
@@ -161,6 +187,22 @@
         "time_to_peak_step": 16,
         "worst_case_h_infinity_objective": 4803.289292860973,
         "worst_case_total_cost_without_penalty": 5305.592609058729
+      },
+      {
+        "closed_loop_epsilon_energy": 1.518885046213267e-06,
+        "closed_loop_epsilon_l2": 0.0012324305441740995,
+        "delta_v_percent": 4.041729916548296,
+        "epsilon_on_nominal_energy": 9.40010465365106e-07,
+        "epsilon_on_nominal_l2": 0.000969541368568204,
+        "factor": 1.4,
+        "factor_key": "1p4",
+        "gamma": 12833.563799663352,
+        "hinf_peak_forward_velocity": 0.7605548406264071,
+        "nominal_total_cost": 4444.135275451243,
+        "terminal_position_error_m": 0.0007033121264565686,
+        "time_to_peak_step": 16,
+        "worst_case_h_infinity_objective": 4596.595429395369,
+        "worst_case_total_cost_without_penalty": 4846.756343001579
       }
     ],
     "gamma_star": 9166.831285473823,
@@ -171,6 +213,8 @@
       "time_to_peak_step": 16,
       "total_cost": 4363.509943825159
     },
+    "output_feedback_certificate_gamma_factor": 1.4,
+    "output_feedback_gamma_selection_issue": "97604a8",
     "plant": {
       "bw_contract": "top physical 8x8 block is identity; lag rows are zero",
       "bw_shape": [
@@ -253,6 +297,7 @@
       2
     ]
   },
+  "output_feedback_certificate_gamma_factor": 1.4,
   "primary_gamma_factor": 1.05,
   "rerun_metadata": {
     "discretization": "euler",
@@ -262,8 +307,8 @@
     "materializer": "cs_stochastic_phase1",
     "phase_label_policy": "Phase 1 and Phase 3 reruns must report both discretization and lane. Euler deterministic analytical results are canonical after the Euler card lands; ZOH results remain sensitivity/historical unless explicitly promoted."
   },
-  "robust_gamma": 9625.172849747514,
-  "robust_gamma_factor": 1.05,
+  "robust_gamma": 12833.563799663352,
+  "robust_gamma_factor": 1.4,
   "seeds": [
     0,
     1,
@@ -283,100 +328,100 @@
   "trial_metrics": {
     "full_state_hinf": [
       {
-        "control_effort": 20.463201767662678,
+        "control_effort": 18.53778859739209,
         "estimator_rms_error": null,
-        "peak_forward_velocity": 0.7846994412820345,
+        "peak_forward_velocity": 0.7597918379073768,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 4557.97615911125,
-        "terminal_position_error_m": 0.00011675130938598426
+        "task_cost": 4423.468503055525,
+        "terminal_position_error_m": 0.0008067940305571327
       },
       {
-        "control_effort": 20.6692391411877,
+        "control_effort": 18.70838824069169,
         "estimator_rms_error": null,
-        "peak_forward_velocity": 0.7849371305089213,
+        "peak_forward_velocity": 0.7598928492673807,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 4583.038066686506,
-        "terminal_position_error_m": 1.7845466302105157e-05
+        "task_cost": 4446.577809359531,
+        "terminal_position_error_m": 0.0007018089325415148
       },
       {
-        "control_effort": 20.697140705615947,
+        "control_effort": 18.739436267391902,
         "estimator_rms_error": null,
-        "peak_forward_velocity": 0.7864648615950699,
+        "peak_forward_velocity": 0.7613292425014047,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 4588.3918394342945,
-        "terminal_position_error_m": 7.208063953526372e-05
+        "task_cost": 4450.063935832557,
+        "terminal_position_error_m": 0.0006741167683032652
       },
       {
-        "control_effort": 20.577347688027153,
+        "control_effort": 18.651716976027725,
         "estimator_rms_error": null,
-        "peak_forward_velocity": 0.7857156409897845,
+        "peak_forward_velocity": 0.7607201038581727,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 4578.565715152611,
-        "terminal_position_error_m": 8.013065329428842e-05
+        "task_cost": 4444.362139149072,
+        "terminal_position_error_m": 0.0007455367879724174
       },
       {
-        "control_effort": 20.62296051622539,
+        "control_effort": 18.684498225106125,
         "estimator_rms_error": null,
-        "peak_forward_velocity": 0.7855199495264412,
+        "peak_forward_velocity": 0.7605908520587384,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 4577.316962158577,
-        "terminal_position_error_m": 4.237166873157523e-05
+        "task_cost": 4440.894497626116,
+        "terminal_position_error_m": 0.0006863114222729565
       },
       {
-        "control_effort": 20.893521836770798,
+        "control_effort": 18.92395474368619,
         "estimator_rms_error": null,
-        "peak_forward_velocity": 0.786543361598268,
+        "peak_forward_velocity": 0.7614909530585259,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 4613.207059541893,
-        "terminal_position_error_m": 6.731029979345248e-05
+        "task_cost": 4474.2666505587895,
+        "terminal_position_error_m": 0.0006685925344550529
       },
       {
-        "control_effort": 20.387123676189873,
+        "control_effort": 18.466134139160623,
         "estimator_rms_error": null,
-        "peak_forward_velocity": 0.7846407766603387,
+        "peak_forward_velocity": 0.7597677170274642,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 4548.1301090629295,
-        "terminal_position_error_m": 6.878564883885713e-05
+        "task_cost": 4413.829020819489,
+        "terminal_position_error_m": 0.0006374054169113836
       },
       {
-        "control_effort": 20.50436750708729,
+        "control_effort": 18.57797401450474,
         "estimator_rms_error": null,
-        "peak_forward_velocity": 0.7860330723988549,
+        "peak_forward_velocity": 0.7611620628935081,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 4553.394283104929,
-        "terminal_position_error_m": 4.126803100907348e-05
+        "task_cost": 4418.085286180546,
+        "terminal_position_error_m": 0.0006779891488507802
       },
       {
-        "control_effort": 20.769467471974135,
+        "control_effort": 18.81009396752626,
         "estimator_rms_error": null,
-        "peak_forward_velocity": 0.7860629962310884,
+        "peak_forward_velocity": 0.7609685345023152,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 4593.796972651006,
-        "terminal_position_error_m": 3.438591409387643e-05
+        "task_cost": 4455.543278162313,
+        "terminal_position_error_m": 0.0006656447006670207
       },
       {
-        "control_effort": 20.639909793368794,
+        "control_effort": 18.715764164859127,
         "estimator_rms_error": null,
-        "peak_forward_velocity": 0.7859380516651593,
+        "peak_forward_velocity": 0.7609814235333199,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 4587.061530695949,
-        "terminal_position_error_m": 2.7265134005900632e-05
+        "task_cost": 4453.017027731213,
+        "terminal_position_error_m": 0.0007063723024283276
       },
       {
-        "control_effort": 20.632183696694224,
+        "control_effort": 18.687867685976233,
         "estimator_rms_error": null,
-        "peak_forward_velocity": 0.7861899284277447,
+        "peak_forward_velocity": 0.7609889866657403,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 4589.142496875849,
-        "terminal_position_error_m": 1.356064242235962e-05
+        "task_cost": 4452.99125936581,
+        "terminal_position_error_m": 0.0007133325854188465
       },
       {
-        "control_effort": 20.433270705129377,
+        "control_effort": 18.50980890902623,
         "estimator_rms_error": null,
-        "peak_forward_velocity": 0.7856425511905843,
+        "peak_forward_velocity": 0.7607690118021895,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 4550.269880621363,
-        "terminal_position_error_m": 6.920368835832014e-05
+        "task_cost": 4414.3536484528,
+        "terminal_position_error_m": 0.0006643947413727321
       }
     ],
     "full_state_lqr": [
@@ -479,100 +524,100 @@
     ],
     "output_feedback_hinf": [
       {
-        "control_effort": 47.877067434997024,
-        "estimator_rms_error": 0.012828816502848644,
-        "peak_forward_velocity": 0.784250137927692,
+        "control_effort": 22.224456807357942,
+        "estimator_rms_error": 0.01115304285368434,
+        "peak_forward_velocity": 0.7602067903470877,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 7598.198328240325,
-        "terminal_position_error_m": 0.0019171828003476886
+        "task_cost": 4898.962310377459,
+        "terminal_position_error_m": 0.0014253993447253654
       },
       {
-        "control_effort": 45.856676571285824,
-        "estimator_rms_error": 0.013793096741558172,
-        "peak_forward_velocity": 0.790357719639668,
+        "control_effort": 22.70187531880897,
+        "estimator_rms_error": 0.010350380093683798,
+        "peak_forward_velocity": 0.7644937927122673,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 7381.582699499054,
-        "terminal_position_error_m": 0.0009918891769823703
+        "task_cost": 4888.403544846322,
+        "terminal_position_error_m": 0.0011335772744753313
       },
       {
-        "control_effort": 56.224865202091635,
-        "estimator_rms_error": 0.02005796017460326,
-        "peak_forward_velocity": 0.7888599095128405,
+        "control_effort": 23.294874662320332,
+        "estimator_rms_error": 0.010679186454279854,
+        "peak_forward_velocity": 0.7636535367994062,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 8413.465034961326,
-        "terminal_position_error_m": 0.0012829081099811315
+        "task_cost": 4956.613152273206,
+        "terminal_position_error_m": 0.00044229751356910084
       },
       {
-        "control_effort": 38.01417981322084,
-        "estimator_rms_error": 0.013551026875509369,
-        "peak_forward_velocity": 0.7965016153299399,
+        "control_effort": 21.433134913770814,
+        "estimator_rms_error": 0.009542325891834813,
+        "peak_forward_velocity": 0.7693478911744613,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4740.321600876216,
+        "terminal_position_error_m": 0.0005349586360885692
+      },
+      {
+        "control_effort": 21.855299766518865,
+        "estimator_rms_error": 0.008528404242453361,
+        "peak_forward_velocity": 0.7701618233899362,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4844.901268123571,
+        "terminal_position_error_m": 0.0004485299976456816
+      },
+      {
+        "control_effort": 22.24184371150072,
+        "estimator_rms_error": 0.013291531360200604,
+        "peak_forward_velocity": 0.7626033137546345,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4901.352855808669,
+        "terminal_position_error_m": 0.0007237458152278264
+      },
+      {
+        "control_effort": 21.534100155885078,
+        "estimator_rms_error": 0.01229636694570245,
+        "peak_forward_velocity": 0.7528396431998506,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4785.940817885074,
+        "terminal_position_error_m": 0.0008567940918881875
+      },
+      {
+        "control_effort": 21.73816156358527,
+        "estimator_rms_error": 0.011430682436628247,
+        "peak_forward_velocity": 0.7571820423901581,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4817.492858750619,
+        "terminal_position_error_m": 0.000673472248281189
+      },
+      {
+        "control_effort": 21.17084734535376,
+        "estimator_rms_error": 0.009085506881559777,
+        "peak_forward_velocity": 0.7497718409616355,
         "peak_forward_velocity_idx": 15,
-        "task_cost": 6493.245340819821,
-        "terminal_position_error_m": 0.00022115780839592457
+        "task_cost": 4749.9561196073755,
+        "terminal_position_error_m": 0.0008740167031391936
       },
       {
-        "control_effort": 43.65082560787137,
-        "estimator_rms_error": 0.014971433256721801,
-        "peak_forward_velocity": 0.7958298634767388,
+        "control_effort": 21.239066083894656,
+        "estimator_rms_error": 0.011789274946712894,
+        "peak_forward_velocity": 0.7597228275124805,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 7175.267357863809,
-        "terminal_position_error_m": 0.0014167879833860222
+        "task_cost": 4825.266528655428,
+        "terminal_position_error_m": 0.0011920075068671933
       },
       {
-        "control_effort": 41.86835899064763,
-        "estimator_rms_error": 0.014930817540369892,
-        "peak_forward_velocity": 0.7872595556753939,
+        "control_effort": 21.416963400256165,
+        "estimator_rms_error": 0.013870913725107636,
+        "peak_forward_velocity": 0.7541345912324008,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 7070.116462122941,
-        "terminal_position_error_m": 0.0006895752825876523
+        "task_cost": 4901.190014235763,
+        "terminal_position_error_m": 0.0006653229094412036
       },
       {
-        "control_effort": 41.681738492542344,
-        "estimator_rms_error": 0.015447534383233921,
-        "peak_forward_velocity": 0.777387889828123,
-        "peak_forward_velocity_idx": 15,
-        "task_cost": 6859.837295449687,
-        "terminal_position_error_m": 0.00035700515177314296
-      },
-      {
-        "control_effort": 45.067650161476756,
-        "estimator_rms_error": 0.013623205841243113,
-        "peak_forward_velocity": 0.7826124538050228,
-        "peak_forward_velocity_idx": 15,
-        "task_cost": 7250.641351378261,
-        "terminal_position_error_m": 0.0007559294087061941
-      },
-      {
-        "control_effort": 36.12345775676231,
-        "estimator_rms_error": 0.010605590676448085,
-        "peak_forward_velocity": 0.7752730491265348,
-        "peak_forward_velocity_idx": 15,
-        "task_cost": 6321.416857097826,
-        "terminal_position_error_m": 0.0003368702662899188
-      },
-      {
-        "control_effort": 38.012287061637025,
-        "estimator_rms_error": 0.015605898464270922,
-        "peak_forward_velocity": 0.7851072071714585,
+        "control_effort": 20.899983119448752,
+        "estimator_rms_error": 0.0088278312139487,
+        "peak_forward_velocity": 0.7655314155545494,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 6639.95852623372,
-        "terminal_position_error_m": 0.0013166168272741026
-      },
-      {
-        "control_effort": 43.10472847615356,
-        "estimator_rms_error": 0.016175777977079916,
-        "peak_forward_velocity": 0.7793060184568911,
-        "peak_forward_velocity_idx": 16,
-        "task_cost": 7296.68891045142,
-        "terminal_position_error_m": 0.0002607508091884124
-      },
-      {
-        "control_effort": 32.779731270253095,
-        "estimator_rms_error": 0.011736127825713708,
-        "peak_forward_velocity": 0.7897979853220541,
-        "peak_forward_velocity_idx": 16,
-        "task_cost": 6125.520722187031,
-        "terminal_position_error_m": 0.0010058131820084363
+        "task_cost": 4747.2455331458905,
+        "terminal_position_error_m": 0.0010906968747030647
       }
     ],
     "output_feedback_lqg_extlqg": [

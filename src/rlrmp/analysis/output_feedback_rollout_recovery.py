@@ -12,7 +12,10 @@ import numpy as np
 import scipy.optimize as scipy_opt
 from jaxtyping import Array, Float
 
-from rlrmp.analysis.cs_game_card import PRIMARY_GAMMA_FACTOR, materialize_reference
+from rlrmp.analysis.cs_game_card import (
+    OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+    materialize_reference,
+)
 from rlrmp.analysis.hinf_riccati import CostSchedule, PlantLinearization
 from rlrmp.analysis.linear_round_trip import LinearTrainingConfig, rollout_task_cost
 from rlrmp.analysis.output_feedback import (
@@ -586,7 +589,7 @@ def run_output_feedback_rollout_recovery(
 ) -> RolloutRecoveryResult:
     """Run the requested clean output-feedback rollout-recovery matrix."""
 
-    reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
+    reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
     gamma_ref = reference.gamma_references[0]
     plant = reference.plant
     schedule = reference.schedule
@@ -922,6 +925,9 @@ Non-goals: {summary["non_goals"]}
 
 Bellman initialization gain relative error:
 `{summary["bellman_initialization_gain_relative_error"]:.8g}`.
+
+Output-feedback certificate gamma factor:
+`{diag["gamma_factor"]:.8g}`.
 
 Training-state scale condition:
 `{diag["state_scales"]["condition"]:.8g}`.

@@ -25,13 +25,28 @@ Bellman objective or Bellman parity is claimed in this lane.
 ## Summary Metrics
 
 Trials: `12`. Seeds: `[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]`.
+Output-feedback certificate gamma factor:
+`1.4`.
 
 | Arm | Structure | Comparator status | Mean cost | Cost std | Peak v mean | Terminal error mean | Estimator RMS mean |
 |---|---|---|---:|---:|---:|---:|---:|
 | `full_state_lqr` | full_state | exact deterministic LQR gains under sampled stochastic plant | 4360.8734 | 17.339323 | 0.73115254 | 0.0031136322 | n/a |
-| `full_state_hinf` | full_state | exact deterministic H-infinity gains under sampled stochastic plant | 4576.6909 | 19.314304 | 0.78569898 | 5.4246591e-05 | n/a |
+| `full_state_hinf` | full_state | exact deterministic H-infinity gains under sampled stochastic plant | 4440.6211 | 18.280142 | 0.76070446 | 0.00069569161 | n/a |
 | `output_feedback_lqg_extlqg` | output_feedback | fixed_point: local port of extLQG/computeOFC/computeExtKalman | 4379.075 | 21.002769 | 0.7263866 | 0.0033047811 | 0.0096668309 |
-| `output_feedback_hinf` | output_feedback | C&S-style robust output-feedback gains under sampled stochastic plant | 7052.1616 | 597.66387 | 0.78604528 | 0.0008793739 | 0.014443941 |
+| `output_feedback_hinf` | output_feedback | C&S-style robust output-feedback gains under sampled stochastic plant | 4838.1372 | 69.042242 | 0.76080413 | 0.00083840158 | 0.010903787 |
+
+## Deterministic Certificate Sidecar
+
+These values audit the exact controller gains used by the stochastic forward
+simulation under the deterministic finite-gamma quadratic checks. They are not
+Monte Carlo stochastic induced-gain certificates.
+
+| Arm | Certificate type | lambda/gamma^2 | finite-gamma feasible | Notes |
+|---|---|---:|---|---|
+| `full_state_lqr` | full_state_riccati_value_sidecar | 0.038608607 | True | computed from LQR value matrices at the finite H-infinity gamma |
+| `full_state_hinf` | full_state_hinf_riccati_admissibility | 0.062050416 | True | max stored Riccati spectral radius for the H-infinity solution |
+| `output_feedback_lqg_extlqg` | output_feedback_flattened_epsilon_sidecar | 1.5551981 | False | Kalman/extLQG fixed-gain deterministic flattened-epsilon audit |
+| `output_feedback_hinf` | output_feedback_flattened_epsilon_sidecar | 0.93312536 | True | robust-estimator deterministic flattened-epsilon audit |
 
 ## Noise Contract
 
