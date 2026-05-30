@@ -6,7 +6,11 @@ import json
 
 import jax.numpy as jnp
 
-from rlrmp.analysis.cs_game_card import PRIMARY_GAMMA_FACTOR, materialize_reference
+from rlrmp.analysis.cs_game_card import (
+    OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+    PRIMARY_GAMMA_FACTOR,
+    materialize_reference,
+)
 from rlrmp.analysis.cs_released_simulation import (
     default_cs_noise_covariances,
     sample_forward_noise_draws,
@@ -83,9 +87,24 @@ def test_phase1_stochastic_manifest_metadata_has_no_bellman_claim() -> None:
     summary = result_summary(result)
 
     assert summary["rerun_metadata"]["lane"] == "released_stochastic"
+    assert summary["robust_gamma_factor"] == OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR
+    assert (
+        summary["output_feedback_certificate_gamma_factor"]
+        == OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR
+    )
     assert summary["no_bellman_claim"] is True
     assert "Bellman" in summary["bellman_claim"]
     assert "fixed_point" in summary["extlqg_comparator"]["parity_status"]
     assert summary["arms"]["output_feedback_lqg_extlqg"]["estimator_rms_error"]["mean"] is not None
     assert summary["arms"]["full_state_lqr"]["estimator_rms_error"]["mean"] is None
+    assert set(summary["deterministic_certificate_sidecar"]) == {
+        "full_state_lqr",
+        "full_state_hinf",
+        "output_feedback_lqg_extlqg",
+        "output_feedback_hinf",
+    }
+    assert (
+        summary["deterministic_certificate_sidecar"]["full_state_hinf"]["lambda_over_gamma_squared"]
+        < 1.0
+    )
     json.dumps(summary)

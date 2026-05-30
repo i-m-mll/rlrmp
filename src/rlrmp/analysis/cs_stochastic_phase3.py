@@ -15,7 +15,7 @@ from jaxtyping import Array, Float
 
 from rlrmp.analysis.cs_game_card import (
     CostBreakdown,
-    PRIMARY_GAMMA_FACTOR,
+    OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     materialize_reference,
 )
 from rlrmp.analysis.cs_released_simulation import (
@@ -28,7 +28,12 @@ from rlrmp.analysis.cs_released_simulation import (
 from rlrmp.analysis.hinf_riccati import CostSchedule, PlantLinearization
 from rlrmp.analysis.output_feedback import (
     OutputFeedbackConfig,
+    exact_output_feedback_adversary_audit,
     make_cs_output_feedback_initial_state,
+    robust_estimator_covariances,
+    robust_estimator_fixed_adversary_policy,
+    robust_output_feedback_gains,
+    rollout_with_robust_estimator_policy,
 )
 from rlrmp.analysis.rerun_metadata import build_rerun_metadata
 from rlrmp.paths import REPO_ROOT, mkdir_p
@@ -94,6 +99,11 @@ class Phase3StochasticEvaluation:
     control_effort_std: float
     action_mismatch_to_reference_mean: float
     action_mismatch_to_reference_std: float
+    deterministic_exact_l2_cost: float
+    deterministic_exact_l2_cost_ratio_to_lqr: float
+    deterministic_exact_l2_cost_ratio_to_hinf: float
+    deterministic_gamma_penalized_feasible: bool
+    deterministic_lambda_over_gamma_squared: float
 
 
 @dataclass(frozen=True)
@@ -174,7 +184,8 @@ def run_phase3_stochastic_evaluation(
 ) -> Phase3StochasticResult:
     """Evaluate deterministic Phase 3 controllers with released stochastic noise."""
 
-    reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
+    reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
+    gamma_ref = reference.gamma_references[0]
     plant = reference.plant
     schedule = reference.schedule
     x0 = make_cs_output_feedback_initial_state(plant, output_config)
@@ -197,6 +208,14 @@ def run_phase3_stochastic_evaluation(
         dtype=jnp.float64,
     )
     reference_controls = [rollout.u_command for rollout in reference_rollouts]
+    certificate_context = _deterministic_certificate_context(
+        plant,
+        schedule,
+        gamma_ref.gamma,
+        gamma_ref.solution,
+        x0,
+        output_config,
+    )
 
     evaluations = []
     arrays: dict[str, np.ndarray] = {
@@ -225,6 +244,17 @@ def run_phase3_stochastic_evaluation(
             ],
             dtype=jnp.float64,
         )
+        certificate = _deterministic_certificate_for_controller(
+            plant=plant,
+            schedule=schedule,
+            spec=spec,
+            x0=x0,
+            gamma=gamma_ref.gamma,
+            budget=certificate_context["budget"],
+            lqr_exact_cost=certificate_context["lqr_exact_cost"],
+            hinf_exact_cost=certificate_context["hinf_exact_cost"],
+            output_config=output_config,
+        )
         evaluations.append(
             Phase3StochasticEvaluation(
                 spec=spec,
@@ -240,6 +270,15 @@ def run_phase3_stochastic_evaluation(
                 control_effort_std=_std(efforts),
                 action_mismatch_to_reference_mean=_mean(mismatches),
                 action_mismatch_to_reference_std=_std(mismatches),
+                deterministic_exact_l2_cost=certificate["exact_l2_cost"],
+                deterministic_exact_l2_cost_ratio_to_lqr=(
+                    certificate["exact_l2_cost_ratio_to_lqr"]
+                ),
+                deterministic_exact_l2_cost_ratio_to_hinf=(
+                    certificate["exact_l2_cost_ratio_to_hinf"]
+                ),
+                deterministic_gamma_penalized_feasible=certificate["gamma_penalized_feasible"],
+                deterministic_lambda_over_gamma_squared=certificate["lambda_over_gamma_squared"],
             )
         )
         key = _safe_key(spec.label)
@@ -277,13 +316,16 @@ def result_summary(result: Phase3StochasticResult) -> dict[str, Any]:
             "deterministic_phase3_manifest": str(DEFAULT_SOURCE_MANIFEST.relative_to(REPO_ROOT)),
         },
         "monte_carlo": result.config.__dict__,
+        "output_feedback_certificate_gamma_factor": OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
         "claims": {
             "bellman_stochastic_parity": False,
             "extlqg_full_parity": True,
             "note": (
                 "Deterministic init labels identify source controllers only; this "
                 "lane evaluates released-code stochastic forward simulation and "
-                "does not derive or claim a stochastic Bellman objective."
+                "does not derive or claim a stochastic Bellman objective. The "
+                "deterministic certificate columns are re-audits of the same "
+                "controller gains, not stochastic induced-gain certificates."
             ),
         },
         "scope": (
@@ -305,8 +347,9 @@ def render_markdown(summary: dict[str, Any]) -> str:
 
     rows = [
         "| controller | source | cost mean | cost std | cost ratio | "
-        "peak v mean | terminal err mean | action mismatch | deterministic gain err |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|",
+        "peak v mean | terminal err mean | action mismatch | deterministic gain err | "
+        "exact L2 ratio | lambda/gamma^2 | finite-gamma feasible |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for row in summary["evaluations"]:
         rows.append(
@@ -321,7 +364,10 @@ def render_markdown(summary: dict[str, Any]) -> str:
             f"{row['terminal_error_mean']:.8g} | "
             f"{row['action_mismatch_to_reference_mean']:.8g} +/- "
             f"{row['action_mismatch_to_reference_std']:.3g} | "
-            f"{_format_optional(row['deterministic_gain_relative_error'])} |"
+            f"{_format_optional(row['deterministic_gain_relative_error'])} | "
+            f"{row['deterministic_exact_l2_cost_ratio_to_lqr']:.8g} | "
+            f"{row['deterministic_lambda_over_gamma_squared']:.8g} | "
+            f"{row['deterministic_gamma_penalized_feasible']} |"
         )
     mc = summary["monte_carlo"]
     return f"""# Phase 3 Released Stochastic Rollout Recovery
@@ -346,6 +392,7 @@ Monte Carlo settings:
 - Motor covariance scale: `{mc["motor_covariance_scale"]}`
 - Process covariance scale: `{mc["process_covariance_scale"]}`
 - Signal-dependent scale: `{mc["signal_dependent_scale"]}`
+- Certificate gamma factor: `{summary["output_feedback_certificate_gamma_factor"]}`
 
 Claims guardrail: {summary["claims"]["note"]}
 
@@ -480,6 +527,124 @@ def _evaluation_summary(evaluation: Phase3StochasticEvaluation) -> dict[str, Any
         "control_effort_std": evaluation.control_effort_std,
         "action_mismatch_to_reference_mean": (evaluation.action_mismatch_to_reference_mean),
         "action_mismatch_to_reference_std": evaluation.action_mismatch_to_reference_std,
+        "deterministic_exact_l2_cost": evaluation.deterministic_exact_l2_cost,
+        "deterministic_exact_l2_cost_ratio_to_lqr": (
+            evaluation.deterministic_exact_l2_cost_ratio_to_lqr
+        ),
+        "deterministic_exact_l2_cost_ratio_to_hinf": (
+            evaluation.deterministic_exact_l2_cost_ratio_to_hinf
+        ),
+        "deterministic_gamma_penalized_feasible": (
+            evaluation.deterministic_gamma_penalized_feasible
+        ),
+        "deterministic_lambda_over_gamma_squared": (
+            evaluation.deterministic_lambda_over_gamma_squared
+        ),
+    }
+
+
+def _deterministic_certificate_context(
+    plant: PlantLinearization,
+    schedule: CostSchedule,
+    gamma: float,
+    solution,
+    x0: Float[Array, " n"],
+    output_config: OutputFeedbackConfig,
+) -> dict[str, float]:
+    """Return the shared deterministic certificate budget and reference costs."""
+
+    covs = robust_estimator_covariances(plant, schedule, gamma, output_config)
+    robust_gains = robust_output_feedback_gains(
+        plant,
+        schedule,
+        solution,
+        covs,
+        output_config,
+    )
+    robust_policy = robust_estimator_fixed_adversary_policy(
+        plant,
+        schedule,
+        solution,
+        robust_gains,
+        covs,
+        output_config,
+    )
+    robust_rollout = rollout_with_robust_estimator_policy(
+        plant,
+        schedule,
+        solution,
+        x0,
+        robust_policy,
+        gains=robust_gains,
+        config=output_config,
+    )
+    budget = float(jnp.sum(robust_rollout.epsilon**2))
+    lqr_exact = exact_output_feedback_adversary_audit(
+        label="analytical_lqr_kalman_for_stochastic_phase3",
+        plant=plant,
+        schedule=schedule,
+        controller_gains=materialize_reference(
+            gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,)
+        ).lqr_solution.K,
+        x0=x0,
+        budget=budget,
+        estimator_kind="kalman",
+        penalty_gamma=gamma,
+        config=output_config,
+    )
+    hinf_exact = exact_output_feedback_adversary_audit(
+        label="analytical_hinf_robust_for_stochastic_phase3",
+        plant=plant,
+        schedule=schedule,
+        controller_gains=robust_gains,
+        x0=x0,
+        budget=budget,
+        estimator_kind="robust",
+        solution=solution,
+        penalty_gamma=gamma,
+        config=output_config,
+    )
+    return {
+        "budget": budget,
+        "lqr_exact_cost": lqr_exact["cost"].total_without_disturbance_penalty,
+        "hinf_exact_cost": hinf_exact["cost"].total_without_disturbance_penalty,
+    }
+
+
+def _deterministic_certificate_for_controller(
+    *,
+    plant: PlantLinearization,
+    schedule: CostSchedule,
+    spec: Phase3ControllerSpec,
+    x0: Float[Array, " n"],
+    gamma: float,
+    budget: float,
+    lqr_exact_cost: float,
+    hinf_exact_cost: float,
+    output_config: OutputFeedbackConfig,
+) -> dict[str, float | bool]:
+    """Run the deterministic exact-L2 and finite-gamma audit for one gain tensor."""
+
+    audit = exact_output_feedback_adversary_audit(
+        label=f"stochastic_phase3_{spec.label}",
+        plant=plant,
+        schedule=schedule,
+        controller_gains=spec.K,
+        x0=x0,
+        budget=budget,
+        estimator_kind="kalman",
+        penalty_gamma=gamma,
+        config=output_config,
+    )
+    exact_l2_cost = audit["cost"].total_without_disturbance_penalty
+    return {
+        "exact_l2_cost": exact_l2_cost,
+        "exact_l2_cost_ratio_to_lqr": exact_l2_cost / lqr_exact_cost,
+        "exact_l2_cost_ratio_to_hinf": exact_l2_cost / hinf_exact_cost,
+        "gamma_penalized_feasible": bool(audit["gamma_penalized"]["feasible"]),
+        "lambda_over_gamma_squared": float(
+            audit["gamma_penalized"]["max_eigenvalue_over_gamma_squared"]
+        ),
     }
 
 

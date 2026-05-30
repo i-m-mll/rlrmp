@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import jax.numpy as jnp
 
-from rlrmp.analysis.cs_game_card import PRIMARY_GAMMA_FACTOR, materialize_reference
+from rlrmp.analysis.cs_game_card import (
+    OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+    PRIMARY_GAMMA_FACTOR,
+    materialize_reference,
+)
 from rlrmp.analysis.linear_round_trip import LinearTrainingConfig
 from rlrmp.analysis.output_feedback import (
     OutputFeedbackConfig,
@@ -113,6 +117,7 @@ def test_rollout_recovery_smoke_emits_scratch_and_bellman_rows() -> None:
     labels = {row["label"] for row in summary["fits"]}
 
     assert labels == {"smoke__scratch", "smoke__bellman_init"}
+    assert summary["diagnostics"]["gamma_factor"] == OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR
     assert len(result.fits) == 2
     assert all(isinstance(fit.clean_rollout, OutputFeedbackRollout) for fit in result.fits)
     assert all("exact_l2_cost_ratio_to_lqr" in row for row in summary["fits"])

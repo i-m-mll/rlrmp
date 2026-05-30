@@ -105,20 +105,20 @@
       },
       "frontier": [
         {
-          "closed_loop_epsilon_energy": 5.421868381615368e-06,
-          "closed_loop_epsilon_l2": 0.0023284905801002004,
-          "delta_v_percent": 7.460371202249536,
-          "epsilon_on_nominal_energy": 2.4614862445624304e-06,
-          "epsilon_on_nominal_l2": 0.0015689124400559869,
-          "factor": 1.05,
-          "factor_key": "1p05",
-          "gamma": 9625.172849747514,
-          "hinf_peak_forward_velocity": 0.7855454302704938,
-          "nominal_total_cost": 4580.631255161967,
-          "terminal_position_error_m": 6.551959065377899e-06,
+          "closed_loop_epsilon_energy": 1.518885046213267e-06,
+          "closed_loop_epsilon_l2": 0.0012324305441740995,
+          "delta_v_percent": 4.041729916548296,
+          "epsilon_on_nominal_energy": 9.40010465365106e-07,
+          "epsilon_on_nominal_l2": 0.000969541368568204,
+          "factor": 1.4,
+          "factor_key": "1p4",
+          "gamma": 12833.563799663352,
+          "hinf_peak_forward_velocity": 0.7605548406264071,
+          "nominal_total_cost": 4444.135275451243,
+          "terminal_position_error_m": 0.0007033121264565686,
           "time_to_peak_step": 16,
-          "worst_case_h_infinity_objective": 4803.289292860973,
-          "worst_case_total_cost_without_penalty": 5305.592609058729
+          "worst_case_h_infinity_objective": 4596.595429395369,
+          "worst_case_total_cost_without_penalty": 4846.756343001579
         }
       ],
       "gamma_star": 9166.831285473823,
@@ -129,6 +129,8 @@
         "time_to_peak_step": 16,
         "total_cost": 4363.509943825159
       },
+      "output_feedback_certificate_gamma_factor": 1.4,
+      "output_feedback_gamma_selection_issue": "97604a8",
       "plant": {
         "bw_contract": "top physical 8x8 block is identity; lag rows are zero",
         "bw_shape": [
@@ -196,20 +198,21 @@
       "sensory_noise_scale": 1.0,
       "use_matlab_persistent_m_index": true
     },
+    "gamma_factor": 1.4,
     "hinf_cost": {
-      "control_stage": 2066.5363597083187,
+      "control_stage": 1874.512337549118,
       "disturbance_energy": 0.0,
       "h_infinity_objective": null,
-      "state_stage": 2503.7514894999167,
-      "terminal_state": 7.421192002041098e-05,
-      "total_without_disturbance_penalty": 4570.2879234201555
+      "state_stage": 2566.5539015876147,
+      "terminal_state": 0.4219416291902401,
+      "total_without_disturbance_penalty": 4441.488180765923
     },
     "hinf_rollout": {
-      "control_effort": 2066.5363597083187,
-      "estimation_error_final_l2": 1.5586451076151018e-06,
-      "estimation_error_rms": 4.533064580549075e-06,
-      "peak_forward_velocity": 0.7852027478892613,
-      "terminal_position_error_m": 9.631640582374867e-06,
+      "control_effort": 1874.512337549118,
+      "estimation_error_final_l2": 6.492386872441416e-05,
+      "estimation_error_rms": 4.1302109897826904e-06,
+      "peak_forward_velocity": 0.7607681884967247,
+      "terminal_position_error_m": 0.0007296996011800227,
       "time_to_peak_step": 16
     },
     "initial_condition": "C&S-compatible repeated physical initial state in every delay-history block.",
@@ -234,238 +237,239 @@
     "status": "canonical_for_cs2019_information_structure"
   },
   "phase1_output_feedback_adversary_equivalence": {
-    "budget": 3.0673628724462454e-06,
-    "budget_l2": 0.0017513888410191055,
+    "budget": 2.0661571053308635e-05,
+    "budget_l2": 0.004545500088363065,
     "deterministic_phase1_issue": "a7dad8a",
     "exact_fixed_controller_audits": [
       {
         "boundary_active": true,
-        "budget": 3.0673628724462454e-06,
-        "budget_l2": 0.0017513888410191055,
+        "budget": 2.0661571053308635e-05,
+        "budget_l2": 0.004545500088363065,
         "cost": {
-          "control_stage": 1670.9542485968732,
-          "disturbance_energy": 3.0673628724462454e-06,
+          "control_stage": 1656.2009589833926,
+          "disturbance_energy": 2.0661571053308608e-05,
           "h_infinity_objective": null,
-          "state_stage": 3948.8000161428326,
-          "terminal_state": 151.48842865447884,
-          "total_without_disturbance_penalty": 5771.242693394184
+          "state_stage": 8815.393239564983,
+          "terminal_state": 774.3776817938968,
+          "total_without_disturbance_penalty": 11245.971880342271
         },
-        "epsilon_energy": 3.0673628724462454e-06,
+        "epsilon_energy": 2.0661571053308608e-05,
         "estimator_kind": "kalman",
-        "kkt_lambda": 355509603.11612666,
+        "kkt_lambda": 294171568.92289096,
         "label": "analytical_lqr_kalman",
         "max_eigenvalue": 256128543.9390701,
-        "quadratic_rollout_abs_error": 1.8189894035458565e-12,
-        "quadratic_total": 5771.242693394182,
+        "quadratic_rollout_abs_error": 9.094947017729282e-12,
+        "quadratic_total": 11245.97188034228,
         "rollout": {
-          "control_effort": 1670.9542485968732,
-          "estimation_error_final_l2": 0.01615088970178997,
-          "estimation_error_rms": 0.001553776843369552,
-          "peak_forward_velocity": 0.731903285873305,
-          "terminal_position_error_m": 0.013930038640667691,
+          "control_effort": 1656.2009589833926,
+          "estimation_error_final_l2": 0.042820691547674705,
+          "estimation_error_rms": 0.004045052037147225,
+          "peak_forward_velocity": 0.7322259739115411,
+          "terminal_position_error_m": 0.03154486242490989,
           "time_to_peak_step": 16
         },
-        "rollout_total": 5771.242693394184,
+        "rollout_total": 11245.971880342271,
         "total_cost_ratio_to_lqr_exact": 1.0,
-        "total_cost_ratio_to_riccati": 1.1500599541004801
+        "total_cost_ratio_to_riccati": 1.380346559836209
       },
       {
         "boundary_active": true,
-        "budget": 3.0673628724462454e-06,
-        "budget_l2": 0.0017513888410191055,
+        "budget": 2.0661571053308635e-05,
+        "budget_l2": 0.004545500088363065,
         "cost": {
-          "control_stage": 2026.5866885854907,
-          "disturbance_energy": 3.0673628724462356e-06,
-          "h_infinity_objective": 4794.365469696248,
-          "state_stage": 3020.914608134497,
-          "terminal_state": 31.036792886405742,
-          "total_without_disturbance_penalty": 5078.538089606393
+          "control_stage": 1828.6790151924542,
+          "disturbance_energy": 2.0661571053308618e-05,
+          "h_infinity_objective": 4744.240788076381,
+          "state_stage": 5941.033285525126,
+          "terminal_state": 377.49667387260826,
+          "total_without_disturbance_penalty": 8147.2089745901885
         },
-        "epsilon_energy": 3.0673628724462356e-06,
+        "epsilon_energy": 2.0661571053308618e-05,
         "estimator_kind": "robust",
-        "kkt_lambda": 132494811.18356094,
+        "kkt_lambda": 164700359.80002996,
         "label": "analytical_hinf_robust",
-        "max_eigenvalue": 130341870.45056471,
-        "quadratic_rollout_abs_error": 6.366462912410498e-12,
-        "quadratic_total": 5078.5380896064,
+        "max_eigenvalue": 153686082.34710637,
+        "quadratic_rollout_abs_error": 5.4569682106375694e-12,
+        "quadratic_total": 8147.208974590194,
         "rollout": {
-          "control_effort": 2026.5866885854907,
-          "estimation_error_final_l2": 4.673717045803517e-05,
-          "estimation_error_rms": 0.0003374864190375666,
-          "peak_forward_velocity": 0.7904326997163701,
-          "terminal_position_error_m": 0.006336027637544095,
+          "control_effort": 1828.6790151924542,
+          "estimation_error_final_l2": 0.0009075798717947634,
+          "estimation_error_rms": 0.0008848973083380974,
+          "peak_forward_velocity": 0.764969968257313,
+          "terminal_position_error_m": 0.02204871975257497,
           "time_to_peak_step": 16
         },
-        "rollout_total": 5078.538089606393,
-        "total_cost_ratio_to_lqr_exact": 0.8799730594277959,
-        "total_cost_ratio_to_riccati": 1.0120217763351902
+        "rollout_total": 8147.2089745901885,
+        "total_cost_ratio_to_lqr_exact": 0.7244557483583383,
+        "total_cost_ratio_to_riccati": 0.9999999999999986
       },
       {
         "boundary_active": true,
-        "budget": 3.0673628724462454e-06,
-        "budget_l2": 0.0017513888410191055,
+        "budget": 2.0661571053308635e-05,
+        "budget_l2": 0.004545500088363065,
         "cost": {
-          "control_stage": 1955.0392978340367,
-          "disturbance_energy": 3.0673628724462424e-06,
+          "control_stage": 1938.249537303007,
+          "disturbance_energy": 2.066157105330856e-05,
           "h_infinity_objective": null,
-          "state_stage": 5156.482526843916,
-          "terminal_state": 248.47813130592857,
-          "total_without_disturbance_penalty": 7359.999955983882
+          "state_stage": 12361.7320015941,
+          "terminal_state": 1193.8567918165727,
+          "total_without_disturbance_penalty": 15493.83833071368
         },
-        "epsilon_energy": 3.0673628724462424e-06,
+        "epsilon_energy": 2.066157105330856e-05,
         "estimator_kind": "kalman",
-        "kkt_lambda": 500198200.1977049,
+        "kkt_lambda": 444464580.6181839,
         "label": "adam_lqr_fit_kalman",
-        "max_eigenvalue": 365085072.1526049,
-        "quadratic_rollout_abs_error": 1.8189894035458565e-12,
-        "quadratic_total": 7359.999955983883,
+        "max_eigenvalue": 398487035.0430758,
+        "quadratic_rollout_abs_error": 1.2187229003757238e-10,
+        "quadratic_total": 15493.838330713801,
         "rollout": {
-          "control_effort": 1955.0392978340367,
-          "estimation_error_final_l2": 0.015214671106451976,
-          "estimation_error_rms": 0.0015220661775542693,
-          "peak_forward_velocity": 0.7770950182955246,
-          "terminal_position_error_m": 0.017874914204339988,
+          "control_effort": 1938.2495373030063,
+          "estimation_error_final_l2": 0.03796111661161456,
+          "estimation_error_rms": 0.0038726529987560534,
+          "peak_forward_velocity": 0.7533649755848201,
+          "terminal_position_error_m": 0.03918003049394996,
           "time_to_peak_step": 17
         },
-        "rollout_total": 7359.999955983882,
-        "total_cost_ratio_to_lqr_exact": 1.2752885898228128,
-        "total_cost_ratio_to_riccati": 1.4666583370764903
+        "rollout_total": 15493.83833071368,
+        "total_cost_ratio_to_lqr_exact": 1.3777233746953068,
+        "total_cost_ratio_to_riccati": 1.9017357206665992
       },
       {
         "boundary_active": true,
-        "budget": 3.0673628724462454e-06,
-        "budget_l2": 0.0017513888410191055,
+        "budget": 2.0661571053308635e-05,
+        "budget_l2": 0.004545500088363065,
         "cost": {
-          "control_stage": 1814.2588619084095,
-          "disturbance_energy": 3.0673628724462437e-06,
+          "control_stage": 1739.4143257249725,
+          "disturbance_energy": 2.0661571053308628e-05,
           "h_infinity_objective": null,
-          "state_stage": 4422.159777724486,
-          "terminal_state": 195.38842235606506,
-          "total_without_disturbance_penalty": 6431.80706198896
+          "state_stage": 12913.768705871898,
+          "terminal_state": 1286.9324012650604,
+          "total_without_disturbance_penalty": 15940.11543286193
         },
-        "epsilon_energy": 3.0673628724462437e-06,
+        "epsilon_energy": 2.0661571053308628e-05,
         "estimator_kind": "kalman",
-        "kkt_lambda": 449632780.9689229,
+        "kkt_lambda": 457109662.98778135,
         "label": "lbfgsb_after_adam_lqr_fit_kalman",
-        "max_eigenvalue": 363965720.7623655,
-        "quadratic_rollout_abs_error": 3.637978807091713e-12,
-        "quadratic_total": 6431.807061988957,
+        "max_eigenvalue": 390008934.4008624,
+        "quadratic_rollout_abs_error": 7.639755494892597e-11,
+        "quadratic_total": 15940.115432861854,
         "rollout": {
-          "control_effort": 1814.258861908409,
-          "estimation_error_final_l2": 0.015092913503829321,
-          "estimation_error_rms": 0.0015132400805779184,
-          "peak_forward_velocity": 0.7675740323681044,
-          "terminal_position_error_m": 0.015835497021415988,
-          "time_to_peak_step": 16
+          "control_effort": 1739.4143257249734,
+          "estimation_error_final_l2": 0.038275097850217765,
+          "estimation_error_rms": 0.003885214687595407,
+          "peak_forward_velocity": 0.7270590787233734,
+          "terminal_position_error_m": 0.040671959161635254,
+          "time_to_peak_step": 17
         },
-        "rollout_total": 6431.80706198896,
-        "total_cost_ratio_to_lqr_exact": 1.1144579085802204,
-        "total_cost_ratio_to_riccati": 1.2816934111886853
+        "rollout_total": 15940.11543286193,
+        "total_cost_ratio_to_lqr_exact": 1.4174066592434689,
+        "total_cost_ratio_to_riccati": 1.956512405975656
       }
     ],
+    "gamma_factor": 1.4,
     "open_loop": [
       {
         "best_cost": {
-          "control_stage": 1996.7391113184362,
-          "disturbance_energy": 3.0673628724462454e-06,
-          "h_infinity_objective": 4734.037668011898,
-          "state_stage": 3020.653913721294,
-          "terminal_state": 0.8172628823153536,
-          "total_without_disturbance_penalty": 5018.210287922045
+          "control_stage": 1828.6790151924567,
+          "disturbance_energy": 2.0661571053308635e-05,
+          "h_infinity_objective": 4744.24078807639,
+          "state_stage": 5941.033285525132,
+          "terminal_state": 377.49667387261155,
+          "total_without_disturbance_penalty": 8147.2089745902
         },
         "best_energies": [
-          3.0673628724462454e-06,
-          3.067362872446247e-06,
-          3.0673628724462467e-06,
-          3.067362872446248e-06
+          2.0661571053308635e-05,
+          2.0661571053308635e-05,
+          2.0661571053308628e-05,
+          2.066157105330864e-05
         ],
         "best_objectives": [
-          5018.210287922041,
-          4734.783661683294,
-          4746.289048848927,
-          4739.08799855628
+          8147.2089745902,
+          5491.054189167914,
+          5523.961192857072,
+          5483.216349347731
         ],
         "best_restart_idx": 0,
         "epsilon_l2_distance_to_riccati": 0.0,
         "final_energies": [
-          3.067362872446247e-06,
-          3.067362872446243e-06,
-          3.0673628724462454e-06,
-          3.0673628724462445e-06
+          2.0661571053308635e-05,
+          2.0661571053308635e-05,
+          2.066157105330865e-05,
+          2.0661571053308655e-05
         ],
         "final_objectives": [
-          4761.583709195282,
-          4723.525128920847,
-          4727.330467883931,
-          4726.6418913243815
+          5552.725904712562,
+          5420.362002669051,
+          5399.894892691703,
+          5392.758141953263
         ],
         "initial_objectives": [
-          5018.210287922045,
-          4561.385421811323,
-          4587.048111494817,
-          4563.31314995138
+          8147.2089745902,
+          4414.220603174118,
+          4515.796801076039,
+          4425.140831775255
         ],
         "n_restarts": 4,
         "n_steps": 50,
         "rollout": {
-          "control_effort": 1996.7391113184362,
-          "estimation_error_final_l2": 7.70431569456997e-05,
-          "estimation_error_rms": 0.0003437163866189503,
-          "peak_forward_velocity": 0.7930014746647199,
-          "terminal_position_error_m": 0.0010337834597044238,
+          "control_effort": 1828.6790151924567,
+          "estimation_error_final_l2": 0.000907579871794762,
+          "estimation_error_rms": 0.0008848973083380992,
+          "peak_forward_velocity": 0.7649699682573127,
+          "terminal_position_error_m": 0.02204871975257508,
           "time_to_peak_step": 16
         },
         "total_cost_ratio_to_riccati": 1.0
       },
       {
         "best_cost": {
-          "control_stage": 1996.7391113184362,
-          "disturbance_energy": 3.0673628724462454e-06,
-          "h_infinity_objective": 4734.037668011898,
-          "state_stage": 3020.653913721294,
-          "terminal_state": 0.8172628823153536,
-          "total_without_disturbance_penalty": 5018.210287922045
+          "control_stage": 1828.6790151924567,
+          "disturbance_energy": 2.0661571053308635e-05,
+          "h_infinity_objective": 4744.24078807639,
+          "state_stage": 5941.033285525132,
+          "terminal_state": 377.49667387261155,
+          "total_without_disturbance_penalty": 8147.2089745902
         },
         "best_energies": [
-          3.0673628724462454e-06,
-          3.067362872446247e-06,
-          3.0673628724462462e-06,
-          3.0673628724462454e-06
+          2.0661571053308635e-05,
+          2.0661571053308614e-05,
+          2.0661571053308628e-05,
+          2.0661571053308648e-05
         ],
         "best_objectives": [
-          5018.210287922041,
-          4735.717029244285,
-          4738.234780834926,
-          4742.586480244661
+          8147.2089745902,
+          6139.2324705973415,
+          5493.232865160262,
+          5567.538982872225
         ],
         "best_restart_idx": 0,
         "epsilon_l2_distance_to_riccati": 0.0,
         "final_energies": [
-          3.0673628724462454e-06,
-          3.0673628724462445e-06,
-          3.0673628724462462e-06,
-          3.0673628724462462e-06
+          2.0661571053308638e-05,
+          2.0661571053308648e-05,
+          2.0661571053308635e-05,
+          2.0661571053308635e-05
         ],
         "final_objectives": [
-          4750.061348169079,
-          4720.411014572592,
-          4729.309157830072,
-          4716.810098759062
+          5529.222618260183,
+          6001.189573632566,
+          5397.106765726567,
+          5401.357145774935
         ],
         "initial_objectives": [
-          5018.210287922045,
-          4579.972449012984,
-          4601.274925750873,
-          4571.418235932279
+          8147.2089745902,
+          4472.172122908863,
+          4564.455803175362,
+          4467.834069913815
         ],
         "n_restarts": 4,
         "n_steps": 200,
         "rollout": {
-          "control_effort": 1996.7391113184362,
-          "estimation_error_final_l2": 7.70431569456997e-05,
-          "estimation_error_rms": 0.0003437163866189503,
-          "peak_forward_velocity": 0.7930014746647199,
-          "terminal_position_error_m": 0.0010337834597044238,
+          "control_effort": 1828.6790151924567,
+          "estimation_error_final_l2": 0.000907579871794762,
+          "estimation_error_rms": 0.0008848973083380992,
+          "peak_forward_velocity": 0.7649699682573127,
+          "terminal_position_error_m": 0.02204871975257508,
           "time_to_peak_step": 16
         },
         "total_cost_ratio_to_riccati": 1.0
@@ -474,19 +478,19 @@
     "open_loop_interpretation": "The PGD rows include the Riccati epsilon as an initial candidate. They are retained as diagnostics only; exact_fixed_controller_audits is the strengthened evidence-bearing Phase 1 audit.",
     "riccati_feedback": {
       "cost": {
-        "control_stage": 1996.7391113184362,
-        "disturbance_energy": 3.0673628724462454e-06,
-        "h_infinity_objective": 4734.037668011898,
-        "state_stage": 3020.653913721294,
-        "terminal_state": 0.8172628823153536,
-        "total_without_disturbance_penalty": 5018.210287922045
+        "control_stage": 1828.6790151924567,
+        "disturbance_energy": 2.0661571053308635e-05,
+        "h_infinity_objective": 4744.24078807639,
+        "state_stage": 5941.033285525132,
+        "terminal_state": 377.49667387261155,
+        "total_without_disturbance_penalty": 8147.2089745902
       },
       "rollout": {
-        "control_effort": 1996.7391113184362,
-        "estimation_error_final_l2": 7.70431569456997e-05,
-        "estimation_error_rms": 0.0003437163866189503,
-        "peak_forward_velocity": 0.7930014746647199,
-        "terminal_position_error_m": 0.0010337834597044238,
+        "control_effort": 1828.6790151924567,
+        "estimation_error_final_l2": 0.000907579871794762,
+        "estimation_error_rms": 0.0008848973083380992,
+        "peak_forward_velocity": 0.7649699682573127,
+        "terminal_position_error_m": 0.02204871975257508,
         "time_to_peak_step": 16
       }
     }
@@ -496,109 +500,110 @@
     "deterministic_phase3_issue": "6f5c79e",
     "fitted_controller_replays": [
       {
-        "clean_action_mismatch_ratio": 0.5089877337660155,
-        "clean_action_mismatch_rms_vs_lqr_reference": 1.905207165581663,
+        "clean_action_mismatch_ratio": 0.6968747903954836,
+        "clean_action_mismatch_rms_vs_lqr_reference": 2.608492810526239,
         "clean_action_reference_rms": 3.74312982256955,
         "clean_cost": {
-          "control_stage": 1948.2880570930483,
+          "control_stage": 1936.721503583453,
           "disturbance_energy": 0.0,
           "h_infinity_objective": null,
-          "state_stage": 3388.275425740657,
-          "terminal_state": 21.439578366994397,
-          "total_without_disturbance_penalty": 5358.003061200699
+          "state_stage": 3349.1670664243757,
+          "terminal_state": 12.352910823136918,
+          "total_without_disturbance_penalty": 5298.241480830966
         },
-        "clean_cost_ratio_to_lqr_reference": 1.2279112752573067,
+        "clean_cost_ratio_to_lqr_reference": 1.214215516310363,
         "clean_rollout": {
-          "control_effort": 1948.2880570930477,
+          "control_effort": 1936.7215035834536,
           "estimation_error_final_l2": 0.0,
           "estimation_error_rms": 0.0,
-          "peak_forward_velocity": 0.7762851244155424,
-          "terminal_position_error_m": 0.005186129957417672,
+          "peak_forward_velocity": 0.7557668850448928,
+          "terminal_position_error_m": 0.003913930118318797,
           "time_to_peak_step": 17
         },
         "label": "adam_lqr_fit",
         "source_artifact": "_artifacts/6f5c79e/linear_round_trip/linear_round_trip.npz",
-        "under_epsilon_cost_ratio_to_lqr_reference": 1.1023267717813872,
+        "under_epsilon_cost_ratio_to_lqr_reference": 1.2362602465670058,
         "under_riccati_epsilon_cost": {
-          "control_stage": 1946.029005923104,
-          "disturbance_energy": 3.0673628724462454e-06,
-          "h_infinity_objective": 5256.09472045146,
-          "state_stage": 3564.835866140642,
-          "terminal_state": 29.402468297861088,
-          "total_without_disturbance_penalty": 5540.267340361606
+          "control_stage": 1937.3012034868389,
+          "disturbance_energy": 2.0661571053308635e-05,
+          "h_infinity_objective": 9961.277737510527,
+          "state_stage": 10439.80403925725,
+          "terminal_state": 987.1406812802493,
+          "total_without_disturbance_penalty": 13364.245924024337
         },
         "under_riccati_epsilon_rollout": {
-          "control_effort": 1946.0290059231047,
-          "estimation_error_final_l2": 0.003256093736093542,
-          "estimation_error_rms": 0.0010757265555393861,
-          "peak_forward_velocity": 0.7761928048066834,
-          "terminal_position_error_m": 0.006058603357894692,
+          "control_effort": 1937.3012034868389,
+          "estimation_error_final_l2": 0.04561678912920662,
+          "estimation_error_rms": 0.0038739085971828255,
+          "peak_forward_velocity": 0.7555608081324819,
+          "terminal_position_error_m": 0.03566023930279323,
           "time_to_peak_step": 17
         }
       },
       {
-        "clean_action_mismatch_ratio": 0.10793336546957386,
-        "clean_action_mismatch_rms_vs_lqr_reference": 0.40400859913946036,
+        "clean_action_mismatch_ratio": 0.5121411995185112,
+        "clean_action_mismatch_rms_vs_lqr_reference": 1.9170109972842813,
         "clean_action_reference_rms": 3.74312982256955,
         "clean_cost": {
-          "control_stage": 1810.8975257466063,
+          "control_stage": 1738.3462304604554,
           "disturbance_energy": 0.0,
           "h_infinity_objective": null,
-          "state_stage": 2956.289084384389,
-          "terminal_state": 7.269774643965556,
-          "total_without_disturbance_penalty": 4774.4563847749605
+          "state_stage": 3183.8905268050603,
+          "terminal_state": 30.534972745091483,
+          "total_without_disturbance_penalty": 4952.771730010607
         },
-        "clean_cost_ratio_to_lqr_reference": 1.0941779541976657,
+        "clean_cost_ratio_to_lqr_reference": 1.1350430713813022,
         "clean_rollout": {
-          "control_effort": 1810.8975257466063,
+          "control_effort": 1738.3462304604554,
           "estimation_error_final_l2": 0.0,
           "estimation_error_rms": 0.0,
-          "peak_forward_velocity": 0.7666073563048765,
-          "terminal_position_error_m": 0.002990046883173058,
-          "time_to_peak_step": 16
+          "peak_forward_velocity": 0.7293989891056747,
+          "terminal_position_error_m": 0.006227933834692937,
+          "time_to_peak_step": 17
         },
         "label": "lbfgsb_after_adam_lqr_fit",
         "source_artifact": "_artifacts/6f5c79e/linear_round_trip/linear_round_trip.npz",
-        "under_epsilon_cost_ratio_to_lqr_reference": 0.9807069201196496,
+        "under_epsilon_cost_ratio_to_lqr_reference": 1.2828107956954196,
         "under_riccati_epsilon_cost": {
-          "control_stage": 1808.2976374480636,
-          "disturbance_energy": 3.0673628724462454e-06,
-          "h_infinity_objective": 4644.836326525074,
-          "state_stage": 3103.61644280212,
-          "terminal_state": 17.094866185036267,
-          "total_without_disturbance_penalty": 4929.00894643522
+          "control_stage": 1739.249844208509,
+          "disturbance_energy": 2.0661571053308635e-05,
+          "h_infinity_objective": 10464.499440366424,
+          "state_stage": 11023.998049201085,
+          "terminal_state": 1104.219733470639,
+          "total_without_disturbance_penalty": 13867.467626880234
         },
         "under_riccati_epsilon_rollout": {
-          "control_effort": 1808.297637448064,
-          "estimation_error_final_l2": 0.0032560937360935284,
-          "estimation_error_rms": 0.0010757265555393978,
-          "peak_forward_velocity": 0.7664914253599888,
-          "terminal_position_error_m": 0.004654627541367117,
-          "time_to_peak_step": 16
+          "control_effort": 1739.2498442085086,
+          "estimation_error_final_l2": 0.04561678912920661,
+          "estimation_error_rms": 0.00387390859718282,
+          "peak_forward_velocity": 0.7291762540164287,
+          "terminal_position_error_m": 0.037739148580396384,
+          "time_to_peak_step": 17
         }
       }
     ],
+    "gamma_factor": 1.4,
     "hinf_under_riccati_epsilon": {
       "cost": {
-        "control_stage": 1996.7391113184362,
-        "disturbance_energy": 3.0673628724462454e-06,
-        "h_infinity_objective": 4734.037668011898,
-        "state_stage": 3020.653913721294,
-        "terminal_state": 0.8172628823153536,
-        "total_without_disturbance_penalty": 5018.210287922045
+        "control_stage": 1828.6790151924567,
+        "disturbance_energy": 2.0661571053308635e-05,
+        "h_infinity_objective": 4744.24078807639,
+        "state_stage": 5941.033285525132,
+        "terminal_state": 377.49667387261155,
+        "total_without_disturbance_penalty": 8147.2089745902
       },
       "rollout": {
-        "control_effort": 1996.7391113184362,
-        "estimation_error_final_l2": 7.70431569456997e-05,
-        "estimation_error_rms": 0.0003437163866189503,
-        "peak_forward_velocity": 0.7930014746647199,
-        "terminal_position_error_m": 0.0010337834597044238,
+        "control_effort": 1828.6790151924567,
+        "estimation_error_final_l2": 0.000907579871794762,
+        "estimation_error_rms": 0.0008848973083380992,
+        "peak_forward_velocity": 0.7649699682573127,
+        "terminal_position_error_m": 0.02204871975257508,
         "time_to_peak_step": 16
       }
     },
-    "hinf_under_riccati_epsilon_vs_clean_lqr_cost_ratio": 1.1500398420397397,
-    "hinf_vs_lqr_cost_ratio_under_riccati_epsilon": 0.9984549854672186,
-    "hinf_vs_lqr_peak_velocity_delta_percent": 7.990517838859219,
+    "hinf_under_riccati_epsilon_vs_clean_lqr_cost_ratio": 1.8671228156288089,
+    "hinf_vs_lqr_cost_ratio_under_riccati_epsilon": 0.7536579791347352,
+    "hinf_vs_lqr_peak_velocity_delta_percent": 4.370237958157117,
     "interpretation": "The linear gate now evaluates controllers through x_hat_aug. The full fitted-controller certificate from d01c35a remains the deterministic Phase 0A check; this lane additionally replays the fitted LQR controllers through the C&S output-feedback estimator dynamics when the Phase 3 artifact is available.",
     "lqr_comparator_scope": "simplified delayed Kalman baseline, not a full extLQG parity implementation with signal-dependent estimator noise terms",
     "lqr_reference": {
@@ -621,118 +626,118 @@
     },
     "lqr_under_riccati_epsilon": {
       "cost": {
-        "control_stage": 1665.888889256675,
-        "disturbance_energy": 3.0673628724462454e-06,
-        "h_infinity_objective": 4741.802873190141,
-        "state_stage": 3320.0630631472613,
-        "terminal_state": 40.02354069635201,
-        "total_without_disturbance_penalty": 5025.975493100288
+        "control_stage": 1668.5895346385919,
+        "disturbance_energy": 2.0661571053308635e-05,
+        "h_infinity_objective": 7407.252364649072,
+        "state_stage": 8377.544474064656,
+        "terminal_state": 764.0865424596338,
+        "total_without_disturbance_penalty": 10810.220551162882
       },
       "rollout": {
-        "control_effort": 1665.888889256675,
-        "estimation_error_final_l2": 0.0032560937360935046,
-        "estimation_error_rms": 0.0010757265555393753,
-        "peak_forward_velocity": 0.7343250968089783,
-        "terminal_position_error_m": 0.007075641187756276,
+        "control_effort": 1668.5895346385919,
+        "estimation_error_final_l2": 0.04561678912920648,
+        "estimation_error_rms": 0.0038739085971828064,
+        "peak_forward_velocity": 0.7329387986678687,
+        "terminal_position_error_m": 0.031351028519136404,
         "time_to_peak_step": 16
       }
     },
     "output_feedback_training_exact_audits": [
       {
         "cost": {
-          "control_stage": 1941.314901486746,
-          "disturbance_energy": 3.067362872446238e-06,
+          "control_stage": 1942.2446736606194,
+          "disturbance_energy": 2.06615710533086e-05,
           "h_infinity_objective": null,
-          "state_stage": 5105.078373040882,
-          "terminal_state": 226.31535883559584,
-          "total_without_disturbance_penalty": 7272.708633363224
+          "state_stage": 12172.291467062796,
+          "terminal_state": 1149.5699164764133,
+          "total_without_disturbance_penalty": 15264.10605719983
         },
-        "epsilon_energy": 3.067362872446238e-06,
+        "epsilon_energy": 2.06615710533086e-05,
         "estimator_kind": "kalman",
         "label": "of_adam_lqr_fit_exact_kalman",
-        "quadratic_rollout_abs_error": 4.547473508864641e-12,
+        "quadratic_rollout_abs_error": 7.639755494892597e-11,
         "rollout": {
-          "control_effort": 1941.3149014867452,
-          "estimation_error_final_l2": 0.014637362963731632,
-          "estimation_error_rms": 0.0014943054360294528,
-          "peak_forward_velocity": 0.7555707719771115,
-          "terminal_position_error_m": 0.017015144325255523,
+          "control_effort": 1942.24467366062,
+          "estimation_error_final_l2": 0.03822280434440466,
+          "estimation_error_rms": 0.0038838632822213504,
+          "peak_forward_velocity": 0.7540039565203617,
+          "terminal_position_error_m": 0.038424924483354016,
           "time_to_peak_step": 17
         },
-        "total_cost_ratio_to_hinf_exact": 1.432047669042271,
-        "total_cost_ratio_to_lqr_exact": 1.260163368573571
+        "total_cost_ratio_to_hinf_exact": 1.873538055155585,
+        "total_cost_ratio_to_lqr_exact": 1.3572954138255648
       },
       {
         "cost": {
-          "control_stage": 1951.6407618008243,
-          "disturbance_energy": 3.0673628724462454e-06,
+          "control_stage": 1936.3700387527638,
+          "disturbance_energy": 2.0661571053308553e-05,
           "h_infinity_objective": null,
-          "state_stage": 6086.655407007174,
-          "terminal_state": 206.2713983370897,
-          "total_without_disturbance_penalty": 8244.567567145088
+          "state_stage": 12588.143555521186,
+          "terminal_state": 1040.2855782450204,
+          "total_without_disturbance_penalty": 15564.799172518971
         },
-        "epsilon_energy": 3.0673628724462454e-06,
+        "epsilon_energy": 2.0661571053308553e-05,
         "estimator_kind": "kalman",
         "label": "of_lbfgsb_zero_lqr_fit_exact_kalman",
-        "quadratic_rollout_abs_error": 7.275957614183426e-11,
+        "quadratic_rollout_abs_error": 1.6916601452976465e-10,
         "rollout": {
-          "control_effort": 1951.640761800824,
-          "estimation_error_final_l2": 0.01511571290188982,
-          "estimation_error_rms": 0.0015250259666259587,
-          "peak_forward_velocity": 0.6587947084331186,
-          "terminal_position_error_m": 0.016117938723735434,
+          "control_effort": 1936.3700387527635,
+          "estimation_error_final_l2": 0.039181597918471124,
+          "estimation_error_rms": 0.003946012110793833,
+          "peak_forward_velocity": 0.6571622294068128,
+          "terminal_position_error_m": 0.03649924674542447,
           "time_to_peak_step": 23
         },
-        "total_cost_ratio_to_hinf_exact": 1.6234135536008305,
-        "total_cost_ratio_to_lqr_exact": 1.428560191478673
+        "total_cost_ratio_to_hinf_exact": 1.9104455551665647,
+        "total_cost_ratio_to_lqr_exact": 1.3840332643660547
       },
       {
         "cost": {
-          "control_stage": 1835.6393210698013,
-          "disturbance_energy": 3.0673628724462433e-06,
+          "control_stage": 1836.0251054557928,
+          "disturbance_energy": 2.0661571053308526e-05,
           "h_infinity_objective": null,
-          "state_stage": 4497.978432431066,
-          "terminal_state": 191.49343829829306,
-          "total_without_disturbance_penalty": 6525.11119179916
+          "state_stage": 11163.99368610465,
+          "terminal_state": 1062.0324756266366,
+          "total_without_disturbance_penalty": 14062.051267187078
         },
-        "epsilon_energy": 3.0673628724462433e-06,
+        "epsilon_energy": 2.0661571053308526e-05,
         "estimator_kind": "kalman",
         "label": "of_lbfgsb_after_of_adam_lqr_fit_exact_kalman",
-        "quadratic_rollout_abs_error": 1.6370904631912708e-11,
+        "quadratic_rollout_abs_error": 0.0,
         "rollout": {
-          "control_effort": 1835.6393210698016,
-          "estimation_error_final_l2": 0.01466751916220057,
-          "estimation_error_rms": 0.001495427032486631,
-          "peak_forward_velocity": 0.7487547025925158,
-          "terminal_position_error_m": 0.01565153339786551,
+          "control_effort": 1836.025105455793,
+          "estimation_error_final_l2": 0.03834471336706045,
+          "estimation_error_rms": 0.003888665662165101,
+          "peak_forward_velocity": 0.7471834802393356,
+          "terminal_position_error_m": 0.03692537544260179,
           "time_to_peak_step": 17
         },
-        "total_cost_ratio_to_hinf_exact": 1.2848404553966597,
-        "total_cost_ratio_to_lqr_exact": 1.130624986412001
+        "total_cost_ratio_to_hinf_exact": 1.7259961431018052,
+        "total_cost_ratio_to_lqr_exact": 1.2504078275144237
       },
       {
         "cost": {
-          "control_stage": 1670.357147936784,
-          "disturbance_energy": 3.0673628724462437e-06,
+          "control_stage": 1655.6099855839275,
+          "disturbance_energy": 2.06615710533086e-05,
           "h_infinity_objective": null,
-          "state_stage": 3950.4041435256354,
-          "terminal_state": 151.58689961270704,
-          "total_without_disturbance_penalty": 5772.348191075127
+          "state_stage": 8818.36906817922,
+          "terminal_state": 774.5791262029384,
+          "total_without_disturbance_penalty": 11248.558179966085
         },
-        "epsilon_energy": 3.0673628724462437e-06,
+        "epsilon_energy": 2.06615710533086e-05,
         "estimator_kind": "kalman",
         "label": "of_bellman_lbfgsb_lqr_fit_exact_kalman",
-        "quadratic_rollout_abs_error": 1.4551915228366852e-11,
+        "quadratic_rollout_abs_error": 5.4569682106375694e-12,
         "rollout": {
-          "control_effort": 1670.357147936784,
-          "estimation_error_final_l2": 0.016150414814242033,
-          "estimation_error_rms": 0.0015537864909540371,
-          "peak_forward_velocity": 0.7317375952100327,
-          "terminal_position_error_m": 0.013934450634984778,
+          "control_effort": 1655.6099855839275,
+          "estimation_error_final_l2": 0.04282022358226984,
+          "estimation_error_rms": 0.004045066000484257,
+          "peak_forward_velocity": 0.7320604677006376,
+          "terminal_position_error_m": 0.031548811409411154,
           "time_to_peak_step": 16
         },
-        "total_cost_ratio_to_hinf_exact": 1.136616106687999,
-        "total_cost_ratio_to_lqr_exact": 1.0001915527971486
+        "total_cost_ratio_to_hinf_exact": 1.3806640059250348,
+        "total_cost_ratio_to_lqr_exact": 1.0002299756438422
       }
     ],
     "output_feedback_training_note": "Clean estimator-in-loop training starts from zero. Because xhat_0=x_0 and clean innovations remain zero, the clean objective is algebraically equivalent to full-state clean training; the estimator-loop distinction is tested by the exact disturbance audits. The Bellman row is a diagnostic one-step LQR dynamic-programming objective using the analytical P[t+1] value matrices; it tests recoverability when the objective identifies the Riccati law, not robust/H-infinity training.",

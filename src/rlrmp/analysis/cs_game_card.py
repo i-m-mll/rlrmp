@@ -42,9 +42,25 @@ from rlrmp.paths import REPO_ROOT, mkdir_p
 
 ISSUE_ID = "cb98e58"
 UMBRELLA_ID = "43e8728"
+# Full-state deterministic C&S speed-matching reference. This is not the
+# default for output-feedback robustness certificates; see
+# OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR below.
 PRIMARY_GAMMA_FACTOR = 1.05
+# Working output-feedback robustness target selected from the gamma sweep on
+# 97604a8. Keep output-feedback Phase 1/3 diagnostics tied to this named value
+# so rerunning the sweep requires updating one contract instead of silently
+# falling back to the full-state speed-matching gamma.
+OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR = 1.4
+OUTPUT_FEEDBACK_GAMMA_SELECTION_ISSUE_ID = "97604a8"
 DIAGNOSTIC_GAMMA_FACTOR = 1.5
-DEFAULT_GAMMA_FACTORS = (1.001, 1.05, 1.5, 2.0, 3.0)
+DEFAULT_GAMMA_FACTORS = (
+    1.001,
+    PRIMARY_GAMMA_FACTOR,
+    OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+    DIAGNOSTIC_GAMMA_FACTOR,
+    2.0,
+    3.0,
+)
 INIT_POS = jnp.array([0.0, 0.0], dtype=jnp.float64)
 TARGET_POS = jnp.array([0.15, 0.0], dtype=jnp.float64)
 
@@ -347,6 +363,8 @@ def reference_summary(
             materializer="analytical_game_card",
         ),
         "primary_gamma_factor": PRIMARY_GAMMA_FACTOR,
+        "output_feedback_certificate_gamma_factor": OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+        "output_feedback_gamma_selection_issue": OUTPUT_FEEDBACK_GAMMA_SELECTION_ISSUE_ID,
         "diagnostic_gamma_factor": DIAGNOSTIC_GAMMA_FACTOR,
         "plant": {
             "name": "cs_faithful_pointmass",
@@ -420,6 +438,9 @@ def render_markdown(summary: dict[str, Any]) -> str:
 
     frontier = summary["frontier"]
     primary = next(row for row in frontier if row["factor"] == PRIMARY_GAMMA_FACTOR)
+    output_feedback = next(
+        row for row in frontier if row["factor"] == OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR
+    )
     diagnostic = next(row for row in frontier if row["factor"] == DIAGNOSTIC_GAMMA_FACTOR)
 
     rows = [
@@ -490,14 +511,20 @@ fixed C&S schedule, not an alpha sweep.
 ## Gamma And Epsilon
 
 - `gamma_star = {summary["gamma_star"]:.6f}`.
-- Primary C&S-matched target: `gamma = 1.05 * gamma_star`, giving
+- Full-state C&S speed-matching target: `gamma = 1.05 * gamma_star`, giving
   Delta-v `{primary["delta_v_percent"]:+.4f}%`.
+- Output-feedback robustness diagnostics use
+  `gamma = {OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR:.4g} * gamma_star`, giving
+  full-state Delta-v `{output_feedback["delta_v_percent"]:+.4f}%` at the same
+  factor. This value is selected from the output-feedback gamma sweep on
+  `{OUTPUT_FEEDBACK_GAMMA_SELECTION_ISSUE_ID}` and must be updated there, not
+  by reusing the full-state speed-matching factor.
 - Conservative diagnostic point: `gamma = 1.5 * gamma_star`, giving
   Delta-v `{diagnostic["delta_v_percent"]:+.4f}%`.
 
 Gamma is not an epsilon budget. It is the H-infinity attenuation/penalty
-parameter. If an open-loop PGD adversary needs a budget, the game-card mapping
-is:
+parameter. If a full-state open-loop PGD adversary needs a budget, the
+game-card mapping for the full-state speed-matching target is:
 
 ```text
 gamma_design = 1.05 * gamma_star
@@ -635,6 +662,8 @@ __all__ = [
     "DEFAULT_GAMMA_FACTORS",
     "DIAGNOSTIC_GAMMA_FACTOR",
     "ISSUE_ID",
+    "OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR",
+    "OUTPUT_FEEDBACK_GAMMA_SELECTION_ISSUE_ID",
     "PRIMARY_GAMMA_FACTOR",
     "UMBRELLA_ID",
     "GameCardReference",

@@ -19,6 +19,15 @@
     "hinf_1p05_u_worst_case",
     "hinf_1p05_x_nominal",
     "hinf_1p05_x_worst_case",
+    "hinf_1p4_F_worst_policy",
+    "hinf_1p4_K",
+    "hinf_1p4_P",
+    "hinf_1p4_epsilon_on_nominal",
+    "hinf_1p4_epsilon_worst_case",
+    "hinf_1p4_u_nominal",
+    "hinf_1p4_u_worst_case",
+    "hinf_1p4_x_nominal",
+    "hinf_1p4_x_worst_case",
     "hinf_1p5_F_worst_policy",
     "hinf_1p5_K",
     "hinf_1p5_P",
@@ -105,6 +114,22 @@
       "worst_case_total_cost_without_penalty": 5305.592609058729
     },
     {
+      "closed_loop_epsilon_energy": 1.518885046213267e-06,
+      "closed_loop_epsilon_l2": 0.0012324305441740995,
+      "delta_v_percent": 4.041729916548296,
+      "epsilon_on_nominal_energy": 9.40010465365106e-07,
+      "epsilon_on_nominal_l2": 0.000969541368568204,
+      "factor": 1.4,
+      "factor_key": "1p4",
+      "gamma": 12833.563799663352,
+      "hinf_peak_forward_velocity": 0.7605548406264071,
+      "nominal_total_cost": 4444.135275451243,
+      "terminal_position_error_m": 0.0007033121264565686,
+      "time_to_peak_step": 16,
+      "worst_case_h_infinity_objective": 4596.595429395369,
+      "worst_case_total_cost_without_penalty": 4846.756343001579
+    },
+    {
       "closed_loop_epsilon_energy": 1.1308586815083292e-06,
       "closed_loop_epsilon_l2": 0.0010634183943812187,
       "delta_v_percent": 3.4990544848597356,
@@ -161,6 +186,8 @@
     "time_to_peak_step": 16,
     "total_cost": 4363.509943825159
   },
+  "output_feedback_certificate_gamma_factor": 1.4,
+  "output_feedback_gamma_selection_issue": "97604a8",
   "plant": {
     "bw_contract": "top physical 8x8 block is identity; lag rows are zero",
     "bw_shape": [
