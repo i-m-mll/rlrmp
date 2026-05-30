@@ -17,6 +17,7 @@ import numpy as np
 from jaxtyping import Array, Float
 
 from rlrmp.analysis.cs_game_card import (
+    OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     PRIMARY_GAMMA_FACTOR,
     TARGET_POS,
     materialize_reference,
@@ -167,7 +168,7 @@ def simulate_full_state_released_forward(
 def analyze_phase1_stochastic(
     *,
     seeds: tuple[int, ...] = DEFAULT_SEEDS,
-    gamma_factor: float = PRIMARY_GAMMA_FACTOR,
+    gamma_factor: float = OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     config: OutputFeedbackConfig = OutputFeedbackConfig(),
 ) -> Phase1StochasticResult:
     """Evaluate Phase 1 controller families in the released stochastic lane."""
@@ -286,7 +287,9 @@ def result_summary(
 ) -> dict[str, Any]:
     """Return a JSON-serializable Phase 1 stochastic-lane summary."""
 
-    schedule = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,)).schedule
+    schedule = materialize_reference(
+        gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,)
+    ).schedule
     arms = {
         "full_state_lqr": {
             "controller_family": "LQR",
@@ -325,6 +328,7 @@ def result_summary(
         "no_bellman_claim": True,
         "bellman_claim": "none; stochastic Bellman parity is explicitly out of scope",
         "primary_gamma_factor": PRIMARY_GAMMA_FACTOR,
+        "output_feedback_certificate_gamma_factor": OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
         "robust_gamma_factor": result.robust_gamma_factor,
         "robust_gamma": result.robust_gamma,
         "n_trials": len(result.trials),
@@ -431,6 +435,8 @@ Bellman objective or Bellman parity is claimed in this lane.
 ## Summary Metrics
 
 Trials: `{summary["n_trials"]}`. Seeds: `{summary["seeds"]}`.
+Output-feedback certificate gamma factor:
+`{summary["output_feedback_certificate_gamma_factor"]}`.
 
 {"\n".join(rows)}
 
@@ -468,7 +474,9 @@ def write_outputs(
 ) -> dict[str, Any]:
     """Write tracked Phase 1 stochastic summary outputs and bulk arrays."""
 
-    reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
+    reference = materialize_reference(
+        gamma_factors=(PRIMARY_GAMMA_FACTOR, OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR)
+    )
     result = analyze_phase1_stochastic(seeds=seeds)
     summary = {
         **result_summary(result, discretization=discretization),

@@ -49,14 +49,20 @@ fixed C&S schedule, not an alpha sweep.
 ## Gamma And Epsilon
 
 - `gamma_star = 9166.831285`.
-- Primary C&S-matched target: `gamma = 1.05 * gamma_star`, giving
+- Full-state C&S speed-matching target: `gamma = 1.05 * gamma_star`, giving
   Delta-v `+7.4604%`.
+- Output-feedback robustness diagnostics use
+  `gamma = 1.4 * gamma_star`, giving
+  full-state Delta-v `+4.0417%` at the same
+  factor. This value is selected from the output-feedback gamma sweep on
+  `97604a8` and must be updated there, not
+  by reusing the full-state speed-matching factor.
 - Conservative diagnostic point: `gamma = 1.5 * gamma_star`, giving
   Delta-v `+3.4991%`.
 
 Gamma is not an epsilon budget. It is the H-infinity attenuation/penalty
-parameter. If an open-loop PGD adversary needs a budget, the game-card mapping
-is:
+parameter. If a full-state open-loop PGD adversary needs a budget, the
+game-card mapping for the full-state speed-matching target is:
 
 ```text
 gamma_design = 1.05 * gamma_star
@@ -102,6 +108,7 @@ LQR baseline:
 |---:|---:|---:|---:|---:|---:|---:|
 | 1.001 | 9176 | +8.2794% | 0.791532 | 16 | 2.22032e-06 | 0.00260044 |
 | 1.05 | 9625.17 | +7.4604% | 0.785545 | 16 | 6.55196e-06 | 0.00232849 |
+| 1.4 | 12833.6 | +4.0417% | 0.760555 | 16 | 0.000703312 | 0.00123243 |
 | 1.5 | 13750.2 | +3.4991% | 0.756588 | 16 | 0.000939616 | 0.00106342 |
 | 2 | 18333.7 | +1.9327% | 0.745138 | 16 | 0.00178533 | 0.000582073 |
 | 3 | 27500.5 | +0.8480% | 0.737208 | 16 | 0.00249514 | 0.00025389 |

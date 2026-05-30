@@ -7,6 +7,8 @@ import pytest
 
 from rlrmp.analysis.cs_game_card import (
     DIAGNOSTIC_GAMMA_FACTOR,
+    OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+    OUTPUT_FEEDBACK_GAMMA_SELECTION_ISSUE_ID,
     PRIMARY_GAMMA_FACTOR,
     assert_physical_selector_bw,
     build_canonical_game,
@@ -19,7 +21,14 @@ from rlrmp.analysis.cs_game_card import (
 
 @pytest.fixture(scope="module")
 def reference():
-    return materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR, DIAGNOSTIC_GAMMA_FACTOR, 3.0))
+    return materialize_reference(
+        gamma_factors=(
+            PRIMARY_GAMMA_FACTOR,
+            OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+            DIAGNOSTIC_GAMMA_FACTOR,
+            3.0,
+        )
+    )
 
 
 def test_canonical_game_uses_physical_selector_bw():
@@ -54,7 +63,15 @@ def test_gamma_frontier_marks_105_as_primary_target(reference):
     assert summary["rerun_metadata"]["discretization"] == "euler"
     assert summary["rerun_metadata"]["lane"] == "deterministic_analytical"
     assert summary["primary_gamma_factor"] == PRIMARY_GAMMA_FACTOR
+    assert (
+        summary["output_feedback_certificate_gamma_factor"]
+        == OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR
+    )
+    assert (
+        summary["output_feedback_gamma_selection_issue"] == OUTPUT_FEEDBACK_GAMMA_SELECTION_ISSUE_ID
+    )
     assert PRIMARY_GAMMA_FACTOR in by_factor
+    assert OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR in by_factor
     assert DIAGNOSTIC_GAMMA_FACTOR in by_factor
 
     primary_delta = by_factor[PRIMARY_GAMMA_FACTOR]["delta_v_percent"]
