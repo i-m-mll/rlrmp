@@ -29,6 +29,36 @@
 - The feedbax repo is at `~/Main/10 Projects/10 PhD/20 Feedbax/feedbax/`. Use worktrees for feature work, following the same conventions as this repo.
 - Feedbax's protected branch is `develop`, not `main`. All canonical feedbax behaviour, APIs, and architectural patterns reside on `develop`. Feedbax-side feature branches must derive from `develop` (`wt feature/<name> develop`), not from `main`. When reading feedbax source code to understand current behaviour, check out develop or read files at the develop branch reference (`git show develop:path/to/file.py`). The feedbax `main` branch may lag develop substantially and should not be treated as authoritative.
 
+## Standard Certificate Presentation
+
+When presenting Phase 3 bridge standard-certificate results, show a table rather
+than only a prose summary. Include row identity, status, training distribution,
+evaluation lens, objective/cost ratio, state-weighted action mismatch, closed-loop
+transition mismatch, value gap, Bellman-Hessian residual, exact-L2/gamma
+sidecars, and raw gain mismatch as a diagnostic sidecar.
+
+Use superscript annotations below the table when state-weighted action mismatch
+and Bellman-Hessian residual are both shown. The standard annotation is:
+`<sup>1</sup> State-weighted action mismatch and Bellman-Hessian residual can
+match exactly when the Bellman action Hessian is a scalar multiple of the action
+cost geometry on that row. In that case they are the same evidence expressed
+through two certificate views; they diverge when downstream value geometry
+weights action directions differently.`
+
+Also annotate raw gain mismatch as diagnostic-only:
+`<sup>2</sup> Gain mismatch is a diagnostic sidecar, not the bridge gate. The
+gate is disturbance-relevant same-game behavior under the standard certificate
+components.`
+
+Do not leave standard components partial when they can be recomputed. If a
+compact manifest lacks fitted gains, trajectories, sampled states, or
+covariances, rerun the relevant deterministic or stochastic analysis to recover
+the full certificate inputs. Only use `missing` or `not_applicable` when the
+quantity is truly impossible or not meaningful for the architecture/evaluation
+lens. Evaluation lenses such as nominal-clean, Riccati-epsilon, process-noise,
+coverage-induced, and held-out validation are not training axes; keep them
+separate from optimal-vs-robust and coverage-vs-no-coverage training factors.
+
 ## RunPod Deploy Runbook for rlrmp Experiments
 
 ### Current training-method orientation (May 2026)

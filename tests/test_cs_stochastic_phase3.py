@@ -107,6 +107,24 @@ def test_phase3_stochastic_result_reports_required_metrics() -> None:
     assert row["deterministic_lambda_over_gamma_squared"] > 0.0
 
 
+def test_phase3_stochastic_result_retains_certificate_trajectory_arrays() -> None:
+    result = run_phase3_stochastic_evaluation(
+        config=Phase3StochasticConfig(n_trials=2, seed=6),
+        controllers=_small_controller_specs(),
+    )
+    reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
+    horizon = reference.schedule.T
+    state_dim = reference.plant.n
+    action_dim = reference.plant.m_u
+
+    for label in ("analytical_lqr_reference", "scratch_smoke", "preservation_smoke"):
+        key = label.replace("/", "_").replace(" ", "_").replace(".", "p").replace("-", "_")
+        assert result.arrays[f"{key}_x"].shape == (2, horizon + 1, state_dim)
+        assert result.arrays[f"{key}_x_hat"].shape == (2, horizon + 1, state_dim)
+        assert result.arrays[f"{key}_u_command"].shape == (2, horizon, action_dim)
+        assert result.arrays[f"{key}_u_applied"].shape == (2, horizon, action_dim)
+
+
 def test_phase3_process_noise_sweep_propagates_explicit_scale_cells() -> None:
     result = run_phase3_process_noise_sweep(
         config=Phase3StochasticConfig(
