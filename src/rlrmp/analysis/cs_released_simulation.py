@@ -17,7 +17,7 @@ import jax.random as jr
 from jaxtyping import Array, Float
 
 from rlrmp.analysis.cs_game_card import TARGET_POS
-from rlrmp.analysis.hinf_riccati import PlantLinearization, RiccatiSolution
+from rlrmp.analysis.hinf_riccati import CostSchedule, PlantLinearization, RiccatiSolution
 from rlrmp.analysis.output_feedback import (
     OutputFeedbackConfig,
     delayed_observation_matrix,
@@ -120,6 +120,8 @@ class CSExtLQGComparatorPath:
     state_covariances: Float[Array, "T_plus_1 n n"]
     noise_covariances: CSNoiseCovariances
     parity_status: str
+    n_iterations: int = 0
+    expected_cost: float | None = None
 
 
 @dataclass(frozen=True)
@@ -235,15 +237,28 @@ def build_extlqg_comparator_path(
     plant: PlantLinearization,
     controller_gains: Float[Array, "T m_u n"],
     covariances: CSNoiseCovariances,
+    schedule: CostSchedule | None = None,
     config: OutputFeedbackConfig = OutputFeedbackConfig(),
 ) -> CSExtLQGComparatorPath:
     """Build the explicit extLQG comparator path scaffold.
 
     The shape contract matches the C&S released-code chain
-    ``extLQG -> computeOFC -> computeExtKalman``. Until the MATLAB iteration is
-    ported in full, ``controller_gains`` are supplied by the caller and the
-    estimator arrays come from the existing delayed Kalman path.
+    ``extLQG -> computeOFC -> computeExtKalman``. When ``schedule`` is omitted,
+    this returns the historical scaffold: caller-supplied controller gains plus
+    the local delayed Kalman estimator. When ``schedule`` is supplied, this runs
+    the C&S fixed-point iteration and replaces the supplied controller gains
+    with the extLQG gains.
     """
+
+    if schedule is not None:
+        result = solve_extlqg_fixed_point(
+            plant,
+            schedule,
+            covariances,
+            initial_estimator_gains=None,
+            config=config,
+        )
+        return result
 
     estimator_gains = kalman_estimator_gains(plant, controller_gains, config)
     state_covariances = _kalman_state_covariance_sequence(
@@ -263,6 +278,195 @@ def build_extlqg_comparator_path(
             "surface; full MATLAB fixed-point iteration still replaces gains"
         ),
     )
+
+
+def solve_extlqg_fixed_point(
+    plant: PlantLinearization,
+    schedule: CostSchedule,
+    covariances: CSNoiseCovariances,
+    *,
+    initial_estimator_gains: Float[Array, "T n n_obs"] | None = None,
+    config: OutputFeedbackConfig = OutputFeedbackConfig(),
+    tol: float = 1e-14,
+    max_iter: int = 100,
+) -> CSExtLQGComparatorPath:
+    """Port the released C&S ``extLQG`` fixed-point comparator.
+
+    The implementation follows ``extLQG.m``: alternate the backward
+    ``computeOFC`` control recursion and the forward ``computeExtKalman``
+    estimator recursion until expected cost stops changing. The additive
+    state-noise covariance is the sum of the forward-simulation motor and
+    process covariances; this keeps the local split noise contract compatible
+    with C&S's single ``oXi`` argument.
+    """
+
+    T = schedule.T
+    H = delayed_observation_matrix(plant, config)
+    estimator_gains = (
+        jnp.zeros((T, plant.n, config.n_phys), dtype=jnp.float64)
+        if initial_estimator_gains is None
+        else initial_estimator_gains.astype(jnp.float64)
+    )
+    state_noise = covariances.motor + covariances.process
+    initial_covariance = jnp.eye(plant.n, dtype=jnp.float64) * jnp.asarray(
+        config.estimator_initial_covariance,
+        dtype=jnp.float64,
+    )
+    current = 1.0e6
+    expected_cost = current
+    controller_gains = jnp.zeros((T, plant.m_u, plant.n), dtype=jnp.float64)
+    state_covariances = jnp.repeat(initial_covariance[None, :, :], T + 1, axis=0)
+
+    for iteration in range(1, max_iter + 1):
+        controller_gains, sx0, se0, scalar_cost = _compute_ofc(
+            plant,
+            schedule,
+            estimator_gains,
+            H,
+            covariances.signal_dependent_state,
+            state_noise,
+            covariances.sensory,
+        )
+        estimator_gains, state_covariances = _compute_ext_kalman(
+            plant,
+            H,
+            controller_gains,
+            covariances.signal_dependent_state,
+            state_noise,
+            covariances.sensory,
+            initial_covariance,
+            initial_covariance,
+        )
+        x0 = _default_output_feedback_initial_state(plant, config)
+        expected_cost = float(x0 @ sx0 @ x0 + jnp.trace((sx0 + se0) @ initial_covariance) + scalar_cost)
+        relative_change = abs(current - expected_cost) / max(abs(expected_cost), 1e-300)
+        current = expected_cost
+        if relative_change <= tol:
+            break
+
+    return CSExtLQGComparatorPath(
+        function_chain=EXTLQG_MATLAB_FUNCTION_CHAIN,
+        controller_gains=controller_gains,
+        estimator_gains=estimator_gains,
+        state_covariances=state_covariances,
+        noise_covariances=covariances,
+        parity_status="fixed_point: local port of extLQG/computeOFC/computeExtKalman",
+        n_iterations=iteration,
+        expected_cost=expected_cost,
+    )
+
+
+def _compute_ofc(
+    plant: PlantLinearization,
+    schedule: CostSchedule,
+    estimator_gains: Float[Array, "T n n_obs"],
+    H: Float[Array, "n_obs n"],
+    signal_dependent_state: Float[Array, "n m_u m_u"],
+    state_noise: Float[Array, "n n"],
+    sensory_noise: Float[Array, "n_obs n_obs"],
+) -> tuple[
+    Float[Array, "T m_u n"],
+    Float[Array, "n n"],
+    Float[Array, "n n"],
+    Float[Array, ""],
+]:
+    """C&S ``computeOFC`` backward recursion."""
+
+    A = plant.A.astype(jnp.float64)
+    B = plant.B.astype(jnp.float64)
+    curr_sx = schedule.Q_f.astype(jnp.float64)
+    curr_se = jnp.zeros_like(curr_sx)
+    scalar = jnp.asarray(0.0, dtype=jnp.float64)
+    gains_rev = []
+    R_terminal = schedule.R[-1].astype(jnp.float64)
+    for t in range(schedule.T - 1, -1, -1):
+        value_sum = curr_sx + curr_se
+        sdn = jnp.einsum(
+            "nuj,nm,mdj->ud",
+            signal_dependent_state,
+            value_sum,
+            signal_dependent_state,
+        )
+        K_est = estimator_gains[t]
+        statedn = jnp.zeros_like(curr_sx)
+        L_t = jnp.linalg.solve(R_terminal + B.T @ curr_sx @ B + sdn, B.T @ curr_sx @ A)
+        prev_sx = curr_sx
+        prev_se = curr_se
+        curr_sx = schedule.Q[t].astype(jnp.float64) + A.T @ curr_sx @ (A - B @ L_t) + statedn
+        curr_se = A.T @ prev_sx @ B @ L_t + (A - K_est @ H).T @ prev_se @ (A - K_est @ H)
+        scalar = scalar + jnp.trace(
+            prev_sx @ state_noise + prev_se @ (state_noise + K_est @ sensory_noise @ K_est.T)
+        )
+        gains_rev.append(L_t)
+    return (
+        jnp.stack(list(reversed(gains_rev)), axis=0),
+        0.5 * (curr_sx + curr_sx.T),
+        0.5 * (curr_se + curr_se.T),
+        scalar,
+    )
+
+
+def _compute_ext_kalman(
+    plant: PlantLinearization,
+    H: Float[Array, "n_obs n"],
+    controller_gains: Float[Array, "T m_u n"],
+    signal_dependent_state: Float[Array, "n m_u m_u"],
+    state_noise: Float[Array, "n n"],
+    sensory_noise: Float[Array, "n_obs n_obs"],
+    initial_xhat_covariance: Float[Array, "n n"],
+    initial_error_covariance: Float[Array, "n n"],
+) -> tuple[Float[Array, "T n n_obs"], Float[Array, "T_plus_1 n n"]]:
+    """C&S ``computeExtKalman`` forward recursion."""
+
+    A = plant.A.astype(jnp.float64)
+    B = plant.B.astype(jnp.float64)
+    sigma_e = initial_error_covariance.astype(jnp.float64)
+    sigma_x = initial_xhat_covariance.astype(jnp.float64)
+    sigma_ex = jnp.zeros_like(sigma_e)
+    gains = []
+    state_covariances = [sigma_e]
+    for L_t in controller_gains:
+        s_temp = sigma_e + sigma_x + sigma_ex + sigma_ex.T
+        statedn = jnp.zeros((H.shape[0], H.shape[0]), dtype=jnp.float64)
+        sdn = jnp.einsum(
+            "nuj,ua,ab,vb,mvj->nm",
+            signal_dependent_state,
+            L_t,
+            sigma_x,
+            L_t,
+            signal_dependent_state,
+        )
+        innovation_cov = H @ sigma_e @ H.T + sensory_noise + statedn
+        K_est = A @ sigma_e @ H.T @ jnp.linalg.inv(innovation_cov)
+        gains.append(K_est)
+
+        sigma_e_prev = sigma_e
+        sigma_e = state_noise + (A - K_est @ H) @ sigma_e @ A.T + sdn
+        term = (A - B @ L_t) @ sigma_ex @ H.T @ K_est.T
+        sigma_x = (
+            K_est @ H @ sigma_e_prev @ A.T
+            + (A - B @ L_t) @ sigma_x @ (A - B @ L_t).T
+            + term
+            + term.T
+        )
+        sigma_ex = (A - B @ L_t) @ sigma_ex @ (A - K_est @ H).T
+        sigma_e = 0.5 * (sigma_e + sigma_e.T)
+        sigma_x = 0.5 * (sigma_x + sigma_x.T)
+        state_covariances.append(sigma_e)
+        _ = s_temp
+    return jnp.stack(gains, axis=0), jnp.stack(state_covariances, axis=0)
+
+
+def _default_output_feedback_initial_state(
+    plant: PlantLinearization,
+    config: OutputFeedbackConfig,
+) -> Array:
+    """Avoid an import cycle with ``output_feedback.make_cs_output_feedback_initial_state``."""
+
+    x_phys = jnp.zeros((config.n_phys,), dtype=jnp.float64)
+    pos_lo, pos_hi = plant.pos_slice
+    x_phys = x_phys.at[pos_lo:pos_hi].set((-TARGET_POS).astype(jnp.float64))
+    return jnp.tile(x_phys, config.delay_steps + 1)
 
 
 def simulate_lqg_released_forward(

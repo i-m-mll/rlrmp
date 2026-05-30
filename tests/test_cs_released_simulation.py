@@ -12,6 +12,7 @@ from rlrmp.analysis.cs_released_simulation import (
     FixedStepPerturbation,
     build_extlqg_comparator_path,
     cs_signal_dependent_state_tensor,
+    default_cs_noise_covariances,
     sample_forward_noise_draws,
     simulate_lqg_released_forward,
     simulate_robust_released_forward,
@@ -234,7 +235,7 @@ def test_signal_dependent_noise_is_state_space_csdn_times_command() -> None:
 def test_extlqg_comparator_path_tracks_matlab_chain_and_shapes() -> None:
     reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
     plant = reference.plant
-    covariances = zero_noise_covariances(plant)
+    covariances = default_cs_noise_covariances(plant)
     comparator = build_extlqg_comparator_path(
         plant,
         reference.lqr_solution.K,
@@ -247,3 +248,25 @@ def test_extlqg_comparator_path_tracks_matlab_chain_and_shapes() -> None:
     assert comparator.state_covariances.shape == (reference.schedule.T + 1, plant.n, plant.n)
     assert comparator.noise_covariances is covariances
     assert "full MATLAB fixed-point iteration" in comparator.parity_status
+
+
+def test_extlqg_fixed_point_returns_finite_controller_path() -> None:
+    reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
+    plant = reference.plant
+    covariances = default_cs_noise_covariances(plant)
+    comparator = build_extlqg_comparator_path(
+        plant,
+        reference.lqr_solution.K,
+        covariances,
+        schedule=reference.schedule,
+    )
+
+    assert comparator.function_chain == ("extLQG", "computeOFC", "computeExtKalman")
+    assert comparator.controller_gains.shape == reference.lqr_solution.K.shape
+    assert comparator.estimator_gains.shape == (reference.schedule.T, plant.n, 8)
+    assert comparator.state_covariances.shape == (reference.schedule.T + 1, plant.n, plant.n)
+    assert comparator.n_iterations > 0
+    assert comparator.expected_cost is not None
+    assert jnp.isfinite(comparator.controller_gains).all()
+    assert jnp.isfinite(comparator.estimator_gains).all()
+    assert "fixed_point" in comparator.parity_status
