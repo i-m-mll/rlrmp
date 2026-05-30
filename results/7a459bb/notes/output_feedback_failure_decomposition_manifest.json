@@ -1,0 +1,373 @@
+{
+  "format": "rlrmp.output_feedback_failure_decomposition.v1",
+  "issue": "c45adde",
+  "rows": [
+    {
+      "certificate": {
+        "bellman_hessian_residual": 0.48157127710410025,
+        "closed_loop_transition_mismatch": 9.46451949671906e-05,
+        "state_weighted_action_mismatch": 0.48157127709920317,
+        "value_gap": 0.00011168367237251871
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": true,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened__scratch",
+      "evaluation_lens": "nominal_clean",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.0016503908865026671,
+        "strong_fraction_mean": 2.7838726801412406e-05,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 416.3776961331086,
+        "unvisited_fraction_max": 0.9999999999992288,
+        "unvisited_fraction_mean": 0.9999721612731985,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9999721612731985,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 0.48157127709920317,
+          "training_objective": 325.29461454472437,
+          "training_objective_ratio_to_reference": 1.0131700438496394
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.27088384336830684,
+          "training_objective": 323.9838591717948,
+          "training_objective_ratio_to_reference": 1.0090875351965962
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.12039281927480115,
+          "training_objective": 323.1166121601109,
+          "training_objective_ratio_to_reference": 1.006386387825663
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.030098204818700378,
+          "training_objective": 322.20160963276237,
+          "training_objective_ratio_to_reference": 1.0035365000337801
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0,
+          "training_objective": 321.06615915008246,
+          "training_objective_ratio_to_reference": 1.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 160.95270342958543,
+        "learned_objective": 325.29461454472437,
+        "learned_projected_gradient_norm": 160.95270342958543,
+        "learned_to_reference_objective_ratio": 1.0131700438496394,
+        "reference_gradient_norm": 6.7181764620140136e-12,
+        "reference_objective": 321.06615915008246,
+        "reference_projected_gradient_norm": 6.7181764620140136e-12
+      },
+      "run_id": "no_coverage__strong_optimizer_whitened__scratch__nominal_clean",
+      "source_optimizer": {
+        "n_function_evaluations": 2185,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "no-coverage/reference",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 1.2158912997425912,
+        "closed_loop_transition_mismatch": 0.01562330166712985,
+        "state_weighted_action_mismatch": 1.2158912997421099,
+        "value_gap": 0.025137285407443723
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": true,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened__scratch",
+      "evaluation_lens": "riccati_epsilon_response",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.001434490403916767,
+        "strong_fraction_mean": 3.0601974233998135e-05,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 416.3776961331086,
+        "unvisited_fraction_max": 0.9999999999632693,
+        "unvisited_fraction_mean": 0.9999693980257659,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9999693980257659,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 1.2158912997421099,
+          "training_objective": 325.29461454472437,
+          "training_objective_ratio_to_reference": 1.0131700438496394
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.6839388561049364,
+          "training_objective": 323.9838591717948,
+          "training_objective_ratio_to_reference": 1.0090875351965962
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.3039728249355267,
+          "training_objective": 323.1166121601109,
+          "training_objective_ratio_to_reference": 1.006386387825663
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.07599320623388178,
+          "training_objective": 322.20160963276237,
+          "training_objective_ratio_to_reference": 1.0035365000337801
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0,
+          "training_objective": 321.06615915008246,
+          "training_objective_ratio_to_reference": 1.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 160.95270342958543,
+        "learned_objective": 325.29461454472437,
+        "learned_projected_gradient_norm": 160.95270342958543,
+        "learned_to_reference_objective_ratio": 1.0131700438496394,
+        "reference_gradient_norm": 6.7181764620140136e-12,
+        "reference_objective": 321.06615915008246,
+        "reference_projected_gradient_norm": 6.7181764620140136e-12
+      },
+      "run_id": "no_coverage__strong_optimizer_whitened__scratch__riccati_epsilon_response",
+      "source_optimizer": {
+        "n_function_evaluations": 2185,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "no-coverage/reference",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 1.4247376961620269e-05,
+        "closed_loop_transition_mismatch": 1.9824391475586305e-11,
+        "state_weighted_action_mismatch": 1.4247376959335943e-05,
+        "value_gap": 7.487165374050103e-12
+      },
+      "classification": {
+        "classification": "not_failure",
+        "reasons": [
+          "standard mismatch and objective ratio are both within tolerance"
+        ]
+      },
+      "controller_label": "strong_optimizer_whitened__bellman_init",
+      "evaluation_lens": "nominal_clean",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 1.569792208421891e-05,
+        "strong_fraction_mean": 4.722169838344364e-07,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 0.05562606675426062,
+        "unvisited_fraction_max": 0.9999999999999797,
+        "unvisited_fraction_mean": 0.9999995277830163,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9999995277830163,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 1.4247376959335943e-05,
+          "training_objective": 321.0661591828935,
+          "training_objective_ratio_to_reference": 1.000000000102194
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 8.014149539476337e-06,
+          "training_objective": 321.0661591685382,
+          "training_objective_ratio_to_reference": 1.0000000000574827
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 3.561844239771188e-06,
+          "training_objective": 321.0661591582848,
+          "training_objective_ratio_to_reference": 1.0000000000255471
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 8.90461059914133e-07,
+          "training_objective": 321.0661591521331,
+          "training_objective_ratio_to_reference": 1.000000000006387
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0,
+          "training_objective": 321.06615915008246,
+          "training_objective_ratio_to_reference": 1.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 0.004040950146974297,
+        "learned_objective": 321.0661591828935,
+        "learned_projected_gradient_norm": 0.004040950146974297,
+        "learned_to_reference_objective_ratio": 1.000000000102194,
+        "reference_gradient_norm": 6.7181764620140136e-12,
+        "reference_objective": 321.06615915008246,
+        "reference_projected_gradient_norm": 6.7181764620140136e-12
+      },
+      "run_id": "no_coverage__strong_optimizer_whitened__bellman_init__nominal_clean",
+      "source_optimizer": {
+        "n_function_evaluations": 2067,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "no-coverage/reference",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 0.0006312629828308419,
+        "closed_loop_transition_mismatch": 1.4221992637205605e-09,
+        "state_weighted_action_mismatch": 0.0006312629828309173,
+        "value_gap": -1.486655075702502e-06
+      },
+      "classification": {
+        "classification": "not_failure",
+        "reasons": [
+          "standard mismatch and objective ratio are both within tolerance"
+        ]
+      },
+      "controller_label": "strong_optimizer_whitened__bellman_init",
+      "evaluation_lens": "riccati_epsilon_response",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.0002572002964249904,
+        "strong_fraction_mean": 2.9795062500038085e-05,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 0.05562606675426062,
+        "unvisited_fraction_max": 0.9999999999995939,
+        "unvisited_fraction_mean": 0.9999702049375003,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9999702049375003,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 0.0006312629828309173,
+          "training_objective": 321.0661591828935,
+          "training_objective_ratio_to_reference": 1.000000000102194
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.0003550854278423923,
+          "training_objective": 321.0661591685382,
+          "training_objective_ratio_to_reference": 1.0000000000574827
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.00015781574570773222,
+          "training_objective": 321.0661591582848,
+          "training_objective_ratio_to_reference": 1.0000000000255471
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 3.945393642693161e-05,
+          "training_objective": 321.0661591521331,
+          "training_objective_ratio_to_reference": 1.000000000006387
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0,
+          "training_objective": 321.06615915008246,
+          "training_objective_ratio_to_reference": 1.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 0.004040950146974297,
+        "learned_objective": 321.0661591828935,
+        "learned_projected_gradient_norm": 0.004040950146974297,
+        "learned_to_reference_objective_ratio": 1.000000000102194,
+        "reference_gradient_norm": 6.7181764620140136e-12,
+        "reference_objective": 321.06615915008246,
+        "reference_projected_gradient_norm": 6.7181764620140136e-12
+      },
+      "run_id": "no_coverage__strong_optimizer_whitened__bellman_init__riccati_epsilon_response",
+      "source_optimizer": {
+        "n_function_evaluations": 2067,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "no-coverage/reference",
+      "source_standard_status": "full_standard_certificate"
+    }
+  ],
+  "scope": "Saved no-coverage output-feedback key rows. The materializer reuses stored gains and rollout arrays, evaluates the same clean training objective at learned/reference gains, and projects gain error through the standard-certificate evaluation state distributions.",
+  "source_artifacts": {
+    "saved_rollout_arrays": "_artifacts/7a459bb/output_feedback_rollout_recovery/output_feedback_rollout_recovery.npz"
+  },
+  "source_issue": "7a459bb",
+  "source_manifests": {
+    "rollout_recovery": "results/7a459bb/notes/output_feedback_rollout_recovery_manifest.json",
+    "standard_certificate": "results/7a459bb/notes/output_feedback_sweep_standard_certificates_manifest.json"
+  },
+  "standard_certificate_issue": "d01c35a",
+  "summary": {
+    "classification_counts": {
+      "not_failure": 2,
+      "optimizer_basin": 2
+    },
+    "evaluation_lenses": [
+      "nominal_clean",
+      "riccati_epsilon_response"
+    ],
+    "labels": [
+      "strong_optimizer_whitened__scratch",
+      "strong_optimizer_whitened__bellman_init"
+    ],
+    "n_controller_labels": 2,
+    "n_rows": 4
+  },
+  "umbrella": "43e8728"
+}

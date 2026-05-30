@@ -50,6 +50,14 @@ Also annotate raw gain mismatch as diagnostic-only:
 gate is disturbance-relevant same-game behavior under the standard certificate
 components.`
 
+When a standard-certificate row fails, present the failure decomposition as the
+standard companion diagnostic rather than as a replacement certificate. The
+table should include row identity, classification, learned/reference objective,
+learned/reference gradient or projected-gradient where defined, learned-to-
+reference interpolation, and visited/weakly visited gain-error decomposition
+from the same state distribution used by the row. Keep annotations explicit that
+failure decomposition explains the failure but does not change the bridge gate.
+
 Do not leave standard components partial when they can be recomputed. If a
 compact manifest lacks fitted gains, trajectories, sampled states, or
 covariances, rerun the relevant deterministic or stochastic analysis to recover
