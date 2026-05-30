@@ -1,9 +1,10 @@
-"""Apply bridge standard-certificate rows to 7a459bb sweep summaries.
+"""Apply bridge standard-certificate rows to 7a459bb sweep outputs.
 
-The recent coverage/noise sweep manifests intentionally keep tracked outputs
-small.  This materializer uses the saved no-coverage arrays where available and
-records explicit missing component rows where compact sweep manifests only
-preserve scalar summaries.
+The tracked sweep manifests are intentionally compact, so this materializer
+reruns the deterministic sweep cells and the released-stochastic process-noise
+evaluation when needed to recover the gains, trajectories, and covariances used
+by the standard certificate. Tracked outputs stay small; regenerated bulk arrays
+remain in ignored artifacts or in memory.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -37,10 +39,22 @@ from rlrmp.analysis.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     materialize_reference,
 )
+from rlrmp.analysis.cs_stochastic_phase3 import (
+    Phase3StochasticConfig,
+    process_noise_sweep_summary,
+    run_phase3_process_noise_sweep,
+)
+from rlrmp.analysis.linear_round_trip import LinearTrainingConfig
 from rlrmp.analysis.output_feedback import (
     OutputFeedbackConfig,
     kalman_estimator_joint_matrices,
     rollout_with_kalman_estimator,
+)
+from rlrmp.analysis.output_feedback_rollout_recovery import (
+    STRONG_OPTIMIZER_WHITENED,
+    eigenspectrum_coverage_conditions,
+    result_summary as rollout_result_summary,
+    run_output_feedback_rollout_recovery,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
@@ -131,9 +145,16 @@ def materialize() -> dict[str, Any]:
     rows.extend(
         _saved_no_coverage_rows(source_manifests["no_coverage"], arrays, reference, output_config)
     )
-    rows.extend(_initial_state_rows(source_manifests["initial_state"]))
-    rows.extend(_process_noise_rows(source_manifests["process_noise"]))
-    rows.extend(_eigenspectrum_rows(source_manifests["eigenspectrum"]))
+    rows.extend(_initial_state_rows(source_manifests["initial_state"], reference, output_config))
+    rows.extend(
+        _process_noise_rows(
+            source_manifests["process_noise"],
+            source_manifests["no_coverage"],
+            reference,
+            output_config,
+        )
+    )
+    rows.extend(_eigenspectrum_rows(source_manifests["eigenspectrum"], reference, output_config))
 
     row_dicts = [row.to_json_dict() for row in rows]
     status_counts = Counter(row.status for row in rows)
@@ -160,15 +181,13 @@ def materialize() -> dict[str, Any]:
             ],
         },
         "result": (
-            "Full standard-certificate components are available only for the saved "
-            "no-coverage/reference rows backed by the rollout-recovery NPZ; those "
-            "rows are now evaluated on both nominal-clean and Riccati-epsilon "
-            "state lenses. The "
-            "recent compact sweep manifests provide deterministic behavioral, "
-            "optimizer, gain-diagnostic, exact-L2/gamma, and coverage-rank sidecars "
-            "where those summaries were saved, but they do not include enough raw "
-            "gains, rollout state/action arrays, covariances, or value matrices to "
-            "recompute every standard component."
+            "Full standard-certificate components are now available for the "
+            "no-coverage/reference rows and for rerun deterministic initial-state "
+            "and eigenspectrum coverage rows on nominal-clean and Riccati-epsilon "
+            "evaluation lenses. Released-stochastic process-noise rows are rerun "
+            "with common random numbers so state/action, transition, value-gap, "
+            "Bellman-Hessian, visited-subspace, behavioral, exact-L2/gamma, and "
+            "gain-diagnostic fields are all explicit when defined."
         ),
         "rows": row_dicts,
     }
@@ -277,112 +296,139 @@ def _ensure_reference_under_epsilon_arrays(
     arrays["lqr_under_eps_x_hat"] = np.asarray(rollout.x_hat)
 
 
-def _initial_state_rows(manifest: dict[str, Any]) -> list[BridgeRunManifest]:
+def _initial_state_rows(
+    manifest: dict[str, Any],
+    reference: Any,
+    output_config: OutputFeedbackConfig,
+) -> list[BridgeRunManifest]:
     rows = []
+    base_config = LinearTrainingConfig(**manifest["base_training_config"])
     for cell in manifest["cells"]:
-        fit = cell["fits"][0]
-        components = _summary_fit_components(
-            fit=fit,
-            available_visited=_visited_summary_component(
-                state_label="initial_state_training_ensemble",
-                source="summary_manifest.initial_state_ensemble",
-                diagnostics=cell["diagnostics"]["initial_state_ensemble"],
-                extra={
+        training_config = replace(
+            base_config,
+            basis_scale=cell["basis_scale"],
+            random_state_scale=cell["random_state_scale"],
+        )
+        result = run_output_feedback_rollout_recovery(
+            conditions=(STRONG_OPTIMIZER_WHITENED,),
+            training_config=training_config,
+            output_config=output_config,
+        )
+        summary = rollout_result_summary(result)
+        fit = summary["fits"][0]
+        rows.extend(
+            _deterministic_fit_rows(
+                fit=fit,
+                arrays=result.arrays,
+                reference=reference,
+                output_config=output_config,
+                family="initial-state coverage",
+                run_parts=("initial_state_coverage", cell["label"], fit["label"]),
+                training_distribution="synthetic_initial_state",
+                source_manifest=SOURCE_MANIFESTS["initial_state"],
+                extra_parameters={
                     "scale_factor": cell["scale_factor"],
                     "basis_scale": cell["basis_scale"],
                     "random_state_scale": cell["random_state_scale"],
                     "n_random_states": cell["n_random_states"],
                     "reach_weight": cell["reach_weight"],
                 },
-            ),
-            missing_reason=(
-                "initial-state sweep manifest stores scalar summaries only; fitted gains "
-                "and rollout state/action arrays were not saved for this cell"
-            ),
-        )
-        spec = BridgeRunSpec(
-            issue_id=ISSUE_ID,
-            run_id=make_bridge_run_id("initial_state_coverage", cell["label"], fit["label"]),
-            objective="optimal",
-            architecture="time_constrained_free_gain",
-            controller_label=fit["label"],
-            optimizer_label="lbfgsb_strong_optimizer_whitened",
-            training_distribution="synthetic_initial_state",
-            evaluation_lane="deterministic",
-            reference_controller="analytical_lqr_kalman",
-            gamma_factor=fit.get("condition", {}).get("gamma_factor"),
-            parameters={
-                "evaluation_distribution": "deterministic_clean_rollout_summary",
-                "distribution_family": "initial-state coverage",
-                "scale_factor": cell["scale_factor"],
-                "basis_scale": cell["basis_scale"],
-                "random_state_scale": cell["random_state_scale"],
-                "source_manifest": _repo_relative(SOURCE_MANIFESTS["initial_state"]),
-            },
-            notes="Partial certificate row from compact initial-state coverage manifest.",
-        )
-        rows.append(
-            BridgeRunManifest(
-                spec=spec,
-                status="partial_summary_certificate",
-                metrics=_fit_metrics(fit),
-                artifacts={"source_manifest": _repo_relative(SOURCE_MANIFESTS["initial_state"])},
-                certificate_components=components,
+                notes=(
+                    "Full standard bundle recomputed by rerunning the initial-state "
+                    "coverage cell from the tracked sweep specification."
+                ),
             )
         )
     return rows
 
 
-def _process_noise_rows(manifest: dict[str, Any]) -> list[BridgeRunManifest]:
+def _process_noise_rows(
+    manifest: dict[str, Any],
+    no_coverage_manifest: dict[str, Any],
+    reference: Any,
+    output_config: OutputFeedbackConfig,
+) -> list[BridgeRunManifest]:
     rows = []
-    for cell in manifest["cells"]:
-        for evaluation in cell["evaluations"]:
-            is_reference = evaluation["label"] == "analytical_lqr_reference"
-            components = _process_summary_components(
-                evaluation=evaluation,
-                missing_reason=(
-                    "process-noise sweep manifest stores Monte Carlo summary statistics "
-                    "but not sampled stochastic state/action trajectories or covariances"
-                ),
-                is_reference=is_reference,
+    config = Phase3StochasticConfig(**manifest["base_monte_carlo"])
+    process_result = run_phase3_process_noise_sweep(
+        config=config,
+        process_covariance_scales=tuple(manifest["process_covariance_scales"]),
+        output_config=output_config,
+    )
+    summary = process_noise_sweep_summary(process_result)
+    optimizer_by_label = _optimizer_metadata_by_label(no_coverage_manifest)
+    for cell, summary_cell in zip(process_result.cells, summary["cells"], strict=True):
+        evaluation_by_label = {row["label"]: row for row in summary_cell["evaluations"]}
+        for evaluation in cell.result.evaluations:
+            label = evaluation.spec.label
+            row_summary = evaluation_by_label[label]
+            key = _safe_key(label)
+            is_reference = label == "analytical_lqr_reference"
+            raw_optimizer = optimizer_by_label.get(label)
+            optimizer_metadata = None if is_reference else raw_optimizer
+            optimizer_not_applicable = None
+            if is_reference:
+                optimizer_not_applicable = "analytical LQR reference has no optimizer metadata"
+            elif optimizer_metadata is None:
+                optimizer_not_applicable = (
+                    "source controller is an initial-controller artifact without a "
+                    "separate stochastic optimizer run"
+                )
+            components = list(
+                _full_standard_components_from_trajectories(
+                    x=cell.result.arrays[f"{key}_x"],
+                    x_hat=cell.result.arrays[f"{key}_x_hat"],
+                    reference=reference,
+                    output_config=output_config,
+                    candidate_gain=np.asarray(evaluation.spec.K),
+                    optimizer_metadata=optimizer_metadata,
+                    optimizer_not_applicable_reason=optimizer_not_applicable,
+                    state_label=(
+                        f"process_noise_{cell.process_covariance_scale:g}_stochastic_coupled_state"
+                    ),
+                    action_state_label=(
+                        f"process_noise_{cell.process_covariance_scale:g}_stochastic_"
+                        "estimated_state"
+                    ),
+                    architecture="reference" if is_reference else "time_constrained_free_gain",
+                )
             )
+            components.extend(_process_diagnostic_sidecars(row_summary))
             spec = BridgeRunSpec(
                 issue_id=ISSUE_ID,
                 run_id=make_bridge_run_id(
                     "process_noise_stochastic",
-                    cell["label"],
-                    evaluation["label"],
+                    cell.label,
+                    label,
                 ),
                 objective="optimal",
                 architecture="reference" if is_reference else "time_constrained_free_gain",
-                controller_label=evaluation["label"],
-                optimizer_label="analytical"
-                if is_reference
-                else evaluation.get("source", "unknown"),
+                controller_label=label,
+                optimizer_label="analytical" if is_reference else evaluation.spec.source,
                 training_distribution="none" if is_reference else "nominal",
                 evaluation_lane="released_stochastic",
                 reference_controller="analytical_lqr_kalman",
-                seed=cell["monte_carlo"]["seed"],
+                seed=cell.result.config.seed,
                 gamma_factor=None,
                 parameters={
                     "evaluation_distribution": "process-noise stochastic",
                     "distribution_family": "process-noise stochastic",
-                    "process_covariance_scale": cell["process_covariance_scale"],
-                    "n_trials": cell["monte_carlo"]["n_trials"],
-                    "motor_covariance_scale": cell["monte_carlo"]["motor_covariance_scale"],
-                    "signal_dependent_scale": cell["monte_carlo"]["signal_dependent_scale"],
+                    "process_covariance_scale": cell.process_covariance_scale,
+                    "n_trials": cell.result.config.n_trials,
+                    "motor_covariance_scale": cell.result.config.motor_covariance_scale,
+                    "signal_dependent_scale": cell.result.config.signal_dependent_scale,
                     "source_manifest": _repo_relative(SOURCE_MANIFESTS["process_noise"]),
                 },
                 notes=(
-                    "Sidecar-only stochastic evaluation row; formal standard components "
-                    "need sampled trajectories/covariances that this manifest does not save."
+                    "Full standard bundle recomputed on common-random-number released-"
+                    "stochastic trajectories for this process-noise scale."
                 ),
             )
             rows.append(
                 BridgeRunManifest(
                     spec=spec,
-                    status="sidecar_only_missing_inputs",
-                    metrics=_process_metrics(evaluation),
+                    status="full_standard_certificate",
+                    metrics=_process_metrics(row_summary),
                     artifacts={
                         "source_manifest": _repo_relative(SOURCE_MANIFESTS["process_noise"])
                     },
@@ -392,64 +438,105 @@ def _process_noise_rows(manifest: dict[str, Any]) -> list[BridgeRunManifest]:
     return rows
 
 
-def _eigenspectrum_rows(manifest: dict[str, Any]) -> list[BridgeRunManifest]:
+def _eigenspectrum_rows(
+    manifest: dict[str, Any],
+    reference: Any,
+    output_config: OutputFeedbackConfig,
+) -> list[BridgeRunManifest]:
     rows = []
-    coverage_by_label = manifest["diagnostics"]["eigenspectrum_coverage"]
-    for fit in manifest["fits"]:
+    result = run_output_feedback_rollout_recovery(
+        conditions=eigenspectrum_coverage_conditions(),
+        training_config=LinearTrainingConfig(),
+        output_config=output_config,
+    )
+    summary = rollout_result_summary(result)
+    for fit in summary["fits"]:
         coverage = fit["condition"]["eigenspectrum_coverage"]
-        condition_label = fit["condition"]["label"]
         family = f"eigenspectrum {coverage['objective']} coverage"
-        components = _summary_fit_components(
-            fit=fit,
-            available_visited=_visited_summary_component(
-                state_label=f"eigenspectrum_{coverage['objective']}_coverage_estimated_state",
-                source="summary_manifest.eigenspectrum_coverage.xhat_coverage",
-                diagnostics=coverage_by_label[condition_label]["xhat_coverage"],
-                extra={
-                    "objective": coverage["objective"],
+        rows.extend(
+            _deterministic_fit_rows(
+                fit=fit,
+                arrays=result.arrays,
+                reference=reference,
+                output_config=output_config,
+                family=family,
+                run_parts=("eigenspectrum", coverage["objective"], fit["label"]),
+                training_distribution=f"eigenspectrum_{coverage['objective']}",
+                source_manifest=SOURCE_MANIFESTS["eigenspectrum"],
+                extra_parameters={
                     "n_modes": coverage["n_modes"],
                     "scale": coverage["scale"],
                     "weight": coverage["weight"],
-                    "n_trajectories": coverage_by_label[condition_label]["n_trajectories"],
-                    "n_state_samples_for_diagnostics": coverage_by_label[condition_label][
-                        "n_state_samples_for_diagnostics"
-                    ],
                 },
-            ),
-            missing_reason=(
-                "eigenspectrum sweep manifest stores scalar summaries and coverage-rank "
-                "diagnostics only; fitted gains and rollout state/action arrays were not "
-                "saved for this cell"
-            ),
+                notes=(
+                    "Full standard bundle recomputed by rerunning the eigenspectrum "
+                    f"{coverage['objective']} coverage cell from the tracked sweep "
+                    "specification."
+                ),
+            )
         )
+    return rows
+
+
+def _deterministic_fit_rows(
+    *,
+    fit: dict[str, Any],
+    arrays: dict[str, np.ndarray],
+    reference: Any,
+    output_config: OutputFeedbackConfig,
+    family: str,
+    run_parts: tuple[str, ...],
+    training_distribution: str,
+    source_manifest: Path,
+    extra_parameters: dict[str, Any],
+    notes: str,
+) -> list[BridgeRunManifest]:
+    rows = []
+    evaluation_lenses = (
+        ("nominal_clean", "clean", f"{family} nominal-clean"),
+        ("riccati_epsilon_response", "under_eps", f"{family} Riccati-epsilon response"),
+    )
+    for lens_label, array_suffix, evaluation_distribution in evaluation_lenses:
+        components = list(
+            _full_standard_components(
+                arrays=arrays,
+                reference=reference,
+                output_config=output_config,
+                array_prefix=f"{fit['label']}_{array_suffix}",
+                candidate_gain=np.asarray(arrays[f"{fit['label']}_K"]),
+                optimizer_metadata=_optimizer_metadata(fit),
+                state_label=f"{evaluation_distribution}_coupled_state",
+                action_state_label=f"{evaluation_distribution}_estimated_state",
+                architecture="time_constrained_free_gain",
+            )
+        )
+        components.extend(_diagnostic_sidecars(fit=fit, reference_manifest=None))
         spec = BridgeRunSpec(
             issue_id=ISSUE_ID,
-            run_id=make_bridge_run_id("eigenspectrum", coverage["objective"], fit["label"]),
+            run_id=make_bridge_run_id(*run_parts, lens_label),
             objective="optimal",
             architecture="time_constrained_free_gain",
             controller_label=fit["label"],
             optimizer_label="lbfgsb_strong_optimizer_whitened",
-            training_distribution=f"eigenspectrum_{coverage['objective']}",
+            training_distribution=training_distribution,
             evaluation_lane="deterministic",
             reference_controller="analytical_lqr_kalman",
-            gamma_factor=manifest["diagnostics"]["gamma_factor"],
+            gamma_factor=OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
             parameters={
-                "evaluation_distribution": family,
+                "evaluation_distribution": evaluation_distribution,
                 "distribution_family": family,
-                "n_modes": coverage["n_modes"],
-                "scale": coverage["scale"],
-                "weight": coverage["weight"],
-                "source_manifest": _repo_relative(SOURCE_MANIFESTS["eigenspectrum"]),
-            },
-            notes=f"Partial certificate row from compact {family} manifest.",
+                "source_manifest": _repo_relative(source_manifest),
+            }
+            | extra_parameters,
+            notes=notes,
         )
         rows.append(
             BridgeRunManifest(
                 spec=spec,
-                status="partial_summary_certificate",
-                metrics=_fit_metrics(fit),
-                artifacts={"source_manifest": _repo_relative(SOURCE_MANIFESTS["eigenspectrum"])},
-                certificate_components=components,
+                status="full_standard_certificate",
+                metrics=_fit_metrics(fit) | {"certificate_evaluation_lens": lens_label},
+                artifacts={"source_manifest": _repo_relative(source_manifest)},
+                certificate_components=tuple(components),
             )
         )
     return rows
@@ -466,14 +553,19 @@ def _full_standard_components(
     state_label: str,
     action_state_label: str,
     architecture: str,
+    x: np.ndarray | None = None,
+    x_hat: np.ndarray | None = None,
 ) -> tuple[BridgeCertificateComponent, ...]:
     plant = reference.plant
     schedule = reference.schedule
     reference_gain = np.asarray(reference.lqr_solution.K)
-    x = _saved_array(arrays, array_prefix, "x")
-    x_hat = _saved_array(arrays, array_prefix, "x_hat")
-    coupled_states = np.concatenate([x, x_hat], axis=-1)[None, :, :]
-    action_states = x_hat[None, :, :]
+    if x is None:
+        x = _saved_array(arrays, array_prefix, "x")
+    if x_hat is None:
+        x_hat = _saved_array(arrays, array_prefix, "x_hat")
+    coupled = np.concatenate([x, x_hat], axis=-1)
+    coupled_states = coupled[None, :, :] if coupled.ndim == 2 else coupled
+    action_states = x_hat[None, :, :] if x_hat.ndim == 2 else x_hat
     candidate_transition = np.asarray(
         kalman_estimator_joint_matrices(plant, jnp.asarray(candidate_gain), output_config)[0]
     )
@@ -500,6 +592,45 @@ def _full_standard_components(
         action_state_label=action_state_label,
         action_label="control",
     )
+
+
+def _full_standard_components_from_trajectories(
+    *,
+    x: np.ndarray,
+    x_hat: np.ndarray,
+    reference: Any,
+    output_config: OutputFeedbackConfig,
+    candidate_gain: np.ndarray,
+    optimizer_metadata: dict[str, Any] | None,
+    optimizer_not_applicable_reason: str | None = None,
+    state_label: str,
+    action_state_label: str,
+    architecture: str,
+) -> tuple[BridgeCertificateComponent, ...]:
+    components = list(
+        _full_standard_components(
+            arrays={},
+            reference=reference,
+            output_config=output_config,
+            array_prefix="",
+            candidate_gain=candidate_gain,
+            optimizer_metadata=optimizer_metadata,
+            state_label=state_label,
+            action_state_label=action_state_label,
+            architecture=architecture,
+            x=x,
+            x_hat=x_hat,
+        )
+    )
+    if optimizer_not_applicable_reason is not None:
+        components = _replace_component(
+            components,
+            BridgeCertificateComponent.not_applicable(
+                OPTIMIZER_METADATA,
+                optimizer_not_applicable_reason,
+            ),
+        )
+    return tuple(components)
 
 
 def _saved_array(arrays: dict[str, np.ndarray], prefix: str, suffix: str) -> np.ndarray:
@@ -624,6 +755,38 @@ def _process_summary_components(
     )
 
 
+def _process_diagnostic_sidecars(evaluation: dict[str, Any]) -> list[BridgeCertificateComponent]:
+    return [
+        BridgeCertificateComponent.available(
+            BEHAVIORAL_ACTION_SIDECAR,
+            cost_ratio_to_reference_mean=evaluation.get("cost_ratio_to_reference_mean"),
+            cost_ratio_to_reference_std=evaluation.get("cost_ratio_to_reference_std"),
+            action_mismatch_to_reference_mean=evaluation.get("action_mismatch_to_reference_mean"),
+            action_mismatch_to_reference_std=evaluation.get("action_mismatch_to_reference_std"),
+            evaluation_distribution="process-noise stochastic",
+        ),
+        BridgeCertificateComponent.available(
+            DETERMINISTIC_AUDIT_SIDECAR,
+            exact_l2_cost_ratio_to_lqr=evaluation.get("deterministic_exact_l2_cost_ratio_to_lqr"),
+            exact_l2_cost_ratio_to_hinf=evaluation.get("deterministic_exact_l2_cost_ratio_to_hinf"),
+            lambda_over_gamma_squared=evaluation.get("deterministic_lambda_over_gamma_squared"),
+            gamma_penalized_feasible=evaluation.get("deterministic_gamma_penalized_feasible"),
+        ),
+        BridgeCertificateComponent.available(
+            GAIN_DIAGNOSTIC_SIDECAR,
+            gain_relative_error=evaluation.get("deterministic_gain_relative_error"),
+            diagnostic_only=True,
+            gate="not_used_as_certificate_gate",
+        ),
+        BridgeCertificateComponent.available(
+            ROLL_OUT_BEHAVIOR_SIDECAR,
+            peak_forward_velocity_mean=evaluation.get("peak_forward_velocity_mean"),
+            terminal_error_mean=evaluation.get("terminal_error_mean"),
+            control_effort_mean=evaluation.get("control_effort_mean"),
+        ),
+    ]
+
+
 def _diagnostic_sidecars(
     *,
     fit: dict[str, Any] | None,
@@ -743,6 +906,20 @@ def _optimizer_metadata(fit: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _optimizer_metadata_by_label(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {fit["label"]: _optimizer_metadata(fit) for fit in manifest.get("fits", [])}
+
+
+def _safe_key(label: str) -> str:
+    return (
+        label.replace("/", "_")
+        .replace(" ", "_")
+        .replace(".", "p")
+        .replace("-", "_")
+        .replace("+", "plus")
+    )
+
+
 def _no_coverage_metrics(
     label: str,
     fit: dict[str, Any] | None,
@@ -817,10 +994,10 @@ def render_markdown(result: dict[str, Any]) -> str:
 Issue: `{ISSUE_ID}`. Standard certificate cross-reference: `{STANDARD_CERTIFICATE_ISSUE_ID}`.
 
 This materialization applies the bridge standard-certificate row contract to the
-recent output-feedback coverage/noise sweep outputs. It is intentionally a
-partial certificate report: the saved no-coverage/reference artifact contains
-gains plus nominal-clean/Riccati-epsilon rollout arrays, while the newer sweep
-manifests mostly preserve small scalar summaries.
+recent output-feedback coverage/noise sweep outputs. It reruns deterministic
+sweep cells and released-stochastic process-noise evaluations as needed so the
+standard certificate is computed from fitted gains, trajectories, and
+covariances rather than inferred from scalar summaries.
 
 Result: {result["result"]}
 
@@ -843,35 +1020,41 @@ used as the certificate gate.
 
 ## Key Rows
 
-| run | status | distribution | objective ratio | gain sidecar | action mismatch | exact L2 sidecar | lambda/gamma^2 |
-|---|---|---|---:|---:|---:|---:|---:|
+| run | status | distribution | objective ratio | gain sidecar<sup>2</sup> | action mismatch<sup>1</sup> | transition mismatch | value gap | Bellman residual<sup>1</sup> | exact L2 sidecar | lambda/gamma^2 |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
 {key_rows}
 
-## Missing Components
+<sup>1</sup> State-weighted action mismatch and Bellman-Hessian residual can
+match exactly when the Bellman action Hessian is a scalar multiple of the action
+cost geometry on that row. In that case they are the same evidence expressed
+through two certificate views; they diverge when downstream value geometry
+weights action directions differently.
 
-- Initial-state coverage rows lack saved fitted gains and rollout state/action
-  arrays for each scale, so formal state-weighted action mismatch, closed-loop
-  transition mismatch, value-policy gap, and Bellman-Hessian residual are
-  marked `missing`. The tracked manifest still records the saved training
-  ensemble effective-rank diagnostics and deterministic behavioral/exact-audit
-  sidecars.
-- Process-noise stochastic rows are evaluation summaries. They expose stochastic
-  cost/action sidecars and deterministic exact-L2/gamma sidecars, but not the
-  sampled state/action trajectories or covariances required for the formal
-  standard components.
-- Eigenspectrum trajectory/state coverage rows expose coverage-induced xhat
-  rank diagnostics by objective/mode/scale, plus deterministic behavioral and
-  exact-audit sidecars. They do not include per-row fitted gains or rollout
-  arrays, so the formal linear components are marked `missing`.
+<sup>2</sup> Gain mismatch is a diagnostic sidecar, not the bridge gate. The
+gate is disturbance-relevant same-game behavior under the standard certificate
+components.
+
+## Computation Notes
+
+- The initial-state and eigenspectrum rows are not inferred from the compact
+  tracked manifests. They are rerun from the tracked sweep specifications so
+  fitted gains, nominal-clean rollouts, and Riccati-epsilon rollouts are
+  available for the full certificate.
+- Process-noise stochastic rows are rerun with the tracked common-random-number
+  settings so sampled state/estimate/action trajectories are available for the
+  same component bundle.
+- Evaluation lenses are not training axes. Nominal-clean, Riccati-epsilon, and
+  process-noise stochastic rows describe where the finished controller is
+  evaluated; they do not by themselves mean the controller was trained with a
+  robust objective or coverage distribution.
 
 ## Verdict
 
-The standard certificate application does not rescue the bridge. The only rows
-with full component availability are the saved no-coverage/reference rows on
-nominal-clean and Riccati-epsilon evaluation lenses. The recent initial-state,
-process-noise, and eigenspectrum rows remain partial/sidecar-only from current
-tracked artifacts, and their saved sidecars continue to show behaviorally close
-but certificate-poor from-scratch recovery.
+The standard certificate application does not rescue the bridge. All rows in
+this materialization now have full component availability where the linear
+output-feedback quantities are defined. The rerun initial-state, process-noise,
+and eigenspectrum rows continue to show behaviorally close but certificate-poor
+from-scratch recovery.
 """
 
 
@@ -968,6 +1151,13 @@ def _key_rows(rows: list[dict[str, Any]]) -> str:
             metrics.get("gain_relative_error"),
             metrics.get("deterministic_gain_relative_error"),
         )
+        transition = _component_summary(
+            row,
+            CLOSED_LOOP_TRANSITION_MISMATCH,
+            "mismatch_ratio_mean",
+        )
+        value_gap = _component_summary(row, VALUE_POLICY_GAP, "gap_ratio_mean")
+        bellman = _component_summary(row, BELLMAN_HESSIAN_RESIDUAL, "residual_ratio_mean")
         lines.append(
             "| "
             f"{row['spec']['run_id']} | "
@@ -976,6 +1166,9 @@ def _key_rows(rows: list[dict[str, Any]]) -> str:
             f"{_fmt(objective)} | "
             f"{_fmt(gain)} | "
             f"{_fmt(action)} | "
+            f"{_fmt(transition)} | "
+            f"{_fmt(value_gap)} | "
+            f"{_fmt(bellman)} | "
             f"{_fmt(exact_l2)} | "
             f"{_fmt(lambda_ratio)} |"
         )

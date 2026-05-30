@@ -347,6 +347,14 @@ def run_phase3_stochastic_evaluation(
         arrays[f"{key}_terminal_errors"] = np.asarray(terminals)
         arrays[f"{key}_control_efforts"] = np.asarray(efforts)
         arrays[f"{key}_action_mismatch_to_reference"] = np.asarray(mismatches)
+        arrays[f"{key}_x"] = np.asarray(jnp.stack([rollout.x for rollout in rollouts]))
+        arrays[f"{key}_x_hat"] = np.asarray(jnp.stack([rollout.x_hat for rollout in rollouts]))
+        arrays[f"{key}_u_command"] = np.asarray(
+            jnp.stack([rollout.u_command for rollout in rollouts])
+        )
+        arrays[f"{key}_u_applied"] = np.asarray(
+            jnp.stack([rollout.u_applied for rollout in rollouts])
+        )
 
     return Phase3StochasticResult(
         issue_id=ISSUE_ID,
