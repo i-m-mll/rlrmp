@@ -48,6 +48,11 @@ from rlrmp.analysis.hinf_riccati import (
     make_reach_initial_state,
     simulate_closed_loop,
 )
+from rlrmp.analysis.rerun_metadata import (
+    DEFAULT_DISCRETIZATION,
+    DEFAULT_LANE,
+    build_rerun_metadata,
+)
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
@@ -644,7 +649,12 @@ def _linear_training_summary(
     }
 
 
-def result_summary(result: Phase3LinearRoundTripResult) -> dict[str, Any]:
+def result_summary(
+    result: Phase3LinearRoundTripResult,
+    *,
+    discretization: str = DEFAULT_DISCRETIZATION,
+    lane: str = DEFAULT_LANE,
+) -> dict[str, Any]:
     """Return a JSON-serializable Phase 3 summary."""
 
     reference = result.reference
@@ -690,6 +700,11 @@ def result_summary(result: Phase3LinearRoundTripResult) -> dict[str, Any]:
         "game_card_issue": GAME_CARD_ISSUE_ID,
         "adversary_equivalence_issue": ADVERSARY_EQUIVALENCE_ISSUE_ID,
         "regeneration_command": "PYTHONPATH=src python scripts/materialize_linear_round_trip.py",
+        "rerun_metadata": build_rerun_metadata(
+            discretization=discretization,
+            lane=lane,
+            materializer="linear_round_trip",
+        ),
         "graphspec_execution_conversion_out_of_scope": True,
         "matrix_generalization_out_of_scope": True,
         "phase3_status": phase3_status,
@@ -812,6 +827,12 @@ def render_markdown(summary: dict[str, Any]) -> str:
 
 Issue: `{summary["issue"]}`. Umbrella: `{summary["umbrella"]}`.
 
+Rerun metadata:
+
+- Discretization: `{summary["rerun_metadata"]["discretization"]}`.
+- Lane: `{summary["rerun_metadata"]["lane"]}`.
+- Lane scope: {summary["rerun_metadata"]["lane_description"]}
+
 This note records the first local analytical Phase 3 certificate attempt for
 the cs2019-to-RNN game-equivalence programme. It intentionally does not perform
 the Feedbax GraphSpec execution conversion or the full `63cec06` matrix-analysis
@@ -906,11 +927,16 @@ def _npz_arrays(result: Phase3LinearRoundTripResult) -> dict[str, np.ndarray]:
     return arrays
 
 
-def write_outputs(issue_id: str = ISSUE_ID) -> dict[str, Any]:
+def write_outputs(
+    issue_id: str = ISSUE_ID,
+    *,
+    discretization: str = DEFAULT_DISCRETIZATION,
+    lane: str = DEFAULT_LANE,
+) -> dict[str, Any]:
     """Write tracked Phase 3 summary outputs and bulk arrays."""
 
     result = run_phase3_linear_round_trip()
-    summary = result_summary(result)
+    summary = result_summary(result, discretization=discretization, lane=lane)
     results_dir = mkdir_p(REPO_ROOT / "results" / issue_id)
     notes_dir = mkdir_p(results_dir / "notes")
     artifact_dir = mkdir_p(REPO_ROOT / "_artifacts" / issue_id / "linear_round_trip")

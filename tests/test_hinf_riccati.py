@@ -17,6 +17,11 @@ of exceptions:
   plain ``PointMass``.
 - ``test_zoh_discretization_consistency``: ZOH discretisation is consistent
   with continuous-time simulation under constant input.
+- ``test_cs_euler_discretization_matches_released_matlab_formulas``:
+  canonical C&S plant entries use forward Euler, matching released ModelDB
+  formulas.
+- ``test_cs_zoh_discretization_remains_selectable_sensitivity``: the prior
+  ZOH plant remains explicitly selectable as a sensitivity variant.
 - ``test_cs_sanity_velocity_inflation``: With C&S parameters, velocity
   inflation magnitude is in the expected range.
 - ``test_rlrmp_smoke_velocity_inflation``: With rlrmp parameters, the +10.8%
@@ -157,6 +162,50 @@ def test_zoh_discretization_consistency():
     assert jnp.linalg.norm(x_d - x_c) < 5e-3
 
 
+def test_cs_euler_discretization_matches_released_matlab_formulas():
+    """Canonical C&S plant uses released-code forward Euler entries.
+
+    ModelDB's point-mass MATLAB path forms ``A = I + dt*A_c`` and
+    ``B = dt*B_c``. The disturbance matrix remains the discrete identity
+    channel used by the C&S game, not ``dt * I``.
+    """
+
+    plant = cs_faithful_pointmass(disturbance_integrator=True, delay_steps=0)
+    dt = plant.dt
+
+    assert plant.discretization == "euler"
+    assert jnp.allclose(
+        plant.A,
+        jnp.eye(8, dtype=jnp.float64) + dt * plant.A_c,
+        atol=1e-14,
+    )
+    assert jnp.allclose(plant.B, dt * plant.B_c, atol=1e-14)
+    assert jnp.allclose(plant.Bw, jnp.eye(8, dtype=jnp.float64), atol=1e-14)
+
+    assert plant.A[0, 2] == pytest.approx(dt)
+    assert plant.A[2, 2] == pytest.approx(1.0 - 0.1 * dt)
+    assert plant.A[2, 4] == pytest.approx(dt)
+    assert plant.A[2, 6] == pytest.approx(dt)
+    assert plant.A[4, 4] == pytest.approx(1.0 - dt / 0.066)
+    assert plant.B[4, 0] == pytest.approx(dt / 0.066)
+
+
+def test_cs_zoh_discretization_remains_selectable_sensitivity():
+    """C&S ZOH is a named sensitivity variant, not the canonical default."""
+
+    plant_euler = cs_faithful_pointmass(
+        disturbance_integrator=True, delay_steps=0, discretization="euler"
+    )
+    plant_zoh = cs_faithful_pointmass(
+        disturbance_integrator=True, delay_steps=0, discretization="zoh"
+    )
+
+    assert plant_zoh.discretization == "zoh"
+    assert jnp.allclose(plant_zoh.Bw, jnp.eye(8, dtype=jnp.float64), atol=1e-14)
+    assert not jnp.allclose(plant_zoh.A, plant_euler.A, atol=1e-14)
+    assert jnp.linalg.norm(plant_zoh.A - plant_euler.A) < 2e-2
+
+
 def test_linearization_lti_match():
     """The discrete-time A, B match the feedbax PointMass continuous dynamics
     integrated via diffrax to machine precision.
@@ -252,8 +301,10 @@ def test_gamma_star_brackets_admissibility():
     gamma_star = find_gamma_star(plant, schedule, tol=1e-4)
     sol_above = solve_hinf_riccati(plant, schedule, 1.02 * gamma_star)
     sol_below = solve_hinf_riccati(plant, schedule, 0.98 * gamma_star)
-    assert sol_above.admissible, f"gamma=1.02*gamma_star should be admissible (gamma_star={gamma_star})"
-    assert not sol_below.admissible, f"gamma=0.98*gamma_star should be inadmissible"
+    assert sol_above.admissible, (
+        f"gamma=1.02*gamma_star should be admissible (gamma_star={gamma_star})"
+    )
+    assert not sol_below.admissible, "gamma=0.98*gamma_star should be inadmissible"
 
 
 def test_numerical_conditioning_4state():
@@ -471,6 +522,13 @@ def test_input_validation():
             mass=1.0, damping=10.0, tau=0.05, dt=0.01,
             disturbance_channel="bogus",
         )
+    with pytest.raises(ValueError, match="discretization must be"):
+        linearize_pointmass(
+            mass=1.0, damping=10.0, tau=0.05, dt=0.01,
+            discretization="bogus",
+        )
+    with pytest.raises(ValueError, match="discretization must be"):
+        cs_faithful_pointmass(discretization="bogus")
 
     plant = _rlrmp_plant()
     schedule = _rlrmp_schedule(plant)
@@ -505,9 +563,13 @@ def test_full_state_disturbance_channel_shape():
 
 
 def test_cs_faithful_pointmass_legacy_defaults():
-    """Legacy 6-state, no-delay form: ``cs_faithful_pointmass(disturbance_integrator=False, delay_steps=0, tau=0.06)``.
+    """Legacy 6-state, no-delay form.
 
-    Backward-compatibility regression test for the pre-9a0558e form.
+    Uses ``cs_faithful_pointmass(
+    disturbance_integrator=False, delay_steps=0, tau=0.06)``.
+
+    Backward-compatibility regression test for the pre-9a0558e shape and
+    physical parameters under the current Euler C&S contract.
     Bug: ``97c227a`` — convenience constructor: mass=1, k=0.1, tau=0.06,
     dt=0.01, B_w = I_6.
 
@@ -522,6 +584,7 @@ def test_cs_faithful_pointmass_legacy_defaults():
     assert plant.n == 6
     assert plant.m_w == 6
     assert plant.dt == pytest.approx(0.01)
+    assert plant.discretization == "euler"
     # Damping = 0.1 → A_c[2:4, 2:4] block is -0.1 * I
     assert jnp.allclose(plant.A_c[2:4, 2:4], -0.1 * jnp.eye(2), atol=1e-12)
     # tau=0.06 → A_c[4:6, 4:6] is -(1/0.06) * I
@@ -552,6 +615,7 @@ def test_cs_faithful_pointmass_canonical_defaults():
     assert plant.m_w == 8  # disturbance is 8-dim (one per physical state)
     assert plant.m_u == 2
     assert plant.dt == pytest.approx(0.01)
+    assert plant.discretization == "euler"
     # Physical-block A_c: damping at rows 2,3; force filter at rows 4,5; integrators at rows 6,7
     # A_c[2:4, 2:4] = -0.1 * I (damping)
     assert jnp.allclose(plant.A_c[2:4, 2:4], -0.1 * jnp.eye(2), atol=1e-12)
@@ -937,20 +1001,24 @@ def test_cs_qr_vs_rlrmp_qr_on_cs_plant():
         f"\n[Q-shape sensitivity] C&S plant (k=0.1, tau=0.06), gamma_factor=1.5:\n"
         f"  Faithful C&S Q,R (Eq. 15):  Δv_fwd = {cs_res.delta_v_percent:+.4f}%  "
         f"Δv_lat = {cs_res.delta_v_lateral_percent:+.4f}%  "
-        f"(LQR fwd_v={cs_res.lqr_peak_forward_velocity:.4f}, H∞ fwd_v={cs_res.hinf_peak_forward_velocity:.4f})\n"
+        f"(LQR fwd_v={cs_res.lqr_peak_forward_velocity:.4f}, "
+        f"H∞ fwd_v={cs_res.hinf_peak_forward_velocity:.4f})\n"
         f"  rlrmp Q,R (synthesis_review §2): Δv_fwd = {rlrmp_res.delta_v_percent:+.4f}%  "
         f"Δv_lat = {rlrmp_res.delta_v_lateral_percent:+.4f}%  "
-        f"(LQR fwd_v={rlrmp_res.lqr_peak_forward_velocity:.4f}, H∞ fwd_v={rlrmp_res.hinf_peak_forward_velocity:.4f})",
+        f"(LQR fwd_v={rlrmp_res.lqr_peak_forward_velocity:.4f}, "
+        f"H∞ fwd_v={rlrmp_res.hinf_peak_forward_velocity:.4f})",
         file=sys.stderr,
     )
 
     # Structural check: both LQR peak forward velocities are plausible for a
     # 15 cm reach on the C&S plant. Near-frictionless → can be faster than rlrmp.
     assert 0.1 < cs_res.lqr_peak_forward_velocity, (
-        f"C&S plant LQR peak fwd vel {cs_res.lqr_peak_forward_velocity} implausibly low for 15 cm reach"
+        f"C&S plant LQR peak fwd vel {cs_res.lqr_peak_forward_velocity} "
+        "implausibly low for 15 cm reach"
     )
     assert 0.1 < rlrmp_res.lqr_peak_forward_velocity, (
-        f"rlrmp Q,R on C&S plant LQR peak fwd vel {rlrmp_res.lqr_peak_forward_velocity} implausibly low"
+        f"rlrmp Q,R on C&S plant LQR peak fwd vel "
+        f"{rlrmp_res.lqr_peak_forward_velocity} implausibly low"
     )
 
 
@@ -1049,13 +1117,12 @@ def test_cs_faithful_qr_velocity_inflation_8state_no_delay():
 def test_cs_canonical_dv_matches_matlab_port():
     r"""MATLAB-port equivalence (Bug: ``9a0558e``).
 
-    Cross-check that the canonical C&S-faithful pipeline reproduces the
-    MATLAB-faithful Python port at
+    Cross-check that the canonical C&S released-code discretization pipeline
+    reproduces the MATLAB-faithful Python port at
     ``/tmp/flavor_ab_review/cs_alignment/cs_matlab_port.py`` to within
     numerical precision. The port reports Δv = +8.24% at γ\*; rlrmp's
-    bisection finds a slightly different boundary due to ZOH vs
-    forward-Euler discretisation (the audit notes this is ~0.02% effect on
-    Δv), so we assert near-boundary Δv lands within 1.0pp of +8.24%.
+    canonical C&S plant now uses the same forward-Euler discretisation, so we
+    assert near-boundary Δv lands within 1.0pp of +8.24%.
 
     The schedule is built physically (state_dim=8) and then distributed
     across the lag chain, matching ``AugRobustControl.m`` exactly:
@@ -1092,8 +1159,9 @@ def test_cs_canonical_dv_matches_matlab_port():
     target_pos = jnp.array([0.15, 0.0], dtype=jnp.float64)
     gamma_star = find_gamma_star(plant, schedule)
 
-    # MATLAB port (FE discretisation) finds gamma_star ≈ 9206. rlrmp uses
-    # ZOH so the boundary differs slightly — we accept within 10%.
+    assert plant.discretization == "euler"
+
+    # MATLAB port (FE discretisation) finds gamma_star ≈ 9206.
     matlab_port_gamma = 9206.3
     rel_gamma_diff = abs(gamma_star - matlab_port_gamma) / matlab_port_gamma
     assert rel_gamma_diff < 0.10, (

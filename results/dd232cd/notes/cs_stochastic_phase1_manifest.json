@@ -1,0 +1,678 @@
+{
+  "arms": {
+    "full_state_hinf": {
+      "comparator_status": "exact deterministic H-infinity gains under sampled stochastic plant",
+      "control_effort": {
+        "mean": 20.60747787549445,
+        "std": 0.1393666794755947
+      },
+      "controller_family": "H-infinity",
+      "estimator_rms_error": {
+        "mean": null,
+        "std": null
+      },
+      "information_structure": "full_state",
+      "n_trials": 12,
+      "peak_forward_velocity": {
+        "mean": 0.7856989801728576,
+        "std": 0.0006175668912373057
+      },
+      "task_cost": {
+        "mean": 4576.690922924764,
+        "std": 19.314304281488024
+      },
+      "terminal_position_error_m": {
+        "mean": 5.4246591314254724e-05,
+        "std": 2.8741560845662634e-05
+      }
+    },
+    "full_state_lqr": {
+      "comparator_status": "exact deterministic LQR gains under sampled stochastic plant",
+      "control_effort": {
+        "mean": 16.78608161666345,
+        "std": 0.10995097600146958
+      },
+      "controller_family": "LQR",
+      "estimator_rms_error": {
+        "mean": null,
+        "std": null
+      },
+      "information_structure": "full_state",
+      "n_trials": 12,
+      "peak_forward_velocity": {
+        "mean": 0.7311525403275633,
+        "std": 0.0005249642209909564
+      },
+      "task_cost": {
+        "mean": 4360.873385990869,
+        "std": 17.33932250891907
+      },
+      "terminal_position_error_m": {
+        "mean": 0.0031136321576306345,
+        "std": 5.452483634433332e-05
+      }
+    },
+    "output_feedback_hinf": {
+      "comparator_status": "C&S-style robust output-feedback gains under sampled stochastic plant",
+      "control_effort": {
+        "mean": 42.52179723657829,
+        "std": 5.868729747783408
+      },
+      "controller_family": "H-infinity",
+      "estimator_rms_error": {
+        "mean": 0.0144439405216334,
+        "std": 0.002308632800667793
+      },
+      "information_structure": "output_feedback",
+      "n_trials": 12,
+      "peak_forward_velocity": {
+        "mean": 0.7860452837726964,
+        "std": 0.006451391193880349
+      },
+      "task_cost": {
+        "mean": 7052.161573858769,
+        "std": 597.6638705555412
+      },
+      "terminal_position_error_m": {
+        "mean": 0.0008793739005767497,
+        "std": 0.0005150172600161939
+      }
+    },
+    "output_feedback_lqg_extlqg": {
+      "comparator_status": "fixed_point: local port of extLQG/computeOFC/computeExtKalman",
+      "control_effort": {
+        "mean": 16.634684079470947,
+        "std": 0.26903877908343377
+      },
+      "controller_family": "LQG",
+      "estimator_rms_error": {
+        "mean": 0.00966683088684634,
+        "std": 0.0015546519676533797
+      },
+      "information_structure": "output_feedback",
+      "n_trials": 12,
+      "peak_forward_velocity": {
+        "mean": 0.7263866032752117,
+        "std": 0.007046811541256219
+      },
+      "task_cost": {
+        "mean": 4379.075029591427,
+        "std": 21.002769094209373
+      },
+      "terminal_position_error_m": {
+        "mean": 0.003304781098925645,
+        "std": 0.0005409503275770149
+      }
+    }
+  },
+  "artifact_npz": "_artifacts/dd232cd/cs_stochastic_phase1/cs_stochastic_phase1.npz",
+  "artifact_npz_keys": [
+    "full_state_hinf_u",
+    "full_state_hinf_x",
+    "full_state_lqr_u",
+    "full_state_lqr_x",
+    "output_feedback_hinf_u",
+    "output_feedback_hinf_x",
+    "output_feedback_lqg_u",
+    "output_feedback_lqg_x",
+    "seeds"
+  ],
+  "bellman_claim": "none; stochastic Bellman parity is explicitly out of scope",
+  "deterministic_phase1_issue": "a7dad8a",
+  "extlqg_comparator": {
+    "expected_cost": 12150.622423244211,
+    "label": "local_extlqg_fixed_point",
+    "matlab_function_chain": [
+      "extLQG",
+      "computeOFC",
+      "computeExtKalman"
+    ],
+    "n_iterations": 4,
+    "parity_status": "fixed_point: local port of extLQG/computeOFC/computeExtKalman"
+  },
+  "game_card_summary": {
+    "cost": {
+      "R": "I_2",
+      "fact_t": "((t + 1) / T)^6, capped at 1",
+      "force_and_integrator_weight": "1.0",
+      "position_weight": "fact_t * 1e6",
+      "schedule": "C&S Eq. 15 physical 8-state schedule with 5-step delay distribution",
+      "velocity_weight": "fact_t * 1e5"
+    },
+    "diagnostic_gamma_factor": 1.5,
+    "epsilon_metric": {
+      "dt_scaled": false,
+      "norm": "sum_t ||epsilon_t||_2^2 over the 8 physical epsilon coordinates",
+      "note": "Gamma is an H-infinity attenuation parameter, not an epsilon budget. Any PGD budget must be derived explicitly from a realized Riccati epsilon sequence and treated as an open-loop surrogate budget."
+    },
+    "frontier": [
+      {
+        "closed_loop_epsilon_energy": 5.421868381615368e-06,
+        "closed_loop_epsilon_l2": 0.0023284905801002004,
+        "delta_v_percent": 7.460371202249536,
+        "epsilon_on_nominal_energy": 2.4614862445624304e-06,
+        "epsilon_on_nominal_l2": 0.0015689124400559869,
+        "factor": 1.05,
+        "factor_key": "1p05",
+        "gamma": 9625.172849747514,
+        "hinf_peak_forward_velocity": 0.7855454302704938,
+        "nominal_total_cost": 4580.631255161967,
+        "terminal_position_error_m": 6.551959065377899e-06,
+        "time_to_peak_step": 16,
+        "worst_case_h_infinity_objective": 4803.289292860973,
+        "worst_case_total_cost_without_penalty": 5305.592609058729
+      }
+    ],
+    "gamma_star": 9166.831285473823,
+    "issue": "cb98e58",
+    "lqr": {
+      "peak_forward_velocity": 0.7310094144305818,
+      "terminal_position_error_m": 0.0031107800086920224,
+      "time_to_peak_step": 16,
+      "total_cost": 4363.509943825159
+    },
+    "plant": {
+      "bw_contract": "top physical 8x8 block is identity; lag rows are zero",
+      "bw_shape": [
+        48,
+        8
+      ],
+      "damping": 0.1,
+      "delay_steps": 5,
+      "discretization": "euler",
+      "disturbance_dim": 8,
+      "dt": 0.01,
+      "mass": 1.0,
+      "name": "cs_faithful_pointmass",
+      "physical_state_dim": 8,
+      "state_dim": 48,
+      "state_order": [
+        "px",
+        "py",
+        "vx",
+        "vy",
+        "fx",
+        "fy",
+        "eps_x_int",
+        "eps_y_int",
+        "lag1_px",
+        "...",
+        "lag5_eps_y_int"
+      ],
+      "tau": 0.066
+    },
+    "primary_gamma_factor": 1.05,
+    "regeneration_command": "PYTHONPATH=src python scripts/materialize_analytical_game_card.py",
+    "rerun_metadata": {
+      "discretization": "euler",
+      "discretization_description": "Forward Euler C&S released-code discretization.",
+      "lane": "released_stochastic",
+      "lane_description": "Released-code stochastic lane: Euler plant plus sampled sensory, motor/process, and signal-dependent control noise. Bellman parity is not claimed unless a separate stochastic objective is derived.",
+      "materializer": "analytical_game_card",
+      "phase_label_policy": "Phase 1 and Phase 3 reruns must report both discretization and lane. Euler deterministic analytical results are canonical after the Euler card lands; ZOH results remain sensitivity/historical unless explicitly promoted."
+    },
+    "task": {
+      "duration_s": 0.6,
+      "hold_free": true,
+      "horizon_steps": 60,
+      "init_pos_m": [
+        0.0,
+        0.0
+      ],
+      "single_reach": true,
+      "target_pos_m": [
+        0.15,
+        0.0
+      ]
+    },
+    "umbrella": "43e8728"
+  },
+  "issue": "dd232cd",
+  "n_trials": 12,
+  "no_bellman_claim": true,
+  "noise_contract": {
+    "motor_covariance_scale": 1e-10,
+    "motor_covariance_shape": [
+      48,
+      48
+    ],
+    "process_covariance_scale": 1.0,
+    "process_covariance_shape": [
+      48,
+      48
+    ],
+    "sensory_covariance_shape": [
+      8,
+      8
+    ],
+    "shared_noise_policy": "Each seed samples one draw bundle and reuses it for full-state LQR, full-state H-infinity, output-feedback extLQG, and output-feedback H-infinity arms.",
+    "signal_dependent_scale": 0.02,
+    "signal_dependent_state_shape": [
+      48,
+      2,
+      2
+    ]
+  },
+  "primary_gamma_factor": 1.05,
+  "rerun_metadata": {
+    "discretization": "euler",
+    "discretization_description": "Forward Euler C&S released-code discretization.",
+    "lane": "released_stochastic",
+    "lane_description": "Released-code stochastic lane: Euler plant plus sampled sensory, motor/process, and signal-dependent control noise. Bellman parity is not claimed unless a separate stochastic objective is derived.",
+    "materializer": "cs_stochastic_phase1",
+    "phase_label_policy": "Phase 1 and Phase 3 reruns must report both discretization and lane. Euler deterministic analytical results are canonical after the Euler card lands; ZOH results remain sensitivity/historical unless explicitly promoted."
+  },
+  "robust_gamma": 9625.172849747514,
+  "robust_gamma_factor": 1.05,
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+  ],
+  "tracked_manifest": "results/dd232cd/notes/cs_stochastic_phase1_manifest.json",
+  "tracked_note": "results/dd232cd/notes/cs_stochastic_phase1.md",
+  "trial_metrics": {
+    "full_state_hinf": [
+      {
+        "control_effort": 20.463201767662678,
+        "estimator_rms_error": null,
+        "peak_forward_velocity": 0.7846994412820345,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4557.97615911125,
+        "terminal_position_error_m": 0.00011675130938598426
+      },
+      {
+        "control_effort": 20.6692391411877,
+        "estimator_rms_error": null,
+        "peak_forward_velocity": 0.7849371305089213,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4583.038066686506,
+        "terminal_position_error_m": 1.7845466302105157e-05
+      },
+      {
+        "control_effort": 20.697140705615947,
+        "estimator_rms_error": null,
+        "peak_forward_velocity": 0.7864648615950699,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4588.3918394342945,
+        "terminal_position_error_m": 7.208063953526372e-05
+      },
+      {
+        "control_effort": 20.577347688027153,
+        "estimator_rms_error": null,
+        "peak_forward_velocity": 0.7857156409897845,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4578.565715152611,
+        "terminal_position_error_m": 8.013065329428842e-05
+      },
+      {
+        "control_effort": 20.62296051622539,
+        "estimator_rms_error": null,
+        "peak_forward_velocity": 0.7855199495264412,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4577.316962158577,
+        "terminal_position_error_m": 4.237166873157523e-05
+      },
+      {
+        "control_effort": 20.893521836770798,
+        "estimator_rms_error": null,
+        "peak_forward_velocity": 0.786543361598268,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4613.207059541893,
+        "terminal_position_error_m": 6.731029979345248e-05
+      },
+      {
+        "control_effort": 20.387123676189873,
+        "estimator_rms_error": null,
+        "peak_forward_velocity": 0.7846407766603387,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4548.1301090629295,
+        "terminal_position_error_m": 6.878564883885713e-05
+      },
+      {
+        "control_effort": 20.50436750708729,
+        "estimator_rms_error": null,
+        "peak_forward_velocity": 0.7860330723988549,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4553.394283104929,
+        "terminal_position_error_m": 4.126803100907348e-05
+      },
+      {
+        "control_effort": 20.769467471974135,
+        "estimator_rms_error": null,
+        "peak_forward_velocity": 0.7860629962310884,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4593.796972651006,
+        "terminal_position_error_m": 3.438591409387643e-05
+      },
+      {
+        "control_effort": 20.639909793368794,
+        "estimator_rms_error": null,
+        "peak_forward_velocity": 0.7859380516651593,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4587.061530695949,
+        "terminal_position_error_m": 2.7265134005900632e-05
+      },
+      {
+        "control_effort": 20.632183696694224,
+        "estimator_rms_error": null,
+        "peak_forward_velocity": 0.7861899284277447,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4589.142496875849,
+        "terminal_position_error_m": 1.356064242235962e-05
+      },
+      {
+        "control_effort": 20.433270705129377,
+        "estimator_rms_error": null,
+        "peak_forward_velocity": 0.7856425511905843,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4550.269880621363,
+        "terminal_position_error_m": 6.920368835832014e-05
+      }
+    ],
+    "full_state_lqr": [
+      {
+        "control_effort": 16.669606947308097,
+        "estimator_rms_error": null,
+        "peak_forward_velocity": 0.7303372931153486,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4347.13337093229,
+        "terminal_position_error_m": 0.003230131660681819
+      },
+      {
+        "control_effort": 16.815341942897785,
+        "estimator_rms_error": null,
+        "peak_forward_velocity": 0.7302944177133559,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4365.154341423227,
+        "terminal_position_error_m": 0.003093636530042339
+      },
+      {
+        "control_effort": 16.842081123541497,
+        "estimator_rms_error": null,
+        "peak_forward_velocity": 0.731630244447614,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4366.644215761557,
+        "terminal_position_error_m": 0.0030795692523154406
+      },
+      {
+        "control_effort": 16.776610039667364,
+        "estimator_rms_error": null,
+        "peak_forward_velocity": 0.7311674099533482,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4367.799121695175,
+        "terminal_position_error_m": 0.0031799208918493267
+      },
+      {
+        "control_effort": 16.804691553706203,
+        "estimator_rms_error": null,
+        "peak_forward_velocity": 0.7311054666046991,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4359.565623070604,
+        "terminal_position_error_m": 0.003087493266812669
+      },
+      {
+        "control_effort": 17.014065827770608,
+        "estimator_rms_error": null,
+        "peak_forward_velocity": 0.7318739126846713,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4390.1003560442305,
+        "terminal_position_error_m": 0.0030684597812817476
+      },
+      {
+        "control_effort": 16.60816370703351,
+        "estimator_rms_error": null,
+        "peak_forward_velocity": 0.7303444387761874,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4334.905399761807,
+        "terminal_position_error_m": 0.0030441968891147093
+      },
+      {
+        "control_effort": 16.70753598578044,
+        "estimator_rms_error": null,
+        "peak_forward_velocity": 0.7317300539883874,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4338.895867150463,
+        "terminal_position_error_m": 0.0030937631137243813
+      },
+      {
+        "control_effort": 16.90746429472144,
+        "estimator_rms_error": null,
+        "peak_forward_velocity": 0.731309368308239,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4372.767964718981,
+        "terminal_position_error_m": 0.0030808994876524833
+      },
+      {
+        "control_effort": 16.84045757713508,
+        "estimator_rms_error": null,
+        "peak_forward_velocity": 0.7314724736895217,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4376.921775145614,
+        "terminal_position_error_m": 0.003150830405661026
+      },
+      {
+        "control_effort": 16.800118086994893,
+        "estimator_rms_error": null,
+        "peak_forward_velocity": 0.7312208815823964,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4375.85024046888,
+        "terminal_position_error_m": 0.003179198655379431
+      },
+      {
+        "control_effort": 16.646842313404424,
+        "estimator_rms_error": null,
+        "peak_forward_velocity": 0.7313445230669899,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4334.742355717611,
+        "terminal_position_error_m": 0.003075485957052246
+      }
+    ],
+    "output_feedback_hinf": [
+      {
+        "control_effort": 47.877067434997024,
+        "estimator_rms_error": 0.012828816502848644,
+        "peak_forward_velocity": 0.784250137927692,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 7598.198328240325,
+        "terminal_position_error_m": 0.0019171828003476886
+      },
+      {
+        "control_effort": 45.856676571285824,
+        "estimator_rms_error": 0.013793096741558172,
+        "peak_forward_velocity": 0.790357719639668,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 7381.582699499054,
+        "terminal_position_error_m": 0.0009918891769823703
+      },
+      {
+        "control_effort": 56.224865202091635,
+        "estimator_rms_error": 0.02005796017460326,
+        "peak_forward_velocity": 0.7888599095128405,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 8413.465034961326,
+        "terminal_position_error_m": 0.0012829081099811315
+      },
+      {
+        "control_effort": 38.01417981322084,
+        "estimator_rms_error": 0.013551026875509369,
+        "peak_forward_velocity": 0.7965016153299399,
+        "peak_forward_velocity_idx": 15,
+        "task_cost": 6493.245340819821,
+        "terminal_position_error_m": 0.00022115780839592457
+      },
+      {
+        "control_effort": 43.65082560787137,
+        "estimator_rms_error": 0.014971433256721801,
+        "peak_forward_velocity": 0.7958298634767388,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 7175.267357863809,
+        "terminal_position_error_m": 0.0014167879833860222
+      },
+      {
+        "control_effort": 41.86835899064763,
+        "estimator_rms_error": 0.014930817540369892,
+        "peak_forward_velocity": 0.7872595556753939,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 7070.116462122941,
+        "terminal_position_error_m": 0.0006895752825876523
+      },
+      {
+        "control_effort": 41.681738492542344,
+        "estimator_rms_error": 0.015447534383233921,
+        "peak_forward_velocity": 0.777387889828123,
+        "peak_forward_velocity_idx": 15,
+        "task_cost": 6859.837295449687,
+        "terminal_position_error_m": 0.00035700515177314296
+      },
+      {
+        "control_effort": 45.067650161476756,
+        "estimator_rms_error": 0.013623205841243113,
+        "peak_forward_velocity": 0.7826124538050228,
+        "peak_forward_velocity_idx": 15,
+        "task_cost": 7250.641351378261,
+        "terminal_position_error_m": 0.0007559294087061941
+      },
+      {
+        "control_effort": 36.12345775676231,
+        "estimator_rms_error": 0.010605590676448085,
+        "peak_forward_velocity": 0.7752730491265348,
+        "peak_forward_velocity_idx": 15,
+        "task_cost": 6321.416857097826,
+        "terminal_position_error_m": 0.0003368702662899188
+      },
+      {
+        "control_effort": 38.012287061637025,
+        "estimator_rms_error": 0.015605898464270922,
+        "peak_forward_velocity": 0.7851072071714585,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 6639.95852623372,
+        "terminal_position_error_m": 0.0013166168272741026
+      },
+      {
+        "control_effort": 43.10472847615356,
+        "estimator_rms_error": 0.016175777977079916,
+        "peak_forward_velocity": 0.7793060184568911,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 7296.68891045142,
+        "terminal_position_error_m": 0.0002607508091884124
+      },
+      {
+        "control_effort": 32.779731270253095,
+        "estimator_rms_error": 0.011736127825713708,
+        "peak_forward_velocity": 0.7897979853220541,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 6125.520722187031,
+        "terminal_position_error_m": 0.0010058131820084363
+      }
+    ],
+    "output_feedback_lqg_extlqg": [
+      {
+        "control_effort": 16.86310115916275,
+        "estimator_rms_error": 0.010418528664206058,
+        "peak_forward_velocity": 0.73315042342144,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4359.989941058865,
+        "terminal_position_error_m": 0.003770858068084265
+      },
+      {
+        "control_effort": 16.898467785601337,
+        "estimator_rms_error": 0.009586871684085767,
+        "peak_forward_velocity": 0.7326925833788206,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4397.211270245296,
+        "terminal_position_error_m": 0.0021153695883097175
+      },
+      {
+        "control_effort": 16.520267080834273,
+        "estimator_rms_error": 0.00882596912601425,
+        "peak_forward_velocity": 0.7215389405414683,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4379.344900323794,
+        "terminal_position_error_m": 0.003661720816819368
+      },
+      {
+        "control_effort": 17.096037419257733,
+        "estimator_rms_error": 0.007883226445371328,
+        "peak_forward_velocity": 0.7395185171884051,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4396.999649490795,
+        "terminal_position_error_m": 0.0029723612471347863
+      },
+      {
+        "control_effort": 16.805405114857916,
+        "estimator_rms_error": 0.007398971159072324,
+        "peak_forward_velocity": 0.7313154092639106,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4370.607317885811,
+        "terminal_position_error_m": 0.0026875244594066518
+      },
+      {
+        "control_effort": 16.73877534185095,
+        "estimator_rms_error": 0.012402271668330295,
+        "peak_forward_velocity": 0.7266492305602633,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4400.869096636477,
+        "terminal_position_error_m": 0.0034407858656360433
+      },
+      {
+        "control_effort": 16.20590173692976,
+        "estimator_rms_error": 0.010772455552904533,
+        "peak_forward_velocity": 0.715918729174329,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4353.232249535154,
+        "terminal_position_error_m": 0.0037741141448560745
+      },
+      {
+        "control_effort": 16.41955943697412,
+        "estimator_rms_error": 0.010639357319499632,
+        "peak_forward_velocity": 0.7237843942239272,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4354.399697408125,
+        "terminal_position_error_m": 0.00366379820212534
+      },
+      {
+        "control_effort": 16.787468417039978,
+        "estimator_rms_error": 0.00857397132379769,
+        "peak_forward_velocity": 0.7245534867230163,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4401.096146534949,
+        "terminal_position_error_m": 0.0041419285147030055
+      },
+      {
+        "control_effort": 16.340167337976315,
+        "estimator_rms_error": 0.009861839008967746,
+        "peak_forward_velocity": 0.7169509063392643,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4393.562463544549,
+        "terminal_position_error_m": 0.0029785941123111775
+      },
+      {
+        "control_effort": 16.26220534755888,
+        "estimator_rms_error": 0.011877251304085647,
+        "peak_forward_velocity": 0.7190027121531792,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4399.2849481594185,
+        "terminal_position_error_m": 0.0034163759234588963
+      },
+      {
+        "control_effort": 16.678852775607375,
+        "estimator_rms_error": 0.007761257385820831,
+        "peak_forward_velocity": 0.7315639063345162,
+        "peak_forward_velocity_idx": 16,
+        "task_cost": 4342.302674273901,
+        "terminal_position_error_m": 0.0030339422442624167
+      }
+    ]
+  },
+  "umbrella": "43e8728"
+}

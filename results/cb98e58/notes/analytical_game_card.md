@@ -2,13 +2,21 @@
 
 Issue: `cb98e58`. Umbrella: `43e8728`.
 
-This note is the auditable C&S-faithful H-infinity target for the first
-cs2019-to-RNN game-equivalence gate. It fixes the analytical game that later
-feedbax and trained-controller work must match.
+This note is the auditable C&S released-code-aligned H-infinity target for the
+first cs2019-to-RNN game-equivalence gate. It fixes the analytical game that
+later feedbax and trained-controller work must match.
+
+Rerun metadata:
+
+- Discretization: `euler`.
+- Lane: `deterministic_analytical`.
+- Lane scope: Deterministic analytical lane: exact recursions and deterministic rollouts/audits with no sampled sensory, motor/process, or signal-dependent control noise.
 
 ## Game Definition
 
 - Plant: `cs_faithful_pointmass()`.
+- Discretization: `euler`. The canonical
+  released-code path is forward Euler; ZOH is a named sensitivity variant.
 - State: 8 physical states plus 5 full-state lag blocks, total `n = 48`.
 - Physical state order: `[px, py, vx, vy, fx, fy, eps_x_int, eps_y_int]`.
 - Delay state order: `[x_t, x_(t-1), x_(t-2), x_(t-3), x_(t-4), x_(t-5)]`,
@@ -40,11 +48,11 @@ fixed C&S schedule, not an alpha sweep.
 
 ## Gamma And Epsilon
 
-- `gamma_star = 9041.443921`.
+- `gamma_star = 9166.831285`.
 - Primary C&S-matched target: `gamma = 1.05 * gamma_star`, giving
-  Delta-v `+7.4877%`.
+  Delta-v `+7.4604%`.
 - Conservative diagnostic point: `gamma = 1.5 * gamma_star`, giving
-  Delta-v `+3.5124%`.
+  Delta-v `+3.4991%`.
 
 Gamma is not an epsilon budget. It is the H-infinity attenuation/penalty
 parameter. If an open-loop PGD adversary needs a budget, the game-card mapping
@@ -63,8 +71,8 @@ game. This resolves the Phase 0 part of blocker `1ad3c16`.
 
 For the primary `1.05 * gamma_star` target:
 
-- `E_train = 5.615095e-06`.
-- `sqrt(E_train) = 0.0023696192`.
+- `E_train = 5.4218684e-06`.
+- `sqrt(E_train) = 0.0023284906`.
 
 ## Riccati Versus Open-Loop Adversary Objects
 
@@ -86,17 +94,17 @@ to later phases.
 
 LQR baseline:
 
-- Peak forward velocity: `0.717230 m/s`.
+- Peak forward velocity: `0.731009 m/s`.
 - Time to peak: step `16`.
-- Terminal position error: `0.0030967 m`.
+- Terminal position error: `0.00311078 m`.
 
 | gamma factor | gamma | Delta-v fwd | peak fwd v | t_peak | terminal error | closed-loop epsilon L2 |
 |---:|---:|---:|---:|---:|---:|---:|
-| 1.001 | 9050.49 | +8.3089% | 0.776823 | 16 | 2.21965e-06 | 0.00264773 |
-| 1.05 | 9493.52 | +7.4877% | 0.770934 | 16 | 7.07068e-06 | 0.00236962 |
-| 1.5 | 13562.2 | +3.5124% | 0.742421 | 16 | 0.000938127 | 0.00107983 |
-| 2 | 18082.9 | +1.9400% | 0.731144 | 16 | 0.00177947 | 0.000590608 |
-| 3 | 27124.3 | +0.8511% | 0.723334 | 16 | 0.00248505 | 0.000257486 |
+| 1.001 | 9176 | +8.2794% | 0.791532 | 16 | 2.22032e-06 | 0.00260044 |
+| 1.05 | 9625.17 | +7.4604% | 0.785545 | 16 | 6.55196e-06 | 0.00232849 |
+| 1.5 | 13750.2 | +3.4991% | 0.756588 | 16 | 0.000939616 | 0.00106342 |
+| 2 | 18333.7 | +1.9327% | 0.745138 | 16 | 0.00178533 | 0.000582073 |
+| 3 | 27500.5 | +0.8480% | 0.737208 | 16 | 0.00249514 | 0.00025389 |
 
 ## Generated Bundle
 

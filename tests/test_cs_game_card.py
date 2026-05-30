@@ -10,6 +10,7 @@ from rlrmp.analysis.cs_game_card import (
     PRIMARY_GAMMA_FACTOR,
     assert_physical_selector_bw,
     build_canonical_game,
+    build_zoh_sensitivity_game,
     materialize_reference,
     reference_summary,
     riccati_worst_case_policy,
@@ -26,6 +27,7 @@ def test_canonical_game_uses_physical_selector_bw():
 
     assert plant.n == 48
     assert plant.m_w == 8
+    assert plant.discretization == "euler"
     assert schedule.T == 60
     assert_physical_selector_bw(plant)
 
@@ -33,10 +35,24 @@ def test_canonical_game_uses_physical_selector_bw():
     assert jnp.allclose(plant.Bw[8:, :], 0.0, atol=1e-14)
 
 
+def test_zoh_sensitivity_game_remains_selectable():
+    canonical, canonical_schedule = build_canonical_game()
+    sensitivity, sensitivity_schedule = build_zoh_sensitivity_game()
+
+    assert canonical.discretization == "euler"
+    assert sensitivity.discretization == "zoh"
+    assert canonical_schedule.T == sensitivity_schedule.T == 60
+    assert_physical_selector_bw(sensitivity)
+    assert not jnp.allclose(canonical.A[:8, :8], sensitivity.A[:8, :8], atol=1e-14)
+    assert jnp.allclose(canonical.Bw, sensitivity.Bw, atol=1e-14)
+
+
 def test_gamma_frontier_marks_105_as_primary_target(reference):
     summary = reference_summary(reference)
     by_factor = {row["factor"]: row for row in summary["frontier"]}
 
+    assert summary["rerun_metadata"]["discretization"] == "euler"
+    assert summary["rerun_metadata"]["lane"] == "deterministic_analytical"
     assert summary["primary_gamma_factor"] == PRIMARY_GAMMA_FACTOR
     assert PRIMARY_GAMMA_FACTOR in by_factor
     assert DIAGNOSTIC_GAMMA_FACTOR in by_factor

@@ -3,6 +3,12 @@
 Issue: `97604a8`. Output-feedback lane: `83fc5b5`.
 Umbrella: `43e8728`.
 
+Rerun metadata:
+
+- Discretization: `euler`.
+- Lane: `deterministic_analytical`.
+- Lane scope: Deterministic analytical lane: exact recursions and deterministic rollouts/audits with no sampled sensory, motor/process, or signal-dependent control noise.
+
 This note extends the exact output-feedback Phase 1 audit from an L2-budget
 trust-region check to a gamma-penalized H-infinity feasibility check. For each
 gamma factor, the robust output-feedback controller is built in the C&S
@@ -15,33 +21,33 @@ analytical H-infinity robust controller. Values below 1 are finite for the
 penalized maximization; values at or above 1 indicate an unbounded penalized
 open-loop epsilon objective for that frozen controller.
 
-Gamma star: `9041.4439`.
+Gamma star: `9166.8313`.
 
 | gamma factor | status | robust lambda/gamma^2 | robust penalized feasible | min estimator eig | min gain-correction eig | min fixed-policy eig | robust exact/LQR exact | H-inf peak velocity |
 |---:|---|---:|---|---:|---:|---:|---:|---:|
-| 1.001 | ok | 1.4797993 | false | 0.061169006 | 0.97549197 | -77036698 | 0.81229017 | 0.77654586 |
-| 1.005 | ok | 1.4745808 | false | 0.061196888 | 0.97571834 | -49215957 | 0.82068953 | 0.77601311 |
-| 1.01 | ok | 1.467987 | false | 0.061231212 | 0.9759967 | -25542181 | 0.82987187 | 0.77535675 |
-| 1.02 | ok | 1.4545625 | false | 0.061298142 | 0.97653861 | -1.7595141e+09 | 0.84542402 | 0.77407513 |
-| 1.05 | ok | 1.4126024 | false | 0.061485973 | 0.97805416 | -7315293.8 | 0.87673213 | 0.77046417 |
-| 1.1 | ok | 1.3391502 | false | 0.061760532 | 0.98026113 | -97338654 | 0.90582459 | 0.76539217 |
-| 1.2 | ok | 1.1919234 | false | 0.062193952 | 0.98375574 | -2.7906557e+08 | 0.90752552 | 0.75740188 |
-| 1.25 | ok | 1.122255 | false | 0.062365289 | 0.98515536 | -25015406 | 0.85255038 | 0.75413385 |
-| 1.3 | ok | 1.0564357 | false | 0.062512813 | 0.986377 | -82665783 | 0.69957369 | 0.75125044 |
-| 1.32 | ok | 1.03126 | false | 0.062566023 | 0.98682267 | -7.4074927e+08 | 0.61533604 | 0.75019142 |
-| 1.33 | ok | 1.0189231 | false | 0.062591494 | 0.98703713 | -6.5976121e+08 | 0.58569299 | 0.74968046 |
-| 1.34 | ok | 1.0067537 | false | 0.062616243 | 0.98724626 | -2.777571e+09 | 0.57728675 | 0.74918136 |
-| 1.345 | ok | 1.0007318 | false | 0.062628354 | 0.98734889 | -11035413 | 0.5833632 | 0.74893613 |
-| 1.35 | ok | 0.99475167 | true | 0.062640293 | 0.98745025 | 1.172626e+08 | 0.57975025 | 0.74869374 |
-| 1.4 | ok | 0.93722957 | true | 0.062750851 | 0.98839869 | 1.4004419e+08 | 0.70805681 | 0.74641624 |
-| 1.45 | ok | 0.88374849 | true | 0.062847084 | 0.98924133 | 1.552079e+08 | 0.81746191 | 0.74437867 |
-| 1.5 | ok | 0.8341075 | true | 0.062931158 | 0.98999362 | 1.692622e+08 | 0.8736949 | 0.74254842 |
-| 2 | ok | 0.49645263 | true | 0.06338854 | 0.99453079 | 3.17707e+08 | 0.97942811 | 0.73129029 |
-| 3 | ok | 0.22854633 | true | 0.063637068 | 0.99761741 | 7.2799808e+08 | 0.99668136 | 0.72341993 |
+| 1.001 | ok | 1.4734828 | false | 0.061264737 | 0.9757718 | -20341291 | 0.81574102 | 0.79092692 |
+| 1.005 | ok | 1.4683333 | false | 0.061291712 | 0.97599479 | -7745962.9 | 0.82424909 | 0.7904267 |
+| 1.01 | ok | 1.4618204 | false | 0.061324918 | 0.97626902 | -1.3903895e+09 | 0.83371687 | 0.78981009 |
+| 1.02 | ok | 1.4485414 | false | 0.061389658 | 0.97680296 | -1.6242085e+08 | 0.84919158 | 0.78860507 |
+| 1.05 | ok | 1.4069118 | false | 0.061571284 | 0.97829667 | -2.9850742e+08 | 0.87997306 | 0.78520275 |
+| 1.1 | ok | 1.3338082 | false | 0.061836586 | 0.98047307 | -21857092 | 0.90825515 | 0.78016469 |
+| 1.2 | ok | 1.1870412 | false | 0.062254849 | 0.98392216 | -60373687 | 0.90786543 | 0.77199016 |
+| 1.25 | ok | 1.1175745 | false | 0.062419977 | 0.98530454 | -3.76433e+08 | 0.84983531 | 0.76865004 |
+| 1.3 | ok | 1.0519517 | false | 0.062562045 | 0.98651159 | -6.5996402e+08 | 0.69036982 | 0.76570435 |
+| 1.32 | ok | 1.0268534 | false | 0.062613261 | 0.98695203 | -8399038 | 0.60883628 | 0.76462275 |
+| 1.33 | ok | 1.0145549 | false | 0.062637773 | 0.98716401 | -2.6233097e+08 | 0.5855349 | 0.76410095 |
+| 1.34 | ok | 1.0024238 | false | 0.062661587 | 0.98737072 | -27031112 | 0.58704891 | 0.76359128 |
+| 1.345 | ok | 0.99642101 | true | 0.06267324 | 0.98747217 | 1.1814189e+08 | 0.58675473 | 0.76334088 |
+| 1.35 | ok | 0.99045992 | true | 0.062684726 | 0.98757236 | 1.2271568e+08 | 0.58571079 | 0.76309337 |
+| 1.4 | ok | 0.93312536 | true | 0.06279106 | 0.98851006 | 1.4436489e+08 | 0.72445575 | 0.76076819 |
+| 1.45 | ok | 0.87982605 | true | 0.06288357 | 0.98934335 | 1.5982197e+08 | 0.82724009 | 0.75868846 |
+| 1.5 | ok | 0.83036023 | true | 0.062964362 | 0.99008747 | 1.7421422e+08 | 0.87984836 | 0.75682072 |
+| 2 | ok | 0.49405315 | true | 0.063403751 | 0.99457868 | 3.2671188e+08 | 0.98016743 | 0.74533849 |
+| 3 | ok | 0.22738734 | true | 0.06364315 | 0.99763728 | 7.484535e+08 | 0.99679177 | 0.73731668 |
 
 ## Recommendation
 
-Choose gamma factor `1.35` (`gamma=12205.949`) for the next robust linear target, subject to external-review interpretation. This is the smallest swept ratio with positive estimator, gain-correction, fixed-policy, and gamma-penalized exact-audit margins. The margin at `1.35` is thin (`lambda/gamma^2=0.99475167`), so `1.4` is the nearest more conservative swept fallback if we want numerical slack.
+Choose gamma factor `1.345` (`gamma=12329.388`) for the next robust linear target, subject to external-review interpretation. This is the smallest swept ratio with positive estimator, gain-correction, fixed-policy, and gamma-penalized exact-audit margins. The margin at `1.345` is thin (`lambda/gamma^2=0.99642101`), so `1.35` is the nearest more conservative swept fallback if we want numerical slack.
 
 ## Interpretation
 

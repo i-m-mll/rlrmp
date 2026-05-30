@@ -3,6 +3,12 @@
 Issue: `d01c35a`. Phase 3 issue: `6f5c79e`.
 Umbrella: `43e8728`.
 
+Rerun metadata:
+
+- Discretization: `euler`.
+- Lane: `deterministic_analytical`.
+- Lane scope: Deterministic analytical lane: exact recursions and deterministic rollouts/audits with no sampled sensory, motor/process, or signal-dependent control noise.
+
 This note applies the GPT 5.5 Pro critique imported under `6f5c79e` by testing
 whether the objective-trained Phase 3 linear controllers are disturbance-
 relevant equivalents of analytical LQR, not merely clean canonical reach
@@ -18,8 +24,8 @@ The richer certificate treats clean behavior as insufficient. Controllers must a
 
 | controller | classification | objective ratio | clean cost ratio | held-out cost ratio | raw gain err | value gap train cov | final grad norm |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `adam_lqr_fit` | `optimizer_uncertain_not_disturbance_equivalent` | 1.08399 | 1.08144 | 1.18051 | 0.989656 | 0.0920786 | 0.533118 |
-| `lbfgsb_after_adam_lqr_fit` | `optimizer_uncertain_not_disturbance_equivalent` | 1.00883 | 1.00038 | 1.09944 | 0.989122 | 0.0355763 | 0.705864 |
+| `adam_lqr_fit` | `optimizer_uncertain_not_disturbance_equivalent` | 1.23851 | 1.21784 | 1.33894 | 0.991522 | 0.303869 | 10.7508 |
+| `lbfgsb_after_adam_lqr_fit` | `optimizer_uncertain_not_disturbance_equivalent` | 1.1402 | 1.11254 | 1.21772 | 0.991245 | 0.227645 | 12.8576 |
 
 The held-out cost ratio compares each controller's held-out open-loop adversary
 audit cost to the analytical LQR held-out audit cost. Values above 1 indicate
@@ -35,21 +41,21 @@ action mismatch uses `H_t = R_t + B^T P^*_(t+1) B`.
 
 | distribution | action rms delta/ref | action mismatch mean | transition rms delta/ref | transition mismatch mean | Bellman action mean | eff rank mean | parallel gain-error mean |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| `canonical_clean_reference` | 4.5409/5.30607 | 33084.8 | 0.638437/8.14872 | 0.0532323 | 33084.8 | 1 | 0.00815452 |
-| `training_ensemble_reference_rollouts` | 1.2745/0.707175 | 16.2787 | 0.179191/1.08865 | 0.0529448 | 16.2787 | 2.60691 | 0.0186469 |
-| `validation_ensemble_reference_rollouts` | 1.79038/0.853622 | 26.1934 | 0.251722/1.31296 | 0.0727691 | 26.1934 | 2.73215 | 0.0186464 |
-| `candidate_heldout_adversary_states` | 2.57178/5.87588 | 0.744796 | 0.361584/8.31574 | 0.0477683 | 0.744796 | 1 | 0.00807143 |
-| `analytical_lqr_heldout_adversary_states` | 4.43573/5.31355 | 280.719 | 0.62365/8.18458 | 0.0529455 | 280.719 | 1 | 0.00816252 |
+| `canonical_clean_reference` | 19.3155/5.29358 | 240713 | 2.9266/8.37583 | 0.240381 | 240713 | 1 | 0.0107771 |
+| `training_ensemble_reference_rollouts` | 3.55808/0.705935 | 97.8163 | 0.539103/1.11942 | 0.193145 | 97.8163 | 2.60728 | 0.019174 |
+| `validation_ensemble_reference_rollouts` | 5.13809/0.852401 | 137.478 | 0.778498/1.35058 | 0.238113 | 137.478 | 2.73172 | 0.019174 |
+| `candidate_heldout_adversary_states` | 3.97036/6.79581 | 108.769 | 0.601569/8.83608 | 0.152505 | 108.769 | 1 | 0.0116743 |
+| `analytical_lqr_heldout_adversary_states` | 19.3055/5.3013 | 1358.55 | 2.92508/8.41166 | 0.218959 | 1358.55 | 1 | 0.0106271 |
 
 ### `lbfgsb_after_adam_lqr_fit`
 
 | distribution | action rms delta/ref | action mismatch mean | transition rms delta/ref | transition mismatch mean | Bellman action mean | eff rank mean | parallel gain-error mean |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| `canonical_clean_reference` | 1.00721/5.30607 | 29352.4 | 0.14161/8.14872 | 0.0211916 | 29352.4 | 1 | 0.000128871 |
-| `training_ensemble_reference_rollouts` | 1.35991/0.707175 | 15.087 | 0.1912/1.08865 | 0.0414321 | 15.087 | 2.60691 | 0.0185011 |
-| `validation_ensemble_reference_rollouts` | 2.02645/0.853622 | 22.4376 | 0.284912/1.31296 | 0.0627896 | 22.4376 | 2.73215 | 0.0185005 |
-| `candidate_heldout_adversary_states` | 1.41583/5.23928 | 1.06399 | 0.199061/8.11203 | 0.0641475 | 1.06399 | 1 | 0.000117392 |
-| `analytical_lqr_heldout_adversary_states` | 1.10903/5.31355 | 173.824 | 0.155927/8.18458 | 0.0226271 | 173.824 | 1 | 0.000136266 |
+| `canonical_clean_reference` | 17.5582/5.29358 | 172243 | 2.66033/8.37583 | 0.27511 | 172243 | 1 | 0.0106219 |
+| `training_ensemble_reference_rollouts` | 3.33175/0.705935 | 75.3618 | 0.50481/1.11942 | 0.240933 | 75.3618 | 2.60728 | 0.0199746 |
+| `validation_ensemble_reference_rollouts` | 4.73748/0.852401 | 99.583 | 0.717801/1.35058 | 0.291186 | 99.583 | 2.73172 | 0.0199745 |
+| `candidate_heldout_adversary_states` | 3.03227/6.12486 | 41.238 | 0.459434/8.59786 | 0.122424 | 41.238 | 1 | 0.00950475 |
+| `analytical_lqr_heldout_adversary_states` | 17.5451/5.3013 | 1325.15 | 2.65836/8.41166 | 0.255226 | 1325.15 | 1 | 0.0104736 |
 
 ## Interpretation
 
