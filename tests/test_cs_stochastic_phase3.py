@@ -87,5 +87,11 @@ def test_phase3_stochastic_result_reports_required_metrics() -> None:
         "peak_forward_velocity_mean",
         "terminal_error_mean",
         "action_mismatch_to_reference_mean",
+        "deterministic_exact_l2_cost_ratio_to_lqr",
+        "deterministic_lambda_over_gamma_squared",
+        "deterministic_gamma_penalized_feasible",
     ):
         assert key in row
+
+    assert row["deterministic_exact_l2_cost_ratio_to_lqr"] > 0.0
+    assert row["deterministic_lambda_over_gamma_squared"] > 0.0
