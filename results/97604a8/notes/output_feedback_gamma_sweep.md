@@ -23,6 +23,9 @@ open-loop epsilon objective for that frozen controller.
 
 Gamma star: `9166.8313`.
 
+Selected working output-feedback gamma factor:
+`1.4`.
+
 | gamma factor | status | robust lambda/gamma^2 | robust penalized feasible | min estimator eig | min gain-correction eig | min fixed-policy eig | robust exact/LQR exact | H-inf peak velocity |
 |---:|---|---:|---|---:|---:|---:|---:|---:|
 | 1.001 | ok | 1.4734828 | false | 0.061264737 | 0.9757718 | -20341291 | 0.81574102 | 0.79092692 |
@@ -47,7 +50,7 @@ Gamma star: `9166.8313`.
 
 ## Recommendation
 
-Choose gamma factor `1.345` (`gamma=12329.388`) for the next robust linear target, subject to external-review interpretation. This is the smallest swept ratio with positive estimator, gain-correction, fixed-policy, and gamma-penalized exact-audit margins. The margin at `1.345` is thin (`lambda/gamma^2=0.99642101`), so `1.35` is the nearest more conservative swept fallback if we want numerical slack.
+The smallest swept passing gamma factor is `1.345` (`gamma=12329.388`). This identifies the boundary of feasibility for this sweep, not the mandatory working default. The working default for later output-feedback Phase 1/3 diagnostics is selected separately as `1.4` from this sweep. The current working output-feedback gamma factor is `1.4` because it keeps additional slack (`lambda/gamma^2=0.93312536`). The margin at `1.345` is thin (`lambda/gamma^2=0.99642101`), so `1.35` is the nearest more conservative swept fallback if we want numerical slack.
 
 ## Interpretation
 

@@ -13,6 +13,7 @@ import scipy.optimize as scipy_opt
 from jaxtyping import Array, Float
 
 from rlrmp.analysis.cs_game_card import (
+    OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     TARGET_POS,
     GameCardReference,
     materialize_reference,
@@ -42,10 +43,10 @@ jax.config.update("jax_enable_x64", True)
 ISSUE_ID = "583d764"
 UMBRELLA_ID = "43e8728"
 GAMMA_SWEEP_ISSUE_ID = "97604a8"
-GAMMA_FACTORS = (1.35, 1.4, 1.5)
+GAMMA_FACTORS = (1.35, OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR, 1.5)
 NUMERICAL_MINMAX_TIME_INDICES = (0, 1, 10, 30, -1)
 EXACT_INNER_TIME_INDICES = (0, 1, 10, 30, -1)
-PRIMARY_EXACT_INNER_GAMMA_FACTORS = (1.4,)
+PRIMARY_EXACT_INNER_GAMMA_FACTORS = (OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,)
 
 
 @dataclass(frozen=True)
@@ -1378,7 +1379,7 @@ def _flattened_objective_with_barrier(
 def train_output_feedback_flattened_epsilon_exact_inner(
     reference: GameCardReference,
     *,
-    gamma_factor: float = 1.4,
+    gamma_factor: float = OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     config: LinearTrainingConfig = LinearTrainingConfig(n_steps=25),
     output_feedback_config: OutputFeedbackConfig = OutputFeedbackConfig(),
 ) -> FlattenedEpsilonFit:
