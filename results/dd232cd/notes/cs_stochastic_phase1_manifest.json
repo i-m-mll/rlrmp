@@ -78,30 +78,30 @@
         "std": 0.0005150172600161939
       }
     },
-    "output_feedback_lqg_provisional": {
-      "comparator_status": "scaffold: preserves extLQG/computeOFC/computeExtKalman call surface; full MATLAB fixed-point iteration still replaces gains",
+    "output_feedback_lqg_extlqg": {
+      "comparator_status": "fixed_point: local port of extLQG/computeOFC/computeExtKalman",
       "control_effort": {
-        "mean": 16.636132565941164,
-        "std": 0.2675031048531495
+        "mean": 16.634684079470947,
+        "std": 0.26903877908343377
       },
       "controller_family": "LQG",
       "estimator_rms_error": {
-        "mean": 0.009641748641852094,
-        "std": 0.001636262657278113
+        "mean": 0.00966683088684634,
+        "std": 0.0015546519676533797
       },
       "information_structure": "output_feedback",
       "n_trials": 12,
       "peak_forward_velocity": {
-        "mean": 0.7263413717801721,
-        "std": 0.007096704648330499
+        "mean": 0.7263866032752117,
+        "std": 0.007046811541256219
       },
       "task_cost": {
-        "mean": 4378.901840325485,
-        "std": 21.092571022235475
+        "mean": 4379.075029591427,
+        "std": 21.002769094209373
       },
       "terminal_position_error_m": {
-        "mean": 0.0033222046581542334,
-        "std": 0.0005409330033304309
+        "mean": 0.003304781098925645,
+        "std": 0.0005409503275770149
       }
     }
   },
@@ -120,15 +120,15 @@
   "bellman_claim": "none; stochastic Bellman parity is explicitly out of scope",
   "deterministic_phase1_issue": "a7dad8a",
   "extlqg_comparator": {
-    "expected_cost": null,
-    "label": "provisional_lqr_plus_kalman",
+    "expected_cost": 12150.622423244211,
+    "label": "local_extlqg_fixed_point",
     "matlab_function_chain": [
       "extLQG",
       "computeOFC",
       "computeExtKalman"
     ],
-    "n_iterations": null,
-    "parity_status": "scaffold: preserves extLQG/computeOFC/computeExtKalman call surface; full MATLAB fixed-point iteration still replaces gains"
+    "n_iterations": 4,
+    "parity_status": "fixed_point: local port of extLQG/computeOFC/computeExtKalman"
   },
   "game_card_summary": {
     "cost": {
@@ -245,7 +245,7 @@
       8,
       8
     ],
-    "shared_noise_policy": "Each seed samples one draw bundle and reuses it for full-state LQR, full-state H-infinity, provisional output-feedback LQG, and output-feedback H-infinity arms.",
+    "shared_noise_policy": "Each seed samples one draw bundle and reuses it for full-state LQR, full-state H-infinity, output-feedback extLQG, and output-feedback H-infinity arms.",
     "signal_dependent_scale": 0.02,
     "signal_dependent_state_shape": [
       48,
@@ -575,102 +575,102 @@
         "terminal_position_error_m": 0.0010058131820084363
       }
     ],
-    "output_feedback_lqg_provisional": [
+    "output_feedback_lqg_extlqg": [
       {
-        "control_effort": 16.87155059275646,
-        "estimator_rms_error": 0.010160416543763442,
-        "peak_forward_velocity": 0.7332229948711808,
+        "control_effort": 16.86310115916275,
+        "estimator_rms_error": 0.010418528664206058,
+        "peak_forward_velocity": 0.73315042342144,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 4359.830927541339,
-        "terminal_position_error_m": 0.0037696019288793454
+        "task_cost": 4359.989941058865,
+        "terminal_position_error_m": 0.003770858068084265
       },
       {
-        "control_effort": 16.894223233703098,
-        "estimator_rms_error": 0.009579196465272343,
-        "peak_forward_velocity": 0.7325977662209764,
+        "control_effort": 16.898467785601337,
+        "estimator_rms_error": 0.009586871684085767,
+        "peak_forward_velocity": 0.7326925833788206,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 4397.3342590401635,
-        "terminal_position_error_m": 0.002103195763252142
+        "task_cost": 4397.211270245296,
+        "terminal_position_error_m": 0.0021153695883097175
       },
       {
-        "control_effort": 16.51324369531733,
-        "estimator_rms_error": 0.00873472413034809,
-        "peak_forward_velocity": 0.7212961805333942,
+        "control_effort": 16.520267080834273,
+        "estimator_rms_error": 0.00882596912601425,
+        "peak_forward_velocity": 0.7215389405414683,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 4379.404345371794,
-        "terminal_position_error_m": 0.0036628680711163373
+        "task_cost": 4379.344900323794,
+        "terminal_position_error_m": 0.003661720816819368
       },
       {
-        "control_effort": 17.099739863663853,
-        "estimator_rms_error": 0.0076587502954395545,
-        "peak_forward_velocity": 0.7395242922219089,
+        "control_effort": 17.096037419257733,
+        "estimator_rms_error": 0.007883226445371328,
+        "peak_forward_velocity": 0.7395185171884051,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 4396.735822462132,
-        "terminal_position_error_m": 0.0030061759905799065
+        "task_cost": 4396.999649490795,
+        "terminal_position_error_m": 0.0029723612471347863
       },
       {
-        "control_effort": 16.81038905442544,
-        "estimator_rms_error": 0.007185794664203444,
-        "peak_forward_velocity": 0.7314475506600965,
+        "control_effort": 16.805405114857916,
+        "estimator_rms_error": 0.007398971159072324,
+        "peak_forward_velocity": 0.7313154092639106,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 4370.493441975325,
-        "terminal_position_error_m": 0.002689804113069368
+        "task_cost": 4370.607317885811,
+        "terminal_position_error_m": 0.0026875244594066518
       },
       {
-        "control_effort": 16.722850390610766,
-        "estimator_rms_error": 0.01236680981691115,
-        "peak_forward_velocity": 0.7261505855257923,
+        "control_effort": 16.73877534185095,
+        "estimator_rms_error": 0.012402271668330295,
+        "peak_forward_velocity": 0.7266492305602633,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 4400.711353713363,
-        "terminal_position_error_m": 0.0034561485943571725
+        "task_cost": 4400.869096636477,
+        "terminal_position_error_m": 0.0034407858656360433
       },
       {
-        "control_effort": 16.22323620825058,
-        "estimator_rms_error": 0.010871643743456186,
-        "peak_forward_velocity": 0.716394472629135,
+        "control_effort": 16.20590173692976,
+        "estimator_rms_error": 0.010772455552904533,
+        "peak_forward_velocity": 0.715918729174329,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 4352.756361199559,
-        "terminal_position_error_m": 0.0037686395358933356
+        "task_cost": 4353.232249535154,
+        "terminal_position_error_m": 0.0037741141448560745
       },
       {
-        "control_effort": 16.431981187048958,
-        "estimator_rms_error": 0.010695099966080394,
-        "peak_forward_velocity": 0.7241382643880729,
+        "control_effort": 16.41955943697412,
+        "estimator_rms_error": 0.010639357319499632,
+        "peak_forward_velocity": 0.7237843942239272,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 4353.823246688355,
-        "terminal_position_error_m": 0.0036598438450737313
+        "task_cost": 4354.399697408125,
+        "terminal_position_error_m": 0.00366379820212534
       },
       {
-        "control_effort": 16.77732674428933,
-        "estimator_rms_error": 0.008617520123201711,
-        "peak_forward_velocity": 0.7242451508430164,
+        "control_effort": 16.787468417039978,
+        "estimator_rms_error": 0.00857397132379769,
+        "peak_forward_velocity": 0.7245534867230163,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 4401.089230405613,
-        "terminal_position_error_m": 0.004151387391576751
+        "task_cost": 4401.096146534949,
+        "terminal_position_error_m": 0.0041419285147030055
       },
       {
-        "control_effort": 16.34037797624046,
-        "estimator_rms_error": 0.009744885781195487,
-        "peak_forward_velocity": 0.7167835122277386,
+        "control_effort": 16.340167337976315,
+        "estimator_rms_error": 0.009861839008967746,
+        "peak_forward_velocity": 0.7169509063392643,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 4393.077568400477,
-        "terminal_position_error_m": 0.003036246449915257
+        "task_cost": 4393.562463544549,
+        "terminal_position_error_m": 0.0029785941123111775
       },
       {
-        "control_effort": 16.254313516213898,
-        "estimator_rms_error": 0.012238372964246094,
-        "peak_forward_velocity": 0.7184353099351105,
+        "control_effort": 16.26220534755888,
+        "estimator_rms_error": 0.011877251304085647,
+        "peak_forward_velocity": 0.7190027121531792,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 4399.357692152429,
-        "terminal_position_error_m": 0.003510822415199309
+        "task_cost": 4399.2849481594185,
+        "terminal_position_error_m": 0.0034163759234588963
       },
       {
-        "control_effort": 16.69435832877379,
-        "estimator_rms_error": 0.007847769208107232,
-        "peak_forward_velocity": 0.731860381305644,
+        "control_effort": 16.678852775607375,
+        "estimator_rms_error": 0.007761257385820831,
+        "peak_forward_velocity": 0.7315639063345162,
         "peak_forward_velocity_idx": 16,
-        "task_cost": 4342.207834955265,
-        "terminal_position_error_m": 0.0030517217989381442
+        "task_cost": 4342.302674273901,
+        "terminal_position_error_m": 0.0030339422442624167
       }
     ]
   },

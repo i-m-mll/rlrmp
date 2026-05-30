@@ -11,7 +11,7 @@ Rerun metadata:
 
 Scope: Small common-random-number Monte Carlo evaluation of deterministic Phase 3 rollout-recovery controllers under Euler plus sampled sensory, state-space motor/process, and signal-dependent state noise.
 
-Non-goals: No initial-state jitter sweep, no process-noise scale sweep, no full C&S extLQG fixed-point port, and no stochastic Bellman parity claim.
+Non-goals: No initial-state jitter sweep, no process-noise scale sweep, and no stochastic Bellman parity claim.
 
 Monte Carlo settings:
 

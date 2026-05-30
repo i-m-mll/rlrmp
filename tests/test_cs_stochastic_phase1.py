@@ -85,7 +85,7 @@ def test_phase1_stochastic_manifest_metadata_has_no_bellman_claim() -> None:
     assert summary["rerun_metadata"]["lane"] == "released_stochastic"
     assert summary["no_bellman_claim"] is True
     assert "Bellman" in summary["bellman_claim"]
-    assert "full MATLAB fixed-point iteration" in summary["extlqg_comparator"]["parity_status"]
-    assert summary["arms"]["output_feedback_lqg_provisional"]["estimator_rms_error"]["mean"] is not None
+    assert "fixed_point" in summary["extlqg_comparator"]["parity_status"]
+    assert summary["arms"]["output_feedback_lqg_extlqg"]["estimator_rms_error"]["mean"] is not None
     assert summary["arms"]["full_state_lqr"]["estimator_rms_error"]["mean"] is None
     json.dumps(summary)

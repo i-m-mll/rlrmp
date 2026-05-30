@@ -284,7 +284,7 @@ def result_summary(
             "comparator_status": "exact deterministic H-infinity gains under sampled stochastic plant",
             "rollouts": [trial.full_state_hinf for trial in result.trials],
         },
-        "output_feedback_lqg_provisional": {
+        "output_feedback_lqg_extlqg": {
             "controller_family": "LQG",
             "information_structure": "output_feedback",
             "comparator_status": result.extlqg_parity_status,
@@ -323,12 +323,12 @@ def result_summary(
             "signal_dependent_state_shape": list(result.covariances.signal_dependent_state.shape),
             "shared_noise_policy": (
                 "Each seed samples one draw bundle and reuses it for full-state LQR, "
-                "full-state H-infinity, provisional output-feedback LQG, and "
+                "full-state H-infinity, output-feedback extLQG, and "
                 "output-feedback H-infinity arms."
             ),
         },
         "extlqg_comparator": {
-            "label": "provisional_lqr_plus_kalman",
+            "label": "local_extlqg_fixed_point",
             "matlab_function_chain": ["extLQG", "computeOFC", "computeExtKalman"],
             "parity_status": result.extlqg_parity_status,
             "n_iterations": result.extlqg_n_iterations,
@@ -392,12 +392,10 @@ arms, so output-feedback LQG and robust comparisons use common random numbers.
 
 ## Comparator Scope
 
-The output-feedback LQG arm is labelled provisional because the full C&S
-`extLQG -> computeOFC -> computeExtKalman` fixed-point port is not complete.
-The local arm uses deterministic LQR gains with the delayed Kalman estimator
-scaffold. The robust arm uses the local C&S-style output-feedback H-infinity
-gains. No stochastic Bellman objective or Bellman parity is claimed in this
-lane.
+The output-feedback LQG arm uses the local port of the C&S
+`extLQG -> computeOFC -> computeExtKalman` fixed-point comparator. The robust
+arm uses the local C&S-style output-feedback H-infinity gains. No stochastic
+Bellman objective or Bellman parity is claimed in this lane.
 
 ## Summary Metrics
 
@@ -416,9 +414,10 @@ Trials: `{summary["n_trials"]}`. Seeds: `{summary["seeds"]}`.
 
 This is a released forward-simulation check for exact controller families where
 local exact arrays exist. It should be read beside the deterministic analytical
-Phase 1 result, not as a replacement for it. The output-feedback LQG row is a
-provisional simplified comparator until the full MATLAB extLQG fixed-point
-iteration is ported.
+Phase 1 result, not as a replacement for it. The output-feedback LQG row now
+uses the local extLQG fixed-point path; remaining fidelity questions should be
+treated as numerical/audit questions against the MATLAB code, not as a missing
+comparator implementation.
 """
 
 
