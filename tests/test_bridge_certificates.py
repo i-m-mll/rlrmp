@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 
 from rlrmp.analysis.bridge_certificates import (
@@ -182,3 +184,19 @@ def test_output_feedback_linear_core_uses_coupled_and_estimated_state_labels() -
     assert by_name[VALUE_POLICY_GAP].summary["state_label"] == "coupled_state"
     assert by_name[BELLMAN_HESSIAN_RESIDUAL].summary["state_label"] == "estimated_state"
     assert all(component.status == "available" for component in components[:2])
+
+
+def test_visited_subspace_handles_zero_singular_values_without_warning() -> None:
+    states = np.zeros((1, 3, 4))
+    states[0, :, 0] = np.asarray([1.0, 0.5, 0.25])
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        components = build_standard_certificate_components(
+            architecture="free_time_varying",
+            states=states,
+        )
+
+    by_name = {component.name: component for component in components}
+    assert by_name[VISITED_SUBSPACE_DIAGNOSTICS].status == "available"
+    assert by_name[VISITED_SUBSPACE_DIAGNOSTICS].summary["mean_effective_rank"] == 1.0

@@ -40,6 +40,7 @@ from rlrmp.analysis.cs_game_card import (
 from rlrmp.analysis.output_feedback import (
     OutputFeedbackConfig,
     kalman_estimator_joint_matrices,
+    rollout_with_kalman_estimator,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
@@ -124,6 +125,7 @@ def materialize() -> dict[str, Any]:
     output_config = OutputFeedbackConfig()
     with np.load(SOURCE_ARTIFACT) as archive:
         arrays = {name: np.asarray(archive[name]) for name in archive.files}
+    _ensure_reference_under_epsilon_arrays(arrays, reference, output_config)
 
     rows: list[BridgeRunManifest] = []
     rows.extend(
@@ -159,7 +161,9 @@ def materialize() -> dict[str, Any]:
         },
         "result": (
             "Full standard-certificate components are available only for the saved "
-            "no-coverage/reference rows backed by the rollout-recovery NPZ. The "
+            "no-coverage/reference rows backed by the rollout-recovery NPZ; those "
+            "rows are now evaluated on both nominal-clean and Riccati-epsilon "
+            "state lenses. The "
             "recent compact sweep manifests provide deterministic behavioral, "
             "optimizer, gain-diagnostic, exact-L2/gamma, and coverage-rank sidecars "
             "where those summaries were saved, but they do not include enough raw "
@@ -186,61 +190,91 @@ def _saved_no_coverage_rows(
         ),
     )
     rows = []
+    evaluation_lenses = (
+        ("nominal_clean", "clean", "no_coverage_nominal_clean"),
+        ("riccati_epsilon_response", "under_eps", "no_coverage_riccati_epsilon_response"),
+    )
     for label, fit in selected:
         is_reference = fit is None
-        components = list(
-            _full_standard_components(
-                arrays=arrays,
-                reference=reference,
-                output_config=output_config,
-                array_prefix="lqr_clean" if is_reference else f"{label}_clean",
-                candidate_gain=np.asarray(reference.lqr_solution.K)
-                if is_reference
-                else arrays[f"{label}_K"],
-                optimizer_metadata=None if is_reference else _optimizer_metadata(fit),
-                state_label="no_coverage_nominal_clean_coupled_state",
-                action_state_label="no_coverage_nominal_clean_estimated_state",
-                architecture="reference" if is_reference else "time_constrained_free_gain",
+        for lens_label, array_suffix, evaluation_distribution in evaluation_lenses:
+            array_prefix = f"lqr_{array_suffix}" if is_reference else f"{label}_{array_suffix}"
+            components = list(
+                _full_standard_components(
+                    arrays=arrays,
+                    reference=reference,
+                    output_config=output_config,
+                    array_prefix=array_prefix,
+                    candidate_gain=np.asarray(reference.lqr_solution.K)
+                    if is_reference
+                    else arrays[f"{label}_K"],
+                    optimizer_metadata=None if is_reference else _optimizer_metadata(fit),
+                    state_label=f"{evaluation_distribution}_coupled_state",
+                    action_state_label=f"{evaluation_distribution}_estimated_state",
+                    architecture="reference" if is_reference else "time_constrained_free_gain",
+                )
             )
-        )
-        if is_reference:
-            components = _replace_component(
-                components,
-                BridgeCertificateComponent.not_applicable(
-                    OPTIMIZER_METADATA,
-                    "analytical LQR reference has no optimizer metadata",
+            if is_reference:
+                components = _replace_component(
+                    components,
+                    BridgeCertificateComponent.not_applicable(
+                        OPTIMIZER_METADATA,
+                        "analytical LQR reference has no optimizer metadata",
+                    ),
+                )
+            components.extend(_diagnostic_sidecars(fit=fit, reference_manifest=manifest))
+            spec = BridgeRunSpec(
+                issue_id=ISSUE_ID,
+                run_id=make_bridge_run_id("no_coverage", label, lens_label),
+                objective="optimal",
+                architecture="reference" if is_reference else "time_constrained_free_gain",
+                controller_label=label,
+                optimizer_label="analytical"
+                if is_reference
+                else "lbfgsb_strong_optimizer_whitened",
+                training_distribution="none" if is_reference else "nominal",
+                evaluation_lane="deterministic",
+                reference_controller="analytical_lqr_kalman",
+                gamma_factor=manifest["diagnostics"]["gamma_factor"],
+                parameters={
+                    "evaluation_distribution": evaluation_distribution,
+                    "distribution_family": "no-coverage/reference",
+                    "source_manifest": _repo_relative(SOURCE_MANIFESTS["no_coverage"]),
+                    "source_artifact": _repo_relative(SOURCE_ARTIFACT),
+                },
+                notes=(
+                    "Full standard bundle computed from saved gains and reconstructed "
+                    f"{lens_label} rollout arrays."
                 ),
             )
-        components.extend(_diagnostic_sidecars(fit=fit, reference_manifest=manifest))
-        spec = BridgeRunSpec(
-            issue_id=ISSUE_ID,
-            run_id=make_bridge_run_id("no_coverage", label, "nominal_clean"),
-            objective="optimal",
-            architecture="reference" if is_reference else "time_constrained_free_gain",
-            controller_label=label,
-            optimizer_label="analytical" if is_reference else "lbfgsb_strong_optimizer_whitened",
-            training_distribution="none" if is_reference else "nominal",
-            evaluation_lane="deterministic",
-            reference_controller="analytical_lqr_kalman",
-            gamma_factor=manifest["diagnostics"]["gamma_factor"],
-            parameters={
-                "evaluation_distribution": "no_coverage_nominal_clean",
-                "distribution_family": "no-coverage/reference",
-                "source_manifest": _repo_relative(SOURCE_MANIFESTS["no_coverage"]),
-                "source_artifact": _repo_relative(SOURCE_ARTIFACT),
-            },
-            notes=("Full standard bundle computed from saved gains and clean rollout arrays."),
-        )
-        rows.append(
-            BridgeRunManifest(
-                spec=spec,
-                status="full_standard_certificate",
-                metrics=_no_coverage_metrics(label, fit, manifest),
-                artifacts={"source_npz": _repo_relative(SOURCE_ARTIFACT)},
-                certificate_components=tuple(components),
+            rows.append(
+                BridgeRunManifest(
+                    spec=spec,
+                    status="full_standard_certificate",
+                    metrics=_no_coverage_metrics(label, fit, manifest)
+                    | {"certificate_evaluation_lens": lens_label},
+                    artifacts={"source_npz": _repo_relative(SOURCE_ARTIFACT)},
+                    certificate_components=tuple(components),
+                )
             )
-        )
     return rows
+
+
+def _ensure_reference_under_epsilon_arrays(
+    arrays: dict[str, np.ndarray],
+    reference: Any,
+    output_config: OutputFeedbackConfig,
+) -> None:
+    if "lqr_under_eps_x" in arrays:
+        return
+    rollout = rollout_with_kalman_estimator(
+        reference.plant,
+        reference.lqr_solution.K,
+        jnp.asarray(arrays["lqr_clean_x"][0], dtype=jnp.float64),
+        jnp.asarray(arrays["riccati_epsilon"], dtype=jnp.float64),
+        output_config,
+    )
+    arrays["lqr_under_eps_x"] = np.asarray(rollout.x)
+    arrays["lqr_under_eps_x_hat"] = np.asarray(rollout.x_hat)
 
 
 def _initial_state_rows(manifest: dict[str, Any]) -> list[BridgeRunManifest]:
@@ -785,8 +819,8 @@ Issue: `{ISSUE_ID}`. Standard certificate cross-reference: `{STANDARD_CERTIFICAT
 This materialization applies the bridge standard-certificate row contract to the
 recent output-feedback coverage/noise sweep outputs. It is intentionally a
 partial certificate report: the saved no-coverage/reference artifact contains
-gains and clean rollout arrays, while the newer sweep manifests mostly preserve
-small scalar summaries.
+gains plus nominal-clean/Riccati-epsilon rollout arrays, while the newer sweep
+manifests mostly preserve small scalar summaries.
 
 Result: {result["result"]}
 
@@ -809,7 +843,7 @@ used as the certificate gate.
 
 ## Key Rows
 
-| run | status | distribution | objective ratio | gain sidecar | action sidecar | exact L2 sidecar | lambda/gamma^2 |
+| run | status | distribution | objective ratio | gain sidecar | action mismatch | exact L2 sidecar | lambda/gamma^2 |
 |---|---|---|---:|---:|---:|---:|---:|
 {key_rows}
 
@@ -833,10 +867,11 @@ used as the certificate gate.
 ## Verdict
 
 The standard certificate application does not rescue the bridge. The only rows
-with full component availability are the saved no-coverage/reference rows. The
-recent initial-state, process-noise, and eigenspectrum rows remain
-partial/sidecar-only from current tracked artifacts, and their saved sidecars
-continue to show behaviorally close but certificate-poor from-scratch recovery.
+with full component availability are the saved no-coverage/reference rows on
+nominal-clean and Riccati-epsilon evaluation lenses. The recent initial-state,
+process-noise, and eigenspectrum rows remain partial/sidecar-only from current
+tracked artifacts, and their saved sidecars continue to show behaviorally close
+but certificate-poor from-scratch recovery.
 """
 
 
@@ -918,6 +953,10 @@ def _key_rows(rows: list[dict[str, Any]]) -> str:
             metrics.get("deterministic_lambda_over_gamma_squared"),
         )
         action = _first_present(
+            _component_summary(row, STATE_WEIGHTED_ACTION_MISMATCH, "mismatch_ratio_mean"),
+            metrics.get("under_epsilon_action_mismatch_ratio")
+            if metrics.get("certificate_evaluation_lens") == "riccati_epsilon_response"
+            else None,
             metrics.get("clean_action_mismatch_ratio"),
             metrics.get("action_mismatch_to_reference_mean"),
         )
@@ -947,6 +986,13 @@ def _first_present(*values: Any) -> Any:
     for value in values:
         if value is not None:
             return value
+    return None
+
+
+def _component_summary(row: dict[str, Any], name: str, summary_key: str) -> Any:
+    for component in row["certificate_components"]:
+        if component["name"] == name and component["status"] == "available":
+            return component["summary"].get(summary_key)
     return None
 
 

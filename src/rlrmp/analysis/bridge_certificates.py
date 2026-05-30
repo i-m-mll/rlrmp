@@ -255,8 +255,9 @@ def visited_subspace_diagnostics_component(
         np.sum(singular_values, axis=1, keepdims=True),
         numerics.denominator_floor,
     )
+    normalized_for_log = np.where(normalized > 0.0, normalized, 1.0)
     entropy = -np.sum(
-        np.where(normalized > 0.0, normalized * np.log(normalized), 0.0),
+        np.where(normalized > 0.0, normalized * np.log(normalized_for_log), 0.0),
         axis=1,
     )
     effective_rank = np.exp(entropy)
