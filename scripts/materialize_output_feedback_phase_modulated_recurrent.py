@@ -24,7 +24,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--skip-reward",
         action="store_true",
-        help="Only materialize projection, action-imitation, and I/O-map-imitation rows.",
+        help="Materialize exact-oracle, projected-oracle, and supervised rows without reward rows.",
     )
     return parser.parse_args()
 
