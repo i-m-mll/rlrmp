@@ -81,6 +81,14 @@ image = (
     modal.Image.debian_slim(python_version="3.12")
     .apt_install("git", "perl")
     .pip_install("uv")
+    .env(
+        {
+            "PYTHONPATH": (
+                "/workspace/rlrmp/src:/workspace/feedbax/src:"
+                "/workspace/jax-cookbook/src"
+            )
+        }
+    )
     .add_local_dir(str(REPO_ROOT), "/workspace/rlrmp", copy=True, ignore=_ignore_source)
     .add_local_dir(str(LOCAL_FEEDBAX_DIR), "/workspace/feedbax", copy=True, ignore=_ignore_source)
     .add_local_dir(
