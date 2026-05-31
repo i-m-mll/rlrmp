@@ -14,16 +14,24 @@ import jax.numpy as jnp
 import numpy as np
 
 from rlrmp.analysis.bridge_certificates import (
+    DISTURBANCE_HISTORY_TO_ACTION_MAP_MISMATCH,
+    DISTURBANCE_HISTORY_TO_STATE_MAP_MISMATCH,
+    OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH,
     STATE_WEIGHTED_ACTION_MISMATCH,
     build_standard_certificate_components,
 )
-from rlrmp.analysis.bridge_contracts import BridgeRunManifest, BridgeRunSpec, make_bridge_run_id
+from rlrmp.analysis.bridge_contracts import (
+    BridgeRolloutBatch,
+    BridgeRunManifest,
+    BridgeRunSpec,
+    make_bridge_run_id,
+)
 from rlrmp.analysis.bridge_controllers import (
     MatrixBasisProjection,
     PhaseModulatedLinearRecurrentController,
     clamped_bspline_time_basis,
+    hidden_growth_diagnostics,
     project_matrix_sequence_to_basis,
-    rollout_phase_modulated_linear_recurrent_controller,
 )
 from rlrmp.analysis.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
@@ -58,7 +66,11 @@ ARTIFACT_PATH = (
     / "phase_modulated_recurrent.npz"
 )
 
-SPLINE_RANKS = (3, 5, 8, 12)
+LEGACY_AUDIT_RANKS = (3, 5, 8)
+PROJECTION_SWEEP_RANKS = (12, 20, 30, 60)
+SPLINE_RANKS = LEGACY_AUDIT_RANKS + PROJECTION_SWEEP_RANKS
+DEFAULT_PROCESS_IO_DISTURBANCE_SCALE = 0.02
+DEFAULT_MEASUREMENT_IO_DISTURBANCE_SCALE = 0.02
 DEFAULT_REWARD_TRAIN_STEPS = 80
 DEFAULT_REWARD_LEARNING_RATE = 3e-3
 DEFAULT_REWARD_STABILITY_PENALTY = 1e-3
@@ -93,6 +105,7 @@ class PhaseModulatedCondition:
     coverage_modes: int | None = None
     coverage_scale: float = 0.0
     disturbance_scale: float = 0.0
+    measurement_scale: float = 0.0
     n_train_steps: int = DEFAULT_REWARD_TRAIN_STEPS
     learning_rate: float = DEFAULT_REWARD_LEARNING_RATE
     stability_penalty: float = DEFAULT_REWARD_STABILITY_PENALTY
@@ -106,40 +119,89 @@ class PhaseModulatedCondition:
 
 
 def default_conditions(*, include_reward: bool = True) -> tuple[PhaseModulatedCondition, ...]:
-    """Return the planned representation, imitation, I/O-map, and r=12 rows."""
+    """Return the planned exact-oracle, projected-oracle, and reward rows."""
 
-    projection = tuple(
+    exact_oracle = (
         PhaseModulatedCondition(
-            label=f"pm_linrec_r{rank}_oracle_matrix_projection",
-            row_family="oracle_matrix_projection",
-            rank=rank,
-            training_distribution="none",
-            evaluation_lens="oracle_matrix_projection",
-        )
-        for rank in SPLINE_RANKS
+            label="pm_linrec_exact_oracle_nominal_replay",
+            row_family="exact_oracle_sanity",
+            rank=60,
+            training_distribution="nominal",
+            evaluation_lens="nominal_clean",
+        ),
+        PhaseModulatedCondition(
+            label="pm_linrec_exact_oracle_process_io",
+            row_family="exact_oracle_sanity",
+            rank=60,
+            training_distribution="process_io_probe",
+            evaluation_lens="process_io",
+            disturbance_scale=DEFAULT_PROCESS_IO_DISTURBANCE_SCALE,
+        ),
+        PhaseModulatedCondition(
+            label="pm_linrec_exact_oracle_process_measurement_io",
+            row_family="exact_oracle_sanity",
+            rank=60,
+            training_distribution="process_measurement_io_probe",
+            evaluation_lens="process_measurement_io",
+            disturbance_scale=DEFAULT_PROCESS_IO_DISTURBANCE_SCALE,
+            measurement_scale=DEFAULT_MEASUREMENT_IO_DISTURBANCE_SCALE,
+        ),
     )
-    imitation = tuple(
+    legacy_projection = tuple(
         PhaseModulatedCondition(
-            label=f"pm_linrec_r{rank}_action_imitation_nominal",
-            row_family="action_imitation",
+            label=f"pm_linrec_r{rank}_legacy_projected_oracle_nominal_replay",
+            row_family="legacy_projected_oracle_replay",
             rank=rank,
             training_distribution="nominal",
             evaluation_lens="nominal_clean",
         )
-        for rank in SPLINE_RANKS
+        for rank in LEGACY_AUDIT_RANKS
     )
-    io_map = tuple(
+    projected_nominal = tuple(
         PhaseModulatedCondition(
-            label=f"pm_linrec_r{rank}_io_map_imitation_exact_process_eigen_m4",
-            row_family="io_map_imitation",
+            label=f"pm_linrec_r{rank}_projected_oracle_nominal_replay",
+            row_family="projected_oracle_replay",
             rank=rank,
-            training_distribution="eigenspectrum_state",
-            evaluation_lens="exact_process_eigen_m4",
+            training_distribution="nominal",
+            evaluation_lens="nominal_clean",
+        )
+        for rank in PROJECTION_SWEEP_RANKS
+    )
+    projected_process = tuple(
+        PhaseModulatedCondition(
+            label=f"pm_linrec_r{rank}_projected_oracle_process_io_eval",
+            row_family="projected_oracle_io_eval",
+            rank=rank,
+            training_distribution="process_io_probe",
+            evaluation_lens="process_io",
+            disturbance_scale=DEFAULT_PROCESS_IO_DISTURBANCE_SCALE,
+        )
+        for rank in PROJECTION_SWEEP_RANKS
+    )
+    projected_process_measurement = tuple(
+        PhaseModulatedCondition(
+            label=f"pm_linrec_r{rank}_projected_oracle_process_measurement_io_eval",
+            row_family="projected_oracle_io_eval",
+            rank=rank,
+            training_distribution="process_measurement_io_probe",
+            evaluation_lens="process_measurement_io",
+            disturbance_scale=DEFAULT_PROCESS_IO_DISTURBANCE_SCALE,
+            measurement_scale=DEFAULT_MEASUREMENT_IO_DISTURBANCE_SCALE,
+        )
+        for rank in PROJECTION_SWEEP_RANKS
+    )
+    state_coverage = tuple(
+        PhaseModulatedCondition(
+            label=f"pm_linrec_r{rank}_projected_oracle_state_coverage_eigen_m4_s0p3_eval",
+            row_family="projected_oracle_state_coverage_eval",
+            rank=rank,
+            training_distribution="state_coverage_eigen",
+            evaluation_lens="state_coverage_eigen_m4_s0.3",
             coverage_family="state_eigenspectrum",
             coverage_modes=4,
             coverage_scale=0.3,
         )
-        for rank in SPLINE_RANKS
+        for rank in (LEGACY_AUDIT_RANKS + (12,))
     )
     reward = (
         PhaseModulatedCondition(
@@ -150,31 +212,31 @@ def default_conditions(*, include_reward: bool = True) -> tuple[PhaseModulatedCo
             evaluation_lens="nominal_clean",
         ),
         PhaseModulatedCondition(
-            label="pm_linrec_r12_exact_process_eigen_m1_s0p3_reward",
+            label="pm_linrec_r12_state_coverage_eigen_m1_s0p3_reward",
             row_family="reward_lens",
             rank=12,
-            training_distribution="eigenspectrum_state",
-            evaluation_lens="exact_process_eigen_m1_s0.3",
+            training_distribution="state_coverage_eigen",
+            evaluation_lens="state_coverage_eigen_m1_s0.3",
             coverage_family="state_eigenspectrum",
             coverage_modes=1,
             coverage_scale=0.3,
         ),
         PhaseModulatedCondition(
-            label="pm_linrec_r12_exact_process_eigen_m4_s0p3_reward",
+            label="pm_linrec_r12_state_coverage_eigen_m4_s0p3_reward",
             row_family="reward_lens",
             rank=12,
-            training_distribution="eigenspectrum_state",
-            evaluation_lens="exact_process_eigen_m4_s0.3",
+            training_distribution="state_coverage_eigen",
+            evaluation_lens="state_coverage_eigen_m4_s0.3",
             coverage_family="state_eigenspectrum",
             coverage_modes=4,
             coverage_scale=0.3,
         ),
         PhaseModulatedCondition(
-            label="pm_linrec_r12_exact_process_eigen_m4_s1_reward",
+            label="pm_linrec_r12_state_coverage_eigen_m4_s1_reward",
             row_family="reward_lens",
             rank=12,
-            training_distribution="eigenspectrum_state",
-            evaluation_lens="exact_process_eigen_m4_s1",
+            training_distribution="state_coverage_eigen",
+            evaluation_lens="state_coverage_eigen_m4_s1",
             coverage_family="state_eigenspectrum",
             coverage_modes=4,
             coverage_scale=1.0,
@@ -201,24 +263,32 @@ def default_conditions(*, include_reward: bool = True) -> tuple[PhaseModulatedCo
             disturbance_scale=0.02,
         ),
         PhaseModulatedCondition(
-            label="pm_linrec_r12_imitation_nominal_then_reward",
-            row_family="imitation_then_reward_lens",
+            label="pm_linrec_r12_projected_oracle_nominal_then_reward",
+            row_family="projection_warm_start_then_reward_lens",
             rank=12,
             training_distribution="nominal",
             evaluation_lens="nominal_clean",
         ),
         PhaseModulatedCondition(
-            label="pm_linrec_r12_imitation_exact_eigen_m4_then_reward",
-            row_family="imitation_then_reward_lens",
+            label="pm_linrec_r12_projected_oracle_state_coverage_eigen_m4_then_reward",
+            row_family="projection_warm_start_then_reward_lens",
             rank=12,
-            training_distribution="eigenspectrum_state",
-            evaluation_lens="exact_process_eigen_m4_s0.3",
+            training_distribution="state_coverage_eigen",
+            evaluation_lens="state_coverage_eigen_m4_s0.3",
             coverage_family="state_eigenspectrum",
             coverage_modes=4,
             coverage_scale=0.3,
         ),
     )
-    return projection + imitation + io_map + (reward if include_reward else ())
+    return (
+        exact_oracle
+        + legacy_projection
+        + projected_nominal
+        + projected_process
+        + projected_process_measurement
+        + state_coverage
+        + (reward if include_reward else ())
+    )
 
 
 def build_oracle_recurrent_reference(
@@ -346,12 +416,22 @@ def materialize(
     )
     exact_controller = exact_oracle_controller(oracle)
     retained = conditions or default_conditions(include_reward=include_reward)
-    bases = {rank: phase_basis(horizon=gains.shape[0], rank=rank) for rank in SPLINE_RANKS}
-    projected = {rank: project_oracle_reference(oracle, basis=bases[rank]) for rank in SPLINE_RANKS}
+    projected_ranks = sorted(
+        {condition.rank for condition in retained if condition.row_family != "exact_oracle_sanity"}
+    )
+    bases = {rank: phase_basis(horizon=gains.shape[0], rank=rank) for rank in projected_ranks}
+    projected = {
+        rank: project_oracle_reference(oracle, basis=bases[rank]) for rank in projected_ranks
+    }
+    exact_projections = project_oracle_reference(
+        oracle,
+        basis=np.eye(gains.shape[0], dtype=np.float64),
+    )[1]
     arrays: dict[str, np.ndarray] = {
         "reference_clean_x": np.asarray(clean_reference.x),
         "reference_clean_x_hat": np.asarray(clean_reference.x_hat),
         "reference_clean_u": np.asarray(clean_reference.u),
+        "exact_time_identity_basis": np.eye(gains.shape[0], dtype=np.float64),
         "oracle_A_h": oracle.recurrent_matrices,
         "oracle_B_y": oracle.observation_matrices,
         "oracle_C_h": oracle.readout_matrices,
@@ -366,23 +446,29 @@ def materialize(
             plant=plant,
             gains=gains,
             x0=x0,
+            observation_dim=oracle.observation_matrix.shape[0],
             output_config=output_config,
         )
-        projected_controller, projections = projected[condition.rank]
+        if condition.row_family == "exact_oracle_sanity":
+            projected_controller, projections = exact_controller, exact_projections
+        else:
+            projected_controller, projections = projected[condition.rank]
         controller, fit_metadata = _controller_for_condition(
             condition,
+            exact_controller=exact_controller,
             projected_controller=projected_controller,
             plant=plant,
             schedule=schedule,
             training=training,
             observation_matrix=oracle.observation_matrix,
         )
-        rollout = rollout_phase_modulated_linear_recurrent_controller(
+        rollout = _rollout_phase_modulated_recurrent_condition(
             controller,
             plant,
             training["x0"],
             observation_matrix=oracle.observation_matrix,
             disturbances=training["disturbances"],
+            measurement_disturbances=training["measurement_disturbances"],
             initial_hidden=training["xhat0"],
         )
         reference_batch = _reference_output_feedback_batch(
@@ -392,6 +478,7 @@ def materialize(
             xhat0=training["xhat0"],
             output_config=output_config,
             disturbances=training["disturbances"],
+            measurement_disturbances=training["measurement_disturbances"],
         )
         row = _manifest_for_condition(
             condition=condition,
@@ -412,15 +499,17 @@ def materialize(
         prefix = condition.run_id
         arrays[f"{prefix}__plant_states"] = np.asarray(rollout.plant_states)
         arrays[f"{prefix}__hidden_states"] = np.asarray(rollout.hidden_states)
+        arrays[f"{prefix}__observations"] = np.asarray(rollout.observations)
         arrays[f"{prefix}__actions"] = np.asarray(rollout.actions)
         arrays[f"{prefix}__reference_actions"] = reference_batch["u"]
+        arrays[f"{prefix}__reference_observations"] = reference_batch["y"]
 
     component_counts: Counter[str] = Counter()
     for row in rows:
         for component in row.certificate_components:
             component_counts[f"{component.name}:{component.status}"] += 1
     summary = {
-        "format": "rlrmp.output_feedback_phase_modulated_recurrent.v1",
+        "format": "rlrmp.output_feedback_phase_modulated_recurrent.v2",
         "issue": ISSUE_ID,
         "umbrella": UMBRELLA_ID,
         "source_issues": {
@@ -433,16 +522,31 @@ def materialize(
             "tau=t/(T-1), not additive phase offsets."
         ),
         "non_goals": (
-            "No GRU training, no broad robust-epsilon arm, and no claim that "
-            "projection/imitation diagnostic rows are bridge passes."
+            "No GRU training, no supervised imitation optimization rows, no broad "
+            "robust-epsilon arm, and no claim that projected-oracle diagnostic rows "
+            "are bridge passes."
         ),
         "runtime_seconds": time.perf_counter() - start,
         "diagnostics": {
             "basis_family": "clamped_b_spline_partition_of_unity",
-            "basis_ranks": list(SPLINE_RANKS),
-            "basis_degrees": {str(rank): min(3, rank - 1) for rank in SPLINE_RANKS},
+            "basis_ranks": projected_ranks,
+            "basis_degrees": {str(rank): min(3, rank - 1) for rank in projected_ranks},
             "component_status_counts": dict(sorted(component_counts.items())),
             "retained_rows": [row.spec.run_id for row in rows],
+            "audit": {
+                "exact_process_eigen_label_disposition": (
+                    "The prior exact_process_eigen rows were state-trajectory covariance "
+                    "coverage directions, not process-eigen disturbance sequences. They are "
+                    "retained under state_coverage_eigen labels."
+                ),
+                "projection_sweep_ranks": list(PROJECTION_SWEEP_RANKS),
+                "exact_oracle_sanity_rows": [
+                    row.spec.run_id
+                    for row in rows
+                    if row.metrics["row_family"] == "exact_oracle_sanity"
+                ],
+                "supervised_optimization_rows": 0,
+            },
         },
         "rows": [row.to_json_dict() for row in rows],
         "result": _result_text(rows),
@@ -484,11 +588,15 @@ def render_markdown(summary: dict[str, Any]) -> str:
     """Render the tracked result note."""
 
     table = [
-        "| row | family | lens | verdict | objective ratio | action mismatch | matrix residual | io-map |",
-        "|---|---|---|---|---:|---:|---:|---|",
+        (
+            "| row | family | lens | verdict | objective ratio | action mismatch | "
+            "matrix residual | obs I/O | proc I/O | io-map |"
+        ),
+        "|---|---|---|---|---:|---:|---:|---:|---:|---|",
     ]
     for row in summary["rows"]:
         metrics = row["metrics"]
+        response = metrics["response_map_mismatch"]
         table.append(
             "| "
             f"{row['spec']['run_id']} | "
@@ -498,6 +606,8 @@ def render_markdown(summary: dict[str, Any]) -> str:
             f"{metrics['objective_ratio_to_clean_reference']:.8g} | "
             f"{metrics['state_weighted_action_mismatch']:.8g} | "
             f"{metrics['projection']['combined_relative_residual']:.8g} | "
+            f"{response['observation_to_action']:.8g} | "
+            f"{response['disturbance_to_action']:.8g} | "
             f"{metrics['io_map_certificate']['status']} |"
         )
     component_rows = [
@@ -516,6 +626,8 @@ Runtime: `{summary.get("runtime_seconds", 0.0):.2f}` seconds.
 
 Verdict: {summary["result"]}
 
+Audit note: {summary["diagnostics"]["audit"]["exact_process_eigen_label_disposition"]}
+
 ## Rows
 
 {"\n".join(table)}
@@ -526,39 +638,56 @@ These rows are diagnostics, not bridge passes. The recurrent controller is an
 augmented-linear system over `z_t = [x_t; h_t]`, and action/visited-state
 components are reported through the existing augmented recurrent adapter. The
 formal I/O-map certificate is consumed through the standard certificate
-component builder; projection/imitation rows remain diagnostic even when those
-components are available.
+component builder; projected-oracle rows remain diagnostic even when those
+components are available. No supervised imitation rows are materialized here.
 
 {"\n".join(component_rows)}
 
 ## Interpretation
 
-The oracle row constructs the exact finite-horizon Kalman recurrent reference.
-Ranked rows then project each time-varying recurrent/readout matrix onto a
-clamped B-spline partition of unity. Reward rows optimize trainable
-phase-modulated recurrent coefficients against the true quadratic rollout
-objective on their retained training distributions; imitation-then-reward rows
-use the projected oracle controller as the warm start before reward fine-tuning.
+The exact-oracle rows replay the finite-horizon Kalman recurrent reference under
+nominal, process I/O, and process+measurement I/O probes. Ranked rows then
+project each time-varying recurrent/readout matrix onto a clamped B-spline
+partition of unity. State-coverage eigen rows preserve the old coverage
+semantics explicitly: they perturb initial state/estimator coverage directions
+from a state-trajectory covariance, not process-eigen disturbances. Reward rows
+optimize trainable phase-modulated recurrent coefficients against the true
+quadratic rollout objective on their retained training distributions; projection
+warm-start rows use the projected oracle controller before reward fine-tuning.
 """
 
 
 def _controller_for_condition(
     condition: PhaseModulatedCondition,
     *,
+    exact_controller: PhaseModulatedLinearRecurrentController,
     projected_controller: PhaseModulatedLinearRecurrentController,
     plant: Any,
     schedule: Any,
     training: dict[str, np.ndarray],
     observation_matrix: np.ndarray,
 ) -> tuple[PhaseModulatedLinearRecurrentController, dict[str, Any]]:
-    if condition.row_family in {"oracle_matrix_projection", "action_imitation", "io_map_imitation"}:
+    if condition.row_family == "exact_oracle_sanity":
+        return exact_controller, {
+            "fit_method": "exact_oracle_replay",
+            "is_reward_trained": False,
+            "initialization": "analytical_lqr_kalman_oracle_recurrence",
+        }
+
+    projected_diagnostics = {
+        "legacy_projected_oracle_replay",
+        "projected_oracle_replay",
+        "projected_oracle_io_eval",
+        "projected_oracle_state_coverage_eval",
+    }
+    if condition.row_family in projected_diagnostics:
         return projected_controller, {
             "fit_method": "oracle_projection_clamped_bspline",
             "is_reward_trained": False,
             "initialization": "oracle_matrix_projection",
         }
 
-    if condition.row_family == "imitation_then_reward_lens":
+    if condition.row_family == "projection_warm_start_then_reward_lens":
         initial = _params_from_controller(projected_controller)
         initialization = "oracle_matrix_projection_warm_start"
     else:
@@ -670,6 +799,10 @@ def _fit_phase_modulated_reward_params(
         "x0": jnp.asarray(training["x0"], dtype=jnp.float64),
         "xhat0": jnp.asarray(training["xhat0"], dtype=jnp.float64),
         "disturbances": jnp.asarray(training["disturbances"], dtype=jnp.float64),
+        "measurement_disturbances": jnp.asarray(
+            training["measurement_disturbances"],
+            dtype=jnp.float64,
+        ),
         "Q": jnp.asarray(schedule.Q, dtype=jnp.float64),
         "R": jnp.asarray(schedule.R, dtype=jnp.float64),
         "Q_f": jnp.asarray(schedule.Q_f, dtype=jnp.float64),
@@ -724,7 +857,7 @@ def _jax_phase_modulated_rollout(
         c_h = jnp.einsum("b,bij->ij", weights, params["C_h"])
         d_y = jnp.einsum("b,bij->ij", weights, params["D_y"])
         c = jnp.einsum("b,bi->i", weights, params["c"])
-        y_t = x @ constants["H"].T
+        y_t = x @ constants["H"].T + constants["measurement_disturbances"][:, t, :]
         u_t = hidden @ c_h.T + y_t @ d_y.T + c
         x = (
             x @ constants["A"].T
@@ -820,6 +953,68 @@ def _adam_minimize(
             "last_loss": loss,
             "best_loss": best_loss,
         },
+    )
+
+
+def _rollout_phase_modulated_recurrent_condition(
+    controller: PhaseModulatedLinearRecurrentController,
+    plant: Any,
+    x0: np.ndarray,
+    *,
+    observation_matrix: np.ndarray,
+    disturbances: np.ndarray,
+    measurement_disturbances: np.ndarray,
+    initial_hidden: np.ndarray,
+) -> BridgeRolloutBatch:
+    """Roll a condition, including explicit measurement-noise probes."""
+
+    A = np.asarray(plant.A, dtype=np.float64)
+    B = np.asarray(plant.B, dtype=np.float64)
+    Bw = np.asarray(plant.Bw, dtype=np.float64)
+    H = np.asarray(observation_matrix, dtype=np.float64)
+    states = np.asarray(x0, dtype=np.float64)
+    hidden = np.asarray(initial_hidden, dtype=np.float64)
+    disturbances_array = np.asarray(disturbances, dtype=np.float64)
+    measurement_array = np.asarray(measurement_disturbances, dtype=np.float64)
+    if states.ndim == 1:
+        states = states[None, :]
+    if hidden.ndim == 1:
+        hidden = hidden[None, :]
+    batch_size = states.shape[0]
+    if hidden.shape[0] == 1 and batch_size != 1:
+        hidden = np.broadcast_to(hidden, (batch_size, hidden.shape[1])).copy()
+    if disturbances_array.shape != (batch_size, controller.horizon, Bw.shape[1]):
+        raise ValueError("disturbances must have shape (batch, horizon, disturbance)")
+    if measurement_array.shape != (batch_size, controller.horizon, H.shape[0]):
+        raise ValueError("measurement_disturbances must have shape (batch, horizon, observation)")
+
+    previous_action = np.zeros((batch_size, controller.action_dim), dtype=np.float64)
+    plant_states = [states]
+    hidden_states = [hidden]
+    observations = []
+    actions = []
+    for t in range(controller.horizon):
+        y_t = states @ H.T + measurement_array[:, t, :]
+        u_t = controller.action(t, hidden, y_t)
+        states = states @ A.T + u_t @ B.T + disturbances_array[:, t, :] @ Bw.T
+        hidden = controller.next_hidden(t, hidden, y_t, previous_action)
+        previous_action = u_t
+        observations.append(y_t)
+        actions.append(u_t)
+        plant_states.append(states)
+        hidden_states.append(hidden)
+
+    hidden_array = np.stack(hidden_states, axis=1)
+    diagnostics = controller.stability_diagnostics() | hidden_growth_diagnostics(hidden_array)
+    diagnostics["phase_modulates_matrices"] = True
+    diagnostics["measurement_disturbance_scale"] = float(np.max(np.abs(measurement_array)))
+    diagnostics["process_disturbance_scale"] = float(np.max(np.abs(disturbances_array)))
+    return BridgeRolloutBatch(
+        plant_states=np.stack(plant_states, axis=1),
+        actions=np.stack(actions, axis=1),
+        observations=np.stack(observations, axis=1),
+        hidden_states=hidden_array,
+        metadata={"controller": "phase_modulated_linear_recurrence", "diagnostics": diagnostics},
     )
 
 
@@ -1004,6 +1199,9 @@ def _manifest_for_condition(
     )
     by_name = {component.name: component for component in components}
     action_summary = by_name[STATE_WEIGHTED_ACTION_MISMATCH].summary
+    observation_response_summary = by_name[OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH].summary
+    disturbance_action_summary = by_name[DISTURBANCE_HISTORY_TO_ACTION_MAP_MISMATCH].summary
+    disturbance_state_summary = by_name[DISTURBANCE_HISTORY_TO_STATE_MAP_MISMATCH].summary
     projection_summary = _projection_summary(projections)
     metrics = {
         "row_family": condition.row_family,
@@ -1015,6 +1213,16 @@ def _manifest_for_condition(
         "objective_ratio_to_lens_reference": candidate_cost / max(reference_cost, 1e-12),
         "state_weighted_action_mismatch": action_summary["mismatch_ratio_mean"],
         "aggregate_action_energy_mismatch": action_summary["aggregate_mismatch_ratio"],
+        "response_map_mismatch": {
+            "observation_to_action": observation_response_summary["aggregate_mismatch_ratio"],
+            "disturbance_to_action": disturbance_action_summary["aggregate_mismatch_ratio"],
+            "disturbance_to_state": disturbance_state_summary["aggregate_mismatch_ratio"],
+            "max_aggregate_mismatch": max(
+                observation_response_summary["aggregate_mismatch_ratio"],
+                disturbance_action_summary["aggregate_mismatch_ratio"],
+                disturbance_state_summary["aggregate_mismatch_ratio"],
+            ),
+        },
         "projection": projection_summary,
         "recurrence_diagnostics": rollout.metadata["diagnostics"],
         "optimizer": fit_metadata,
@@ -1044,14 +1252,21 @@ def _manifest_for_condition(
         reference_controller="analytical_lqr_kalman_oracle_recurrence",
         parameters={
             "rank": condition.rank,
-            "basis": "clamped_b_spline",
-            "degree": min(3, condition.rank - 1),
+            "basis": (
+                "time_identity"
+                if condition.row_family == "exact_oracle_sanity"
+                else "clamped_b_spline"
+            ),
+            "degree": (
+                0 if condition.row_family == "exact_oracle_sanity" else min(3, condition.rank - 1)
+            ),
             "row_family": condition.row_family,
             "evaluation_lens": condition.evaluation_lens,
             "coverage_family": condition.coverage_family,
             "coverage_modes": condition.coverage_modes,
             "coverage_scale": condition.coverage_scale,
             "disturbance_scale": condition.disturbance_scale,
+            "measurement_scale": condition.measurement_scale,
             "n_train_steps": (
                 condition.n_train_steps if fit_metadata.get("is_reward_trained", False) else 0
             ),
@@ -1067,9 +1282,10 @@ def _manifest_for_condition(
         },
         notes=(
             "Phase-modulated linear recurrence uses spline coefficients for "
-            "time-varying A/B/C/D matrices. Reward rows optimize these coefficients "
-            "against the retained rollout objective; projection/imitation rows stay "
-            "diagnostic."
+            "time-varying A/B/C/D matrices. Exact-oracle rows replay the analytical "
+            "Kalman recurrence; projected-oracle rows are representational diagnostics "
+            "without supervised optimization. Reward rows optimize these coefficients "
+            "against the retained rollout objective."
         ),
     )
     return BridgeRunManifest(
@@ -1108,10 +1324,21 @@ def _row_verdict(
     projection: dict[str, Any],
     action_summary: dict[str, Any],
 ) -> str:
-    if condition.row_family == "oracle_matrix_projection":
-        return "representation_diagnostic"
-    if condition.row_family in {"action_imitation", "io_map_imitation"}:
-        return "imitation_diagnostic"
+    if condition.row_family == "exact_oracle_sanity":
+        if (
+            action_summary["aggregate_mismatch_ratio"] < 1e-18
+            and projection["combined_relative_residual"] < 1e-12
+        ):
+            return "exact_oracle_sanity_pass"
+        return "exact_oracle_sanity_fail"
+    if condition.row_family == "legacy_projected_oracle_replay":
+        return "legacy_projected_oracle_replay_diagnostic"
+    if condition.row_family == "projected_oracle_replay":
+        return "projected_oracle_replay_diagnostic"
+    if condition.row_family == "projected_oracle_io_eval":
+        return "projected_oracle_io_diagnostic"
+    if condition.row_family == "projected_oracle_state_coverage_eval":
+        return "state_coverage_projection_diagnostic"
     if action_summary["mismatch_ratio_mean"] < 0.1:
         return "reward_trained_reference_equivalent"
     if (
@@ -1128,6 +1355,7 @@ def _training_batch_for_condition(
     plant: Any,
     gains: np.ndarray,
     x0: np.ndarray,
+    observation_dim: int,
     output_config: OutputFeedbackConfig,
 ) -> dict[str, np.ndarray]:
     x0_batch, xhat0_batch = _coverage_initial_states(condition, plant=plant, x0=x0)
@@ -1137,7 +1365,18 @@ def _training_batch_for_condition(
         horizon=gains.shape[0],
         disturbance_dim=int(plant.Bw.shape[1]),
     )
-    return {"x0": x0_batch, "xhat0": xhat0_batch, "disturbances": disturbances}
+    measurement_disturbances = _measurement_disturbances_for_condition(
+        condition,
+        batch_size=x0_batch.shape[0],
+        horizon=gains.shape[0],
+        observation_dim=observation_dim,
+    )
+    return {
+        "x0": x0_batch,
+        "xhat0": xhat0_batch,
+        "disturbances": disturbances,
+        "measurement_disturbances": measurement_disturbances,
+    }
 
 
 def _coverage_initial_states(
@@ -1200,6 +1439,23 @@ def _disturbances_for_condition(
     return disturbances
 
 
+def _measurement_disturbances_for_condition(
+    condition: PhaseModulatedCondition,
+    *,
+    batch_size: int,
+    horizon: int,
+    observation_dim: int,
+) -> np.ndarray:
+    measurement = np.zeros((batch_size, horizon, observation_dim), dtype=np.float64)
+    if condition.measurement_scale <= 0.0 or observation_dim == 0:
+        return measurement
+    tau = np.linspace(0.0, 2.0 * np.pi, horizon, dtype=np.float64)
+    for index in range(observation_dim):
+        phase = index * np.pi / max(observation_dim, 1)
+        measurement[:, :, index] = condition.measurement_scale * np.cos(tau + phase)[None, :]
+    return measurement
+
+
 def _reference_output_feedback_batch(
     *,
     plant: Any,
@@ -1208,6 +1464,7 @@ def _reference_output_feedback_batch(
     xhat0: np.ndarray,
     output_config: OutputFeedbackConfig,
     disturbances: np.ndarray,
+    measurement_disturbances: np.ndarray,
 ) -> dict[str, np.ndarray]:
     A = np.asarray(plant.A, dtype=np.float64)
     B = np.asarray(plant.B, dtype=np.float64)
@@ -1221,20 +1478,23 @@ def _reference_output_feedback_batch(
     xhat = np.asarray(xhat0, dtype=np.float64).copy()
     x_seq = [x]
     xhat_seq = [xhat]
+    y_seq = []
     u_seq = []
     for t in range(K.shape[0]):
-        y_t = x @ H.T
+        y_t = x @ H.T + measurement_disturbances[:, t, :]
         u_t = -xhat @ K[t].T
         xhat = xhat @ (A - B @ K[t] - L[t] @ H).T + y_t @ L[t].T
         x = x @ A.T + u_t @ B.T + disturbances[:, t, :] @ Bw.T
         sigma = (A - L[t] @ H) @ sigma @ A.T + process
         sigma = 0.5 * (sigma + sigma.T)
         u_seq.append(u_t)
+        y_seq.append(y_t)
         x_seq.append(x)
         xhat_seq.append(xhat)
     return {
         "x": np.stack(x_seq, axis=1),
         "x_hat": np.stack(xhat_seq, axis=1),
+        "y": np.stack(y_seq, axis=1),
         "u": np.stack(u_seq, axis=1),
     }
 
@@ -1252,25 +1512,33 @@ def _batch_quadratic_cost(schedule: Any, states: np.ndarray, actions: np.ndarray
 
 
 def _result_text(rows: list[BridgeRunManifest]) -> str:
+    exact_rows = [row for row in rows if row.metrics["row_family"] == "exact_oracle_sanity"]
     r12 = [
         row
         for row in rows
-        if row.spec.parameters.get("rank") == 12 and row.metrics["row_family"] == "action_imitation"
+        if row.spec.parameters.get("rank") == 12
+        and row.metrics["row_family"] == "projected_oracle_replay"
     ]
     if not r12:
         return "Phase-modulated recurrent rows were materialized with pending I/O-map certificates."
     mismatch = r12[0].metrics["state_weighted_action_mismatch"]
     residual = r12[0].metrics["projection"]["combined_relative_residual"]
+    exact_response = (
+        max(row.metrics["response_map_mismatch"]["max_aggregate_mismatch"] for row in exact_rows)
+        if exact_rows
+        else float("nan")
+    )
     reward_rows = [
         row
         for row in rows
-        if row.metrics["row_family"] in {"reward_lens", "imitation_then_reward_lens"}
+        if row.metrics["row_family"] in {"reward_lens", "projection_warm_start_then_reward_lens"}
         and row.metrics["optimizer"].get("is_reward_trained", False)
     ]
     return (
-        "The oracle recurrent reference and clamped-spline projections were "
-        f"materialized. The r=12 nominal imitation row has action mismatch "
-        f"{mismatch:.4g} and combined matrix residual {residual:.4g}. "
+        "The exact oracle and clamped-spline projected-oracle rows were materialized. "
+        f"Exact-oracle sanity rows have max aggregate response-map mismatch "
+        f"{exact_response:.4g}. The r=12 projected-oracle nominal replay row has "
+        f"action mismatch {mismatch:.4g} and combined matrix residual {residual:.4g}. "
         f"{len(reward_rows)} r=12 reward rows were optimized with bounded Adam "
         "over phase-modulated recurrent coefficients."
     )
