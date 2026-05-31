@@ -240,3 +240,158 @@ def test_time_constrained_row_entries_group_r12_coverage_metadata():
     assert observer_entry["training_distribution"] == "observer_error_state"
     assert observer_entry["parameters"]["coverage_family"] == "observer_error"
     assert observer_entry["parameters"]["coverage_modes"] == 1
+
+
+def test_time_constrained_row_entries_group_r20_coverage_metadata():
+    summary = {
+        "diagnostics": {"basis_family": "cardinal_cubic_b_spline"},
+        "fits": [
+            {
+                **_fit("spline_r20__state_eigenspectrum_state"),
+                "condition": {
+                    "rank": 20,
+                    "optimizer": "adamw_then_lbfgsb",
+                    "learning_rate": 0.01,
+                    "eigenspectrum_coverage": {
+                        "objective": "state",
+                        "n_modes": 4,
+                        "scale": 1.0,
+                        "weight": 0.1,
+                        "reference": "lqr_exact_budget_l2",
+                    },
+                },
+                "initialization": "scratch",
+            },
+            {
+                **_fit("spline_r20__observer_error_state"),
+                "condition": {
+                    "rank": 20,
+                    "optimizer": "adamw_then_lbfgsb",
+                    "learning_rate": 0.01,
+                    "observer_error_coverage": {
+                        "objective": "state",
+                        "n_modes": 1,
+                        "scale": 0.3,
+                        "weight": 0.1,
+                        "reference": "lqr_exact_budget_l2",
+                    },
+                },
+                "initialization": "scratch",
+            },
+        ],
+    }
+
+    entries = time_constrained._row_entries(summary)
+
+    assert [entry["fit"]["label"] for entry in entries] == [
+        "spline_r20__state_eigenspectrum_state",
+        "spline_r20__observer_error_state",
+    ]
+    assert entries[0]["parameters"] == {
+        "rank": 20,
+        "basis_family": "cardinal_cubic_b_spline",
+        "initialization": "scratch",
+        "coverage_family": "state_eigenspectrum",
+        "coverage_objective": "state",
+        "coverage_modes": 4,
+        "coverage_scale": 1.0,
+        "coverage_weight": 0.1,
+        "coverage_reference": "lqr_exact_budget_l2",
+    }
+    assert entries[0]["run_parts"][:4] == (
+        "smooth_spline_time_basis",
+        "rank_20",
+        "state_eigenspectrum",
+        "state",
+    )
+    assert "r=20 state-coverage follow-up" in entries[0]["notes"]
+    assert entries[1]["training_distribution"] == "observer_error_state"
+    assert entries[1]["source_group"] == "observer_error"
+
+
+def test_time_constrained_r20_coverage_conditions_are_focused():
+    conditions = time_constrained._r20_coverage_conditions(
+        include=True,
+        rank=20,
+        learning_rate=0.01,
+        adamw_steps=5000,
+        polish_maxiter=1000,
+        state_eigenspectrum_modes=(4,),
+        state_eigenspectrum_scales=(1.0, 3.0),
+        observer_error_modes=(1,),
+        observer_error_scales=(0.3,),
+        weight=0.1,
+    )
+
+    assert len(conditions) == 3
+    assert {
+        (condition.eigenspectrum_coverage.n_modes, condition.eigenspectrum_coverage.scale)
+        for condition in conditions
+        if condition.eigenspectrum_coverage is not None
+    } == {(4, 1.0), (4, 3.0)}
+    assert {
+        (condition.observer_error_coverage.n_modes, condition.observer_error_coverage.scale)
+        for condition in conditions
+        if condition.observer_error_coverage is not None
+    } == {(1, 0.3)}
+    assert all(condition.rank == 20 for condition in conditions)
+
+
+def test_time_constrained_main_routes_r20_coverage_to_distinct_outputs(monkeypatch):
+    calls = {}
+
+    def fake_parse_args():
+        return SimpleNamespace(
+            ranks=",".join(str(rank) for rank in time_constrained.SPLINE_RANKS),
+            fit_ranks="",
+            adamw_lrs="0.003,0.01",
+            lbfgsb_maxiter=2000,
+            adamw_steps=5000,
+            polish_maxiter=1000,
+            note_output=time_constrained.NOTE_PATH,
+            manifest_output=time_constrained.MANIFEST_PATH,
+            artifact_output=time_constrained.ARTIFACT_PATH,
+            include_r12_coverage=False,
+            r12_coverage_rank=12,
+            r12_state_eigenspectrum_modes="1,4",
+            r12_state_eigenspectrum_scales="0.3,1,3",
+            r12_observer_error_modes="1",
+            r12_observer_error_scales="0.3,1",
+            r12_coverage_weight=0.1,
+            include_r20_coverage=True,
+            r20_coverage_rank=20,
+            r20_state_eigenspectrum_modes="4",
+            r20_state_eigenspectrum_scales="1,3",
+            r20_observer_error_modes="1",
+            r20_observer_error_scales="0.3",
+            r20_coverage_weight=0.1,
+        )
+
+    def fake_materialize(**kwargs):
+        calls["materialize"] = kwargs
+        return {"fits": [], "projections": []}, {}
+
+    def fake_write_result(summary, *, arrays, note_path, manifest_path, artifact_path):
+        calls["write"] = {
+            "summary": summary,
+            "arrays": arrays,
+            "note_path": note_path,
+            "manifest_path": manifest_path,
+            "artifact_path": artifact_path,
+        }
+
+    monkeypatch.setattr(time_constrained, "parse_args", fake_parse_args)
+    monkeypatch.setattr(time_constrained, "materialize", fake_materialize)
+    monkeypatch.setattr(time_constrained, "write_result", fake_write_result)
+
+    time_constrained.main()
+
+    assert calls["materialize"]["ranks"] == (20,)
+    assert calls["materialize"]["fit_ranks"] == (20,)
+    assert calls["materialize"]["include_r20_coverage"] is True
+    assert calls["materialize"]["r20_state_eigenspectrum_modes"] == (4,)
+    assert calls["materialize"]["r20_state_eigenspectrum_scales"] == (1.0, 3.0)
+    assert calls["materialize"]["r20_observer_error_scales"] == (0.3,)
+    assert calls["write"]["note_path"] == time_constrained.R20_COVERAGE_NOTE_PATH
+    assert calls["write"]["manifest_path"] == time_constrained.R20_COVERAGE_MANIFEST_PATH
+    assert calls["write"]["artifact_path"] == time_constrained.R20_COVERAGE_ARTIFACT_PATH
