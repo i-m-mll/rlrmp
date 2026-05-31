@@ -81,9 +81,22 @@ image = (
     modal.Image.debian_slim(python_version="3.12")
     .apt_install("git", "perl")
     .pip_install("uv")
-    .add_local_dir(str(REPO_ROOT), "/workspace/rlrmp", ignore=_ignore_source)
-    .add_local_dir(str(LOCAL_FEEDBAX_DIR), "/workspace/feedbax", ignore=_ignore_source)
-    .add_local_dir(str(LOCAL_JAX_COOKBOOK_DIR), "/workspace/jax-cookbook", ignore=_ignore_source)
+    .env(
+        {
+            "PYTHONPATH": (
+                "/workspace/rlrmp/src:/workspace/feedbax/src:"
+                "/workspace/jax-cookbook/src"
+            )
+        }
+    )
+    .add_local_dir(str(REPO_ROOT), "/workspace/rlrmp", copy=True, ignore=_ignore_source)
+    .add_local_dir(str(LOCAL_FEEDBAX_DIR), "/workspace/feedbax", copy=True, ignore=_ignore_source)
+    .add_local_dir(
+        str(LOCAL_JAX_COOKBOOK_DIR),
+        "/workspace/jax-cookbook",
+        copy=True,
+        ignore=_ignore_source,
+    )
     .workdir("/workspace/rlrmp")
     .run_commands(
         f"python - <<'PY'\n{_PATCH_AND_SYNC}\nPY",
