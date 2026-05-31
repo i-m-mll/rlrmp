@@ -6,10 +6,12 @@ import numpy as np
 
 from rlrmp.analysis.failure_decomposition import (
     FailureDecompositionNumerics,
+    SIDECAR_IMPROVING_NON_EQUIVALENT,
     classify_failure,
     covariances_from_states,
     gain_error_subspace_decomposition,
     interpolation_curve,
+    is_sidecar_improving_non_equivalent,
     objective_gradient_summary,
 )
 
@@ -100,3 +102,26 @@ def test_classify_failure_distinguishes_optimizer_and_under_identification() -> 
 
     assert optimizer["classification"] == "optimizer_basin"
     assert under_identified["classification"] == "under_identification"
+
+
+def test_sidecar_improving_non_equivalent_classification_is_explicit() -> None:
+    assert is_sidecar_improving_non_equivalent(
+        sidecar_improved=True,
+        equivalence_metrics_failed=True,
+    )
+    assert not is_sidecar_improving_non_equivalent(
+        sidecar_improved=True,
+        equivalence_metrics_failed=False,
+    )
+
+    classification = classify_failure(
+        objective_ratio=1.0,
+        learned_gradient_norm=0.0,
+        reference_gradient_norm=0.0,
+        certificate_mismatch_ratio=0.5,
+        subspace_decomposition={"weak_or_unvisited_fraction_mean": 0.0},
+        sidecar_improved=True,
+        equivalence_metrics_failed=True,
+    )
+
+    assert classification["classification"] == SIDECAR_IMPROVING_NON_EQUIVALENT

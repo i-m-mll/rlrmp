@@ -25,6 +25,7 @@ BridgeArchitecture = Literal[
     "gru",
     "reference",
 ]
+BridgeCertificateMode = Literal["static_gain", "augmented_linear", "empirical_nonlinear"]
 BridgeTrainingDistribution = Literal[
     "none",
     "nominal",
@@ -302,6 +303,7 @@ __all__ = [
     "BridgeArchitecture",
     "BridgeArraySpec",
     "BridgeCertificateComponent",
+    "BridgeCertificateMode",
     "BridgeComponentStatus",
     "BridgeEvaluationLane",
     "BridgeObjective",
