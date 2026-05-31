@@ -14,6 +14,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 import materialize_output_feedback_failure_decomposition as failure
 import materialize_output_feedback_sweep_certificates as certificates
+import materialize_output_feedback_time_constrained as time_constrained
 from rlrmp.analysis.bridge_contracts import BridgeCertificateComponent
 
 
@@ -154,3 +155,88 @@ def test_failure_adapter_joins_standard_rows_by_generated_run_id(monkeypatch):
     assert rows[0]["source_standard_status"] == "full_standard_certificate"
     assert rows[0]["certificate"]["state_weighted_action_mismatch"] == 0.1
     assert rows[0]["gain_error_decomposition"]["time_steps"] == 2
+
+
+def test_time_constrained_row_entries_group_r12_coverage_metadata():
+    summary = {
+        "diagnostics": {"basis_family": "cardinal_cubic_b_spline"},
+        "fits": [
+            {
+                **_fit("spline_r12__state_eigenspectrum_state"),
+                "condition": {
+                    "rank": 12,
+                    "optimizer": "adamw_then_lbfgsb",
+                    "learning_rate": 0.01,
+                    "state_eigenspectrum_coverage": {
+                        "objective": "state",
+                        "n_modes": 4,
+                        "scale": 3.0,
+                        "weight": 0.1,
+                        "reference": "lqr",
+                    },
+                },
+                "initialization": "scratch",
+            },
+            {
+                **_fit("spline_r12__observer_error_state"),
+                "condition": {
+                    "rank": 12,
+                    "optimizer": "adamw_then_lbfgsb",
+                    "learning_rate": 0.01,
+                    "observer_error_coverage": {
+                        "objective": "state",
+                        "n_modes": 1,
+                        "scale": 0.3,
+                        "weight": 0.1,
+                        "reference": "lqr",
+                    },
+                },
+                "initialization": "scratch",
+            },
+            {
+                **_fit("spline_r12__trajectory_eigenspectrum"),
+                "condition": {
+                    "rank": 12,
+                    "optimizer": "adamw_then_lbfgsb",
+                    "learning_rate": 0.01,
+                    "eigenspectrum_coverage": {
+                        "objective": "trajectory",
+                        "n_modes": 1,
+                        "scale": 1.0,
+                        "weight": 0.1,
+                    },
+                },
+                "initialization": "scratch",
+            },
+        ],
+    }
+
+    entries = time_constrained._row_entries(summary)
+
+    assert [entry["fit"]["label"] for entry in entries] == [
+        "spline_r12__state_eigenspectrum_state",
+        "spline_r12__observer_error_state",
+    ]
+    state_entry, observer_entry = entries
+    assert state_entry["training_distribution"] == "state_eigenspectrum_state"
+    assert state_entry["source_group"] == "state_eigenspectrum"
+    assert state_entry["parameters"] == {
+        "rank": 12,
+        "basis_family": "cardinal_cubic_b_spline",
+        "initialization": "scratch",
+        "coverage_family": "state_eigenspectrum",
+        "coverage_objective": "state",
+        "coverage_modes": 4,
+        "coverage_scale": 3.0,
+        "coverage_weight": 0.1,
+        "coverage_reference": "lqr",
+    }
+    assert state_entry["run_parts"][:4] == (
+        "smooth_spline_time_basis",
+        "rank_12",
+        "state_eigenspectrum",
+        "state",
+    )
+    assert observer_entry["training_distribution"] == "observer_error_state"
+    assert observer_entry["parameters"]["coverage_family"] == "observer_error"
+    assert observer_entry["parameters"]["coverage_modes"] == 1

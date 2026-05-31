@@ -17,6 +17,9 @@ from rlrmp.analysis.output_feedback import OutputFeedbackConfig
 from rlrmp.analysis.output_feedback_time_constrained import (
     ISSUE_ID,
     SPLINE_RANKS,
+    TimeBasisCondition,
+    r12_observer_error_state_coverage_conditions,
+    r12_state_eigenspectrum_coverage_conditions,
     render_markdown,
     timed_run,
     write_basic_outputs,
@@ -48,6 +51,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--note-output", type=Path, default=NOTE_PATH)
     parser.add_argument("--manifest-output", type=Path, default=MANIFEST_PATH)
     parser.add_argument("--artifact-output", type=Path, default=ARTIFACT_PATH)
+    parser.add_argument(
+        "--include-r12-coverage",
+        action="store_true",
+        help="Include r=12 state eigenspectrum and observer-error state coverage rows.",
+    )
+    parser.add_argument("--r12-coverage-rank", type=int, default=12)
+    parser.add_argument("--r12-state-eigenspectrum-modes", type=str, default="1,4")
+    parser.add_argument("--r12-state-eigenspectrum-scales", type=str, default="0.3,1,3")
+    parser.add_argument("--r12-observer-error-modes", type=str, default="1")
+    parser.add_argument("--r12-observer-error-scales", type=str, default="0.3,1")
+    parser.add_argument("--r12-coverage-weight", type=float, default=0.1)
     return parser.parse_args()
 
 
@@ -61,6 +75,13 @@ def main() -> None:
         adamw_steps=args.adamw_steps,
         polish_maxiter=args.polish_maxiter,
         manifest_path=args.manifest_output,
+        include_r12_coverage=args.include_r12_coverage,
+        r12_coverage_rank=args.r12_coverage_rank,
+        r12_state_eigenspectrum_modes=_parse_ints(args.r12_state_eigenspectrum_modes),
+        r12_state_eigenspectrum_scales=_parse_floats(args.r12_state_eigenspectrum_scales),
+        r12_observer_error_modes=_parse_ints(args.r12_observer_error_modes),
+        r12_observer_error_scales=_parse_floats(args.r12_observer_error_scales),
+        r12_coverage_weight=args.r12_coverage_weight,
     )
     write_result(
         summary,
@@ -83,9 +104,30 @@ def materialize(
     adamw_steps: int = 5000,
     polish_maxiter: int = 1000,
     manifest_path: Path = MANIFEST_PATH,
+    include_r12_coverage: bool = False,
+    r12_coverage_rank: int = 12,
+    r12_state_eigenspectrum_modes: tuple[int, ...] = (1, 4),
+    r12_state_eigenspectrum_scales: tuple[float, ...] = (0.3, 1.0, 3.0),
+    r12_observer_error_modes: tuple[int, ...] = (1,),
+    r12_observer_error_scales: tuple[float, ...] = (0.3, 1.0),
+    r12_coverage_weight: float = 0.1,
 ) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
     """Run training plus standard-certificate/failure adapters."""
 
+    coverage_conditions = _r12_coverage_conditions(
+        include=include_r12_coverage,
+        rank=r12_coverage_rank,
+        learning_rate=adamw_lrs[-1],
+        adamw_steps=adamw_steps,
+        polish_maxiter=polish_maxiter,
+        state_eigenspectrum_modes=r12_state_eigenspectrum_modes,
+        state_eigenspectrum_scales=r12_state_eigenspectrum_scales,
+        observer_error_modes=r12_observer_error_modes,
+        observer_error_scales=r12_observer_error_scales,
+        weight=r12_coverage_weight,
+    )
+    if coverage_conditions:
+        ranks = tuple(dict.fromkeys((*ranks, r12_coverage_rank)))
     summary, arrays = timed_run(
         ranks=ranks,
         fit_ranks=fit_ranks,
@@ -93,7 +135,20 @@ def materialize(
         lbfgsb_maxiter=lbfgsb_maxiter,
         adamw_steps=adamw_steps,
         polish_maxiter=polish_maxiter,
+        coverage_conditions=coverage_conditions,
     )
+    if include_r12_coverage:
+        summary["scope"] = (
+            "Focused r=12 state-coverage follow-up for the smooth spline "
+            "time-basis output-feedback bridge. Coverage rows test whether "
+            "state-eigenspectrum or observer-error state coverage changes "
+            "scratch discovery relative to the no-coverage r=12 baseline."
+        )
+        summary["non_goals"] = (
+            "No trajectory eigenspectrum coverage, broader rank sweep, GRU, "
+            "linear recurrence, robust training variants, or direct "
+            "teacher-cloning claims."
+        )
     entries = _row_entries(summary)
     reference = materialize_reference()
     output_config = OutputFeedbackConfig()
@@ -156,27 +211,143 @@ def _row_entries(summary: dict[str, Any]) -> list[dict[str, Any]]:
         condition = fit.get("condition", {})
         rank = condition.get("rank")
         label = fit["label"]
+        coverage = _coverage_metadata(condition)
+        if coverage is None and _is_trajectory_eigenspectrum_coverage(condition):
+            continue
+        basis_family = summary["diagnostics"]["basis_family"]
+        parameters = {
+            "rank": rank,
+            "basis_family": basis_family,
+            "initialization": fit.get("initialization"),
+        }
+        metrics = {
+            "rank": rank,
+            "basis_family": basis_family,
+        }
+        source_group = "smooth_spline_time_basis"
+        family = f"smooth spline time-basis rank {rank}"
+        training_distribution = "nominal"
+        run_parts = ("smooth_spline_time_basis", f"rank_{rank}", label)
+        notes = "Full standard certificate computed from saved deterministic arrays."
+        if coverage is not None:
+            parameters |= {
+                "coverage_family": coverage["family"],
+                "coverage_objective": coverage["objective"],
+                "coverage_modes": coverage["modes"],
+                "coverage_scale": coverage["scale"],
+                "coverage_weight": coverage["weight"],
+                "coverage_reference": coverage.get("reference"),
+            }
+            metrics |= {
+                "coverage_family": coverage["family"],
+                "coverage_objective": coverage["objective"],
+                "coverage_modes": coverage["modes"],
+                "coverage_scale": coverage["scale"],
+                "coverage_weight": coverage["weight"],
+            }
+            source_group = coverage["family"]
+            family = f"{coverage['family'].replace('_', ' ')} {coverage['objective']} coverage"
+            training_distribution = f"{coverage['family']}_{coverage['objective']}"
+            run_parts = (
+                "smooth_spline_time_basis",
+                f"rank_{rank}",
+                coverage["family"],
+                coverage["objective"],
+                label,
+            )
+            notes = (
+                "Full standard certificate computed from saved deterministic arrays "
+                "for the r=12 state-coverage follow-up."
+            )
         entries.append(
             {
                 "fit": fit,
                 "array_prefix": label,
-                "run_parts": ("smooth_spline_time_basis", f"rank_{rank}", label),
-                "source_group": "smooth_spline_time_basis",
-                "family": f"smooth spline time-basis rank {rank}",
-                "training_distribution": "nominal",
+                "run_parts": run_parts,
+                "source_group": source_group,
+                "family": family,
+                "training_distribution": training_distribution,
                 "optimizer_label": _optimizer_label(fit),
-                "parameters": {
-                    "rank": rank,
-                    "basis_family": summary["diagnostics"]["basis_family"],
-                    "initialization": fit.get("initialization"),
-                },
-                "metrics": {
-                    "rank": rank,
-                    "basis_family": summary["diagnostics"]["basis_family"],
-                },
+                "parameters": parameters,
+                "metrics": metrics,
+                "notes": notes,
             }
         )
     return entries
+
+
+def _r12_coverage_conditions(
+    *,
+    include: bool,
+    rank: int,
+    learning_rate: float,
+    adamw_steps: int,
+    polish_maxiter: int,
+    state_eigenspectrum_modes: tuple[int, ...],
+    state_eigenspectrum_scales: tuple[float, ...],
+    observer_error_modes: tuple[int, ...],
+    observer_error_scales: tuple[float, ...],
+    weight: float,
+) -> tuple[TimeBasisCondition, ...]:
+    if not include:
+        return ()
+    if rank != 12:
+        raise ValueError("r12 coverage materialization only supports rank 12.")
+    common_kwargs = {
+        "weight": weight,
+        "maxiter": adamw_steps,
+        "learning_rate": learning_rate,
+        "polish_maxiter": polish_maxiter,
+    }
+    return (
+        r12_state_eigenspectrum_coverage_conditions(
+            modes=state_eigenspectrum_modes,
+            scales=state_eigenspectrum_scales,
+            **common_kwargs,
+        )
+        + r12_observer_error_state_coverage_conditions(
+            modes=observer_error_modes,
+            scales=observer_error_scales,
+            **common_kwargs,
+        )
+    )
+
+
+def _coverage_metadata(condition: dict[str, Any]) -> dict[str, Any] | None:
+    for key, family in (
+        ("state_eigenspectrum_coverage", "state_eigenspectrum"),
+        ("eigenspectrum_state_coverage", "state_eigenspectrum"),
+        ("eigenspectrum_coverage", "state_eigenspectrum"),
+        ("observer_error_state_coverage", "observer_error"),
+        ("observer_error_coverage", "observer_error"),
+    ):
+        coverage = condition.get(key)
+        if coverage is None:
+            continue
+        objective = coverage.get("objective", "state")
+        if family == "state_eigenspectrum" and objective == "trajectory":
+            return None
+        return {
+            "family": family,
+            "objective": objective,
+            "modes": coverage.get("n_modes", coverage.get("modes")),
+            "scale": coverage.get("scale"),
+            "weight": coverage.get("weight"),
+            "reference": coverage.get("reference"),
+        }
+    return None
+
+
+def _is_trajectory_eigenspectrum_coverage(condition: dict[str, Any]) -> bool:
+    for key in (
+        "state_eigenspectrum_coverage",
+        "eigenspectrum_state_coverage",
+        "eigenspectrum_coverage",
+    ):
+        coverage = condition.get(key)
+        if coverage is not None and coverage.get("objective") == "trajectory":
+            return True
+    return False
 
 
 def _optimizer_label(fit: dict[str, Any]) -> str:
