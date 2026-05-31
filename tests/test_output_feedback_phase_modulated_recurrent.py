@@ -82,7 +82,7 @@ def test_project_oracle_reference_returns_phase_modulated_controller(monkeypatch
     )
 
 
-def test_materialize_with_fake_reference_reports_pending_io_map(monkeypatch) -> None:
+def test_materialize_with_fake_reference_reports_available_io_map(monkeypatch) -> None:
     plant = _tiny_plant()
     schedule = SimpleNamespace(
         Q=np.broadcast_to(np.eye(2), (3, 2, 2)),
@@ -128,8 +128,64 @@ def test_materialize_with_fake_reference_reports_pending_io_map(monkeypatch) -> 
     assert summary["issue"] == pm.ISSUE_ID
     assert (
         summary["rows"][0]["metrics"]["io_map_certificate"]["status"]
-        == "pending_io_map_certificate"
+        == "standard_components_available"
     )
     assert summary["rows"][0]["metrics"]["verdict"] == "representation_diagnostic"
     assert "clamped_bspline_r3_basis" in arrays
     assert any(key.endswith("__hidden_states") for key in arrays)
+
+
+def test_reward_condition_runs_bounded_training(monkeypatch) -> None:
+    plant = _tiny_plant()
+    schedule = SimpleNamespace(
+        Q=np.broadcast_to(np.eye(2), (3, 2, 2)),
+        R=np.broadcast_to(np.eye(1), (3, 1, 1)),
+        Q_f=np.eye(2),
+    )
+    gains = np.array([[[0.2, 0.0]], [[0.1, 0.1]], [[0.0, 0.2]]])
+    reference = SimpleNamespace(
+        plant=plant,
+        schedule=schedule,
+        lqr_solution=SimpleNamespace(K=gains),
+    )
+    reference_clean = SimpleNamespace(
+        x=np.array([[1.0, 0.0], [1.0, -0.2], [0.98, -0.3], [0.95, -0.25]]),
+        x_hat=np.array([[1.0, 0.0], [1.0, -0.2], [0.98, -0.3], [0.95, -0.25]]),
+        u=np.array([[-0.2], [-0.08], [0.06]]),
+    )
+    monkeypatch.setattr(pm, "materialize_reference", lambda gamma_factors: reference)
+    monkeypatch.setattr(
+        pm, "make_cs_output_feedback_initial_state", lambda p, c: np.array([1.0, 0.0])
+    )
+    monkeypatch.setattr(pm, "rollout_with_kalman_estimator", lambda p, k, x: reference_clean)
+    monkeypatch.setattr(
+        pm,
+        "output_feedback_cost",
+        lambda schedule, rollout: SimpleNamespace(total_without_disturbance_penalty=1.0),
+    )
+    monkeypatch.setattr(
+        pm, "delayed_observation_matrix", lambda plant, config: np.array([[1.0, 0.0]])
+    )
+    monkeypatch.setattr(pm, "kalman_estimator_gains", lambda plant, K, config: np.zeros((3, 2, 1)))
+    monkeypatch.setattr(pm, "process_covariance", lambda plant, config: np.zeros((2, 2)))
+    condition = pm.PhaseModulatedCondition(
+        label="pm_linrec_r3_tiny_scratch_reward",
+        row_family="reward_lens",
+        rank=3,
+        training_distribution="nominal",
+        evaluation_lens="nominal_clean",
+        n_train_steps=2,
+        learning_rate=1e-3,
+    )
+
+    summary, _arrays = pm.materialize(include_reward=False, conditions=(condition,))
+
+    row = summary["rows"][0]
+    assert row["spec"]["objective"] == "reward_rollout"
+    assert row["spec"]["optimizer_label"] == "adam_phase_modulated_reward_rollout"
+    assert row["metrics"]["optimizer"]["is_reward_trained"] is True
+    assert (
+        row["metrics"]["optimizer"]["reward_best_loss"]
+        <= row["metrics"]["optimizer"]["reward_initial_loss"]
+    )
+    assert row["metrics"]["verdict"].startswith("reward_trained_")
