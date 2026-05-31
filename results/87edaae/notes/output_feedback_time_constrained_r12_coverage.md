@@ -3,14 +3,34 @@
 Issue: `87edaae`. Umbrella: `43e8728`.
 Source issue: `7a459bb`.
 
-Scope: Smooth spline time-basis output-feedback bridge. Projection rows check representability; scratch rows test discovery; Bellman-projected rows are preservation anchors only.
+Scope: Focused r=12 state-coverage follow-up for the smooth spline time-basis output-feedback bridge. Coverage rows test whether state-eigenspectrum or observer-error state coverage changes scratch discovery relative to the no-coverage r=12 baseline.
 
-Non-goals: No GRU, linear recurrence, coverage/noise sweeps, robust training variants, or direct teacher-cloning claims.
+Non-goals: No trajectory eigenspectrum coverage, broader rank sweep, GRU, linear recurrence, robust training variants, or direct teacher-cloning claims.
 
 Runtime: `2697.46` seconds.
 
 Rank grid: `[12]`.
 Retained fit ranks: `[12]`.
+
+## Coverage Follow-Up Verdict
+
+State coverage changed the r=12 scratch solutions substantially, but it did not
+produce a standard bridge pass. All 24 standard-certificate rows are full rows,
+and the failure-decomposition classifications are `mixed` for all coverage rows
+and `optimizer_basin` for the no-coverage/preservation rows.
+
+The best exact-L2 sidecar was the state-eigenspectrum `m=4`, `scale=3` row
+(`0.896405` LQR ratio, `lambda/gamma^2=1.25830`), but it also had large gain
+error (`1.60809`), worse clean mismatch (`0.0344251`), high final projected
+gradient (`148.731`), and very large state-weighted action/Bellman residual
+ratios on the standard certificate lens. The small observer-error state row
+(`m=1`, `scale=0.3`) was less extreme (`0.924709` exact-L2 ratio,
+`lambda/gamma^2=1.62450`) but still classified as `mixed`.
+
+Interpretation: r=12 state coverage can find lower exact-L2 sidecars than the
+no-coverage r=12 scratch row, so coverage is not inert. It is not a clean rescue
+of scratch discovery, because the improved sidecars come with non-equivalent
+gain/action structure and non-converged optimizer diagnostics.
 
 ## Projection-Only Representability
 
