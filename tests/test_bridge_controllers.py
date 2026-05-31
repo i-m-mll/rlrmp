@@ -164,6 +164,34 @@ def test_linear_recurrent_controller_rollout_updates_hidden_and_actions() -> Non
     np.testing.assert_allclose(batch.plant_states[0, :, 0], np.array([1.0, 1.0, 3.0]))
 
 
+def test_linear_recurrent_controller_accepts_action_phase_and_bias_terms() -> None:
+    controller = LinearRecurrentController(
+        recurrent_weights=np.array([[0.5]]),
+        observation_weights=np.array([[2.0]]),
+        previous_action_weights=np.array([[3.0]]),
+        phase_weights=np.array([[4.0, 5.0]]),
+        hidden_bias=np.array([6.0]),
+        readout_weights=np.array([[7.0]]),
+        feedthrough_weights=np.array([[8.0]]),
+        readout_phase_weights=np.array([[9.0, 10.0]]),
+        action_bias=np.array([11.0]),
+    )
+
+    hidden = np.array([[1.0]])
+    observation = np.array([[2.0]])
+    previous_action = np.array([[3.0]])
+    phase = np.array([[4.0, 5.0]])
+
+    next_hidden = controller.next_hidden(hidden, observation, previous_action, phase)
+    action = controller.action(hidden, observation, phase)
+
+    np.testing.assert_allclose(next_hidden, np.array([[0.5 + 4.0 + 9.0 + 16.0 + 25.0 + 6.0]]))
+    np.testing.assert_allclose(action, np.array([[7.0 + 16.0 + 36.0 + 50.0 + 11.0]]))
+    diagnostics = controller.stability_diagnostics()
+    assert diagnostics["phase_dim"] == 2
+    assert diagnostics["previous_action_weight_norm"] == 3.0
+
+
 def test_linear_recurrent_rollout_accepts_batches_and_bridge_array_specs() -> None:
     plant = TinyPlant(
         A=np.eye(2),
