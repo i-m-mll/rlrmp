@@ -36,7 +36,7 @@ ARTIFACT_PATH = (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--maxiter", type=int, default=200)
+    parser.add_argument("--maxiter", type=int, default=80)
     parser.add_argument("--no-selected-coverage", action="store_true")
     parser.add_argument("--spline-rank", type=int, default=DEFAULT_SPLINE_RANK)
     parser.add_argument("--note-output", type=Path, default=NOTE_PATH)

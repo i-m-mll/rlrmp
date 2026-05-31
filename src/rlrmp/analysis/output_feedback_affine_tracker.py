@@ -29,7 +29,10 @@ from jaxtyping import Array, Float
 from rlrmp.analysis.bridge_certificates import build_standard_certificate_components
 from rlrmp.analysis.bridge_contracts import BridgeRunManifest, BridgeRunSpec, make_bridge_run_id
 from rlrmp.analysis.bridge_controllers import TimeConstrainedGainParameterization
-from rlrmp.analysis.cs_game_card import OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR, materialize_reference
+from rlrmp.analysis.cs_game_card import (
+    OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+    materialize_reference,
+)
 from rlrmp.analysis.hinf_riccati import PlantLinearization
 from rlrmp.analysis.linear_round_trip import LinearTrainingConfig, rollout_task_cost
 from rlrmp.analysis.output_feedback import (
@@ -80,7 +83,11 @@ AffineRowKind = Literal[
     "gain_only",
     "both_from_scratch",
     "spline_tracker",
+    "staged_reward",
+    "action_match_diagnostic",
 ]
+PerturbationFamily = Literal["clean", "riccati_eps", "state_eig", "observer_error", "mixed"]
+InitializationSource = Literal["scratch", "reference", "previous_stage"]
 
 
 @dataclass(frozen=True)
@@ -91,6 +98,12 @@ class AffineTrackerCondition:
     row_kind: AffineRowKind
     train_feedforward: bool
     train_gain: bool
+    perturbation_family: PerturbationFamily = "clean"
+    objective_family: Literal["reward_rollout", "supervised_action_match"] = "reward_rollout"
+    initialization_source: InitializationSource = "scratch"
+    stage_source_label: str | None = None
+    clean_objective_weight: float = 1.0
+    perturbation_objective_weight: float = 0.0
     gain_basis_rank: int | None = None
     optimizer: str = "lbfgsb"
     maxiter: int = 200
@@ -107,7 +120,15 @@ class AffineTrackerCondition:
             return f"eigenspectrum_{self.eigenspectrum_coverage.objective}"
         if self.observer_error_coverage is not None:
             return f"observer_error_{self.observer_error_coverage.objective}"
+        if self.perturbation_family != "clean":
+            return self.perturbation_family
         return "nominal" if self.row_kind != "reference_replay" else "none"
+
+    @property
+    def is_diagnostic(self) -> bool:
+        """Whether this row is diagnostic rather than a scratch bridge claim."""
+
+        return self.objective_family == "supervised_action_match"
 
 
 @dataclass(frozen=True)
@@ -217,7 +238,9 @@ def selected_coverage_conditions(
 ) -> tuple[AffineTrackerCondition, ...]:
     """Return selected state-coverage rows from the 50c260d acceptance criteria."""
 
-    coverage_specs: tuple[tuple[str, EigenspectrumCoverageConfig | ObserverErrorCoverageConfig], ...]
+    coverage_specs: tuple[
+        tuple[str, EigenspectrumCoverageConfig | ObserverErrorCoverageConfig], ...
+    ]
     coverage_specs = (
         (
             "state_eigenspectrum_m4_s1_w0p1",
@@ -232,8 +255,13 @@ def selected_coverage_conditions(
             ObserverErrorCoverageConfig(n_modes=1, scale=0.3, weight=0.1, objective="state"),
         ),
     )
-    base_by_label = {condition.label: condition for condition in baseline_conditions(maxiter=maxiter)}
-    if f"spline_tracker_r{DEFAULT_SPLINE_RANK}" not in base_by_label and spline_rank != DEFAULT_SPLINE_RANK:
+    base_by_label = {
+        condition.label: condition for condition in baseline_conditions(maxiter=maxiter)
+    }
+    if (
+        f"spline_tracker_r{DEFAULT_SPLINE_RANK}" not in base_by_label
+        and spline_rank != DEFAULT_SPLINE_RANK
+    ):
         base_by_label[f"spline_tracker_r{spline_rank}"] = baseline_conditions(
             maxiter=maxiter,
             spline_rank=spline_rank,
@@ -250,6 +278,178 @@ def selected_coverage_conditions(
                 kwargs["observer_error_coverage"] = coverage
             rows.append(replace(base, **kwargs))
     return tuple(rows)
+
+
+def staged_curriculum_conditions(*, maxiter: int = 80) -> tuple[AffineTrackerCondition, ...]:
+    """Return the 50c260d staged nominal-only affine curriculum rows.
+
+    The main rows use reward/task rollout objectives.  The two action-match rows
+    are labeled diagnostic and are kept separate from from-scratch bridge claims.
+    """
+
+    return (
+        AffineTrackerCondition(
+            label="affine_clean_scratch_baseline",
+            row_kind="staged_reward",
+            train_feedforward=True,
+            train_gain=True,
+            maxiter=maxiter,
+        ),
+        AffineTrackerCondition(
+            label="affine_ff_clean_stage",
+            row_kind="staged_reward",
+            train_feedforward=True,
+            train_gain=False,
+            initialization_source="reference",
+            maxiter=maxiter,
+        ),
+        AffineTrackerCondition(
+            label="affine_fb_riccati_eps",
+            row_kind="staged_reward",
+            train_feedforward=False,
+            train_gain=True,
+            perturbation_family="riccati_eps",
+            initialization_source="previous_stage",
+            stage_source_label="affine_ff_clean_stage",
+            clean_objective_weight=0.0,
+            perturbation_objective_weight=1.0,
+            maxiter=maxiter,
+        ),
+        AffineTrackerCondition(
+            label="affine_joint_riccati_eps",
+            row_kind="staged_reward",
+            train_feedforward=True,
+            train_gain=True,
+            perturbation_family="riccati_eps",
+            initialization_source="previous_stage",
+            stage_source_label="affine_fb_riccati_eps",
+            clean_objective_weight=1.0,
+            perturbation_objective_weight=1.0,
+            maxiter=maxiter,
+        ),
+        AffineTrackerCondition(
+            label="affine_fb_state_eig",
+            row_kind="staged_reward",
+            train_feedforward=False,
+            train_gain=True,
+            perturbation_family="state_eig",
+            initialization_source="previous_stage",
+            stage_source_label="affine_ff_clean_stage",
+            clean_objective_weight=0.0,
+            perturbation_objective_weight=1.0,
+            eigenspectrum_coverage=EigenspectrumCoverageConfig(
+                n_modes=4,
+                scale=1.0,
+                weight=1.0,
+                objective="state",
+            ),
+            maxiter=maxiter,
+        ),
+        AffineTrackerCondition(
+            label="affine_joint_state_eig",
+            row_kind="staged_reward",
+            train_feedforward=True,
+            train_gain=True,
+            perturbation_family="state_eig",
+            initialization_source="previous_stage",
+            stage_source_label="affine_fb_state_eig",
+            clean_objective_weight=1.0,
+            perturbation_objective_weight=1.0,
+            eigenspectrum_coverage=EigenspectrumCoverageConfig(
+                n_modes=4,
+                scale=1.0,
+                weight=1.0,
+                objective="state",
+            ),
+            maxiter=maxiter,
+        ),
+        AffineTrackerCondition(
+            label="affine_fb_observer_error",
+            row_kind="staged_reward",
+            train_feedforward=False,
+            train_gain=True,
+            perturbation_family="observer_error",
+            initialization_source="previous_stage",
+            stage_source_label="affine_ff_clean_stage",
+            clean_objective_weight=0.0,
+            perturbation_objective_weight=1.0,
+            observer_error_coverage=ObserverErrorCoverageConfig(
+                n_modes=1,
+                scale=0.3,
+                weight=1.0,
+                objective="state",
+            ),
+            maxiter=maxiter,
+        ),
+        AffineTrackerCondition(
+            label="affine_joint_observer_error",
+            row_kind="staged_reward",
+            train_feedforward=True,
+            train_gain=True,
+            perturbation_family="observer_error",
+            initialization_source="previous_stage",
+            stage_source_label="affine_fb_observer_error",
+            clean_objective_weight=1.0,
+            perturbation_objective_weight=1.0,
+            observer_error_coverage=ObserverErrorCoverageConfig(
+                n_modes=1,
+                scale=0.3,
+                weight=1.0,
+                objective="state",
+            ),
+            maxiter=maxiter,
+        ),
+        AffineTrackerCondition(
+            label="affine_fb_mixed",
+            row_kind="staged_reward",
+            train_feedforward=False,
+            train_gain=True,
+            perturbation_family="mixed",
+            initialization_source="previous_stage",
+            stage_source_label="affine_ff_clean_stage",
+            clean_objective_weight=0.0,
+            perturbation_objective_weight=1.0,
+            maxiter=maxiter,
+        ),
+        AffineTrackerCondition(
+            label="affine_joint_mixed",
+            row_kind="staged_reward",
+            train_feedforward=True,
+            train_gain=True,
+            perturbation_family="mixed",
+            initialization_source="previous_stage",
+            stage_source_label="affine_fb_mixed",
+            clean_objective_weight=1.0,
+            perturbation_objective_weight=1.0,
+            maxiter=maxiter,
+        ),
+        AffineTrackerCondition(
+            label="affine_feedback_action_match_riccati_eps",
+            row_kind="action_match_diagnostic",
+            train_feedforward=False,
+            train_gain=True,
+            perturbation_family="riccati_eps",
+            objective_family="supervised_action_match",
+            initialization_source="previous_stage",
+            stage_source_label="affine_ff_clean_stage",
+            clean_objective_weight=0.0,
+            perturbation_objective_weight=1.0,
+            maxiter=maxiter,
+        ),
+        AffineTrackerCondition(
+            label="affine_feedback_action_match_mixed",
+            row_kind="action_match_diagnostic",
+            train_feedforward=False,
+            train_gain=True,
+            perturbation_family="mixed",
+            objective_family="supervised_action_match",
+            initialization_source="previous_stage",
+            stage_source_label="affine_ff_clean_stage",
+            clean_objective_weight=0.0,
+            perturbation_objective_weight=1.0,
+            maxiter=maxiter,
+        ),
+    )
 
 
 def rollout_with_affine_tracker(
@@ -347,16 +547,16 @@ def run_affine_tracker_bridge(
     *,
     conditions: tuple[AffineTrackerCondition, ...] | None = None,
     include_selected_coverage: bool = True,
-    maxiter: int = 200,
+    maxiter: int = 80,
     training_config: LinearTrainingConfig = LinearTrainingConfig(n_steps=500),
     output_config: OutputFeedbackConfig = OutputFeedbackConfig(),
 ) -> AffineTrackerResult:
     """Run affine tracker rows and keep bulk arrays for certificates."""
 
     if conditions is None:
-        conditions = baseline_conditions(maxiter=maxiter)
+        conditions = staged_curriculum_conditions(maxiter=maxiter)
         if include_selected_coverage:
-            conditions = conditions + selected_coverage_conditions(maxiter=maxiter)
+            conditions = conditions
 
     reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
     gamma_ref = reference.gamma_references[0]
@@ -442,6 +642,7 @@ def run_affine_tracker_bridge(
         "riccati_epsilon": np.asarray(riccati_epsilon),
     }
     fits = []
+    fits_by_label: dict[str, AffineTrackerFit] = {}
     for condition in conditions:
         coverage = _coverage_samples(
             condition=condition,
@@ -452,6 +653,12 @@ def run_affine_tracker_bridge(
             budget_l2=budget_l2,
             gamma=gamma_ref.gamma,
             output_config=output_config,
+        )
+        initial_K, initial_u_ref = _initial_parts_for_condition(
+            condition,
+            K_ref=K_ref,
+            u_ref=u_ref,
+            fits_by_label=fits_by_label,
         )
         arrays.update({f"{condition.label}_{key}": value for key, value in coverage.arrays.items()})
         fit = _fit_condition(
@@ -465,6 +672,8 @@ def run_affine_tracker_bridge(
             weights=weights,
             state_scales=state_scales,
             coverage=coverage,
+            initial_K=initial_K,
+            initial_u_ref=initial_u_ref,
             x0=x0,
             riccati_epsilon=riccati_epsilon,
             gamma=gamma_ref.gamma,
@@ -475,6 +684,7 @@ def run_affine_tracker_bridge(
             output_config=output_config,
         )
         fits.append(fit)
+        fits_by_label[fit.label] = fit
         _store_fit_arrays(arrays, fit)
 
     diagnostics = {
@@ -489,7 +699,9 @@ def run_affine_tracker_bridge(
         "budget_l2": budget_l2,
         "training_config": asdict(training_config),
         "output_config": asdict(output_config),
-        "reference_clean_cost": output_feedback_cost(schedule, lqr_clean).total_without_disturbance_penalty,
+        "reference_clean_cost": output_feedback_cost(
+            schedule, lqr_clean
+        ).total_without_disturbance_penalty,
         "reference_under_epsilon_cost": output_feedback_cost(
             schedule,
             lqr_under_eps,
@@ -503,6 +715,30 @@ def run_affine_tracker_bridge(
         diagnostics=diagnostics,
         arrays=arrays,
     )
+
+
+def _initial_parts_for_condition(
+    condition: AffineTrackerCondition,
+    *,
+    K_ref: Float[Array, "T m_u n"],
+    u_ref: Float[Array, "T m_u"],
+    fits_by_label: dict[str, AffineTrackerFit],
+) -> tuple[Float[Array, "T m_u n"], Float[Array, "T m_u"]]:
+    """Resolve scratch/reference/previous-stage initialization for a row."""
+
+    if condition.initialization_source == "reference":
+        return K_ref, u_ref
+    if condition.initialization_source == "previous_stage":
+        if condition.stage_source_label is None:
+            raise ValueError(f"{condition.label} requires stage_source_label.")
+        try:
+            source = fits_by_label[condition.stage_source_label]
+        except KeyError as exc:
+            raise ValueError(
+                f"{condition.label} depends on missing stage {condition.stage_source_label!r}."
+            ) from exc
+        return source.K, source.u_ref
+    return jnp.zeros_like(K_ref), jnp.zeros_like(u_ref)
 
 
 @dataclass(frozen=True)
@@ -528,7 +764,27 @@ def _coverage_samples(
     gamma: float,
     output_config: OutputFeedbackConfig,
 ) -> _CoverageBundle:
-    if condition.eigenspectrum_coverage is not None:
+    if condition.perturbation_family == "riccati_eps":
+        raw = _riccati_epsilon_coverage_samples(
+            plant=plant,
+            schedule=schedule,
+            K_ref=K_ref,
+            x0=x0,
+            budget_l2=budget_l2,
+            gamma=gamma,
+            output_config=output_config,
+        )
+    elif condition.perturbation_family == "mixed":
+        raw = _mixed_coverage_samples(
+            plant=plant,
+            schedule=schedule,
+            K_ref=K_ref,
+            x0=x0,
+            budget_l2=budget_l2,
+            gamma=gamma,
+            output_config=output_config,
+        )
+    elif condition.eigenspectrum_coverage is not None:
         raw = _eigenspectrum_coverage_samples(
             plant=plant,
             schedule=schedule,
@@ -555,6 +811,137 @@ def _coverage_samples(
     return _CoverageBundle(eps, traj_w, x, xhat, times, state_w, metadata, arrays)
 
 
+def _riccati_epsilon_coverage_samples(
+    *,
+    plant: PlantLinearization,
+    schedule: Any,
+    K_ref: Float[Array, "T m_u n"],
+    x0: Float[Array, " n"],
+    budget_l2: float,
+    gamma: float,
+    output_config: OutputFeedbackConfig,
+):
+    gamma_solution = (
+        materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
+        .gamma_references[0]
+        .solution
+    )
+    covs = robust_estimator_covariances(plant, schedule, gamma, output_config)
+    robust_gains = robust_output_feedback_gains(
+        plant,
+        schedule,
+        gamma_solution,
+        covs,
+        output_config,
+    )
+    robust_policy = robust_estimator_fixed_adversary_policy(
+        plant,
+        schedule,
+        gamma_solution,
+        robust_gains,
+        covs,
+        output_config,
+    )
+    robust_rollout = rollout_with_robust_estimator_policy(
+        plant,
+        schedule,
+        gamma_solution,
+        x0,
+        robust_policy,
+        gains=robust_gains,
+        config=output_config,
+    )
+    eps = robust_rollout.epsilon[None, :, :]
+    return (
+        eps,
+        jnp.ones((1,), dtype=jnp.float64),
+        jnp.zeros((0, plant.n), dtype=jnp.float64),
+        jnp.zeros((0, plant.n), dtype=jnp.float64),
+        jnp.zeros((0,), dtype=jnp.int32),
+        jnp.zeros((0,), dtype=jnp.float64),
+        {
+            "enabled": True,
+            "objective": "trajectory",
+            "family": "riccati_eps",
+            "budget_l2": float(budget_l2),
+        },
+        {"coverage_riccati_epsilons": np.asarray(eps), "coverage_weights": np.ones((1,))},
+    )
+
+
+def _mixed_coverage_samples(
+    *,
+    plant: PlantLinearization,
+    schedule: Any,
+    K_ref: Float[Array, "T m_u n"],
+    x0: Float[Array, " n"],
+    budget_l2: float,
+    gamma: float,
+    output_config: OutputFeedbackConfig,
+):
+    ric = _riccati_epsilon_coverage_samples(
+        plant=plant,
+        schedule=schedule,
+        K_ref=K_ref,
+        x0=x0,
+        budget_l2=budget_l2,
+        gamma=gamma,
+        output_config=output_config,
+    )
+    eig = _eigenspectrum_coverage_samples(
+        plant=plant,
+        schedule=schedule,
+        K_ref=K_ref,
+        x0=x0,
+        budget_l2=budget_l2,
+        gamma=gamma,
+        output_config=output_config,
+        coverage_config=EigenspectrumCoverageConfig(
+            n_modes=4,
+            scale=1.0,
+            weight=0.25,
+            objective="state",
+        ),
+    )
+    obs = _observer_error_coverage_samples(
+        plant=plant,
+        schedule=schedule,
+        K_ref=K_ref,
+        x0=x0,
+        budget_l2=budget_l2,
+        output_config=output_config,
+        coverage_config=ObserverErrorCoverageConfig(
+            n_modes=1,
+            scale=0.3,
+            weight=0.25,
+            objective="state",
+        ),
+    )
+    eps = ric[0]
+    traj_w = ric[1] * 2.0
+    x = jnp.concatenate([eig[2], obs[2]], axis=0)
+    xhat = jnp.concatenate([eig[3], obs[3]], axis=0)
+    times = jnp.concatenate([eig[4], obs[4]], axis=0)
+    state_w = jnp.concatenate([eig[5], obs[5]], axis=0)
+    arrays = {
+        "coverage_mixed_riccati_epsilons": np.asarray(eps),
+        "coverage_mixed_x": np.asarray(x),
+        "coverage_mixed_x_hat": np.asarray(xhat),
+        "coverage_mixed_times": np.asarray(times),
+        "coverage_mixed_state_weights": np.asarray(state_w),
+    }
+    return (
+        eps,
+        traj_w,
+        x,
+        xhat,
+        times,
+        state_w,
+        {"enabled": True, "objective": "mixed", "family": "mixed", "riccati_primary": True},
+        arrays,
+    )
+
+
 def _fit_condition(
     *,
     condition: AffineTrackerCondition,
@@ -567,6 +954,8 @@ def _fit_condition(
     weights: Float[Array, " batch"],
     state_scales: Float[Array, " n"],
     coverage: _CoverageBundle,
+    initial_K: Float[Array, "T m_u n"],
+    initial_u_ref: Float[Array, "T m_u"],
     x0: Float[Array, " n"],
     riccati_epsilon: Float[Array, "T m_w"],
     gamma: float,
@@ -576,13 +965,34 @@ def _fit_condition(
     hinf_exact_cost: float,
     output_config: OutputFeedbackConfig,
 ) -> AffineTrackerFit:
-    maps = _make_parameter_maps(condition, K_ref, u_ref_ref, state_scales)
+    maps = _make_parameter_maps(
+        condition,
+        K_ref,
+        u_ref_ref,
+        state_scales,
+        initial_K=initial_K,
+        initial_u_ref=initial_u_ref,
+    )
     theta0 = maps["initial_theta"]
     theta_ref = maps["reference_theta"]
     theta_zero = maps["zero_theta"]
 
     def objective_from_parts(K: Float[Array, "T m_u n"], u_ref: Float[Array, "T m_u"]):
-        return _affine_clean_objective(
+        if condition.objective_family == "supervised_action_match":
+            return _affine_action_match_objective(
+                plant=plant,
+                K=K,
+                u_ref=u_ref,
+                xhat_ref=xhat_ref,
+                reference_K=K_ref,
+                reference_u_ref=u_ref_ref,
+                reference_xhat_ref=xhat_ref,
+                coverage=coverage,
+                x0=x0,
+                riccati_epsilon=riccati_epsilon,
+                config=output_config,
+            )
+        clean = _affine_clean_objective(
             plant=plant,
             schedule=schedule,
             K=K,
@@ -591,7 +1001,8 @@ def _fit_condition(
             states=states,
             weights=weights,
             config=output_config,
-        ) + _affine_coverage_objective(
+        )
+        perturbation = _affine_coverage_objective(
             plant=plant,
             schedule=schedule,
             K=K,
@@ -599,6 +1010,10 @@ def _fit_condition(
             xhat_ref=xhat_ref,
             coverage=coverage,
             config=output_config,
+        )
+        return (
+            condition.clean_objective_weight * clean
+            + condition.perturbation_objective_weight * perturbation
         )
 
     def objective_theta(theta_flat: Float[Array, " flat"]) -> Float[Array, ""]:
@@ -717,10 +1132,14 @@ def _fit_condition(
         under_epsilon_cost=float(under_eps_cost),
         under_epsilon_cost_ratio_to_lqr=float(
             under_eps_cost
-            / max(lqr_under_epsilon_rollout.control_effort * 0.0 + output_feedback_cost(
-                schedule,
-                lqr_under_epsilon_rollout,
-            ).total_without_disturbance_penalty, 1e-12)
+            / max(
+                lqr_under_epsilon_rollout.control_effort * 0.0
+                + output_feedback_cost(
+                    schedule,
+                    lqr_under_epsilon_rollout,
+                ).total_without_disturbance_penalty,
+                1e-12,
+            )
         ),
         under_epsilon_action_mismatch_ratio=_action_mismatch_ratio(
             under_eps_rollout.u,
@@ -769,12 +1188,18 @@ def _make_parameter_maps(
     K_ref: Float[Array, "T m_u n"],
     u_ref: Float[Array, "T m_u"],
     state_scales: Float[Array, " n"],
+    *,
+    initial_K: Float[Array, "T m_u n"] | None = None,
+    initial_u_ref: Float[Array, "T m_u"] | None = None,
 ) -> dict[str, Any]:
     K_ref = K_ref.astype(jnp.float64)
     u_ref = u_ref.astype(jnp.float64)
     K_zero = jnp.zeros_like(K_ref)
     u_zero = jnp.zeros_like(u_ref)
-    if condition.row_kind == "reference_replay":
+    if initial_K is not None and initial_u_ref is not None:
+        initial_K = initial_K.astype(jnp.float64)
+        initial_u = initial_u_ref.astype(jnp.float64)
+    elif condition.row_kind == "reference_replay":
         initial_K = K_ref
         initial_u = u_ref
     elif condition.row_kind == "feedforward_only":
@@ -815,7 +1240,7 @@ def _make_parameter_maps(
 
     def decode_K(theta: Float[Array, " flat"]) -> Float[Array, "T m_u n"]:
         if not condition.train_gain:
-            return K_ref if condition.row_kind == "feedforward_only" else initial_K
+            return initial_K
         if basis is not None:
             theta_basis_size = basis.n_basis * K_ref.shape[1] * K_ref.shape[2]
             theta_basis = theta[:theta_basis_size].reshape(
@@ -835,7 +1260,7 @@ def _make_parameter_maps(
 
     def decode_u(theta: Float[Array, " flat"]) -> Float[Array, "T m_u"]:
         if not condition.train_feedforward:
-            return u_ref if condition.row_kind in {"gain_only", "reference_replay"} else initial_u
+            return initial_u
         k_size = encode_K(initial_K).size
         return theta[k_size:].reshape(u_ref.shape)
 
@@ -923,7 +1348,93 @@ def _affine_coverage_objective(
             coverage.state_weights,
             config,
         )
+    if objective == "mixed":
+        return _affine_coverage_trajectory_objective(
+            plant,
+            schedule,
+            K,
+            u_ref,
+            xhat_ref,
+            coverage.epsilons,
+            coverage.trajectory_weights,
+            config,
+        ) + _affine_coverage_state_objective(
+            plant,
+            schedule,
+            K,
+            u_ref,
+            xhat_ref,
+            coverage.x,
+            coverage.xhat,
+            coverage.times,
+            coverage.state_weights,
+            config,
+        )
     raise ValueError(f"Unknown coverage objective {objective!r}.")
+
+
+def _affine_action_match_objective(
+    *,
+    plant: PlantLinearization,
+    K: Float[Array, "T m_u n"],
+    u_ref: Float[Array, "T m_u"],
+    xhat_ref: Float[Array, "T_plus_1 n"],
+    reference_K: Float[Array, "T m_u n"],
+    reference_u_ref: Float[Array, "T m_u"],
+    reference_xhat_ref: Float[Array, "T_plus_1 n"],
+    coverage: _CoverageBundle,
+    x0: Float[Array, " n"],
+    riccati_epsilon: Float[Array, "T m_w"],
+    config: OutputFeedbackConfig,
+) -> Float[Array, ""]:
+    """Diagnostic supervised action matching, never used as a bridge success gate."""
+
+    if coverage.epsilons.shape[0] == 0:
+        epsilons = riccati_epsilon[None, :, :]
+        weights = jnp.ones((1,), dtype=jnp.float64)
+    else:
+        epsilons = coverage.epsilons
+        weights = coverage.trajectory_weights
+
+    def trajectory_loss(epsilon):
+        _x, xhat, _y, u, _covs = affine_tracker_rollout_arrays(
+            plant=plant,
+            K=K,
+            u_ref=u_ref,
+            xhat_ref=xhat_ref,
+            x0=x0,
+            epsilon=epsilon,
+            config=config,
+        )
+        _rx, rxhat, _ry, ref_u, _rcovs = affine_tracker_rollout_arrays(
+            plant=plant,
+            K=reference_K,
+            u_ref=reference_u_ref,
+            xhat_ref=reference_xhat_ref,
+            x0=x0,
+            epsilon=epsilon,
+            config=config,
+        )
+        return jnp.mean((u - ref_u) ** 2) + 1e-4 * jnp.mean((xhat - rxhat) ** 2)
+
+    losses = jax.vmap(trajectory_loss)(epsilons)
+    trajectory_term = jnp.sum(weights * losses) / jnp.maximum(jnp.sum(weights), 1e-30)
+    if coverage.x.shape[0] == 0:
+        return trajectory_term
+    state_actions = jax.vmap(lambda xhat, time: u_ref[time] - K[time] @ (xhat - xhat_ref[time]))(
+        coverage.xhat, coverage.times
+    )
+    reference_actions = jax.vmap(
+        lambda xhat, time: (
+            reference_u_ref[time] - reference_K[time] @ (xhat - reference_xhat_ref[time])
+        )
+    )(coverage.xhat, coverage.times)
+    state_losses = jnp.mean((state_actions - reference_actions) ** 2, axis=-1)
+    state_term = jnp.sum(coverage.state_weights * state_losses) / jnp.maximum(
+        jnp.sum(coverage.state_weights),
+        1e-30,
+    )
+    return trajectory_term + state_term
 
 
 def _affine_coverage_trajectory_objective(
@@ -1166,7 +1677,7 @@ def _standard_rows_for_fit(
         spec = BridgeRunSpec(
             issue_id=ISSUE_ID,
             run_id=make_bridge_run_id("affine_tracker", fit.label, lens),
-            objective="diagnostic" if fit.condition.row_kind == "reference_replay" else "optimal",
+            objective="diagnostic" if fit.condition.is_diagnostic else "optimal",
             architecture="free_time_varying",
             controller_label=fit.label,
             optimizer_label=fit.condition.optimizer,
@@ -1232,7 +1743,9 @@ def _standard_components_for_rollout(
         action_weight=np.asarray(schedule.R),
         candidate_transition=candidate_transition,
         reference_transition=reference_transition,
-        candidate_value_matrices=_policy_value_matrices(schedule, np.asarray(fit.K), candidate_transition),
+        candidate_value_matrices=_policy_value_matrices(
+            schedule, np.asarray(fit.K), candidate_transition
+        ),
         reference_value_matrices=_policy_value_matrices(schedule, K_ref, reference_transition),
         bellman_hessian=_bellman_hessian(schedule, plant, reference.lqr_solution.P),
         optimizer_metadata={
@@ -1259,9 +1772,10 @@ def result_summary(result: AffineTrackerResult, *, manifest_path: Path) -> dict[
         "standard_certificate_issue": STANDARD_CERTIFICATE_ISSUE_ID,
         "failure_decomposition_issue": FAILURE_DECOMPOSITION_ISSUE_ID,
         "scope": (
-            "Same-game affine tracker bridge rows: reference replay, feedforward-only "
-            "with K_ref frozen, K-only with u_ref frozen, both-from-scratch, spline "
-            "tracker K_t, and selected state-coverage variants."
+            "Staged same-game affine tracker curriculum rows: clean scratch baseline, "
+            "clean feedforward stage, reward-objective feedback and joint rows for "
+            "Riccati-epsilon, state-eigenspectrum, observer-error, and mixed "
+            "perturbation families, plus isolated supervised action-match diagnostics."
         ),
         "non_goals": (
             "No GRU, robust/H-infinity training arm, direct teacher-cloning success "
@@ -1311,14 +1825,16 @@ def render_markdown(summary: dict[str, Any]) -> str:
     """Render the tracked affine tracker note."""
 
     fit_rows = [
-        "| row | training distribution | objective ratio | feedforward rel err | gain rel err | clean action mismatch | under-eps action mismatch | exact L2 ratio | lambda/gamma^2 | status |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| row | objective | training distribution | diagnostic | objective ratio | feedforward rel err | gain rel err | clean action mismatch | under-eps action mismatch | exact L2 ratio | lambda/gamma^2 | status |",
+        "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for fit in summary["fits"]:
         fit_rows.append(
             "| "
             f"{fit['label']} | "
+            f"{fit['condition']['objective_family']} | "
             f"{fit['condition']['training_distribution']} | "
+            f"{fit['diagnostic_only']} | "
             f"{fit['objective_ratio_to_reference']:.8g} | "
             f"{fit['feedforward_relative_error']:.8g} | "
             f"{fit['gain_relative_error']:.8g} | "
@@ -1409,16 +1925,40 @@ certificate and failure decomposition, not a revived decoupling demonstration.
 
 def _verdict(summary: dict[str, Any]) -> str:
     fits = summary["fits"]
-    reference = next(fit for fit in fits if fit["label"] == "reference_affine_replay")
-    scratch = [fit for fit in fits if fit["condition"]["row_kind"] != "reference_replay"]
-    best_scratch = min(scratch, key=lambda fit: fit["clean_action_mismatch_ratio"])
+    main_rows = [fit for fit in fits if fit["condition"]["objective_family"] == "reward_rollout"]
+    joint_rows = [
+        fit
+        for fit in main_rows
+        if fit["condition"]["train_feedforward"] and fit["condition"]["train_gain"]
+    ]
+    diagnostic_rows = [
+        fit for fit in fits if fit["condition"]["objective_family"] == "supervised_action_match"
+    ]
+    best_joint = min(joint_rows, key=lambda fit: fit["clean_action_mismatch_ratio"])
+    joint_mixed = next((fit for fit in fits if fit["label"] == "affine_joint_mixed"), None)
+    final_row = joint_mixed or best_joint
+    rescued = (
+        final_row["clean_action_mismatch_ratio"] <= 0.05
+        and final_row["exact_l2_cost_ratio_to_lqr"] <= 1.1
+    )
+    diagnostic_text = (
+        f" The supervised diagnostic rows are present but excluded from this verdict "
+        f"(`{len(diagnostic_rows)}` rows)."
+        if diagnostic_rows
+        else ""
+    )
     return (
-        "Reference affine replay preserves the analytical output-feedback policy "
-        f"(clean action mismatch `{reference['clean_action_mismatch_ratio']:.3g}`). "
-        "The scratch rows are retained as discovery diagnostics; the best retained "
-        f"scratch clean-action mismatch is `{best_scratch['clean_action_mismatch_ratio']:.3g}` "
-        f"on `{best_scratch['label']}`. Treat any scratch rescue claim as provisional "
-        "unless the standard-certificate and failure-decomposition rows agree."
+        "The staged feedback curriculum "
+        f"{'rescues' if rescued else 'does not rescue'} nominal same-game recovery "
+        "under the retained bounded materialization. "
+        f"The final mixed joint row has clean action mismatch "
+        f"`{final_row['clean_action_mismatch_ratio']:.3g}` and exact-L2 ratio "
+        f"`{final_row['exact_l2_cost_ratio_to_lqr']:.3g}`. "
+        f"The best reward-objective joint row is `{best_joint['label']}` with clean "
+        f"action mismatch `{best_joint['clean_action_mismatch_ratio']:.3g}` and "
+        f"exact-L2 ratio `{best_joint['exact_l2_cost_ratio_to_lqr']:.3g}`. "
+        "This verdict is based only on from-scratch/reward rows, not analytical action "
+        f"labels.{diagnostic_text}"
     )
 
 
@@ -1428,7 +1968,8 @@ def _fit_summary(fit: AffineTrackerFit) -> dict[str, Any]:
     return {
         "label": fit.label,
         "condition": condition,
-        "initialization": "reference" if fit.condition.row_kind == "reference_replay" else "scratch",
+        "initialization": fit.condition.initialization_source,
+        "diagnostic_only": fit.condition.is_diagnostic,
         "objective_initial": fit.objective_initial,
         "objective_final": fit.objective_final,
         "objective_reference": fit.objective_reference,
@@ -1487,6 +2028,12 @@ def _condition_parameters(condition: AffineTrackerCondition) -> dict[str, Any]:
         "train_feedforward": condition.train_feedforward,
         "train_gain": condition.train_gain,
         "gain_basis_rank": condition.gain_basis_rank,
+        "perturbation_family": condition.perturbation_family,
+        "objective_family": condition.objective_family,
+        "initialization_source": condition.initialization_source,
+        "stage_source_label": condition.stage_source_label,
+        "clean_objective_weight": condition.clean_objective_weight,
+        "perturbation_objective_weight": condition.perturbation_objective_weight,
     }
     if condition.eigenspectrum_coverage is not None:
         data["coverage_family"] = "state_eigenspectrum"
@@ -1598,6 +2145,7 @@ __all__ = [
     "AffineTrackerResult",
     "baseline_conditions",
     "selected_coverage_conditions",
+    "staged_curriculum_conditions",
     "rollout_with_affine_tracker",
     "affine_tracker_rollout_arrays",
     "affine_tracker_exact_adversary_audit",
