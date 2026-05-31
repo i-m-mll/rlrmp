@@ -14,6 +14,7 @@ import numpy as np
 
 from rlrmp.analysis.bridge_contracts import (
     BridgeArchitecture,
+    BridgeCertificateMode,
     BridgeCertificateComponent,
 )
 
@@ -36,6 +37,50 @@ class CertificateNumerics:
 
     denominator_floor: float = 1e-12
     covariance_rank_rtol: float = 1e-8
+
+
+def action_energy_mismatch_summary(
+    *,
+    candidate_actions: np.ndarray,
+    reference_actions: np.ndarray,
+    action_weight: np.ndarray | None = None,
+    numerics: CertificateNumerics = CertificateNumerics(),
+) -> dict[str, Any]:
+    """Return timewise and aggregate action-energy mismatch summaries.
+
+    Args:
+        candidate_actions: Candidate actions with shape ``(time, batch, action)``.
+        reference_actions: Reference actions with shape ``(time, batch, action)``.
+        action_weight: Optional action metric with shape ``(action, action)`` or
+            ``(time, action, action)``.
+        numerics: Denominator floor used in ratios.
+    """
+
+    candidate = _as_float_array(candidate_actions)
+    reference = _as_float_array(reference_actions)
+    if candidate.shape != reference.shape:
+        raise ValueError("candidate and reference actions must have the same shape")
+    if candidate.ndim != 3:
+        raise ValueError("actions must have shape (time, batch, action)")
+
+    delta = candidate - reference
+    weights = _time_weight(action_weight, candidate.shape[0], candidate.shape[-1])
+    delta_energy = _weighted_energy(delta, weights)
+    reference_energy = _weighted_energy(reference, weights)
+    ratios = delta_energy / np.maximum(reference_energy, numerics.denominator_floor)
+    aggregate_delta_energy = float(np.sum(delta_energy))
+    aggregate_reference_energy = float(np.sum(reference_energy))
+    return {
+        "delta_rms": _json_float(np.sqrt(np.mean(delta_energy))),
+        "reference_rms": _json_float(np.sqrt(np.mean(reference_energy))),
+        "mismatch_ratio_mean": _json_float(np.mean(ratios)),
+        "mismatch_ratio_max": _json_float(np.max(ratios)),
+        "aggregate_mismatch_ratio": _json_float(
+            aggregate_delta_energy / max(aggregate_reference_energy, numerics.denominator_floor)
+        ),
+        "aggregate_delta_energy": _json_float(aggregate_delta_energy),
+        "aggregate_reference_energy": _json_float(aggregate_reference_energy),
+    }
 
 
 def missing_component(name: str, reason: str) -> BridgeCertificateComponent:
@@ -90,20 +135,15 @@ def state_weighted_action_mismatch_component(
             name,
             "requires either candidate/reference actions or states plus candidate/reference gains",
         )
-    if candidate.shape != reference.shape:
-        raise ValueError("candidate and reference actions must have the same shape")
-
-    delta = candidate - reference
-    weights = _time_weight(action_weight, candidate.shape[0], candidate.shape[-1])
-    delta_energy = _weighted_energy(delta, weights)
-    reference_energy = _weighted_energy(reference, weights)
-    ratios = delta_energy / np.maximum(reference_energy, numerics.denominator_floor)
+    summary = action_energy_mismatch_summary(
+        candidate_actions=candidate,
+        reference_actions=reference,
+        action_weight=action_weight,
+        numerics=numerics,
+    )
     return BridgeCertificateComponent.available(
         name,
-        delta_rms=_json_float(np.sqrt(np.mean(delta_energy))),
-        reference_rms=_json_float(np.sqrt(np.mean(reference_energy))),
-        mismatch_ratio_mean=_json_float(np.mean(ratios)),
-        mismatch_ratio_max=_json_float(np.max(ratios)),
+        **summary,
         n_samples=int(np.prod(candidate.shape[:2])),
         state_label=state_label,
         action_label=action_label,
@@ -255,8 +295,9 @@ def visited_subspace_diagnostics_component(
         np.sum(singular_values, axis=1, keepdims=True),
         numerics.denominator_floor,
     )
+    normalized_for_log = np.where(normalized > 0.0, normalized, 1.0)
     entropy = -np.sum(
-        np.where(normalized > 0.0, normalized * np.log(normalized), 0.0),
+        np.where(normalized > 0.0, normalized * np.log(normalized_for_log), 0.0),
         axis=1,
     )
     effective_rank = np.exp(entropy)
@@ -326,15 +367,115 @@ def recurrence_safe_components(
     )
 
 
+def augmented_linear_recurrent_components(
+    *,
+    augmented_states: np.ndarray | None,
+    candidate_action_sensitivity: np.ndarray | None = None,
+    reference_action_sensitivity: np.ndarray | None = None,
+    candidate_actions: np.ndarray | None = None,
+    reference_actions: np.ndarray | None = None,
+    action_weight: np.ndarray | None = None,
+    candidate_transition: np.ndarray | None = None,
+    reference_transition: np.ndarray | None = None,
+    candidate_value_matrices: np.ndarray | None = None,
+    reference_value_matrices: np.ndarray | None = None,
+    bellman_hessian: np.ndarray | None = None,
+    augmented_state_covariances: np.ndarray | None = None,
+    optimizer_metadata: dict[str, Any] | None = None,
+    recurrence_diagnostics: dict[str, Any] | None = None,
+    layout: ArrayLayout = "batch_time_state",
+    numerics: CertificateNumerics = CertificateNumerics(),
+    state_label: str = "augmented_state",
+    action_label: str = "action",
+) -> tuple[BridgeCertificateComponent, ...]:
+    """Build formal certificate rows for a linear recurrent augmented state.
+
+    ``augmented_states`` is the state used by the linear recurrence certificate,
+    typically ``z_t = [x_t; h_t]`` or a plant/estimator/hidden-state stack.
+    Candidate/reference action sensitivities are linear maps from that
+    augmented state to action with shape ``(time, action, augmented_state)``.
+    """
+
+    covariances = _covariances_or_none(augmented_states, augmented_state_covariances, layout)
+    gain_delta = (
+        None
+        if candidate_action_sensitivity is None or reference_action_sensitivity is None
+        else _as_float_array(candidate_action_sensitivity)
+        - _as_float_array(reference_action_sensitivity)
+    )
+    return (
+        state_weighted_action_mismatch_component(
+            states=augmented_states,
+            candidate_actions=candidate_actions,
+            reference_actions=reference_actions,
+            candidate_gain=candidate_action_sensitivity,
+            reference_gain=reference_action_sensitivity,
+            action_weight=action_weight,
+            layout=layout,
+            numerics=numerics,
+            state_label=state_label,
+            action_label=action_label,
+        ),
+        visited_subspace_diagnostics_component(
+            states=augmented_states,
+            state_covariances=covariances,
+            gain_delta=gain_delta,
+            layout=layout,
+            numerics=numerics,
+            state_label=state_label,
+        ),
+        optimizer_metadata_component(optimizer_metadata),
+        closed_loop_transition_mismatch_component(
+            states=augmented_states,
+            candidate_transition=candidate_transition,
+            reference_transition=reference_transition,
+            layout=layout,
+            numerics=numerics,
+            state_label=state_label,
+        ),
+        value_policy_gap_component(
+            candidate_value_matrices=candidate_value_matrices,
+            reference_value_matrices=reference_value_matrices,
+            state_covariances=covariances,
+            numerics=numerics,
+            state_label=state_label,
+        ),
+        bellman_hessian_residual_component(
+            gain_delta=gain_delta,
+            bellman_hessian=bellman_hessian,
+            state_covariances=covariances,
+            reference_gain=reference_action_sensitivity,
+            numerics=numerics,
+            state_label=state_label,
+        ),
+        (
+            BridgeCertificateComponent.available(
+                RECURRENCE_GRU_DIAGNOSTICS,
+                certificate_mode="augmented_linear",
+                **_json_summary(recurrence_diagnostics),
+            )
+            if recurrence_diagnostics
+            else missing_component(
+                RECURRENCE_GRU_DIAGNOSTICS,
+                "no augmented linear recurrence diagnostic metadata was supplied",
+            )
+        ),
+    )
+
+
 def build_standard_certificate_components(
     *,
     architecture: BridgeArchitecture,
+    certificate_mode: BridgeCertificateMode | None = None,
     states: np.ndarray | None = None,
     action_states: np.ndarray | None = None,
+    augmented_states: np.ndarray | None = None,
     candidate_actions: np.ndarray | None = None,
     reference_actions: np.ndarray | None = None,
     candidate_gain: np.ndarray | None = None,
     reference_gain: np.ndarray | None = None,
+    candidate_augmented_action_sensitivity: np.ndarray | None = None,
+    reference_augmented_action_sensitivity: np.ndarray | None = None,
     action_weight: np.ndarray | None = None,
     candidate_transition: np.ndarray | None = None,
     reference_transition: np.ndarray | None = None,
@@ -342,6 +483,7 @@ def build_standard_certificate_components(
     reference_value_matrices: np.ndarray | None = None,
     bellman_hessian: np.ndarray | None = None,
     state_covariances: np.ndarray | None = None,
+    augmented_state_covariances: np.ndarray | None = None,
     optimizer_metadata: dict[str, Any] | None = None,
     recurrence_diagnostics: dict[str, Any] | None = None,
     layout: ArrayLayout = "batch_time_state",
@@ -352,11 +494,43 @@ def build_standard_certificate_components(
 ) -> tuple[BridgeCertificateComponent, ...]:
     """Build the standard bridge certificate component bundle.
 
-    The same entry point covers full-state and output-feedback linear cases.
-    For output-feedback linear controllers, pass ``states`` as the coupled
-    closed-loop state (for transition/value/rank rows) and ``action_states`` as
-    the estimated state used by the controller gain.
+    The same entry point covers full-state, output-feedback linear, and
+    augmented-linear recurrent cases. For output-feedback linear controllers,
+    pass ``states`` as the coupled closed-loop state (for transition/value/rank
+    rows) and ``action_states`` as the estimated state used by the controller
+    gain. For linear recurrent controllers with a formal recurrence-state model,
+    set ``certificate_mode="augmented_linear"`` and provide ``augmented_states``
+    plus augmented action/transition sensitivities.
     """
+
+    mode = _resolve_certificate_mode(
+        architecture=architecture,
+        certificate_mode=certificate_mode,
+        augmented_states=augmented_states,
+        candidate_augmented_action_sensitivity=candidate_augmented_action_sensitivity,
+        reference_augmented_action_sensitivity=reference_augmented_action_sensitivity,
+    )
+    if mode == "augmented_linear":
+        return augmented_linear_recurrent_components(
+            augmented_states=augmented_states,
+            candidate_action_sensitivity=candidate_augmented_action_sensitivity,
+            reference_action_sensitivity=reference_augmented_action_sensitivity,
+            candidate_actions=candidate_actions,
+            reference_actions=reference_actions,
+            action_weight=action_weight,
+            candidate_transition=candidate_transition,
+            reference_transition=reference_transition,
+            candidate_value_matrices=candidate_value_matrices,
+            reference_value_matrices=reference_value_matrices,
+            bellman_hessian=bellman_hessian,
+            augmented_state_covariances=augmented_state_covariances,
+            optimizer_metadata=optimizer_metadata,
+            recurrence_diagnostics=recurrence_diagnostics,
+            layout=layout,
+            numerics=numerics,
+            state_label="augmented_state" if state_label == "state" else state_label,
+            action_label=action_label,
+        )
 
     covariances = _covariances_or_none(states, state_covariances, layout)
     action_covariances = (
@@ -436,6 +610,30 @@ def build_standard_certificate_components(
         ]
     )
     return tuple(components)
+
+
+def _resolve_certificate_mode(
+    *,
+    architecture: BridgeArchitecture,
+    certificate_mode: BridgeCertificateMode | None,
+    augmented_states: np.ndarray | None,
+    candidate_augmented_action_sensitivity: np.ndarray | None,
+    reference_augmented_action_sensitivity: np.ndarray | None,
+) -> BridgeCertificateMode:
+    if certificate_mode is not None:
+        if certificate_mode == "augmented_linear" and architecture == "gru":
+            raise ValueError("GRU rows cannot claim augmented_linear certificate mode")
+        return certificate_mode
+    if (
+        architecture == "linear_recurrence"
+        and augmented_states is not None
+        and candidate_augmented_action_sensitivity is not None
+        and reference_augmented_action_sensitivity is not None
+    ):
+        return "augmented_linear"
+    if architecture in _RECURRENCE_ARCHITECTURES:
+        return "empirical_nonlinear"
+    return "static_gain"
 
 
 def _as_float_array(values: np.ndarray) -> np.ndarray:
@@ -601,6 +799,8 @@ __all__ = [
     "VISITED_SUBSPACE_DIAGNOSTICS",
     "ArrayLayout",
     "CertificateNumerics",
+    "action_energy_mismatch_summary",
+    "augmented_linear_recurrent_components",
     "bellman_hessian_residual_component",
     "build_standard_certificate_components",
     "closed_loop_transition_mismatch_component",

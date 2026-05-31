@@ -551,6 +551,7 @@ def exact_output_feedback_adversary_audit(
     estimator_kind: str,
     solution: RiccatiSolution | None = None,
     penalty_gamma: float | None = None,
+    eigenspectrum_modes: int = 0,
     config: OutputFeedbackConfig = OutputFeedbackConfig(),
 ) -> dict[str, Any]:
     """Maximize fixed-controller output-feedback task cost under an L2 epsilon budget."""
@@ -618,6 +619,17 @@ def exact_output_feedback_adversary_audit(
         "boundary_active": boundary_active,
         "max_eigenvalue": float(np.max(np.linalg.eigvalsh(H_quad))),
     }
+    if eigenspectrum_modes > 0:
+        eigvals, eigvecs = np.linalg.eigh(0.5 * (H_quad + H_quad.T))
+        n_modes = min(int(eigenspectrum_modes), eigvecs.shape[1])
+        order = np.arange(eigvecs.shape[1] - n_modes, eigvecs.shape[1])[::-1]
+        result["eigenspectrum"] = {
+            "eigenvalues": jnp.asarray(eigvals[order], dtype=jnp.float64),
+            "epsilon_modes": jnp.asarray(
+                eigvecs[:, order].T.reshape((n_modes, schedule.T, plant.m_w)),
+                dtype=jnp.float64,
+            ),
+        }
     if penalty_gamma is not None:
         penalized = _gamma_penalized_quadratic_diagnostic(
             H_quad,

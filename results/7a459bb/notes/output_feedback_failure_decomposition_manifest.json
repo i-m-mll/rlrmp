@@ -1,0 +1,3904 @@
+{
+  "format": "rlrmp.output_feedback_failure_decomposition.v1",
+  "issue": "c45adde",
+  "rows": [
+    {
+      "certificate": {
+        "bellman_hessian_residual": 0.48157127710410025,
+        "closed_loop_transition_mismatch": 9.46451949671906e-05,
+        "state_weighted_action_mismatch": 0.48157127709920317,
+        "value_gap": 0.00011168367237251871
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": true,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened__scratch",
+      "evaluation_lens": "nominal_clean",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.0016503908865026671,
+        "strong_fraction_mean": 2.7838726801412406e-05,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 416.3776961331086,
+        "unvisited_fraction_max": 0.9999999999992288,
+        "unvisited_fraction_mean": 0.9999721612731985,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9999721612731985,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 0.48157127709920317,
+          "training_objective": 325.29461454472437,
+          "training_objective_ratio_to_reference": 1.0131700438496394
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.27088384336830684,
+          "training_objective": 323.9838591717948,
+          "training_objective_ratio_to_reference": 1.0090875351965962
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.12039281927480115,
+          "training_objective": 323.1166121601109,
+          "training_objective_ratio_to_reference": 1.006386387825663
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.030098204818700378,
+          "training_objective": 322.20160963276237,
+          "training_objective_ratio_to_reference": 1.0035365000337801
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0,
+          "training_objective": 321.06615915008246,
+          "training_objective_ratio_to_reference": 1.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 160.95270342958543,
+        "learned_objective": 325.29461454472437,
+        "learned_projected_gradient_norm": 160.95270342958543,
+        "learned_to_reference_objective_ratio": 1.0131700438496394,
+        "reference_gradient_norm": 6.7181764620140136e-12,
+        "reference_objective": 321.06615915008246,
+        "reference_projected_gradient_norm": 6.7181764620140136e-12
+      },
+      "row_parameters": {},
+      "run_id": "no_coverage__strong_optimizer_whitened__scratch__nominal_clean",
+      "source_group": "no_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2185,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "no-coverage/reference",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 1.2158912997425912,
+        "closed_loop_transition_mismatch": 0.01562330166712985,
+        "state_weighted_action_mismatch": 1.2158912997421099,
+        "value_gap": 0.025137285407443723
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": true,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened__scratch",
+      "evaluation_lens": "riccati_epsilon_response",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.001434490403916767,
+        "strong_fraction_mean": 3.0601974233998135e-05,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 416.3776961331086,
+        "unvisited_fraction_max": 0.9999999999632693,
+        "unvisited_fraction_mean": 0.9999693980257659,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9999693980257659,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 1.2158912997421099,
+          "training_objective": 325.29461454472437,
+          "training_objective_ratio_to_reference": 1.0131700438496394
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.6839388561049364,
+          "training_objective": 323.9838591717948,
+          "training_objective_ratio_to_reference": 1.0090875351965962
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.3039728249355267,
+          "training_objective": 323.1166121601109,
+          "training_objective_ratio_to_reference": 1.006386387825663
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.07599320623388178,
+          "training_objective": 322.20160963276237,
+          "training_objective_ratio_to_reference": 1.0035365000337801
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0,
+          "training_objective": 321.06615915008246,
+          "training_objective_ratio_to_reference": 1.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 160.95270342958543,
+        "learned_objective": 325.29461454472437,
+        "learned_projected_gradient_norm": 160.95270342958543,
+        "learned_to_reference_objective_ratio": 1.0131700438496394,
+        "reference_gradient_norm": 6.7181764620140136e-12,
+        "reference_objective": 321.06615915008246,
+        "reference_projected_gradient_norm": 6.7181764620140136e-12
+      },
+      "row_parameters": {},
+      "run_id": "no_coverage__strong_optimizer_whitened__scratch__riccati_epsilon_response",
+      "source_group": "no_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2185,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "no-coverage/reference",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 1.4247376961620269e-05,
+        "closed_loop_transition_mismatch": 1.9824391475586305e-11,
+        "state_weighted_action_mismatch": 1.4247376959335943e-05,
+        "value_gap": 7.487165374050103e-12
+      },
+      "classification": {
+        "classification": "not_failure",
+        "reasons": [
+          "standard mismatch and objective ratio are both within tolerance"
+        ]
+      },
+      "controller_label": "strong_optimizer_whitened__bellman_init",
+      "evaluation_lens": "nominal_clean",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 1.569792208421891e-05,
+        "strong_fraction_mean": 4.722169838344364e-07,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 0.05562606675426062,
+        "unvisited_fraction_max": 0.9999999999999797,
+        "unvisited_fraction_mean": 0.9999995277830163,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9999995277830163,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 1.4247376959335943e-05,
+          "training_objective": 321.0661591828935,
+          "training_objective_ratio_to_reference": 1.000000000102194
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 8.014149539476337e-06,
+          "training_objective": 321.0661591685382,
+          "training_objective_ratio_to_reference": 1.0000000000574827
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 3.561844239771188e-06,
+          "training_objective": 321.0661591582848,
+          "training_objective_ratio_to_reference": 1.0000000000255471
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 8.90461059914133e-07,
+          "training_objective": 321.0661591521331,
+          "training_objective_ratio_to_reference": 1.000000000006387
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0,
+          "training_objective": 321.06615915008246,
+          "training_objective_ratio_to_reference": 1.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 0.004040950146974297,
+        "learned_objective": 321.0661591828935,
+        "learned_projected_gradient_norm": 0.004040950146974297,
+        "learned_to_reference_objective_ratio": 1.000000000102194,
+        "reference_gradient_norm": 6.7181764620140136e-12,
+        "reference_objective": 321.06615915008246,
+        "reference_projected_gradient_norm": 6.7181764620140136e-12
+      },
+      "row_parameters": {},
+      "run_id": "no_coverage__strong_optimizer_whitened__bellman_init__nominal_clean",
+      "source_group": "no_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2067,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "no-coverage/reference",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 0.0006312629828308419,
+        "closed_loop_transition_mismatch": 1.4221992637205605e-09,
+        "state_weighted_action_mismatch": 0.0006312629828309173,
+        "value_gap": -1.486655075702502e-06
+      },
+      "classification": {
+        "classification": "not_failure",
+        "reasons": [
+          "standard mismatch and objective ratio are both within tolerance"
+        ]
+      },
+      "controller_label": "strong_optimizer_whitened__bellman_init",
+      "evaluation_lens": "riccati_epsilon_response",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.0002572002964249904,
+        "strong_fraction_mean": 2.9795062500038085e-05,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 0.05562606675426062,
+        "unvisited_fraction_max": 0.9999999999995939,
+        "unvisited_fraction_mean": 0.9999702049375003,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9999702049375003,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 0.0006312629828309173,
+          "training_objective": 321.0661591828935,
+          "training_objective_ratio_to_reference": 1.000000000102194
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.0003550854278423923,
+          "training_objective": 321.0661591685382,
+          "training_objective_ratio_to_reference": 1.0000000000574827
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.00015781574570773222,
+          "training_objective": 321.0661591582848,
+          "training_objective_ratio_to_reference": 1.0000000000255471
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 3.945393642693161e-05,
+          "training_objective": 321.0661591521331,
+          "training_objective_ratio_to_reference": 1.000000000006387
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0,
+          "training_objective": 321.06615915008246,
+          "training_objective_ratio_to_reference": 1.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 0.004040950146974297,
+        "learned_objective": 321.0661591828935,
+        "learned_projected_gradient_norm": 0.004040950146974297,
+        "learned_to_reference_objective_ratio": 1.000000000102194,
+        "reference_gradient_norm": 6.7181764620140136e-12,
+        "reference_objective": 321.06615915008246,
+        "reference_projected_gradient_norm": 6.7181764620140136e-12
+      },
+      "row_parameters": {},
+      "run_id": "no_coverage__strong_optimizer_whitened__bellman_init__riccati_epsilon_response",
+      "source_group": "no_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2067,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "no-coverage/reference",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 60.90499988466517,
+        "closed_loop_transition_mismatch": 0.02014560959545435,
+        "state_weighted_action_mismatch": 60.904999884875096,
+        "value_gap": 0.13090181857827118
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": true,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened__scratch",
+      "evaluation_lens": "nominal_clean",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.042714386994585386,
+        "strong_fraction_mean": 0.000920899804196284,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 423.29837986528236,
+        "unvisited_fraction_max": 0.9999999993770805,
+        "unvisited_fraction_mean": 0.9990791001958037,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9990791001958037,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 60.904999884875096
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 34.25906243524223
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 15.226249971218769
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 3.8065624928047046
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 48439174.66389835,
+        "learned_objective": 365.6845567416607,
+        "learned_projected_gradient_norm": 48439174.66389835,
+        "learned_to_reference_objective_ratio": 1.349262735208271,
+        "reference_gradient_norm": null,
+        "reference_objective": 271.02546242427275,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "basis_scale": 0.0,
+        "random_state_scale": 0.0,
+        "scale_factor": 0.0
+      },
+      "run_id": "initial_state_coverage__initial_state_scale_0x__strong_optimizer_whitened__scratch__nominal_clean",
+      "source_group": "initial_state_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2016,
+        "n_iterations": 1448,
+        "optimizer_status": "ABNORMAL: ",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "initial-state coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 46.18961880064762,
+        "closed_loop_transition_mismatch": 0.15411916041529675,
+        "state_weighted_action_mismatch": 46.189618800718414,
+        "value_gap": 15.708830750873613
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": true,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened__scratch",
+      "evaluation_lens": "riccati_epsilon_response",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.042714386994585386,
+        "strong_fraction_mean": 0.0009413220653145836,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 423.29837986528236,
+        "unvisited_fraction_max": 0.9999999999985667,
+        "unvisited_fraction_mean": 0.9990586779346854,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9990586779346854,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 46.189618800718414
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 25.98166057540409
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 11.547404700179609
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 2.886851175044894
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 48439174.66389835,
+        "learned_objective": 365.6845567416607,
+        "learned_projected_gradient_norm": 48439174.66389835,
+        "learned_to_reference_objective_ratio": 1.349262735208271,
+        "reference_gradient_norm": null,
+        "reference_objective": 271.02546242427275,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "basis_scale": 0.0,
+        "random_state_scale": 0.0,
+        "scale_factor": 0.0
+      },
+      "run_id": "initial_state_coverage__initial_state_scale_0x__strong_optimizer_whitened__scratch__riccati_epsilon_response",
+      "source_group": "initial_state_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2016,
+        "n_iterations": 1448,
+        "optimizer_status": "ABNORMAL: ",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "initial-state coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 0.5991493611217567,
+        "closed_loop_transition_mismatch": 0.003943174280905682,
+        "state_weighted_action_mismatch": 0.5991493611219879,
+        "value_gap": 0.0014618371279614963
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": true,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened__scratch",
+      "evaluation_lens": "nominal_clean",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.017989682973927633,
+        "strong_fraction_mean": 0.0005465988033017138,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 418.3587400880649,
+        "unvisited_fraction_max": 0.9999999999961428,
+        "unvisited_fraction_mean": 0.9994534011966987,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9994534011966987,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 0.5991493611219879
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.3370215156311173
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.14978734028049692
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.03744683507012413
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 1012.1475695048175,
+        "learned_objective": 282.1084737409415,
+        "learned_projected_gradient_norm": 1012.1475695048175,
+        "learned_to_reference_objective_ratio": 1.0238789587425696,
+        "reference_gradient_norm": null,
+        "reference_objective": 275.5291251295956,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "basis_scale": 0.003,
+        "random_state_scale": 0.006,
+        "scale_factor": 0.3
+      },
+      "run_id": "initial_state_coverage__initial_state_scale_0.3x__strong_optimizer_whitened__scratch__nominal_clean",
+      "source_group": "initial_state_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2187,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "initial-state coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 3.715243118395072,
+        "closed_loop_transition_mismatch": 0.017655836028907725,
+        "state_weighted_action_mismatch": 3.7152431183932904,
+        "value_gap": 0.025638258887646873
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": true,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened__scratch",
+      "evaluation_lens": "riccati_epsilon_response",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.015322861466673663,
+        "strong_fraction_mean": 0.0005068450566966104,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 418.3587400880649,
+        "unvisited_fraction_max": 0.9999999999961428,
+        "unvisited_fraction_mean": 0.9994931549433033,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9994931549433033,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 3.7152431183932904
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 2.0898242540962264
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.9288107795983194
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.23220269489957993
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 1012.1475695048175,
+        "learned_objective": 282.1084737409415,
+        "learned_projected_gradient_norm": 1012.1475695048175,
+        "learned_to_reference_objective_ratio": 1.0238789587425696,
+        "reference_gradient_norm": null,
+        "reference_objective": 275.5291251295956,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "basis_scale": 0.003,
+        "random_state_scale": 0.006,
+        "scale_factor": 0.3
+      },
+      "run_id": "initial_state_coverage__initial_state_scale_0.3x__strong_optimizer_whitened__scratch__riccati_epsilon_response",
+      "source_group": "initial_state_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2187,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "initial-state coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 0.48157127710410025,
+        "closed_loop_transition_mismatch": 9.46451949671906e-05,
+        "state_weighted_action_mismatch": 0.48157127709920317,
+        "value_gap": 0.00011168367237251871
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": true,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened__scratch",
+      "evaluation_lens": "nominal_clean",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.0016503908865026671,
+        "strong_fraction_mean": 2.7838726801412406e-05,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 416.3776961331086,
+        "unvisited_fraction_max": 0.9999999999992288,
+        "unvisited_fraction_mean": 0.9999721612731985,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9999721612731985,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 0.48157127709920317
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.27088384336830684
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.12039281927480115
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.030098204818700378
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 160.95270342954933,
+        "learned_objective": 325.29461454472437,
+        "learned_projected_gradient_norm": 160.95270342954933,
+        "learned_to_reference_objective_ratio": 1.0131700438496394,
+        "reference_gradient_norm": null,
+        "reference_objective": 321.06615915008246,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "basis_scale": 0.01,
+        "random_state_scale": 0.02,
+        "scale_factor": 1.0
+      },
+      "run_id": "initial_state_coverage__initial_state_scale_1x__strong_optimizer_whitened__scratch__nominal_clean",
+      "source_group": "initial_state_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2185,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "initial-state coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 1.2158912997425912,
+        "closed_loop_transition_mismatch": 0.01562330166712985,
+        "state_weighted_action_mismatch": 1.2158912997421099,
+        "value_gap": 0.025137285407443723
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": true,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened__scratch",
+      "evaluation_lens": "riccati_epsilon_response",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.001434490403916767,
+        "strong_fraction_mean": 3.0601974233998135e-05,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 416.3776961331086,
+        "unvisited_fraction_max": 0.9999999999632693,
+        "unvisited_fraction_mean": 0.9999693980257659,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9999693980257659,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 1.2158912997421099
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.6839388561049364
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.3039728249355267
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.07599320623388178
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 160.95270342954933,
+        "learned_objective": 325.29461454472437,
+        "learned_projected_gradient_norm": 160.95270342954933,
+        "learned_to_reference_objective_ratio": 1.0131700438496394,
+        "reference_gradient_norm": null,
+        "reference_objective": 321.06615915008246,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "basis_scale": 0.01,
+        "random_state_scale": 0.02,
+        "scale_factor": 1.0
+      },
+      "run_id": "initial_state_coverage__initial_state_scale_1x__strong_optimizer_whitened__scratch__riccati_epsilon_response",
+      "source_group": "initial_state_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2185,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "initial-state coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 4.116828542184619,
+        "closed_loop_transition_mismatch": 6.431757625519303e-05,
+        "state_weighted_action_mismatch": 4.116828542333716,
+        "value_gap": 5.724131634809644e-05
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": false,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened__scratch",
+      "evaluation_lens": "nominal_clean",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.003552584705165339,
+        "strong_fraction_mean": 6.040218320266343e-05,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 420.53384204162035,
+        "unvisited_fraction_max": 0.9999999999991971,
+        "unvisited_fraction_mean": 0.9999395978167974,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9999395978167974,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 4.116828542333716
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 2.3157160550627167
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 1.0292071355834287
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.25730178389585917
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 159.1150941468344,
+        "learned_objective": 725.7877408364782,
+        "learned_projected_gradient_norm": 159.1150941468344,
+        "learned_to_reference_objective_ratio": 1.0060937874376534,
+        "reference_gradient_norm": null,
+        "reference_objective": 721.3917329565605,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "basis_scale": 0.03,
+        "random_state_scale": 0.06,
+        "scale_factor": 3.0
+      },
+      "run_id": "initial_state_coverage__initial_state_scale_3x__strong_optimizer_whitened__scratch__nominal_clean",
+      "source_group": "initial_state_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2132,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "initial-state coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 0.9263088723616532,
+        "closed_loop_transition_mismatch": 0.015555477516267523,
+        "state_weighted_action_mismatch": 0.9263088723619647,
+        "value_gap": 0.02669655608686758
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": false,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened__scratch",
+      "evaluation_lens": "riccati_epsilon_response",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.002796131366741257,
+        "strong_fraction_mean": 5.517066874383849e-05,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 420.53384204162035,
+        "unvisited_fraction_max": 0.9999999995708598,
+        "unvisited_fraction_mean": 0.9999448293312562,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9999448293312562,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 0.9263088723619647
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.5210487407036051
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.23157721809049123
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.057894304522622494
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 159.1150941468344,
+        "learned_objective": 725.7877408364782,
+        "learned_projected_gradient_norm": 159.1150941468344,
+        "learned_to_reference_objective_ratio": 1.0060937874376534,
+        "reference_gradient_norm": null,
+        "reference_objective": 721.3917329565605,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "basis_scale": 0.03,
+        "random_state_scale": 0.06,
+        "scale_factor": 3.0
+      },
+      "run_id": "initial_state_coverage__initial_state_scale_3x__strong_optimizer_whitened__scratch__riccati_epsilon_response",
+      "source_group": "initial_state_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2132,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "initial-state coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 2.778095702951675,
+        "closed_loop_transition_mismatch": 0.022163098265630843,
+        "state_weighted_action_mismatch": 2.778095702951632,
+        "value_gap": 0.12430099590774034
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": true,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_eigen_trajectory_m1_s0.3__scratch",
+      "evaluation_lens": "nominal_clean",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.03706303800789151,
+        "strong_fraction_mean": 0.0007276807852447532,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 420.4112054632111,
+        "unvisited_fraction_max": 0.999999991334265,
+        "unvisited_fraction_mean": 0.9992723192147555,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9992723192147555,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 2.778095702951632
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 1.562678832910292
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.6945239257379078
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.17363098143447714
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 96609.635586562,
+        "learned_objective": 6258.759789732165,
+        "learned_projected_gradient_norm": 96609.635586562,
+        "learned_to_reference_objective_ratio": 1.2127363535849864,
+        "reference_gradient_norm": null,
+        "reference_objective": 5160.857734024844,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 1,
+        "objective": "trajectory",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 0.3,
+        "weight": 0.1
+      },
+      "run_id": "eigenspectrum__trajectory__strong_optimizer_whitened_eigen_trajectory_m1_s0.3__scratch__nominal_clean",
+      "source_group": "eigenspectrum_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2249,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "eigenspectrum trajectory coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 1.737990079316667,
+        "closed_loop_transition_mismatch": 0.061473606438637536,
+        "state_weighted_action_mismatch": 1.7379900793166407,
+        "value_gap": 0.31515231083344014
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": true,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_eigen_trajectory_m1_s0.3__scratch",
+      "evaluation_lens": "riccati_epsilon_response",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.04403101160470347,
+        "strong_fraction_mean": 0.0008594179698207467,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 420.4112054632111,
+        "unvisited_fraction_max": 0.9999999606086168,
+        "unvisited_fraction_mean": 0.9991405820301793,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9991405820301793,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 1.7379900793166407
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.9776194196156109
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.43449751982916
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.1086243799572902
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 96609.635586562,
+        "learned_objective": 6258.759789732165,
+        "learned_projected_gradient_norm": 96609.635586562,
+        "learned_to_reference_objective_ratio": 1.2127363535849864,
+        "reference_gradient_norm": null,
+        "reference_objective": 5160.857734024844,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 1,
+        "objective": "trajectory",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 0.3,
+        "weight": 0.1
+      },
+      "run_id": "eigenspectrum__trajectory__strong_optimizer_whitened_eigen_trajectory_m1_s0.3__scratch__riccati_epsilon_response",
+      "source_group": "eigenspectrum_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2249,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "eigenspectrum trajectory coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 4.2595031191215,
+        "closed_loop_transition_mismatch": 0.03723962131421584,
+        "state_weighted_action_mismatch": 4.2595031191214225,
+        "value_gap": 0.16296020761416863
+      },
+      "classification": {
+        "classification": "mixed",
+        "reasons": [
+          "under_identification",
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": false,
+          "objective_close": true,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_eigen_trajectory_m1_s1__scratch",
+      "evaluation_lens": "nominal_clean",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.005224416153898837,
+        "strong_fraction_mean": 0.0001835139755864584,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 420.5552058533672,
+        "unvisited_fraction_max": 0.9999999886516843,
+        "unvisited_fraction_mean": 0.9998164860244134,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9998164860244134,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 4.2595031191214225
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 2.3959705045058013
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 1.0648757797803559
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.2662189449450889
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 236998.0265830602,
+        "learned_objective": 9183.63931846528,
+        "learned_projected_gradient_norm": 236998.0265830602,
+        "learned_to_reference_objective_ratio": 0.9205184777370692,
+        "reference_gradient_norm": null,
+        "reference_objective": 9976.594213558454,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 1,
+        "objective": "trajectory",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 1.0,
+        "weight": 0.1
+      },
+      "run_id": "eigenspectrum__trajectory__strong_optimizer_whitened_eigen_trajectory_m1_s1__scratch__nominal_clean",
+      "source_group": "eigenspectrum_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2358,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "eigenspectrum trajectory coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 1.314734105734849,
+        "closed_loop_transition_mismatch": 0.046030868403740426,
+        "state_weighted_action_mismatch": 1.3147341057348438,
+        "value_gap": 0.36166152189390316
+      },
+      "classification": {
+        "classification": "mixed",
+        "reasons": [
+          "under_identification",
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": false,
+          "objective_close": true,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_eigen_trajectory_m1_s1__scratch",
+      "evaluation_lens": "riccati_epsilon_response",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.005224416153898837,
+        "strong_fraction_mean": 0.00018937241247134879,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 420.5552058533672,
+        "unvisited_fraction_max": 0.9999998882095982,
+        "unvisited_fraction_mean": 0.9998106275875288,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9998106275875288,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 1.3147341057348438
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.7395379344758495
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.32868352643371085
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.0821708816084277
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 236998.0265830602,
+        "learned_objective": 9183.63931846528,
+        "learned_projected_gradient_norm": 236998.0265830602,
+        "learned_to_reference_objective_ratio": 0.9205184777370692,
+        "reference_gradient_norm": null,
+        "reference_objective": 9976.594213558454,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 1,
+        "objective": "trajectory",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 1.0,
+        "weight": 0.1
+      },
+      "run_id": "eigenspectrum__trajectory__strong_optimizer_whitened_eigen_trajectory_m1_s1__scratch__riccati_epsilon_response",
+      "source_group": "eigenspectrum_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2358,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "eigenspectrum trajectory coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 1.1191548267549156,
+        "closed_loop_transition_mismatch": 0.06078589008176018,
+        "state_weighted_action_mismatch": 1.119154826754925,
+        "value_gap": 0.12828451623607315
+      },
+      "classification": {
+        "classification": "mixed",
+        "reasons": [
+          "under_identification",
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": false,
+          "objective_close": true,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_eigen_trajectory_m1_s3__scratch",
+      "evaluation_lens": "nominal_clean",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.03561044703922464,
+        "strong_fraction_mean": 0.0008830351267198804,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 422.85448122982274,
+        "unvisited_fraction_max": 0.9999999930725622,
+        "unvisited_fraction_mean": 0.9991169648732803,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9991169648732803,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 1.119154826754925
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.6295245900496452
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.27978870668873124
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.06994717667218277
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 1766412.2259941825,
+        "learned_objective": 27691.807316444363,
+        "learned_projected_gradient_norm": 1766412.2259941825,
+        "learned_to_reference_objective_ratio": 0.5293511255366488,
+        "reference_gradient_norm": null,
+        "reference_objective": 52312.73908857905,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 1,
+        "objective": "trajectory",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 3.0,
+        "weight": 0.1
+      },
+      "run_id": "eigenspectrum__trajectory__strong_optimizer_whitened_eigen_trajectory_m1_s3__scratch__nominal_clean",
+      "source_group": "eigenspectrum_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2527,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "eigenspectrum trajectory coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 0.9795312102576835,
+        "closed_loop_transition_mismatch": 0.046137362621930224,
+        "state_weighted_action_mismatch": 0.9795312102576826,
+        "value_gap": 0.4896789479269556
+      },
+      "classification": {
+        "classification": "mixed",
+        "reasons": [
+          "under_identification",
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": false,
+          "objective_close": true,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_eigen_trajectory_m1_s3__scratch",
+      "evaluation_lens": "riccati_epsilon_response",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.03561044703922464,
+        "strong_fraction_mean": 0.0008067908727892452,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 422.85448122982274,
+        "unvisited_fraction_max": 0.9999999909973192,
+        "unvisited_fraction_mean": 0.9991932091272109,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9991932091272109,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 0.9795312102576826
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.5509863057699464
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.24488280256442066
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.06122070064110512
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 1766412.2259941825,
+        "learned_objective": 27691.807316444363,
+        "learned_projected_gradient_norm": 1766412.2259941825,
+        "learned_to_reference_objective_ratio": 0.5293511255366488,
+        "reference_gradient_norm": null,
+        "reference_objective": 52312.73908857905,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 1,
+        "objective": "trajectory",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 3.0,
+        "weight": 0.1
+      },
+      "run_id": "eigenspectrum__trajectory__strong_optimizer_whitened_eigen_trajectory_m1_s3__scratch__riccati_epsilon_response",
+      "source_group": "eigenspectrum_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2527,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "eigenspectrum trajectory coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 5.611978421008008,
+        "closed_loop_transition_mismatch": 0.011784209606758626,
+        "state_weighted_action_mismatch": 5.61197842100764,
+        "value_gap": 0.09406787851798933
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": true,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_eigen_trajectory_m4_s0.3__scratch",
+      "evaluation_lens": "nominal_clean",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.06348763130567493,
+        "strong_fraction_mean": 0.0012133815729905213,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 420.8087322800357,
+        "unvisited_fraction_max": 0.999999991285299,
+        "unvisited_fraction_mean": 0.9987866184270092,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9987866184270092,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 5.61197842100764
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 3.156737861816803
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 1.4029946052519089
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.350748651312977
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 66773.32272989315,
+        "learned_objective": 6141.789941036737,
+        "learned_projected_gradient_norm": 66773.32272989315,
+        "learned_to_reference_objective_ratio": 1.24306778003909,
+        "reference_gradient_norm": null,
+        "reference_objective": 4940.832704105323,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 4,
+        "objective": "trajectory",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 0.3,
+        "weight": 0.1
+      },
+      "run_id": "eigenspectrum__trajectory__strong_optimizer_whitened_eigen_trajectory_m4_s0.3__scratch__nominal_clean",
+      "source_group": "eigenspectrum_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2344,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "eigenspectrum trajectory coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 1.8909179036893307,
+        "closed_loop_transition_mismatch": 0.018151770895734075,
+        "state_weighted_action_mismatch": 1.8909179036893062,
+        "value_gap": 0.08560407592862453
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": true,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_eigen_trajectory_m4_s0.3__scratch",
+      "evaluation_lens": "riccati_epsilon_response",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.056572113039818586,
+        "strong_fraction_mean": 0.0010989477065310063,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 420.8087322800357,
+        "unvisited_fraction_max": 0.9999999895895529,
+        "unvisited_fraction_mean": 0.9989010522934689,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9989010522934689,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 1.8909179036893062
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 1.063641320825236
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.47272947592232684
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.1181823689805816
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 66773.32272989315,
+        "learned_objective": 6141.789941036737,
+        "learned_projected_gradient_norm": 66773.32272989315,
+        "learned_to_reference_objective_ratio": 1.24306778003909,
+        "reference_gradient_norm": null,
+        "reference_objective": 4940.832704105323,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 4,
+        "objective": "trajectory",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 0.3,
+        "weight": 0.1
+      },
+      "run_id": "eigenspectrum__trajectory__strong_optimizer_whitened_eigen_trajectory_m4_s0.3__scratch__riccati_epsilon_response",
+      "source_group": "eigenspectrum_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2344,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "eigenspectrum trajectory coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 3.1067088520525874,
+        "closed_loop_transition_mismatch": 0.03151700538102268,
+        "state_weighted_action_mismatch": 3.1067088520526536,
+        "value_gap": 0.11982334258485208
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": true,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_eigen_trajectory_m4_s1__scratch",
+      "evaluation_lens": "nominal_clean",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.01650969915237358,
+        "strong_fraction_mean": 0.0003131360204968476,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 421.3683131563275,
+        "unvisited_fraction_max": 0.9999999882426612,
+        "unvisited_fraction_mean": 0.9996868639795032,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9996868639795032,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 3.1067088520526536
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 1.7475237292796177
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.7766772130131636
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.19416930325329096
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 113249.09241503221,
+        "learned_objective": 9563.508705472126,
+        "learned_projected_gradient_norm": 113249.09241503221,
+        "learned_to_reference_objective_ratio": 1.2697386703576234,
+        "reference_gradient_norm": null,
+        "reference_objective": 7531.8716588969855,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 4,
+        "objective": "trajectory",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 1.0,
+        "weight": 0.1
+      },
+      "run_id": "eigenspectrum__trajectory__strong_optimizer_whitened_eigen_trajectory_m4_s1__scratch__nominal_clean",
+      "source_group": "eigenspectrum_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2374,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "eigenspectrum trajectory coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 3.0399318717272616,
+        "closed_loop_transition_mismatch": 0.025305517543514858,
+        "state_weighted_action_mismatch": 3.0399318717271795,
+        "value_gap": 0.10806498746567111
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": true,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_eigen_trajectory_m4_s1__scratch",
+      "evaluation_lens": "riccati_epsilon_response",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.01650969915237358,
+        "strong_fraction_mean": 0.0003166526218403504,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 421.3683131563275,
+        "unvisited_fraction_max": 0.9999999932610089,
+        "unvisited_fraction_mean": 0.9996833473781594,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9996833473781594,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 3.0399318717271795
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 1.7099616778465392
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.7599829679317942
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.18999574198294844
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 113249.09241503221,
+        "learned_objective": 9563.508705472126,
+        "learned_projected_gradient_norm": 113249.09241503221,
+        "learned_to_reference_objective_ratio": 1.2697386703576234,
+        "reference_gradient_norm": null,
+        "reference_objective": 7531.8716588969855,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 4,
+        "objective": "trajectory",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 1.0,
+        "weight": 0.1
+      },
+      "run_id": "eigenspectrum__trajectory__strong_optimizer_whitened_eigen_trajectory_m4_s1__scratch__riccati_epsilon_response",
+      "source_group": "eigenspectrum_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2374,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "eigenspectrum trajectory coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 3.0781865321710145,
+        "closed_loop_transition_mismatch": 0.08929739878981216,
+        "state_weighted_action_mismatch": 3.07818653217102,
+        "value_gap": 0.22583575407645462
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": true,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_eigen_trajectory_m4_s3__scratch",
+      "evaluation_lens": "nominal_clean",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.043248481057599736,
+        "strong_fraction_mean": 0.0009223702260056,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 420.164679229285,
+        "unvisited_fraction_max": 0.9999999855126899,
+        "unvisited_fraction_mean": 0.9990776297739947,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9990776297739947,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 3.07818653217102
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 1.7314799243461991
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.7695466330427551
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.19238665826068863
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 1314978.2395196771,
+        "learned_objective": 32748.53680278231,
+        "learned_projected_gradient_norm": 1314978.2395196771,
+        "learned_to_reference_objective_ratio": 1.0804447942399178,
+        "reference_gradient_norm": null,
+        "reference_objective": 30310.236096625908,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 4,
+        "objective": "trajectory",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 3.0,
+        "weight": 0.1
+      },
+      "run_id": "eigenspectrum__trajectory__strong_optimizer_whitened_eigen_trajectory_m4_s3__scratch__nominal_clean",
+      "source_group": "eigenspectrum_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2402,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "eigenspectrum trajectory coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 4.131283502781691,
+        "closed_loop_transition_mismatch": 0.17223009610980264,
+        "state_weighted_action_mismatch": 4.131283502781737,
+        "value_gap": 0.35471866904572946
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": true,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_eigen_trajectory_m4_s3__scratch",
+      "evaluation_lens": "riccati_epsilon_response",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.02928715362953639,
+        "strong_fraction_mean": 0.0011619655968606337,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 420.164679229285,
+        "unvisited_fraction_max": 0.9999999645567857,
+        "unvisited_fraction_mean": 0.9988380344031396,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9988380344031396,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 4.131283502781737
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 2.3238469703147264
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 1.0328208756954342
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.25820521892385834
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 1314978.2395196771,
+        "learned_objective": 32748.53680278231,
+        "learned_projected_gradient_norm": 1314978.2395196771,
+        "learned_to_reference_objective_ratio": 1.0804447942399178,
+        "reference_gradient_norm": null,
+        "reference_objective": 30310.236096625908,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 4,
+        "objective": "trajectory",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 3.0,
+        "weight": 0.1
+      },
+      "run_id": "eigenspectrum__trajectory__strong_optimizer_whitened_eigen_trajectory_m4_s3__scratch__riccati_epsilon_response",
+      "source_group": "eigenspectrum_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2402,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "eigenspectrum trajectory coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 0.4047346316214419,
+        "closed_loop_transition_mismatch": 0.000496715794712526,
+        "state_weighted_action_mismatch": 0.404734631649901,
+        "value_gap": 0.0002715057964709712
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": false,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_eigen_state_m1_s0.3__scratch",
+      "evaluation_lens": "nominal_clean",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.008085481167457923,
+        "strong_fraction_mean": 0.00014896453379808578,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 421.2335391085939,
+        "unvisited_fraction_max": 0.9999999999996001,
+        "unvisited_fraction_mean": 0.9998510354662021,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9998510354662021,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 0.404734631649901
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.22766323030306979
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.10118365791247512
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.025295914478118787
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 853.2233721274556,
+        "learned_objective": 1888.3914538668464,
+        "learned_projected_gradient_norm": 853.2233721274556,
+        "learned_to_reference_objective_ratio": 1.0081118707937906,
+        "reference_gradient_norm": null,
+        "reference_objective": 1873.196327288479,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 1,
+        "objective": "state",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 0.3,
+        "weight": 0.1
+      },
+      "run_id": "eigenspectrum__state__strong_optimizer_whitened_eigen_state_m1_s0.3__scratch__nominal_clean",
+      "source_group": "eigenspectrum_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2148,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "eigenspectrum state coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 0.7600225708938041,
+        "closed_loop_transition_mismatch": 0.0037700221224072714,
+        "state_weighted_action_mismatch": 0.7600225708936021,
+        "value_gap": 0.014361037575846723
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": false,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_eigen_state_m1_s0.3__scratch",
+      "evaluation_lens": "riccati_epsilon_response",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.0075092450466631025,
+        "strong_fraction_mean": 0.00014036011948140867,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 421.2335391085939,
+        "unvisited_fraction_max": 0.9999999997588792,
+        "unvisited_fraction_mean": 0.9998596398805184,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9998596398805184,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 0.7600225708936021
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.42751269612765175
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.19000564272340104
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.047501410680850016
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 853.2233721274556,
+        "learned_objective": 1888.3914538668464,
+        "learned_projected_gradient_norm": 853.2233721274556,
+        "learned_to_reference_objective_ratio": 1.0081118707937906,
+        "reference_gradient_norm": null,
+        "reference_objective": 1873.196327288479,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 1,
+        "objective": "state",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 0.3,
+        "weight": 0.1
+      },
+      "run_id": "eigenspectrum__state__strong_optimizer_whitened_eigen_state_m1_s0.3__scratch__riccati_epsilon_response",
+      "source_group": "eigenspectrum_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2148,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "eigenspectrum state coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 0.6016109836262886,
+        "closed_loop_transition_mismatch": 0.0007400524899012346,
+        "state_weighted_action_mismatch": 0.6016109836262438,
+        "value_gap": 0.0007588035556664476
+      },
+      "classification": {
+        "classification": "mixed",
+        "reasons": [
+          "under_identification",
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": false,
+          "objective_close": true,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_eigen_state_m1_s1__scratch",
+      "evaluation_lens": "nominal_clean",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.0029701613261944233,
+        "strong_fraction_mean": 5.7834139597098396e-05,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 421.276333581519,
+        "unvisited_fraction_max": 0.9999999999746718,
+        "unvisited_fraction_mean": 0.9999421658604025,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9999421658604025,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 0.6016109836262438
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.33840617828976194
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.1504027459065611
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.037600686476640235
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 732.2643135572068,
+        "learned_objective": 3213.1311393897868,
+        "learned_projected_gradient_norm": 732.2643135572068,
+        "learned_to_reference_objective_ratio": 0.9933852916414918,
+        "reference_gradient_norm": null,
+        "reference_objective": 3234.5265894568843,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 1,
+        "objective": "state",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 1.0,
+        "weight": 0.1
+      },
+      "run_id": "eigenspectrum__state__strong_optimizer_whitened_eigen_state_m1_s1__scratch__nominal_clean",
+      "source_group": "eigenspectrum_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2163,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "eigenspectrum state coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 0.758951170576333,
+        "closed_loop_transition_mismatch": 0.012309384942366284,
+        "state_weighted_action_mismatch": 0.7589511705768185,
+        "value_gap": 0.01573511125409956
+      },
+      "classification": {
+        "classification": "mixed",
+        "reasons": [
+          "under_identification",
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": false,
+          "objective_close": true,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_eigen_state_m1_s1__scratch",
+      "evaluation_lens": "riccati_epsilon_response",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.0026696412347386846,
+        "strong_fraction_mean": 5.7808247574738826e-05,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 421.276333581519,
+        "unvisited_fraction_max": 0.999999999441159,
+        "unvisited_fraction_mean": 0.9999421917524255,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9999421917524255,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 0.7589511705768185
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.42691003344945994
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.18973779264420484
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.04743444816105106
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 732.2643135572068,
+        "learned_objective": 3213.1311393897868,
+        "learned_projected_gradient_norm": 732.2643135572068,
+        "learned_to_reference_objective_ratio": 0.9933852916414918,
+        "reference_gradient_norm": null,
+        "reference_objective": 3234.5265894568843,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 1,
+        "objective": "state",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 1.0,
+        "weight": 0.1
+      },
+      "run_id": "eigenspectrum__state__strong_optimizer_whitened_eigen_state_m1_s1__scratch__riccati_epsilon_response",
+      "source_group": "eigenspectrum_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2163,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "eigenspectrum state coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 0.44820417327656575,
+        "closed_loop_transition_mismatch": 0.0015795128180866647,
+        "state_weighted_action_mismatch": 0.44820417327650985,
+        "value_gap": 0.002148142813151604
+      },
+      "classification": {
+        "classification": "mixed",
+        "reasons": [
+          "under_identification",
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": false,
+          "objective_close": true,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_eigen_state_m1_s3__scratch",
+      "evaluation_lens": "nominal_clean",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.006034505464675459,
+        "strong_fraction_mean": 0.00011335929398829971,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 421.6932424876716,
+        "unvisited_fraction_max": 0.9999999999997625,
+        "unvisited_fraction_mean": 0.9998866407060116,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9998866407060116,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 0.44820417327650985
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.2521148474680362
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.11205104331912752
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.028012760829781987
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 6299.369576641837,
+        "learned_objective": 14691.299630593914,
+        "learned_projected_gradient_norm": 6299.369576641837,
+        "learned_to_reference_objective_ratio": 0.9663888557351927,
+        "reference_gradient_norm": null,
+        "reference_objective": 15202.265157970307,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 1,
+        "objective": "state",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 3.0,
+        "weight": 0.1
+      },
+      "run_id": "eigenspectrum__state__strong_optimizer_whitened_eigen_state_m1_s3__scratch__nominal_clean",
+      "source_group": "eigenspectrum_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2183,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "eigenspectrum state coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 1.3106166286151013,
+        "closed_loop_transition_mismatch": 0.012865599922555373,
+        "state_weighted_action_mismatch": 1.31061662861465,
+        "value_gap": 0.016652728496678853
+      },
+      "classification": {
+        "classification": "mixed",
+        "reasons": [
+          "under_identification",
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": false,
+          "objective_close": true,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_eigen_state_m1_s3__scratch",
+      "evaluation_lens": "riccati_epsilon_response",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.006034505464675459,
+        "strong_fraction_mean": 0.00012696031366117618,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 421.6932424876716,
+        "unvisited_fraction_max": 0.9999999995355846,
+        "unvisited_fraction_mean": 0.9998730396863387,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9998730396863387,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 1.31061662861465
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.7372218535957432
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.3276541571536635
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.08191353928841648
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 6299.369576641837,
+        "learned_objective": 14691.299630593914,
+        "learned_projected_gradient_norm": 6299.369576641837,
+        "learned_to_reference_objective_ratio": 0.9663888557351927,
+        "reference_gradient_norm": null,
+        "reference_objective": 15202.265157970307,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 1,
+        "objective": "state",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 3.0,
+        "weight": 0.1
+      },
+      "run_id": "eigenspectrum__state__strong_optimizer_whitened_eigen_state_m1_s3__scratch__riccati_epsilon_response",
+      "source_group": "eigenspectrum_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2183,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "eigenspectrum state coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 1.1829429996695062,
+        "closed_loop_transition_mismatch": 0.0009819928299003634,
+        "state_weighted_action_mismatch": 1.1829429996689018,
+        "value_gap": 0.0006953985646241071
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": true,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_eigen_state_m4_s0.3__scratch",
+      "evaluation_lens": "nominal_clean",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.003994057139419271,
+        "strong_fraction_mean": 0.00010917092472231572,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 421.75218290039413,
+        "unvisited_fraction_max": 0.9999999999958529,
+        "unvisited_fraction_mean": 0.9998908290752779,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9998908290752779,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 1.1829429996689018
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.6654054373137569
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.2957357499172259
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.07393393747930635
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 1432.3418827394723,
+        "learned_objective": 1840.5488248086033,
+        "learned_projected_gradient_norm": 1432.3418827394723,
+        "learned_to_reference_objective_ratio": 1.0140665403707454,
+        "reference_gradient_norm": null,
+        "reference_objective": 1815.0178036006332,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 4,
+        "objective": "state",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 0.3,
+        "weight": 0.1
+      },
+      "run_id": "eigenspectrum__state__strong_optimizer_whitened_eigen_state_m4_s0.3__scratch__nominal_clean",
+      "source_group": "eigenspectrum_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2178,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "eigenspectrum state coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 2.485743329070893,
+        "closed_loop_transition_mismatch": 0.014347162366908061,
+        "state_weighted_action_mismatch": 2.485743329081603,
+        "value_gap": 0.02363593927331951
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": true,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_eigen_state_m4_s0.3__scratch",
+      "evaluation_lens": "riccati_epsilon_response",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.003994057139419271,
+        "strong_fraction_mean": 0.00010813825228881564,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 421.75218290039413,
+        "unvisited_fraction_max": 0.9999999990895873,
+        "unvisited_fraction_mean": 0.999891861747711,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.999891861747711,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 2.485743329081603
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 1.3982306226083894
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.6214358322703987
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.15535895806759945
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 1432.3418827394723,
+        "learned_objective": 1840.5488248086033,
+        "learned_projected_gradient_norm": 1432.3418827394723,
+        "learned_to_reference_objective_ratio": 1.0140665403707454,
+        "reference_gradient_norm": null,
+        "reference_objective": 1815.0178036006332,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 4,
+        "objective": "state",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 0.3,
+        "weight": 0.1
+      },
+      "run_id": "eigenspectrum__state__strong_optimizer_whitened_eigen_state_m4_s0.3__scratch__riccati_epsilon_response",
+      "source_group": "eigenspectrum_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2178,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "eigenspectrum state coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 0.6516707252398836,
+        "closed_loop_transition_mismatch": 0.004192167081707064,
+        "state_weighted_action_mismatch": 0.6516707252398363,
+        "value_gap": 0.0031474757358242417
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": true,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_eigen_state_m4_s1__scratch",
+      "evaluation_lens": "nominal_clean",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.013463563381500093,
+        "strong_fraction_mean": 0.000371052297987421,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 422.38199393073006,
+        "unvisited_fraction_max": 0.9999999998862135,
+        "unvisited_fraction_mean": 0.9996289477020125,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9996289477020125,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 0.6516707252398363
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.3665647829474075
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.16291768130995882
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.040729420327489836
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 6677.9720322866215,
+        "learned_objective": 2631.222794734901,
+        "learned_projected_gradient_norm": 6677.9720322866215,
+        "learned_to_reference_objective_ratio": 1.0166625209381748,
+        "reference_gradient_norm": null,
+        "reference_objective": 2588.09854848078,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 4,
+        "objective": "state",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 1.0,
+        "weight": 0.1
+      },
+      "run_id": "eigenspectrum__state__strong_optimizer_whitened_eigen_state_m4_s1__scratch__nominal_clean",
+      "source_group": "eigenspectrum_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2187,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "eigenspectrum state coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 1.070523853118427,
+        "closed_loop_transition_mismatch": 0.013426932446231879,
+        "state_weighted_action_mismatch": 1.0705238531185943,
+        "value_gap": 0.01887923976086316
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": true,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_eigen_state_m4_s1__scratch",
+      "evaluation_lens": "riccati_epsilon_response",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.013463563381500093,
+        "strong_fraction_mean": 0.00036436798619993323,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 422.38199393073006,
+        "unvisited_fraction_max": 0.9999999980401131,
+        "unvisited_fraction_mean": 0.9996356320138005,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9996356320138005,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 1.0705238531185943
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.6021696673792115
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.2676309632796475
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.06690774081991187
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 6677.9720322866215,
+        "learned_objective": 2631.222794734901,
+        "learned_projected_gradient_norm": 6677.9720322866215,
+        "learned_to_reference_objective_ratio": 1.0166625209381748,
+        "reference_gradient_norm": null,
+        "reference_objective": 2588.09854848078,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 4,
+        "objective": "state",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 1.0,
+        "weight": 0.1
+      },
+      "run_id": "eigenspectrum__state__strong_optimizer_whitened_eigen_state_m4_s1__scratch__riccati_epsilon_response",
+      "source_group": "eigenspectrum_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2187,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "eigenspectrum state coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 0.3179310991398212,
+        "closed_loop_transition_mismatch": 0.004185720060028478,
+        "state_weighted_action_mismatch": 0.31793109913980744,
+        "value_gap": 0.0024483030488711465
+      },
+      "classification": {
+        "classification": "mixed",
+        "reasons": [
+          "under_identification",
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": false,
+          "objective_close": true,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_eigen_state_m4_s3__scratch",
+      "evaluation_lens": "nominal_clean",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.015015643467098537,
+        "strong_fraction_mean": 0.0002570572375036369,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 422.16696219717636,
+        "unvisited_fraction_max": 0.999999999998953,
+        "unvisited_fraction_mean": 0.9997429427624968,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9997429427624968,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 0.31793109913980744
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.17883624326614134
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.07948277478495198
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.0198706936962379
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 4992.504801744946,
+        "learned_objective": 9310.249582289744,
+        "learned_projected_gradient_norm": 4992.504801744946,
+        "learned_to_reference_objective_ratio": 0.9920971925935426,
+        "reference_gradient_norm": null,
+        "reference_objective": 9384.412789185371,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 4,
+        "objective": "state",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 3.0,
+        "weight": 0.1
+      },
+      "run_id": "eigenspectrum__state__strong_optimizer_whitened_eigen_state_m4_s3__scratch__nominal_clean",
+      "source_group": "eigenspectrum_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2199,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "eigenspectrum state coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 1.0403420566869788,
+        "closed_loop_transition_mismatch": 0.006403578882628231,
+        "state_weighted_action_mismatch": 1.0403420566874093,
+        "value_gap": 0.015081559102645468
+      },
+      "classification": {
+        "classification": "mixed",
+        "reasons": [
+          "under_identification",
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": false,
+          "objective_close": true,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_eigen_state_m4_s3__scratch",
+      "evaluation_lens": "riccati_epsilon_response",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.015015643467098537,
+        "strong_fraction_mean": 0.00025792205737491445,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 422.16696219717636,
+        "unvisited_fraction_max": 0.9999999983611643,
+        "unvisited_fraction_mean": 0.9997420779426249,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9997420779426249,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 1.0403420566874093
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.5851924068866676
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.26008551417185266
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.06502137854296303
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 4992.504801744946,
+        "learned_objective": 9310.249582289744,
+        "learned_projected_gradient_norm": 4992.504801744946,
+        "learned_to_reference_objective_ratio": 0.9920971925935426,
+        "reference_gradient_norm": null,
+        "reference_objective": 9384.412789185371,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 4,
+        "objective": "state",
+        "reference": "lqr_exact_budget_l2",
+        "scale": 3.0,
+        "weight": 0.1
+      },
+      "run_id": "eigenspectrum__state__strong_optimizer_whitened_eigen_state_m4_s3__scratch__riccati_epsilon_response",
+      "source_group": "eigenspectrum_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2199,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "eigenspectrum state coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 2.6002131532123838,
+        "closed_loop_transition_mismatch": 0.025042238297440737,
+        "state_weighted_action_mismatch": 2.6002131532124713,
+        "value_gap": 0.1568136795335549
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": true,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3__scratch",
+      "evaluation_lens": "nominal_clean",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.04314779014752495,
+        "strong_fraction_mean": 0.0009432690876919175,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 421.2444103781265,
+        "unvisited_fraction_max": 0.9999999996818071,
+        "unvisited_fraction_mean": 0.9990567309123082,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9990567309123082,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 2.6002131532124713
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 1.4626198986820145
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.6500532883031178
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.16251332207577956
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 329198.1751016381,
+        "learned_objective": 6598.831139008316,
+        "learned_projected_gradient_norm": 329198.1751016381,
+        "learned_to_reference_objective_ratio": 1.301883733341305,
+        "reference_gradient_norm": null,
+        "reference_objective": 5068.679306770592,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 1,
+        "objective": "trajectory",
+        "reference": "kalman_observer_error_svd",
+        "scale": 0.3,
+        "weight": 0.1
+      },
+      "run_id": "observer_error__trajectory__strong_optimizer_whitened_observer_error_trajectory_m1_s0.3__scratch__nominal_clean",
+      "source_group": "observer_error_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2313,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "observer-error trajectory coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 3.9187445543396735,
+        "closed_loop_transition_mismatch": 0.09936723246897644,
+        "state_weighted_action_mismatch": 3.9187445543397135,
+        "value_gap": 0.15645673996975068
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": true,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_observer_error_trajectory_m1_s0.3__scratch",
+      "evaluation_lens": "riccati_epsilon_response",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.03695067767357795,
+        "strong_fraction_mean": 0.001019213734801193,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 421.2444103781265,
+        "unvisited_fraction_max": 0.9999999903894435,
+        "unvisited_fraction_mean": 0.9989807862651988,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9989807862651988,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 3.9187445543397135
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 2.2042938118160875
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.9796861385849288
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.24492153464623215
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 329198.1751016381,
+        "learned_objective": 6598.831139008316,
+        "learned_projected_gradient_norm": 329198.1751016381,
+        "learned_to_reference_objective_ratio": 1.301883733341305,
+        "reference_gradient_norm": null,
+        "reference_objective": 5068.679306770592,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 1,
+        "objective": "trajectory",
+        "reference": "kalman_observer_error_svd",
+        "scale": 0.3,
+        "weight": 0.1
+      },
+      "run_id": "observer_error__trajectory__strong_optimizer_whitened_observer_error_trajectory_m1_s0.3__scratch__riccati_epsilon_response",
+      "source_group": "observer_error_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2313,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "observer-error trajectory coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 2.1879049444641208,
+        "closed_loop_transition_mismatch": 0.008883255774478025,
+        "state_weighted_action_mismatch": 2.1879049444641137,
+        "value_gap": 0.11643826564598543
+      },
+      "classification": {
+        "classification": "mixed",
+        "reasons": [
+          "under_identification",
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": false,
+          "objective_close": true,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_observer_error_trajectory_m1_s1__scratch",
+      "evaluation_lens": "nominal_clean",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.0006659281595443082,
+        "strong_fraction_mean": 2.006796090230416e-05,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 419.63745687365673,
+        "unvisited_fraction_max": 0.9999999972567534,
+        "unvisited_fraction_mean": 0.999979932039098,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.999979932039098,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 2.1879049444641137
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 1.230696531261063
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.5469762361160277
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.13674405902900708
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 816567.7530849011,
+        "learned_objective": 7760.601930470886,
+        "learned_projected_gradient_norm": 816567.7530849011,
+        "learned_to_reference_objective_ratio": 0.8668749231358172,
+        "reference_gradient_norm": null,
+        "reference_objective": 8952.389466288665,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 1,
+        "objective": "trajectory",
+        "reference": "kalman_observer_error_svd",
+        "scale": 1.0,
+        "weight": 0.1
+      },
+      "run_id": "observer_error__trajectory__strong_optimizer_whitened_observer_error_trajectory_m1_s1__scratch__nominal_clean",
+      "source_group": "observer_error_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2299,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "observer-error trajectory coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 1.3041249309113851,
+        "closed_loop_transition_mismatch": 0.030057768652331354,
+        "state_weighted_action_mismatch": 1.3041249309113814,
+        "value_gap": 0.35870429086896033
+      },
+      "classification": {
+        "classification": "mixed",
+        "reasons": [
+          "under_identification",
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": false,
+          "objective_close": true,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_observer_error_trajectory_m1_s1__scratch",
+      "evaluation_lens": "riccati_epsilon_response",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.0017290679350086655,
+        "strong_fraction_mean": 4.457211833378633e-05,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 419.63745687365673,
+        "unvisited_fraction_max": 0.9999999308567311,
+        "unvisited_fraction_mean": 0.9999554278816665,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9999554278816665,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 1.3041249309113814
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.7335702736376523
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.3260312327278453
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.08150780818196135
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 816567.7530849011,
+        "learned_objective": 7760.601930470886,
+        "learned_projected_gradient_norm": 816567.7530849011,
+        "learned_to_reference_objective_ratio": 0.8668749231358172,
+        "reference_gradient_norm": null,
+        "reference_objective": 8952.389466288665,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 1,
+        "objective": "trajectory",
+        "reference": "kalman_observer_error_svd",
+        "scale": 1.0,
+        "weight": 0.1
+      },
+      "run_id": "observer_error__trajectory__strong_optimizer_whitened_observer_error_trajectory_m1_s1__scratch__riccati_epsilon_response",
+      "source_group": "observer_error_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2299,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "observer-error trajectory coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 0.4672733905118548,
+        "closed_loop_transition_mismatch": 0.0006157427324633764,
+        "state_weighted_action_mismatch": 0.46727339051209243,
+        "value_gap": 0.00038556463747092714
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": false,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_observer_error_state_m1_s0.3__scratch",
+      "evaluation_lens": "nominal_clean",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.006264511408620609,
+        "strong_fraction_mean": 0.00015286201819397318,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 421.48525323367465,
+        "unvisited_fraction_max": 0.9999999999992693,
+        "unvisited_fraction_mean": 0.999847137981806,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.999847137981806,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 0.46727339051209243
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.2628412821630521
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.116818347628023
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.02920458690700583
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 517.8562754279217,
+        "learned_objective": 1878.7510670679173,
+        "learned_projected_gradient_norm": 517.8562754279217,
+        "learned_to_reference_objective_ratio": 1.009209119697578,
+        "reference_gradient_norm": null,
+        "reference_objective": 1861.6073025884943,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 1,
+        "objective": "state",
+        "reference": "kalman_observer_error_svd",
+        "scale": 0.3,
+        "weight": 0.1
+      },
+      "run_id": "observer_error__state__strong_optimizer_whitened_observer_error_state_m1_s0.3__scratch__nominal_clean",
+      "source_group": "observer_error_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2184,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "observer-error state coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 0.6292217680980569,
+        "closed_loop_transition_mismatch": 0.013310873042344509,
+        "state_weighted_action_mismatch": 0.6292217680978971,
+        "value_gap": 0.020942954987119528
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": false,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_observer_error_state_m1_s0.3__scratch",
+      "evaluation_lens": "riccati_epsilon_response",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.005250772067856628,
+        "strong_fraction_mean": 0.00014120874132058273,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 421.48525323367465,
+        "unvisited_fraction_max": 0.9999999993864149,
+        "unvisited_fraction_mean": 0.9998587912586798,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9998587912586798,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 0.6292217680978971
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.3539372445550674
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.1573054420244744
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.03932636050611846
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 517.8562754279217,
+        "learned_objective": 1878.7510670679173,
+        "learned_projected_gradient_norm": 517.8562754279217,
+        "learned_to_reference_objective_ratio": 1.009209119697578,
+        "reference_gradient_norm": null,
+        "reference_objective": 1861.6073025884943,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 1,
+        "objective": "state",
+        "reference": "kalman_observer_error_svd",
+        "scale": 0.3,
+        "weight": 0.1
+      },
+      "run_id": "observer_error__state__strong_optimizer_whitened_observer_error_state_m1_s0.3__scratch__riccati_epsilon_response",
+      "source_group": "observer_error_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2184,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "observer-error state coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 0.5848149952537783,
+        "closed_loop_transition_mismatch": 0.0028302284804293445,
+        "state_weighted_action_mismatch": 0.584814995256077,
+        "value_gap": 0.0022906731287851358
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": false,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_observer_error_state_m1_s1__scratch",
+      "evaluation_lens": "nominal_clean",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.011048653111335413,
+        "strong_fraction_mean": 0.00020857020379901422,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 422.29318877681214,
+        "unvisited_fraction_max": 0.9999999999203776,
+        "unvisited_fraction_mean": 0.9997914297962013,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9997914297962013,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 0.584814995256077
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.32895843483154474
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.1462037488140198
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.03655093720350565
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 3889.778802810017,
+        "learned_objective": 3111.391186924478,
+        "learned_projected_gradient_norm": 3889.778802810017,
+        "learned_to_reference_objective_ratio": 1.001813256406252,
+        "reference_gradient_norm": null,
+        "reference_objective": 3105.7596483458356,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 1,
+        "objective": "state",
+        "reference": "kalman_observer_error_svd",
+        "scale": 1.0,
+        "weight": 0.1
+      },
+      "run_id": "observer_error__state__strong_optimizer_whitened_observer_error_state_m1_s1__scratch__nominal_clean",
+      "source_group": "observer_error_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2182,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "observer-error state coverage",
+      "source_standard_status": "full_standard_certificate"
+    },
+    {
+      "certificate": {
+        "bellman_hessian_residual": 0.8195061052566486,
+        "closed_loop_transition_mismatch": 0.016011534781614076,
+        "state_weighted_action_mismatch": 0.8195061052566179,
+        "value_gap": 0.024751830450680325
+      },
+      "classification": {
+        "classification": "optimizer_basin",
+        "reasons": [
+          "optimizer_basin"
+        ],
+        "signals": {
+          "certificate_bad": true,
+          "learned_gradient_bad": true,
+          "objective_bad": false,
+          "objective_close": false,
+          "reference_gradient_bad": false,
+          "weak_subspace_dominates": true
+        }
+      },
+      "controller_label": "strong_optimizer_whitened_observer_error_state_m1_s1__scratch",
+      "evaluation_lens": "riccati_epsilon_response",
+      "gain_error_decomposition": {
+        "strong_fraction_max": 0.011048653111335413,
+        "strong_fraction_mean": 0.00020411676309575215,
+        "strong_rank_mean": 1.0,
+        "strong_rank_min": 1.0,
+        "time_steps": 60,
+        "total_gain_error_rms": 422.29318877681214,
+        "unvisited_fraction_max": 0.9999999901818643,
+        "unvisited_fraction_mean": 0.9997958832369045,
+        "unvisited_rank_mean": 47.0,
+        "weak_fraction_max": 0.0,
+        "weak_fraction_mean": 0.0,
+        "weak_or_unvisited_fraction_mean": 0.9997958832369045,
+        "weak_rank_mean": 0.0
+      },
+      "interpolation": [
+        {
+          "alpha": 0.0,
+          "state_weighted_action_mismatch": 0.8195061052566179
+        },
+        {
+          "alpha": 0.25,
+          "state_weighted_action_mismatch": 0.4609721842068474
+        },
+        {
+          "alpha": 0.5,
+          "state_weighted_action_mismatch": 0.2048765263141543
+        },
+        {
+          "alpha": 0.75,
+          "state_weighted_action_mismatch": 0.051219131578538565
+        },
+        {
+          "alpha": 1.0,
+          "state_weighted_action_mismatch": 0.0
+        }
+      ],
+      "objective": {
+        "learned_gradient_norm": 3889.778802810017,
+        "learned_objective": 3111.391186924478,
+        "learned_projected_gradient_norm": 3889.778802810017,
+        "learned_to_reference_objective_ratio": 1.001813256406252,
+        "reference_gradient_norm": null,
+        "reference_objective": 3105.7596483458356,
+        "reference_projected_gradient_norm": null,
+        "source": "rollout_fit_summary"
+      },
+      "row_parameters": {
+        "n_modes": 1,
+        "objective": "state",
+        "reference": "kalman_observer_error_svd",
+        "scale": 1.0,
+        "weight": 0.1
+      },
+      "run_id": "observer_error__state__strong_optimizer_whitened_observer_error_state_m1_s1__scratch__riccati_epsilon_response",
+      "source_group": "observer_error_coverage",
+      "source_optimizer": {
+        "n_function_evaluations": 2182,
+        "n_iterations": 2000,
+        "optimizer_status": "STOP: TOTAL NO. OF ITERATIONS REACHED LIMIT",
+        "optimizer_success": false
+      },
+      "source_standard_distribution": "observer-error state coverage",
+      "source_standard_status": "full_standard_certificate"
+    }
+  ],
+  "scope": "Current output-feedback no-coverage, initial-state coverage, eigenspectrum coverage, and observer-error coverage rows. Saved arrays are reused where available; deterministic coverage reruns are cached under ignored artifacts so future applications do not lose the controller and rollout arrays required for the decomposition.",
+  "source_artifacts": {
+    "deterministic_coverage_arrays": "_artifacts/7a459bb/output_feedback_failure_decomposition/deterministic_coverage_arrays.npz",
+    "deterministic_coverage_summary": "_artifacts/7a459bb/output_feedback_failure_decomposition/deterministic_coverage_summary.json",
+    "observer_error_arrays": "_artifacts/7a459bb/output_feedback_observer_error_coverage/output_feedback_observer_error_coverage.npz",
+    "saved_rollout_arrays": "_artifacts/7a459bb/output_feedback_rollout_recovery/output_feedback_rollout_recovery.npz"
+  },
+  "source_issue": "7a459bb",
+  "source_manifests": {
+    "observer_error_coverage": "results/7a459bb/notes/output_feedback_observer_error_coverage_manifest.json",
+    "rollout_recovery": "results/7a459bb/notes/output_feedback_rollout_recovery_manifest.json",
+    "standard_certificate": "results/7a459bb/notes/output_feedback_sweep_standard_certificates_manifest.json"
+  },
+  "standard_certificate_issue": "d01c35a",
+  "summary": {
+    "classification_counts": {
+      "mixed": 12,
+      "not_failure": 2,
+      "optimizer_basin": 30
+    },
+    "evaluation_lenses": [
+      "nominal_clean",
+      "riccati_epsilon_response"
+    ],
+    "n_controller_labels": 18,
+    "n_rows": 44,
+    "source_groups": [
+      "eigenspectrum_coverage",
+      "initial_state_coverage",
+      "no_coverage",
+      "observer_error_coverage"
+    ]
+  },
+  "umbrella": "43e8728"
+}
