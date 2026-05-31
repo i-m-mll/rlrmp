@@ -2,10 +2,9 @@
 
 This module keeps the GRU-facing bridge deliberately auditable: the controller
 is a linear recurrence driven by delayed observations plus explicit phase/time
-features.  It does not claim a formal static-gain certificate.  Instead, rows
-carry standard action-mismatch and visited-subspace diagnostics, with formal
-static-gain components marked ``not_applicable`` by the shared certificate
-adapter.
+features. It does not claim a formal static-gain certificate. Instead, rows use
+the augmented-linear recurrent certificate mode over plant plus hidden state
+when those arrays are available.
 """
 
 from __future__ import annotations
@@ -488,18 +487,18 @@ Verdict: {summary["result"]}
 
 ## Certificate Boundary
 
-Formal static-gain components are not silently treated as passes for the
-linear recurrence. They are explicit `not_applicable` rows because the
-controller has recurrent hidden state and no global static gain over the
-certificate state.
+Linear recurrent rows use the augmented-linear certificate mode over
+`z_t = [x_t; h_t]` when plant and hidden states are available. Action mismatch,
+visited-subspace diagnostics, optimizer metadata, and recurrence diagnostics
+are therefore reported on the augmented state rather than through a static gain
+certificate.
 
 {"\n".join(component_rows)}
 
-Augmented-state recurrent certificate components are pending the `b8b533e`
-shared interface. This materializer saves plant states, observations, actions,
-hidden states, and controller matrices (`A_h`, `B_y`, `B_u`, `B_phi`, `b`,
-`C_h`, `D_y`, `D_phi`, `c`) for that adapter rather than inventing a competing
-schema here.
+Transition/value/Bellman rows are explicit `missing` components in this pass
+when a same-coordinate reference recurrent realization is unavailable. That is
+different from a pass and different from the old static-gain `not_applicable`
+boundary.
 
 ## Failure Diagnostics
 
@@ -993,14 +992,18 @@ def _manifest_for_condition(
     reference_actions = np.asarray(reference_clean.u)[None, :, :]
     recurrence_diagnostics = dict(rollout.metadata["diagnostics"])
     recurrence_diagnostics.update(fit_metadata)
+    hidden_states = np.asarray(rollout.hidden_states)
+    augmented_states = np.concatenate([np.asarray(rollout.plant_states), hidden_states], axis=-1)
     components = build_standard_certificate_components(
         architecture="linear_recurrence",
+        certificate_mode="augmented_linear",
         states=np.asarray(rollout.plant_states),
+        augmented_states=augmented_states,
         candidate_actions=candidate_actions,
         reference_actions=reference_actions,
         optimizer_metadata=fit_metadata,
         recurrence_diagnostics=recurrence_diagnostics,
-        state_label="clean_delayed_output_feedback_state",
+        state_label="plant_hidden_augmented_state",
         action_label="control",
     )
     by_name = {component.name: component for component in components}
@@ -1013,20 +1016,17 @@ def _manifest_for_condition(
         "state_weighted_action_mismatch": mismatch,
         "aggregate_action_energy_mismatch": action_summary["aggregate_mismatch_ratio"],
         "recurrence_diagnostics": recurrence_diagnostics,
-        "formal_static_gain_certificate_boundary": {
-            name: by_name[name].status for name in FORMAL_STATIC_GAIN_COMPONENTS
-        },
         "augmented_state_certificate": {
-            "status": "pending_b8b533e_augmented_components",
-            "expected_components": [
-                "augmented_closed_loop_transition",
-                "augmented_value_policy_gap",
-                "augmented_bellman_residual",
-            ],
+            "status": "augmented_linear_mode",
+            "state": "plant_hidden_augmented_state",
+            "component_statuses": {
+                name: by_name[name].status for name in FORMAL_STATIC_GAIN_COMPONENTS
+            },
             "reason": (
-                "b8b533e owns the shared augmented-state certificate interface; "
-                "this row saves plant, action, observation, and hidden arrays for "
-                "that adapter without inventing a competing schema."
+                "Action and visited-state components use z_t=[x_t; h_t]. "
+                "Transition/value/Bellman components are explicit missing rows "
+                "until a reference recurrent realization in the same augmented "
+                "coordinates is available."
             ),
         },
     }
@@ -1058,13 +1058,15 @@ def _manifest_for_condition(
         },
         notes=(
             "Trainable linear recurrence evaluated on clean output-feedback "
-            "rollout. Formal static-gain certificate components are explicitly "
-            "not applicable; augmented-state components are pending b8b533e."
+            "rollout. Certificate rows use augmented-linear mode over plant "
+            "plus hidden state; transition/value/Bellman components remain "
+            "explicit missing rows when same-coordinate reference recurrent "
+            "sensitivities are unavailable."
         ),
     )
     return BridgeRunManifest(
         spec=spec,
-        status="trainable_recurrence_pending_augmented_certificate",
+        status="trainable_recurrence_augmented_certificate",
         arrays=rollout.array_specs(),
         metrics=metrics,
         certificate_components=components,
@@ -1173,8 +1175,8 @@ def _result_text(rows: list[BridgeRunManifest]) -> str:
         return (
             "The d_h=48 trainable linear recurrence shows nominal bridge "
             f"recovery (clean ratio {clean_ratio:.4g}, Riccati-epsilon ratio "
-            f"{riccati_ratio:.4g}). Augmented-state certificate semantics are "
-            "pending b8b533e before this can be treated as a formal recurrent "
+            f"{riccati_ratio:.4g}). The augmented-state certificate must still "
+            "be inspected before this can be treated as a formal recurrent "
             "certificate pass."
         )
     scaffold = (
