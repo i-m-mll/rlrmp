@@ -109,6 +109,9 @@
     "component_status_counts": {
       "bellman_hessian_residual:missing": 20,
       "closed_loop_transition_mismatch:missing": 20,
+      "disturbance_history_to_action_map_mismatch:available": 20,
+      "disturbance_history_to_state_map_mismatch:available": 20,
+      "observation_history_to_action_map_mismatch:available": 20,
       "optimizer_metadata:available": 20,
       "recurrence_gru_diagnostics:available": 20,
       "state_weighted_action_mismatch:available": 20,
@@ -141,7 +144,7 @@
   "format": "rlrmp.output_feedback_phase_modulated_recurrent.v1",
   "issue": "d6d25d6",
   "non_goals": "No GRU training, no broad robust-epsilon arm, and no claim that supervised/imitation/reward-lens diagnostic rows are bridge passes.",
-  "result": "The oracle recurrent reference and clamped-spline projections were materialized. The r=12 nominal imitation row has action mismatch 24.54 and combined matrix residual 0.01274; formal bridge interpretation remains pending the I/O-map certificate.",
+  "result": "The oracle recurrent reference and clamped-spline projections were materialized. The r=12 nominal imitation row has action mismatch 24.54 and combined matrix residual 0.01274. I/O-map certificate components are available, but these rows remain diagnostic rather than bridge passes.",
   "rows": [
     {
       "arrays": [
@@ -247,6 +250,66 @@
           "summary": {}
         },
         {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.5004735936177123,
+            "delta_frobenius": 564.358126636913,
+            "input_label": "observation_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 4390359485996273.5,
+            "mismatch_ratio_mean": 242158703562877.7,
+            "output_label": "control",
+            "reference_frobenius": 797.7451991116911
+          }
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.103856500575147,
+            "delta_frobenius": 395.6153767493573,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 75273.66504140345,
+            "mismatch_ratio_mean": 1259.8841104472692,
+            "output_label": "control",
+            "reference_frobenius": 1227.5984201878043
+          }
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.055273503231153466,
+            "delta_frobenius": 449.1187828163597,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              61,
+              48,
+              480
+            ],
+            "map_slices": 61,
+            "mismatch_ratio_max": 3.070139965738635,
+            "mismatch_ratio_mean": 0.176149119730835,
+            "output_label": "plant_hidden_augmented_state",
+            "reference_frobenius": 1910.3050456506946
+          }
+        },
+        {
           "name": "recurrence_gru_diagnostics",
           "reason": "",
           "status": "available",
@@ -272,9 +335,29 @@
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "oracle_matrix_projection",
         "io_map_certificate": {
+          "components": {
+            "disturbance_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.103856500575147,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 1259.8841104472692,
+              "status": "available"
+            },
+            "disturbance_history_to_state_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.055273503231153466,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 0.176149119730835,
+              "status": "available"
+            },
+            "observation_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.5004735936177123,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 242158703562877.7,
+              "status": "available"
+            }
+          },
+          "max_relative_mismatch": 0.5004735936177123,
           "owner_issue": "007087e",
-          "reason": "Formal I/O-map certificate schema is owned by the sibling worker; this materializer only records local action/rollout diagnostics.",
-          "status": "pending_io_map_certificate"
+          "status": "available"
         },
         "objective_ratio_to_clean_reference": 1.1648125079601779,
         "objective_ratio_to_lens_reference": 1.1648125079601777,
@@ -342,7 +425,7 @@
         "evaluation_lane": "diagnostic",
         "gamma_factor": null,
         "issue_id": "d6d25d6",
-        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. This row is diagnostic until the formal I/O-map certificate is consumed.",
+        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. I/O-map certificate components compare external response maps to the oracle recurrent reference; imitation/projection rows remain diagnostic rather than bridge passes.",
         "objective": "diagnostic",
         "optimizer_label": "oracle_projection_clamped_bspline",
         "parameters": {
@@ -467,6 +550,66 @@
           "summary": {}
         },
         {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.4301228685324834,
+            "delta_frobenius": 523.1912426430893,
+            "input_label": "observation_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 2821231721533829.0,
+            "mismatch_ratio_mean": 134376880403897.86,
+            "output_label": "control",
+            "reference_frobenius": 797.7451991116911
+          }
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.5818433475027818,
+            "delta_frobenius": 936.3955851586973,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 4272.3399119712,
+            "mismatch_ratio_mean": 72.42944954112339,
+            "output_label": "control",
+            "reference_frobenius": 1227.5984201878043
+          }
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.41961390270175225,
+            "delta_frobenius": 1237.4499920502703,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              61,
+              48,
+              480
+            ],
+            "map_slices": 61,
+            "mismatch_ratio_max": 1.2374561736982557,
+            "mismatch_ratio_mean": 0.3840676995480785,
+            "output_label": "plant_hidden_augmented_state",
+            "reference_frobenius": 1910.3050456506946
+          }
+        },
+        {
           "name": "recurrence_gru_diagnostics",
           "reason": "",
           "status": "available",
@@ -492,9 +635,29 @@
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "oracle_matrix_projection",
         "io_map_certificate": {
+          "components": {
+            "disturbance_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.5818433475027818,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 72.42944954112339,
+              "status": "available"
+            },
+            "disturbance_history_to_state_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.41961390270175225,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 0.3840676995480785,
+              "status": "available"
+            },
+            "observation_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.4301228685324834,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 134376880403897.86,
+              "status": "available"
+            }
+          },
+          "max_relative_mismatch": 0.5818433475027818,
           "owner_issue": "007087e",
-          "reason": "Formal I/O-map certificate schema is owned by the sibling worker; this materializer only records local action/rollout diagnostics.",
-          "status": "pending_io_map_certificate"
+          "status": "available"
         },
         "objective_ratio_to_clean_reference": 1.1346192760703355,
         "objective_ratio_to_lens_reference": 1.1346192760703353,
@@ -562,7 +725,7 @@
         "evaluation_lane": "diagnostic",
         "gamma_factor": null,
         "issue_id": "d6d25d6",
-        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. This row is diagnostic until the formal I/O-map certificate is consumed.",
+        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. I/O-map certificate components compare external response maps to the oracle recurrent reference; imitation/projection rows remain diagnostic rather than bridge passes.",
         "objective": "diagnostic",
         "optimizer_label": "oracle_projection_clamped_bspline",
         "parameters": {
@@ -687,6 +850,66 @@
           "summary": {}
         },
         {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.20552348361310396,
+            "delta_frobenius": 361.6553762443156,
+            "input_label": "observation_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 7380797733118322.0,
+            "mismatch_ratio_mean": 245645605501028.94,
+            "output_label": "control",
+            "reference_frobenius": 797.7451991116911
+          }
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.029962721662194262,
+            "delta_frobenius": 212.49413653401854,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 215.08833453381595,
+            "mismatch_ratio_mean": 3.618289286525011,
+            "output_label": "control",
+            "reference_frobenius": 1227.5984201878043
+          }
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.01707706232105804,
+            "delta_frobenius": 249.63720096537307,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              61,
+              48,
+              480
+            ],
+            "map_slices": 61,
+            "mismatch_ratio_max": 0.05952672981736695,
+            "mismatch_ratio_mean": 0.013218493803718036,
+            "output_label": "plant_hidden_augmented_state",
+            "reference_frobenius": 1910.3050456506946
+          }
+        },
+        {
           "name": "recurrence_gru_diagnostics",
           "reason": "",
           "status": "available",
@@ -712,9 +935,29 @@
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "oracle_matrix_projection",
         "io_map_certificate": {
+          "components": {
+            "disturbance_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.029962721662194262,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 3.618289286525011,
+              "status": "available"
+            },
+            "disturbance_history_to_state_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.01707706232105804,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 0.013218493803718036,
+              "status": "available"
+            },
+            "observation_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.20552348361310396,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 245645605501028.94,
+              "status": "available"
+            }
+          },
+          "max_relative_mismatch": 0.20552348361310396,
           "owner_issue": "007087e",
-          "reason": "Formal I/O-map certificate schema is owned by the sibling worker; this materializer only records local action/rollout diagnostics.",
-          "status": "pending_io_map_certificate"
+          "status": "available"
         },
         "objective_ratio_to_clean_reference": 1.0008824702115666,
         "objective_ratio_to_lens_reference": 1.0008824702115664,
@@ -782,7 +1025,7 @@
         "evaluation_lane": "diagnostic",
         "gamma_factor": null,
         "issue_id": "d6d25d6",
-        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. This row is diagnostic until the formal I/O-map certificate is consumed.",
+        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. I/O-map certificate components compare external response maps to the oracle recurrent reference; imitation/projection rows remain diagnostic rather than bridge passes.",
         "objective": "diagnostic",
         "optimizer_label": "oracle_projection_clamped_bspline",
         "parameters": {
@@ -907,6 +1150,66 @@
           "summary": {}
         },
         {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.2542297298631456,
+            "delta_frobenius": 402.2326935686491,
+            "input_label": "observation_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 5018714589715145.0,
+            "mismatch_ratio_mean": 125648933783802.69,
+            "output_label": "control",
+            "reference_frobenius": 797.7451991116911
+          }
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.1090039422073579,
+            "delta_frobenius": 405.3007648082143,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 175.2400101076971,
+            "mismatch_ratio_mean": 2.9957118971202967,
+            "output_label": "control",
+            "reference_frobenius": 1227.5984201878043
+          }
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.047365518523964416,
+            "delta_frobenius": 415.7515440263213,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              61,
+              48,
+              480
+            ],
+            "map_slices": 61,
+            "mismatch_ratio_max": 0.08634725508999937,
+            "mismatch_ratio_mean": 0.02873744330425438,
+            "output_label": "plant_hidden_augmented_state",
+            "reference_frobenius": 1910.3050456506946
+          }
+        },
+        {
           "name": "recurrence_gru_diagnostics",
           "reason": "",
           "status": "available",
@@ -932,9 +1235,29 @@
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "oracle_matrix_projection",
         "io_map_certificate": {
+          "components": {
+            "disturbance_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.1090039422073579,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 2.9957118971202967,
+              "status": "available"
+            },
+            "disturbance_history_to_state_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.047365518523964416,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 0.02873744330425438,
+              "status": "available"
+            },
+            "observation_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.2542297298631456,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 125648933783802.69,
+              "status": "available"
+            }
+          },
+          "max_relative_mismatch": 0.2542297298631456,
           "owner_issue": "007087e",
-          "reason": "Formal I/O-map certificate schema is owned by the sibling worker; this materializer only records local action/rollout diagnostics.",
-          "status": "pending_io_map_certificate"
+          "status": "available"
         },
         "objective_ratio_to_clean_reference": 1.0000609227466963,
         "objective_ratio_to_lens_reference": 1.0000609227466963,
@@ -1002,7 +1325,7 @@
         "evaluation_lane": "diagnostic",
         "gamma_factor": null,
         "issue_id": "d6d25d6",
-        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. This row is diagnostic until the formal I/O-map certificate is consumed.",
+        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. I/O-map certificate components compare external response maps to the oracle recurrent reference; imitation/projection rows remain diagnostic rather than bridge passes.",
         "objective": "diagnostic",
         "optimizer_label": "oracle_projection_clamped_bspline",
         "parameters": {
@@ -1127,6 +1450,66 @@
           "summary": {}
         },
         {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.5004735936177123,
+            "delta_frobenius": 564.358126636913,
+            "input_label": "observation_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 4390359485996273.5,
+            "mismatch_ratio_mean": 242158703562877.7,
+            "output_label": "control",
+            "reference_frobenius": 797.7451991116911
+          }
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.103856500575147,
+            "delta_frobenius": 395.6153767493573,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 75273.66504140345,
+            "mismatch_ratio_mean": 1259.8841104472692,
+            "output_label": "control",
+            "reference_frobenius": 1227.5984201878043
+          }
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.055273503231153466,
+            "delta_frobenius": 449.1187828163597,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              61,
+              48,
+              480
+            ],
+            "map_slices": 61,
+            "mismatch_ratio_max": 3.070139965738635,
+            "mismatch_ratio_mean": 0.176149119730835,
+            "output_label": "plant_hidden_augmented_state",
+            "reference_frobenius": 1910.3050456506946
+          }
+        },
+        {
           "name": "recurrence_gru_diagnostics",
           "reason": "",
           "status": "available",
@@ -1152,9 +1535,29 @@
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "nominal_clean",
         "io_map_certificate": {
+          "components": {
+            "disturbance_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.103856500575147,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 1259.8841104472692,
+              "status": "available"
+            },
+            "disturbance_history_to_state_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.055273503231153466,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 0.176149119730835,
+              "status": "available"
+            },
+            "observation_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.5004735936177123,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 242158703562877.7,
+              "status": "available"
+            }
+          },
+          "max_relative_mismatch": 0.5004735936177123,
           "owner_issue": "007087e",
-          "reason": "Formal I/O-map certificate schema is owned by the sibling worker; this materializer only records local action/rollout diagnostics.",
-          "status": "pending_io_map_certificate"
+          "status": "available"
         },
         "objective_ratio_to_clean_reference": 1.1648125079601779,
         "objective_ratio_to_lens_reference": 1.1648125079601777,
@@ -1214,7 +1617,7 @@
         "reference_lens_cost": 4363.509945030793,
         "row_family": "action_imitation",
         "state_weighted_action_mismatch": 12406.437291277132,
-        "verdict": "imitation_diagnostic_pending_io_map_certificate"
+        "verdict": "imitation_diagnostic"
       },
       "spec": {
         "architecture": "linear_recurrence",
@@ -1222,7 +1625,7 @@
         "evaluation_lane": "diagnostic",
         "gamma_factor": null,
         "issue_id": "d6d25d6",
-        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. This row is diagnostic until the formal I/O-map certificate is consumed.",
+        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. I/O-map certificate components compare external response maps to the oracle recurrent reference; imitation/projection rows remain diagnostic rather than bridge passes.",
         "objective": "diagnostic",
         "optimizer_label": "oracle_projection_clamped_bspline",
         "parameters": {
@@ -1241,7 +1644,7 @@
         "seed": null,
         "training_distribution": "nominal"
       },
-      "status": "imitation_diagnostic_pending_io_map_certificate"
+      "status": "imitation_diagnostic"
     },
     {
       "arrays": [
@@ -1347,6 +1750,66 @@
           "summary": {}
         },
         {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.4301228685324834,
+            "delta_frobenius": 523.1912426430893,
+            "input_label": "observation_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 2821231721533829.0,
+            "mismatch_ratio_mean": 134376880403897.86,
+            "output_label": "control",
+            "reference_frobenius": 797.7451991116911
+          }
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.5818433475027818,
+            "delta_frobenius": 936.3955851586973,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 4272.3399119712,
+            "mismatch_ratio_mean": 72.42944954112339,
+            "output_label": "control",
+            "reference_frobenius": 1227.5984201878043
+          }
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.41961390270175225,
+            "delta_frobenius": 1237.4499920502703,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              61,
+              48,
+              480
+            ],
+            "map_slices": 61,
+            "mismatch_ratio_max": 1.2374561736982557,
+            "mismatch_ratio_mean": 0.3840676995480785,
+            "output_label": "plant_hidden_augmented_state",
+            "reference_frobenius": 1910.3050456506946
+          }
+        },
+        {
           "name": "recurrence_gru_diagnostics",
           "reason": "",
           "status": "available",
@@ -1372,9 +1835,29 @@
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "nominal_clean",
         "io_map_certificate": {
+          "components": {
+            "disturbance_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.5818433475027818,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 72.42944954112339,
+              "status": "available"
+            },
+            "disturbance_history_to_state_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.41961390270175225,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 0.3840676995480785,
+              "status": "available"
+            },
+            "observation_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.4301228685324834,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 134376880403897.86,
+              "status": "available"
+            }
+          },
+          "max_relative_mismatch": 0.5818433475027818,
           "owner_issue": "007087e",
-          "reason": "Formal I/O-map certificate schema is owned by the sibling worker; this materializer only records local action/rollout diagnostics.",
-          "status": "pending_io_map_certificate"
+          "status": "available"
         },
         "objective_ratio_to_clean_reference": 1.1346192760703355,
         "objective_ratio_to_lens_reference": 1.1346192760703353,
@@ -1434,7 +1917,7 @@
         "reference_lens_cost": 4363.509945030793,
         "row_family": "action_imitation",
         "state_weighted_action_mismatch": 191.52429638144244,
-        "verdict": "imitation_diagnostic_pending_io_map_certificate"
+        "verdict": "imitation_diagnostic"
       },
       "spec": {
         "architecture": "linear_recurrence",
@@ -1442,7 +1925,7 @@
         "evaluation_lane": "diagnostic",
         "gamma_factor": null,
         "issue_id": "d6d25d6",
-        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. This row is diagnostic until the formal I/O-map certificate is consumed.",
+        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. I/O-map certificate components compare external response maps to the oracle recurrent reference; imitation/projection rows remain diagnostic rather than bridge passes.",
         "objective": "diagnostic",
         "optimizer_label": "oracle_projection_clamped_bspline",
         "parameters": {
@@ -1461,7 +1944,7 @@
         "seed": null,
         "training_distribution": "nominal"
       },
-      "status": "imitation_diagnostic_pending_io_map_certificate"
+      "status": "imitation_diagnostic"
     },
     {
       "arrays": [
@@ -1567,6 +2050,66 @@
           "summary": {}
         },
         {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.20552348361310396,
+            "delta_frobenius": 361.6553762443156,
+            "input_label": "observation_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 7380797733118322.0,
+            "mismatch_ratio_mean": 245645605501028.94,
+            "output_label": "control",
+            "reference_frobenius": 797.7451991116911
+          }
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.029962721662194262,
+            "delta_frobenius": 212.49413653401854,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 215.08833453381595,
+            "mismatch_ratio_mean": 3.618289286525011,
+            "output_label": "control",
+            "reference_frobenius": 1227.5984201878043
+          }
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.01707706232105804,
+            "delta_frobenius": 249.63720096537307,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              61,
+              48,
+              480
+            ],
+            "map_slices": 61,
+            "mismatch_ratio_max": 0.05952672981736695,
+            "mismatch_ratio_mean": 0.013218493803718036,
+            "output_label": "plant_hidden_augmented_state",
+            "reference_frobenius": 1910.3050456506946
+          }
+        },
+        {
           "name": "recurrence_gru_diagnostics",
           "reason": "",
           "status": "available",
@@ -1592,9 +2135,29 @@
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "nominal_clean",
         "io_map_certificate": {
+          "components": {
+            "disturbance_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.029962721662194262,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 3.618289286525011,
+              "status": "available"
+            },
+            "disturbance_history_to_state_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.01707706232105804,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 0.013218493803718036,
+              "status": "available"
+            },
+            "observation_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.20552348361310396,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 245645605501028.94,
+              "status": "available"
+            }
+          },
+          "max_relative_mismatch": 0.20552348361310396,
           "owner_issue": "007087e",
-          "reason": "Formal I/O-map certificate schema is owned by the sibling worker; this materializer only records local action/rollout diagnostics.",
-          "status": "pending_io_map_certificate"
+          "status": "available"
         },
         "objective_ratio_to_clean_reference": 1.0008824702115666,
         "objective_ratio_to_lens_reference": 1.0008824702115664,
@@ -1654,7 +2217,7 @@
         "reference_lens_cost": 4363.509945030793,
         "row_family": "action_imitation",
         "state_weighted_action_mismatch": 64.73211406198787,
-        "verdict": "imitation_diagnostic_pending_io_map_certificate"
+        "verdict": "imitation_diagnostic"
       },
       "spec": {
         "architecture": "linear_recurrence",
@@ -1662,7 +2225,7 @@
         "evaluation_lane": "diagnostic",
         "gamma_factor": null,
         "issue_id": "d6d25d6",
-        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. This row is diagnostic until the formal I/O-map certificate is consumed.",
+        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. I/O-map certificate components compare external response maps to the oracle recurrent reference; imitation/projection rows remain diagnostic rather than bridge passes.",
         "objective": "diagnostic",
         "optimizer_label": "oracle_projection_clamped_bspline",
         "parameters": {
@@ -1681,7 +2244,7 @@
         "seed": null,
         "training_distribution": "nominal"
       },
-      "status": "imitation_diagnostic_pending_io_map_certificate"
+      "status": "imitation_diagnostic"
     },
     {
       "arrays": [
@@ -1787,6 +2350,66 @@
           "summary": {}
         },
         {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.2542297298631456,
+            "delta_frobenius": 402.2326935686491,
+            "input_label": "observation_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 5018714589715145.0,
+            "mismatch_ratio_mean": 125648933783802.69,
+            "output_label": "control",
+            "reference_frobenius": 797.7451991116911
+          }
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.1090039422073579,
+            "delta_frobenius": 405.3007648082143,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 175.2400101076971,
+            "mismatch_ratio_mean": 2.9957118971202967,
+            "output_label": "control",
+            "reference_frobenius": 1227.5984201878043
+          }
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.047365518523964416,
+            "delta_frobenius": 415.7515440263213,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              61,
+              48,
+              480
+            ],
+            "map_slices": 61,
+            "mismatch_ratio_max": 0.08634725508999937,
+            "mismatch_ratio_mean": 0.02873744330425438,
+            "output_label": "plant_hidden_augmented_state",
+            "reference_frobenius": 1910.3050456506946
+          }
+        },
+        {
           "name": "recurrence_gru_diagnostics",
           "reason": "",
           "status": "available",
@@ -1812,9 +2435,29 @@
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "nominal_clean",
         "io_map_certificate": {
+          "components": {
+            "disturbance_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.1090039422073579,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 2.9957118971202967,
+              "status": "available"
+            },
+            "disturbance_history_to_state_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.047365518523964416,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 0.02873744330425438,
+              "status": "available"
+            },
+            "observation_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.2542297298631456,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 125648933783802.69,
+              "status": "available"
+            }
+          },
+          "max_relative_mismatch": 0.2542297298631456,
           "owner_issue": "007087e",
-          "reason": "Formal I/O-map certificate schema is owned by the sibling worker; this materializer only records local action/rollout diagnostics.",
-          "status": "pending_io_map_certificate"
+          "status": "available"
         },
         "objective_ratio_to_clean_reference": 1.0000609227466963,
         "objective_ratio_to_lens_reference": 1.0000609227466963,
@@ -1874,7 +2517,7 @@
         "reference_lens_cost": 4363.509945030793,
         "row_family": "action_imitation",
         "state_weighted_action_mismatch": 24.543846104878963,
-        "verdict": "imitation_diagnostic_pending_io_map_certificate"
+        "verdict": "imitation_diagnostic"
       },
       "spec": {
         "architecture": "linear_recurrence",
@@ -1882,7 +2525,7 @@
         "evaluation_lane": "diagnostic",
         "gamma_factor": null,
         "issue_id": "d6d25d6",
-        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. This row is diagnostic until the formal I/O-map certificate is consumed.",
+        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. I/O-map certificate components compare external response maps to the oracle recurrent reference; imitation/projection rows remain diagnostic rather than bridge passes.",
         "objective": "diagnostic",
         "optimizer_label": "oracle_projection_clamped_bspline",
         "parameters": {
@@ -1901,7 +2544,7 @@
         "seed": null,
         "training_distribution": "nominal"
       },
-      "status": "imitation_diagnostic_pending_io_map_certificate"
+      "status": "imitation_diagnostic"
     },
     {
       "arrays": [
@@ -2007,6 +2650,66 @@
           "summary": {}
         },
         {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.5004735936177123,
+            "delta_frobenius": 564.358126636913,
+            "input_label": "observation_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 4390359485996273.5,
+            "mismatch_ratio_mean": 242158703562877.7,
+            "output_label": "control",
+            "reference_frobenius": 797.7451991116911
+          }
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.103856500575147,
+            "delta_frobenius": 395.6153767493573,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 75273.66504140345,
+            "mismatch_ratio_mean": 1259.8841104472692,
+            "output_label": "control",
+            "reference_frobenius": 1227.5984201878043
+          }
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.055273503231153466,
+            "delta_frobenius": 449.1187828163597,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              61,
+              48,
+              480
+            ],
+            "map_slices": 61,
+            "mismatch_ratio_max": 3.070139965738635,
+            "mismatch_ratio_mean": 0.176149119730835,
+            "output_label": "plant_hidden_augmented_state",
+            "reference_frobenius": 1910.3050456506946
+          }
+        },
+        {
           "name": "recurrence_gru_diagnostics",
           "reason": "",
           "status": "available",
@@ -2032,9 +2735,29 @@
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "exact_process_eigen_m4",
         "io_map_certificate": {
+          "components": {
+            "disturbance_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.103856500575147,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 1259.8841104472692,
+              "status": "available"
+            },
+            "disturbance_history_to_state_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.055273503231153466,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 0.176149119730835,
+              "status": "available"
+            },
+            "observation_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.5004735936177123,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 242158703562877.7,
+              "status": "available"
+            }
+          },
+          "max_relative_mismatch": 0.5004735936177123,
           "owner_issue": "007087e",
-          "reason": "Formal I/O-map certificate schema is owned by the sibling worker; this materializer only records local action/rollout diagnostics.",
-          "status": "pending_io_map_certificate"
+          "status": "available"
         },
         "objective_ratio_to_clean_reference": 1.5383957615265127,
         "objective_ratio_to_lens_reference": 1.1662826317450394,
@@ -2094,7 +2817,7 @@
         "reference_lens_cost": 5755.727661630513,
         "row_family": "io_map_imitation",
         "state_weighted_action_mismatch": 12432.099366228927,
-        "verdict": "imitation_diagnostic_pending_io_map_certificate"
+        "verdict": "imitation_diagnostic"
       },
       "spec": {
         "architecture": "linear_recurrence",
@@ -2102,7 +2825,7 @@
         "evaluation_lane": "diagnostic",
         "gamma_factor": null,
         "issue_id": "d6d25d6",
-        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. This row is diagnostic until the formal I/O-map certificate is consumed.",
+        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. I/O-map certificate components compare external response maps to the oracle recurrent reference; imitation/projection rows remain diagnostic rather than bridge passes.",
         "objective": "diagnostic",
         "optimizer_label": "oracle_projection_clamped_bspline",
         "parameters": {
@@ -2121,7 +2844,7 @@
         "seed": null,
         "training_distribution": "eigenspectrum_state"
       },
-      "status": "imitation_diagnostic_pending_io_map_certificate"
+      "status": "imitation_diagnostic"
     },
     {
       "arrays": [
@@ -2227,6 +2950,66 @@
           "summary": {}
         },
         {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.4301228685324834,
+            "delta_frobenius": 523.1912426430893,
+            "input_label": "observation_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 2821231721533829.0,
+            "mismatch_ratio_mean": 134376880403897.86,
+            "output_label": "control",
+            "reference_frobenius": 797.7451991116911
+          }
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.5818433475027818,
+            "delta_frobenius": 936.3955851586973,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 4272.3399119712,
+            "mismatch_ratio_mean": 72.42944954112339,
+            "output_label": "control",
+            "reference_frobenius": 1227.5984201878043
+          }
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.41961390270175225,
+            "delta_frobenius": 1237.4499920502703,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              61,
+              48,
+              480
+            ],
+            "map_slices": 61,
+            "mismatch_ratio_max": 1.2374561736982557,
+            "mismatch_ratio_mean": 0.3840676995480785,
+            "output_label": "plant_hidden_augmented_state",
+            "reference_frobenius": 1910.3050456506946
+          }
+        },
+        {
           "name": "recurrence_gru_diagnostics",
           "reason": "",
           "status": "available",
@@ -2252,9 +3035,29 @@
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "exact_process_eigen_m4",
         "io_map_certificate": {
+          "components": {
+            "disturbance_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.5818433475027818,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 72.42944954112339,
+              "status": "available"
+            },
+            "disturbance_history_to_state_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.41961390270175225,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 0.3840676995480785,
+              "status": "available"
+            },
+            "observation_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.4301228685324834,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 134376880403897.86,
+              "status": "available"
+            }
+          },
+          "max_relative_mismatch": 0.5818433475027818,
           "owner_issue": "007087e",
-          "reason": "Formal I/O-map certificate schema is owned by the sibling worker; this materializer only records local action/rollout diagnostics.",
-          "status": "pending_io_map_certificate"
+          "status": "available"
         },
         "objective_ratio_to_clean_reference": 1.4958733032633358,
         "objective_ratio_to_lens_reference": 1.1340456705080713,
@@ -2314,7 +3117,7 @@
         "reference_lens_cost": 5755.727661630513,
         "row_family": "io_map_imitation",
         "state_weighted_action_mismatch": 53.16795506063815,
-        "verdict": "imitation_diagnostic_pending_io_map_certificate"
+        "verdict": "imitation_diagnostic"
       },
       "spec": {
         "architecture": "linear_recurrence",
@@ -2322,7 +3125,7 @@
         "evaluation_lane": "diagnostic",
         "gamma_factor": null,
         "issue_id": "d6d25d6",
-        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. This row is diagnostic until the formal I/O-map certificate is consumed.",
+        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. I/O-map certificate components compare external response maps to the oracle recurrent reference; imitation/projection rows remain diagnostic rather than bridge passes.",
         "objective": "diagnostic",
         "optimizer_label": "oracle_projection_clamped_bspline",
         "parameters": {
@@ -2341,7 +3144,7 @@
         "seed": null,
         "training_distribution": "eigenspectrum_state"
       },
-      "status": "imitation_diagnostic_pending_io_map_certificate"
+      "status": "imitation_diagnostic"
     },
     {
       "arrays": [
@@ -2447,6 +3250,66 @@
           "summary": {}
         },
         {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.20552348361310396,
+            "delta_frobenius": 361.6553762443156,
+            "input_label": "observation_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 7380797733118322.0,
+            "mismatch_ratio_mean": 245645605501028.94,
+            "output_label": "control",
+            "reference_frobenius": 797.7451991116911
+          }
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.029962721662194262,
+            "delta_frobenius": 212.49413653401854,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 215.08833453381595,
+            "mismatch_ratio_mean": 3.618289286525011,
+            "output_label": "control",
+            "reference_frobenius": 1227.5984201878043
+          }
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.01707706232105804,
+            "delta_frobenius": 249.63720096537307,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              61,
+              48,
+              480
+            ],
+            "map_slices": 61,
+            "mismatch_ratio_max": 0.05952672981736695,
+            "mismatch_ratio_mean": 0.013218493803718036,
+            "output_label": "plant_hidden_augmented_state",
+            "reference_frobenius": 1910.3050456506946
+          }
+        },
+        {
           "name": "recurrence_gru_diagnostics",
           "reason": "",
           "status": "available",
@@ -2472,9 +3335,29 @@
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "exact_process_eigen_m4",
         "io_map_certificate": {
+          "components": {
+            "disturbance_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.029962721662194262,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 3.618289286525011,
+              "status": "available"
+            },
+            "disturbance_history_to_state_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.01707706232105804,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 0.013218493803718036,
+              "status": "available"
+            },
+            "observation_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.20552348361310396,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 245645605501028.94,
+              "status": "available"
+            }
+          },
+          "max_relative_mismatch": 0.20552348361310396,
           "owner_issue": "007087e",
-          "reason": "Formal I/O-map certificate schema is owned by the sibling worker; this materializer only records local action/rollout diagnostics.",
-          "status": "pending_io_map_certificate"
+          "status": "available"
         },
         "objective_ratio_to_clean_reference": 1.320212836430544,
         "objective_ratio_to_lens_reference": 1.0008746382712017,
@@ -2534,7 +3417,7 @@
         "reference_lens_cost": 5755.727661630513,
         "row_family": "io_map_imitation",
         "state_weighted_action_mismatch": 64.15873482958209,
-        "verdict": "imitation_diagnostic_pending_io_map_certificate"
+        "verdict": "imitation_diagnostic"
       },
       "spec": {
         "architecture": "linear_recurrence",
@@ -2542,7 +3425,7 @@
         "evaluation_lane": "diagnostic",
         "gamma_factor": null,
         "issue_id": "d6d25d6",
-        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. This row is diagnostic until the formal I/O-map certificate is consumed.",
+        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. I/O-map certificate components compare external response maps to the oracle recurrent reference; imitation/projection rows remain diagnostic rather than bridge passes.",
         "objective": "diagnostic",
         "optimizer_label": "oracle_projection_clamped_bspline",
         "parameters": {
@@ -2561,7 +3444,7 @@
         "seed": null,
         "training_distribution": "eigenspectrum_state"
       },
-      "status": "imitation_diagnostic_pending_io_map_certificate"
+      "status": "imitation_diagnostic"
     },
     {
       "arrays": [
@@ -2667,6 +3550,66 @@
           "summary": {}
         },
         {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.2542297298631456,
+            "delta_frobenius": 402.2326935686491,
+            "input_label": "observation_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 5018714589715145.0,
+            "mismatch_ratio_mean": 125648933783802.69,
+            "output_label": "control",
+            "reference_frobenius": 797.7451991116911
+          }
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.1090039422073579,
+            "delta_frobenius": 405.3007648082143,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 175.2400101076971,
+            "mismatch_ratio_mean": 2.9957118971202967,
+            "output_label": "control",
+            "reference_frobenius": 1227.5984201878043
+          }
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.047365518523964416,
+            "delta_frobenius": 415.7515440263213,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              61,
+              48,
+              480
+            ],
+            "map_slices": 61,
+            "mismatch_ratio_max": 0.08634725508999937,
+            "mismatch_ratio_mean": 0.02873744330425438,
+            "output_label": "plant_hidden_augmented_state",
+            "reference_frobenius": 1910.3050456506946
+          }
+        },
+        {
           "name": "recurrence_gru_diagnostics",
           "reason": "",
           "status": "available",
@@ -2692,9 +3635,29 @@
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "exact_process_eigen_m4",
         "io_map_certificate": {
+          "components": {
+            "disturbance_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.1090039422073579,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 2.9957118971202967,
+              "status": "available"
+            },
+            "disturbance_history_to_state_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.047365518523964416,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 0.02873744330425438,
+              "status": "available"
+            },
+            "observation_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.2542297298631456,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 125648933783802.69,
+              "status": "available"
+            }
+          },
+          "max_relative_mismatch": 0.2542297298631456,
           "owner_issue": "007087e",
-          "reason": "Formal I/O-map certificate schema is owned by the sibling worker; this materializer only records local action/rollout diagnostics.",
-          "status": "pending_io_map_certificate"
+          "status": "available"
         },
         "objective_ratio_to_clean_reference": 1.3191389280756836,
         "objective_ratio_to_lens_reference": 1.0000604910317963,
@@ -2754,7 +3717,7 @@
         "reference_lens_cost": 5755.727661630513,
         "row_family": "io_map_imitation",
         "state_weighted_action_mismatch": 24.37833760489549,
-        "verdict": "imitation_diagnostic_pending_io_map_certificate"
+        "verdict": "imitation_diagnostic"
       },
       "spec": {
         "architecture": "linear_recurrence",
@@ -2762,7 +3725,7 @@
         "evaluation_lane": "diagnostic",
         "gamma_factor": null,
         "issue_id": "d6d25d6",
-        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. This row is diagnostic until the formal I/O-map certificate is consumed.",
+        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. I/O-map certificate components compare external response maps to the oracle recurrent reference; imitation/projection rows remain diagnostic rather than bridge passes.",
         "objective": "diagnostic",
         "optimizer_label": "oracle_projection_clamped_bspline",
         "parameters": {
@@ -2781,7 +3744,7 @@
         "seed": null,
         "training_distribution": "eigenspectrum_state"
       },
-      "status": "imitation_diagnostic_pending_io_map_certificate"
+      "status": "imitation_diagnostic"
     },
     {
       "arrays": [
@@ -2887,6 +3850,66 @@
           "summary": {}
         },
         {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.2542297298631456,
+            "delta_frobenius": 402.2326935686491,
+            "input_label": "observation_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 5018714589715145.0,
+            "mismatch_ratio_mean": 125648933783802.69,
+            "output_label": "control",
+            "reference_frobenius": 797.7451991116911
+          }
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.1090039422073579,
+            "delta_frobenius": 405.3007648082143,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 175.2400101076971,
+            "mismatch_ratio_mean": 2.9957118971202967,
+            "output_label": "control",
+            "reference_frobenius": 1227.5984201878043
+          }
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.047365518523964416,
+            "delta_frobenius": 415.7515440263213,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              61,
+              48,
+              480
+            ],
+            "map_slices": 61,
+            "mismatch_ratio_max": 0.08634725508999937,
+            "mismatch_ratio_mean": 0.02873744330425438,
+            "output_label": "plant_hidden_augmented_state",
+            "reference_frobenius": 1910.3050456506946
+          }
+        },
+        {
           "name": "recurrence_gru_diagnostics",
           "reason": "",
           "status": "available",
@@ -2912,9 +3935,29 @@
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "nominal_clean",
         "io_map_certificate": {
+          "components": {
+            "disturbance_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.1090039422073579,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 2.9957118971202967,
+              "status": "available"
+            },
+            "disturbance_history_to_state_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.047365518523964416,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 0.02873744330425438,
+              "status": "available"
+            },
+            "observation_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.2542297298631456,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 125648933783802.69,
+              "status": "available"
+            }
+          },
+          "max_relative_mismatch": 0.2542297298631456,
           "owner_issue": "007087e",
-          "reason": "Formal I/O-map certificate schema is owned by the sibling worker; this materializer only records local action/rollout diagnostics.",
-          "status": "pending_io_map_certificate"
+          "status": "available"
         },
         "objective_ratio_to_clean_reference": 1.0000609227466963,
         "objective_ratio_to_lens_reference": 1.0000609227466963,
@@ -2974,7 +4017,7 @@
         "reference_lens_cost": 4363.509945030793,
         "row_family": "reward_lens",
         "state_weighted_action_mismatch": 24.543846104878963,
-        "verdict": "reward_lens_non_equivalent_pending_io_map_certificate"
+        "verdict": "reward_lens_non_equivalent"
       },
       "spec": {
         "architecture": "linear_recurrence",
@@ -2982,7 +4025,7 @@
         "evaluation_lane": "diagnostic",
         "gamma_factor": null,
         "issue_id": "d6d25d6",
-        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. This row is diagnostic until the formal I/O-map certificate is consumed.",
+        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. I/O-map certificate components compare external response maps to the oracle recurrent reference; imitation/projection rows remain diagnostic rather than bridge passes.",
         "objective": "diagnostic",
         "optimizer_label": "oracle_projection_clamped_bspline",
         "parameters": {
@@ -3001,7 +4044,7 @@
         "seed": null,
         "training_distribution": "nominal"
       },
-      "status": "reward_lens_non_equivalent_pending_io_map_certificate"
+      "status": "reward_lens_non_equivalent"
     },
     {
       "arrays": [
@@ -3107,6 +4150,66 @@
           "summary": {}
         },
         {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.2542297298631456,
+            "delta_frobenius": 402.2326935686491,
+            "input_label": "observation_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 5018714589715145.0,
+            "mismatch_ratio_mean": 125648933783802.69,
+            "output_label": "control",
+            "reference_frobenius": 797.7451991116911
+          }
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.1090039422073579,
+            "delta_frobenius": 405.3007648082143,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 175.2400101076971,
+            "mismatch_ratio_mean": 2.9957118971202967,
+            "output_label": "control",
+            "reference_frobenius": 1227.5984201878043
+          }
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.047365518523964416,
+            "delta_frobenius": 415.7515440263213,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              61,
+              48,
+              480
+            ],
+            "map_slices": 61,
+            "mismatch_ratio_max": 0.08634725508999937,
+            "mismatch_ratio_mean": 0.02873744330425438,
+            "output_label": "plant_hidden_augmented_state",
+            "reference_frobenius": 1910.3050456506946
+          }
+        },
+        {
           "name": "recurrence_gru_diagnostics",
           "reason": "",
           "status": "available",
@@ -3132,9 +4235,29 @@
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "exact_process_eigen_m1_s0.3",
         "io_map_certificate": {
+          "components": {
+            "disturbance_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.1090039422073579,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 2.9957118971202967,
+              "status": "available"
+            },
+            "disturbance_history_to_state_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.047365518523964416,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 0.02873744330425438,
+              "status": "available"
+            },
+            "observation_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.2542297298631456,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 125648933783802.69,
+              "status": "available"
+            }
+          },
+          "max_relative_mismatch": 0.2542297298631456,
           "owner_issue": "007087e",
-          "reason": "Formal I/O-map certificate schema is owned by the sibling worker; this materializer only records local action/rollout diagnostics.",
-          "status": "pending_io_map_certificate"
+          "status": "available"
         },
         "objective_ratio_to_clean_reference": 1.44453244396745,
         "objective_ratio_to_lens_reference": 1.000060922746696,
@@ -3194,7 +4317,7 @@
         "reference_lens_cost": 6302.847698377812,
         "row_family": "reward_lens",
         "state_weighted_action_mismatch": 24.543846104917034,
-        "verdict": "reward_lens_non_equivalent_pending_io_map_certificate"
+        "verdict": "reward_lens_non_equivalent"
       },
       "spec": {
         "architecture": "linear_recurrence",
@@ -3202,7 +4325,7 @@
         "evaluation_lane": "diagnostic",
         "gamma_factor": null,
         "issue_id": "d6d25d6",
-        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. This row is diagnostic until the formal I/O-map certificate is consumed.",
+        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. I/O-map certificate components compare external response maps to the oracle recurrent reference; imitation/projection rows remain diagnostic rather than bridge passes.",
         "objective": "diagnostic",
         "optimizer_label": "oracle_projection_clamped_bspline",
         "parameters": {
@@ -3221,7 +4344,7 @@
         "seed": null,
         "training_distribution": "eigenspectrum_state"
       },
-      "status": "reward_lens_non_equivalent_pending_io_map_certificate"
+      "status": "reward_lens_non_equivalent"
     },
     {
       "arrays": [
@@ -3327,6 +4450,66 @@
           "summary": {}
         },
         {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.2542297298631456,
+            "delta_frobenius": 402.2326935686491,
+            "input_label": "observation_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 5018714589715145.0,
+            "mismatch_ratio_mean": 125648933783802.69,
+            "output_label": "control",
+            "reference_frobenius": 797.7451991116911
+          }
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.1090039422073579,
+            "delta_frobenius": 405.3007648082143,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 175.2400101076971,
+            "mismatch_ratio_mean": 2.9957118971202967,
+            "output_label": "control",
+            "reference_frobenius": 1227.5984201878043
+          }
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.047365518523964416,
+            "delta_frobenius": 415.7515440263213,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              61,
+              48,
+              480
+            ],
+            "map_slices": 61,
+            "mismatch_ratio_max": 0.08634725508999937,
+            "mismatch_ratio_mean": 0.02873744330425438,
+            "output_label": "plant_hidden_augmented_state",
+            "reference_frobenius": 1910.3050456506946
+          }
+        },
+        {
           "name": "recurrence_gru_diagnostics",
           "reason": "",
           "status": "available",
@@ -3352,9 +4535,29 @@
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "exact_process_eigen_m4_s0.3",
         "io_map_certificate": {
+          "components": {
+            "disturbance_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.1090039422073579,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 2.9957118971202967,
+              "status": "available"
+            },
+            "disturbance_history_to_state_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.047365518523964416,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 0.02873744330425438,
+              "status": "available"
+            },
+            "observation_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.2542297298631456,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 125648933783802.69,
+              "status": "available"
+            }
+          },
+          "max_relative_mismatch": 0.2542297298631456,
           "owner_issue": "007087e",
-          "reason": "Formal I/O-map certificate schema is owned by the sibling worker; this materializer only records local action/rollout diagnostics.",
-          "status": "pending_io_map_certificate"
+          "status": "available"
         },
         "objective_ratio_to_clean_reference": 1.3191389280756836,
         "objective_ratio_to_lens_reference": 1.0000604910317963,
@@ -3414,7 +4617,7 @@
         "reference_lens_cost": 5755.727661630513,
         "row_family": "reward_lens",
         "state_weighted_action_mismatch": 24.37833760489549,
-        "verdict": "reward_lens_non_equivalent_pending_io_map_certificate"
+        "verdict": "reward_lens_non_equivalent"
       },
       "spec": {
         "architecture": "linear_recurrence",
@@ -3422,7 +4625,7 @@
         "evaluation_lane": "diagnostic",
         "gamma_factor": null,
         "issue_id": "d6d25d6",
-        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. This row is diagnostic until the formal I/O-map certificate is consumed.",
+        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. I/O-map certificate components compare external response maps to the oracle recurrent reference; imitation/projection rows remain diagnostic rather than bridge passes.",
         "objective": "diagnostic",
         "optimizer_label": "oracle_projection_clamped_bspline",
         "parameters": {
@@ -3441,7 +4644,7 @@
         "seed": null,
         "training_distribution": "eigenspectrum_state"
       },
-      "status": "reward_lens_non_equivalent_pending_io_map_certificate"
+      "status": "reward_lens_non_equivalent"
     },
     {
       "arrays": [
@@ -3547,6 +4750,66 @@
           "summary": {}
         },
         {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.2542297298631456,
+            "delta_frobenius": 402.2326935686491,
+            "input_label": "observation_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 5018714589715145.0,
+            "mismatch_ratio_mean": 125648933783802.69,
+            "output_label": "control",
+            "reference_frobenius": 797.7451991116911
+          }
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.1090039422073579,
+            "delta_frobenius": 405.3007648082143,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 175.2400101076971,
+            "mismatch_ratio_mean": 2.9957118971202967,
+            "output_label": "control",
+            "reference_frobenius": 1227.5984201878043
+          }
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.047365518523964416,
+            "delta_frobenius": 415.7515440263213,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              61,
+              48,
+              480
+            ],
+            "map_slices": 61,
+            "mismatch_ratio_max": 0.08634725508999937,
+            "mismatch_ratio_mean": 0.02873744330425438,
+            "output_label": "plant_hidden_augmented_state",
+            "reference_frobenius": 1910.3050456506946
+          }
+        },
+        {
           "name": "recurrence_gru_diagnostics",
           "reason": "",
           "status": "available",
@@ -3572,9 +4835,29 @@
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "exact_process_eigen_m4_s1",
         "io_map_certificate": {
+          "components": {
+            "disturbance_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.1090039422073579,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 2.9957118971202967,
+              "status": "available"
+            },
+            "disturbance_history_to_state_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.047365518523964416,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 0.02873744330425438,
+              "status": "available"
+            },
+            "observation_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.2542297298631456,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 125648933783802.69,
+              "status": "available"
+            }
+          },
+          "max_relative_mismatch": 0.2542297298631456,
           "owner_issue": "007087e",
-          "reason": "Formal I/O-map certificate schema is owned by the sibling worker; this materializer only records local action/rollout diagnostics.",
-          "status": "pending_io_map_certificate"
+          "status": "available"
         },
         "objective_ratio_to_clean_reference": 4.545372093068776,
         "objective_ratio_to_lens_reference": 1.000059530631396,
@@ -3634,7 +4917,7 @@
         "reference_lens_cost": 19832.595685027678,
         "row_family": "reward_lens",
         "state_weighted_action_mismatch": 24.025691067449237,
-        "verdict": "reward_lens_non_equivalent_pending_io_map_certificate"
+        "verdict": "reward_lens_non_equivalent"
       },
       "spec": {
         "architecture": "linear_recurrence",
@@ -3642,7 +4925,7 @@
         "evaluation_lane": "diagnostic",
         "gamma_factor": null,
         "issue_id": "d6d25d6",
-        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. This row is diagnostic until the formal I/O-map certificate is consumed.",
+        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. I/O-map certificate components compare external response maps to the oracle recurrent reference; imitation/projection rows remain diagnostic rather than bridge passes.",
         "objective": "diagnostic",
         "optimizer_label": "oracle_projection_clamped_bspline",
         "parameters": {
@@ -3661,7 +4944,7 @@
         "seed": null,
         "training_distribution": "eigenspectrum_state"
       },
-      "status": "reward_lens_non_equivalent_pending_io_map_certificate"
+      "status": "reward_lens_non_equivalent"
     },
     {
       "arrays": [
@@ -3767,6 +5050,66 @@
           "summary": {}
         },
         {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.2542297298631456,
+            "delta_frobenius": 402.2326935686491,
+            "input_label": "observation_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 5018714589715145.0,
+            "mismatch_ratio_mean": 125648933783802.69,
+            "output_label": "control",
+            "reference_frobenius": 797.7451991116911
+          }
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.1090039422073579,
+            "delta_frobenius": 405.3007648082143,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 175.2400101076971,
+            "mismatch_ratio_mean": 2.9957118971202967,
+            "output_label": "control",
+            "reference_frobenius": 1227.5984201878043
+          }
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.047365518523964416,
+            "delta_frobenius": 415.7515440263213,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              61,
+              48,
+              480
+            ],
+            "map_slices": 61,
+            "mismatch_ratio_max": 0.08634725508999937,
+            "mismatch_ratio_mean": 0.02873744330425438,
+            "output_label": "plant_hidden_augmented_state",
+            "reference_frobenius": 1910.3050456506946
+          }
+        },
+        {
           "name": "recurrence_gru_diagnostics",
           "reason": "",
           "status": "available",
@@ -3792,9 +5135,29 @@
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "observer_error_svd_m1_s0.3",
         "io_map_certificate": {
+          "components": {
+            "disturbance_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.1090039422073579,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 2.9957118971202967,
+              "status": "available"
+            },
+            "disturbance_history_to_state_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.047365518523964416,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 0.02873744330425438,
+              "status": "available"
+            },
+            "observation_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.2542297298631456,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 125648933783802.69,
+              "status": "available"
+            }
+          },
+          "max_relative_mismatch": 0.2542297298631456,
           "owner_issue": "007087e",
-          "reason": "Formal I/O-map certificate schema is owned by the sibling worker; this materializer only records local action/rollout diagnostics.",
-          "status": "pending_io_map_certificate"
+          "status": "available"
         },
         "objective_ratio_to_clean_reference": 1.367132878063506,
         "objective_ratio_to_lens_reference": 0.9695336580740738,
@@ -3854,7 +5217,7 @@
         "reference_lens_cost": 6152.955970047306,
         "row_family": "reward_lens",
         "state_weighted_action_mismatch": 8.798664056034399,
-        "verdict": "reward_lens_non_equivalent_pending_io_map_certificate"
+        "verdict": "reward_lens_non_equivalent"
       },
       "spec": {
         "architecture": "linear_recurrence",
@@ -3862,7 +5225,7 @@
         "evaluation_lane": "diagnostic",
         "gamma_factor": null,
         "issue_id": "d6d25d6",
-        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. This row is diagnostic until the formal I/O-map certificate is consumed.",
+        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. I/O-map certificate components compare external response maps to the oracle recurrent reference; imitation/projection rows remain diagnostic rather than bridge passes.",
         "objective": "diagnostic",
         "optimizer_label": "oracle_projection_clamped_bspline",
         "parameters": {
@@ -3881,7 +5244,7 @@
         "seed": null,
         "training_distribution": "observer_error"
       },
-      "status": "reward_lens_non_equivalent_pending_io_map_certificate"
+      "status": "reward_lens_non_equivalent"
     },
     {
       "arrays": [
@@ -3987,6 +5350,66 @@
           "summary": {}
         },
         {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.2542297298631456,
+            "delta_frobenius": 402.2326935686491,
+            "input_label": "observation_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 5018714589715145.0,
+            "mismatch_ratio_mean": 125648933783802.69,
+            "output_label": "control",
+            "reference_frobenius": 797.7451991116911
+          }
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.1090039422073579,
+            "delta_frobenius": 405.3007648082143,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 175.2400101076971,
+            "mismatch_ratio_mean": 2.9957118971202967,
+            "output_label": "control",
+            "reference_frobenius": 1227.5984201878043
+          }
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.047365518523964416,
+            "delta_frobenius": 415.7515440263213,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              61,
+              48,
+              480
+            ],
+            "map_slices": 61,
+            "mismatch_ratio_max": 0.08634725508999937,
+            "mismatch_ratio_mean": 0.02873744330425438,
+            "output_label": "plant_hidden_augmented_state",
+            "reference_frobenius": 1910.3050456506946
+          }
+        },
+        {
           "name": "recurrence_gru_diagnostics",
           "reason": "",
           "status": "available",
@@ -4012,9 +5435,29 @@
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "mixed_process_observer",
         "io_map_certificate": {
+          "components": {
+            "disturbance_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.1090039422073579,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 2.9957118971202967,
+              "status": "available"
+            },
+            "disturbance_history_to_state_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.047365518523964416,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 0.02873744330425438,
+              "status": "available"
+            },
+            "observation_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.2542297298631456,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 125648933783802.69,
+              "status": "available"
+            }
+          },
+          "max_relative_mismatch": 0.2542297298631456,
           "owner_issue": "007087e",
-          "reason": "Formal I/O-map certificate schema is owned by the sibling worker; this materializer only records local action/rollout diagnostics.",
-          "status": "pending_io_map_certificate"
+          "status": "available"
         },
         "objective_ratio_to_clean_reference": 656.9697325417744,
         "objective_ratio_to_lens_reference": 1.0006602153573723,
@@ -4074,7 +5517,7 @@
         "reference_lens_cost": 2864802.5748744803,
         "row_family": "reward_lens",
         "state_weighted_action_mismatch": 3.28487730787401,
-        "verdict": "reward_lens_non_equivalent_pending_io_map_certificate"
+        "verdict": "reward_lens_non_equivalent"
       },
       "spec": {
         "architecture": "linear_recurrence",
@@ -4082,7 +5525,7 @@
         "evaluation_lane": "diagnostic",
         "gamma_factor": null,
         "issue_id": "d6d25d6",
-        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. This row is diagnostic until the formal I/O-map certificate is consumed.",
+        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. I/O-map certificate components compare external response maps to the oracle recurrent reference; imitation/projection rows remain diagnostic rather than bridge passes.",
         "objective": "diagnostic",
         "optimizer_label": "oracle_projection_clamped_bspline",
         "parameters": {
@@ -4101,7 +5544,7 @@
         "seed": null,
         "training_distribution": "mixed"
       },
-      "status": "reward_lens_non_equivalent_pending_io_map_certificate"
+      "status": "reward_lens_non_equivalent"
     },
     {
       "arrays": [
@@ -4207,6 +5650,66 @@
           "summary": {}
         },
         {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.2542297298631456,
+            "delta_frobenius": 402.2326935686491,
+            "input_label": "observation_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 5018714589715145.0,
+            "mismatch_ratio_mean": 125648933783802.69,
+            "output_label": "control",
+            "reference_frobenius": 797.7451991116911
+          }
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.1090039422073579,
+            "delta_frobenius": 405.3007648082143,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 175.2400101076971,
+            "mismatch_ratio_mean": 2.9957118971202967,
+            "output_label": "control",
+            "reference_frobenius": 1227.5984201878043
+          }
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.047365518523964416,
+            "delta_frobenius": 415.7515440263213,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              61,
+              48,
+              480
+            ],
+            "map_slices": 61,
+            "mismatch_ratio_max": 0.08634725508999937,
+            "mismatch_ratio_mean": 0.02873744330425438,
+            "output_label": "plant_hidden_augmented_state",
+            "reference_frobenius": 1910.3050456506946
+          }
+        },
+        {
           "name": "recurrence_gru_diagnostics",
           "reason": "",
           "status": "available",
@@ -4232,9 +5735,29 @@
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "nominal_clean",
         "io_map_certificate": {
+          "components": {
+            "disturbance_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.1090039422073579,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 2.9957118971202967,
+              "status": "available"
+            },
+            "disturbance_history_to_state_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.047365518523964416,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 0.02873744330425438,
+              "status": "available"
+            },
+            "observation_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.2542297298631456,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 125648933783802.69,
+              "status": "available"
+            }
+          },
+          "max_relative_mismatch": 0.2542297298631456,
           "owner_issue": "007087e",
-          "reason": "Formal I/O-map certificate schema is owned by the sibling worker; this materializer only records local action/rollout diagnostics.",
-          "status": "pending_io_map_certificate"
+          "status": "available"
         },
         "objective_ratio_to_clean_reference": 1.0000609227466963,
         "objective_ratio_to_lens_reference": 1.0000609227466963,
@@ -4294,7 +5817,7 @@
         "reference_lens_cost": 4363.509945030793,
         "row_family": "imitation_then_reward_lens",
         "state_weighted_action_mismatch": 24.543846104878963,
-        "verdict": "reward_lens_non_equivalent_pending_io_map_certificate"
+        "verdict": "reward_lens_non_equivalent"
       },
       "spec": {
         "architecture": "linear_recurrence",
@@ -4302,7 +5825,7 @@
         "evaluation_lane": "diagnostic",
         "gamma_factor": null,
         "issue_id": "d6d25d6",
-        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. This row is diagnostic until the formal I/O-map certificate is consumed.",
+        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. I/O-map certificate components compare external response maps to the oracle recurrent reference; imitation/projection rows remain diagnostic rather than bridge passes.",
         "objective": "diagnostic",
         "optimizer_label": "oracle_projection_clamped_bspline",
         "parameters": {
@@ -4321,7 +5844,7 @@
         "seed": null,
         "training_distribution": "nominal"
       },
-      "status": "reward_lens_non_equivalent_pending_io_map_certificate"
+      "status": "reward_lens_non_equivalent"
     },
     {
       "arrays": [
@@ -4427,6 +5950,66 @@
           "summary": {}
         },
         {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.2542297298631456,
+            "delta_frobenius": 402.2326935686491,
+            "input_label": "observation_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 5018714589715145.0,
+            "mismatch_ratio_mean": 125648933783802.69,
+            "output_label": "control",
+            "reference_frobenius": 797.7451991116911
+          }
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.1090039422073579,
+            "delta_frobenius": 405.3007648082143,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 175.2400101076971,
+            "mismatch_ratio_mean": 2.9957118971202967,
+            "output_label": "control",
+            "reference_frobenius": 1227.5984201878043
+          }
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.047365518523964416,
+            "delta_frobenius": 415.7515440263213,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              61,
+              48,
+              480
+            ],
+            "map_slices": 61,
+            "mismatch_ratio_max": 0.08634725508999937,
+            "mismatch_ratio_mean": 0.02873744330425438,
+            "output_label": "plant_hidden_augmented_state",
+            "reference_frobenius": 1910.3050456506946
+          }
+        },
+        {
           "name": "recurrence_gru_diagnostics",
           "reason": "",
           "status": "available",
@@ -4452,9 +6035,29 @@
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "exact_process_eigen_m4_s0.3",
         "io_map_certificate": {
+          "components": {
+            "disturbance_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.1090039422073579,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 2.9957118971202967,
+              "status": "available"
+            },
+            "disturbance_history_to_state_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.047365518523964416,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 0.02873744330425438,
+              "status": "available"
+            },
+            "observation_history_to_action_map_mismatch": {
+              "aggregate_mismatch_ratio": 0.2542297298631456,
+              "covariance_weighted_mismatch_ratio_mean": null,
+              "mismatch_ratio_mean": 125648933783802.69,
+              "status": "available"
+            }
+          },
+          "max_relative_mismatch": 0.2542297298631456,
           "owner_issue": "007087e",
-          "reason": "Formal I/O-map certificate schema is owned by the sibling worker; this materializer only records local action/rollout diagnostics.",
-          "status": "pending_io_map_certificate"
+          "status": "available"
         },
         "objective_ratio_to_clean_reference": 1.3191389280756836,
         "objective_ratio_to_lens_reference": 1.0000604910317963,
@@ -4514,7 +6117,7 @@
         "reference_lens_cost": 5755.727661630513,
         "row_family": "imitation_then_reward_lens",
         "state_weighted_action_mismatch": 24.37833760489549,
-        "verdict": "reward_lens_non_equivalent_pending_io_map_certificate"
+        "verdict": "reward_lens_non_equivalent"
       },
       "spec": {
         "architecture": "linear_recurrence",
@@ -4522,7 +6125,7 @@
         "evaluation_lane": "diagnostic",
         "gamma_factor": null,
         "issue_id": "d6d25d6",
-        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. This row is diagnostic until the formal I/O-map certificate is consumed.",
+        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. I/O-map certificate components compare external response maps to the oracle recurrent reference; imitation/projection rows remain diagnostic rather than bridge passes.",
         "objective": "diagnostic",
         "optimizer_label": "oracle_projection_clamped_bspline",
         "parameters": {
@@ -4541,10 +6144,10 @@
         "seed": null,
         "training_distribution": "eigenspectrum_state"
       },
-      "status": "reward_lens_non_equivalent_pending_io_map_certificate"
+      "status": "reward_lens_non_equivalent"
     }
   ],
-  "runtime_seconds": 5.0213732499978505,
+  "runtime_seconds": 18.851300875016022,
   "scope": "Oracle Kalman recurrent reference plus clamped-spline phase-modulated linear recurrence. The spline basis modulates A/B/C/D matrices over tau=t/(T-1), not additive phase offsets.",
   "source_issues": {
     "additive_phase_recurrent": "5e55f69",
