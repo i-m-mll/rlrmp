@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Float
@@ -61,15 +62,9 @@ SUBSTRATE_ISSUE_ID = "4ded904"
 STANDARD_CERTIFICATE_ISSUE_ID = "d01c35a"
 FAILURE_DECOMPOSITION_ISSUE_ID = "c45adde"
 
-NOTE_PATH = (
-    REPO_ROOT / "results" / ISSUE_ID / "notes" / "output_feedback_linear_recurrent.md"
-)
+NOTE_PATH = REPO_ROOT / "results" / ISSUE_ID / "notes" / "output_feedback_linear_recurrent.md"
 MANIFEST_PATH = (
-    REPO_ROOT
-    / "results"
-    / ISSUE_ID
-    / "notes"
-    / "output_feedback_linear_recurrent_manifest.json"
+    REPO_ROOT / "results" / ISSUE_ID / "notes" / "output_feedback_linear_recurrent_manifest.json"
 )
 ARTIFACT_PATH = (
     REPO_ROOT
@@ -85,6 +80,10 @@ FORMAL_STATIC_GAIN_COMPONENTS = (
     VALUE_POLICY_GAP,
     BELLMAN_HESSIAN_RESIDUAL,
 )
+DEFAULT_HIDDEN_DIM = 48
+DEFAULT_REWARD_STEPS = 80
+DEFAULT_IMITATION_STEPS = 120
+DEFAULT_FINE_TUNE_STEPS = 50
 
 
 @dataclass(frozen=True)
@@ -94,14 +93,20 @@ class LinearRecurrentCondition:
     label: str
     training_distribution: str
     initialization: str
-    fit_reference_actions: bool
+    objective: str
+    hidden_dim: int = DEFAULT_HIDDEN_DIM
     coverage_family: str | None = None
     coverage_modes: int | None = None
     coverage_scale: float | None = None
     coverage_weight: float | None = None
+    disturbance_scale: float = 0.0
     seed: int = 0
-    recurrent_decay: float = 0.85
-    ridge: float = 1e-6
+    n_train_steps: int = DEFAULT_REWARD_STEPS
+    imitation_steps: int = DEFAULT_IMITATION_STEPS
+    fine_tune_steps: int = 0
+    learning_rate: float = 3e-3
+    stability_penalty: float = 1e-3
+    ridge: float = 1e-5
 
     @property
     def run_id(self) -> str:
@@ -111,58 +116,76 @@ class LinearRecurrentCondition:
 
 
 def default_conditions(*, include_coverage: bool = True) -> tuple[LinearRecurrentCondition, ...]:
-    """Return the planned no-coverage and selected coverage rows."""
+    """Return the planned trainable recurrent bridge rows."""
 
-    conditions = [
+    conditions = (
         LinearRecurrentCondition(
-            label="no_coverage__scratch_seed_0",
-            training_distribution="none",
-            initialization="scratch_seed_0",
-            fit_reference_actions=False,
+            label="linrec_clean_scratch_baseline",
+            training_distribution="clean_nominal",
+            initialization="scratch",
+            objective="reward_rollout",
         ),
         LinearRecurrentCondition(
-            label="no_coverage__reference_replay",
+            label="linrec_riccati_eps_scratch",
+            training_distribution="riccati_epsilon",
+            initialization="scratch",
+            objective="reward_rollout",
+            disturbance_scale=0.03,
+        ),
+        LinearRecurrentCondition(
+            label="linrec_state_eig_scratch",
+            training_distribution="state_eigenspectrum",
+            initialization="scratch",
+            objective="reward_rollout",
+            coverage_family="state_eigenspectrum",
+            coverage_modes=4,
+            coverage_scale=1.0,
+            coverage_weight=0.1,
+        ),
+        LinearRecurrentCondition(
+            label="linrec_observer_error_scratch",
+            training_distribution="observer_error",
+            initialization="scratch",
+            objective="reward_rollout",
+            coverage_family="observer_error_state",
+            coverage_modes=1,
+            coverage_scale=0.3,
+            coverage_weight=0.1,
+        ),
+        LinearRecurrentCondition(
+            label="linrec_mixed_scratch",
+            training_distribution="mixed_deviation",
+            initialization="scratch",
+            objective="reward_rollout",
+            coverage_family="mixed_deviation",
+            coverage_modes=4,
+            coverage_scale=1.0,
+            coverage_weight=0.1,
+            disturbance_scale=0.02,
+        ),
+        LinearRecurrentCondition(
+            label="linrec_imitation_nominal",
             training_distribution="nominal",
-            initialization="least_squares_reference_replay",
-            fit_reference_actions=True,
+            initialization="reference_action_imitation",
+            objective="imitation_diagnostic",
+            n_train_steps=0,
+            fine_tune_steps=0,
         ),
-    ]
-    if include_coverage:
-        conditions.extend(
-            [
-                LinearRecurrentCondition(
-                    label="state_eigenspectrum_m4_s1_w0p1__reference_replay",
-                    training_distribution="eigenspectrum_state",
-                    initialization="least_squares_reference_replay",
-                    fit_reference_actions=True,
-                    coverage_family="state_eigenspectrum",
-                    coverage_modes=4,
-                    coverage_scale=1.0,
-                    coverage_weight=0.1,
-                ),
-                LinearRecurrentCondition(
-                    label="state_eigenspectrum_m4_s3_w0p1__reference_replay",
-                    training_distribution="eigenspectrum_state",
-                    initialization="least_squares_reference_replay",
-                    fit_reference_actions=True,
-                    coverage_family="state_eigenspectrum",
-                    coverage_modes=4,
-                    coverage_scale=3.0,
-                    coverage_weight=0.1,
-                ),
-                LinearRecurrentCondition(
-                    label="observer_error_state_m1_s0p3_w0p1__reference_replay",
-                    training_distribution="observer_error",
-                    initialization="least_squares_reference_replay",
-                    fit_reference_actions=True,
-                    coverage_family="observer_error_state",
-                    coverage_modes=1,
-                    coverage_scale=0.3,
-                    coverage_weight=0.1,
-                ),
-            ]
-        )
-    return tuple(conditions)
+        LinearRecurrentCondition(
+            label="linrec_imitation_mixed_then_rollout",
+            training_distribution="mixed_deviation",
+            initialization="reference_action_imitation_then_rollout",
+            objective="imitation_then_reward_rollout_scaffold",
+            coverage_family="mixed_deviation",
+            coverage_modes=4,
+            coverage_scale=1.0,
+            coverage_weight=0.1,
+            disturbance_scale=0.02,
+            n_train_steps=0,
+            fine_tune_steps=DEFAULT_FINE_TUNE_STEPS,
+        ),
+    )
+    return conditions if include_coverage else conditions[:2]
 
 
 def phase_time_features(horizon: int) -> Float[np.ndarray, "horizon phase"]:
@@ -199,8 +222,10 @@ def rollout_phase_aware_linear_recurrent(
             "phase_features must have shape "
             f"{(horizon, len(PHASE_FEATURE_NAMES))}; got {phase.shape}"
         )
-    if controller.observation_dim != H.shape[0] + phase.shape[1]:
-        raise ValueError("controller observation dimension does not match delayed obs + phase")
+    if controller.observation_dim != H.shape[0]:
+        raise ValueError("controller observation dimension does not match delayed observation")
+    if controller.phase_dim != phase.shape[1]:
+        raise ValueError("controller phase dimension does not match phase features")
 
     states = _as_batch(np.asarray(x0, dtype=np.float64), width=A.shape[0], name="x0")
     batch_size = states.shape[0]
@@ -211,6 +236,7 @@ def rollout_phase_aware_linear_recurrent(
         horizon=horizon,
     )
     hidden = np.broadcast_to(controller.initial_hidden, (batch_size, controller.hidden_dim)).copy()
+    previous_action = np.zeros((batch_size, controller.action_dim), dtype=np.float64)
 
     plant_states = [states]
     hidden_states = [hidden]
@@ -219,11 +245,11 @@ def rollout_phase_aware_linear_recurrent(
     for t in range(horizon):
         delayed = states @ H.T
         phase_t = np.broadcast_to(phase[t], (batch_size, phase.shape[1]))
-        y_t = np.concatenate([delayed, phase_t], axis=-1)
-        u_t = controller.action(hidden, y_t)
+        u_t = controller.action(hidden, delayed, phase_t)
         states = states @ A.T + u_t @ B.T + eps[:, t, :] @ Bw.T
-        hidden = controller.next_hidden(hidden, y_t)
-        observations.append(y_t)
+        hidden = controller.next_hidden(hidden, delayed, previous_action, phase_t)
+        previous_action = u_t
+        observations.append(np.concatenate([delayed, phase_t], axis=-1))
         actions.append(u_t)
         plant_states.append(states)
         hidden_states.append(hidden)
@@ -281,6 +307,7 @@ def materialize(
             plant=plant,
             K_ref=K_ref,
             x0=x0,
+            schedule=schedule,
             output_config=output_config,
         )
         controller, fit_metadata = _controller_for_condition(
@@ -323,6 +350,16 @@ def materialize(
         arrays[f"{prefix}__reference_actions"] = np.asarray(reference_clean.u)[None, :, :]
         arrays[f"{prefix}__training_x0"] = training["x0"]
         arrays[f"{prefix}__training_xhat0"] = training["xhat0"]
+        arrays[f"{prefix}__training_disturbances"] = training["disturbances"]
+        arrays[f"{prefix}__A_h"] = np.asarray(controller.recurrent_weights)
+        arrays[f"{prefix}__B_y"] = np.asarray(controller.observation_weights)
+        arrays[f"{prefix}__B_u"] = np.asarray(controller.previous_action_weights)
+        arrays[f"{prefix}__B_phi"] = np.asarray(controller.phase_weights)
+        arrays[f"{prefix}__b"] = np.asarray(controller.hidden_bias)
+        arrays[f"{prefix}__C_h"] = np.asarray(controller.readout_weights)
+        arrays[f"{prefix}__D_y"] = np.asarray(controller.feedthrough_weights)
+        arrays[f"{prefix}__D_phi"] = np.asarray(controller.readout_phase_weights)
+        arrays[f"{prefix}__c"] = np.asarray(controller.action_bias)
 
     component_counts: Counter[str] = Counter()
     for row in rows:
@@ -330,7 +367,7 @@ def materialize(
             component_counts[f"{component.name}:{component.status}"] += 1
 
     summary = {
-        "format": "rlrmp.output_feedback_linear_recurrent.v1",
+        "format": "rlrmp.output_feedback_linear_recurrent.v2",
         "issue": ISSUE_ID,
         "umbrella": UMBRELLA_ID,
         "source_issues": {
@@ -339,8 +376,9 @@ def materialize(
             "failure_decomposition": FAILURE_DECOMPOSITION_ISSUE_ID,
         },
         "scope": (
-            "Phase-aware linear recurrent output-feedback rows using delayed "
-            "observations plus explicit polynomial phase/time inputs."
+            "Trainable phase-aware linear recurrent output-feedback rows using "
+            "delayed observations, previous actions, and explicit polynomial "
+            "phase/time inputs."
         ),
         "non_goals": (
             "No GRU training, robust/H-infinity training arm, formal game-card "
@@ -359,9 +397,7 @@ def materialize(
             "rows": failure_rows,
             "classification_counts": dict(
                 sorted(
-                    Counter(
-                        row["classification"]["classification"] for row in failure_rows
-                    ).items()
+                    Counter(row["classification"]["classification"] for row in failure_rows).items()
                 )
             ),
         },
@@ -459,6 +495,12 @@ certificate state.
 
 {"\n".join(component_rows)}
 
+Augmented-state recurrent certificate components are pending the `b8b533e`
+shared interface. This materializer saves plant states, observations, actions,
+hidden states, and controller matrices (`A_h`, `B_y`, `B_u`, `B_phi`, `b`,
+`C_h`, `D_y`, `D_phi`, `c`) for that adapter rather than inventing a competing
+schema here.
+
 ## Failure Diagnostics
 
 The failure rows use a recurrence-compatible subset of `c45adde`: clean
@@ -483,95 +525,316 @@ def _controller_for_condition(
     output_config: OutputFeedbackConfig,
 ) -> tuple[LinearRecurrentController, dict[str, Any]]:
     H = np.asarray(delayed_observation_matrix(plant, output_config), dtype=np.float64)
-    observation_dim = H.shape[0] + phase.shape[1]
+    observation_dim = H.shape[0]
     action_dim = int(plant.B.shape[1])
-    recurrent = condition.recurrent_decay * np.eye(observation_dim, dtype=np.float64)
-    observation = (1.0 - condition.recurrent_decay) * np.eye(observation_dim, dtype=np.float64)
-    base = LinearRecurrentController(
-        recurrent_weights=recurrent,
-        observation_weights=observation,
-        readout_weights=np.zeros((action_dim, observation_dim), dtype=np.float64),
+    params = _initial_trainable_params(
+        hidden_dim=condition.hidden_dim,
+        observation_dim=observation_dim,
+        action_dim=action_dim,
+        phase_dim=phase.shape[1],
+        seed=condition.seed,
     )
-    if not condition.fit_reference_actions:
-        rng = np.random.default_rng(condition.seed)
-        readout = 0.01 * rng.normal(size=(action_dim, observation_dim))
-        feedthrough = 0.01 * rng.normal(size=(action_dim, observation_dim))
-        controller = LinearRecurrentController(
-            recurrent_weights=recurrent,
-            observation_weights=observation,
-            readout_weights=readout,
-            feedthrough_weights=feedthrough,
-        )
-        return controller, {
-            "fit_method": "scratch_random_linear_readout",
-            "ridge": None,
-            "training_action_rmse": None,
-            "phase_feedthrough_norm": float(np.linalg.norm(feedthrough[:, -phase.shape[1] :])),
-            "phase_observation_weight_norm": float(
-                np.linalg.norm(observation[:, -phase.shape[1] :])
-            ),
-        }
-
-    features, targets = _teacher_forced_features(
-        base,
-        plant=plant,
-        reference_training=reference_training,
-        phase=phase,
-        output_config=output_config,
-    )
-    weights = _ridge_readout(features, targets, ridge=condition.ridge)
-    hidden_dim = base.hidden_dim
-    readout = weights[:, :hidden_dim]
-    feedthrough = weights[:, hidden_dim:]
-    prediction = features @ weights.T
-    rmse = float(np.sqrt(np.mean((prediction - targets) ** 2)))
-    controller = LinearRecurrentController(
-        recurrent_weights=recurrent,
-        observation_weights=observation,
-        readout_weights=readout,
-        feedthrough_weights=feedthrough,
-    )
-    return controller, {
-        "fit_method": "teacher_forced_least_squares_reference_replay",
+    fit_metadata: dict[str, Any] = {
+        "fit_method": _fit_method_label(condition),
+        "hidden_dim": condition.hidden_dim,
+        "learning_rate": condition.learning_rate,
+        "stability_penalty": condition.stability_penalty,
         "ridge": condition.ridge,
-        "training_action_rmse": rmse,
-        "phase_feedthrough_norm": float(np.linalg.norm(feedthrough[:, -phase.shape[1] :])),
-        "phase_observation_weight_norm": float(np.linalg.norm(observation[:, -phase.shape[1] :])),
+    }
+    if condition.objective.startswith("imitation"):
+        params, imitation_metadata = _fit_imitation_params(
+            params,
+            condition=condition,
+            plant=plant,
+            reference_training=reference_training,
+            phase=phase,
+            output_config=output_config,
+        )
+        fit_metadata.update(imitation_metadata)
+    if condition.objective == "reward_rollout" or condition.fine_tune_steps > 0:
+        steps = (
+            condition.n_train_steps
+            if condition.objective == "reward_rollout"
+            else condition.fine_tune_steps
+        )
+        params, reward_metadata = _fit_reward_params(
+            params,
+            condition=condition,
+            plant=plant,
+            training=reference_training,
+            phase=phase,
+            output_config=output_config,
+            n_steps=steps,
+        )
+        fit_metadata.update(reward_metadata)
+    controller = _controller_from_params(params)
+    fit_metadata.update(_parameter_norms(controller))
+    return controller, fit_metadata
+
+
+def _fit_method_label(condition: LinearRecurrentCondition) -> str:
+    if condition.objective == "reward_rollout":
+        return "adam_reward_rollout_from_scratch"
+    if condition.objective == "imitation_diagnostic":
+        return "adam_reference_action_imitation_diagnostic"
+    return "adam_reference_action_imitation_then_reward_rollout"
+
+
+def _initial_trainable_params(
+    *,
+    hidden_dim: int,
+    observation_dim: int,
+    action_dim: int,
+    phase_dim: int,
+    seed: int,
+) -> dict[str, np.ndarray]:
+    rng = np.random.default_rng(seed)
+    recurrent = 0.72 * np.eye(hidden_dim, dtype=np.float64)
+    recurrent += 0.01 * rng.normal(size=(hidden_dim, hidden_dim))
+    return {
+        "A_h": recurrent,
+        "B_y": 0.03 * rng.normal(size=(hidden_dim, observation_dim)),
+        "B_u": 0.02 * rng.normal(size=(hidden_dim, action_dim)),
+        "B_phi": 0.03 * rng.normal(size=(hidden_dim, phase_dim)),
+        "b_h": np.zeros((hidden_dim,), dtype=np.float64),
+        "C_h": 0.03 * rng.normal(size=(action_dim, hidden_dim)),
+        "D_y": 0.01 * rng.normal(size=(action_dim, observation_dim)),
+        "D_phi": 0.01 * rng.normal(size=(action_dim, phase_dim)),
+        "c": np.zeros((action_dim,), dtype=np.float64),
     }
 
 
-def _teacher_forced_features(
-    controller: LinearRecurrentController,
+def _controller_from_params(params: dict[str, np.ndarray]) -> LinearRecurrentController:
+    return LinearRecurrentController(
+        recurrent_weights=np.asarray(params["A_h"]),
+        observation_weights=np.asarray(params["B_y"]),
+        previous_action_weights=np.asarray(params["B_u"]),
+        phase_weights=np.asarray(params["B_phi"]),
+        hidden_bias=np.asarray(params["b_h"]),
+        readout_weights=np.asarray(params["C_h"]),
+        feedthrough_weights=np.asarray(params["D_y"]),
+        readout_phase_weights=np.asarray(params["D_phi"]),
+        action_bias=np.asarray(params["c"]),
+    )
+
+
+def _fit_imitation_params(
+    params: dict[str, np.ndarray],
     *,
+    condition: LinearRecurrentCondition,
     plant: Any,
     reference_training: dict[str, np.ndarray],
     phase: np.ndarray,
     output_config: OutputFeedbackConfig,
-) -> tuple[np.ndarray, np.ndarray]:
-    H = np.asarray(delayed_observation_matrix(plant, output_config), dtype=np.float64)
-    x = reference_training["x"]
-    u = reference_training["u"]
-    batch_size, horizon, _action_dim = u.shape
-    hidden = np.broadcast_to(controller.initial_hidden, (batch_size, controller.hidden_dim)).copy()
-    features = []
-    targets = []
-    for t in range(horizon):
-        delayed = x[:, t, :] @ H.T
-        y_t = np.concatenate(
-            [delayed, np.broadcast_to(phase[t], (batch_size, phase.shape[1]))],
-            axis=-1,
+) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+    constants = _jax_training_constants(
+        plant=plant,
+        training=reference_training,
+        phase=phase,
+        output_config=output_config,
+    )
+
+    def loss_fn(jax_params: dict[str, jax.Array]) -> jax.Array:
+        rollout = _jax_rollout(jax_params, constants)
+        imitation = jnp.mean((rollout["actions"] - constants["reference_actions"]) ** 2)
+        return imitation + _jax_stability_penalty(jax_params, condition.stability_penalty)
+
+    fitted, history = _adam_minimize(
+        params,
+        loss_fn,
+        n_steps=condition.imitation_steps,
+        learning_rate=condition.learning_rate,
+    )
+    return fitted, {
+        "imitation_steps": condition.imitation_steps,
+        "imitation_initial_loss": history["initial_loss"],
+        "imitation_final_loss": history["final_loss"],
+        "training_action_rmse": float(np.sqrt(max(history["final_loss"], 0.0))),
+    }
+
+
+def _fit_reward_params(
+    params: dict[str, np.ndarray],
+    *,
+    condition: LinearRecurrentCondition,
+    plant: Any,
+    training: dict[str, np.ndarray],
+    phase: np.ndarray,
+    output_config: OutputFeedbackConfig,
+    n_steps: int,
+) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+    constants = _jax_training_constants(
+        plant=plant,
+        training=training,
+        phase=phase,
+        output_config=output_config,
+    )
+
+    def loss_fn(jax_params: dict[str, jax.Array]) -> jax.Array:
+        rollout = _jax_rollout(jax_params, constants)
+        cost = _jax_quadratic_cost(
+            states=rollout["states"],
+            actions=rollout["actions"],
+            q=constants["Q"],
+            r=constants["R"],
+            q_f=constants["Q_f"],
         )
-        features.append(np.concatenate([hidden, y_t], axis=-1))
-        targets.append(u[:, t, :])
-        hidden = controller.next_hidden(hidden, y_t)
-    return np.concatenate(features, axis=0), np.concatenate(targets, axis=0)
+        return cost + _jax_stability_penalty(jax_params, condition.stability_penalty)
+
+    fitted, history = _adam_minimize(
+        params,
+        loss_fn,
+        n_steps=n_steps,
+        learning_rate=condition.learning_rate,
+    )
+    return fitted, {
+        "reward_rollout_steps": n_steps,
+        "reward_initial_loss": history["initial_loss"],
+        "reward_final_loss": history["final_loss"],
+    }
 
 
-def _ridge_readout(features: np.ndarray, targets: np.ndarray, *, ridge: float) -> np.ndarray:
-    gram = features.T @ features
-    rhs = features.T @ targets
-    weights = np.linalg.solve(gram + ridge * np.eye(gram.shape[0]), rhs)
-    return weights.T
+def _jax_training_constants(
+    *,
+    plant: Any,
+    training: dict[str, np.ndarray],
+    phase: np.ndarray,
+    output_config: OutputFeedbackConfig,
+) -> dict[str, jax.Array]:
+    return {
+        "A": jnp.asarray(plant.A, dtype=jnp.float64),
+        "B": jnp.asarray(plant.B, dtype=jnp.float64),
+        "Bw": jnp.asarray(plant.Bw, dtype=jnp.float64),
+        "H": jnp.asarray(delayed_observation_matrix(plant, output_config), dtype=jnp.float64),
+        "x0": jnp.asarray(training["x0"], dtype=jnp.float64),
+        "disturbances": jnp.asarray(training["disturbances"], dtype=jnp.float64),
+        "reference_actions": jnp.asarray(training["u"], dtype=jnp.float64),
+        "phase": jnp.asarray(phase, dtype=jnp.float64),
+        "Q": jnp.asarray(training["Q"], dtype=jnp.float64),
+        "R": jnp.asarray(training["R"], dtype=jnp.float64),
+        "Q_f": jnp.asarray(training["Q_f"], dtype=jnp.float64),
+    }
+
+
+def _jax_rollout(
+    params: dict[str, jax.Array],
+    constants: dict[str, jax.Array],
+) -> dict[str, jax.Array]:
+    x = constants["x0"]
+    batch_size = x.shape[0]
+    hidden = jnp.zeros((batch_size, params["A_h"].shape[0]), dtype=x.dtype)
+    previous_action = jnp.zeros((batch_size, params["C_h"].shape[0]), dtype=x.dtype)
+    states = [x]
+    hidden_states = [hidden]
+    actions = []
+    for t in range(constants["phase"].shape[0]):
+        y_t = x @ constants["H"].T
+        phi_t = jnp.broadcast_to(constants["phase"][t], (batch_size, constants["phase"].shape[1]))
+        u_t = (
+            hidden @ params["C_h"].T
+            + y_t @ params["D_y"].T
+            + phi_t @ params["D_phi"].T
+            + params["c"]
+        )
+        x = (
+            x @ constants["A"].T
+            + u_t @ constants["B"].T
+            + constants["disturbances"][:, t, :] @ constants["Bw"].T
+        )
+        hidden = (
+            hidden @ params["A_h"].T
+            + y_t @ params["B_y"].T
+            + previous_action @ params["B_u"].T
+            + phi_t @ params["B_phi"].T
+            + params["b_h"]
+        )
+        previous_action = u_t
+        states.append(x)
+        hidden_states.append(hidden)
+        actions.append(u_t)
+    return {
+        "states": jnp.stack(states, axis=1),
+        "hidden_states": jnp.stack(hidden_states, axis=1),
+        "actions": jnp.stack(actions, axis=1),
+    }
+
+
+def _jax_quadratic_cost(
+    *,
+    states: jax.Array,
+    actions: jax.Array,
+    q: jax.Array,
+    r: jax.Array,
+    q_f: jax.Array,
+) -> jax.Array:
+    state_terms = jnp.einsum("bti,tij,btj->bt", states[:, :-1, :], q, states[:, :-1, :])
+    control_terms = jnp.einsum("bti,tij,btj->bt", actions, r, actions)
+    terminal = jnp.einsum("bi,ij,bj->b", states[:, -1, :], q_f, states[:, -1, :])
+    return jnp.mean(jnp.sum(state_terms + control_terms, axis=1) + terminal)
+
+
+def _jax_stability_penalty(params: dict[str, jax.Array], scale: float) -> jax.Array:
+    if scale <= 0.0:
+        return jnp.asarray(0.0)
+    row_norms = jnp.linalg.norm(params["A_h"], axis=1)
+    return scale * jnp.mean(jnp.square(jnp.maximum(row_norms - 0.98, 0.0)))
+
+
+def _adam_minimize(
+    params: dict[str, np.ndarray],
+    loss_fn: Any,
+    *,
+    n_steps: int,
+    learning_rate: float,
+) -> tuple[dict[str, np.ndarray], dict[str, float]]:
+    jax_params = {key: jnp.asarray(value, dtype=jnp.float64) for key, value in params.items()}
+    if n_steps <= 0:
+        loss = float(loss_fn(jax_params))
+        return params, {"initial_loss": loss, "final_loss": loss}
+    value_and_grad = jax.jit(jax.value_and_grad(loss_fn))
+    initial_loss = float(jax.jit(loss_fn)(jax_params))
+    m = jax.tree.map(jnp.zeros_like, jax_params)
+    v = jax.tree.map(jnp.zeros_like, jax_params)
+    beta1 = 0.9
+    beta2 = 0.999
+    eps = 1e-8
+    loss = initial_loss
+    for step in range(1, n_steps + 1):
+        loss_value, grads = value_and_grad(jax_params)
+        loss = float(loss_value)
+        m = jax.tree.map(lambda m_i, g_i: beta1 * m_i + (1.0 - beta1) * g_i, m, grads)
+        v = jax.tree.map(lambda v_i, g_i: beta2 * v_i + (1.0 - beta2) * (g_i * g_i), v, grads)
+        m_hat = jax.tree.map(lambda m_i: m_i / (1.0 - beta1**step), m)
+        v_hat = jax.tree.map(lambda v_i: v_i / (1.0 - beta2**step), v)
+        jax_params = jax.tree.map(
+            lambda p_i, m_i, v_i: p_i - learning_rate * m_i / (jnp.sqrt(v_i) + eps),
+            jax_params,
+            m_hat,
+            v_hat,
+        )
+    return (
+        {key: np.asarray(value, dtype=np.float64) for key, value in jax_params.items()},
+        {"initial_loss": initial_loss, "final_loss": loss},
+    )
+
+
+def _parameter_norms(controller: LinearRecurrentController) -> dict[str, float]:
+    assert controller.previous_action_weights is not None
+    assert controller.phase_weights is not None
+    assert controller.hidden_bias is not None
+    assert controller.readout_phase_weights is not None
+    assert controller.action_bias is not None
+    return {
+        "A_h_norm": float(np.linalg.norm(controller.recurrent_weights)),
+        "B_y_norm": float(np.linalg.norm(controller.observation_weights)),
+        "B_u_norm": float(np.linalg.norm(controller.previous_action_weights)),
+        "B_phi_norm": float(np.linalg.norm(controller.phase_weights)),
+        "b_norm": float(np.linalg.norm(controller.hidden_bias)),
+        "C_h_norm": float(np.linalg.norm(controller.readout_weights)),
+        "D_y_norm": float(np.linalg.norm(controller.feedthrough_weights)),
+        "D_phi_norm": float(np.linalg.norm(controller.readout_phase_weights)),
+        "c_norm": float(np.linalg.norm(controller.action_bias)),
+    }
 
 
 def _training_batch_for_condition(
@@ -580,16 +843,46 @@ def _training_batch_for_condition(
     plant: Any,
     K_ref: np.ndarray,
     x0: np.ndarray,
+    schedule: Any | None = None,
     output_config: OutputFeedbackConfig,
 ) -> dict[str, np.ndarray]:
     x0_batch, xhat0_batch = _coverage_initial_states(condition, plant=plant, x0=x0)
-    return _reference_output_feedback_batch(
+    batch = _reference_output_feedback_batch(
         plant=plant,
         K=K_ref,
         x0=x0_batch,
         xhat0=xhat0_batch,
         output_config=output_config,
     )
+    horizon = K_ref.shape[0]
+    disturbances = _disturbances_for_condition(
+        condition,
+        batch_size=x0_batch.shape[0],
+        horizon=horizon,
+        disturbance_dim=int(plant.Bw.shape[1]),
+    )
+    batch["disturbances"] = disturbances
+    if schedule is not None:
+        batch["Q"] = np.asarray(schedule.Q, dtype=np.float64)
+        batch["R"] = np.asarray(schedule.R, dtype=np.float64)
+        batch["Q_f"] = np.asarray(schedule.Q_f, dtype=np.float64)
+    return batch
+
+
+def _disturbances_for_condition(
+    condition: LinearRecurrentCondition,
+    *,
+    batch_size: int,
+    horizon: int,
+    disturbance_dim: int,
+) -> np.ndarray:
+    disturbances = np.zeros((batch_size, horizon, disturbance_dim), dtype=np.float64)
+    if condition.disturbance_scale <= 0.0 or disturbance_dim == 0:
+        return disturbances
+    tau = np.linspace(0.0, np.pi, horizon, dtype=np.float64)
+    base = condition.disturbance_scale * np.sin(tau)
+    disturbances[:, :, 0] = base[None, :]
+    return disturbances
 
 
 def _coverage_initial_states(
@@ -613,6 +906,15 @@ def _coverage_initial_states(
         return (
             np.broadcast_to(base_x, offsets_array.shape).copy(),
             base_x[None, :] + offsets_array,
+        )
+    if condition.coverage_family == "mixed_deviation":
+        observer_x = np.broadcast_to(base_x, offsets_array.shape).copy()
+        observer_xhat = base_x[None, :] + offsets_array
+        state_x = base_x[None, :] + offsets_array
+        state_xhat = state_x.copy()
+        return (
+            np.concatenate([state_x, observer_x], axis=0),
+            np.concatenate([state_xhat, observer_xhat], axis=0),
         )
     return base_x[None, :] + offsets_array, base_x[None, :] + offsets_array
 
@@ -712,11 +1014,24 @@ def _manifest_for_condition(
         "formal_static_gain_certificate_boundary": {
             name: by_name[name].status for name in FORMAL_STATIC_GAIN_COMPONENTS
         },
+        "augmented_state_certificate": {
+            "status": "pending_b8b533e_augmented_components",
+            "expected_components": [
+                "augmented_closed_loop_transition",
+                "augmented_value_policy_gap",
+                "augmented_bellman_residual",
+            ],
+            "reason": (
+                "b8b533e owns the shared augmented-state certificate interface; "
+                "this row saves plant, action, observation, and hidden arrays for "
+                "that adapter without inventing a competing schema."
+            ),
+        },
     }
     spec = BridgeRunSpec(
         issue_id=ISSUE_ID,
         run_id=condition.run_id,
-        objective="diagnostic",
+        objective=condition.objective,
         architecture="linear_recurrence",
         controller_label=condition.label,
         optimizer_label=fit_metadata["fit_method"],
@@ -731,17 +1046,23 @@ def _manifest_for_condition(
             "coverage_scale": condition.coverage_scale,
             "coverage_weight": condition.coverage_weight,
             "phase_time_feature_names": list(PHASE_FEATURE_NAMES),
-            "recurrent_decay": condition.recurrent_decay,
+            "hidden_dim": condition.hidden_dim,
+            "disturbance_scale": condition.disturbance_scale,
+            "n_train_steps": condition.n_train_steps,
+            "imitation_steps": condition.imitation_steps,
+            "fine_tune_steps": condition.fine_tune_steps,
+            "learning_rate": condition.learning_rate,
+            "stability_penalty": condition.stability_penalty,
         },
         notes=(
-            "Linear recurrence evaluated against clean output-feedback LQR "
-            "reference actions. Formal static-gain certificate components are "
-            "explicitly not applicable."
+            "Trainable linear recurrence evaluated on clean output-feedback "
+            "rollout. Formal static-gain certificate components are explicitly "
+            "not applicable; augmented-state components are pending b8b533e."
         ),
     )
     return BridgeRunManifest(
         spec=spec,
-        status="recurrence_audit_not_formal_static_gain",
+        status="trainable_recurrence_pending_augmented_certificate",
         arrays=rollout.array_specs(),
         metrics=metrics,
         certificate_components=components,
@@ -796,34 +1117,26 @@ def _phase_ablation(
     output_config: OutputFeedbackConfig,
     phase: np.ndarray,
 ) -> dict[str, float]:
-    training = {
-        "x": np.asarray(reference_clean.x)[None, :, :],
-        "u": np.asarray(reference_clean.u)[None, :, :],
-    }
     H = np.asarray(delayed_observation_matrix(plant, output_config), dtype=np.float64)
-    full_condition = LinearRecurrentCondition(
-        label="ablation_phase",
-        training_distribution="nominal",
-        initialization="least_squares_reference_replay",
-        fit_reference_actions=True,
-    )
-    controller, full_meta = _controller_for_condition(
-        full_condition,
-        plant=plant,
-        reference_training=training | {"x0": training["x"][:, 0], "xhat0": training["x"][:, 0]},
-        phase=phase,
-        output_config=output_config,
-    )
-    del controller
     no_phase_obs = np.asarray(reference_clean.x)[:-1] @ H.T
+    phase_obs = np.concatenate([no_phase_obs, phase], axis=-1)
     targets = np.asarray(reference_clean.u)
-    weights = _ridge_readout(no_phase_obs, targets, ridge=1e-6)
-    no_phase_rmse = float(np.sqrt(np.mean((no_phase_obs @ weights.T - targets) ** 2)))
+    no_phase_weights = _ridge_readout(no_phase_obs, targets, ridge=1e-6)
+    phase_weights = _ridge_readout(phase_obs, targets, ridge=1e-6)
+    no_phase_rmse = float(np.sqrt(np.mean((no_phase_obs @ no_phase_weights.T - targets) ** 2)))
+    phase_rmse = float(np.sqrt(np.mean((phase_obs @ phase_weights.T - targets) ** 2)))
     return {
-        "phase_training_action_rmse": float(full_meta["training_action_rmse"] or 0.0),
+        "phase_training_action_rmse": phase_rmse,
         "no_phase_training_action_rmse": no_phase_rmse,
         "reference_gain_time_variation_norm": float(np.linalg.norm(np.diff(K_ref, axis=0))),
     }
+
+
+def _ridge_readout(features: np.ndarray, targets: np.ndarray, *, ridge: float) -> np.ndarray:
+    gram = features.T @ features
+    rhs = features.T @ targets
+    weights = np.linalg.solve(gram + ridge * np.eye(gram.shape[0]), rhs)
+    return weights.T
 
 
 def _quadratic_cost(schedule: Any, states: np.ndarray, actions: np.ndarray) -> float:
@@ -840,23 +1153,34 @@ def _quadratic_cost(schedule: Any, states: np.ndarray, actions: np.ndarray) -> f
 
 def _result_text(rows: list[BridgeRunManifest]) -> str:
     by_id = {row.spec.run_id: row for row in rows}
-    scratch = by_id.get(make_bridge_run_id("linear_recurrent", "no_coverage__scratch_seed_0"))
-    replay = by_id.get(make_bridge_run_id("linear_recurrent", "no_coverage__reference_replay"))
-    if scratch is None or replay is None:
-        return "Retained rows were materialized; no scratch/reference comparison was available."
-    scratch_ratio = scratch.metrics["objective_ratio_to_reference"]
-    replay_ratio = replay.metrics["objective_ratio_to_reference"]
-    if replay_ratio < scratch_ratio:
+    clean = by_id.get(make_bridge_run_id("linear_recurrent", "linrec_clean_scratch_baseline"))
+    riccati = by_id.get(make_bridge_run_id("linear_recurrent", "linrec_riccati_eps_scratch"))
+    imitation = by_id.get(make_bridge_run_id("linear_recurrent", "linrec_imitation_nominal"))
+    if clean is None or riccati is None:
         return (
-            "The phase-aware least-squares reference-replay recurrence improves "
-            f"the no-coverage clean objective ratio versus scratch "
-            f"({replay_ratio:.4g} vs {scratch_ratio:.4g}), but remains an "
-            "audit row rather than a formal static-gain certificate pass."
+            "Retained trainable rows were materialized; no clean/Riccati comparison was available."
         )
+    clean_ratio = clean.metrics["objective_ratio_to_reference"]
+    riccati_ratio = riccati.metrics["objective_ratio_to_reference"]
+    imitation_ratio = (
+        None if imitation is None else imitation.metrics["objective_ratio_to_reference"]
+    )
+    if clean_ratio <= 1.5 and riccati_ratio <= 2.0:
+        return (
+            "The d_h=48 trainable linear recurrence shows nominal bridge "
+            f"recovery (clean ratio {clean_ratio:.4g}, Riccati-epsilon ratio "
+            f"{riccati_ratio:.4g}). Augmented-state certificate semantics are "
+            "pending b8b533e before this can be treated as a formal recurrent "
+            "certificate pass."
+        )
+    scaffold = (
+        "" if imitation_ratio is None else f"; imitation diagnostic ratio {imitation_ratio:.4g}"
+    )
     return (
-        "The phase-aware recurrence rows were materialized, but no-coverage "
-        f"reference replay did not improve clean objective ratio over scratch "
-        f"({replay_ratio:.4g} vs {scratch_ratio:.4g})."
+        "The d_h=48 trainable linear recurrence rows were materialized, but "
+        "nominal bridge recovery is not established by the scratch reward rows "
+        f"(clean ratio {clean_ratio:.4g}, Riccati-epsilon ratio {riccati_ratio:.4g}"
+        f"{scaffold})."
     )
 
 

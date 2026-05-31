@@ -207,9 +207,7 @@ def _cardinal_cubic_bspline(x: np.ndarray) -> np.ndarray:
     values = np.zeros_like(distance)
 
     inner = distance < 1.0
-    values[inner] = (
-        4.0 - 6.0 * distance[inner] ** 2 + 3.0 * distance[inner] ** 3
-    ) / 6.0
+    values[inner] = (4.0 - 6.0 * distance[inner] ** 2 + 3.0 * distance[inner] ** 3) / 6.0
 
     outer = (distance >= 1.0) & (distance < 2.0)
     values[outer] = (2.0 - distance[outer]) ** 3 / 6.0
@@ -222,18 +220,24 @@ class LinearRecurrentController:
 
     The recurrence is
 
-    ``h_{t+1} = A_h h_t + B_y y_t``
-    ``u_t = C_h h_t + D_y y_t``
+    ``h_{t+1} = A_h h_t + B_y y_t + B_u u_{t-1} + B_phi phi_t + b``
+    ``u_t = C_h h_t + D_y y_t + D_phi phi_t + c``
 
-    where ``y_t`` is the rollout observation and ``u_t`` is applied directly to
-    the plant.  ``D_y`` defaults to zero so pure hidden-readout controllers stay
-    explicit.
+    where ``y_t`` is the rollout observation, ``phi_t`` is an optional phase/time
+    feature vector, and ``u_t`` is applied directly to the plant.  The previous
+    action and phase terms default to zero, preserving the older
+    observation-only recurrence.
     """
 
     recurrent_weights: Float[np.ndarray, "hidden hidden"]
     observation_weights: Float[np.ndarray, "hidden observation"]
     readout_weights: Float[np.ndarray, "action hidden"]
     feedthrough_weights: Float[np.ndarray, "action observation"] | None = None
+    previous_action_weights: Float[np.ndarray, "hidden action"] | None = None
+    phase_weights: Float[np.ndarray, "hidden phase"] | None = None
+    hidden_bias: Float[np.ndarray, " hidden"] | None = None
+    readout_phase_weights: Float[np.ndarray, "action phase"] | None = None
+    action_bias: Float[np.ndarray, " action"] | None = None
     initial_hidden: Float[np.ndarray, " hidden"] | None = None
 
     def __post_init__(self) -> None:
@@ -253,6 +257,45 @@ class LinearRecurrentController:
             expected = (readout.shape[0], observation.shape[1])
             if feedthrough.shape != expected:
                 raise ValueError(f"feedthrough_weights must have shape {expected}")
+        action_dim = readout.shape[0]
+        hidden_dim = recurrent.shape[0]
+        if self.previous_action_weights is None:
+            previous_action = np.zeros((hidden_dim, action_dim), dtype=np.float64)
+        else:
+            previous_action = np.asarray(self.previous_action_weights, dtype=np.float64)
+            expected = (hidden_dim, action_dim)
+            if previous_action.shape != expected:
+                raise ValueError(f"previous_action_weights must have shape {expected}")
+        phase_dim = 0
+        if self.phase_weights is None:
+            phase = np.zeros((hidden_dim, 0), dtype=np.float64)
+        else:
+            phase = np.asarray(self.phase_weights, dtype=np.float64)
+            if phase.ndim != 2 or phase.shape[0] != hidden_dim:
+                raise ValueError("phase_weights must have shape (hidden, phase)")
+            phase_dim = int(phase.shape[1])
+        if self.hidden_bias is None:
+            hidden_bias = np.zeros((hidden_dim,), dtype=np.float64)
+        else:
+            hidden_bias = np.asarray(self.hidden_bias, dtype=np.float64)
+            if hidden_bias.shape != (hidden_dim,):
+                raise ValueError("hidden_bias must have shape (hidden,)")
+        if self.readout_phase_weights is None:
+            readout_phase = np.zeros((action_dim, phase_dim), dtype=np.float64)
+        else:
+            readout_phase = np.asarray(self.readout_phase_weights, dtype=np.float64)
+            if phase_dim == 0:
+                phase_dim = int(readout_phase.shape[1])
+                phase = np.zeros((hidden_dim, phase_dim), dtype=np.float64)
+            expected = (action_dim, phase_dim)
+            if readout_phase.shape != expected:
+                raise ValueError(f"readout_phase_weights must have shape {expected}")
+        if self.action_bias is None:
+            action_bias = np.zeros((action_dim,), dtype=np.float64)
+        else:
+            action_bias = np.asarray(self.action_bias, dtype=np.float64)
+            if action_bias.shape != (action_dim,):
+                raise ValueError("action_bias must have shape (action,)")
         if self.initial_hidden is None:
             initial_hidden = np.zeros((recurrent.shape[0],), dtype=np.float64)
         else:
@@ -264,6 +307,11 @@ class LinearRecurrentController:
         object.__setattr__(self, "observation_weights", observation)
         object.__setattr__(self, "readout_weights", readout)
         object.__setattr__(self, "feedthrough_weights", feedthrough)
+        object.__setattr__(self, "previous_action_weights", previous_action)
+        object.__setattr__(self, "phase_weights", phase)
+        object.__setattr__(self, "hidden_bias", hidden_bias)
+        object.__setattr__(self, "readout_phase_weights", readout_phase)
+        object.__setattr__(self, "action_bias", action_bias)
         object.__setattr__(self, "initial_hidden", initial_hidden)
 
     @property
@@ -284,29 +332,81 @@ class LinearRecurrentController:
 
         return int(self.readout_weights.shape[0])
 
+    @property
+    def phase_dim(self) -> int:
+        """Phase/time feature dimension expected by the recurrence."""
+
+        assert self.phase_weights is not None
+        return int(self.phase_weights.shape[1])
+
     def next_hidden(
         self,
         hidden: Float[np.ndarray, "... hidden"],
         observation: Float[np.ndarray, "... observation"],
+        previous_action: Float[np.ndarray, "... action"] | None = None,
+        phase: Float[np.ndarray, "... phase"] | None = None,
     ) -> Float[np.ndarray, "... hidden"]:
         """Return the next hidden state for one or more batch elements."""
 
-        return hidden @ self.recurrent_weights.T + observation @ self.observation_weights.T
+        assert self.previous_action_weights is not None
+        assert self.phase_weights is not None
+        assert self.hidden_bias is not None
+        previous = (
+            _zero_like_batch(hidden, self.action_dim)
+            if previous_action is None
+            else previous_action
+        )
+        phase_input = _zero_like_batch(hidden, self.phase_dim) if phase is None else phase
+        return (
+            hidden @ self.recurrent_weights.T
+            + observation @ self.observation_weights.T
+            + previous @ self.previous_action_weights.T
+            + phase_input @ self.phase_weights.T
+            + self.hidden_bias
+        )
 
     def action(
         self,
         hidden: Float[np.ndarray, "... hidden"],
         observation: Float[np.ndarray, "... observation"],
+        phase: Float[np.ndarray, "... phase"] | None = None,
     ) -> Float[np.ndarray, "... action"]:
         """Return the controller action for one or more batch elements."""
 
         assert self.feedthrough_weights is not None
-        return hidden @ self.readout_weights.T + observation @ self.feedthrough_weights.T
+        assert self.readout_phase_weights is not None
+        assert self.action_bias is not None
+        phase_input = _zero_like_batch(hidden, self.phase_dim) if phase is None else phase
+        return (
+            hidden @ self.readout_weights.T
+            + observation @ self.feedthrough_weights.T
+            + phase_input @ self.readout_phase_weights.T
+            + self.action_bias
+        )
 
     def stability_diagnostics(self) -> dict[str, float]:
         """Return recurrence-only stability diagnostics."""
 
-        return {"recurrent_spectral_radius": recurrent_spectral_radius(self.recurrent_weights)}
+        assert self.previous_action_weights is not None
+        assert self.phase_weights is not None
+        assert self.hidden_bias is not None
+        assert self.readout_phase_weights is not None
+        assert self.action_bias is not None
+        return {
+            "recurrent_spectral_radius": recurrent_spectral_radius(self.recurrent_weights),
+            "hidden_dim": self.hidden_dim,
+            "observation_dim": self.observation_dim,
+            "phase_dim": self.phase_dim,
+            "previous_action_weight_norm": float(np.linalg.norm(self.previous_action_weights)),
+            "phase_weight_norm": float(np.linalg.norm(self.phase_weights)),
+            "readout_phase_weight_norm": float(np.linalg.norm(self.readout_phase_weights)),
+            "hidden_bias_norm": float(np.linalg.norm(self.hidden_bias)),
+            "action_bias_norm": float(np.linalg.norm(self.action_bias)),
+        }
+
+
+def _zero_like_batch(reference: np.ndarray, width: int) -> np.ndarray:
+    return np.zeros((*reference.shape[:-1], width), dtype=np.asarray(reference).dtype)
 
 
 def recurrent_spectral_radius(matrix: Float[np.ndarray, "hidden hidden"]) -> float:
@@ -405,6 +505,7 @@ def rollout_linear_recurrent_controller(
         horizon=horizon,
     )
     hidden = _initial_hidden_batch(controller, initial_hidden, batch_size)
+    previous_action = np.zeros((batch_size, controller.action_dim), dtype=np.float64)
 
     plant_states = [states]
     hidden_states = [hidden]
@@ -414,7 +515,8 @@ def rollout_linear_recurrent_controller(
         y_t = states @ observations_matrix.T
         u_t = controller.action(hidden, y_t)
         states = states @ A.T + u_t @ B.T + disturbances_batch[:, t, :] @ Bw.T
-        hidden = controller.next_hidden(hidden, y_t)
+        hidden = controller.next_hidden(hidden, y_t, previous_action)
+        previous_action = u_t
         observations.append(y_t)
         actions.append(u_t)
         plant_states.append(states)
