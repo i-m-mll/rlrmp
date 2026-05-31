@@ -116,11 +116,11 @@ def test_materialize_with_fake_reference_reports_available_io_map(monkeypatch) -
     monkeypatch.setattr(pm, "kalman_estimator_gains", lambda plant, K, config: np.zeros((3, 2, 1)))
     monkeypatch.setattr(pm, "process_covariance", lambda plant, config: np.zeros((2, 2)))
     condition = pm.PhaseModulatedCondition(
-        label="pm_linrec_r3_oracle_matrix_projection",
-        row_family="oracle_matrix_projection",
+        label="pm_linrec_r3_projected_oracle_nominal_replay",
+        row_family="projected_oracle_replay",
         rank=3,
-        training_distribution="none",
-        evaluation_lens="oracle_matrix_projection",
+        training_distribution="nominal",
+        evaluation_lens="nominal_clean",
     )
 
     summary, arrays = pm.materialize(include_reward=False, conditions=(condition,))
@@ -130,9 +130,93 @@ def test_materialize_with_fake_reference_reports_available_io_map(monkeypatch) -
         summary["rows"][0]["metrics"]["io_map_certificate"]["status"]
         == "standard_components_available"
     )
-    assert summary["rows"][0]["metrics"]["verdict"] == "representation_diagnostic"
+    assert summary["rows"][0]["metrics"]["verdict"] == "projected_oracle_replay_diagnostic"
     assert "clamped_bspline_r3_basis" in arrays
     assert any(key.endswith("__hidden_states") for key in arrays)
+
+
+def test_default_conditions_relabel_state_coverage_and_projection_rows() -> None:
+    conditions = pm.default_conditions(include_reward=False)
+    labels_and_lenses = [
+        (condition.label, condition.evaluation_lens, condition.row_family)
+        for condition in conditions
+    ]
+
+    assert not any("imitation" in label for label, _lens, _family in labels_and_lenses)
+    assert not any("exact_process_eigen" in lens for _label, lens, _family in labels_and_lenses)
+    assert {
+        condition.rank
+        for condition in conditions
+        if condition.row_family == "projected_oracle_replay"
+    } == {12, 20, 30, 60}
+    assert any(
+        condition.row_family == "exact_oracle_sanity"
+        and condition.evaluation_lens == "process_measurement_io"
+        for condition in conditions
+    )
+    assert any(
+        condition.row_family == "projected_oracle_state_coverage_eval"
+        and condition.evaluation_lens == "state_coverage_eigen_m4_s0.3"
+        for condition in conditions
+    )
+
+
+def test_exact_oracle_process_measurement_row_is_response_map_sanity(monkeypatch) -> None:
+    plant = _tiny_plant()
+    plant = TinyPlant(
+        A=plant.A,
+        B=plant.B,
+        Bw=np.array([[0.0], [1.0]]),
+        n=plant.n,
+        m_w=plant.m_w,
+    )
+    schedule = SimpleNamespace(
+        Q=np.broadcast_to(np.eye(2), (3, 2, 2)),
+        R=np.broadcast_to(np.eye(1), (3, 1, 1)),
+        Q_f=np.eye(2),
+    )
+    gains = np.array([[[0.2, 0.0]], [[0.1, 0.1]], [[0.0, 0.2]]])
+    reference = SimpleNamespace(
+        plant=plant,
+        schedule=schedule,
+        lqr_solution=SimpleNamespace(K=gains),
+    )
+    reference_clean = SimpleNamespace(
+        x=np.array([[1.0, 0.0], [1.0, -0.2], [0.98, -0.3], [0.95, -0.25]]),
+        x_hat=np.array([[1.0, 0.0], [1.0, -0.2], [0.98, -0.3], [0.95, -0.25]]),
+        u=np.array([[-0.2], [-0.08], [0.06]]),
+    )
+    monkeypatch.setattr(pm, "materialize_reference", lambda gamma_factors: reference)
+    monkeypatch.setattr(
+        pm, "make_cs_output_feedback_initial_state", lambda p, c: np.array([1.0, 0.0])
+    )
+    monkeypatch.setattr(pm, "rollout_with_kalman_estimator", lambda p, k, x: reference_clean)
+    monkeypatch.setattr(
+        pm,
+        "output_feedback_cost",
+        lambda schedule, rollout: SimpleNamespace(total_without_disturbance_penalty=1.0),
+    )
+    monkeypatch.setattr(
+        pm, "delayed_observation_matrix", lambda plant, config: np.array([[1.0, 0.0]])
+    )
+    monkeypatch.setattr(pm, "kalman_estimator_gains", lambda plant, K, config: np.zeros((3, 2, 1)))
+    monkeypatch.setattr(pm, "process_covariance", lambda plant, config: np.zeros((2, 2)))
+    condition = pm.PhaseModulatedCondition(
+        label="pm_linrec_exact_oracle_process_measurement_io",
+        row_family="exact_oracle_sanity",
+        rank=3,
+        training_distribution="process_measurement_io_probe",
+        evaluation_lens="process_measurement_io",
+        disturbance_scale=0.02,
+        measurement_scale=0.02,
+    )
+
+    summary, _arrays = pm.materialize(include_reward=False, conditions=(condition,))
+
+    row = summary["rows"][0]
+    assert row["metrics"]["verdict"] == "exact_oracle_sanity_pass"
+    assert row["metrics"]["response_map_mismatch"]["max_aggregate_mismatch"] == 0.0
+    assert row["metrics"]["aggregate_action_energy_mismatch"] == 0.0
 
 
 def test_reward_condition_runs_bounded_training(monkeypatch) -> None:
