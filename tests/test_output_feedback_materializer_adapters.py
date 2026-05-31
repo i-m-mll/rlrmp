@@ -12,10 +12,10 @@ SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-import materialize_output_feedback_failure_decomposition as failure
-import materialize_output_feedback_sweep_certificates as certificates
-import materialize_output_feedback_time_constrained as time_constrained
-from rlrmp.analysis.bridge_contracts import BridgeCertificateComponent
+import materialize_output_feedback_failure_decomposition as failure  # noqa: E402
+import materialize_output_feedback_sweep_certificates as certificates  # noqa: E402
+import materialize_output_feedback_time_constrained as time_constrained  # noqa: E402
+from rlrmp.analysis.bridge_contracts import BridgeCertificateComponent  # noqa: E402
 
 
 def _fit(label: str) -> dict[str, object]:
