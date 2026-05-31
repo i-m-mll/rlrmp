@@ -135,6 +135,25 @@ def test_recurrent_manifest_uses_augmented_certificate_mode(monkeypatch) -> None
     assert "aggregate_action_energy_mismatch" in manifest.metrics
 
 
+def test_lens_metadata_preserves_aliases_while_naming_sources() -> None:
+    by_label = {condition.label: condition for condition in recurrent.default_conditions()}
+
+    riccati = recurrent.lens_metadata_for_condition(by_label["linrec_riccati_eps_scratch"])
+    assert riccati["lens_kind"] == "sinusoidal_process_disturbance"
+    assert riccati["lens_source"] == "first_process_coordinate_sinusoid"
+    assert riccati["lens_deprecated_alias"] == "riccati_epsilon"
+
+    state_eig = recurrent.lens_metadata_for_condition(by_label["linrec_state_eig_scratch"])
+    assert state_eig["lens_kind"] == "state_covariance_modes"
+    assert state_eig["lens_source"] == "open_loop_A_power_x0_covariance_eigenvectors"
+    assert state_eig["lens_deprecated_alias"] == "state_eigenspectrum"
+
+    observer = recurrent.lens_metadata_for_condition(by_label["linrec_observer_error_scratch"])
+    assert observer["lens_kind"] == "observer_estimate_state_covariance_modes"
+    assert observer["lens_deprecated_alias"] == "observer_error"
+    assert "observer-error SVD modes are a separate lens kind" in observer["lens_notes"]
+
+
 def test_materialize_no_coverage_with_fake_reference(monkeypatch) -> None:
     plant = _tiny_plant()
     schedule = SimpleNamespace(
@@ -184,6 +203,17 @@ def test_materialize_no_coverage_with_fake_reference(monkeypatch) -> None:
         "clean_nominal",
         "riccati_epsilon",
     ]
+    assert summary["rows"][1]["spec"]["parameters"]["lens_metadata"] == {
+        "lens_kind": "sinusoidal_process_disturbance",
+        "lens_source": "first_process_coordinate_sinusoid",
+        "lens_deprecated_alias": "riccati_epsilon",
+        "lens_notes": (
+            "Historical row ID and training_distribution are preserved, but this row "
+            "uses a sinusoidal process disturbance, not the exact Riccati epsilon."
+        ),
+    }
+    assert "true_riccati_epsilon" in summary["diagnostics"]["lens_kind_catalog"]
+    assert "observer_error_svd_modes" in summary["diagnostics"]["lens_kind_catalog"]
     assert len(summary["failure_decomposition"]["rows"]) == 2
     assert any(key.endswith("__hidden_states") for key in arrays)
     component_counts = summary["diagnostics"]["component_status_counts"]

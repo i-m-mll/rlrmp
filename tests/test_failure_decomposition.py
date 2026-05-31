@@ -6,6 +6,8 @@ import numpy as np
 
 from rlrmp.analysis.failure_decomposition import (
     FailureDecompositionNumerics,
+    IO_MAP_MISMATCH,
+    REPRESENTATION_FAILURE,
     SIDECAR_IMPROVING_NON_EQUIVALENT,
     classify_failure,
     covariances_from_states,
@@ -125,3 +127,31 @@ def test_sidecar_improving_non_equivalent_classification_is_explicit() -> None:
     )
 
     assert classification["classification"] == SIDECAR_IMPROVING_NON_EQUIVALENT
+
+
+def test_classify_failure_reports_recurrent_io_map_mismatch() -> None:
+    classification = classify_failure(
+        objective_ratio=1.0,
+        learned_gradient_norm=0.0,
+        reference_gradient_norm=0.0,
+        certificate_mismatch_ratio=None,
+        io_map_mismatch_ratio=0.5,
+        subspace_decomposition=None,
+    )
+
+    assert classification["classification"] == IO_MAP_MISMATCH
+    assert classification["signals"]["io_map_bad"]
+
+
+def test_classify_failure_reports_representation_failure() -> None:
+    classification = classify_failure(
+        objective_ratio=1.0,
+        learned_gradient_norm=0.0,
+        reference_gradient_norm=0.0,
+        certificate_mismatch_ratio=None,
+        representation_failed=True,
+        subspace_decomposition=None,
+    )
+
+    assert classification["classification"] == REPRESENTATION_FAILURE
+    assert classification["signals"]["representation_failed"]

@@ -83,6 +83,28 @@ DEFAULT_HIDDEN_DIM = 48
 DEFAULT_REWARD_STEPS = 80
 DEFAULT_IMITATION_STEPS = 120
 DEFAULT_FINE_TUNE_STEPS = 50
+LENS_KIND_CATALOG = {
+    "nominal_clean": "clean nominal output-feedback rollout from the canonical initial state",
+    "true_riccati_epsilon": (
+        "analytical H-infinity Riccati epsilon trajectory from the exact output-feedback audit"
+    ),
+    "sinusoidal_process_disturbance": (
+        "hand-authored sinusoid injected into the first process-disturbance coordinate"
+    ),
+    "state_covariance_modes": (
+        "eigenvectors of the open-loop A^k x0 covariance used as signed initial-state offsets"
+    ),
+    "exact_audit_eigen_disturbance_modes": (
+        "disturbance modes from exact-audit epsilon trajectories or their covariance"
+    ),
+    "observer_error_svd_modes": ("left singular modes of the disturbance-to-observer-error map"),
+    "observer_estimate_state_covariance_modes": (
+        "state-covariance directions applied only to the observer estimate"
+    ),
+    "mixed_sinusoidal_process_and_state_covariance_modes": (
+        "local sinusoidal process disturbance plus state-covariance offset coverage"
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -112,6 +134,60 @@ class LinearRecurrentCondition:
         """Stable run identifier for manifests and array keys."""
 
         return make_bridge_run_id("linear_recurrent", self.label)
+
+
+def lens_metadata_for_condition(condition: LinearRecurrentCondition) -> dict[str, Any]:
+    """Return explicit local lens metadata without changing historical row IDs."""
+
+    if condition.training_distribution == "riccati_epsilon" and condition.disturbance_scale > 0.0:
+        return {
+            "lens_kind": "sinusoidal_process_disturbance",
+            "lens_source": "first_process_coordinate_sinusoid",
+            "lens_deprecated_alias": "riccati_epsilon",
+            "lens_notes": (
+                "Historical row ID and training_distribution are preserved, but this row "
+                "uses a sinusoidal process disturbance, not the exact Riccati epsilon."
+            ),
+        }
+    if condition.coverage_family == "state_eigenspectrum":
+        return {
+            "lens_kind": "state_covariance_modes",
+            "lens_source": "open_loop_A_power_x0_covariance_eigenvectors",
+            "lens_deprecated_alias": "state_eigenspectrum",
+            "lens_notes": (
+                "Directions come from eigenvectors of the open-loop A^k x0 covariance; "
+                "they are not exact-audit eigen disturbance modes."
+            ),
+        }
+    if condition.coverage_family == "observer_error_state":
+        return {
+            "lens_kind": "observer_estimate_state_covariance_modes",
+            "lens_source": "open_loop_A_power_x0_covariance_offsets_on_xhat",
+            "lens_deprecated_alias": "observer_error",
+            "lens_notes": (
+                "Offsets are applied to the observer estimate along state-covariance "
+                "directions; observer-error SVD modes are a separate lens kind."
+            ),
+        }
+    if condition.coverage_family == "mixed_deviation":
+        return {
+            "lens_kind": "mixed_sinusoidal_process_and_state_covariance_modes",
+            "lens_source": (
+                "first_process_coordinate_sinusoid_plus_open_loop_A_power_x0_"
+                "covariance_eigenvectors"
+            ),
+            "lens_deprecated_alias": "mixed_deviation",
+            "lens_notes": (
+                "Mixed rows combine the local sinusoidal process disturbance with "
+                "state-covariance initial-state and observer-estimate offsets."
+            ),
+        }
+    return {
+        "lens_kind": "nominal_clean",
+        "lens_source": "canonical_output_feedback_initial_state",
+        "lens_deprecated_alias": None,
+        "lens_notes": "No coverage or disturbance lens is applied.",
+    }
 
 
 def default_conditions(*, include_coverage: bool = True) -> tuple[LinearRecurrentCondition, ...]:
@@ -387,6 +463,7 @@ def materialize(
         "diagnostics": {
             "phase_time_feature_names": list(PHASE_FEATURE_NAMES),
             "phase_ablation": ablation,
+            "lens_kind_catalog": LENS_KIND_CATALOG,
             "component_status_counts": dict(sorted(component_counts.items())),
             "retained_rows": [row.spec.run_id for row in rows],
         },
@@ -442,13 +519,14 @@ def render_markdown(summary: dict[str, Any]) -> str:
     """Render the tracked result note."""
 
     rows = [
-        "| row | status | train dist | objective ratio | action mismatch | "
-        "spectral radius | hidden max | failure |",
-        "|---|---|---|---:|---:|---:|---:|---|",
+        "| row | status | train dist | lens kind | lens source | objective ratio | "
+        "action mismatch | spectral radius | hidden max | failure |",
+        "|---|---|---|---|---|---:|---:|---:|---:|---|",
     ]
     for row in summary["rows"]:
         metrics = row["metrics"]
         recurrence = metrics["recurrence_diagnostics"]
+        lens = row["spec"]["parameters"].get("lens_metadata", {})
         failure = next(
             item
             for item in summary["failure_decomposition"]["rows"]
@@ -458,6 +536,8 @@ def render_markdown(summary: dict[str, Any]) -> str:
             "| "
             f"{row['spec']['run_id']} | {row['status']} | "
             f"{row['spec']['training_distribution']} | "
+            f"{lens.get('lens_kind', 'unknown')} | "
+            f"{lens.get('lens_source', 'unknown')} | "
             f"{metrics['objective_ratio_to_reference']:.8g} | "
             f"{metrics['state_weighted_action_mismatch']:.8g} | "
             f"{recurrence['recurrent_spectral_radius']:.8g} | "
@@ -484,6 +564,14 @@ Verdict: {summary["result"]}
 ## Retained Rows
 
 {"\n".join(rows)}
+
+Historical row IDs and `training_distribution` values are preserved. The
+`lens kind` and `lens source` columns are the authoritative interpretation for
+these retained rows; deprecated aliases are kept only as compatibility labels.
+
+## Lens Catalog
+
+{"\n".join(f"- `{key}`: {value}" for key, value in summary["diagnostics"]["lens_kind_catalog"].items())}
 
 ## Certificate Boundary
 
@@ -1030,6 +1118,7 @@ def _manifest_for_condition(
             ),
         },
     }
+    lens_metadata = lens_metadata_for_condition(condition)
     spec = BridgeRunSpec(
         issue_id=ISSUE_ID,
         run_id=condition.run_id,
@@ -1043,6 +1132,7 @@ def _manifest_for_condition(
         seed=condition.seed,
         parameters={
             "initialization": condition.initialization,
+            "lens_metadata": lens_metadata,
             "coverage_family": condition.coverage_family,
             "coverage_modes": condition.coverage_modes,
             "coverage_scale": condition.coverage_scale,
@@ -1174,10 +1264,10 @@ def _result_text(rows: list[BridgeRunManifest]) -> str:
     if clean_ratio <= 1.5 and riccati_ratio <= 2.0:
         return (
             "The d_h=48 trainable linear recurrence shows nominal bridge "
-            f"recovery (clean ratio {clean_ratio:.4g}, Riccati-epsilon ratio "
-            f"{riccati_ratio:.4g}). The augmented-state certificate must still "
-            "be inspected before this can be treated as a formal recurrent "
-            "certificate pass."
+            f"recovery (clean ratio {clean_ratio:.4g}, historical "
+            f"`riccati_epsilon` alias/sinusoidal-process ratio {riccati_ratio:.4g}). "
+            "The augmented-state certificate must still be inspected before this can "
+            "be treated as a formal recurrent certificate pass."
         )
     scaffold = (
         "" if imitation_ratio is None else f"; imitation diagnostic ratio {imitation_ratio:.4g}"
@@ -1185,7 +1275,8 @@ def _result_text(rows: list[BridgeRunManifest]) -> str:
     return (
         "The d_h=48 trainable linear recurrence rows were materialized, but "
         "nominal bridge recovery is not established by the scratch reward rows "
-        f"(clean ratio {clean_ratio:.4g}, Riccati-epsilon ratio {riccati_ratio:.4g}"
+        f"(clean ratio {clean_ratio:.4g}, historical `riccati_epsilon` "
+        f"alias/sinusoidal-process ratio {riccati_ratio:.4g}"
         f"{scaffold})."
     )
 
@@ -1227,8 +1318,10 @@ __all__ = [
     "ISSUE_ID",
     "MANIFEST_PATH",
     "NOTE_PATH",
+    "LENS_KIND_CATALOG",
     "LinearRecurrentCondition",
     "default_conditions",
+    "lens_metadata_for_condition",
     "materialize",
     "phase_time_features",
     "render_markdown",
