@@ -24,7 +24,6 @@ from jaxtyping import Float
 from rlrmp.analysis.bridge_certificates import (
     BELLMAN_HESSIAN_RESIDUAL,
     CLOSED_LOOP_TRANSITION_MISMATCH,
-    RECURRENCE_GRU_DIAGNOSTICS,
     STATE_WEIGHTED_ACTION_MISMATCH,
     VALUE_POLICY_GAP,
     build_standard_certificate_components,
