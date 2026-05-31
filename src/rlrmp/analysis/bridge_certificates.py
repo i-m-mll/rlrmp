@@ -1137,7 +1137,11 @@ def _as_response_map(values: np.ndarray, *, label: str) -> np.ndarray:
 
 
 def _response_quadratic(response: np.ndarray, weights: np.ndarray) -> np.ndarray:
-    return np.einsum("toi,tok,tkj->ij", response, weights, response)
+    input_dim = response.shape[-1]
+    quadratic = np.zeros((input_dim, input_dim), dtype=np.float64)
+    for response_t, weight_t in zip(response, weights, strict=True):
+        quadratic += response_t.T @ weight_t @ response_t
+    return quadratic
 
 
 def _first_available(*values: np.ndarray | None) -> np.ndarray | None:
