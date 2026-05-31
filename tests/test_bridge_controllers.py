@@ -70,6 +70,70 @@ def test_time_constrained_gain_constant_projection_uses_temporal_mean() -> None:
     assert projection.residual_norm > 0.0
 
 
+def test_time_constrained_gain_cubic_bspline_is_partition_of_unity() -> None:
+    parameterization = TimeConstrainedGainParameterization.cubic_bspline(
+        horizon=24,
+        n_basis=6,
+        action_dim=2,
+        input_dim=3,
+    )
+
+    assert parameterization.basis.shape == (24, 6)
+    assert np.all(parameterization.basis >= 0.0)
+    np.testing.assert_allclose(np.sum(parameterization.basis, axis=1), np.ones(24))
+
+
+def test_time_constrained_gain_cubic_bspline_is_smooth_and_local() -> None:
+    parameterization = TimeConstrainedGainParameterization.cubic_bspline(
+        horizon=24,
+        n_basis=6,
+        action_dim=1,
+        input_dim=1,
+    )
+
+    nonzero_counts = np.count_nonzero(parameterization.basis > 1e-14, axis=1)
+    adjacent_deltas = np.abs(np.diff(parameterization.basis, axis=0))
+
+    assert np.max(nonzero_counts) <= 4
+    assert np.max(adjacent_deltas) < 0.2
+
+
+def test_time_constrained_gain_cubic_bspline_projection_reconstructs_representable_gains() -> None:
+    parameterization = TimeConstrainedGainParameterization.cubic_bspline(
+        horizon=24,
+        n_basis=6,
+        action_dim=2,
+        input_dim=2,
+    )
+    theta = np.linspace(-1.0, 1.0, 24, dtype=np.float64).reshape((6, 2, 2))
+    gains = parameterization.gains_from_theta(theta)
+
+    projection = parameterization.project_gains(gains)
+
+    assert projection.rank == 6
+    np.testing.assert_allclose(projection.reconstructed_gains, gains, atol=1e-12)
+    assert projection.residual_norm < 1e-12
+    assert projection.relative_residual < 1e-12
+
+
+def test_time_constrained_gain_cubic_bspline_r60_reconstructs_unconstrained_gains() -> None:
+    rng = np.random.default_rng(87)
+    parameterization = TimeConstrainedGainParameterization.cubic_bspline(
+        horizon=60,
+        n_basis=60,
+        action_dim=2,
+        input_dim=2,
+    )
+    gains = rng.normal(size=(60, 2, 2))
+
+    projection = parameterization.project_gains(gains)
+
+    assert projection.rank == 60
+    assert projection.singular_values[-1] > 0.0
+    np.testing.assert_allclose(projection.reconstructed_gains, gains, atol=1e-11)
+    assert projection.residual_norm < 1e-10
+
+
 def test_linear_recurrent_controller_rollout_updates_hidden_and_actions() -> None:
     plant = TinyPlant(
         A=np.eye(2),
