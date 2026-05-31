@@ -21,6 +21,7 @@ from rlrmp.analysis.output_feedback_affine_tracker import (  # noqa: E402
     baseline_conditions,
     rollout_with_affine_tracker,
     selected_coverage_conditions,
+    staged_curriculum_conditions,
 )
 from rlrmp.analysis.cs_game_card import materialize_reference  # noqa: E402
 
@@ -48,14 +49,34 @@ def test_reference_affine_replay_matches_kalman_rollout() -> None:
 
 
 def test_row_labels_and_selected_coverage_metadata() -> None:
-    labels = [condition.label for condition in baseline_conditions(maxiter=7)]
-    assert labels == [
+    legacy_labels = [condition.label for condition in baseline_conditions(maxiter=7)]
+    assert legacy_labels == [
         "reference_affine_replay",
         "feedforward_only_k_ref_frozen",
         "gain_only_u_ref_frozen",
         "both_from_scratch",
         "spline_tracker_r20",
     ]
+
+    labels = [condition.label for condition in staged_curriculum_conditions(maxiter=7)]
+    assert labels == [
+        "affine_clean_scratch_baseline",
+        "affine_ff_clean_stage",
+        "affine_fb_riccati_eps",
+        "affine_joint_riccati_eps",
+        "affine_fb_state_eig",
+        "affine_joint_state_eig",
+        "affine_fb_observer_error",
+        "affine_joint_observer_error",
+        "affine_fb_mixed",
+        "affine_joint_mixed",
+        "affine_feedback_action_match_riccati_eps",
+        "affine_feedback_action_match_mixed",
+    ]
+    assert len(labels) == 12
+    assert staged_curriculum_conditions(maxiter=7)[2].objective_family == "reward_rollout"
+    assert staged_curriculum_conditions(maxiter=7)[2].stage_source_label == "affine_ff_clean_stage"
+    assert staged_curriculum_conditions(maxiter=7)[10].is_diagnostic
 
     coverage = selected_coverage_conditions(maxiter=7)
 
