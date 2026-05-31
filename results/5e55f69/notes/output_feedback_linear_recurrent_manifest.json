@@ -1,0 +1,1240 @@
+{
+  "artifact_npz": "_artifacts/5e55f69/output_feedback_linear_recurrent/output_feedback_linear_recurrent.npz",
+  "artifact_npz_keys": [
+    "linear_recurrent__no_coverage__reference_replay__actions",
+    "linear_recurrent__no_coverage__reference_replay__hidden_states",
+    "linear_recurrent__no_coverage__reference_replay__observations",
+    "linear_recurrent__no_coverage__reference_replay__plant_states",
+    "linear_recurrent__no_coverage__reference_replay__reference_actions",
+    "linear_recurrent__no_coverage__reference_replay__training_x0",
+    "linear_recurrent__no_coverage__reference_replay__training_xhat0",
+    "linear_recurrent__no_coverage__scratch_seed_0__actions",
+    "linear_recurrent__no_coverage__scratch_seed_0__hidden_states",
+    "linear_recurrent__no_coverage__scratch_seed_0__observations",
+    "linear_recurrent__no_coverage__scratch_seed_0__plant_states",
+    "linear_recurrent__no_coverage__scratch_seed_0__reference_actions",
+    "linear_recurrent__no_coverage__scratch_seed_0__training_x0",
+    "linear_recurrent__no_coverage__scratch_seed_0__training_xhat0",
+    "linear_recurrent__observer_error_state_m1_s0p3_w0p1__reference_replay__actions",
+    "linear_recurrent__observer_error_state_m1_s0p3_w0p1__reference_replay__hidden_states",
+    "linear_recurrent__observer_error_state_m1_s0p3_w0p1__reference_replay__observations",
+    "linear_recurrent__observer_error_state_m1_s0p3_w0p1__reference_replay__plant_states",
+    "linear_recurrent__observer_error_state_m1_s0p3_w0p1__reference_replay__reference_actions",
+    "linear_recurrent__observer_error_state_m1_s0p3_w0p1__reference_replay__training_x0",
+    "linear_recurrent__observer_error_state_m1_s0p3_w0p1__reference_replay__training_xhat0",
+    "linear_recurrent__state_eigenspectrum_m4_s1_w0p1__reference_replay__actions",
+    "linear_recurrent__state_eigenspectrum_m4_s1_w0p1__reference_replay__hidden_states",
+    "linear_recurrent__state_eigenspectrum_m4_s1_w0p1__reference_replay__observations",
+    "linear_recurrent__state_eigenspectrum_m4_s1_w0p1__reference_replay__plant_states",
+    "linear_recurrent__state_eigenspectrum_m4_s1_w0p1__reference_replay__reference_actions",
+    "linear_recurrent__state_eigenspectrum_m4_s1_w0p1__reference_replay__training_x0",
+    "linear_recurrent__state_eigenspectrum_m4_s1_w0p1__reference_replay__training_xhat0",
+    "linear_recurrent__state_eigenspectrum_m4_s3_w0p1__reference_replay__actions",
+    "linear_recurrent__state_eigenspectrum_m4_s3_w0p1__reference_replay__hidden_states",
+    "linear_recurrent__state_eigenspectrum_m4_s3_w0p1__reference_replay__observations",
+    "linear_recurrent__state_eigenspectrum_m4_s3_w0p1__reference_replay__plant_states",
+    "linear_recurrent__state_eigenspectrum_m4_s3_w0p1__reference_replay__reference_actions",
+    "linear_recurrent__state_eigenspectrum_m4_s3_w0p1__reference_replay__training_x0",
+    "linear_recurrent__state_eigenspectrum_m4_s3_w0p1__reference_replay__training_xhat0",
+    "phase_time_features",
+    "reference_clean_u",
+    "reference_clean_x",
+    "reference_clean_x_hat"
+  ],
+  "diagnostics": {
+    "component_status_counts": {
+      "bellman_hessian_residual:not_applicable": 5,
+      "closed_loop_transition_mismatch:not_applicable": 5,
+      "optimizer_metadata:available": 5,
+      "recurrence_gru_diagnostics:available": 5,
+      "state_weighted_action_mismatch:available": 5,
+      "value_policy_gap:not_applicable": 5,
+      "visited_subspace_diagnostics:available": 5
+    },
+    "phase_ablation": {
+      "no_phase_training_action_rmse": 1.0595994428002136,
+      "phase_training_action_rmse": 0.1950006189663149,
+      "reference_gain_time_variation_norm": 191.594920987971
+    },
+    "phase_time_feature_names": [
+      "phase_bias",
+      "phase_tau",
+      "phase_tau_squared"
+    ],
+    "retained_rows": [
+      "linear_recurrent__no_coverage__scratch_seed_0",
+      "linear_recurrent__no_coverage__reference_replay",
+      "linear_recurrent__state_eigenspectrum_m4_s1_w0p1__reference_replay",
+      "linear_recurrent__state_eigenspectrum_m4_s3_w0p1__reference_replay",
+      "linear_recurrent__observer_error_state_m1_s0p3_w0p1__reference_replay"
+    ]
+  },
+  "failure_decomposition": {
+    "classification_counts": {
+      "optimizer_basin": 4,
+      "uncertain": 1
+    },
+    "rows": [
+      {
+        "certificate": {
+          "formal_static_gain_components": {
+            "bellman_hessian_residual": "not_applicable",
+            "closed_loop_transition_mismatch": "not_applicable",
+            "value_policy_gap": "not_applicable"
+          },
+          "state_weighted_action_mismatch": 2398.9139855471094
+        },
+        "classification": {
+          "classification": "optimizer_basin",
+          "reasons": [
+            "optimizer_basin"
+          ],
+          "signals": {
+            "certificate_bad": true,
+            "learned_gradient_bad": false,
+            "objective_bad": true,
+            "objective_close": false,
+            "reference_gradient_bad": false,
+            "weak_subspace_dominates": false
+          }
+        },
+        "objective": {
+          "learned_gradient_norm": null,
+          "learned_objective": 176794.21286101898,
+          "learned_to_reference_objective_ratio": 40.516514248432955,
+          "reference_gradient_norm": null,
+          "reference_objective": 4363.509945030792,
+          "source": "clean_closed_loop_quadratic_cost"
+        },
+        "run_id": "linear_recurrent__no_coverage__scratch_seed_0",
+        "schema": "recurrence-compatible c45adde subset",
+        "subspace_decomposition": {
+          "reason": "linear recurrent controller has no time-local static gain delta",
+          "status": "not_applicable"
+        }
+      },
+      {
+        "certificate": {
+          "formal_static_gain_components": {
+            "bellman_hessian_residual": "not_applicable",
+            "closed_loop_transition_mismatch": "not_applicable",
+            "value_policy_gap": "not_applicable"
+          },
+          "state_weighted_action_mismatch": 45318.451630113035
+        },
+        "classification": {
+          "classification": "uncertain",
+          "reasons": [],
+          "signals": {
+            "certificate_bad": true,
+            "learned_gradient_bad": false,
+            "objective_bad": false,
+            "objective_close": false,
+            "reference_gradient_bad": false,
+            "weak_subspace_dominates": false
+          }
+        },
+        "objective": {
+          "learned_gradient_norm": null,
+          "learned_objective": 4385.035194590185,
+          "learned_to_reference_objective_ratio": 1.0049330126046594,
+          "reference_gradient_norm": null,
+          "reference_objective": 4363.509945030792,
+          "source": "clean_closed_loop_quadratic_cost"
+        },
+        "run_id": "linear_recurrent__no_coverage__reference_replay",
+        "schema": "recurrence-compatible c45adde subset",
+        "subspace_decomposition": {
+          "reason": "linear recurrent controller has no time-local static gain delta",
+          "status": "not_applicable"
+        }
+      },
+      {
+        "certificate": {
+          "formal_static_gain_components": {
+            "bellman_hessian_residual": "not_applicable",
+            "closed_loop_transition_mismatch": "not_applicable",
+            "value_policy_gap": "not_applicable"
+          },
+          "state_weighted_action_mismatch": 986451.7907768086
+        },
+        "classification": {
+          "classification": "optimizer_basin",
+          "reasons": [
+            "optimizer_basin"
+          ],
+          "signals": {
+            "certificate_bad": true,
+            "learned_gradient_bad": false,
+            "objective_bad": true,
+            "objective_close": false,
+            "reference_gradient_bad": false,
+            "weak_subspace_dominates": false
+          }
+        },
+        "objective": {
+          "learned_gradient_norm": null,
+          "learned_objective": 6204.552292773572,
+          "learned_to_reference_objective_ratio": 1.4219177613745049,
+          "reference_gradient_norm": null,
+          "reference_objective": 4363.509945030792,
+          "source": "clean_closed_loop_quadratic_cost"
+        },
+        "run_id": "linear_recurrent__state_eigenspectrum_m4_s1_w0p1__reference_replay",
+        "schema": "recurrence-compatible c45adde subset",
+        "subspace_decomposition": {
+          "reason": "linear recurrent controller has no time-local static gain delta",
+          "status": "not_applicable"
+        }
+      },
+      {
+        "certificate": {
+          "formal_static_gain_components": {
+            "bellman_hessian_residual": "not_applicable",
+            "closed_loop_transition_mismatch": "not_applicable",
+            "value_policy_gap": "not_applicable"
+          },
+          "state_weighted_action_mismatch": 309803.36568425235
+        },
+        "classification": {
+          "classification": "optimizer_basin",
+          "reasons": [
+            "optimizer_basin"
+          ],
+          "signals": {
+            "certificate_bad": true,
+            "learned_gradient_bad": false,
+            "objective_bad": true,
+            "objective_close": false,
+            "reference_gradient_bad": false,
+            "weak_subspace_dominates": false
+          }
+        },
+        "objective": {
+          "learned_gradient_norm": null,
+          "learned_objective": 6232.328724375796,
+          "learned_to_reference_objective_ratio": 1.4282833780345185,
+          "reference_gradient_norm": null,
+          "reference_objective": 4363.509945030792,
+          "source": "clean_closed_loop_quadratic_cost"
+        },
+        "run_id": "linear_recurrent__state_eigenspectrum_m4_s3_w0p1__reference_replay",
+        "schema": "recurrence-compatible c45adde subset",
+        "subspace_decomposition": {
+          "reason": "linear recurrent controller has no time-local static gain delta",
+          "status": "not_applicable"
+        }
+      },
+      {
+        "certificate": {
+          "formal_static_gain_components": {
+            "bellman_hessian_residual": "not_applicable",
+            "closed_loop_transition_mismatch": "not_applicable",
+            "value_policy_gap": "not_applicable"
+          },
+          "state_weighted_action_mismatch": 445032.8275869169
+        },
+        "classification": {
+          "classification": "optimizer_basin",
+          "reasons": [
+            "optimizer_basin"
+          ],
+          "signals": {
+            "certificate_bad": true,
+            "learned_gradient_bad": false,
+            "objective_bad": true,
+            "objective_close": false,
+            "reference_gradient_bad": false,
+            "weak_subspace_dominates": false
+          }
+        },
+        "objective": {
+          "learned_gradient_norm": null,
+          "learned_objective": 4873.1723394736055,
+          "learned_to_reference_objective_ratio": 1.1168010158939188,
+          "reference_gradient_norm": null,
+          "reference_objective": 4363.509945030792,
+          "source": "clean_closed_loop_quadratic_cost"
+        },
+        "run_id": "linear_recurrent__observer_error_state_m1_s0p3_w0p1__reference_replay",
+        "schema": "recurrence-compatible c45adde subset",
+        "subspace_decomposition": {
+          "reason": "linear recurrent controller has no time-local static gain delta",
+          "status": "not_applicable"
+        }
+      }
+    ],
+    "schema": "recurrence-compatible c45adde subset"
+  },
+  "format": "rlrmp.output_feedback_linear_recurrent.v1",
+  "issue": "5e55f69",
+  "non_goals": "No GRU training, robust/H-infinity training arm, formal game-card change, or affine tracker implementation.",
+  "result": "The phase-aware least-squares reference-replay recurrence improves the no-coverage clean objective ratio versus scratch (1.005 vs 40.52), but remains an audit row rather than a formal static-gain certificate pass.",
+  "rows": [
+    {
+      "arrays": [
+        {
+          "dtype": "float64",
+          "name": "plant_states",
+          "role": "plant_state",
+          "shape": [
+            1,
+            61,
+            48
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "actions",
+          "role": "action",
+          "shape": [
+            1,
+            60,
+            2
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "observations",
+          "role": "observation",
+          "shape": [
+            1,
+            60,
+            11
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "hidden_states",
+          "role": "hidden_state",
+          "shape": [
+            1,
+            61,
+            11
+          ]
+        }
+      ],
+      "artifacts": {},
+      "certificate_components": [
+        {
+          "name": "state_weighted_action_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "action_label": "control",
+            "delta_rms": 5.291487772951343,
+            "mismatch_ratio_max": 86249.98489781625,
+            "mismatch_ratio_mean": 2398.9139855471094,
+            "n_samples": 60,
+            "reference_rms": 5.293584960801055,
+            "state_label": "state"
+          }
+        },
+        {
+          "name": "visited_subspace_diagnostics",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "mean_effective_rank": 1.000000000000006,
+            "mean_identifiable_rank": 1.0,
+            "min_effective_rank": 1.0000000000000004,
+            "min_identifiable_rank": 1.0,
+            "state_label": "clean_delayed_output_feedback_state",
+            "time_steps": 61
+          }
+        },
+        {
+          "name": "optimizer_metadata",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "fit_method": "scratch_random_linear_readout",
+            "phase_feedthrough_norm": 0.024087816958709787,
+            "phase_observation_weight_norm": 0.2598076211353316,
+            "ridge": null,
+            "training_action_rmse": null
+          }
+        },
+        {
+          "name": "closed_loop_transition_mismatch",
+          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "value_policy_gap",
+          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "bellman_hessian_residual",
+          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "recurrence_gru_diagnostics",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "architecture": "linear_recurrence",
+            "delayed_observation_dim": 8,
+            "fit_method": "scratch_random_linear_readout",
+            "hidden_final_mean_norm": 1.5901022115312209,
+            "hidden_final_to_initial": 1590102211531.221,
+            "hidden_initial_mean_norm": 0.0,
+            "hidden_max_norm": 1.5901022115312209,
+            "hidden_max_to_initial": 1590102211531.221,
+            "phase_feedthrough_norm": 0.024087816958709787,
+            "phase_observation_weight_norm": 0.2598076211353316,
+            "phase_time_feature_names": [
+              "phase_bias",
+              "phase_tau",
+              "phase_tau_squared"
+            ],
+            "phase_time_input_dim": 3,
+            "phase_time_input_used": true,
+            "recurrent_spectral_radius": 0.85,
+            "ridge": null,
+            "training_action_rmse": null
+          }
+        }
+      ],
+      "metrics": {
+        "candidate_clean_cost": 176794.21286101898,
+        "formal_static_gain_certificate_boundary": {
+          "bellman_hessian_residual": "not_applicable",
+          "closed_loop_transition_mismatch": "not_applicable",
+          "value_policy_gap": "not_applicable"
+        },
+        "objective_ratio_to_reference": 40.516514248432955,
+        "recurrence_diagnostics": {
+          "delayed_observation_dim": 8,
+          "fit_method": "scratch_random_linear_readout",
+          "hidden_final_mean_norm": 1.5901022115312209,
+          "hidden_final_to_initial": 1590102211531.221,
+          "hidden_initial_mean_norm": 0.0,
+          "hidden_max_norm": 1.5901022115312209,
+          "hidden_max_to_initial": 1590102211531.221,
+          "phase_feedthrough_norm": 0.024087816958709787,
+          "phase_observation_weight_norm": 0.2598076211353316,
+          "phase_time_feature_names": [
+            "phase_bias",
+            "phase_tau",
+            "phase_tau_squared"
+          ],
+          "phase_time_input_dim": 3,
+          "phase_time_input_used": true,
+          "recurrent_spectral_radius": 0.85,
+          "ridge": null,
+          "training_action_rmse": null
+        },
+        "reference_clean_cost": 4363.509945030792,
+        "state_weighted_action_mismatch": 2398.9139855471094
+      },
+      "spec": {
+        "architecture": "linear_recurrence",
+        "controller_label": "no_coverage__scratch_seed_0",
+        "evaluation_lane": "deterministic",
+        "gamma_factor": null,
+        "issue_id": "5e55f69",
+        "notes": "Linear recurrence evaluated against clean output-feedback LQR reference actions. Formal static-gain certificate components are explicitly not applicable.",
+        "objective": "diagnostic",
+        "optimizer_label": "scratch_random_linear_readout",
+        "parameters": {
+          "coverage_family": null,
+          "coverage_modes": null,
+          "coverage_scale": null,
+          "coverage_weight": null,
+          "initialization": "scratch_seed_0",
+          "phase_time_feature_names": [
+            "phase_bias",
+            "phase_tau",
+            "phase_tau_squared"
+          ],
+          "recurrent_decay": 0.85
+        },
+        "reference_controller": "analytical_lqr_kalman",
+        "run_id": "linear_recurrent__no_coverage__scratch_seed_0",
+        "seed": 0,
+        "training_distribution": "none"
+      },
+      "status": "recurrence_audit_not_formal_static_gain"
+    },
+    {
+      "arrays": [
+        {
+          "dtype": "float64",
+          "name": "plant_states",
+          "role": "plant_state",
+          "shape": [
+            1,
+            61,
+            48
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "actions",
+          "role": "action",
+          "shape": [
+            1,
+            60,
+            2
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "observations",
+          "role": "observation",
+          "shape": [
+            1,
+            60,
+            11
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "hidden_states",
+          "role": "hidden_state",
+          "shape": [
+            1,
+            61,
+            11
+          ]
+        }
+      ],
+      "artifacts": {},
+      "certificate_components": [
+        {
+          "name": "state_weighted_action_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "action_label": "control",
+            "delta_rms": 0.2877743244228122,
+            "mismatch_ratio_max": 1935973.7663301025,
+            "mismatch_ratio_mean": 45318.451630113035,
+            "n_samples": 60,
+            "reference_rms": 5.293584960801055,
+            "state_label": "state"
+          }
+        },
+        {
+          "name": "visited_subspace_diagnostics",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "mean_effective_rank": 1.000000000000005,
+            "mean_identifiable_rank": 1.0,
+            "min_effective_rank": 1.0000000000000004,
+            "min_identifiable_rank": 1.0,
+            "state_label": "clean_delayed_output_feedback_state",
+            "time_steps": 61
+          }
+        },
+        {
+          "name": "optimizer_metadata",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "fit_method": "teacher_forced_least_squares_reference_replay",
+            "phase_feedthrough_norm": 31.763467812231802,
+            "phase_observation_weight_norm": 0.2598076211353316,
+            "ridge": 1e-06,
+            "training_action_rmse": 0.19500061896630963
+          }
+        },
+        {
+          "name": "closed_loop_transition_mismatch",
+          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "value_policy_gap",
+          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "bellman_hessian_residual",
+          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "recurrence_gru_diagnostics",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "architecture": "linear_recurrence",
+            "delayed_observation_dim": 8,
+            "fit_method": "teacher_forced_least_squares_reference_replay",
+            "hidden_final_mean_norm": 1.5966523122330014,
+            "hidden_final_to_initial": 1596652312233.0015,
+            "hidden_initial_mean_norm": 0.0,
+            "hidden_max_norm": 5.172892515514983,
+            "hidden_max_to_initial": 5172892515514.982,
+            "phase_feedthrough_norm": 31.763467812231802,
+            "phase_observation_weight_norm": 0.2598076211353316,
+            "phase_time_feature_names": [
+              "phase_bias",
+              "phase_tau",
+              "phase_tau_squared"
+            ],
+            "phase_time_input_dim": 3,
+            "phase_time_input_used": true,
+            "recurrent_spectral_radius": 0.85,
+            "ridge": 1e-06,
+            "training_action_rmse": 0.19500061896630963
+          }
+        }
+      ],
+      "metrics": {
+        "candidate_clean_cost": 4385.035194590185,
+        "formal_static_gain_certificate_boundary": {
+          "bellman_hessian_residual": "not_applicable",
+          "closed_loop_transition_mismatch": "not_applicable",
+          "value_policy_gap": "not_applicable"
+        },
+        "objective_ratio_to_reference": 1.0049330126046594,
+        "recurrence_diagnostics": {
+          "delayed_observation_dim": 8,
+          "fit_method": "teacher_forced_least_squares_reference_replay",
+          "hidden_final_mean_norm": 1.5966523122330014,
+          "hidden_final_to_initial": 1596652312233.0015,
+          "hidden_initial_mean_norm": 0.0,
+          "hidden_max_norm": 5.172892515514983,
+          "hidden_max_to_initial": 5172892515514.982,
+          "phase_feedthrough_norm": 31.763467812231802,
+          "phase_observation_weight_norm": 0.2598076211353316,
+          "phase_time_feature_names": [
+            "phase_bias",
+            "phase_tau",
+            "phase_tau_squared"
+          ],
+          "phase_time_input_dim": 3,
+          "phase_time_input_used": true,
+          "recurrent_spectral_radius": 0.85,
+          "ridge": 1e-06,
+          "training_action_rmse": 0.19500061896630963
+        },
+        "reference_clean_cost": 4363.509945030792,
+        "state_weighted_action_mismatch": 45318.451630113035
+      },
+      "spec": {
+        "architecture": "linear_recurrence",
+        "controller_label": "no_coverage__reference_replay",
+        "evaluation_lane": "deterministic",
+        "gamma_factor": null,
+        "issue_id": "5e55f69",
+        "notes": "Linear recurrence evaluated against clean output-feedback LQR reference actions. Formal static-gain certificate components are explicitly not applicable.",
+        "objective": "diagnostic",
+        "optimizer_label": "teacher_forced_least_squares_reference_replay",
+        "parameters": {
+          "coverage_family": null,
+          "coverage_modes": null,
+          "coverage_scale": null,
+          "coverage_weight": null,
+          "initialization": "least_squares_reference_replay",
+          "phase_time_feature_names": [
+            "phase_bias",
+            "phase_tau",
+            "phase_tau_squared"
+          ],
+          "recurrent_decay": 0.85
+        },
+        "reference_controller": "analytical_lqr_kalman",
+        "run_id": "linear_recurrent__no_coverage__reference_replay",
+        "seed": 0,
+        "training_distribution": "nominal"
+      },
+      "status": "recurrence_audit_not_formal_static_gain"
+    },
+    {
+      "arrays": [
+        {
+          "dtype": "float64",
+          "name": "plant_states",
+          "role": "plant_state",
+          "shape": [
+            1,
+            61,
+            48
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "actions",
+          "role": "action",
+          "shape": [
+            1,
+            60,
+            2
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "observations",
+          "role": "observation",
+          "shape": [
+            1,
+            60,
+            11
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "hidden_states",
+          "role": "hidden_state",
+          "shape": [
+            1,
+            61,
+            11
+          ]
+        }
+      ],
+      "artifacts": {},
+      "certificate_components": [
+        {
+          "name": "state_weighted_action_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "action_label": "control",
+            "delta_rms": 1.8398477707707313,
+            "mismatch_ratio_max": 29351422.952481702,
+            "mismatch_ratio_mean": 986451.7907768086,
+            "n_samples": 60,
+            "reference_rms": 5.293584960801055,
+            "state_label": "state"
+          }
+        },
+        {
+          "name": "visited_subspace_diagnostics",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "mean_effective_rank": 1.0000000000000062,
+            "mean_identifiable_rank": 1.0,
+            "min_effective_rank": 1.0000000000000004,
+            "min_identifiable_rank": 1.0,
+            "state_label": "clean_delayed_output_feedback_state",
+            "time_steps": 61
+          }
+        },
+        {
+          "name": "optimizer_metadata",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "fit_method": "teacher_forced_least_squares_reference_replay",
+            "phase_feedthrough_norm": 19.266095215593985,
+            "phase_observation_weight_norm": 0.2598076211353316,
+            "ridge": 1e-06,
+            "training_action_rmse": 5.169781773989318
+          }
+        },
+        {
+          "name": "closed_loop_transition_mismatch",
+          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "value_policy_gap",
+          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "bellman_hessian_residual",
+          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "recurrence_gru_diagnostics",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "architecture": "linear_recurrence",
+            "delayed_observation_dim": 8,
+            "fit_method": "teacher_forced_least_squares_reference_replay",
+            "hidden_final_mean_norm": 1.629781328010108,
+            "hidden_final_to_initial": 1629781328010.1082,
+            "hidden_initial_mean_norm": 0.0,
+            "hidden_max_norm": 5.817519351835032,
+            "hidden_max_to_initial": 5817519351835.032,
+            "phase_feedthrough_norm": 19.266095215593985,
+            "phase_observation_weight_norm": 0.2598076211353316,
+            "phase_time_feature_names": [
+              "phase_bias",
+              "phase_tau",
+              "phase_tau_squared"
+            ],
+            "phase_time_input_dim": 3,
+            "phase_time_input_used": true,
+            "recurrent_spectral_radius": 0.85,
+            "ridge": 1e-06,
+            "training_action_rmse": 5.169781773989318
+          }
+        }
+      ],
+      "metrics": {
+        "candidate_clean_cost": 6204.552292773572,
+        "formal_static_gain_certificate_boundary": {
+          "bellman_hessian_residual": "not_applicable",
+          "closed_loop_transition_mismatch": "not_applicable",
+          "value_policy_gap": "not_applicable"
+        },
+        "objective_ratio_to_reference": 1.4219177613745049,
+        "recurrence_diagnostics": {
+          "delayed_observation_dim": 8,
+          "fit_method": "teacher_forced_least_squares_reference_replay",
+          "hidden_final_mean_norm": 1.629781328010108,
+          "hidden_final_to_initial": 1629781328010.1082,
+          "hidden_initial_mean_norm": 0.0,
+          "hidden_max_norm": 5.817519351835032,
+          "hidden_max_to_initial": 5817519351835.032,
+          "phase_feedthrough_norm": 19.266095215593985,
+          "phase_observation_weight_norm": 0.2598076211353316,
+          "phase_time_feature_names": [
+            "phase_bias",
+            "phase_tau",
+            "phase_tau_squared"
+          ],
+          "phase_time_input_dim": 3,
+          "phase_time_input_used": true,
+          "recurrent_spectral_radius": 0.85,
+          "ridge": 1e-06,
+          "training_action_rmse": 5.169781773989318
+        },
+        "reference_clean_cost": 4363.509945030792,
+        "state_weighted_action_mismatch": 986451.7907768086
+      },
+      "spec": {
+        "architecture": "linear_recurrence",
+        "controller_label": "state_eigenspectrum_m4_s1_w0p1__reference_replay",
+        "evaluation_lane": "deterministic",
+        "gamma_factor": null,
+        "issue_id": "5e55f69",
+        "notes": "Linear recurrence evaluated against clean output-feedback LQR reference actions. Formal static-gain certificate components are explicitly not applicable.",
+        "objective": "diagnostic",
+        "optimizer_label": "teacher_forced_least_squares_reference_replay",
+        "parameters": {
+          "coverage_family": "state_eigenspectrum",
+          "coverage_modes": 4,
+          "coverage_scale": 1.0,
+          "coverage_weight": 0.1,
+          "initialization": "least_squares_reference_replay",
+          "phase_time_feature_names": [
+            "phase_bias",
+            "phase_tau",
+            "phase_tau_squared"
+          ],
+          "recurrent_decay": 0.85
+        },
+        "reference_controller": "analytical_lqr_kalman",
+        "run_id": "linear_recurrent__state_eigenspectrum_m4_s1_w0p1__reference_replay",
+        "seed": 0,
+        "training_distribution": "eigenspectrum_state"
+      },
+      "status": "recurrence_audit_not_formal_static_gain"
+    },
+    {
+      "arrays": [
+        {
+          "dtype": "float64",
+          "name": "plant_states",
+          "role": "plant_state",
+          "shape": [
+            1,
+            61,
+            48
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "actions",
+          "role": "action",
+          "shape": [
+            1,
+            60,
+            2
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "observations",
+          "role": "observation",
+          "shape": [
+            1,
+            60,
+            11
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "hidden_states",
+          "role": "hidden_state",
+          "shape": [
+            1,
+            61,
+            11
+          ]
+        }
+      ],
+      "artifacts": {},
+      "certificate_components": [
+        {
+          "name": "state_weighted_action_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "action_label": "control",
+            "delta_rms": 2.648478132356058,
+            "mismatch_ratio_max": 10921660.114302747,
+            "mismatch_ratio_mean": 309803.36568425235,
+            "n_samples": 60,
+            "reference_rms": 5.293584960801055,
+            "state_label": "state"
+          }
+        },
+        {
+          "name": "visited_subspace_diagnostics",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "mean_effective_rank": 1.0000000000000064,
+            "mean_identifiable_rank": 1.0,
+            "min_effective_rank": 1.0000000000000004,
+            "min_identifiable_rank": 1.0,
+            "state_label": "clean_delayed_output_feedback_state",
+            "time_steps": 61
+          }
+        },
+        {
+          "name": "optimizer_metadata",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "fit_method": "teacher_forced_least_squares_reference_replay",
+            "phase_feedthrough_norm": 18.085158287996386,
+            "phase_observation_weight_norm": 0.2598076211353316,
+            "ridge": 1e-06,
+            "training_action_rmse": 15.264422368370917
+          }
+        },
+        {
+          "name": "closed_loop_transition_mismatch",
+          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "value_policy_gap",
+          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "bellman_hessian_residual",
+          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "recurrence_gru_diagnostics",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "architecture": "linear_recurrence",
+            "delayed_observation_dim": 8,
+            "fit_method": "teacher_forced_least_squares_reference_replay",
+            "hidden_final_mean_norm": 1.7349344893029675,
+            "hidden_final_to_initial": 1734934489302.9675,
+            "hidden_initial_mean_norm": 0.0,
+            "hidden_max_norm": 6.04115446674532,
+            "hidden_max_to_initial": 6041154466745.32,
+            "phase_feedthrough_norm": 18.085158287996386,
+            "phase_observation_weight_norm": 0.2598076211353316,
+            "phase_time_feature_names": [
+              "phase_bias",
+              "phase_tau",
+              "phase_tau_squared"
+            ],
+            "phase_time_input_dim": 3,
+            "phase_time_input_used": true,
+            "recurrent_spectral_radius": 0.85,
+            "ridge": 1e-06,
+            "training_action_rmse": 15.264422368370917
+          }
+        }
+      ],
+      "metrics": {
+        "candidate_clean_cost": 6232.328724375796,
+        "formal_static_gain_certificate_boundary": {
+          "bellman_hessian_residual": "not_applicable",
+          "closed_loop_transition_mismatch": "not_applicable",
+          "value_policy_gap": "not_applicable"
+        },
+        "objective_ratio_to_reference": 1.4282833780345185,
+        "recurrence_diagnostics": {
+          "delayed_observation_dim": 8,
+          "fit_method": "teacher_forced_least_squares_reference_replay",
+          "hidden_final_mean_norm": 1.7349344893029675,
+          "hidden_final_to_initial": 1734934489302.9675,
+          "hidden_initial_mean_norm": 0.0,
+          "hidden_max_norm": 6.04115446674532,
+          "hidden_max_to_initial": 6041154466745.32,
+          "phase_feedthrough_norm": 18.085158287996386,
+          "phase_observation_weight_norm": 0.2598076211353316,
+          "phase_time_feature_names": [
+            "phase_bias",
+            "phase_tau",
+            "phase_tau_squared"
+          ],
+          "phase_time_input_dim": 3,
+          "phase_time_input_used": true,
+          "recurrent_spectral_radius": 0.85,
+          "ridge": 1e-06,
+          "training_action_rmse": 15.264422368370917
+        },
+        "reference_clean_cost": 4363.509945030792,
+        "state_weighted_action_mismatch": 309803.36568425235
+      },
+      "spec": {
+        "architecture": "linear_recurrence",
+        "controller_label": "state_eigenspectrum_m4_s3_w0p1__reference_replay",
+        "evaluation_lane": "deterministic",
+        "gamma_factor": null,
+        "issue_id": "5e55f69",
+        "notes": "Linear recurrence evaluated against clean output-feedback LQR reference actions. Formal static-gain certificate components are explicitly not applicable.",
+        "objective": "diagnostic",
+        "optimizer_label": "teacher_forced_least_squares_reference_replay",
+        "parameters": {
+          "coverage_family": "state_eigenspectrum",
+          "coverage_modes": 4,
+          "coverage_scale": 3.0,
+          "coverage_weight": 0.1,
+          "initialization": "least_squares_reference_replay",
+          "phase_time_feature_names": [
+            "phase_bias",
+            "phase_tau",
+            "phase_tau_squared"
+          ],
+          "recurrent_decay": 0.85
+        },
+        "reference_controller": "analytical_lqr_kalman",
+        "run_id": "linear_recurrent__state_eigenspectrum_m4_s3_w0p1__reference_replay",
+        "seed": 0,
+        "training_distribution": "eigenspectrum_state"
+      },
+      "status": "recurrence_audit_not_formal_static_gain"
+    },
+    {
+      "arrays": [
+        {
+          "dtype": "float64",
+          "name": "plant_states",
+          "role": "plant_state",
+          "shape": [
+            1,
+            61,
+            48
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "actions",
+          "role": "action",
+          "shape": [
+            1,
+            60,
+            2
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "observations",
+          "role": "observation",
+          "shape": [
+            1,
+            60,
+            11
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "hidden_states",
+          "role": "hidden_state",
+          "shape": [
+            1,
+            61,
+            11
+          ]
+        }
+      ],
+      "artifacts": {},
+      "certificate_components": [
+        {
+          "name": "state_weighted_action_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "action_label": "control",
+            "delta_rms": 1.4658039442835156,
+            "mismatch_ratio_max": 22948712.213405464,
+            "mismatch_ratio_mean": 445032.8275869169,
+            "n_samples": 60,
+            "reference_rms": 5.293584960801055,
+            "state_label": "state"
+          }
+        },
+        {
+          "name": "visited_subspace_diagnostics",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "mean_effective_rank": 1.0000000000000053,
+            "mean_identifiable_rank": 1.0,
+            "min_effective_rank": 1.0000000000000004,
+            "min_identifiable_rank": 1.0,
+            "state_label": "clean_delayed_output_feedback_state",
+            "time_steps": 61
+          }
+        },
+        {
+          "name": "optimizer_metadata",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "fit_method": "teacher_forced_least_squares_reference_replay",
+            "phase_feedthrough_norm": 17.298390303998215,
+            "phase_observation_weight_norm": 0.2598076211353316,
+            "ridge": 1e-06,
+            "training_action_rmse": 2.6275545378089116
+          }
+        },
+        {
+          "name": "closed_loop_transition_mismatch",
+          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "value_policy_gap",
+          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "bellman_hessian_residual",
+          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "recurrence_gru_diagnostics",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "architecture": "linear_recurrence",
+            "delayed_observation_dim": 8,
+            "fit_method": "teacher_forced_least_squares_reference_replay",
+            "hidden_final_mean_norm": 1.5832188703615773,
+            "hidden_final_to_initial": 1583218870361.5774,
+            "hidden_initial_mean_norm": 0.0,
+            "hidden_max_norm": 5.59710886253784,
+            "hidden_max_to_initial": 5597108862537.84,
+            "phase_feedthrough_norm": 17.298390303998215,
+            "phase_observation_weight_norm": 0.2598076211353316,
+            "phase_time_feature_names": [
+              "phase_bias",
+              "phase_tau",
+              "phase_tau_squared"
+            ],
+            "phase_time_input_dim": 3,
+            "phase_time_input_used": true,
+            "recurrent_spectral_radius": 0.85,
+            "ridge": 1e-06,
+            "training_action_rmse": 2.6275545378089116
+          }
+        }
+      ],
+      "metrics": {
+        "candidate_clean_cost": 4873.1723394736055,
+        "formal_static_gain_certificate_boundary": {
+          "bellman_hessian_residual": "not_applicable",
+          "closed_loop_transition_mismatch": "not_applicable",
+          "value_policy_gap": "not_applicable"
+        },
+        "objective_ratio_to_reference": 1.1168010158939188,
+        "recurrence_diagnostics": {
+          "delayed_observation_dim": 8,
+          "fit_method": "teacher_forced_least_squares_reference_replay",
+          "hidden_final_mean_norm": 1.5832188703615773,
+          "hidden_final_to_initial": 1583218870361.5774,
+          "hidden_initial_mean_norm": 0.0,
+          "hidden_max_norm": 5.59710886253784,
+          "hidden_max_to_initial": 5597108862537.84,
+          "phase_feedthrough_norm": 17.298390303998215,
+          "phase_observation_weight_norm": 0.2598076211353316,
+          "phase_time_feature_names": [
+            "phase_bias",
+            "phase_tau",
+            "phase_tau_squared"
+          ],
+          "phase_time_input_dim": 3,
+          "phase_time_input_used": true,
+          "recurrent_spectral_radius": 0.85,
+          "ridge": 1e-06,
+          "training_action_rmse": 2.6275545378089116
+        },
+        "reference_clean_cost": 4363.509945030792,
+        "state_weighted_action_mismatch": 445032.8275869169
+      },
+      "spec": {
+        "architecture": "linear_recurrence",
+        "controller_label": "observer_error_state_m1_s0p3_w0p1__reference_replay",
+        "evaluation_lane": "deterministic",
+        "gamma_factor": null,
+        "issue_id": "5e55f69",
+        "notes": "Linear recurrence evaluated against clean output-feedback LQR reference actions. Formal static-gain certificate components are explicitly not applicable.",
+        "objective": "diagnostic",
+        "optimizer_label": "teacher_forced_least_squares_reference_replay",
+        "parameters": {
+          "coverage_family": "observer_error_state",
+          "coverage_modes": 1,
+          "coverage_scale": 0.3,
+          "coverage_weight": 0.1,
+          "initialization": "least_squares_reference_replay",
+          "phase_time_feature_names": [
+            "phase_bias",
+            "phase_tau",
+            "phase_tau_squared"
+          ],
+          "recurrent_decay": 0.85
+        },
+        "reference_controller": "analytical_lqr_kalman",
+        "run_id": "linear_recurrent__observer_error_state_m1_s0p3_w0p1__reference_replay",
+        "seed": 0,
+        "training_distribution": "observer_error"
+      },
+      "status": "recurrence_audit_not_formal_static_gain"
+    }
+  ],
+  "runtime_seconds": 3.541270124958828,
+  "scope": "Phase-aware linear recurrent output-feedback rows using delayed observations plus explicit polynomial phase/time inputs.",
+  "source_issues": {
+    "failure_decomposition": "c45adde",
+    "standard_certificate": "d01c35a",
+    "substrate": "4ded904"
+  },
+  "tracked_manifest": "results/5e55f69/notes/output_feedback_linear_recurrent_manifest.json",
+  "tracked_note": "results/5e55f69/notes/output_feedback_linear_recurrent.md",
+  "umbrella": "43e8728"
+}
