@@ -28,8 +28,12 @@ VISITED_SUBSPACE_DIAGNOSTICS = "visited_subspace_diagnostics"
 OPTIMIZER_METADATA = "optimizer_metadata"
 RECURRENCE_GRU_DIAGNOSTICS = "recurrence_gru_diagnostics"
 OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH = "observation_history_to_action_map_mismatch"
+MEASUREMENT_HISTORY_TO_ACTION_MAP_MISMATCH = "measurement_history_to_action_map_mismatch"
+MEASUREMENT_HISTORY_TO_OUTPUT_MAP_MISMATCH = "measurement_history_to_output_map_mismatch"
 DISTURBANCE_HISTORY_TO_ACTION_MAP_MISMATCH = "disturbance_history_to_action_map_mismatch"
 DISTURBANCE_HISTORY_TO_STATE_MAP_MISMATCH = "disturbance_history_to_state_map_mismatch"
+DISTURBANCE_HISTORY_TO_OUTPUT_MAP_MISMATCH = "disturbance_history_to_output_map_mismatch"
+DISTURBANCE_HISTORY_TO_COST_QUADRATIC = "disturbance_history_to_cost_quadratic"
 
 _RECURRENCE_ARCHITECTURES = {"linear_recurrence", "gru"}
 
@@ -163,6 +167,118 @@ def response_map_mismatch_summary(
     return summary
 
 
+def disturbance_to_cost_quadratic_response_map(
+    *,
+    disturbance_to_state_map: np.ndarray,
+    disturbance_to_action_map: np.ndarray,
+    state_cost: np.ndarray,
+    action_cost: np.ndarray,
+    terminal_state_cost: np.ndarray | None = None,
+) -> np.ndarray:
+    """Assemble a disturbance-history-to-cost quadratic response map.
+
+    This finite-horizon helper assumes zero affine offsets and a separable
+    quadratic cost
+    ``sum_t x_t.T Q_t x_t + u_t.T R_t u_t`` with an optional terminal
+    ``x_T.T Q_T x_T``.  Response maps must be linear maps from one flattened
+    disturbance history vector to state/action slices.  Cross state-action
+    terms, nonzero means, and disturbance penalties are intentionally outside
+    this helper; callers can add them before passing weights if needed.
+    """
+
+    state_response = _as_response_map(disturbance_to_state_map, label="state response")
+    action_response = _as_response_map(disturbance_to_action_map, label="action response")
+    horizon, action_dim, input_dim = action_response.shape
+    state_steps, state_dim, state_input_dim = state_response.shape
+    if state_input_dim != input_dim:
+        raise ValueError("state and action response maps must use the same input dimension")
+    if state_steps not in {horizon, horizon + 1}:
+        raise ValueError("state response map must have horizon or horizon + 1 time slices")
+
+    action_weights = _time_weight(action_cost, horizon, action_dim)
+    action_quadratic = _response_quadratic(action_response, action_weights)
+    if terminal_state_cost is None:
+        state_weights = _time_weight(state_cost, state_steps, state_dim)
+        state_quadratic = _response_quadratic(state_response, state_weights)
+    else:
+        if state_steps != horizon + 1:
+            raise ValueError("terminal_state_cost requires horizon + 1 state response slices")
+        state_weights = _time_weight(state_cost, horizon, state_dim)
+        terminal_weight = _time_weight(terminal_state_cost, 1, state_dim)[0]
+        state_quadratic = _response_quadratic(state_response[:-1], state_weights)
+        state_quadratic += state_response[-1].T @ terminal_weight @ state_response[-1]
+    quadratic = state_quadratic + action_quadratic
+    return 0.5 * (quadratic + quadratic.T)
+
+
+def disturbance_to_cost_quadratic_summary(
+    *,
+    candidate_disturbance_to_state_map: np.ndarray,
+    candidate_disturbance_to_action_map: np.ndarray,
+    reference_disturbance_to_state_map: np.ndarray,
+    reference_disturbance_to_action_map: np.ndarray,
+    state_cost: np.ndarray,
+    action_cost: np.ndarray,
+    terminal_state_cost: np.ndarray | None = None,
+    disturbance_history_covariance: np.ndarray | None = None,
+    numerics: CertificateNumerics = CertificateNumerics(),
+) -> dict[str, Any]:
+    """Return mismatch diagnostics for disturbance-to-cost quadratic maps."""
+
+    candidate_quadratic = disturbance_to_cost_quadratic_response_map(
+        disturbance_to_state_map=candidate_disturbance_to_state_map,
+        disturbance_to_action_map=candidate_disturbance_to_action_map,
+        state_cost=state_cost,
+        action_cost=action_cost,
+        terminal_state_cost=terminal_state_cost,
+    )
+    reference_quadratic = disturbance_to_cost_quadratic_response_map(
+        disturbance_to_state_map=reference_disturbance_to_state_map,
+        disturbance_to_action_map=reference_disturbance_to_action_map,
+        state_cost=state_cost,
+        action_cost=action_cost,
+        terminal_state_cost=terminal_state_cost,
+    )
+    summary = response_map_mismatch_summary(
+        candidate_map=candidate_quadratic,
+        reference_map=reference_quadratic,
+        numerics=numerics,
+    )
+    summary.update(
+        {
+            "candidate_quadratic_frobenius": _json_float(np.linalg.norm(candidate_quadratic)),
+            "reference_quadratic_frobenius": _json_float(np.linalg.norm(reference_quadratic)),
+            "quadratic_map_shape": [int(dim) for dim in candidate_quadratic.shape],
+            "sidecar_type": "disturbance_to_cost_quadratic",
+            "input_label": "disturbance_history",
+            "output_label": "quadratic_cost",
+            "assumptions": [
+                "zero_affine_offset",
+                "linear_disturbance_response",
+                "separable_state_action_quadratic_cost",
+                "no_state_action_cross_terms",
+            ],
+        }
+    )
+    if disturbance_history_covariance is not None:
+        covariance = _as_float_array(disturbance_history_covariance)
+        if covariance.shape != candidate_quadratic.shape:
+            raise ValueError("disturbance covariance must match the quadratic input dimension")
+        candidate_expected = np.einsum("ij,ji->", candidate_quadratic, covariance)
+        reference_expected = np.einsum("ij,ji->", reference_quadratic, covariance)
+        summary.update(
+            {
+                "candidate_expected_cost": _json_float(candidate_expected),
+                "reference_expected_cost": _json_float(reference_expected),
+                "expected_cost_delta": _json_float(candidate_expected - reference_expected),
+                "expected_cost_ratio": _json_float(
+                    candidate_expected / max(reference_expected, numerics.denominator_floor)
+                ),
+            }
+        )
+    return summary
+
+
 def missing_component(name: str, reason: str) -> BridgeCertificateComponent:
     """Create an explicit missing certificate-component row."""
 
@@ -255,7 +371,49 @@ def response_map_mismatch_component(
         **summary,
         input_label=input_label,
         output_label=output_label,
+        response_map_schema="finite_horizon_linear_v1",
     )
+
+
+def disturbance_to_cost_quadratic_component(
+    *,
+    candidate_disturbance_to_state_map: np.ndarray | None,
+    candidate_disturbance_to_action_map: np.ndarray | None,
+    reference_disturbance_to_state_map: np.ndarray | None,
+    reference_disturbance_to_action_map: np.ndarray | None,
+    state_cost: np.ndarray | None,
+    action_cost: np.ndarray | None,
+    terminal_state_cost: np.ndarray | None = None,
+    disturbance_history_covariance: np.ndarray | None = None,
+    numerics: CertificateNumerics = CertificateNumerics(),
+    name: str = DISTURBANCE_HISTORY_TO_COST_QUADRATIC,
+) -> BridgeCertificateComponent:
+    """Return disturbance-history-to-cost quadratic sidecar diagnostics."""
+
+    if (
+        candidate_disturbance_to_state_map is None
+        or candidate_disturbance_to_action_map is None
+        or reference_disturbance_to_state_map is None
+        or reference_disturbance_to_action_map is None
+        or state_cost is None
+        or action_cost is None
+    ):
+        return missing_component(
+            name,
+            "requires candidate/reference disturbance-to-state/action maps and cost weights",
+        )
+    summary = disturbance_to_cost_quadratic_summary(
+        candidate_disturbance_to_state_map=candidate_disturbance_to_state_map,
+        candidate_disturbance_to_action_map=candidate_disturbance_to_action_map,
+        reference_disturbance_to_state_map=reference_disturbance_to_state_map,
+        reference_disturbance_to_action_map=reference_disturbance_to_action_map,
+        state_cost=state_cost,
+        action_cost=action_cost,
+        terminal_state_cost=terminal_state_cost,
+        disturbance_history_covariance=disturbance_history_covariance,
+        numerics=numerics,
+    )
+    return BridgeCertificateComponent.available(name, **summary)
 
 
 def closed_loop_transition_mismatch_component(
@@ -448,11 +606,21 @@ def recurrence_safe_components(
     diagnostics: dict[str, Any] | None = None,
     candidate_observation_to_action_map: np.ndarray | None = None,
     reference_observation_to_action_map: np.ndarray | None = None,
+    candidate_measurement_to_action_map: np.ndarray | None = None,
+    reference_measurement_to_action_map: np.ndarray | None = None,
+    candidate_measurement_to_output_map: np.ndarray | None = None,
+    reference_measurement_to_output_map: np.ndarray | None = None,
     observation_history_covariance: np.ndarray | None = None,
+    measurement_history_covariance: np.ndarray | None = None,
     candidate_disturbance_to_action_map: np.ndarray | None = None,
     reference_disturbance_to_action_map: np.ndarray | None = None,
     candidate_disturbance_to_state_map: np.ndarray | None = None,
     reference_disturbance_to_state_map: np.ndarray | None = None,
+    candidate_disturbance_to_output_map: np.ndarray | None = None,
+    reference_disturbance_to_output_map: np.ndarray | None = None,
+    disturbance_state_cost: np.ndarray | None = None,
+    disturbance_action_cost: np.ndarray | None = None,
+    disturbance_terminal_state_cost: np.ndarray | None = None,
     disturbance_history_covariance: np.ndarray | None = None,
     numerics: CertificateNumerics = CertificateNumerics(),
 ) -> tuple[BridgeCertificateComponent, ...]:
@@ -487,6 +655,33 @@ def recurrence_safe_components(
             output_label="action",
         ),
         response_map_mismatch_component(
+            candidate_map=_first_available(
+                candidate_measurement_to_action_map,
+                candidate_observation_to_action_map,
+            ),
+            reference_map=_first_available(
+                reference_measurement_to_action_map,
+                reference_observation_to_action_map,
+            ),
+            input_covariance=_first_available(
+                measurement_history_covariance,
+                observation_history_covariance,
+            ),
+            numerics=numerics,
+            name=MEASUREMENT_HISTORY_TO_ACTION_MAP_MISMATCH,
+            input_label="measurement_history",
+            output_label="action",
+        ),
+        response_map_mismatch_component(
+            candidate_map=candidate_measurement_to_output_map,
+            reference_map=reference_measurement_to_output_map,
+            input_covariance=measurement_history_covariance,
+            numerics=numerics,
+            name=MEASUREMENT_HISTORY_TO_OUTPUT_MAP_MISMATCH,
+            input_label="measurement_history",
+            output_label="external_output",
+        ),
+        response_map_mismatch_component(
             candidate_map=candidate_disturbance_to_action_map,
             reference_map=reference_disturbance_to_action_map,
             input_covariance=disturbance_history_covariance,
@@ -503,6 +698,26 @@ def recurrence_safe_components(
             name=DISTURBANCE_HISTORY_TO_STATE_MAP_MISMATCH,
             input_label="disturbance_history",
             output_label="state",
+        ),
+        response_map_mismatch_component(
+            candidate_map=candidate_disturbance_to_output_map,
+            reference_map=reference_disturbance_to_output_map,
+            input_covariance=disturbance_history_covariance,
+            numerics=numerics,
+            name=DISTURBANCE_HISTORY_TO_OUTPUT_MAP_MISMATCH,
+            input_label="disturbance_history",
+            output_label="external_output",
+        ),
+        disturbance_to_cost_quadratic_component(
+            candidate_disturbance_to_state_map=candidate_disturbance_to_state_map,
+            candidate_disturbance_to_action_map=candidate_disturbance_to_action_map,
+            reference_disturbance_to_state_map=reference_disturbance_to_state_map,
+            reference_disturbance_to_action_map=reference_disturbance_to_action_map,
+            state_cost=disturbance_state_cost,
+            action_cost=disturbance_action_cost,
+            terminal_state_cost=disturbance_terminal_state_cost,
+            disturbance_history_covariance=disturbance_history_covariance,
+            numerics=numerics,
         ),
         BridgeCertificateComponent.not_applicable(CLOSED_LOOP_TRANSITION_MISMATCH, reason),
         BridgeCertificateComponent.not_applicable(VALUE_POLICY_GAP, reason),
@@ -529,11 +744,21 @@ def augmented_linear_recurrent_components(
     recurrence_diagnostics: dict[str, Any] | None = None,
     candidate_observation_to_action_map: np.ndarray | None = None,
     reference_observation_to_action_map: np.ndarray | None = None,
+    candidate_measurement_to_action_map: np.ndarray | None = None,
+    reference_measurement_to_action_map: np.ndarray | None = None,
+    candidate_measurement_to_output_map: np.ndarray | None = None,
+    reference_measurement_to_output_map: np.ndarray | None = None,
     observation_history_covariance: np.ndarray | None = None,
+    measurement_history_covariance: np.ndarray | None = None,
     candidate_disturbance_to_action_map: np.ndarray | None = None,
     reference_disturbance_to_action_map: np.ndarray | None = None,
     candidate_disturbance_to_state_map: np.ndarray | None = None,
     reference_disturbance_to_state_map: np.ndarray | None = None,
+    candidate_disturbance_to_output_map: np.ndarray | None = None,
+    reference_disturbance_to_output_map: np.ndarray | None = None,
+    disturbance_state_cost: np.ndarray | None = None,
+    disturbance_action_cost: np.ndarray | None = None,
+    disturbance_terminal_state_cost: np.ndarray | None = None,
     disturbance_history_covariance: np.ndarray | None = None,
     layout: ArrayLayout = "batch_time_state",
     numerics: CertificateNumerics = CertificateNumerics(),
@@ -610,6 +835,33 @@ def augmented_linear_recurrent_components(
             output_label=action_label,
         ),
         response_map_mismatch_component(
+            candidate_map=_first_available(
+                candidate_measurement_to_action_map,
+                candidate_observation_to_action_map,
+            ),
+            reference_map=_first_available(
+                reference_measurement_to_action_map,
+                reference_observation_to_action_map,
+            ),
+            input_covariance=_first_available(
+                measurement_history_covariance,
+                observation_history_covariance,
+            ),
+            numerics=numerics,
+            name=MEASUREMENT_HISTORY_TO_ACTION_MAP_MISMATCH,
+            input_label="measurement_history",
+            output_label=action_label,
+        ),
+        response_map_mismatch_component(
+            candidate_map=candidate_measurement_to_output_map,
+            reference_map=reference_measurement_to_output_map,
+            input_covariance=measurement_history_covariance,
+            numerics=numerics,
+            name=MEASUREMENT_HISTORY_TO_OUTPUT_MAP_MISMATCH,
+            input_label="measurement_history",
+            output_label="external_output",
+        ),
+        response_map_mismatch_component(
             candidate_map=candidate_disturbance_to_action_map,
             reference_map=reference_disturbance_to_action_map,
             input_covariance=disturbance_history_covariance,
@@ -626,6 +878,26 @@ def augmented_linear_recurrent_components(
             name=DISTURBANCE_HISTORY_TO_STATE_MAP_MISMATCH,
             input_label="disturbance_history",
             output_label=state_label,
+        ),
+        response_map_mismatch_component(
+            candidate_map=candidate_disturbance_to_output_map,
+            reference_map=reference_disturbance_to_output_map,
+            input_covariance=disturbance_history_covariance,
+            numerics=numerics,
+            name=DISTURBANCE_HISTORY_TO_OUTPUT_MAP_MISMATCH,
+            input_label="disturbance_history",
+            output_label="external_output",
+        ),
+        disturbance_to_cost_quadratic_component(
+            candidate_disturbance_to_state_map=candidate_disturbance_to_state_map,
+            candidate_disturbance_to_action_map=candidate_disturbance_to_action_map,
+            reference_disturbance_to_state_map=reference_disturbance_to_state_map,
+            reference_disturbance_to_action_map=reference_disturbance_to_action_map,
+            state_cost=disturbance_state_cost,
+            action_cost=disturbance_action_cost,
+            terminal_state_cost=disturbance_terminal_state_cost,
+            disturbance_history_covariance=disturbance_history_covariance,
+            numerics=numerics,
         ),
         (
             BridgeCertificateComponent.available(
@@ -667,11 +939,21 @@ def build_standard_certificate_components(
     recurrence_diagnostics: dict[str, Any] | None = None,
     candidate_observation_to_action_map: np.ndarray | None = None,
     reference_observation_to_action_map: np.ndarray | None = None,
+    candidate_measurement_to_action_map: np.ndarray | None = None,
+    reference_measurement_to_action_map: np.ndarray | None = None,
+    candidate_measurement_to_output_map: np.ndarray | None = None,
+    reference_measurement_to_output_map: np.ndarray | None = None,
     observation_history_covariance: np.ndarray | None = None,
+    measurement_history_covariance: np.ndarray | None = None,
     candidate_disturbance_to_action_map: np.ndarray | None = None,
     reference_disturbance_to_action_map: np.ndarray | None = None,
     candidate_disturbance_to_state_map: np.ndarray | None = None,
     reference_disturbance_to_state_map: np.ndarray | None = None,
+    candidate_disturbance_to_output_map: np.ndarray | None = None,
+    reference_disturbance_to_output_map: np.ndarray | None = None,
+    disturbance_state_cost: np.ndarray | None = None,
+    disturbance_action_cost: np.ndarray | None = None,
+    disturbance_terminal_state_cost: np.ndarray | None = None,
     disturbance_history_covariance: np.ndarray | None = None,
     layout: ArrayLayout = "batch_time_state",
     numerics: CertificateNumerics = CertificateNumerics(),
@@ -715,11 +997,21 @@ def build_standard_certificate_components(
             recurrence_diagnostics=recurrence_diagnostics,
             candidate_observation_to_action_map=candidate_observation_to_action_map,
             reference_observation_to_action_map=reference_observation_to_action_map,
+            candidate_measurement_to_action_map=candidate_measurement_to_action_map,
+            reference_measurement_to_action_map=reference_measurement_to_action_map,
+            candidate_measurement_to_output_map=candidate_measurement_to_output_map,
+            reference_measurement_to_output_map=reference_measurement_to_output_map,
             observation_history_covariance=observation_history_covariance,
+            measurement_history_covariance=measurement_history_covariance,
             candidate_disturbance_to_action_map=candidate_disturbance_to_action_map,
             reference_disturbance_to_action_map=reference_disturbance_to_action_map,
             candidate_disturbance_to_state_map=candidate_disturbance_to_state_map,
             reference_disturbance_to_state_map=reference_disturbance_to_state_map,
+            candidate_disturbance_to_output_map=candidate_disturbance_to_output_map,
+            reference_disturbance_to_output_map=reference_disturbance_to_output_map,
+            disturbance_state_cost=disturbance_state_cost,
+            disturbance_action_cost=disturbance_action_cost,
+            disturbance_terminal_state_cost=disturbance_terminal_state_cost,
             disturbance_history_covariance=disturbance_history_covariance,
             layout=layout,
             numerics=numerics,
@@ -775,11 +1067,21 @@ def build_standard_certificate_components(
                 diagnostics=recurrence_diagnostics,
                 candidate_observation_to_action_map=candidate_observation_to_action_map,
                 reference_observation_to_action_map=reference_observation_to_action_map,
+                candidate_measurement_to_action_map=candidate_measurement_to_action_map,
+                reference_measurement_to_action_map=reference_measurement_to_action_map,
+                candidate_measurement_to_output_map=candidate_measurement_to_output_map,
+                reference_measurement_to_output_map=reference_measurement_to_output_map,
                 observation_history_covariance=observation_history_covariance,
+                measurement_history_covariance=measurement_history_covariance,
                 candidate_disturbance_to_action_map=candidate_disturbance_to_action_map,
                 reference_disturbance_to_action_map=reference_disturbance_to_action_map,
                 candidate_disturbance_to_state_map=candidate_disturbance_to_state_map,
                 reference_disturbance_to_state_map=reference_disturbance_to_state_map,
+                candidate_disturbance_to_output_map=candidate_disturbance_to_output_map,
+                reference_disturbance_to_output_map=reference_disturbance_to_output_map,
+                disturbance_state_cost=disturbance_state_cost,
+                disturbance_action_cost=disturbance_action_cost,
+                disturbance_terminal_state_cost=disturbance_terminal_state_cost,
                 disturbance_history_covariance=disturbance_history_covariance,
                 numerics=numerics,
             )
@@ -842,6 +1144,28 @@ def _resolve_certificate_mode(
 
 def _as_float_array(values: np.ndarray) -> np.ndarray:
     return np.asarray(values, dtype=float)
+
+
+def _as_response_map(values: np.ndarray, *, label: str) -> np.ndarray:
+    response = _as_float_array(values)
+    if response.ndim != 3:
+        raise ValueError(f"{label} map must have shape (time, output, input)")
+    return response
+
+
+def _response_quadratic(response: np.ndarray, weights: np.ndarray) -> np.ndarray:
+    input_dim = response.shape[-1]
+    quadratic = np.zeros((input_dim, input_dim), dtype=np.float64)
+    for response_t, weight_t in zip(response, weights, strict=True):
+        quadratic += response_t.T @ weight_t @ response_t
+    return quadratic
+
+
+def _first_available(*values: np.ndarray | None) -> np.ndarray | None:
+    for value in values:
+        if value is not None:
+            return value
+    return None
 
 
 def _json_float(value: float | np.floating[Any]) -> float:
@@ -1011,8 +1335,12 @@ def _gain_error_fractions(
 __all__ = [
     "BELLMAN_HESSIAN_RESIDUAL",
     "CLOSED_LOOP_TRANSITION_MISMATCH",
+    "DISTURBANCE_HISTORY_TO_COST_QUADRATIC",
     "DISTURBANCE_HISTORY_TO_ACTION_MAP_MISMATCH",
+    "DISTURBANCE_HISTORY_TO_OUTPUT_MAP_MISMATCH",
     "DISTURBANCE_HISTORY_TO_STATE_MAP_MISMATCH",
+    "MEASUREMENT_HISTORY_TO_ACTION_MAP_MISMATCH",
+    "MEASUREMENT_HISTORY_TO_OUTPUT_MAP_MISMATCH",
     "OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH",
     "OPTIMIZER_METADATA",
     "RECURRENCE_GRU_DIAGNOSTICS",
@@ -1026,6 +1354,9 @@ __all__ = [
     "bellman_hessian_residual_component",
     "build_standard_certificate_components",
     "closed_loop_transition_mismatch_component",
+    "disturbance_to_cost_quadratic_component",
+    "disturbance_to_cost_quadratic_response_map",
+    "disturbance_to_cost_quadratic_summary",
     "missing_component",
     "optimizer_metadata_component",
     "recurrence_safe_components",

@@ -259,6 +259,8 @@ def classify_failure(
     certificate_mismatch_ratio: float | None,
     io_map_mismatch_ratio: float | None = None,
     representation_failed: bool = False,
+    external_map_mismatch_ratios: Mapping[str, float | None] | None = None,
+    hidden_state_coordinate_mismatch: float | None = None,
     subspace_decomposition: Mapping[str, Any] | None = None,
     sidecar_improved: bool = False,
     equivalence_metrics_failed: bool = False,
@@ -267,6 +269,16 @@ def classify_failure(
     """Classify a bridge row failure from objective, gradient, and subspace signals."""
 
     reasons = []
+    external_representation = None
+    if external_map_mismatch_ratios is not None:
+        external_representation = external_response_map_representation_summary(
+            external_map_mismatch_ratios=external_map_mismatch_ratios,
+            hidden_state_coordinate_mismatch=hidden_state_coordinate_mismatch,
+            numerics=numerics,
+        )
+        representation_failed = bool(
+            representation_failed or external_representation["representation_failed"]
+        )
     weak_or_unvisited = (
         None
         if subspace_decomposition is None
@@ -339,12 +351,47 @@ def classify_failure(
             "certificate_bad": certificate_bad,
             "io_map_bad": io_map_bad,
             "representation_failed": representation_failed,
+            "external_map_representation": external_representation,
+            "hidden_state_coordinate_mismatch": hidden_state_coordinate_mismatch,
             "learned_gradient_bad": learned_gradient_bad,
             "reference_gradient_bad": reference_gradient_bad,
             "weak_subspace_dominates": weak_subspace_dominates,
             "sidecar_improved": sidecar_improved,
             "equivalence_metrics_failed": equivalence_metrics_failed,
         },
+    }
+
+
+def external_response_map_representation_summary(
+    *,
+    external_map_mismatch_ratios: Mapping[str, float | None],
+    hidden_state_coordinate_mismatch: float | None = None,
+    numerics: FailureDecompositionNumerics = FailureDecompositionNumerics(),
+) -> dict[str, Any]:
+    """Classify recurrent representation failure from external response maps.
+
+    The augmented recurrent certificate should not fail solely because a hidden
+    state uses different internal coordinates.  This helper treats measurement,
+    action, state/output, and disturbance response-map ratios as the external
+    evidence.  A hidden-state coordinate mismatch is echoed for diagnostics but
+    does not affect the failure decision.
+    """
+
+    ratios = {
+        str(name): None if ratio is None else float(ratio)
+        for name, ratio in external_map_mismatch_ratios.items()
+    }
+    failed_maps = {
+        name: ratio
+        for name, ratio in ratios.items()
+        if ratio is not None and ratio >= numerics.certificate_failure_ratio
+    }
+    return {
+        "representation_basis": "external_response_maps",
+        "representation_failed": bool(failed_maps),
+        "failed_external_maps": sorted(failed_maps),
+        "external_map_mismatch_ratios": ratios,
+        "ignored_internal_coordinate_mismatch": hidden_state_coordinate_mismatch,
     }
 
 
@@ -411,6 +458,7 @@ __all__ = [
     "SIDECAR_IMPROVING_NON_EQUIVALENT",
     "classify_failure",
     "covariances_from_states",
+    "external_response_map_representation_summary",
     "gain_error_subspace_decomposition",
     "is_sidecar_improving_non_equivalent",
     "interpolation_curve",

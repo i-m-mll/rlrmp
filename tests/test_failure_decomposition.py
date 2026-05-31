@@ -11,6 +11,7 @@ from rlrmp.analysis.failure_decomposition import (
     SIDECAR_IMPROVING_NON_EQUIVALENT,
     classify_failure,
     covariances_from_states,
+    external_response_map_representation_summary,
     gain_error_subspace_decomposition,
     interpolation_curve,
     is_sidecar_improving_non_equivalent,
@@ -155,3 +156,42 @@ def test_classify_failure_reports_representation_failure() -> None:
 
     assert classification["classification"] == REPRESENTATION_FAILURE
     assert classification["signals"]["representation_failed"]
+
+
+def test_augmented_recurrent_representation_uses_external_maps_not_hidden_coordinates() -> None:
+    coordinate_only = external_response_map_representation_summary(
+        external_map_mismatch_ratios={
+            "measurement_history_to_action_map_mismatch": 0.0,
+            "disturbance_history_to_state_map_mismatch": 0.0,
+        },
+        hidden_state_coordinate_mismatch=100.0,
+    )
+    assert not coordinate_only["representation_failed"]
+    assert coordinate_only["ignored_internal_coordinate_mismatch"] == 100.0
+
+    not_failure = classify_failure(
+        objective_ratio=1.0,
+        learned_gradient_norm=0.0,
+        reference_gradient_norm=0.0,
+        certificate_mismatch_ratio=None,
+        external_map_mismatch_ratios={
+            "measurement_history_to_action_map_mismatch": 0.0,
+        },
+        hidden_state_coordinate_mismatch=100.0,
+    )
+    assert not_failure["classification"] == "not_failure"
+
+    external_failure = classify_failure(
+        objective_ratio=1.0,
+        learned_gradient_norm=0.0,
+        reference_gradient_norm=0.0,
+        certificate_mismatch_ratio=None,
+        external_map_mismatch_ratios={
+            "measurement_history_to_action_map_mismatch": 0.5,
+        },
+        hidden_state_coordinate_mismatch=0.0,
+    )
+    assert external_failure["classification"] == REPRESENTATION_FAILURE
+    assert external_failure["signals"]["external_map_representation"]["failed_external_maps"] == [
+        "measurement_history_to_action_map_mismatch"
+    ]
