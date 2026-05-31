@@ -32,6 +32,7 @@ from rlrmp.feedbax_graph import (
     write_graph_spec_bundle,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.run_specs import validate_nominal_gru_run_spec
 
 ISSUE_ID = "18ae684"
 SCHEMA_VERSION = "rlrmp.cs_nominal_gru.v1"
@@ -309,15 +310,29 @@ def build_run_spec(
         "n_train_batches": int(args.n_train_batches),
         "batch_size": int(args.batch_size),
         "controller_lr": float(args.controller_lr),
-        "game_card_provenance": build_game_card_provenance(),
-        "model_structure": build_model_structure_summary(hps),
-        "task_summary": graph_bundle.task_spec,
+        "game_card": build_game_card_provenance(),
+        "model_summary": build_model_structure_summary(hps),
+        "task_timing": graph_bundle.task_spec,
         "loss_summary": graph_bundle.loss_spec,
-        "training_summary": graph_bundle.training_spec,
+        "training_summary": {
+            **graph_bundle.training_spec,
+            "training_mode": "nominal",
+            "n_train_batches": int(args.n_train_batches),
+            "n_adversary_batches": 0,
+        },
         "feedbax_graph": graph_bundle.to_run_metadata(),
         "hps": _plain(hps),
-        "git": _get_git_metadata(),
-        "runtime": _get_runtime_metadata(),
+        "provenance": {
+            "git": _get_git_metadata(),
+            "dependencies": _get_dependency_metadata(),
+            "modal": {
+                "launch": "not_requested",
+                "app_name": "rlrmp-cs-nominal-gru",
+                "mode": "not_requested",
+            },
+            "gpu": _get_gpu_metadata(),
+            "runtime": _get_runtime_metadata(),
+        },
     }
 
 
@@ -349,6 +364,7 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
     mkdir_p(spec_dir)
     graph_path = write_graph_spec_bundle(graph_bundle, spec_dir)
     payload["feedbax_graph"] = graph_bundle.to_run_metadata(graph_spec_path=graph_path.name)
+    validate_nominal_gru_run_spec(payload, spec_dir=spec_dir)
     run_path = spec_dir / "run.json"
     run_path.write_text(_json_dumps(payload), encoding="utf-8")
     return {
@@ -484,6 +500,35 @@ def _get_runtime_metadata() -> dict[str, Any]:
     except ImportError:
         metadata["feedbax_version"] = "unavailable"
     return metadata
+
+
+def _get_dependency_metadata() -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "rlrmp": "local",
+        "jax": jax.__version__,
+    }
+    for package in ("feedbax", "jax_cookbook", "modal"):
+        try:
+            module = __import__(package)
+            metadata[package] = getattr(module, "__version__", "unknown")
+        except ImportError:
+            metadata[package] = "unavailable"
+    return metadata
+
+
+def _get_gpu_metadata() -> dict[str, Any]:
+    try:
+        devices = jax.devices()
+        return {
+            "device_kinds": [device.device_kind for device in devices],
+            "device_count": len(devices),
+        }
+    except Exception as exc:
+        return {
+            "device_kinds": None,
+            "device_count": 0,
+            "error": str(exc),
+        }
 
 
 def _plain(value: Any) -> Any:

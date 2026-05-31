@@ -12,19 +12,17 @@ def test_nominal_training_command_is_bounded_and_nominal_only() -> None:
     config = NominalGruRunConfig(
         experiment="18ae684",
         run="smoke__unit",
-        n_warmup_batches=1,
+        n_train_batches=1,
         batch_size=2,
         n_replicates=1,
     )
 
     command = build_training_command(config)
 
-    assert command[:4] == ["uv", "run", "python", "scripts/train_minimax.py"]
-    assert command[command.index("--n-adversary-batches") + 1] == "0"
-    assert command[command.index("--hidden-type") + 1] == "gru"
-    assert command[command.index("--effector-hold-pos") + 1] == "0.0"
-    assert command[command.index("--effector-hold-vel") + 1] == "0.0"
-    assert command[command.index("--effector-pos-running-schedule") + 1] == "movement_ramp"
+    assert command[:4] == ["uv", "run", "python", "scripts/train_cs_nominal_gru.py"]
+    assert "--n-adversary-batches" not in command
+    assert command[command.index("--n-train-batches") + 1] == "1"
+    assert command[command.index("--hidden-size") + 1] == "4"
 
 
 def test_remote_training_command_uses_no_sync_and_remote_paths() -> None:
@@ -32,7 +30,7 @@ def test_remote_training_command_uses_no_sync_and_remote_paths() -> None:
 
     command = build_training_command(config, remote=True)
 
-    assert command[:5] == ["uv", "run", "--no-sync", "python", "scripts/train_minimax.py"]
+    assert command[:5] == ["uv", "run", "--no-sync", "python", "scripts/train_cs_nominal_gru.py"]
     assert "/workspace/rlrmp/_artifacts/18ae684/runs/nominal_cs_gru__modal_prep" in command
     assert "/workspace/rlrmp/results/18ae684/runs/nominal_cs_gru__modal_prep" in command
 

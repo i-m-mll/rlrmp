@@ -95,8 +95,12 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     assert graph_path == spec_dir / "model.graph.json"
     assert manifest_path == spec_dir / "model.graph.manifest.json"
     assert payload["schema_version"] == "rlrmp.cs_nominal_gru.v1"
-    assert payload["model_structure"]["hidden_size"] == 4
-    assert payload["game_card_provenance"]["plant"]["bw_shape"] == [48, 8]
+    assert payload["model_summary"]["hidden_size"] == 4
+    assert payload["model_summary"]["controller_kind"] == "gru"
+    assert payload["training_summary"]["training_mode"] == "nominal"
+    assert payload["game_card"]["plant"]["bw_shape"] == [48, 8]
+    assert payload["task_timing"]["type"] == "simple_reach"
+    assert "git" in payload["provenance"]
     assert manifest["training_spec"]["nominal_only"] is True
     assert not output_dir.exists()
     assert REPO_ROOT not in output_dir.parents
