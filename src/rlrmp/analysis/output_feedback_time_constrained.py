@@ -1030,9 +1030,58 @@ def r12_state_eigenspectrum_coverage_conditions(
 ) -> tuple[TimeBasisCondition, ...]:
     """Return the planned r=12 state-eigenspectrum coverage rows."""
 
+    return state_eigenspectrum_coverage_conditions(
+        rank=12,
+        modes=modes,
+        scales=scales,
+        weight=weight,
+        maxiter=maxiter,
+        learning_rate=learning_rate,
+        polish_maxiter=polish_maxiter,
+        adam_clip_norm=adam_clip_norm,
+    )
+
+
+def r12_observer_error_state_coverage_conditions(
+    *,
+    modes: tuple[int, ...] = (1,),
+    scales: tuple[float, ...] = (0.3, 1.0),
+    weight: float = 0.1,
+    maxiter: int = 2000,
+    learning_rate: float = 1e-2,
+    polish_maxiter: int = 1000,
+    adam_clip_norm: float = 1e4,
+) -> tuple[TimeBasisCondition, ...]:
+    """Return the planned r=12 observer-error state coverage rows."""
+
+    return observer_error_state_coverage_conditions(
+        rank=12,
+        modes=modes,
+        scales=scales,
+        weight=weight,
+        maxiter=maxiter,
+        learning_rate=learning_rate,
+        polish_maxiter=polish_maxiter,
+        adam_clip_norm=adam_clip_norm,
+    )
+
+
+def state_eigenspectrum_coverage_conditions(
+    *,
+    rank: int,
+    modes: tuple[int, ...],
+    scales: tuple[float, ...],
+    weight: float,
+    maxiter: int,
+    learning_rate: float,
+    polish_maxiter: int,
+    adam_clip_norm: float = 1e4,
+) -> tuple[TimeBasisCondition, ...]:
+    """Return state-eigenspectrum coverage rows for one spline rank."""
+
     return tuple(
         TimeBasisCondition(
-            rank=12,
+            rank=rank,
             initialization="scratch",
             optimizer="adamw_then_lbfgsb",
             learning_rate=learning_rate,
@@ -1051,21 +1100,22 @@ def r12_state_eigenspectrum_coverage_conditions(
     )
 
 
-def r12_observer_error_state_coverage_conditions(
+def observer_error_state_coverage_conditions(
     *,
-    modes: tuple[int, ...] = (1,),
-    scales: tuple[float, ...] = (0.3, 1.0),
-    weight: float = 0.1,
-    maxiter: int = 2000,
-    learning_rate: float = 1e-2,
-    polish_maxiter: int = 1000,
+    rank: int,
+    modes: tuple[int, ...],
+    scales: tuple[float, ...],
+    weight: float,
+    maxiter: int,
+    learning_rate: float,
+    polish_maxiter: int,
     adam_clip_norm: float = 1e4,
 ) -> tuple[TimeBasisCondition, ...]:
-    """Return the planned r=12 observer-error state coverage rows."""
+    """Return observer-error state coverage rows for one spline rank."""
 
     return tuple(
         TimeBasisCondition(
-            rank=12,
+            rank=rank,
             initialization="scratch",
             optimizer="adamw_then_lbfgsb",
             learning_rate=learning_rate,
@@ -1081,6 +1131,63 @@ def r12_observer_error_state_coverage_conditions(
         )
         for n_modes in modes
         for scale in scales
+    )
+
+
+def r20_state_eigenspectrum_coverage_conditions(
+    *,
+    modes: tuple[int, ...] = (4,),
+    scales: tuple[float, ...] = (1.0, 3.0),
+    weight: float = 0.1,
+    maxiter: int = 2000,
+    learning_rate: float = 1e-2,
+    polish_maxiter: int = 1000,
+    adam_clip_norm: float = 1e4,
+) -> tuple[TimeBasisCondition, ...]:
+    """Return the focused r=20 state-eigenspectrum coverage rows."""
+
+    return state_eigenspectrum_coverage_conditions(
+        rank=20,
+        modes=modes,
+        scales=scales,
+        weight=weight,
+        maxiter=maxiter,
+        learning_rate=learning_rate,
+        polish_maxiter=polish_maxiter,
+        adam_clip_norm=adam_clip_norm,
+    )
+
+
+def r20_observer_error_state_coverage_conditions(
+    *,
+    modes: tuple[int, ...] = (1,),
+    scales: tuple[float, ...] = (0.3,),
+    weight: float = 0.1,
+    maxiter: int = 2000,
+    learning_rate: float = 1e-2,
+    polish_maxiter: int = 1000,
+    adam_clip_norm: float = 1e4,
+) -> tuple[TimeBasisCondition, ...]:
+    """Return the focused r=20 observer-error state coverage rows."""
+
+    return observer_error_state_coverage_conditions(
+        rank=20,
+        modes=modes,
+        scales=scales,
+        weight=weight,
+        maxiter=maxiter,
+        learning_rate=learning_rate,
+        polish_maxiter=polish_maxiter,
+        adam_clip_norm=adam_clip_norm,
+    )
+
+
+def r20_state_coverage_conditions() -> tuple[TimeBasisCondition, ...]:
+    """Return the focused r=20 state-only coverage closure row set."""
+
+    return (
+        r20_state_eigenspectrum_coverage_conditions()
+        + r20_observer_error_state_coverage_conditions()
     )
 
 
@@ -1200,12 +1307,17 @@ __all__ = [
     "ISSUE_ID",
     "SPLINE_RANKS",
     "TimeBasisCondition",
+    "observer_error_state_coverage_conditions",
     "r12_observer_error_state_coverage_conditions",
     "r12_state_coverage_conditions",
     "r12_state_eigenspectrum_coverage_conditions",
+    "r20_observer_error_state_coverage_conditions",
+    "r20_state_coverage_conditions",
+    "r20_state_eigenspectrum_coverage_conditions",
     "render_markdown",
     "result_summary",
     "run_time_basis_bridge",
+    "state_eigenspectrum_coverage_conditions",
     "timed_run",
     "write_basic_outputs",
 ]
