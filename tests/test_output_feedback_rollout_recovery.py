@@ -177,6 +177,31 @@ def test_adamw_condition_uses_whitened_full_batch_objective_and_reports_best() -
     assert "adamw_smoke__scratch_K" in result.arrays
 
 
+def test_adamw_polish_condition_reports_both_optimizer_stages() -> None:
+    condition = adamw_optimizer_whitened(
+        label="adamw_polish_smoke",
+        optimizer="adamw_then_lbfgsb",
+        learning_rate=1e-3,
+        adam_schedule="warmup_cosine",
+        adam_clip_norm=10.0,
+        maxiter=2,
+        polish_maxiter=1,
+        initializations=("scratch",),
+    )
+    result = run_output_feedback_rollout_recovery(
+        conditions=(condition,),
+        training_config=LinearTrainingConfig(n_random_states=4),
+    )
+    fit = result_summary(result)["fits"][0]
+
+    assert fit["condition"]["optimizer"] == "adamw_then_lbfgsb"
+    assert fit["condition"]["adam_schedule"] == "warmup_cosine"
+    assert fit["n_iterations"] >= 2
+    assert fit["n_function_evaluations"] >= 2
+    assert "AdamW completed 2 full-batch steps" in fit["optimizer_status"]
+    assert "L-BFGS-B polish maxiter=1" in fit["optimizer_status"]
+
+
 def test_eigenspectrum_coverage_samples_are_time_indexed_signed_pairs() -> None:
     reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
     gamma_ref = reference.gamma_references[0]

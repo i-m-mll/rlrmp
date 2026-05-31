@@ -94,6 +94,11 @@ class RolloutRecoveryCondition:
     adam_b1: float = 0.9
     adam_b2: float = 0.999
     adam_eps: float = 1e-8
+    adam_schedule: str = "fixed"
+    adam_warmup_fraction: float = 0.05
+    adam_end_lr_fraction: float = 0.01
+    adam_clip_norm: float | None = None
+    polish_maxiter: int | None = None
     initializations: tuple[str, ...] = ("scratch", "bellman_init")
     auxiliary_bellman_weights: tuple[float, ...] = ()
     eigenspectrum_coverage: EigenspectrumCoverageConfig | None = None
@@ -201,17 +206,24 @@ def adamw_optimizer_whitened(
     learning_rate: float,
     weight_decay: float = 0.0,
     maxiter: int = 5000,
+    optimizer: str = "adamw",
+    adam_schedule: str = "fixed",
+    adam_clip_norm: float | None = None,
+    polish_maxiter: int | None = None,
     initializations: tuple[str, ...] = ("scratch", "bellman_init"),
 ) -> RolloutRecoveryCondition:
     """Return a full-batch AdamW condition using the standard whitening map."""
 
     return RolloutRecoveryCondition(
         label=label,
-        optimizer="adamw",
+        optimizer=optimizer,
         use_whitening=True,
         maxiter=maxiter,
         learning_rate=learning_rate,
         weight_decay=weight_decay,
+        adam_schedule=adam_schedule,
+        adam_clip_norm=adam_clip_norm,
+        polish_maxiter=polish_maxiter,
         initializations=initializations,
     )
 
@@ -772,15 +784,31 @@ def _gradient_norms(
 
 
 def _validate_condition(condition: RolloutRecoveryCondition) -> None:
-    valid_optimizers = {"lbfgsb", "adamw"}
+    valid_optimizers = {"lbfgsb", "adamw", "adamw_then_lbfgsb"}
     if condition.optimizer not in valid_optimizers:
         raise ValueError(
-            f"Unknown optimizer={condition.optimizer!r}; expected one of {sorted(valid_optimizers)}."
+            f"Unknown optimizer={condition.optimizer!r}; expected one of "
+            f"{sorted(valid_optimizers)}."
         )
-    if condition.optimizer == "adamw" and condition.maxiter < 1:
+    if condition.optimizer in {"adamw", "adamw_then_lbfgsb"} and condition.maxiter < 1:
         raise ValueError("AdamW conditions require maxiter >= 1.")
-    if condition.optimizer == "adamw" and condition.learning_rate <= 0.0:
+    if condition.optimizer in {"adamw", "adamw_then_lbfgsb"} and condition.learning_rate <= 0.0:
         raise ValueError("AdamW conditions require a positive learning_rate.")
+    if condition.adam_schedule not in {"fixed", "warmup_cosine"}:
+        raise ValueError(
+            f"Unknown adam_schedule={condition.adam_schedule!r}; expected 'fixed' or "
+            "'warmup_cosine'."
+        )
+    if condition.adam_schedule == "warmup_cosine" and condition.maxiter < 2:
+        raise ValueError("warmup_cosine AdamW conditions require maxiter >= 2.")
+    if not 0.0 <= condition.adam_warmup_fraction < 1.0:
+        raise ValueError("adam_warmup_fraction must be in [0, 1).")
+    if condition.adam_end_lr_fraction < 0.0:
+        raise ValueError("adam_end_lr_fraction must be non-negative.")
+    if condition.adam_clip_norm is not None and condition.adam_clip_norm <= 0.0:
+        raise ValueError("adam_clip_norm must be positive when provided.")
+    if condition.polish_maxiter is not None and condition.polish_maxiter < 1:
+        raise ValueError("polish_maxiter must be >= 1 when provided.")
     if condition.use_time_block_preconditioning and not condition.use_whitening:
         raise ValueError("Time-block preconditioning requires whitening.")
 
@@ -960,6 +988,31 @@ def _fit_one_condition(
     projected_gradient_norm = None
     best_objective = initial_objective
     best_iteration: int | None = 0
+    def run_lbfgsb_from(
+        theta_start: np.ndarray,
+        *,
+        maxiter: int,
+    ) -> tuple[np.ndarray, str, bool, int, int]:
+        scipy_result = scipy_opt.minimize(
+            scipy_value_and_grad_for_weight(0.0),
+            theta_start,
+            jac=True,
+            method="L-BFGS-B",
+            options={
+                "maxiter": maxiter,
+                "ftol": condition.ftol,
+                "gtol": condition.gtol,
+                "maxls": condition.maxls,
+            },
+        )
+        return (
+            np.asarray(scipy_result.x, dtype=np.float64),
+            str(scipy_result.message),
+            bool(scipy_result.success),
+            int(scipy_result.nit),
+            int(scipy_result.nfev),
+        )
+
     if condition.optimizer == "lbfgsb":
         for bellman_weight in stage_weights:
             scipy_result = scipy_opt.minimize(
@@ -995,13 +1048,33 @@ def _fit_one_condition(
             else:
                 stage_messages.append(str(scipy_result.message))
     else:
-        optimizer = optax.adamw(
-            learning_rate=condition.learning_rate,
-            b1=condition.adam_b1,
-            b2=condition.adam_b2,
-            eps=condition.adam_eps,
-            weight_decay=condition.weight_decay,
+        if condition.adam_schedule == "fixed":
+            learning_rate = condition.learning_rate
+        else:
+            warmup_steps = min(
+                max(1, int(round(condition.maxiter * condition.adam_warmup_fraction))),
+                condition.maxiter - 1,
+            )
+            learning_rate = optax.warmup_cosine_decay_schedule(
+                init_value=0.0,
+                peak_value=condition.learning_rate,
+                warmup_steps=warmup_steps,
+                decay_steps=condition.maxiter,
+                end_value=condition.learning_rate * condition.adam_end_lr_fraction,
+            )
+        transforms = []
+        if condition.adam_clip_norm is not None:
+            transforms.append(optax.clip_by_global_norm(condition.adam_clip_norm))
+        transforms.append(
+            optax.adamw(
+                learning_rate=learning_rate,
+                b1=condition.adam_b1,
+                b2=condition.adam_b2,
+                eps=condition.adam_eps,
+                weight_decay=condition.weight_decay,
+            )
         )
+        optimizer = optax.chain(*transforms)
 
         @jax.jit
         def adamw_stage(
@@ -1073,9 +1146,26 @@ def _fit_one_condition(
             else:
                 stage_messages.append(
                     f"AdamW completed {condition.maxiter} full-batch steps "
-                    f"(lr={condition.learning_rate:g}, weight_decay={condition.weight_decay:g})"
+                    f"(lr={condition.learning_rate:g}, schedule={condition.adam_schedule}, "
+                    f"clip={condition.adam_clip_norm}, weight_decay={condition.weight_decay:g})"
                 )
         theta_current = np.asarray(best_theta, dtype=np.float64)
+        if condition.optimizer == "adamw_then_lbfgsb":
+            polish_maxiter = condition.polish_maxiter or min(condition.maxiter, 500)
+            polish_theta, message, success, nit, nfev = run_lbfgsb_from(
+                theta_current,
+                maxiter=polish_maxiter,
+            )
+            total_iterations += nit
+            total_evaluations += nfev
+            optimizer_success = optimizer_success and success
+            clean_value = float(clean_value_flat(jnp.asarray(polish_theta, dtype=jnp.float64)))
+            if clean_value <= best_objective:
+                theta_current = polish_theta
+                best_theta = jnp.asarray(polish_theta, dtype=jnp.float64)
+                best_objective = clean_value
+                best_iteration = total_iterations
+            stage_messages.append(f"L-BFGS-B polish maxiter={polish_maxiter}: {message}")
     theta_final = jnp.asarray(theta_current, dtype=jnp.float64).reshape(shape)
     K_final = to_K(theta_final)
     final_objective = float(objective_theta(theta_final))

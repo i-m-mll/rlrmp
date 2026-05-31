@@ -386,6 +386,7 @@ def result_summary(
     """Return JSON-serializable interpolated-start summary."""
 
     condition = result.condition.__dict__.copy()
+    optimizer = condition.get("optimizer", "lbfgsb")
     return {
         "issue": result.issue_id,
         "source_issue": result.source_issue_id,
@@ -402,13 +403,13 @@ def result_summary(
         },
         "scope": (
             "Basin-access diagnostic for the free output-feedback bridge: run "
-            "L-BFGS-B from K_alpha = (1-alpha) K_scratch + alpha K_ref under the "
-            "deterministic no-coverage clean-rollout objective and current "
-            "strong_optimizer_whitened scaling."
+            f"{optimizer} from K_alpha = (1-alpha) K_scratch + alpha K_ref under "
+            "the deterministic no-coverage clean-rollout objective and current "
+            "whitened scaling."
         ),
         "non_goals": (
-            "No AdamW stage, no coverage/noise/GRU/basis-constrained runs, and no "
-            "standard-certificate schema changes."
+            "No coverage/noise/GRU/basis-constrained runs and no standard-certificate "
+            "schema changes."
         ),
         "source_artifact": result.source_artifact,
         "condition": condition,
