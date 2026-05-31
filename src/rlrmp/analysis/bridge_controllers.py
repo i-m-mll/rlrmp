@@ -115,6 +115,28 @@ class TimeConstrainedGainParameterization:
             basis[t, index[int(segment)]] = 1.0
         return cls(basis=basis, action_dim=action_dim, input_dim=input_dim)
 
+    @classmethod
+    def cubic_bspline(
+        cls,
+        *,
+        horizon: int,
+        n_basis: int,
+        action_dim: int,
+        input_dim: int,
+    ) -> "TimeConstrainedGainParameterization":
+        """Return a compact smooth cubic time basis.
+
+        The basis uses cardinal cubic B-spline weights evaluated at uniformly
+        spaced centers over the discrete horizon.  Each row is normalized after
+        evaluation, so the basis is nonnegative and forms a partition of unity
+        over time.  When ``n_basis == horizon`` this produces a square local
+        basis that is numerically full rank for ordinary horizons such as
+        ``60``, so projections can reconstruct any gain sequence.
+        """
+
+        basis = _cubic_bspline_time_basis(horizon=horizon, n_basis=n_basis)
+        return cls(basis=basis, action_dim=action_dim, input_dim=input_dim)
+
     def gains_from_theta(
         self,
         theta: Float[np.ndarray, "basis action input"],
@@ -159,6 +181,39 @@ class TimeConstrainedGainParameterization:
             rank=int(rank),
             singular_values=np.asarray(singular_values, dtype=np.float64),
         )
+
+
+def _cubic_bspline_time_basis(*, horizon: int, n_basis: int) -> np.ndarray:
+    if horizon <= 0:
+        raise ValueError("horizon must be positive")
+    if n_basis <= 0:
+        raise ValueError("n_basis must be positive")
+    if n_basis == 1:
+        return np.ones((horizon, 1), dtype=np.float64)
+
+    times = np.arange(horizon, dtype=np.float64)
+    centers = np.linspace(0.0, float(horizon - 1), n_basis, dtype=np.float64)
+    spacing = centers[1] - centers[0]
+    scaled_distance = (times[:, None] - centers[None, :]) / spacing
+    basis = _cardinal_cubic_bspline(scaled_distance)
+    row_sums = np.sum(basis, axis=1, keepdims=True)
+    if np.any(row_sums <= np.finfo(np.float64).eps):
+        raise ValueError("cubic basis construction produced an empty row")
+    return basis / row_sums
+
+
+def _cardinal_cubic_bspline(x: np.ndarray) -> np.ndarray:
+    distance = np.abs(np.asarray(x, dtype=np.float64))
+    values = np.zeros_like(distance)
+
+    inner = distance < 1.0
+    values[inner] = (
+        4.0 - 6.0 * distance[inner] ** 2 + 3.0 * distance[inner] ** 3
+    ) / 6.0
+
+    outer = (distance >= 1.0) & (distance < 2.0)
+    values[outer] = (2.0 - distance[outer]) ** 3 / 6.0
+    return values
 
 
 @dataclass(frozen=True)

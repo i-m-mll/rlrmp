@@ -1,0 +1,209 @@
+"""Materialize the 87edaae smooth time-basis output-feedback bridge."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+
+import materialize_output_feedback_failure_decomposition as failure
+import materialize_output_feedback_sweep_certificates as certificates
+from rlrmp.analysis.cs_game_card import materialize_reference
+from rlrmp.analysis.output_feedback import OutputFeedbackConfig
+from rlrmp.analysis.output_feedback_time_constrained import (
+    ISSUE_ID,
+    SPLINE_RANKS,
+    render_markdown,
+    timed_run,
+    write_basic_outputs,
+)
+from rlrmp.paths import REPO_ROOT, mkdir_p
+
+
+NOTE_PATH = REPO_ROOT / "results" / ISSUE_ID / "notes" / "output_feedback_time_constrained.md"
+MANIFEST_PATH = (
+    REPO_ROOT / "results" / ISSUE_ID / "notes" / "output_feedback_time_constrained_manifest.json"
+)
+ARTIFACT_PATH = (
+    REPO_ROOT
+    / "_artifacts"
+    / ISSUE_ID
+    / "output_feedback_time_constrained"
+    / "output_feedback_time_constrained.npz"
+)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--ranks", type=str, default=",".join(str(rank) for rank in SPLINE_RANKS))
+    parser.add_argument("--fit-ranks", type=str, default="")
+    parser.add_argument("--adamw-lrs", type=str, default="0.003,0.01")
+    parser.add_argument("--lbfgsb-maxiter", type=int, default=2000)
+    parser.add_argument("--adamw-steps", type=int, default=5000)
+    parser.add_argument("--polish-maxiter", type=int, default=1000)
+    parser.add_argument("--note-output", type=Path, default=NOTE_PATH)
+    parser.add_argument("--manifest-output", type=Path, default=MANIFEST_PATH)
+    parser.add_argument("--artifact-output", type=Path, default=ARTIFACT_PATH)
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    summary, arrays = materialize(
+        ranks=_parse_ints(args.ranks),
+        fit_ranks=_parse_ints(args.fit_ranks) if args.fit_ranks else None,
+        adamw_lrs=_parse_floats(args.adamw_lrs),
+        lbfgsb_maxiter=args.lbfgsb_maxiter,
+        adamw_steps=args.adamw_steps,
+        polish_maxiter=args.polish_maxiter,
+        manifest_path=args.manifest_output,
+    )
+    write_result(
+        summary,
+        arrays=arrays,
+        note_path=args.note_output,
+        manifest_path=args.manifest_output,
+        artifact_path=args.artifact_output,
+    )
+    print(f"Wrote {args.note_output}")
+    print(f"Wrote {args.manifest_output}")
+    print(f"Wrote {args.artifact_output}")
+
+
+def materialize(
+    *,
+    ranks: tuple[int, ...] = SPLINE_RANKS,
+    fit_ranks: tuple[int, ...] | None = None,
+    adamw_lrs: tuple[float, ...] = (3e-3, 1e-2),
+    lbfgsb_maxiter: int = 2000,
+    adamw_steps: int = 5000,
+    polish_maxiter: int = 1000,
+    manifest_path: Path = MANIFEST_PATH,
+) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
+    """Run training plus standard-certificate/failure adapters."""
+
+    summary, arrays = timed_run(
+        ranks=ranks,
+        fit_ranks=fit_ranks,
+        adamw_lrs=adamw_lrs,
+        lbfgsb_maxiter=lbfgsb_maxiter,
+        adamw_steps=adamw_steps,
+        polish_maxiter=polish_maxiter,
+    )
+    entries = _row_entries(summary)
+    reference = materialize_reference()
+    output_config = OutputFeedbackConfig()
+    standard_rows = certificates.deterministic_standard_rows_from_manifest_entries(
+        entries=entries,
+        arrays=arrays,
+        reference=reference,
+        output_config=output_config,
+        issue_id=ISSUE_ID,
+        source_manifest=manifest_path,
+        default_family="smooth spline time-basis",
+        default_training_distribution="mixed",
+    )
+    failure_rows = failure.failure_rows_from_manifest_entries(
+        entries=entries,
+        arrays=arrays,
+        standard_rows={"standard_certificate": {"rows": standard_rows}},
+        default_source_group="smooth_spline_time_basis",
+    )
+    summary["standard_certificate"] = {
+        "rows": standard_rows,
+        "n_rows": len(standard_rows),
+        "status_counts": _counts(row["status"] for row in standard_rows),
+    }
+    summary["failure_decomposition"] = {
+        "rows": failure_rows,
+        "n_rows": len(failure_rows),
+        "classification_counts": _counts(
+            row["classification"]["classification"] for row in failure_rows
+        ),
+    }
+    return summary, arrays
+
+
+def write_result(
+    summary: dict[str, Any],
+    *,
+    arrays: dict[str, np.ndarray],
+    note_path: Path,
+    manifest_path: Path,
+    artifact_path: Path,
+) -> None:
+    write_basic_outputs(
+        summary=summary,
+        arrays=arrays,
+        note_path=note_path,
+        manifest_path=manifest_path,
+        artifact_path=artifact_path,
+    )
+    # write_basic_outputs writes before these adapter fields existed in older
+    # callers; rewrite here so the final manifest always includes them.
+    mkdir_p(note_path.parent)
+    note_path.write_text(render_markdown(summary), encoding="utf-8")
+    manifest_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _row_entries(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    entries = []
+    for fit in summary["fits"]:
+        condition = fit.get("condition", {})
+        rank = condition.get("rank")
+        label = fit["label"]
+        entries.append(
+            {
+                "fit": fit,
+                "array_prefix": label,
+                "run_parts": ("smooth_spline_time_basis", f"rank_{rank}", label),
+                "source_group": "smooth_spline_time_basis",
+                "family": f"smooth spline time-basis rank {rank}",
+                "training_distribution": "nominal",
+                "optimizer_label": _optimizer_label(fit),
+                "parameters": {
+                    "rank": rank,
+                    "basis_family": summary["diagnostics"]["basis_family"],
+                    "initialization": fit.get("initialization"),
+                },
+                "metrics": {
+                    "rank": rank,
+                    "basis_family": summary["diagnostics"]["basis_family"],
+                },
+            }
+        )
+    return entries
+
+
+def _optimizer_label(fit: dict[str, Any]) -> str:
+    condition = fit.get("condition", {})
+    optimizer = condition.get("optimizer", "unknown")
+    if optimizer.startswith("adamw"):
+        return f"{optimizer}_lr_{condition.get('learning_rate')}"
+    return "lbfgsb_spline_whitened"
+
+
+def _parse_ints(value: str) -> tuple[int, ...]:
+    return tuple(int(part.strip()) for part in value.split(",") if part.strip())
+
+
+def _parse_floats(value: str) -> tuple[float, ...]:
+    return tuple(float(part.strip()) for part in value.split(",") if part.strip())
+
+
+def _counts(values) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        counts[str(value)] = counts.get(str(value), 0) + 1
+    return dict(sorted(counts.items()))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        sys.exit(130)
