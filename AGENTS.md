@@ -67,6 +67,24 @@ lens. Evaluation lenses such as nominal-clean, Riccati-epsilon, process-noise,
 coverage-induced, and held-out validation are not training axes; keep them
 separate from optimal-vs-robust and coverage-vs-no-coverage training factors.
 
+Certificate mode is part of the row contract. Use `static_gain` only when the
+controller has a time-local gain over the action state used by the row. Use
+`augmented_linear` for linear recurrent rows only when the manifest supplies the
+augmented state, action sensitivity, and closed-loop transition over that state
+(for example `z_t = [x_t; h_t]`); then report action, transition, value, and
+Bellman components in the augmented-state basis. If those augmented inputs are
+absent, keep invalid static-gain transition/value/Bellman components explicit
+as `not_applicable` rather than silently falling back to plant-state gains. Use
+empirical/nonlinear reporting for GRU or other nonlinear recurrent rows unless a
+separate local-linear certificate is deliberately defined.
+
+When exact-L2/gamma sidecars improve but action/value/transition/reference-
+equivalence metrics still fail, label the failure
+`sidecar_improving_non_equivalent`. This label documents a useful sidecar trend;
+it is not a bridge pass and must be presented alongside the standard certificate
+components. Report aggregate action-energy mismatch (`R_u`) alongside the mean
+timewise action mismatch ratio for recurrent and augmented-state rows.
+
 ## RunPod Deploy Runbook for rlrmp Experiments
 
 ### Current training-method orientation (May 2026)

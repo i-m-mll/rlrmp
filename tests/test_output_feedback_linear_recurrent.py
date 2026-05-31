@@ -122,6 +122,7 @@ def test_recurrent_manifest_marks_formal_static_components_not_applicable(monkey
     assert by_name[VALUE_POLICY_GAP].status == "not_applicable"
     assert by_name[BELLMAN_HESSIAN_RESIDUAL].status == "not_applicable"
     assert by_name[RECURRENCE_GRU_DIAGNOSTICS].status == "available"
+    assert "aggregate_action_energy_mismatch" in manifest.metrics
 
 
 def test_materialize_no_coverage_with_fake_reference(monkeypatch) -> None:
