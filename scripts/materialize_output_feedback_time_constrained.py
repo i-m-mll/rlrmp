@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import inspect
 import json
 import sys
 from pathlib import Path
@@ -13,12 +12,14 @@ import numpy as np
 
 import materialize_output_feedback_failure_decomposition as failure
 import materialize_output_feedback_sweep_certificates as certificates
-import rlrmp.analysis.output_feedback_time_constrained as time_constrained
 from rlrmp.analysis.cs_game_card import materialize_reference
 from rlrmp.analysis.output_feedback import OutputFeedbackConfig
 from rlrmp.analysis.output_feedback_time_constrained import (
     ISSUE_ID,
     SPLINE_RANKS,
+    TimeBasisCondition,
+    r12_observer_error_state_coverage_conditions,
+    r12_state_eigenspectrum_coverage_conditions,
     render_markdown,
     timed_run,
     write_basic_outputs,
@@ -113,31 +114,28 @@ def materialize(
 ) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
     """Run training plus standard-certificate/failure adapters."""
 
-    summary, arrays = _timed_run(
-        {
-            "ranks": ranks,
-            "fit_ranks": fit_ranks,
-            "adamw_lrs": adamw_lrs,
-            "lbfgsb_maxiter": lbfgsb_maxiter,
-            "adamw_steps": adamw_steps,
-            "polish_maxiter": polish_maxiter,
-        },
-        include_r12_coverage=include_r12_coverage,
-        coverage_kwargs={
-            "include_r12_coverage": True,
-            "r12_coverage_rank": r12_coverage_rank,
-            "r12_state_eigenspectrum_modes": r12_state_eigenspectrum_modes,
-            "r12_state_eigenspectrum_scales": r12_state_eigenspectrum_scales,
-            "r12_observer_error_modes": r12_observer_error_modes,
-            "r12_observer_error_scales": r12_observer_error_scales,
-            "r12_coverage_weight": r12_coverage_weight,
-            "coverage_rank": r12_coverage_rank,
-            "state_eigenspectrum_modes": r12_state_eigenspectrum_modes,
-            "state_eigenspectrum_scales": r12_state_eigenspectrum_scales,
-            "observer_error_modes": r12_observer_error_modes,
-            "observer_error_scales": r12_observer_error_scales,
-            "coverage_weight": r12_coverage_weight,
-        },
+    coverage_conditions = _r12_coverage_conditions(
+        include=include_r12_coverage,
+        rank=r12_coverage_rank,
+        learning_rate=adamw_lrs[-1],
+        adamw_steps=adamw_steps,
+        polish_maxiter=polish_maxiter,
+        state_eigenspectrum_modes=r12_state_eigenspectrum_modes,
+        state_eigenspectrum_scales=r12_state_eigenspectrum_scales,
+        observer_error_modes=r12_observer_error_modes,
+        observer_error_scales=r12_observer_error_scales,
+        weight=r12_coverage_weight,
+    )
+    if coverage_conditions:
+        ranks = tuple(dict.fromkeys((*ranks, r12_coverage_rank)))
+    summary, arrays = timed_run(
+        ranks=ranks,
+        fit_ranks=fit_ranks,
+        adamw_lrs=adamw_lrs,
+        lbfgsb_maxiter=lbfgsb_maxiter,
+        adamw_steps=adamw_steps,
+        polish_maxiter=polish_maxiter,
+        coverage_conditions=coverage_conditions,
     )
     entries = _row_entries(summary)
     reference = materialize_reference()
@@ -266,90 +264,40 @@ def _row_entries(summary: dict[str, Any]) -> list[dict[str, Any]]:
     return entries
 
 
-def _timed_run(
-    base_kwargs: dict[str, Any],
-    *,
-    include_r12_coverage: bool,
-    coverage_kwargs: dict[str, Any],
-) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
-    if not include_r12_coverage:
-        return timed_run(**base_kwargs)
-
-    helper_conditions = _r12_coverage_conditions(base_kwargs, coverage_kwargs)
-    if helper_conditions is not None:
-        run_kwargs = base_kwargs.copy()
-        rank = int(coverage_kwargs["r12_coverage_rank"])
-        run_kwargs["ranks"] = tuple(dict.fromkeys((*run_kwargs["ranks"], rank)))
-        run_kwargs["coverage_conditions"] = helper_conditions
-        return timed_run(**run_kwargs)
-
-    kwargs = base_kwargs | coverage_kwargs
-    for hook_name in (
-        "timed_run_with_r12_coverage",
-        "timed_run_r12_coverage",
-        "timed_run_with_coverage",
-    ):
-        hook = getattr(time_constrained, hook_name, None)
-        if callable(hook):
-            return hook(**_accepted_kwargs(hook, kwargs))
-    if _accepts_keyword(timed_run, "include_r12_coverage"):
-        return timed_run(**_accepted_kwargs(timed_run, kwargs))
-    raise RuntimeError(
-        "--include-r12-coverage requires the analysis module to expose a coverage-aware "
-        "timed_run hook: timed_run_with_r12_coverage, timed_run_r12_coverage, "
-        "timed_run_with_coverage, or timed_run(..., include_r12_coverage=...)."
-    )
-
-
 def _r12_coverage_conditions(
-    base_kwargs: dict[str, Any],
-    coverage_kwargs: dict[str, Any],
-) -> tuple[Any, ...] | None:
-    state_hook = getattr(time_constrained, "r12_state_eigenspectrum_coverage_conditions", None)
-    observer_hook = getattr(time_constrained, "r12_observer_error_state_coverage_conditions", None)
-    if not callable(state_hook) or not callable(observer_hook):
-        return None
-    learning_rate = base_kwargs["adamw_lrs"][-1]
+    *,
+    include: bool,
+    rank: int,
+    learning_rate: float,
+    adamw_steps: int,
+    polish_maxiter: int,
+    state_eigenspectrum_modes: tuple[int, ...],
+    state_eigenspectrum_scales: tuple[float, ...],
+    observer_error_modes: tuple[int, ...],
+    observer_error_scales: tuple[float, ...],
+    weight: float,
+) -> tuple[TimeBasisCondition, ...]:
+    if not include:
+        return ()
+    if rank != 12:
+        raise ValueError("r12 coverage materialization only supports rank 12.")
     common_kwargs = {
-        "weight": coverage_kwargs["r12_coverage_weight"],
-        "maxiter": base_kwargs["adamw_steps"],
+        "weight": weight,
+        "maxiter": adamw_steps,
         "learning_rate": learning_rate,
-        "polish_maxiter": base_kwargs["polish_maxiter"],
+        "polish_maxiter": polish_maxiter,
     }
-    state = state_hook(
-        **_accepted_kwargs(
-            state_hook,
-            common_kwargs
-            | {
-                "modes": coverage_kwargs["r12_state_eigenspectrum_modes"],
-                "scales": coverage_kwargs["r12_state_eigenspectrum_scales"],
-            },
+    return (
+        r12_state_eigenspectrum_coverage_conditions(
+            modes=state_eigenspectrum_modes,
+            scales=state_eigenspectrum_scales,
+            **common_kwargs,
         )
-    )
-    observer = observer_hook(
-        **_accepted_kwargs(
-            observer_hook,
-            common_kwargs
-            | {
-                "modes": coverage_kwargs["r12_observer_error_modes"],
-                "scales": coverage_kwargs["r12_observer_error_scales"],
-            },
+        + r12_observer_error_state_coverage_conditions(
+            modes=observer_error_modes,
+            scales=observer_error_scales,
+            **common_kwargs,
         )
-    )
-    return tuple(state) + tuple(observer)
-
-
-def _accepted_kwargs(func: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
-    signature = inspect.signature(func)
-    if any(param.kind is inspect.Parameter.VAR_KEYWORD for param in signature.parameters.values()):
-        return kwargs
-    return {key: value for key, value in kwargs.items() if key in signature.parameters}
-
-
-def _accepts_keyword(func: Any, keyword: str) -> bool:
-    signature = inspect.signature(func)
-    return keyword in signature.parameters or any(
-        param.kind is inspect.Parameter.VAR_KEYWORD for param in signature.parameters.values()
     )
 
 
