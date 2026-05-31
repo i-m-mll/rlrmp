@@ -20,6 +20,8 @@ from rlrmp.analysis.output_feedback_time_constrained import (
     TimeBasisCondition,
     r12_observer_error_state_coverage_conditions,
     r12_state_eigenspectrum_coverage_conditions,
+    r20_observer_error_state_coverage_conditions,
+    r20_state_eigenspectrum_coverage_conditions,
     render_markdown,
     timed_run,
     write_basic_outputs,
@@ -37,6 +39,27 @@ ARTIFACT_PATH = (
     / ISSUE_ID
     / "output_feedback_time_constrained"
     / "output_feedback_time_constrained.npz"
+)
+R20_COVERAGE_NOTE_PATH = (
+    REPO_ROOT
+    / "results"
+    / ISSUE_ID
+    / "notes"
+    / "output_feedback_time_constrained_r20_coverage.md"
+)
+R20_COVERAGE_MANIFEST_PATH = (
+    REPO_ROOT
+    / "results"
+    / ISSUE_ID
+    / "notes"
+    / "output_feedback_time_constrained_r20_coverage_manifest.json"
+)
+R20_COVERAGE_ARTIFACT_PATH = (
+    REPO_ROOT
+    / "_artifacts"
+    / ISSUE_ID
+    / "output_feedback_time_constrained_r20_coverage"
+    / "output_feedback_time_constrained_r20_coverage.npz"
 )
 
 
@@ -62,19 +85,48 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--r12-observer-error-modes", type=str, default="1")
     parser.add_argument("--r12-observer-error-scales", type=str, default="0.3,1")
     parser.add_argument("--r12-coverage-weight", type=float, default=0.1)
+    parser.add_argument(
+        "--include-r20-coverage",
+        action="store_true",
+        help="Include the focused r=20 state eigenspectrum and observer-error coverage rows.",
+    )
+    parser.add_argument("--r20-coverage-rank", type=int, default=20)
+    parser.add_argument("--r20-state-eigenspectrum-modes", type=str, default="4")
+    parser.add_argument("--r20-state-eigenspectrum-scales", type=str, default="1,3")
+    parser.add_argument("--r20-observer-error-modes", type=str, default="1")
+    parser.add_argument("--r20-observer-error-scales", type=str, default="0.3")
+    parser.add_argument("--r20-coverage-weight", type=float, default=0.1)
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if args.include_r12_coverage and args.include_r20_coverage:
+        raise ValueError("Choose at most one focused coverage materialization path.")
+    ranks = _parse_ints(args.ranks)
+    fit_ranks = _parse_ints(args.fit_ranks) if args.fit_ranks else None
+    note_path = args.note_output
+    manifest_path = args.manifest_output
+    artifact_path = args.artifact_output
+    if args.include_r20_coverage:
+        if args.ranks == ",".join(str(rank) for rank in SPLINE_RANKS):
+            ranks = (args.r20_coverage_rank,)
+        if not args.fit_ranks:
+            fit_ranks = (args.r20_coverage_rank,)
+        if note_path == NOTE_PATH:
+            note_path = R20_COVERAGE_NOTE_PATH
+        if manifest_path == MANIFEST_PATH:
+            manifest_path = R20_COVERAGE_MANIFEST_PATH
+        if artifact_path == ARTIFACT_PATH:
+            artifact_path = R20_COVERAGE_ARTIFACT_PATH
     summary, arrays = materialize(
-        ranks=_parse_ints(args.ranks),
-        fit_ranks=_parse_ints(args.fit_ranks) if args.fit_ranks else None,
+        ranks=ranks,
+        fit_ranks=fit_ranks,
         adamw_lrs=_parse_floats(args.adamw_lrs),
         lbfgsb_maxiter=args.lbfgsb_maxiter,
         adamw_steps=args.adamw_steps,
         polish_maxiter=args.polish_maxiter,
-        manifest_path=args.manifest_output,
+        manifest_path=manifest_path,
         include_r12_coverage=args.include_r12_coverage,
         r12_coverage_rank=args.r12_coverage_rank,
         r12_state_eigenspectrum_modes=_parse_ints(args.r12_state_eigenspectrum_modes),
@@ -82,17 +134,24 @@ def main() -> None:
         r12_observer_error_modes=_parse_ints(args.r12_observer_error_modes),
         r12_observer_error_scales=_parse_floats(args.r12_observer_error_scales),
         r12_coverage_weight=args.r12_coverage_weight,
+        include_r20_coverage=args.include_r20_coverage,
+        r20_coverage_rank=args.r20_coverage_rank,
+        r20_state_eigenspectrum_modes=_parse_ints(args.r20_state_eigenspectrum_modes),
+        r20_state_eigenspectrum_scales=_parse_floats(args.r20_state_eigenspectrum_scales),
+        r20_observer_error_modes=_parse_ints(args.r20_observer_error_modes),
+        r20_observer_error_scales=_parse_floats(args.r20_observer_error_scales),
+        r20_coverage_weight=args.r20_coverage_weight,
     )
     write_result(
         summary,
         arrays=arrays,
-        note_path=args.note_output,
-        manifest_path=args.manifest_output,
-        artifact_path=args.artifact_output,
+        note_path=note_path,
+        manifest_path=manifest_path,
+        artifact_path=artifact_path,
     )
-    print(f"Wrote {args.note_output}")
-    print(f"Wrote {args.manifest_output}")
-    print(f"Wrote {args.artifact_output}")
+    print(f"Wrote {note_path}")
+    print(f"Wrote {manifest_path}")
+    print(f"Wrote {artifact_path}")
 
 
 def materialize(
@@ -111,9 +170,18 @@ def materialize(
     r12_observer_error_modes: tuple[int, ...] = (1,),
     r12_observer_error_scales: tuple[float, ...] = (0.3, 1.0),
     r12_coverage_weight: float = 0.1,
+    include_r20_coverage: bool = False,
+    r20_coverage_rank: int = 20,
+    r20_state_eigenspectrum_modes: tuple[int, ...] = (4,),
+    r20_state_eigenspectrum_scales: tuple[float, ...] = (1.0, 3.0),
+    r20_observer_error_modes: tuple[int, ...] = (1,),
+    r20_observer_error_scales: tuple[float, ...] = (0.3,),
+    r20_coverage_weight: float = 0.1,
 ) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
     """Run training plus standard-certificate/failure adapters."""
 
+    if include_r12_coverage and include_r20_coverage:
+        raise ValueError("Choose at most one focused coverage materialization path.")
     coverage_conditions = _r12_coverage_conditions(
         include=include_r12_coverage,
         rank=r12_coverage_rank,
@@ -126,8 +194,21 @@ def materialize(
         observer_error_scales=r12_observer_error_scales,
         weight=r12_coverage_weight,
     )
+    coverage_conditions += _r20_coverage_conditions(
+        include=include_r20_coverage,
+        rank=r20_coverage_rank,
+        learning_rate=adamw_lrs[-1],
+        adamw_steps=adamw_steps,
+        polish_maxiter=polish_maxiter,
+        state_eigenspectrum_modes=r20_state_eigenspectrum_modes,
+        state_eigenspectrum_scales=r20_state_eigenspectrum_scales,
+        observer_error_modes=r20_observer_error_modes,
+        observer_error_scales=r20_observer_error_scales,
+        weight=r20_coverage_weight,
+    )
     if coverage_conditions:
-        ranks = tuple(dict.fromkeys((*ranks, r12_coverage_rank)))
+        coverage_ranks = tuple(condition.rank for condition in coverage_conditions)
+        ranks = tuple(dict.fromkeys((*ranks, *coverage_ranks)))
     summary, arrays = timed_run(
         ranks=ranks,
         fit_ranks=fit_ranks,
@@ -148,6 +229,18 @@ def materialize(
             "No trajectory eigenspectrum coverage, broader rank sweep, GRU, "
             "linear recurrence, robust training variants, or direct "
             "teacher-cloning claims."
+        )
+    if include_r20_coverage:
+        summary["scope"] = (
+            "Focused r=20 state-coverage closure for the smooth spline "
+            "time-basis output-feedback bridge. Coverage rows are restricted "
+            "to state-eigenspectrum m=4 at scales 1 and 3 plus observer-error "
+            "state m=1 at scale 0.3, all with weight 0.1."
+        )
+        summary["non_goals"] = (
+            "No broader rank sweep, trajectory eigenspectrum coverage, affine "
+            "tracker, recurrent controller, GRU, robust training variants, or "
+            "direct teacher-cloning claims."
         )
     entries = _row_entries(summary)
     reference = materialize_reference()
@@ -257,7 +350,7 @@ def _row_entries(summary: dict[str, Any]) -> list[dict[str, Any]]:
             )
             notes = (
                 "Full standard certificate computed from saved deterministic arrays "
-                "for the r=12 state-coverage follow-up."
+                f"for the r={rank} state-coverage follow-up."
             )
         entries.append(
             {
@@ -306,6 +399,43 @@ def _r12_coverage_conditions(
             **common_kwargs,
         )
         + r12_observer_error_state_coverage_conditions(
+            modes=observer_error_modes,
+            scales=observer_error_scales,
+            **common_kwargs,
+        )
+    )
+
+
+def _r20_coverage_conditions(
+    *,
+    include: bool,
+    rank: int,
+    learning_rate: float,
+    adamw_steps: int,
+    polish_maxiter: int,
+    state_eigenspectrum_modes: tuple[int, ...],
+    state_eigenspectrum_scales: tuple[float, ...],
+    observer_error_modes: tuple[int, ...],
+    observer_error_scales: tuple[float, ...],
+    weight: float,
+) -> tuple[TimeBasisCondition, ...]:
+    if not include:
+        return ()
+    if rank != 20:
+        raise ValueError("r20 coverage materialization only supports rank 20.")
+    common_kwargs = {
+        "weight": weight,
+        "maxiter": adamw_steps,
+        "learning_rate": learning_rate,
+        "polish_maxiter": polish_maxiter,
+    }
+    return (
+        r20_state_eigenspectrum_coverage_conditions(
+            modes=state_eigenspectrum_modes,
+            scales=state_eigenspectrum_scales,
+            **common_kwargs,
+        )
+        + r20_observer_error_state_coverage_conditions(
             modes=observer_error_modes,
             scales=observer_error_scales,
             **common_kwargs,
