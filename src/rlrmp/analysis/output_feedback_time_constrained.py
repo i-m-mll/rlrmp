@@ -37,9 +37,16 @@ from rlrmp.analysis.output_feedback import (
 )
 from rlrmp.analysis.output_feedback_rollout_recovery import (
     _action_mismatch_ratio,
+    _coverage_state_objective,
+    _coverage_trajectory_objective,
     _effective_rank_from_covariance,
+    _eigenspectrum_coverage_samples,
+    _empty_coverage_samples,
+    _observer_error_coverage_samples,
     _state_scales,
     _training_ensemble,
+    EigenspectrumCoverageConfig,
+    ObserverErrorCoverageConfig,
 )
 from rlrmp.analysis.rerun_metadata import (
     DEFAULT_DISCRETIZATION,
@@ -73,6 +80,8 @@ class TimeBasisCondition:
     polish_maxiter: int | None = None
     adam_clip_norm: float | None = 1e4
     use_whitening: bool = True
+    eigenspectrum_coverage: EigenspectrumCoverageConfig | None = None
+    observer_error_coverage: ObserverErrorCoverageConfig | None = None
 
     @property
     def label(self) -> str:
@@ -86,7 +95,26 @@ class TimeBasisCondition:
             suffix = f"adamw_then_lbfgsb_lr_{_float_label(self.learning_rate)}"
         else:
             raise ValueError(f"Unknown optimizer {self.optimizer!r}.")
-        return f"spline_r{self.rank}__{self.initialization}_{suffix}"
+        return f"spline_r{self.rank}__{self.initialization}_{suffix}{self._coverage_suffix()}"
+
+    def _coverage_suffix(self) -> str:
+        """Return a stable label suffix for optional coverage objectives."""
+
+        if self.eigenspectrum_coverage is not None and self.observer_error_coverage is not None:
+            raise ValueError("Time-basis conditions cannot combine coverage config types.")
+        if self.eigenspectrum_coverage is not None:
+            coverage = self.eigenspectrum_coverage
+            return (
+                f"_eigen_{coverage.objective}_m{coverage.n_modes}"
+                f"_s{_float_label(coverage.scale)}_w{_float_label(coverage.weight)}"
+            )
+        if self.observer_error_coverage is not None:
+            coverage = self.observer_error_coverage
+            return (
+                f"_observer_error_{coverage.objective}_m{coverage.n_modes}"
+                f"_s{_float_label(coverage.scale)}_w{_float_label(coverage.weight)}"
+            )
+        return ""
 
 
 @dataclass(frozen=True)
@@ -169,6 +197,7 @@ def run_time_basis_bridge(
     adamw_clip_norm: float = 1e4,
     training_config: LinearTrainingConfig = LinearTrainingConfig(n_steps=500),
     output_config: OutputFeedbackConfig = OutputFeedbackConfig(),
+    coverage_conditions: tuple[TimeBasisCondition, ...] = (),
 ) -> TimeBasisResult:
     """Run projection checks and bounded training rows."""
 
@@ -307,9 +336,68 @@ def run_time_basis_bridge(
         adamw_steps=adamw_steps,
         polish_maxiter=polish_maxiter,
         adamw_clip_norm=adamw_clip_norm,
-    )
+    ) + coverage_conditions
     fits = []
+    eigenspectrum_coverage_by_label: dict[str, dict[str, Any]] = {}
+    observer_error_coverage_by_label: dict[str, dict[str, Any]] = {}
+    coverage_arrays: dict[str, np.ndarray] = {}
     for condition in conditions:
+        _validate_condition(condition)
+        if condition.eigenspectrum_coverage is None and condition.observer_error_coverage is None:
+            (
+                coverage_epsilons,
+                coverage_trajectory_weights,
+                coverage_x,
+                coverage_xhat,
+                coverage_times,
+                coverage_state_weights,
+            ) = _empty_coverage_samples(plant)
+        elif condition.eigenspectrum_coverage is not None:
+            (
+                coverage_epsilons,
+                coverage_trajectory_weights,
+                coverage_x,
+                coverage_xhat,
+                coverage_times,
+                coverage_state_weights,
+                coverage_metadata,
+                condition_arrays,
+            ) = _eigenspectrum_coverage_samples(
+                plant=plant,
+                schedule=schedule,
+                K_ref=K_ref,
+                x0=x0,
+                budget_l2=float(jnp.sqrt(jnp.asarray(budget))),
+                gamma=gamma_ref.gamma,
+                output_config=output_config,
+                coverage_config=condition.eigenspectrum_coverage,
+            )
+            eigenspectrum_coverage_by_label[condition.label] = coverage_metadata
+            for key, value in condition_arrays.items():
+                coverage_arrays[f"{condition.label}_{key}"] = value
+        else:
+            assert condition.observer_error_coverage is not None
+            (
+                coverage_epsilons,
+                coverage_trajectory_weights,
+                coverage_x,
+                coverage_xhat,
+                coverage_times,
+                coverage_state_weights,
+                coverage_metadata,
+                condition_arrays,
+            ) = _observer_error_coverage_samples(
+                plant=plant,
+                schedule=schedule,
+                K_ref=K_ref,
+                x0=x0,
+                budget_l2=float(jnp.sqrt(jnp.asarray(budget))),
+                output_config=output_config,
+                coverage_config=condition.observer_error_coverage,
+            )
+            observer_error_coverage_by_label[condition.label] = coverage_metadata
+            for key, value in condition_arrays.items():
+                coverage_arrays[f"{condition.label}_{key}"] = value
         initial_K = jnp.zeros_like(K_ref)
         if condition.initialization == "bellman_projected":
             initial_K = bellman.K
@@ -324,6 +412,12 @@ def run_time_basis_bridge(
             states=states,
             weights=weights,
             state_scales=state_scales,
+            coverage_epsilons=coverage_epsilons,
+            coverage_trajectory_weights=coverage_trajectory_weights,
+            coverage_x=coverage_x,
+            coverage_xhat=coverage_xhat,
+            coverage_times=coverage_times,
+            coverage_state_weights=coverage_state_weights,
             x0=x0,
             riccati_epsilon=riccati_epsilon,
             budget=budget,
@@ -355,6 +449,8 @@ def run_time_basis_bridge(
         "rank_grid": list(ranks),
         "retained_fit_ranks": list(retained),
         "basis_family": "cardinal_cubic_b_spline",
+        "eigenspectrum_coverage": eigenspectrum_coverage_by_label,
+        "observer_error_coverage": observer_error_coverage_by_label,
         "initial_state_ensemble": _effective_rank_from_covariance(
             _weighted_covariance(states, weights)
         ),
@@ -375,6 +471,7 @@ def run_time_basis_bridge(
             },
         },
     }
+    arrays.update(coverage_arrays)
     return TimeBasisResult(
         issue_id=ISSUE_ID,
         projections=tuple(projections),
@@ -594,6 +691,12 @@ def _fit_condition(
     states: Float[Array, "batch state"],
     weights: Float[Array, " batch"],
     state_scales: Float[Array, " state"],
+    coverage_epsilons: Float[Array, "coverage time disturbance"],
+    coverage_trajectory_weights: Float[Array, " coverage"],
+    coverage_x: Float[Array, "coverage state"],
+    coverage_xhat: Float[Array, "coverage state"],
+    coverage_times: Float[Array, " coverage"],
+    coverage_state_weights: Float[Array, " coverage"],
     x0: Float[Array, " state"],
     riccati_epsilon: Float[Array, "time disturbance"],
     budget: float,
@@ -614,15 +717,61 @@ def _fit_condition(
         theta = theta_tree / scale[None, None, :]
         return jnp.einsum("tr,rai->tai", basis, theta)
 
-    def objective_theta(theta_tree: Float[Array, "rank action state"]) -> Float[Array, ""]:
-        return output_feedback_clean_objective(
+    def coverage_objective(gains: Float[Array, "time action state"]) -> Float[Array, ""]:
+        coverage = condition.eigenspectrum_coverage or condition.observer_error_coverage
+        if coverage is None:
+            return jnp.asarray(0.0, dtype=jnp.float64)
+        if coverage.objective == "trajectory":
+            return _coverage_trajectory_objective(
+                plant,
+                schedule,
+                gains,
+                x0,
+                coverage_epsilons,
+                coverage_trajectory_weights,
+                output_config,
+            )
+        if coverage.objective == "state":
+            return _coverage_state_objective(
+                plant,
+                schedule,
+                gains,
+                coverage_x,
+                coverage_xhat,
+                coverage_times,
+                coverage_state_weights,
+                output_config,
+            )
+        raise ValueError(f"Unknown coverage objective={coverage.objective!r}.")
+
+    objective_reference = float(
+        output_feedback_clean_objective(
             plant,
             schedule,
-            to_K(theta_tree),
+            K_ref,
             states,
             weights,
             output_config,
         )
+        + coverage_objective(K_ref)
+    )
+
+    def objective_theta(theta_tree: Float[Array, "rank action state"]) -> Float[Array, ""]:
+        gains = to_K(theta_tree)
+        objective = output_feedback_clean_objective(
+            plant,
+            schedule,
+            gains,
+            states,
+            weights,
+            output_config,
+        )
+        if (
+            condition.eigenspectrum_coverage is not None
+            or condition.observer_error_coverage is not None
+        ):
+            objective = objective + coverage_objective(gains)
+        return objective
 
     @jax.jit
     def value_and_grad_flat(theta: Float[Array, " flat"]) -> tuple[Float[Array, ""], Array]:
@@ -773,9 +922,9 @@ def _fit_condition(
         K=K_final,
         objective_initial=objective_initial,
         objective_final=objective_final,
-        objective_reference=reference_objective,
+        objective_reference=objective_reference,
         objective_zero=objective_zero,
-        objective_ratio_to_reference=objective_final / reference_objective,
+        objective_ratio_to_reference=objective_final / objective_reference,
         gain_relative_error=float(jnp.linalg.norm(K_final - K_ref) / jnp.linalg.norm(K_ref)),
         gradient_norm_initial=float(np.linalg.norm(initial_grad)),
         gradient_norm_final=float(np.linalg.norm(final_grad)),
@@ -869,6 +1018,95 @@ def _conditions_for_ranks(
     return tuple(rows)
 
 
+def r12_state_eigenspectrum_coverage_conditions(
+    *,
+    modes: tuple[int, ...] = (1, 4),
+    scales: tuple[float, ...] = (0.3, 1.0, 3.0),
+    weight: float = 0.1,
+    maxiter: int = 2000,
+    learning_rate: float = 1e-2,
+    polish_maxiter: int = 1000,
+    adam_clip_norm: float = 1e4,
+) -> tuple[TimeBasisCondition, ...]:
+    """Return the planned r=12 state-eigenspectrum coverage rows."""
+
+    return tuple(
+        TimeBasisCondition(
+            rank=12,
+            initialization="scratch",
+            optimizer="adamw_then_lbfgsb",
+            learning_rate=learning_rate,
+            maxiter=maxiter,
+            polish_maxiter=polish_maxiter,
+            adam_clip_norm=adam_clip_norm,
+            eigenspectrum_coverage=EigenspectrumCoverageConfig(
+                n_modes=n_modes,
+                scale=scale,
+                weight=weight,
+                objective="state",
+            ),
+        )
+        for n_modes in modes
+        for scale in scales
+    )
+
+
+def r12_observer_error_state_coverage_conditions(
+    *,
+    modes: tuple[int, ...] = (1,),
+    scales: tuple[float, ...] = (0.3, 1.0),
+    weight: float = 0.1,
+    maxiter: int = 2000,
+    learning_rate: float = 1e-2,
+    polish_maxiter: int = 1000,
+    adam_clip_norm: float = 1e4,
+) -> tuple[TimeBasisCondition, ...]:
+    """Return the planned r=12 observer-error state coverage rows."""
+
+    return tuple(
+        TimeBasisCondition(
+            rank=12,
+            initialization="scratch",
+            optimizer="adamw_then_lbfgsb",
+            learning_rate=learning_rate,
+            maxiter=maxiter,
+            polish_maxiter=polish_maxiter,
+            adam_clip_norm=adam_clip_norm,
+            observer_error_coverage=ObserverErrorCoverageConfig(
+                n_modes=n_modes,
+                scale=scale,
+                weight=weight,
+                objective="state",
+            ),
+        )
+        for n_modes in modes
+        for scale in scales
+    )
+
+
+def r12_state_coverage_conditions() -> tuple[TimeBasisCondition, ...]:
+    """Return the default r=12 state-only coverage follow-up row set."""
+
+    return (
+        r12_state_eigenspectrum_coverage_conditions()
+        + r12_observer_error_state_coverage_conditions()
+    )
+
+
+def _validate_condition(condition: TimeBasisCondition) -> None:
+    if (
+        condition.eigenspectrum_coverage is not None
+        and condition.observer_error_coverage is not None
+    ):
+        raise ValueError(
+            f"Condition {condition.label!r} cannot combine eigenspectrum and "
+            "observer-error coverage."
+        )
+    coverage = condition.eigenspectrum_coverage or condition.observer_error_coverage
+    if coverage is not None and coverage.objective not in {"trajectory", "state"}:
+        raise ValueError(f"Unknown coverage objective={coverage.objective!r}.")
+
+
 def _default_retained_ranks(projections: list[TimeBasisProjection]) -> tuple[int, ...]:
     ranks = [
         row.rank
@@ -895,9 +1133,16 @@ def _projection_summary(row: TimeBasisProjection) -> dict[str, Any]:
 
 
 def _fit_summary(row: TimeBasisFit) -> dict[str, Any]:
+    condition = row.condition.__dict__.copy()
+    condition.pop("eigenspectrum_coverage", None)
+    condition.pop("observer_error_coverage", None)
+    if row.condition.eigenspectrum_coverage is not None:
+        condition["eigenspectrum_coverage"] = row.condition.eigenspectrum_coverage.__dict__
+    if row.condition.observer_error_coverage is not None:
+        condition["observer_error_coverage"] = row.condition.observer_error_coverage.__dict__
     return {
         "label": row.label,
-        "condition": row.condition.__dict__,
+        "condition": condition,
         "initialization": row.condition.initialization,
         "optimizer_status": row.optimizer_status,
         "optimizer_success": row.optimizer_success,
@@ -955,6 +1200,9 @@ __all__ = [
     "ISSUE_ID",
     "SPLINE_RANKS",
     "TimeBasisCondition",
+    "r12_observer_error_state_coverage_conditions",
+    "r12_state_coverage_conditions",
+    "r12_state_eigenspectrum_coverage_conditions",
     "render_markdown",
     "result_summary",
     "run_time_basis_bridge",
