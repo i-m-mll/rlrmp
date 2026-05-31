@@ -630,7 +630,7 @@ def materialize(
         if conditions is not None:
             continue
         if row_index == len(materialized_conditions):
-            has_supervised_pass = any(_is_supervised_representation_pass(row) for row in rows)
+            has_supervised_pass = any(_is_reward_gate_representation_pass(row) for row in rows)
             if (
                 extension_conditions
                 and not supervised_extension_materialized
@@ -642,9 +642,9 @@ def materialize(
             if deferred_reward_conditions:
                 if has_supervised_pass:
                     materialized_conditions.extend(deferred_reward_conditions)
-                    reward_gating_status = "released_after_supervised_representation_pass"
+                    reward_gating_status = "released_after_supervised_action_io_representation_pass"
                 else:
-                    reward_gating_status = "stopped_no_supervised_representation_pass"
+                    reward_gating_status = "stopped_no_supervised_action_io_representation_pass"
                 deferred_reward_conditions = ()
 
     component_counts: Counter[str] = Counter()
@@ -696,6 +696,9 @@ def materialize(
                 "supervised_representation_pass_rows": [
                     row.spec.run_id for row in rows if _is_supervised_representation_pass(row)
                 ],
+                "reward_gate_representation_pass_rows": [
+                    row.spec.run_id for row in rows if _is_reward_gate_representation_pass(row)
+                ],
                 "reward_gating_status": reward_gating_status,
             },
         },
@@ -740,11 +743,11 @@ def render_markdown(summary: dict[str, Any]) -> str:
 
     table = [
         (
-            "| row | family | lens | verdict | objective ratio | action mismatch | "
-            "R_u | matrix residual | obs action | meas action | meas output | "
+            "| row | family | lens | verdict | clean objective ratio | lens objective ratio | "
+            "action mismatch | R_u | matrix residual | obs action | meas action | meas output | "
             "proc action | proc output | cost sidecar | io-map |"
         ),
-        "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for row in summary["rows"]:
         metrics = row["metrics"]
@@ -756,6 +759,7 @@ def render_markdown(summary: dict[str, Any]) -> str:
             f"{metrics['evaluation_lens']} | "
             f"{metrics['verdict']} | "
             f"{metrics['objective_ratio_to_clean_reference']:.8g} | "
+            f"{metrics['objective_ratio_to_lens_reference']:.8g} | "
             f"{metrics['state_weighted_action_mismatch']:.8g} | "
             f"{metrics['aggregate_action_energy_mismatch']:.8g} | "
             f"{metrics['projection']['combined_relative_residual']:.8g} | "
@@ -793,13 +797,15 @@ Reward gating: `{summary["diagnostics"]["audit"]["reward_gating_status"]}`.
 
 ## Certificate Boundary
 
-These rows are diagnostics, not bridge passes. The recurrent controller is an
-augmented-linear system over `z_t = [x_t; h_t]`, and action/visited-state
-components are reported through the existing augmented recurrent adapter. The
-formal I/O-map certificate is consumed through the standard certificate
-component builder; projected-oracle rows remain diagnostic even when those
-components are available. Supervised rows are optimized against external action
-and/or response-map losses and are not reward-trained.
+These rows are diagnostics, not bridge passes. The recurrent controller has an
+augmented state `z_t = [x_t; h_t]`, but these rows do not yet supply the full
+augmented-linear certificate contract (augmented action sensitivities,
+transitions, value matrices, and Bellman Hessians). The standard certificate
+therefore uses the recurrent I/O-map path: external response-map components and
+visited-state/action diagnostics are available, while static transition/value
+rows are explicitly not applicable. Projected-oracle rows remain diagnostic
+even when response-map components are available. Supervised rows are optimized
+against external action and/or response-map losses and are not reward-trained.
 
 {"\n".join(component_rows)}
 
@@ -2007,10 +2013,10 @@ def _manifest_for_condition(
     candidate_cost = _batch_quadratic_cost(schedule, rollout.plant_states, candidate_actions)
     reference_cost = _batch_quadratic_cost(schedule, reference_batch["x"], reference_actions)
     augmented_states = np.concatenate([rollout.plant_states, rollout.hidden_states], axis=-1)
-    include_disturbance_cost_sidecar = condition.row_family == "supervised_action_io_map_fit"
     components = build_standard_certificate_components(
         architecture="linear_recurrence",
-        certificate_mode="augmented_linear",
+        certificate_mode="empirical_nonlinear",
+        states=augmented_states,
         augmented_states=augmented_states,
         candidate_actions=candidate_actions,
         reference_actions=reference_actions,
@@ -2029,15 +2035,9 @@ def _manifest_for_condition(
         reference_disturbance_to_state_map=response_maps["reference_disturbance_to_state"],
         candidate_disturbance_to_output_map=response_maps["candidate_disturbance_to_output"],
         reference_disturbance_to_output_map=response_maps["reference_disturbance_to_output"],
-        disturbance_state_cost=(
-            np.asarray(schedule.Q, dtype=np.float64) if include_disturbance_cost_sidecar else None
-        ),
-        disturbance_action_cost=(
-            np.asarray(schedule.R, dtype=np.float64) if include_disturbance_cost_sidecar else None
-        ),
-        disturbance_terminal_state_cost=(
-            np.asarray(schedule.Q_f, dtype=np.float64) if include_disturbance_cost_sidecar else None
-        ),
+        disturbance_state_cost=np.asarray(schedule.Q, dtype=np.float64),
+        disturbance_action_cost=np.asarray(schedule.R, dtype=np.float64),
+        disturbance_terminal_state_cost=np.asarray(schedule.Q_f, dtype=np.float64),
         disturbance_history_covariance=None,
         optimizer_metadata={
             **fit_metadata,
@@ -2290,6 +2290,13 @@ def _is_supervised_representation_pass(row: BridgeRunManifest) -> bool:
     return (
         row.metrics["row_family"]
         in {"supervised_action_fit", "supervised_io_map_fit", "supervised_action_io_map_fit"}
+        and row.metrics["verdict"] == "supervised_representation_pass"
+    )
+
+
+def _is_reward_gate_representation_pass(row: BridgeRunManifest) -> bool:
+    return (
+        row.metrics["row_family"] == "supervised_action_io_map_fit"
         and row.metrics["verdict"] == "supervised_representation_pass"
     )
 

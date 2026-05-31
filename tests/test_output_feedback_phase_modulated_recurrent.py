@@ -438,5 +438,5 @@ def test_default_materialize_gates_reward_when_supervised_rows_do_not_pass(monke
     assert summary["diagnostics"]["audit"]["supervised_extension_materialized"] is True
     assert (
         summary["diagnostics"]["audit"]["reward_gating_status"]
-        == "stopped_no_supervised_representation_pass"
+        == "stopped_no_supervised_action_io_representation_pass"
     )
