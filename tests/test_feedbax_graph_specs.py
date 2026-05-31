@@ -102,3 +102,4 @@ def test_write_graph_spec_bundle_creates_companion_manifest(tmp_path) -> None:
     assert graph_payload["nodes"]["net"]["type"] == "RLRMPSimpleStagedNetwork"
     assert manifest_payload["schema_version"] == "rlrmp.feedbax_graph.v1"
     assert bundle.to_run_metadata()["graph_spec_path"] == "model.graph.json"
+    assert bundle.to_run_metadata()["manifest_path"] == "model.graph.manifest.json"
