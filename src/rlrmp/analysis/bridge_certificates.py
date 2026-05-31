@@ -27,6 +27,9 @@ BELLMAN_HESSIAN_RESIDUAL = "bellman_hessian_residual"
 VISITED_SUBSPACE_DIAGNOSTICS = "visited_subspace_diagnostics"
 OPTIMIZER_METADATA = "optimizer_metadata"
 RECURRENCE_GRU_DIAGNOSTICS = "recurrence_gru_diagnostics"
+OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH = "observation_history_to_action_map_mismatch"
+DISTURBANCE_HISTORY_TO_ACTION_MAP_MISMATCH = "disturbance_history_to_action_map_mismatch"
+DISTURBANCE_HISTORY_TO_STATE_MAP_MISMATCH = "disturbance_history_to_state_map_mismatch"
 
 _RECURRENCE_ARCHITECTURES = {"linear_recurrence", "gru"}
 
@@ -81,6 +84,83 @@ def action_energy_mismatch_summary(
         "aggregate_delta_energy": _json_float(aggregate_delta_energy),
         "aggregate_reference_energy": _json_float(aggregate_reference_energy),
     }
+
+
+def response_map_mismatch_summary(
+    *,
+    candidate_map: np.ndarray,
+    reference_map: np.ndarray,
+    input_covariance: np.ndarray | None = None,
+    numerics: CertificateNumerics = CertificateNumerics(),
+) -> dict[str, Any]:
+    """Return finite-horizon input/output response-map mismatch summaries.
+
+    Args:
+        candidate_map: Candidate linear response map. The last two axes are
+            ``(output, input)``; any leading axes are flattened into map slices.
+        reference_map: Reference response map with the same shape.
+        input_covariance: Optional input-history covariance with shape
+            ``(input, input)`` or ``(*leading, input, input)``.
+        numerics: Denominator floor used in ratios.
+    """
+
+    candidate = _as_float_array(candidate_map)
+    reference = _as_float_array(reference_map)
+    if candidate.shape != reference.shape:
+        raise ValueError("candidate and reference response maps must have the same shape")
+    if candidate.ndim < 2:
+        raise ValueError("response maps must have at least output and input dimensions")
+
+    output_dim, input_dim = candidate.shape[-2:]
+    leading_shape = candidate.shape[:-2]
+    candidate_slices = candidate.reshape((-1, output_dim, input_dim))
+    reference_slices = reference.reshape((-1, output_dim, input_dim))
+    delta_slices = candidate_slices - reference_slices
+    delta_energy = np.sum(delta_slices**2, axis=(1, 2))
+    reference_energy = np.sum(reference_slices**2, axis=(1, 2))
+    ratios = delta_energy / np.maximum(reference_energy, numerics.denominator_floor)
+    summary = {
+        "delta_frobenius": _json_float(np.sqrt(np.sum(delta_energy))),
+        "reference_frobenius": _json_float(np.sqrt(np.sum(reference_energy))),
+        "mismatch_ratio_mean": _json_float(np.mean(ratios)),
+        "mismatch_ratio_max": _json_float(np.max(ratios)),
+        "aggregate_mismatch_ratio": _json_float(
+            np.sum(delta_energy) / max(np.sum(reference_energy), numerics.denominator_floor)
+        ),
+        "map_slices": int(candidate_slices.shape[0]),
+        "map_shape": [int(dim) for dim in candidate.shape],
+    }
+    if input_covariance is not None:
+        covariance_slices = _map_input_covariances(input_covariance, leading_shape, input_dim)
+        weighted_delta = np.einsum(
+            "soi,sij,soj->s",
+            delta_slices,
+            covariance_slices,
+            delta_slices,
+        )
+        weighted_reference = np.einsum(
+            "soi,sij,soj->s",
+            reference_slices,
+            covariance_slices,
+            reference_slices,
+        )
+        weighted_ratios = weighted_delta / np.maximum(
+            weighted_reference,
+            numerics.denominator_floor,
+        )
+        summary.update(
+            {
+                "covariance_weighted_delta_rms": _json_float(
+                    np.sqrt(np.mean(np.maximum(weighted_delta, 0.0)))
+                ),
+                "covariance_weighted_reference_rms": _json_float(
+                    np.sqrt(np.mean(np.maximum(weighted_reference, 0.0)))
+                ),
+                "covariance_weighted_mismatch_ratio_mean": _json_float(np.mean(weighted_ratios)),
+                "covariance_weighted_mismatch_ratio_max": _json_float(np.max(weighted_ratios)),
+            }
+        )
+    return summary
 
 
 def missing_component(name: str, reason: str) -> BridgeCertificateComponent:
@@ -147,6 +227,34 @@ def state_weighted_action_mismatch_component(
         n_samples=int(np.prod(candidate.shape[:2])),
         state_label=state_label,
         action_label=action_label,
+    )
+
+
+def response_map_mismatch_component(
+    *,
+    candidate_map: np.ndarray | None,
+    reference_map: np.ndarray | None,
+    input_covariance: np.ndarray | None = None,
+    numerics: CertificateNumerics = CertificateNumerics(),
+    name: str,
+    input_label: str,
+    output_label: str,
+) -> BridgeCertificateComponent:
+    """Return a finite-horizon I/O-map mismatch row."""
+
+    if candidate_map is None or reference_map is None:
+        return missing_component(name, "requires candidate/reference finite-horizon response maps")
+    summary = response_map_mismatch_summary(
+        candidate_map=candidate_map,
+        reference_map=reference_map,
+        input_covariance=input_covariance,
+        numerics=numerics,
+    )
+    return BridgeCertificateComponent.available(
+        name,
+        **summary,
+        input_label=input_label,
+        output_label=output_label,
     )
 
 
@@ -338,6 +446,15 @@ def recurrence_safe_components(
     *,
     architecture: BridgeArchitecture,
     diagnostics: dict[str, Any] | None = None,
+    candidate_observation_to_action_map: np.ndarray | None = None,
+    reference_observation_to_action_map: np.ndarray | None = None,
+    observation_history_covariance: np.ndarray | None = None,
+    candidate_disturbance_to_action_map: np.ndarray | None = None,
+    reference_disturbance_to_action_map: np.ndarray | None = None,
+    candidate_disturbance_to_state_map: np.ndarray | None = None,
+    reference_disturbance_to_state_map: np.ndarray | None = None,
+    disturbance_history_covariance: np.ndarray | None = None,
+    numerics: CertificateNumerics = CertificateNumerics(),
 ) -> tuple[BridgeCertificateComponent, ...]:
     """Return honest rows for recurrence/GRU cases without formal linear claims."""
 
@@ -360,6 +477,33 @@ def recurrence_safe_components(
         )
     )
     return (
+        response_map_mismatch_component(
+            candidate_map=candidate_observation_to_action_map,
+            reference_map=reference_observation_to_action_map,
+            input_covariance=observation_history_covariance,
+            numerics=numerics,
+            name=OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH,
+            input_label="observation_history",
+            output_label="action",
+        ),
+        response_map_mismatch_component(
+            candidate_map=candidate_disturbance_to_action_map,
+            reference_map=reference_disturbance_to_action_map,
+            input_covariance=disturbance_history_covariance,
+            numerics=numerics,
+            name=DISTURBANCE_HISTORY_TO_ACTION_MAP_MISMATCH,
+            input_label="disturbance_history",
+            output_label="action",
+        ),
+        response_map_mismatch_component(
+            candidate_map=candidate_disturbance_to_state_map,
+            reference_map=reference_disturbance_to_state_map,
+            input_covariance=disturbance_history_covariance,
+            numerics=numerics,
+            name=DISTURBANCE_HISTORY_TO_STATE_MAP_MISMATCH,
+            input_label="disturbance_history",
+            output_label="state",
+        ),
         BridgeCertificateComponent.not_applicable(CLOSED_LOOP_TRANSITION_MISMATCH, reason),
         BridgeCertificateComponent.not_applicable(VALUE_POLICY_GAP, reason),
         BridgeCertificateComponent.not_applicable(BELLMAN_HESSIAN_RESIDUAL, reason),
@@ -383,6 +527,14 @@ def augmented_linear_recurrent_components(
     augmented_state_covariances: np.ndarray | None = None,
     optimizer_metadata: dict[str, Any] | None = None,
     recurrence_diagnostics: dict[str, Any] | None = None,
+    candidate_observation_to_action_map: np.ndarray | None = None,
+    reference_observation_to_action_map: np.ndarray | None = None,
+    observation_history_covariance: np.ndarray | None = None,
+    candidate_disturbance_to_action_map: np.ndarray | None = None,
+    reference_disturbance_to_action_map: np.ndarray | None = None,
+    candidate_disturbance_to_state_map: np.ndarray | None = None,
+    reference_disturbance_to_state_map: np.ndarray | None = None,
+    disturbance_history_covariance: np.ndarray | None = None,
     layout: ArrayLayout = "batch_time_state",
     numerics: CertificateNumerics = CertificateNumerics(),
     state_label: str = "augmented_state",
@@ -448,6 +600,33 @@ def augmented_linear_recurrent_components(
             numerics=numerics,
             state_label=state_label,
         ),
+        response_map_mismatch_component(
+            candidate_map=candidate_observation_to_action_map,
+            reference_map=reference_observation_to_action_map,
+            input_covariance=observation_history_covariance,
+            numerics=numerics,
+            name=OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH,
+            input_label="observation_history",
+            output_label=action_label,
+        ),
+        response_map_mismatch_component(
+            candidate_map=candidate_disturbance_to_action_map,
+            reference_map=reference_disturbance_to_action_map,
+            input_covariance=disturbance_history_covariance,
+            numerics=numerics,
+            name=DISTURBANCE_HISTORY_TO_ACTION_MAP_MISMATCH,
+            input_label="disturbance_history",
+            output_label=action_label,
+        ),
+        response_map_mismatch_component(
+            candidate_map=candidate_disturbance_to_state_map,
+            reference_map=reference_disturbance_to_state_map,
+            input_covariance=disturbance_history_covariance,
+            numerics=numerics,
+            name=DISTURBANCE_HISTORY_TO_STATE_MAP_MISMATCH,
+            input_label="disturbance_history",
+            output_label=state_label,
+        ),
         (
             BridgeCertificateComponent.available(
                 RECURRENCE_GRU_DIAGNOSTICS,
@@ -486,6 +665,14 @@ def build_standard_certificate_components(
     augmented_state_covariances: np.ndarray | None = None,
     optimizer_metadata: dict[str, Any] | None = None,
     recurrence_diagnostics: dict[str, Any] | None = None,
+    candidate_observation_to_action_map: np.ndarray | None = None,
+    reference_observation_to_action_map: np.ndarray | None = None,
+    observation_history_covariance: np.ndarray | None = None,
+    candidate_disturbance_to_action_map: np.ndarray | None = None,
+    reference_disturbance_to_action_map: np.ndarray | None = None,
+    candidate_disturbance_to_state_map: np.ndarray | None = None,
+    reference_disturbance_to_state_map: np.ndarray | None = None,
+    disturbance_history_covariance: np.ndarray | None = None,
     layout: ArrayLayout = "batch_time_state",
     numerics: CertificateNumerics = CertificateNumerics(),
     state_label: str = "state",
@@ -526,6 +713,14 @@ def build_standard_certificate_components(
             augmented_state_covariances=augmented_state_covariances,
             optimizer_metadata=optimizer_metadata,
             recurrence_diagnostics=recurrence_diagnostics,
+            candidate_observation_to_action_map=candidate_observation_to_action_map,
+            reference_observation_to_action_map=reference_observation_to_action_map,
+            observation_history_covariance=observation_history_covariance,
+            candidate_disturbance_to_action_map=candidate_disturbance_to_action_map,
+            reference_disturbance_to_action_map=reference_disturbance_to_action_map,
+            candidate_disturbance_to_state_map=candidate_disturbance_to_state_map,
+            reference_disturbance_to_state_map=reference_disturbance_to_state_map,
+            disturbance_history_covariance=disturbance_history_covariance,
             layout=layout,
             numerics=numerics,
             state_label="augmented_state" if state_label == "state" else state_label,
@@ -578,6 +773,15 @@ def build_standard_certificate_components(
             recurrence_safe_components(
                 architecture=architecture,
                 diagnostics=recurrence_diagnostics,
+                candidate_observation_to_action_map=candidate_observation_to_action_map,
+                reference_observation_to_action_map=reference_observation_to_action_map,
+                observation_history_covariance=observation_history_covariance,
+                candidate_disturbance_to_action_map=candidate_disturbance_to_action_map,
+                reference_disturbance_to_action_map=reference_disturbance_to_action_map,
+                candidate_disturbance_to_state_map=candidate_disturbance_to_state_map,
+                reference_disturbance_to_state_map=reference_disturbance_to_state_map,
+                disturbance_history_covariance=disturbance_history_covariance,
+                numerics=numerics,
             )
         )
         return tuple(components)
@@ -735,6 +939,21 @@ def _time_matrix(matrix: np.ndarray, horizon: int, rows: int, cols: int) -> np.n
     raise ValueError("matrix must have shape (rows, cols) or (horizon, rows, cols)")
 
 
+def _map_input_covariances(
+    covariance: np.ndarray,
+    leading_shape: tuple[int, ...],
+    input_dim: int,
+) -> np.ndarray:
+    values = _as_float_array(covariance)
+    n_slices = int(np.prod(leading_shape, dtype=int)) if leading_shape else 1
+    if values.shape == (input_dim, input_dim):
+        return np.broadcast_to(values, (n_slices, input_dim, input_dim))
+    expected = (*leading_shape, input_dim, input_dim)
+    if values.shape == expected:
+        return values.reshape((n_slices, input_dim, input_dim))
+    raise ValueError("input covariance must have shape (input, input) or (*leading, input, input)")
+
+
 def _weighted_energy(values: np.ndarray, weights: np.ndarray) -> np.ndarray:
     return np.mean(np.einsum("tbi,tij,tbj->tb", values, weights, values), axis=1)
 
@@ -792,6 +1011,9 @@ def _gain_error_fractions(
 __all__ = [
     "BELLMAN_HESSIAN_RESIDUAL",
     "CLOSED_LOOP_TRANSITION_MISMATCH",
+    "DISTURBANCE_HISTORY_TO_ACTION_MAP_MISMATCH",
+    "DISTURBANCE_HISTORY_TO_STATE_MAP_MISMATCH",
+    "OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH",
     "OPTIMIZER_METADATA",
     "RECURRENCE_GRU_DIAGNOSTICS",
     "STATE_WEIGHTED_ACTION_MISMATCH",
@@ -807,6 +1029,8 @@ __all__ = [
     "missing_component",
     "optimizer_metadata_component",
     "recurrence_safe_components",
+    "response_map_mismatch_component",
+    "response_map_mismatch_summary",
     "state_weighted_action_mismatch_component",
     "value_policy_gap_component",
     "visited_subspace_diagnostics_component",

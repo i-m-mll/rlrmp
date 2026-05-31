@@ -21,11 +21,15 @@ FailureClass = Literal[
     "optimizer_basin",
     "objective_mismatch",
     "sidecar_improving_non_equivalent",
+    "io_map_mismatch",
+    "representation_failure",
     "mixed",
     "uncertain",
 ]
 
 SIDECAR_IMPROVING_NON_EQUIVALENT = "sidecar_improving_non_equivalent"
+IO_MAP_MISMATCH = "io_map_mismatch"
+REPRESENTATION_FAILURE = "representation_failure"
 
 ObjectiveFn = Callable[[np.ndarray], float]
 GradientFn = Callable[[np.ndarray], np.ndarray]
@@ -253,7 +257,9 @@ def classify_failure(
     learned_gradient_norm: float | None,
     reference_gradient_norm: float | None,
     certificate_mismatch_ratio: float | None,
-    subspace_decomposition: Mapping[str, Any] | None,
+    io_map_mismatch_ratio: float | None = None,
+    representation_failed: bool = False,
+    subspace_decomposition: Mapping[str, Any] | None = None,
     sidecar_improved: bool = False,
     equivalence_metrics_failed: bool = False,
     numerics: FailureDecompositionNumerics = FailureDecompositionNumerics(),
@@ -276,6 +282,11 @@ def classify_failure(
         certificate_mismatch_ratio is not None
         and certificate_mismatch_ratio >= numerics.certificate_failure_ratio
     )
+    io_map_bad = (
+        io_map_mismatch_ratio is not None
+        and io_map_mismatch_ratio >= numerics.certificate_failure_ratio
+    )
+    any_certificate_bad = bool(certificate_bad or io_map_bad or representation_failed)
     learned_stationary = (
         learned_gradient_norm is not None
         and learned_gradient_norm <= numerics.gradient_stationary_norm
@@ -291,16 +302,20 @@ def classify_failure(
         weak_or_unvisited is not None and weak_or_unvisited >= numerics.weak_or_unvisited_fraction
     )
 
-    if not certificate_bad and objective_close:
+    if not any_certificate_bad and objective_close:
         return {
             "classification": "not_failure",
             "reasons": ["standard mismatch and objective ratio are both within tolerance"],
         }
     if is_sidecar_improving_non_equivalent(
         sidecar_improved=sidecar_improved,
-        equivalence_metrics_failed=equivalence_metrics_failed or bool(certificate_bad),
+        equivalence_metrics_failed=equivalence_metrics_failed or any_certificate_bad,
     ):
         reasons.append(SIDECAR_IMPROVING_NON_EQUIVALENT)
+    if representation_failed:
+        reasons.append(REPRESENTATION_FAILURE)
+    if io_map_bad:
+        reasons.append(IO_MAP_MISMATCH)
     if certificate_bad and objective_close and weak_subspace_dominates:
         reasons.append("under_identification")
     if objective_bad or learned_gradient_bad:
@@ -314,7 +329,7 @@ def classify_failure(
     elif len(unique_reasons) > 1:
         classification = "mixed"
     else:
-        classification = "uncertain" if certificate_bad else "not_failure"
+        classification = "uncertain" if any_certificate_bad else "not_failure"
     return {
         "classification": classification,
         "reasons": unique_reasons,
@@ -322,6 +337,8 @@ def classify_failure(
             "objective_close": objective_close,
             "objective_bad": objective_bad,
             "certificate_bad": certificate_bad,
+            "io_map_bad": io_map_bad,
+            "representation_failed": representation_failed,
             "learned_gradient_bad": learned_gradient_bad,
             "reference_gradient_bad": reference_gradient_bad,
             "weak_subspace_dominates": weak_subspace_dominates,
@@ -389,6 +406,8 @@ def _mean_sum(rows: Sequence[Mapping[str, Any]], keys: Sequence[str]) -> float:
 __all__ = [
     "FailureClass",
     "FailureDecompositionNumerics",
+    "IO_MAP_MISMATCH",
+    "REPRESENTATION_FAILURE",
     "SIDECAR_IMPROVING_NON_EQUIVALENT",
     "classify_failure",
     "covariances_from_states",
