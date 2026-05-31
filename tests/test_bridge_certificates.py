@@ -9,6 +9,9 @@ import numpy as np
 from rlrmp.analysis.bridge_certificates import (
     BELLMAN_HESSIAN_RESIDUAL,
     CLOSED_LOOP_TRANSITION_MISMATCH,
+    DISTURBANCE_HISTORY_TO_ACTION_MAP_MISMATCH,
+    DISTURBANCE_HISTORY_TO_STATE_MAP_MISMATCH,
+    OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH,
     OPTIMIZER_METADATA,
     RECURRENCE_GRU_DIAGNOSTICS,
     STATE_WEIGHTED_ACTION_MISMATCH,
@@ -145,6 +148,9 @@ def test_gru_bundle_marks_formal_linear_components_not_applicable() -> None:
     by_name = {component.name: component for component in components}
 
     assert by_name[STATE_WEIGHTED_ACTION_MISMATCH].status == "available"
+    assert by_name[OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH].status == "missing"
+    assert by_name[DISTURBANCE_HISTORY_TO_ACTION_MAP_MISMATCH].status == "missing"
+    assert by_name[DISTURBANCE_HISTORY_TO_STATE_MAP_MISMATCH].status == "missing"
     assert by_name[VISITED_SUBSPACE_DIAGNOSTICS].status == "available"
     assert by_name[CLOSED_LOOP_TRANSITION_MISMATCH].status == "not_applicable"
     assert by_name[VALUE_POLICY_GAP].status == "not_applicable"
@@ -206,6 +212,60 @@ def test_linear_recurrence_without_augmented_inputs_keeps_static_rows_not_applic
     by_name = {component.name: component for component in components}
 
     assert by_name[STATE_WEIGHTED_ACTION_MISMATCH].status == "available"
+    assert by_name[CLOSED_LOOP_TRANSITION_MISMATCH].status == "not_applicable"
+    assert by_name[VALUE_POLICY_GAP].status == "not_applicable"
+    assert by_name[BELLMAN_HESSIAN_RESIDUAL].status == "not_applicable"
+
+
+def test_recurrent_rows_report_available_io_map_components() -> None:
+    fixture = _linear_fixture()
+    reference_observation_action = np.asarray(
+        [
+            [[1.0, 0.0, 0.0, 0.0]],
+            [[0.5, 0.5, 0.0, 0.0]],
+        ]
+    )
+    candidate_observation_action = reference_observation_action.copy()
+    candidate_observation_action[1, 0, 1] += 0.5
+    reference_disturbance_action = np.asarray([[[0.2, 0.0]], [[0.0, 0.1]]])
+    candidate_disturbance_action = reference_disturbance_action + 0.05
+    reference_disturbance_state = np.asarray(
+        [
+            [[1.0, 0.0], [0.0, 1.0]],
+            [[0.5, 0.1], [0.0, 0.5]],
+        ]
+    )
+    candidate_disturbance_state = reference_disturbance_state.copy()
+    candidate_disturbance_state[:, 0, 1] += 0.1
+
+    components = build_standard_certificate_components(
+        architecture="gru",
+        states=fixture["states"],
+        candidate_actions=np.zeros((2, 2, 1)),
+        reference_actions=np.zeros((2, 2, 1)),
+        candidate_observation_to_action_map=candidate_observation_action,
+        reference_observation_to_action_map=reference_observation_action,
+        observation_history_covariance=np.eye(4),
+        candidate_disturbance_to_action_map=candidate_disturbance_action,
+        reference_disturbance_to_action_map=reference_disturbance_action,
+        candidate_disturbance_to_state_map=candidate_disturbance_state,
+        reference_disturbance_to_state_map=reference_disturbance_state,
+        disturbance_history_covariance=np.eye(2),
+    )
+    by_name = {component.name: component for component in components}
+
+    observation_map = by_name[OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH]
+    disturbance_action_map = by_name[DISTURBANCE_HISTORY_TO_ACTION_MAP_MISMATCH]
+    disturbance_state_map = by_name[DISTURBANCE_HISTORY_TO_STATE_MAP_MISMATCH]
+    assert observation_map.status == "available"
+    assert observation_map.summary["input_label"] == "observation_history"
+    assert observation_map.summary["output_label"] == "action"
+    assert observation_map.summary["map_shape"] == [2, 1, 4]
+    assert observation_map.summary["covariance_weighted_mismatch_ratio_mean"] > 0.0
+    assert disturbance_action_map.status == "available"
+    assert disturbance_action_map.summary["input_label"] == "disturbance_history"
+    assert disturbance_state_map.status == "available"
+    assert disturbance_state_map.summary["output_label"] == "state"
     assert by_name[CLOSED_LOOP_TRANSITION_MISMATCH].status == "not_applicable"
     assert by_name[VALUE_POLICY_GAP].status == "not_applicable"
     assert by_name[BELLMAN_HESSIAN_RESIDUAL].status == "not_applicable"
