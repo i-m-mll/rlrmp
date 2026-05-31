@@ -490,8 +490,16 @@ def _deterministic_fit_rows(
     source_manifest: Path,
     extra_parameters: dict[str, Any],
     notes: str,
+    issue_id: str = ISSUE_ID,
+    array_prefix: str | None = None,
+    architecture: str = "time_constrained_free_gain",
+    optimizer_label: str = "lbfgsb_strong_optimizer_whitened",
+    gamma_factor: float = OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+    reference_controller: str = "analytical_lqr_kalman",
+    row_metrics: dict[str, Any] | None = None,
 ) -> list[BridgeRunManifest]:
     rows = []
+    prefix = array_prefix or fit["label"]
     evaluation_lenses = (
         ("nominal_clean", "clean", f"{family} nominal-clean"),
         ("riccati_epsilon_response", "under_eps", f"{family} Riccati-epsilon response"),
@@ -502,26 +510,26 @@ def _deterministic_fit_rows(
                 arrays=arrays,
                 reference=reference,
                 output_config=output_config,
-                array_prefix=f"{fit['label']}_{array_suffix}",
-                candidate_gain=np.asarray(arrays[f"{fit['label']}_K"]),
+                array_prefix=f"{prefix}_{array_suffix}",
+                candidate_gain=np.asarray(arrays[f"{prefix}_K"]),
                 optimizer_metadata=_optimizer_metadata(fit),
                 state_label=f"{evaluation_distribution}_coupled_state",
                 action_state_label=f"{evaluation_distribution}_estimated_state",
-                architecture="time_constrained_free_gain",
+                architecture=architecture,
             )
         )
         components.extend(_diagnostic_sidecars(fit=fit, reference_manifest=None))
         spec = BridgeRunSpec(
-            issue_id=ISSUE_ID,
+            issue_id=issue_id,
             run_id=make_bridge_run_id(*run_parts, lens_label),
             objective="optimal",
-            architecture="time_constrained_free_gain",
+            architecture=architecture,  # type: ignore[arg-type]
             controller_label=fit["label"],
-            optimizer_label="lbfgsb_strong_optimizer_whitened",
+            optimizer_label=optimizer_label,
             training_distribution=training_distribution,
             evaluation_lane="deterministic",
-            reference_controller="analytical_lqr_kalman",
-            gamma_factor=OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+            reference_controller=reference_controller,
+            gamma_factor=gamma_factor,
             parameters={
                 "evaluation_distribution": evaluation_distribution,
                 "distribution_family": family,
@@ -534,11 +542,74 @@ def _deterministic_fit_rows(
             BridgeRunManifest(
                 spec=spec,
                 status="full_standard_certificate",
-                metrics=_fit_metrics(fit) | {"certificate_evaluation_lens": lens_label},
+                metrics=_fit_metrics(fit)
+                | (row_metrics or {})
+                | {"certificate_evaluation_lens": lens_label},
                 artifacts={"source_manifest": _repo_relative(source_manifest)},
                 certificate_components=tuple(components),
             )
         )
+    return rows
+
+
+def deterministic_standard_rows_from_manifest_entries(
+    *,
+    entries: list[dict[str, Any]],
+    arrays: dict[str, np.ndarray],
+    reference: Any,
+    output_config: OutputFeedbackConfig,
+    issue_id: str,
+    source_manifest: Path,
+    default_family: str,
+    default_training_distribution: str = "mixed",
+    default_optimizer_label: str = "lbfgsb_strong_optimizer_whitened",
+    default_architecture: str = "time_constrained_free_gain",
+    default_gamma_factor: float = OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+    default_reference_controller: str = "analytical_lqr_kalman",
+    default_notes: str = "Full standard certificate computed from saved deterministic arrays.",
+) -> list[dict[str, Any]]:
+    """Build standard-certificate rows from saved deterministic row descriptors.
+
+    This is the adapter for follow-on materializers such as the 87edaae smooth
+    time-basis sweep: callers keep their own manifest schema, but provide one
+    descriptor per fitted row plus the NPZ array prefix containing
+    ``<prefix>_K``, ``<prefix>_clean_x``, ``<prefix>_clean_x_hat``,
+    ``<prefix>_under_eps_x``, and ``<prefix>_under_eps_x_hat``.
+    """
+
+    rows: list[dict[str, Any]] = []
+    for entry in entries:
+        fit = entry.get("fit", entry)
+        label = fit["label"]
+        run_parts = tuple(
+            entry.get("run_parts", (entry.get("source_group", "saved"), label))
+        )
+        row_manifests = _deterministic_fit_rows(
+            fit=fit,
+            arrays=arrays,
+            reference=reference,
+            output_config=output_config,
+            family=entry.get("family", default_family),
+            run_parts=run_parts,
+            training_distribution=entry.get(
+                "training_distribution",
+                default_training_distribution,
+            ),
+            source_manifest=source_manifest,
+            extra_parameters=entry.get("parameters", entry.get("row_parameters", {})),
+            notes=entry.get("notes", default_notes),
+            issue_id=issue_id,
+            array_prefix=entry.get("array_prefix", label),
+            architecture=entry.get("architecture", default_architecture),
+            optimizer_label=entry.get("optimizer_label", default_optimizer_label),
+            gamma_factor=entry.get("gamma_factor", default_gamma_factor),
+            reference_controller=entry.get(
+                "reference_controller",
+                default_reference_controller,
+            ),
+            row_metrics=entry.get("metrics"),
+        )
+        rows.extend(row.to_json_dict() for row in row_manifests)
     return rows
 
 
@@ -1204,7 +1275,10 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def _repo_relative(path: Path) -> str:
-    return str(path.relative_to(REPO_ROOT))
+    try:
+        return str(path.absolute().relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
 
 
 if __name__ == "__main__":

@@ -621,6 +621,62 @@ def _rollout_summary_rows(
     return rows
 
 
+def failure_rows_from_manifest_entries(
+    *,
+    entries: list[dict[str, Any]],
+    arrays: dict[str, np.ndarray],
+    standard_rows: dict[str, Any] | list[dict[str, Any]],
+    default_source_group: str,
+) -> list[dict[str, Any]]:
+    """Build failure-decomposition rows from saved deterministic row descriptors.
+
+    The entries use the same descriptor shape as
+    ``deterministic_standard_rows_from_manifest_entries`` in the standard
+    certificate materializer. Each descriptor supplies a fit summary, run-id
+    prefix, and NPZ array prefix; this adapter joins those rows back to their
+    standard-certificate rows and emits the existing c45adde-compatible
+    failure-decomposition schema.
+    """
+
+    standard_by_id = _standard_rows_by_id(standard_rows)
+    rows: list[dict[str, Any]] = []
+    for entry in entries:
+        fit = entry.get("fit", entry)
+        label = fit["label"]
+        run_parts = tuple(
+            entry.get("run_parts", (entry.get("source_group", default_source_group), label))
+        )
+        array_prefix = entry.get("array_prefix", label)
+        source_group = entry.get("source_group", default_source_group)
+        rows.extend(
+            _rollout_summary_rows(
+                summary={"fits": [fit]},
+                arrays=arrays,
+                standard_by_id=standard_by_id,
+                run_id_prefix=lambda _fit, run_parts=run_parts: run_parts,
+                array_prefix=lambda _fit, array_prefix=array_prefix: array_prefix,
+                source_group=source_group,
+                row_parameters=entry.get("row_parameters", entry.get("parameters", {})),
+            )
+        )
+    return rows
+
+
+def _standard_rows_by_id(
+    standard_rows: dict[str, Any] | list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    if isinstance(standard_rows, dict):
+        if "standard_certificate" in standard_rows:
+            rows = standard_rows["standard_certificate"]["rows"]
+        elif "rows" in standard_rows:
+            rows = standard_rows["rows"]
+        else:
+            rows = list(standard_rows.values())
+    else:
+        rows = standard_rows
+    return {row["spec"]["run_id"]: row for row in rows}
+
+
 def _fit_objective_summary(fit: dict[str, Any]) -> dict[str, Any]:
     return {
         "learned_objective": fit.get("objective_final"),
