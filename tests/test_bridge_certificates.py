@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 
 from rlrmp.analysis.bridge_certificates import (
@@ -12,6 +14,7 @@ from rlrmp.analysis.bridge_certificates import (
     STATE_WEIGHTED_ACTION_MISMATCH,
     VALUE_POLICY_GAP,
     VISITED_SUBSPACE_DIAGNOSTICS,
+    action_energy_mismatch_summary,
     build_standard_certificate_components,
 )
 from rlrmp.analysis.bridge_contracts import (
@@ -100,6 +103,7 @@ def test_linear_components_are_available_and_manifest_compatible(tmp_path) -> No
     assert by_name[VISITED_SUBSPACE_DIAGNOSTICS].status == "available"
     assert by_name[OPTIMIZER_METADATA].summary["final_gradient_norm"] == 0.01
     assert by_name[STATE_WEIGHTED_ACTION_MISMATCH].summary["mismatch_ratio_mean"] > 0.0
+    assert by_name[STATE_WEIGHTED_ACTION_MISMATCH].summary["aggregate_mismatch_ratio"] > 0.0
 
     manifest = BridgeRunManifest(
         spec=_spec(),
@@ -151,6 +155,77 @@ def test_gru_bundle_marks_formal_linear_components_not_applicable() -> None:
     }
 
 
+def test_linear_recurrence_uses_augmented_certificate_when_inputs_are_available() -> None:
+    fixture = _linear_fixture()
+    hidden = 0.25 * fixture["states"]
+    augmented_states = np.concatenate([fixture["states"], hidden], axis=-1)
+    reference_gain = np.concatenate(
+        [fixture["reference_gain"], np.zeros((2, 1, 2))],
+        axis=-1,
+    )
+    candidate_gain = reference_gain.copy()
+    candidate_gain[:, :, 2:] = 0.05
+    reference_transition = np.broadcast_to(np.eye(4), (2, 4, 4)).copy()
+    candidate_transition = reference_transition.copy()
+    candidate_transition[:, 0, 2] = 0.1
+    reference_value = np.broadcast_to(np.eye(4), (3, 4, 4)).copy()
+    candidate_value = reference_value + 0.01 * np.eye(4)[None]
+    bellman_hessian = np.broadcast_to(np.eye(1), (2, 1, 1)).copy()
+
+    components = build_standard_certificate_components(
+        architecture="linear_recurrence",
+        augmented_states=augmented_states,
+        candidate_augmented_action_sensitivity=candidate_gain,
+        reference_augmented_action_sensitivity=reference_gain,
+        candidate_transition=candidate_transition,
+        reference_transition=reference_transition,
+        candidate_value_matrices=candidate_value,
+        reference_value_matrices=reference_value,
+        bellman_hessian=bellman_hessian,
+        recurrence_diagnostics={"linear_recurrence": True},
+    )
+    by_name = {component.name: component for component in components}
+
+    assert by_name[STATE_WEIGHTED_ACTION_MISMATCH].status == "available"
+    assert by_name[CLOSED_LOOP_TRANSITION_MISMATCH].status == "available"
+    assert by_name[VALUE_POLICY_GAP].status == "available"
+    assert by_name[BELLMAN_HESSIAN_RESIDUAL].status == "available"
+    assert by_name[RECURRENCE_GRU_DIAGNOSTICS].summary["certificate_mode"] == "augmented_linear"
+    assert by_name[CLOSED_LOOP_TRANSITION_MISMATCH].summary["state_label"] == "augmented_state"
+
+
+def test_linear_recurrence_without_augmented_inputs_keeps_static_rows_not_applicable() -> None:
+    fixture = _linear_fixture()
+
+    components = build_standard_certificate_components(
+        architecture="linear_recurrence",
+        states=fixture["states"],
+        candidate_gain=fixture["candidate_gain"],
+        reference_gain=fixture["reference_gain"],
+    )
+    by_name = {component.name: component for component in components}
+
+    assert by_name[STATE_WEIGHTED_ACTION_MISMATCH].status == "available"
+    assert by_name[CLOSED_LOOP_TRANSITION_MISMATCH].status == "not_applicable"
+    assert by_name[VALUE_POLICY_GAP].status == "not_applicable"
+    assert by_name[BELLMAN_HESSIAN_RESIDUAL].status == "not_applicable"
+
+
+def test_action_energy_summary_reports_aggregate_ratio_separately() -> None:
+    candidate = np.asarray([[[2.0]], [[1.0]]])
+    reference = np.asarray([[[1.0]], [[1.0]]])
+
+    summary = action_energy_mismatch_summary(
+        candidate_actions=candidate,
+        reference_actions=reference,
+    )
+
+    assert summary["mismatch_ratio_mean"] == 0.5
+    assert summary["aggregate_mismatch_ratio"] == 0.5
+    assert summary["aggregate_delta_energy"] == 1.0
+    assert summary["aggregate_reference_energy"] == 2.0
+
+
 def test_output_feedback_linear_core_uses_coupled_and_estimated_state_labels() -> None:
     fixture = _linear_fixture()
     xhat = fixture["states"]
@@ -182,3 +257,19 @@ def test_output_feedback_linear_core_uses_coupled_and_estimated_state_labels() -
     assert by_name[VALUE_POLICY_GAP].summary["state_label"] == "coupled_state"
     assert by_name[BELLMAN_HESSIAN_RESIDUAL].summary["state_label"] == "estimated_state"
     assert all(component.status == "available" for component in components[:2])
+
+
+def test_visited_subspace_handles_zero_singular_values_without_warning() -> None:
+    states = np.zeros((1, 3, 4))
+    states[0, :, 0] = np.asarray([1.0, 0.5, 0.25])
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        components = build_standard_certificate_components(
+            architecture="free_time_varying",
+            states=states,
+        )
+
+    by_name = {component.name: component for component in components}
+    assert by_name[VISITED_SUBSPACE_DIAGNOSTICS].status == "available"
+    assert by_name[VISITED_SUBSPACE_DIAGNOSTICS].summary["mean_effective_rank"] == 1.0
