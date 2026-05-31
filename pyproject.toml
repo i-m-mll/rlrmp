@@ -10,6 +10,7 @@ dependencies = [
     "feedbax",
     "ipyfilechooser>=0.6.0",
     "ipywidgets>=8.1.8",
+    "modal>=1.1.4",
     "statsmodels>=0.14.5",
 ]
 
