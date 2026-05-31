@@ -58,9 +58,12 @@ def test_phase_aware_rollout_appends_phase_inputs(monkeypatch) -> None:
     plant = _tiny_plant()
     controller = LinearRecurrentController(
         recurrent_weights=0.5 * np.eye(4),
-        observation_weights=np.eye(4),
+        observation_weights=np.ones((4, 1)),
+        previous_action_weights=np.zeros((4, 1)),
+        phase_weights=np.eye(4, 3),
         readout_weights=np.ones((1, 4)),
-        feedthrough_weights=np.zeros((1, 4)),
+        feedthrough_weights=np.zeros((1, 1)),
+        readout_phase_weights=np.zeros((1, 3)),
     )
 
     batch = recurrent.rollout_phase_aware_linear_recurrent(
@@ -88,9 +91,12 @@ def test_recurrent_manifest_marks_formal_static_components_not_applicable(monkey
     plant = _tiny_plant()
     controller = LinearRecurrentController(
         recurrent_weights=0.5 * np.eye(4),
-        observation_weights=np.eye(4),
+        observation_weights=np.ones((4, 1)),
+        previous_action_weights=np.zeros((4, 1)),
+        phase_weights=np.eye(4, 3),
         readout_weights=np.zeros((1, 4)),
-        feedthrough_weights=np.zeros((1, 4)),
+        feedthrough_weights=np.zeros((1, 1)),
+        readout_phase_weights=np.zeros((1, 3)),
     )
     rollout = recurrent.rollout_phase_aware_linear_recurrent(
         controller=controller,
@@ -104,7 +110,9 @@ def test_recurrent_manifest_marks_formal_static_components_not_applicable(monkey
         label="no_coverage__scratch_seed_0",
         training_distribution="none",
         initialization="scratch_seed_0",
-        fit_reference_actions=False,
+        objective="reward_rollout",
+        hidden_dim=4,
+        n_train_steps=1,
     )
 
     manifest = recurrent._manifest_for_condition(
@@ -170,8 +178,8 @@ def test_materialize_no_coverage_with_fake_reference(monkeypatch) -> None:
 
     assert summary["issue"] == recurrent.ISSUE_ID
     assert [row["spec"]["training_distribution"] for row in summary["rows"]] == [
-        "none",
-        "nominal",
+        "clean_nominal",
+        "riccati_epsilon",
     ]
     assert len(summary["failure_decomposition"]["rows"]) == 2
     assert any(key.endswith("__hidden_states") for key in arrays)
