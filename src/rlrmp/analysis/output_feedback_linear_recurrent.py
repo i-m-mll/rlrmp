@@ -61,15 +61,9 @@ SUBSTRATE_ISSUE_ID = "4ded904"
 STANDARD_CERTIFICATE_ISSUE_ID = "d01c35a"
 FAILURE_DECOMPOSITION_ISSUE_ID = "c45adde"
 
-NOTE_PATH = (
-    REPO_ROOT / "results" / ISSUE_ID / "notes" / "output_feedback_linear_recurrent.md"
-)
+NOTE_PATH = REPO_ROOT / "results" / ISSUE_ID / "notes" / "output_feedback_linear_recurrent.md"
 MANIFEST_PATH = (
-    REPO_ROOT
-    / "results"
-    / ISSUE_ID
-    / "notes"
-    / "output_feedback_linear_recurrent_manifest.json"
+    REPO_ROOT / "results" / ISSUE_ID / "notes" / "output_feedback_linear_recurrent_manifest.json"
 )
 ARTIFACT_PATH = (
     REPO_ROOT
@@ -359,9 +353,7 @@ def materialize(
             "rows": failure_rows,
             "classification_counts": dict(
                 sorted(
-                    Counter(
-                        row["classification"]["classification"] for row in failure_rows
-                    ).items()
+                    Counter(row["classification"]["classification"] for row in failure_rows).items()
                 )
             ),
         },
@@ -702,12 +694,14 @@ def _manifest_for_condition(
         action_label="control",
     )
     by_name = {component.name: component for component in components}
-    mismatch = by_name[STATE_WEIGHTED_ACTION_MISMATCH].summary["mismatch_ratio_mean"]
+    action_summary = by_name[STATE_WEIGHTED_ACTION_MISMATCH].summary
+    mismatch = action_summary["mismatch_ratio_mean"]
     metrics = {
         "candidate_clean_cost": candidate_cost,
         "reference_clean_cost": reference_clean_cost,
         "objective_ratio_to_reference": candidate_cost / max(reference_clean_cost, 1e-12),
         "state_weighted_action_mismatch": mismatch,
+        "aggregate_action_energy_mismatch": action_summary["aggregate_mismatch_ratio"],
         "recurrence_diagnostics": recurrence_diagnostics,
         "formal_static_gain_certificate_boundary": {
             name: by_name[name].status for name in FORMAL_STATIC_GAIN_COMPONENTS
@@ -755,7 +749,8 @@ def _failure_row(
     reference_cost: float,
 ) -> dict[str, Any]:
     components = {component.name: component for component in manifest.certificate_components}
-    mismatch = components[STATE_WEIGHTED_ACTION_MISMATCH].summary.get("mismatch_ratio_mean")
+    action_summary = components[STATE_WEIGHTED_ACTION_MISMATCH].summary
+    mismatch = action_summary.get("mismatch_ratio_mean")
     objective_ratio = candidate_cost / max(reference_cost, 1e-12)
     classification = classify_failure(
         objective_ratio=objective_ratio,
@@ -777,6 +772,7 @@ def _failure_row(
         },
         "certificate": {
             "state_weighted_action_mismatch": mismatch,
+            "aggregate_action_energy_mismatch": action_summary.get("aggregate_mismatch_ratio"),
             "formal_static_gain_components": {
                 name: components[name].status for name in FORMAL_STATIC_GAIN_COMPONENTS
             },
