@@ -46,6 +46,77 @@ class GainProjection:
     singular_values: Float[np.ndarray, " basis"]
 
 
+def clamped_bspline_time_basis(
+    *, horizon: int, n_basis: int, degree: int | None = None
+) -> Float[np.ndarray, "horizon basis"]:
+    """Return a clamped B-spline phase basis over ``tau=t/(T-1)``."""
+
+    if horizon <= 0:
+        raise ValueError("horizon must be positive")
+    if n_basis <= 0:
+        raise ValueError("n_basis must be positive")
+    spline_degree = min(3, n_basis - 1) if degree is None else int(degree)
+    if spline_degree < 0 or spline_degree >= n_basis:
+        raise ValueError("degree must satisfy 0 <= degree < n_basis")
+    if n_basis == 1:
+        return np.ones((horizon, 1), dtype=np.float64)
+
+    tau = (
+        np.zeros((1,), dtype=np.float64)
+        if horizon == 1
+        else np.linspace(0.0, 1.0, horizon, dtype=np.float64)
+    )
+    n_interior = n_basis - spline_degree - 1
+    interior = (
+        np.linspace(0.0, 1.0, n_interior + 2, dtype=np.float64)[1:-1]
+        if n_interior > 0
+        else np.array([], dtype=np.float64)
+    )
+    knots = np.concatenate(
+        [
+            np.zeros((spline_degree + 1,), dtype=np.float64),
+            interior,
+            np.ones((spline_degree + 1,), dtype=np.float64),
+        ]
+    )
+    basis = np.column_stack(
+        [_bspline_basis_function(tau, i, spline_degree, knots) for i in range(n_basis)]
+    )
+    basis[tau == 1.0, :] = 0.0
+    basis[tau == 1.0, -1] = 1.0
+    row_sums = np.sum(basis, axis=1, keepdims=True)
+    if np.any(row_sums <= np.finfo(np.float64).eps):
+        raise ValueError("clamped B-spline construction produced an empty row")
+    return basis / row_sums
+
+
+def _bspline_basis_function(
+    tau: np.ndarray,
+    index: int,
+    degree: int,
+    knots: np.ndarray,
+) -> np.ndarray:
+    if degree == 0:
+        return ((knots[index] <= tau) & (tau < knots[index + 1])).astype(np.float64)
+    left_denominator = knots[index + degree] - knots[index]
+    right_denominator = knots[index + degree + 1] - knots[index + 1]
+    left = np.zeros_like(tau, dtype=np.float64)
+    right = np.zeros_like(tau, dtype=np.float64)
+    if left_denominator > 0.0:
+        left = (
+            (tau - knots[index])
+            / left_denominator
+            * _bspline_basis_function(tau, index, degree - 1, knots)
+        )
+    if right_denominator > 0.0:
+        right = (
+            (knots[index + degree + 1] - tau)
+            / right_denominator
+            * _bspline_basis_function(tau, index + 1, degree - 1, knots)
+        )
+    return left + right
+
+
 @dataclass(frozen=True)
 class TimeConstrainedGainParameterization:
     """Linear time-basis parameterization for output-feedback gains.
@@ -212,6 +283,206 @@ def _cardinal_cubic_bspline(x: np.ndarray) -> np.ndarray:
     outer = (distance >= 1.0) & (distance < 2.0)
     values[outer] = (2.0 - distance[outer]) ** 3 / 6.0
     return values
+
+
+@dataclass(frozen=True)
+class MatrixBasisProjection:
+    """Least-squares projection of a time-varying matrix sequence."""
+
+    theta: Float[np.ndarray, "basis rows cols"]
+    reconstructed: Float[np.ndarray, "horizon rows cols"]
+    residual_norm: float
+    relative_residual: float
+    rank: int
+    singular_values: Float[np.ndarray, " basis"]
+
+
+def project_matrix_sequence_to_basis(
+    matrix_sequence: Float[np.ndarray, "horizon rows cols"],
+    basis: Float[np.ndarray, "horizon basis"],
+    *,
+    rcond: float | None = None,
+) -> MatrixBasisProjection:
+    """Least-squares project a time-varying matrix sequence onto ``basis``."""
+
+    sequence = np.asarray(matrix_sequence, dtype=np.float64)
+    basis_array = np.asarray(basis, dtype=np.float64)
+    if sequence.ndim != 3:
+        raise ValueError("matrix_sequence must have shape (horizon, rows, cols)")
+    if basis_array.ndim != 2 or basis_array.shape[0] != sequence.shape[0]:
+        raise ValueError("basis must have shape (horizon, basis)")
+    flat = sequence.reshape((sequence.shape[0], sequence.shape[1] * sequence.shape[2]))
+    theta_flat, _residuals, rank, singular_values = np.linalg.lstsq(
+        basis_array,
+        flat,
+        rcond=rcond,
+    )
+    theta = theta_flat.reshape((basis_array.shape[1], sequence.shape[1], sequence.shape[2]))
+    reconstructed = np.einsum("tb,bij->tij", basis_array, theta)
+    residual_norm = float(np.linalg.norm(sequence - reconstructed))
+    sequence_norm = float(np.linalg.norm(sequence))
+    return MatrixBasisProjection(
+        theta=theta,
+        reconstructed=reconstructed,
+        residual_norm=residual_norm,
+        relative_residual=residual_norm / max(sequence_norm, np.finfo(np.float64).eps),
+        rank=int(rank),
+        singular_values=np.asarray(singular_values, dtype=np.float64),
+    )
+
+
+@dataclass(frozen=True)
+class PhaseModulatedLinearRecurrentController:
+    """Linear recurrence whose dynamics/readout matrices vary with trial phase."""
+
+    basis: Float[np.ndarray, "horizon basis"]
+    recurrent_coefficients: Float[np.ndarray, "basis hidden hidden"]
+    observation_coefficients: Float[np.ndarray, "basis hidden observation"]
+    previous_action_coefficients: Float[np.ndarray, "basis hidden action"]
+    hidden_bias_coefficients: Float[np.ndarray, "basis hidden"]
+    readout_coefficients: Float[np.ndarray, "basis action hidden"]
+    feedthrough_coefficients: Float[np.ndarray, "basis action observation"]
+    action_bias_coefficients: Float[np.ndarray, "basis action"]
+    initial_hidden: Float[np.ndarray, " hidden"] | None = None
+
+    def __post_init__(self) -> None:
+        basis = np.asarray(self.basis, dtype=np.float64)
+        recurrent = np.asarray(self.recurrent_coefficients, dtype=np.float64)
+        observation = np.asarray(self.observation_coefficients, dtype=np.float64)
+        previous_action = np.asarray(self.previous_action_coefficients, dtype=np.float64)
+        hidden_bias = np.asarray(self.hidden_bias_coefficients, dtype=np.float64)
+        readout = np.asarray(self.readout_coefficients, dtype=np.float64)
+        feedthrough = np.asarray(self.feedthrough_coefficients, dtype=np.float64)
+        action_bias = np.asarray(self.action_bias_coefficients, dtype=np.float64)
+        if basis.ndim != 2 or basis.shape[0] <= 0 or basis.shape[1] <= 0:
+            raise ValueError("basis must have shape (horizon, basis)")
+        n_basis = basis.shape[1]
+        if recurrent.ndim != 3 or recurrent.shape[0] != n_basis:
+            raise ValueError("recurrent_coefficients must have shape (basis, hidden, hidden)")
+        hidden_dim = recurrent.shape[1]
+        if recurrent.shape[2] != hidden_dim:
+            raise ValueError("recurrent coefficients must be square in hidden dimensions")
+        if observation.ndim != 3 or observation.shape[:2] != (n_basis, hidden_dim):
+            raise ValueError("observation_coefficients must have shape (basis, hidden, obs)")
+        observation_dim = observation.shape[2]
+        if readout.ndim != 3 or readout.shape[0] != n_basis or readout.shape[2] != hidden_dim:
+            raise ValueError("readout_coefficients must have shape (basis, action, hidden)")
+        action_dim = readout.shape[1]
+        if previous_action.shape != (n_basis, hidden_dim, action_dim):
+            raise ValueError("previous_action_coefficients has incompatible shape")
+        if hidden_bias.shape != (n_basis, hidden_dim):
+            raise ValueError("hidden_bias_coefficients has incompatible shape")
+        if feedthrough.shape != (n_basis, action_dim, observation_dim):
+            raise ValueError("feedthrough_coefficients has incompatible shape")
+        if action_bias.shape != (n_basis, action_dim):
+            raise ValueError("action_bias_coefficients has incompatible shape")
+        if self.initial_hidden is None:
+            initial_hidden = np.zeros((hidden_dim,), dtype=np.float64)
+        else:
+            initial_hidden = np.asarray(self.initial_hidden, dtype=np.float64)
+            if initial_hidden.shape != (hidden_dim,):
+                raise ValueError("initial_hidden must have shape (hidden,)")
+
+        object.__setattr__(self, "basis", basis)
+        object.__setattr__(self, "recurrent_coefficients", recurrent)
+        object.__setattr__(self, "observation_coefficients", observation)
+        object.__setattr__(self, "previous_action_coefficients", previous_action)
+        object.__setattr__(self, "hidden_bias_coefficients", hidden_bias)
+        object.__setattr__(self, "readout_coefficients", readout)
+        object.__setattr__(self, "feedthrough_coefficients", feedthrough)
+        object.__setattr__(self, "action_bias_coefficients", action_bias)
+        object.__setattr__(self, "initial_hidden", initial_hidden)
+
+    @property
+    def horizon(self) -> int:
+        """Number of rollout steps represented by the phase basis."""
+
+        return int(self.basis.shape[0])
+
+    @property
+    def hidden_dim(self) -> int:
+        """Hidden-state dimension."""
+
+        return int(self.recurrent_coefficients.shape[1])
+
+    @property
+    def observation_dim(self) -> int:
+        """Observation dimension."""
+
+        return int(self.observation_coefficients.shape[2])
+
+    @property
+    def action_dim(self) -> int:
+        """Action dimension."""
+
+        return int(self.readout_coefficients.shape[1])
+
+    def matrix_sequence(self, coefficients: np.ndarray) -> np.ndarray:
+        """Expand ``(basis, ...)`` coefficients into ``(time, ...)`` arrays."""
+
+        return np.einsum("tb,b...->t...", self.basis, np.asarray(coefficients))
+
+    def matrices_at(self, time_index: int) -> dict[str, np.ndarray]:
+        """Return all modulated matrices at one time index."""
+
+        if time_index < 0 or time_index >= self.horizon:
+            raise IndexError("time_index out of range")
+        weights = self.basis[time_index]
+        return {
+            "A_h": np.einsum("b,bij->ij", weights, self.recurrent_coefficients),
+            "B_y": np.einsum("b,bij->ij", weights, self.observation_coefficients),
+            "B_u": np.einsum("b,bij->ij", weights, self.previous_action_coefficients),
+            "b_h": np.einsum("b,bi->i", weights, self.hidden_bias_coefficients),
+            "C_h": np.einsum("b,bij->ij", weights, self.readout_coefficients),
+            "D_y": np.einsum("b,bij->ij", weights, self.feedthrough_coefficients),
+            "c": np.einsum("b,bi->i", weights, self.action_bias_coefficients),
+        }
+
+    def action(
+        self,
+        time_index: int,
+        hidden: Float[np.ndarray, "... hidden"],
+        observation: Float[np.ndarray, "... observation"],
+    ) -> Float[np.ndarray, "... action"]:
+        """Return the action at one time index."""
+
+        matrices = self.matrices_at(time_index)
+        return hidden @ matrices["C_h"].T + observation @ matrices["D_y"].T + matrices["c"]
+
+    def next_hidden(
+        self,
+        time_index: int,
+        hidden: Float[np.ndarray, "... hidden"],
+        observation: Float[np.ndarray, "... observation"],
+        previous_action: Float[np.ndarray, "... action"] | None = None,
+    ) -> Float[np.ndarray, "... hidden"]:
+        """Return the next hidden state at one time index."""
+
+        matrices = self.matrices_at(time_index)
+        previous = (
+            _zero_like_batch(hidden, self.action_dim)
+            if previous_action is None
+            else previous_action
+        )
+        return (
+            hidden @ matrices["A_h"].T
+            + observation @ matrices["B_y"].T
+            + previous @ matrices["B_u"].T
+            + matrices["b_h"]
+        )
+
+    def stability_diagnostics(self) -> dict[str, float]:
+        """Return spectral diagnostics for modulated recurrent matrices."""
+
+        recurrent = self.matrix_sequence(self.recurrent_coefficients)
+        radii = np.asarray([recurrent_spectral_radius(matrix) for matrix in recurrent])
+        return {
+            "basis_rank": int(self.basis.shape[1]),
+            "hidden_dim": self.hidden_dim,
+            "observation_dim": self.observation_dim,
+            "recurrent_spectral_radius_mean": float(np.mean(radii)),
+            "recurrent_spectral_radius_max": float(np.max(radii)),
+        }
 
 
 @dataclass(frozen=True)
@@ -584,11 +855,92 @@ def _normalize_disturbances(
     return values.copy(), int(values.shape[1])
 
 
+def rollout_phase_modulated_linear_recurrent_controller(
+    controller: PhaseModulatedLinearRecurrentController,
+    plant: LinearPlantLike,
+    x0: np.ndarray,
+    *,
+    observation_matrix: Float[np.ndarray, "observation state"] | None = None,
+    disturbances: np.ndarray | None = None,
+    initial_hidden: np.ndarray | None = None,
+) -> BridgeRolloutBatch:
+    """Roll a phase-modulated linear recurrent controller through a plant."""
+
+    A = np.asarray(plant.A, dtype=np.float64)
+    B = np.asarray(plant.B, dtype=np.float64)
+    Bw = np.asarray(plant.Bw, dtype=np.float64)
+    if A.ndim != 2 or A.shape[0] != A.shape[1]:
+        raise ValueError("plant.A must have shape (state, state)")
+    if B.shape != (A.shape[0], controller.action_dim):
+        raise ValueError(
+            f"plant.B must have shape {(A.shape[0], controller.action_dim)}; got {B.shape}"
+        )
+    if Bw.ndim != 2 or Bw.shape[0] != A.shape[0]:
+        raise ValueError("plant.Bw must have shape (state, disturbance)")
+
+    states = _as_batch(np.asarray(x0, dtype=np.float64), width=A.shape[0], name="x0")
+    batch_size = states.shape[0]
+    observations_matrix = (
+        np.eye(A.shape[0], dtype=np.float64)
+        if observation_matrix is None
+        else np.asarray(observation_matrix, dtype=np.float64)
+    )
+    if observations_matrix.shape != (controller.observation_dim, A.shape[0]):
+        raise ValueError(
+            "observation_matrix must have shape "
+            f"{(controller.observation_dim, A.shape[0])}; got {observations_matrix.shape}"
+        )
+
+    disturbances_batch, _horizon = _normalize_disturbances(
+        disturbances,
+        batch_size=batch_size,
+        disturbance_dim=Bw.shape[1],
+        horizon=controller.horizon,
+    )
+    hidden_source = controller.initial_hidden if initial_hidden is None else initial_hidden
+    hidden = _as_batch(
+        np.asarray(hidden_source, dtype=np.float64), width=controller.hidden_dim, name="hidden"
+    )
+    hidden = np.broadcast_to(hidden, (batch_size, controller.hidden_dim)).copy()
+    previous_action = np.zeros((batch_size, controller.action_dim), dtype=np.float64)
+
+    plant_states = [states]
+    hidden_states = [hidden]
+    observations = []
+    actions = []
+    for t in range(controller.horizon):
+        y_t = states @ observations_matrix.T
+        u_t = controller.action(t, hidden, y_t)
+        states = states @ A.T + u_t @ B.T + disturbances_batch[:, t, :] @ Bw.T
+        hidden = controller.next_hidden(t, hidden, y_t, previous_action)
+        previous_action = u_t
+        observations.append(y_t)
+        actions.append(u_t)
+        plant_states.append(states)
+        hidden_states.append(hidden)
+
+    hidden_array = np.stack(hidden_states, axis=1)
+    diagnostics = controller.stability_diagnostics() | hidden_growth_diagnostics(hidden_array)
+    diagnostics["phase_modulates_matrices"] = True
+    return BridgeRolloutBatch(
+        plant_states=np.stack(plant_states, axis=1),
+        actions=np.stack(actions, axis=1),
+        observations=np.stack(observations, axis=1),
+        hidden_states=hidden_array,
+        metadata={"controller": "phase_modulated_linear_recurrence", "diagnostics": diagnostics},
+    )
+
+
 __all__ = [
     "GainProjection",
     "LinearRecurrentController",
+    "MatrixBasisProjection",
+    "PhaseModulatedLinearRecurrentController",
     "TimeConstrainedGainParameterization",
+    "clamped_bspline_time_basis",
     "hidden_growth_diagnostics",
+    "project_matrix_sequence_to_basis",
     "recurrent_spectral_radius",
     "rollout_linear_recurrent_controller",
+    "rollout_phase_modulated_linear_recurrent_controller",
 ]
