@@ -9,10 +9,14 @@ import numpy as np
 from rlrmp.analysis.bridge_contracts import BridgeRolloutBatch
 from rlrmp.analysis.bridge_controllers import (
     LinearRecurrentController,
+    PhaseModulatedLinearRecurrentController,
     TimeConstrainedGainParameterization,
+    clamped_bspline_time_basis,
     hidden_growth_diagnostics,
+    project_matrix_sequence_to_basis,
     recurrent_spectral_radius,
     rollout_linear_recurrent_controller,
+    rollout_phase_modulated_linear_recurrent_controller,
 )
 
 
@@ -132,6 +136,79 @@ def test_time_constrained_gain_cubic_bspline_r60_reconstructs_unconstrained_gain
     assert projection.singular_values[-1] > 0.0
     np.testing.assert_allclose(projection.reconstructed_gains, gains, atol=1e-11)
     assert projection.residual_norm < 1e-10
+
+
+def test_clamped_bspline_basis_is_partition_of_unity_and_endpoint_clamped() -> None:
+    basis = clamped_bspline_time_basis(horizon=11, n_basis=5)
+
+    assert basis.shape == (11, 5)
+    assert np.all(basis >= 0.0)
+    np.testing.assert_allclose(np.sum(basis, axis=1), np.ones(11))
+    np.testing.assert_allclose(basis[0], np.array([1.0, 0.0, 0.0, 0.0, 0.0]))
+    np.testing.assert_allclose(basis[-1], np.array([0.0, 0.0, 0.0, 0.0, 1.0]))
+
+
+def test_project_matrix_sequence_to_basis_reconstructs_representable_sequence() -> None:
+    basis = clamped_bspline_time_basis(horizon=9, n_basis=3)
+    theta = np.arange(12, dtype=np.float64).reshape((3, 2, 2))
+    sequence = np.einsum("tb,bij->tij", basis, theta)
+
+    projection = project_matrix_sequence_to_basis(sequence, basis)
+
+    assert projection.rank == 3
+    np.testing.assert_allclose(projection.reconstructed, sequence, atol=1e-12)
+    assert projection.relative_residual < 1e-12
+
+
+def test_phase_modulated_recurrent_controller_changes_matrices_over_time() -> None:
+    basis = clamped_bspline_time_basis(horizon=3, n_basis=2, degree=1)
+    controller = PhaseModulatedLinearRecurrentController(
+        basis=basis,
+        recurrent_coefficients=np.array([[[0.0]], [[1.0]]]),
+        observation_coefficients=np.array([[[1.0]], [[2.0]]]),
+        previous_action_coefficients=np.zeros((2, 1, 1)),
+        hidden_bias_coefficients=np.zeros((2, 1)),
+        readout_coefficients=np.array([[[1.0]], [[3.0]]]),
+        feedthrough_coefficients=np.zeros((2, 1, 1)),
+        action_bias_coefficients=np.zeros((2, 1)),
+    )
+
+    first = controller.matrices_at(0)
+    last = controller.matrices_at(2)
+
+    np.testing.assert_allclose(first["A_h"], np.array([[0.0]]))
+    np.testing.assert_allclose(last["A_h"], np.array([[1.0]]))
+    assert first["C_h"][0, 0] != last["C_h"][0, 0]
+
+
+def test_phase_modulated_recurrent_rollout_uses_time_varying_readout() -> None:
+    plant = TinyPlant(
+        A=np.eye(1),
+        B=np.array([[1.0]]),
+        Bw=np.zeros((1, 1)),
+    )
+    basis = clamped_bspline_time_basis(horizon=2, n_basis=2, degree=1)
+    controller = PhaseModulatedLinearRecurrentController(
+        basis=basis,
+        recurrent_coefficients=np.ones((2, 1, 1)),
+        observation_coefficients=np.ones((2, 1, 1)),
+        previous_action_coefficients=np.zeros((2, 1, 1)),
+        hidden_bias_coefficients=np.zeros((2, 1)),
+        readout_coefficients=np.array([[[1.0]], [[2.0]]]),
+        feedthrough_coefficients=np.zeros((2, 1, 1)),
+        action_bias_coefficients=np.zeros((2, 1)),
+        initial_hidden=np.array([1.0]),
+    )
+
+    batch = rollout_phase_modulated_linear_recurrent_controller(
+        controller,
+        plant,
+        np.array([0.0]),
+        observation_matrix=np.array([[1.0]]),
+    )
+
+    np.testing.assert_allclose(batch.actions[0, :, 0], np.array([1.0, 2.0]))
+    assert batch.metadata["diagnostics"]["phase_modulates_matrices"] is True
 
 
 def test_linear_recurrent_controller_rollout_updates_hidden_and_actions() -> None:

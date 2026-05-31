@@ -135,6 +135,16 @@
       "value_policy_gap:missing": 7,
       "visited_subspace_diagnostics:available": 7
     },
+    "lens_kind_catalog": {
+      "exact_audit_eigen_disturbance_modes": "disturbance modes from exact-audit epsilon trajectories or their covariance",
+      "mixed_sinusoidal_process_and_state_covariance_modes": "local sinusoidal process disturbance plus state-covariance offset coverage",
+      "nominal_clean": "clean nominal output-feedback rollout from the canonical initial state",
+      "observer_error_svd_modes": "left singular modes of the disturbance-to-observer-error map",
+      "observer_estimate_state_covariance_modes": "state-covariance directions applied only to the observer estimate",
+      "sinusoidal_process_disturbance": "hand-authored sinusoid injected into the first process-disturbance coordinate",
+      "state_covariance_modes": "eigenvectors of the open-loop A^k x0 covariance used as signed initial-state offsets",
+      "true_riccati_epsilon": "analytical H-infinity Riccati epsilon trajectory from the exact output-feedback audit"
+    },
     "phase_ablation": {
       "no_phase_training_action_rmse": 1.0595994428002136,
       "phase_training_action_rmse": 0.26139984601419014,
@@ -453,7 +463,7 @@
   "format": "rlrmp.output_feedback_linear_recurrent.v2",
   "issue": "5e55f69",
   "non_goals": "No GRU training, robust/H-infinity training arm, formal game-card change, or affine tracker implementation.",
-  "result": "The d_h=48 trainable linear recurrence rows were materialized, but nominal bridge recovery is not established by the scratch reward rows (clean ratio 13.02, Riccati-epsilon ratio 98.87; imitation diagnostic ratio 314).",
+  "result": "The d_h=48 trainable linear recurrence rows were materialized, but nominal bridge recovery is not established by the scratch reward rows (clean ratio 13.02, historical `riccati_epsilon` alias/sinusoidal-process ratio 98.87; imitation diagnostic ratio 314).",
   "rows": [
     {
       "arrays": [
@@ -696,6 +706,12 @@
           "imitation_steps": 120,
           "initialization": "scratch",
           "learning_rate": 0.003,
+          "lens_metadata": {
+            "lens_deprecated_alias": null,
+            "lens_kind": "nominal_clean",
+            "lens_notes": "No coverage or disturbance lens is applied.",
+            "lens_source": "canonical_output_feedback_initial_state"
+          },
           "n_train_steps": 80,
           "phase_time_feature_names": [
             "phase_bias",
@@ -952,6 +968,12 @@
           "imitation_steps": 120,
           "initialization": "scratch",
           "learning_rate": 0.003,
+          "lens_metadata": {
+            "lens_deprecated_alias": "riccati_epsilon",
+            "lens_kind": "sinusoidal_process_disturbance",
+            "lens_notes": "Historical row ID and training_distribution are preserved, but this row uses a sinusoidal process disturbance, not the exact Riccati epsilon.",
+            "lens_source": "first_process_coordinate_sinusoid"
+          },
           "n_train_steps": 80,
           "phase_time_feature_names": [
             "phase_bias",
@@ -1208,6 +1230,12 @@
           "imitation_steps": 120,
           "initialization": "scratch",
           "learning_rate": 0.003,
+          "lens_metadata": {
+            "lens_deprecated_alias": "state_eigenspectrum",
+            "lens_kind": "state_covariance_modes",
+            "lens_notes": "Directions come from eigenvectors of the open-loop A^k x0 covariance; they are not exact-audit eigen disturbance modes.",
+            "lens_source": "open_loop_A_power_x0_covariance_eigenvectors"
+          },
           "n_train_steps": 80,
           "phase_time_feature_names": [
             "phase_bias",
@@ -1464,6 +1492,12 @@
           "imitation_steps": 120,
           "initialization": "scratch",
           "learning_rate": 0.003,
+          "lens_metadata": {
+            "lens_deprecated_alias": "observer_error",
+            "lens_kind": "observer_estimate_state_covariance_modes",
+            "lens_notes": "Offsets are applied to the observer estimate along state-covariance directions; observer-error SVD modes are a separate lens kind.",
+            "lens_source": "open_loop_A_power_x0_covariance_offsets_on_xhat"
+          },
           "n_train_steps": 80,
           "phase_time_feature_names": [
             "phase_bias",
@@ -1720,6 +1754,12 @@
           "imitation_steps": 120,
           "initialization": "scratch",
           "learning_rate": 0.003,
+          "lens_metadata": {
+            "lens_deprecated_alias": "mixed_deviation",
+            "lens_kind": "mixed_sinusoidal_process_and_state_covariance_modes",
+            "lens_notes": "Mixed rows combine the local sinusoidal process disturbance with state-covariance initial-state and observer-estimate offsets.",
+            "lens_source": "first_process_coordinate_sinusoid_plus_open_loop_A_power_x0_covariance_eigenvectors"
+          },
           "n_train_steps": 80,
           "phase_time_feature_names": [
             "phase_bias",
@@ -1979,6 +2019,12 @@
           "imitation_steps": 120,
           "initialization": "reference_action_imitation",
           "learning_rate": 0.003,
+          "lens_metadata": {
+            "lens_deprecated_alias": null,
+            "lens_kind": "nominal_clean",
+            "lens_notes": "No coverage or disturbance lens is applied.",
+            "lens_source": "canonical_output_feedback_initial_state"
+          },
           "n_train_steps": 0,
           "phase_time_feature_names": [
             "phase_bias",
@@ -2247,6 +2293,12 @@
           "imitation_steps": 120,
           "initialization": "reference_action_imitation_then_rollout",
           "learning_rate": 0.003,
+          "lens_metadata": {
+            "lens_deprecated_alias": "mixed_deviation",
+            "lens_kind": "mixed_sinusoidal_process_and_state_covariance_modes",
+            "lens_notes": "Mixed rows combine the local sinusoidal process disturbance with state-covariance initial-state and observer-estimate offsets.",
+            "lens_source": "first_process_coordinate_sinusoid_plus_open_loop_A_power_x0_covariance_eigenvectors"
+          },
           "n_train_steps": 0,
           "phase_time_feature_names": [
             "phase_bias",
