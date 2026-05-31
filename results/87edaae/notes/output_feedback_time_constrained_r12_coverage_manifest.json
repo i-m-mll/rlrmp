@@ -3153,7 +3153,7 @@
   ],
   "format": "rlrmp.output_feedback_time_constrained.v1",
   "issue": "87edaae",
-  "non_goals": "No GRU, linear recurrence, coverage/noise sweeps, robust training variants, or direct teacher-cloning claims.",
+  "non_goals": "No trajectory eigenspectrum coverage, broader rank sweep, GRU, linear recurrence, robust training variants, or direct teacher-cloning claims.",
   "optimizer_bridge_issue": "1c014e5",
   "projections": [
     {
@@ -3177,7 +3177,7 @@
     "phase_label_policy": "Phase 1 and Phase 3 reruns must report both discretization and lane. Euler deterministic analytical results are canonical after the Euler card lands; ZOH results remain sensitivity/historical unless explicitly promoted."
   },
   "runtime_seconds": 2697.464831416961,
-  "scope": "Smooth spline time-basis output-feedback bridge. Projection rows check representability; scratch rows test discovery; Bellman-projected rows are preservation anchors only.",
+  "scope": "Focused r=12 state-coverage follow-up for the smooth spline time-basis output-feedback bridge. Coverage rows test whether state-eigenspectrum or observer-error state coverage changes scratch discovery relative to the no-coverage r=12 baseline.",
   "source_issue": "7a459bb",
   "standard_certificate": {
     "n_rows": 24,

@@ -137,6 +137,18 @@ def materialize(
         polish_maxiter=polish_maxiter,
         coverage_conditions=coverage_conditions,
     )
+    if include_r12_coverage:
+        summary["scope"] = (
+            "Focused r=12 state-coverage follow-up for the smooth spline "
+            "time-basis output-feedback bridge. Coverage rows test whether "
+            "state-eigenspectrum or observer-error state coverage changes "
+            "scratch discovery relative to the no-coverage r=12 baseline."
+        )
+        summary["non_goals"] = (
+            "No trajectory eigenspectrum coverage, broader rank sweep, GRU, "
+            "linear recurrence, robust training variants, or direct "
+            "teacher-cloning claims."
+        )
     entries = _row_entries(summary)
     reference = materialize_reference()
     output_config = OutputFeedbackConfig()
