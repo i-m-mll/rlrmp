@@ -9,8 +9,12 @@ import numpy as np
 from rlrmp.analysis.bridge_certificates import (
     BELLMAN_HESSIAN_RESIDUAL,
     CLOSED_LOOP_TRANSITION_MISMATCH,
+    DISTURBANCE_HISTORY_TO_COST_QUADRATIC,
     DISTURBANCE_HISTORY_TO_ACTION_MAP_MISMATCH,
+    DISTURBANCE_HISTORY_TO_OUTPUT_MAP_MISMATCH,
     DISTURBANCE_HISTORY_TO_STATE_MAP_MISMATCH,
+    MEASUREMENT_HISTORY_TO_ACTION_MAP_MISMATCH,
+    MEASUREMENT_HISTORY_TO_OUTPUT_MAP_MISMATCH,
     OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH,
     OPTIMIZER_METADATA,
     RECURRENCE_GRU_DIAGNOSTICS,
@@ -269,6 +273,87 @@ def test_recurrent_rows_report_available_io_map_components() -> None:
     assert by_name[CLOSED_LOOP_TRANSITION_MISMATCH].status == "not_applicable"
     assert by_name[VALUE_POLICY_GAP].status == "not_applicable"
     assert by_name[BELLMAN_HESSIAN_RESIDUAL].status == "not_applicable"
+
+
+def test_recurrent_rows_report_measurement_history_input_output_maps() -> None:
+    fixture = _linear_fixture()
+    reference_measurement_action = np.asarray([[[1.0, 0.0]], [[0.25, 0.75]]])
+    candidate_measurement_action = reference_measurement_action.copy()
+    candidate_measurement_action[1, 0, 1] += 0.2
+    reference_measurement_output = np.asarray(
+        [
+            [[1.0, 0.0], [0.0, 1.0]],
+            [[0.5, 0.0], [0.0, 0.5]],
+        ]
+    )
+    candidate_measurement_output = reference_measurement_output.copy()
+    candidate_measurement_output[:, 0, 1] += 0.1
+    reference_disturbance_output = np.asarray([[[1.0, 0.0]], [[0.0, 1.0]]])
+    candidate_disturbance_output = reference_disturbance_output.copy()
+    candidate_disturbance_output[0, 0, 1] = 0.25
+
+    components = build_standard_certificate_components(
+        architecture="gru",
+        states=fixture["states"],
+        candidate_actions=np.zeros((2, 2, 1)),
+        reference_actions=np.zeros((2, 2, 1)),
+        candidate_measurement_to_action_map=candidate_measurement_action,
+        reference_measurement_to_action_map=reference_measurement_action,
+        candidate_measurement_to_output_map=candidate_measurement_output,
+        reference_measurement_to_output_map=reference_measurement_output,
+        measurement_history_covariance=np.eye(2),
+        candidate_disturbance_to_output_map=candidate_disturbance_output,
+        reference_disturbance_to_output_map=reference_disturbance_output,
+        disturbance_history_covariance=np.eye(2),
+    )
+    by_name = {component.name: component for component in components}
+
+    measurement_action = by_name[MEASUREMENT_HISTORY_TO_ACTION_MAP_MISMATCH]
+    measurement_output = by_name[MEASUREMENT_HISTORY_TO_OUTPUT_MAP_MISMATCH]
+    disturbance_output = by_name[DISTURBANCE_HISTORY_TO_OUTPUT_MAP_MISMATCH]
+    assert measurement_action.status == "available"
+    assert measurement_action.summary["input_label"] == "measurement_history"
+    assert measurement_action.summary["output_label"] == "action"
+    assert measurement_action.summary["response_map_schema"] == "finite_horizon_linear_v1"
+    assert measurement_action.summary["aggregate_mismatch_ratio"] > 0.0
+    assert measurement_output.status == "available"
+    assert measurement_output.summary["output_label"] == "external_output"
+    assert disturbance_output.status == "available"
+    assert disturbance_output.summary["input_label"] == "disturbance_history"
+
+
+def test_augmented_recurrent_reports_disturbance_to_cost_quadratic_sidecar() -> None:
+    fixture = _linear_fixture()
+    hidden = 0.25 * fixture["states"]
+    augmented_states = np.concatenate([fixture["states"], hidden], axis=-1)
+    reference_disturbance_action = np.asarray([[[0.0, 1.0]]])
+    candidate_disturbance_action = reference_disturbance_action.copy()
+    reference_disturbance_state = np.asarray([[[0.0, 0.0]], [[1.0, 0.0]]])
+    candidate_disturbance_state = np.asarray([[[0.0, 0.0]], [[2.0, 0.0]]])
+
+    components = build_standard_certificate_components(
+        architecture="linear_recurrence",
+        certificate_mode="augmented_linear",
+        augmented_states=augmented_states[:, :2],
+        candidate_actions=np.zeros((2, 1, 1)),
+        reference_actions=np.zeros((2, 1, 1)),
+        candidate_disturbance_to_action_map=candidate_disturbance_action,
+        reference_disturbance_to_action_map=reference_disturbance_action,
+        candidate_disturbance_to_state_map=candidate_disturbance_state,
+        reference_disturbance_to_state_map=reference_disturbance_state,
+        disturbance_state_cost=np.eye(1),
+        disturbance_action_cost=np.eye(1),
+        disturbance_history_covariance=np.eye(2),
+    )
+    by_name = {component.name: component for component in components}
+
+    sidecar = by_name[DISTURBANCE_HISTORY_TO_COST_QUADRATIC]
+    assert sidecar.status == "available"
+    assert sidecar.summary["sidecar_type"] == "disturbance_to_cost_quadratic"
+    assert sidecar.summary["quadratic_map_shape"] == [2, 2]
+    assert sidecar.summary["candidate_expected_cost"] == 5.0
+    assert sidecar.summary["reference_expected_cost"] == 2.0
+    assert sidecar.summary["aggregate_mismatch_ratio"] > 0.0
 
 
 def test_action_energy_summary_reports_aggregate_ratio_separately() -> None:
