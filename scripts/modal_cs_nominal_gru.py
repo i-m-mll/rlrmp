@@ -51,6 +51,32 @@ def _ignore_source(path: str) -> bool:
     return any(part.endswith(".assets") for part in parts)
 
 
+_PATCH_AND_SYNC = r"""
+from pathlib import Path
+
+replacements = {
+    "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax": "/workspace/feedbax",
+    "../../../20 Feedbax/feedbax": "/workspace/feedbax",
+    "/Users/mll/Main/10 Projects/05 Utils/jax-cookbook": "/workspace/jax-cookbook",
+    "../../../../05 Utils/jax-cookbook": "/workspace/jax-cookbook",
+    "../../../../../05 Utils/jax-cookbook": "/workspace/jax-cookbook",
+}
+for filename in (
+    "/workspace/rlrmp/pyproject.toml",
+    "/workspace/rlrmp/uv.lock",
+    "/workspace/feedbax/pyproject.toml",
+    "/workspace/feedbax/uv.lock",
+):
+    path = Path(filename)
+    if not path.exists():
+        continue
+    text = path.read_text()
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    path.write_text(text)
+"""
+
+
 image = (
     modal.Image.debian_slim(python_version="3.12")
     .apt_install("git", "perl")
@@ -59,6 +85,11 @@ image = (
     .add_local_dir(str(LOCAL_FEEDBAX_DIR), "/workspace/feedbax", ignore=_ignore_source)
     .add_local_dir(str(LOCAL_JAX_COOKBOOK_DIR), "/workspace/jax-cookbook", ignore=_ignore_source)
     .workdir("/workspace/rlrmp")
+    .run_commands(
+        f"python - <<'PY'\n{_PATCH_AND_SYNC}\nPY",
+        "uv sync",
+        'uv pip install -U "jax[cuda12]"',
+    )
 )
 
 app = modal.App(APP_NAME, image=image)

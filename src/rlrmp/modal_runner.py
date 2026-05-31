@@ -43,9 +43,10 @@ class NominalGruRunConfig:
 
     experiment: str = DEFAULT_EXPERIMENT
     run: str = DEFAULT_RUN
-    n_warmup_batches: int = 1
+    n_train_batches: int = 1
     batch_size: int = 4
     n_replicates: int = 1
+    hidden_size: int = 4
     seed: int = 42
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
     gpu: str = DEFAULT_GPU
@@ -82,9 +83,8 @@ def build_training_command(
 ) -> list[str]:
     """Build the nominal C&S-fidelity GRU training command.
 
-    The command intentionally keeps the trainer in nominal-only mode by setting
-    ``--n-adversary-batches 0``. It also uses hold-free movement-ramp loss flags
-    from the current rlrmp runbook without editing the shared training builder.
+    The command intentionally targets the dedicated C&S nominal GRU spec writer,
+    not the older delayed-reach minimax trainer.
     """
 
     artifact_dir = config.remote_artifact_dir() if remote else config.local_artifact_dir()
@@ -94,24 +94,16 @@ def build_training_command(
         "run",
         "--no-sync" if remote else "",
         "python",
-        "scripts/train_minimax.py",
+        "scripts/train_cs_nominal_gru.py",
     ]
     command = [part for part in command if part]
-    _append_arg(command, "--n-warmup-batches", config.n_warmup_batches)
-    _append_arg(command, "--n-adversary-batches", 0)
+    _append_arg(command, "--n-train-batches", config.n_train_batches)
     _append_arg(command, "--batch-size", config.batch_size)
     _append_arg(command, "--n-replicates", config.n_replicates)
-    _append_arg(command, "--hidden-type", "gru")
+    _append_arg(command, "--hidden-size", config.hidden_size)
     _append_arg(command, "--seed", config.seed)
     _append_arg(command, "--output-dir", artifact_dir)
     _append_arg(command, "--spec-dir", spec_dir)
-    _append_arg(command, "--effector-hold-pos", 0.0)
-    _append_arg(command, "--effector-hold-vel", 0.0)
-    _append_arg(command, "--effector-pos-running-schedule", "movement_ramp")
-    _append_arg(command, "--movement-ramp-shape", "power")
-    _append_arg(command, "--movement-ramp-power", 6.0)
-    _append_arg(command, "--movement-ramp-duration-steps", 80)
-    _append_arg(command, "--nn-output-pre-go", 1.0)
     command.extend(config.extra_args)
     return command
 
@@ -295,9 +287,10 @@ def make_config(args: argparse.Namespace) -> NominalGruRunConfig:
     return NominalGruRunConfig(
         experiment=args.experiment,
         run=args.run,
-        n_warmup_batches=args.n_warmup_batches,
+        n_train_batches=args.n_train_batches,
         batch_size=args.batch_size,
         n_replicates=args.n_replicates,
+        hidden_size=args.hidden_size,
         seed=args.seed,
         timeout_seconds=args.timeout_seconds,
         gpu=args.gpu,
@@ -323,15 +316,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout-seconds", type=int, default=DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument("--experiment", default=DEFAULT_EXPERIMENT)
     parser.add_argument("--run", default=DEFAULT_RUN)
-    parser.add_argument("--n-warmup-batches", type=int, default=1)
+    parser.add_argument("--n-train-batches", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--n-replicates", type=int, default=1)
+    parser.add_argument("--hidden-size", type=int, default=4)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--pinned-repo-dir", default=str(REMOTE_REPO_DIR))
     parser.add_argument(
         "--extra-arg",
         action="append",
-        help="Additional argument token appended to scripts/train_minimax.py; repeat per token.",
+        help=(
+            "Additional argument token appended to scripts/train_cs_nominal_gru.py; "
+            "repeat per token."
+        ),
     )
     return parser
 
