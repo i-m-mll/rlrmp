@@ -9,6 +9,9 @@ from rlrmp.analysis.output_feedback_time_constrained import (
     TimeBasisCondition,
     TimeBasisFit,
     _fit_summary,
+    r20_observer_error_state_coverage_conditions,
+    r20_state_coverage_conditions,
+    r20_state_eigenspectrum_coverage_conditions,
     r12_observer_error_state_coverage_conditions,
     r12_state_coverage_conditions,
     r12_state_eigenspectrum_coverage_conditions,
@@ -35,6 +38,33 @@ def test_r12_state_coverage_helpers_emit_planned_row_set() -> None:
     assert all(condition.initialization == "scratch" for condition in conditions)
     assert all(condition.optimizer == "adamw_then_lbfgsb" for condition in conditions)
     assert all(condition.use_whitening for condition in conditions)
+    assert all(condition.eigenspectrum_coverage.objective == "state" for condition in eigenspectrum)
+    assert all(
+        condition.observer_error_coverage.objective == "state" for condition in observer_error
+    )
+    assert all(condition.eigenspectrum_coverage.weight == 0.1 for condition in eigenspectrum)
+    assert all(condition.observer_error_coverage.weight == 0.1 for condition in observer_error)
+
+
+def test_r20_state_coverage_helpers_emit_focused_row_set() -> None:
+    eigenspectrum = r20_state_eigenspectrum_coverage_conditions()
+    observer_error = r20_observer_error_state_coverage_conditions()
+    conditions = r20_state_coverage_conditions()
+
+    assert len(eigenspectrum) == 2
+    assert len(observer_error) == 1
+    assert conditions == eigenspectrum + observer_error
+    assert {
+        (condition.eigenspectrum_coverage.n_modes, condition.eigenspectrum_coverage.scale)
+        for condition in eigenspectrum
+    } == {(4, 1.0), (4, 3.0)}
+    assert {
+        (condition.observer_error_coverage.n_modes, condition.observer_error_coverage.scale)
+        for condition in observer_error
+    } == {(1, 0.3)}
+    assert all(condition.rank == 20 for condition in conditions)
+    assert all(condition.initialization == "scratch" for condition in conditions)
+    assert all(condition.optimizer == "adamw_then_lbfgsb" for condition in conditions)
     assert all(condition.eigenspectrum_coverage.objective == "state" for condition in eigenspectrum)
     assert all(
         condition.observer_error_coverage.objective == "state" for condition in observer_error
