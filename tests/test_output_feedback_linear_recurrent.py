@@ -82,7 +82,7 @@ def test_phase_aware_rollout_appends_phase_inputs(monkeypatch) -> None:
     assert batch.metadata["diagnostics"]["phase_time_input_dim"] == 3
 
 
-def test_recurrent_manifest_marks_formal_static_components_not_applicable(monkeypatch) -> None:
+def test_recurrent_manifest_uses_augmented_certificate_mode(monkeypatch) -> None:
     monkeypatch.setattr(
         recurrent,
         "delayed_observation_matrix",
@@ -126,10 +126,12 @@ def test_recurrent_manifest_marks_formal_static_components_not_applicable(monkey
     by_name = {component.name: component for component in manifest.certificate_components}
 
     assert by_name[STATE_WEIGHTED_ACTION_MISMATCH].status == "available"
-    assert by_name[CLOSED_LOOP_TRANSITION_MISMATCH].status == "not_applicable"
-    assert by_name[VALUE_POLICY_GAP].status == "not_applicable"
-    assert by_name[BELLMAN_HESSIAN_RESIDUAL].status == "not_applicable"
+    assert by_name[CLOSED_LOOP_TRANSITION_MISMATCH].status == "missing"
+    assert by_name[VALUE_POLICY_GAP].status == "missing"
+    assert by_name[BELLMAN_HESSIAN_RESIDUAL].status == "missing"
     assert by_name[RECURRENCE_GRU_DIAGNOSTICS].status == "available"
+    assert by_name[RECURRENCE_GRU_DIAGNOSTICS].summary["certificate_mode"] == "augmented_linear"
+    assert manifest.metrics["augmented_state_certificate"]["status"] == "augmented_linear_mode"
     assert "aggregate_action_energy_mismatch" in manifest.metrics
 
 
@@ -185,4 +187,4 @@ def test_materialize_no_coverage_with_fake_reference(monkeypatch) -> None:
     assert len(summary["failure_decomposition"]["rows"]) == 2
     assert any(key.endswith("__hidden_states") for key in arrays)
     component_counts = summary["diagnostics"]["component_status_counts"]
-    assert component_counts[f"{CLOSED_LOOP_TRANSITION_MISMATCH}:not_applicable"] == 2
+    assert component_counts[f"{CLOSED_LOOP_TRANSITION_MISMATCH}:missing"] == 2

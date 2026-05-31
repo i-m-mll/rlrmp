@@ -127,12 +127,12 @@
   ],
   "diagnostics": {
     "component_status_counts": {
-      "bellman_hessian_residual:not_applicable": 7,
-      "closed_loop_transition_mismatch:not_applicable": 7,
+      "bellman_hessian_residual:missing": 7,
+      "closed_loop_transition_mismatch:missing": 7,
       "optimizer_metadata:available": 7,
       "recurrence_gru_diagnostics:available": 7,
       "state_weighted_action_mismatch:available": 7,
-      "value_policy_gap:not_applicable": 7,
+      "value_policy_gap:missing": 7,
       "visited_subspace_diagnostics:available": 7
     },
     "phase_ablation": {
@@ -162,10 +162,11 @@
     "rows": [
       {
         "certificate": {
+          "aggregate_action_energy_mismatch": 0.9767871754581824,
           "formal_static_gain_components": {
-            "bellman_hessian_residual": "not_applicable",
-            "closed_loop_transition_mismatch": "not_applicable",
-            "value_policy_gap": "not_applicable"
+            "bellman_hessian_residual": "missing",
+            "closed_loop_transition_mismatch": "missing",
+            "value_policy_gap": "missing"
           },
           "state_weighted_action_mismatch": 1099766.9215264756
         },
@@ -176,10 +177,12 @@
           ],
           "signals": {
             "certificate_bad": true,
+            "equivalence_metrics_failed": false,
             "learned_gradient_bad": false,
             "objective_bad": true,
             "objective_close": false,
             "reference_gradient_bad": false,
+            "sidecar_improved": false,
             "weak_subspace_dominates": false
           }
         },
@@ -200,10 +203,11 @@
       },
       {
         "certificate": {
+          "aggregate_action_energy_mismatch": 1.0378914313610115,
           "formal_static_gain_components": {
-            "bellman_hessian_residual": "not_applicable",
-            "closed_loop_transition_mismatch": "not_applicable",
-            "value_policy_gap": "not_applicable"
+            "bellman_hessian_residual": "missing",
+            "closed_loop_transition_mismatch": "missing",
+            "value_policy_gap": "missing"
           },
           "state_weighted_action_mismatch": 624907.837432151
         },
@@ -214,10 +218,12 @@
           ],
           "signals": {
             "certificate_bad": true,
+            "equivalence_metrics_failed": false,
             "learned_gradient_bad": false,
             "objective_bad": true,
             "objective_close": false,
             "reference_gradient_bad": false,
+            "sidecar_improved": false,
             "weak_subspace_dominates": false
           }
         },
@@ -238,10 +244,11 @@
       },
       {
         "certificate": {
+          "aggregate_action_energy_mismatch": 1.4865871639414847,
           "formal_static_gain_components": {
-            "bellman_hessian_residual": "not_applicable",
-            "closed_loop_transition_mismatch": "not_applicable",
-            "value_policy_gap": "not_applicable"
+            "bellman_hessian_residual": "missing",
+            "closed_loop_transition_mismatch": "missing",
+            "value_policy_gap": "missing"
           },
           "state_weighted_action_mismatch": 6318914.503309837
         },
@@ -252,10 +259,12 @@
           ],
           "signals": {
             "certificate_bad": true,
+            "equivalence_metrics_failed": false,
             "learned_gradient_bad": false,
             "objective_bad": true,
             "objective_close": false,
             "reference_gradient_bad": false,
+            "sidecar_improved": false,
             "weak_subspace_dominates": false
           }
         },
@@ -276,10 +285,11 @@
       },
       {
         "certificate": {
+          "aggregate_action_energy_mismatch": 0.976787175457734,
           "formal_static_gain_components": {
-            "bellman_hessian_residual": "not_applicable",
-            "closed_loop_transition_mismatch": "not_applicable",
-            "value_policy_gap": "not_applicable"
+            "bellman_hessian_residual": "missing",
+            "closed_loop_transition_mismatch": "missing",
+            "value_policy_gap": "missing"
           },
           "state_weighted_action_mismatch": 1099766.9215192718
         },
@@ -290,10 +300,12 @@
           ],
           "signals": {
             "certificate_bad": true,
+            "equivalence_metrics_failed": false,
             "learned_gradient_bad": false,
             "objective_bad": true,
             "objective_close": false,
             "reference_gradient_bad": false,
+            "sidecar_improved": false,
             "weak_subspace_dominates": false
           }
         },
@@ -314,10 +326,11 @@
       },
       {
         "certificate": {
+          "aggregate_action_energy_mismatch": 1.0162954354115148,
           "formal_static_gain_components": {
-            "bellman_hessian_residual": "not_applicable",
-            "closed_loop_transition_mismatch": "not_applicable",
-            "value_policy_gap": "not_applicable"
+            "bellman_hessian_residual": "missing",
+            "closed_loop_transition_mismatch": "missing",
+            "value_policy_gap": "missing"
           },
           "state_weighted_action_mismatch": 1281896.8977017994
         },
@@ -328,10 +341,12 @@
           ],
           "signals": {
             "certificate_bad": true,
+            "equivalence_metrics_failed": false,
             "learned_gradient_bad": false,
             "objective_bad": true,
             "objective_close": false,
             "reference_gradient_bad": false,
+            "sidecar_improved": false,
             "weak_subspace_dominates": false
           }
         },
@@ -352,10 +367,11 @@
       },
       {
         "certificate": {
+          "aggregate_action_energy_mismatch": 0.6489948349580827,
           "formal_static_gain_components": {
-            "bellman_hessian_residual": "not_applicable",
-            "closed_loop_transition_mismatch": "not_applicable",
-            "value_policy_gap": "not_applicable"
+            "bellman_hessian_residual": "missing",
+            "closed_loop_transition_mismatch": "missing",
+            "value_policy_gap": "missing"
           },
           "state_weighted_action_mismatch": 430663.55315068585
         },
@@ -366,10 +382,12 @@
           ],
           "signals": {
             "certificate_bad": true,
+            "equivalence_metrics_failed": false,
             "learned_gradient_bad": false,
             "objective_bad": true,
             "objective_close": false,
             "reference_gradient_bad": false,
+            "sidecar_improved": false,
             "weak_subspace_dominates": false
           }
         },
@@ -390,10 +408,11 @@
       },
       {
         "certificate": {
+          "aggregate_action_energy_mismatch": 0.9549829154452,
           "formal_static_gain_components": {
-            "bellman_hessian_residual": "not_applicable",
-            "closed_loop_transition_mismatch": "not_applicable",
-            "value_policy_gap": "not_applicable"
+            "bellman_hessian_residual": "missing",
+            "closed_loop_transition_mismatch": "missing",
+            "value_policy_gap": "missing"
           },
           "state_weighted_action_mismatch": 7053035.795486079
         },
@@ -404,10 +423,12 @@
           ],
           "signals": {
             "certificate_bad": true,
+            "equivalence_metrics_failed": false,
             "learned_gradient_bad": false,
             "objective_bad": true,
             "objective_close": false,
             "reference_gradient_bad": false,
+            "sidecar_improved": false,
             "weak_subspace_dominates": false
           }
         },
@@ -485,12 +506,15 @@
           "status": "available",
           "summary": {
             "action_label": "control",
+            "aggregate_delta_energy": 1642.294259944173,
+            "aggregate_mismatch_ratio": 0.9767871754581824,
+            "aggregate_reference_energy": 1681.3225042331464,
             "delta_rms": 5.231784685847607,
             "mismatch_ratio_max": 31288167.75473396,
             "mismatch_ratio_mean": 1099766.9215264756,
             "n_samples": 60,
             "reference_rms": 5.293584960801055,
-            "state_label": "state"
+            "state_label": "plant_hidden_augmented_state"
           }
         },
         {
@@ -498,11 +522,11 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "mean_effective_rank": 1.0000000000000073,
+            "mean_effective_rank": 1.0000000000000115,
             "mean_identifiable_rank": 1.0,
             "min_effective_rank": 1.0000000000000004,
             "min_identifiable_rank": 1.0,
-            "state_label": "clean_delayed_output_feedback_state",
+            "state_label": "plant_hidden_augmented_state",
             "time_steps": 61
           }
         },
@@ -532,20 +556,20 @@
         },
         {
           "name": "closed_loop_transition_mismatch",
-          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
-          "status": "not_applicable",
+          "reason": "requires states plus candidate/reference closed-loop transition matrices",
+          "status": "missing",
           "summary": {}
         },
         {
           "name": "value_policy_gap",
-          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
-          "status": "not_applicable",
+          "reason": "requires candidate/reference value matrices and state covariances",
+          "status": "missing",
           "summary": {}
         },
         {
           "name": "bellman_hessian_residual",
-          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
-          "status": "not_applicable",
+          "reason": "requires gain delta, Bellman action Hessians, and state covariances",
+          "status": "missing",
           "summary": {}
         },
         {
@@ -561,9 +585,9 @@
             "D_phi_norm": 0.1682577333819673,
             "D_y_norm": 0.3329229183641606,
             "action_bias_norm": 0.1156651124702112,
-            "architecture": "linear_recurrence",
             "b_norm": 0.2546773590179206,
             "c_norm": 0.1156651124702112,
+            "certificate_mode": "augmented_linear",
             "delayed_observation_dim": 8,
             "fit_method": "adam_reward_rollout_from_scratch",
             "hidden_bias_norm": 0.2546773590179206,
@@ -596,21 +620,18 @@
         }
       ],
       "metrics": {
+        "aggregate_action_energy_mismatch": 0.9767871754581824,
         "augmented_state_certificate": {
-          "expected_components": [
-            "augmented_closed_loop_transition",
-            "augmented_value_policy_gap",
-            "augmented_bellman_residual"
-          ],
-          "reason": "b8b533e owns the shared augmented-state certificate interface; this row saves plant, action, observation, and hidden arrays for that adapter without inventing a competing schema.",
-          "status": "pending_b8b533e_augmented_components"
+          "component_statuses": {
+            "bellman_hessian_residual": "missing",
+            "closed_loop_transition_mismatch": "missing",
+            "value_policy_gap": "missing"
+          },
+          "reason": "Action and visited-state components use z_t=[x_t; h_t]. Transition/value/Bellman components are explicit missing rows until a reference recurrent realization in the same augmented coordinates is available.",
+          "state": "plant_hidden_augmented_state",
+          "status": "augmented_linear_mode"
         },
         "candidate_clean_cost": 56810.07612751392,
-        "formal_static_gain_certificate_boundary": {
-          "bellman_hessian_residual": "not_applicable",
-          "closed_loop_transition_mismatch": "not_applicable",
-          "value_policy_gap": "not_applicable"
-        },
         "objective_ratio_to_reference": 13.019352961991023,
         "recurrence_diagnostics": {
           "A_h_norm": 5.014685700955379,
@@ -661,7 +682,7 @@
         "evaluation_lane": "deterministic",
         "gamma_factor": null,
         "issue_id": "5e55f69",
-        "notes": "Trainable linear recurrence evaluated on clean output-feedback rollout. Formal static-gain certificate components are explicitly not applicable; augmented-state components are pending b8b533e.",
+        "notes": "Trainable linear recurrence evaluated on clean output-feedback rollout. Certificate rows use augmented-linear mode over plant plus hidden state; transition/value/Bellman components remain explicit missing rows when same-coordinate reference recurrent sensitivities are unavailable.",
         "objective": "reward_rollout",
         "optimizer_label": "adam_reward_rollout_from_scratch",
         "parameters": {
@@ -688,7 +709,7 @@
         "seed": 0,
         "training_distribution": "clean_nominal"
       },
-      "status": "trainable_recurrence_pending_augmented_certificate"
+      "status": "trainable_recurrence_augmented_certificate"
     },
     {
       "arrays": [
@@ -741,12 +762,15 @@
           "status": "available",
           "summary": {
             "action_label": "control",
+            "aggregate_delta_energy": 1745.0302204980208,
+            "aggregate_mismatch_ratio": 1.0378914313610115,
+            "aggregate_reference_energy": 1681.3225042331464,
             "delta_rms": 5.392943260252267,
             "mismatch_ratio_max": 25778526.22480745,
             "mismatch_ratio_mean": 624907.837432151,
             "n_samples": 60,
             "reference_rms": 5.293584960801055,
-            "state_label": "state"
+            "state_label": "plant_hidden_augmented_state"
           }
         },
         {
@@ -754,11 +778,11 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "mean_effective_rank": 1.000000000000007,
+            "mean_effective_rank": 1.0000000000000122,
             "mean_identifiable_rank": 1.0,
             "min_effective_rank": 1.0000000000000004,
             "min_identifiable_rank": 1.0,
-            "state_label": "clean_delayed_output_feedback_state",
+            "state_label": "plant_hidden_augmented_state",
             "time_steps": 61
           }
         },
@@ -788,20 +812,20 @@
         },
         {
           "name": "closed_loop_transition_mismatch",
-          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
-          "status": "not_applicable",
+          "reason": "requires states plus candidate/reference closed-loop transition matrices",
+          "status": "missing",
           "summary": {}
         },
         {
           "name": "value_policy_gap",
-          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
-          "status": "not_applicable",
+          "reason": "requires candidate/reference value matrices and state covariances",
+          "status": "missing",
           "summary": {}
         },
         {
           "name": "bellman_hessian_residual",
-          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
-          "status": "not_applicable",
+          "reason": "requires gain delta, Bellman action Hessians, and state covariances",
+          "status": "missing",
           "summary": {}
         },
         {
@@ -817,9 +841,9 @@
             "D_phi_norm": 0.23559543070318528,
             "D_y_norm": 0.21886268406551118,
             "action_bias_norm": 0.16789186850625104,
-            "architecture": "linear_recurrence",
             "b_norm": 0.27636965437442074,
             "c_norm": 0.16789186850625104,
+            "certificate_mode": "augmented_linear",
             "delayed_observation_dim": 8,
             "fit_method": "adam_reward_rollout_from_scratch",
             "hidden_bias_norm": 0.27636965437442074,
@@ -852,21 +876,18 @@
         }
       ],
       "metrics": {
+        "aggregate_action_energy_mismatch": 1.0378914313610115,
         "augmented_state_certificate": {
-          "expected_components": [
-            "augmented_closed_loop_transition",
-            "augmented_value_policy_gap",
-            "augmented_bellman_residual"
-          ],
-          "reason": "b8b533e owns the shared augmented-state certificate interface; this row saves plant, action, observation, and hidden arrays for that adapter without inventing a competing schema.",
-          "status": "pending_b8b533e_augmented_components"
+          "component_statuses": {
+            "bellman_hessian_residual": "missing",
+            "closed_loop_transition_mismatch": "missing",
+            "value_policy_gap": "missing"
+          },
+          "reason": "Action and visited-state components use z_t=[x_t; h_t]. Transition/value/Bellman components are explicit missing rows until a reference recurrent realization in the same augmented coordinates is available.",
+          "state": "plant_hidden_augmented_state",
+          "status": "augmented_linear_mode"
         },
         "candidate_clean_cost": 431401.6507451074,
-        "formal_static_gain_certificate_boundary": {
-          "bellman_hessian_residual": "not_applicable",
-          "closed_loop_transition_mismatch": "not_applicable",
-          "value_policy_gap": "not_applicable"
-        },
         "objective_ratio_to_reference": 98.86574252830381,
         "recurrence_diagnostics": {
           "A_h_norm": 5.123846081119855,
@@ -917,7 +938,7 @@
         "evaluation_lane": "deterministic",
         "gamma_factor": null,
         "issue_id": "5e55f69",
-        "notes": "Trainable linear recurrence evaluated on clean output-feedback rollout. Formal static-gain certificate components are explicitly not applicable; augmented-state components are pending b8b533e.",
+        "notes": "Trainable linear recurrence evaluated on clean output-feedback rollout. Certificate rows use augmented-linear mode over plant plus hidden state; transition/value/Bellman components remain explicit missing rows when same-coordinate reference recurrent sensitivities are unavailable.",
         "objective": "reward_rollout",
         "optimizer_label": "adam_reward_rollout_from_scratch",
         "parameters": {
@@ -944,7 +965,7 @@
         "seed": 0,
         "training_distribution": "riccati_epsilon"
       },
-      "status": "trainable_recurrence_pending_augmented_certificate"
+      "status": "trainable_recurrence_augmented_certificate"
     },
     {
       "arrays": [
@@ -997,12 +1018,15 @@
           "status": "available",
           "summary": {
             "action_label": "control",
+            "aggregate_delta_energy": 2499.4324532389483,
+            "aggregate_mismatch_ratio": 1.4865871639414847,
+            "aggregate_reference_energy": 1681.3225042331464,
             "delta_rms": 6.454239502372257,
             "mismatch_ratio_max": 275121454.6975425,
             "mismatch_ratio_mean": 6318914.503309837,
             "n_samples": 60,
             "reference_rms": 5.293584960801055,
-            "state_label": "state"
+            "state_label": "plant_hidden_augmented_state"
           }
         },
         {
@@ -1010,11 +1034,11 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "mean_effective_rank": 1.0000000000000067,
+            "mean_effective_rank": 1.0000000000000109,
             "mean_identifiable_rank": 1.0,
             "min_effective_rank": 1.0000000000000004,
             "min_identifiable_rank": 1.0,
-            "state_label": "clean_delayed_output_feedback_state",
+            "state_label": "plant_hidden_augmented_state",
             "time_steps": 61
           }
         },
@@ -1044,20 +1068,20 @@
         },
         {
           "name": "closed_loop_transition_mismatch",
-          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
-          "status": "not_applicable",
+          "reason": "requires states plus candidate/reference closed-loop transition matrices",
+          "status": "missing",
           "summary": {}
         },
         {
           "name": "value_policy_gap",
-          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
-          "status": "not_applicable",
+          "reason": "requires candidate/reference value matrices and state covariances",
+          "status": "missing",
           "summary": {}
         },
         {
           "name": "bellman_hessian_residual",
-          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
-          "status": "not_applicable",
+          "reason": "requires gain delta, Bellman action Hessians, and state covariances",
+          "status": "missing",
           "summary": {}
         },
         {
@@ -1073,9 +1097,9 @@
             "D_phi_norm": 0.1245224881080019,
             "D_y_norm": 0.394400049382069,
             "action_bias_norm": 0.09527666582321,
-            "architecture": "linear_recurrence",
             "b_norm": 0.09801295676436461,
             "c_norm": 0.09527666582321,
+            "certificate_mode": "augmented_linear",
             "delayed_observation_dim": 8,
             "fit_method": "adam_reward_rollout_from_scratch",
             "hidden_bias_norm": 0.09801295676436461,
@@ -1108,21 +1132,18 @@
         }
       ],
       "metrics": {
+        "aggregate_action_energy_mismatch": 1.4865871639414847,
         "augmented_state_certificate": {
-          "expected_components": [
-            "augmented_closed_loop_transition",
-            "augmented_value_policy_gap",
-            "augmented_bellman_residual"
-          ],
-          "reason": "b8b533e owns the shared augmented-state certificate interface; this row saves plant, action, observation, and hidden arrays for that adapter without inventing a competing schema.",
-          "status": "pending_b8b533e_augmented_components"
+          "component_statuses": {
+            "bellman_hessian_residual": "missing",
+            "closed_loop_transition_mismatch": "missing",
+            "value_policy_gap": "missing"
+          },
+          "reason": "Action and visited-state components use z_t=[x_t; h_t]. Transition/value/Bellman components are explicit missing rows until a reference recurrent realization in the same augmented coordinates is available.",
+          "state": "plant_hidden_augmented_state",
+          "status": "augmented_linear_mode"
         },
         "candidate_clean_cost": 43834.54530066528,
-        "formal_static_gain_certificate_boundary": {
-          "bellman_hessian_residual": "not_applicable",
-          "closed_loop_transition_mismatch": "not_applicable",
-          "value_policy_gap": "not_applicable"
-        },
         "objective_ratio_to_reference": 10.045707664900476,
         "recurrence_diagnostics": {
           "A_h_norm": 5.101067249039308,
@@ -1173,7 +1194,7 @@
         "evaluation_lane": "deterministic",
         "gamma_factor": null,
         "issue_id": "5e55f69",
-        "notes": "Trainable linear recurrence evaluated on clean output-feedback rollout. Formal static-gain certificate components are explicitly not applicable; augmented-state components are pending b8b533e.",
+        "notes": "Trainable linear recurrence evaluated on clean output-feedback rollout. Certificate rows use augmented-linear mode over plant plus hidden state; transition/value/Bellman components remain explicit missing rows when same-coordinate reference recurrent sensitivities are unavailable.",
         "objective": "reward_rollout",
         "optimizer_label": "adam_reward_rollout_from_scratch",
         "parameters": {
@@ -1200,7 +1221,7 @@
         "seed": 0,
         "training_distribution": "state_eigenspectrum"
       },
-      "status": "trainable_recurrence_pending_augmented_certificate"
+      "status": "trainable_recurrence_augmented_certificate"
     },
     {
       "arrays": [
@@ -1253,12 +1274,15 @@
           "status": "available",
           "summary": {
             "action_label": "control",
+            "aggregate_delta_energy": 1642.294259943419,
+            "aggregate_mismatch_ratio": 0.976787175457734,
+            "aggregate_reference_energy": 1681.3225042331464,
             "delta_rms": 5.2317846858464065,
             "mismatch_ratio_max": 31288167.75438946,
             "mismatch_ratio_mean": 1099766.9215192718,
             "n_samples": 60,
             "reference_rms": 5.293584960801055,
-            "state_label": "state"
+            "state_label": "plant_hidden_augmented_state"
           }
         },
         {
@@ -1266,11 +1290,11 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "mean_effective_rank": 1.0000000000000069,
+            "mean_effective_rank": 1.0000000000000115,
             "mean_identifiable_rank": 1.0,
             "min_effective_rank": 1.0000000000000004,
             "min_identifiable_rank": 1.0,
-            "state_label": "clean_delayed_output_feedback_state",
+            "state_label": "plant_hidden_augmented_state",
             "time_steps": 61
           }
         },
@@ -1300,20 +1324,20 @@
         },
         {
           "name": "closed_loop_transition_mismatch",
-          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
-          "status": "not_applicable",
+          "reason": "requires states plus candidate/reference closed-loop transition matrices",
+          "status": "missing",
           "summary": {}
         },
         {
           "name": "value_policy_gap",
-          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
-          "status": "not_applicable",
+          "reason": "requires candidate/reference value matrices and state covariances",
+          "status": "missing",
           "summary": {}
         },
         {
           "name": "bellman_hessian_residual",
-          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
-          "status": "not_applicable",
+          "reason": "requires gain delta, Bellman action Hessians, and state covariances",
+          "status": "missing",
           "summary": {}
         },
         {
@@ -1329,9 +1353,9 @@
             "D_phi_norm": 0.16825773338193548,
             "D_y_norm": 0.33292291836403604,
             "action_bias_norm": 0.11566511247021133,
-            "architecture": "linear_recurrence",
             "b_norm": 0.25467735901796423,
             "c_norm": 0.11566511247021133,
+            "certificate_mode": "augmented_linear",
             "delayed_observation_dim": 8,
             "fit_method": "adam_reward_rollout_from_scratch",
             "hidden_bias_norm": 0.25467735901796423,
@@ -1364,21 +1388,18 @@
         }
       ],
       "metrics": {
+        "aggregate_action_energy_mismatch": 0.976787175457734,
         "augmented_state_certificate": {
-          "expected_components": [
-            "augmented_closed_loop_transition",
-            "augmented_value_policy_gap",
-            "augmented_bellman_residual"
-          ],
-          "reason": "b8b533e owns the shared augmented-state certificate interface; this row saves plant, action, observation, and hidden arrays for that adapter without inventing a competing schema.",
-          "status": "pending_b8b533e_augmented_components"
+          "component_statuses": {
+            "bellman_hessian_residual": "missing",
+            "closed_loop_transition_mismatch": "missing",
+            "value_policy_gap": "missing"
+          },
+          "reason": "Action and visited-state components use z_t=[x_t; h_t]. Transition/value/Bellman components are explicit missing rows until a reference recurrent realization in the same augmented coordinates is available.",
+          "state": "plant_hidden_augmented_state",
+          "status": "augmented_linear_mode"
         },
         "candidate_clean_cost": 56810.076127757005,
-        "formal_static_gain_certificate_boundary": {
-          "bellman_hessian_residual": "not_applicable",
-          "closed_loop_transition_mismatch": "not_applicable",
-          "value_policy_gap": "not_applicable"
-        },
         "objective_ratio_to_reference": 13.019352962046732,
         "recurrence_diagnostics": {
           "A_h_norm": 5.014685700955241,
@@ -1429,7 +1450,7 @@
         "evaluation_lane": "deterministic",
         "gamma_factor": null,
         "issue_id": "5e55f69",
-        "notes": "Trainable linear recurrence evaluated on clean output-feedback rollout. Formal static-gain certificate components are explicitly not applicable; augmented-state components are pending b8b533e.",
+        "notes": "Trainable linear recurrence evaluated on clean output-feedback rollout. Certificate rows use augmented-linear mode over plant plus hidden state; transition/value/Bellman components remain explicit missing rows when same-coordinate reference recurrent sensitivities are unavailable.",
         "objective": "reward_rollout",
         "optimizer_label": "adam_reward_rollout_from_scratch",
         "parameters": {
@@ -1456,7 +1477,7 @@
         "seed": 0,
         "training_distribution": "observer_error"
       },
-      "status": "trainable_recurrence_pending_augmented_certificate"
+      "status": "trainable_recurrence_augmented_certificate"
     },
     {
       "arrays": [
@@ -1509,12 +1530,15 @@
           "status": "available",
           "summary": {
             "action_label": "control",
+            "aggregate_delta_energy": 1708.7203865068038,
+            "aggregate_mismatch_ratio": 1.0162954354115148,
+            "aggregate_reference_energy": 1681.3225042331464,
             "delta_rms": 5.336541305794112,
             "mismatch_ratio_max": 44284040.70742097,
             "mismatch_ratio_mean": 1281896.8977017994,
             "n_samples": 60,
             "reference_rms": 5.293584960801055,
-            "state_label": "state"
+            "state_label": "plant_hidden_augmented_state"
           }
         },
         {
@@ -1522,11 +1546,11 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "mean_effective_rank": 1.0000000000000067,
+            "mean_effective_rank": 1.0000000000000115,
             "mean_identifiable_rank": 1.0,
             "min_effective_rank": 1.0000000000000004,
             "min_identifiable_rank": 1.0,
-            "state_label": "clean_delayed_output_feedback_state",
+            "state_label": "plant_hidden_augmented_state",
             "time_steps": 61
           }
         },
@@ -1556,20 +1580,20 @@
         },
         {
           "name": "closed_loop_transition_mismatch",
-          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
-          "status": "not_applicable",
+          "reason": "requires states plus candidate/reference closed-loop transition matrices",
+          "status": "missing",
           "summary": {}
         },
         {
           "name": "value_policy_gap",
-          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
-          "status": "not_applicable",
+          "reason": "requires candidate/reference value matrices and state covariances",
+          "status": "missing",
           "summary": {}
         },
         {
           "name": "bellman_hessian_residual",
-          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
-          "status": "not_applicable",
+          "reason": "requires gain delta, Bellman action Hessians, and state covariances",
+          "status": "missing",
           "summary": {}
         },
         {
@@ -1585,9 +1609,9 @@
             "D_phi_norm": 0.2146514477572618,
             "D_y_norm": 0.37987487140892173,
             "action_bias_norm": 0.16816010172624413,
-            "architecture": "linear_recurrence",
             "b_norm": 0.3143359926626082,
             "c_norm": 0.16816010172624413,
+            "certificate_mode": "augmented_linear",
             "delayed_observation_dim": 8,
             "fit_method": "adam_reward_rollout_from_scratch",
             "hidden_bias_norm": 0.3143359926626082,
@@ -1620,21 +1644,18 @@
         }
       ],
       "metrics": {
+        "aggregate_action_energy_mismatch": 1.0162954354115148,
         "augmented_state_certificate": {
-          "expected_components": [
-            "augmented_closed_loop_transition",
-            "augmented_value_policy_gap",
-            "augmented_bellman_residual"
-          ],
-          "reason": "b8b533e owns the shared augmented-state certificate interface; this row saves plant, action, observation, and hidden arrays for that adapter without inventing a competing schema.",
-          "status": "pending_b8b533e_augmented_components"
+          "component_statuses": {
+            "bellman_hessian_residual": "missing",
+            "closed_loop_transition_mismatch": "missing",
+            "value_policy_gap": "missing"
+          },
+          "reason": "Action and visited-state components use z_t=[x_t; h_t]. Transition/value/Bellman components are explicit missing rows until a reference recurrent realization in the same augmented coordinates is available.",
+          "state": "plant_hidden_augmented_state",
+          "status": "augmented_linear_mode"
         },
         "candidate_clean_cost": 1136791.0116950015,
-        "formal_static_gain_certificate_boundary": {
-          "bellman_hessian_residual": "not_applicable",
-          "closed_loop_transition_mismatch": "not_applicable",
-          "value_policy_gap": "not_applicable"
-        },
         "objective_ratio_to_reference": 260.52215441598577,
         "recurrence_diagnostics": {
           "A_h_norm": 5.1394600325583,
@@ -1685,7 +1706,7 @@
         "evaluation_lane": "deterministic",
         "gamma_factor": null,
         "issue_id": "5e55f69",
-        "notes": "Trainable linear recurrence evaluated on clean output-feedback rollout. Formal static-gain certificate components are explicitly not applicable; augmented-state components are pending b8b533e.",
+        "notes": "Trainable linear recurrence evaluated on clean output-feedback rollout. Certificate rows use augmented-linear mode over plant plus hidden state; transition/value/Bellman components remain explicit missing rows when same-coordinate reference recurrent sensitivities are unavailable.",
         "objective": "reward_rollout",
         "optimizer_label": "adam_reward_rollout_from_scratch",
         "parameters": {
@@ -1712,7 +1733,7 @@
         "seed": 0,
         "training_distribution": "mixed_deviation"
       },
-      "status": "trainable_recurrence_pending_augmented_certificate"
+      "status": "trainable_recurrence_augmented_certificate"
     },
     {
       "arrays": [
@@ -1765,12 +1786,15 @@
           "status": "available",
           "summary": {
             "action_label": "control",
+            "aggregate_delta_energy": 1091.1696211461012,
+            "aggregate_mismatch_ratio": 0.6489948349580827,
+            "aggregate_reference_energy": 1681.3225042331464,
             "delta_rms": 4.264523461353568,
             "mismatch_ratio_max": 17555745.625770252,
             "mismatch_ratio_mean": 430663.55315068585,
             "n_samples": 60,
             "reference_rms": 5.293584960801055,
-            "state_label": "state"
+            "state_label": "plant_hidden_augmented_state"
           }
         },
         {
@@ -1778,11 +1802,11 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "mean_effective_rank": 1.0000000000000069,
+            "mean_effective_rank": 1.0000000000000109,
             "mean_identifiable_rank": 1.0,
             "min_effective_rank": 1.0000000000000004,
             "min_identifiable_rank": 1.0,
-            "state_label": "clean_delayed_output_feedback_state",
+            "state_label": "plant_hidden_augmented_state",
             "time_steps": 61
           }
         },
@@ -1813,20 +1837,20 @@
         },
         {
           "name": "closed_loop_transition_mismatch",
-          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
-          "status": "not_applicable",
+          "reason": "requires states plus candidate/reference closed-loop transition matrices",
+          "status": "missing",
           "summary": {}
         },
         {
           "name": "value_policy_gap",
-          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
-          "status": "not_applicable",
+          "reason": "requires candidate/reference value matrices and state covariances",
+          "status": "missing",
           "summary": {}
         },
         {
           "name": "bellman_hessian_residual",
-          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
-          "status": "not_applicable",
+          "reason": "requires gain delta, Bellman action Hessians, and state covariances",
+          "status": "missing",
           "summary": {}
         },
         {
@@ -1842,9 +1866,9 @@
             "D_phi_norm": 0.3584257345958858,
             "D_y_norm": 0.40307624374514395,
             "action_bias_norm": 0.34807315021542573,
-            "architecture": "linear_recurrence",
             "b_norm": 0.4080804959430158,
             "c_norm": 0.34807315021542573,
+            "certificate_mode": "augmented_linear",
             "delayed_observation_dim": 8,
             "fit_method": "adam_reference_action_imitation_diagnostic",
             "hidden_bias_norm": 0.4080804959430158,
@@ -1878,21 +1902,18 @@
         }
       ],
       "metrics": {
+        "aggregate_action_energy_mismatch": 0.6489948349580827,
         "augmented_state_certificate": {
-          "expected_components": [
-            "augmented_closed_loop_transition",
-            "augmented_value_policy_gap",
-            "augmented_bellman_residual"
-          ],
-          "reason": "b8b533e owns the shared augmented-state certificate interface; this row saves plant, action, observation, and hidden arrays for that adapter without inventing a competing schema.",
-          "status": "pending_b8b533e_augmented_components"
+          "component_statuses": {
+            "bellman_hessian_residual": "missing",
+            "closed_loop_transition_mismatch": "missing",
+            "value_policy_gap": "missing"
+          },
+          "reason": "Action and visited-state components use z_t=[x_t; h_t]. Transition/value/Bellman components are explicit missing rows until a reference recurrent realization in the same augmented coordinates is available.",
+          "state": "plant_hidden_augmented_state",
+          "status": "augmented_linear_mode"
         },
         "candidate_clean_cost": 1370136.197408722,
-        "formal_static_gain_certificate_boundary": {
-          "bellman_hessian_residual": "not_applicable",
-          "closed_loop_transition_mismatch": "not_applicable",
-          "value_policy_gap": "not_applicable"
-        },
         "objective_ratio_to_reference": 313.99864207231764,
         "recurrence_diagnostics": {
           "A_h_norm": 5.070675684493589,
@@ -1944,7 +1965,7 @@
         "evaluation_lane": "deterministic",
         "gamma_factor": null,
         "issue_id": "5e55f69",
-        "notes": "Trainable linear recurrence evaluated on clean output-feedback rollout. Formal static-gain certificate components are explicitly not applicable; augmented-state components are pending b8b533e.",
+        "notes": "Trainable linear recurrence evaluated on clean output-feedback rollout. Certificate rows use augmented-linear mode over plant plus hidden state; transition/value/Bellman components remain explicit missing rows when same-coordinate reference recurrent sensitivities are unavailable.",
         "objective": "imitation_diagnostic",
         "optimizer_label": "adam_reference_action_imitation_diagnostic",
         "parameters": {
@@ -1971,7 +1992,7 @@
         "seed": 0,
         "training_distribution": "nominal"
       },
-      "status": "trainable_recurrence_pending_augmented_certificate"
+      "status": "trainable_recurrence_augmented_certificate"
     },
     {
       "arrays": [
@@ -2024,12 +2045,15 @@
           "status": "available",
           "summary": {
             "action_label": "control",
+            "aggregate_delta_energy": 1605.6342668961947,
+            "aggregate_mismatch_ratio": 0.9549829154452,
+            "aggregate_reference_energy": 1681.3225042331464,
             "delta_rms": 5.1730620637042986,
             "mismatch_ratio_max": 419450048.9384908,
             "mismatch_ratio_mean": 7053035.795486079,
             "n_samples": 60,
             "reference_rms": 5.293584960801055,
-            "state_label": "state"
+            "state_label": "plant_hidden_augmented_state"
           }
         },
         {
@@ -2037,11 +2061,11 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "mean_effective_rank": 1.0000000000000064,
+            "mean_effective_rank": 1.000000000000011,
             "mean_identifiable_rank": 1.0,
             "min_effective_rank": 1.0000000000000004,
             "min_identifiable_rank": 1.0,
-            "state_label": "clean_delayed_output_feedback_state",
+            "state_label": "plant_hidden_augmented_state",
             "time_steps": 61
           }
         },
@@ -2075,20 +2099,20 @@
         },
         {
           "name": "closed_loop_transition_mismatch",
-          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
-          "status": "not_applicable",
+          "reason": "requires states plus candidate/reference closed-loop transition matrices",
+          "status": "missing",
           "summary": {}
         },
         {
           "name": "value_policy_gap",
-          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
-          "status": "not_applicable",
+          "reason": "requires candidate/reference value matrices and state covariances",
+          "status": "missing",
           "summary": {}
         },
         {
           "name": "bellman_hessian_residual",
-          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
-          "status": "not_applicable",
+          "reason": "requires gain delta, Bellman action Hessians, and state covariances",
+          "status": "missing",
           "summary": {}
         },
         {
@@ -2104,9 +2128,9 @@
             "D_phi_norm": 0.3609067588440074,
             "D_y_norm": 0.676861158767993,
             "action_bias_norm": 0.35057664585850884,
-            "architecture": "linear_recurrence",
             "b_norm": 0.5566471596972676,
             "c_norm": 0.35057664585850884,
+            "certificate_mode": "augmented_linear",
             "delayed_observation_dim": 8,
             "fit_method": "adam_reference_action_imitation_then_reward_rollout",
             "hidden_bias_norm": 0.5566471596972676,
@@ -2143,21 +2167,18 @@
         }
       ],
       "metrics": {
+        "aggregate_action_energy_mismatch": 0.9549829154452,
         "augmented_state_certificate": {
-          "expected_components": [
-            "augmented_closed_loop_transition",
-            "augmented_value_policy_gap",
-            "augmented_bellman_residual"
-          ],
-          "reason": "b8b533e owns the shared augmented-state certificate interface; this row saves plant, action, observation, and hidden arrays for that adapter without inventing a competing schema.",
-          "status": "pending_b8b533e_augmented_components"
+          "component_statuses": {
+            "bellman_hessian_residual": "missing",
+            "closed_loop_transition_mismatch": "missing",
+            "value_policy_gap": "missing"
+          },
+          "reason": "Action and visited-state components use z_t=[x_t; h_t]. Transition/value/Bellman components are explicit missing rows until a reference recurrent realization in the same augmented coordinates is available.",
+          "state": "plant_hidden_augmented_state",
+          "status": "augmented_linear_mode"
         },
         "candidate_clean_cost": 1130264.2162809272,
-        "formal_static_gain_certificate_boundary": {
-          "bellman_hessian_residual": "not_applicable",
-          "closed_loop_transition_mismatch": "not_applicable",
-          "value_policy_gap": "not_applicable"
-        },
         "objective_ratio_to_reference": 259.0263871331572,
         "recurrence_diagnostics": {
           "A_h_norm": 5.145805216992002,
@@ -2212,7 +2233,7 @@
         "evaluation_lane": "deterministic",
         "gamma_factor": null,
         "issue_id": "5e55f69",
-        "notes": "Trainable linear recurrence evaluated on clean output-feedback rollout. Formal static-gain certificate components are explicitly not applicable; augmented-state components are pending b8b533e.",
+        "notes": "Trainable linear recurrence evaluated on clean output-feedback rollout. Certificate rows use augmented-linear mode over plant plus hidden state; transition/value/Bellman components remain explicit missing rows when same-coordinate reference recurrent sensitivities are unavailable.",
         "objective": "imitation_then_reward_rollout_scaffold",
         "optimizer_label": "adam_reference_action_imitation_then_reward_rollout",
         "parameters": {
@@ -2239,10 +2260,10 @@
         "seed": 0,
         "training_distribution": "mixed_deviation"
       },
-      "status": "trainable_recurrence_pending_augmented_certificate"
+      "status": "trainable_recurrence_augmented_certificate"
     }
   ],
-  "runtime_seconds": 34.93152404099237,
+  "runtime_seconds": 33.51318499998888,
   "scope": "Trainable phase-aware linear recurrent output-feedback rows using delayed observations, previous actions, and explicit polynomial phase/time inputs.",
   "source_issues": {
     "failure_decomposition": "c45adde",
