@@ -9,6 +9,7 @@ from typing import Any
 import jax
 import jax.numpy as jnp
 import numpy as np
+import optax
 import scipy.optimize as scipy_opt
 from jaxtyping import Array, Float
 
@@ -81,12 +82,18 @@ class RolloutRecoveryCondition:
     """One objective-preserving rollout optimizer condition."""
 
     label: str
+    optimizer: str = "lbfgsb"
     use_whitening: bool = False
     use_time_block_preconditioning: bool = False
     maxiter: int = 500
     ftol: float = 1e-12
     gtol: float = 1e-8
     maxls: int = 50
+    learning_rate: float = 1e-3
+    weight_decay: float = 0.0
+    adam_b1: float = 0.9
+    adam_b2: float = 0.999
+    adam_eps: float = 1e-8
     initializations: tuple[str, ...] = ("scratch", "bellman_init")
     auxiliary_bellman_weights: tuple[float, ...] = ()
     eigenspectrum_coverage: EigenspectrumCoverageConfig | None = None
@@ -110,6 +117,8 @@ class RolloutRecoveryFit:
     gradient_norm_initial: float
     gradient_norm_final: float
     projected_gradient_norm_final: float | None
+    best_objective: float
+    best_checkpoint_iteration: int | None
     optimizer_status: str
     optimizer_success: bool
     n_iterations: int
@@ -184,6 +193,27 @@ STRONG_OPTIMIZER_WHITENED = RolloutRecoveryCondition(
     maxls=100,
     initializations=("scratch",),
 )
+
+
+def adamw_optimizer_whitened(
+    label: str,
+    *,
+    learning_rate: float,
+    weight_decay: float = 0.0,
+    maxiter: int = 5000,
+    initializations: tuple[str, ...] = ("scratch", "bellman_init"),
+) -> RolloutRecoveryCondition:
+    """Return a full-batch AdamW condition using the standard whitening map."""
+
+    return RolloutRecoveryCondition(
+        label=label,
+        optimizer="adamw",
+        use_whitening=True,
+        maxiter=maxiter,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        initializations=initializations,
+    )
 
 
 def strong_optimizer_whitened_with_coverage(
@@ -741,6 +771,20 @@ def _gradient_norms(
     return float(np.linalg.norm(grad_np)), grad_np
 
 
+def _validate_condition(condition: RolloutRecoveryCondition) -> None:
+    valid_optimizers = {"lbfgsb", "adamw"}
+    if condition.optimizer not in valid_optimizers:
+        raise ValueError(
+            f"Unknown optimizer={condition.optimizer!r}; expected one of {sorted(valid_optimizers)}."
+        )
+    if condition.optimizer == "adamw" and condition.maxiter < 1:
+        raise ValueError("AdamW conditions require maxiter >= 1.")
+    if condition.optimizer == "adamw" and condition.learning_rate <= 0.0:
+        raise ValueError("AdamW conditions require a positive learning_rate.")
+    if condition.use_time_block_preconditioning and not condition.use_whitening:
+        raise ValueError("Time-block preconditioning requires whitening.")
+
+
 def _action_mismatch_ratio(
     candidate_u: Float[Array, "T m_u"],
     reference_u: Float[Array, "T m_u"],
@@ -886,6 +930,10 @@ def _fit_one_condition(
         )
         return value, grads.reshape(-1)
 
+    @jax.jit
+    def clean_value_flat(theta: Float[Array, " flat"]) -> Float[Array, ""]:
+        return objective_theta(theta.reshape(shape))
+
     def scipy_value_and_grad_for_weight(bellman_weight: float):
         def scipy_value_and_grad(theta: np.ndarray) -> tuple[float, np.ndarray]:
             if not condition.auxiliary_bellman_weights:
@@ -910,33 +958,124 @@ def _fit_one_condition(
     total_evaluations = 0
     optimizer_success = True
     projected_gradient_norm = None
-    for bellman_weight in stage_weights:
-        scipy_result = scipy_opt.minimize(
-            scipy_value_and_grad_for_weight(bellman_weight),
-            theta_current,
-            jac=True,
-            method="L-BFGS-B",
-            options={
-                "maxiter": condition.maxiter,
-                "ftol": condition.ftol,
-                "gtol": condition.gtol,
-                "maxls": condition.maxls,
-            },
+    best_objective = initial_objective
+    best_iteration: int | None = 0
+    if condition.optimizer == "lbfgsb":
+        for bellman_weight in stage_weights:
+            scipy_result = scipy_opt.minimize(
+                scipy_value_and_grad_for_weight(bellman_weight),
+                theta_current,
+                jac=True,
+                method="L-BFGS-B",
+                options={
+                    "maxiter": condition.maxiter,
+                    "ftol": condition.ftol,
+                    "gtol": condition.gtol,
+                    "maxls": condition.maxls,
+                },
+            )
+            theta_current = np.asarray(scipy_result.x, dtype=np.float64)
+            total_iterations += int(scipy_result.nit)
+            total_evaluations += int(scipy_result.nfev)
+            optimizer_success = optimizer_success and bool(scipy_result.success)
+            projected_gradient = getattr(scipy_result, "jac", None)
+            projected_gradient_norm = (
+                None
+                if projected_gradient is None
+                else float(np.linalg.norm(np.asarray(projected_gradient, dtype=np.float64)))
+            )
+            clean_value = float(clean_value_flat(jnp.asarray(theta_current, dtype=jnp.float64)))
+            if clean_value <= best_objective:
+                best_objective = clean_value
+                best_iteration = total_iterations
+            if condition.auxiliary_bellman_weights:
+                stage_messages.append(
+                    f"bellman_weight={bellman_weight:g}: {scipy_result.message}"
+                )
+            else:
+                stage_messages.append(str(scipy_result.message))
+    else:
+        optimizer = optax.adamw(
+            learning_rate=condition.learning_rate,
+            b1=condition.adam_b1,
+            b2=condition.adam_b2,
+            eps=condition.adam_eps,
+            weight_decay=condition.weight_decay,
         )
-        theta_current = np.asarray(scipy_result.x, dtype=np.float64)
-        total_iterations += int(scipy_result.nit)
-        total_evaluations += int(scipy_result.nfev)
-        optimizer_success = optimizer_success and bool(scipy_result.success)
-        projected_gradient = getattr(scipy_result, "jac", None)
-        projected_gradient_norm = (
-            None
-            if projected_gradient is None
-            else float(np.linalg.norm(np.asarray(projected_gradient, dtype=np.float64)))
-        )
-        if condition.auxiliary_bellman_weights:
-            stage_messages.append(f"bellman_weight={bellman_weight:g}: {scipy_result.message}")
-        else:
-            stage_messages.append(str(scipy_result.message))
+
+        @jax.jit
+        def adamw_stage(
+            theta: Float[Array, " flat"],
+            opt_state: optax.OptState,
+            bellman_weight: Float[Array, ""],
+            starting_step: Float[Array, ""],
+        ):
+            best_theta = theta
+            best_value = clean_value_flat(theta)
+            best_step = starting_step
+            all_finite = jnp.asarray(True)
+
+            def step(carry, step_index):
+                theta, opt_state, best_theta, best_value, best_step, all_finite = carry
+                if condition.auxiliary_bellman_weights:
+                    train_value, grads = composite_value_and_grad_flat(theta, bellman_weight)
+                else:
+                    train_value, grads = clean_value_and_grad_flat(theta)
+                updates, opt_state = optimizer.update(grads, opt_state, theta)
+                theta = optax.apply_updates(theta, updates)
+                clean_value = clean_value_flat(theta)
+                finite = jnp.isfinite(train_value) & jnp.isfinite(clean_value)
+                finite = finite & jnp.all(jnp.isfinite(grads)) & jnp.all(jnp.isfinite(theta))
+                improved = finite & (clean_value < best_value)
+                absolute_step = starting_step + step_index + 1
+                best_theta = jnp.where(improved, theta, best_theta)
+                best_value = jnp.where(improved, clean_value, best_value)
+                best_step = jnp.where(improved, absolute_step, best_step)
+                all_finite = all_finite & finite
+                return (theta, opt_state, best_theta, best_value, best_step, all_finite), None
+
+            steps = jnp.arange(condition.maxiter)
+            (theta, opt_state, best_theta, best_value, best_step, all_finite), _ = jax.lax.scan(
+                step,
+                (theta, opt_state, best_theta, best_value, best_step, all_finite),
+                steps,
+            )
+            return theta, opt_state, best_theta, best_value, best_step, all_finite
+
+        best_theta = jnp.asarray(theta_current, dtype=jnp.float64)
+        for bellman_weight in stage_weights:
+            opt_state = optimizer.init(jnp.asarray(theta_current, dtype=jnp.float64))
+            (
+                _theta_terminal,
+                _opt_state,
+                stage_best_theta,
+                stage_best_value,
+                stage_best_step,
+                all_finite,
+            ) = adamw_stage(
+                jnp.asarray(theta_current, dtype=jnp.float64),
+                opt_state,
+                jnp.asarray(bellman_weight, dtype=jnp.float64),
+                jnp.asarray(total_iterations, dtype=jnp.int64),
+            )
+            theta_current = np.asarray(stage_best_theta, dtype=np.float64)
+            best_theta = stage_best_theta
+            best_objective = float(stage_best_value)
+            best_iteration = int(stage_best_step)
+            total_iterations += condition.maxiter
+            total_evaluations += condition.maxiter
+            optimizer_success = optimizer_success and bool(all_finite)
+            if condition.auxiliary_bellman_weights:
+                stage_messages.append(
+                    f"bellman_weight={bellman_weight:g}: AdamW completed "
+                    f"{condition.maxiter} full-batch steps"
+                )
+            else:
+                stage_messages.append(
+                    f"AdamW completed {condition.maxiter} full-batch steps "
+                    f"(lr={condition.learning_rate:g}, weight_decay={condition.weight_decay:g})"
+                )
+        theta_current = np.asarray(best_theta, dtype=np.float64)
     theta_final = jnp.asarray(theta_current, dtype=jnp.float64).reshape(shape)
     K_final = to_K(theta_final)
     final_objective = float(objective_theta(theta_final))
@@ -980,6 +1119,8 @@ def _fit_one_condition(
         gradient_norm_initial=initial_grad_norm,
         gradient_norm_final=final_grad_norm,
         projected_gradient_norm_final=projected_gradient_norm,
+        best_objective=best_objective,
+        best_checkpoint_iteration=best_iteration,
         optimizer_status="; ".join(stage_messages),
         optimizer_success=optimizer_success,
         n_iterations=total_iterations,
@@ -1120,6 +1261,7 @@ def run_output_feedback_rollout_recovery(
     observer_error_coverage_by_label: dict[str, dict[str, Any]] = {}
     coverage_arrays: dict[str, np.ndarray] = {}
     for condition in conditions:
+        _validate_condition(condition)
         if (
             condition.eigenspectrum_coverage is not None
             and condition.observer_error_coverage is not None
@@ -1336,6 +1478,8 @@ def _fit_summary(fit: RolloutRecoveryFit) -> dict[str, Any]:
         "gradient_norm_initial": fit.gradient_norm_initial,
         "gradient_norm_final": fit.gradient_norm_final,
         "projected_gradient_norm_final": fit.projected_gradient_norm_final,
+        "best_objective": fit.best_objective,
+        "best_checkpoint_iteration": fit.best_checkpoint_iteration,
         "clean_cost": fit.clean_cost,
         "clean_rollout": _rollout_summary(fit.clean_rollout),
         "clean_action_mismatch_ratio": fit.clean_action_mismatch_ratio,
@@ -1689,6 +1833,7 @@ __all__ = [
     "RolloutRecoveryFit",
     "RolloutRecoveryResult",
     "STRONG_OPTIMIZER_WHITENED",
+    "adamw_optimizer_whitened",
     "eigenspectrum_coverage_conditions",
     "observer_error_coverage_conditions",
     "render_markdown",
