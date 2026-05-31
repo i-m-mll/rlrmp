@@ -82,7 +82,7 @@ def test_project_oracle_reference_returns_phase_modulated_controller(monkeypatch
     )
 
 
-def test_materialize_with_fake_reference_reports_pending_io_map(monkeypatch) -> None:
+def test_materialize_with_fake_reference_reports_io_map_certificate(monkeypatch) -> None:
     plant = _tiny_plant()
     schedule = SimpleNamespace(
         Q=np.broadcast_to(np.eye(2), (3, 2, 2)),
@@ -126,10 +126,12 @@ def test_materialize_with_fake_reference_reports_pending_io_map(monkeypatch) -> 
     summary, arrays = pm.materialize(include_reward=False, conditions=(condition,))
 
     assert summary["issue"] == pm.ISSUE_ID
-    assert (
-        summary["rows"][0]["metrics"]["io_map_certificate"]["status"]
-        == "pending_io_map_certificate"
-    )
+    assert summary["rows"][0]["metrics"]["io_map_certificate"]["status"] == "available"
     assert summary["rows"][0]["metrics"]["verdict"] == "representation_diagnostic"
+    assert any(
+        component["name"] == "observation_history_to_action_map_mismatch"
+        and component["status"] == "available"
+        for component in summary["rows"][0]["certificate_components"]
+    )
     assert "clamped_bspline_r3_basis" in arrays
     assert any(key.endswith("__hidden_states") for key in arrays)

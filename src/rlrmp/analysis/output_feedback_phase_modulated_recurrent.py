@@ -13,6 +13,9 @@ import jax.numpy as jnp
 import numpy as np
 
 from rlrmp.analysis.bridge_certificates import (
+    DISTURBANCE_HISTORY_TO_ACTION_MAP_MISMATCH,
+    DISTURBANCE_HISTORY_TO_STATE_MAP_MISMATCH,
+    OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH,
     STATE_WEIGHTED_ACTION_MISMATCH,
     build_standard_certificate_components,
 )
@@ -359,6 +362,9 @@ def materialize(
         )
         row = _manifest_for_condition(
             condition=condition,
+            controller=controller,
+            oracle=oracle,
+            plant=plant,
             rollout=rollout,
             reference_batch=reference_batch,
             schedule=schedule,
@@ -482,9 +488,9 @@ Verdict: {summary["result"]}
 These rows are diagnostics, not bridge passes. The recurrent controller is an
 augmented-linear system over `z_t = [x_t; h_t]`, and action/visited-state
 components are reported through the existing augmented recurrent adapter. The
-formal I/O-map certificate is owned by `{IO_MAP_CERTIFICATE_ISSUE_ID}`; until
-that contract is merged into this branch, local rows are marked
-`pending_io_map_certificate` rather than inventing a parallel schema.
+I/O-map certificate from `{IO_MAP_CERTIFICATE_ISSUE_ID}` compares finite-horizon
+observation-to-action, disturbance-to-action, and disturbance-to-state response
+maps against the oracle recurrent reference.
 
 {"\n".join(component_rows)}
 
@@ -502,6 +508,9 @@ status.
 def _manifest_for_condition(
     *,
     condition: PhaseModulatedCondition,
+    controller: PhaseModulatedLinearRecurrentController,
+    oracle: OracleRecurrentReference,
+    plant: Any,
     rollout: Any,
     reference_batch: dict[str, np.ndarray],
     schedule: Any,
@@ -513,6 +522,20 @@ def _manifest_for_condition(
     candidate_cost = _batch_quadratic_cost(schedule, rollout.plant_states, candidate_actions)
     reference_cost = _batch_quadratic_cost(schedule, reference_batch["x"], reference_actions)
     augmented_states = np.concatenate([rollout.plant_states, rollout.hidden_states], axis=-1)
+    candidate_maps = _response_maps_for_phase_modulated_controller(
+        controller=controller,
+        plant=plant,
+        observation_matrix=oracle.observation_matrix,
+    )
+    reference_maps = _response_maps_for_matrix_sequences(
+        plant=plant,
+        observation_matrix=oracle.observation_matrix,
+        recurrent=oracle.recurrent_matrices,
+        observation=oracle.observation_matrices,
+        previous_action=oracle.previous_action_matrices,
+        readout=oracle.readout_matrices,
+        feedthrough=oracle.feedthrough_matrices,
+    )
     components = build_standard_certificate_components(
         architecture="linear_recurrence",
         certificate_mode="augmented_linear",
@@ -527,9 +550,16 @@ def _manifest_for_condition(
         },
         state_label="plant_hidden_augmented_state",
         action_label="control",
+        candidate_observation_to_action_map=candidate_maps["observation_to_action"],
+        reference_observation_to_action_map=reference_maps["observation_to_action"],
+        candidate_disturbance_to_action_map=candidate_maps["disturbance_to_action"],
+        reference_disturbance_to_action_map=reference_maps["disturbance_to_action"],
+        candidate_disturbance_to_state_map=candidate_maps["disturbance_to_state"],
+        reference_disturbance_to_state_map=reference_maps["disturbance_to_state"],
     )
     by_name = {component.name: component for component in components}
     action_summary = by_name[STATE_WEIGHTED_ACTION_MISMATCH].summary
+    io_map_summary = _io_map_certificate_summary(by_name)
     projection_summary = _projection_summary(projections)
     metrics = {
         "row_family": condition.row_family,
@@ -543,15 +573,8 @@ def _manifest_for_condition(
         "aggregate_action_energy_mismatch": action_summary["aggregate_mismatch_ratio"],
         "projection": projection_summary,
         "recurrence_diagnostics": rollout.metadata["diagnostics"],
-        "io_map_certificate": {
-            "status": "pending_io_map_certificate",
-            "owner_issue": IO_MAP_CERTIFICATE_ISSUE_ID,
-            "reason": (
-                "Formal I/O-map certificate schema is owned by the sibling worker; "
-                "this materializer only records local action/rollout diagnostics."
-            ),
-        },
-        "verdict": _row_verdict(condition, projection_summary, action_summary),
+        "io_map_certificate": io_map_summary,
+        "verdict": _row_verdict(condition, projection_summary, action_summary, io_map_summary),
     }
     spec = BridgeRunSpec(
         issue_id=ISSUE_ID,
@@ -576,8 +599,9 @@ def _manifest_for_condition(
         },
         notes=(
             "Phase-modulated linear recurrence uses spline coefficients for "
-            "time-varying A/B/C/D matrices. This row is diagnostic until the "
-            "formal I/O-map certificate is consumed."
+            "time-varying A/B/C/D matrices. I/O-map certificate components "
+            "compare external response maps to the oracle recurrent reference; "
+            "imitation/projection rows remain diagnostic rather than bridge passes."
         ),
     )
     return BridgeRunManifest(
@@ -615,17 +639,184 @@ def _row_verdict(
     condition: PhaseModulatedCondition,
     projection: dict[str, Any],
     action_summary: dict[str, Any],
+    io_map_summary: dict[str, Any],
 ) -> str:
     if condition.row_family == "oracle_matrix_projection":
         return "representation_diagnostic"
     if condition.row_family in {"action_imitation", "io_map_imitation"}:
-        return "imitation_diagnostic_pending_io_map_certificate"
+        return "imitation_diagnostic"
     if (
         projection["combined_relative_residual"] < 0.05
         and action_summary["mismatch_ratio_mean"] < 0.1
+        and io_map_summary["max_relative_mismatch"] < 0.1
     ):
-        return "reward_lens_projection_close_pending_io_map_certificate"
-    return "reward_lens_non_equivalent_pending_io_map_certificate"
+        return "reward_lens_projection_close_io_map_near_reference"
+    return "reward_lens_non_equivalent"
+
+
+def _io_map_certificate_summary(
+    by_name: dict[str, Any],
+) -> dict[str, Any]:
+    names = (
+        OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH,
+        DISTURBANCE_HISTORY_TO_ACTION_MAP_MISMATCH,
+        DISTURBANCE_HISTORY_TO_STATE_MAP_MISMATCH,
+    )
+    components = {name: by_name[name] for name in names}
+    available = [component for component in components.values() if component.status == "available"]
+    ratios = [
+        float(component.summary["aggregate_mismatch_ratio"])
+        for component in available
+        if "aggregate_mismatch_ratio" in component.summary
+    ]
+    return {
+        "status": "available" if len(available) == len(names) else "missing",
+        "owner_issue": IO_MAP_CERTIFICATE_ISSUE_ID,
+        "max_relative_mismatch": max(ratios) if ratios else float("nan"),
+        "components": {
+            name: {
+                "status": component.status,
+                "aggregate_mismatch_ratio": component.summary.get("aggregate_mismatch_ratio"),
+                "mismatch_ratio_mean": component.summary.get("mismatch_ratio_mean"),
+                "covariance_weighted_mismatch_ratio_mean": component.summary.get(
+                    "covariance_weighted_mismatch_ratio_mean"
+                ),
+            }
+            for name, component in components.items()
+        },
+    }
+
+
+def _response_maps_for_phase_modulated_controller(
+    *,
+    controller: PhaseModulatedLinearRecurrentController,
+    plant: Any,
+    observation_matrix: np.ndarray,
+) -> dict[str, np.ndarray]:
+    return _response_maps_for_matrix_sequences(
+        plant=plant,
+        observation_matrix=observation_matrix,
+        recurrent=controller.matrix_sequence(controller.recurrent_coefficients),
+        observation=controller.matrix_sequence(controller.observation_coefficients),
+        previous_action=controller.matrix_sequence(controller.previous_action_coefficients),
+        readout=controller.matrix_sequence(controller.readout_coefficients),
+        feedthrough=controller.matrix_sequence(controller.feedthrough_coefficients),
+    )
+
+
+def _response_maps_for_matrix_sequences(
+    *,
+    plant: Any,
+    observation_matrix: np.ndarray,
+    recurrent: np.ndarray,
+    observation: np.ndarray,
+    previous_action: np.ndarray,
+    readout: np.ndarray,
+    feedthrough: np.ndarray,
+) -> dict[str, np.ndarray]:
+    horizon = int(recurrent.shape[0])
+    observation_dim = int(observation.shape[2])
+    disturbance_dim = int(plant.Bw.shape[1])
+    action_dim = int(readout.shape[1])
+    state_dim = int(plant.A.shape[0])
+    obs_inputs = horizon * observation_dim
+    disturbance_inputs = horizon * disturbance_dim
+
+    obs_to_action = np.zeros((horizon, action_dim, obs_inputs), dtype=np.float64)
+    for input_index in range(obs_inputs):
+        observations = np.zeros((horizon, observation_dim), dtype=np.float64)
+        observations.reshape(-1)[input_index] = 1.0
+        obs_to_action[:, :, input_index] = _linear_recurrence_actions_from_observations(
+            recurrent=recurrent,
+            observation=observation,
+            previous_action=previous_action,
+            readout=readout,
+            feedthrough=feedthrough,
+            observations=observations,
+        )
+
+    disturbance_to_action = np.zeros(
+        (horizon, action_dim, disturbance_inputs),
+        dtype=np.float64,
+    )
+    disturbance_to_state = np.zeros(
+        (horizon + 1, state_dim, disturbance_inputs),
+        dtype=np.float64,
+    )
+    for input_index in range(disturbance_inputs):
+        disturbances = np.zeros((horizon, disturbance_dim), dtype=np.float64)
+        disturbances.reshape(-1)[input_index] = 1.0
+        x, u = _linear_closed_loop_response_from_disturbances(
+            plant=plant,
+            observation_matrix=observation_matrix,
+            recurrent=recurrent,
+            observation=observation,
+            previous_action=previous_action,
+            readout=readout,
+            feedthrough=feedthrough,
+            disturbances=disturbances,
+        )
+        disturbance_to_action[:, :, input_index] = u
+        disturbance_to_state[:, :, input_index] = x
+    return {
+        "observation_to_action": obs_to_action,
+        "disturbance_to_action": disturbance_to_action,
+        "disturbance_to_state": disturbance_to_state,
+    }
+
+
+def _linear_recurrence_actions_from_observations(
+    *,
+    recurrent: np.ndarray,
+    observation: np.ndarray,
+    previous_action: np.ndarray,
+    readout: np.ndarray,
+    feedthrough: np.ndarray,
+    observations: np.ndarray,
+) -> np.ndarray:
+    horizon = recurrent.shape[0]
+    hidden = np.zeros((recurrent.shape[1],), dtype=np.float64)
+    prev_u = np.zeros((readout.shape[1],), dtype=np.float64)
+    actions = []
+    for t in range(horizon):
+        y_t = observations[t]
+        u_t = readout[t] @ hidden + feedthrough[t] @ y_t
+        hidden = recurrent[t] @ hidden + observation[t] @ y_t + previous_action[t] @ prev_u
+        prev_u = u_t
+        actions.append(u_t)
+    return np.stack(actions, axis=0)
+
+
+def _linear_closed_loop_response_from_disturbances(
+    *,
+    plant: Any,
+    observation_matrix: np.ndarray,
+    recurrent: np.ndarray,
+    observation: np.ndarray,
+    previous_action: np.ndarray,
+    readout: np.ndarray,
+    feedthrough: np.ndarray,
+    disturbances: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    A = np.asarray(plant.A, dtype=np.float64)
+    B = np.asarray(plant.B, dtype=np.float64)
+    Bw = np.asarray(plant.Bw, dtype=np.float64)
+    H = np.asarray(observation_matrix, dtype=np.float64)
+    horizon = recurrent.shape[0]
+    x = np.zeros((A.shape[0],), dtype=np.float64)
+    hidden = np.zeros((recurrent.shape[1],), dtype=np.float64)
+    prev_u = np.zeros((readout.shape[1],), dtype=np.float64)
+    states = [x.copy()]
+    actions = []
+    for t in range(horizon):
+        y_t = H @ x
+        u_t = readout[t] @ hidden + feedthrough[t] @ y_t
+        hidden = recurrent[t] @ hidden + observation[t] @ y_t + previous_action[t] @ prev_u
+        x = A @ x + B @ u_t + Bw @ disturbances[t]
+        prev_u = u_t
+        actions.append(u_t)
+        states.append(x.copy())
+    return np.stack(states, axis=0), np.stack(actions, axis=0)
 
 
 def _training_batch_for_condition(
@@ -770,8 +961,9 @@ def _result_text(rows: list[BridgeRunManifest]) -> str:
     return (
         "The oracle recurrent reference and clamped-spline projections were "
         f"materialized. The r=12 nominal imitation row has action mismatch "
-        f"{mismatch:.4g} and combined matrix residual {residual:.4g}; formal "
-        "bridge interpretation remains pending the I/O-map certificate."
+        f"{mismatch:.4g} and combined matrix residual {residual:.4g}. I/O-map "
+        "certificate components are available, but these rows remain diagnostic "
+        "rather than bridge passes."
     )
 
 
