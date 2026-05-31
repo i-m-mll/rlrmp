@@ -30,6 +30,7 @@ from rlrmp.analysis.output_feedback_rollout_recovery import (
     _state_scales,
     _time_block_scales,
     _training_ensemble,
+    adamw_optimizer_whitened,
     result_summary,
     run_output_feedback_rollout_recovery,
 )
@@ -148,6 +149,32 @@ def test_bellman_auxiliary_condition_emits_scratch_only_with_schedule() -> None:
     assert summary["diagnostics"]["bellman_auxiliary"]["schedules"] == {"aux_smoke": (0.1, 0.0)}
     assert "bellman_weight=0.1" in summary["fits"][0]["optimizer_status"]
     assert "bellman_weight=0" in summary["fits"][0]["optimizer_status"]
+
+
+def test_adamw_condition_uses_whitened_full_batch_objective_and_reports_best() -> None:
+    condition = adamw_optimizer_whitened(
+        label="adamw_smoke",
+        learning_rate=1e-3,
+        maxiter=2,
+        initializations=("scratch",),
+    )
+    result = run_output_feedback_rollout_recovery(
+        conditions=(condition,),
+        training_config=LinearTrainingConfig(n_random_states=4),
+    )
+    summary = result_summary(result)
+    fit = summary["fits"][0]
+
+    assert fit["label"] == "adamw_smoke__scratch"
+    assert fit["condition"]["optimizer"] == "adamw"
+    assert fit["condition"]["use_whitening"] is True
+    assert fit["n_iterations"] == 2
+    assert fit["n_function_evaluations"] == 2
+    assert fit["optimizer_success"] is True
+    assert fit["best_objective"] <= fit["objective_initial"]
+    assert fit["best_checkpoint_iteration"] is not None
+    assert "AdamW completed 2 full-batch steps" in fit["optimizer_status"]
+    assert "adamw_smoke__scratch_K" in result.arrays
 
 
 def test_eigenspectrum_coverage_samples_are_time_indexed_signed_pairs() -> None:
