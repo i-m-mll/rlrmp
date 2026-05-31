@@ -20,9 +20,12 @@ FailureClass = Literal[
     "under_identification",
     "optimizer_basin",
     "objective_mismatch",
+    "sidecar_improving_non_equivalent",
     "mixed",
     "uncertain",
 ]
+
+SIDECAR_IMPROVING_NON_EQUIVALENT = "sidecar_improving_non_equivalent"
 
 ObjectiveFn = Callable[[np.ndarray], float]
 GradientFn = Callable[[np.ndarray], np.ndarray]
@@ -251,6 +254,8 @@ def classify_failure(
     reference_gradient_norm: float | None,
     certificate_mismatch_ratio: float | None,
     subspace_decomposition: Mapping[str, Any] | None,
+    sidecar_improved: bool = False,
+    equivalence_metrics_failed: bool = False,
     numerics: FailureDecompositionNumerics = FailureDecompositionNumerics(),
 ) -> dict[str, Any]:
     """Classify a bridge row failure from objective, gradient, and subspace signals."""
@@ -291,6 +296,11 @@ def classify_failure(
             "classification": "not_failure",
             "reasons": ["standard mismatch and objective ratio are both within tolerance"],
         }
+    if is_sidecar_improving_non_equivalent(
+        sidecar_improved=sidecar_improved,
+        equivalence_metrics_failed=equivalence_metrics_failed or bool(certificate_bad),
+    ):
+        reasons.append(SIDECAR_IMPROVING_NON_EQUIVALENT)
     if certificate_bad and objective_close and weak_subspace_dominates:
         reasons.append("under_identification")
     if objective_bad or learned_gradient_bad:
@@ -315,8 +325,25 @@ def classify_failure(
             "learned_gradient_bad": learned_gradient_bad,
             "reference_gradient_bad": reference_gradient_bad,
             "weak_subspace_dominates": weak_subspace_dominates,
+            "sidecar_improved": sidecar_improved,
+            "equivalence_metrics_failed": equivalence_metrics_failed,
         },
     }
+
+
+def is_sidecar_improving_non_equivalent(
+    *,
+    sidecar_improved: bool,
+    equivalence_metrics_failed: bool,
+) -> bool:
+    """Return whether exact-L2/gamma sidecars improved without equivalence.
+
+    This helper labels rows where sidecar diagnostics improve but the formal
+    bridge gates still fail action, value, transition, or reference-equivalence
+    metrics. The label is deliberately not a pass condition.
+    """
+
+    return bool(sidecar_improved and equivalence_metrics_failed)
 
 
 def _match_covariances(covariances: np.ndarray, horizon: int, state_dim: int) -> np.ndarray:
@@ -362,9 +389,11 @@ def _mean_sum(rows: Sequence[Mapping[str, Any]], keys: Sequence[str]) -> float:
 __all__ = [
     "FailureClass",
     "FailureDecompositionNumerics",
+    "SIDECAR_IMPROVING_NON_EQUIVALENT",
     "classify_failure",
     "covariances_from_states",
     "gain_error_subspace_decomposition",
+    "is_sidecar_improving_non_equivalent",
     "interpolation_curve",
     "objective_gradient_summary",
 ]
