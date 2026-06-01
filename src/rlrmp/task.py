@@ -1,6 +1,7 @@
 from functools import partial
 from typing import Optional, Tuple
 
+from equinox import field
 import jax
 import jax.numpy as jnp
 import jax.random as jr
@@ -61,6 +62,57 @@ class EpochSimpleReaches(SimpleReaches):
                 epoch_names=("movement",),
             ),
         )
+
+
+class FixedEpochSimpleReaches(EpochSimpleReaches):
+    """Simple reach task with a fixed train/validation endpoint pair."""
+
+    fixed_init_pos: Float[Array, "2"] = field(
+        default_factory=lambda: jnp.zeros(2),
+        converter=jnp.asarray,
+    )
+    fixed_target_pos: Float[Array, "2"] = field(
+        default_factory=lambda: jnp.asarray([0.15, 0.0]),
+        converter=jnp.asarray,
+    )
+
+    def _fixed_endpoints(self) -> Float[Array, "2 2"]:
+        return jnp.stack([self.fixed_init_pos, self.fixed_target_pos])
+
+    def get_train_trial(
+        self, key: PRNGKeyArray, batch_info=None
+    ) -> TaskTrialSpec:
+        """Return the fixed endpoint pair, ignoring randomness."""
+
+        del key, batch_info
+        effector_init_state, effector_target_state = _pos_only_states(self._fixed_endpoints())
+        effector_target_state = jt.map(
+            lambda x: jnp.broadcast_to(x, (self.n_steps - 1, *x.shape)),
+            effector_target_state,
+        )
+        return self._construct_trial_spec(effector_init_state, effector_target_state)
+
+    def get_validation_trials(self, key: PRNGKeyArray) -> TaskTrialSpec:
+        """Return one validation trial with the same fixed endpoint pair."""
+
+        del key
+        endpoints = jnp.stack([self.fixed_init_pos[None, :], self.fixed_target_pos[None, :]])
+        effector_init_states, effector_target_states = _pos_only_states(endpoints)
+        effector_target_states = jt.map(
+            lambda x: jnp.swapaxes(
+                jnp.broadcast_to(x, (self.n_steps - 1, *x.shape)),
+                0,
+                1,
+            ),
+            effector_target_states,
+        )
+        return self._construct_trial_spec(effector_init_states, effector_target_states)
+
+    @property
+    def n_validation_trials(self) -> int:
+        """Number of validation trials."""
+
+        return 1
 
 
 def _random_centerout_endpoints(
@@ -177,6 +229,7 @@ class CenterOutDelayedReaches(DelayedReaches):
 
 TASK_TYPES = {
     "simple_reach": EpochSimpleReaches,
+    "fixed_simple_reach": FixedEpochSimpleReaches,
     "delayed_reach": DelayedReaches,
     "center_out_delayed_reach": CenterOutDelayedReaches,
 }
