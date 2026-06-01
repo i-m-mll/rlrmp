@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import os
+import sys
+from pathlib import Path
+
+import pytest
+
 from rlrmp.modal_runner import (
     DEFAULT_RUN,
     DEFAULT_TRAIN_TIMEOUT_SECONDS,
     MODAL_VOLUME_NAME,
     REGULARIZED_RUN,
     NominalGruRunConfig,
+    activate_project_venv,
     build_parser,
     build_packing_benchmark_command,
     build_remote_smoke_command,
@@ -124,6 +131,27 @@ def test_modal_run_defaults_to_training_timeout() -> None:
     config = make_config(args)
 
     assert config.timeout_seconds == DEFAULT_TRAIN_TIMEOUT_SECONDS
+
+
+def test_activate_project_venv_exposes_uv_site_packages(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    venv_dir = tmp_path / ".venv"
+    site_packages = venv_dir / "lib" / "python3.12" / "site-packages"
+    site_packages.mkdir(parents=True)
+    monkeypatch.setenv("PATH", "/usr/bin")
+    original_path = list(sys.path)
+
+    try:
+        activated = activate_project_venv(venv_dir)
+
+        assert activated == site_packages
+        assert sys.path[0] == str(site_packages)
+        assert os.environ["VIRTUAL_ENV"] == str(venv_dir)
+        assert os.environ["PATH"].split(os.pathsep)[0] == str(venv_dir / "bin")
+    finally:
+        sys.path[:] = original_path
 
 
 def test_packing_benchmark_command_disables_sync_and_sets_worker_count() -> None:

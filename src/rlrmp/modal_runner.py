@@ -39,6 +39,7 @@ MODAL_VOLUME_MOUNT = Path("/vol/rlrmp-cs-stochastic-gru")
 REMOTE_REPO_DIR = Path("/workspace/rlrmp")
 REMOTE_FEEDBAX_DIR = Path("/workspace/feedbax")
 REMOTE_JAX_COOKBOOK_DIR = Path("/workspace/jax-cookbook")
+REMOTE_VENV_DIR = REMOTE_REPO_DIR / ".venv"
 LOCAL_FEEDBAX_DIR = Path("/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax")
 LOCAL_JAX_COOKBOOK_DIR = Path("/Users/mll/Main/10 Projects/05 Utils/jax-cookbook")
 
@@ -309,6 +310,32 @@ def modal_volume_pull_commands(config: NominalGruRunConfig) -> dict[str, list[st
 
 def _modal_volume_relative(path: Path) -> str:
     return str(path.relative_to(MODAL_VOLUME_MOUNT))
+
+
+def activate_project_venv(venv_dir: Path = REMOTE_VENV_DIR) -> Path:
+    """Expose a uv-created project venv to the current Python process.
+
+    Modal invokes the function body with its system Python, while the image
+    build installs rlrmp dependencies into ``/workspace/rlrmp/.venv``. The
+    in-process trainer path therefore needs the venv's site-packages on
+    ``sys.path`` before importing Equinox/Feedbax/JAX-dependent modules.
+    """
+
+    lib_dir = venv_dir / "lib"
+    site_packages = sorted(lib_dir.glob("python*/site-packages"))
+    if not site_packages:
+        raise FileNotFoundError(f"No site-packages directory found under {lib_dir}")
+
+    site_path = str(site_packages[-1])
+    if site_path not in sys.path:
+        sys.path.insert(0, site_path)
+
+    bin_path = str(venv_dir / "bin")
+    path_parts = os.environ.get("PATH", "").split(os.pathsep)
+    if bin_path not in path_parts:
+        os.environ["PATH"] = os.pathsep.join([bin_path, *path_parts])
+    os.environ["VIRTUAL_ENV"] = str(venv_dir)
+    return site_packages[-1]
 
 
 def collect_provenance() -> dict[str, Any]:
