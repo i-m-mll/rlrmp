@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +59,7 @@ SUPERVISED_FIT_ISSUE_ID = "a06307d"
 UMBRELLA_ID = "1fabee8"
 RELATED_RECURRENT_ISSUE_ID = "5e55f69"
 IO_MAP_CERTIFICATE_ISSUE_ID = "007087e"
+R60_REWARD_CONTROLS_ISSUE_ID = "ad309f5"
 
 NOTE_PATH = REPO_ROOT / "results" / ISSUE_ID / "notes" / "phase_modulated_recurrent.md"
 MANIFEST_PATH = (
@@ -84,6 +85,11 @@ DEFAULT_SUPERVISED_LEARNING_RATE = 1e-3
 DEFAULT_REWARD_TRAIN_STEPS = 4
 DEFAULT_REWARD_LEARNING_RATE = 3e-3
 DEFAULT_REWARD_STABILITY_PENALTY = 1e-3
+R60_REWARD_TRAIN_STEPS = 24
+R60_SCRATCH_REWARD_TRAIN_STEPS = 16
+R60_REWARD_LEARNING_RATE = 5e-4
+R60_REWARD_GRADIENT_CLIP_NORM = 1.0
+R60_REWARD_PROXIMAL_WEIGHT = 1e-4
 SUPERVISED_ACTION_PASS_THRESHOLD = 2e-1
 SUPERVISED_RESPONSE_PASS_THRESHOLD = 2e-2
 
@@ -121,6 +127,8 @@ class PhaseModulatedCondition:
     n_train_steps: int = DEFAULT_REWARD_TRAIN_STEPS
     learning_rate: float = DEFAULT_REWARD_LEARNING_RATE
     stability_penalty: float = DEFAULT_REWARD_STABILITY_PENALTY
+    gradient_clip_norm: float | None = None
+    proximal_preservation_weight: float = 0.0
     seed: int = 0
     supervised_objective: str | None = None
 
@@ -392,6 +400,80 @@ def _reward_conditions() -> tuple[PhaseModulatedCondition, ...]:
             coverage_modes=4,
             coverage_scale=0.3,
         ),
+        PhaseModulatedCondition(
+            label="pm_linrec_r60_projected_oracle_nominal_then_reward",
+            row_family="projection_warm_start_then_reward_lens",
+            rank=60,
+            training_distribution="nominal_reward_projection_preserve",
+            evaluation_lens="nominal_clean",
+            n_train_steps=R60_REWARD_TRAIN_STEPS,
+            learning_rate=R60_REWARD_LEARNING_RATE,
+            gradient_clip_norm=R60_REWARD_GRADIENT_CLIP_NORM,
+            proximal_preservation_weight=R60_REWARD_PROXIMAL_WEIGHT,
+        ),
+        PhaseModulatedCondition(
+            label="pm_linrec_r60_projected_oracle_process_measurement_then_reward",
+            row_family="projection_warm_start_then_reward_lens",
+            rank=60,
+            training_distribution="process_measurement_reward_projection_preserve",
+            evaluation_lens="process_measurement_io",
+            disturbance_scale=DEFAULT_PROCESS_IO_DISTURBANCE_SCALE,
+            measurement_scale=DEFAULT_MEASUREMENT_IO_DISTURBANCE_SCALE,
+            n_train_steps=R60_REWARD_TRAIN_STEPS,
+            learning_rate=R60_REWARD_LEARNING_RATE,
+            gradient_clip_norm=R60_REWARD_GRADIENT_CLIP_NORM,
+            proximal_preservation_weight=R60_REWARD_PROXIMAL_WEIGHT,
+        ),
+        PhaseModulatedCondition(
+            label="pm_linrec_r60_supervised_action_io_nominal_then_reward",
+            row_family="supervised_action_io_warm_start_then_reward_lens",
+            rank=60,
+            training_distribution="nominal_reward_supervised_action_io_preserve",
+            evaluation_lens="nominal_clean",
+            n_train_steps=R60_REWARD_TRAIN_STEPS,
+            learning_rate=R60_REWARD_LEARNING_RATE,
+            gradient_clip_norm=R60_REWARD_GRADIENT_CLIP_NORM,
+            proximal_preservation_weight=R60_REWARD_PROXIMAL_WEIGHT,
+            supervised_objective="action_and_io",
+        ),
+        PhaseModulatedCondition(
+            label="pm_linrec_r60_supervised_action_io_process_measurement_then_reward",
+            row_family="supervised_action_io_warm_start_then_reward_lens",
+            rank=60,
+            training_distribution="process_measurement_reward_supervised_action_io_preserve",
+            evaluation_lens="process_measurement_io",
+            disturbance_scale=DEFAULT_PROCESS_IO_DISTURBANCE_SCALE,
+            measurement_scale=DEFAULT_MEASUREMENT_IO_DISTURBANCE_SCALE,
+            n_train_steps=R60_REWARD_TRAIN_STEPS,
+            learning_rate=R60_REWARD_LEARNING_RATE,
+            gradient_clip_norm=R60_REWARD_GRADIENT_CLIP_NORM,
+            proximal_preservation_weight=R60_REWARD_PROXIMAL_WEIGHT,
+            supervised_objective="action_and_io",
+        ),
+        PhaseModulatedCondition(
+            label="pm_linrec_r60_clean_scratch_reward",
+            row_family="reward_lens",
+            rank=60,
+            training_distribution="nominal_reward_scratch_discover",
+            evaluation_lens="nominal_clean",
+            n_train_steps=R60_SCRATCH_REWARD_TRAIN_STEPS,
+            learning_rate=R60_REWARD_LEARNING_RATE,
+            gradient_clip_norm=R60_REWARD_GRADIENT_CLIP_NORM,
+            seed=60,
+        ),
+        PhaseModulatedCondition(
+            label="pm_linrec_r60_process_measurement_scratch_reward",
+            row_family="reward_lens",
+            rank=60,
+            training_distribution="process_measurement_reward_scratch_discover",
+            evaluation_lens="process_measurement_io",
+            disturbance_scale=DEFAULT_PROCESS_IO_DISTURBANCE_SCALE,
+            measurement_scale=DEFAULT_MEASUREMENT_IO_DISTURBANCE_SCALE,
+            n_train_steps=R60_SCRATCH_REWARD_TRAIN_STEPS,
+            learning_rate=R60_REWARD_LEARNING_RATE,
+            gradient_clip_norm=R60_REWARD_GRADIENT_CLIP_NORM,
+            seed=61,
+        ),
     )
 
 
@@ -659,6 +741,7 @@ def materialize(
             "additive_phase_recurrent": RELATED_RECURRENT_ISSUE_ID,
             "io_map_certificate": IO_MAP_CERTIFICATE_ISSUE_ID,
             "supervised_recurrent_io_map_fit": SUPERVISED_FIT_ISSUE_ID,
+            "r60_recurrent_reward_controls": R60_REWARD_CONTROLS_ISSUE_ID,
         },
         "scope": (
             "Oracle Kalman recurrent reference plus clamped-spline phase-modulated "
@@ -669,6 +752,8 @@ def materialize(
             "No GRU training, no broad robust-epsilon arm, and no claim that "
             "projected-oracle diagnostic rows are bridge passes. Supervised rows "
             "fit action and response maps; they are not reward-trained rows."
+            " r=60 reward-control rows are capacity sanity checks, not compact "
+            "bridge claims."
         ),
         "runtime_seconds": time.perf_counter() - start,
         "diagnostics": {
@@ -700,6 +785,7 @@ def materialize(
                     row.spec.run_id for row in rows if _is_reward_gate_representation_pass(row)
                 ],
                 "reward_gating_status": reward_gating_status,
+                "r60_reward_controls_issue": R60_REWARD_CONTROLS_ISSUE_ID,
             },
         },
         "rows": [row.to_json_dict() for row in rows],
@@ -777,7 +863,7 @@ def render_markdown(summary: dict[str, Any]) -> str:
     ]
     return f"""# Phase-Modulated Linear Recurrent Output-Feedback Bridge
 
-Issue: `{summary["issue"]}`. Follow-up: `{summary["source_issues"]["supervised_recurrent_io_map_fit"]}`. Umbrella: `{summary["umbrella"]}`.
+Issue: `{summary["issue"]}`. Follow-ups: `{summary["source_issues"]["supervised_recurrent_io_map_fit"]}`, `{summary["source_issues"]["r60_recurrent_reward_controls"]}`. Umbrella: `{summary["umbrella"]}`.
 
 Scope: {summary["scope"]}
 
@@ -821,6 +907,10 @@ rows optimize trainable phase-modulated recurrent coefficients against exact
 oracle action histories and/or finite-horizon response maps. Reward rows are
 gated on supervised representation success and optimize the true quadratic
 rollout objective on their retained training distributions only after that gate.
+The r=60 reward-control rows are capacity sanity checks: projected-oracle and
+supervised action+I/O warm starts carry low-learning-rate Adam, gradient
+clipping, and proximal preservation metadata to separate preservation behavior
+from scratch discovery rows.
 """
 
 
@@ -892,9 +982,46 @@ def _controller_for_condition(
     if condition.row_family == "projection_warm_start_then_reward_lens":
         initial = _params_from_controller(projected_controller)
         initialization = "oracle_matrix_projection_warm_start"
+        reward_control_mode = "preserve_projected_oracle"
+        warm_start_metadata: dict[str, Any] = {
+            "warm_start_source": "oracle_matrix_projection",
+        }
+    elif condition.row_family == "supervised_action_io_warm_start_then_reward_lens":
+        supervised_initial = _params_from_controller(projected_controller)
+        supervised_condition = replace(
+            condition,
+            row_family="supervised_action_io_map_fit",
+            n_train_steps=DEFAULT_SUPERVISED_TRAIN_STEPS,
+            learning_rate=DEFAULT_SUPERVISED_LEARNING_RATE,
+            supervised_objective="action_and_io",
+        )
+        initial, supervised_metadata = _fit_phase_modulated_supervised_params(
+            supervised_initial,
+            condition=supervised_condition,
+            reference_controller=exact_controller,
+            plant=plant,
+            training=training,
+            observation_matrix=observation_matrix,
+            basis=projected_controller.basis,
+        )
+        initialization = "supervised_action_io_warm_start"
+        reward_control_mode = "preserve_supervised_action_io"
+        warm_start_metadata = {
+            "warm_start_source": "supervised_action_io_map_fit",
+            "warm_start_supervised_objective": "action_and_io",
+            "warm_start_supervised_initial_loss": supervised_metadata["supervised_initial_loss"],
+            "warm_start_supervised_best_loss": supervised_metadata["supervised_best_loss"],
+            "warm_start_supervised_loss_improvement": supervised_metadata[
+                "supervised_loss_improvement"
+            ],
+        }
     else:
         initial = _scratch_params_like_controller(projected_controller, seed=condition.seed)
         initialization = "scratch_random_stable"
+        reward_control_mode = "discover_from_scratch"
+        warm_start_metadata = {
+            "warm_start_source": "scratch_random_stable",
+        }
 
     fitted, fit_metadata = _fit_phase_modulated_reward_params(
         initial,
@@ -915,9 +1042,13 @@ def _controller_for_condition(
             "fit_method": "adam_phase_modulated_reward_rollout",
             "is_reward_trained": True,
             "initialization": initialization,
+            "reward_control_mode": reward_control_mode,
+            **warm_start_metadata,
             "n_train_steps": condition.n_train_steps,
             "learning_rate": condition.learning_rate,
             "stability_penalty": condition.stability_penalty,
+            "gradient_clip_norm": condition.gradient_clip_norm,
+            "proximal_preservation_weight": condition.proximal_preservation_weight,
         }
     )
     return controller, fit_metadata
@@ -1430,6 +1561,9 @@ def _fit_phase_modulated_reward_params(
     observation_matrix: np.ndarray,
     basis: np.ndarray,
 ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+    preservation_params = {
+        key: jnp.asarray(value, dtype=jnp.float64) for key, value in params.items()
+    }
     constants = {
         "A": jnp.asarray(plant.A, dtype=jnp.float64),
         "B": jnp.asarray(plant.B, dtype=jnp.float64),
@@ -1448,7 +1582,7 @@ def _fit_phase_modulated_reward_params(
         "Q_f": jnp.asarray(schedule.Q_f, dtype=jnp.float64),
     }
 
-    def loss_fn(jax_params: dict[str, jax.Array]) -> jax.Array:
+    def loss_components(jax_params: dict[str, jax.Array]) -> dict[str, jax.Array]:
         rollout = _jax_phase_modulated_rollout(jax_params, constants)
         cost = _jax_quadratic_cost(
             states=rollout["states"],
@@ -1457,10 +1591,28 @@ def _fit_phase_modulated_reward_params(
             r=constants["R"],
             q_f=constants["Q_f"],
         )
-        return cost + _jax_phase_stability_penalty(
+        stability = _jax_phase_stability_penalty(
             jax_params,
             basis=constants["basis"],
             scale=condition.stability_penalty,
+        )
+        proximal = _jax_param_proximal_penalty(
+            jax_params,
+            target=preservation_params,
+            scale=condition.proximal_preservation_weight,
+        )
+        return {
+            "task_loss": cost,
+            "stability_penalty": stability,
+            "proximal_preservation_penalty": proximal,
+        }
+
+    def loss_fn(jax_params: dict[str, jax.Array]) -> jax.Array:
+        components = loss_components(jax_params)
+        return (
+            components["task_loss"]
+            + components["stability_penalty"]
+            + components["proximal_preservation_penalty"]
         )
 
     fitted, history = _adam_minimize(
@@ -1468,13 +1620,39 @@ def _fit_phase_modulated_reward_params(
         loss_fn,
         n_steps=condition.n_train_steps,
         learning_rate=condition.learning_rate,
+        gradient_clip_norm=condition.gradient_clip_norm,
     )
+    initial_components = _to_float_dict(loss_components(preservation_params))
+    fitted_jax_params = {
+        key: jnp.asarray(value, dtype=jnp.float64) for key, value in fitted.items()
+    }
+    final_components = _to_float_dict(loss_components(fitted_jax_params))
     return fitted, {
         "reward_initial_loss": history["initial_loss"],
         "reward_final_loss": history["final_loss"],
         "reward_last_loss": history["last_loss"],
         "reward_best_loss": history["best_loss"],
         "reward_loss_improvement": history["initial_loss"] - history["final_loss"],
+        "reward_initial_task_loss": initial_components["task_loss"],
+        "reward_final_task_loss": final_components["task_loss"],
+        "reward_initial_stability_penalty": initial_components["stability_penalty"],
+        "reward_final_stability_penalty": final_components["stability_penalty"],
+        "reward_initial_proximal_preservation_penalty": initial_components[
+            "proximal_preservation_penalty"
+        ],
+        "reward_final_proximal_preservation_penalty": final_components[
+            "proximal_preservation_penalty"
+        ],
+        "reward_task_loss_improvement": (
+            initial_components["task_loss"] - final_components["task_loss"]
+        ),
+        "adam_beta1": history["beta1"],
+        "adam_beta2": history["beta2"],
+        "adam_epsilon": history["epsilon"],
+        "adam_gradient_clip_norm": history["gradient_clip_norm"],
+        "adam_max_gradient_norm": history["max_gradient_norm"],
+        "adam_last_gradient_norm": history["last_gradient_norm"],
+        "adam_clipped_steps": history["clipped_steps"],
     }
 
 
@@ -1723,14 +1901,34 @@ def _jax_phase_stability_penalty(
     return scale * jnp.mean(jnp.square(jnp.maximum(row_norms - 0.98, 0.0)))
 
 
+def _jax_param_proximal_penalty(
+    params: dict[str, jax.Array],
+    *,
+    target: dict[str, jax.Array],
+    scale: float,
+) -> jax.Array:
+    if scale <= 0.0:
+        return jnp.asarray(0.0)
+    terms = [jnp.mean(jnp.square(params[key] - target[key])) for key in params]
+    return scale * sum(terms)
+
+
+def _to_float_dict(values: dict[str, jax.Array]) -> dict[str, float]:
+    return {key: float(value) for key, value in values.items()}
+
+
 def _adam_minimize(
     params: dict[str, np.ndarray],
     loss_fn: Any,
     *,
     n_steps: int,
     learning_rate: float,
+    gradient_clip_norm: float | None = None,
 ) -> tuple[dict[str, np.ndarray], dict[str, float]]:
     jax_params = {key: jnp.asarray(value, dtype=jnp.float64) for key, value in params.items()}
+    beta1 = 0.9
+    beta2 = 0.999
+    eps = 1e-8
     if n_steps <= 0:
         loss = float(loss_fn(jax_params))
         return params, {
@@ -1738,6 +1936,13 @@ def _adam_minimize(
             "final_loss": loss,
             "last_loss": loss,
             "best_loss": loss,
+            "beta1": beta1,
+            "beta2": beta2,
+            "epsilon": eps,
+            "gradient_clip_norm": gradient_clip_norm,
+            "max_gradient_norm": 0.0,
+            "last_gradient_norm": 0.0,
+            "clipped_steps": 0,
         }
     value_and_grad = jax.jit(jax.value_and_grad(loss_fn))
     initial_loss = float(jax.jit(loss_fn)(jax_params))
@@ -1745,16 +1950,23 @@ def _adam_minimize(
     best_params = jax_params
     m = jt.map(jnp.zeros_like, jax_params)
     v = jt.map(jnp.zeros_like, jax_params)
-    beta1 = 0.9
-    beta2 = 0.999
-    eps = 1e-8
     loss = initial_loss
+    max_gradient_norm = 0.0
+    last_gradient_norm = 0.0
+    clipped_steps = 0
     for step in range(1, n_steps + 1):
         loss_value, grads = value_and_grad(jax_params)
         loss = float(loss_value)
         if np.isfinite(loss) and loss < best_loss:
             best_loss = loss
             best_params = jax_params
+        grad_norm = _tree_l2_norm(grads)
+        last_gradient_norm = float(grad_norm)
+        max_gradient_norm = max(max_gradient_norm, last_gradient_norm)
+        if gradient_clip_norm is not None and gradient_clip_norm > 0.0:
+            clip_scale = jnp.minimum(1.0, jnp.asarray(gradient_clip_norm) / (grad_norm + 1e-12))
+            clipped_steps += int(float(clip_scale) < 1.0)
+            grads = jt.map(lambda g_i: g_i * clip_scale, grads)
         m = jt.map(lambda m_i, g_i: beta1 * m_i + (1.0 - beta1) * g_i, m, grads)
         v = jt.map(lambda v_i, g_i: beta2 * v_i + (1.0 - beta2) * (g_i * g_i), v, grads)
         m_hat = jt.map(lambda m_i: m_i / (1.0 - beta1**step), m)
@@ -1765,6 +1977,11 @@ def _adam_minimize(
             m_hat,
             v_hat,
         )
+    final_loss = float(loss_fn(jax_params))
+    loss = final_loss
+    if np.isfinite(final_loss) and final_loss < best_loss:
+        best_loss = final_loss
+        best_params = jax_params
     return (
         {key: np.asarray(value, dtype=np.float64) for key, value in best_params.items()},
         {
@@ -1772,8 +1989,23 @@ def _adam_minimize(
             "final_loss": best_loss,
             "last_loss": loss,
             "best_loss": best_loss,
+            "beta1": beta1,
+            "beta2": beta2,
+            "epsilon": eps,
+            "gradient_clip_norm": gradient_clip_norm,
+            "max_gradient_norm": max_gradient_norm,
+            "last_gradient_norm": last_gradient_norm,
+            "clipped_steps": clipped_steps,
         },
     )
+
+
+def _tree_l2_norm(tree: dict[str, jax.Array]) -> jax.Array:
+    leaves = jt.leaves(tree)
+    if not leaves:
+        return jnp.asarray(0.0)
+    squared = sum(jnp.sum(jnp.square(leaf)) for leaf in leaves)
+    return jnp.sqrt(squared)
 
 
 def _rollout_phase_modulated_recurrent_condition(
@@ -2157,7 +2389,19 @@ def _manifest_for_condition(
                 )
                 else None
             ),
+            "gradient_clip_norm": (
+                condition.gradient_clip_norm
+                if fit_metadata.get("is_reward_trained", False)
+                else None
+            ),
+            "proximal_preservation_weight": (
+                condition.proximal_preservation_weight
+                if fit_metadata.get("is_reward_trained", False)
+                else None
+            ),
             "initialization": fit_metadata.get("initialization"),
+            "reward_control_mode": fit_metadata.get("reward_control_mode"),
+            "warm_start_source": fit_metadata.get("warm_start_source"),
             "supervised_objective": condition.supervised_objective,
         },
         notes=(
@@ -2496,12 +2740,7 @@ def _result_text(rows: list[BridgeRunManifest]) -> str:
         if exact_rows
         else float("nan")
     )
-    reward_rows = [
-        row
-        for row in rows
-        if row.metrics["row_family"] in {"reward_lens", "projection_warm_start_then_reward_lens"}
-        and row.metrics["optimizer"].get("is_reward_trained", False)
-    ]
+    reward_rows = [row for row in rows if row.metrics["optimizer"].get("is_reward_trained", False)]
     supervised_rows = [
         row for row in rows if row.metrics["optimizer"].get("is_supervised_trained", False)
     ]
@@ -2513,7 +2752,7 @@ def _result_text(rows: list[BridgeRunManifest]) -> str:
         f"action mismatch {mismatch:.4g} and combined matrix residual {residual:.4g}. "
         f"{len(supervised_rows)} supervised action/response-map rows were optimized, "
         f"with {len(supervised_passes)} representation pass rows. {len(reward_rows)} "
-        "r=12 reward rows were optimized after the supervised gate."
+        "reward rows were optimized after the supervised gate."
     )
 
 
