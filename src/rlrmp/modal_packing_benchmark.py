@@ -195,9 +195,9 @@ def run_worker(config: WorkerConfig) -> int:
         "batch_size": config.batch_size,
         "n_replicates": config.n_replicates,
         "hidden_size": config.hidden_size,
-        "n_input_only": config.hidden_size // 3,
-        "n_readout_only": config.hidden_size // 3,
-        "n_recurrent_only": config.hidden_size - 2 * (config.hidden_size // 3),
+        "n_input_only": 0,
+        "n_readout_only": 0,
+        "n_recurrent_only": 0,
         "controller_lr": config.controller_lr,
         "n_train_batches": max(1, config.warmup_batches + config.chunk_batches),
     }
