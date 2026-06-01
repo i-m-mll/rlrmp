@@ -9,8 +9,10 @@ from rlrmp.analysis.cs_game_card import PRIMARY_GAMMA_FACTOR, materialize_refere
 from rlrmp.analysis.cs_released_simulation import (
     CSForwardNoiseDraws,
     CSNoiseCovariances,
+    DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
     FixedStepPerturbation,
     build_extlqg_comparator_path,
+    cs_additive_motor_state_covariance,
     cs_signal_dependent_state_tensor,
     default_cs_noise_covariances,
     sample_forward_noise_draws,
@@ -230,6 +232,27 @@ def test_signal_dependent_noise_is_state_space_csdn_times_command() -> None:
     assert jnp.allclose(rollout.u_applied[0], u0)
     assert jnp.allclose(rollout.signal_dependent_noise[0], expected_sdn)
     assert jnp.allclose(rollout.x[1], expected_x1)
+
+
+def test_default_additive_motor_covariance_is_input_image_shaped() -> None:
+    reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
+    plant = reference.plant
+
+    covariances = default_cs_noise_covariances(plant)
+    expected = (
+        DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG.motor_covariance_scale
+        * (plant.B @ plant.B.T)
+    )
+
+    assert jnp.allclose(covariances.motor, expected)
+    assert jnp.allclose(
+        covariances.motor,
+        cs_additive_motor_state_covariance(
+            plant,
+            scale=DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG.motor_covariance_scale,
+        ),
+    )
+    assert jnp.linalg.matrix_rank(covariances.motor) <= plant.m_u
 
 
 def test_extlqg_comparator_path_tracks_matlab_chain_and_shapes() -> None:
