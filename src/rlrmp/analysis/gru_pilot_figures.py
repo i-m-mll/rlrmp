@@ -30,7 +30,9 @@ from rlrmp.analysis.cs_game_card import materialize_reference
 from rlrmp.analysis.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.analysis.output_feedback import (
     OutputFeedbackConfig,
+    delayed_observation_matrix,
     make_cs_output_feedback_initial_state,
+    position_velocity_observation_config,
     rollout_with_kalman_estimator,
 )
 from rlrmp.modules.training.part2 import setup_task_model_pair
@@ -40,7 +42,8 @@ from rlrmp.paths import REPO_ROOT, mkdir_p
 DEFAULT_FIGURE_SUBDIR = "tmp_figures/gru_pilot"
 DEFAULT_N_ROLLOUT_TRIALS = 64
 LOSS_TERMS_MODE = "union"
-REFERENCE_LABEL = "C&S extLQG/output-feedback"
+REFERENCE_LABEL = "C&S extLQG/output-feedback 8D"
+REFERENCE_4D_LABEL = "C&S extLQG/output-feedback 4D pos+vel"
 
 
 @dataclass(frozen=True)
@@ -78,12 +81,17 @@ class ReferenceProfile:
     """Analytical output-feedback reference profile."""
 
     label: str
+    observation_channel: str
+    observation_dim: int
+    observed_physical_indices: tuple[int, ...]
     time_s: np.ndarray
     forward_velocity: np.ndarray
     peak_forward_velocity_m_s: float
     time_of_peak_forward_velocity_s: float
     terminal_position_error_m: float
     gamma_factor: float
+    line_color: str
+    line_dash: str
 
 
 def materialize_gru_pilot_figures(
@@ -137,11 +145,11 @@ def materialize_gru_pilot_figures(
         )
         for run in runs
     ]
-    reference = cs_output_feedback_reference_profile() if include_reference else None
+    references = cs_output_feedback_reference_profiles() if include_reference else ()
     velocity_file = write_velocity_figure(
         velocity_profiles,
         output_dir=output_dir,
-        reference=reference,
+        references=references,
     )
     alias_file = output_dir / "forward_velocity_profiles_stochastic_with_extlqg.html"
     if include_reference:
@@ -154,7 +162,7 @@ def materialize_gru_pilot_figures(
         velocity_file=velocity_file,
         alias_file=alias_file if include_reference else None,
         velocity_profiles=velocity_profiles,
-        reference=reference,
+        references=references,
     )
     summary_path = output_dir / "figure_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -351,11 +359,46 @@ def repeat_single_validation_trial(trial_specs: Any, n_trials: int) -> Any:
     return jt.map(repeat_leaf, trial_specs)
 
 
-def cs_output_feedback_reference_profile() -> ReferenceProfile:
-    """Return the analytical C&S output-feedback forward-velocity profile."""
+def cs_output_feedback_reference_profiles() -> tuple[ReferenceProfile, ...]:
+    """Return analytical C&S output-feedback references for 8D and 4D observations."""
 
-    config = OutputFeedbackConfig()
     reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
+    config_8d = OutputFeedbackConfig()
+    config_4d = position_velocity_observation_config(reference.plant, config_8d)
+    return (
+        cs_output_feedback_reference_profile(
+            reference=reference,
+            config=config_8d,
+            label=REFERENCE_LABEL,
+            observation_channel="oldest_delayed_physical_block_full_8d",
+            line_color="#111827",
+            line_dash="dash",
+        ),
+        cs_output_feedback_reference_profile(
+            reference=reference,
+            config=config_4d,
+            label=REFERENCE_4D_LABEL,
+            observation_channel="oldest_delayed_position_velocity_4d",
+            line_color="#f97316",
+            line_dash="dot",
+        ),
+    )
+
+
+def cs_output_feedback_reference_profile(
+    *,
+    reference: Any | None = None,
+    config: OutputFeedbackConfig = OutputFeedbackConfig(),
+    label: str = REFERENCE_LABEL,
+    observation_channel: str = "oldest_delayed_physical_block_full_8d",
+    line_color: str = "#111827",
+    line_dash: str = "dash",
+) -> ReferenceProfile:
+    """Return one analytical C&S output-feedback forward-velocity profile."""
+
+    reference = reference or materialize_reference(
+        gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,)
+    )
     x0 = make_cs_output_feedback_initial_state(reference.plant, config)
     rollout = rollout_with_kalman_estimator(
         reference.plant,
@@ -366,14 +409,25 @@ def cs_output_feedback_reference_profile() -> ReferenceProfile:
     x = np.asarray(rollout.x, dtype=np.float64)
     vel_lo, _vel_hi = reference.plant.vel_slice
     dt = float(reference.plant.dt)
+    observation_matrix = delayed_observation_matrix(reference.plant, config)
+    observed_indices = (
+        tuple(range(config.n_phys))
+        if config.observed_physical_indices is None
+        else tuple(config.observed_physical_indices)
+    )
     return ReferenceProfile(
-        label=REFERENCE_LABEL,
+        label=label,
+        observation_channel=observation_channel,
+        observation_dim=int(observation_matrix.shape[0]),
+        observed_physical_indices=observed_indices,
         time_s=np.arange(x.shape[0], dtype=np.float64) * dt,
         forward_velocity=x[:, vel_lo],
         peak_forward_velocity_m_s=float(rollout.peak_forward_velocity),
         time_of_peak_forward_velocity_s=float(rollout.peak_forward_velocity_idx * dt),
         terminal_position_error_m=float(rollout.terminal_position_error),
         gamma_factor=OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+        line_color=line_color,
+        line_dash=line_dash,
     )
 
 
@@ -381,7 +435,7 @@ def write_velocity_figure(
     profiles: Sequence[VelocityProfile],
     *,
     output_dir: Path,
-    reference: ReferenceProfile | None,
+    references: Sequence[ReferenceProfile] = (),
 ) -> Path:
     """Write the stochastic forward-velocity profile figure."""
 
@@ -424,13 +478,17 @@ def write_velocity_figure(
             row=1,
             col=idx,
         )
-        if reference is not None:
+        for reference in references:
             fig.add_trace(
                 go.Scatter(
                     x=reference.time_s,
                     y=reference.forward_velocity,
                     mode="lines",
-                    line={"color": "#111827", "width": 2, "dash": "dash"},
+                    line={
+                        "color": reference.line_color,
+                        "width": 2,
+                        "dash": reference.line_dash,
+                    },
                     name=reference.label,
                     showlegend=idx == 1,
                 ),
@@ -459,7 +517,7 @@ def build_figure_summary(
     velocity_file: Path,
     alias_file: Path | None,
     velocity_profiles: Sequence[VelocityProfile],
-    reference: ReferenceProfile | None,
+    references: Sequence[ReferenceProfile] = (),
 ) -> dict[str, Any]:
     """Build the JSON sidecar summary for generated figures."""
 
@@ -490,15 +548,21 @@ def build_figure_summary(
     }
     if alias_file is not None:
         velocity_summary["alias_file"] = alias_file.name
-    if reference is not None:
-        velocity_summary["reference"] = {
-            "controller": "analytical_lqr_kalman_output_feedback",
-            "display_label": reference.label,
-            "gamma_factor_recorded_for_certificate": reference.gamma_factor,
-            "n_time_steps": int(reference.forward_velocity.shape[0]),
-            "peak_forward_velocity_m_s": reference.peak_forward_velocity_m_s,
-            "time_of_peak_forward_velocity_s": reference.time_of_peak_forward_velocity_s,
-            "terminal_position_error_m": reference.terminal_position_error_m,
+    if references:
+        velocity_summary["references"] = {
+            reference.label: {
+                "controller": "analytical_lqr_kalman_output_feedback",
+                "display_label": reference.label,
+                "observation_channel": reference.observation_channel,
+                "observation_dim": reference.observation_dim,
+                "observed_physical_indices": list(reference.observed_physical_indices),
+                "gamma_factor_recorded_for_certificate": reference.gamma_factor,
+                "n_time_steps": int(reference.forward_velocity.shape[0]),
+                "peak_forward_velocity_m_s": reference.peak_forward_velocity_m_s,
+                "time_of_peak_forward_velocity_s": reference.time_of_peak_forward_velocity_s,
+                "terminal_position_error_m": reference.terminal_position_error_m,
+            }
+            for reference in references
         }
 
     return {
@@ -539,10 +603,12 @@ __all__ = [
     "DEFAULT_FIGURE_SUBDIR",
     "DEFAULT_N_ROLLOUT_TRIALS",
     "REFERENCE_LABEL",
+    "REFERENCE_4D_LABEL",
     "RunFigureInputs",
     "VelocityProfile",
     "active_loss_term_labels",
     "build_figure_summary",
+    "cs_output_feedback_reference_profiles",
     "cs_output_feedback_reference_profile",
     "default_label",
     "default_output_dir",

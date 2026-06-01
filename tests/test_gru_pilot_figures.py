@@ -4,7 +4,16 @@ from __future__ import annotations
 
 import numpy as np
 
-from rlrmp.analysis.gru_pilot_figures import active_loss_term_labels, load_gru_training_history
+from rlrmp.analysis.gru_pilot_figures import (
+    REFERENCE_4D_LABEL,
+    REFERENCE_LABEL,
+    ReferenceProfile,
+    RunFigureInputs,
+    VelocityProfile,
+    active_loss_term_labels,
+    build_figure_summary,
+    load_gru_training_history,
+)
 
 
 def _run_spec(*, hidden_weight: float = 0.0) -> dict[str, object]:
@@ -66,3 +75,68 @@ def test_load_gru_training_history_rebuilds_feedbax_loss_tree(tmp_path) -> None:
     assert np.asarray(history.loss.children[4].value).shape == (3, 2)
     assert float(history.loss.children[4].weight) == 5.0
     assert np.asarray(history.learning_rate).shape == (3, 2)
+
+
+def test_build_figure_summary_records_8d_and_4d_reference_metadata(tmp_path) -> None:
+    run = RunFigureInputs(
+        run_id="cs_stochastic_gru__no_hidden_penalty",
+        label="nn_hidden = 0",
+        run_spec_path=tmp_path / "run.json",
+        artifact_dir=tmp_path,
+        run_spec={},
+    )
+    profile = VelocityProfile(
+        run_id=run.run_id,
+        label=run.label,
+        time_s=np.asarray([0.0, 0.01]),
+        mean=np.asarray([0.0, 1.0]),
+        std=np.asarray([0.0, 0.1]),
+        n_replicates=2,
+        n_rollout_trials_per_replicate=3,
+    )
+    references = (
+        ReferenceProfile(
+            label=REFERENCE_LABEL,
+            observation_channel="oldest_delayed_physical_block_full_8d",
+            observation_dim=8,
+            observed_physical_indices=tuple(range(8)),
+            time_s=np.asarray([0.0, 0.01]),
+            forward_velocity=np.asarray([0.0, 0.9]),
+            peak_forward_velocity_m_s=0.9,
+            time_of_peak_forward_velocity_s=0.01,
+            terminal_position_error_m=0.0,
+            gamma_factor=1.05,
+            line_color="#111827",
+            line_dash="dash",
+        ),
+        ReferenceProfile(
+            label=REFERENCE_4D_LABEL,
+            observation_channel="oldest_delayed_position_velocity_4d",
+            observation_dim=4,
+            observed_physical_indices=(0, 1, 2, 3),
+            time_s=np.asarray([0.0, 0.01]),
+            forward_velocity=np.asarray([0.0, 0.8]),
+            peak_forward_velocity_m_s=0.8,
+            time_of_peak_forward_velocity_s=0.01,
+            terminal_position_error_m=0.0,
+            gamma_factor=1.05,
+            line_color="#f97316",
+            line_dash="dot",
+        ),
+    )
+
+    summary = build_figure_summary(
+        experiment="30f2313",
+        runs=(run,),
+        loss_files=(tmp_path / "loss_training.html",),
+        velocity_file=tmp_path / "forward_velocity_profiles_stochastic.html",
+        alias_file=tmp_path / "forward_velocity_profiles_stochastic_with_extlqg.html",
+        velocity_profiles=(profile,),
+        references=references,
+    )
+
+    metadata = summary["velocity_profiles"]["references"]
+    assert set(metadata) == {REFERENCE_LABEL, REFERENCE_4D_LABEL}
+    assert metadata[REFERENCE_LABEL]["observation_dim"] == 8
+    assert metadata[REFERENCE_4D_LABEL]["observation_dim"] == 4
+    assert metadata[REFERENCE_4D_LABEL]["observed_physical_indices"] == [0, 1, 2, 3]

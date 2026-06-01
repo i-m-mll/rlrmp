@@ -70,6 +70,7 @@ class OutputFeedbackConfig:
 
     n_phys: int = 8
     delay_steps: int = 5
+    observed_physical_indices: tuple[int, ...] | None = None
     estimator_initial_covariance: float = 1e-2
     process_covariance_scale: float = 1e-3
     sensory_noise_scale: float = 1.0
@@ -128,17 +129,53 @@ class OutputFeedbackPhase3Result:
 def delayed_observation_matrix(
     plant: PlantLinearization,
     config: OutputFeedbackConfig = OutputFeedbackConfig(),
-) -> Float[Array, "n_phys n"]:
-    """Return C&S ``H`` selecting the oldest delayed physical block."""
+) -> Float[Array, "obs n"]:
+    """Return C&S ``H`` selecting channels from the oldest delayed physical block."""
 
     h = config.delay_steps
     n_phys = config.n_phys
     expected_n = (h + 1) * n_phys
     if plant.n != expected_n:
         raise ValueError(f"Expected plant.n={expected_n}; got {plant.n}.")
-    H = jnp.zeros((n_phys, plant.n), dtype=jnp.float64)
+    observed = config.observed_physical_indices
+    physical_indices = tuple(range(n_phys)) if observed is None else tuple(observed)
+    if not physical_indices:
+        raise ValueError("At least one observed physical channel is required.")
+    if min(physical_indices) < 0 or max(physical_indices) >= n_phys:
+        raise ValueError(
+            "observed_physical_indices must select channels inside one physical block; "
+            f"got {physical_indices} for n_phys={n_phys}."
+        )
+    H = jnp.zeros((len(physical_indices), plant.n), dtype=jnp.float64)
     start = h * n_phys
-    return H.at[:, start : start + n_phys].set(jnp.eye(n_phys, dtype=jnp.float64))
+    cols = jnp.asarray([start + idx for idx in physical_indices], dtype=jnp.int32)
+    return H.at[jnp.arange(len(physical_indices)), cols].set(1.0)
+
+
+def position_velocity_observation_config(
+    plant: PlantLinearization,
+    config: OutputFeedbackConfig = OutputFeedbackConfig(),
+) -> OutputFeedbackConfig:
+    """Return a config observing delayed position and velocity only.
+
+    The resulting channel is the 4D Feedbax GRU pilot feedback domain:
+    position and velocity from the oldest delayed physical block, excluding the
+    remaining C&S force/filter physical states.
+    """
+
+    pos_lo, pos_hi = plant.pos_slice
+    vel_lo, vel_hi = plant.vel_slice
+    physical_indices = tuple(range(pos_lo, pos_hi)) + tuple(range(vel_lo, vel_hi))
+    return OutputFeedbackConfig(
+        n_phys=config.n_phys,
+        delay_steps=config.delay_steps,
+        observed_physical_indices=physical_indices,
+        estimator_initial_covariance=config.estimator_initial_covariance,
+        process_covariance_scale=config.process_covariance_scale,
+        sensory_noise_scale=config.sensory_noise_scale,
+        use_matlab_persistent_m_index=config.use_matlab_persistent_m_index,
+        denominator_floor=config.denominator_floor,
+    )
 
 
 def make_cs_output_feedback_initial_state(
@@ -175,11 +212,12 @@ def process_covariance(
 def measurement_covariance(
     plant: PlantLinearization,
     config: OutputFeedbackConfig = OutputFeedbackConfig(),
-) -> Float[Array, "n_phys n_phys"]:
+) -> Float[Array, "obs obs"]:
     """Return the C&S sensory covariance proxy."""
 
     Q_proc = process_covariance(plant, config)
-    return jnp.eye(config.n_phys, dtype=jnp.float64) * Q_proc[4, 4] * config.sensory_noise_scale
+    obs_dim = delayed_observation_matrix(plant, config).shape[0]
+    return jnp.eye(obs_dim, dtype=jnp.float64) * Q_proc[4, 4] * config.sensory_noise_scale
 
 
 def robust_estimator_covariances(
