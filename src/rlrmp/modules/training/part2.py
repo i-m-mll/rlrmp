@@ -188,7 +188,7 @@ def setup_task_model_pair(
 
     task_type = hps.task.type
     hps_task = {k: v for k, v in hps.task.omitting_attrs("eval_n", "type").items() if v is not None}
-    if task_type == "simple_reach":
+    if task_type in {"simple_reach", "fixed_simple_reach"}:
         delayed_only_keys = {
             "epoch_len_ranges",
             "target_on_epochs",

@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import jax.numpy as jnp
 import pytest
 
-from rlrmp.loss import make_epoch_locked_ramp
+from rlrmp.loss import make_cs_eq15_stage_schedule, make_epoch_locked_ramp
 
 
 def _trial_spec(*, n_steps: int = 140, epoch_bounds=(0, 0, 11, 139)):
@@ -46,3 +46,11 @@ def test_epoch_locked_ramp_shapes(shape, power, expected_mid):
 
     assert weights[41] == pytest.approx(expected_mid)
     assert weights[71] == pytest.approx(1.0)
+
+
+def test_cs_eq15_stage_schedule_uses_one_indexed_sixty_stage_contract():
+    weights = make_cs_eq15_stage_schedule(n_steps=61, power=6.0)
+
+    assert weights.shape == (60,)
+    assert weights[0] == pytest.approx((1.0 / 60.0) ** 6)
+    assert weights[-1] == pytest.approx(1.0)
