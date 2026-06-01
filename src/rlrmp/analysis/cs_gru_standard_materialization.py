@@ -9,12 +9,14 @@ from pathlib import Path
 from typing import Any
 
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 import numpy as np
 from feedbax._io import load_with_hyperparameters
 from feedbax.channel import Channel
+from feedbax.graph import init_state_from_component
 from feedbax.types import TreeNamespace, dict_to_namespace
 
 from rlrmp.analysis.bridge_certificates import (
@@ -42,7 +44,9 @@ from rlrmp.analysis.failure_decomposition import failure_diagnostic_from_standar
 from rlrmp.analysis.output_feedback import (
     OutputFeedbackConfig,
     delayed_observation_matrix,
+    kalman_estimator_gains,
     make_cs_output_feedback_initial_state,
+    position_velocity_observation_config,
     rollout_with_kalman_estimator,
 )
 from rlrmp.analysis.standard_certificate_materialization import (
@@ -153,17 +157,20 @@ def materialize_gru_standard_row(
     training_summary_path = _default_training_summary_path(run_id)
     training_summary = _read_json(training_summary_path) if training_summary_path.exists() else {}
     reference_actions, reference_metadata = cs_output_feedback_reference_actions()
+    reference_map, response_reference_metadata = cs_output_feedback_observation_action_map()
     action_weight = reference_metadata["action_weight"]
     serializable_reference_metadata = {
         key: value for key, value in reference_metadata.items() if key != "action_weight"
     }
+    serializable_reference_metadata["io_response_map"] = response_reference_metadata
     if load_model:
-        candidate_actions, evaluation_metadata = evaluate_gru_clean_actions(
+        candidate_actions, candidate_map, evaluation_metadata = evaluate_gru_clean_actions(
             run_id,
             run_spec=run_spec,
         )
     else:
         candidate_actions = np.zeros((0, reference_actions.shape[0], reference_actions.shape[1]))
+        candidate_map = None
         evaluation_metadata = {
             "status": "not_evaluated",
             "reason": "model loading was disabled",
@@ -179,6 +186,12 @@ def materialize_gru_standard_row(
         candidate_actions=candidate_actions,
         reference_actions=reference_batch,
         action_weight=action_weight,
+        candidate_observation_to_action_map=candidate_map,
+        reference_observation_to_action_map=(
+            None
+            if candidate_map is None
+            else np.broadcast_to(reference_map[None, :, :, :], candidate_map.shape)
+        ),
         evaluation_metadata=evaluation_metadata,
         run_spec_path=run_spec_path,
         model_path=_default_model_path(run_id),
@@ -195,6 +208,8 @@ def build_gru_standard_manifest_from_actions(
     candidate_actions: np.ndarray,
     reference_actions: np.ndarray,
     action_weight: np.ndarray,
+    candidate_observation_to_action_map: np.ndarray | None = None,
+    reference_observation_to_action_map: np.ndarray | None = None,
     evaluation_metadata: dict[str, Any] | None = None,
     run_spec_path: Path | None = None,
     model_path: Path | None = None,
@@ -210,8 +225,17 @@ def build_gru_standard_manifest_from_actions(
     if candidate.ndim != 3:
         raise ValueError("actions must have shape (batch, horizon, action)")
     action_evidence_available = candidate.shape[0] > 0 and reference.shape[0] > 0
-    blocker = gru_io_response_map_blocker(run_spec)
+    response_map_evidence_available = (
+        candidate_observation_to_action_map is not None
+        and reference_observation_to_action_map is not None
+    )
+    blocker = None if response_map_evidence_available else gru_io_response_map_blocker(run_spec)
     model_hps = run_spec.get("hps", {}).get("model", {})
+    response_map_status = (
+        "available_4d_observation_contract"
+        if response_map_evidence_available
+        else "blocked_missing_observation_contract"
+    )
     spec = BridgeRunSpec(
         issue_id=MATERIALIZER_ISSUE_ID,
         run_id=make_bridge_run_id(run_id, "nominal_clean"),
@@ -231,6 +255,7 @@ def build_gru_standard_manifest_from_actions(
             "certificate_mode": "empirical_nonlinear",
             "stochastic_preset": run_spec.get("stochastic_preset"),
             "nn_hidden": run_spec.get("fidelity_status", {}).get("nn_hidden"),
+            "io_response_map_status": response_map_status,
             "io_response_map_blocker": blocker,
         },
         notes=(
@@ -259,9 +284,12 @@ def build_gru_standard_manifest_from_actions(
                 "hidden_size": model_hps.get("hidden_size"),
                 "n_replicates": model_hps.get("n_replicates"),
                 "population_structure": model_hps.get("population_structure"),
-                "io_response_map_status": "blocked_missing_observation_contract",
+                "io_response_map_status": response_map_status,
+                "io_response_map_observation_dim": 4 if response_map_evidence_available else None,
                 "io_response_map_blocker": blocker,
             },
+            "candidate_observation_to_action_map": candidate_observation_to_action_map,
+            "reference_observation_to_action_map": reference_observation_to_action_map,
             "action_label": "command",
             "state_label": "feedbax_rollout_state_not_used",
         },
@@ -270,6 +298,7 @@ def build_gru_standard_manifest_from_actions(
             "reference_action_shape": [int(dim) for dim in reference.shape],
             "evaluation": evaluation_metadata or {},
             "reference": reference_metadata or {},
+            "io_response_map_status": response_map_status,
             "io_response_map_blocker": blocker,
         },
         artifacts=_artifact_paths(
@@ -294,11 +323,13 @@ def evaluate_gru_clean_actions(
     run_id: str,
     *,
     run_spec: dict[str, Any] | None = None,
-) -> tuple[np.ndarray, dict[str, Any]]:
-    """Load a GRU pilot model and return clean action traces.
+) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
+    """Load a GRU pilot model and return clean action traces and I/O maps.
 
     Returns:
-        Candidate actions with shape ``(replicate * trial, horizon, action)`` and
+        Candidate actions with shape ``(replicate * trial, horizon, action)``,
+        candidate feedback-to-action Jacobians with shape
+        ``(replicate * trial, horizon, action, horizon * feedback)``, and
         JSON-compatible evaluation metadata.
     """
 
@@ -325,9 +356,9 @@ def evaluate_gru_clean_actions(
             trial_specs,
             jr.split(key, n_trials),
         )
-        return states.net.output
+        return states.net.output, states.net.input
 
-    outputs = eqx.filter_vmap(eval_one_replicate, in_axes=(0, 0))(
+    outputs, net_inputs = eqx.filter_vmap(eval_one_replicate, in_axes=(0, 0))(
         model_arrays,
         jr.split(jr.PRNGKey(0), n_replicates),
     )
@@ -336,12 +367,79 @@ def evaluate_gru_clean_actions(
         outputs.shape[-2],
         outputs.shape[-1],
     )
-    return actions, {
+    response_maps = _gru_observation_to_action_maps(
+        model_arrays=model_arrays,
+        model_other=model_other,
+        net_inputs=net_inputs,
+        n_replicates=n_replicates,
+        feedback_dim=4,
+    )
+    return actions, response_maps, {
         "status": "evaluated_clean_feedbax_rollout",
         "n_replicates": n_replicates,
         "n_trials": n_trials,
         "noise": "feedbax Channel noise disabled; plant-process force noise disabled if present",
+        "io_response_map": {
+            "status": "evaluated_controller_local_jacobian",
+            "input_channel": "4D delayed position/velocity feedback",
+            "map_shape": [int(dim) for dim in response_maps.shape],
+        },
     }
+
+
+def _gru_observation_to_action_maps(
+    *,
+    model_arrays: Any,
+    model_other: Any,
+    net_inputs: Any,
+    n_replicates: int,
+    feedback_dim: int,
+) -> np.ndarray:
+    """Return local GRU feedback-history to action-history Jacobians.
+
+    The clean Feedbax rollout records the flattened vector consumed by the
+    network at each step. For these additive-SISU pilots, the final
+    ``feedback_dim`` entries are the delayed position/velocity feedback channel
+    and the preceding entries are fixed task inputs. The Jacobian therefore
+    holds task inputs fixed and differentiates commands with respect to the
+    entire 4D feedback history.
+    """
+
+    def map_one_replicate(model_array_leaves: Any, replicate_net_inputs: Any) -> Any:
+        replicate_model = eqx.combine(model_array_leaves, model_other)
+        net = replicate_model.nodes["net"]
+
+        def map_one_trial(trial_net_inputs: Any) -> Any:
+            task_inputs = trial_net_inputs[:, :-feedback_dim]
+            feedback_seq = trial_net_inputs[:, -feedback_dim:]
+
+            def rollout(feedback_flat: Any) -> Any:
+                feedback_history = feedback_flat.reshape(feedback_seq.shape)
+                state = init_state_from_component(net)
+                outputs = []
+                for t in range(task_inputs.shape[0]):
+                    output, state = net(
+                        {
+                            "input": task_inputs[t],
+                            "feedback": feedback_history[t],
+                        },
+                        state,
+                        key=jr.PRNGKey(0),
+                    )
+                    outputs.append(output["output"])
+                return jnp.stack(outputs, axis=0)
+
+            return jax.jacfwd(rollout)(feedback_seq.reshape(-1))
+
+        return jax.vmap(map_one_trial)(replicate_net_inputs)
+
+    maps = eqx.filter_vmap(map_one_replicate, in_axes=(0, 0))(model_arrays, net_inputs)
+    return np.asarray(maps, dtype=np.float64).reshape(
+        n_replicates * maps.shape[1],
+        maps.shape[-3],
+        maps.shape[-2],
+        maps.shape[-1],
+    )
 
 
 def cs_output_feedback_reference_actions(
@@ -370,6 +468,45 @@ def cs_output_feedback_reference_actions(
             "delay_steps": int(output_config.delay_steps),
             "estimator_initial_covariance": float(output_config.estimator_initial_covariance),
         },
+    }
+
+
+def cs_output_feedback_observation_action_map(
+    output_config: OutputFeedbackConfig | None = None,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Return the analytical 4D observation-history to command response map."""
+
+    reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
+    config = (
+        position_velocity_observation_config(reference.plant)
+        if output_config is None
+        else output_config
+    )
+    H = delayed_observation_matrix(reference.plant, config)
+    gains = kalman_estimator_gains(reference.plant, reference.lqr_solution.K, config)
+    horizon = int(reference.schedule.T)
+    observation_dim = int(H.shape[0])
+    action_dim = int(reference.plant.m_u)
+    history_dim = horizon * observation_dim
+    sensitivity = np.zeros((reference.plant.n, history_dim), dtype=np.float64)
+    response = np.zeros((horizon, action_dim, history_dim), dtype=np.float64)
+    A = np.asarray(reference.plant.A, dtype=np.float64)
+    B = np.asarray(reference.plant.B, dtype=np.float64)
+    K = np.asarray(reference.lqr_solution.K, dtype=np.float64)
+    H_np = np.asarray(H, dtype=np.float64)
+    G = np.asarray(gains, dtype=np.float64)
+    for t in range(horizon):
+        response[t] = -K[t] @ sensitivity
+        sensitivity = (A - B @ K[t] - G[t] @ H_np) @ sensitivity
+        sensitivity[:, t * observation_dim : (t + 1) * observation_dim] += G[t]
+    return response, {
+        "controller": "analytical_lqr_kalman_output_feedback",
+        "gamma_factor": OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+        "observation_channel": "delayed_position_velocity",
+        "observation_dim": observation_dim,
+        "action_dim": action_dim,
+        "history_dim": history_dim,
+        "map_shape": [int(dim) for dim in response.shape],
     }
 
 
@@ -421,6 +558,7 @@ def render_gru_standard_markdown(result: dict[str, Any]) -> str:
     rows = result["rows"]
     failure_rows = result["failure_decomposition"]["rows"]
     blocker = "\n".join(f"- {item}" for item in result["summary"].get("blockers", ()))
+    blocker_section = blocker if blocker else "_None for observation-to-action maps._"
     return f"""# GRU Standard Certificates
 
 Issue: `{MATERIALIZER_ISSUE_ID}`. Source run issue: `{SOURCE_ISSUE_ID}`.
@@ -429,17 +567,18 @@ This materialization applies the standard certificate umbrella contract to the
 two locally synced C&S stochastic GRU pilot rows. The rows use
 `empirical_nonlinear` mode. Clean rollout action behavior is available;
 same-coordinate transition, value, and Bellman components are explicitly
-`not_applicable`; response-map components remain blocked rather than inferred
-across incompatible observation contracts.
+`not_applicable`. Observation-to-action response-map components are evaluated
+under the shared 4D delayed position/velocity feedback contract; disturbance and
+measurement-output response maps remain unavailable for these GRU rows.
 
-## Blocker
+## Observation-contract blocker
 
-{blocker}
+{blocker_section}
 
 ## Rows
 
-| run | status | action mismatch | transition | value | Bellman | class |
-|---|---|---:|---|---|---|---|
+| run | status | action mismatch | obs-action map | transition | value | Bellman | class |
+|---|---|---:|---:|---|---|---|---|
 {_markdown_row_table(rows, failure_rows)}
 """
 
@@ -455,6 +594,7 @@ def _markdown_row_table(rows: list[dict[str, Any]], failure_rows: list[dict[str,
             f"{run_id} | "
             f"{row['status']} | "
             f"{_fmt(_summary(by_name, 'state_weighted_action_mismatch', 'aggregate_mismatch_ratio'))} | "
+            f"{_fmt(_summary(by_name, 'observation_history_to_action_map_mismatch', 'aggregate_mismatch_ratio'))} | "
             f"{by_name[CLOSED_LOOP_TRANSITION_MISMATCH]['status']} | "
             f"{by_name[VALUE_POLICY_GAP]['status']} | "
             f"{by_name[BELLMAN_HESSIAN_RESIDUAL]['status']} | "

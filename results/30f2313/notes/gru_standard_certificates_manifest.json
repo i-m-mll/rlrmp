@@ -3,36 +3,49 @@
     "rows": [
       {
         "certificate": {
-          "external_mismatch_ratio": 0.3718608527729889,
+          "external_mismatch_ratio": 0.9587445016682332,
           "external_response_map_mismatches": {
             "disturbance_history_to_action_map_mismatch": null,
             "disturbance_history_to_output_map_mismatch": null,
             "disturbance_history_to_state_map_mismatch": null,
-            "measurement_history_to_action_map_mismatch": null,
+            "measurement_history_to_action_map_mismatch": 0.9587445016682332,
             "measurement_history_to_output_map_mismatch": null,
-            "observation_history_to_action_map_mismatch": null
+            "observation_history_to_action_map_mismatch": 0.9587445016682332
           },
-          "response_map_mismatch": null,
+          "response_map_mismatch": 0.9587445016682332,
           "state_weighted_action_mismatch": 0.3718608527729889
         },
         "classification": {
-          "classification": "external_rollout_mismatch",
+          "classification": "mixed",
           "reasons": [
-            "external_rollout_mismatch"
+            "representation_failure",
+            "io_map_mismatch"
           ],
           "signals": {
             "certificate_bad": false,
             "equivalence_metrics_failed": false,
             "external_certificate_evidence_available": true,
-            "external_map_representation": null,
+            "external_map_representation": {
+              "external_map_mismatch_ratios": {
+                "measurement_history_to_action_map_mismatch": 0.9587445016682332,
+                "observation_history_to_action_map_mismatch": 0.9587445016682332
+              },
+              "failed_external_maps": [
+                "measurement_history_to_action_map_mismatch",
+                "observation_history_to_action_map_mismatch"
+              ],
+              "ignored_internal_coordinate_mismatch": null,
+              "representation_basis": "external_response_maps",
+              "representation_failed": true
+            },
             "hidden_state_coordinate_mismatch": null,
-            "io_map_bad": false,
+            "io_map_bad": true,
             "learned_gradient_bad": false,
             "objective_bad": false,
             "objective_close": false,
             "reference_gradient_bad": false,
-            "representation_failed": false,
-            "response_map_evidence_available": false,
+            "representation_failed": true,
+            "response_map_evidence_available": true,
             "rollout_action_mismatch_bad": true,
             "sidecar_improved": false,
             "weak_subspace_dominates": false
@@ -59,7 +72,8 @@
         "row_parameters": {
           "certificate_mode": "empirical_nonlinear",
           "evaluation_lens": "nominal_clean",
-          "io_response_map_blocker": "Response-map components are blocked: the 30f2313 Feedbax GraphSpec (model.graph.json) feeds the GRU delayed position/velocity feedback (4D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 4D-to-8D projection or 4D analytical reference response-map contract is present.",
+          "io_response_map_blocker": null,
+          "io_response_map_status": "available_4d_observation_contract",
           "nn_hidden": 0.0,
           "source_issue": "30f2313",
           "source_run_id": "cs_stochastic_gru__no_hidden_penalty",
@@ -118,36 +132,49 @@
       },
       {
         "certificate": {
-          "external_mismatch_ratio": 0.8502054516260569,
+          "external_mismatch_ratio": 0.9758737651851378,
           "external_response_map_mismatches": {
             "disturbance_history_to_action_map_mismatch": null,
             "disturbance_history_to_output_map_mismatch": null,
             "disturbance_history_to_state_map_mismatch": null,
-            "measurement_history_to_action_map_mismatch": null,
+            "measurement_history_to_action_map_mismatch": 0.9758737651851378,
             "measurement_history_to_output_map_mismatch": null,
-            "observation_history_to_action_map_mismatch": null
+            "observation_history_to_action_map_mismatch": 0.9758737651851378
           },
-          "response_map_mismatch": null,
+          "response_map_mismatch": 0.9758737651851378,
           "state_weighted_action_mismatch": 0.8502054516260569
         },
         "classification": {
-          "classification": "external_rollout_mismatch",
+          "classification": "mixed",
           "reasons": [
-            "external_rollout_mismatch"
+            "representation_failure",
+            "io_map_mismatch"
           ],
           "signals": {
             "certificate_bad": false,
             "equivalence_metrics_failed": false,
             "external_certificate_evidence_available": true,
-            "external_map_representation": null,
+            "external_map_representation": {
+              "external_map_mismatch_ratios": {
+                "measurement_history_to_action_map_mismatch": 0.9758737651851378,
+                "observation_history_to_action_map_mismatch": 0.9758737651851378
+              },
+              "failed_external_maps": [
+                "measurement_history_to_action_map_mismatch",
+                "observation_history_to_action_map_mismatch"
+              ],
+              "ignored_internal_coordinate_mismatch": null,
+              "representation_basis": "external_response_maps",
+              "representation_failed": true
+            },
             "hidden_state_coordinate_mismatch": null,
-            "io_map_bad": false,
+            "io_map_bad": true,
             "learned_gradient_bad": false,
             "objective_bad": false,
             "objective_close": false,
             "reference_gradient_bad": false,
-            "representation_failed": false,
-            "response_map_evidence_available": false,
+            "representation_failed": true,
+            "response_map_evidence_available": true,
             "rollout_action_mismatch_bad": true,
             "sidecar_improved": false,
             "weak_subspace_dominates": false
@@ -174,7 +201,8 @@
         "row_parameters": {
           "certificate_mode": "empirical_nonlinear",
           "evaluation_lens": "nominal_clean",
-          "io_response_map_blocker": "Response-map components are blocked: the 30f2313 Feedbax GraphSpec (model.graph.json) feeds the GRU delayed position/velocity feedback (4D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 4D-to-8D projection or 4D analytical reference response-map contract is present.",
+          "io_response_map_blocker": null,
+          "io_response_map_status": "available_4d_observation_contract",
           "nn_hidden": 1e-05,
           "source_issue": "30f2313",
           "source_run_id": "cs_stochastic_gru__hidden_penalty",
@@ -283,43 +311,75 @@
         },
         {
           "name": "observation_history_to_action_map_mismatch",
-          "reason": "Response-map components are blocked: the 30f2313 Feedbax GraphSpec (model.graph.json) feeds the GRU delayed position/velocity feedback (4D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 4D-to-8D projection or 4D analytical reference response-map contract is present.",
-          "status": "missing",
-          "summary": {}
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.9587445016682332,
+            "delta_frobenius": 1880.6511244550911,
+            "input_label": "observation_history",
+            "map_shape": [
+              5,
+              60,
+              2,
+              240
+            ],
+            "map_slices": 300,
+            "mismatch_ratio_max": 349652778486722.94,
+            "mismatch_ratio_mean": 8651918428367.7,
+            "output_label": "action",
+            "reference_frobenius": 1920.6878753358412,
+            "response_map_schema": "finite_horizon_linear_v1"
+          }
         },
         {
           "name": "measurement_history_to_action_map_mismatch",
-          "reason": "Response-map components are blocked: the 30f2313 Feedbax GraphSpec (model.graph.json) feeds the GRU delayed position/velocity feedback (4D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 4D-to-8D projection or 4D analytical reference response-map contract is present.",
-          "status": "missing",
-          "summary": {}
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.9587445016682332,
+            "delta_frobenius": 1880.6511244550911,
+            "input_label": "measurement_history",
+            "map_shape": [
+              5,
+              60,
+              2,
+              240
+            ],
+            "map_slices": 300,
+            "mismatch_ratio_max": 349652778486722.94,
+            "mismatch_ratio_mean": 8651918428367.7,
+            "output_label": "action",
+            "reference_frobenius": 1920.6878753358412,
+            "response_map_schema": "finite_horizon_linear_v1"
+          }
         },
         {
           "name": "measurement_history_to_output_map_mismatch",
-          "reason": "Response-map components are blocked: the 30f2313 Feedbax GraphSpec (model.graph.json) feeds the GRU delayed position/velocity feedback (4D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 4D-to-8D projection or 4D analytical reference response-map contract is present.",
+          "reason": null,
           "status": "missing",
           "summary": {}
         },
         {
           "name": "disturbance_history_to_action_map_mismatch",
-          "reason": "Response-map components are blocked: the 30f2313 Feedbax GraphSpec (model.graph.json) feeds the GRU delayed position/velocity feedback (4D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 4D-to-8D projection or 4D analytical reference response-map contract is present.",
+          "reason": null,
           "status": "missing",
           "summary": {}
         },
         {
           "name": "disturbance_history_to_state_map_mismatch",
-          "reason": "Response-map components are blocked: the 30f2313 Feedbax GraphSpec (model.graph.json) feeds the GRU delayed position/velocity feedback (4D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 4D-to-8D projection or 4D analytical reference response-map contract is present.",
+          "reason": null,
           "status": "missing",
           "summary": {}
         },
         {
           "name": "disturbance_history_to_output_map_mismatch",
-          "reason": "Response-map components are blocked: the 30f2313 Feedbax GraphSpec (model.graph.json) feeds the GRU delayed position/velocity feedback (4D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 4D-to-8D projection or 4D analytical reference response-map contract is present.",
+          "reason": null,
           "status": "missing",
           "summary": {}
         },
         {
           "name": "disturbance_history_to_cost_quadratic",
-          "reason": "Response-map components are blocked: the 30f2313 Feedbax GraphSpec (model.graph.json) feeds the GRU delayed position/velocity feedback (4D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 4D-to-8D projection or 4D analytical reference response-map contract is present.",
+          "reason": null,
           "status": "missing",
           "summary": {}
         },
@@ -350,8 +410,9 @@
             "certificate_mode": "empirical_nonlinear",
             "controller_kind": "gru",
             "hidden_size": 180,
-            "io_response_map_blocker": "Response-map components are blocked: the 30f2313 Feedbax GraphSpec (model.graph.json) feeds the GRU delayed position/velocity feedback (4D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 4D-to-8D projection or 4D analytical reference response-map contract is present.",
-            "io_response_map_status": "blocked_missing_observation_contract",
+            "io_response_map_blocker": null,
+            "io_response_map_observation_dim": 4,
+            "io_response_map_status": "available_4d_observation_contract",
             "n_replicates": 5,
             "population_structure": {
               "n_input_only": 0,
@@ -369,18 +430,42 @@
           2
         ],
         "evaluation": {
+          "io_response_map": {
+            "input_channel": "4D delayed position/velocity feedback",
+            "map_shape": [
+              5,
+              60,
+              2,
+              240
+            ],
+            "status": "evaluated_controller_local_jacobian"
+          },
           "n_replicates": 5,
           "n_trials": 1,
           "noise": "feedbax Channel noise disabled; plant-process force noise disabled if present",
           "status": "evaluated_clean_feedbax_rollout"
         },
-        "io_response_map_blocker": "Response-map components are blocked: the 30f2313 Feedbax GraphSpec (model.graph.json) feeds the GRU delayed position/velocity feedback (4D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 4D-to-8D projection or 4D analytical reference response-map contract is present.",
+        "io_response_map_blocker": null,
+        "io_response_map_status": "available_4d_observation_contract",
         "reference": {
           "action_dim": 2,
           "controller": "analytical_lqr_kalman_output_feedback",
           "cs_observation_dim": 8,
           "gamma_factor": 1.4,
           "horizon": 60,
+          "io_response_map": {
+            "action_dim": 2,
+            "controller": "analytical_lqr_kalman_output_feedback",
+            "gamma_factor": 1.4,
+            "history_dim": 240,
+            "map_shape": [
+              60,
+              2,
+              240
+            ],
+            "observation_channel": "delayed_position_velocity",
+            "observation_dim": 4
+          },
           "output_feedback_config": {
             "delay_steps": 5,
             "estimator_initial_covariance": 0.01,
@@ -405,7 +490,8 @@
         "parameters": {
           "certificate_mode": "empirical_nonlinear",
           "evaluation_lens": "nominal_clean",
-          "io_response_map_blocker": "Response-map components are blocked: the 30f2313 Feedbax GraphSpec (model.graph.json) feeds the GRU delayed position/velocity feedback (4D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 4D-to-8D projection or 4D analytical reference response-map contract is present.",
+          "io_response_map_blocker": null,
+          "io_response_map_status": "available_4d_observation_contract",
           "nn_hidden": 0.0,
           "source_issue": "30f2313",
           "source_run_id": "cs_stochastic_gru__no_hidden_penalty",
@@ -512,43 +598,75 @@
         },
         {
           "name": "observation_history_to_action_map_mismatch",
-          "reason": "Response-map components are blocked: the 30f2313 Feedbax GraphSpec (model.graph.json) feeds the GRU delayed position/velocity feedback (4D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 4D-to-8D projection or 4D analytical reference response-map contract is present.",
-          "status": "missing",
-          "summary": {}
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.9758737651851378,
+            "delta_frobenius": 1897.3769322388018,
+            "input_label": "observation_history",
+            "map_shape": [
+              5,
+              60,
+              2,
+              240
+            ],
+            "map_slices": 300,
+            "mismatch_ratio_max": 715627752568559.0,
+            "mismatch_ratio_mean": 9426549860491.732,
+            "output_label": "action",
+            "reference_frobenius": 1920.6878753358412,
+            "response_map_schema": "finite_horizon_linear_v1"
+          }
         },
         {
           "name": "measurement_history_to_action_map_mismatch",
-          "reason": "Response-map components are blocked: the 30f2313 Feedbax GraphSpec (model.graph.json) feeds the GRU delayed position/velocity feedback (4D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 4D-to-8D projection or 4D analytical reference response-map contract is present.",
-          "status": "missing",
-          "summary": {}
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.9758737651851378,
+            "delta_frobenius": 1897.3769322388018,
+            "input_label": "measurement_history",
+            "map_shape": [
+              5,
+              60,
+              2,
+              240
+            ],
+            "map_slices": 300,
+            "mismatch_ratio_max": 715627752568559.0,
+            "mismatch_ratio_mean": 9426549860491.732,
+            "output_label": "action",
+            "reference_frobenius": 1920.6878753358412,
+            "response_map_schema": "finite_horizon_linear_v1"
+          }
         },
         {
           "name": "measurement_history_to_output_map_mismatch",
-          "reason": "Response-map components are blocked: the 30f2313 Feedbax GraphSpec (model.graph.json) feeds the GRU delayed position/velocity feedback (4D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 4D-to-8D projection or 4D analytical reference response-map contract is present.",
+          "reason": null,
           "status": "missing",
           "summary": {}
         },
         {
           "name": "disturbance_history_to_action_map_mismatch",
-          "reason": "Response-map components are blocked: the 30f2313 Feedbax GraphSpec (model.graph.json) feeds the GRU delayed position/velocity feedback (4D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 4D-to-8D projection or 4D analytical reference response-map contract is present.",
+          "reason": null,
           "status": "missing",
           "summary": {}
         },
         {
           "name": "disturbance_history_to_state_map_mismatch",
-          "reason": "Response-map components are blocked: the 30f2313 Feedbax GraphSpec (model.graph.json) feeds the GRU delayed position/velocity feedback (4D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 4D-to-8D projection or 4D analytical reference response-map contract is present.",
+          "reason": null,
           "status": "missing",
           "summary": {}
         },
         {
           "name": "disturbance_history_to_output_map_mismatch",
-          "reason": "Response-map components are blocked: the 30f2313 Feedbax GraphSpec (model.graph.json) feeds the GRU delayed position/velocity feedback (4D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 4D-to-8D projection or 4D analytical reference response-map contract is present.",
+          "reason": null,
           "status": "missing",
           "summary": {}
         },
         {
           "name": "disturbance_history_to_cost_quadratic",
-          "reason": "Response-map components are blocked: the 30f2313 Feedbax GraphSpec (model.graph.json) feeds the GRU delayed position/velocity feedback (4D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 4D-to-8D projection or 4D analytical reference response-map contract is present.",
+          "reason": null,
           "status": "missing",
           "summary": {}
         },
@@ -579,8 +697,9 @@
             "certificate_mode": "empirical_nonlinear",
             "controller_kind": "gru",
             "hidden_size": 180,
-            "io_response_map_blocker": "Response-map components are blocked: the 30f2313 Feedbax GraphSpec (model.graph.json) feeds the GRU delayed position/velocity feedback (4D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 4D-to-8D projection or 4D analytical reference response-map contract is present.",
-            "io_response_map_status": "blocked_missing_observation_contract",
+            "io_response_map_blocker": null,
+            "io_response_map_observation_dim": 4,
+            "io_response_map_status": "available_4d_observation_contract",
             "n_replicates": 5,
             "population_structure": {
               "n_input_only": 0,
@@ -598,18 +717,42 @@
           2
         ],
         "evaluation": {
+          "io_response_map": {
+            "input_channel": "4D delayed position/velocity feedback",
+            "map_shape": [
+              5,
+              60,
+              2,
+              240
+            ],
+            "status": "evaluated_controller_local_jacobian"
+          },
           "n_replicates": 5,
           "n_trials": 1,
           "noise": "feedbax Channel noise disabled; plant-process force noise disabled if present",
           "status": "evaluated_clean_feedbax_rollout"
         },
-        "io_response_map_blocker": "Response-map components are blocked: the 30f2313 Feedbax GraphSpec (model.graph.json) feeds the GRU delayed position/velocity feedback (4D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 4D-to-8D projection or 4D analytical reference response-map contract is present.",
+        "io_response_map_blocker": null,
+        "io_response_map_status": "available_4d_observation_contract",
         "reference": {
           "action_dim": 2,
           "controller": "analytical_lqr_kalman_output_feedback",
           "cs_observation_dim": 8,
           "gamma_factor": 1.4,
           "horizon": 60,
+          "io_response_map": {
+            "action_dim": 2,
+            "controller": "analytical_lqr_kalman_output_feedback",
+            "gamma_factor": 1.4,
+            "history_dim": 240,
+            "map_shape": [
+              60,
+              2,
+              240
+            ],
+            "observation_channel": "delayed_position_velocity",
+            "observation_dim": 4
+          },
           "output_feedback_config": {
             "delay_steps": 5,
             "estimator_initial_covariance": 0.01,
@@ -634,7 +777,8 @@
         "parameters": {
           "certificate_mode": "empirical_nonlinear",
           "evaluation_lens": "nominal_clean",
-          "io_response_map_blocker": "Response-map components are blocked: the 30f2313 Feedbax GraphSpec (model.graph.json) feeds the GRU delayed position/velocity feedback (4D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 4D-to-8D projection or 4D analytical reference response-map contract is present.",
+          "io_response_map_blocker": null,
+          "io_response_map_status": "available_4d_observation_contract",
           "nn_hidden": 1e-05,
           "source_issue": "30f2313",
           "source_run_id": "cs_stochastic_gru__hidden_penalty",
@@ -706,9 +850,7 @@
     "cs_stochastic_gru__no_hidden_penalty": "results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/run.json"
   },
   "summary": {
-    "blockers": [
-      "Response-map components are blocked: the 30f2313 Feedbax GraphSpec (model.graph.json) feeds the GRU delayed position/velocity feedback (4D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 4D-to-8D projection or 4D analytical reference response-map contract is present."
-    ],
+    "blockers": [],
     "component_status_counts": {
       "bellman_hessian_residual:not_applicable": 2,
       "closed_loop_transition_mismatch:not_applicable": 2,
@@ -716,9 +858,9 @@
       "disturbance_history_to_cost_quadratic:missing": 2,
       "disturbance_history_to_output_map_mismatch:missing": 2,
       "disturbance_history_to_state_map_mismatch:missing": 2,
-      "measurement_history_to_action_map_mismatch:missing": 2,
+      "measurement_history_to_action_map_mismatch:available": 2,
       "measurement_history_to_output_map_mismatch:missing": 2,
-      "observation_history_to_action_map_mismatch:missing": 2,
+      "observation_history_to_action_map_mismatch:available": 2,
       "optimizer_metadata:available": 2,
       "recurrence_gru_diagnostics:available": 2,
       "state_weighted_action_mismatch:available": 2,
@@ -726,7 +868,7 @@
       "visited_subspace_diagnostics:missing": 2
     },
     "failure_classification_counts": {
-      "external_rollout_mismatch": 2
+      "mixed": 2
     },
     "n_rows": 2,
     "status_counts": {

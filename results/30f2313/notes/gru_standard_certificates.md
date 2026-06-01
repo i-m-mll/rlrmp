@@ -6,16 +6,17 @@ This materialization applies the standard certificate umbrella contract to the
 two locally synced C&S stochastic GRU pilot rows. The rows use
 `empirical_nonlinear` mode. Clean rollout action behavior is available;
 same-coordinate transition, value, and Bellman components are explicitly
-`not_applicable`; response-map components remain blocked rather than inferred
-across incompatible observation contracts.
+`not_applicable`. Observation-to-action response-map components are evaluated
+under the shared 4D delayed position/velocity feedback contract; disturbance and
+measurement-output response maps remain unavailable for these GRU rows.
 
-## Blocker
+## Observation-contract blocker
 
-- Response-map components are blocked: the 30f2313 Feedbax GraphSpec (model.graph.json) feeds the GRU delayed position/velocity feedback (4D), while the current C&S output-feedback reference uses delayed_observation_matrix over the full physical block (8D). No approved 4D-to-8D projection or 4D analytical reference response-map contract is present.
+_None for observation-to-action maps._
 
 ## Rows
 
-| run | status | action mismatch | transition | value | Bellman | class |
-|---|---|---:|---|---|---|---|
-| cs_stochastic_gru__no_hidden_penalty__nominal_clean | partial_standard_certificate_blocked | 0.371861 | not_applicable | not_applicable | not_applicable | external_rollout_mismatch |
-| cs_stochastic_gru__hidden_penalty__nominal_clean | partial_standard_certificate_blocked | 0.850205 | not_applicable | not_applicable | not_applicable | external_rollout_mismatch |
+| run | status | action mismatch | obs-action map | transition | value | Bellman | class |
+|---|---|---:|---:|---|---|---|---|
+| cs_stochastic_gru__no_hidden_penalty__nominal_clean | partial_standard_certificate_blocked | 0.371861 | 0.958745 | not_applicable | not_applicable | not_applicable | mixed |
+| cs_stochastic_gru__hidden_penalty__nominal_clean | partial_standard_certificate_blocked | 0.850205 | 0.975874 | not_applicable | not_applicable | not_applicable | mixed |

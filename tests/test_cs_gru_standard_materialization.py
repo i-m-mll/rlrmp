@@ -7,6 +7,7 @@ import numpy as np
 from rlrmp.analysis.bridge_certificates import (
     BELLMAN_HESSIAN_RESIDUAL,
     CLOSED_LOOP_TRANSITION_MISMATCH,
+    MEASUREMENT_HISTORY_TO_ACTION_MAP_MISMATCH,
     OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH,
     STATE_WEIGHTED_ACTION_MISMATCH,
     VALUE_POLICY_GAP,
@@ -86,6 +87,40 @@ def test_gru_manifest_keeps_same_coordinate_rows_not_applicable() -> None:
     assert diagnostic["certificate"]["response_map_mismatch"] is None
     assert diagnostic["gradient_diagnostics"]["status"] == "not_applicable"
     assert diagnostic["gain_error_decomposition"]["status"] == "not_applicable"
+
+
+def test_gru_manifest_accepts_4d_observation_response_maps() -> None:
+    actions = np.zeros((2, 3, 2))
+    reference = np.ones_like(actions)
+    candidate_map = np.zeros((2, 3, 2, 12))
+    reference_map = np.ones_like(candidate_map)
+
+    manifest = build_gru_standard_manifest_from_actions(
+        run_id="cs_stochastic_gru__unit",
+        run_spec=_minimal_run_spec(),
+        training_summary={"completed_batches": 12},
+        candidate_actions=actions,
+        reference_actions=reference,
+        action_weight=np.broadcast_to(np.eye(2), (3, 2, 2)),
+        candidate_observation_to_action_map=candidate_map,
+        reference_observation_to_action_map=reference_map,
+    )
+    row = manifest.to_json_dict()
+    by_name = _components(row)
+
+    assert row["metrics"]["io_response_map_status"] == "available_4d_observation_contract"
+    assert row["metrics"]["io_response_map_blocker"] is None
+    assert by_name[OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH]["status"] == "available"
+    assert by_name[OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH]["summary"]["map_shape"] == [
+        2,
+        3,
+        2,
+        12,
+    ]
+    assert by_name[OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH]["summary"][
+        "aggregate_mismatch_ratio"
+    ] == 1.0
+    assert by_name[MEASUREMENT_HISTORY_TO_ACTION_MAP_MISMATCH]["status"] == "available"
 
 
 def test_gru_materializer_does_not_claim_action_evidence_when_models_are_not_loaded() -> None:
