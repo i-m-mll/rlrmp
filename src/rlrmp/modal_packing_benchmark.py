@@ -1,4 +1,4 @@
-"""Multi-process Modal packing benchmark for nominal C&S GRU training."""
+"""Multi-process Modal packing benchmark for stochastic C&S GRU training."""
 
 from __future__ import annotations
 
@@ -31,11 +31,12 @@ class WorkerConfig:
     measure_seconds: float
     chunk_batches: int
     controller_lr: float
+    stochastic_preset: str
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run a bounded nominal C&S GRU multi-process packing benchmark."
+        description="Run a bounded stochastic C&S GRU multi-process packing benchmark."
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -52,6 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
     parent.add_argument("--n-replicates", type=int, default=5)
     parent.add_argument("--hidden-size", type=int, default=180)
     parent.add_argument("--controller-lr", type=float, default=1e-2)
+    parent.add_argument("--stochastic-preset", default="cs2019-rollout")
     parent.add_argument("--seed", type=int, default=42)
     parent.add_argument("--sample-seconds", type=float, default=5.0)
 
@@ -103,6 +105,7 @@ def run_parent(args: argparse.Namespace) -> int:
             measure_seconds=float(args.measure_seconds),
             chunk_batches=int(args.chunk_batches),
             controller_lr=float(args.controller_lr),
+            stochastic_preset=str(args.stochastic_preset),
         )
         command = [
             sys.executable,
@@ -199,6 +202,7 @@ def run_worker(config: WorkerConfig) -> int:
         "n_readout_only": 0,
         "n_recurrent_only": 0,
         "controller_lr": config.controller_lr,
+        "stochastic_preset": config.stochastic_preset,
         "n_train_batches": max(1, config.warmup_batches + config.chunk_batches),
     }
     nominal_args = _argparse.Namespace(**{**vars(nominal_args), **overrides})
