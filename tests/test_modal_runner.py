@@ -2,13 +2,16 @@ from __future__ import annotations
 
 from rlrmp.modal_runner import (
     DEFAULT_RUN,
+    DEFAULT_TRAIN_TIMEOUT_SECONDS,
     MODAL_VOLUME_NAME,
     REGULARIZED_RUN,
     NominalGruRunConfig,
+    build_parser,
     build_packing_benchmark_command,
     build_remote_smoke_command,
     build_training_command,
     dry_run_payload,
+    make_config,
 )
 
 
@@ -113,6 +116,14 @@ def test_dry_run_payload_exposes_no_warm_container_settings() -> None:
     assert pull["artifacts"][:4] == ["modal", "volume", "get", MODAL_VOLUME_NAME]
     assert pull["artifacts"][4] == f"_artifacts/30f2313/runs/{DEFAULT_RUN}"
     assert pull["specs"][4] == f"results/30f2313/runs/{DEFAULT_RUN}"
+
+
+def test_modal_run_defaults_to_training_timeout() -> None:
+    args = build_parser().parse_args(["modal-run"])
+
+    config = make_config(args)
+
+    assert config.timeout_seconds == DEFAULT_TRAIN_TIMEOUT_SECONDS
 
 
 def test_packing_benchmark_command_disables_sync_and_sets_worker_count() -> None:

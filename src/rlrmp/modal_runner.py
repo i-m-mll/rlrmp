@@ -447,6 +447,9 @@ def execute_remote_payload(
 
 
 def make_config(args: argparse.Namespace) -> NominalGruRunConfig:
+    timeout_seconds = int(args.timeout_seconds)
+    if args.command == "modal-run" and timeout_seconds == DEFAULT_TIMEOUT_SECONDS:
+        timeout_seconds = DEFAULT_TRAIN_TIMEOUT_SECONDS
     return NominalGruRunConfig(
         experiment=args.experiment,
         run=args.run,
@@ -460,7 +463,7 @@ def make_config(args: argparse.Namespace) -> NominalGruRunConfig:
         regularized_fidelity=args.regularized_fidelity,
         checkpoint_interval_batches=args.checkpoint_interval_batches,
         resume=args.resume,
-        timeout_seconds=args.timeout_seconds,
+        timeout_seconds=timeout_seconds,
         gpu=args.gpu,
         mode=args.mode,
         pinned_repo_dir=args.pinned_repo_dir,

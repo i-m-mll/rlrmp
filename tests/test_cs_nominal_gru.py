@@ -253,7 +253,10 @@ def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Pat
     args = _args(
         output_dir=str(output_dir),
         spec_dir=str(spec_dir),
-        smoke=True,
+        n_train_batches=2,
+        batch_size=2,
+        n_replicates=1,
+        hidden_size=4,
         full_train=True,
         resume=True,
         checkpoint_interval_batches=1,
@@ -270,15 +273,17 @@ def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Pat
 
     checkpoint_latest = output_dir / "checkpoints" / "checkpoint_latest"
     checkpoint_1 = output_dir / "checkpoints" / "checkpoint_0000001"
+    checkpoint_2 = output_dir / "checkpoints" / "checkpoint_0000002"
     metadata = json.loads((checkpoint_latest / "metadata.json").read_text())
     summary = json.loads((output_dir / "training_summary.json").read_text())
 
-    assert result["completed_batches"] == 1
+    assert result["completed_batches"] == 2
     assert Path(result["final_model_path"]) == output_dir / "trained_model.eqx"
     assert Path(result["training_history_path"]) == output_dir / "training_history.eqx"
     assert checkpoint_latest.exists()
     assert checkpoint_1.exists()
-    assert metadata["completed_batches"] == 1
+    assert checkpoint_2.exists()
+    assert metadata["completed_batches"] == 2
     assert metadata["next_prng_key"]
     assert metadata["run_spec"]["mode"] == "full_train"
     assert metadata["run_spec"]["schema_version"] == "rlrmp.cs_stochastic_gru.v1"
@@ -287,8 +292,9 @@ def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Pat
     assert (output_dir / "trained_model.eqx").exists()
     assert (output_dir / "training_history.eqx").exists()
     assert (output_dir / "history_chunks" / "history_0000001.eqx").exists()
+    assert (output_dir / "history_chunks" / "history_0000002.eqx").exists()
     assert summary["latest_checkpoint"] == str(checkpoint_latest)
-    assert commits == 2
+    assert commits == 3
 
 
 def test_setup_task_model_pair_trains_tiny_nominal_simple_reach_batch() -> None:
