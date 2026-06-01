@@ -50,6 +50,10 @@ def test_hps_uses_canonical_cs_nominal_task() -> None:
     assert hps.task.p_catch_trial == 0.0
     assert hps.model.feedback_delay_steps == 5
     assert hps.model.feedback_noise_std == 0.0
+    assert hps.model.population_structure.n_input_only == 0
+    assert hps.model.population_structure.n_readout_only == 0
+    assert hps.model.population_structure.n_recurrent_only == 0
+    assert hps.model.population_structure.n_input_readout == hps.model.hidden_size
     assert hps.loss.weights.effector_hold_pos == 0.0
     assert hps.loss.weights.effector_hold_vel == 0.0
     assert hps.loss.weights.effector_pos_running == 1.0
@@ -70,6 +74,12 @@ def test_graph_bundle_records_nominal_provenance() -> None:
         == OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR
     )
     assert bundle.manifest["model_structure"]["controller_kind"] == "gru"
+    assert bundle.manifest["model_structure"]["population_structure"] == {
+        "n_input_only": 0,
+        "n_readout_only": 0,
+        "n_recurrent_only": 0,
+        "n_input_readout": 4,
+    }
     assert bundle.graph_spec.nodes["net"].params["hidden_size"] == 4
 
 
@@ -113,6 +123,12 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     assert payload["schema_version"] == "rlrmp.cs_nominal_gru.v1"
     assert payload["model_summary"]["hidden_size"] == 4
     assert payload["model_summary"]["controller_kind"] == "gru"
+    assert payload["model_summary"]["population_structure"] == {
+        "n_input_only": 0,
+        "n_readout_only": 0,
+        "n_recurrent_only": 0,
+        "n_input_readout": 4,
+    }
     assert payload["training_summary"]["training_mode"] == "nominal"
     assert payload["game_card"]["plant"]["bw_shape"] == [48, 8]
     assert payload["task_timing"]["type"] == "simple_reach"
