@@ -15,6 +15,16 @@ from typing import Any, Literal
 
 import numpy as np
 
+from rlrmp.analysis.bridge_certificates import (
+    DISTURBANCE_HISTORY_TO_ACTION_MAP_MISMATCH,
+    DISTURBANCE_HISTORY_TO_OUTPUT_MAP_MISMATCH,
+    DISTURBANCE_HISTORY_TO_STATE_MAP_MISMATCH,
+    MEASUREMENT_HISTORY_TO_ACTION_MAP_MISMATCH,
+    MEASUREMENT_HISTORY_TO_OUTPUT_MAP_MISMATCH,
+    OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH,
+    STATE_WEIGHTED_ACTION_MISMATCH,
+)
+
 FailureClass = Literal[
     "not_failure",
     "under_identification",
@@ -22,6 +32,7 @@ FailureClass = Literal[
     "objective_mismatch",
     "sidecar_improving_non_equivalent",
     "io_map_mismatch",
+    "external_rollout_mismatch",
     "representation_failure",
     "mixed",
     "uncertain",
@@ -30,6 +41,16 @@ FailureClass = Literal[
 SIDECAR_IMPROVING_NON_EQUIVALENT = "sidecar_improving_non_equivalent"
 IO_MAP_MISMATCH = "io_map_mismatch"
 REPRESENTATION_FAILURE = "representation_failure"
+EXTERNAL_ROLLOUT_MISMATCH = "external_rollout_mismatch"
+
+EXTERNAL_RESPONSE_MAP_COMPONENTS = (
+    OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH,
+    MEASUREMENT_HISTORY_TO_ACTION_MAP_MISMATCH,
+    MEASUREMENT_HISTORY_TO_OUTPUT_MAP_MISMATCH,
+    DISTURBANCE_HISTORY_TO_ACTION_MAP_MISMATCH,
+    DISTURBANCE_HISTORY_TO_STATE_MAP_MISMATCH,
+    DISTURBANCE_HISTORY_TO_OUTPUT_MAP_MISMATCH,
+)
 
 ObjectiveFn = Callable[[np.ndarray], float]
 GradientFn = Callable[[np.ndarray], np.ndarray]
@@ -395,6 +416,124 @@ def external_response_map_representation_summary(
     }
 
 
+def failure_diagnostic_from_standard_row(
+    row: Mapping[str, Any],
+    *,
+    source_group: str,
+    objective_summary: Mapping[str, Any] | None = None,
+    row_parameters: Mapping[str, Any] | None = None,
+    numerics: FailureDecompositionNumerics = FailureDecompositionNumerics(),
+) -> dict[str, Any]:
+    """Build a failure diagnostic directly from one standard-certificate row.
+
+    This adapter is for standard rows whose certificate evidence is external
+    behavior rather than a fitted static-gain parameterization, such as GRU
+    empirical/nonlinear rows.  Static-gain-only diagnostics are reported as
+    explicit ``not_applicable`` blocks instead of as missing data.
+    """
+
+    components = _components_by_name(row)
+    rollout_mismatch = _component_summary_value(
+        components.get(STATE_WEIGHTED_ACTION_MISMATCH),
+        "aggregate_mismatch_ratio",
+        "mismatch_ratio_mean",
+    )
+    external_ratios = {
+        name: _component_summary_value(
+            components.get(name),
+            "aggregate_mismatch_ratio",
+            "mismatch_ratio_mean",
+        )
+        for name in EXTERNAL_RESPONSE_MAP_COMPONENTS
+    }
+    observed_external_ratios = {
+        name: ratio for name, ratio in external_ratios.items() if ratio is not None
+    }
+    response_map_mismatch = (
+        max(observed_external_ratios.values()) if observed_external_ratios else None
+    )
+    mismatch_candidates = [
+        ratio for ratio in (rollout_mismatch, response_map_mismatch) if ratio is not None
+    ]
+    external_mismatch_ratio = max(mismatch_candidates) if mismatch_candidates else None
+    objective = dict(objective_summary or {})
+    classification = classify_failure(
+        objective_ratio=objective.get("learned_to_reference_objective_ratio"),
+        learned_gradient_norm=objective.get("learned_projected_gradient_norm"),
+        reference_gradient_norm=objective.get("reference_projected_gradient_norm"),
+        certificate_mismatch_ratio=None,
+        io_map_mismatch_ratio=response_map_mismatch,
+        external_map_mismatch_ratios=observed_external_ratios or None,
+        subspace_decomposition=None,
+        numerics=numerics,
+    )
+    rollout_bad = (
+        rollout_mismatch is not None and rollout_mismatch >= numerics.certificate_failure_ratio
+    )
+    if response_map_mismatch is None and rollout_bad:
+        classification = {
+            "classification": EXTERNAL_ROLLOUT_MISMATCH,
+            "reasons": [EXTERNAL_ROLLOUT_MISMATCH],
+            "signals": {
+                **classification.get("signals", {}),
+                "external_certificate_evidence_available": True,
+                "rollout_action_mismatch_bad": True,
+                "response_map_evidence_available": False,
+            },
+        }
+    elif external_mismatch_ratio is None:
+        classification = {
+            "classification": "uncertain",
+            "reasons": ["no_available_external_certificate_evidence"],
+            "signals": {
+                **classification.get("signals", {}),
+                "external_certificate_evidence_available": False,
+            },
+        }
+    else:
+        classification = {
+            **classification,
+            "signals": {
+                **classification.get("signals", {}),
+                "external_certificate_evidence_available": True,
+                "rollout_action_mismatch_bad": rollout_bad,
+                "response_map_evidence_available": response_map_mismatch is not None,
+            },
+        }
+    run_id = _row_run_id(row)
+    return {
+        "run_id": run_id,
+        "source_group": source_group,
+        "controller_label": _row_spec(row).get("controller_label"),
+        "evaluation_lens": _row_spec(row).get("parameters", {}).get("evaluation_lens"),
+        "row_parameters": dict(row_parameters or _row_spec(row).get("parameters", {})),
+        "source_standard_status": row.get("status"),
+        "certificate": {
+            "state_weighted_action_mismatch": rollout_mismatch,
+            "external_response_map_mismatches": external_ratios,
+            "response_map_mismatch": response_map_mismatch,
+            "external_mismatch_ratio": external_mismatch_ratio,
+        },
+        "objective": objective
+        or _not_applicable_block(
+            "GRU empirical/nonlinear rows do not expose a static training objective "
+            "parameterization in the standard row."
+        ),
+        "gradient_diagnostics": _not_applicable_block(
+            "No static gain or optimizer-coordinate gradient is defined for this "
+            "empirical/nonlinear standard row."
+        ),
+        "gain_error_decomposition": _not_applicable_block(
+            "Visited gain-error decomposition requires same-coordinate static gains."
+        ),
+        "interpolation": _not_applicable_block(
+            "Learned-to-reference interpolation is undefined without a shared static "
+            "gain parameterization."
+        ),
+        "classification": classification,
+    }
+
+
 def is_sidecar_improving_non_equivalent(
     *,
     sidecar_improved: bool,
@@ -408,6 +547,37 @@ def is_sidecar_improving_non_equivalent(
     """
 
     return bool(sidecar_improved and equivalence_metrics_failed)
+
+
+def _components_by_name(row: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    return {component["name"]: component for component in row.get("certificate_components", ())}
+
+
+def _component_summary_value(
+    component: Mapping[str, Any] | None,
+    *keys: str,
+) -> float | None:
+    if component is None or component.get("status") != "available":
+        return None
+    summary = component.get("summary", {})
+    for key in keys:
+        value = summary.get(key)
+        if value is not None:
+            return float(value)
+    return None
+
+
+def _row_spec(row: Mapping[str, Any]) -> Mapping[str, Any]:
+    return row.get("spec", {})
+
+
+def _row_run_id(row: Mapping[str, Any]) -> str | None:
+    run_id = _row_spec(row).get("run_id")
+    return None if run_id is None else str(run_id)
+
+
+def _not_applicable_block(reason: str) -> dict[str, str]:
+    return {"status": "not_applicable", "reason": reason}
 
 
 def _match_covariances(covariances: np.ndarray, horizon: int, state_dim: int) -> np.ndarray:
@@ -453,12 +623,15 @@ def _mean_sum(rows: Sequence[Mapping[str, Any]], keys: Sequence[str]) -> float:
 __all__ = [
     "FailureClass",
     "FailureDecompositionNumerics",
+    "EXTERNAL_RESPONSE_MAP_COMPONENTS",
+    "EXTERNAL_ROLLOUT_MISMATCH",
     "IO_MAP_MISMATCH",
     "REPRESENTATION_FAILURE",
     "SIDECAR_IMPROVING_NON_EQUIVALENT",
     "classify_failure",
     "covariances_from_states",
     "external_response_map_representation_summary",
+    "failure_diagnostic_from_standard_row",
     "gain_error_subspace_decomposition",
     "is_sidecar_improving_non_equivalent",
     "interpolation_curve",

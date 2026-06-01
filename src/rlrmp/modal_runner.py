@@ -247,6 +247,7 @@ def dry_run_payload(config: NominalGruRunConfig) -> dict[str, Any]:
         "remote_spec_dir": str(config.remote_spec_dir()),
         "remote_artifact_dir": str(config.remote_artifact_dir()),
         "modal_volume_pull_commands": modal_volume_pull_commands(config),
+        "modal_volume_sync_command": modal_volume_sync_command(config),
         "planned_stochastic_runs": planned_stochastic_runs(config),
     }
 
@@ -275,6 +276,7 @@ def planned_stochastic_runs(config: NominalGruRunConfig) -> dict[str, dict[str, 
             "local_training_command": build_training_command(no_hidden_config, remote=False),
             "remote_training_command": build_training_command(no_hidden_config, remote=True),
             "modal_volume_pull_commands": modal_volume_pull_commands(no_hidden_config),
+            "modal_volume_sync_command": modal_volume_sync_command(no_hidden_config),
         },
         "stochastic_hidden_penalty": {
             "run": REGULARIZED_RUN,
@@ -282,6 +284,7 @@ def planned_stochastic_runs(config: NominalGruRunConfig) -> dict[str, dict[str, 
             "local_training_command": build_training_command(hidden_config, remote=False),
             "remote_training_command": build_training_command(hidden_config, remote=True),
             "modal_volume_pull_commands": modal_volume_pull_commands(hidden_config),
+            "modal_volume_sync_command": modal_volume_sync_command(hidden_config),
         },
     }
 
@@ -307,6 +310,21 @@ def modal_volume_pull_commands(config: NominalGruRunConfig) -> dict[str, list[st
             str(config.local_spec_dir()),
         ],
     }
+
+
+def modal_volume_sync_command(config: NominalGruRunConfig) -> list[str]:
+    """Return the one-action local command for pulling and validating a run."""
+
+    return [
+        "uv",
+        "run",
+        "python",
+        "scripts/sync_modal_run_artifacts.py",
+        "--issue",
+        config.experiment,
+        "--run",
+        config.run,
+    ]
 
 
 def _modal_volume_relative(path: Path) -> str:
@@ -367,9 +385,7 @@ def collect_provenance() -> dict[str, Any]:
         "platform": platform.platform(),
         "executable": sys.executable,
         "cwd": str(Path.cwd()),
-        "modal_env": {
-            key: value for key, value in os.environ.items() if key.startswith("MODAL_")
-        },
+        "modal_env": {key: value for key, value in os.environ.items() if key.startswith("MODAL_")},
         "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
     }
     for package in ("modal", "rlrmp", "feedbax", "jax_cookbook", "jax"):
