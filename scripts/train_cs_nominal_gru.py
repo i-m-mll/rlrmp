@@ -1,4 +1,4 @@
-"""CLI wrapper for nominal C&S-fidelity GRU run-spec preparation."""
+"""CLI wrapper for stochastic C&S-fidelity GRU run-spec preparation."""
 
 from rlrmp.train.cs_nominal_gru import main
 

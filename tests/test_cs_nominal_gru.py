@@ -1,4 +1,4 @@
-"""Tests for nominal C&S-fidelity GRU run-spec preparation."""
+"""Tests for stochastic C&S-fidelity GRU run-spec preparation."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from rlrmp.analysis.cs_game_card import OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR
 from rlrmp.modules.training.part2 import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, run_artifact_dir, run_spec_dir
 from rlrmp.train.cs_nominal_gru import (
+    DEFAULT_STOCHASTIC_PRESET,
     build_graph_bundle,
     build_hps,
     build_parser,
@@ -53,10 +54,11 @@ def test_hps_uses_canonical_cs_nominal_task() -> None:
     assert hps.task.p_catch_trial == 0.0
     assert hps.model.feedback_delay_steps == 5
     assert hps.model.feedback_noise_std == 0.0
-    assert hps.model.sensory_noise_std == 0.0
-    assert hps.model.additive_motor_noise_std == 0.0
-    assert hps.model.signal_dependent_motor_noise_std == 0.0
-    assert hps.model.plant_process_force_noise_std == 0.0
+    assert hps.model.stochastic_preset == DEFAULT_STOCHASTIC_PRESET
+    assert hps.model.sensory_noise_std > 0.0
+    assert hps.model.additive_motor_noise_std == 1e-5
+    assert hps.model.signal_dependent_motor_noise_std == 0.02
+    assert hps.model.plant_process_force_noise_std > 0.0
     assert hps.model.population_structure.n_input_only == 0
     assert hps.model.population_structure.n_readout_only == 0
     assert hps.model.population_structure.n_recurrent_only == 0
@@ -109,6 +111,8 @@ def test_graph_bundle_records_nominal_provenance() -> None:
     )
     assert bundle.manifest["model_structure"]["controller_kind"] == "gru"
     assert bundle.manifest["model_structure"]["stochastic_runtime"]["state_diffusion"] == "not_used"
+    assert bundle.manifest["stochastic_preset"]["name"] == DEFAULT_STOCHASTIC_PRESET
+    assert bundle.manifest["stochastic_preset"]["signal_dependent_motor_noise_std"] == 0.02
     assert (
         bundle.manifest["model_structure"]["plant_process"]["noise_timing"]
         == "post_force_filter_pre_mechanics"
@@ -125,8 +129,11 @@ def test_graph_bundle_records_nominal_provenance() -> None:
 
 
 def test_derive_spec_dir_preserves_artifact_results_mirror() -> None:
-    artifact = run_artifact_dir("a1a8e39", "cs_nominal_gru__local_smoke")
-    assert derive_spec_dir(artifact) == run_spec_dir("a1a8e39", "cs_nominal_gru__local_smoke")
+    artifact = run_artifact_dir("30f2313", "cs_stochastic_gru__no_hidden_penalty")
+    assert derive_spec_dir(artifact) == run_spec_dir(
+        "30f2313",
+        "cs_stochastic_gru__no_hidden_penalty",
+    )
 
 
 def test_dry_run_does_not_write_files(tmp_path: Path) -> None:
@@ -138,7 +145,9 @@ def test_dry_run_does_not_write_files(tmp_path: Path) -> None:
     assert "run_spec" in result
     assert result["run_spec"]["mode"] == "dry_run"
     assert result["run_spec"]["nominal_only"] is True
-    assert result["run_spec"]["fidelity_status"]["exact_fidelity"] is True
+    assert result["run_spec"]["fidelity_status"]["exact_fidelity"] is False
+    assert result["run_spec"]["fidelity_status"]["exact_objective_terms"] is True
+    assert result["run_spec"]["fidelity_status"]["exact_stochastic_rollout"] is False
     assert result["run_spec"]["fidelity_status"]["nn_hidden"] == 0.0
     assert not spec_dir.exists()
 
@@ -155,6 +164,7 @@ def test_regularized_run_metadata_marks_non_exact_status(tmp_path: Path) -> None
 
     fidelity = result["run_spec"]["fidelity_status"]
     assert fidelity["exact_fidelity"] is False
+    assert fidelity["exact_objective_terms"] is False
     assert fidelity["regularized_pair"] is True
     assert fidelity["regularizer"] == "nn_hidden"
     assert fidelity["nn_hidden"] == 1e-5
@@ -180,11 +190,21 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     assert run_path == spec_dir / "run.json"
     assert graph_path == spec_dir / "model.graph.json"
     assert manifest_path == spec_dir / "model.graph.manifest.json"
-    assert payload["schema_version"] == "rlrmp.cs_nominal_gru.v1"
-    assert payload["issue"] == "a1a8e39"
+    assert payload["schema_version"] == "rlrmp.cs_stochastic_gru.v1"
+    assert payload["issue"] == "30f2313"
     assert payload["model_summary"]["hidden_size"] == 4
     assert payload["model_summary"]["controller_kind"] == "gru"
-    assert payload["model_summary"]["stochastic_runtime"]["sensory_noise_std"] == 0.0
+    assert payload["stochastic_preset"]["name"] == DEFAULT_STOCHASTIC_PRESET
+    assert payload["stochastic_preset"]["source_contract"]["contract"] == (
+        "cs_released_stochastic_v1"
+    )
+    assert payload["model_summary"]["stochastic_runtime"]["sensory_noise_std"] > 0.0
+    assert payload["model_summary"]["stochastic_runtime"]["additive_motor_noise_std"] == 1e-5
+    assert (
+        payload["model_summary"]["stochastic_runtime"]["signal_dependent_motor_noise_std"]
+        == 0.02
+    )
+    assert payload["model_summary"]["stochastic_runtime"]["plant_process_force_noise_std"] > 0.0
     assert payload["model_summary"]["plant_process"]["state_diffusion"] == "not_used"
     assert payload["model_summary"]["certificate_lens"] == "input_output_map_certificate"
     assert payload["model_summary"]["analytical_delay_augmented_state_input"] is False

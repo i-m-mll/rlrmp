@@ -1,4 +1,4 @@
-"""Modal launch helpers for nominal C&S-fidelity GRU preparation.
+"""Modal launch helpers for stochastic C&S-fidelity GRU preparation.
 
 This module keeps cloud execution behind explicit CLI choices. The default
 path is a local dry-run that prints the command and provenance paths without
@@ -21,9 +21,10 @@ from typing import Any, Literal, Sequence
 
 from rlrmp.paths import REPO_ROOT, run_artifact_dir, run_spec_dir
 
-APP_NAME = "rlrmp-cs-nominal-gru"
-DEFAULT_EXPERIMENT = "a1a8e39"
-DEFAULT_RUN = "nominal_cs_gru__modal_prep"
+APP_NAME = "rlrmp-cs-stochastic-gru"
+DEFAULT_EXPERIMENT = "30f2313"
+DEFAULT_RUN = "cs_stochastic_gru__no_hidden_penalty"
+DEFAULT_STOCHASTIC_PRESET = "cs2019-rollout"
 DEFAULT_GPU = "A10G"
 DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_TRAIN_TIMEOUT_SECONDS = 24 * 60 * 60
@@ -39,7 +40,7 @@ CommandKind = Literal["dry-run", "local-smoke", "modal-smoke", "modal-run", "mod
 
 @dataclass(frozen=True)
 class NominalGruRunConfig:
-    """Command-level configuration for the nominal GRU run."""
+    """Command-level configuration for the stochastic GRU run."""
 
     experiment: str = DEFAULT_EXPERIMENT
     run: str = DEFAULT_RUN
@@ -49,6 +50,8 @@ class NominalGruRunConfig:
     hidden_size: int = 4
     seed: int = 42
     controller_lr: float = 1e-2
+    stochastic_preset: str = DEFAULT_STOCHASTIC_PRESET
+    regularized_fidelity: bool = False
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
     gpu: str = DEFAULT_GPU
     mode: Mode = "source"
@@ -90,7 +93,7 @@ def build_training_command(
     *,
     remote: bool = False,
 ) -> list[str]:
-    """Build the nominal C&S-fidelity GRU training command.
+    """Build the stochastic C&S-fidelity GRU training command.
 
     The command intentionally targets the dedicated C&S nominal GRU spec writer,
     not the older delayed-reach minimax trainer.
@@ -111,8 +114,11 @@ def build_training_command(
     _append_arg(command, "--n-replicates", config.n_replicates)
     _append_arg(command, "--hidden-size", config.hidden_size)
     _append_arg(command, "--seed", config.seed)
+    _append_arg(command, "--stochastic-preset", config.stochastic_preset)
     _append_arg(command, "--output-dir", artifact_dir)
     _append_arg(command, "--spec-dir", spec_dir)
+    if config.regularized_fidelity:
+        command.append("--regularized-fidelity")
     command.extend(config.extra_args)
     return command
 
@@ -171,6 +177,7 @@ def build_packing_benchmark_command(
         ("--n-replicates", config.n_replicates),
         ("--hidden-size", config.hidden_size),
         ("--controller-lr", config.controller_lr),
+        ("--stochastic-preset", config.stochastic_preset),
         ("--seed", config.seed),
         ("--sample-seconds", config.sample_seconds),
     ]:
@@ -350,6 +357,8 @@ def make_config(args: argparse.Namespace) -> NominalGruRunConfig:
         hidden_size=args.hidden_size,
         seed=args.seed,
         controller_lr=args.controller_lr,
+        stochastic_preset=args.stochastic_preset,
+        regularized_fidelity=args.regularized_fidelity,
         timeout_seconds=args.timeout_seconds,
         gpu=args.gpu,
         mode=args.mode,
@@ -368,7 +377,7 @@ def make_config(args: argparse.Namespace) -> NominalGruRunConfig:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Prepare or launch the nominal C&S-fidelity GRU Modal runner."
+        description="Prepare or launch the stochastic C&S-fidelity GRU Modal runner."
     )
     parser.add_argument(
         "command",
@@ -388,6 +397,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--hidden-size", type=int, default=4)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--controller-lr", type=float, default=1e-2)
+    parser.add_argument("--stochastic-preset", default=DEFAULT_STOCHASTIC_PRESET)
+    parser.add_argument(
+        "--regularized-fidelity",
+        action="store_true",
+        help="Run the paired stochastic condition with nn_hidden=1e-5.",
+    )
     parser.add_argument("--n-workers", type=int, default=1)
     parser.add_argument("--stagger-seconds", type=float, default=10.0)
     parser.add_argument("--burn-in-seconds", type=float, default=60.0)

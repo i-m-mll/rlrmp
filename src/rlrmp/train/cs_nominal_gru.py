@@ -1,7 +1,7 @@
-"""Nominal C&S-fidelity GRU run-spec construction.
+"""Stochastic C&S-fidelity GRU run-spec construction.
 
-This module prepares the first nominal, hold-free C&S-aligned GRU run for
-issue ``a1a8e39``. It intentionally stops at lightweight run-spec and
+This module prepares nominal, hold-free C&S-aligned GRU runs for issue
+``30f2313``. It intentionally stops at lightweight run-spec and
 GraphSpec materialization; full local/Modal training remains a separate,
 explicitly launched step.
 """
@@ -10,12 +10,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import equinox as eqx
 import jax
+import jax.numpy as jnp
 from feedbax.types import TreeNamespace, dict_to_namespace
 
 from rlrmp.analysis.cs_game_card import (
@@ -25,6 +28,11 @@ from rlrmp.analysis.cs_game_card import (
     TARGET_POS,
     build_canonical_game,
 )
+from rlrmp.analysis.cs_released_simulation import (
+    DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
+    default_cs_noise_covariances,
+)
+from rlrmp.analysis.output_feedback import OutputFeedbackConfig
 from rlrmp.feedbax_graph import (
     EXECUTION_BACKEND,
     PLANT_INTERVENOR_LABEL,
@@ -39,17 +47,110 @@ from rlrmp.stochastic_runtime import (
     stochastic_runtime_config_from_model,
 )
 
-ISSUE_ID = "a1a8e39"
-SCHEMA_VERSION = "rlrmp.cs_nominal_gru.v1"
+ISSUE_ID = "30f2313"
+SCHEMA_VERSION = "rlrmp.cs_stochastic_gru.v1"
 DEFAULT_EXPERIMENT = ISSUE_ID
-DEFAULT_RUN = "cs_nominal_gru__local_smoke"
+DEFAULT_RUN = "cs_stochastic_gru__no_hidden_penalty"
 DEFAULT_OUTPUT_DIR = f"_artifacts/{DEFAULT_EXPERIMENT}/runs/{DEFAULT_RUN}"
+DEFAULT_STOCHASTIC_PRESET = "cs2019-rollout"
 CS_STAGE_COUNT = 60
 CS_FEEDBAX_N_STEPS = CS_STAGE_COUNT + 1
 CS_POSITION_SCALE = 1e6
 CS_VELOCITY_SCALE = 1e5
 CS_CONTROL_SCALE = 1.0
 CS_REGULARIZED_NN_HIDDEN = 1e-5
+
+
+@dataclass(frozen=True)
+class StochasticPreset:
+    """Named stochastic rollout preset for Feedbax-backed GRU runs."""
+
+    name: str
+    sensory_noise_std: float
+    additive_motor_noise_std: float
+    signal_dependent_motor_noise_std: float
+    plant_process_force_noise_std: float
+    source_contract: dict[str, Any]
+    projection_notes: dict[str, str]
+
+    def hps_fields(self) -> dict[str, float]:
+        """Return model-hyperparameter fields controlled by the preset."""
+
+        return {
+            "sensory_noise_std": self.sensory_noise_std,
+            "additive_motor_noise_std": self.additive_motor_noise_std,
+            "signal_dependent_motor_noise_std": self.signal_dependent_motor_noise_std,
+            "plant_process_force_noise_std": self.plant_process_force_noise_std,
+        }
+
+    def summary(self) -> dict[str, Any]:
+        """Return JSON-serializable preset metadata."""
+
+        return {
+            "name": self.name,
+            **self.hps_fields(),
+            "source_contract": self.source_contract,
+            "projection_notes": self.projection_notes,
+        }
+
+
+def stochastic_preset(name: str) -> StochasticPreset:
+    """Return a named stochastic preset for the dedicated C&S GRU runner."""
+
+    if name != DEFAULT_STOCHASTIC_PRESET:
+        raise ValueError(
+            f"Unknown stochastic preset {name!r}; expected {DEFAULT_STOCHASTIC_PRESET!r}"
+        )
+    plant, _schedule = build_canonical_game()
+    output_config = OutputFeedbackConfig()
+    noise_config = DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG
+    covariances = default_cs_noise_covariances(
+        plant,
+        output_config,
+        motor_covariance_scale=noise_config.motor_covariance_scale,
+        process_covariance_scale=noise_config.process_covariance_scale,
+        signal_dependent_scale=noise_config.signal_dependent_scale,
+    )
+    sensory_diag = jnp.diag(covariances.sensory)
+    if not bool(jnp.allclose(sensory_diag, sensory_diag[0])):
+        raise ValueError("C&S sensory covariance projection expects isotropic diagonal covariance")
+    return StochasticPreset(
+        name=name,
+        sensory_noise_std=float(jnp.sqrt(sensory_diag[0])),
+        additive_motor_noise_std=math.sqrt(noise_config.motor_covariance_scale),
+        signal_dependent_motor_noise_std=noise_config.signal_dependent_scale,
+        plant_process_force_noise_std=math.sqrt(
+            output_config.process_covariance_scale * noise_config.process_covariance_scale
+        ),
+        source_contract={
+            **noise_config.summary(),
+            "output_feedback_process_covariance_scale": output_config.process_covariance_scale,
+            "sensory_noise_scale": output_config.sensory_noise_scale,
+            "sensory_covariance_diag": [float(x) for x in sensory_diag.tolist()],
+            "motor_covariance_shape": list(covariances.motor.shape),
+            "process_covariance_shape": list(covariances.process.shape),
+            "signal_dependent_state_shape": list(covariances.signal_dependent_state.shape),
+        },
+        projection_notes={
+            "sensory": (
+                "Use the C&S sensory covariance diagonal standard deviation on the "
+                "Feedbax delayed pos/vel feedback channel."
+            ),
+            "additive_motor": (
+                "Project C&S input-image motor covariance to command-channel "
+                "additive noise with std sqrt(motor_covariance_scale)."
+            ),
+            "signal_dependent_motor": (
+                "Use the C&S Csdn scale as Feedbax pre-force-filter "
+                "multiplicative command noise."
+            ),
+            "plant_process": (
+                "Project C&S process/load covariance to independent force noise "
+                "immediately upstream of mechanics, after the force filter."
+            ),
+            "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout.",
+        },
+    )
 
 
 def derive_spec_dir(output_dir: Path) -> Path:
@@ -70,13 +171,10 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
 
     args = _apply_smoke_overrides(args)
     plant, schedule = build_canonical_game()
+    preset = stochastic_preset(args.stochastic_preset)
     if int(schedule.T) != CS_STAGE_COUNT:
         raise ValueError(f"Expected C&S stage count {CS_STAGE_COUNT}, got {schedule.T}")
-    nn_hidden = (
-        CS_REGULARIZED_NN_HIDDEN
-        if args.regularized_fidelity and args.nn_hidden is None
-        else float(args.nn_hidden or 0.0)
-    )
+    nn_hidden = CS_REGULARIZED_NN_HIDDEN if args.regularized_fidelity else 0.0
     n_input_readout = int(args.hidden_size) - (
         int(args.n_input_only) + int(args.n_readout_only) + int(args.n_recurrent_only)
     )
@@ -108,10 +206,8 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "feedback_delay_steps": 5,
             "feedback_noise_std": 0.0,
             "motor_noise_std": 0.0,
-            "sensory_noise_std": 0.0,
-            "additive_motor_noise_std": 0.0,
-            "signal_dependent_motor_noise_std": 0.0,
-            "plant_process_force_noise_std": 0.0,
+            **preset.hps_fields(),
+            "stochastic_preset": preset.name,
             "damping": 0.1,
             "tau_rise": 0.066,
             "population_structure": {
@@ -159,7 +255,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
                 "effector_final_vel": float(args.effector_final_vel),
                 "nn_output": float(args.nn_output),
                 "nn_hidden": nn_hidden,
-                "nn_hidden_derivative": float(args.nn_hidden_derivative),
+                "nn_hidden_derivative": 0.0,
                 "nn_output_jerk": float(args.nn_output_jerk),
                 "nn_output_pre_go": 0.0,
                 "nn_hidden_derivative_pre_go": 0.0,
@@ -287,6 +383,7 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
             "state_diffusion": "not_used",
         },
         "stochastic_runtime": stochastic_runtime,
+        "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
         "nominal_only": True,
         "adversarial_phase": "none",
         "certificate_lens": "input_output_map_certificate",
@@ -324,6 +421,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "stochastic_runtime": graphspec_noise_contract(
             stochastic_runtime_config_from_model(hps.model)
         ),
+        "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
     }
     manifest = {
         "schema_version": SCHEMA_VERSION,
@@ -348,6 +446,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "training_spec": training_spec,
         "game_card_provenance": build_game_card_provenance(),
         "model_structure": build_model_structure_summary(hps),
+        "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
         "stochastic_runtime": graphspec_noise_contract(
             stochastic_runtime_config_from_model(hps.model)
         ),
@@ -387,6 +486,7 @@ def build_run_spec(
         "batch_size": int(args.batch_size),
         "controller_lr": float(args.controller_lr),
         "fidelity_status": _fidelity_status(hps),
+        "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
         "game_card": build_game_card_provenance(),
         "model_summary": build_model_structure_summary(hps),
         "task_timing": graph_bundle.task_spec,
@@ -404,7 +504,7 @@ def build_run_spec(
             "dependencies": _get_dependency_metadata(),
             "modal": {
                 "launch": "not_requested",
-                "app_name": "rlrmp-cs-nominal-gru",
+                "app_name": "rlrmp-cs-stochastic-gru",
                 "mode": "not_requested",
             },
             "gpu": _get_gpu_metadata(),
@@ -414,7 +514,7 @@ def build_run_spec(
 
 
 def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
-    """Write, or dry-run, the nominal C&S GRU spec artifacts."""
+    """Write, or dry-run, the stochastic C&S GRU spec artifacts."""
 
     args = _apply_smoke_overrides(args)
     output_dir = Path(args.output_dir)
@@ -455,7 +555,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the CLI parser."""
 
     parser = argparse.ArgumentParser(
-        description="Prepare a nominal C&S-fidelity GRU run spec.",
+        description="Prepare a stochastic C&S-fidelity GRU run spec.",
     )
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--spec-dir", default=None)
@@ -465,6 +565,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--controller-lr", type=float, default=1e-2)
     parser.add_argument("--n-replicates", type=int, default=5)
     parser.add_argument("--hidden-size", type=int, default=180)
+    parser.add_argument(
+        "--stochastic-preset",
+        choices=[DEFAULT_STOCHASTIC_PRESET],
+        default=DEFAULT_STOCHASTIC_PRESET,
+        help=(
+            "Named stochastic rollout contract. The preset fixes sensory, command, "
+            "signal-dependent, and plant/load force noise and records concrete "
+            "values in run.json."
+        ),
+    )
     parser.add_argument(
         "--target-m",
         type=float,
@@ -480,13 +590,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--effector-terminal-vel", type=float, default=CS_VELOCITY_SCALE)
     parser.add_argument("--effector-final-vel", type=float, default=0.0)
     parser.add_argument("--nn-output", type=float, default=CS_CONTROL_SCALE)
-    parser.add_argument("--nn-hidden", type=float, default=None)
-    parser.add_argument("--nn-hidden-derivative", type=float, default=0.0)
     parser.add_argument("--nn-output-jerk", type=float, default=0.0)
     parser.add_argument(
         "--regularized-fidelity",
         action="store_true",
-        help="Mark a paired non-exact run and use nn_hidden=1e-5 unless overridden.",
+        help="Mark the paired non-exact run and use nn_hidden=1e-5.",
     )
     parser.add_argument(
         "--smoke",
@@ -623,8 +731,16 @@ def _fidelity_status(hps: TreeNamespace) -> dict[str, Any]:
     nn_hidden = float(hps.loss.weights.nn_hidden)
     exact = nn_hidden == 0.0
     return {
-        "objective": "cs_fidelity",
-        "exact_fidelity": exact,
+        "objective": "cs_fidelity_stochastic_rollout",
+        "exact_fidelity": False,
+        "exact_objective_terms": exact,
+        "exact_stochastic_rollout": False,
+        "stochastic_preset": str(hps.model.stochastic_preset),
+        "stochastic_projection": (
+            "Feedbax GRU rollout uses C&S-shaped sensory, command, signal-dependent, "
+            "and plant/load force noise channels without feeding the 48D "
+            "delay-augmented analytical state to the GRU."
+        ),
         "regularized_pair": not exact,
         "regularizer": "none" if exact else "nn_hidden",
         "nn_hidden": nn_hidden,
