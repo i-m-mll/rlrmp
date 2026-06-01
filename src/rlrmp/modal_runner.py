@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import platform
+import site
 import shlex
 import subprocess
 import sys
@@ -26,7 +27,7 @@ DEFAULT_EXPERIMENT = "30f2313"
 DEFAULT_RUN = "cs_stochastic_gru__no_hidden_penalty"
 REGULARIZED_RUN = "cs_stochastic_gru__hidden_penalty"
 DEFAULT_STOCHASTIC_PRESET = "cs2019-rollout"
-DEFAULT_GPU = "A10G"
+DEFAULT_GPU = "A10"
 DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_TRAIN_TIMEOUT_SECONDS = 24 * 60 * 60
 DEFAULT_N_TRAIN_BATCHES = 12000
@@ -326,9 +327,17 @@ def activate_project_venv(venv_dir: Path = REMOTE_VENV_DIR) -> Path:
     if not site_packages:
         raise FileNotFoundError(f"No site-packages directory found under {lib_dir}")
 
+    before = list(sys.path)
     site_path = str(site_packages[-1])
-    if site_path not in sys.path:
-        sys.path.insert(0, site_path)
+    site.addsitedir(site_path)
+    activated_paths = [
+        path for path in sys.path if path == site_path or (path not in before and path)
+    ]
+    sys.path[:] = [
+        *activated_paths,
+        *(path for path in sys.path if path not in set(activated_paths)),
+    ]
+    _evict_modal_bundled_modules(("typing_extensions",))
 
     bin_path = str(venv_dir / "bin")
     path_parts = os.environ.get("PATH", "").split(os.pathsep)
@@ -336,6 +345,17 @@ def activate_project_venv(venv_dir: Path = REMOTE_VENV_DIR) -> Path:
         os.environ["PATH"] = os.pathsep.join([bin_path, *path_parts])
     os.environ["VIRTUAL_ENV"] = str(venv_dir)
     return site_packages[-1]
+
+
+def _evict_modal_bundled_modules(module_names: Sequence[str]) -> None:
+    for module_name in module_names:
+        module = sys.modules.get(module_name)
+        module_file = getattr(module, "__file__", None)
+        if module_file is None:
+            continue
+        parts = Path(module_file).parts
+        if "__modal" in parts and "deps" in parts:
+            sys.modules.pop(module_name, None)
 
 
 def collect_provenance() -> dict[str, Any]:
@@ -356,6 +376,9 @@ def collect_provenance() -> dict[str, Any]:
         try:
             module = __import__(package)
             provenance[f"{package}_version"] = getattr(module, "__version__", "unknown")
+            if package == "jax":
+                provenance["jax_devices"] = [str(device) for device in module.devices()]
+                provenance["jax_default_backend"] = module.default_backend()
         except Exception as exc:
             provenance[f"{package}_error"] = str(exc)
 
@@ -388,10 +411,44 @@ def collect_provenance() -> dict[str, Any]:
     return provenance
 
 
-def write_provenance(config: NominalGruRunConfig, *, remote: bool = False) -> dict[str, str]:
+def collect_source_provenance(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
+    """Collect local source provenance before Modal source dirs are copied."""
+
+    commands = {
+        "commit": ["git", "rev-parse", "HEAD"],
+        "branch": ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        "status_short": ["git", "status", "--short"],
+    }
+    provenance: dict[str, Any] = {}
+    for key, command in commands.items():
+        try:
+            result = subprocess.run(
+                command,
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            provenance[key] = result.stdout.strip() if result.returncode == 0 else None
+            if result.returncode != 0:
+                provenance[f"{key}_stderr"] = result.stderr.strip()
+        except Exception as exc:
+            provenance[f"{key}_error"] = str(exc)
+    return provenance
+
+
+def write_provenance(
+    config: NominalGruRunConfig,
+    *,
+    remote: bool = False,
+    source_provenance: dict[str, Any] | None = None,
+) -> dict[str, str]:
     """Write Modal/environment provenance next to the run spec and artifacts."""
 
     payload = collect_provenance()
+    if source_provenance is not None:
+        payload["source_provenance"] = source_provenance
     spec_dir = config.remote_spec_dir() if remote else config.local_spec_dir()
     artifact_dir = config.remote_artifact_dir() if remote else config.local_artifact_dir()
     spec_dir.mkdir(parents=True, exist_ok=True)
@@ -454,7 +511,11 @@ def execute_remote_payload(
     command_kind: CommandKind = payload["command_kind"]
     if config.mode == "source":
         patch_remote_editable_paths()
-    write_provenance(config, remote=True)
+    write_provenance(
+        config,
+        remote=True,
+        source_provenance=payload.get("source_provenance"),
+    )
     if command_kind == "modal-smoke":
         return run_subprocess(build_remote_smoke_command(), timeout_seconds=config.timeout_seconds)
     if command_kind == "modal-run":

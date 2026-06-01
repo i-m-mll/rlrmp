@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import os
 import sys
 from pathlib import Path
@@ -8,6 +9,7 @@ import pytest
 
 from rlrmp.modal_runner import (
     DEFAULT_RUN,
+    DEFAULT_GPU,
     DEFAULT_TRAIN_TIMEOUT_SECONDS,
     MODAL_VOLUME_NAME,
     REGULARIZED_RUN,
@@ -17,6 +19,7 @@ from rlrmp.modal_runner import (
     build_packing_benchmark_command,
     build_remote_smoke_command,
     build_training_command,
+    collect_source_provenance,
     dry_run_payload,
     make_config,
 )
@@ -131,6 +134,7 @@ def test_modal_run_defaults_to_training_timeout() -> None:
     config = make_config(args)
 
     assert config.timeout_seconds == DEFAULT_TRAIN_TIMEOUT_SECONDS
+    assert config.gpu == DEFAULT_GPU == "A10"
 
 
 def test_activate_project_venv_exposes_uv_site_packages(
@@ -140,18 +144,64 @@ def test_activate_project_venv_exposes_uv_site_packages(
     venv_dir = tmp_path / ".venv"
     site_packages = venv_dir / "lib" / "python3.12" / "site-packages"
     site_packages.mkdir(parents=True)
+    editable_src = tmp_path / "editable-src"
+    editable_src.mkdir()
+    (site_packages / "editable.pth").write_text(str(editable_src) + "\n")
+    modal_deps = tmp_path / "__modal" / "deps"
+    modal_deps.mkdir(parents=True)
     monkeypatch.setenv("PATH", "/usr/bin")
     original_path = list(sys.path)
 
     try:
+        sys.path.insert(0, str(modal_deps))
         activated = activate_project_venv(venv_dir)
 
         assert activated == site_packages
-        assert sys.path[0] == str(site_packages)
+        assert sys.path.index(str(site_packages)) < sys.path.index(str(modal_deps))
+        assert sys.path.index(str(editable_src)) < sys.path.index(str(modal_deps))
         assert os.environ["VIRTUAL_ENV"] == str(venv_dir)
         assert os.environ["PATH"].split(os.pathsep)[0] == str(venv_dir / "bin")
     finally:
         sys.path[:] = original_path
+
+
+def test_activate_project_venv_prefers_venv_package_over_modal_deps(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    venv_dir = tmp_path / ".venv"
+    site_packages = venv_dir / "lib" / "python3.12" / "site-packages"
+    site_packages.mkdir(parents=True)
+    (site_packages / "typing_extensions.py").write_text("Sentinel = object()\n")
+    modal_deps = tmp_path / "__modal" / "deps"
+    modal_deps.mkdir(parents=True)
+    (modal_deps / "typing_extensions.py").write_text("_Sentinel = object()\n")
+    original_path = list(sys.path)
+    old_module = sys.modules.pop("typing_extensions", None)
+
+    try:
+        sys.path.insert(0, str(modal_deps))
+        shadow_module = importlib.import_module("typing_extensions")
+        assert not hasattr(shadow_module, "Sentinel")
+        assert Path(shadow_module.__file__).parent == modal_deps
+
+        activate_project_venv(venv_dir)
+        module = importlib.import_module("typing_extensions")
+
+        assert hasattr(module, "Sentinel")
+        assert Path(module.__file__).parent == site_packages
+    finally:
+        sys.path[:] = original_path
+        sys.modules.pop("typing_extensions", None)
+        if old_module is not None:
+            sys.modules["typing_extensions"] = old_module
+
+
+def test_collect_source_provenance_reports_commit_and_status() -> None:
+    provenance = collect_source_provenance()
+
+    assert provenance["commit"]
+    assert "status_short" in provenance
 
 
 def test_packing_benchmark_command_disables_sync_and_sets_worker_count() -> None:
