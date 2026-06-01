@@ -10,6 +10,13 @@ Cloud smoke usage:
     uv run modal run scripts/modal_cs_nominal_gru.py -- modal-smoke --timeout-seconds 60
     uv run modal run scripts/modal_cs_nominal_gru.py -- modal-packing-smoke --n-workers 2
 
+Planned stochastic C&S GRU runs:
+
+    uv run modal run scripts/modal_cs_nominal_gru.py -- modal-run \
+        --run cs_stochastic_gru__no_hidden_penalty
+    uv run modal run scripts/modal_cs_nominal_gru.py -- modal-run \
+        --run cs_stochastic_gru__hidden_penalty --regularized-fidelity
+
 The full Modal training path exists for a later approved launch:
 
     uv run modal run scripts/modal_cs_nominal_gru.py -- modal-run --timeout-seconds 86400
@@ -25,8 +32,11 @@ import modal
 
 from rlrmp.modal_runner import (
     APP_NAME,
+    DEFAULT_TRAIN_TIMEOUT_SECONDS,
     LOCAL_FEEDBAX_DIR,
     LOCAL_JAX_COOKBOOK_DIR,
+    MODAL_VOLUME_MOUNT,
+    MODAL_VOLUME_NAME,
     REPO_ROOT,
     build_parser,
     dry_run_payload,
@@ -107,12 +117,18 @@ image = (
     )
 )
 
+volume = modal.Volume.from_name(MODAL_VOLUME_NAME, create_if_missing=True)
 app = modal.App(APP_NAME, image=image)
 
 
-@app.function(timeout=60, min_containers=0, max_containers=1)
+@app.function(
+    timeout=DEFAULT_TRAIN_TIMEOUT_SECONDS,
+    min_containers=0,
+    max_containers=1,
+    volumes={str(MODAL_VOLUME_MOUNT): volume},
+)
 def _run_payload(payload: dict[str, Any]) -> int:
-    return execute_remote_payload(payload)
+    return execute_remote_payload(payload, volume_commit=volume.commit)
 
 
 @app.local_entrypoint()
