@@ -86,6 +86,24 @@ DEFAULT_REWARD_LEARNING_RATE = 3e-3
 DEFAULT_REWARD_STABILITY_PENALTY = 1e-3
 SUPERVISED_ACTION_PASS_THRESHOLD = 2e-1
 SUPERVISED_RESPONSE_PASS_THRESHOLD = 2e-2
+REWARD_ACTION_ENERGY_PASS_THRESHOLD = 1e-1
+REWARD_RESPONSE_MAP_PASS_THRESHOLD = 1e-1
+REWARD_DISTURBANCE_COST_PASS_THRESHOLD = 1e-1
+SUPERVISED_READOUT_ACTION_FIT_FAMILY = "supervised_readout_action_fit"
+SUPERVISED_READOUT_IO_MAP_FIT_FAMILY = "supervised_readout_io_map_fit"
+SUPERVISED_READOUT_ACTION_IO_MAP_FIT_FAMILY = "supervised_readout_action_io_map_fit"
+SUPERVISED_READOUT_ROW_FAMILIES = {
+    SUPERVISED_READOUT_ACTION_FIT_FAMILY,
+    SUPERVISED_READOUT_IO_MAP_FIT_FAMILY,
+    SUPERVISED_READOUT_ACTION_IO_MAP_FIT_FAMILY,
+}
+LEGACY_SUPERVISED_ROW_FAMILIES = {
+    "supervised_action_fit",
+    "supervised_io_map_fit",
+    "supervised_action_io_map_fit",
+}
+SUPERVISED_ROW_FAMILIES = SUPERVISED_READOUT_ROW_FAMILIES | LEGACY_SUPERVISED_ROW_FAMILIES
+REWARD_ROW_FAMILIES = {"reward_lens", "projection_warm_start_then_reward_lens"}
 
 
 @dataclass(frozen=True)
@@ -250,7 +268,7 @@ def _supervised_conditions(ranks: tuple[int, ...]) -> tuple[PhaseModulatedCondit
             [
                 PhaseModulatedCondition(
                     label=f"pm_linrec_r{rank}_supervised_nominal_action_fit",
-                    row_family="supervised_action_fit",
+                    row_family=SUPERVISED_READOUT_ACTION_FIT_FAMILY,
                     rank=rank,
                     training_distribution="nominal_action_supervised",
                     evaluation_lens="nominal_clean",
@@ -260,7 +278,7 @@ def _supervised_conditions(ranks: tuple[int, ...]) -> tuple[PhaseModulatedCondit
                 ),
                 PhaseModulatedCondition(
                     label=f"pm_linrec_r{rank}_supervised_mixed_history_action_fit",
-                    row_family="supervised_action_fit",
+                    row_family=SUPERVISED_READOUT_ACTION_FIT_FAMILY,
                     rank=rank,
                     training_distribution="mixed_history_action_supervised",
                     evaluation_lens="mixed_process_observer",
@@ -274,7 +292,7 @@ def _supervised_conditions(ranks: tuple[int, ...]) -> tuple[PhaseModulatedCondit
                 ),
                 PhaseModulatedCondition(
                     label=f"pm_linrec_r{rank}_supervised_process_io_map_fit",
-                    row_family="supervised_io_map_fit",
+                    row_family=SUPERVISED_READOUT_IO_MAP_FIT_FAMILY,
                     rank=rank,
                     training_distribution="process_io_map_supervised",
                     evaluation_lens="process_io",
@@ -285,7 +303,7 @@ def _supervised_conditions(ranks: tuple[int, ...]) -> tuple[PhaseModulatedCondit
                 ),
                 PhaseModulatedCondition(
                     label=f"pm_linrec_r{rank}_supervised_process_measurement_io_map_fit",
-                    row_family="supervised_io_map_fit",
+                    row_family=SUPERVISED_READOUT_IO_MAP_FIT_FAMILY,
                     rank=rank,
                     training_distribution="process_measurement_io_map_supervised",
                     evaluation_lens="process_measurement_io",
@@ -297,7 +315,7 @@ def _supervised_conditions(ranks: tuple[int, ...]) -> tuple[PhaseModulatedCondit
                 ),
                 PhaseModulatedCondition(
                     label=f"pm_linrec_r{rank}_supervised_action_io_combined_fit",
-                    row_family="supervised_action_io_map_fit",
+                    row_family=SUPERVISED_READOUT_ACTION_IO_MAP_FIT_FAMILY,
                     rank=rank,
                     training_distribution="mixed_action_process_measurement_io_supervised",
                     evaluation_lens="mixed_process_measurement_io",
@@ -668,7 +686,8 @@ def materialize(
         "non_goals": (
             "No GRU training, no broad robust-epsilon arm, and no claim that "
             "projected-oracle diagnostic rows are bridge passes. Supervised rows "
-            "fit action and response maps; they are not reward-trained rows."
+            "fit readout/feedthrough maps; they are not full recurrent-dynamics "
+            "fits or reward-trained rows."
         ),
         "runtime_seconds": time.perf_counter() - start,
         "diagnostics": {
@@ -805,7 +824,11 @@ therefore uses the recurrent I/O-map path: external response-map components and
 visited-state/action diagnostics are available, while static transition/value
 rows are explicitly not applicable. Projected-oracle rows remain diagnostic
 even when response-map components are available. Supervised rows are optimized
-against external action and/or response-map losses and are not reward-trained.
+against external action and/or response-map losses by fitting only `C_h`, `D_y`,
+and `c`; they are not full recurrent-dynamics fits and are not reward-trained.
+Reward row verdicts use the external certificate metrics `R_u`, relevant
+response-map mismatch, and disturbance-to-cost sidecar. Mean timewise action
+mismatch remains a diagnostic column only.
 
 {"\n".join(component_rows)}
 
@@ -817,10 +840,13 @@ project each time-varying recurrent/readout matrix onto a clamped B-spline
 partition of unity. State-coverage eigen rows preserve the old coverage
 semantics explicitly: they perturb initial state/estimator coverage directions
 from a state-trajectory covariance, not process-eigen disturbances. Supervised
-rows optimize trainable phase-modulated recurrent coefficients against exact
-oracle action histories and/or finite-horizon response maps. Reward rows are
-gated on supervised representation success and optimize the true quadratic
-rollout objective on their retained training distributions only after that gate.
+rows optimize phase-modulated readout/feedthrough coefficients against exact
+oracle action histories and/or finite-horizon response maps. The fitted
+blocks are the readout/feedthrough/bias blocks only. Reward rows are gated on
+supervised representation success and optimize the true quadratic rollout
+objective on their retained training distributions only after that gate; their
+verdicts come from the external response-map certificate criteria, not the mean
+timewise action mismatch diagnostic.
 """
 
 
@@ -854,12 +880,7 @@ def _controller_for_condition(
             "initialization": "oracle_matrix_projection",
         }
 
-    supervised_families = {
-        "supervised_action_fit",
-        "supervised_io_map_fit",
-        "supervised_action_io_map_fit",
-    }
-    if condition.row_family in supervised_families:
+    if condition.row_family in SUPERVISED_ROW_FAMILIES:
         initial = _params_from_controller(projected_controller)
         fitted, fit_metadata = _fit_phase_modulated_supervised_params(
             initial,
@@ -877,7 +898,7 @@ def _controller_for_condition(
         )
         fit_metadata.update(
             {
-                "fit_method": "alternating_least_squares_supervised_maps",
+                "fit_method": "alternating_least_squares_readout_feedthrough_maps",
                 "is_reward_trained": False,
                 "is_supervised_trained": True,
                 "initialization": "oracle_matrix_projection_warm_start",
@@ -885,6 +906,8 @@ def _controller_for_condition(
                 "learning_rate": condition.learning_rate,
                 "stability_penalty": condition.stability_penalty,
                 "supervised_objective": condition.supervised_objective,
+                "supervised_fit_scope": "readout_feedthrough_only",
+                "supervised_dynamics_fit": False,
             }
         )
         return controller, fit_metadata
@@ -997,6 +1020,9 @@ def _fit_phase_modulated_supervised_params(
         "supervised_loss_improvement": initial_loss - best_loss,
         "supervised_solver": "alternating_readout_least_squares",
         "supervised_fit_blocks": ["C_h", "D_y", "c"],
+        "supervised_frozen_blocks": ["A_h", "B_y", "B_u", "b_h"],
+        "supervised_fit_scope": "readout_feedthrough_only",
+        "supervised_dynamics_fit": False,
     }
 
 
@@ -2077,6 +2103,15 @@ def _manifest_for_condition(
             disturbance_output_summary["aggregate_mismatch_ratio"],
         ),
     }
+    reward_verdict_criteria = (
+        _reward_verdict_criteria(
+            condition,
+            action_summary=action_summary,
+            response_metrics=response_metrics,
+        )
+        if condition.row_family in REWARD_ROW_FAMILIES
+        else None
+    )
     metrics = {
         "row_family": condition.row_family,
         "evaluation_lens": condition.evaluation_lens,
@@ -2088,6 +2123,7 @@ def _manifest_for_condition(
         "state_weighted_action_mismatch": action_summary["mismatch_ratio_mean"],
         "aggregate_action_energy_mismatch": action_summary["aggregate_mismatch_ratio"],
         "response_map_mismatch": response_metrics,
+        "reward_verdict_criteria": reward_verdict_criteria,
         "projection": projection_summary,
         "recurrence_diagnostics": rollout.metadata["diagnostics"],
         "optimizer": fit_metadata,
@@ -2103,7 +2139,10 @@ def _manifest_for_condition(
             condition,
             projection_summary,
             action_summary,
-            metrics={"response_map_mismatch": response_metrics},
+            metrics={
+                "response_map_mismatch": response_metrics,
+                "reward_verdict_criteria": reward_verdict_criteria,
+            },
         ),
     }
     spec = BridgeRunSpec(
@@ -2164,8 +2203,9 @@ def _manifest_for_condition(
             "Phase-modulated linear recurrence uses spline coefficients for "
             "time-varying A/B/C/D matrices. Exact-oracle rows replay the analytical "
             "Kalman recurrence; projected-oracle rows are diagnostics; supervised rows "
-            "optimize external action and/or response-map losses; reward rows optimize "
-            "the retained rollout objective only after supervised representation gates pass."
+            "optimize only readout/feedthrough coefficients against external action "
+            "and/or response-map losses; reward rows optimize the retained rollout "
+            "objective only after supervised representation gates pass."
         ),
     )
     return BridgeRunManifest(
@@ -2233,11 +2273,7 @@ def _row_verdict(
         return "projected_oracle_io_diagnostic"
     if condition.row_family == "projected_oracle_state_coverage_eval":
         return "state_coverage_projection_diagnostic"
-    if condition.row_family in {
-        "supervised_action_fit",
-        "supervised_io_map_fit",
-        "supervised_action_io_map_fit",
-    }:
+    if condition.row_family in SUPERVISED_ROW_FAMILIES:
         response = (metrics or {"response_map_mismatch": {}})["response_map_mismatch"]
         objective = str(condition.supervised_objective or "action")
         relevant_response = _supervised_relevant_response_mismatch(objective, response)
@@ -2250,6 +2286,26 @@ def _row_verdict(
         if objective == "action_and_io" and action_pass and response_pass:
             return "supervised_representation_pass"
         return "supervised_representation_non_equivalent"
+    if condition.row_family in REWARD_ROW_FAMILIES:
+        criteria = (metrics or {}).get("reward_verdict_criteria")
+        if criteria is None:
+            criteria = _reward_verdict_criteria(
+                condition,
+                action_summary=action_summary,
+                response_metrics=(metrics or {"response_map_mismatch": {}})[
+                    "response_map_mismatch"
+                ],
+            )
+        if criteria["passes"]:
+            return "reward_trained_external_certificate_equivalent"
+        if (
+            condition.row_family == "projection_warm_start_then_reward_lens"
+            and projection["combined_relative_residual"] < 0.05
+            and criteria["action_energy_pass"]
+            and criteria["response_map_pass"]
+        ):
+            return "reward_trained_projection_response_close_cost_non_equivalent"
+        return "reward_trained_external_certificate_non_equivalent"
     if action_summary["mismatch_ratio_mean"] < 0.1:
         return "reward_trained_reference_equivalent"
     if (
@@ -2286,17 +2342,63 @@ def _supervised_relevant_response_mismatch(
     return max(float(response.get(key, float("inf"))) for key in keys)
 
 
+def _reward_verdict_criteria(
+    condition: PhaseModulatedCondition,
+    *,
+    action_summary: dict[str, Any],
+    response_metrics: dict[str, Any],
+) -> dict[str, Any]:
+    action_energy = float(action_summary["aggregate_mismatch_ratio"])
+    response_keys = _reward_relevant_response_keys(condition)
+    response_mismatch = max(float(response_metrics.get(key, float("inf"))) for key in response_keys)
+    disturbance_cost_raw = response_metrics.get("disturbance_to_cost")
+    disturbance_cost = float("inf") if disturbance_cost_raw is None else float(disturbance_cost_raw)
+    action_energy_pass = action_energy <= REWARD_ACTION_ENERGY_PASS_THRESHOLD
+    response_map_pass = response_mismatch <= REWARD_RESPONSE_MAP_PASS_THRESHOLD
+    disturbance_cost_pass = disturbance_cost <= REWARD_DISTURBANCE_COST_PASS_THRESHOLD
+    return {
+        "source": "external_response_map_certificate",
+        "mean_timewise_action_mismatch_role": "diagnostic_only",
+        "aggregate_action_energy_mismatch": action_energy,
+        "aggregate_action_energy_threshold": REWARD_ACTION_ENERGY_PASS_THRESHOLD,
+        "action_energy_pass": action_energy_pass,
+        "relevant_response_map_keys": list(response_keys),
+        "relevant_response_map_mismatch": response_mismatch,
+        "relevant_response_map_threshold": REWARD_RESPONSE_MAP_PASS_THRESHOLD,
+        "response_map_pass": response_map_pass,
+        "disturbance_to_cost_mismatch": None if disturbance_cost_raw is None else disturbance_cost,
+        "disturbance_to_cost_threshold": REWARD_DISTURBANCE_COST_PASS_THRESHOLD,
+        "disturbance_to_cost_pass": disturbance_cost_pass,
+        "passes": action_energy_pass and response_map_pass and disturbance_cost_pass,
+    }
+
+
+def _reward_relevant_response_keys(condition: PhaseModulatedCondition) -> tuple[str, ...]:
+    lens = condition.evaluation_lens
+    distribution = condition.training_distribution
+    keys: list[str] = ["observation_to_action"]
+    if (
+        condition.disturbance_scale > 0.0
+        or "process" in lens
+        or distribution in {"mixed", "mixed_action_process_measurement_io_supervised"}
+    ):
+        keys.extend(["disturbance_to_action", "disturbance_to_state", "disturbance_to_output"])
+    if condition.measurement_scale > 0.0 or "measurement" in lens or "observer" in lens:
+        keys.extend(["measurement_to_action", "measurement_to_output"])
+    return tuple(dict.fromkeys(keys))
+
+
 def _is_supervised_representation_pass(row: BridgeRunManifest) -> bool:
     return (
-        row.metrics["row_family"]
-        in {"supervised_action_fit", "supervised_io_map_fit", "supervised_action_io_map_fit"}
+        row.metrics["row_family"] in SUPERVISED_ROW_FAMILIES
         and row.metrics["verdict"] == "supervised_representation_pass"
     )
 
 
 def _is_reward_gate_representation_pass(row: BridgeRunManifest) -> bool:
     return (
-        row.metrics["row_family"] == "supervised_action_io_map_fit"
+        row.metrics["row_family"]
+        in {"supervised_action_io_map_fit", SUPERVISED_READOUT_ACTION_IO_MAP_FIT_FAMILY}
         and row.metrics["verdict"] == "supervised_representation_pass"
     )
 
@@ -2499,7 +2601,7 @@ def _result_text(rows: list[BridgeRunManifest]) -> str:
     reward_rows = [
         row
         for row in rows
-        if row.metrics["row_family"] in {"reward_lens", "projection_warm_start_then_reward_lens"}
+        if row.metrics["row_family"] in REWARD_ROW_FAMILIES
         and row.metrics["optimizer"].get("is_reward_trained", False)
     ]
     supervised_rows = [
@@ -2510,10 +2612,11 @@ def _result_text(rows: list[BridgeRunManifest]) -> str:
         "The exact oracle and clamped-spline projected-oracle rows were materialized. "
         f"Exact-oracle sanity rows have max aggregate response-map mismatch "
         f"{exact_response:.4g}. The r=12 projected-oracle nominal replay row has "
-        f"action mismatch {mismatch:.4g} and combined matrix residual {residual:.4g}. "
-        f"{len(supervised_rows)} supervised action/response-map rows were optimized, "
+        f"diagnostic action mismatch {mismatch:.4g} and combined matrix residual {residual:.4g}. "
+        f"{len(supervised_rows)} supervised readout/feedthrough rows were optimized, "
         f"with {len(supervised_passes)} representation pass rows. {len(reward_rows)} "
-        "r=12 reward rows were optimized after the supervised gate."
+        "r=12 reward rows were optimized after the supervised gate and judged by "
+        "R_u, response-map mismatch, and the disturbance-to-cost sidecar."
     )
 
 
