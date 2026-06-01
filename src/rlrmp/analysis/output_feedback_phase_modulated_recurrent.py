@@ -1113,7 +1113,7 @@ def _controller_for_condition(
         fit_method = (
             "adam_full_matrix_supervised_action_io_maps"
             if condition.supervised_fit_scope == "full_matrix"
-            else "alternating_least_squares_supervised_maps"
+            else "alternating_least_squares_readout_feedthrough_maps"
         )
         fit_metadata.update(
             {
@@ -1128,7 +1128,11 @@ def _controller_for_condition(
                 "proximal_penalty": condition.proximal_penalty,
                 "parameter_bound": condition.parameter_bound,
                 "supervised_objective": condition.supervised_objective,
-                "supervised_fit_scope": condition.supervised_fit_scope,
+                "supervised_fit_scope": (
+                    "full_matrix"
+                    if condition.supervised_fit_scope == "full_matrix"
+                    else "readout_feedthrough_only"
+                ),
                 "supervised_dynamics_fit": condition.supervised_fit_scope == "full_matrix",
             }
         )

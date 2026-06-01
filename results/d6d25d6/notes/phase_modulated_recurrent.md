@@ -6,7 +6,7 @@ Scope: Oracle Kalman recurrent reference plus clamped-spline phase-modulated lin
 
 Non-goals: No GRU training, no broad robust-epsilon arm, and no claim that projected-oracle diagnostic rows are bridge passes. Supervised rows fit readout/feedthrough maps; they are not full recurrent-dynamics fits or reward-trained rows. r=60 reward-control rows are capacity sanity checks, not compact bridge claims.
 
-Runtime: `115.79` seconds.
+Runtime: `110.26` seconds.
 
 Verdict: The exact oracle and clamped-spline projected-oracle rows were materialized. Exact-oracle sanity rows have max aggregate response-map mismatch 0. The r=12 projected-oracle nominal replay row has diagnostic action mismatch 24.54 and combined matrix residual 0.01274. 22 supervised action/response-map rows were optimized, including 2 full-matrix rows, with 13 representation pass rows and full-matrix pass ranks []. 14 reward rows were optimized after the supervised gate for ranks [12, 60] and judged by R_u, response-map mismatch, and the disturbance-to-cost sidecar.
 
