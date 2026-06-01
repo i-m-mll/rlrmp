@@ -179,6 +179,7 @@ def test_default_conditions_relabel_state_coverage_and_projection_rows() -> None
         condition.row_family
         for condition in conditions
         if condition.label.endswith("_supervised_action_io_combined_fit")
+        and condition.supervised_fit_scope == "readout_only"
     } == {pm.SUPERVISED_READOUT_ACTION_IO_MAP_FIT_FAMILY}
     assert {
         condition.rank
