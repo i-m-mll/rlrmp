@@ -77,11 +77,18 @@ LEGACY_AUDIT_RANKS = (3, 5, 8)
 PROJECTION_SWEEP_RANKS = (12, 20, 30, 60)
 SUPERVISED_INITIAL_RANKS = (12, 20)
 SUPERVISED_EXTENSION_RANKS = (30, 60)
+FULL_MATRIX_SUPERVISED_RANKS = (20, 30)
 SPLINE_RANKS = LEGACY_AUDIT_RANKS + PROJECTION_SWEEP_RANKS
 DEFAULT_PROCESS_IO_DISTURBANCE_SCALE = 0.02
 DEFAULT_MEASUREMENT_IO_DISTURBANCE_SCALE = 0.02
 DEFAULT_SUPERVISED_TRAIN_STEPS = 1
 DEFAULT_SUPERVISED_LEARNING_RATE = 1e-3
+DEFAULT_FULL_MATRIX_SUPERVISED_TRAIN_STEPS = 12
+DEFAULT_FULL_MATRIX_SUPERVISED_LEARNING_RATE = 7.5e-4
+DEFAULT_FULL_MATRIX_SUPERVISED_STABILITY_PENALTY = 1e-3
+DEFAULT_FULL_MATRIX_SUPERVISED_SMOOTHNESS_PENALTY = 1e-5
+DEFAULT_FULL_MATRIX_SUPERVISED_PROXIMAL_PENALTY = 1e-4
+DEFAULT_FULL_MATRIX_SUPERVISED_PARAMETER_BOUND = 10.0
 DEFAULT_REWARD_TRAIN_STEPS = 4
 DEFAULT_REWARD_LEARNING_RATE = 3e-3
 DEFAULT_REWARD_STABILITY_PENALTY = 1e-3
@@ -151,8 +158,12 @@ class PhaseModulatedCondition:
     stability_penalty: float = DEFAULT_REWARD_STABILITY_PENALTY
     gradient_clip_norm: float | None = None
     proximal_preservation_weight: float = 0.0
+    smoothness_penalty: float = 0.0
+    proximal_penalty: float = 0.0
+    parameter_bound: float | None = None
     seed: int = 0
     supervised_objective: str | None = None
+    supervised_fit_scope: str = "readout_only"
 
     @property
     def run_id(self) -> str:
@@ -172,10 +183,11 @@ def default_conditions(
         _exact_oracle_conditions()
         + _projection_diagnostic_conditions()
         + _supervised_conditions(SUPERVISED_INITIAL_RANKS)
+        + _full_matrix_supervised_conditions()
     )
     if include_supervised_extensions:
         base += _supervised_conditions(SUPERVISED_EXTENSION_RANKS)
-    return base + (_reward_conditions() if include_reward else ())
+    return base + (_deferred_reward_conditions() if include_reward else ())
 
 
 def _exact_oracle_conditions() -> tuple[PhaseModulatedCondition, ...]:
@@ -345,83 +357,123 @@ def _supervised_conditions(ranks: tuple[int, ...]) -> tuple[PhaseModulatedCondit
     return tuple(conditions)
 
 
-def _reward_conditions() -> tuple[PhaseModulatedCondition, ...]:
-    return (
+def _full_matrix_supervised_conditions() -> tuple[PhaseModulatedCondition, ...]:
+    return tuple(
         PhaseModulatedCondition(
-            label="pm_linrec_r12_clean_scratch_reward",
-            row_family="reward_lens",
-            rank=12,
-            training_distribution="nominal",
-            evaluation_lens="nominal_clean",
-        ),
-        PhaseModulatedCondition(
-            label="pm_linrec_r12_state_coverage_eigen_m1_s0p3_reward",
-            row_family="reward_lens",
-            rank=12,
-            training_distribution="state_coverage_eigen",
-            evaluation_lens="state_coverage_eigen_m1_s0.3",
-            coverage_family="state_eigenspectrum",
-            coverage_modes=1,
-            coverage_scale=0.3,
-        ),
-        PhaseModulatedCondition(
-            label="pm_linrec_r12_state_coverage_eigen_m4_s0p3_reward",
-            row_family="reward_lens",
-            rank=12,
-            training_distribution="state_coverage_eigen",
-            evaluation_lens="state_coverage_eigen_m4_s0.3",
-            coverage_family="state_eigenspectrum",
-            coverage_modes=4,
-            coverage_scale=0.3,
-        ),
-        PhaseModulatedCondition(
-            label="pm_linrec_r12_state_coverage_eigen_m4_s1_reward",
-            row_family="reward_lens",
-            rank=12,
-            training_distribution="state_coverage_eigen",
-            evaluation_lens="state_coverage_eigen_m4_s1",
-            coverage_family="state_eigenspectrum",
-            coverage_modes=4,
-            coverage_scale=1.0,
-        ),
-        PhaseModulatedCondition(
-            label="pm_linrec_r12_observer_error_svd_m1_s0p3_reward",
-            row_family="reward_lens",
-            rank=12,
-            training_distribution="observer_error",
-            evaluation_lens="observer_error_svd_m1_s0.3",
-            coverage_family="observer_error_state",
-            coverage_modes=1,
-            coverage_scale=0.3,
-        ),
-        PhaseModulatedCondition(
-            label="pm_linrec_r12_mixed_process_observer_reward",
-            row_family="reward_lens",
-            rank=12,
-            training_distribution="mixed",
-            evaluation_lens="mixed_process_observer",
+            label=f"pm_linrec_r{rank}_full_matrix_supervised_action_io_combined_fit",
+            row_family="supervised_action_io_map_fit",
+            rank=rank,
+            training_distribution="mixed_action_process_measurement_io_supervised",
+            evaluation_lens="mixed_process_measurement_io",
             coverage_family="mixed_deviation",
             coverage_modes=4,
             coverage_scale=0.3,
-            disturbance_scale=0.02,
-        ),
-        PhaseModulatedCondition(
-            label="pm_linrec_r12_projected_oracle_nominal_then_reward",
-            row_family="projection_warm_start_then_reward_lens",
-            rank=12,
-            training_distribution="nominal",
-            evaluation_lens="nominal_clean",
-        ),
-        PhaseModulatedCondition(
-            label="pm_linrec_r12_projected_oracle_state_coverage_eigen_m4_then_reward",
-            row_family="projection_warm_start_then_reward_lens",
-            rank=12,
-            training_distribution="state_coverage_eigen",
-            evaluation_lens="state_coverage_eigen_m4_s0.3",
-            coverage_family="state_eigenspectrum",
-            coverage_modes=4,
-            coverage_scale=0.3,
-        ),
+            disturbance_scale=DEFAULT_PROCESS_IO_DISTURBANCE_SCALE,
+            measurement_scale=DEFAULT_MEASUREMENT_IO_DISTURBANCE_SCALE,
+            n_train_steps=DEFAULT_FULL_MATRIX_SUPERVISED_TRAIN_STEPS,
+            learning_rate=DEFAULT_FULL_MATRIX_SUPERVISED_LEARNING_RATE,
+            stability_penalty=DEFAULT_FULL_MATRIX_SUPERVISED_STABILITY_PENALTY,
+            smoothness_penalty=DEFAULT_FULL_MATRIX_SUPERVISED_SMOOTHNESS_PENALTY,
+            proximal_penalty=DEFAULT_FULL_MATRIX_SUPERVISED_PROXIMAL_PENALTY,
+            parameter_bound=DEFAULT_FULL_MATRIX_SUPERVISED_PARAMETER_BOUND,
+            supervised_objective="action_and_io",
+            supervised_fit_scope="full_matrix",
+        )
+        for rank in FULL_MATRIX_SUPERVISED_RANKS
+    )
+
+
+def _deferred_reward_conditions() -> tuple[PhaseModulatedCondition, ...]:
+    return _reward_conditions() + _r60_reward_control_conditions()
+
+
+def _reward_conditions(ranks: tuple[int, ...] = (12,)) -> tuple[PhaseModulatedCondition, ...]:
+    conditions: list[PhaseModulatedCondition] = []
+    for rank in ranks:
+        conditions.extend(
+            [
+                PhaseModulatedCondition(
+                    label=f"pm_linrec_r{rank}_clean_scratch_reward",
+                    row_family="reward_lens",
+                    rank=rank,
+                    training_distribution="nominal",
+                    evaluation_lens="nominal_clean",
+                ),
+                PhaseModulatedCondition(
+                    label=f"pm_linrec_r{rank}_state_coverage_eigen_m1_s0p3_reward",
+                    row_family="reward_lens",
+                    rank=rank,
+                    training_distribution="state_coverage_eigen",
+                    evaluation_lens="state_coverage_eigen_m1_s0.3",
+                    coverage_family="state_eigenspectrum",
+                    coverage_modes=1,
+                    coverage_scale=0.3,
+                ),
+                PhaseModulatedCondition(
+                    label=f"pm_linrec_r{rank}_state_coverage_eigen_m4_s0p3_reward",
+                    row_family="reward_lens",
+                    rank=rank,
+                    training_distribution="state_coverage_eigen",
+                    evaluation_lens="state_coverage_eigen_m4_s0.3",
+                    coverage_family="state_eigenspectrum",
+                    coverage_modes=4,
+                    coverage_scale=0.3,
+                ),
+                PhaseModulatedCondition(
+                    label=f"pm_linrec_r{rank}_state_coverage_eigen_m4_s1_reward",
+                    row_family="reward_lens",
+                    rank=rank,
+                    training_distribution="state_coverage_eigen",
+                    evaluation_lens="state_coverage_eigen_m4_s1",
+                    coverage_family="state_eigenspectrum",
+                    coverage_modes=4,
+                    coverage_scale=1.0,
+                ),
+                PhaseModulatedCondition(
+                    label=f"pm_linrec_r{rank}_observer_error_svd_m1_s0p3_reward",
+                    row_family="reward_lens",
+                    rank=rank,
+                    training_distribution="observer_error",
+                    evaluation_lens="observer_error_svd_m1_s0.3",
+                    coverage_family="observer_error_state",
+                    coverage_modes=1,
+                    coverage_scale=0.3,
+                ),
+                PhaseModulatedCondition(
+                    label=f"pm_linrec_r{rank}_mixed_process_observer_reward",
+                    row_family="reward_lens",
+                    rank=rank,
+                    training_distribution="mixed",
+                    evaluation_lens="mixed_process_observer",
+                    coverage_family="mixed_deviation",
+                    coverage_modes=4,
+                    coverage_scale=0.3,
+                    disturbance_scale=0.02,
+                ),
+                PhaseModulatedCondition(
+                    label=f"pm_linrec_r{rank}_projected_oracle_nominal_then_reward",
+                    row_family="projection_warm_start_then_reward_lens",
+                    rank=rank,
+                    training_distribution="nominal",
+                    evaluation_lens="nominal_clean",
+                ),
+                PhaseModulatedCondition(
+                    label=f"pm_linrec_r{rank}_projected_oracle_state_coverage_eigen_m4_then_reward",
+                    row_family="projection_warm_start_then_reward_lens",
+                    rank=rank,
+                    training_distribution="state_coverage_eigen",
+                    evaluation_lens="state_coverage_eigen_m4_s0.3",
+                    coverage_family="state_eigenspectrum",
+                    coverage_modes=4,
+                    coverage_scale=0.3,
+                ),
+            ]
+        )
+    return tuple(conditions)
+
+
+def _r60_reward_control_conditions() -> tuple[PhaseModulatedCondition, ...]:
+    return (
         PhaseModulatedCondition(
             label="pm_linrec_r60_projected_oracle_nominal_then_reward",
             row_family="projection_warm_start_then_reward_lens",
@@ -626,7 +678,7 @@ def materialize(
     if conditions is None:
         initial_conditions = default_conditions(include_reward=False)
         extension_conditions = _supervised_conditions(SUPERVISED_EXTENSION_RANKS)
-        deferred_reward_conditions = _reward_conditions() if include_reward else ()
+        deferred_reward_conditions = _deferred_reward_conditions() if include_reward else ()
         retained_for_bases = initial_conditions + extension_conditions + deferred_reward_conditions
     else:
         initial_conditions = conditions
@@ -664,6 +716,7 @@ def materialize(
     materialized_conditions = list(initial_conditions)
     supervised_extension_materialized = False
     reward_gating_status = "not_requested" if not include_reward else "not_applicable"
+    released_full_matrix_reward_ranks: set[int] = set()
     row_index = 0
     while row_index < len(materialized_conditions):
         condition = materialized_conditions[row_index]
@@ -735,14 +788,26 @@ def materialize(
             continue
         if row_index == len(materialized_conditions):
             has_supervised_pass = any(_is_reward_gate_representation_pass(row) for row in rows)
+            full_matrix_pass_ranks = _full_matrix_supervised_pass_ranks(rows)
             if (
                 extension_conditions
                 and not supervised_extension_materialized
                 and not has_supervised_pass
+                and not full_matrix_pass_ranks
             ):
                 materialized_conditions.extend(extension_conditions)
                 supervised_extension_materialized = True
                 continue
+            pending_full_matrix_reward_ranks = tuple(
+                rank
+                for rank in full_matrix_pass_ranks
+                if rank not in released_full_matrix_reward_ranks
+            )
+            if pending_full_matrix_reward_ranks:
+                materialized_conditions.extend(
+                    _reward_conditions(ranks=pending_full_matrix_reward_ranks)
+                )
+                released_full_matrix_reward_ranks.update(pending_full_matrix_reward_ranks)
             if deferred_reward_conditions:
                 if has_supervised_pass:
                     materialized_conditions.extend(deferred_reward_conditions)
@@ -750,6 +815,11 @@ def materialize(
                 else:
                     reward_gating_status = "stopped_no_supervised_action_io_representation_pass"
                 deferred_reward_conditions = ()
+            if pending_full_matrix_reward_ranks:
+                reward_gating_status = (
+                    f"{reward_gating_status}; released_full_matrix_ranks="
+                    f"{list(pending_full_matrix_reward_ranks)}"
+                )
 
     component_counts: Counter[str] = Counter()
     for row in rows:
@@ -804,6 +874,13 @@ def materialize(
                 "supervised_representation_pass_rows": [
                     row.spec.run_id for row in rows if _is_supervised_representation_pass(row)
                 ],
+                "full_matrix_supervised_rows": [
+                    row.spec.run_id for row in rows if _is_full_matrix_supervised_row(row)
+                ],
+                "full_matrix_supervised_pass_ranks": _full_matrix_supervised_pass_ranks(rows),
+                "full_matrix_supervised_gate_residuals": _full_matrix_supervised_gate_residuals(
+                    rows
+                ),
                 "reward_gate_representation_pass_rows": [
                     row.spec.run_id for row in rows if _is_reward_gate_representation_pass(row)
                 ],
@@ -884,6 +961,29 @@ def render_markdown(summary: dict[str, Any]) -> str:
         f"- `{key}`: {value}"
         for key, value in summary["diagnostics"]["component_status_counts"].items()
     ]
+    full_matrix_gate_rows = [
+        (
+            "| row | rank | verdict | action energy mismatch | relevant response mismatch | "
+            "max response mismatch |"
+        ),
+        "|---|---:|---|---:|---:|---:|",
+    ]
+    full_matrix_residuals = summary["diagnostics"]["audit"]["full_matrix_supervised_gate_residuals"]
+    for run_id, residual in full_matrix_residuals.items():
+        full_matrix_gate_rows.append(
+            "| "
+            f"{run_id} | "
+            f"{residual['rank']} | "
+            f"{residual['verdict']} | "
+            f"{residual['action_energy_mismatch']:.8g} | "
+            f"{residual['relevant_response_mismatch']:.8g} | "
+            f"{residual['max_response_mismatch']:.8g} |"
+        )
+    full_matrix_gate_table = (
+        "\n".join(full_matrix_gate_rows)
+        if full_matrix_residuals
+        else "No full-matrix supervised gate rows were materialized."
+    )
     return f"""# Phase-Modulated Linear Recurrent Output-Feedback Bridge
 
 Issue: `{summary["issue"]}`. Follow-ups: `{summary["source_issues"]["supervised_recurrent_io_map_fit"]}`, `{summary["source_issues"]["r60_recurrent_reward_controls"]}`. Umbrella: `{summary["umbrella"]}`.
@@ -900,9 +1000,18 @@ Audit note: {summary["diagnostics"]["audit"]["exact_process_eigen_label_disposit
 
 Reward gating: `{summary["diagnostics"]["audit"]["reward_gating_status"]}`.
 
+Full-matrix supervised pass ranks: `{summary["diagnostics"]["audit"]["full_matrix_supervised_pass_ranks"]}`.
+
 ## Rows
 
 {"\n".join(table)}
+
+## Full-Matrix Supervised Gate
+
+Strict gate thresholds: action energy mismatch <= `{SUPERVISED_ACTION_PASS_THRESHOLD}` and
+relevant response-map mismatch <= `{SUPERVISED_RESPONSE_PASS_THRESHOLD}`.
+
+{full_matrix_gate_table}
 
 ## Certificate Boundary
 
@@ -976,32 +1085,51 @@ def _controller_for_condition(
 
     if condition.row_family in SUPERVISED_ROW_FAMILIES:
         initial = _params_from_controller(projected_controller)
-        fitted, fit_metadata = _fit_phase_modulated_supervised_params(
-            initial,
-            condition=condition,
-            reference_controller=exact_controller,
-            plant=plant,
-            training=training,
-            observation_matrix=observation_matrix,
-            basis=projected_controller.basis,
-        )
+        if condition.supervised_fit_scope == "full_matrix":
+            fitted, fit_metadata = _fit_phase_modulated_full_matrix_supervised_params(
+                initial,
+                condition=condition,
+                reference_controller=exact_controller,
+                plant=plant,
+                training=training,
+                observation_matrix=observation_matrix,
+                basis=projected_controller.basis,
+            )
+        else:
+            fitted, fit_metadata = _fit_phase_modulated_supervised_params(
+                initial,
+                condition=condition,
+                reference_controller=exact_controller,
+                plant=plant,
+                training=training,
+                observation_matrix=observation_matrix,
+                basis=projected_controller.basis,
+            )
         controller = _controller_from_params(
             fitted,
             basis=projected_controller.basis,
             initial_hidden=projected_controller.initial_hidden,
         )
+        fit_method = (
+            "adam_full_matrix_supervised_action_io_maps"
+            if condition.supervised_fit_scope == "full_matrix"
+            else "alternating_least_squares_supervised_maps"
+        )
         fit_metadata.update(
             {
-                "fit_method": "alternating_least_squares_readout_feedthrough_maps",
+                "fit_method": fit_method,
                 "is_reward_trained": False,
                 "is_supervised_trained": True,
                 "initialization": "oracle_matrix_projection_warm_start",
                 "n_train_steps": condition.n_train_steps,
                 "learning_rate": condition.learning_rate,
                 "stability_penalty": condition.stability_penalty,
+                "smoothness_penalty": condition.smoothness_penalty,
+                "proximal_penalty": condition.proximal_penalty,
+                "parameter_bound": condition.parameter_bound,
                 "supervised_objective": condition.supervised_objective,
-                "supervised_fit_scope": "readout_feedthrough_only",
-                "supervised_dynamics_fit": False,
+                "supervised_fit_scope": condition.supervised_fit_scope,
+                "supervised_dynamics_fit": condition.supervised_fit_scope == "full_matrix",
             }
         )
         return controller, fit_metadata
@@ -1076,6 +1204,9 @@ def _controller_for_condition(
             "stability_penalty": condition.stability_penalty,
             "gradient_clip_norm": condition.gradient_clip_norm,
             "proximal_preservation_weight": condition.proximal_preservation_weight,
+            "smoothness_penalty": condition.smoothness_penalty,
+            "proximal_penalty": condition.proximal_penalty,
+            "parameter_bound": condition.parameter_bound,
         }
     )
     return controller, fit_metadata
@@ -1158,6 +1289,97 @@ def _fit_phase_modulated_supervised_params(
         "supervised_frozen_blocks": ["A_h", "B_y", "B_u", "b_h"],
         "supervised_fit_scope": "readout_feedthrough_only",
         "supervised_dynamics_fit": False,
+    }
+
+
+def _fit_phase_modulated_full_matrix_supervised_params(
+    params: dict[str, np.ndarray],
+    *,
+    condition: PhaseModulatedCondition,
+    reference_controller: PhaseModulatedLinearRecurrentController,
+    plant: Any,
+    training: dict[str, np.ndarray],
+    observation_matrix: np.ndarray,
+    basis: np.ndarray,
+) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+    reference_batch = _rollout_phase_modulated_recurrent_condition(
+        reference_controller,
+        plant,
+        training["x0"],
+        observation_matrix=observation_matrix,
+        disturbances=training["disturbances"],
+        measurement_disturbances=training["measurement_disturbances"],
+        initial_hidden=training["xhat0"],
+    )
+    reference_maps = _response_maps_for_controller_pair(
+        candidate=reference_controller,
+        reference=reference_controller,
+        plant=plant,
+        observation_matrix=observation_matrix,
+    )
+    constants = {
+        "A": jnp.asarray(plant.A, dtype=jnp.float64),
+        "B": jnp.asarray(plant.B, dtype=jnp.float64),
+        "Bw": jnp.asarray(plant.Bw, dtype=jnp.float64),
+        "H": jnp.asarray(observation_matrix, dtype=jnp.float64),
+        "basis": jnp.asarray(basis, dtype=jnp.float64),
+        "x0": jnp.asarray(training["x0"], dtype=jnp.float64),
+        "xhat0": jnp.asarray(training["xhat0"], dtype=jnp.float64),
+        "disturbances": jnp.asarray(training["disturbances"], dtype=jnp.float64),
+        "measurement_disturbances": jnp.asarray(
+            training["measurement_disturbances"],
+            dtype=jnp.float64,
+        ),
+        "reference_actions": jnp.asarray(reference_batch.actions, dtype=jnp.float64),
+        "reference_maps": {
+            key.removeprefix("reference_"): jnp.asarray(value, dtype=jnp.float64)
+            for key, value in reference_maps.items()
+            if key.startswith("reference_")
+        },
+        "initial_params": {
+            key: jnp.asarray(value, dtype=jnp.float64) for key, value in params.items()
+        },
+    }
+
+    objective = str(condition.supervised_objective or "action")
+
+    def loss_fn(jax_params: dict[str, jax.Array]) -> jax.Array:
+        terms = []
+        if objective in {"action", "action_and_io"}:
+            rollout = _jax_phase_modulated_rollout(jax_params, constants)
+            terms.append(
+                _jax_normalized_mse(
+                    rollout["actions"],
+                    constants["reference_actions"],
+                )
+            )
+        maps = _jax_response_maps(jax_params, constants)
+        for key in _supervised_response_map_keys(objective):
+            terms.append(_jax_normalized_mse(maps[key], constants["reference_maps"][key]))
+        data_loss = jnp.mean(jnp.asarray(terms)) if terms else jnp.asarray(0.0)
+        return data_loss + _jax_supervised_regularization_penalty(
+            jax_params,
+            constants=constants,
+            stability_scale=condition.stability_penalty,
+            smoothness_scale=condition.smoothness_penalty,
+            proximal_scale=condition.proximal_penalty,
+        )
+
+    fitted, history = _adam_minimize(
+        params,
+        loss_fn,
+        n_steps=condition.n_train_steps,
+        learning_rate=condition.learning_rate,
+        max_param_abs=condition.parameter_bound,
+    )
+    return fitted, {
+        "supervised_initial_loss": history["initial_loss"],
+        "supervised_final_loss": history["final_loss"],
+        "supervised_last_loss": history["last_loss"],
+        "supervised_best_loss": history["best_loss"],
+        "supervised_loss_improvement": history["initial_loss"] - history["final_loss"],
+        "supervised_solver": "adam_full_matrix_response_map_loss",
+        "supervised_fit_blocks": ["A_h", "B_y", "B_u", "b_h", "C_h", "D_y", "c"],
     }
 
 
@@ -1947,6 +2169,36 @@ def _to_float_dict(values: dict[str, jax.Array]) -> dict[str, float]:
     return {key: float(value) for key, value in values.items()}
 
 
+def _jax_supervised_regularization_penalty(
+    params: dict[str, jax.Array],
+    *,
+    constants: dict[str, Any],
+    stability_scale: float,
+    smoothness_scale: float,
+    proximal_scale: float,
+) -> jax.Array:
+    penalty = _jax_phase_stability_penalty(
+        params,
+        basis=constants["basis"],
+        scale=stability_scale,
+    )
+    if smoothness_scale > 0.0:
+        smooth_terms = []
+        for value in params.values():
+            if value.shape[0] > 1:
+                smooth_terms.append(jnp.mean(jnp.square(jnp.diff(value, axis=0))))
+        if smooth_terms:
+            penalty = penalty + smoothness_scale * jnp.mean(jnp.asarray(smooth_terms))
+    if proximal_scale > 0.0:
+        prox_terms = []
+        for key, value in params.items():
+            initial = constants["initial_params"][key]
+            denom = jnp.maximum(jnp.mean(jnp.square(initial)), jnp.asarray(1e-12))
+            prox_terms.append(jnp.mean(jnp.square(value - initial)) / denom)
+        penalty = penalty + proximal_scale * jnp.mean(jnp.asarray(prox_terms))
+    return penalty
+
+
 def _adam_minimize(
     params: dict[str, np.ndarray],
     loss_fn: Any,
@@ -1954,6 +2206,7 @@ def _adam_minimize(
     n_steps: int,
     learning_rate: float,
     gradient_clip_norm: float | None = None,
+    max_param_abs: float | None = None,
 ) -> tuple[dict[str, np.ndarray], dict[str, float]]:
     jax_params = {key: jnp.asarray(value, dtype=jnp.float64) for key, value in params.items()}
     beta1 = 0.9
@@ -1970,12 +2223,14 @@ def _adam_minimize(
             "beta2": beta2,
             "epsilon": eps,
             "gradient_clip_norm": gradient_clip_norm,
+            "max_param_abs": max_param_abs,
             "max_gradient_norm": 0.0,
             "last_gradient_norm": 0.0,
             "clipped_steps": 0,
         }
+    compiled_loss = jax.jit(loss_fn)
     value_and_grad = jax.jit(jax.value_and_grad(loss_fn))
-    initial_loss = float(jax.jit(loss_fn)(jax_params))
+    initial_loss = float(compiled_loss(jax_params))
     best_loss = initial_loss
     best_params = jax_params
     m = jt.map(jnp.zeros_like, jax_params)
@@ -2007,11 +2262,13 @@ def _adam_minimize(
             m_hat,
             v_hat,
         )
-    final_loss = float(loss_fn(jax_params))
-    loss = final_loss
-    if np.isfinite(final_loss) and final_loss < best_loss:
-        best_loss = final_loss
-        best_params = jax_params
+        if max_param_abs is not None:
+            bound = float(max_param_abs)
+            jax_params = jt.map(lambda p_i: jnp.clip(p_i, -bound, bound), jax_params)
+        loss = float(compiled_loss(jax_params))
+        if np.isfinite(loss) and loss < best_loss:
+            best_loss = loss
+            best_params = jax_params
     return (
         {key: np.asarray(value, dtype=np.float64) for key, value in best_params.items()},
         {
@@ -2023,6 +2280,7 @@ def _adam_minimize(
             "beta2": beta2,
             "epsilon": eps,
             "gradient_clip_norm": gradient_clip_norm,
+            "max_param_abs": max_param_abs,
             "max_gradient_norm": max_gradient_norm,
             "last_gradient_norm": last_gradient_norm,
             "clipped_steps": clipped_steps,
@@ -2442,10 +2700,27 @@ def _manifest_for_condition(
                 if fit_metadata.get("is_reward_trained", False)
                 else None
             ),
+            "smoothness_penalty": (
+                condition.smoothness_penalty
+                if fit_metadata.get("is_supervised_trained", False)
+                else None
+            ),
+            "proximal_penalty": (
+                condition.proximal_penalty
+                if fit_metadata.get("is_supervised_trained", False)
+                else None
+            ),
+            "parameter_bound": (
+                condition.parameter_bound
+                if fit_metadata.get("is_supervised_trained", False)
+                else None
+            ),
             "initialization": fit_metadata.get("initialization"),
             "reward_control_mode": fit_metadata.get("reward_control_mode"),
             "warm_start_source": fit_metadata.get("warm_start_source"),
             "supervised_objective": condition.supervised_objective,
+            "supervised_fit_scope": condition.supervised_fit_scope,
+            "supervised_fit_blocks": fit_metadata.get("supervised_fit_blocks"),
         },
         notes=(
             "Phase-modulated linear recurrence uses spline coefficients for "
@@ -2641,6 +2916,45 @@ def _is_supervised_representation_pass(row: BridgeRunManifest) -> bool:
         row.metrics["row_family"] in SUPERVISED_ROW_FAMILIES
         and row.metrics["verdict"] == "supervised_representation_pass"
     )
+
+
+def _is_full_matrix_supervised_row(row: BridgeRunManifest) -> bool:
+    return (
+        row.metrics["row_family"] == "supervised_action_io_map_fit"
+        and row.metrics["optimizer"].get("supervised_fit_scope") == "full_matrix"
+        and row.metrics["optimizer"].get("supervised_objective") == "action_and_io"
+    )
+
+
+def _full_matrix_supervised_pass_ranks(rows: list[BridgeRunManifest]) -> list[int]:
+    ranks = {
+        int(row.spec.parameters["rank"])
+        for row in rows
+        if _is_full_matrix_supervised_row(row)
+        and row.metrics["verdict"] == "supervised_representation_pass"
+    }
+    return sorted(ranks)
+
+
+def _full_matrix_supervised_gate_residuals(rows: list[BridgeRunManifest]) -> dict[str, Any]:
+    residuals = {}
+    for row in rows:
+        if not _is_full_matrix_supervised_row(row):
+            continue
+        response = row.metrics["response_map_mismatch"]
+        residuals[row.spec.run_id] = {
+            "rank": int(row.spec.parameters["rank"]),
+            "verdict": row.metrics["verdict"],
+            "action_energy_mismatch": row.metrics["aggregate_action_energy_mismatch"],
+            "relevant_response_mismatch": _supervised_relevant_response_mismatch(
+                "action_and_io",
+                response,
+            ),
+            "max_response_mismatch": response["max_aggregate_mismatch"],
+            "strict_action_threshold": SUPERVISED_ACTION_PASS_THRESHOLD,
+            "strict_response_threshold": SUPERVISED_RESPONSE_PASS_THRESHOLD,
+        }
+    return residuals
 
 
 def _is_reward_gate_representation_pass(row: BridgeRunManifest) -> bool:
@@ -2856,15 +3170,20 @@ def _result_text(rows: list[BridgeRunManifest]) -> str:
         row for row in rows if row.metrics["optimizer"].get("is_supervised_trained", False)
     ]
     supervised_passes = [row for row in supervised_rows if _is_supervised_representation_pass(row)]
+    full_matrix_rows = [row for row in supervised_rows if _is_full_matrix_supervised_row(row)]
+    full_matrix_pass_ranks = _full_matrix_supervised_pass_ranks(rows)
+    reward_ranks = sorted({int(row.spec.parameters["rank"]) for row in reward_rows})
     return (
         "The exact oracle and clamped-spline projected-oracle rows were materialized. "
         f"Exact-oracle sanity rows have max aggregate response-map mismatch "
         f"{exact_response:.4g}. The r=12 projected-oracle nominal replay row has "
         f"diagnostic action mismatch {mismatch:.4g} and combined matrix residual {residual:.4g}. "
-        f"{len(supervised_rows)} supervised readout/feedthrough rows were optimized, "
-        f"with {len(supervised_passes)} representation pass rows. {len(reward_rows)} "
-        "reward rows were optimized after the supervised gate and judged by "
-        "R_u, response-map mismatch, and the disturbance-to-cost sidecar."
+        f"{len(supervised_rows)} supervised action/response-map rows were optimized, "
+        f"including {len(full_matrix_rows)} full-matrix rows, with {len(supervised_passes)} "
+        f"representation pass rows and full-matrix pass ranks {full_matrix_pass_ranks}. "
+        f"{len(reward_rows)} reward rows were optimized after the supervised gate for ranks "
+        f"{reward_ranks} and judged by R_u, response-map mismatch, and the "
+        "disturbance-to-cost sidecar."
     )
 
 
