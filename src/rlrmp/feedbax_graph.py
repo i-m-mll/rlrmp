@@ -24,6 +24,12 @@ from feedbax.web.models.graph import (
     WireSpec,
 )
 
+from rlrmp.stochastic_runtime import (
+    PLANT_PROCESS_FORCE_NOISE_LABEL,
+    graphspec_noise_contract,
+    stochastic_runtime_config_from_model,
+)
+
 
 SCHEMA_VERSION = "rlrmp.feedbax_graph.v1"
 EXECUTION_BACKEND = "rlrmp.legacy_simple_feedback_compat"
@@ -94,6 +100,9 @@ def build_rlrmp_feedbax_graph_bundle(hps: Any) -> RLRMPFeedbaxGraphBundle:
         "task_spec": task_spec,
         "loss_spec": loss_spec,
         "training_spec": training_spec,
+        "stochastic_runtime": graphspec_noise_contract(
+            stochastic_runtime_config_from_model(hps.model)
+        ),
     }
     return RLRMPFeedbaxGraphBundle(
         graph_spec=graph_spec,
@@ -119,6 +128,7 @@ def build_point_mass_sensorimotor_graph_spec(
 
     if controller_kind is None:
         controller_kind = _controller_kind(hps)
+    noise_config = stochastic_runtime_config_from_model(hps.model)
 
     mechanics_params = {
         "dt": float(hps.dt),
@@ -131,7 +141,8 @@ def build_point_mass_sensorimotor_graph_spec(
             params={
                 "where": ["plant.skeleton.pos", "plant.skeleton.vel"],
                 "delay": int(hps.model.feedback_delay_steps),
-                "noise_std": float(hps.model.feedback_noise_std),
+                "noise_std": noise_config.sensory_noise_std,
+                "noise_role": "sensory_feedback",
             },
             input_ports=["mechanics"],
             output_ports=["feedback"],
@@ -141,10 +152,14 @@ def build_point_mass_sensorimotor_graph_spec(
             type="Channel",
             params={
                 "delay": 0,
-                "noise_std": float(hps.model.motor_noise_std),
-                "add_noise": float(hps.model.motor_noise_std) != 0.0,
-                "noise_model": "multiplicative_plus_constant",
-                "constant_noise_scale": 1.8,
+                "additive_noise_std": noise_config.additive_motor_noise_std,
+                "signal_dependent_noise_std": (
+                    noise_config.signal_dependent_motor_noise_std
+                ),
+                "add_noise": noise_config.has_command_noise,
+                "noise_model": "signal_dependent_plus_additive",
+                "noise_role": "motor_command",
+                "noise_timing": "pre_force_filter",
                 "input_shape": [2],
             },
             input_ports=["input"],
@@ -258,6 +273,47 @@ def build_point_mass_sensorimotor_graph_spec(
             "params_override",
         )
 
+    if noise_config.has_plant_process_force_noise:
+        force_wires = [
+            wire
+            for wire in wires
+            if wire.target_node == "mechanics" and wire.target_port == "force"
+        ]
+        if len(force_wires) != 1:
+            raise ValueError(
+                "Expected exactly one GraphSpec force wire into mechanics before "
+                f"inserting {PLANT_PROCESS_FORCE_NOISE_LABEL!r}; found {len(force_wires)}"
+            )
+        force_wire = force_wires[0]
+        wires.remove(force_wire)
+        nodes[PLANT_PROCESS_FORCE_NOISE_LABEL] = ComponentSpec(
+            type="RLRMPPlantProcessForceNoise",
+            params={
+                "noise_std": noise_config.plant_process_force_noise_std,
+                "noise_role": "plant_process_load",
+                "noise_timing": "post_force_filter_pre_mechanics",
+                "state_diffusion": False,
+            },
+            input_ports=["force"],
+            output_ports=["force"],
+        )
+        wires.extend(
+            [
+                WireSpec(
+                    source_node=force_wire.source_node,
+                    source_port=force_wire.source_port,
+                    target_node=PLANT_PROCESS_FORCE_NOISE_LABEL,
+                    target_port="force",
+                ),
+                WireSpec(
+                    source_node=PLANT_PROCESS_FORCE_NOISE_LABEL,
+                    source_port="force",
+                    target_node="mechanics",
+                    target_port="force",
+                ),
+            ]
+        )
+
     return GraphSpec(
         nodes=nodes,
         wires=wires,
@@ -265,7 +321,9 @@ def build_point_mass_sensorimotor_graph_spec(
         output_ports=["effector"],
         input_bindings=input_bindings,
         output_bindings={"effector": ("mechanics", "effector")},
-        retained_observables=_retained_observables(),
+        retained_observables=_retained_observables(
+            include_plant_process_force_noise=noise_config.has_plant_process_force_noise,
+        ),
         metadata=GraphMetadata(
             name="RLRMP point-mass sensorimotor loop",
             description=(
@@ -377,8 +435,11 @@ def _intervention_component_spec(intervention_type: str, hps: Any) -> ComponentS
     )
 
 
-def _retained_observables() -> list[RetainedObservableSpec]:
-    return [
+def _retained_observables(
+    *,
+    include_plant_process_force_noise: bool = False,
+) -> list[RetainedObservableSpec]:
+    observables = [
         _port_observable("mechanics.effector", "mechanics", "effector"),
         _port_observable("mechanics.state", "mechanics", "state"),
         _port_observable("net.output", "net", "output"),
@@ -386,6 +447,15 @@ def _retained_observables() -> list[RetainedObservableSpec]:
         _port_observable("efferent.output", "efferent", "output"),
         _port_observable(f"{PLANT_INTERVENOR_LABEL}.force", PLANT_INTERVENOR_LABEL, "force"),
     ]
+    if include_plant_process_force_noise:
+        observables.append(
+            _port_observable(
+                f"{PLANT_PROCESS_FORCE_NOISE_LABEL}.force",
+                PLANT_PROCESS_FORCE_NOISE_LABEL,
+                "force",
+            )
+        )
+    return observables
 
 
 def _port_observable(selector: str, node_id: str, port: str) -> RetainedObservableSpec:
@@ -451,6 +521,9 @@ def _training_spec(hps: Any, *, controller_kind: str) -> dict[str, Any]:
         "trainable": trainable,
         "method": str(hps.method),
         "loss_update": _plain(hps.loss_update),
+        "stochastic_runtime": graphspec_noise_contract(
+            stochastic_runtime_config_from_model(hps.model)
+        ),
     }
 
 

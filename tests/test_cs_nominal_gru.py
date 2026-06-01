@@ -53,6 +53,10 @@ def test_hps_uses_canonical_cs_nominal_task() -> None:
     assert hps.task.p_catch_trial == 0.0
     assert hps.model.feedback_delay_steps == 5
     assert hps.model.feedback_noise_std == 0.0
+    assert hps.model.sensory_noise_std == 0.0
+    assert hps.model.additive_motor_noise_std == 0.0
+    assert hps.model.signal_dependent_motor_noise_std == 0.0
+    assert hps.model.plant_process_force_noise_std == 0.0
     assert hps.model.population_structure.n_input_only == 0
     assert hps.model.population_structure.n_readout_only == 0
     assert hps.model.population_structure.n_recurrent_only == 0
@@ -104,6 +108,11 @@ def test_graph_bundle_records_nominal_provenance() -> None:
         == OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR
     )
     assert bundle.manifest["model_structure"]["controller_kind"] == "gru"
+    assert bundle.manifest["model_structure"]["stochastic_runtime"]["state_diffusion"] == "not_used"
+    assert (
+        bundle.manifest["model_structure"]["plant_process"]["noise_timing"]
+        == "post_force_filter_pre_mechanics"
+    )
     assert bundle.manifest["model_structure"]["population_structure"] == {
         "n_input_only": 0,
         "n_readout_only": 0,
@@ -175,6 +184,8 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     assert payload["issue"] == "a1a8e39"
     assert payload["model_summary"]["hidden_size"] == 4
     assert payload["model_summary"]["controller_kind"] == "gru"
+    assert payload["model_summary"]["stochastic_runtime"]["sensory_noise_std"] == 0.0
+    assert payload["model_summary"]["plant_process"]["state_diffusion"] == "not_used"
     assert payload["model_summary"]["certificate_lens"] == "input_output_map_certificate"
     assert payload["model_summary"]["analytical_delay_augmented_state_input"] is False
     assert payload["model_summary"]["population_structure"] == {

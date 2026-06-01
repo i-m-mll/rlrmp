@@ -80,6 +80,18 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "feedback_delay_steps": 5,
             "feedback_noise_std": 0.01,
             "motor_noise_std": 0.01,
+            "sensory_noise_std": getattr(args, "sensory_noise_std", None),
+            "additive_motor_noise_std": getattr(args, "additive_motor_noise_std", None),
+            "signal_dependent_motor_noise_std": getattr(
+                args,
+                "signal_dependent_motor_noise_std",
+                None,
+            ),
+            "plant_process_force_noise_std": getattr(
+                args,
+                "plant_process_force_noise_std",
+                0.0,
+            ),
             "damping": 10.0,
             "tau_rise": 0.05,
             "population_structure": {

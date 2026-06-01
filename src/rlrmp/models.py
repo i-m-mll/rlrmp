@@ -4,18 +4,20 @@
 :license: Apache 2.0. See LICENSE for details.
 """
 
-from functools import partial
 from typing import Any, Optional
 
 import equinox as eqx
-import jax
-import jax.numpy as jnp
 import jax.random as jr
 from feedbax.nn import LeakyRNNCell, PopulationStructure
-from feedbax.xabdeef.models import point_mass_nn
 from feedbax.types import TreeNamespace
+from feedbax.xabdeef.models import point_mass_nn
 from jax_cookbook.tree import get_ensemble
 from jaxtyping import Array, PRNGKeyArray
+
+from rlrmp.stochastic_runtime import (
+    apply_stochastic_runtime_to_ensemble,
+    stochastic_runtime_config_from_model,
+)
 
 # Sentinel ``hidden_type`` strings that select linear-controller MVP variants
 # instead of an RNN cell class. ``setup_task_model_pair`` dispatches to
@@ -133,7 +135,8 @@ def create_point_mass_nn_ensemble(
             key=key_pop,
         )
 
-    return get_ensemble(
+    noise_config = stochastic_runtime_config_from_model(hps.model)
+    models = get_ensemble(
         point_mass_nn,
         task,
         n_extra_inputs=n_extra_inputs,
@@ -144,14 +147,19 @@ def create_point_mass_nn_ensemble(
         hidden_size=hps.model.hidden_size,
         n_steps=hps.task.n_steps,
         feedback_delay_steps=hps.model.feedback_delay_steps,
-        feedback_noise_std=hps.model.feedback_noise_std,
-        motor_noise_std=hps.model.motor_noise_std,
+        feedback_noise_std=noise_config.sensory_noise_std,
+        motor_noise_std=0.0,
         tau_rise=hps.model.tau_rise,
         tau_decay=hps.model.tau_rise,  # Note: using tau_rise for both
         population_structure=population_structure,
         hidden_type=hidden_type,
         sisu_gating=sisu_gating,
         key=key,
+    )
+    return apply_stochastic_runtime_to_ensemble(
+        models,
+        noise_config,
+        include_plant_process_force_noise=False,
     )
 
 
@@ -182,7 +190,8 @@ def create_point_mass_linear_ensemble(
     # Local import to avoid circular module dependency at package init time.
     from rlrmp.networks.linear_controllers import point_mass_linear_controller
 
-    return get_ensemble(
+    noise_config = stochastic_runtime_config_from_model(hps.model)
+    models = get_ensemble(
         point_mass_linear_controller,
         task,
         controller_type=controller_type,
@@ -193,9 +202,14 @@ def create_point_mass_linear_ensemble(
         damping=hps.model.damping,
         n_steps=hps.task.n_steps,
         feedback_delay_steps=hps.model.feedback_delay_steps,
-        feedback_noise_std=hps.model.feedback_noise_std,
-        motor_noise_std=hps.model.motor_noise_std,
+        feedback_noise_std=noise_config.sensory_noise_std,
+        motor_noise_std=0.0,
         tau_rise=hps.model.tau_rise,
         tau_decay=hps.model.tau_rise,  # match point_mass_nn convention
         key=key,
+    )
+    return apply_stochastic_runtime_to_ensemble(
+        models,
+        noise_config,
+        include_plant_process_force_noise=False,
     )

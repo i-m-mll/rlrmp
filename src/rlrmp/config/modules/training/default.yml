@@ -22,6 +22,14 @@ model:
   feedback_delay_steps: 5
   feedback_noise_std: 0.01
   motor_noise_std: 0.01
+  # Explicit stochastic-runtime fields. Null preserves the legacy aliases:
+  # sensory=feedback_noise_std, signal_dependent=motor_noise_std,
+  # additive=1.8*motor_noise_std. Plant process/load noise is a post-filter
+  # force disturbance upstream of mechanics, not position/velocity diffusion.
+  sensory_noise_std: null
+  additive_motor_noise_std: null
+  signal_dependent_motor_noise_std: null
+  plant_process_force_noise_std: 0.0
   damping: 10.0   #! 10.0
   tau_rise: 0.05  #! 0.05
   # Optional: partition hidden units into subpopulations with different connectivity
@@ -138,4 +146,3 @@ loss_update:
   goal_term: ["effector_pos_mid", "effector_pos_late"]  # Name(s) of goal error term(s) (summed if list)
   # Iteration to start applying updates (0 = from beginning)
   start_iteration: 0  # Updates will be applied at every iteration >= start_iteration
-

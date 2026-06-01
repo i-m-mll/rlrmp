@@ -1,5 +1,4 @@
 from collections.abc import Callable
-from functools import partial
 from typing import Literal as L
 from typing import TypeAlias
 
@@ -11,13 +10,9 @@ from feedbax.intervene import (
     FixedFieldParams,
     schedule_intervenor,
 )
-from feedbax.task import DelayedReaches, SimpleReaches
 from feedbax.misc import get_field_amplitude, vector_with_gaussian_length
 from feedbax.training.train import always_active, bernoulli_active
-
-from rlrmp.loss import get_reach_loss
 from feedbax.types import LDict, TaskModelPair, TreeNamespace
-from jax_cookbook import is_module
 from jaxtyping import PRNGKeyArray
 
 from rlrmp.disturbance import (
@@ -25,11 +20,15 @@ from rlrmp.disturbance import (
 )
 from rlrmp.disturbances import get_gusts_fn
 from rlrmp.intervention_compat import add_plant_intervention_to_ensemble
-from rlrmp.loss import get_loss_update_func
+from rlrmp.loss import get_reach_loss
 from rlrmp.models import (
     LINEAR_HIDDEN_TYPES,
     create_point_mass_linear_ensemble,
     create_point_mass_nn_ensemble,
+)
+from rlrmp.stochastic_runtime import (
+    apply_stochastic_runtime_to_ensemble,
+    stochastic_runtime_config_from_model,
 )
 from rlrmp.task import TASK_TYPES
 
@@ -236,6 +235,10 @@ def setup_task_model_pair(
         hps.pert.type,
         PLANT_INTERVENOR_LABEL,
         active=False,  # Default to inactive; schedule_intervenor will control activation
+    )
+    models = apply_stochastic_runtime_to_ensemble(
+        models,
+        stochastic_runtime_config_from_model(hps.model),
     )
 
     # Add SISU input to task

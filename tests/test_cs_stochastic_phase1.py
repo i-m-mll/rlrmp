@@ -94,6 +94,12 @@ def test_phase1_stochastic_manifest_metadata_has_no_bellman_claim() -> None:
     )
     assert summary["no_bellman_claim"] is True
     assert "Bellman" in summary["bellman_claim"]
+    assert summary["noise_contract"]["contract"] == "cs_released_stochastic_v1"
+    assert (
+        summary["noise_contract"]["additive_motor_covariance"]
+        == "input_image_state_covariance_B_B_T"
+    )
+    assert summary["noise_contract"]["process_noise"] == "separate_output_feedback_process_covariance"
     assert "fixed_point" in summary["extlqg_comparator"]["parity_status"]
     assert summary["arms"]["output_feedback_lqg_extlqg"]["estimator_rms_error"]["mean"] is not None
     assert summary["arms"]["full_state_lqr"]["estimator_rms_error"]["mean"] is None
