@@ -12,6 +12,7 @@ from rlrmp.feedbax_graph import (
     build_rlrmp_feedbax_graph_bundle,
     write_graph_spec_bundle,
 )
+from rlrmp.stochastic_runtime import PLANT_PROCESS_FORCE_NOISE_LABEL
 from rlrmp.train.minimax import build_hps
 
 
@@ -54,6 +55,39 @@ def test_minimax_graph_bundle_serializes_legacy_feedback_contract() -> None:
         if wire.temporality == "recurrent"
     }
     assert ("mechanics", "feedback") in recurrent_edges
+
+
+def test_graph_spec_serializes_explicit_stochastic_runtime_contract() -> None:
+    hps = build_hps(
+        _args(
+            sensory_noise_std=0.02,
+            additive_motor_noise_std=0.03,
+            signal_dependent_motor_noise_std=0.04,
+            plant_process_force_noise_std=0.05,
+        )
+    )
+
+    bundle = build_rlrmp_feedbax_graph_bundle(hps)
+    spec = bundle.graph_spec
+
+    assert spec.nodes["feedback"].params["noise_std"] == 0.02
+    assert spec.nodes["feedback"].params["noise_role"] == "sensory_feedback"
+    assert spec.nodes["efferent"].params["additive_noise_std"] == 0.03
+    assert spec.nodes["efferent"].params["signal_dependent_noise_std"] == 0.04
+    assert spec.nodes["efferent"].params["noise_timing"] == "pre_force_filter"
+    assert spec.nodes[PLANT_PROCESS_FORCE_NOISE_LABEL].type == "RLRMPPlantProcessForceNoise"
+    assert spec.nodes[PLANT_PROCESS_FORCE_NOISE_LABEL].params["noise_std"] == 0.05
+    assert spec.nodes[PLANT_PROCESS_FORCE_NOISE_LABEL].params["state_diffusion"] is False
+    assert bundle.manifest["stochastic_runtime"]["state_diffusion"] == "not_used"
+
+    force_edges = [
+        (wire.source_node, wire.target_node)
+        for wire in spec.wires
+        if wire.target_port == "force"
+    ]
+    assert ("force_filter", PLANT_INTERVENOR_LABEL) in force_edges
+    assert (PLANT_INTERVENOR_LABEL, PLANT_PROCESS_FORCE_NOISE_LABEL) in force_edges
+    assert (PLANT_PROCESS_FORCE_NOISE_LABEL, "mechanics") in force_edges
 
 
 def test_linear_tracker_is_graphspec_addressable_as_rlrmp_component() -> None:

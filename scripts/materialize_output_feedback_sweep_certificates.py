@@ -39,6 +39,10 @@ from rlrmp.analysis.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     materialize_reference,
 )
+from rlrmp.analysis.cs_released_simulation import (
+    DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
+    CSReleasedStochasticNoiseConfig,
+)
 from rlrmp.analysis.cs_stochastic_phase3 import (
     Phase3StochasticConfig,
     process_noise_sweep_summary,
@@ -349,7 +353,26 @@ def _process_noise_rows(
     output_config: OutputFeedbackConfig,
 ) -> list[BridgeRunManifest]:
     rows = []
-    config = Phase3StochasticConfig(**manifest["base_monte_carlo"])
+    base_monte_carlo = manifest["base_monte_carlo"]
+    base_noise_contract = manifest.get("base_noise_contract", base_monte_carlo)
+    config = Phase3StochasticConfig(
+        n_trials=base_monte_carlo["n_trials"],
+        seed=base_monte_carlo["seed"],
+        noise_config=CSReleasedStochasticNoiseConfig(
+            motor_covariance_scale=base_noise_contract.get(
+                "motor_covariance_scale",
+                DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG.motor_covariance_scale,
+            ),
+            process_covariance_scale=base_noise_contract.get(
+                "process_covariance_scale",
+                DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG.process_covariance_scale,
+            ),
+            signal_dependent_scale=base_noise_contract.get(
+                "signal_dependent_scale",
+                DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG.signal_dependent_scale,
+            ),
+        ),
+    )
     process_result = run_phase3_process_noise_sweep(
         config=config,
         process_covariance_scales=tuple(manifest["process_covariance_scales"]),

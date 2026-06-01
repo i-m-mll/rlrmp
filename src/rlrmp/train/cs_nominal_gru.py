@@ -34,6 +34,10 @@ from rlrmp.feedbax_graph import (
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.run_specs import validate_nominal_gru_run_spec
+from rlrmp.stochastic_runtime import (
+    graphspec_noise_contract,
+    stochastic_runtime_config_from_model,
+)
 
 ISSUE_ID = "a1a8e39"
 SCHEMA_VERSION = "rlrmp.cs_nominal_gru.v1"
@@ -104,6 +108,10 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "feedback_delay_steps": 5,
             "feedback_noise_std": 0.0,
             "motor_noise_std": 0.0,
+            "sensory_noise_std": 0.0,
+            "additive_motor_noise_std": 0.0,
+            "signal_dependent_motor_noise_std": 0.0,
+            "plant_process_force_noise_std": 0.0,
             "damping": 0.1,
             "tau_rise": 0.066,
             "population_structure": {
@@ -248,6 +256,7 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
     """Return the model/training summary embedded in ``run.json``."""
 
     pop = hps.model.population_structure
+    stochastic_runtime = graphspec_noise_contract(stochastic_runtime_config_from_model(hps.model))
     return {
         "controller_kind": "gru",
         "hidden_size": int(hps.model.hidden_size),
@@ -261,12 +270,23 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
         },
         "feedback": {
             "delay_steps": int(hps.model.feedback_delay_steps),
-            "noise_std": float(hps.model.feedback_noise_std),
+            "noise_std": stochastic_runtime["sensory_noise_std"],
+            "noise_role": "sensory_feedback",
         },
         "efferent": {
-            "motor_noise_std": float(hps.model.motor_noise_std),
+            "additive_motor_noise_std": stochastic_runtime["additive_motor_noise_std"],
+            "signal_dependent_motor_noise_std": (
+                stochastic_runtime["signal_dependent_motor_noise_std"]
+            ),
+            "noise_timing": "pre_force_filter",
             "force_filter_tau_s": float(hps.model.tau_rise),
         },
+        "plant_process": {
+            "force_noise_std": stochastic_runtime["plant_process_force_noise_std"],
+            "noise_timing": "post_force_filter_pre_mechanics",
+            "state_diffusion": "not_used",
+        },
+        "stochastic_runtime": stochastic_runtime,
         "nominal_only": True,
         "adversarial_phase": "none",
         "certificate_lens": "input_output_map_certificate",
@@ -301,6 +321,9 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "adversarial_phase": "none",
         "certificate_lens": "input_output_map_certificate",
         "analytical_delay_augmented_state_input": False,
+        "stochastic_runtime": graphspec_noise_contract(
+            stochastic_runtime_config_from_model(hps.model)
+        ),
     }
     manifest = {
         "schema_version": SCHEMA_VERSION,
@@ -325,6 +348,9 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "training_spec": training_spec,
         "game_card_provenance": build_game_card_provenance(),
         "model_structure": build_model_structure_summary(hps),
+        "stochastic_runtime": graphspec_noise_contract(
+            stochastic_runtime_config_from_model(hps.model)
+        ),
     }
     return RLRMPFeedbaxGraphBundle(
         graph_spec=graph_spec,

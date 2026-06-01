@@ -1,9 +1,6 @@
-from functools import partial
-
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-import jax.tree as jt
 from feedbax.intervene import (
     CurlFieldParams,
     FixedFieldParams,
@@ -11,16 +8,18 @@ from feedbax.intervene import (
 )
 from feedbax.misc import vector_with_gaussian_length
 from feedbax.types import LDict, TaskModelPair, TreeNamespace
-from jax_cookbook import is_module
-from jaxtyping import PRNGKeyArray
 
 from rlrmp.disturbance import (
     PLANT_INTERVENOR_LABEL,
 )
 from rlrmp.disturbances import get_gusts_fn
 from rlrmp.intervention_compat import add_plant_intervention_to_ensemble
-from rlrmp.loss import get_loss_update_func, get_reach_loss
+from rlrmp.loss import get_reach_loss
 from rlrmp.models import create_point_mass_nn_ensemble
+from rlrmp.stochastic_runtime import (
+    apply_stochastic_runtime_to_ensemble,
+    stochastic_runtime_config_from_model,
+)
 from rlrmp.task import TASK_TYPES
 
 
@@ -97,6 +96,10 @@ def setup_task_model_pair(hps: TreeNamespace, *, key):
         hps.pert.type,
         PLANT_INTERVENOR_LABEL,
         active=False,  # Default to inactive; schedule_intervenor will control activation
+    )
+    models = apply_stochastic_runtime_to_ensemble(
+        models,
+        stochastic_runtime_config_from_model(hps.model),
     )
 
     # Build disturbance params for scheduling
