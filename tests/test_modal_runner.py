@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from rlrmp.modal_runner import (
     NominalGruRunConfig,
+    build_packing_benchmark_command,
     build_remote_smoke_command,
     build_training_command,
     dry_run_payload,
@@ -58,3 +59,33 @@ def test_dry_run_payload_exposes_no_warm_container_settings() -> None:
     assert payload["min_containers"] == 0
     assert payload["max_containers"] == 1
     assert payload["remote_smoke_command"] == build_remote_smoke_command()
+    assert payload["remote_packing_benchmark_command"] == build_packing_benchmark_command(
+        NominalGruRunConfig(gpu="A10G", timeout_seconds=90),
+        remote=True,
+    )
+
+
+def test_packing_benchmark_command_disables_sync_and_sets_worker_count() -> None:
+    command = build_packing_benchmark_command(
+        NominalGruRunConfig(
+            run="packing_a10_n2",
+            n_workers=2,
+            burn_in_seconds=45,
+            measure_seconds=60,
+            warmup_batches=1,
+            chunk_batches=5,
+        ),
+        remote=True,
+    )
+
+    assert command[:6] == [
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "-m",
+        "rlrmp.modal_packing_benchmark",
+    ]
+    assert command[command.index("--n-workers") + 1] == "2"
+    assert command[command.index("--burn-in-seconds") + 1] == "45"
+    assert command[command.index("--measure-seconds") + 1] == "60"
