@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +20,9 @@ from rlrmp.analysis.cs_game_card import (
 )
 from rlrmp.analysis.cs_released_simulation import (
     CSNoiseCovariances,
+    CSReleasedStochasticNoiseConfig,
     CSStochasticRollout,
+    DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
     default_cs_noise_covariances,
     sample_forward_noise_draws,
     simulate_lqg_released_forward,
@@ -66,9 +68,21 @@ class Phase3StochasticConfig:
 
     n_trials: int = 24
     seed: int = 2323
-    motor_covariance_scale: float = 1e-8
-    process_covariance_scale: float | None = None
-    signal_dependent_scale: float = 0.02
+    noise_config: CSReleasedStochasticNoiseConfig = field(
+        default_factory=lambda: DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG
+    )
+
+    @property
+    def motor_covariance_scale(self) -> float:
+        return self.noise_config.motor_covariance_scale
+
+    @property
+    def process_covariance_scale(self) -> float:
+        return self.noise_config.process_covariance_scale
+
+    @property
+    def signal_dependent_scale(self) -> float:
+        return self.noise_config.signal_dependent_scale
 
 
 @dataclass(frozen=True)
@@ -212,7 +226,10 @@ def run_phase3_process_noise_sweep(
     cells = []
     normalized_scales = tuple(float(scale) for scale in process_covariance_scales)
     for scale in normalized_scales:
-        cell_config = replace(config, process_covariance_scale=scale)
+        cell_config = replace(
+            config,
+            noise_config=replace(config.noise_config, process_covariance_scale=scale),
+        )
         result = run_phase3_stochastic_evaluation(
             config=cell_config,
             controllers=controller_specs,
@@ -369,6 +386,7 @@ def run_phase3_stochastic_evaluation(
 def process_noise_sweep_summary(result: Phase3ProcessNoiseSweepResult) -> dict[str, Any]:
     """Return a JSON-serializable process-noise sweep summary."""
 
+    base_monte_carlo = _monte_carlo_summary(result.base_config)
     return {
         "issue": result.issue_id,
         "phase3_issue": result.phase3_issue_id,
@@ -378,7 +396,8 @@ def process_noise_sweep_summary(result: Phase3ProcessNoiseSweepResult) -> dict[s
             lane="released_stochastic",
             materializer="cs_stochastic_phase3_process_noise_sweep",
         ),
-        "base_monte_carlo": result.base_config.__dict__,
+        "base_monte_carlo": base_monte_carlo,
+        "base_noise_contract": _noise_contract_summary(result.base_config.noise_config),
         "process_covariance_scales": list(result.process_covariance_scales),
         "scope": (
             "Released-code stochastic evaluation sweep over explicit process "
@@ -393,7 +412,8 @@ def process_noise_sweep_summary(result: Phase3ProcessNoiseSweepResult) -> dict[s
             {
                 "label": cell.label,
                 "process_covariance_scale": cell.process_covariance_scale,
-                "monte_carlo": cell.result.config.__dict__,
+                "monte_carlo": _monte_carlo_summary(cell.result.config),
+                "noise_contract": _noise_contract_summary(cell.result.config.noise_config),
                 "evaluations": [
                     _evaluation_summary(evaluation) for evaluation in cell.result.evaluations
                 ],
@@ -404,9 +424,21 @@ def process_noise_sweep_summary(result: Phase3ProcessNoiseSweepResult) -> dict[s
     }
 
 
+def _monte_carlo_summary(config: Phase3StochasticConfig) -> dict[str, int]:
+    return {
+        "n_trials": config.n_trials,
+        "seed": config.seed,
+    }
+
+
+def _noise_contract_summary(config: CSReleasedStochasticNoiseConfig) -> dict[str, float | str]:
+    return config.summary()
+
+
 def result_summary(result: Phase3StochasticResult) -> dict[str, Any]:
     """Return a JSON-serializable released stochastic Phase 3 summary."""
 
+    noise_contract = _noise_contract_summary(result.config.noise_config)
     return {
         "issue": result.issue_id,
         "phase3_issue": result.phase3_issue_id,
@@ -420,7 +452,8 @@ def result_summary(result: Phase3StochasticResult) -> dict[str, Any]:
             "deterministic_phase3_npz": str(DEFAULT_SOURCE_NPZ.relative_to(REPO_ROOT)),
             "deterministic_phase3_manifest": str(DEFAULT_SOURCE_MANIFEST.relative_to(REPO_ROOT)),
         },
-        "monte_carlo": result.config.__dict__,
+        "monte_carlo": _monte_carlo_summary(result.config),
+        "noise_contract": noise_contract,
         "output_feedback_certificate_gamma_factor": OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
         "claims": {
             "bellman_stochastic_parity": False,
@@ -436,7 +469,8 @@ def result_summary(result: Phase3StochasticResult) -> dict[str, Any]:
         "scope": (
             "Small common-random-number Monte Carlo evaluation of deterministic "
             "Phase 3 rollout-recovery controllers under Euler plus sampled sensory, "
-            "state-space motor/process, and signal-dependent state noise."
+            "input-image additive motor, signal-dependent input-image motor, and "
+            "separate process/load noise."
         ),
         "non_goals": (
             "No initial-state jitter sweep, no stochastic training, and no "
@@ -475,6 +509,7 @@ def render_markdown(summary: dict[str, Any]) -> str:
             f"{row['deterministic_gamma_penalized_feasible']} |"
         )
     mc = summary["monte_carlo"]
+    noise = summary["noise_contract"]
     return f"""# Phase 3 Released Stochastic Rollout Recovery
 
 Issue: `{summary["issue"]}`. Phase 3 issue: `{summary["phase3_issue"]}`.
@@ -494,10 +529,17 @@ Monte Carlo settings:
 
 - Trials: `{mc["n_trials"]}`
 - Seed: `{mc["seed"]}`
-- Motor covariance scale: `{mc["motor_covariance_scale"]}`
-- Process covariance scale: `{mc["process_covariance_scale"]}`
-- Signal-dependent scale: `{mc["signal_dependent_scale"]}`
 - Certificate gamma factor: `{summary["output_feedback_certificate_gamma_factor"]}`
+
+Noise contract:
+
+- Contract: `{noise["contract"]}`
+- Additive motor covariance: `{noise["additive_motor_covariance"]}`
+- Motor covariance scale: `{noise["motor_covariance_scale"]}`
+- Process/load noise: `{noise["process_noise"]}`
+- Process covariance scale: `{noise["process_covariance_scale"]}`
+- Signal-dependent motor noise: `{noise["signal_dependent_motor_noise"]}`
+- Signal-dependent scale: `{noise["signal_dependent_scale"]}`
 
 Claims guardrail: {summary["claims"]["note"]}
 
@@ -555,9 +597,7 @@ def _phase3_noise_covariances(
     return default_cs_noise_covariances(
         plant,
         output_config,
-        motor_covariance_scale=config.motor_covariance_scale,
-        process_covariance_scale=config.process_covariance_scale,
-        signal_dependent_scale=config.signal_dependent_scale,
+        noise_config=config.noise_config,
     )
 
 

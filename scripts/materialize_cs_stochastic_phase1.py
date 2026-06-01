@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import argparse
 
+from rlrmp.analysis.cs_released_simulation import (
+    DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
+    CSReleasedStochasticNoiseConfig,
+)
 from rlrmp.analysis.cs_stochastic_phase1 import DEFAULT_SEEDS, ISSUE_ID, write_outputs
 from rlrmp.analysis.rerun_metadata import (
     DEFAULT_DISCRETIZATION,
@@ -27,6 +31,21 @@ def parse_args() -> argparse.Namespace:
         default=list(DEFAULT_SEEDS),
         help="Monte Carlo seeds to materialize; defaults to 12 deterministic seeds.",
     )
+    parser.add_argument(
+        "--motor-covariance-scale",
+        type=float,
+        default=DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG.motor_covariance_scale,
+    )
+    parser.add_argument(
+        "--process-covariance-scale",
+        type=float,
+        default=DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG.process_covariance_scale,
+    )
+    parser.add_argument(
+        "--signal-dependent-scale",
+        type=float,
+        default=DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG.signal_dependent_scale,
+    )
     return parser.parse_args()
 
 
@@ -36,6 +55,11 @@ def main() -> None:
         issue_id=ISSUE_ID,
         discretization=args.discretization,
         seeds=tuple(args.seeds),
+        noise_config=CSReleasedStochasticNoiseConfig(
+            motor_covariance_scale=args.motor_covariance_scale,
+            process_covariance_scale=args.process_covariance_scale,
+            signal_dependent_scale=args.signal_dependent_scale,
+        ),
     )
     print(f"Wrote {manifest['tracked_note']}")
     print(f"Wrote {manifest['tracked_manifest']}")

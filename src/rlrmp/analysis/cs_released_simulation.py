@@ -36,15 +36,47 @@ EXTLQG_MATLAB_FUNCTION_CHAIN = ("extLQG", "computeOFC", "computeExtKalman")
 
 
 @dataclass(frozen=True)
+class CSReleasedStochasticNoiseConfig:
+    """Canonical scalar settings for the released C&S stochastic noise contract.
+
+    These are the game-contract noise settings shared by Phase 1, Phase 3, and
+    GRU-facing run specs. Monte Carlo trial counts and diagnostic process-noise
+    sweeps are intentionally kept outside this contract.
+    """
+
+    motor_covariance_scale: float = 1e-10
+    process_covariance_scale: float = 1.0
+    signal_dependent_scale: float = 0.02
+
+    def summary(self) -> dict[str, float | str]:
+        """Return a JSON-serializable description of the canonical settings."""
+
+        return {
+            "contract": "cs_released_stochastic_v1",
+            "additive_motor_covariance": "input_image_state_covariance_B_B_T",
+            "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
+            "process_noise": "separate_output_feedback_process_covariance",
+            "motor_covariance_scale": self.motor_covariance_scale,
+            "process_covariance_scale": self.process_covariance_scale,
+            "signal_dependent_scale": self.signal_dependent_scale,
+        }
+
+
+DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG = CSReleasedStochasticNoiseConfig()
+
+
+@dataclass(frozen=True)
 class CSNoiseCovariances:
     """Noise covariance contract for released-code C&S forward simulation.
 
     Attributes:
         sensory: Observation covariance for the delayed physical measurement,
             shape ``(n_obs, n_obs)``.
-        motor: Additive state-space motor covariance, shape ``(n, n)``. This
-            mirrors C&S ``motorNoise`` sampled from ``Oxi`` and added directly
-            to ``currentX``.
+        motor: Additive state-space motor covariance, shape ``(n, n)``. This is
+            the input-image covariance ``B @ B.T * scale`` rather than an
+            isotropic full-state covariance; it mirrors C&S motor noise as an
+            input-channel perturbation added to the state through the plant
+            input image.
         process: Additive state/process covariance after plant propagation,
             shape ``(n, n)``.
         signal_dependent_state: C&S ``Csdn`` tensor, shape ``(n, m_u, m_u)``.
@@ -151,32 +183,53 @@ def default_cs_noise_covariances(
     plant: PlantLinearization,
     config: OutputFeedbackConfig = OutputFeedbackConfig(),
     *,
-    motor_covariance_scale: float = 0.0,
+    noise_config: CSReleasedStochasticNoiseConfig = DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
+    motor_covariance_scale: float | None = None,
     process_covariance_scale: float | None = None,
-    signal_dependent_scale: float = 0.0,
+    signal_dependent_scale: float | None = None,
 ) -> CSNoiseCovariances:
     """Return the local C&S noise covariance contract.
 
-    The defaults keep historical deterministic behaviour unless the caller
-    opts into nonzero stochastic terms. ``process_covariance_scale=None`` uses
-    :func:`process_covariance` from the output-feedback estimator contract.
+    The defaults are the canonical released-stochastic C&S settings. Pass
+    explicit scale overrides for diagnostics, such as process-noise sweeps.
     """
 
-    process = process_covariance(plant, config)
-    if process_covariance_scale is not None:
-        process = process * jnp.asarray(process_covariance_scale, dtype=jnp.float64)
+    motor_scale = (
+        noise_config.motor_covariance_scale
+        if motor_covariance_scale is None
+        else motor_covariance_scale
+    )
+    process_scale = (
+        noise_config.process_covariance_scale
+        if process_covariance_scale is None
+        else process_covariance_scale
+    )
+    sdn_scale = (
+        noise_config.signal_dependent_scale
+        if signal_dependent_scale is None
+        else signal_dependent_scale
+    )
+    process = process_covariance(plant, config) * jnp.asarray(process_scale, dtype=jnp.float64)
     return CSNoiseCovariances(
         sensory=measurement_covariance(plant, config),
-        motor=(
-            jnp.eye(plant.n, dtype=jnp.float64)
-            * jnp.asarray(motor_covariance_scale, dtype=jnp.float64)
-        ),
+        motor=cs_additive_motor_state_covariance(plant, scale=motor_scale),
         process=process,
         signal_dependent_state=cs_signal_dependent_state_tensor(
             plant,
-            scale=signal_dependent_scale,
+            scale=sdn_scale,
         ),
     )
+
+
+def cs_additive_motor_state_covariance(
+    plant: PlantLinearization,
+    *,
+    scale: float,
+) -> Float[Array, "n n"]:
+    """Return additive C&S motor covariance in the plant-input image."""
+
+    scale_arr = jnp.asarray(scale, dtype=jnp.float64)
+    return scale_arr * (plant.B.astype(jnp.float64) @ plant.B.astype(jnp.float64).T)
 
 
 def cs_signal_dependent_state_tensor(

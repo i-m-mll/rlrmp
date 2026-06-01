@@ -9,6 +9,7 @@ from rlrmp.analysis.cs_game_card import (
     PRIMARY_GAMMA_FACTOR,
     materialize_reference,
 )
+from rlrmp.analysis.cs_released_simulation import CSReleasedStochasticNoiseConfig
 from rlrmp.analysis.cs_stochastic_phase3 import (
     Phase3ControllerSpec,
     Phase3StochasticConfig,
@@ -81,6 +82,12 @@ def test_phase3_stochastic_manifest_marks_lane_and_no_bellman_parity_claim() -> 
     assert summary["claims"]["bellman_stochastic_parity"] is False
     assert "stochastic Bellman objective" in summary["claims"]["note"]
     assert "Bellman parity claim" in summary["non_goals"]
+    assert summary["noise_contract"]["contract"] == "cs_released_stochastic_v1"
+    assert (
+        summary["noise_contract"]["additive_motor_covariance"]
+        == "input_image_state_covariance_B_B_T"
+    )
+    assert summary["monte_carlo"] == {"n_trials": 2, "seed": 3}
 
 
 def test_phase3_stochastic_result_reports_required_metrics() -> None:
@@ -130,7 +137,6 @@ def test_phase3_process_noise_sweep_propagates_explicit_scale_cells() -> None:
         config=Phase3StochasticConfig(
             n_trials=1,
             seed=7,
-            process_covariance_scale=None,
         ),
         process_covariance_scales=(0.0, 0.3),
         controllers=_small_controller_specs(),
@@ -139,8 +145,11 @@ def test_phase3_process_noise_sweep_propagates_explicit_scale_cells() -> None:
     assert result.process_covariance_scales == (0.0, 0.3)
     assert [cell.label for cell in result.cells] == ["0.0", "0.3"]
     assert [cell.process_covariance_scale for cell in result.cells] == [0.0, 0.3]
-    assert [cell.result.config.process_covariance_scale for cell in result.cells] == [0.0, 0.3]
-    assert result.base_config.process_covariance_scale is None
+    assert [cell.result.config.noise_config.process_covariance_scale for cell in result.cells] == [
+        0.0,
+        0.3,
+    ]
+    assert result.base_config.noise_config.process_covariance_scale == 1.0
 
 
 def test_phase3_process_noise_sweep_summary_reports_cell_scales_and_shape() -> None:
@@ -152,14 +161,29 @@ def test_phase3_process_noise_sweep_summary_reports_cell_scales_and_shape() -> N
     summary = process_noise_sweep_summary(result)
 
     assert summary["process_covariance_scales"] == [0.0, 1.0, 3.0]
-    assert summary["base_monte_carlo"]["process_covariance_scale"] is None
+    assert summary["base_monte_carlo"] == {"n_trials": 1, "seed": 11}
+    assert summary["base_noise_contract"]["process_covariance_scale"] == 1.0
     assert [cell["label"] for cell in summary["cells"]] == ["0.0", "1.0", "3.0"]
     assert [cell["process_covariance_scale"] for cell in summary["cells"]] == [0.0, 1.0, 3.0]
-    assert [cell["monte_carlo"]["process_covariance_scale"] for cell in summary["cells"]] == [
+    assert [cell["noise_contract"]["process_covariance_scale"] for cell in summary["cells"]] == [
         0.0,
         1.0,
         3.0,
     ]
+    assert all(cell["monte_carlo"] == {"n_trials": 1, "seed": 11} for cell in summary["cells"])
     assert all(
         len(cell["evaluations"]) == len(_small_controller_specs()) for cell in summary["cells"]
     )
+
+
+def test_phase3_process_noise_sweep_does_not_mutate_canonical_contract() -> None:
+    base_noise = CSReleasedStochasticNoiseConfig(process_covariance_scale=1.0)
+    result = run_phase3_process_noise_sweep(
+        config=Phase3StochasticConfig(n_trials=1, seed=13, noise_config=base_noise),
+        process_covariance_scales=(0.0,),
+        controllers=_small_controller_specs(),
+    )
+
+    assert result.base_config.noise_config is base_noise
+    assert result.base_config.noise_config.process_covariance_scale == 1.0
+    assert result.cells[0].result.config.noise_config.process_covariance_scale == 0.0

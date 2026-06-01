@@ -24,8 +24,10 @@ from rlrmp.analysis.cs_game_card import (
     reference_summary,
 )
 from rlrmp.analysis.cs_released_simulation import (
+    DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
     CSForwardNoiseDraws,
     CSNoiseCovariances,
+    CSReleasedStochasticNoiseConfig,
     CSStochasticRollout,
     build_extlqg_comparator_path,
     default_cs_noise_covariances,
@@ -55,9 +57,9 @@ UMBRELLA_ID = "43e8728"
 DETERMINISTIC_PHASE1_ISSUE_ID = "a7dad8a"
 LANE = "released_stochastic"
 DEFAULT_SEEDS = tuple(range(12))
-MOTOR_COVARIANCE_SCALE = 1e-10
-PROCESS_COVARIANCE_SCALE = 1.0
-SIGNAL_DEPENDENT_SCALE = 0.02
+MOTOR_COVARIANCE_SCALE = DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG.motor_covariance_scale
+PROCESS_COVARIANCE_SCALE = DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG.process_covariance_scale
+SIGNAL_DEPENDENT_SCALE = DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG.signal_dependent_scale
 
 
 @dataclass(frozen=True)
@@ -95,6 +97,7 @@ class Phase1StochasticResult:
     """Materialized Phase 1 stochastic-lane evaluation."""
 
     seeds: tuple[int, ...]
+    noise_config: CSReleasedStochasticNoiseConfig
     covariances: CSNoiseCovariances
     trials: tuple[Phase1StochasticTrial, ...]
     extlqg_parity_status: str
@@ -169,6 +172,7 @@ def analyze_phase1_stochastic(
     *,
     seeds: tuple[int, ...] = DEFAULT_SEEDS,
     gamma_factor: float = OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+    noise_config: CSReleasedStochasticNoiseConfig = DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
     config: OutputFeedbackConfig = OutputFeedbackConfig(),
 ) -> Phase1StochasticResult:
     """Evaluate Phase 1 controller families in the released stochastic lane."""
@@ -181,9 +185,7 @@ def analyze_phase1_stochastic(
     covariances = default_cs_noise_covariances(
         plant,
         config,
-        motor_covariance_scale=MOTOR_COVARIANCE_SCALE,
-        process_covariance_scale=PROCESS_COVARIANCE_SCALE,
-        signal_dependent_scale=SIGNAL_DEPENDENT_SCALE,
+        noise_config=noise_config,
     )
     comparator = _build_extlqg_comparator_path(
         plant,
@@ -265,6 +267,7 @@ def analyze_phase1_stochastic(
         )
     return Phase1StochasticResult(
         seeds=tuple(int(seed) for seed in seeds),
+        noise_config=noise_config,
         covariances=covariances,
         trials=tuple(trials),
         extlqg_parity_status=comparator.parity_status,
@@ -316,6 +319,18 @@ def result_summary(
             "rollouts": [trial.output_feedback_hinf for trial in result.trials],
         },
     }
+    noise_contract = {
+        **result.noise_config.summary(),
+        "sensory_covariance_shape": list(result.covariances.sensory.shape),
+        "motor_covariance_shape": list(result.covariances.motor.shape),
+        "process_covariance_shape": list(result.covariances.process.shape),
+        "signal_dependent_state_shape": list(result.covariances.signal_dependent_state.shape),
+        "shared_noise_policy": (
+            "Each seed samples one draw bundle and reuses it for full-state LQR, "
+            "full-state H-infinity, output-feedback extLQG, and "
+            "output-feedback H-infinity arms."
+        ),
+    }
     return {
         "issue": ISSUE_ID,
         "umbrella": UMBRELLA_ID,
@@ -333,20 +348,7 @@ def result_summary(
         "robust_gamma": result.robust_gamma,
         "n_trials": len(result.trials),
         "seeds": list(result.seeds),
-        "noise_contract": {
-            "motor_covariance_scale": MOTOR_COVARIANCE_SCALE,
-            "process_covariance_scale": PROCESS_COVARIANCE_SCALE,
-            "signal_dependent_scale": SIGNAL_DEPENDENT_SCALE,
-            "sensory_covariance_shape": list(result.covariances.sensory.shape),
-            "motor_covariance_shape": list(result.covariances.motor.shape),
-            "process_covariance_shape": list(result.covariances.process.shape),
-            "signal_dependent_state_shape": list(result.covariances.signal_dependent_state.shape),
-            "shared_noise_policy": (
-                "Each seed samples one draw bundle and reuses it for full-state LQR, "
-                "full-state H-infinity, output-feedback extLQG, and "
-                "output-feedback H-infinity arms."
-            ),
-        },
+        "noise_contract": noise_contract,
         "deterministic_certificate_sidecar": result.deterministic_certificate_sidecar,
         "extlqg_comparator": {
             "label": "local_extlqg_fixed_point",
@@ -421,8 +423,9 @@ Rerun metadata:
 - Bellman claim: `{summary["bellman_claim"]}`.
 
 This note materializes the Phase 1 released-code stochastic lane. All arms use
-the Euler plant and sampled sensory, state-space motor/process, and
-signal-dependent state noise. Each seed reuses the same noise bundle across
+the Euler plant and sampled sensory, input-image additive motor noise,
+signal-dependent input-image motor noise, and separate process/load noise.
+Each seed reuses the same noise bundle across
 arms, so output-feedback LQG and robust comparisons use common random numbers.
 
 ## Comparator Scope
@@ -450,8 +453,12 @@ Monte Carlo stochastic induced-gain certificates.
 
 ## Noise Contract
 
+- Contract: `{summary["noise_contract"]["contract"]}`.
+- Additive motor covariance: `{summary["noise_contract"]["additive_motor_covariance"]}`.
 - Motor covariance scale: `{summary["noise_contract"]["motor_covariance_scale"]}`.
+- Process/load noise: `{summary["noise_contract"]["process_noise"]}`.
 - Process covariance scale: `{summary["noise_contract"]["process_covariance_scale"]}`.
+- Signal-dependent motor noise: `{summary["noise_contract"]["signal_dependent_motor_noise"]}`.
 - Signal-dependent tensor scale: `{summary["noise_contract"]["signal_dependent_scale"]}`.
 - Shared-noise policy: {summary["noise_contract"]["shared_noise_policy"]}
 
@@ -471,13 +478,14 @@ def write_outputs(
     *,
     discretization: str = DEFAULT_DISCRETIZATION,
     seeds: tuple[int, ...] = DEFAULT_SEEDS,
+    noise_config: CSReleasedStochasticNoiseConfig = DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
 ) -> dict[str, Any]:
     """Write tracked Phase 1 stochastic summary outputs and bulk arrays."""
 
     reference = materialize_reference(
         gamma_factors=(PRIMARY_GAMMA_FACTOR, OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR)
     )
-    result = analyze_phase1_stochastic(seeds=seeds)
+    result = analyze_phase1_stochastic(seeds=seeds, noise_config=noise_config)
     summary = {
         **result_summary(result, discretization=discretization),
         "game_card_summary": reference_summary(
