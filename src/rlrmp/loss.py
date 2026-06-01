@@ -18,6 +18,7 @@ from feedbax.loss import (
     TargetSpec,
     TargetStateLoss,
     TermTree,
+    reduce_over_time_with_weights,
     target_final_state,
     target_zero,
 )
@@ -153,6 +154,60 @@ def _pick(d: Mapping[str, Any], keys) -> dict[str, Any]:
 
 def _filter_nonzero(d: dict[str, float]) -> dict[str, float]:
     return {k: v for k, v in d.items() if float(v) != 0.0}
+
+
+class SimpleReachPositionLoss(TargetStateLoss):
+    """Position target loss for Feedbax ``SimpleReaches`` transition timelines.
+
+    ``SimpleReaches`` emits one target per transition (``n_steps - 1``) and the
+    rollout states are already transition-aligned. The generic Feedbax
+    ``TargetStateLoss`` drops ``states[:, 0]`` for tasks that include an initial
+    state in their history, which is wrong for this task/loss contract.
+    """
+
+    def term(
+        self,
+        states: Optional[PyTree],
+        trial_specs: Optional["TaskTrialSpec"],
+        model: Optional[AbstractModel],
+    ) -> Array:
+        assert states is not None, "SimpleReachPositionLoss requires states, but states is None"
+        assert trial_specs is not None, (
+            "SimpleReachPositionLoss requires trial_specs, but trial_specs is None"
+        )
+
+        state = self.where(states)
+
+        if (task_target_spec := trial_specs.targets.get(self.key, None)) is None:
+            if self.spec is None:
+                raise ValueError(
+                    "`TargetSpec` must be provided on construction of "
+                    "`SimpleReachPositionLoss`, or as part of the trial specifications"
+                )
+            target_spec = self.spec
+        elif isinstance(task_target_spec, TargetSpec):
+            target_spec: TargetSpec = eqx.combine(self.spec, task_target_spec)
+        elif isinstance(task_target_spec, Mapping):
+            target_spec = eqx.combine(self.spec, task_target_spec[self.label])
+        else:
+            raise ValueError("Invalid target spec encountered")
+
+        loss_over_time = self.norm(state - target_spec.value)
+
+        time_mask = target_spec.time_mask
+        if time_mask is None:
+            time_mask = target_spec.get_time_mask(loss_over_time.shape[-1])
+
+        masks = [x for x in [time_mask, target_spec.discount] if x is not None]
+        return reduce_over_time_with_weights(
+            label=self.label,
+            arr=loss_over_time,
+            trial_specs=trial_specs,
+            time_axis=-1,
+            trial_axis=0,
+            trial_axis_specs=0,
+            masks=masks,
+        )
 
 
 DEFAULT_TOP_WEIGHTS: dict[str, float] = {
@@ -350,6 +405,15 @@ def make_power_law_schedule(power: float = 6.0, normalization: str = "trial_end"
         return (t / N) ** power  # (T,)
 
     return schedule
+
+
+def make_fixed_power_law_schedule(n_steps: int, power: float = 6.0) -> Array:
+    """Return a transition-time power law for tasks without epoch metadata."""
+
+    T = max(int(n_steps) - 1, 1)
+    t = jnp.arange(T, dtype=jnp.float32)
+    normalizer = jnp.maximum(jnp.asarray(T - 1, dtype=jnp.float32), 1.0)
+    return (t / normalizer) ** power
 
 
 def make_epoch_locked_ramp(
@@ -577,6 +641,8 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
     _movement_ramp_shape = _nsget(hps, "loss.movement_ramp_shape", "linear") or "linear"
     _movement_ramp_duration = int(_nsget(hps, "loss.movement_ramp_duration_steps", 60) or 60)
     _movement_ramp_power = float(_nsget(hps, "loss.movement_ramp_power", 2.0) or 2.0)
+    task_type = getattr(hps.task, "type", "")
+    is_simple_reach = task_type == "simple_reach"
 
     # "center_out_delayed_reach" is a subclass of DelayedReaches and shares the
     # same hold-period structure — match on suffix. Bug: 2e1a6ad.
@@ -635,10 +701,12 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
     # MODE 1: Simple mode (effector_pos weight > 0)
     # Creates simple effector_pos term + final velocity penalty only
     if use_simple_effector_pos:
-        terms["effector_pos"] = TargetStateLoss(
+        effector_pos_loss_cls = SimpleReachPositionLoss if is_simple_reach else TargetStateLoss
+        effector_pos_spec = None if is_simple_reach else during_movement
+        terms["effector_pos"] = effector_pos_loss_cls(
             "effector_pos",
             where=lambda state: state.mechanics.effector.pos,
-            spec=during_movement,
+            spec=effector_pos_spec,
         )
         # Final velocity penalty (only at final timestep)
         terms["effector_final_vel"] = TargetStateLoss(
@@ -746,12 +814,32 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
         # go cue to trial end, with the time-profile determined by the schedule.
         # Bug: 2e1a6ad
         if getattr(user_outer_weights, "effector_pos_running", 0.0) != 0.0:
-            if _pos_running_sched == "powerlaw":
+            effector_pos_running_loss_cls = (
+                SimpleReachPositionLoss if is_simple_reach else TargetStateLoss
+            )
+            if _pos_running_sched == "cs_eq15_power6":
+                if is_simple_reach:
+                    running_spec = TargetSpec(
+                        discount=make_fixed_power_law_schedule(hps.task.n_steps, power=6.0)
+                    )
+                else:
+                    running_spec = during_movement & TargetSpec(
+                        discount=make_power_law_schedule(power=6.0)
+                    )
+            elif _pos_running_sched == "powerlaw":
                 # Multiply the epoch mask (1 during movement, 0 before) by the
                 # power-law discount (rises as (t/T-1)^power over the whole trial).
-                running_spec = during_movement & TargetSpec(
-                    discount=make_power_law_schedule(power=_powerlaw_power)
-                )
+                if is_simple_reach:
+                    running_spec = TargetSpec(
+                        discount=make_fixed_power_law_schedule(
+                            hps.task.n_steps,
+                            power=_powerlaw_power,
+                        )
+                    )
+                else:
+                    running_spec = during_movement & TargetSpec(
+                        discount=make_power_law_schedule(power=_powerlaw_power)
+                    )
             elif _pos_running_sched == "movement_ramp":
                 running_spec = TargetSpec(
                     discount=make_epoch_locked_ramp(
@@ -762,9 +850,9 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
                     )
                 )
             else:
-                running_spec = during_movement
+                running_spec = TargetSpec() if is_simple_reach else during_movement
 
-            terms["effector_pos_running"] = TargetStateLoss(
+            terms["effector_pos_running"] = effector_pos_running_loss_cls(
                 "effector_pos_running",
                 where=lambda state: state.mechanics.effector.pos,
                 spec=running_spec,
