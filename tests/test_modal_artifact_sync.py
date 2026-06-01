@@ -51,9 +51,13 @@ def test_sync_pulls_specs_artifacts_and_validates_run_spec(tmp_path: Path) -> No
         commands.append(list(command))
         destination = Path(command[5])
         if command[4].startswith("results/"):
-            _write_complete_specs(destination)
+            _write_complete_specs(destination / "cs_stochastic_gru__no_hidden_penalty")
         else:
-            _write_complete_artifacts(destination, "cs_stochastic_gru__no_hidden_penalty")
+            _write_complete_artifacts(
+                destination
+                / "cs_stochastic_gru__no_hidden_penalty"
+                / "cs_stochastic_gru__no_hidden_penalty"
+            )
         return 0
 
     results = sync_modal_run_artifacts(
@@ -77,6 +81,14 @@ def test_sync_pulls_specs_artifacts_and_validates_run_spec(tmp_path: Path) -> No
         / "cs_stochastic_gru__no_hidden_penalty"
         / "run.json"
     ]
+    spec_dir = tmp_path / "results" / "30f2313" / "runs" / "cs_stochastic_gru__no_hidden_penalty"
+    artifact_dir = (
+        tmp_path / "_artifacts" / "30f2313" / "runs" / "cs_stochastic_gru__no_hidden_penalty"
+    )
+    assert (spec_dir / "model.graph.manifest.json").is_file()
+    assert not (spec_dir / "cs_stochastic_gru__no_hidden_penalty").exists()
+    assert (artifact_dir / "trained_model.eqx").is_file()
+    assert not (artifact_dir / "cs_stochastic_gru__no_hidden_penalty").exists()
 
 
 def test_sync_accepts_multiple_runs_in_order(tmp_path: Path) -> None:
@@ -87,9 +99,9 @@ def test_sync_accepts_multiple_runs_in_order(tmp_path: Path) -> None:
         destination = Path(command[5])
         run = remote_paths[-1].split("/")[-1]
         if command[4].startswith("results/"):
-            _write_complete_specs(destination)
+            _write_complete_specs(destination / run)
         else:
-            _write_complete_artifacts(destination, run)
+            _write_complete_artifacts(destination / run)
         return 0
 
     sync_modal_run_artifacts(
@@ -112,11 +124,12 @@ def test_sync_rejects_missing_graph_manifest(tmp_path: Path) -> None:
     def runner(command: Sequence[str]) -> int:
         destination = Path(command[5])
         if command[4].startswith("results/"):
-            destination.mkdir(parents=True)
-            (destination / "run.json").write_text("{}", encoding="utf-8")
-            (destination / "model.graph.json").write_text("{}", encoding="utf-8")
+            nested = destination / "missing_manifest"
+            nested.mkdir(parents=True)
+            (nested / "run.json").write_text("{}", encoding="utf-8")
+            (nested / "model.graph.json").write_text("{}", encoding="utf-8")
         else:
-            _write_complete_artifacts(destination, "missing_manifest")
+            _write_complete_artifacts(destination / "missing_manifest")
         return 0
 
     with pytest.raises(ModalArtifactSyncError, match="model.graph.manifest.json"):
@@ -133,12 +146,13 @@ def test_sync_rejects_missing_bulk_artifact(tmp_path: Path) -> None:
     def runner(command: Sequence[str]) -> int:
         destination = Path(command[5])
         if command[4].startswith("results/"):
-            _write_complete_specs(destination)
+            _write_complete_specs(destination / "missing_artifact")
         else:
-            destination.mkdir(parents=True)
-            (destination / "trained_model.eqx").write_text("", encoding="utf-8")
-            (destination / "training_history.eqx").write_text("", encoding="utf-8")
-            (destination / "modal_environment.json").write_text("{}", encoding="utf-8")
+            nested = destination / "missing_artifact"
+            nested.mkdir(parents=True)
+            (nested / "trained_model.eqx").write_text("", encoding="utf-8")
+            (nested / "training_history.eqx").write_text("", encoding="utf-8")
+            (nested / "modal_environment.json").write_text("{}", encoding="utf-8")
         return 0
 
     with pytest.raises(ModalArtifactSyncError, match="training_summary.json"):
@@ -193,10 +207,9 @@ def _write_complete_specs(destination: Path) -> None:
     (destination / "model.graph.manifest.json").write_text("{}", encoding="utf-8")
 
 
-def _write_complete_artifacts(destination: Path, run: str) -> None:
-    nested = destination / run
-    nested.mkdir(parents=True)
-    (nested / "trained_model.eqx").write_text("", encoding="utf-8")
-    (nested / "training_history.eqx").write_text("", encoding="utf-8")
-    (nested / "training_summary.json").write_text("{}", encoding="utf-8")
+def _write_complete_artifacts(destination: Path) -> None:
+    destination.mkdir(parents=True)
+    (destination / "trained_model.eqx").write_text("", encoding="utf-8")
+    (destination / "training_history.eqx").write_text("", encoding="utf-8")
+    (destination / "training_summary.json").write_text("{}", encoding="utf-8")
     (destination / "modal_environment.json").write_text("{}", encoding="utf-8")

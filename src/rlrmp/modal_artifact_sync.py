@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence
@@ -137,6 +138,7 @@ def sync_modal_run_artifacts(
             plan.local_artifact_dir.parent.mkdir(parents=True, exist_ok=True)
             _run_checked(plan.spec_command, runner=command_runner)
             _run_checked(plan.artifact_command, runner=command_runner)
+            normalize_synced_modal_run(plan)
             validate_synced_modal_run(
                 plan,
                 run_spec_validator=run_spec_validator,
@@ -153,6 +155,13 @@ def sync_modal_run_artifacts(
             )
         )
     return results
+
+
+def normalize_synced_modal_run(plan: ModalRunSyncPlan) -> None:
+    """Collapse Modal directory-basename nesting into exact local run paths."""
+
+    _collapse_nested_run_dir(plan.local_spec_dir, plan.run)
+    _collapse_nested_run_dir(plan.local_artifact_dir, plan.run)
 
 
 def validate_synced_modal_run(
@@ -179,19 +188,45 @@ def validate_synced_modal_run(
             f"synced run {plan.issue}/{plan.run} is missing artifact directory: "
             f"{plan.local_artifact_dir}"
         )
-    present_artifact_names = {
-        path.name for path in plan.local_artifact_dir.rglob("*") if path.is_file()
-    }
     missing_artifacts = [
         file_name
         for file_name in REQUIRED_ARTIFACT_FILES
-        if file_name not in present_artifact_names
+        if not (plan.local_artifact_dir / file_name).is_file()
     ]
     if missing_artifacts:
         raise ModalArtifactSyncError(
             f"synced run {plan.issue}/{plan.run} is missing bulk artifact files: "
             + ", ".join(missing_artifacts)
         )
+
+
+def _collapse_nested_run_dir(target_dir: Path, run: str) -> None:
+    nested_dir = target_dir / run
+    while nested_dir.is_dir():
+        inner_nested_dir = nested_dir / run
+        if inner_nested_dir.is_dir():
+            _merge_directory_contents(inner_nested_dir, nested_dir)
+            continue
+        _merge_directory_contents(nested_dir, target_dir)
+
+
+def _merge_directory_contents(source_dir: Path, target_dir: Path) -> None:
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for source in tuple(source_dir.iterdir()):
+        _move_entry(source, target_dir / source.name)
+    source_dir.rmdir()
+
+
+def _move_entry(source: Path, destination: Path) -> None:
+    if source.is_dir() and destination.is_dir():
+        _merge_directory_contents(source, destination)
+        return
+    if destination.exists():
+        if destination.is_dir():
+            shutil.rmtree(destination)
+        else:
+            destination.unlink()
+    shutil.move(str(source), str(destination))
 
 
 def _run_checked(command: Sequence[str], *, runner: Runner) -> None:
@@ -215,6 +250,7 @@ __all__ = [
     "REQUIRED_SPEC_FILES",
     "build_modal_run_sync_plan",
     "build_modal_volume_get_command",
+    "normalize_synced_modal_run",
     "sync_modal_run_artifacts",
     "validate_synced_modal_run",
 ]
