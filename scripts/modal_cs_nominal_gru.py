@@ -8,6 +8,7 @@ Direct local usage:
 Cloud smoke usage:
 
     uv run modal run scripts/modal_cs_nominal_gru.py -- modal-smoke --timeout-seconds 60
+    uv run modal run scripts/modal_cs_nominal_gru.py -- modal-packing-smoke --n-workers 2
 
 The full Modal training path exists for a later approved launch:
 
@@ -86,7 +87,8 @@ image = (
             "PYTHONPATH": (
                 "/workspace/rlrmp/src:/workspace/feedbax/src:"
                 "/workspace/jax-cookbook/src"
-            )
+            ),
+            "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
         }
     )
     .add_local_dir(str(REPO_ROOT), "/workspace/rlrmp", copy=True, ignore=_ignore_source)
