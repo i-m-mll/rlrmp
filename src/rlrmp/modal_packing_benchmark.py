@@ -200,8 +200,6 @@ def run_worker(config: WorkerConfig) -> int:
         "n_recurrent_only": config.hidden_size - 2 * (config.hidden_size // 3),
         "controller_lr": config.controller_lr,
         "n_train_batches": max(1, config.warmup_batches + config.chunk_batches),
-        "effector_pos_running": 0.0,
-        "effector_final_vel": 0.0,
     }
     nominal_args = _argparse.Namespace(**{**vars(nominal_args), **overrides})
     hps = build_hps(nominal_args)
