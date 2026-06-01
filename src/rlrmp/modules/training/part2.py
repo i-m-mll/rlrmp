@@ -33,11 +33,12 @@ from rlrmp.models import (
 )
 from rlrmp.task import TASK_TYPES
 
-TrainingMethodLabel: TypeAlias = L["bcs", "dai", "pai-asf", "pai-n"]
+TrainingMethodLabel: TypeAlias = L["bcs", "dai", "pai-asf", "pai-n", "nominal-cs-gru"]
 
 
 P_PERTURBED = LDict.of("train__method")(
     {
+        "nominal-cs-gru": 0.0,
         "bcs": 0.5,
         "dai": 1.0,
         "pai-asf": 1.0,
@@ -47,6 +48,7 @@ P_PERTURBED = LDict.of("train__method")(
 # Define whether the disturbance is active on each trial
 disturbance_active: LDict[str, Callable] = LDict.of("train__method")(
     {
+        "nominal-cs-gru": always_active,
         "bcs": bernoulli_active,
         "dai": bernoulli_active,  # or always_active?
         "pai-asf": always_active,  # or bernoulli_active? and let hps control it
@@ -69,6 +71,11 @@ def scaled_sampler(sample_fn, scale=1.0):
 # (See the definition of `SCALE_FNS` below.)
 disturbance_extra_params = LDict.of("train__method")(
     {
+        "nominal-cs-gru": {
+            "gusts": get_gusts_fn,
+            "constant": lambda hps: dict(field=scaled_sampler(vector_with_gaussian_length)),
+            "curl": lambda hps: dict(amplitude=scaled_sampler(jr.normal)),
+        },
         "bcs": {
             "curl": lambda hps: dict(amplitude=scaled_sampler(jr.normal)),
             "constant": lambda hps: dict(field=scaled_sampler(vector_with_gaussian_length)),
@@ -91,6 +98,15 @@ disturbance_extra_params = LDict.of("train__method")(
 # Define how the network's SISU will be determined from the trial specs, to which it is then added
 SISU_FNS = LDict.of("train__method")(
     {
+        "nominal-cs-gru": lambda trial_specs, key: jnp.zeros(
+            (
+                (trial_specs.timeline.epoch_bounds.shape[0], trial_specs.timeline.n_steps)
+                if trial_specs.timeline.epoch_bounds is not None
+                and trial_specs.timeline.epoch_bounds.ndim > 1
+                else (trial_specs.timeline.n_steps,)
+            ),
+            dtype=float,
+        ),
         "bcs": lambda trial_specs, key: trial_specs.intervene[PLANT_INTERVENOR_LABEL].active.astype(
             float
         ),
@@ -110,6 +126,7 @@ is the same on average between the `"dai"` and `"pai-asf"` methods.
 """
 SCALE_FNS = LDict.of("train__method")(
     {
+        "nominal-cs-gru": lambda field_std: field_std,
         "bcs": lambda field_std: field_std,
         "dai": lambda field_std: field_std,
         "pai-asf": lambda field_std: (
@@ -169,9 +186,20 @@ def setup_task_model_pair(
         def batch_scale_up(batch_start, n_batches, batch_info, x):
             return x
 
+    task_type = hps.task.type
     hps_task = {k: v for k, v in hps.task.omitting_attrs("eval_n", "type").items() if v is not None}
+    if task_type == "simple_reach":
+        delayed_only_keys = {
+            "epoch_len_ranges",
+            "target_on_epochs",
+            "hold_epochs",
+            "move_epochs",
+            "p_catch_trial",
+            "train_endpoint_mode",
+        }
+        hps_task = {k: v for k, v in hps_task.items() if k not in delayed_only_keys}
 
-    task_base = TASK_TYPES[hps.task.type](loss_func=get_reach_loss(hps), **hps_task)
+    task_base = TASK_TYPES[task_type](loss_func=get_reach_loss(hps), **hps_task)
 
     # Resolve hidden_type from hps if present; default (None) falls back to GRUCell
     hidden_type = getattr(hps, 'hidden_type', None)
