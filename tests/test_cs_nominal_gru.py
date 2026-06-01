@@ -7,6 +7,7 @@ import json
 from functools import partial
 from pathlib import Path
 
+import jax.numpy as jnp
 import jax.random as jr
 import optax
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
@@ -43,8 +44,10 @@ def test_hps_uses_canonical_cs_nominal_task() -> None:
 
     assert hps.method == "nominal-cs-gru"
     assert hps.dt == 0.01
-    assert hps.task.type == "simple_reach"
-    assert hps.task.n_steps == 60
+    assert hps.task.type == "fixed_simple_reach"
+    assert hps.task.n_steps == 61
+    assert hps.task.fixed_init_pos == [0.0, 0.0]
+    assert hps.task.fixed_target_pos == [0.15, 0.0]
     assert hps.task.eval_reach_length == 0.15
     assert hps.task.hold_epochs == []
     assert hps.task.p_catch_trial == 0.0
@@ -56,9 +59,28 @@ def test_hps_uses_canonical_cs_nominal_task() -> None:
     assert hps.model.population_structure.n_input_readout == hps.model.hidden_size
     assert hps.loss.weights.effector_hold_pos == 0.0
     assert hps.loss.weights.effector_hold_vel == 0.0
-    assert hps.loss.weights.effector_pos_running == 1.0
+    assert hps.loss.weights.effector_pos_running == 1e6
+    assert hps.loss.weights.effector_vel_running == 1e5
+    assert hps.loss.weights.effector_terminal_pos == 1e6
+    assert hps.loss.weights.effector_terminal_vel == 1e5
+    assert hps.loss.weights.nn_output == 1.0
+    assert hps.loss.weights.nn_hidden == 0.0
     assert hps.loss.effector_pos_running_schedule == "cs_eq15_power6"
     assert hps.pert.std == 0.0
+
+
+def test_runtime_task_executes_sixty_fixed_cs_targets() -> None:
+    hps = build_hps(_args(smoke=True))
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+
+    trial = pair.task.get_train_trial(jr.PRNGKey(1))
+    targets = trial.targets["mechanics.effector.pos"].value
+
+    assert trial.timeline.n_steps == 60
+    assert trial.timeline.epoch_bounds.tolist() == [0, 60]
+    assert targets.shape == (60, 2)
+    assert jnp.allclose(trial.inits["mechanics.effector"].pos, jnp.array([0.0, 0.0]))
+    assert jnp.allclose(targets, jnp.broadcast_to(jnp.array([0.15, 0.0]), (60, 2)))
 
 
 def test_graph_bundle_records_nominal_provenance() -> None:
@@ -67,8 +89,16 @@ def test_graph_bundle_records_nominal_provenance() -> None:
 
     assert bundle.training_spec["nominal_only"] is True
     assert bundle.training_spec["adversarial_phase"] == "none"
+    assert bundle.training_spec["certificate_lens"] == "input_output_map_certificate"
     assert bundle.manifest["game_card_provenance"]["horizon_steps"] == 60
+    assert bundle.manifest["game_card_provenance"]["feedbax_task_n_steps"] == 61
+    assert bundle.manifest["game_card_provenance"]["feedbax_control_cost_stages"] == 60
+    assert bundle.manifest["game_card_provenance"]["init_pos_m"] == [0.0, 0.0]
     assert bundle.manifest["game_card_provenance"]["target_distance_m"] == 0.15
+    assert (
+        bundle.manifest["game_card_provenance"]["cost"]["feedbax_force_filter_state_cost"]
+        == "not_available"
+    )
     assert (
         bundle.manifest["game_card_provenance"]["output_feedback_certificate_gamma_factor"]
         == OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR
@@ -80,12 +110,14 @@ def test_graph_bundle_records_nominal_provenance() -> None:
         "n_recurrent_only": 0,
         "n_input_readout": 4,
     }
+    assert bundle.manifest["model_structure"]["certificate_lens"] == "input_output_map_certificate"
+    assert bundle.manifest["model_structure"]["analytical_delay_augmented_state_input"] is False
     assert bundle.graph_spec.nodes["net"].params["hidden_size"] == 4
 
 
 def test_derive_spec_dir_preserves_artifact_results_mirror() -> None:
-    artifact = run_artifact_dir("18ae684", "cs_nominal_gru__local_smoke")
-    assert derive_spec_dir(artifact) == run_spec_dir("18ae684", "cs_nominal_gru__local_smoke")
+    artifact = run_artifact_dir("a1a8e39", "cs_nominal_gru__local_smoke")
+    assert derive_spec_dir(artifact) == run_spec_dir("a1a8e39", "cs_nominal_gru__local_smoke")
 
 
 def test_dry_run_does_not_write_files(tmp_path: Path) -> None:
@@ -97,7 +129,26 @@ def test_dry_run_does_not_write_files(tmp_path: Path) -> None:
     assert "run_spec" in result
     assert result["run_spec"]["mode"] == "dry_run"
     assert result["run_spec"]["nominal_only"] is True
+    assert result["run_spec"]["fidelity_status"]["exact_fidelity"] is True
+    assert result["run_spec"]["fidelity_status"]["nn_hidden"] == 0.0
     assert not spec_dir.exists()
+
+
+def test_regularized_run_metadata_marks_non_exact_status(tmp_path: Path) -> None:
+    args = _args(
+        output_dir=str(tmp_path / "artifacts"),
+        spec_dir=str(tmp_path / "spec"),
+        dry_run=True,
+        regularized_fidelity=True,
+    )
+
+    result = write_run_spec(args)
+
+    fidelity = result["run_spec"]["fidelity_status"]
+    assert fidelity["exact_fidelity"] is False
+    assert fidelity["regularized_pair"] is True
+    assert fidelity["regularizer"] == "nn_hidden"
+    assert fidelity["nn_hidden"] == 1e-5
 
 
 def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> None:
@@ -121,8 +172,11 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     assert graph_path == spec_dir / "model.graph.json"
     assert manifest_path == spec_dir / "model.graph.manifest.json"
     assert payload["schema_version"] == "rlrmp.cs_nominal_gru.v1"
+    assert payload["issue"] == "a1a8e39"
     assert payload["model_summary"]["hidden_size"] == 4
     assert payload["model_summary"]["controller_kind"] == "gru"
+    assert payload["model_summary"]["certificate_lens"] == "input_output_map_certificate"
+    assert payload["model_summary"]["analytical_delay_augmented_state_input"] is False
     assert payload["model_summary"]["population_structure"] == {
         "n_input_only": 0,
         "n_readout_only": 0,
@@ -131,7 +185,11 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     }
     assert payload["training_summary"]["training_mode"] == "nominal"
     assert payload["game_card"]["plant"]["bw_shape"] == [48, 8]
-    assert payload["task_timing"]["type"] == "simple_reach"
+    assert payload["task_timing"]["type"] == "fixed_simple_reach"
+    assert payload["task_timing"]["n_steps"] == 61
+    assert payload["task_timing"]["control_cost_stages"] == 60
+    assert payload["task_timing"]["fixed_init_pos"] == [0.0, 0.0]
+    assert payload["task_timing"]["fixed_target_pos"] == [0.15, 0.0]
     assert payload["task_timing"]["movement_window"] == {
         "kind": "full_simple_reach_trial",
         "start_transition": 0,
@@ -143,6 +201,14 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
         "same-coordinate target sequence"
         in payload["loss_summary"]["simple_reach_position_loss_contract"]
     )
+    assert payload["loss_summary"]["objective_profile"] == "cs_fidelity"
+    assert payload["loss_summary"]["active_cs_terms"]["stage_position"]["scale"] == 1e6
+    assert payload["loss_summary"]["active_cs_terms"]["stage_velocity"]["scale"] == 1e5
+    assert payload["loss_summary"]["active_cs_terms"]["control"]["scale"] == 1.0
+    assert payload["loss_summary"]["active_cs_terms"]["terminal_position"]["scale"] == 1e6
+    assert payload["loss_summary"]["active_cs_terms"]["terminal_velocity"]["scale"] == 1e5
+    assert payload["loss_summary"]["force_filter_state_cost"] == "not_available"
+    assert payload["loss_summary"]["hidden_regularizer"]["scale"] == 0.0
     assert "git" in payload["provenance"]
     assert manifest["training_spec"]["nominal_only"] is True
     assert not output_dir.exists()
@@ -152,8 +218,6 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
 def test_setup_task_model_pair_trains_tiny_nominal_simple_reach_batch() -> None:
     args = _args(
         smoke=True,
-        effector_pos_running=1.0,
-        effector_final_vel=1.0,
         batch_size=2,
         n_train_batches=1,
     )
@@ -184,14 +248,19 @@ def test_setup_task_model_pair_trains_tiny_nominal_simple_reach_batch() -> None:
     )
 
     assert trained is not None
-    assert hps.task.type == "simple_reach"
-    assert hps.task.n_steps == 60
+    assert hps.task.type == "fixed_simple_reach"
+    assert hps.task.n_steps == 61
     assert hps.loss.effector_pos_running_schedule == "cs_eq15_power6"
-    assert pair.task.loss_func.weights["effector_pos_running"] == 1.0
-    assert pair.task.loss_func.weights["effector_final_vel"] == 1.0
+    assert pair.task.loss_func.weights["effector_pos_running"] == 1e6
+    assert pair.task.loss_func.weights["effector_vel_running"] == 1e5
+    assert pair.task.loss_func.weights["effector_terminal_pos"] == 1e6
+    assert pair.task.loss_func.weights["effector_terminal_vel"] == 1e5
+    assert pair.task.loss_func.weights["nn_output"] == 1.0
+    assert "nn_hidden" not in pair.task.loss_func.weights
     assert set(pair.task.loss_func.terms) >= {
         "effector_pos_running",
-        "effector_final_vel",
+        "effector_vel_running",
+        "effector_terminal_pos",
+        "effector_terminal_vel",
         "nn_output",
-        "nn_hidden",
     }

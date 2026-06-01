@@ -22,7 +22,7 @@ from typing import Any, Literal, Sequence
 from rlrmp.paths import REPO_ROOT, run_artifact_dir, run_spec_dir
 
 APP_NAME = "rlrmp-cs-nominal-gru"
-DEFAULT_EXPERIMENT = "18ae684"
+DEFAULT_EXPERIMENT = "a1a8e39"
 DEFAULT_RUN = "nominal_cs_gru__modal_prep"
 DEFAULT_GPU = "A10G"
 DEFAULT_TIMEOUT_SECONDS = 60
