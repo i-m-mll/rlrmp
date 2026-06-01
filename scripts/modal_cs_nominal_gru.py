@@ -38,6 +38,7 @@ from rlrmp.modal_runner import (
     MODAL_VOLUME_MOUNT,
     MODAL_VOLUME_NAME,
     REPO_ROOT,
+    activate_project_venv,
     build_parser,
     dry_run_payload,
     execute_remote_payload,
@@ -128,6 +129,7 @@ app = modal.App(APP_NAME, image=image)
     volumes={str(MODAL_VOLUME_MOUNT): volume},
 )
 def _run_payload(payload: dict[str, Any]) -> int:
+    activate_project_venv()
     return execute_remote_payload(payload, volume_commit=volume.commit)
 
 
