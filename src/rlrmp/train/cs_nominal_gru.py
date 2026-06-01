@@ -1,7 +1,7 @@
 """Nominal C&S-fidelity GRU run-spec construction.
 
 This module prepares the first nominal, hold-free C&S-aligned GRU run for
-issue ``18ae684``. It intentionally stops at lightweight run-spec and
+issue ``a1a8e39``. It intentionally stops at lightweight run-spec and
 GraphSpec materialization; full local/Modal training remains a separate,
 explicitly launched step.
 """
@@ -19,6 +19,7 @@ import jax
 from feedbax.types import TreeNamespace, dict_to_namespace
 
 from rlrmp.analysis.cs_game_card import (
+    INIT_POS,
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     OUTPUT_FEEDBACK_GAMMA_SELECTION_ISSUE_ID,
     TARGET_POS,
@@ -34,11 +35,17 @@ from rlrmp.feedbax_graph import (
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.run_specs import validate_nominal_gru_run_spec
 
-ISSUE_ID = "18ae684"
+ISSUE_ID = "a1a8e39"
 SCHEMA_VERSION = "rlrmp.cs_nominal_gru.v1"
 DEFAULT_EXPERIMENT = ISSUE_ID
 DEFAULT_RUN = "cs_nominal_gru__local_smoke"
 DEFAULT_OUTPUT_DIR = f"_artifacts/{DEFAULT_EXPERIMENT}/runs/{DEFAULT_RUN}"
+CS_STAGE_COUNT = 60
+CS_FEEDBAX_N_STEPS = CS_STAGE_COUNT + 1
+CS_POSITION_SCALE = 1e6
+CS_VELOCITY_SCALE = 1e5
+CS_CONTROL_SCALE = 1.0
+CS_REGULARIZED_NN_HIDDEN = 1e-5
 
 
 def derive_spec_dir(output_dir: Path) -> Path:
@@ -59,7 +66,13 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
 
     args = _apply_smoke_overrides(args)
     plant, schedule = build_canonical_game()
-    target_m = float(args.target_m)
+    if int(schedule.T) != CS_STAGE_COUNT:
+        raise ValueError(f"Expected C&S stage count {CS_STAGE_COUNT}, got {schedule.T}")
+    nn_hidden = (
+        CS_REGULARIZED_NN_HIDDEN
+        if args.regularized_fidelity and args.nn_hidden is None
+        else float(args.nn_hidden or 0.0)
+    )
     n_input_readout = int(args.hidden_size) - (
         int(args.n_input_only) + int(args.n_readout_only) + int(args.n_recurrent_only)
     )
@@ -101,13 +114,15 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             },
         },
         "task": {
-            "type": "simple_reach",
-            "n_steps": int(schedule.T),
-            "workspace": [[-0.02, -0.02], [target_m + 0.02, 0.02]],
+            "type": "fixed_simple_reach",
+            "n_steps": CS_FEEDBAX_N_STEPS,
+            "workspace": [[-0.02, -0.02], [float(TARGET_POS[0]) + 0.02, 0.02]],
+            "fixed_init_pos": [float(x) for x in INIT_POS.tolist()],
+            "fixed_target_pos": [float(x) for x in TARGET_POS.tolist()],
             "eval_grid_n": 1,
             "eval_n_directions": 1,
-            "eval_reach_length": target_m,
-            "epoch_len_ranges": [[0, 1], [int(schedule.T), int(schedule.T) + 1]],
+            "eval_reach_length": float(TARGET_POS[0]),
+            "epoch_len_ranges": [[0, 1], [CS_STAGE_COUNT, CS_STAGE_COUNT + 1]],
             "target_on_epochs": [0],
             "hold_epochs": [],
             "move_epochs": [0],
@@ -124,6 +139,9 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
                 "goal_hit_in_window": 0.0,
                 "effector_pos": 0.0,
                 "effector_pos_running": float(args.effector_pos_running),
+                "effector_vel_running": float(args.effector_vel_running),
+                "effector_terminal_pos": float(args.effector_terminal_pos),
+                "effector_terminal_vel": float(args.effector_terminal_vel),
                 "effector_pos_mid": 0.0,
                 "effector_vel_mid": 0.0,
                 "effector_pos_late": 0.0,
@@ -132,7 +150,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
                 "effector_hold_vel": 0.0,
                 "effector_final_vel": float(args.effector_final_vel),
                 "nn_output": float(args.nn_output),
-                "nn_hidden": float(args.nn_hidden),
+                "nn_hidden": nn_hidden,
                 "nn_hidden_derivative": float(args.nn_hidden_derivative),
                 "nn_output_jerk": float(args.nn_output_jerk),
                 "nn_output_pre_go": 0.0,
@@ -158,7 +176,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "target_ratio": 0.0,
             "alpha": 0.0,
             "control_term": "nn_output",
-            "goal_term": ["effector_pos_running"],
+            "goal_term": ["effector_pos_running", "effector_vel_running"],
             "start_iteration": 0,
         },
         "where": {
@@ -175,12 +193,16 @@ def build_game_card_provenance() -> dict[str, Any]:
 
     plant, schedule = build_canonical_game()
     target = [float(x) for x in TARGET_POS.tolist()]
+    init = [float(x) for x in INIT_POS.tolist()]
     return {
         "source_module": "rlrmp.analysis.cs_game_card",
         "canonical_builder": "build_canonical_game",
         "discretization": plant.discretization,
         "dt": float(plant.dt),
         "horizon_steps": int(schedule.T),
+        "feedbax_task_n_steps": CS_FEEDBAX_N_STEPS,
+        "feedbax_control_cost_stages": CS_STAGE_COUNT,
+        "init_pos_m": init,
         "target_pos_m": target,
         "target_distance_m": float(TARGET_POS[0]),
         "hold_free": True,
@@ -204,6 +226,14 @@ def build_game_card_provenance() -> dict[str, Any]:
             "force_and_integrator_weight": "1.0",
             "fact_t": "((t + 1) / T)^6, capped at 1",
             "R": "I_2",
+            "terminal_Q_f": "diag([1e6, 1e6, 1e5, 1e5, 1, 1, 1, 1]) on physical state",
+            "feedbax_force_filter_state_cost": "not_available",
+            "feedbax_force_filter_state_cost_note": (
+                "The GRU task metadata records the analytical force/integrator "
+                "cost, but the current Feedbax loss only exposes clean effector "
+                "position, velocity, and efferent-output terms here; no synthetic "
+                "force/filter-state cost is added."
+            ),
         },
         "output_feedback_certificate_gamma_factor": OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
         "output_feedback_gamma_selection_issue": OUTPUT_FEEDBACK_GAMMA_SELECTION_ISSUE_ID,
@@ -239,7 +269,14 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
         },
         "nominal_only": True,
         "adversarial_phase": "none",
-        "certificate_claim": "none",
+        "certificate_lens": "input_output_map_certificate",
+        "certificate_coordinate_claim": "not_same_coordinate_gain",
+        "analytical_delay_augmented_state_input": False,
+        "certificate_claim": (
+            "I/O map certificate framing only; the output-feedback GRU is not fed "
+            "the 48D delay-augmented analytical state and is not claimed to share "
+            "same-coordinate gains with the analytical controller."
+        ),
     }
 
 
@@ -262,6 +299,8 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "method": str(hps.method),
         "nominal_only": True,
         "adversarial_phase": "none",
+        "certificate_lens": "input_output_map_certificate",
+        "analytical_delay_augmented_state_input": False,
     }
     manifest = {
         "schema_version": SCHEMA_VERSION,
@@ -321,6 +360,7 @@ def build_run_spec(
         "n_train_batches": int(args.n_train_batches),
         "batch_size": int(args.batch_size),
         "controller_lr": float(args.controller_lr),
+        "fidelity_status": _fidelity_status(hps),
         "game_card": build_game_card_provenance(),
         "model_summary": build_model_structure_summary(hps),
         "task_timing": graph_bundle.task_spec,
@@ -399,16 +439,29 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--controller-lr", type=float, default=1e-2)
     parser.add_argument("--n-replicates", type=int, default=5)
     parser.add_argument("--hidden-size", type=int, default=180)
-    parser.add_argument("--target-m", type=float, default=0.15)
+    parser.add_argument(
+        "--target-m",
+        type=float,
+        default=float(TARGET_POS[0]),
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument("--n-input-only", type=int, default=0)
     parser.add_argument("--n-readout-only", type=int, default=0)
     parser.add_argument("--n-recurrent-only", type=int, default=0)
-    parser.add_argument("--effector-pos-running", type=float, default=1.0)
+    parser.add_argument("--effector-pos-running", type=float, default=CS_POSITION_SCALE)
+    parser.add_argument("--effector-vel-running", type=float, default=CS_VELOCITY_SCALE)
+    parser.add_argument("--effector-terminal-pos", type=float, default=CS_POSITION_SCALE)
+    parser.add_argument("--effector-terminal-vel", type=float, default=CS_VELOCITY_SCALE)
     parser.add_argument("--effector-final-vel", type=float, default=0.0)
-    parser.add_argument("--nn-output", type=float, default=1e-5)
-    parser.add_argument("--nn-hidden", type=float, default=1e-5)
+    parser.add_argument("--nn-output", type=float, default=CS_CONTROL_SCALE)
+    parser.add_argument("--nn-hidden", type=float, default=None)
     parser.add_argument("--nn-hidden-derivative", type=float, default=0.0)
     parser.add_argument("--nn-output-jerk", type=float, default=0.0)
+    parser.add_argument(
+        "--regularized-fidelity",
+        action="store_true",
+        help="Mark a paired non-exact run and use nn_hidden=1e-5 unless overridden.",
+    )
     parser.add_argument(
         "--smoke",
         action="store_true",
@@ -453,7 +506,10 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
     return {
         "type": str(hps.task.type),
         "n_steps": int(hps.task.n_steps),
+        "control_cost_stages": int(hps.task.n_steps) - 1,
         "workspace": _plain(hps.task.workspace),
+        "fixed_init_pos": _plain(hps.task.fixed_init_pos),
+        "fixed_target_pos": _plain(hps.task.fixed_target_pos),
         "eval_grid_n": int(hps.task.eval_grid_n),
         "eval_n_directions": int(hps.task.eval_n_directions),
         "eval_reach_length": float(hps.task.eval_reach_length),
@@ -467,13 +523,14 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
             "Cartesian metre coordinates as the point-mass effector state."
         ),
         "time_axis_contract": (
-            "Hold-free nominal task: one position target per transition, aligned directly "
-            "with SimpleReaches rollout states; delayed-reach epoch masks are not used."
+            "Hold-free fixed nominal task: Feedbax n_steps=61 yields exactly 60 "
+            "transition/control-cost stages and one position target per transition; "
+            "delayed-reach epoch masks are not used."
         ),
         "movement_window": {
             "kind": "full_simple_reach_trial",
             "start_transition": 0,
-            "end_transition": int(hps.task.n_steps) - 1,
+            "end_transition": int(hps.task.n_steps) - 2,
         },
         "extra_inputs": ["sisu", f"intervene:{PLANT_INTERVENOR_LABEL}"],
     }
@@ -485,6 +542,44 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
         "effector_pos_late": _plain(hps.loss.effector_pos_late),
         "effector_vel_late": _plain(hps.loss.effector_vel_late),
         "effector_pos_running_schedule": str(hps.loss.effector_pos_running_schedule),
+        "objective_profile": "cs_fidelity",
+        "active_cs_terms": {
+            "stage_position": {
+                "term": "effector_pos_running",
+                "scale": float(hps.loss.weights.effector_pos_running),
+                "fact_t": "((t + 1) / T)^6",
+            },
+            "stage_velocity": {
+                "term": "effector_vel_running",
+                "scale": float(hps.loss.weights.effector_vel_running),
+                "fact_t": "((t + 1) / T)^6",
+            },
+            "control": {
+                "term": "nn_output",
+                "scale": float(hps.loss.weights.nn_output),
+                "equivalent_R": "I_2 on efferent output",
+            },
+            "terminal_position": {
+                "term": "effector_terminal_pos",
+                "scale": float(hps.loss.weights.effector_terminal_pos),
+            },
+            "terminal_velocity": {
+                "term": "effector_terminal_vel",
+                "scale": float(hps.loss.weights.effector_terminal_vel),
+            },
+        },
+        "force_filter_state_cost": "not_available",
+        "force_filter_state_cost_note": (
+            "No force/filter-state quadratic term is synthesized because this "
+            "nominal Feedbax loss path has no clean C&S physical force/integrator "
+            "state target exposed through the task state contract."
+        ),
+        "hidden_regularizer": {
+            "term": "nn_hidden",
+            "scale": float(hps.loss.weights.nn_hidden),
+            "exact_fidelity_default": 0.0,
+            "regularized_pair_scale": CS_REGULARIZED_NN_HIDDEN,
+        },
         "simple_reach_position_loss_contract": (
             "effector_pos_running compares mechanics.effector.pos to the SimpleReaches "
             "same-coordinate target sequence over every transition, using the configured "
@@ -495,6 +590,21 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
         "movement_ramp_shape": str(hps.loss.movement_ramp_shape),
         "movement_ramp_duration_steps": int(hps.loss.movement_ramp_duration_steps),
         "movement_ramp_power": float(hps.loss.movement_ramp_power),
+    }
+
+
+def _fidelity_status(hps: TreeNamespace) -> dict[str, Any]:
+    nn_hidden = float(hps.loss.weights.nn_hidden)
+    exact = nn_hidden == 0.0
+    return {
+        "objective": "cs_fidelity",
+        "exact_fidelity": exact,
+        "regularized_pair": not exact,
+        "regularizer": "none" if exact else "nn_hidden",
+        "nn_hidden": nn_hidden,
+        "certificate_lens": "input_output_map_certificate",
+        "same_coordinate_gain_certificate": False,
+        "analytical_delay_augmented_state_input": False,
     }
 
 

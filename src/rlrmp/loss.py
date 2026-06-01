@@ -198,7 +198,11 @@ class SimpleReachPositionLoss(TargetStateLoss):
         if time_mask is None:
             time_mask = target_spec.get_time_mask(loss_over_time.shape[-1])
 
-        masks = [x for x in [time_mask, target_spec.discount] if x is not None]
+        discount = target_spec.discount
+        if discount is not None and getattr(discount, "ndim", 0) > 1:
+            discount = discount[0]
+
+        masks = [x for x in [time_mask, discount] if x is not None]
         return reduce_over_time_with_weights(
             label=self.label,
             arr=loss_over_time,
@@ -220,6 +224,9 @@ DEFAULT_TOP_WEIGHTS: dict[str, float] = {
     "effector_pos_late": 1.0,
     "effector_vel_late": 1.0,
     "effector_pos_running": 0.0,
+    "effector_vel_running": 0.0,
+    "effector_terminal_pos": 0.0,
+    "effector_terminal_vel": 0.0,
     # Terminal-step velocity penalty (historical simple_reach_loss shape).
     # Fires only at the final timestep t=T; strong identifying constraint that
     # funnels replicates to a single "come-to-rest at the goal" strategy.
@@ -414,6 +421,18 @@ def make_fixed_power_law_schedule(n_steps: int, power: float = 6.0) -> Array:
     t = jnp.arange(T, dtype=jnp.float32)
     normalizer = jnp.maximum(jnp.asarray(T - 1, dtype=jnp.float32), 1.0)
     return (t / normalizer) ** power
+
+
+def make_cs_eq15_stage_schedule(n_steps: int, power: float = 6.0) -> Array:
+    """Return C&S Eq. 15 stage weights ``((t + 1) / T) ** power``.
+
+    ``n_steps`` is the Feedbax rollout length, so the number of control/cost
+    stages is ``n_steps - 1``.
+    """
+
+    T = max(int(n_steps) - 1, 1)
+    t_plus_1 = jnp.arange(1, T + 1, dtype=jnp.float32)
+    return jnp.minimum(1.0, (t_plus_1 / float(T)) ** power)
 
 
 def make_epoch_locked_ramp(
@@ -642,7 +661,7 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
     _movement_ramp_duration = int(_nsget(hps, "loss.movement_ramp_duration_steps", 60) or 60)
     _movement_ramp_power = float(_nsget(hps, "loss.movement_ramp_power", 2.0) or 2.0)
     task_type = getattr(hps.task, "type", "")
-    is_simple_reach = task_type == "simple_reach"
+    is_simple_reach = task_type in {"simple_reach", "fixed_simple_reach"}
 
     # "center_out_delayed_reach" is a subclass of DelayedReaches and shares the
     # same hold-period structure — match on suffix. Bug: 2e1a6ad.
@@ -820,7 +839,7 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
             if _pos_running_sched == "cs_eq15_power6":
                 if is_simple_reach:
                     running_spec = TargetSpec(
-                        discount=make_fixed_power_law_schedule(hps.task.n_steps, power=6.0)
+                        discount=make_cs_eq15_stage_schedule(hps.task.n_steps, power=6.0)
                     )
                 else:
                     running_spec = during_movement & TargetSpec(
@@ -856,6 +875,59 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
                 "effector_pos_running",
                 where=lambda state: state.mechanics.effector.pos,
                 spec=running_spec,
+            )
+
+        if getattr(user_outer_weights, "effector_vel_running", 0.0) != 0.0:
+            effector_vel_running_loss_cls = (
+                SimpleReachPositionLoss if is_simple_reach else TargetStateLoss
+            )
+            if _pos_running_sched == "cs_eq15_power6":
+                vel_running_spec = target_zero & TargetSpec(
+                    discount=make_cs_eq15_stage_schedule(hps.task.n_steps, power=6.0)
+                )
+            elif _pos_running_sched == "powerlaw":
+                if is_simple_reach:
+                    vel_running_spec = target_zero & TargetSpec(
+                        discount=make_fixed_power_law_schedule(
+                            hps.task.n_steps,
+                            power=_powerlaw_power,
+                        )
+                    )
+                else:
+                    vel_running_spec = target_zero & during_movement & TargetSpec(
+                        discount=make_power_law_schedule(power=_powerlaw_power)
+                    )
+            else:
+                vel_running_spec = target_zero if is_simple_reach else target_zero & during_movement
+
+            terms["effector_vel_running"] = effector_vel_running_loss_cls(
+                "effector_vel_running",
+                where=lambda state: state.mechanics.effector.vel,
+                spec=vel_running_spec,
+            )
+
+        if getattr(user_outer_weights, "effector_terminal_pos", 0.0) != 0.0:
+            effector_terminal_pos_loss_cls = (
+                SimpleReachPositionLoss if is_simple_reach else TargetStateLoss
+            )
+            terms["effector_terminal_pos"] = effector_terminal_pos_loss_cls(
+                "effector_terminal_pos",
+                where=lambda state: state.mechanics.effector.pos,
+                spec=(
+                    target_final_state
+                    if is_simple_reach
+                    else during_movement & target_final_state
+                ),
+            )
+
+        if getattr(user_outer_weights, "effector_terminal_vel", 0.0) != 0.0:
+            effector_terminal_vel_loss_cls = (
+                SimpleReachPositionLoss if is_simple_reach else TargetStateLoss
+            )
+            terms["effector_terminal_vel"] = effector_terminal_vel_loss_cls(
+                "effector_terminal_vel",
+                where=lambda state: state.mechanics.effector.vel,
+                spec=target_zero & target_final_state,
             )
 
         # Late-period position term (optional, active in goal_hit or structured modes)
