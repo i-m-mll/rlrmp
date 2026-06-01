@@ -60,6 +60,17 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
     args = _apply_smoke_overrides(args)
     plant, schedule = build_canonical_game()
     target_m = float(args.target_m)
+    n_input_readout = int(args.hidden_size) - (
+        int(args.n_input_only) + int(args.n_readout_only) + int(args.n_recurrent_only)
+    )
+    if n_input_readout < 0:
+        raise ValueError(
+            "Population subgroups exceed hidden_size: "
+            f"hidden_size={args.hidden_size}, "
+            f"n_input_only={args.n_input_only}, "
+            f"n_readout_only={args.n_readout_only}, "
+            f"n_recurrent_only={args.n_recurrent_only}"
+        )
     hps_dict = {
         "method": "nominal-cs-gru",
         "dt": float(plant.dt),
@@ -86,7 +97,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
                 "n_input_only": int(args.n_input_only),
                 "n_readout_only": int(args.n_readout_only),
                 "n_recurrent_only": int(args.n_recurrent_only),
-                "n_input_readout": 0,
+                "n_input_readout": n_input_readout,
             },
         },
         "task": {
@@ -389,9 +400,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--n-replicates", type=int, default=5)
     parser.add_argument("--hidden-size", type=int, default=180)
     parser.add_argument("--target-m", type=float, default=0.15)
-    parser.add_argument("--n-input-only", type=int, default=60)
-    parser.add_argument("--n-readout-only", type=int, default=60)
-    parser.add_argument("--n-recurrent-only", type=int, default=60)
+    parser.add_argument("--n-input-only", type=int, default=0)
+    parser.add_argument("--n-readout-only", type=int, default=0)
+    parser.add_argument("--n-recurrent-only", type=int, default=0)
     parser.add_argument("--effector-pos-running", type=float, default=1.0)
     parser.add_argument("--effector-final-vel", type=float, default=0.0)
     parser.add_argument("--nn-output", type=float, default=1e-5)
@@ -430,9 +441,9 @@ def _apply_smoke_overrides(args: argparse.Namespace) -> argparse.Namespace:
             "batch_size": 2,
             "n_replicates": 1,
             "hidden_size": 4,
-            "n_input_only": 1,
-            "n_readout_only": 1,
-            "n_recurrent_only": 2,
+            "n_input_only": 0,
+            "n_readout_only": 0,
+            "n_recurrent_only": 0,
         }
     )
     return argparse.Namespace(**values)
