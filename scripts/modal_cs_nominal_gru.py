@@ -1,4 +1,4 @@
-"""Modal entrypoint for nominal C&S-fidelity GRU preparation.
+"""Modal entrypoint for stochastic C&S-fidelity GRU preparation.
 
 Direct local usage:
 

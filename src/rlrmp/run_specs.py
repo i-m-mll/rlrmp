@@ -38,7 +38,7 @@ class RunSpecValidationError(ValueError):
 
 
 def validate_nominal_gru_run_spec(run_spec: dict[str, Any], *, spec_dir: Path) -> None:
-    """Validate the nominal C&S-fidelity GRU run metadata contract.
+    """Validate the C&S-fidelity GRU run metadata contract.
 
     Args:
         run_spec: Decoded ``run.json`` payload.
@@ -102,7 +102,7 @@ def validate_nominal_gru_run_spec(run_spec: dict[str, Any], *, spec_dir: Path) -
 
 
 def validate_nominal_gru_run_spec_file(run_spec_path: Path | str) -> None:
-    """Load and validate a nominal C&S-fidelity GRU ``run.json`` file."""
+    """Load and validate a C&S-fidelity GRU ``run.json`` file."""
 
     path = Path(run_spec_path)
     validate_nominal_gru_run_spec(
