@@ -82,7 +82,8 @@ def test_gru_manifest_keeps_same_coordinate_rows_not_applicable() -> None:
     assert "4D-to-8D" in by_name[OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH]["reason"]
 
     diagnostic = failure_diagnostic_from_standard_row(row, source_group="cs_stochastic_gru")
-    assert diagnostic["classification"]["classification"] == "io_map_mismatch"
+    assert diagnostic["classification"]["classification"] == "external_rollout_mismatch"
+    assert diagnostic["certificate"]["response_map_mismatch"] is None
     assert diagnostic["gradient_diagnostics"]["status"] == "not_applicable"
     assert diagnostic["gain_error_decomposition"]["status"] == "not_applicable"
 

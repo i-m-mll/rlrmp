@@ -32,6 +32,7 @@ FailureClass = Literal[
     "objective_mismatch",
     "sidecar_improving_non_equivalent",
     "io_map_mismatch",
+    "external_rollout_mismatch",
     "representation_failure",
     "mixed",
     "uncertain",
@@ -448,10 +449,11 @@ def failure_diagnostic_from_standard_row(
     observed_external_ratios = {
         name: ratio for name, ratio in external_ratios.items() if ratio is not None
     }
+    response_map_mismatch = (
+        max(observed_external_ratios.values()) if observed_external_ratios else None
+    )
     mismatch_candidates = [
-        ratio
-        for ratio in (rollout_mismatch, *observed_external_ratios.values())
-        if ratio is not None
+        ratio for ratio in (rollout_mismatch, response_map_mismatch) if ratio is not None
     ]
     external_mismatch_ratio = max(mismatch_candidates) if mismatch_candidates else None
     objective = dict(objective_summary or {})
@@ -460,12 +462,26 @@ def failure_diagnostic_from_standard_row(
         learned_gradient_norm=objective.get("learned_projected_gradient_norm"),
         reference_gradient_norm=objective.get("reference_projected_gradient_norm"),
         certificate_mismatch_ratio=None,
-        io_map_mismatch_ratio=external_mismatch_ratio,
+        io_map_mismatch_ratio=response_map_mismatch,
         external_map_mismatch_ratios=observed_external_ratios or None,
         subspace_decomposition=None,
         numerics=numerics,
     )
-    if external_mismatch_ratio is None:
+    rollout_bad = (
+        rollout_mismatch is not None and rollout_mismatch >= numerics.certificate_failure_ratio
+    )
+    if response_map_mismatch is None and rollout_bad:
+        classification = {
+            "classification": EXTERNAL_ROLLOUT_MISMATCH,
+            "reasons": [EXTERNAL_ROLLOUT_MISMATCH],
+            "signals": {
+                **classification.get("signals", {}),
+                "external_certificate_evidence_available": True,
+                "rollout_action_mismatch_bad": True,
+                "response_map_evidence_available": False,
+            },
+        }
+    elif external_mismatch_ratio is None:
         classification = {
             "classification": "uncertain",
             "reasons": ["no_available_external_certificate_evidence"],
@@ -480,6 +496,8 @@ def failure_diagnostic_from_standard_row(
             "signals": {
                 **classification.get("signals", {}),
                 "external_certificate_evidence_available": True,
+                "rollout_action_mismatch_bad": rollout_bad,
+                "response_map_evidence_available": response_map_mismatch is not None,
             },
         }
     run_id = _row_run_id(row)
@@ -493,6 +511,7 @@ def failure_diagnostic_from_standard_row(
         "certificate": {
             "state_weighted_action_mismatch": rollout_mismatch,
             "external_response_map_mismatches": external_ratios,
+            "response_map_mismatch": response_map_mismatch,
             "external_mismatch_ratio": external_mismatch_ratio,
         },
         "objective": objective

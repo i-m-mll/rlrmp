@@ -12,12 +12,13 @@
             "measurement_history_to_output_map_mismatch": null,
             "observation_history_to_action_map_mismatch": null
           },
+          "response_map_mismatch": null,
           "state_weighted_action_mismatch": 0.3718608527729889
         },
         "classification": {
-          "classification": "io_map_mismatch",
+          "classification": "external_rollout_mismatch",
           "reasons": [
-            "io_map_mismatch"
+            "external_rollout_mismatch"
           ],
           "signals": {
             "certificate_bad": false,
@@ -25,12 +26,14 @@
             "external_certificate_evidence_available": true,
             "external_map_representation": null,
             "hidden_state_coordinate_mismatch": null,
-            "io_map_bad": true,
+            "io_map_bad": false,
             "learned_gradient_bad": false,
             "objective_bad": false,
             "objective_close": false,
             "reference_gradient_bad": false,
             "representation_failed": false,
+            "response_map_evidence_available": false,
+            "rollout_action_mismatch_bad": true,
             "sidecar_improved": false,
             "weak_subspace_dominates": false
           }
@@ -124,12 +127,13 @@
             "measurement_history_to_output_map_mismatch": null,
             "observation_history_to_action_map_mismatch": null
           },
+          "response_map_mismatch": null,
           "state_weighted_action_mismatch": 0.8502054516260569
         },
         "classification": {
-          "classification": "io_map_mismatch",
+          "classification": "external_rollout_mismatch",
           "reasons": [
-            "io_map_mismatch"
+            "external_rollout_mismatch"
           ],
           "signals": {
             "certificate_bad": false,
@@ -137,12 +141,14 @@
             "external_certificate_evidence_available": true,
             "external_map_representation": null,
             "hidden_state_coordinate_mismatch": null,
-            "io_map_bad": true,
+            "io_map_bad": false,
             "learned_gradient_bad": false,
             "objective_bad": false,
             "objective_close": false,
             "reference_gradient_bad": false,
             "representation_failed": false,
+            "response_map_evidence_available": false,
+            "rollout_action_mismatch_bad": true,
             "sidecar_improved": false,
             "weak_subspace_dominates": false
           }
@@ -720,7 +726,7 @@
       "visited_subspace_diagnostics:missing": 2
     },
     "failure_classification_counts": {
-      "io_map_mismatch": 2
+      "external_rollout_mismatch": 2
     },
     "n_rows": 2,
     "status_counts": {

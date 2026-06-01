@@ -17,5 +17,5 @@ across incompatible observation contracts.
 
 | run | status | action mismatch | transition | value | Bellman | class |
 |---|---|---:|---|---|---|---|
-| cs_stochastic_gru__no_hidden_penalty__nominal_clean | partial_standard_certificate_blocked | 0.371861 | not_applicable | not_applicable | not_applicable | io_map_mismatch |
-| cs_stochastic_gru__hidden_penalty__nominal_clean | partial_standard_certificate_blocked | 0.850205 | not_applicable | not_applicable | not_applicable | io_map_mismatch |
+| cs_stochastic_gru__no_hidden_penalty__nominal_clean | partial_standard_certificate_blocked | 0.371861 | not_applicable | not_applicable | not_applicable | external_rollout_mismatch |
+| cs_stochastic_gru__hidden_penalty__nominal_clean | partial_standard_certificate_blocked | 0.850205 | not_applicable | not_applicable | not_applicable | external_rollout_mismatch |
