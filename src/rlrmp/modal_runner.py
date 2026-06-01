@@ -27,7 +27,7 @@ DEFAULT_EXPERIMENT = "30f2313"
 DEFAULT_RUN = "cs_stochastic_gru__no_hidden_penalty"
 REGULARIZED_RUN = "cs_stochastic_gru__hidden_penalty"
 DEFAULT_STOCHASTIC_PRESET = "cs2019-rollout"
-DEFAULT_GPU = "A10G"
+DEFAULT_GPU = "A10"
 DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_TRAIN_TIMEOUT_SECONDS = 24 * 60 * 60
 DEFAULT_N_TRAIN_BATCHES = 12000
@@ -376,6 +376,9 @@ def collect_provenance() -> dict[str, Any]:
         try:
             module = __import__(package)
             provenance[f"{package}_version"] = getattr(module, "__version__", "unknown")
+            if package == "jax":
+                provenance["jax_devices"] = [str(device) for device in module.devices()]
+                provenance["jax_default_backend"] = module.default_backend()
         except Exception as exc:
             provenance[f"{package}_error"] = str(exc)
 

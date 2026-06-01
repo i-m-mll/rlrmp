@@ -294,6 +294,12 @@ def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Pat
     assert (output_dir / "history_chunks" / "history_0000001.eqx").exists()
     assert (output_dir / "history_chunks" / "history_0000002.eqx").exists()
     assert summary["latest_checkpoint"] == str(checkpoint_latest)
+    assert summary["training_duration_seconds"] > 0
+    assert summary["training_batches_per_second"] > 0
+    assert len(summary["chunks"]) == 2
+    assert summary["chunks"][0]["chunk_batches"] == 1
+    assert summary["chunks"][0]["duration_seconds"] > 0
+    assert summary["chunks"][0]["batches_per_second"] > 0
     assert commits == 3
 
 

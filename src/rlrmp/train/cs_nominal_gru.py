@@ -12,6 +12,7 @@ import json
 import math
 import os
 import subprocess
+import time
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -620,11 +621,13 @@ def run_full_training(
         else template_state
     )
 
-    chunks: list[dict[str, int | str]] = []
+    chunks: list[dict[str, float | int | str]] = []
+    training_started = time.perf_counter()
     while state.completed_batches < int(args.n_train_batches):
         remaining = int(args.n_train_batches) - state.completed_batches
         chunk_batches = min(int(args.checkpoint_interval_batches), remaining)
         key_chunk, key_next = jr.split(state.key, 2)
+        chunk_started = time.perf_counter()
         model, history_chunk, optimizer_state = trainer(
             pair.task,
             state.model,
@@ -644,6 +647,7 @@ def run_full_training(
             disable_progress=bool(args.disable_progress),
             verbose_progress=not bool(args.quiet_progress),
         )
+        chunk_duration_seconds = time.perf_counter() - chunk_started
         history = _append_history(state.history, history_chunk)
         completed = state.completed_batches + chunk_batches
         history_chunk_path = output_dir / "history_chunks" / f"history_{completed:07d}.eqx"
@@ -668,8 +672,12 @@ def run_full_training(
                 "completed_batches": completed,
                 "checkpoint": str(checkpoint_path),
                 "history_chunk": str(history_chunk_path),
+                "chunk_batches": chunk_batches,
+                "duration_seconds": chunk_duration_seconds,
+                "batches_per_second": chunk_batches / chunk_duration_seconds,
             }
         )
+    training_duration_seconds = time.perf_counter() - training_started
 
     final_model_path = output_dir / "trained_model.eqx"
     final_history_path = output_dir / "training_history.eqx"
@@ -682,6 +690,12 @@ def run_full_training(
         "issue": ISSUE_ID,
         "completed_batches": state.completed_batches,
         "n_train_batches": int(args.n_train_batches),
+        "training_duration_seconds": training_duration_seconds,
+        "training_batches_per_second": (
+            state.completed_batches / training_duration_seconds
+            if training_duration_seconds > 0
+            else None
+        ),
         "checkpoint_interval_batches": int(args.checkpoint_interval_batches),
         "latest_checkpoint": str(latest_checkpoint_path(checkpoint_root)),
         "final_model_path": str(final_model_path),

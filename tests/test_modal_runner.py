@@ -9,6 +9,7 @@ import pytest
 
 from rlrmp.modal_runner import (
     DEFAULT_RUN,
+    DEFAULT_GPU,
     DEFAULT_TRAIN_TIMEOUT_SECONDS,
     MODAL_VOLUME_NAME,
     REGULARIZED_RUN,
@@ -132,6 +133,7 @@ def test_modal_run_defaults_to_training_timeout() -> None:
     config = make_config(args)
 
     assert config.timeout_seconds == DEFAULT_TRAIN_TIMEOUT_SECONDS
+    assert config.gpu == DEFAULT_GPU == "A10"
 
 
 def test_activate_project_venv_exposes_uv_site_packages(
