@@ -451,6 +451,19 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
         "hold_epochs": _plain(hps.task.hold_epochs),
         "move_epochs": _plain(hps.task.move_epochs),
         "p_catch_trial": float(hps.task.p_catch_trial),
+        "coordinate_contract": (
+            "Feedbax SimpleReaches supplies mechanics.effector.pos targets in the same "
+            "Cartesian metre coordinates as the point-mass effector state."
+        ),
+        "time_axis_contract": (
+            "Hold-free nominal task: one position target per transition, aligned directly "
+            "with SimpleReaches rollout states; delayed-reach epoch masks are not used."
+        ),
+        "movement_window": {
+            "kind": "full_simple_reach_trial",
+            "start_transition": 0,
+            "end_transition": int(hps.task.n_steps) - 1,
+        },
         "extra_inputs": ["sisu", f"intervene:{PLANT_INTERVENOR_LABEL}"],
     }
 
@@ -461,6 +474,11 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
         "effector_pos_late": _plain(hps.loss.effector_pos_late),
         "effector_vel_late": _plain(hps.loss.effector_vel_late),
         "effector_pos_running_schedule": str(hps.loss.effector_pos_running_schedule),
+        "simple_reach_position_loss_contract": (
+            "effector_pos_running compares mechanics.effector.pos to the SimpleReaches "
+            "same-coordinate target sequence over every transition, using the configured "
+            "C&S Eq. 15 power-law discount when requested."
+        ),
         "effector_hold_pos_schedule": str(hps.loss.effector_hold_pos_schedule),
         "position_powerlaw_power": float(hps.loss.position_powerlaw_power),
         "movement_ramp_shape": str(hps.loss.movement_ramp_shape),
