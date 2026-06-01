@@ -82,7 +82,7 @@ def build_modal_volume_get_command(
 ) -> list[str]:
     """Build a ``modal volume get`` command."""
 
-    return ["modal", "volume", "get", volume_name, remote_path, str(local_path)]
+    return ["modal", "volume", "get", "--force", volume_name, remote_path, str(local_path)]
 
 
 def build_modal_run_sync_plan(

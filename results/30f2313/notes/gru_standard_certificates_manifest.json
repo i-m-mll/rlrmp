@@ -240,8 +240,8 @@
       "arrays": [],
       "artifacts": {
         "run_spec": "results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/run.json",
-        "trained_model": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/cs_stochastic_gru__no_hidden_penalty/trained_model.eqx",
-        "training_summary": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/cs_stochastic_gru__no_hidden_penalty/training_summary.json"
+        "trained_model": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/trained_model.eqx",
+        "training_summary": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/training_summary.json"
       },
       "certificate_components": [
         {
@@ -469,8 +469,8 @@
       "arrays": [],
       "artifacts": {
         "run_spec": "results/30f2313/runs/cs_stochastic_gru__hidden_penalty/run.json",
-        "trained_model": "_artifacts/30f2313/runs/cs_stochastic_gru__hidden_penalty/cs_stochastic_gru__hidden_penalty/trained_model.eqx",
-        "training_summary": "_artifacts/30f2313/runs/cs_stochastic_gru__hidden_penalty/cs_stochastic_gru__hidden_penalty/training_summary.json"
+        "trained_model": "_artifacts/30f2313/runs/cs_stochastic_gru__hidden_penalty/trained_model.eqx",
+        "training_summary": "_artifacts/30f2313/runs/cs_stochastic_gru__hidden_penalty/training_summary.json"
       },
       "certificate_components": [
         {
@@ -697,8 +697,8 @@
   ],
   "scope": "Two locally synced 30f2313 C&S stochastic GRU pilot rows. The standard certificate is materialized in empirical_nonlinear mode: clean rollout action behavior is available, same-coordinate transition/value/Bellman components are not applicable, and response map rows remain missing until the observation projection contract is defined.",
   "source_artifacts": {
-    "cs_stochastic_gru__hidden_penalty": "_artifacts/30f2313/runs/cs_stochastic_gru__hidden_penalty/cs_stochastic_gru__hidden_penalty/trained_model.eqx",
-    "cs_stochastic_gru__no_hidden_penalty": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/cs_stochastic_gru__no_hidden_penalty/trained_model.eqx"
+    "cs_stochastic_gru__hidden_penalty": "_artifacts/30f2313/runs/cs_stochastic_gru__hidden_penalty/trained_model.eqx",
+    "cs_stochastic_gru__no_hidden_penalty": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/trained_model.eqx"
   },
   "source_issue": "30f2313",
   "source_manifests": {

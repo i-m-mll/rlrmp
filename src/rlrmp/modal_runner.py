@@ -385,9 +385,7 @@ def collect_provenance() -> dict[str, Any]:
         "platform": platform.platform(),
         "executable": sys.executable,
         "cwd": str(Path.cwd()),
-        "modal_env": {
-            key: value for key, value in os.environ.items() if key.startswith("MODAL_")
-        },
+        "modal_env": {key: value for key, value in os.environ.items() if key.startswith("MODAL_")},
         "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
     }
     for package in ("modal", "rlrmp", "feedbax", "jax_cookbook", "jax"):

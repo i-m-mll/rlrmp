@@ -577,11 +577,18 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def _default_model_path(run_id: str) -> Path:
-    return ARTIFACT_RUN_ROOT / run_id / run_id / "trained_model.eqx"
+    return _run_artifact_path(run_id, "trained_model.eqx")
 
 
 def _default_training_summary_path(run_id: str) -> Path:
-    return ARTIFACT_RUN_ROOT / run_id / run_id / "training_summary.json"
+    return _run_artifact_path(run_id, "training_summary.json")
+
+
+def _run_artifact_path(run_id: str, file_name: str) -> Path:
+    normalized = ARTIFACT_RUN_ROOT / run_id / file_name
+    if normalized.exists():
+        return normalized
+    return ARTIFACT_RUN_ROOT / run_id / run_id / file_name
 
 
 __all__ = [

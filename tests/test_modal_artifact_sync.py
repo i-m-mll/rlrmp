@@ -37,6 +37,7 @@ def test_build_plan_uses_role_based_repo_layout(tmp_path: Path) -> None:
         "modal",
         "volume",
         "get",
+        "--force",
         MODAL_VOLUME_NAME,
         "results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty",
         str(plan.local_spec_dir),
@@ -49,8 +50,8 @@ def test_sync_pulls_specs_artifacts_and_validates_run_spec(tmp_path: Path) -> No
 
     def runner(command: Sequence[str]) -> int:
         commands.append(list(command))
-        destination = Path(command[5])
-        if command[4].startswith("results/"):
+        destination = Path(command[6])
+        if command[5].startswith("results/"):
             _write_complete_specs(destination / "cs_stochastic_gru__no_hidden_penalty")
         else:
             _write_complete_artifacts(
@@ -71,8 +72,8 @@ def test_sync_pulls_specs_artifacts_and_validates_run_spec(tmp_path: Path) -> No
     assert len(results) == 1
     assert results[0].validated is True
     assert len(commands) == 2
-    assert commands[0][4] == "results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty"
-    assert commands[1][4] == "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty"
+    assert commands[0][5] == "results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty"
+    assert commands[1][5] == "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty"
     assert validated == [
         tmp_path
         / "results"
@@ -95,10 +96,10 @@ def test_sync_accepts_multiple_runs_in_order(tmp_path: Path) -> None:
     remote_paths: list[str] = []
 
     def runner(command: Sequence[str]) -> int:
-        remote_paths.append(command[4])
-        destination = Path(command[5])
+        remote_paths.append(command[5])
+        destination = Path(command[6])
         run = remote_paths[-1].split("/")[-1]
-        if command[4].startswith("results/"):
+        if command[5].startswith("results/"):
             _write_complete_specs(destination / run)
         else:
             _write_complete_artifacts(destination / run)
@@ -122,8 +123,8 @@ def test_sync_accepts_multiple_runs_in_order(tmp_path: Path) -> None:
 
 def test_sync_rejects_missing_graph_manifest(tmp_path: Path) -> None:
     def runner(command: Sequence[str]) -> int:
-        destination = Path(command[5])
-        if command[4].startswith("results/"):
+        destination = Path(command[6])
+        if command[5].startswith("results/"):
             nested = destination / "missing_manifest"
             nested.mkdir(parents=True)
             (nested / "run.json").write_text("{}", encoding="utf-8")
@@ -144,8 +145,8 @@ def test_sync_rejects_missing_graph_manifest(tmp_path: Path) -> None:
 
 def test_sync_rejects_missing_bulk_artifact(tmp_path: Path) -> None:
     def runner(command: Sequence[str]) -> int:
-        destination = Path(command[5])
-        if command[4].startswith("results/"):
+        destination = Path(command[6])
+        if command[5].startswith("results/"):
             _write_complete_specs(destination / "missing_artifact")
         else:
             nested = destination / "missing_artifact"
@@ -182,8 +183,8 @@ def test_dry_run_builds_commands_without_running_or_validating(tmp_path: Path) -
     )
 
     assert results[0].validated is False
-    assert results[0].commands[0][4] == "results/30f2313/runs/dry_run"
-    assert results[0].commands[1][4] == "_artifacts/30f2313/runs/dry_run"
+    assert results[0].commands[0][5] == "results/30f2313/runs/dry_run"
+    assert results[0].commands[1][5] == "_artifacts/30f2313/runs/dry_run"
 
 
 def test_nonzero_modal_command_aborts_sync(tmp_path: Path) -> None:
