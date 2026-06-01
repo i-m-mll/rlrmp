@@ -132,6 +132,12 @@
     "phase_modulated_recurrent__pm_linrec_r12_supervised_process_measurement_io_map_fit__plant_states",
     "phase_modulated_recurrent__pm_linrec_r12_supervised_process_measurement_io_map_fit__reference_actions",
     "phase_modulated_recurrent__pm_linrec_r12_supervised_process_measurement_io_map_fit__reference_observations",
+    "phase_modulated_recurrent__pm_linrec_r20_full_matrix_supervised_action_io_combined_fit__actions",
+    "phase_modulated_recurrent__pm_linrec_r20_full_matrix_supervised_action_io_combined_fit__hidden_states",
+    "phase_modulated_recurrent__pm_linrec_r20_full_matrix_supervised_action_io_combined_fit__observations",
+    "phase_modulated_recurrent__pm_linrec_r20_full_matrix_supervised_action_io_combined_fit__plant_states",
+    "phase_modulated_recurrent__pm_linrec_r20_full_matrix_supervised_action_io_combined_fit__reference_actions",
+    "phase_modulated_recurrent__pm_linrec_r20_full_matrix_supervised_action_io_combined_fit__reference_observations",
     "phase_modulated_recurrent__pm_linrec_r20_projected_oracle_nominal_replay__actions",
     "phase_modulated_recurrent__pm_linrec_r20_projected_oracle_nominal_replay__hidden_states",
     "phase_modulated_recurrent__pm_linrec_r20_projected_oracle_nominal_replay__observations",
@@ -180,6 +186,12 @@
     "phase_modulated_recurrent__pm_linrec_r20_supervised_process_measurement_io_map_fit__plant_states",
     "phase_modulated_recurrent__pm_linrec_r20_supervised_process_measurement_io_map_fit__reference_actions",
     "phase_modulated_recurrent__pm_linrec_r20_supervised_process_measurement_io_map_fit__reference_observations",
+    "phase_modulated_recurrent__pm_linrec_r30_full_matrix_supervised_action_io_combined_fit__actions",
+    "phase_modulated_recurrent__pm_linrec_r30_full_matrix_supervised_action_io_combined_fit__hidden_states",
+    "phase_modulated_recurrent__pm_linrec_r30_full_matrix_supervised_action_io_combined_fit__observations",
+    "phase_modulated_recurrent__pm_linrec_r30_full_matrix_supervised_action_io_combined_fit__plant_states",
+    "phase_modulated_recurrent__pm_linrec_r30_full_matrix_supervised_action_io_combined_fit__reference_actions",
+    "phase_modulated_recurrent__pm_linrec_r30_full_matrix_supervised_action_io_combined_fit__reference_observations",
     "phase_modulated_recurrent__pm_linrec_r30_projected_oracle_nominal_replay__actions",
     "phase_modulated_recurrent__pm_linrec_r30_projected_oracle_nominal_replay__hidden_states",
     "phase_modulated_recurrent__pm_linrec_r30_projected_oracle_nominal_replay__observations",
@@ -324,6 +336,31 @@
         "phase_modulated_recurrent__pm_linrec_exact_oracle_process_measurement_io"
       ],
       "exact_process_eigen_label_disposition": "The prior exact_process_eigen rows were state-trajectory covariance coverage directions, not process-eigen disturbance sequences. They are retained under state_coverage_eigen labels.",
+      "full_matrix_supervised_gate_residuals": {
+        "phase_modulated_recurrent__pm_linrec_r20_full_matrix_supervised_action_io_combined_fit": {
+          "action_energy_mismatch": 0.030721857979394536,
+          "max_response_mismatch": 0.21845499195859341,
+          "rank": 20,
+          "relevant_response_mismatch": 0.21845499195859341,
+          "strict_action_threshold": 0.2,
+          "strict_response_threshold": 0.02,
+          "verdict": "supervised_representation_non_equivalent"
+        },
+        "phase_modulated_recurrent__pm_linrec_r30_full_matrix_supervised_action_io_combined_fit": {
+          "action_energy_mismatch": 0.01942150282049335,
+          "max_response_mismatch": 0.1444296148016984,
+          "rank": 30,
+          "relevant_response_mismatch": 0.1444296148016984,
+          "strict_action_threshold": 0.2,
+          "strict_response_threshold": 0.02,
+          "verdict": "supervised_representation_non_equivalent"
+        }
+      },
+      "full_matrix_supervised_pass_ranks": [],
+      "full_matrix_supervised_rows": [
+        "phase_modulated_recurrent__pm_linrec_r20_full_matrix_supervised_action_io_combined_fit",
+        "phase_modulated_recurrent__pm_linrec_r30_full_matrix_supervised_action_io_combined_fit"
+      ],
       "projection_sweep_ranks": [
         12,
         20,
@@ -335,7 +372,7 @@
       ],
       "reward_gating_status": "released_after_supervised_action_io_representation_pass",
       "supervised_extension_materialized": true,
-      "supervised_optimization_rows": 20,
+      "supervised_optimization_rows": 22,
       "supervised_representation_pass_rows": [
         "phase_modulated_recurrent__pm_linrec_r12_supervised_nominal_action_fit",
         "phase_modulated_recurrent__pm_linrec_r12_supervised_mixed_history_action_fit",
@@ -372,20 +409,20 @@
       60
     ],
     "component_status_counts": {
-      "bellman_hessian_residual:not_applicable": 50,
-      "closed_loop_transition_mismatch:not_applicable": 50,
-      "disturbance_history_to_action_map_mismatch:available": 50,
-      "disturbance_history_to_cost_quadratic:available": 50,
-      "disturbance_history_to_output_map_mismatch:available": 50,
-      "disturbance_history_to_state_map_mismatch:available": 50,
-      "measurement_history_to_action_map_mismatch:available": 50,
-      "measurement_history_to_output_map_mismatch:available": 50,
-      "observation_history_to_action_map_mismatch:available": 50,
-      "optimizer_metadata:available": 50,
-      "recurrence_gru_diagnostics:available": 50,
-      "state_weighted_action_mismatch:available": 50,
-      "value_policy_gap:not_applicable": 50,
-      "visited_subspace_diagnostics:available": 50
+      "bellman_hessian_residual:not_applicable": 52,
+      "closed_loop_transition_mismatch:not_applicable": 52,
+      "disturbance_history_to_action_map_mismatch:available": 52,
+      "disturbance_history_to_cost_quadratic:available": 52,
+      "disturbance_history_to_output_map_mismatch:available": 52,
+      "disturbance_history_to_state_map_mismatch:available": 52,
+      "measurement_history_to_action_map_mismatch:available": 52,
+      "measurement_history_to_output_map_mismatch:available": 52,
+      "observation_history_to_action_map_mismatch:available": 52,
+      "optimizer_metadata:available": 52,
+      "recurrence_gru_diagnostics:available": 52,
+      "state_weighted_action_mismatch:available": 52,
+      "value_policy_gap:not_applicable": 52,
+      "visited_subspace_diagnostics:available": 52
     },
     "retained_rows": [
       "phase_modulated_recurrent__pm_linrec_exact_oracle_nominal_replay",
@@ -420,6 +457,8 @@
       "phase_modulated_recurrent__pm_linrec_r20_supervised_process_io_map_fit",
       "phase_modulated_recurrent__pm_linrec_r20_supervised_process_measurement_io_map_fit",
       "phase_modulated_recurrent__pm_linrec_r20_supervised_action_io_combined_fit",
+      "phase_modulated_recurrent__pm_linrec_r20_full_matrix_supervised_action_io_combined_fit",
+      "phase_modulated_recurrent__pm_linrec_r30_full_matrix_supervised_action_io_combined_fit",
       "phase_modulated_recurrent__pm_linrec_r30_supervised_nominal_action_fit",
       "phase_modulated_recurrent__pm_linrec_r30_supervised_mixed_history_action_fit",
       "phase_modulated_recurrent__pm_linrec_r30_supervised_process_io_map_fit",
@@ -443,7 +482,7 @@
   "format": "rlrmp.output_feedback_phase_modulated_recurrent.v2",
   "issue": "d6d25d6",
   "non_goals": "No GRU training, no broad robust-epsilon arm, and no claim that projected-oracle diagnostic rows are bridge passes. Supervised rows fit action and response maps; they are not reward-trained rows.",
-  "result": "The exact oracle and clamped-spline projected-oracle rows were materialized. Exact-oracle sanity rows have max aggregate response-map mismatch 0. The r=12 projected-oracle nominal replay row has action mismatch 24.54 and combined matrix residual 0.01274. 20 supervised action/response-map rows were optimized, with 13 representation pass rows. 8 r=12 reward rows were optimized after the supervised gate.",
+  "result": "The exact oracle and clamped-spline projected-oracle rows were materialized. Exact-oracle sanity rows have max aggregate response-map mismatch 0. The r=12 projected-oracle nominal replay row has action mismatch 24.54 and combined matrix residual 0.01274. 22 supervised action/response-map rows were optimized, including 2 full-matrix rows, with 13 representation pass rows and full-matrix pass ranks []. 8 reward rows were optimized after the supervised gate for ranks [12].",
   "rows": [
     {
       "arrays": [
@@ -838,9 +877,14 @@
           "learning_rate": null,
           "measurement_scale": 0.0,
           "n_train_steps": 0,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 60,
           "row_family": "exact_oracle_sanity",
+          "smoothness_penalty": null,
           "stability_penalty": null,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -1243,9 +1287,14 @@
           "learning_rate": null,
           "measurement_scale": 0.0,
           "n_train_steps": 0,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 60,
           "row_family": "exact_oracle_sanity",
+          "smoothness_penalty": null,
           "stability_penalty": null,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -1648,9 +1697,14 @@
           "learning_rate": null,
           "measurement_scale": 0.02,
           "n_train_steps": 0,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 60,
           "row_family": "exact_oracle_sanity",
+          "smoothness_penalty": null,
           "stability_penalty": null,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -2053,9 +2107,14 @@
           "learning_rate": null,
           "measurement_scale": 0.0,
           "n_train_steps": 0,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 3,
           "row_family": "legacy_projected_oracle_replay",
+          "smoothness_penalty": null,
           "stability_penalty": null,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -2458,9 +2517,14 @@
           "learning_rate": null,
           "measurement_scale": 0.0,
           "n_train_steps": 0,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 5,
           "row_family": "legacy_projected_oracle_replay",
+          "smoothness_penalty": null,
           "stability_penalty": null,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -2863,9 +2927,14 @@
           "learning_rate": null,
           "measurement_scale": 0.0,
           "n_train_steps": 0,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 8,
           "row_family": "legacy_projected_oracle_replay",
+          "smoothness_penalty": null,
           "stability_penalty": null,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -3268,9 +3337,14 @@
           "learning_rate": null,
           "measurement_scale": 0.0,
           "n_train_steps": 0,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 12,
           "row_family": "projected_oracle_replay",
+          "smoothness_penalty": null,
           "stability_penalty": null,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -3673,9 +3747,14 @@
           "learning_rate": null,
           "measurement_scale": 0.0,
           "n_train_steps": 0,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 20,
           "row_family": "projected_oracle_replay",
+          "smoothness_penalty": null,
           "stability_penalty": null,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -4078,9 +4157,14 @@
           "learning_rate": null,
           "measurement_scale": 0.0,
           "n_train_steps": 0,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 30,
           "row_family": "projected_oracle_replay",
+          "smoothness_penalty": null,
           "stability_penalty": null,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -4483,9 +4567,14 @@
           "learning_rate": null,
           "measurement_scale": 0.0,
           "n_train_steps": 0,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 60,
           "row_family": "projected_oracle_replay",
+          "smoothness_penalty": null,
           "stability_penalty": null,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -4888,9 +4977,14 @@
           "learning_rate": null,
           "measurement_scale": 0.0,
           "n_train_steps": 0,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 12,
           "row_family": "projected_oracle_io_eval",
+          "smoothness_penalty": null,
           "stability_penalty": null,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -5293,9 +5387,14 @@
           "learning_rate": null,
           "measurement_scale": 0.0,
           "n_train_steps": 0,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 20,
           "row_family": "projected_oracle_io_eval",
+          "smoothness_penalty": null,
           "stability_penalty": null,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -5698,9 +5797,14 @@
           "learning_rate": null,
           "measurement_scale": 0.0,
           "n_train_steps": 0,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 30,
           "row_family": "projected_oracle_io_eval",
+          "smoothness_penalty": null,
           "stability_penalty": null,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -6103,9 +6207,14 @@
           "learning_rate": null,
           "measurement_scale": 0.0,
           "n_train_steps": 0,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 60,
           "row_family": "projected_oracle_io_eval",
+          "smoothness_penalty": null,
           "stability_penalty": null,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -6508,9 +6617,14 @@
           "learning_rate": null,
           "measurement_scale": 0.02,
           "n_train_steps": 0,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 12,
           "row_family": "projected_oracle_io_eval",
+          "smoothness_penalty": null,
           "stability_penalty": null,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -6913,9 +7027,14 @@
           "learning_rate": null,
           "measurement_scale": 0.02,
           "n_train_steps": 0,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 20,
           "row_family": "projected_oracle_io_eval",
+          "smoothness_penalty": null,
           "stability_penalty": null,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -7318,9 +7437,14 @@
           "learning_rate": null,
           "measurement_scale": 0.02,
           "n_train_steps": 0,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 30,
           "row_family": "projected_oracle_io_eval",
+          "smoothness_penalty": null,
           "stability_penalty": null,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -7723,9 +7847,14 @@
           "learning_rate": null,
           "measurement_scale": 0.02,
           "n_train_steps": 0,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 60,
           "row_family": "projected_oracle_io_eval",
+          "smoothness_penalty": null,
           "stability_penalty": null,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -8128,9 +8257,14 @@
           "learning_rate": null,
           "measurement_scale": 0.0,
           "n_train_steps": 0,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 3,
           "row_family": "projected_oracle_state_coverage_eval",
+          "smoothness_penalty": null,
           "stability_penalty": null,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -8533,9 +8667,14 @@
           "learning_rate": null,
           "measurement_scale": 0.0,
           "n_train_steps": 0,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 5,
           "row_family": "projected_oracle_state_coverage_eval",
+          "smoothness_penalty": null,
           "stability_penalty": null,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -8938,9 +9077,14 @@
           "learning_rate": null,
           "measurement_scale": 0.0,
           "n_train_steps": 0,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 8,
           "row_family": "projected_oracle_state_coverage_eval",
+          "smoothness_penalty": null,
           "stability_penalty": null,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -9343,9 +9487,14 @@
           "learning_rate": null,
           "measurement_scale": 0.0,
           "n_train_steps": 0,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 12,
           "row_family": "projected_oracle_state_coverage_eval",
+          "smoothness_penalty": null,
           "stability_penalty": null,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -9441,8 +9590,11 @@
             "is_supervised_trained": true,
             "learning_rate": 0.001,
             "n_train_steps": 1,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 12,
             "row_family": "supervised_action_fit",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001,
             "supervised_best_loss": 1.5626547998191722e-05,
             "supervised_final_loss": 1.5626547998191722e-05,
@@ -9451,6 +9603,7 @@
               "D_y",
               "c"
             ],
+            "supervised_fit_scope": "readout_only",
             "supervised_initial_loss": 0.00013843373997658511,
             "supervised_last_loss": 1.5626547998191722e-05,
             "supervised_loss_improvement": 0.0001228071919783934,
@@ -9675,6 +9828,9 @@
           "is_supervised_trained": true,
           "learning_rate": 0.001,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
           "supervised_best_loss": 1.5626547998191722e-05,
           "supervised_final_loss": 1.5626547998191722e-05,
@@ -9683,6 +9839,7 @@
             "D_y",
             "c"
           ],
+          "supervised_fit_scope": "readout_only",
           "supervised_initial_loss": 0.00013843373997658511,
           "supervised_last_loss": 1.5626547998191722e-05,
           "supervised_loss_improvement": 0.0001228071919783934,
@@ -9780,9 +9937,18 @@
           "learning_rate": 0.001,
           "measurement_scale": 0.0,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
           "rank": 12,
           "row_family": "supervised_action_fit",
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": [
+            "C_h",
+            "D_y",
+            "c"
+          ],
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": "action"
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -9878,8 +10044,11 @@
             "is_supervised_trained": true,
             "learning_rate": 0.001,
             "n_train_steps": 1,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 12,
             "row_family": "supervised_action_fit",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001,
             "supervised_best_loss": 0.05568759012579957,
             "supervised_final_loss": 0.05568759012579957,
@@ -9888,6 +10057,7 @@
               "D_y",
               "c"
             ],
+            "supervised_fit_scope": "readout_only",
             "supervised_initial_loss": 0.05568759012579957,
             "supervised_last_loss": 2.170850692417569,
             "supervised_loss_improvement": 0.0,
@@ -10112,6 +10282,9 @@
           "is_supervised_trained": true,
           "learning_rate": 0.001,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
           "supervised_best_loss": 0.05568759012579957,
           "supervised_final_loss": 0.05568759012579957,
@@ -10120,6 +10293,7 @@
             "D_y",
             "c"
           ],
+          "supervised_fit_scope": "readout_only",
           "supervised_initial_loss": 0.05568759012579957,
           "supervised_last_loss": 2.170850692417569,
           "supervised_loss_improvement": 0.0,
@@ -10217,9 +10391,18 @@
           "learning_rate": 0.001,
           "measurement_scale": 0.0,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
           "rank": 12,
           "row_family": "supervised_action_fit",
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": [
+            "C_h",
+            "D_y",
+            "c"
+          ],
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": "action"
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -10315,8 +10498,11 @@
             "is_supervised_trained": true,
             "learning_rate": 0.001,
             "n_train_steps": 1,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 12,
             "row_family": "supervised_io_map_fit",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001,
             "supervised_best_loss": 0.10900394220735786,
             "supervised_final_loss": 0.10900394220735786,
@@ -10325,6 +10511,7 @@
               "D_y",
               "c"
             ],
+            "supervised_fit_scope": "readout_only",
             "supervised_initial_loss": 0.10900394220735786,
             "supervised_last_loss": 0.11792252520628348,
             "supervised_loss_improvement": 0.0,
@@ -10549,6 +10736,9 @@
           "is_supervised_trained": true,
           "learning_rate": 0.001,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
           "supervised_best_loss": 0.10900394220735786,
           "supervised_final_loss": 0.10900394220735786,
@@ -10557,6 +10747,7 @@
             "D_y",
             "c"
           ],
+          "supervised_fit_scope": "readout_only",
           "supervised_initial_loss": 0.10900394220735786,
           "supervised_last_loss": 0.11792252520628348,
           "supervised_loss_improvement": 0.0,
@@ -10654,9 +10845,18 @@
           "learning_rate": 0.001,
           "measurement_scale": 0.0,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
           "rank": 12,
           "row_family": "supervised_io_map_fit",
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": [
+            "C_h",
+            "D_y",
+            "c"
+          ],
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": "process_io"
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -10752,8 +10952,11 @@
             "is_supervised_trained": true,
             "learning_rate": 0.001,
             "n_train_steps": 1,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 12,
             "row_family": "supervised_io_map_fit",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001,
             "supervised_best_loss": 0.2069828218917969,
             "supervised_final_loss": 0.2069828218917969,
@@ -10762,6 +10965,7 @@
               "D_y",
               "c"
             ],
+            "supervised_fit_scope": "readout_only",
             "supervised_initial_loss": 0.2069828218917969,
             "supervised_last_loss": 0.2229234325325322,
             "supervised_loss_improvement": 0.0,
@@ -10986,6 +11190,9 @@
           "is_supervised_trained": true,
           "learning_rate": 0.001,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
           "supervised_best_loss": 0.2069828218917969,
           "supervised_final_loss": 0.2069828218917969,
@@ -10994,6 +11201,7 @@
             "D_y",
             "c"
           ],
+          "supervised_fit_scope": "readout_only",
           "supervised_initial_loss": 0.2069828218917969,
           "supervised_last_loss": 0.2229234325325322,
           "supervised_loss_improvement": 0.0,
@@ -11091,9 +11299,18 @@
           "learning_rate": 0.001,
           "measurement_scale": 0.02,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
           "rank": 12,
           "row_family": "supervised_io_map_fit",
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": [
+            "C_h",
+            "D_y",
+            "c"
+          ],
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": "process_measurement_io"
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -11189,8 +11406,11 @@
             "is_supervised_trained": true,
             "learning_rate": 0.001,
             "n_train_steps": 1,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 12,
             "row_family": "supervised_action_io_map_fit",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001,
             "supervised_best_loss": 0.17729240773808524,
             "supervised_final_loss": 0.17729240773808524,
@@ -11199,6 +11419,7 @@
               "D_y",
               "c"
             ],
+            "supervised_fit_scope": "readout_only",
             "supervised_initial_loss": 0.18181068847363122,
             "supervised_last_loss": 0.17729240773808524,
             "supervised_loss_improvement": 0.004518280735545971,
@@ -11423,6 +11644,9 @@
           "is_supervised_trained": true,
           "learning_rate": 0.001,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
           "supervised_best_loss": 0.17729240773808524,
           "supervised_final_loss": 0.17729240773808524,
@@ -11431,6 +11655,7 @@
             "D_y",
             "c"
           ],
+          "supervised_fit_scope": "readout_only",
           "supervised_initial_loss": 0.18181068847363122,
           "supervised_last_loss": 0.17729240773808524,
           "supervised_loss_improvement": 0.004518280735545971,
@@ -11528,9 +11753,18 @@
           "learning_rate": 0.001,
           "measurement_scale": 0.02,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
           "rank": 12,
           "row_family": "supervised_action_io_map_fit",
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": [
+            "C_h",
+            "D_y",
+            "c"
+          ],
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": "action_and_io"
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -11626,8 +11860,11 @@
             "is_supervised_trained": true,
             "learning_rate": 0.001,
             "n_train_steps": 1,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 20,
             "row_family": "supervised_action_fit",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001,
             "supervised_best_loss": 1.0351405029076184e-08,
             "supervised_final_loss": 1.0351405029076184e-08,
@@ -11636,6 +11873,7 @@
               "D_y",
               "c"
             ],
+            "supervised_fit_scope": "readout_only",
             "supervised_initial_loss": 4.156306198264689e-07,
             "supervised_last_loss": 1.0351405029076184e-08,
             "supervised_loss_improvement": 4.052792147973927e-07,
@@ -11860,6 +12098,9 @@
           "is_supervised_trained": true,
           "learning_rate": 0.001,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
           "supervised_best_loss": 1.0351405029076184e-08,
           "supervised_final_loss": 1.0351405029076184e-08,
@@ -11868,6 +12109,7 @@
             "D_y",
             "c"
           ],
+          "supervised_fit_scope": "readout_only",
           "supervised_initial_loss": 4.156306198264689e-07,
           "supervised_last_loss": 1.0351405029076184e-08,
           "supervised_loss_improvement": 4.052792147973927e-07,
@@ -11965,9 +12207,18 @@
           "learning_rate": 0.001,
           "measurement_scale": 0.0,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
           "rank": 20,
           "row_family": "supervised_action_fit",
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": [
+            "C_h",
+            "D_y",
+            "c"
+          ],
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": "action"
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -12063,8 +12314,11 @@
             "is_supervised_trained": true,
             "learning_rate": 0.001,
             "n_train_steps": 1,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 20,
             "row_family": "supervised_action_fit",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001,
             "supervised_best_loss": 0.025452985263591382,
             "supervised_final_loss": 0.025452985263591382,
@@ -12073,6 +12327,7 @@
               "D_y",
               "c"
             ],
+            "supervised_fit_scope": "readout_only",
             "supervised_initial_loss": 0.025452985263591382,
             "supervised_last_loss": 0.329001348587613,
             "supervised_loss_improvement": 0.0,
@@ -12297,6 +12552,9 @@
           "is_supervised_trained": true,
           "learning_rate": 0.001,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
           "supervised_best_loss": 0.025452985263591382,
           "supervised_final_loss": 0.025452985263591382,
@@ -12305,6 +12563,7 @@
             "D_y",
             "c"
           ],
+          "supervised_fit_scope": "readout_only",
           "supervised_initial_loss": 0.025452985263591382,
           "supervised_last_loss": 0.329001348587613,
           "supervised_loss_improvement": 0.0,
@@ -12402,9 +12661,18 @@
           "learning_rate": 0.001,
           "measurement_scale": 0.0,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
           "rank": 20,
           "row_family": "supervised_action_fit",
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": [
+            "C_h",
+            "D_y",
+            "c"
+          ],
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": "action"
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -12500,8 +12768,11 @@
             "is_supervised_trained": true,
             "learning_rate": 0.001,
             "n_train_steps": 1,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 20,
             "row_family": "supervised_io_map_fit",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001,
             "supervised_best_loss": 0.01492392039958602,
             "supervised_final_loss": 0.01492392039958602,
@@ -12510,6 +12781,7 @@
               "D_y",
               "c"
             ],
+            "supervised_fit_scope": "readout_only",
             "supervised_initial_loss": 0.015810533427335585,
             "supervised_last_loss": 0.01492392039958602,
             "supervised_loss_improvement": 0.0008866130277495644,
@@ -12734,6 +13006,9 @@
           "is_supervised_trained": true,
           "learning_rate": 0.001,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
           "supervised_best_loss": 0.01492392039958602,
           "supervised_final_loss": 0.01492392039958602,
@@ -12742,6 +13017,7 @@
             "D_y",
             "c"
           ],
+          "supervised_fit_scope": "readout_only",
           "supervised_initial_loss": 0.015810533427335585,
           "supervised_last_loss": 0.01492392039958602,
           "supervised_loss_improvement": 0.0008866130277495644,
@@ -12839,9 +13115,18 @@
           "learning_rate": 0.001,
           "measurement_scale": 0.0,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
           "rank": 20,
           "row_family": "supervised_io_map_fit",
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": [
+            "C_h",
+            "D_y",
+            "c"
+          ],
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": "process_io"
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -12937,8 +13222,11 @@
             "is_supervised_trained": true,
             "learning_rate": 0.001,
             "n_train_steps": 1,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 20,
             "row_family": "supervised_io_map_fit",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001,
             "supervised_best_loss": 0.09475258043784143,
             "supervised_final_loss": 0.09475258043784143,
@@ -12947,6 +13235,7 @@
               "D_y",
               "c"
             ],
+            "supervised_fit_scope": "readout_only",
             "supervised_initial_loss": 0.11713276269296452,
             "supervised_last_loss": 0.09475258043784143,
             "supervised_loss_improvement": 0.022380182255123088,
@@ -13171,6 +13460,9 @@
           "is_supervised_trained": true,
           "learning_rate": 0.001,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
           "supervised_best_loss": 0.09475258043784143,
           "supervised_final_loss": 0.09475258043784143,
@@ -13179,6 +13471,7 @@
             "D_y",
             "c"
           ],
+          "supervised_fit_scope": "readout_only",
           "supervised_initial_loss": 0.11713276269296452,
           "supervised_last_loss": 0.09475258043784143,
           "supervised_loss_improvement": 0.022380182255123088,
@@ -13276,9 +13569,18 @@
           "learning_rate": 0.001,
           "measurement_scale": 0.02,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
           "rank": 20,
           "row_family": "supervised_io_map_fit",
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": [
+            "C_h",
+            "D_y",
+            "c"
+          ],
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": "process_measurement_io"
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -13374,8 +13676,11 @@
             "is_supervised_trained": true,
             "learning_rate": 0.001,
             "n_train_steps": 1,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 20,
             "row_family": "supervised_action_io_map_fit",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001,
             "supervised_best_loss": 0.08572348807219722,
             "supervised_final_loss": 0.08572348807219722,
@@ -13384,6 +13689,7 @@
               "D_y",
               "c"
             ],
+            "supervised_fit_scope": "readout_only",
             "supervised_initial_loss": 0.106941204018935,
             "supervised_last_loss": 0.08572348807219722,
             "supervised_loss_improvement": 0.021217715946737783,
@@ -13608,6 +13914,9 @@
           "is_supervised_trained": true,
           "learning_rate": 0.001,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
           "supervised_best_loss": 0.08572348807219722,
           "supervised_final_loss": 0.08572348807219722,
@@ -13616,6 +13925,7 @@
             "D_y",
             "c"
           ],
+          "supervised_fit_scope": "readout_only",
           "supervised_initial_loss": 0.106941204018935,
           "supervised_last_loss": 0.08572348807219722,
           "supervised_loss_improvement": 0.021217715946737783,
@@ -13713,13 +14023,954 @@
           "learning_rate": 0.001,
           "measurement_scale": 0.02,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
           "rank": 20,
           "row_family": "supervised_action_io_map_fit",
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": [
+            "C_h",
+            "D_y",
+            "c"
+          ],
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": "action_and_io"
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
         "run_id": "phase_modulated_recurrent__pm_linrec_r20_supervised_action_io_combined_fit",
+        "seed": null,
+        "training_distribution": "mixed_action_process_measurement_io_supervised"
+      },
+      "status": "supervised_representation_non_equivalent"
+    },
+    {
+      "arrays": [
+        {
+          "dtype": "float64",
+          "name": "plant_states",
+          "role": "plant_state",
+          "shape": [
+            18,
+            61,
+            48
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "actions",
+          "role": "action",
+          "shape": [
+            18,
+            60,
+            2
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "observations",
+          "role": "observation",
+          "shape": [
+            18,
+            60,
+            8
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "hidden_states",
+          "role": "hidden_state",
+          "shape": [
+            18,
+            61,
+            48
+          ]
+        }
+      ],
+      "artifacts": {},
+      "certificate_components": [
+        {
+          "name": "state_weighted_action_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "action_label": "control",
+            "aggregate_delta_energy": 86.54137402080994,
+            "aggregate_mismatch_ratio": 0.030721857979394536,
+            "aggregate_reference_energy": 2816.9316477816583,
+            "delta_rms": 1.200981362753047,
+            "mismatch_ratio_max": 18.422962621035328,
+            "mismatch_ratio_mean": 0.9243286961919777,
+            "n_samples": 1080,
+            "reference_rms": 6.851923875552104,
+            "state_label": "state"
+          }
+        },
+        {
+          "name": "visited_subspace_diagnostics",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "mean_effective_rank": 1.4714288670209827,
+            "mean_identifiable_rank": 6.950819672131147,
+            "min_effective_rank": 1.001446968266984,
+            "min_identifiable_rank": 5.0,
+            "state_label": "plant_hidden_augmented_state",
+            "time_steps": 61
+          }
+        },
+        {
+          "name": "optimizer_metadata",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "fit_method": "adam_full_matrix_supervised_action_io_maps",
+            "initialization": "oracle_matrix_projection_warm_start",
+            "is_reward_trained": false,
+            "is_supervised_trained": true,
+            "learning_rate": 0.00075,
+            "n_train_steps": 12,
+            "parameter_bound": 10.0,
+            "proximal_penalty": 0.0001,
+            "rank": 20,
+            "row_family": "supervised_action_io_map_fit",
+            "smoothness_penalty": 1e-05,
+            "stability_penalty": 0.001,
+            "supervised_best_loss": 0.17538066564010132,
+            "supervised_final_loss": 0.17538066564010132,
+            "supervised_fit_blocks": [
+              "A_h",
+              "B_y",
+              "B_u",
+              "b_h",
+              "C_h",
+              "D_y",
+              "c"
+            ],
+            "supervised_fit_scope": "full_matrix",
+            "supervised_initial_loss": 0.17538066564010132,
+            "supervised_last_loss": 3.5952043164381697,
+            "supervised_loss_improvement": 0.0,
+            "supervised_objective": "action_and_io",
+            "supervised_solver": "adam_full_matrix_response_map_loss"
+          }
+        },
+        {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.1627774327104164,
+            "delta_frobenius": 321.85576800178563,
+            "input_label": "observation_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 7559724754955389.0,
+            "mismatch_ratio_mean": 174338661990524.28,
+            "output_label": "action",
+            "reference_frobenius": 797.7451991116911,
+            "response_map_schema": "finite_horizon_linear_v1"
+          }
+        },
+        {
+          "name": "measurement_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.21845499195859341,
+            "delta_frobenius": 239.9282625456388,
+            "input_label": "measurement_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 7559724754955389.0,
+            "mismatch_ratio_mean": 174338661990524.12,
+            "output_label": "action",
+            "reference_frobenius": 513.3344636552252,
+            "response_map_schema": "finite_horizon_linear_v1"
+          }
+        },
+        {
+          "name": "measurement_history_to_output_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.20591281027486813,
+            "delta_frobenius": 91.0540555807012,
+            "input_label": "measurement_history",
+            "map_shape": [
+              60,
+              8,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 34.58259604582276,
+            "mismatch_ratio_mean": 1.0382677510990697,
+            "output_label": "external_output",
+            "reference_frobenius": 200.6585230418815,
+            "response_map_schema": "finite_horizon_linear_v1"
+          }
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.015810533427335585,
+            "delta_frobenius": 154.3581561706053,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 2.5620121341646787,
+            "mismatch_ratio_mean": 0.055107293875233936,
+            "output_label": "action",
+            "reference_frobenius": 1227.5984201878043,
+            "response_map_schema": "finite_horizon_linear_v1"
+          }
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.005938111110149945,
+            "delta_frobenius": 147.20646460761157,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              61,
+              48,
+              480
+            ],
+            "map_slices": 61,
+            "mismatch_ratio_max": 0.030607298660685265,
+            "mismatch_ratio_mean": 0.00484817192887108,
+            "output_label": "state",
+            "reference_frobenius": 1910.3050456506946,
+            "response_map_schema": "finite_horizon_linear_v1"
+          }
+        },
+        {
+          "name": "disturbance_history_to_output_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.005963583370373455,
+            "delta_frobenius": 60.08486631319449,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              60,
+              8,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 0.034130615184164714,
+            "mismatch_ratio_mean": 0.0041807743537747915,
+            "output_label": "external_output",
+            "reference_frobenius": 778.057066983652,
+            "response_map_schema": "finite_horizon_linear_v1"
+          }
+        },
+        {
+          "name": "disturbance_history_to_cost_quadratic",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.00021210490689960157,
+            "assumptions": [
+              "zero_affine_offset",
+              "linear_disturbance_response",
+              "separable_state_action_quadratic_cost",
+              "no_state_action_cross_terms"
+            ],
+            "candidate_quadratic_frobenius": 363642102.7702924,
+            "delta_frobenius": 5296420.953383004,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              480,
+              480
+            ],
+            "map_slices": 1,
+            "mismatch_ratio_max": 0.00021210490689960157,
+            "mismatch_ratio_mean": 0.00021210490689960157,
+            "output_label": "quadratic_cost",
+            "quadratic_map_shape": [
+              480,
+              480
+            ],
+            "reference_frobenius": 363669715.7978495,
+            "reference_quadratic_frobenius": 363669715.7978494,
+            "sidecar_type": "disturbance_to_cost_quadratic"
+          }
+        },
+        {
+          "name": "closed_loop_transition_mismatch",
+          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "value_policy_gap",
+          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "bellman_hessian_residual",
+          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "recurrence_gru_diagnostics",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "architecture": "linear_recurrence",
+            "basis_rank": 20,
+            "hidden_dim": 48,
+            "hidden_final_mean_norm": 2.460879095057254,
+            "hidden_final_to_initial": 5.609451689280924,
+            "hidden_initial_mean_norm": 0.4387022531559968,
+            "hidden_max_norm": 31.008790469988156,
+            "hidden_max_to_initial": 70.68299797166037,
+            "measurement_disturbance_scale": 0.02,
+            "observation_dim": 8,
+            "phase_modulates_matrices": true,
+            "process_disturbance_scale": 0.01999291222246905,
+            "recurrent_spectral_radius_max": 1.0881452835570216,
+            "recurrent_spectral_radius_mean": 0.9862544438762285
+          }
+        }
+      ],
+      "metrics": {
+        "aggregate_action_energy_mismatch": 0.030721857979394536,
+        "candidate_cost": 2903602.505740301,
+        "clean_reference_cost": 4363.509945030792,
+        "evaluation_lens": "mixed_process_measurement_io",
+        "io_map_certificate": {
+          "owner_issue": "007087e",
+          "reason": "The row consumes the integrated standard certificate component builder for linear recurrence response maps and augmented rollout diagnostics.",
+          "status": "standard_components_available"
+        },
+        "objective_ratio_to_clean_reference": 665.428185639167,
+        "objective_ratio_to_lens_reference": 1.0010836133184973,
+        "optimizer": {
+          "fit_method": "adam_full_matrix_supervised_action_io_maps",
+          "initialization": "oracle_matrix_projection_warm_start",
+          "is_reward_trained": false,
+          "is_supervised_trained": true,
+          "learning_rate": 0.00075,
+          "n_train_steps": 12,
+          "parameter_bound": 10.0,
+          "proximal_penalty": 0.0001,
+          "smoothness_penalty": 1e-05,
+          "stability_penalty": 0.001,
+          "supervised_best_loss": 0.17538066564010132,
+          "supervised_final_loss": 0.17538066564010132,
+          "supervised_fit_blocks": [
+            "A_h",
+            "B_y",
+            "B_u",
+            "b_h",
+            "C_h",
+            "D_y",
+            "c"
+          ],
+          "supervised_fit_scope": "full_matrix",
+          "supervised_initial_loss": 0.17538066564010132,
+          "supervised_last_loss": 3.5952043164381697,
+          "supervised_loss_improvement": 0.0,
+          "supervised_objective": "action_and_io",
+          "supervised_solver": "adam_full_matrix_response_map_loss"
+        },
+        "projection": {
+          "combined_relative_residual": 0.004876618673334097,
+          "matrices": {
+            "A_h": {
+              "rank": 20,
+              "relative_residual": 0.009658170832796398,
+              "residual_norm": 4.849009377251386
+            },
+            "B_u": {
+              "rank": 20,
+              "relative_residual": 0.0,
+              "residual_norm": 0.0
+            },
+            "B_y": {
+              "rank": 20,
+              "relative_residual": 0.21813625656864313,
+              "residual_norm": 4.29162845210459
+            },
+            "C_h": {
+              "rank": 20,
+              "relative_residual": 0.004524151747920187,
+              "residual_norm": 14.897323112380535
+            },
+            "D_y": {
+              "rank": 20,
+              "relative_residual": 0.0,
+              "residual_norm": 0.0
+            },
+            "b_h": {
+              "rank": 20,
+              "relative_residual": 0.0,
+              "residual_norm": 0.0
+            },
+            "c": {
+              "rank": 20,
+              "relative_residual": 0.0,
+              "residual_norm": 0.0
+            }
+          }
+        },
+        "recurrence_diagnostics": {
+          "basis_rank": 20,
+          "hidden_dim": 48,
+          "hidden_final_mean_norm": 2.460879095057254,
+          "hidden_final_to_initial": 5.609451689280924,
+          "hidden_initial_mean_norm": 0.4387022531559968,
+          "hidden_max_norm": 31.008790469988156,
+          "hidden_max_to_initial": 70.68299797166037,
+          "measurement_disturbance_scale": 0.02,
+          "observation_dim": 8,
+          "phase_modulates_matrices": true,
+          "process_disturbance_scale": 0.01999291222246905,
+          "recurrent_spectral_radius_max": 1.0881452835570216,
+          "recurrent_spectral_radius_mean": 0.9862544438762285
+        },
+        "reference_lens_cost": 2900459.529164736,
+        "response_map_mismatch": {
+          "disturbance_to_action": 0.015810533427335585,
+          "disturbance_to_cost": 0.00021210490689960157,
+          "disturbance_to_output": 0.005963583370373455,
+          "disturbance_to_state": 0.005938111110149945,
+          "max_aggregate_mismatch": 0.21845499195859341,
+          "measurement_to_action": 0.21845499195859341,
+          "measurement_to_output": 0.20591281027486813,
+          "observation_to_action": 0.1627774327104164
+        },
+        "row_family": "supervised_action_io_map_fit",
+        "state_weighted_action_mismatch": 0.9243286961919777,
+        "verdict": "supervised_representation_non_equivalent"
+      },
+      "spec": {
+        "architecture": "linear_recurrence",
+        "controller_label": "pm_linrec_r20_full_matrix_supervised_action_io_combined_fit",
+        "evaluation_lane": "supervised_representation",
+        "gamma_factor": null,
+        "issue_id": "d6d25d6",
+        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. Exact-oracle rows replay the analytical Kalman recurrence; projected-oracle rows are diagnostics; supervised rows optimize external action and/or response-map losses; reward rows optimize the retained rollout objective only after supervised representation gates pass.",
+        "objective": "supervised_action_and_io",
+        "optimizer_label": "adam_full_matrix_supervised_action_io_maps",
+        "parameters": {
+          "basis": "clamped_b_spline",
+          "coverage_family": "mixed_deviation",
+          "coverage_modes": 4,
+          "coverage_scale": 0.3,
+          "degree": 3,
+          "disturbance_scale": 0.02,
+          "evaluation_lens": "mixed_process_measurement_io",
+          "initialization": "oracle_matrix_projection_warm_start",
+          "learning_rate": 0.00075,
+          "measurement_scale": 0.02,
+          "n_train_steps": 12,
+          "parameter_bound": 10.0,
+          "proximal_penalty": 0.0001,
+          "rank": 20,
+          "row_family": "supervised_action_io_map_fit",
+          "smoothness_penalty": 1e-05,
+          "stability_penalty": 0.001,
+          "supervised_fit_blocks": [
+            "A_h",
+            "B_y",
+            "B_u",
+            "b_h",
+            "C_h",
+            "D_y",
+            "c"
+          ],
+          "supervised_fit_scope": "full_matrix",
+          "supervised_objective": "action_and_io"
+        },
+        "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
+        "run_id": "phase_modulated_recurrent__pm_linrec_r20_full_matrix_supervised_action_io_combined_fit",
+        "seed": null,
+        "training_distribution": "mixed_action_process_measurement_io_supervised"
+      },
+      "status": "supervised_representation_non_equivalent"
+    },
+    {
+      "arrays": [
+        {
+          "dtype": "float64",
+          "name": "plant_states",
+          "role": "plant_state",
+          "shape": [
+            18,
+            61,
+            48
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "actions",
+          "role": "action",
+          "shape": [
+            18,
+            60,
+            2
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "observations",
+          "role": "observation",
+          "shape": [
+            18,
+            60,
+            8
+          ]
+        },
+        {
+          "dtype": "float64",
+          "name": "hidden_states",
+          "role": "hidden_state",
+          "shape": [
+            18,
+            61,
+            48
+          ]
+        }
+      ],
+      "artifacts": {},
+      "certificate_components": [
+        {
+          "name": "state_weighted_action_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "action_label": "control",
+            "aggregate_delta_energy": 54.709045942528455,
+            "aggregate_mismatch_ratio": 0.01942150282049335,
+            "aggregate_reference_energy": 2816.9316477816583,
+            "delta_rms": 0.9548913196670469,
+            "mismatch_ratio_max": 0.9551235320957933,
+            "mismatch_ratio_mean": 0.04511028130511382,
+            "n_samples": 1080,
+            "reference_rms": 6.851923875552104,
+            "state_label": "state"
+          }
+        },
+        {
+          "name": "visited_subspace_diagnostics",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "mean_effective_rank": 1.4628247318355097,
+            "mean_identifiable_rank": 6.80327868852459,
+            "min_effective_rank": 1.001214922352536,
+            "min_identifiable_rank": 4.0,
+            "state_label": "plant_hidden_augmented_state",
+            "time_steps": 61
+          }
+        },
+        {
+          "name": "optimizer_metadata",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "fit_method": "adam_full_matrix_supervised_action_io_maps",
+            "initialization": "oracle_matrix_projection_warm_start",
+            "is_reward_trained": false,
+            "is_supervised_trained": true,
+            "learning_rate": 0.00075,
+            "n_train_steps": 12,
+            "parameter_bound": 10.0,
+            "proximal_penalty": 0.0001,
+            "rank": 30,
+            "row_family": "supervised_action_io_map_fit",
+            "smoothness_penalty": 1e-05,
+            "stability_penalty": 0.001,
+            "supervised_best_loss": 0.14136477503413158,
+            "supervised_final_loss": 0.14136477503413158,
+            "supervised_fit_blocks": [
+              "A_h",
+              "B_y",
+              "B_u",
+              "b_h",
+              "C_h",
+              "D_y",
+              "c"
+            ],
+            "supervised_fit_scope": "full_matrix",
+            "supervised_initial_loss": 0.14136477503413158,
+            "supervised_last_loss": 3.7979803188335226,
+            "supervised_loss_improvement": 0.0,
+            "supervised_objective": "action_and_io",
+            "supervised_solver": "adam_full_matrix_response_map_loss"
+          }
+        },
+        {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.11044878254785775,
+            "delta_frobenius": 265.1213275944978,
+            "input_label": "observation_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 8755110570840467.0,
+            "mismatch_ratio_mean": 190226493106499.2,
+            "output_label": "action",
+            "reference_frobenius": 797.7451991116911,
+            "response_map_schema": "finite_horizon_linear_v1"
+          }
+        },
+        {
+          "name": "measurement_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.1444296148016984,
+            "delta_frobenius": 195.08709818763208,
+            "input_label": "measurement_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 8755110570840467.0,
+            "mismatch_ratio_mean": 190226493106499.16,
+            "output_label": "action",
+            "reference_frobenius": 513.3344636552252,
+            "response_map_schema": "finite_horizon_linear_v1"
+          }
+        },
+        {
+          "name": "measurement_history_to_output_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.1281910329972677,
+            "delta_frobenius": 71.8433268290212,
+            "input_label": "measurement_history",
+            "map_shape": [
+              60,
+              8,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 38.26282343094565,
+            "mismatch_ratio_mean": 1.0359486398249653,
+            "output_label": "external_output",
+            "reference_frobenius": 200.6585230418815,
+            "response_map_schema": "finite_horizon_linear_v1"
+          }
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.0030258818845495987,
+            "delta_frobenius": 67.52775421204024,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              60,
+              2,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 0.0711732400161582,
+            "mismatch_ratio_mean": 0.0032021186929666223,
+            "output_label": "action",
+            "reference_frobenius": 1227.5984201878043,
+            "response_map_schema": "finite_horizon_linear_v1"
+          }
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.00118314814983559,
+            "delta_frobenius": 65.7086110623559,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              61,
+              48,
+              480
+            ],
+            "map_slices": 61,
+            "mismatch_ratio_max": 0.023410182852214034,
+            "mismatch_ratio_mean": 0.0019535708397794174,
+            "output_label": "state",
+            "reference_frobenius": 1910.3050456506946,
+            "response_map_schema": "finite_horizon_linear_v1"
+          }
+        },
+        {
+          "name": "disturbance_history_to_output_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 0.0011885646122733909,
+            "delta_frobenius": 26.823957327333535,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              60,
+              8,
+              480
+            ],
+            "map_slices": 60,
+            "mismatch_ratio_max": 0.025665450413996593,
+            "mismatch_ratio_mean": 0.0016398167805052432,
+            "output_label": "external_output",
+            "reference_frobenius": 778.057066983652,
+            "response_map_schema": "finite_horizon_linear_v1"
+          }
+        },
+        {
+          "name": "disturbance_history_to_cost_quadratic",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 3.531973734839393e-05,
+            "assumptions": [
+              "zero_affine_offset",
+              "linear_disturbance_response",
+              "separable_state_action_quadratic_cost",
+              "no_state_action_cross_terms"
+            ],
+            "candidate_quadratic_frobenius": 363639666.2808105,
+            "delta_frobenius": 2161304.06267497,
+            "input_label": "disturbance_history",
+            "map_shape": [
+              480,
+              480
+            ],
+            "map_slices": 1,
+            "mismatch_ratio_max": 3.531973734839393e-05,
+            "mismatch_ratio_mean": 3.531973734839393e-05,
+            "output_label": "quadratic_cost",
+            "quadratic_map_shape": [
+              480,
+              480
+            ],
+            "reference_frobenius": 363669715.7978495,
+            "reference_quadratic_frobenius": 363669715.7978494,
+            "sidecar_type": "disturbance_to_cost_quadratic"
+          }
+        },
+        {
+          "name": "closed_loop_transition_mismatch",
+          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "value_policy_gap",
+          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "bellman_hessian_residual",
+          "reason": "linear_recurrence controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "recurrence_gru_diagnostics",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "architecture": "linear_recurrence",
+            "basis_rank": 30,
+            "hidden_dim": 48,
+            "hidden_final_mean_norm": 2.433106718605081,
+            "hidden_final_to_initial": 5.546145936341704,
+            "hidden_initial_mean_norm": 0.4387022531559968,
+            "hidden_max_norm": 31.0155974269863,
+            "hidden_max_to_initial": 70.69851409210237,
+            "measurement_disturbance_scale": 0.02,
+            "observation_dim": 8,
+            "phase_modulates_matrices": true,
+            "process_disturbance_scale": 0.01999291222246905,
+            "recurrent_spectral_radius_max": 1.1287823033712105,
+            "recurrent_spectral_radius_mean": 0.9884890212032089
+          }
+        }
+      ],
+      "metrics": {
+        "aggregate_action_energy_mismatch": 0.01942150282049335,
+        "candidate_cost": 2902891.4528063727,
+        "clean_reference_cost": 4363.509945030792,
+        "evaluation_lens": "mixed_process_measurement_io",
+        "io_map_certificate": {
+          "owner_issue": "007087e",
+          "reason": "The row consumes the integrated standard certificate component builder for linear recurrence response maps and augmented rollout diagnostics.",
+          "status": "standard_components_available"
+        },
+        "objective_ratio_to_clean_reference": 665.2652312875359,
+        "objective_ratio_to_lens_reference": 1.000838461497974,
+        "optimizer": {
+          "fit_method": "adam_full_matrix_supervised_action_io_maps",
+          "initialization": "oracle_matrix_projection_warm_start",
+          "is_reward_trained": false,
+          "is_supervised_trained": true,
+          "learning_rate": 0.00075,
+          "n_train_steps": 12,
+          "parameter_bound": 10.0,
+          "proximal_penalty": 0.0001,
+          "smoothness_penalty": 1e-05,
+          "stability_penalty": 0.001,
+          "supervised_best_loss": 0.14136477503413158,
+          "supervised_final_loss": 0.14136477503413158,
+          "supervised_fit_blocks": [
+            "A_h",
+            "B_y",
+            "B_u",
+            "b_h",
+            "C_h",
+            "D_y",
+            "c"
+          ],
+          "supervised_fit_scope": "full_matrix",
+          "supervised_initial_loss": 0.14136477503413158,
+          "supervised_last_loss": 3.7979803188335226,
+          "supervised_loss_improvement": 0.0,
+          "supervised_objective": "action_and_io",
+          "supervised_solver": "adam_full_matrix_response_map_loss"
+        },
+        "projection": {
+          "combined_relative_residual": 0.0023077801292012714,
+          "matrices": {
+            "A_h": {
+              "rank": 30,
+              "relative_residual": 0.007375201892548009,
+              "residual_norm": 3.7028153420778662
+            },
+            "B_u": {
+              "rank": 30,
+              "relative_residual": 0.0,
+              "residual_norm": 0.0
+            },
+            "B_y": {
+              "rank": 30,
+              "relative_residual": 0.18302933750438707,
+              "residual_norm": 3.600932393173723
+            },
+            "C_h": {
+              "rank": 30,
+              "relative_residual": 0.0017290059878147738,
+              "residual_norm": 5.693345912978817
+            },
+            "D_y": {
+              "rank": 30,
+              "relative_residual": 0.0,
+              "residual_norm": 0.0
+            },
+            "b_h": {
+              "rank": 30,
+              "relative_residual": 0.0,
+              "residual_norm": 0.0
+            },
+            "c": {
+              "rank": 30,
+              "relative_residual": 0.0,
+              "residual_norm": 0.0
+            }
+          }
+        },
+        "recurrence_diagnostics": {
+          "basis_rank": 30,
+          "hidden_dim": 48,
+          "hidden_final_mean_norm": 2.433106718605081,
+          "hidden_final_to_initial": 5.546145936341704,
+          "hidden_initial_mean_norm": 0.4387022531559968,
+          "hidden_max_norm": 31.0155974269863,
+          "hidden_max_to_initial": 70.69851409210237,
+          "measurement_disturbance_scale": 0.02,
+          "observation_dim": 8,
+          "phase_modulates_matrices": true,
+          "process_disturbance_scale": 0.01999291222246905,
+          "recurrent_spectral_radius_max": 1.1287823033712105,
+          "recurrent_spectral_radius_mean": 0.9884890212032089
+        },
+        "reference_lens_cost": 2900459.529164736,
+        "response_map_mismatch": {
+          "disturbance_to_action": 0.0030258818845495987,
+          "disturbance_to_cost": 3.531973734839393e-05,
+          "disturbance_to_output": 0.0011885646122733909,
+          "disturbance_to_state": 0.00118314814983559,
+          "max_aggregate_mismatch": 0.1444296148016984,
+          "measurement_to_action": 0.1444296148016984,
+          "measurement_to_output": 0.1281910329972677,
+          "observation_to_action": 0.11044878254785775
+        },
+        "row_family": "supervised_action_io_map_fit",
+        "state_weighted_action_mismatch": 0.04511028130511382,
+        "verdict": "supervised_representation_non_equivalent"
+      },
+      "spec": {
+        "architecture": "linear_recurrence",
+        "controller_label": "pm_linrec_r30_full_matrix_supervised_action_io_combined_fit",
+        "evaluation_lane": "supervised_representation",
+        "gamma_factor": null,
+        "issue_id": "d6d25d6",
+        "notes": "Phase-modulated linear recurrence uses spline coefficients for time-varying A/B/C/D matrices. Exact-oracle rows replay the analytical Kalman recurrence; projected-oracle rows are diagnostics; supervised rows optimize external action and/or response-map losses; reward rows optimize the retained rollout objective only after supervised representation gates pass.",
+        "objective": "supervised_action_and_io",
+        "optimizer_label": "adam_full_matrix_supervised_action_io_maps",
+        "parameters": {
+          "basis": "clamped_b_spline",
+          "coverage_family": "mixed_deviation",
+          "coverage_modes": 4,
+          "coverage_scale": 0.3,
+          "degree": 3,
+          "disturbance_scale": 0.02,
+          "evaluation_lens": "mixed_process_measurement_io",
+          "initialization": "oracle_matrix_projection_warm_start",
+          "learning_rate": 0.00075,
+          "measurement_scale": 0.02,
+          "n_train_steps": 12,
+          "parameter_bound": 10.0,
+          "proximal_penalty": 0.0001,
+          "rank": 30,
+          "row_family": "supervised_action_io_map_fit",
+          "smoothness_penalty": 1e-05,
+          "stability_penalty": 0.001,
+          "supervised_fit_blocks": [
+            "A_h",
+            "B_y",
+            "B_u",
+            "b_h",
+            "C_h",
+            "D_y",
+            "c"
+          ],
+          "supervised_fit_scope": "full_matrix",
+          "supervised_objective": "action_and_io"
+        },
+        "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
+        "run_id": "phase_modulated_recurrent__pm_linrec_r30_full_matrix_supervised_action_io_combined_fit",
         "seed": null,
         "training_distribution": "mixed_action_process_measurement_io_supervised"
       },
@@ -13811,8 +15062,11 @@
             "is_supervised_trained": true,
             "learning_rate": 0.001,
             "n_train_steps": 1,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 30,
             "row_family": "supervised_action_fit",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001,
             "supervised_best_loss": 1.776964530865837e-09,
             "supervised_final_loss": 1.776964530865837e-09,
@@ -13821,6 +15075,7 @@
               "D_y",
               "c"
             ],
+            "supervised_fit_scope": "readout_only",
             "supervised_initial_loss": 1.776964530865837e-09,
             "supervised_last_loss": 7.640305155979721e-09,
             "supervised_loss_improvement": 0.0,
@@ -14045,6 +15300,9 @@
           "is_supervised_trained": true,
           "learning_rate": 0.001,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
           "supervised_best_loss": 1.776964530865837e-09,
           "supervised_final_loss": 1.776964530865837e-09,
@@ -14053,6 +15311,7 @@
             "D_y",
             "c"
           ],
+          "supervised_fit_scope": "readout_only",
           "supervised_initial_loss": 1.776964530865837e-09,
           "supervised_last_loss": 7.640305155979721e-09,
           "supervised_loss_improvement": 0.0,
@@ -14150,9 +15409,18 @@
           "learning_rate": 0.001,
           "measurement_scale": 0.0,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
           "rank": 30,
           "row_family": "supervised_action_fit",
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": [
+            "C_h",
+            "D_y",
+            "c"
+          ],
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": "action"
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -14248,8 +15516,11 @@
             "is_supervised_trained": true,
             "learning_rate": 0.001,
             "n_train_steps": 1,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 30,
             "row_family": "supervised_action_fit",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001,
             "supervised_best_loss": 0.015919672647821247,
             "supervised_final_loss": 0.015919672647821247,
@@ -14258,6 +15529,7 @@
               "D_y",
               "c"
             ],
+            "supervised_fit_scope": "readout_only",
             "supervised_initial_loss": 0.015919672647821247,
             "supervised_last_loss": 0.020024236258084967,
             "supervised_loss_improvement": 0.0,
@@ -14482,6 +15754,9 @@
           "is_supervised_trained": true,
           "learning_rate": 0.001,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
           "supervised_best_loss": 0.015919672647821247,
           "supervised_final_loss": 0.015919672647821247,
@@ -14490,6 +15765,7 @@
             "D_y",
             "c"
           ],
+          "supervised_fit_scope": "readout_only",
           "supervised_initial_loss": 0.015919672647821247,
           "supervised_last_loss": 0.020024236258084967,
           "supervised_loss_improvement": 0.0,
@@ -14587,9 +15863,18 @@
           "learning_rate": 0.001,
           "measurement_scale": 0.0,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
           "rank": 30,
           "row_family": "supervised_action_fit",
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": [
+            "C_h",
+            "D_y",
+            "c"
+          ],
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": "action"
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -14685,8 +15970,11 @@
             "is_supervised_trained": true,
             "learning_rate": 0.001,
             "n_train_steps": 1,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 30,
             "row_family": "supervised_io_map_fit",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001,
             "supervised_best_loss": 0.0030258818845495996,
             "supervised_final_loss": 0.0030258818845495996,
@@ -14695,6 +15983,7 @@
               "D_y",
               "c"
             ],
+            "supervised_fit_scope": "readout_only",
             "supervised_initial_loss": 0.0030258818845495996,
             "supervised_last_loss": 0.005659936470276913,
             "supervised_loss_improvement": 0.0,
@@ -14919,6 +16208,9 @@
           "is_supervised_trained": true,
           "learning_rate": 0.001,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
           "supervised_best_loss": 0.0030258818845495996,
           "supervised_final_loss": 0.0030258818845495996,
@@ -14927,6 +16219,7 @@
             "D_y",
             "c"
           ],
+          "supervised_fit_scope": "readout_only",
           "supervised_initial_loss": 0.0030258818845495996,
           "supervised_last_loss": 0.005659936470276913,
           "supervised_loss_improvement": 0.0,
@@ -15024,9 +16317,18 @@
           "learning_rate": 0.001,
           "measurement_scale": 0.0,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
           "rank": 30,
           "row_family": "supervised_io_map_fit",
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": [
+            "C_h",
+            "D_y",
+            "c"
+          ],
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": "process_io"
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -15122,8 +16424,11 @@
             "is_supervised_trained": true,
             "learning_rate": 0.001,
             "n_train_steps": 1,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 30,
             "row_family": "supervised_io_map_fit",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001,
             "supervised_best_loss": 0.0512207532737547,
             "supervised_final_loss": 0.0512207532737547,
@@ -15132,6 +16437,7 @@
               "D_y",
               "c"
             ],
+            "supervised_fit_scope": "readout_only",
             "supervised_initial_loss": 0.07372774834312401,
             "supervised_last_loss": 0.0512207532737547,
             "supervised_loss_improvement": 0.02250699506936931,
@@ -15356,6 +16662,9 @@
           "is_supervised_trained": true,
           "learning_rate": 0.001,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
           "supervised_best_loss": 0.0512207532737547,
           "supervised_final_loss": 0.0512207532737547,
@@ -15364,6 +16673,7 @@
             "D_y",
             "c"
           ],
+          "supervised_fit_scope": "readout_only",
           "supervised_initial_loss": 0.07372774834312401,
           "supervised_last_loss": 0.0512207532737547,
           "supervised_loss_improvement": 0.02250699506936931,
@@ -15461,9 +16771,18 @@
           "learning_rate": 0.001,
           "measurement_scale": 0.02,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
           "rank": 30,
           "row_family": "supervised_io_map_fit",
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": [
+            "C_h",
+            "D_y",
+            "c"
+          ],
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": "process_measurement_io"
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -15559,8 +16878,11 @@
             "is_supervised_trained": true,
             "learning_rate": 0.001,
             "n_train_steps": 1,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 30,
             "row_family": "supervised_action_io_map_fit",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001,
             "supervised_best_loss": 0.04752190776142616,
             "supervised_final_loss": 0.04752190776142616,
@@ -15569,6 +16891,7 @@
               "D_y",
               "c"
             ],
+            "supervised_fit_scope": "readout_only",
             "supervised_initial_loss": 0.06933144551364978,
             "supervised_last_loss": 0.04752190776142616,
             "supervised_loss_improvement": 0.02180953775222362,
@@ -15793,6 +17116,9 @@
           "is_supervised_trained": true,
           "learning_rate": 0.001,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
           "supervised_best_loss": 0.04752190776142616,
           "supervised_final_loss": 0.04752190776142616,
@@ -15801,6 +17127,7 @@
             "D_y",
             "c"
           ],
+          "supervised_fit_scope": "readout_only",
           "supervised_initial_loss": 0.06933144551364978,
           "supervised_last_loss": 0.04752190776142616,
           "supervised_loss_improvement": 0.02180953775222362,
@@ -15898,9 +17225,18 @@
           "learning_rate": 0.001,
           "measurement_scale": 0.02,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
           "rank": 30,
           "row_family": "supervised_action_io_map_fit",
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": [
+            "C_h",
+            "D_y",
+            "c"
+          ],
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": "action_and_io"
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -15996,8 +17332,11 @@
             "is_supervised_trained": true,
             "learning_rate": 0.001,
             "n_train_steps": 1,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 60,
             "row_family": "supervised_action_fit",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001,
             "supervised_best_loss": 7.128998525752285e-29,
             "supervised_final_loss": 7.128998525752285e-29,
@@ -16006,6 +17345,7 @@
               "D_y",
               "c"
             ],
+            "supervised_fit_scope": "readout_only",
             "supervised_initial_loss": 7.128998525752285e-29,
             "supervised_last_loss": 1.8061118908468987e-10,
             "supervised_loss_improvement": 0.0,
@@ -16230,6 +17570,9 @@
           "is_supervised_trained": true,
           "learning_rate": 0.001,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
           "supervised_best_loss": 7.128998525752285e-29,
           "supervised_final_loss": 7.128998525752285e-29,
@@ -16238,6 +17581,7 @@
             "D_y",
             "c"
           ],
+          "supervised_fit_scope": "readout_only",
           "supervised_initial_loss": 7.128998525752285e-29,
           "supervised_last_loss": 1.8061118908468987e-10,
           "supervised_loss_improvement": 0.0,
@@ -16335,9 +17679,18 @@
           "learning_rate": 0.001,
           "measurement_scale": 0.0,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
           "rank": 60,
           "row_family": "supervised_action_fit",
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": [
+            "C_h",
+            "D_y",
+            "c"
+          ],
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": "action"
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -16433,8 +17786,11 @@
             "is_supervised_trained": true,
             "learning_rate": 0.001,
             "n_train_steps": 1,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 60,
             "row_family": "supervised_action_fit",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001,
             "supervised_best_loss": 8.967383168588628e-27,
             "supervised_final_loss": 8.967383168588628e-27,
@@ -16443,6 +17799,7 @@
               "D_y",
               "c"
             ],
+            "supervised_fit_scope": "readout_only",
             "supervised_initial_loss": 8.967383168588628e-27,
             "supervised_last_loss": 7.551951042483477e-06,
             "supervised_loss_improvement": 0.0,
@@ -16667,6 +18024,9 @@
           "is_supervised_trained": true,
           "learning_rate": 0.001,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
           "supervised_best_loss": 8.967383168588628e-27,
           "supervised_final_loss": 8.967383168588628e-27,
@@ -16675,6 +18035,7 @@
             "D_y",
             "c"
           ],
+          "supervised_fit_scope": "readout_only",
           "supervised_initial_loss": 8.967383168588628e-27,
           "supervised_last_loss": 7.551951042483477e-06,
           "supervised_loss_improvement": 0.0,
@@ -16772,9 +18133,18 @@
           "learning_rate": 0.001,
           "measurement_scale": 0.0,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
           "rank": 60,
           "row_family": "supervised_action_fit",
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": [
+            "C_h",
+            "D_y",
+            "c"
+          ],
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": "action"
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -16870,8 +18240,11 @@
             "is_supervised_trained": true,
             "learning_rate": 0.001,
             "n_train_steps": 1,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 60,
             "row_family": "supervised_io_map_fit",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001,
             "supervised_best_loss": 1.2974113577723392e-26,
             "supervised_final_loss": 1.2974113577723392e-26,
@@ -16880,6 +18253,7 @@
               "D_y",
               "c"
             ],
+            "supervised_fit_scope": "readout_only",
             "supervised_initial_loss": 1.2974113577723392e-26,
             "supervised_last_loss": 0.005302771845296093,
             "supervised_loss_improvement": 0.0,
@@ -17104,6 +18478,9 @@
           "is_supervised_trained": true,
           "learning_rate": 0.001,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
           "supervised_best_loss": 1.2974113577723392e-26,
           "supervised_final_loss": 1.2974113577723392e-26,
@@ -17112,6 +18489,7 @@
             "D_y",
             "c"
           ],
+          "supervised_fit_scope": "readout_only",
           "supervised_initial_loss": 1.2974113577723392e-26,
           "supervised_last_loss": 0.005302771845296093,
           "supervised_loss_improvement": 0.0,
@@ -17209,9 +18587,18 @@
           "learning_rate": 0.001,
           "measurement_scale": 0.0,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
           "rank": 60,
           "row_family": "supervised_io_map_fit",
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": [
+            "C_h",
+            "D_y",
+            "c"
+          ],
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": "process_io"
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -17307,8 +18694,11 @@
             "is_supervised_trained": true,
             "learning_rate": 0.001,
             "n_train_steps": 1,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 60,
             "row_family": "supervised_io_map_fit",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001,
             "supervised_best_loss": 1.2353492331894539e-26,
             "supervised_final_loss": 1.2353492331894539e-26,
@@ -17317,6 +18707,7 @@
               "D_y",
               "c"
             ],
+            "supervised_fit_scope": "readout_only",
             "supervised_initial_loss": 1.2353492331894539e-26,
             "supervised_last_loss": 0.012448278037321358,
             "supervised_loss_improvement": 0.0,
@@ -17541,6 +18932,9 @@
           "is_supervised_trained": true,
           "learning_rate": 0.001,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
           "supervised_best_loss": 1.2353492331894539e-26,
           "supervised_final_loss": 1.2353492331894539e-26,
@@ -17549,6 +18943,7 @@
             "D_y",
             "c"
           ],
+          "supervised_fit_scope": "readout_only",
           "supervised_initial_loss": 1.2353492331894539e-26,
           "supervised_last_loss": 0.012448278037321358,
           "supervised_loss_improvement": 0.0,
@@ -17646,9 +19041,18 @@
           "learning_rate": 0.001,
           "measurement_scale": 0.02,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
           "rank": 60,
           "row_family": "supervised_io_map_fit",
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": [
+            "C_h",
+            "D_y",
+            "c"
+          ],
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": "process_measurement_io"
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -17744,8 +19148,11 @@
             "is_supervised_trained": true,
             "learning_rate": 0.001,
             "n_train_steps": 1,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 60,
             "row_family": "supervised_action_io_map_fit",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001,
             "supervised_best_loss": 1.2432856450387804e-26,
             "supervised_final_loss": 1.2432856450387804e-26,
@@ -17754,6 +19161,7 @@
               "D_y",
               "c"
             ],
+            "supervised_fit_scope": "readout_only",
             "supervised_initial_loss": 1.2432856450387804e-26,
             "supervised_last_loss": 0.0043344848115231,
             "supervised_loss_improvement": 0.0,
@@ -17978,6 +19386,9 @@
           "is_supervised_trained": true,
           "learning_rate": 0.001,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
           "supervised_best_loss": 1.2432856450387804e-26,
           "supervised_final_loss": 1.2432856450387804e-26,
@@ -17986,6 +19397,7 @@
             "D_y",
             "c"
           ],
+          "supervised_fit_scope": "readout_only",
           "supervised_initial_loss": 1.2432856450387804e-26,
           "supervised_last_loss": 0.0043344848115231,
           "supervised_loss_improvement": 0.0,
@@ -18083,9 +19495,18 @@
           "learning_rate": 0.001,
           "measurement_scale": 0.02,
           "n_train_steps": 1,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
           "rank": 60,
           "row_family": "supervised_action_io_map_fit",
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": [
+            "C_h",
+            "D_y",
+            "c"
+          ],
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": "action_and_io"
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -18146,12 +19567,12 @@
           "status": "available",
           "summary": {
             "action_label": "control",
-            "aggregate_delta_energy": 1689.7801122845378,
-            "aggregate_mismatch_ratio": 1.0050303306058754,
+            "aggregate_delta_energy": 1717.9884042242247,
+            "aggregate_mismatch_ratio": 1.021807773284877,
             "aggregate_reference_energy": 1681.3225042331467,
-            "delta_rms": 5.30688250024522,
-            "mismatch_ratio_max": 39153.10366614741,
-            "mismatch_ratio_mean": 696.8918939050524,
+            "delta_rms": 5.3509943067063475,
+            "mismatch_ratio_max": 338341.56580291316,
+            "mismatch_ratio_mean": 5796.598797499132,
             "n_samples": 60,
             "reference_rms": 5.293584960801056,
             "state_label": "state"
@@ -18162,7 +19583,7 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "mean_effective_rank": 1.0000000000000133,
+            "mean_effective_rank": 1.0000000000000135,
             "mean_identifiable_rank": 1.0,
             "min_effective_rank": 1.0000000000000018,
             "min_identifiable_rank": 1.0,
@@ -18180,13 +19601,16 @@
             "is_reward_trained": true,
             "learning_rate": 0.003,
             "n_train_steps": 4,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 12,
-            "reward_best_loss": 157116.5816619274,
-            "reward_final_loss": 157116.5816619274,
+            "reward_best_loss": 139348.54268344506,
+            "reward_final_loss": 139348.54268344506,
             "reward_initial_loss": 172633.36067942638,
-            "reward_last_loss": 157116.5816619274,
-            "reward_loss_improvement": 15516.779017498979,
+            "reward_last_loss": 139348.54268344506,
+            "reward_loss_improvement": 33284.81799598131,
             "row_family": "reward_lens",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001
           }
         },
@@ -18195,8 +19619,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9999376993227965,
-            "delta_frobenius": 797.7203486915654,
+            "aggregate_mismatch_ratio": 0.99988701633662,
+            "delta_frobenius": 797.7001317511666,
             "input_label": "observation_history",
             "map_shape": [
               60,
@@ -18204,8 +19628,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 2699343197.7304068,
-            "mismatch_ratio_mean": 186160447.66524708,
+            "mismatch_ratio_max": 5410709346.1670265,
+            "mismatch_ratio_mean": 303871387.4701881,
             "output_label": "action",
             "reference_frobenius": 797.7451991116911,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -18216,8 +19640,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9999775651488119,
-            "delta_frobenius": 513.3287053317774,
+            "aggregate_mismatch_ratio": 1.0000612091896497,
+            "delta_frobenius": 513.3501738080973,
             "input_label": "measurement_history",
             "map_shape": [
               60,
@@ -18225,8 +19649,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 2699343197.7304068,
-            "mismatch_ratio_mean": 186160447.68817997,
+            "mismatch_ratio_max": 5410709346.1670265,
+            "mismatch_ratio_mean": 303871387.4933646,
             "output_label": "action",
             "reference_frobenius": 513.3344636552252,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -18237,8 +19661,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9881232608626878,
-            "delta_frobenius": 199.46337937306762,
+            "aggregate_mismatch_ratio": 0.9884761996180436,
+            "delta_frobenius": 199.49899844739184,
             "input_label": "measurement_history",
             "map_shape": [
               60,
@@ -18246,8 +19670,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 0.9968817397069605,
-            "mismatch_ratio_mean": 0.756394616442886,
+            "mismatch_ratio_max": 0.9968017301959676,
+            "mismatch_ratio_mean": 0.7567756712432377,
             "output_label": "external_output",
             "reference_frobenius": 200.6585230418815,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -18258,8 +19682,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 1.0006511461980436,
-            "delta_frobenius": 1227.9980281696005,
+            "aggregate_mismatch_ratio": 1.0020975396962775,
+            "delta_frobenius": 1228.8852139747291,
             "input_label": "disturbance_history",
             "map_shape": [
               60,
@@ -18267,8 +19691,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 869291441.0838823,
-            "mismatch_ratio_mean": 14488191.590489479,
+            "mismatch_ratio_max": 1195979124.6615312,
+            "mismatch_ratio_mean": 19932986.323755875,
             "output_label": "action",
             "reference_frobenius": 1227.5984201878043,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -18279,8 +19703,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9916952555083667,
-            "delta_frobenius": 1902.3562103296426,
+            "aggregate_mismatch_ratio": 0.994265704695456,
+            "delta_frobenius": 1904.8200445650937,
             "input_label": "disturbance_history",
             "map_shape": [
               61,
@@ -18288,8 +19712,8 @@
               480
             ],
             "map_slices": 61,
-            "mismatch_ratio_max": 0.9966864267914299,
-            "mismatch_ratio_mean": 0.8379956709831221,
+            "mismatch_ratio_max": 1.002462894538888,
+            "mismatch_ratio_mean": 0.8432893366146347,
             "output_label": "state",
             "reference_frobenius": 1910.3050456506946,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -18300,8 +19724,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9926408890770412,
-            "delta_frobenius": 775.1888762760107,
+            "aggregate_mismatch_ratio": 0.9951574784545115,
+            "delta_frobenius": 776.1709017082856,
             "input_label": "disturbance_history",
             "map_shape": [
               60,
@@ -18309,8 +19733,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 0.9968509623805338,
-            "mismatch_ratio_mean": 0.7687822247872601,
+            "mismatch_ratio_max": 1.0027273692321481,
+            "mismatch_ratio_mean": 0.7734134421668543,
             "output_label": "external_output",
             "reference_frobenius": 778.057066983652,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -18321,23 +19745,23 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.7200876272980227,
+            "aggregate_mismatch_ratio": 0.714229811784091,
             "assumptions": [
               "zero_affine_offset",
               "linear_disturbance_response",
               "separable_state_action_quadratic_cost",
               "no_state_action_cross_terms"
             ],
-            "candidate_quadratic_frobenius": 570657874.4727094,
-            "delta_frobenius": 308602764.0544355,
+            "candidate_quadratic_frobenius": 569649459.302808,
+            "delta_frobenius": 307344979.9691944,
             "input_label": "disturbance_history",
             "map_shape": [
               480,
               480
             ],
             "map_slices": 1,
-            "mismatch_ratio_max": 0.7200876272980227,
-            "mismatch_ratio_mean": 0.7200876272980227,
+            "mismatch_ratio_max": 0.714229811784091,
+            "mismatch_ratio_mean": 0.714229811784091,
             "output_label": "quadratic_cost",
             "quadratic_map_shape": [
               480,
@@ -18374,23 +19798,23 @@
             "architecture": "linear_recurrence",
             "basis_rank": 12,
             "hidden_dim": 48,
-            "hidden_final_mean_norm": 0.2321251530655909,
-            "hidden_final_to_initial": 0.6317646460846001,
+            "hidden_final_mean_norm": 0.4285287298801891,
+            "hidden_final_to_initial": 1.166307475921585,
             "hidden_initial_mean_norm": 0.36742346141747667,
-            "hidden_max_norm": 0.6108372319997905,
-            "hidden_max_to_initial": 1.6624883714372838,
+            "hidden_max_norm": 2.1975170757525286,
+            "hidden_max_to_initial": 5.980883929607448,
             "measurement_disturbance_scale": 0.0,
             "observation_dim": 8,
             "phase_modulates_matrices": true,
             "process_disturbance_scale": 0.0,
-            "recurrent_spectral_radius_max": 0.906302720884552,
-            "recurrent_spectral_radius_mean": 0.8651359244793543
+            "recurrent_spectral_radius_max": 0.9968156810197726,
+            "recurrent_spectral_radius_mean": 0.9330720293637321
           }
         }
       ],
       "metrics": {
-        "aggregate_action_energy_mismatch": 1.0050303306058754,
-        "candidate_cost": 157116.5816619274,
+        "aggregate_action_energy_mismatch": 1.021807773284877,
+        "candidate_cost": 139348.54268344506,
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "nominal_clean",
         "io_map_certificate": {
@@ -18398,19 +19822,22 @@
           "reason": "The row consumes the integrated standard certificate component builder for linear recurrence response maps and augmented rollout diagnostics.",
           "status": "standard_components_available"
         },
-        "objective_ratio_to_clean_reference": 36.006926451686745,
-        "objective_ratio_to_lens_reference": 36.00692645168674,
+        "objective_ratio_to_clean_reference": 31.934966217307828,
+        "objective_ratio_to_lens_reference": 31.93496621730782,
         "optimizer": {
           "fit_method": "adam_phase_modulated_reward_rollout",
           "initialization": "scratch_random_stable",
           "is_reward_trained": true,
           "learning_rate": 0.003,
           "n_train_steps": 4,
-          "reward_best_loss": 157116.5816619274,
-          "reward_final_loss": 157116.5816619274,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "reward_best_loss": 139348.54268344506,
+          "reward_final_loss": 139348.54268344506,
           "reward_initial_loss": 172633.36067942638,
-          "reward_last_loss": 157116.5816619274,
-          "reward_loss_improvement": 15516.779017498979,
+          "reward_last_loss": 139348.54268344506,
+          "reward_loss_improvement": 33284.81799598131,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001
         },
         "projection": {
@@ -18456,31 +19883,31 @@
         "recurrence_diagnostics": {
           "basis_rank": 12,
           "hidden_dim": 48,
-          "hidden_final_mean_norm": 0.2321251530655909,
-          "hidden_final_to_initial": 0.6317646460846001,
+          "hidden_final_mean_norm": 0.4285287298801891,
+          "hidden_final_to_initial": 1.166307475921585,
           "hidden_initial_mean_norm": 0.36742346141747667,
-          "hidden_max_norm": 0.6108372319997905,
-          "hidden_max_to_initial": 1.6624883714372838,
+          "hidden_max_norm": 2.1975170757525286,
+          "hidden_max_to_initial": 5.980883929607448,
           "measurement_disturbance_scale": 0.0,
           "observation_dim": 8,
           "phase_modulates_matrices": true,
           "process_disturbance_scale": 0.0,
-          "recurrent_spectral_radius_max": 0.906302720884552,
-          "recurrent_spectral_radius_mean": 0.8651359244793543
+          "recurrent_spectral_radius_max": 0.9968156810197726,
+          "recurrent_spectral_radius_mean": 0.9330720293637321
         },
         "reference_lens_cost": 4363.509945030793,
         "response_map_mismatch": {
-          "disturbance_to_action": 1.0006511461980436,
-          "disturbance_to_cost": 0.7200876272980227,
-          "disturbance_to_output": 0.9926408890770412,
-          "disturbance_to_state": 0.9916952555083667,
-          "max_aggregate_mismatch": 1.0006511461980436,
-          "measurement_to_action": 0.9999775651488119,
-          "measurement_to_output": 0.9881232608626878,
-          "observation_to_action": 0.9999376993227965
+          "disturbance_to_action": 1.0020975396962775,
+          "disturbance_to_cost": 0.714229811784091,
+          "disturbance_to_output": 0.9951574784545115,
+          "disturbance_to_state": 0.994265704695456,
+          "max_aggregate_mismatch": 1.0020975396962775,
+          "measurement_to_action": 1.0000612091896497,
+          "measurement_to_output": 0.9884761996180436,
+          "observation_to_action": 0.99988701633662
         },
         "row_family": "reward_lens",
-        "state_weighted_action_mismatch": 696.8918939050524,
+        "state_weighted_action_mismatch": 5796.598797499132,
         "verdict": "reward_trained_non_equivalent"
       },
       "spec": {
@@ -18504,9 +19931,14 @@
           "learning_rate": 0.003,
           "measurement_scale": 0.0,
           "n_train_steps": 4,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 12,
           "row_family": "reward_lens",
+          "smoothness_penalty": null,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -18567,12 +19999,12 @@
           "status": "available",
           "summary": {
             "action_label": "control",
-            "aggregate_delta_energy": 2437.083912902088,
-            "aggregate_mismatch_ratio": 1.0035028588824986,
+            "aggregate_delta_energy": 2466.6153072267516,
+            "aggregate_mismatch_ratio": 1.0156628171320679,
             "aggregate_reference_energy": 2428.576950558991,
-            "delta_rms": 6.37323035948292,
-            "mismatch_ratio_max": 25917.77326095578,
-            "mismatch_ratio_mean": 473.0957507368434,
+            "delta_rms": 6.411727935622804,
+            "mismatch_ratio_max": 224920.86657412478,
+            "mismatch_ratio_mean": 3836.772051082339,
             "n_samples": 180,
             "reference_rms": 6.362097335731081,
             "state_label": "state"
@@ -18583,7 +20015,7 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "mean_effective_rank": 1.1590952165435107,
+            "mean_effective_rank": 1.0615446494120897,
             "mean_identifiable_rank": 1.9836065573770492,
             "min_effective_rank": 1.0000000000000044,
             "min_identifiable_rank": 1.0,
@@ -18601,13 +20033,16 @@
             "is_reward_trained": true,
             "learning_rate": 0.003,
             "n_train_steps": 4,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 12,
-            "reward_best_loss": 231860.62705271377,
-            "reward_final_loss": 231860.62705271377,
+            "reward_best_loss": 211149.5413409444,
+            "reward_final_loss": 211149.5413409444,
             "reward_initial_loss": 249359.29875917127,
-            "reward_last_loss": 231860.62705271377,
-            "reward_loss_improvement": 17498.671706457506,
+            "reward_last_loss": 211149.5413409444,
+            "reward_loss_improvement": 38209.75741822689,
             "row_family": "reward_lens",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001
           }
         },
@@ -18616,8 +20051,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9999373557889126,
-            "delta_frobenius": 797.7202116610316,
+            "aggregate_mismatch_ratio": 0.9998895817365113,
+            "delta_frobenius": 797.7011550760449,
             "input_label": "observation_history",
             "map_shape": [
               60,
@@ -18625,8 +20060,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 2717502485.006164,
-            "mismatch_ratio_mean": 186795980.77574176,
+            "mismatch_ratio_max": 5528217043.40283,
+            "mismatch_ratio_mean": 308358754.1422211,
             "output_label": "action",
             "reference_frobenius": 797.7451991116911,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -18637,8 +20072,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9999732452459498,
-            "delta_frobenius": 513.3275965406327,
+            "aggregate_mismatch_ratio": 1.0000559162963312,
+            "delta_frobenius": 513.3488153355983,
             "input_label": "measurement_history",
             "map_shape": [
               60,
@@ -18646,8 +20081,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 2717502485.006164,
-            "mismatch_ratio_mean": 186795980.7992173,
+            "mismatch_ratio_max": 5528217043.40283,
+            "mismatch_ratio_mean": 308358754.165899,
             "output_label": "action",
             "reference_frobenius": 513.3344636552252,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -18658,8 +20093,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9881184926734669,
-            "delta_frobenius": 199.4628981171755,
+            "aggregate_mismatch_ratio": 0.9884646650912493,
+            "delta_frobenius": 199.49783446728947,
             "input_label": "measurement_history",
             "map_shape": [
               60,
@@ -18667,8 +20102,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 0.996882645471597,
-            "mismatch_ratio_mean": 0.7563926737030743,
+            "mismatch_ratio_max": 0.9968092801204445,
+            "mismatch_ratio_mean": 0.7568150120275267,
             "output_label": "external_output",
             "reference_frobenius": 200.6585230418815,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -18679,8 +20114,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 1.0006236273380205,
-            "delta_frobenius": 1227.9811424955506,
+            "aggregate_mismatch_ratio": 1.002055935420703,
+            "delta_frobenius": 1228.8597037784964,
             "input_label": "disturbance_history",
             "map_shape": [
               60,
@@ -18688,8 +20123,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 867341243.186739,
-            "mismatch_ratio_mean": 14455688.293307995,
+            "mismatch_ratio_max": 1173366298.0356448,
+            "mismatch_ratio_mean": 19556105.878360786,
             "output_label": "action",
             "reference_frobenius": 1227.5984201878043,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -18700,8 +20135,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9916591214620628,
-            "delta_frobenius": 1902.3215522765854,
+            "aggregate_mismatch_ratio": 0.9941773369996435,
+            "delta_frobenius": 1904.735395010298,
             "input_label": "disturbance_history",
             "map_shape": [
               61,
@@ -18709,8 +20144,8 @@
               480
             ],
             "map_slices": 61,
-            "mismatch_ratio_max": 0.996611111146158,
-            "mismatch_ratio_mean": 0.8379767054737918,
+            "mismatch_ratio_max": 1.0019417599812284,
+            "mismatch_ratio_mean": 0.8432319976123285,
             "output_label": "state",
             "reference_frobenius": 1910.3050456506946,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -18721,8 +20156,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.992602831566172,
-            "delta_frobenius": 775.1740158958941,
+            "aggregate_mismatch_ratio": 0.9950597748406858,
+            "delta_frobenius": 776.1327989129384,
             "input_label": "disturbance_history",
             "map_shape": [
               60,
@@ -18730,8 +20165,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 0.9967732088109205,
-            "mismatch_ratio_mean": 0.7687444716204977,
+            "mismatch_ratio_max": 1.0021870018367705,
+            "mismatch_ratio_mean": 0.7732605934039288,
             "output_label": "external_output",
             "reference_frobenius": 778.057066983652,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -18742,23 +20177,23 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.7202797284869461,
+            "aggregate_mismatch_ratio": 0.7148735984375202,
             "assumptions": [
               "zero_affine_offset",
               "linear_disturbance_response",
               "separable_state_action_quadratic_cost",
               "no_state_action_cross_terms"
             ],
-            "candidate_quadratic_frobenius": 570690758.9758707,
-            "delta_frobenius": 308643925.0203798,
+            "candidate_quadratic_frobenius": 569748974.2653255,
+            "delta_frobenius": 307483464.82765853,
             "input_label": "disturbance_history",
             "map_shape": [
               480,
               480
             ],
             "map_slices": 1,
-            "mismatch_ratio_max": 0.7202797284869461,
-            "mismatch_ratio_mean": 0.7202797284869461,
+            "mismatch_ratio_max": 0.7148735984375202,
+            "mismatch_ratio_mean": 0.7148735984375202,
             "output_label": "quadratic_cost",
             "quadratic_map_shape": [
               480,
@@ -18795,23 +20230,23 @@
             "architecture": "linear_recurrence",
             "basis_rank": 12,
             "hidden_dim": 48,
-            "hidden_final_mean_norm": 0.24222650710491064,
-            "hidden_final_to_initial": 0.6592570495374169,
+            "hidden_final_mean_norm": 0.43443436010715447,
+            "hidden_final_to_initial": 1.1823805655500537,
             "hidden_initial_mean_norm": 0.3674234614174767,
-            "hidden_max_norm": 0.743324961590975,
-            "hidden_max_to_initial": 2.023074298857548,
+            "hidden_max_norm": 2.5400394389859997,
+            "hidden_max_to_initial": 6.91311172451216,
             "measurement_disturbance_scale": 0.0,
             "observation_dim": 8,
             "phase_modulates_matrices": true,
             "process_disturbance_scale": 0.0,
-            "recurrent_spectral_radius_max": 0.9041254980768365,
-            "recurrent_spectral_radius_mean": 0.8614440785916159
+            "recurrent_spectral_radius_max": 0.9958727069768002,
+            "recurrent_spectral_radius_mean": 0.9312744845917477
           }
         }
       ],
       "metrics": {
-        "aggregate_action_energy_mismatch": 1.0035028588824986,
-        "candidate_cost": 231860.62705271374,
+        "aggregate_action_energy_mismatch": 1.0156628171320679,
+        "candidate_cost": 211149.5413409444,
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "state_coverage_eigen_m1_s0.3",
         "io_map_certificate": {
@@ -18819,19 +20254,22 @@
           "reason": "The row consumes the integrated standard certificate component builder for linear recurrence response maps and augmented rollout diagnostics.",
           "status": "standard_components_available"
         },
-        "objective_ratio_to_clean_reference": 53.13626643999263,
-        "objective_ratio_to_lens_reference": 36.78664599691796,
+        "objective_ratio_to_clean_reference": 48.38983845594384,
+        "objective_ratio_to_lens_reference": 33.50065739257649,
         "optimizer": {
           "fit_method": "adam_phase_modulated_reward_rollout",
           "initialization": "scratch_random_stable",
           "is_reward_trained": true,
           "learning_rate": 0.003,
           "n_train_steps": 4,
-          "reward_best_loss": 231860.62705271377,
-          "reward_final_loss": 231860.62705271377,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "reward_best_loss": 211149.5413409444,
+          "reward_final_loss": 211149.5413409444,
           "reward_initial_loss": 249359.29875917127,
-          "reward_last_loss": 231860.62705271377,
-          "reward_loss_improvement": 17498.671706457506,
+          "reward_last_loss": 211149.5413409444,
+          "reward_loss_improvement": 38209.75741822689,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001
         },
         "projection": {
@@ -18877,31 +20315,31 @@
         "recurrence_diagnostics": {
           "basis_rank": 12,
           "hidden_dim": 48,
-          "hidden_final_mean_norm": 0.24222650710491064,
-          "hidden_final_to_initial": 0.6592570495374169,
+          "hidden_final_mean_norm": 0.43443436010715447,
+          "hidden_final_to_initial": 1.1823805655500537,
           "hidden_initial_mean_norm": 0.3674234614174767,
-          "hidden_max_norm": 0.743324961590975,
-          "hidden_max_to_initial": 2.023074298857548,
+          "hidden_max_norm": 2.5400394389859997,
+          "hidden_max_to_initial": 6.91311172451216,
           "measurement_disturbance_scale": 0.0,
           "observation_dim": 8,
           "phase_modulates_matrices": true,
           "process_disturbance_scale": 0.0,
-          "recurrent_spectral_radius_max": 0.9041254980768365,
-          "recurrent_spectral_radius_mean": 0.8614440785916159
+          "recurrent_spectral_radius_max": 0.9958727069768002,
+          "recurrent_spectral_radius_mean": 0.9312744845917477
         },
         "reference_lens_cost": 6302.847698377812,
         "response_map_mismatch": {
-          "disturbance_to_action": 1.0006236273380205,
-          "disturbance_to_cost": 0.7202797284869461,
-          "disturbance_to_output": 0.992602831566172,
-          "disturbance_to_state": 0.9916591214620628,
-          "max_aggregate_mismatch": 1.0006236273380205,
-          "measurement_to_action": 0.9999732452459498,
-          "measurement_to_output": 0.9881184926734669,
-          "observation_to_action": 0.9999373557889126
+          "disturbance_to_action": 1.002055935420703,
+          "disturbance_to_cost": 0.7148735984375202,
+          "disturbance_to_output": 0.9950597748406858,
+          "disturbance_to_state": 0.9941773369996435,
+          "max_aggregate_mismatch": 1.002055935420703,
+          "measurement_to_action": 1.0000559162963312,
+          "measurement_to_output": 0.9884646650912493,
+          "observation_to_action": 0.9998895817365113
         },
         "row_family": "reward_lens",
-        "state_weighted_action_mismatch": 473.0957507368434,
+        "state_weighted_action_mismatch": 3836.772051082339,
         "verdict": "reward_trained_non_equivalent"
       },
       "spec": {
@@ -18925,9 +20363,14 @@
           "learning_rate": 0.003,
           "measurement_scale": 0.0,
           "n_train_steps": 4,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 12,
           "row_family": "reward_lens",
+          "smoothness_penalty": null,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -18988,12 +20431,12 @@
           "status": "available",
           "summary": {
             "action_label": "control",
-            "aggregate_delta_energy": 2236.8521167240647,
-            "aggregate_mismatch_ratio": 1.0034897238062612,
+            "aggregate_delta_energy": 2261.7670565013964,
+            "aggregate_mismatch_ratio": 1.0146669875372316,
             "aggregate_reference_energy": 2229.073266679433,
-            "delta_rms": 6.105806139410892,
-            "mismatch_ratio_max": 27682.93841461528,
-            "mismatch_ratio_mean": 531.171316280645,
+            "delta_rms": 6.139716411069538,
+            "mismatch_ratio_max": 274311.7962237785,
+            "mismatch_ratio_mean": 5233.91863042786,
             "n_samples": 540,
             "reference_rms": 6.095180154131942,
             "state_label": "state"
@@ -19004,9 +20447,9 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "mean_effective_rank": 2.0918042144462317,
+            "mean_effective_rank": 1.5034683820900236,
             "mean_identifiable_rank": 4.983606557377049,
-            "min_effective_rank": 1.8304947075089915,
+            "min_effective_rank": 1.2296287965244064,
             "min_identifiable_rank": 4.0,
             "state_label": "plant_hidden_augmented_state",
             "time_steps": 61
@@ -19022,13 +20465,16 @@
             "is_reward_trained": true,
             "learning_rate": 0.003,
             "n_train_steps": 4,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 12,
-            "reward_best_loss": 241966.5610387752,
-            "reward_final_loss": 241966.5610387752,
+            "reward_best_loss": 223511.29644893174,
+            "reward_final_loss": 223511.29644893174,
             "reward_initial_loss": 259258.70514002326,
-            "reward_last_loss": 241966.5610387752,
-            "reward_loss_improvement": 17292.144101248065,
+            "reward_last_loss": 223511.29644893174,
+            "reward_loss_improvement": 35747.40869109152,
             "row_family": "reward_lens",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001
           }
         },
@@ -19037,8 +20483,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9998724406490238,
-            "delta_frobenius": 797.6943175591134,
+            "aggregate_mismatch_ratio": 0.9997957894007522,
+            "delta_frobenius": 797.6637409402445,
             "input_label": "observation_history",
             "map_shape": [
               60,
@@ -19046,8 +20492,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 2716380860.0151587,
-            "mismatch_ratio_mean": 194417871.87458876,
+            "mismatch_ratio_max": 5469939630.831283,
+            "mismatch_ratio_mean": 318793746.3825701,
             "output_label": "action",
             "reference_frobenius": 797.7451991116911,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -19058,8 +20504,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9998677228358241,
-            "delta_frobenius": 513.3005113188455,
+            "aggregate_mismatch_ratio": 0.9999227259846948,
+            "delta_frobenius": 513.3146295644523,
             "input_label": "measurement_history",
             "map_shape": [
               60,
@@ -19067,8 +20513,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 2716380860.0151587,
-            "mismatch_ratio_mean": 194417871.90488705,
+            "mismatch_ratio_max": 5469939630.831283,
+            "mismatch_ratio_mean": 318793746.4378329,
             "output_label": "action",
             "reference_frobenius": 513.3344636552252,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -19079,8 +20525,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9879922031813174,
-            "delta_frobenius": 199.4501512284079,
+            "aggregate_mismatch_ratio": 0.9882943783109206,
+            "delta_frobenius": 199.48064958028422,
             "input_label": "measurement_history",
             "map_shape": [
               60,
@@ -19088,8 +20534,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 0.996775012473202,
-            "mismatch_ratio_mean": 0.7565322825377864,
+            "mismatch_ratio_max": 0.9966810752304444,
+            "mismatch_ratio_mean": 0.7573364210535459,
             "output_label": "external_output",
             "reference_frobenius": 200.6585230418815,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -19100,8 +20546,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 1.0005653120680122,
-            "delta_frobenius": 1227.9453592633229,
+            "aggregate_mismatch_ratio": 1.0017604967793787,
+            "delta_frobenius": 1228.6785365440628,
             "input_label": "disturbance_history",
             "map_shape": [
               60,
@@ -19109,8 +20555,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 860084563.0237938,
-            "mismatch_ratio_mean": 14334743.737307416,
+            "mismatch_ratio_max": 1308147489.115348,
+            "mismatch_ratio_mean": 21802459.789934713,
             "output_label": "action",
             "reference_frobenius": 1227.5984201878043,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -19121,8 +20567,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9915737241125602,
-            "delta_frobenius": 1902.2396407040796,
+            "aggregate_mismatch_ratio": 0.9936243605329532,
+            "delta_frobenius": 1904.2056000170085,
             "input_label": "disturbance_history",
             "map_shape": [
               61,
@@ -19130,8 +20576,8 @@
               480
             ],
             "map_slices": 61,
-            "mismatch_ratio_max": 0.9972836678250433,
-            "mismatch_ratio_mean": 0.8389908857068753,
+            "mismatch_ratio_max": 1.0019914353878265,
+            "mismatch_ratio_mean": 0.8447958734116642,
             "output_label": "state",
             "reference_frobenius": 1910.3050456506946,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -19142,8 +20588,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9925073824606276,
-            "delta_frobenius": 775.1367444702491,
+            "aggregate_mismatch_ratio": 0.9944475899966645,
+            "delta_frobenius": 775.8940143444885,
             "input_label": "disturbance_history",
             "map_shape": [
               60,
@@ -19151,8 +20597,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 0.9974688133446284,
-            "mismatch_ratio_mean": 0.769677936691079,
+            "mismatch_ratio_max": 1.002156485251199,
+            "mismatch_ratio_mean": 0.7742555173139933,
             "output_label": "external_output",
             "reference_frobenius": 778.057066983652,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -19163,23 +20609,23 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.7132573291872675,
+            "aggregate_mismatch_ratio": 0.7050041886497568,
             "assumptions": [
               "zero_affine_offset",
               "linear_disturbance_response",
               "separable_state_action_quadratic_cost",
               "no_state_action_cross_terms"
             ],
-            "candidate_quadratic_frobenius": 569583326.4137715,
-            "delta_frobenius": 307135670.97042775,
+            "candidate_quadratic_frobenius": 568199953.9252894,
+            "delta_frobenius": 305353558.7078227,
             "input_label": "disturbance_history",
             "map_shape": [
               480,
               480
             ],
             "map_slices": 1,
-            "mismatch_ratio_max": 0.7132573291872675,
-            "mismatch_ratio_mean": 0.7132573291872675,
+            "mismatch_ratio_max": 0.7050041886497568,
+            "mismatch_ratio_mean": 0.7050041886497568,
             "output_label": "quadratic_cost",
             "quadratic_map_shape": [
               480,
@@ -19216,23 +20662,23 @@
             "architecture": "linear_recurrence",
             "basis_rank": 12,
             "hidden_dim": 48,
-            "hidden_final_mean_norm": 0.21760518022188788,
-            "hidden_final_to_initial": 0.49602020198540053,
+            "hidden_final_mean_norm": 0.5349929142327028,
+            "hidden_final_to_initial": 1.219489780104836,
             "hidden_initial_mean_norm": 0.43870225315599687,
-            "hidden_max_norm": 0.7099166155573966,
-            "hidden_max_to_initial": 1.618219670517533,
+            "hidden_max_norm": 1.9496537699486252,
+            "hidden_max_to_initial": 4.444138948279696,
             "measurement_disturbance_scale": 0.0,
             "observation_dim": 8,
             "phase_modulates_matrices": true,
             "process_disturbance_scale": 0.0,
-            "recurrent_spectral_radius_max": 0.8975516417860756,
-            "recurrent_spectral_radius_mean": 0.8658577060485408
+            "recurrent_spectral_radius_max": 0.9858939262293323,
+            "recurrent_spectral_radius_mean": 0.9429929496511579
           }
         }
       ],
       "metrics": {
-        "aggregate_action_energy_mismatch": 1.0034897238062612,
-        "candidate_cost": 241966.56103877517,
+        "aggregate_action_energy_mismatch": 1.0146669875372316,
+        "candidate_cost": 223511.29644893174,
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "state_coverage_eigen_m4_s0.3",
         "io_map_certificate": {
@@ -19240,19 +20686,22 @@
           "reason": "The row consumes the integrated standard certificate component builder for linear recurrence response maps and augmented rollout diagnostics.",
           "status": "standard_components_available"
         },
-        "objective_ratio_to_clean_reference": 55.45227674210508,
-        "objective_ratio_to_lens_reference": 42.039265104879824,
+        "objective_ratio_to_clean_reference": 51.22282274238165,
+        "objective_ratio_to_lens_reference": 38.83284783241712,
         "optimizer": {
           "fit_method": "adam_phase_modulated_reward_rollout",
           "initialization": "scratch_random_stable",
           "is_reward_trained": true,
           "learning_rate": 0.003,
           "n_train_steps": 4,
-          "reward_best_loss": 241966.5610387752,
-          "reward_final_loss": 241966.5610387752,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "reward_best_loss": 223511.29644893174,
+          "reward_final_loss": 223511.29644893174,
           "reward_initial_loss": 259258.70514002326,
-          "reward_last_loss": 241966.5610387752,
-          "reward_loss_improvement": 17292.144101248065,
+          "reward_last_loss": 223511.29644893174,
+          "reward_loss_improvement": 35747.40869109152,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001
         },
         "projection": {
@@ -19298,31 +20747,31 @@
         "recurrence_diagnostics": {
           "basis_rank": 12,
           "hidden_dim": 48,
-          "hidden_final_mean_norm": 0.21760518022188788,
-          "hidden_final_to_initial": 0.49602020198540053,
+          "hidden_final_mean_norm": 0.5349929142327028,
+          "hidden_final_to_initial": 1.219489780104836,
           "hidden_initial_mean_norm": 0.43870225315599687,
-          "hidden_max_norm": 0.7099166155573966,
-          "hidden_max_to_initial": 1.618219670517533,
+          "hidden_max_norm": 1.9496537699486252,
+          "hidden_max_to_initial": 4.444138948279696,
           "measurement_disturbance_scale": 0.0,
           "observation_dim": 8,
           "phase_modulates_matrices": true,
           "process_disturbance_scale": 0.0,
-          "recurrent_spectral_radius_max": 0.8975516417860756,
-          "recurrent_spectral_radius_mean": 0.8658577060485408
+          "recurrent_spectral_radius_max": 0.9858939262293323,
+          "recurrent_spectral_radius_mean": 0.9429929496511579
         },
         "reference_lens_cost": 5755.727661630513,
         "response_map_mismatch": {
-          "disturbance_to_action": 1.0005653120680122,
-          "disturbance_to_cost": 0.7132573291872675,
-          "disturbance_to_output": 0.9925073824606276,
-          "disturbance_to_state": 0.9915737241125602,
-          "max_aggregate_mismatch": 1.0005653120680122,
-          "measurement_to_action": 0.9998677228358241,
-          "measurement_to_output": 0.9879922031813174,
-          "observation_to_action": 0.9998724406490238
+          "disturbance_to_action": 1.0017604967793787,
+          "disturbance_to_cost": 0.7050041886497568,
+          "disturbance_to_output": 0.9944475899966645,
+          "disturbance_to_state": 0.9936243605329532,
+          "max_aggregate_mismatch": 1.0017604967793787,
+          "measurement_to_action": 0.9999227259846948,
+          "measurement_to_output": 0.9882943783109206,
+          "observation_to_action": 0.9997957894007522
         },
         "row_family": "reward_lens",
-        "state_weighted_action_mismatch": 531.171316280645,
+        "state_weighted_action_mismatch": 5233.91863042786,
         "verdict": "reward_trained_non_equivalent"
       },
       "spec": {
@@ -19346,9 +20795,14 @@
           "learning_rate": 0.003,
           "measurement_scale": 0.0,
           "n_train_steps": 4,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 12,
           "row_family": "reward_lens",
+          "smoothness_penalty": null,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -19409,12 +20863,12 @@
           "status": "available",
           "summary": {
             "action_label": "control",
-            "aggregate_delta_energy": 7773.485500186906,
-            "aggregate_mismatch_ratio": 1.0007780441939034,
+            "aggregate_delta_energy": 7790.47151815397,
+            "aggregate_mismatch_ratio": 1.0029648668025404,
             "aggregate_reference_energy": 7767.442086969659,
-            "delta_rms": 11.382358791998334,
-            "mismatch_ratio_max": 57571.32397621449,
-            "mismatch_ratio_mean": 1175.5087249497738,
+            "delta_rms": 11.394787929980655,
+            "mismatch_ratio_max": 1135293.9183939057,
+            "mismatch_ratio_mean": 23723.923839773906,
             "n_samples": 540,
             "reference_rms": 11.377933385117043,
             "state_label": "state"
@@ -19425,9 +20879,9 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "mean_effective_rank": 2.603158298481228,
+            "mean_effective_rank": 2.1941352774584515,
             "mean_identifiable_rank": 4.983606557377049,
-            "min_effective_rank": 2.26504170142302,
+            "min_effective_rank": 1.3052526378343972,
             "min_identifiable_rank": 4.0,
             "state_label": "plant_hidden_augmented_state",
             "time_steps": 61
@@ -19443,13 +20897,16 @@
             "is_reward_trained": true,
             "learning_rate": 0.003,
             "n_train_steps": 4,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 12,
-            "reward_best_loss": 1087561.8565063612,
-            "reward_final_loss": 1087561.8565063612,
+            "reward_best_loss": 1037169.18234647,
+            "reward_final_loss": 1037169.18234647,
             "reward_initial_loss": 1135137.188019392,
-            "reward_last_loss": 1087561.8565063612,
-            "reward_loss_improvement": 47575.33151303092,
+            "reward_last_loss": 1037169.18234647,
+            "reward_loss_improvement": 97968.00567292213,
             "row_family": "reward_lens",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001
           }
         },
@@ -19458,8 +20915,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.999868482056252,
-            "delta_frobenius": 797.6927384826449,
+            "aggregate_mismatch_ratio": 0.9997711282098183,
+            "delta_frobenius": 797.6539032017129,
             "input_label": "observation_history",
             "map_shape": [
               60,
@@ -19467,8 +20924,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 2539587703.857162,
-            "mismatch_ratio_mean": 180353928.12769082,
+            "mismatch_ratio_max": 4936171918.957285,
+            "mismatch_ratio_mean": 294237982.99076635,
             "output_label": "action",
             "reference_frobenius": 797.7451991116911,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -19479,8 +20936,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9998621455900928,
-            "delta_frobenius": 513.2990797259395,
+            "aggregate_mismatch_ratio": 0.9999202608516428,
+            "delta_frobenius": 513.313996820738,
             "input_label": "measurement_history",
             "map_shape": [
               60,
@@ -19488,8 +20945,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 2539587703.857162,
-            "mismatch_ratio_mean": 180353928.1618883,
+            "mismatch_ratio_max": 4936171918.957285,
+            "mismatch_ratio_mean": 294237983.1036451,
             "output_label": "action",
             "reference_frobenius": 513.3344636552252,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -19500,8 +20957,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9879834030306917,
-            "delta_frobenius": 199.4492629646767,
+            "aggregate_mismatch_ratio": 0.9883097165673637,
+            "delta_frobenius": 199.48219753682147,
             "input_label": "measurement_history",
             "map_shape": [
               60,
@@ -19509,8 +20966,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 0.9967748579468438,
-            "mismatch_ratio_mean": 0.7565746211240167,
+            "mismatch_ratio_max": 0.9966795797093486,
+            "mismatch_ratio_mean": 0.7575248945875691,
             "output_label": "external_output",
             "reference_frobenius": 200.6585230418815,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -19521,8 +20978,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 1.000531150425757,
-            "delta_frobenius": 1227.9243966196912,
+            "aggregate_mismatch_ratio": 1.0022063079106607,
+            "delta_frobenius": 1228.9519041013518,
             "input_label": "disturbance_history",
             "map_shape": [
               60,
@@ -19530,8 +20987,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 894208953.3334932,
-            "mismatch_ratio_mean": 14903483.626384458,
+            "mismatch_ratio_max": 1378091039.0451574,
+            "mismatch_ratio_mean": 22968187.026407603,
             "output_label": "action",
             "reference_frobenius": 1227.5984201878043,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -19542,8 +20999,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9914831414248105,
-            "delta_frobenius": 1902.152751595069,
+            "aggregate_mismatch_ratio": 0.9944199900231024,
+            "delta_frobenius": 1904.9678291981336,
             "input_label": "disturbance_history",
             "map_shape": [
               61,
@@ -19551,8 +21008,8 @@
               480
             ],
             "map_slices": 61,
-            "mismatch_ratio_max": 0.9971544485573945,
-            "mismatch_ratio_mean": 0.8389760853859591,
+            "mismatch_ratio_max": 1.0035305040544935,
+            "mismatch_ratio_mean": 0.8491278949571454,
             "output_label": "state",
             "reference_frobenius": 1910.3050456506946,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -19563,8 +21020,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9924163093429131,
-            "delta_frobenius": 775.1011801305091,
+            "aggregate_mismatch_ratio": 0.9950921940214014,
+            "delta_frobenius": 776.1454420652217,
             "input_label": "disturbance_history",
             "map_shape": [
               60,
@@ -19572,8 +21029,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 0.9973415718063492,
-            "mismatch_ratio_mean": 0.7696623326129515,
+            "mismatch_ratio_max": 1.0037483753156349,
+            "mismatch_ratio_mean": 0.7769631249254293,
             "output_label": "external_output",
             "reference_frobenius": 778.057066983652,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -19584,23 +21041,23 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.7123717656149234,
+            "aggregate_mismatch_ratio": 0.6994812247793816,
             "assumptions": [
               "zero_affine_offset",
               "linear_disturbance_response",
               "separable_state_action_quadratic_cost",
               "no_state_action_cross_terms"
             ],
-            "candidate_quadratic_frobenius": 569471064.776828,
-            "delta_frobenius": 306944945.52897346,
+            "candidate_quadratic_frobenius": 567422814.789294,
+            "delta_frobenius": 304155145.5616231,
             "input_label": "disturbance_history",
             "map_shape": [
               480,
               480
             ],
             "map_slices": 1,
-            "mismatch_ratio_max": 0.7123717656149234,
-            "mismatch_ratio_mean": 0.7123717656149234,
+            "mismatch_ratio_max": 0.6994812247793816,
+            "mismatch_ratio_mean": 0.6994812247793816,
             "output_label": "quadratic_cost",
             "quadratic_map_shape": [
               480,
@@ -19637,23 +21094,23 @@
             "architecture": "linear_recurrence",
             "basis_rank": 12,
             "hidden_dim": 48,
-            "hidden_final_mean_norm": 0.40139866716025446,
-            "hidden_final_to_initial": 0.4124144313376212,
+            "hidden_final_mean_norm": 1.5469572083415892,
+            "hidden_final_to_initial": 1.5894110508521453,
             "hidden_initial_mean_norm": 0.973289576357359,
-            "hidden_max_norm": 1.5230048337347157,
-            "hidden_max_to_initial": 1.5648013404548369,
+            "hidden_max_norm": 6.538526812259584,
+            "hidden_max_to_initial": 6.717966544685215,
             "measurement_disturbance_scale": 0.0,
             "observation_dim": 8,
             "phase_modulates_matrices": true,
             "process_disturbance_scale": 0.0,
-            "recurrent_spectral_radius_max": 0.9057301497210155,
-            "recurrent_spectral_radius_mean": 0.8686605151698349
+            "recurrent_spectral_radius_max": 0.9926551429615946,
+            "recurrent_spectral_radius_mean": 0.949675500857222
           }
         }
       ],
       "metrics": {
-        "aggregate_action_energy_mismatch": 1.0007780441939034,
-        "candidate_cost": 1087561.8565063614,
+        "aggregate_action_energy_mismatch": 1.0029648668025404,
+        "candidate_cost": 1037169.1823464701,
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "state_coverage_eigen_m4_s1",
         "io_map_certificate": {
@@ -19661,19 +21118,22 @@
           "reason": "The row consumes the integrated standard certificate component builder for linear recurrence response maps and augmented rollout diagnostics.",
           "status": "standard_components_available"
         },
-        "objective_ratio_to_clean_reference": 249.2401461683129,
-        "objective_ratio_to_lens_reference": 54.8370911089263,
+        "objective_ratio_to_clean_reference": 237.69149043136903,
+        "objective_ratio_to_lens_reference": 52.29618950632193,
         "optimizer": {
           "fit_method": "adam_phase_modulated_reward_rollout",
           "initialization": "scratch_random_stable",
           "is_reward_trained": true,
           "learning_rate": 0.003,
           "n_train_steps": 4,
-          "reward_best_loss": 1087561.8565063612,
-          "reward_final_loss": 1087561.8565063612,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "reward_best_loss": 1037169.18234647,
+          "reward_final_loss": 1037169.18234647,
           "reward_initial_loss": 1135137.188019392,
-          "reward_last_loss": 1087561.8565063612,
-          "reward_loss_improvement": 47575.33151303092,
+          "reward_last_loss": 1037169.18234647,
+          "reward_loss_improvement": 97968.00567292213,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001
         },
         "projection": {
@@ -19719,31 +21179,31 @@
         "recurrence_diagnostics": {
           "basis_rank": 12,
           "hidden_dim": 48,
-          "hidden_final_mean_norm": 0.40139866716025446,
-          "hidden_final_to_initial": 0.4124144313376212,
+          "hidden_final_mean_norm": 1.5469572083415892,
+          "hidden_final_to_initial": 1.5894110508521453,
           "hidden_initial_mean_norm": 0.973289576357359,
-          "hidden_max_norm": 1.5230048337347157,
-          "hidden_max_to_initial": 1.5648013404548369,
+          "hidden_max_norm": 6.538526812259584,
+          "hidden_max_to_initial": 6.717966544685215,
           "measurement_disturbance_scale": 0.0,
           "observation_dim": 8,
           "phase_modulates_matrices": true,
           "process_disturbance_scale": 0.0,
-          "recurrent_spectral_radius_max": 0.9057301497210155,
-          "recurrent_spectral_radius_mean": 0.8686605151698349
+          "recurrent_spectral_radius_max": 0.9926551429615946,
+          "recurrent_spectral_radius_mean": 0.949675500857222
         },
         "reference_lens_cost": 19832.595685027678,
         "response_map_mismatch": {
-          "disturbance_to_action": 1.000531150425757,
-          "disturbance_to_cost": 0.7123717656149234,
-          "disturbance_to_output": 0.9924163093429131,
-          "disturbance_to_state": 0.9914831414248105,
-          "max_aggregate_mismatch": 1.000531150425757,
-          "measurement_to_action": 0.9998621455900928,
-          "measurement_to_output": 0.9879834030306917,
-          "observation_to_action": 0.999868482056252
+          "disturbance_to_action": 1.0022063079106607,
+          "disturbance_to_cost": 0.6994812247793816,
+          "disturbance_to_output": 0.9950921940214014,
+          "disturbance_to_state": 0.9944199900231024,
+          "max_aggregate_mismatch": 1.0022063079106607,
+          "measurement_to_action": 0.9999202608516428,
+          "measurement_to_output": 0.9883097165673637,
+          "observation_to_action": 0.9997711282098183
         },
         "row_family": "reward_lens",
-        "state_weighted_action_mismatch": 1175.5087249497738,
+        "state_weighted_action_mismatch": 23723.923839773906,
         "verdict": "reward_trained_non_equivalent"
       },
       "spec": {
@@ -19767,9 +21227,14 @@
           "learning_rate": 0.003,
           "measurement_scale": 0.0,
           "n_train_steps": 4,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 12,
           "row_family": "reward_lens",
+          "smoothness_penalty": null,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -19830,12 +21295,12 @@
           "status": "available",
           "summary": {
             "action_label": "control",
-            "aggregate_delta_energy": 2948.892821854104,
-            "aggregate_mismatch_ratio": 1.002981624739511,
+            "aggregate_delta_energy": 2977.907989361057,
+            "aggregate_mismatch_ratio": 1.0128503048192146,
             "aggregate_reference_energy": 2940.126468039706,
-            "delta_rms": 7.010578699192272,
-            "mismatch_ratio_max": 7193.695058702726,
-            "mismatch_ratio_mean": 151.64837166218598,
+            "delta_rms": 7.044984018625186,
+            "mismatch_ratio_max": 62150.97696770532,
+            "mismatch_ratio_mean": 1140.3806529291428,
             "n_samples": 180,
             "reference_rms": 7.000150555571056,
             "state_label": "state"
@@ -19846,9 +21311,9 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "mean_effective_rank": 1.023794800822631,
+            "mean_effective_rank": 1.021390357056975,
             "mean_identifiable_rank": 2.0,
-            "min_effective_rank": 1.000407542438023,
+            "min_effective_rank": 1.0004958360633687,
             "min_identifiable_rank": 2.0,
             "state_label": "plant_hidden_augmented_state",
             "time_steps": 61
@@ -19864,13 +21329,16 @@
             "is_reward_trained": true,
             "learning_rate": 0.003,
             "n_train_steps": 4,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 12,
-            "reward_best_loss": 157121.15409112445,
-            "reward_final_loss": 157121.15409112445,
+            "reward_best_loss": 139396.90203014377,
+            "reward_final_loss": 139396.90203014377,
             "reward_initial_loss": 172633.36340387037,
-            "reward_last_loss": 157121.15409112445,
-            "reward_loss_improvement": 15512.209312745923,
+            "reward_last_loss": 139396.90203014377,
+            "reward_loss_improvement": 33236.461373726605,
             "row_family": "reward_lens",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001
           }
         },
@@ -19879,8 +21347,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9999376955409732,
-            "delta_frobenius": 797.7203471830527,
+            "aggregate_mismatch_ratio": 0.9998869869512872,
+            "delta_frobenius": 797.7001200295002,
             "input_label": "observation_history",
             "map_shape": [
               60,
@@ -19888,8 +21356,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 2700216772.348967,
-            "mismatch_ratio_mean": 186239695.40629104,
+            "mismatch_ratio_max": 5411273855.385271,
+            "mismatch_ratio_mean": 303972739.1879675,
             "output_label": "action",
             "reference_frobenius": 797.7451991116911,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -19900,8 +21368,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9999775608569885,
-            "delta_frobenius": 513.3287042301946,
+            "aggregate_mismatch_ratio": 1.000061192262702,
+            "delta_frobenius": 513.3501694636375,
             "input_label": "measurement_history",
             "map_shape": [
               60,
@@ -19909,8 +21377,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 2700216772.348967,
-            "mismatch_ratio_mean": 186239695.42921725,
+            "mismatch_ratio_max": 5411273855.385271,
+            "mismatch_ratio_mean": 303972739.21113867,
             "output_label": "action",
             "reference_frobenius": 513.3344636552252,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -19921,8 +21389,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9881229151805113,
-            "delta_frobenius": 199.46334448321943,
+            "aggregate_mismatch_ratio": 0.9884754312071133,
+            "delta_frobenius": 199.4989209051906,
             "input_label": "measurement_history",
             "map_shape": [
               60,
@@ -19930,8 +21398,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 0.9968814883162516,
-            "mismatch_ratio_mean": 0.7563944841474445,
+            "mismatch_ratio_max": 0.996801110975449,
+            "mismatch_ratio_mean": 0.7567753699828457,
             "output_label": "external_output",
             "reference_frobenius": 200.6585230418815,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -19942,8 +21410,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 1.0006511829341183,
-            "delta_frobenius": 1227.9980507108362,
+            "aggregate_mismatch_ratio": 1.002096182308454,
+            "delta_frobenius": 1228.884381683298,
             "input_label": "disturbance_history",
             "map_shape": [
               60,
@@ -19951,8 +21419,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 870107485.788433,
-            "mismatch_ratio_mean": 14501792.33555809,
+            "mismatch_ratio_max": 1199046018.2366486,
+            "mismatch_ratio_mean": 19984101.216675993,
             "output_label": "action",
             "reference_frobenius": 1227.5984201878043,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -19963,8 +21431,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9916952449958317,
-            "delta_frobenius": 1902.3562002466126,
+            "aggregate_mismatch_ratio": 0.9942639628404881,
+            "delta_frobenius": 1904.818376036402,
             "input_label": "disturbance_history",
             "map_shape": [
               61,
@@ -19972,8 +21440,8 @@
               480
             ],
             "map_slices": 61,
-            "mismatch_ratio_max": 0.9966886058838322,
-            "mismatch_ratio_mean": 0.8379961306397056,
+            "mismatch_ratio_max": 1.0024670934537243,
+            "mismatch_ratio_mean": 0.8432888283671707,
             "output_label": "state",
             "reference_frobenius": 1910.3050456506946,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -19984,8 +21452,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9926408792341217,
-            "delta_frobenius": 775.1888724326661,
+            "aggregate_mismatch_ratio": 0.99515573766017,
+            "delta_frobenius": 776.1702228436164,
             "input_label": "disturbance_history",
             "map_shape": [
               60,
@@ -19993,8 +21461,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 0.9968530871902823,
-            "mismatch_ratio_mean": 0.7687826950992764,
+            "mismatch_ratio_max": 1.0027317103297957,
+            "mismatch_ratio_mean": 0.7734130966134035,
             "output_label": "external_output",
             "reference_frobenius": 778.057066983652,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -20005,23 +21473,23 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.7200780690443844,
+            "aggregate_mismatch_ratio": 0.7142124979100323,
             "assumptions": [
               "zero_affine_offset",
               "linear_disturbance_response",
               "separable_state_action_quadratic_cost",
               "no_state_action_cross_terms"
             ],
-            "candidate_quadratic_frobenius": 570656207.5749733,
-            "delta_frobenius": 308600715.8917057,
+            "candidate_quadratic_frobenius": 569646643.1537032,
+            "delta_frobenius": 307341254.72247595,
             "input_label": "disturbance_history",
             "map_shape": [
               480,
               480
             ],
             "map_slices": 1,
-            "mismatch_ratio_max": 0.7200780690443844,
-            "mismatch_ratio_mean": 0.7200780690443844,
+            "mismatch_ratio_max": 0.7142124979100323,
+            "mismatch_ratio_mean": 0.7142124979100323,
             "output_label": "quadratic_cost",
             "quadratic_map_shape": [
               480,
@@ -20058,23 +21526,23 @@
             "architecture": "linear_recurrence",
             "basis_rank": 12,
             "hidden_dim": 48,
-            "hidden_final_mean_norm": 0.23212223592987838,
-            "hidden_final_to_initial": 0.6317567066468155,
+            "hidden_final_mean_norm": 0.42848836231471793,
+            "hidden_final_to_initial": 1.166197609324293,
             "hidden_initial_mean_norm": 0.3674234614174767,
-            "hidden_max_norm": 0.6674234614174768,
-            "hidden_max_to_initial": 1.816496580927726,
+            "hidden_max_norm": 2.310314047391711,
+            "hidden_max_to_initial": 6.287878401882095,
             "measurement_disturbance_scale": 0.0,
             "observation_dim": 8,
             "phase_modulates_matrices": true,
             "process_disturbance_scale": 0.0,
-            "recurrent_spectral_radius_max": 0.9063871773892345,
-            "recurrent_spectral_radius_mean": 0.8651241145687469
+            "recurrent_spectral_radius_max": 0.9969884229645336,
+            "recurrent_spectral_radius_mean": 0.9330665923531706
           }
         }
       ],
       "metrics": {
-        "aggregate_action_energy_mismatch": 1.002981624739511,
-        "candidate_cost": 157121.15409112445,
+        "aggregate_action_energy_mismatch": 1.0128503048192146,
+        "candidate_cost": 139396.90203014377,
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "observer_error_svd_m1_s0.3",
         "io_map_certificate": {
@@ -20082,19 +21550,22 @@
           "reason": "The row consumes the integrated standard certificate component builder for linear recurrence response maps and augmented rollout diagnostics.",
           "status": "standard_components_available"
         },
-        "objective_ratio_to_clean_reference": 36.007974330402426,
-        "objective_ratio_to_lens_reference": 25.535881429347597,
+        "objective_ratio_to_clean_reference": 31.946048888668248,
+        "objective_ratio_to_lens_reference": 22.655273775520293,
         "optimizer": {
           "fit_method": "adam_phase_modulated_reward_rollout",
           "initialization": "scratch_random_stable",
           "is_reward_trained": true,
           "learning_rate": 0.003,
           "n_train_steps": 4,
-          "reward_best_loss": 157121.15409112445,
-          "reward_final_loss": 157121.15409112445,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "reward_best_loss": 139396.90203014377,
+          "reward_final_loss": 139396.90203014377,
           "reward_initial_loss": 172633.36340387037,
-          "reward_last_loss": 157121.15409112445,
-          "reward_loss_improvement": 15512.209312745923,
+          "reward_last_loss": 139396.90203014377,
+          "reward_loss_improvement": 33236.461373726605,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001
         },
         "projection": {
@@ -20140,31 +21611,31 @@
         "recurrence_diagnostics": {
           "basis_rank": 12,
           "hidden_dim": 48,
-          "hidden_final_mean_norm": 0.23212223592987838,
-          "hidden_final_to_initial": 0.6317567066468155,
+          "hidden_final_mean_norm": 0.42848836231471793,
+          "hidden_final_to_initial": 1.166197609324293,
           "hidden_initial_mean_norm": 0.3674234614174767,
-          "hidden_max_norm": 0.6674234614174768,
-          "hidden_max_to_initial": 1.816496580927726,
+          "hidden_max_norm": 2.310314047391711,
+          "hidden_max_to_initial": 6.287878401882095,
           "measurement_disturbance_scale": 0.0,
           "observation_dim": 8,
           "phase_modulates_matrices": true,
           "process_disturbance_scale": 0.0,
-          "recurrent_spectral_radius_max": 0.9063871773892345,
-          "recurrent_spectral_radius_mean": 0.8651241145687469
+          "recurrent_spectral_radius_max": 0.9969884229645336,
+          "recurrent_spectral_radius_mean": 0.9330665923531706
         },
         "reference_lens_cost": 6152.955970047306,
         "response_map_mismatch": {
-          "disturbance_to_action": 1.0006511829341183,
-          "disturbance_to_cost": 0.7200780690443844,
-          "disturbance_to_output": 0.9926408792341217,
-          "disturbance_to_state": 0.9916952449958317,
-          "max_aggregate_mismatch": 1.0006511829341183,
-          "measurement_to_action": 0.9999775608569885,
-          "measurement_to_output": 0.9881229151805113,
-          "observation_to_action": 0.9999376955409732
+          "disturbance_to_action": 1.002096182308454,
+          "disturbance_to_cost": 0.7142124979100323,
+          "disturbance_to_output": 0.99515573766017,
+          "disturbance_to_state": 0.9942639628404881,
+          "max_aggregate_mismatch": 1.002096182308454,
+          "measurement_to_action": 1.000061192262702,
+          "measurement_to_output": 0.9884754312071133,
+          "observation_to_action": 0.9998869869512872
         },
         "row_family": "reward_lens",
-        "state_weighted_action_mismatch": 151.64837166218598,
+        "state_weighted_action_mismatch": 1140.3806529291428,
         "verdict": "reward_trained_non_equivalent"
       },
       "spec": {
@@ -20188,9 +21659,14 @@
           "learning_rate": 0.003,
           "measurement_scale": 0.0,
           "n_train_steps": 4,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 12,
           "row_family": "reward_lens",
+          "smoothness_penalty": null,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -20251,12 +21727,12 @@
           "status": "available",
           "summary": {
             "action_label": "control",
-            "aggregate_delta_energy": 3173.7561510604874,
-            "aggregate_mismatch_ratio": 0.997018995702585,
+            "aggregate_delta_energy": 3147.7991507286038,
+            "aggregate_mismatch_ratio": 0.9888647389889119,
             "aggregate_reference_energy": 3183.2454193352523,
-            "delta_rms": 7.272959222421649,
-            "mismatch_ratio_max": 29.460748035134326,
-            "mismatch_ratio_mean": 1.979599923768785,
+            "delta_rms": 7.243156713671882,
+            "mismatch_ratio_max": 74.863504331813,
+            "mismatch_ratio_mean": 4.191249287884504,
             "n_samples": 1080,
             "reference_rms": 7.283823880507697,
             "state_label": "state"
@@ -20267,9 +21743,9 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "mean_effective_rank": 1.5048137556526884,
-            "mean_identifiable_rank": 6.934426229508197,
-            "min_effective_rank": 1.1210420766459264,
+            "mean_effective_rank": 1.2292388258166391,
+            "mean_identifiable_rank": 6.737704918032787,
+            "min_effective_rank": 1.0785182901976742,
             "min_identifiable_rank": 5.0,
             "state_label": "plant_hidden_augmented_state",
             "time_steps": 61
@@ -20285,13 +21761,16 @@
             "is_reward_trained": true,
             "learning_rate": 0.003,
             "n_train_steps": 4,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 12,
-            "reward_best_loss": 2294233.854791289,
-            "reward_final_loss": 2294233.854791289,
+            "reward_best_loss": 2214947.8584582666,
+            "reward_final_loss": 2214947.8584582666,
             "reward_initial_loss": 2353450.076077225,
-            "reward_last_loss": 2294233.854791289,
-            "reward_loss_improvement": 59216.22128593596,
+            "reward_last_loss": 2214947.8584582666,
+            "reward_loss_improvement": 138502.21761895856,
             "row_family": "reward_lens",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001
           }
         },
@@ -20300,8 +21779,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 1.0000206132107377,
-            "delta_frobenius": 797.753421114273,
+            "aggregate_mismatch_ratio": 1.000058549642945,
+            "delta_frobenius": 797.7685526181458,
             "input_label": "observation_history",
             "map_shape": [
               60,
@@ -20309,8 +21788,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 2175676184.9293456,
-            "mismatch_ratio_mean": 177415441.2898524,
+            "mismatch_ratio_max": 3338068183.702446,
+            "mismatch_ratio_mean": 264529545.1133191,
             "output_label": "action",
             "reference_frobenius": 797.7451991116911,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -20321,8 +21800,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9999606386976844,
-            "delta_frobenius": 513.3243607993024,
+            "aggregate_mismatch_ratio": 0.99984790993395,
+            "delta_frobenius": 513.2954256346036,
             "input_label": "measurement_history",
             "map_shape": [
               60,
@@ -20330,8 +21809,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 2175676184.9293456,
-            "mismatch_ratio_mean": 177415441.31892273,
+            "mismatch_ratio_max": 3338068183.702446,
+            "mismatch_ratio_mean": 264529545.1485665,
             "output_label": "action",
             "reference_frobenius": 513.3344636552252,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -20342,8 +21821,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9879196751320027,
-            "delta_frobenius": 199.4428303225101,
+            "aggregate_mismatch_ratio": 0.9875651794521202,
+            "delta_frobenius": 199.40704402979574,
             "input_label": "measurement_history",
             "map_shape": [
               60,
@@ -20351,8 +21830,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 0.9971457943468172,
-            "mismatch_ratio_mean": 0.7562327750202569,
+            "mismatch_ratio_max": 0.99719125685054,
+            "mismatch_ratio_mean": 0.7564773271651751,
             "output_label": "external_output",
             "reference_frobenius": 200.6585230418815,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -20363,8 +21842,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 1.0007198925197902,
-            "delta_frobenius": 1228.040210151786,
+            "aggregate_mismatch_ratio": 1.000694762401455,
+            "delta_frobenius": 1228.0247907573187,
             "input_label": "disturbance_history",
             "map_shape": [
               60,
@@ -20372,8 +21851,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 838215935.7758553,
-            "mismatch_ratio_mean": 13970266.561554385,
+            "mismatch_ratio_max": 1262366860.815577,
+            "mismatch_ratio_mean": 21039448.703110714,
             "output_label": "action",
             "reference_frobenius": 1227.5984201878043,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -20384,8 +21863,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9918352079463302,
-            "delta_frobenius": 1902.4904400718308,
+            "aggregate_mismatch_ratio": 0.9921320223849571,
+            "delta_frobenius": 1902.7750863452425,
             "input_label": "disturbance_history",
             "map_shape": [
               61,
@@ -20393,8 +21872,8 @@
               480
             ],
             "map_slices": 61,
-            "mismatch_ratio_max": 0.9970868737186186,
-            "mismatch_ratio_mean": 0.8389502624850538,
+            "mismatch_ratio_max": 0.9977241217641534,
+            "mismatch_ratio_mean": 0.8419037222259703,
             "output_label": "state",
             "reference_frobenius": 1910.3050456506946,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -20405,8 +21884,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9927511159709951,
-            "delta_frobenius": 775.2319151489025,
+            "aggregate_mismatch_ratio": 0.9929500435516015,
+            "delta_frobenius": 775.3095817876891,
             "input_label": "disturbance_history",
             "map_shape": [
               60,
@@ -20414,8 +21893,8 @@
               480
             ],
             "map_slices": 60,
-            "mismatch_ratio_max": 0.9972425114492357,
-            "mismatch_ratio_mean": 0.7694085169867481,
+            "mismatch_ratio_max": 0.9979136174824523,
+            "mismatch_ratio_mean": 0.7713317102224994,
             "output_label": "external_output",
             "reference_frobenius": 778.057066983652,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -20426,23 +21905,23 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.7233944712034996,
+            "aggregate_mismatch_ratio": 0.7255920023345437,
             "assumptions": [
               "zero_affine_offset",
               "linear_disturbance_response",
               "separable_state_action_quadratic_cost",
               "no_state_action_cross_terms"
             ],
-            "candidate_quadratic_frobenius": 571127230.7555016,
-            "delta_frobenius": 309310547.52871,
+            "candidate_quadratic_frobenius": 571338979.6086506,
+            "delta_frobenius": 309780003.7888605,
             "input_label": "disturbance_history",
             "map_shape": [
               480,
               480
             ],
             "map_slices": 1,
-            "mismatch_ratio_max": 0.7233944712034996,
-            "mismatch_ratio_mean": 0.7233944712034996,
+            "mismatch_ratio_max": 0.7255920023345437,
+            "mismatch_ratio_mean": 0.7255920023345437,
             "output_label": "quadratic_cost",
             "quadratic_map_shape": [
               480,
@@ -20479,23 +21958,23 @@
             "architecture": "linear_recurrence",
             "basis_rank": 12,
             "hidden_dim": 48,
-            "hidden_final_mean_norm": 0.6594197673707236,
-            "hidden_final_to_initial": 1.5031146127627535,
+            "hidden_final_mean_norm": 1.1748752272564746,
+            "hidden_final_to_initial": 2.6780697359188266,
             "hidden_initial_mean_norm": 0.4387022531559968,
-            "hidden_max_norm": 0.8138812709190228,
-            "hidden_max_to_initial": 1.8552019395022739,
+            "hidden_max_norm": 2.2735514377487895,
+            "hidden_max_to_initial": 5.1824475971869335,
             "measurement_disturbance_scale": 0.0,
             "observation_dim": 8,
             "phase_modulates_matrices": true,
             "process_disturbance_scale": 0.01999291222246905,
-            "recurrent_spectral_radius_max": 0.8830194969086909,
-            "recurrent_spectral_radius_mean": 0.850676011285495
+            "recurrent_spectral_radius_max": 0.9832953617144258,
+            "recurrent_spectral_radius_mean": 0.9199553867583855
           }
         }
       ],
       "metrics": {
-        "aggregate_action_energy_mismatch": 0.997018995702585,
-        "candidate_cost": 2294233.854791289,
+        "aggregate_action_energy_mismatch": 0.9888647389889119,
+        "candidate_cost": 2214947.8584582675,
         "clean_reference_cost": 4363.509945030792,
         "evaluation_lens": "mixed_process_observer",
         "io_map_certificate": {
@@ -20503,19 +21982,22 @@
           "reason": "The row consumes the integrated standard certificate component builder for linear recurrence response maps and augmented rollout diagnostics.",
           "status": "standard_components_available"
         },
-        "objective_ratio_to_clean_reference": 525.7771573097904,
-        "objective_ratio_to_lens_reference": 0.8008348899546105,
+        "objective_ratio_to_clean_reference": 507.60692340822374,
+        "objective_ratio_to_lens_reference": 0.7731589875980596,
         "optimizer": {
           "fit_method": "adam_phase_modulated_reward_rollout",
           "initialization": "scratch_random_stable",
           "is_reward_trained": true,
           "learning_rate": 0.003,
           "n_train_steps": 4,
-          "reward_best_loss": 2294233.854791289,
-          "reward_final_loss": 2294233.854791289,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
+          "reward_best_loss": 2214947.8584582666,
+          "reward_final_loss": 2214947.8584582666,
           "reward_initial_loss": 2353450.076077225,
-          "reward_last_loss": 2294233.854791289,
-          "reward_loss_improvement": 59216.22128593596,
+          "reward_last_loss": 2214947.8584582666,
+          "reward_loss_improvement": 138502.21761895856,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001
         },
         "projection": {
@@ -20561,31 +22043,31 @@
         "recurrence_diagnostics": {
           "basis_rank": 12,
           "hidden_dim": 48,
-          "hidden_final_mean_norm": 0.6594197673707236,
-          "hidden_final_to_initial": 1.5031146127627535,
+          "hidden_final_mean_norm": 1.1748752272564746,
+          "hidden_final_to_initial": 2.6780697359188266,
           "hidden_initial_mean_norm": 0.4387022531559968,
-          "hidden_max_norm": 0.8138812709190228,
-          "hidden_max_to_initial": 1.8552019395022739,
+          "hidden_max_norm": 2.2735514377487895,
+          "hidden_max_to_initial": 5.1824475971869335,
           "measurement_disturbance_scale": 0.0,
           "observation_dim": 8,
           "phase_modulates_matrices": true,
           "process_disturbance_scale": 0.01999291222246905,
-          "recurrent_spectral_radius_max": 0.8830194969086909,
-          "recurrent_spectral_radius_mean": 0.850676011285495
+          "recurrent_spectral_radius_max": 0.9832953617144258,
+          "recurrent_spectral_radius_mean": 0.9199553867583855
         },
         "reference_lens_cost": 2864802.5748744803,
         "response_map_mismatch": {
-          "disturbance_to_action": 1.0007198925197902,
-          "disturbance_to_cost": 0.7233944712034996,
-          "disturbance_to_output": 0.9927511159709951,
-          "disturbance_to_state": 0.9918352079463302,
-          "max_aggregate_mismatch": 1.0007198925197902,
-          "measurement_to_action": 0.9999606386976844,
-          "measurement_to_output": 0.9879196751320027,
-          "observation_to_action": 1.0000206132107377
+          "disturbance_to_action": 1.000694762401455,
+          "disturbance_to_cost": 0.7255920023345437,
+          "disturbance_to_output": 0.9929500435516015,
+          "disturbance_to_state": 0.9921320223849571,
+          "max_aggregate_mismatch": 1.000694762401455,
+          "measurement_to_action": 0.99984790993395,
+          "measurement_to_output": 0.9875651794521202,
+          "observation_to_action": 1.000058549642945
         },
         "row_family": "reward_lens",
-        "state_weighted_action_mismatch": 1.979599923768785,
+        "state_weighted_action_mismatch": 4.191249287884504,
         "verdict": "reward_trained_non_equivalent"
       },
       "spec": {
@@ -20609,9 +22091,14 @@
           "learning_rate": 0.003,
           "measurement_scale": 0.0,
           "n_train_steps": 4,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 12,
           "row_family": "reward_lens",
+          "smoothness_penalty": null,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -20706,13 +22193,16 @@
             "is_reward_trained": true,
             "learning_rate": 0.003,
             "n_train_steps": 4,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 12,
             "reward_best_loss": 4363.858815003297,
             "reward_final_loss": 4363.858815003297,
             "reward_initial_loss": 4363.858815003297,
-            "reward_last_loss": 3.9678740328712696e+16,
+            "reward_last_loss": 182004121493355.25,
             "reward_loss_improvement": 0.0,
             "row_family": "projection_warm_start_then_reward_lens",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001
           }
         },
@@ -20932,11 +22422,14 @@
           "is_reward_trained": true,
           "learning_rate": 0.003,
           "n_train_steps": 4,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
           "reward_best_loss": 4363.858815003297,
           "reward_final_loss": 4363.858815003297,
           "reward_initial_loss": 4363.858815003297,
-          "reward_last_loss": 3.9678740328712696e+16,
+          "reward_last_loss": 182004121493355.25,
           "reward_loss_improvement": 0.0,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001
         },
         "projection": {
@@ -21030,9 +22523,14 @@
           "learning_rate": 0.003,
           "measurement_scale": 0.0,
           "n_train_steps": 4,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 12,
           "row_family": "projection_warm_start_then_reward_lens",
+          "smoothness_penalty": null,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -21127,13 +22625,16 @@
             "is_reward_trained": true,
             "learning_rate": 0.003,
             "n_train_steps": 4,
+            "parameter_bound": null,
+            "proximal_penalty": 0.0,
             "rank": 12,
             "reward_best_loss": 5756.1588644969215,
             "reward_final_loss": 5756.1588644969215,
             "reward_initial_loss": 5756.1588644969215,
-            "reward_last_loss": 147711012353853.4,
+            "reward_last_loss": 1.7093534535000978e+18,
             "reward_loss_improvement": 0.0,
             "row_family": "projection_warm_start_then_reward_lens",
+            "smoothness_penalty": 0.0,
             "stability_penalty": 0.001
           }
         },
@@ -21353,11 +22854,14 @@
           "is_reward_trained": true,
           "learning_rate": 0.003,
           "n_train_steps": 4,
+          "parameter_bound": null,
+          "proximal_penalty": 0.0,
           "reward_best_loss": 5756.1588644969215,
           "reward_final_loss": 5756.1588644969215,
           "reward_initial_loss": 5756.1588644969215,
-          "reward_last_loss": 147711012353853.4,
+          "reward_last_loss": 1.7093534535000978e+18,
           "reward_loss_improvement": 0.0,
+          "smoothness_penalty": 0.0,
           "stability_penalty": 0.001
         },
         "projection": {
@@ -21451,9 +22955,14 @@
           "learning_rate": 0.003,
           "measurement_scale": 0.0,
           "n_train_steps": 4,
+          "parameter_bound": null,
+          "proximal_penalty": null,
           "rank": 12,
           "row_family": "projection_warm_start_then_reward_lens",
+          "smoothness_penalty": null,
           "stability_penalty": 0.001,
+          "supervised_fit_blocks": null,
+          "supervised_fit_scope": "readout_only",
           "supervised_objective": null
         },
         "reference_controller": "analytical_lqr_kalman_oracle_recurrence",
@@ -21464,7 +22973,7 @@
       "status": "reward_trained_non_equivalent"
     }
   ],
-  "runtime_seconds": 48.990326625003945,
+  "runtime_seconds": 88.45943504199386,
   "scope": "Oracle Kalman recurrent reference plus clamped-spline phase-modulated linear recurrence. The spline basis modulates A/B/C/D matrices over tau=t/(T-1), not additive phase offsets.",
   "source_issues": {
     "additive_phase_recurrent": "5e55f69",
