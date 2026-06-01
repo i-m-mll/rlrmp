@@ -34,7 +34,7 @@ LOCAL_FEEDBAX_DIR = Path("/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax"
 LOCAL_JAX_COOKBOOK_DIR = Path("/Users/mll/Main/10 Projects/05 Utils/jax-cookbook")
 
 Mode = Literal["source", "pinned"]
-CommandKind = Literal["dry-run", "local-smoke", "modal-smoke", "modal-run"]
+CommandKind = Literal["dry-run", "local-smoke", "modal-smoke", "modal-run", "modal-packing-smoke"]
 
 
 @dataclass(frozen=True)
@@ -48,11 +48,20 @@ class NominalGruRunConfig:
     n_replicates: int = 1
     hidden_size: int = 4
     seed: int = 42
+    controller_lr: float = 1e-2
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
     gpu: str = DEFAULT_GPU
     mode: Mode = "source"
     pinned_repo_dir: str = str(REMOTE_REPO_DIR)
     extra_args: tuple[str, ...] = ()
+    n_workers: int = 1
+    stagger_seconds: float = 10.0
+    burn_in_seconds: float = 60.0
+    measure_seconds: float = 60.0
+    warmup_batches: int = 2
+    chunk_batches: int = 4
+    ready_timeout_seconds: float = 900.0
+    sample_seconds: float = 5.0
 
     def local_artifact_dir(self) -> Path:
         return run_artifact_dir(self.experiment, self.run)
@@ -131,6 +140,44 @@ def build_remote_smoke_command() -> list[str]:
     return ["python", "-c", code]
 
 
+def build_packing_benchmark_command(
+    config: NominalGruRunConfig,
+    *,
+    remote: bool = False,
+) -> list[str]:
+    """Build the multi-process packing benchmark command."""
+
+    artifact_dir = config.remote_artifact_dir() if remote else config.local_artifact_dir()
+    command = [
+        "uv",
+        "run",
+        "--no-sync" if remote else "",
+        "python",
+        "-m",
+        "rlrmp.modal_packing_benchmark",
+        "parent",
+    ]
+    command = [part for part in command if part]
+    for flag, value in [
+        ("--output-dir", artifact_dir),
+        ("--n-workers", config.n_workers),
+        ("--stagger-seconds", config.stagger_seconds),
+        ("--ready-timeout-seconds", config.ready_timeout_seconds),
+        ("--burn-in-seconds", config.burn_in_seconds),
+        ("--measure-seconds", config.measure_seconds),
+        ("--warmup-batches", config.warmup_batches),
+        ("--chunk-batches", config.chunk_batches),
+        ("--batch-size", config.batch_size),
+        ("--n-replicates", config.n_replicates),
+        ("--hidden-size", config.hidden_size),
+        ("--controller-lr", config.controller_lr),
+        ("--seed", config.seed),
+        ("--sample-seconds", config.sample_seconds),
+    ]:
+        _append_arg(command, flag, value)
+    return command
+
+
 def shell_join(command: Sequence[str]) -> str:
     return " ".join(shlex.quote(part) for part in command)
 
@@ -150,6 +197,10 @@ def dry_run_payload(config: NominalGruRunConfig) -> dict[str, Any]:
         "local_training_shell": shell_join(build_training_command(config, remote=False)),
         "remote_training_command": build_training_command(config, remote=True),
         "remote_training_shell": shell_join(build_training_command(config, remote=True)),
+        "remote_packing_benchmark_command": build_packing_benchmark_command(config, remote=True),
+        "remote_packing_benchmark_shell": shell_join(
+            build_packing_benchmark_command(config, remote=True)
+        ),
         "remote_smoke_command": build_remote_smoke_command(),
         "remote_smoke_shell": shell_join(build_remote_smoke_command()),
         "local_spec_dir": str(config.local_spec_dir()),
@@ -280,6 +331,12 @@ def execute_remote_payload(payload: dict[str, Any]) -> int:
             timeout_seconds=config.timeout_seconds,
             cwd=config.remote_repo_dir(),
         )
+    if command_kind == "modal-packing-smoke":
+        return run_subprocess(
+            build_packing_benchmark_command(config, remote=True),
+            timeout_seconds=config.timeout_seconds,
+            cwd=config.remote_repo_dir(),
+        )
     raise ValueError(f"Remote execution does not support {command_kind!r}")
 
 
@@ -292,11 +349,20 @@ def make_config(args: argparse.Namespace) -> NominalGruRunConfig:
         n_replicates=args.n_replicates,
         hidden_size=args.hidden_size,
         seed=args.seed,
+        controller_lr=args.controller_lr,
         timeout_seconds=args.timeout_seconds,
         gpu=args.gpu,
         mode=args.mode,
         pinned_repo_dir=args.pinned_repo_dir,
         extra_args=tuple(args.extra_arg or ()),
+        n_workers=args.n_workers,
+        stagger_seconds=args.stagger_seconds,
+        burn_in_seconds=args.burn_in_seconds,
+        measure_seconds=args.measure_seconds,
+        warmup_batches=args.warmup_batches,
+        chunk_batches=args.chunk_batches,
+        ready_timeout_seconds=args.ready_timeout_seconds,
+        sample_seconds=args.sample_seconds,
     )
 
 
@@ -306,7 +372,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "command",
-        choices=["dry-run", "local-smoke", "modal-smoke", "modal-run"],
+        choices=["dry-run", "local-smoke", "modal-smoke", "modal-run", "modal-packing-smoke"],
         nargs="?",
         default="dry-run",
         help="dry-run prints commands; local-smoke runs only an immediate local smoke.",
@@ -321,6 +387,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--n-replicates", type=int, default=1)
     parser.add_argument("--hidden-size", type=int, default=4)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--controller-lr", type=float, default=1e-2)
+    parser.add_argument("--n-workers", type=int, default=1)
+    parser.add_argument("--stagger-seconds", type=float, default=10.0)
+    parser.add_argument("--burn-in-seconds", type=float, default=60.0)
+    parser.add_argument("--measure-seconds", type=float, default=60.0)
+    parser.add_argument("--warmup-batches", type=int, default=2)
+    parser.add_argument("--chunk-batches", type=int, default=4)
+    parser.add_argument("--ready-timeout-seconds", type=float, default=900.0)
+    parser.add_argument("--sample-seconds", type=float, default=5.0)
     parser.add_argument("--pinned-repo-dir", default=str(REMOTE_REPO_DIR))
     parser.add_argument(
         "--extra-arg",

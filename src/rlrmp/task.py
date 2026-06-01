@@ -4,6 +4,7 @@ from typing import Optional, Tuple
 import jax
 import jax.numpy as jnp
 import jax.random as jr
+import jax.tree as jt
 from feedbax.loss import TargetSpec
 from feedbax._mapping import WhereDict
 from feedbax.task import (
@@ -15,6 +16,51 @@ from feedbax.task import (
     centreout_endpoints,
 )
 from jaxtyping import Array, Float, PRNGKeyArray
+
+
+class EpochSimpleReaches(SimpleReaches):
+    """Simple reaches with a full-trial movement epoch for RLRMP losses."""
+
+    def _construct_trial_spec(self, effector_init_state, effector_target_state):
+        trial_spec = super()._construct_trial_spec(effector_init_state, effector_target_state)
+        n_time = self.n_steps - 1
+        epoch_bounds = jnp.asarray((0, n_time), dtype=jnp.int32)
+        targets = trial_spec.targets
+        if effector_init_state.pos.ndim > 1:
+            batch_size = effector_init_state.pos.shape[0]
+            epoch_bounds = jnp.broadcast_to(epoch_bounds, (effector_init_state.pos.shape[0], 2))
+            targets = jt.map(
+                lambda spec: (
+                    TargetSpec(
+                        value=spec.value,
+                        time_idxs=spec.time_idxs,
+                        time_mask=spec.time_mask,
+                        discount=(
+                            jnp.broadcast_to(spec.discount, (batch_size, n_time))
+                            if spec.discount is not None
+                            and hasattr(spec.discount, "shape")
+                            and spec.discount.shape == (n_time,)
+                            else spec.discount
+                        ),
+                    )
+                    if isinstance(spec, TargetSpec)
+                    else spec
+                ),
+                targets,
+                is_leaf=lambda x: isinstance(x, TargetSpec),
+            )
+        return TaskTrialSpec(
+            inits=trial_spec.inits,
+            inputs=trial_spec.inputs,
+            targets=targets,
+            intervene=trial_spec.intervene,
+            extra=trial_spec.extra,
+            timeline=TrialTimeline.from_epochs_events(
+                n_time,
+                epoch_bounds=epoch_bounds,
+                epoch_names=("movement",),
+            ),
+        )
 
 
 def _random_centerout_endpoints(
@@ -130,7 +176,7 @@ class CenterOutDelayedReaches(DelayedReaches):
 
 
 TASK_TYPES = {
-    "simple_reach": SimpleReaches,
+    "simple_reach": EpochSimpleReaches,
     "delayed_reach": DelayedReaches,
     "center_out_delayed_reach": CenterOutDelayedReaches,
 }
