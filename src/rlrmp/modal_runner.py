@@ -337,6 +337,7 @@ def activate_project_venv(venv_dir: Path = REMOTE_VENV_DIR) -> Path:
         *activated_paths,
         *(path for path in sys.path if path not in set(activated_paths)),
     ]
+    _evict_modal_bundled_modules(("typing_extensions",))
 
     bin_path = str(venv_dir / "bin")
     path_parts = os.environ.get("PATH", "").split(os.pathsep)
@@ -344,6 +345,17 @@ def activate_project_venv(venv_dir: Path = REMOTE_VENV_DIR) -> Path:
         os.environ["PATH"] = os.pathsep.join([bin_path, *path_parts])
     os.environ["VIRTUAL_ENV"] = str(venv_dir)
     return site_packages[-1]
+
+
+def _evict_modal_bundled_modules(module_names: Sequence[str]) -> None:
+    for module_name in module_names:
+        module = sys.modules.get(module_name)
+        module_file = getattr(module, "__file__", None)
+        if module_file is None:
+            continue
+        parts = Path(module_file).parts
+        if "__modal" in parts and "deps" in parts:
+            sys.modules.pop(module_name, None)
 
 
 def collect_provenance() -> dict[str, Any]:

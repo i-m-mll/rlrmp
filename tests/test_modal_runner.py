@@ -178,6 +178,10 @@ def test_activate_project_venv_prefers_venv_package_over_modal_deps(
 
     try:
         sys.path.insert(0, str(modal_deps))
+        shadow_module = importlib.import_module("typing_extensions")
+        assert not hasattr(shadow_module, "Sentinel")
+        assert Path(shadow_module.__file__).parent == modal_deps
+
         activate_project_venv(venv_dir)
         module = importlib.import_module("typing_extensions")
 
