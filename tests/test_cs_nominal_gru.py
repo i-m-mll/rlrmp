@@ -21,6 +21,7 @@ from rlrmp.train.cs_nominal_gru import (
     build_hps,
     build_parser,
     derive_spec_dir,
+    run_full_training,
     write_run_spec,
 )
 
@@ -244,6 +245,50 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     assert manifest["training_spec"]["nominal_only"] is True
     assert not output_dir.exists()
     assert REPO_ROOT not in output_dir.parents
+
+
+def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Path) -> None:
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        smoke=True,
+        full_train=True,
+        resume=True,
+        checkpoint_interval_batches=1,
+        disable_progress=True,
+        quiet_progress=True,
+    )
+    commits = 0
+
+    def commit() -> None:
+        nonlocal commits
+        commits += 1
+
+    result = run_full_training(args, volume_commit=commit)
+
+    checkpoint_latest = output_dir / "checkpoints" / "checkpoint_latest"
+    checkpoint_1 = output_dir / "checkpoints" / "checkpoint_0000001"
+    metadata = json.loads((checkpoint_latest / "metadata.json").read_text())
+    summary = json.loads((output_dir / "training_summary.json").read_text())
+
+    assert result["completed_batches"] == 1
+    assert Path(result["final_model_path"]) == output_dir / "trained_model.eqx"
+    assert Path(result["training_history_path"]) == output_dir / "training_history.eqx"
+    assert checkpoint_latest.exists()
+    assert checkpoint_1.exists()
+    assert metadata["completed_batches"] == 1
+    assert metadata["next_prng_key"]
+    assert metadata["run_spec"]["mode"] == "full_train"
+    assert metadata["run_spec"]["schema_version"] == "rlrmp.cs_stochastic_gru.v1"
+    assert (checkpoint_latest / "model.eqx").exists()
+    assert (checkpoint_latest / "optimizer_state.eqx").exists()
+    assert (output_dir / "trained_model.eqx").exists()
+    assert (output_dir / "training_history.eqx").exists()
+    assert (output_dir / "history_chunks" / "history_0000001.eqx").exists()
+    assert summary["latest_checkpoint"] == str(checkpoint_latest)
+    assert commits == 2
 
 
 def test_setup_task_model_pair_trains_tiny_nominal_simple_reach_batch() -> None:

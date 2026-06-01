@@ -1,9 +1,8 @@
-"""Stochastic C&S-fidelity GRU run-spec construction.
+"""Stochastic C&S-fidelity GRU run-spec construction and training.
 
 This module prepares nominal, hold-free C&S-aligned GRU runs for issue
-``30f2313``. It intentionally stops at lightweight run-spec and
-GraphSpec materialization; full local/Modal training remains a separate,
-explicitly launched step.
+``30f2313``. The default CLI mode writes only the lightweight run spec and
+GraphSpec; ``--full-train`` performs the explicitly launched training path.
 """
 
 from __future__ import annotations
@@ -11,14 +10,22 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import subprocess
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import jax.random as jr
+import jax_cookbook.tree as jtree
+import optax
+from feedbax._io import save as fbx_save
+from feedbax.train import filter_spec_leaves, get_model_parameters
+from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule
 from feedbax.types import TreeNamespace, dict_to_namespace
 
 from rlrmp.analysis.cs_game_card import (
@@ -40,6 +47,7 @@ from rlrmp.feedbax_graph import (
     build_point_mass_sensorimotor_graph_spec,
     write_graph_spec_bundle,
 )
+from rlrmp.modules.training.part2 import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.run_specs import validate_nominal_gru_run_spec
 from rlrmp.stochastic_runtime import (
@@ -53,12 +61,25 @@ DEFAULT_EXPERIMENT = ISSUE_ID
 DEFAULT_RUN = "cs_stochastic_gru__no_hidden_penalty"
 DEFAULT_OUTPUT_DIR = f"_artifacts/{DEFAULT_EXPERIMENT}/runs/{DEFAULT_RUN}"
 DEFAULT_STOCHASTIC_PRESET = "cs2019-rollout"
+DEFAULT_CHECKPOINT_INTERVAL_BATCHES = 500
 CS_STAGE_COUNT = 60
 CS_FEEDBAX_N_STEPS = CS_STAGE_COUNT + 1
 CS_POSITION_SCALE = 1e6
 CS_VELOCITY_SCALE = 1e5
 CS_CONTROL_SCALE = 1.0
 CS_REGULARIZED_NN_HIDDEN = 1e-5
+VolumeCommit = Callable[[], None]
+
+
+@dataclass(frozen=True)
+class TrainingState:
+    """Serializable state needed to resume the chunked C&S GRU training loop."""
+
+    model: Any
+    optimizer_state: Any
+    completed_batches: int
+    key: Any
+    history: Any | None
 
 
 @dataclass(frozen=True)
@@ -474,17 +495,18 @@ def build_run_spec(
         "schema_version": SCHEMA_VERSION,
         "issue": ISSUE_ID,
         "training_script": "scripts/train_cs_nominal_gru.py",
-        "mode": "dry_run" if args.dry_run else "spec_write",
+        "mode": _run_mode(args),
         "artifact_output_dir": str(output_dir),
         "spec_dir": str(spec_dir),
         "nominal_only": True,
         "adversarial_phase": "none",
         "modal_launch": "not_requested",
-        "full_training_launch": "not_requested",
+        "full_training_launch": "requested" if args.full_train else "not_requested",
         "seed": int(args.seed),
         "n_train_batches": int(args.n_train_batches),
         "batch_size": int(args.batch_size),
         "controller_lr": float(args.controller_lr),
+        "checkpointing": _checkpoint_metadata(args, output_dir),
         "fidelity_status": _fidelity_status(hps),
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
         "game_card": build_game_card_provenance(),
@@ -551,6 +573,218 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def run_full_training(
+    args: argparse.Namespace,
+    *,
+    volume_commit: VolumeCommit | None = None,
+) -> dict[str, Any]:
+    """Run chunked stochastic C&S GRU training with durable checkpoints.
+
+    Feedbax's trainer can accept an optimizer state, but its checkpoint restore
+    path is model-centric. This wrapper owns the resume contract explicitly:
+    checkpoints store model leaves, optimizer state, completed batch count,
+    PRNG state, run/config metadata, and training history snapshots.
+    """
+
+    args = _apply_smoke_overrides(args)
+    if int(args.n_train_batches) < 1:
+        raise ValueError("--n-train-batches must be positive for --full-train")
+    if int(args.checkpoint_interval_batches) < 1:
+        raise ValueError("--checkpoint-interval-batches must be positive")
+
+    spec_result = write_run_spec(args)
+    output_dir = mkdir_p(Path(args.output_dir))
+    run_spec_path = Path(spec_result["run_spec_path"])
+    run_spec = json.loads(run_spec_path.read_text(encoding="utf-8"))
+
+    hps = build_hps(args)
+    key_init, key_train = jr.split(jr.PRNGKey(int(args.seed)), 2)
+    pair = setup_task_model_pair(hps, key=key_init)
+    trainer = _build_trainer(hps)
+    where_train = _where_train()
+    template_state = _initial_training_state(
+        model=pair.model,
+        trainer=trainer,
+        where_train=where_train[0],
+        key=key_train,
+    )
+    checkpoint_root = output_dir / "checkpoints"
+    state = (
+        load_latest_checkpoint(
+            checkpoint_root,
+            model_template=pair.model,
+            optimizer_state_template=template_state.optimizer_state,
+            history_template=None,
+        )
+        if args.resume and latest_checkpoint_path(checkpoint_root).exists()
+        else template_state
+    )
+
+    chunks: list[dict[str, int | str]] = []
+    while state.completed_batches < int(args.n_train_batches):
+        remaining = int(args.n_train_batches) - state.completed_batches
+        chunk_batches = min(int(args.checkpoint_interval_batches), remaining)
+        key_chunk, key_next = jr.split(state.key, 2)
+        model, history_chunk, optimizer_state = trainer(
+            pair.task,
+            state.model,
+            n_batches=chunk_batches,
+            idx_start=state.completed_batches,
+            opt_state=state.optimizer_state,
+            key=key_chunk,
+            ensembled=True,
+            loss_func=pair.task.loss_func,
+            where_train=where_train,
+            batch_size=int(hps.batch_size),
+            log_step=max(1, int(args.log_step)),
+            disable_progress=bool(args.disable_progress),
+            verbose_progress=not bool(args.quiet_progress),
+        )
+        history = _append_history(state.history, history_chunk)
+        completed = state.completed_batches + chunk_batches
+        history_chunk_path = output_dir / "history_chunks" / f"history_{completed:07d}.eqx"
+        history_chunk_path.parent.mkdir(parents=True, exist_ok=True)
+        fbx_save(history_chunk_path, history_chunk)
+        state = TrainingState(
+            model=model,
+            optimizer_state=optimizer_state,
+            completed_batches=completed,
+            key=key_next,
+            history=history,
+        )
+        checkpoint_path = save_training_checkpoint(
+            checkpoint_root,
+            state,
+            args=args,
+            run_spec=run_spec,
+        )
+        _commit_volume(volume_commit)
+        chunks.append(
+            {
+                "completed_batches": completed,
+                "checkpoint": str(checkpoint_path),
+                "history_chunk": str(history_chunk_path),
+            }
+        )
+
+    final_model_path = output_dir / "trained_model.eqx"
+    final_history_path = output_dir / "training_history.eqx"
+    final_summary_path = output_dir / "training_summary.json"
+    fbx_save(final_model_path, state.model, hyperparameters=run_spec)
+    if state.history is not None:
+        fbx_save(final_history_path, state.history)
+    final_summary = {
+        "schema_version": f"{SCHEMA_VERSION}.training.v1",
+        "issue": ISSUE_ID,
+        "completed_batches": state.completed_batches,
+        "n_train_batches": int(args.n_train_batches),
+        "checkpoint_interval_batches": int(args.checkpoint_interval_batches),
+        "latest_checkpoint": str(latest_checkpoint_path(checkpoint_root)),
+        "final_model_path": str(final_model_path),
+        "training_history_path": str(final_history_path),
+        "run_spec_path": str(run_spec_path),
+        "graph_spec_path": spec_result["graph_spec_path"],
+        "chunks": chunks,
+    }
+    _atomic_write_json(final_summary_path, final_summary)
+    _commit_volume(volume_commit)
+    return {
+        **spec_result,
+        "final_model_path": str(final_model_path),
+        "training_history_path": str(final_history_path),
+        "training_summary_path": str(final_summary_path),
+        "latest_checkpoint": str(latest_checkpoint_path(checkpoint_root)),
+        "completed_batches": state.completed_batches,
+    }
+
+
+def save_training_checkpoint(
+    checkpoint_root: Path,
+    state: TrainingState,
+    *,
+    args: argparse.Namespace,
+    run_spec: dict[str, Any],
+) -> Path:
+    """Write a numbered checkpoint and atomically repoint ``checkpoint_latest``."""
+
+    checkpoint_root.mkdir(parents=True, exist_ok=True)
+    checkpoint_name = f"checkpoint_{state.completed_batches:07d}"
+    target = checkpoint_root / checkpoint_name
+    tmp = checkpoint_root / f".{checkpoint_name}.tmp"
+    if tmp.exists():
+        _remove_tree(tmp)
+    tmp.mkdir(parents=True)
+
+    eqx.tree_serialise_leaves(tmp / "model.eqx", state.model)
+    eqx.tree_serialise_leaves(tmp / "optimizer_state.eqx", state.optimizer_state)
+    if state.history is not None:
+        fbx_save(tmp / "history.eqx", state.history)
+    metadata = {
+        "schema_version": f"{SCHEMA_VERSION}.checkpoint.v1",
+        "issue": ISSUE_ID,
+        "completed_batches": state.completed_batches,
+        "n_train_batches": int(args.n_train_batches),
+        "checkpoint_interval_batches": int(args.checkpoint_interval_batches),
+        "seed": int(args.seed),
+        "next_prng_key": _plain(state.key),
+        "stochastic_preset": str(args.stochastic_preset),
+        "run_spec": run_spec,
+    }
+    _atomic_write_json(tmp / "metadata.json", metadata)
+    if target.exists():
+        _remove_tree(target)
+    os.replace(tmp, target)
+    _atomic_latest_link(checkpoint_root, checkpoint_name)
+    _atomic_write_json(
+        checkpoint_root / "checkpoint_index.json",
+        {
+            "latest": checkpoint_name,
+            "latest_path": str(latest_checkpoint_path(checkpoint_root)),
+            "completed_batches": state.completed_batches,
+        },
+    )
+    return target
+
+
+def load_latest_checkpoint(
+    checkpoint_root: Path,
+    *,
+    model_template: Any,
+    optimizer_state_template: Any,
+    history_template: Any | None = None,
+) -> TrainingState:
+    """Load ``checkpoint_latest`` using explicit model and optimizer templates."""
+
+    checkpoint_path = latest_checkpoint_path(checkpoint_root)
+    if not checkpoint_path.exists():
+        raise FileNotFoundError(f"No checkpoint_latest found under {checkpoint_root}")
+    metadata = json.loads((checkpoint_path / "metadata.json").read_text(encoding="utf-8"))
+    model = eqx.tree_deserialise_leaves(checkpoint_path / "model.eqx", model_template)
+    optimizer_state = eqx.tree_deserialise_leaves(
+        checkpoint_path / "optimizer_state.eqx",
+        optimizer_state_template,
+    )
+    history_path = checkpoint_path / "history.eqx"
+    history = (
+        eqx.tree_deserialise_leaves(history_path, history_template)
+        if history_template is not None and history_path.exists()
+        else None
+    )
+    return TrainingState(
+        model=model,
+        optimizer_state=optimizer_state,
+        completed_batches=int(metadata["completed_batches"]),
+        key=jnp.asarray(metadata["next_prng_key"], dtype=jnp.uint32),
+        history=history,
+    )
+
+
+def latest_checkpoint_path(checkpoint_root: Path) -> Path:
+    """Return the path used by the durable latest-checkpoint contract."""
+
+    return checkpoint_root / "checkpoint_latest"
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the CLI parser."""
 
@@ -599,8 +833,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--smoke",
         action="store_true",
-        help="Use tiny local spec values; still does not perform full training.",
+        help="Use tiny local values; with --full-train this runs a one-batch smoke.",
     )
+    parser.add_argument("--full-train", action="store_true")
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument(
+        "--checkpoint-interval-batches",
+        type=int,
+        default=DEFAULT_CHECKPOINT_INTERVAL_BATCHES,
+    )
+    parser.add_argument("--log-step", type=int, default=100)
+    parser.add_argument("--disable-progress", action="store_true", default=True)
+    parser.add_argument("--quiet-progress", action="store_true", default=True)
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -609,11 +853,15 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(
+    argv: list[str] | None = None,
+    *,
+    volume_commit: VolumeCommit | None = None,
+) -> int:
     """CLI entry point."""
 
     args = build_parser().parse_args(argv)
-    result = write_run_spec(args)
+    result = run_full_training(args, volume_commit=volume_commit) if args.full_train else write_run_spec(args)
     print(_json_dumps(result), end="")
     return 0
 
@@ -631,9 +879,112 @@ def _apply_smoke_overrides(args: argparse.Namespace) -> argparse.Namespace:
             "n_input_only": 0,
             "n_readout_only": 0,
             "n_recurrent_only": 0,
+            "checkpoint_interval_batches": 1,
+            "log_step": 1,
         }
     )
     return argparse.Namespace(**values)
+
+
+def _build_trainer(hps: TreeNamespace) -> TaskTrainer:
+    schedule = make_delayed_cosine_schedule(
+        float(hps.learning_rate_0),
+        constant_steps=int(hps.constant_lr_iterations),
+        total_steps=int(hps.n_batches_condition),
+        alpha=float(hps.cosine_annealing_alpha),
+    )
+    optimizer = optax.inject_hyperparams(
+        partial(optax.adamw, weight_decay=float(hps.weight_decay))
+    )(learning_rate=schedule)
+    return TaskTrainer(optimizer=optimizer, checkpointing=False)
+
+
+def _where_train() -> dict[int, Callable[[Any], tuple[Any, Any]]]:
+    def where_train_fn(model):
+        net = model.nodes["net"]
+        return (net.hidden, net.readout)
+
+    return {0: where_train_fn}
+
+
+def _initial_training_state(
+    *,
+    model: Any,
+    trainer: TaskTrainer,
+    where_train: Callable[[Any], Any],
+    key: Any,
+) -> TrainingState:
+    where_train_spec = filter_spec_leaves(model, where_train)
+    model_parameters = get_model_parameters(model, where_train_spec)
+    optimizer_state = eqx.filter_vmap(trainer.optimizer.init)(model_parameters)
+    return TrainingState(
+        model=model,
+        optimizer_state=optimizer_state,
+        completed_batches=0,
+        key=key,
+        history=None,
+    )
+
+
+def _append_history(history: Any | None, chunk: Any) -> Any:
+    if history is None:
+        return chunk
+    return jtree.concatenate([history, chunk])
+
+
+def _checkpoint_metadata(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
+    return {
+        "enabled": bool(args.full_train),
+        "resume": bool(args.resume),
+        "checkpoint_dir": str(Path(output_dir) / "checkpoints"),
+        "latest_checkpoint": str(Path(output_dir) / "checkpoints" / "checkpoint_latest"),
+        "numbered_pattern": "checkpoint_{completed_batches:07d}",
+        "interval_batches": int(args.checkpoint_interval_batches),
+        "contents": [
+            "model.eqx",
+            "optimizer_state.eqx",
+            "history.eqx",
+            "metadata.json",
+        ],
+    }
+
+
+def _run_mode(args: argparse.Namespace) -> str:
+    if args.dry_run:
+        return "dry_run"
+    if args.full_train:
+        return "full_train"
+    return "spec_write"
+
+
+def _commit_volume(volume_commit: VolumeCommit | None) -> None:
+    if volume_commit is not None:
+        volume_commit()
+
+
+def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(_json_dumps(payload), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _atomic_latest_link(checkpoint_root: Path, checkpoint_name: str) -> None:
+    latest = checkpoint_root / "checkpoint_latest"
+    tmp_link = checkpoint_root / ".checkpoint_latest.tmp"
+    if tmp_link.exists() or tmp_link.is_symlink():
+        tmp_link.unlink()
+    os.symlink(checkpoint_name, tmp_link)
+    os.replace(tmp_link, latest)
+
+
+def _remove_tree(path: Path) -> None:
+    for child in path.iterdir():
+        if child.is_dir() and not child.is_symlink():
+            _remove_tree(child)
+        else:
+            child.unlink()
+    path.rmdir()
 
 
 def _task_spec(hps: TreeNamespace) -> dict[str, Any]:

@@ -17,17 +17,25 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal, Sequence
+from typing import Any, Callable, Literal, Sequence
 
 from rlrmp.paths import REPO_ROOT, run_artifact_dir, run_spec_dir
 
 APP_NAME = "rlrmp-cs-stochastic-gru"
 DEFAULT_EXPERIMENT = "30f2313"
 DEFAULT_RUN = "cs_stochastic_gru__no_hidden_penalty"
+REGULARIZED_RUN = "cs_stochastic_gru__hidden_penalty"
 DEFAULT_STOCHASTIC_PRESET = "cs2019-rollout"
 DEFAULT_GPU = "A10G"
 DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_TRAIN_TIMEOUT_SECONDS = 24 * 60 * 60
+DEFAULT_N_TRAIN_BATCHES = 12000
+DEFAULT_BATCH_SIZE = 250
+DEFAULT_N_REPLICATES = 5
+DEFAULT_HIDDEN_SIZE = 180
+DEFAULT_CHECKPOINT_INTERVAL_BATCHES = 500
+MODAL_VOLUME_NAME = "rlrmp-cs-stochastic-gru"
+MODAL_VOLUME_MOUNT = Path("/vol/rlrmp-cs-stochastic-gru")
 REMOTE_REPO_DIR = Path("/workspace/rlrmp")
 REMOTE_FEEDBAX_DIR = Path("/workspace/feedbax")
 REMOTE_JAX_COOKBOOK_DIR = Path("/workspace/jax-cookbook")
@@ -44,14 +52,16 @@ class NominalGruRunConfig:
 
     experiment: str = DEFAULT_EXPERIMENT
     run: str = DEFAULT_RUN
-    n_train_batches: int = 1
-    batch_size: int = 4
-    n_replicates: int = 1
-    hidden_size: int = 4
+    n_train_batches: int = DEFAULT_N_TRAIN_BATCHES
+    batch_size: int = DEFAULT_BATCH_SIZE
+    n_replicates: int = DEFAULT_N_REPLICATES
+    hidden_size: int = DEFAULT_HIDDEN_SIZE
     seed: int = 42
     controller_lr: float = 1e-2
     stochastic_preset: str = DEFAULT_STOCHASTIC_PRESET
     regularized_fidelity: bool = False
+    checkpoint_interval_batches: int = DEFAULT_CHECKPOINT_INTERVAL_BATCHES
+    resume: bool = True
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
     gpu: str = DEFAULT_GPU
     mode: Mode = "source"
@@ -73,10 +83,10 @@ class NominalGruRunConfig:
         return run_spec_dir(self.experiment, self.run)
 
     def remote_artifact_dir(self) -> Path:
-        return self.remote_repo_dir() / "_artifacts" / self.experiment / "runs" / self.run
+        return MODAL_VOLUME_MOUNT / "_artifacts" / self.experiment / "runs" / self.run
 
     def remote_spec_dir(self) -> Path:
-        return self.remote_repo_dir() / "results" / self.experiment / "runs" / self.run
+        return MODAL_VOLUME_MOUNT / "results" / self.experiment / "runs" / self.run
 
     def remote_repo_dir(self) -> Path:
         if self.mode == "pinned":
@@ -95,7 +105,7 @@ def build_training_command(
 ) -> list[str]:
     """Build the stochastic C&S-fidelity GRU training command.
 
-    The command intentionally targets the dedicated C&S nominal GRU spec writer,
+    The command intentionally targets the dedicated C&S GRU trainer,
     not the older delayed-reach minimax trainer.
     """
 
@@ -117,10 +127,26 @@ def build_training_command(
     _append_arg(command, "--stochastic-preset", config.stochastic_preset)
     _append_arg(command, "--output-dir", artifact_dir)
     _append_arg(command, "--spec-dir", spec_dir)
+    _append_arg(command, "--checkpoint-interval-batches", config.checkpoint_interval_batches)
+    command.append("--full-train")
+    if config.resume:
+        command.append("--resume")
     if config.regularized_fidelity:
         command.append("--regularized-fidelity")
     command.extend(config.extra_args)
     return command
+
+
+def build_training_script_args(
+    config: NominalGruRunConfig,
+    *,
+    remote: bool = False,
+) -> list[str]:
+    """Return argv for ``scripts/train_cs_nominal_gru.py`` without uv/python."""
+
+    command = build_training_command(config, remote=remote)
+    script_index = command.index("scripts/train_cs_nominal_gru.py")
+    return command[script_index + 1 :]
 
 
 def build_remote_smoke_command() -> list[str]:
@@ -194,9 +220,13 @@ def dry_run_payload(config: NominalGruRunConfig) -> dict[str, Any]:
 
     return {
         "app_name": APP_NAME,
+        "modal_volume_name": MODAL_VOLUME_NAME,
+        "modal_volume_mount": str(MODAL_VOLUME_MOUNT),
         "mode": config.mode,
         "gpu": config.gpu,
         "timeout_seconds": config.timeout_seconds,
+        "stochastic_preset": config.stochastic_preset,
+        "regularized_fidelity": config.regularized_fidelity,
         "warm_containers": 0,
         "min_containers": 0,
         "max_containers": 1,
@@ -214,7 +244,71 @@ def dry_run_payload(config: NominalGruRunConfig) -> dict[str, Any]:
         "local_artifact_dir": str(config.local_artifact_dir()),
         "remote_spec_dir": str(config.remote_spec_dir()),
         "remote_artifact_dir": str(config.remote_artifact_dir()),
+        "modal_volume_pull_commands": modal_volume_pull_commands(config),
+        "planned_stochastic_runs": planned_stochastic_runs(config),
     }
+
+
+def planned_stochastic_runs(config: NominalGruRunConfig) -> dict[str, dict[str, Any]]:
+    """Return the two planned stochastic C&S GRU run commands."""
+
+    base = {
+        **config.__dict__,
+        "run": DEFAULT_RUN,
+        "regularized_fidelity": False,
+        "extra_args": config.extra_args,
+    }
+    regularized = {
+        **config.__dict__,
+        "run": REGULARIZED_RUN,
+        "regularized_fidelity": True,
+        "extra_args": config.extra_args,
+    }
+    no_hidden_config = NominalGruRunConfig(**base)
+    hidden_config = NominalGruRunConfig(**regularized)
+    return {
+        "stochastic_no_hidden_penalty": {
+            "run": DEFAULT_RUN,
+            "nn_hidden": 0.0,
+            "local_training_command": build_training_command(no_hidden_config, remote=False),
+            "remote_training_command": build_training_command(no_hidden_config, remote=True),
+            "modal_volume_pull_commands": modal_volume_pull_commands(no_hidden_config),
+        },
+        "stochastic_hidden_penalty": {
+            "run": REGULARIZED_RUN,
+            "nn_hidden": 1e-5,
+            "local_training_command": build_training_command(hidden_config, remote=False),
+            "remote_training_command": build_training_command(hidden_config, remote=True),
+            "modal_volume_pull_commands": modal_volume_pull_commands(hidden_config),
+        },
+    }
+
+
+def modal_volume_pull_commands(config: NominalGruRunConfig) -> dict[str, list[str]]:
+    """Return commands for pulling persisted Modal Volume outputs locally."""
+
+    return {
+        "artifacts": [
+            "modal",
+            "volume",
+            "get",
+            MODAL_VOLUME_NAME,
+            _modal_volume_relative(config.remote_artifact_dir()),
+            str(config.local_artifact_dir()),
+        ],
+        "specs": [
+            "modal",
+            "volume",
+            "get",
+            MODAL_VOLUME_NAME,
+            _modal_volume_relative(config.remote_spec_dir()),
+            str(config.local_spec_dir()),
+        ],
+    }
+
+
+def _modal_volume_relative(path: Path) -> str:
+    return str(path.relative_to(MODAL_VOLUME_MOUNT))
 
 
 def collect_provenance() -> dict[str, Any]:
@@ -322,7 +416,11 @@ def patch_remote_editable_paths() -> None:
         file_path.write_text(text)
 
 
-def execute_remote_payload(payload: dict[str, Any]) -> int:
+def execute_remote_payload(
+    payload: dict[str, Any],
+    *,
+    volume_commit: Callable[[], None] | None = None,
+) -> int:
     """Execute a Modal payload inside the remote container."""
 
     config = NominalGruRunConfig(**payload["config"])
@@ -333,10 +431,11 @@ def execute_remote_payload(payload: dict[str, Any]) -> int:
     if command_kind == "modal-smoke":
         return run_subprocess(build_remote_smoke_command(), timeout_seconds=config.timeout_seconds)
     if command_kind == "modal-run":
-        return run_subprocess(
-            build_training_command(config, remote=True),
-            timeout_seconds=config.timeout_seconds,
-            cwd=config.remote_repo_dir(),
+        from rlrmp.train.cs_nominal_gru import main as train_main
+
+        return train_main(
+            build_training_script_args(config, remote=True),
+            volume_commit=volume_commit,
         )
     if command_kind == "modal-packing-smoke":
         return run_subprocess(
@@ -359,6 +458,8 @@ def make_config(args: argparse.Namespace) -> NominalGruRunConfig:
         controller_lr=args.controller_lr,
         stochastic_preset=args.stochastic_preset,
         regularized_fidelity=args.regularized_fidelity,
+        checkpoint_interval_batches=args.checkpoint_interval_batches,
+        resume=args.resume,
         timeout_seconds=args.timeout_seconds,
         gpu=args.gpu,
         mode=args.mode,
@@ -391,10 +492,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout-seconds", type=int, default=DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument("--experiment", default=DEFAULT_EXPERIMENT)
     parser.add_argument("--run", default=DEFAULT_RUN)
-    parser.add_argument("--n-train-batches", type=int, default=1)
-    parser.add_argument("--batch-size", type=int, default=4)
-    parser.add_argument("--n-replicates", type=int, default=1)
-    parser.add_argument("--hidden-size", type=int, default=4)
+    parser.add_argument("--n-train-batches", type=int, default=DEFAULT_N_TRAIN_BATCHES)
+    parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
+    parser.add_argument("--n-replicates", type=int, default=DEFAULT_N_REPLICATES)
+    parser.add_argument("--hidden-size", type=int, default=DEFAULT_HIDDEN_SIZE)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--controller-lr", type=float, default=1e-2)
     parser.add_argument("--stochastic-preset", default=DEFAULT_STOCHASTIC_PRESET)
@@ -403,6 +504,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run the paired stochastic condition with nn_hidden=1e-5.",
     )
+    parser.add_argument(
+        "--checkpoint-interval-batches",
+        type=int,
+        default=DEFAULT_CHECKPOINT_INTERVAL_BATCHES,
+    )
+    parser.add_argument("--resume", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--n-workers", type=int, default=1)
     parser.add_argument("--stagger-seconds", type=float, default=10.0)
     parser.add_argument("--burn-in-seconds", type=float, default=60.0)
