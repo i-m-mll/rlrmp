@@ -4,9 +4,15 @@ from __future__ import annotations
 
 import argparse
 import json
+from functools import partial
 from pathlib import Path
 
+import jax.random as jr
+import optax
+from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
+
 from rlrmp.analysis.cs_game_card import OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR
+from rlrmp.modules.training.part2 import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, run_artifact_dir, run_spec_dir
 from rlrmp.train.cs_nominal_gru import (
     build_graph_bundle,
@@ -24,6 +30,14 @@ def _args(**overrides) -> argparse.Namespace:
     return args
 
 
+def _where_train() -> dict[int, object]:
+    def where_train_fn(model):
+        net = model.nodes["net"]
+        return (net.hidden, net.readout)
+
+    return {0: where_train_fn}
+
+
 def test_hps_uses_canonical_cs_nominal_task() -> None:
     hps = build_hps(_args())
 
@@ -38,6 +52,8 @@ def test_hps_uses_canonical_cs_nominal_task() -> None:
     assert hps.model.feedback_noise_std == 0.0
     assert hps.loss.weights.effector_hold_pos == 0.0
     assert hps.loss.weights.effector_hold_vel == 0.0
+    assert hps.loss.weights.effector_pos_running == 1.0
+    assert hps.loss.effector_pos_running_schedule == "cs_eq15_power6"
     assert hps.pert.std == 0.0
 
 
@@ -100,7 +116,66 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     assert payload["training_summary"]["training_mode"] == "nominal"
     assert payload["game_card"]["plant"]["bw_shape"] == [48, 8]
     assert payload["task_timing"]["type"] == "simple_reach"
+    assert payload["task_timing"]["movement_window"] == {
+        "kind": "full_simple_reach_trial",
+        "start_transition": 0,
+        "end_transition": 59,
+    }
+    assert "same Cartesian metre coordinates" in payload["task_timing"]["coordinate_contract"]
+    assert "one position target per transition" in payload["task_timing"]["time_axis_contract"]
+    assert (
+        "same-coordinate target sequence"
+        in payload["loss_summary"]["simple_reach_position_loss_contract"]
+    )
     assert "git" in payload["provenance"]
     assert manifest["training_spec"]["nominal_only"] is True
     assert not output_dir.exists()
     assert REPO_ROOT not in output_dir.parents
+
+
+def test_setup_task_model_pair_trains_tiny_nominal_simple_reach_batch() -> None:
+    args = _args(
+        smoke=True,
+        effector_pos_running=1.0,
+        effector_final_vel=1.0,
+        batch_size=2,
+        n_train_batches=1,
+    )
+    hps = build_hps(args)
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    schedule = make_delayed_cosine_schedule(
+        float(hps.learning_rate_0),
+        constant_steps=0,
+        total_steps=1,
+    )
+    optimizer = optax.inject_hyperparams(partial(optax.adamw, weight_decay=0.0))(
+        learning_rate=schedule
+    )
+    trainer = TaskTrainer(optimizer=optimizer, checkpointing=False)
+
+    trained, _history = train_pair(
+        trainer,
+        pair,
+        n_batches=1,
+        key=jr.PRNGKey(1),
+        ensembled=True,
+        loss_func=pair.task.loss_func,
+        where_train=_where_train(),
+        batch_size=2,
+        log_step=1,
+        disable_progress=True,
+        verbose_progress=False,
+    )
+
+    assert trained is not None
+    assert hps.task.type == "simple_reach"
+    assert hps.task.n_steps == 60
+    assert hps.loss.effector_pos_running_schedule == "cs_eq15_power6"
+    assert pair.task.loss_func.weights["effector_pos_running"] == 1.0
+    assert pair.task.loss_func.weights["effector_final_vel"] == 1.0
+    assert set(pair.task.loss_func.terms) >= {
+        "effector_pos_running",
+        "effector_final_vel",
+        "nn_output",
+        "nn_hidden",
+    }
