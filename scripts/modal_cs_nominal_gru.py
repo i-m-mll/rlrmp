@@ -40,6 +40,7 @@ from rlrmp.modal_runner import (
     REPO_ROOT,
     activate_project_venv,
     build_parser,
+    collect_source_provenance,
     dry_run_payload,
     execute_remote_payload,
     make_config,
@@ -151,6 +152,7 @@ def main(*args: str) -> None:
             **config.__dict__,
             "extra_args": list(config.extra_args),
         },
+        "source_provenance": collect_source_provenance(REPO_ROOT),
     }
     remote_fn = _run_payload.with_options(
         gpu=config.gpu,

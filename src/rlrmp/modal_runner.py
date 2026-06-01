@@ -411,10 +411,44 @@ def collect_provenance() -> dict[str, Any]:
     return provenance
 
 
-def write_provenance(config: NominalGruRunConfig, *, remote: bool = False) -> dict[str, str]:
+def collect_source_provenance(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
+    """Collect local source provenance before Modal source dirs are copied."""
+
+    commands = {
+        "commit": ["git", "rev-parse", "HEAD"],
+        "branch": ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        "status_short": ["git", "status", "--short"],
+    }
+    provenance: dict[str, Any] = {}
+    for key, command in commands.items():
+        try:
+            result = subprocess.run(
+                command,
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            provenance[key] = result.stdout.strip() if result.returncode == 0 else None
+            if result.returncode != 0:
+                provenance[f"{key}_stderr"] = result.stderr.strip()
+        except Exception as exc:
+            provenance[f"{key}_error"] = str(exc)
+    return provenance
+
+
+def write_provenance(
+    config: NominalGruRunConfig,
+    *,
+    remote: bool = False,
+    source_provenance: dict[str, Any] | None = None,
+) -> dict[str, str]:
     """Write Modal/environment provenance next to the run spec and artifacts."""
 
     payload = collect_provenance()
+    if source_provenance is not None:
+        payload["source_provenance"] = source_provenance
     spec_dir = config.remote_spec_dir() if remote else config.local_spec_dir()
     artifact_dir = config.remote_artifact_dir() if remote else config.local_artifact_dir()
     spec_dir.mkdir(parents=True, exist_ok=True)
@@ -477,7 +511,11 @@ def execute_remote_payload(
     command_kind: CommandKind = payload["command_kind"]
     if config.mode == "source":
         patch_remote_editable_paths()
-    write_provenance(config, remote=True)
+    write_provenance(
+        config,
+        remote=True,
+        source_provenance=payload.get("source_provenance"),
+    )
     if command_kind == "modal-smoke":
         return run_subprocess(build_remote_smoke_command(), timeout_seconds=config.timeout_seconds)
     if command_kind == "modal-run":

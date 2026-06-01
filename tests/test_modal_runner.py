@@ -19,6 +19,7 @@ from rlrmp.modal_runner import (
     build_packing_benchmark_command,
     build_remote_smoke_command,
     build_training_command,
+    collect_source_provenance,
     dry_run_payload,
     make_config,
 )
@@ -194,6 +195,13 @@ def test_activate_project_venv_prefers_venv_package_over_modal_deps(
         sys.modules.pop("typing_extensions", None)
         if old_module is not None:
             sys.modules["typing_extensions"] = old_module
+
+
+def test_collect_source_provenance_reports_commit_and_status() -> None:
+    provenance = collect_source_provenance()
+
+    assert provenance["commit"]
+    assert "status_short" in provenance
 
 
 def test_packing_benchmark_command_disables_sync_and_sets_worker_count() -> None:
