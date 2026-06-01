@@ -187,6 +187,40 @@ def test_default_conditions_relabel_state_coverage_and_projection_rows() -> None
     } == {12, 20, 30, 60}
 
 
+def test_reward_conditions_include_r60_capacity_controls() -> None:
+    conditions = pm.default_conditions(include_reward=True, include_supervised_extensions=True)
+    by_label = {condition.label: condition for condition in conditions}
+
+    expected = {
+        "pm_linrec_r60_projected_oracle_nominal_then_reward",
+        "pm_linrec_r60_projected_oracle_process_measurement_then_reward",
+        "pm_linrec_r60_supervised_action_io_nominal_then_reward",
+        "pm_linrec_r60_supervised_action_io_process_measurement_then_reward",
+        "pm_linrec_r60_clean_scratch_reward",
+        "pm_linrec_r60_process_measurement_scratch_reward",
+    }
+
+    assert expected <= set(by_label)
+    for label in expected:
+        condition = by_label[label]
+        assert condition.rank == 60
+        assert condition.n_train_steps >= pm.R60_SCRATCH_REWARD_TRAIN_STEPS
+        assert condition.learning_rate == pm.R60_REWARD_LEARNING_RATE
+        assert condition.gradient_clip_norm == pm.R60_REWARD_GRADIENT_CLIP_NORM
+    assert (
+        by_label["pm_linrec_r60_projected_oracle_nominal_then_reward"].proximal_preservation_weight
+        == pm.R60_REWARD_PROXIMAL_WEIGHT
+    )
+    assert (
+        by_label["pm_linrec_r60_supervised_action_io_process_measurement_then_reward"].row_family
+        == "supervised_action_io_warm_start_then_reward_lens"
+    )
+    assert (
+        by_label["pm_linrec_r60_process_measurement_scratch_reward"].proximal_preservation_weight
+        == 0.0
+    )
+
+
 def test_exact_oracle_process_measurement_row_is_response_map_sanity(monkeypatch) -> None:
     plant = _tiny_plant()
     plant = TinyPlant(
@@ -305,6 +339,75 @@ def test_reward_condition_runs_bounded_training(monkeypatch) -> None:
     assert criteria["aggregate_action_energy_threshold"] == pm.REWARD_ACTION_ENERGY_PASS_THRESHOLD
     assert criteria["relevant_response_map_threshold"] == pm.REWARD_RESPONSE_MAP_PASS_THRESHOLD
     assert criteria["disturbance_to_cost_threshold"] == pm.REWARD_DISTURBANCE_COST_PASS_THRESHOLD
+
+
+def test_supervised_warm_start_reward_logs_preservation_metadata(monkeypatch) -> None:
+    plant = _tiny_plant()
+    plant = TinyPlant(
+        A=plant.A,
+        B=plant.B,
+        Bw=np.array([[0.0], [1.0]]),
+        n=plant.n,
+        m_w=plant.m_w,
+    )
+    schedule = SimpleNamespace(
+        Q=np.broadcast_to(np.eye(2), (3, 2, 2)),
+        R=np.broadcast_to(np.eye(1), (3, 1, 1)),
+        Q_f=np.eye(2),
+    )
+    gains = np.array([[[0.2, 0.0]], [[0.1, 0.1]], [[0.0, 0.2]]])
+    reference = SimpleNamespace(
+        plant=plant,
+        schedule=schedule,
+        lqr_solution=SimpleNamespace(K=gains),
+    )
+    reference_clean = SimpleNamespace(
+        x=np.array([[1.0, 0.0], [1.0, -0.2], [0.98, -0.3], [0.95, -0.25]]),
+        x_hat=np.array([[1.0, 0.0], [1.0, -0.2], [0.98, -0.3], [0.95, -0.25]]),
+        u=np.array([[-0.2], [-0.08], [0.06]]),
+    )
+    monkeypatch.setattr(pm, "materialize_reference", lambda gamma_factors: reference)
+    monkeypatch.setattr(
+        pm, "make_cs_output_feedback_initial_state", lambda p, c: np.array([1.0, 0.0])
+    )
+    monkeypatch.setattr(pm, "rollout_with_kalman_estimator", lambda p, k, x: reference_clean)
+    monkeypatch.setattr(
+        pm,
+        "output_feedback_cost",
+        lambda schedule, rollout: SimpleNamespace(total_without_disturbance_penalty=1.0),
+    )
+    monkeypatch.setattr(
+        pm, "delayed_observation_matrix", lambda plant, config: np.array([[1.0, 0.0]])
+    )
+    monkeypatch.setattr(pm, "kalman_estimator_gains", lambda plant, K, config: np.zeros((3, 2, 1)))
+    monkeypatch.setattr(pm, "process_covariance", lambda plant, config: np.zeros((2, 2)))
+    condition = pm.PhaseModulatedCondition(
+        label="pm_linrec_r3_supervised_action_io_nominal_then_reward",
+        row_family="supervised_action_io_warm_start_then_reward_lens",
+        rank=3,
+        training_distribution="nominal_reward_supervised_action_io_preserve",
+        evaluation_lens="nominal_clean",
+        n_train_steps=1,
+        learning_rate=5e-4,
+        gradient_clip_norm=0.5,
+        proximal_preservation_weight=1e-4,
+        supervised_objective="action_and_io",
+    )
+
+    summary, _arrays = pm.materialize(include_reward=False, conditions=(condition,))
+
+    row = summary["rows"][0]
+    optimizer = row["metrics"]["optimizer"]
+    assert row["spec"]["objective"] == "reward_rollout"
+    assert row["spec"]["parameters"]["reward_control_mode"] == "preserve_supervised_action_io"
+    assert row["spec"]["parameters"]["warm_start_source"] == "supervised_action_io_map_fit"
+    assert row["spec"]["parameters"]["gradient_clip_norm"] == 0.5
+    assert row["spec"]["parameters"]["proximal_preservation_weight"] == 1e-4
+    assert optimizer["reward_control_mode"] == "preserve_supervised_action_io"
+    assert optimizer["warm_start_supervised_objective"] == "action_and_io"
+    assert optimizer["adam_gradient_clip_norm"] == 0.5
+    assert optimizer["proximal_preservation_weight"] == 1e-4
+    assert "reward_final_proximal_preservation_penalty" in optimizer
 
 
 def test_supervised_condition_fits_maps_without_reward_label(monkeypatch) -> None:
