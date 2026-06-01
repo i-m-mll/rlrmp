@@ -1,14 +1,14 @@
 # Phase-Modulated Linear Recurrent Output-Feedback Bridge
 
-Issue: `d6d25d6`. Follow-up: `a06307d`. Umbrella: `1fabee8`.
+Issue: `d6d25d6`. Follow-ups: `a06307d`, `ad309f5`. Umbrella: `1fabee8`.
 
 Scope: Oracle Kalman recurrent reference plus clamped-spline phase-modulated linear recurrence. The spline basis modulates A/B/C/D matrices over tau=t/(T-1), not additive phase offsets.
 
-Non-goals: No GRU training, no broad robust-epsilon arm, and no claim that projected-oracle diagnostic rows are bridge passes. Supervised rows fit action and response maps; they are not reward-trained rows.
+Non-goals: No GRU training, no broad robust-epsilon arm, and no claim that projected-oracle diagnostic rows are bridge passes. Supervised rows fit action and response maps; they are not reward-trained rows. r=60 reward-control rows are capacity sanity checks, not compact bridge claims.
 
-Runtime: `48.99` seconds.
+Runtime: `86.22` seconds.
 
-Verdict: The exact oracle and clamped-spline projected-oracle rows were materialized. Exact-oracle sanity rows have max aggregate response-map mismatch 0. The r=12 projected-oracle nominal replay row has action mismatch 24.54 and combined matrix residual 0.01274. 20 supervised action/response-map rows were optimized, with 13 representation pass rows. 8 r=12 reward rows were optimized after the supervised gate.
+Verdict: The exact oracle and clamped-spline projected-oracle rows were materialized. Exact-oracle sanity rows have max aggregate response-map mismatch 0. The r=12 projected-oracle nominal replay row has action mismatch 24.54 and combined matrix residual 0.01274. 20 supervised action/response-map rows were optimized, with 13 representation pass rows. 14 reward rows were optimized after the supervised gate.
 
 Audit note: The prior exact_process_eigen rows were state-trajectory covariance coverage directions, not process-eigen disturbance sequences. They are retained under state_coverage_eigen labels.
 
@@ -60,14 +60,20 @@ Reward gating: `released_after_supervised_action_io_representation_pass`.
 | phase_modulated_recurrent__pm_linrec_r60_supervised_process_io_map_fit | supervised_io_map_fit | process_io | supervised_representation_pass | 656.22396 | 1 | 2.8123112e-24 | 1.1347363e-26 | 1.5500104e-15 | 1.5641413e-26 | 1.1732871e-26 | 1.2577263e-26 | 1.2974114e-26 | 4.4689595e-27 | 1.9656016e-28 | standard_components_available |
 | phase_modulated_recurrent__pm_linrec_r60_supervised_process_measurement_io_map_fit | supervised_io_map_fit | process_measurement_io | supervised_representation_pass | 664.39558 | 1 | 7.7824656e-25 | 1.2276543e-26 | 1.5500104e-15 | 1.5641413e-26 | 1.1732871e-26 | 1.2577263e-26 | 1.2974114e-26 | 4.4689595e-27 | 1.9656016e-28 | standard_components_available |
 | phase_modulated_recurrent__pm_linrec_r60_supervised_action_io_combined_fit | supervised_action_io_map_fit | mixed_process_measurement_io | supervised_representation_pass | 664.7079 | 1 | 7.6625162e-25 | 9.3830279e-27 | 1.5500104e-15 | 1.5641413e-26 | 1.1732871e-26 | 1.2577263e-26 | 1.2974114e-26 | 4.4689595e-27 | 1.9656016e-28 | standard_components_available |
-| phase_modulated_recurrent__pm_linrec_r12_clean_scratch_reward | reward_lens | nominal_clean | reward_trained_non_equivalent | 36.006926 | 36.006926 | 696.89189 | 1.0050303 | 0.012744718 | 0.9999377 | 0.99997757 | 0.98812326 | 1.0006511 | 0.99264089 | 0.72008763 | standard_components_available |
-| phase_modulated_recurrent__pm_linrec_r12_state_coverage_eigen_m1_s0p3_reward | reward_lens | state_coverage_eigen_m1_s0.3 | reward_trained_non_equivalent | 53.136266 | 36.786646 | 473.09575 | 1.0035029 | 0.012744718 | 0.99993736 | 0.99997325 | 0.98811849 | 1.0006236 | 0.99260283 | 0.72027973 | standard_components_available |
-| phase_modulated_recurrent__pm_linrec_r12_state_coverage_eigen_m4_s0p3_reward | reward_lens | state_coverage_eigen_m4_s0.3 | reward_trained_non_equivalent | 55.452277 | 42.039265 | 531.17132 | 1.0034897 | 0.012744718 | 0.99987244 | 0.99986772 | 0.9879922 | 1.0005653 | 0.99250738 | 0.71325733 | standard_components_available |
-| phase_modulated_recurrent__pm_linrec_r12_state_coverage_eigen_m4_s1_reward | reward_lens | state_coverage_eigen_m4_s1 | reward_trained_non_equivalent | 249.24015 | 54.837091 | 1175.5087 | 1.000778 | 0.012744718 | 0.99986848 | 0.99986215 | 0.9879834 | 1.0005312 | 0.99241631 | 0.71237177 | standard_components_available |
-| phase_modulated_recurrent__pm_linrec_r12_observer_error_svd_m1_s0p3_reward | reward_lens | observer_error_svd_m1_s0.3 | reward_trained_non_equivalent | 36.007974 | 25.535881 | 151.64837 | 1.0029816 | 0.012744718 | 0.9999377 | 0.99997756 | 0.98812292 | 1.0006512 | 0.99264088 | 0.72007807 | standard_components_available |
-| phase_modulated_recurrent__pm_linrec_r12_mixed_process_observer_reward | reward_lens | mixed_process_observer | reward_trained_non_equivalent | 525.77716 | 0.80083489 | 1.9795999 | 0.997019 | 0.012744718 | 1.0000206 | 0.99996064 | 0.98791968 | 1.0007199 | 0.99275112 | 0.72339447 | standard_components_available |
+| phase_modulated_recurrent__pm_linrec_r12_clean_scratch_reward | reward_lens | nominal_clean | reward_trained_non_equivalent | 31.934966 | 31.934966 | 5796.5988 | 1.0218078 | 0.012744718 | 0.99988702 | 1.0000612 | 0.9884762 | 1.0020975 | 0.99515748 | 0.71422981 | standard_components_available |
+| phase_modulated_recurrent__pm_linrec_r12_state_coverage_eigen_m1_s0p3_reward | reward_lens | state_coverage_eigen_m1_s0.3 | reward_trained_non_equivalent | 48.389838 | 33.500657 | 3836.7721 | 1.0156628 | 0.012744718 | 0.99988958 | 1.0000559 | 0.98846467 | 1.0020559 | 0.99505977 | 0.7148736 | standard_components_available |
+| phase_modulated_recurrent__pm_linrec_r12_state_coverage_eigen_m4_s0p3_reward | reward_lens | state_coverage_eigen_m4_s0.3 | reward_trained_non_equivalent | 51.222823 | 38.832848 | 5233.9186 | 1.014667 | 0.012744718 | 0.99979579 | 0.99992273 | 0.98829438 | 1.0017605 | 0.99444759 | 0.70500419 | standard_components_available |
+| phase_modulated_recurrent__pm_linrec_r12_state_coverage_eigen_m4_s1_reward | reward_lens | state_coverage_eigen_m4_s1 | reward_trained_non_equivalent | 237.69149 | 52.29619 | 23723.924 | 1.0029649 | 0.012744718 | 0.99977113 | 0.99992026 | 0.98830972 | 1.0022063 | 0.99509219 | 0.69948122 | standard_components_available |
+| phase_modulated_recurrent__pm_linrec_r12_observer_error_svd_m1_s0p3_reward | reward_lens | observer_error_svd_m1_s0.3 | reward_trained_non_equivalent | 31.946049 | 22.655274 | 1140.3807 | 1.0128503 | 0.012744718 | 0.99988699 | 1.0000612 | 0.98847543 | 1.0020962 | 0.99515574 | 0.7142125 | standard_components_available |
+| phase_modulated_recurrent__pm_linrec_r12_mixed_process_observer_reward | reward_lens | mixed_process_observer | reward_trained_non_equivalent | 507.60692 | 0.77315899 | 4.1912493 | 0.98886474 | 0.012744718 | 1.0000585 | 0.99984791 | 0.98756518 | 1.0006948 | 0.99295004 | 0.725592 | standard_components_available |
 | phase_modulated_recurrent__pm_linrec_r12_projected_oracle_nominal_then_reward | projection_warm_start_then_reward_lens | nominal_clean | reward_trained_non_equivalent | 1.0000609 | 1.0000609 | 24.543846 | 0.00013843374 | 0.012744718 | 0.25422973 | 0.3049617 | 0.29497161 | 0.10900394 | 0.047580488 | 0.001471869 | standard_components_available |
 | phase_modulated_recurrent__pm_linrec_r12_projected_oracle_state_coverage_eigen_m4_then_reward | projection_warm_start_then_reward_lens | state_coverage_eigen_m4_s0.3 | reward_trained_non_equivalent | 1.3191389 | 1.0000605 | 24.378338 | 0.00013673777 | 0.012744718 | 0.25422973 | 0.3049617 | 0.29497161 | 0.10900394 | 0.047580488 | 0.001471869 | standard_components_available |
+| phase_modulated_recurrent__pm_linrec_r60_projected_oracle_nominal_then_reward | projection_warm_start_then_reward_lens | nominal_clean | reward_trained_reference_equivalent | 1 | 1 | 1.6218418e-23 | 7.1289985e-29 | 1.5500104e-15 | 1.5641413e-26 | 1.1732871e-26 | 1.2577263e-26 | 1.2974114e-26 | 4.4689595e-27 | 1.9656016e-28 | standard_components_available |
+| phase_modulated_recurrent__pm_linrec_r60_projected_oracle_process_measurement_then_reward | projection_warm_start_then_reward_lens | process_measurement_io | reward_trained_reference_equivalent | 664.39558 | 1 | 7.7824656e-25 | 1.2276543e-26 | 1.5500104e-15 | 1.5641413e-26 | 1.1732871e-26 | 1.2577263e-26 | 1.2974114e-26 | 4.4689595e-27 | 1.9656016e-28 | standard_components_available |
+| phase_modulated_recurrent__pm_linrec_r60_supervised_action_io_nominal_then_reward | supervised_action_io_warm_start_then_reward_lens | nominal_clean | reward_trained_reference_equivalent | 1 | 1 | 1.6218418e-23 | 7.1289985e-29 | 1.5500104e-15 | 1.5641413e-26 | 1.1732871e-26 | 1.2577263e-26 | 1.2974114e-26 | 4.4689595e-27 | 1.9656016e-28 | standard_components_available |
+| phase_modulated_recurrent__pm_linrec_r60_supervised_action_io_process_measurement_then_reward | supervised_action_io_warm_start_then_reward_lens | process_measurement_io | reward_trained_reference_equivalent | 664.39558 | 1 | 7.7824656e-25 | 1.2276543e-26 | 1.5500104e-15 | 1.5641413e-26 | 1.1732871e-26 | 1.2577263e-26 | 1.2974114e-26 | 4.4689595e-27 | 1.9656016e-28 | standard_components_available |
+| phase_modulated_recurrent__pm_linrec_r60_clean_scratch_reward | reward_lens | nominal_clean | reward_trained_non_equivalent | 35.886158 | 35.886158 | 873.91247 | 1.004666 | 1.5500104e-15 | 0.99993807 | 0.99995911 | 0.98814582 | 1.0007677 | 0.99277049 | 0.72153222 | standard_components_available |
+| phase_modulated_recurrent__pm_linrec_r60_process_measurement_scratch_reward | reward_lens | process_measurement_io | reward_trained_non_equivalent | 513.82981 | 0.77337934 | 1.1034511 | 0.99366306 | 1.5500104e-15 | 1.0000544 | 0.9999954 | 0.98793557 | 1.0005022 | 0.99235074 | 0.72758166 | standard_components_available |
 
 ## Certificate Boundary
 
@@ -81,20 +87,20 @@ rows are explicitly not applicable. Projected-oracle rows remain diagnostic
 even when response-map components are available. Supervised rows are optimized
 against external action and/or response-map losses and are not reward-trained.
 
-- `bellman_hessian_residual:not_applicable`: 50
-- `closed_loop_transition_mismatch:not_applicable`: 50
-- `disturbance_history_to_action_map_mismatch:available`: 50
-- `disturbance_history_to_cost_quadratic:available`: 50
-- `disturbance_history_to_output_map_mismatch:available`: 50
-- `disturbance_history_to_state_map_mismatch:available`: 50
-- `measurement_history_to_action_map_mismatch:available`: 50
-- `measurement_history_to_output_map_mismatch:available`: 50
-- `observation_history_to_action_map_mismatch:available`: 50
-- `optimizer_metadata:available`: 50
-- `recurrence_gru_diagnostics:available`: 50
-- `state_weighted_action_mismatch:available`: 50
-- `value_policy_gap:not_applicable`: 50
-- `visited_subspace_diagnostics:available`: 50
+- `bellman_hessian_residual:not_applicable`: 56
+- `closed_loop_transition_mismatch:not_applicable`: 56
+- `disturbance_history_to_action_map_mismatch:available`: 56
+- `disturbance_history_to_cost_quadratic:available`: 56
+- `disturbance_history_to_output_map_mismatch:available`: 56
+- `disturbance_history_to_state_map_mismatch:available`: 56
+- `measurement_history_to_action_map_mismatch:available`: 56
+- `measurement_history_to_output_map_mismatch:available`: 56
+- `observation_history_to_action_map_mismatch:available`: 56
+- `optimizer_metadata:available`: 56
+- `recurrence_gru_diagnostics:available`: 56
+- `state_weighted_action_mismatch:available`: 56
+- `value_policy_gap:not_applicable`: 56
+- `visited_subspace_diagnostics:available`: 56
 
 ## Interpretation
 
@@ -108,3 +114,7 @@ rows optimize trainable phase-modulated recurrent coefficients against exact
 oracle action histories and/or finite-horizon response maps. Reward rows are
 gated on supervised representation success and optimize the true quadratic
 rollout objective on their retained training distributions only after that gate.
+The r=60 reward-control rows are capacity sanity checks: projected-oracle and
+supervised action+I/O warm starts carry low-learning-rate Adam, gradient
+clipping, and proximal preservation metadata to separate preservation behavior
+from scratch discovery rows.
