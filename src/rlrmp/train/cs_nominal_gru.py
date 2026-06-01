@@ -21,7 +21,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-import jax_cookbook.tree as jtree
+import jax.tree as jt
 import optax
 from feedbax._io import save as fbx_save
 from feedbax.train import filter_spec_leaves, get_model_parameters
@@ -629,7 +629,11 @@ def run_full_training(
             pair.task,
             state.model,
             n_batches=chunk_batches,
-            idx_start=state.completed_batches,
+            # Keep each Feedbax trainer call local to the chunk. The optimizer
+            # state carries schedule progress across chunks; passing a nonzero
+            # idx_start here would make Feedbax index past the chunk-local PRNG
+            # key array.
+            idx_start=0,
             opt_state=state.optimizer_state,
             key=key_chunk,
             ensembled=True,
@@ -929,7 +933,19 @@ def _initial_training_state(
 def _append_history(history: Any | None, chunk: Any) -> Any:
     if history is None:
         return chunk
-    return jtree.concatenate([history, chunk])
+    return jt.map(_append_history_leaf, history, chunk, is_leaf=lambda x: x is None)
+
+
+def _append_history_leaf(left: Any, right: Any) -> Any:
+    if left is None:
+        return right
+    if right is None:
+        return left
+    if eqx.is_array(left) and eqx.is_array(right):
+        if left.ndim == 0 or right.ndim == 0:
+            return right
+        return jnp.concatenate([left, right], axis=0)
+    return right
 
 
 def _checkpoint_metadata(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
