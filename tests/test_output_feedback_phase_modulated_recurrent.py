@@ -160,8 +160,17 @@ def test_default_conditions_relabel_state_coverage_and_projection_rows() -> None
         for condition in conditions
     )
     assert {
-        condition.rank for condition in conditions if condition.row_family.startswith("supervised")
+        condition.rank
+        for condition in conditions
+        if condition.row_family.startswith("supervised")
+        and condition.supervised_fit_scope == "readout_only"
     } == {12, 20}
+    assert {
+        condition.rank
+        for condition in conditions
+        if condition.row_family.startswith("supervised")
+        and condition.supervised_fit_scope == "full_matrix"
+    } == {20, 30}
     assert {
         condition.rank
         for condition in pm.default_conditions(
@@ -169,6 +178,7 @@ def test_default_conditions_relabel_state_coverage_and_projection_rows() -> None
             include_supervised_extensions=True,
         )
         if condition.row_family.startswith("supervised")
+        and condition.supervised_fit_scope == "readout_only"
     } == {12, 20, 30, 60}
 
 
@@ -357,6 +367,91 @@ def test_supervised_condition_fits_maps_without_reward_label(monkeypatch) -> Non
     assert "disturbance_history_to_cost_quadratic" in component_names
 
 
+def test_full_matrix_supervised_condition_uses_all_blocks(monkeypatch) -> None:
+    plant = _tiny_plant()
+    plant = TinyPlant(
+        A=plant.A,
+        B=plant.B,
+        Bw=np.array([[0.0], [1.0]]),
+        n=plant.n,
+        m_w=plant.m_w,
+    )
+    schedule = SimpleNamespace(
+        Q=np.broadcast_to(np.eye(2), (3, 2, 2)),
+        R=np.broadcast_to(np.eye(1), (3, 1, 1)),
+        Q_f=np.eye(2),
+    )
+    gains = np.array([[[0.2, 0.0]], [[0.1, 0.1]], [[0.0, 0.2]]])
+    reference = SimpleNamespace(
+        plant=plant,
+        schedule=schedule,
+        lqr_solution=SimpleNamespace(K=gains),
+    )
+    reference_clean = SimpleNamespace(
+        x=np.array([[1.0, 0.0], [1.0, -0.2], [0.98, -0.3], [0.95, -0.25]]),
+        x_hat=np.array([[1.0, 0.0], [1.0, -0.2], [0.98, -0.3], [0.95, -0.25]]),
+        u=np.array([[-0.2], [-0.08], [0.06]]),
+    )
+    monkeypatch.setattr(pm, "materialize_reference", lambda gamma_factors: reference)
+    monkeypatch.setattr(
+        pm, "make_cs_output_feedback_initial_state", lambda p, c: np.array([1.0, 0.0])
+    )
+    monkeypatch.setattr(pm, "rollout_with_kalman_estimator", lambda p, k, x: reference_clean)
+    monkeypatch.setattr(
+        pm,
+        "output_feedback_cost",
+        lambda schedule, rollout: SimpleNamespace(total_without_disturbance_penalty=1.0),
+    )
+    monkeypatch.setattr(
+        pm, "delayed_observation_matrix", lambda plant, config: np.array([[1.0, 0.0]])
+    )
+    monkeypatch.setattr(pm, "kalman_estimator_gains", lambda plant, K, config: np.zeros((3, 2, 1)))
+    monkeypatch.setattr(pm, "process_covariance", lambda plant, config: np.zeros((2, 2)))
+
+    def fake_adam(params, loss_fn, *, n_steps, learning_rate, max_param_abs=None):
+        loss = float(loss_fn({key: value.copy() for key, value in params.items()}))
+        fitted = {key: value.copy() for key, value in params.items()}
+        fitted["A_h"] = fitted["A_h"] * 0.99
+        return fitted, {
+            "initial_loss": loss,
+            "final_loss": loss,
+            "last_loss": loss,
+            "best_loss": loss,
+        }
+
+    monkeypatch.setattr(pm, "_adam_minimize", fake_adam)
+    condition = pm.PhaseModulatedCondition(
+        label="pm_linrec_r3_full_matrix_supervised_action_io_combined_fit",
+        row_family="supervised_action_io_map_fit",
+        rank=3,
+        training_distribution="mixed_action_process_measurement_io_supervised",
+        evaluation_lens="mixed_process_measurement_io",
+        disturbance_scale=0.02,
+        measurement_scale=0.02,
+        n_train_steps=2,
+        learning_rate=1e-3,
+        stability_penalty=1e-3,
+        smoothness_penalty=1e-5,
+        proximal_penalty=1e-4,
+        parameter_bound=10.0,
+        supervised_objective="action_and_io",
+        supervised_fit_scope="full_matrix",
+    )
+
+    summary, _arrays = pm.materialize(include_reward=False, conditions=(condition,))
+
+    row = summary["rows"][0]
+    optimizer = row["metrics"]["optimizer"]
+    assert row["spec"]["optimizer_label"] == "adam_full_matrix_supervised_action_io_maps"
+    assert optimizer["supervised_fit_scope"] == "full_matrix"
+    assert optimizer["supervised_fit_blocks"] == ["A_h", "B_y", "B_u", "b_h", "C_h", "D_y", "c"]
+    assert optimizer["smoothness_penalty"] == 1e-5
+    assert optimizer["proximal_penalty"] == 1e-4
+    assert optimizer["parameter_bound"] == 10.0
+    assert row["spec"]["parameters"]["supervised_fit_scope"] == "full_matrix"
+    assert summary["diagnostics"]["audit"]["full_matrix_supervised_rows"] == [row["spec"]["run_id"]]
+
+
 def test_default_materialize_gates_reward_when_supervised_rows_do_not_pass(monkeypatch) -> None:
     plant = _tiny_plant()
     plant = TinyPlant(
@@ -415,10 +510,11 @@ def test_default_materialize_gates_reward_when_supervised_rows_do_not_pass(monke
     monkeypatch.setattr(pm, "_exact_oracle_conditions", lambda: ())
     monkeypatch.setattr(pm, "_projection_diagnostic_conditions", lambda: ())
     monkeypatch.setattr(pm, "_supervised_conditions", one_supervised_condition)
+    monkeypatch.setattr(pm, "_full_matrix_supervised_conditions", lambda: ())
     monkeypatch.setattr(
         pm,
         "_reward_conditions",
-        lambda: (
+        lambda ranks=(3,): (
             pm.PhaseModulatedCondition(
                 label="pm_linrec_r3_clean_scratch_reward",
                 row_family="reward_lens",
