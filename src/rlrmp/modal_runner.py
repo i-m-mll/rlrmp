@@ -327,8 +327,16 @@ def activate_project_venv(venv_dir: Path = REMOTE_VENV_DIR) -> Path:
     if not site_packages:
         raise FileNotFoundError(f"No site-packages directory found under {lib_dir}")
 
+    before = list(sys.path)
     site_path = str(site_packages[-1])
     site.addsitedir(site_path)
+    activated_paths = [
+        path for path in sys.path if path == site_path or (path not in before and path)
+    ]
+    sys.path[:] = [
+        *activated_paths,
+        *(path for path in sys.path if path not in set(activated_paths)),
+    ]
 
     bin_path = str(venv_dir / "bin")
     path_parts = os.environ.get("PATH", "").split(os.pathsep)
