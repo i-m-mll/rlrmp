@@ -119,13 +119,22 @@ def test_dry_run_payload_exposes_no_warm_container_settings() -> None:
     assert planned["stochastic_hidden_penalty"]["run"] == REGULARIZED_RUN
     assert planned["stochastic_hidden_penalty"]["nn_hidden"] == 1e-5
     assert (
-        "--regularized-fidelity"
-        in planned["stochastic_hidden_penalty"]["remote_training_command"]
+        "--regularized-fidelity" in planned["stochastic_hidden_penalty"]["remote_training_command"]
     )
     pull = payload["modal_volume_pull_commands"]
     assert pull["artifacts"][:4] == ["modal", "volume", "get", MODAL_VOLUME_NAME]
     assert pull["artifacts"][4] == f"_artifacts/30f2313/runs/{DEFAULT_RUN}"
     assert pull["specs"][4] == f"results/30f2313/runs/{DEFAULT_RUN}"
+    assert payload["modal_volume_sync_command"] == [
+        "uv",
+        "run",
+        "python",
+        "scripts/sync_modal_run_artifacts.py",
+        "--issue",
+        "30f2313",
+        "--run",
+        DEFAULT_RUN,
+    ]
 
 
 def test_modal_run_defaults_to_training_timeout() -> None:
