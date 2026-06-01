@@ -140,6 +140,9 @@ def test_activate_project_venv_exposes_uv_site_packages(
     venv_dir = tmp_path / ".venv"
     site_packages = venv_dir / "lib" / "python3.12" / "site-packages"
     site_packages.mkdir(parents=True)
+    editable_src = tmp_path / "editable-src"
+    editable_src.mkdir()
+    (site_packages / "editable.pth").write_text(str(editable_src) + "\n")
     monkeypatch.setenv("PATH", "/usr/bin")
     original_path = list(sys.path)
 
@@ -147,7 +150,8 @@ def test_activate_project_venv_exposes_uv_site_packages(
         activated = activate_project_venv(venv_dir)
 
         assert activated == site_packages
-        assert sys.path[0] == str(site_packages)
+        assert str(site_packages) in sys.path
+        assert str(editable_src) in sys.path
         assert os.environ["VIRTUAL_ENV"] == str(venv_dir)
         assert os.environ["PATH"].split(os.pathsep)[0] == str(venv_dir / "bin")
     finally:

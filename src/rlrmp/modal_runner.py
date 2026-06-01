@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import platform
+import site
 import shlex
 import subprocess
 import sys
@@ -327,8 +328,7 @@ def activate_project_venv(venv_dir: Path = REMOTE_VENV_DIR) -> Path:
         raise FileNotFoundError(f"No site-packages directory found under {lib_dir}")
 
     site_path = str(site_packages[-1])
-    if site_path not in sys.path:
-        sys.path.insert(0, site_path)
+    site.addsitedir(site_path)
 
     bin_path = str(venv_dir / "bin")
     path_parts = os.environ.get("PATH", "").split(os.pathsep)
