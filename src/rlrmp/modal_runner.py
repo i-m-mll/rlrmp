@@ -60,6 +60,9 @@ class NominalGruRunConfig:
     hidden_size: int = DEFAULT_HIDDEN_SIZE
     seed: int = 42
     controller_lr: float = 1e-2
+    lr_warmup_batches: int = 0
+    lr_warmup_init_fraction: float = 0.1
+    lr_cosine_alpha: float = 1.0
     gradient_clip_norm: float | None = None
     stochastic_preset: str = DEFAULT_STOCHASTIC_PRESET
     regularized_fidelity: bool = False
@@ -129,6 +132,9 @@ def build_training_command(
     _append_arg(command, "--hidden-size", config.hidden_size)
     _append_arg(command, "--seed", config.seed)
     _append_arg(command, "--controller-lr", config.controller_lr)
+    _append_arg(command, "--lr-warmup-batches", config.lr_warmup_batches)
+    _append_arg(command, "--lr-warmup-init-fraction", config.lr_warmup_init_fraction)
+    _append_arg(command, "--lr-cosine-alpha", config.lr_cosine_alpha)
     if config.gradient_clip_norm is not None:
         _append_arg(command, "--gradient-clip-norm", config.gradient_clip_norm)
     _append_arg(command, "--stochastic-preset", config.stochastic_preset)
@@ -570,6 +576,9 @@ def make_config(args: argparse.Namespace) -> NominalGruRunConfig:
         hidden_size=args.hidden_size,
         seed=args.seed,
         controller_lr=args.controller_lr,
+        lr_warmup_batches=args.lr_warmup_batches,
+        lr_warmup_init_fraction=args.lr_warmup_init_fraction,
+        lr_cosine_alpha=args.lr_cosine_alpha,
         gradient_clip_norm=args.gradient_clip_norm,
         stochastic_preset=args.stochastic_preset,
         regularized_fidelity=args.regularized_fidelity,
@@ -613,6 +622,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--hidden-size", type=int, default=DEFAULT_HIDDEN_SIZE)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--controller-lr", type=float, default=1e-2)
+    parser.add_argument("--lr-warmup-batches", type=int, default=0)
+    parser.add_argument("--lr-warmup-init-fraction", type=float, default=0.1)
+    parser.add_argument("--lr-cosine-alpha", type=float, default=1.0)
     parser.add_argument("--gradient-clip-norm", type=float, default=None)
     parser.add_argument("--stochastic-preset", default=DEFAULT_STOCHASTIC_PRESET)
     parser.add_argument(
