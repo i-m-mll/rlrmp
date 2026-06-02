@@ -635,7 +635,8 @@ def write_velocity_by_replicate_figure(
             std = profile.replicate_std[rep_idx]
             upper = mean + std
             lower = mean - std
-            name = f"{profile.label} replicate {rep_idx}"
+            legendgroup = f"replicate-{rep_idx}"
+            name = f"replicate {rep_idx}"
             fig.add_trace(
                 go.Scatter(
                     x=np.concatenate([profile.time_s, profile.time_s[::-1]]),
@@ -644,8 +645,9 @@ def write_velocity_by_replicate_figure(
                     fillcolor=_rgba(color, 0.12),
                     line={"color": "rgba(0,0,0,0)"},
                     hoverinfo="skip",
+                    legendgroup=legendgroup,
                     name=f"{name} mean +/- 1 SD",
-                    showlegend=row_idx == 1,
+                    showlegend=False,
                 ),
                 row=row_idx,
                 col=1,
@@ -656,6 +658,7 @@ def write_velocity_by_replicate_figure(
                     y=mean,
                     mode="lines",
                     line={"color": color, "width": 1.8},
+                    legendgroup=legendgroup,
                     name=name,
                     showlegend=row_idx == 1,
                 ),
@@ -665,6 +668,7 @@ def write_velocity_by_replicate_figure(
         for reference in references:
             upper = reference.forward_velocity + reference.forward_velocity_std
             lower = reference.forward_velocity - reference.forward_velocity_std
+            legendgroup = f"reference-{reference.observation_channel}"
             fig.add_trace(
                 go.Scatter(
                     x=np.concatenate([reference.time_s, reference.time_s[::-1]]),
@@ -673,8 +677,9 @@ def write_velocity_by_replicate_figure(
                     fillcolor=_rgba(reference.line_color, 0.08),
                     line={"color": "rgba(0,0,0,0)"},
                     hoverinfo="skip",
+                    legendgroup=legendgroup,
                     name=f"{reference.label} mean +/- 1 SD",
-                    showlegend=row_idx == 1,
+                    showlegend=False,
                 ),
                 row=row_idx,
                 col=1,
@@ -689,6 +694,7 @@ def write_velocity_by_replicate_figure(
                         "width": 2.2,
                         "dash": reference.line_dash,
                     },
+                    legendgroup=legendgroup,
                     name=reference.label,
                     showlegend=row_idx == 1,
                 ),
@@ -701,6 +707,7 @@ def write_velocity_by_replicate_figure(
         height=max(420, 320 * len(profiles)),
         margin={"l": 70, "r": 20, "t": 60, "b": 60},
         hovermode="x unified",
+        legend={"groupclick": "togglegroup"},
     )
     fig.update_xaxes(title_text="Time (s)", row=len(profiles), col=1)
     fig.update_yaxes(title_text="Forward velocity (m/s)", zeroline=True)
