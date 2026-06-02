@@ -28,9 +28,17 @@ from plotly.subplots import make_subplots
 from rlrmp.analysis.cs_game_card import OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR
 from rlrmp.analysis.cs_game_card import materialize_reference
 from rlrmp.analysis.cs_gru_standard_materialization import normalize_gru_hps
+from rlrmp.analysis.cs_released_simulation import (
+    build_extlqg_comparator_path,
+    default_cs_noise_covariances,
+    sample_forward_noise_draws,
+    simulate_lqg_released_forward,
+)
 from rlrmp.analysis.output_feedback import (
     OutputFeedbackConfig,
+    delayed_observation_matrix,
     make_cs_output_feedback_initial_state,
+    position_velocity_observation_config,
     rollout_with_kalman_estimator,
 )
 from rlrmp.modules.training.part2 import setup_task_model_pair
@@ -40,7 +48,8 @@ from rlrmp.paths import REPO_ROOT, mkdir_p
 DEFAULT_FIGURE_SUBDIR = "tmp_figures/gru_pilot"
 DEFAULT_N_ROLLOUT_TRIALS = 64
 LOSS_TERMS_MODE = "union"
-REFERENCE_LABEL = "C&S extLQG/output-feedback"
+REFERENCE_LABEL = "C&S extLQG/output-feedback 8D"
+REFERENCE_4D_LABEL = "C&S extLQG/output-feedback 4D pos+vel"
 
 
 @dataclass(frozen=True)
@@ -65,6 +74,8 @@ class VelocityProfile:
     std: np.ndarray
     n_replicates: int
     n_rollout_trials_per_replicate: int
+    replicate_mean: np.ndarray | None = None
+    replicate_std: np.ndarray | None = None
 
     @property
     def n_pooled_samples(self) -> int:
@@ -78,12 +89,20 @@ class ReferenceProfile:
     """Analytical output-feedback reference profile."""
 
     label: str
+    observation_channel: str
+    observation_dim: int
+    observed_physical_indices: tuple[int, ...]
     time_s: np.ndarray
     forward_velocity: np.ndarray
+    forward_velocity_std: np.ndarray
+    n_samples: int
     peak_forward_velocity_m_s: float
     time_of_peak_forward_velocity_s: float
     terminal_position_error_m: float
     gamma_factor: float
+    parity_status: str
+    line_color: str
+    line_dash: str
 
 
 def materialize_gru_pilot_figures(
@@ -137,11 +156,21 @@ def materialize_gru_pilot_figures(
         )
         for run in runs
     ]
-    reference = cs_output_feedback_reference_profile() if include_reference else None
+    reference_n_samples = max(profile.n_pooled_samples for profile in velocity_profiles)
+    references = (
+        cs_output_feedback_reference_profiles(n_samples=reference_n_samples)
+        if include_reference
+        else ()
+    )
     velocity_file = write_velocity_figure(
         velocity_profiles,
         output_dir=output_dir,
-        reference=reference,
+        references=references,
+    )
+    replicate_velocity_file = write_velocity_by_replicate_figure(
+        velocity_profiles,
+        output_dir=output_dir,
+        references=references,
     )
     alias_file = output_dir / "forward_velocity_profiles_stochastic_with_extlqg.html"
     if include_reference:
@@ -152,9 +181,10 @@ def materialize_gru_pilot_figures(
         runs=runs,
         loss_files=loss_files,
         velocity_file=velocity_file,
+        replicate_velocity_file=replicate_velocity_file,
         alias_file=alias_file if include_reference else None,
         velocity_profiles=velocity_profiles,
-        reference=reference,
+        references=references,
     )
     summary_path = output_dir / "figure_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -306,6 +336,7 @@ def evaluate_stochastic_forward_velocity_profile(
         setup_func=lambda key, **_kwargs: setup_task_model_pair(hps, key=key).model,
     )
     trial_specs = repeat_single_validation_trial(pair.task.validation_trials, n_rollout_trials)
+    initial_velocity = initial_effector_velocity(trial_specs)
     model_arrays, model_other = eqx.partition(
         model,
         lambda leaf: _is_replicate_array(leaf, n_replicates),
@@ -318,7 +349,13 @@ def evaluate_stochastic_forward_velocity_profile(
             trial_specs,
             jr.split(key, n_rollout_trials),
         )
-        return states.mechanics.effector.vel
+        # Task.eval_trials strips the prepended initial history sample. Reinsert
+        # it here so plotted GRU rollouts share the analytical reference time
+        # convention: sample 0 is the true trial initial state.
+        return jnp.concatenate(
+            [initial_velocity[:, None, :], states.mechanics.effector.vel],
+            axis=1,
+        )
 
     velocity = eqx.filter_vmap(eval_one_replicate, in_axes=(0, 0))(
         model_arrays,
@@ -336,7 +373,22 @@ def evaluate_stochastic_forward_velocity_profile(
         std=np.std(pooled, axis=0),
         n_replicates=n_replicates,
         n_rollout_trials_per_replicate=n_rollout_trials,
+        replicate_mean=np.mean(forward, axis=1),
+        replicate_std=np.std(forward, axis=1),
     )
+
+
+def initial_effector_velocity(trial_specs: Any) -> jnp.ndarray:
+    """Return the trial initial effector velocity array, shape ``(trials, 2)``."""
+
+    for init_state in trial_specs.inits.values():
+        velocity = getattr(init_state, "vel", None)
+        if velocity is not None:
+            return velocity
+        shape = getattr(init_state, "shape", None)
+        if shape is not None and len(shape) >= 1 and shape[-1] >= 4:
+            return jnp.asarray(init_state)[..., 2:4]
+    raise ValueError("Trial spec does not include an effector velocity initial state")
 
 
 def repeat_single_validation_trial(trial_specs: Any, n_trials: int) -> Any:
@@ -351,29 +403,113 @@ def repeat_single_validation_trial(trial_specs: Any, n_trials: int) -> Any:
     return jt.map(repeat_leaf, trial_specs)
 
 
-def cs_output_feedback_reference_profile() -> ReferenceProfile:
-    """Return the analytical C&S output-feedback forward-velocity profile."""
+def cs_output_feedback_reference_profiles(
+    *,
+    n_samples: int = DEFAULT_N_ROLLOUT_TRIALS,
+    key: Any = jr.PRNGKey(0),
+) -> tuple[ReferenceProfile, ...]:
+    """Return stochastic analytical C&S output-feedback references."""
 
-    config = OutputFeedbackConfig()
     reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
+    config_8d = OutputFeedbackConfig()
+    config_4d = position_velocity_observation_config(reference.plant, config_8d)
+    keys = jr.split(key, 2)
+    return (
+        cs_output_feedback_reference_profile(
+            reference=reference,
+            config=config_8d,
+            label=REFERENCE_LABEL,
+            observation_channel="oldest_delayed_physical_block_full_8d",
+            n_samples=n_samples,
+            key=keys[0],
+            line_color="#111827",
+            line_dash="dash",
+        ),
+        cs_output_feedback_reference_profile(
+            reference=reference,
+            config=config_4d,
+            label=REFERENCE_4D_LABEL,
+            observation_channel="oldest_delayed_position_velocity_4d",
+            n_samples=n_samples,
+            key=keys[1],
+            line_color="#f97316",
+            line_dash="dot",
+        ),
+    )
+
+
+def cs_output_feedback_reference_profile(
+    *,
+    reference: Any | None = None,
+    config: OutputFeedbackConfig = OutputFeedbackConfig(),
+    label: str = REFERENCE_LABEL,
+    observation_channel: str = "oldest_delayed_physical_block_full_8d",
+    n_samples: int = DEFAULT_N_ROLLOUT_TRIALS,
+    key: Any = jr.PRNGKey(0),
+    line_color: str = "#111827",
+    line_dash: str = "dash",
+) -> ReferenceProfile:
+    """Return one stochastic analytical C&S output-feedback velocity profile."""
+
+    reference = reference or materialize_reference(
+        gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,)
+    )
     x0 = make_cs_output_feedback_initial_state(reference.plant, config)
-    rollout = rollout_with_kalman_estimator(
+    covariances = default_cs_noise_covariances(reference.plant, config)
+    comparator = build_extlqg_comparator_path(
         reference.plant,
         reference.lqr_solution.K,
-        x0,
+        covariances,
+        schedule=reference.schedule,
         config=config,
     )
-    x = np.asarray(rollout.x, dtype=np.float64)
+    sample_keys = jr.split(key, n_samples)
+    rollouts = [
+        simulate_lqg_released_forward(
+            reference.plant,
+            comparator.controller_gains,
+            x0,
+            draws=sample_forward_noise_draws(
+                sample_key,
+                T=reference.schedule.T,
+                covariances=covariances,
+            ),
+            covariances=covariances,
+            estimator_gains=comparator.estimator_gains,
+            config=config,
+        )
+        for sample_key in sample_keys
+    ]
+    x = np.stack([np.asarray(rollout.x, dtype=np.float64) for rollout in rollouts], axis=0)
     vel_lo, _vel_hi = reference.plant.vel_slice
     dt = float(reference.plant.dt)
+    forward = x[:, :, vel_lo]
+    mean_forward = np.mean(forward, axis=0)
+    observation_matrix = delayed_observation_matrix(reference.plant, config)
+    observed_indices = (
+        tuple(range(config.n_phys))
+        if config.observed_physical_indices is None
+        else tuple(config.observed_physical_indices)
+    )
+    peak_idx = int(np.argmax(mean_forward))
     return ReferenceProfile(
-        label=REFERENCE_LABEL,
-        time_s=np.arange(x.shape[0], dtype=np.float64) * dt,
-        forward_velocity=x[:, vel_lo],
-        peak_forward_velocity_m_s=float(rollout.peak_forward_velocity),
-        time_of_peak_forward_velocity_s=float(rollout.peak_forward_velocity_idx * dt),
-        terminal_position_error_m=float(rollout.terminal_position_error),
+        label=label,
+        observation_channel=observation_channel,
+        observation_dim=int(observation_matrix.shape[0]),
+        observed_physical_indices=observed_indices,
+        time_s=np.arange(mean_forward.shape[0], dtype=np.float64) * dt,
+        forward_velocity=mean_forward,
+        forward_velocity_std=np.std(forward, axis=0),
+        n_samples=n_samples,
+        peak_forward_velocity_m_s=float(mean_forward[peak_idx]),
+        time_of_peak_forward_velocity_s=float(peak_idx * dt),
+        terminal_position_error_m=float(
+            np.mean([rollout.terminal_position_error for rollout in rollouts])
+        ),
         gamma_factor=OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+        parity_status=comparator.parity_status,
+        line_color=line_color,
+        line_dash=line_dash,
     )
 
 
@@ -381,17 +517,18 @@ def write_velocity_figure(
     profiles: Sequence[VelocityProfile],
     *,
     output_dir: Path,
-    reference: ReferenceProfile | None,
+    references: Sequence[ReferenceProfile] = (),
 ) -> Path:
     """Write the stochastic forward-velocity profile figure."""
 
     if not profiles:
         raise ValueError("At least one velocity profile is required")
     fig = make_subplots(
-        rows=1,
-        cols=len(profiles),
-        shared_yaxes=True,
+        rows=len(profiles),
+        cols=1,
+        shared_xaxes=True,
         subplot_titles=[profile.label for profile in profiles],
+        vertical_spacing=0.10,
     )
     colors = ("#2563eb", "#dc2626", "#059669", "#7c3aed", "#ea580c")
     for idx, profile in enumerate(profiles, start=1):
@@ -409,8 +546,8 @@ def write_velocity_figure(
                 name=f"{profile.label} mean +/- 1 SD",
                 showlegend=idx == 1,
             ),
-            row=1,
-            col=idx,
+            row=idx,
+            col=1,
         )
         fig.add_trace(
             go.Scatter(
@@ -421,32 +558,160 @@ def write_velocity_figure(
                 name=profile.label,
                 showlegend=True,
             ),
-            row=1,
-            col=idx,
+            row=idx,
+            col=1,
         )
-        if reference is not None:
+        for reference in references:
+            upper = reference.forward_velocity + reference.forward_velocity_std
+            lower = reference.forward_velocity - reference.forward_velocity_std
+            fig.add_trace(
+                go.Scatter(
+                    x=np.concatenate([reference.time_s, reference.time_s[::-1]]),
+                    y=np.concatenate([upper, lower[::-1]]),
+                    fill="toself",
+                    fillcolor=_rgba(reference.line_color, 0.10),
+                    line={"color": "rgba(0,0,0,0)"},
+                    hoverinfo="skip",
+                    name=f"{reference.label} mean +/- 1 SD",
+                    showlegend=idx == 1,
+                ),
+                row=idx,
+                col=1,
+            )
             fig.add_trace(
                 go.Scatter(
                     x=reference.time_s,
                     y=reference.forward_velocity,
                     mode="lines",
-                    line={"color": "#111827", "width": 2, "dash": "dash"},
+                    line={
+                        "color": reference.line_color,
+                        "width": 2,
+                        "dash": reference.line_dash,
+                    },
                     name=reference.label,
                     showlegend=idx == 1,
                 ),
-                row=1,
-                col=idx,
+                row=idx,
+                col=1,
             )
     fig.update_layout(
         title="GRU pilot stochastic forward velocity",
-        width=max(520, 430 * len(profiles)),
-        height=420,
+        width=780,
+        height=max(420, 300 * len(profiles)),
         margin={"l": 70, "r": 20, "t": 60, "b": 60},
         hovermode="x unified",
     )
-    fig.update_xaxes(title_text="Time (s)")
+    fig.update_xaxes(title_text="Time (s)", row=len(profiles), col=1)
     fig.update_yaxes(title_text="Forward velocity (m/s)", zeroline=True)
     path = output_dir / "forward_velocity_profiles_stochastic.html"
+    fig.write_html(path)
+    return path
+
+
+def write_velocity_by_replicate_figure(
+    profiles: Sequence[VelocityProfile],
+    *,
+    output_dir: Path,
+    references: Sequence[ReferenceProfile] = (),
+) -> Path:
+    """Write stochastic forward velocity by replicate, with trial-wise bands."""
+
+    if not profiles:
+        raise ValueError("At least one velocity profile is required")
+    fig = make_subplots(
+        rows=len(profiles),
+        cols=1,
+        shared_xaxes=True,
+        subplot_titles=[profile.label for profile in profiles],
+        vertical_spacing=0.10,
+    )
+    colors = ("#2563eb", "#dc2626", "#059669", "#7c3aed", "#ea580c", "#0891b2", "#be123c")
+    for row_idx, profile in enumerate(profiles, start=1):
+        if profile.replicate_mean is None or profile.replicate_std is None:
+            raise ValueError(f"Missing replicate-resolved statistics for {profile.run_id}")
+        for rep_idx in range(profile.n_replicates):
+            color = colors[rep_idx % len(colors)]
+            mean = profile.replicate_mean[rep_idx]
+            std = profile.replicate_std[rep_idx]
+            upper = mean + std
+            lower = mean - std
+            legendgroup = f"replicate-{rep_idx}"
+            name = f"replicate {rep_idx}"
+            fig.add_trace(
+                go.Scatter(
+                    x=np.concatenate([profile.time_s, profile.time_s[::-1]]),
+                    y=np.concatenate([upper, lower[::-1]]),
+                    fill="toself",
+                    fillcolor=_rgba(color, 0.12),
+                    line={"color": "rgba(0,0,0,0)"},
+                    hoverinfo="skip",
+                    legendgroup=legendgroup,
+                    name=f"{name} mean +/- 1 SD",
+                    showlegend=False,
+                ),
+                row=row_idx,
+                col=1,
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=profile.time_s,
+                    y=mean,
+                    mode="lines",
+                    line={"color": color, "width": 1.8},
+                    legendgroup=legendgroup,
+                    name=name,
+                    showlegend=row_idx == 1,
+                ),
+                row=row_idx,
+                col=1,
+            )
+        for reference in references:
+            upper = reference.forward_velocity + reference.forward_velocity_std
+            lower = reference.forward_velocity - reference.forward_velocity_std
+            legendgroup = f"reference-{reference.observation_channel}"
+            fig.add_trace(
+                go.Scatter(
+                    x=np.concatenate([reference.time_s, reference.time_s[::-1]]),
+                    y=np.concatenate([upper, lower[::-1]]),
+                    fill="toself",
+                    fillcolor=_rgba(reference.line_color, 0.08),
+                    line={"color": "rgba(0,0,0,0)"},
+                    hoverinfo="skip",
+                    legendgroup=legendgroup,
+                    name=f"{reference.label} mean +/- 1 SD",
+                    showlegend=False,
+                ),
+                row=row_idx,
+                col=1,
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=reference.time_s,
+                    y=reference.forward_velocity,
+                    mode="lines",
+                    line={
+                        "color": reference.line_color,
+                        "width": 2.2,
+                        "dash": reference.line_dash,
+                    },
+                    legendgroup=legendgroup,
+                    name=reference.label,
+                    showlegend=row_idx == 1,
+                ),
+                row=row_idx,
+                col=1,
+            )
+    fig.update_layout(
+        title="GRU pilot stochastic forward velocity by replicate",
+        width=820,
+        height=max(420, 320 * len(profiles)),
+        margin={"l": 70, "r": 20, "t": 60, "b": 60},
+        hovermode="x unified",
+        legend={"groupclick": "togglegroup"},
+    )
+    fig.update_xaxes(title_text="Time (s)", row=len(profiles), col=1)
+    fig.update_yaxes(title_text="Forward velocity (m/s)", zeroline=True)
+    path = output_dir / "forward_velocity_profiles_by_replicate_stochastic_with_extlqg.html"
     fig.write_html(path)
     return path
 
@@ -459,7 +724,8 @@ def build_figure_summary(
     velocity_file: Path,
     alias_file: Path | None,
     velocity_profiles: Sequence[VelocityProfile],
-    reference: ReferenceProfile | None,
+    replicate_velocity_file: Path | None = None,
+    references: Sequence[ReferenceProfile] = (),
 ) -> dict[str, Any]:
     """Build the JSON sidecar summary for generated figures."""
 
@@ -473,6 +739,7 @@ def build_figure_summary(
             "n_time_steps": int(profile.mean.shape[0]),
             "peak_mean_forward_velocity_m_s": float(np.max(profile.mean)),
             "time_of_peak_mean_forward_velocity_s": float(profile.time_s[int(np.argmax(profile.mean))]),
+            "replicates": _replicate_velocity_summaries(profile),
         }
         for profile in velocity_profiles
     }
@@ -484,21 +751,34 @@ def build_figure_summary(
         ),
         "error_band": (
             "GRU mean +/- 1 SD over pooled stochastic rollout trials across replicates; "
-            "analytical trace has no band"
+            "analytical references mean +/- 1 SD over stochastic C&S rollouts"
         ),
         "summaries": velocity_profiles_summary,
     }
+    if replicate_velocity_file is not None:
+        velocity_summary["replicate_file"] = replicate_velocity_file.name
+        velocity_summary["replicate_error_band"] = (
+            "GRU mean +/- 1 SD over stochastic rollout trials within each replicate"
+        )
     if alias_file is not None:
         velocity_summary["alias_file"] = alias_file.name
-    if reference is not None:
-        velocity_summary["reference"] = {
-            "controller": "analytical_lqr_kalman_output_feedback",
-            "display_label": reference.label,
-            "gamma_factor_recorded_for_certificate": reference.gamma_factor,
-            "n_time_steps": int(reference.forward_velocity.shape[0]),
-            "peak_forward_velocity_m_s": reference.peak_forward_velocity_m_s,
-            "time_of_peak_forward_velocity_s": reference.time_of_peak_forward_velocity_s,
-            "terminal_position_error_m": reference.terminal_position_error_m,
+    if references:
+        velocity_summary["references"] = {
+            reference.label: {
+                "controller": "analytical_lqr_kalman_output_feedback",
+                "display_label": reference.label,
+                "observation_channel": reference.observation_channel,
+                "observation_dim": reference.observation_dim,
+                "observed_physical_indices": list(reference.observed_physical_indices),
+                "gamma_factor_recorded_for_certificate": reference.gamma_factor,
+                "n_stochastic_samples": reference.n_samples,
+                "parity_status": reference.parity_status,
+                "n_time_steps": int(reference.forward_velocity.shape[0]),
+                "peak_forward_velocity_m_s": reference.peak_forward_velocity_m_s,
+                "time_of_peak_forward_velocity_s": reference.time_of_peak_forward_velocity_s,
+                "terminal_position_error_m": reference.terminal_position_error_m,
+            }
+            for reference in references
         }
 
     return {
@@ -524,6 +804,23 @@ def _read_loss_tree(stream: Any, term_labels: Sequence[str]) -> TermTree:
     return TermTree.branch("reach_loss", children, weight=branch_weight)
 
 
+def _replicate_velocity_summaries(profile: VelocityProfile) -> list[dict[str, float | int]]:
+    if profile.replicate_mean is None or profile.replicate_std is None:
+        return []
+    summaries: list[dict[str, float | int]] = []
+    for idx in range(profile.n_replicates):
+        peak_idx = int(np.argmax(profile.replicate_mean[idx]))
+        summaries.append(
+            {
+                "replicate": idx,
+                "peak_mean_forward_velocity_m_s": float(profile.replicate_mean[idx, peak_idx]),
+                "time_of_peak_mean_forward_velocity_s": float(profile.time_s[peak_idx]),
+                "trial_sd_at_peak_m_s": float(profile.replicate_std[idx, peak_idx]),
+            }
+        )
+    return summaries
+
+
 def _is_replicate_array(leaf: Any, n_replicates: int) -> bool:
     return eqx.is_array(leaf) and leaf.ndim >= 1 and leaf.shape[0] == n_replicates
 
@@ -539,10 +836,12 @@ __all__ = [
     "DEFAULT_FIGURE_SUBDIR",
     "DEFAULT_N_ROLLOUT_TRIALS",
     "REFERENCE_LABEL",
+    "REFERENCE_4D_LABEL",
     "RunFigureInputs",
     "VelocityProfile",
     "active_loss_term_labels",
     "build_figure_summary",
+    "cs_output_feedback_reference_profiles",
     "cs_output_feedback_reference_profile",
     "default_label",
     "default_output_dir",
@@ -553,4 +852,5 @@ __all__ = [
     "resolve_run_inputs",
     "write_loss_figures",
     "write_velocity_figure",
+    "write_velocity_by_replicate_figure",
 ]

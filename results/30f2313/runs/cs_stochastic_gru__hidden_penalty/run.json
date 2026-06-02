@@ -181,7 +181,7 @@
       "tau_rise": 0.066
     },
     "n_batches_baseline": 0,
-    "n_batches_condition": 1000,
+    "n_batches_condition": 12000,
     "n_scaleup_batches": 0,
     "pert": {
       "duration_mean": 0,
@@ -412,7 +412,7 @@
       "nodes.net.readout"
     ]
   },
-  "n_train_batches": 1000,
+  "n_train_batches": 12000,
   "nominal_only": true,
   "provenance": {
     "dependencies": {
@@ -556,7 +556,7 @@
     "method": "nominal-cs-gru",
     "n_adversary_batches": 0,
     "n_replicates": 5,
-    "n_train_batches": 1000,
+    "n_train_batches": 12000,
     "nominal_only": true,
     "stochastic_preset": {
       "additive_motor_noise_std": 1e-05,

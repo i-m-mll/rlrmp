@@ -1,20 +1,36 @@
 from collections.abc import Callable
 from typing import Literal as L
 from typing import TypeAlias
+import warnings
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
+from feedbax._mapping import WhereDict
 from feedbax.intervene import (
     CurlFieldParams,
     FixedFieldParams,
     schedule_intervenor,
 )
 from feedbax.misc import get_field_amplitude, vector_with_gaussian_length
+from feedbax.nn import PopulationStructure
+from feedbax.state import CartesianState
+from feedbax.task import AbstractTask, TaskTrialSpec
 from feedbax.training.train import always_active, bernoulli_active
 from feedbax.types import LDict, TaskModelPair, TreeNamespace
 from jaxtyping import PRNGKeyArray
 
+from rlrmp.analysis.cs_game_card import build_canonical_game
+from rlrmp.analysis.cs_released_simulation import (
+    DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
+    default_cs_noise_covariances,
+)
+from rlrmp.analysis.output_feedback import OutputFeedbackConfig
+from rlrmp.cs_lss_gru import (
+    CS_EPSILON_DIM,
+    build_cs_lss_gru_graph,
+)
 from rlrmp.disturbance import (
     PLANT_INTERVENOR_LABEL,
 )
@@ -33,6 +49,17 @@ from rlrmp.stochastic_runtime import (
 from rlrmp.task import TASK_TYPES
 
 TrainingMethodLabel: TypeAlias = L["bcs", "dai", "pai-asf", "pai-n", "nominal-cs-gru"]
+PlantBackendLabel: TypeAlias = L["cs_lss", "legacy_causal_simplefeedback"]
+
+CS_LSS_PLANT_BACKEND = "cs_lss"
+LEGACY_CAUSAL_PLANT_BACKEND = "legacy_causal_simplefeedback"
+LEGACY_CAUSAL_BACKEND_WARNING = (
+    "Using legacy causal SimpleFeedback backend for nominal-cs-gru. This backend "
+    "splits the C&S plant into a point-mass mechanics node plus a first-order "
+    "force filter, which creates the known same-step force-filter-to-mechanics "
+    "timing problem. Use plant_backend='cs_lss' for the exact C&S LinearStateSpace "
+    "plant."
+)
 
 
 P_PERTURBED = LDict.of("train__method")(
@@ -204,6 +231,31 @@ def setup_task_model_pair(
     hidden_type = getattr(hps, 'hidden_type', None)
     # Resolve SISU gating mode; default "additive" preserves existing behavior
     sisu_gating = getattr(hps, 'sisu_gating', 'additive')
+    plant_backend = getattr(hps.model, "plant_backend", LEGACY_CAUSAL_PLANT_BACKEND)
+
+    if hps.method == "nominal-cs-gru" and plant_backend == CS_LSS_PLANT_BACKEND:
+        if isinstance(hidden_type, str) and hidden_type in LINEAR_HIDDEN_TYPES:
+            raise ValueError("The C&S LSS nominal GRU backend requires a recurrent cell type.")
+        task = _add_cs_lss_task_inputs(_CsLssTaskAdapter(task_base))
+        models = _create_cs_lss_gru_ensemble(
+            hps,
+            hidden_type=hidden_type,
+            sisu_gating=sisu_gating,
+            key=key,
+        )
+        return TaskModelPair(task, models)
+
+    if hps.method == "nominal-cs-gru" and plant_backend == LEGACY_CAUSAL_PLANT_BACKEND:
+        warnings.warn(
+            LEGACY_CAUSAL_BACKEND_WARNING,
+            RuntimeWarning,
+            stacklevel=2,
+        )
+    elif hps.method == "nominal-cs-gru":
+        raise ValueError(
+            f"Unknown nominal-cs-gru plant_backend {plant_backend!r}; expected "
+            f"{CS_LSS_PLANT_BACKEND!r} or {LEGACY_CAUSAL_PLANT_BACKEND!r}."
+        )
 
     # Dispatch: linear-controller MVP variants (Bug: 410d7ac) bypass
     # ``create_point_mass_nn_ensemble`` entirely because they replace
@@ -263,3 +315,183 @@ def setup_task_model_pair(
     )
 
     return TaskModelPair(task, models)
+
+
+class _CsLssTaskAdapter(AbstractTask):
+    """Rewrite SimpleReaches initial state for a C&S LSS graph.
+
+    Feedbax ``SimpleReaches`` initializes ``mechanics.effector`` because the
+    legacy point-mass mechanics retains a ``MechanicsState``. The C&S LSS graph
+    retains ``mechanics.vector`` and exposes ``mechanics.effector`` only as a
+    semantic state view. This adapter leaves targets, inputs, timelines, and
+    loss functions unchanged while translating the initial Cartesian effector
+    state into the 48D LSS vector.
+    """
+
+    task: object
+
+    def __getattr__(self, name: str):
+        return getattr(self.task, name)
+
+    @property
+    def loss_func(self):
+        return self.task.loss_func
+
+    @property
+    def n_steps(self) -> int:
+        return int(self.task.n_steps)
+
+    @property
+    def seed_validation(self) -> int:
+        return int(self.task.seed_validation)
+
+    @property
+    def intervention_specs(self):
+        return self.task.intervention_specs
+
+    @property
+    def input_dependencies(self):
+        return self.task.input_dependencies
+
+    def add_input(
+        self,
+        name: str,
+        input_fn: Callable[[TaskTrialSpec, PRNGKeyArray], object],
+        exist_ok: bool = True,
+    ):
+        return _CsLssTaskAdapter(self.task.add_input(name, input_fn, exist_ok=exist_ok))
+
+    def get_train_trial(self, key: PRNGKeyArray, batch_info=None) -> TaskTrialSpec:
+        return self._rewrite_trial(self.task.get_train_trial(key, batch_info))
+
+    def get_train_trial_with_intervenor_params(
+        self,
+        key: PRNGKeyArray,
+        batch_info=None,
+    ) -> TaskTrialSpec:
+        return self._rewrite_trial(
+            self.task.get_train_trial_with_intervenor_params(key, batch_info)
+        )
+
+    def get_validation_trials(self, key: PRNGKeyArray) -> TaskTrialSpec:
+        return self._rewrite_trial(self.task.get_validation_trials(key))
+
+    @property
+    def n_validation_trials(self) -> int:
+        return int(self.task.n_validation_trials)
+
+    def validation_plots(self, states, trial_specs=None):
+        return self.task.validation_plots(states, trial_specs=trial_specs)
+
+    @property
+    def validation_trials(self) -> TaskTrialSpec:
+        return self._rewrite_trial(self.task.validation_trials)
+
+    def _rewrite_trial(self, trial_spec: TaskTrialSpec) -> TaskTrialSpec:
+        effector_init = trial_spec.inits["mechanics.effector"]
+        lss_vector = _effector_init_to_lss_vector(effector_init)
+        return TaskTrialSpec(
+            inits=WhereDict({"mechanics.vector": lss_vector}),
+            inputs=trial_spec.inputs,
+            targets=trial_spec.targets,
+            intervene=trial_spec.intervene,
+            extra=trial_spec.extra,
+            timeline=trial_spec.timeline,
+        )
+
+
+def _effector_init_to_lss_vector(effector_init: CartesianState) -> jax.Array:
+    pos = jnp.asarray(effector_init.pos)
+    vel = jnp.asarray(effector_init.vel)
+    force = jnp.asarray(effector_init.force)
+    batch_shape = jnp.broadcast_shapes(pos.shape[:-1], vel.shape[:-1], force.shape[:-1])
+    vector = jnp.zeros((*batch_shape, 48), dtype=jnp.result_type(pos, vel, force, float))
+    return vector.at[..., 0:2].set(jnp.broadcast_to(pos, (*batch_shape, 2))).at[
+        ..., 2:4
+    ].set(jnp.broadcast_to(vel, (*batch_shape, 2))).at[..., 4:6].set(
+        jnp.broadcast_to(force, (*batch_shape, 2))
+    )
+
+
+def _add_cs_lss_task_inputs(task: _CsLssTaskAdapter) -> _CsLssTaskAdapter:
+    task = task.add_input(
+        name="input",
+        input_fn=SISU_FNS["nominal-cs-gru"],
+    )
+    return task.add_input(
+        name="epsilon",
+        input_fn=_sample_cs_lss_process_epsilon,
+    )
+
+
+def _sample_cs_lss_process_epsilon(
+    trial_spec: TaskTrialSpec,
+    key: PRNGKeyArray,
+) -> jax.Array:
+    """Sample the temporary physical-process epsilon bridge for C&S LSS GRUs.
+
+    ``LinearStateSpace.B_w`` injects an 8D physical epsilon into the current
+    physical block. Sensory and motor noise are handled by the LSS graph's
+    causal ``Channel`` nodes; this function owns only the process/load noise
+    source.
+    """
+
+    target = trial_spec.targets["mechanics.effector.pos"].value
+    batch_shape = target.shape[:-2] if target.ndim >= 3 else ()
+    n_steps = int(trial_spec.timeline.n_steps)
+    factor = _cs_lss_process_epsilon_factor()
+    draws = jr.normal(key, (*batch_shape, n_steps, CS_EPSILON_DIM), dtype=jnp.float64)
+    return draws @ factor.T
+
+
+def _cs_lss_process_epsilon_factor() -> jax.Array:
+    """Return a square-root factor for the physical process epsilon covariance."""
+
+    plant, _schedule = build_canonical_game()
+    covariances = default_cs_noise_covariances(
+        plant,
+        OutputFeedbackConfig(),
+        noise_config=DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
+    )
+    physical_cov = covariances.process[:CS_EPSILON_DIM, :CS_EPSILON_DIM]
+    eigvals, eigvecs = jnp.linalg.eigh(0.5 * (physical_cov + physical_cov.T))
+    return eigvecs @ jnp.diag(jnp.sqrt(jnp.clip(eigvals, min=0.0)))
+
+
+def _create_cs_lss_gru_ensemble(
+    hps: TreeNamespace,
+    *,
+    hidden_type,
+    sisu_gating: str,
+    key: PRNGKeyArray,
+):
+    if hidden_type is None:
+        hidden_type = eqx.nn.GRUCell
+    pop_config = hps.model.population_structure
+    key_pop, key_models = jr.split(key)
+    population_structure = PopulationStructure.create(
+        hidden_size=hps.model.hidden_size,
+        n_input_only=getattr(pop_config, "n_input_only", 0) or 0,
+        n_readout_only=getattr(pop_config, "n_readout_only", 0) or 0,
+        n_recurrent_only=getattr(pop_config, "n_recurrent_only", 0) or 0,
+        n_input_readout=getattr(pop_config, "n_input_readout", 0) or 0,
+        assignment_fn=None,
+        key=key_pop,
+    )
+    keys = jr.split(key_models, int(hps.model.n_replicates))
+
+    def build_one(key_one):
+        return build_cs_lss_gru_graph(
+            hidden_size=int(hps.model.hidden_size),
+            input_size=1,
+            hidden_type=hidden_type,
+            population_structure=population_structure,
+            sisu_gating=sisu_gating,
+            sensory_noise_std=float(hps.model.sensory_noise_std),
+            additive_motor_noise_std=float(hps.model.additive_motor_noise_std),
+            signal_dependent_motor_noise_std=float(hps.model.signal_dependent_motor_noise_std),
+            bind_epsilon_input=True,
+            key=key_one,
+        )
+
+    return eqx.filter_vmap(build_one)(keys)

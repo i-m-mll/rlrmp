@@ -1,56 +1,14 @@
 {
-  "adversarial_phase": "none",
-  "artifact_output_dir": "/vol/rlrmp-cs-stochastic-gru/_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty",
-  "batch_size": 250,
-  "checkpointing": {
-    "checkpoint_dir": "/vol/rlrmp-cs-stochastic-gru/_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/checkpoints",
-    "contents": [
-      "model.eqx",
-      "optimizer_state.eqx",
-      "history.eqx",
-      "metadata.json"
-    ],
-    "enabled": true,
-    "interval_batches": 500,
-    "latest_checkpoint": "/vol/rlrmp-cs-stochastic-gru/_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/checkpoints/checkpoint_latest",
-    "numbered_pattern": "checkpoint_{completed_batches:07d}",
-    "resume": true
+  "component_policy": {
+    "nominal_intervention_policy": "plant_intervenor is present only as an inactive legacy GraphSpec compatibility component; no robust/minimax adversary is scheduled.",
+    "rlrmp_component_types": [
+      "RLRMPFeedbackChannels",
+      "RLRMPSimpleStagedNetwork",
+      "FixedField"
+    ]
   },
-  "controller_lr": 0.01,
-  "feedbax_graph": {
-    "component_policy": {
-      "nominal_intervention_policy": "plant_intervenor is present only as an inactive legacy GraphSpec compatibility component; no robust/minimax adversary is scheduled.",
-      "rlrmp_component_types": [
-        "RLRMPFeedbackChannels",
-        "RLRMPSimpleStagedNetwork",
-        "FixedField"
-      ]
-    },
-    "execution_backend": "rlrmp.legacy_simple_feedback_compat",
-    "graph_spec_path": "model.graph.json",
-    "legacy_loader": {
-      "checkpoint_format": "feedbax._io.save/load_with_hyperparameters",
-      "setup_function": "rlrmp.modules.training.part2.setup_task_model_pair"
-    },
-    "manifest_path": "model.graph.manifest.json",
-    "schema_version": "rlrmp.feedbax_graph.v1"
-  },
-  "fidelity_status": {
-    "analytical_delay_augmented_state_input": false,
-    "certificate_lens": "input_output_map_certificate",
-    "exact_fidelity": false,
-    "exact_objective_terms": true,
-    "exact_stochastic_rollout": false,
-    "nn_hidden": 0.0,
-    "objective": "cs_fidelity_stochastic_rollout",
-    "regularized_pair": false,
-    "regularizer": "none",
-    "same_coordinate_gain_certificate": false,
-    "stochastic_preset": "cs2019-rollout",
-    "stochastic_projection": "Feedbax GRU rollout uses C&S-shaped sensory, command, signal-dependent, and plant/load force noise channels without feeding the 48D delay-augmented analytical state to the GRU."
-  },
-  "full_training_launch": "requested",
-  "game_card": {
+  "execution_backend": "rlrmp.legacy_simple_feedback_compat",
+  "game_card_provenance": {
     "canonical_builder": "build_canonical_game",
     "cost": {
       "R": "I_2",
@@ -99,151 +57,11 @@
       0.0
     ]
   },
-  "hps": {
-    "batch_size": 250,
-    "constant_lr_iterations": 0,
-    "cosine_annealing_alpha": 1.0,
-    "dt": 0.01,
-    "hidden_type": "equinox.nn._rnn.GRUCell",
-    "intervention_scaleup_batches": [
-      0,
-      0
-    ],
-    "learning_rate_0": 0.01,
-    "loss": {
-      "effector_hold_pos_schedule": "disabled",
-      "effector_pos_late": {
-        "final_scale_factor": 1.0,
-        "start_step_after_go": 60
-      },
-      "effector_pos_running_schedule": "cs_eq15_power6",
-      "effector_vel_late": {
-        "final_scale_factor": 1.0,
-        "start_step_after_go": 60
-      },
-      "movement_ramp_duration_steps": 0,
-      "movement_ramp_power": 1.0,
-      "movement_ramp_shape": "none",
-      "position_powerlaw_power": 6.0,
-      "weights": {
-        "effector_final_vel": 0.0,
-        "effector_hold_pos": 0.0,
-        "effector_hold_vel": 0.0,
-        "effector_pos": 0.0,
-        "effector_pos_late": 0.0,
-        "effector_pos_mid": 0.0,
-        "effector_pos_running": 1000000.0,
-        "effector_terminal_pos": 1000000.0,
-        "effector_terminal_vel": 100000.0,
-        "effector_vel_late": 0.0,
-        "effector_vel_mid": 0.0,
-        "effector_vel_running": 100000.0,
-        "goal_hit_in_window": 0.0,
-        "nn_hidden": 0.0,
-        "nn_hidden_derivative": 0.0,
-        "nn_hidden_derivative_pre_go": 0.0,
-        "nn_output": 1.0,
-        "nn_output_jerk": 0.0,
-        "nn_output_pre_go": 0.0
-      }
-    },
-    "loss_update": {
-      "alpha": 0.0,
-      "control_term": "nn_output",
-      "enabled": false,
-      "goal_term": [
-        "effector_pos_running",
-        "effector_vel_running"
-      ],
-      "start_iteration": 0,
-      "target_ratio": 0.0
-    },
-    "method": "nominal-cs-gru",
-    "model": {
-      "additive_motor_noise_std": 1e-05,
-      "damping": 0.1,
-      "effector_mass": 1.0,
-      "feedback_delay_steps": 5,
-      "feedback_noise_std": 0.0,
-      "hidden_size": 180,
-      "motor_noise_std": 0.0,
-      "n_replicates": 5,
-      "plant_process_force_noise_std": 0.03162277660168379,
-      "population_structure": {
-        "n_input_only": 0,
-        "n_input_readout": 180,
-        "n_readout_only": 0,
-        "n_recurrent_only": 0
-      },
-      "sensory_noise_std": 0.004791329788133908,
-      "signal_dependent_motor_noise_std": 0.02,
-      "stochastic_preset": "cs2019-rollout",
-      "tau_rise": 0.066
-    },
-    "n_batches_baseline": 0,
-    "n_batches_condition": 12000,
-    "n_scaleup_batches": 0,
-    "pert": {
-      "duration_mean": 0,
-      "n_expected": 0,
-      "std": 0.0,
-      "type": "gusts"
-    },
-    "sisu_gating": "additive",
-    "state_reset_iterations": [],
-    "task": {
-      "epoch_len_ranges": [
-        [
-          0,
-          1
-        ],
-        [
-          60,
-          61
-        ]
-      ],
-      "eval_grid_n": 1,
-      "eval_n_directions": 1,
-      "eval_reach_length": 0.15,
-      "fixed_init_pos": [
-        0.0,
-        0.0
-      ],
-      "fixed_target_pos": [
-        0.15,
-        0.0
-      ],
-      "hold_epochs": [],
-      "move_epochs": [
-        0
-      ],
-      "n_steps": 61,
-      "p_catch_trial": 0.0,
-      "target_on_epochs": [
-        0
-      ],
-      "type": "fixed_simple_reach",
-      "workspace": [
-        [
-          -0.02,
-          -0.02
-        ],
-        [
-          0.16999999999999998,
-          0.02
-        ]
-      ]
-    },
-    "weight_decay": 0.0,
-    "where": {
-      "0": [
-        "nodes.net.hidden",
-        "nodes.net.readout"
-      ]
-    }
+  "legacy_loader": {
+    "checkpoint_format": "feedbax._io.save/load_with_hyperparameters",
+    "setup_function": "rlrmp.modules.training.part2.setup_task_model_pair"
   },
-  "issue": "30f2313",
-  "loss_summary": {
+  "loss_spec": {
     "active_cs_terms": {
       "control": {
         "equivalent_R": "I_2 on efferent output",
@@ -284,7 +102,7 @@
     "hidden_regularizer": {
       "exact_fidelity_default": 0.0,
       "regularized_pair_scale": 1e-05,
-      "scale": 0.0,
+      "scale": 1e-05,
       "term": "nn_hidden"
     },
     "movement_ramp_duration_steps": 0,
@@ -307,7 +125,7 @@
       "effector_vel_mid": 0.0,
       "effector_vel_running": 100000.0,
       "goal_hit_in_window": 0.0,
-      "nn_hidden": 0.0,
+      "nn_hidden": 1e-05,
       "nn_hidden_derivative": 0.0,
       "nn_hidden_derivative_pre_go": 0.0,
       "nn_output": 1.0,
@@ -315,9 +133,7 @@
       "nn_output_pre_go": 0.0
     }
   },
-  "modal_launch": "not_requested",
-  "mode": "full_train",
-  "model_summary": {
+  "model_structure": {
     "adversarial_phase": "none",
     "analytical_delay_augmented_state_input": false,
     "certificate_claim": "I/O map certificate framing only; the output-feedback GRU is not fed the 48D delay-augmented analytical state and is not claimed to share same-coordinate gains with the analytical controller.",
@@ -326,22 +142,34 @@
     "controller_kind": "gru",
     "efferent": {
       "additive_motor_noise_std": 1e-05,
+      "force_filter_role": "coupled inside C&S LinearStateSpace dynamics",
       "force_filter_tau_s": 0.066,
-      "noise_timing": "pre_force_filter",
+      "noise_timing": "Feedbax efferent Channel immediately before LinearStateSpace.force",
       "signal_dependent_motor_noise_std": 0.02
     },
+    "exact_cs_linear_state_space": true,
     "feedback": {
+      "delay_source": "C&S 48D LinearStateSpace delay-augmented state",
       "delay_steps": 5,
       "noise_role": "sensory_feedback",
-      "noise_std": 0.004791329788133908
+      "noise_std": 0.004791329788133908,
+      "noise_timing": "Feedbax sensory Channel after 4D delayed LSS feedback selector"
     },
+    "fixed_plant_parameters": [
+      "nodes.mechanics.A",
+      "nodes.mechanics.B",
+      "nodes.mechanics.B_w"
+    ],
     "hidden_size": 180,
     "n_replicates": 5,
     "nominal_only": true,
+    "plant_backend": "cs_lss",
+    "plant_backend_warning": null,
     "plant_process": {
+      "epsilon_bridge": "sampled physical-process/load epsilon Task input bound to C&S LinearStateSpace mechanics.epsilon using the physical block of the released C&S process covariance",
       "force_noise_std": 0.03162277660168379,
-      "noise_timing": "post_force_filter_pre_mechanics",
-      "state_diffusion": "not_used"
+      "noise_timing": "mechanics.epsilon_sampled_task_input",
+      "state_diffusion": "mechanics.epsilon"
     },
     "population_structure": {
       "n_input_only": 0,
@@ -399,49 +227,20 @@
     },
     "stochastic_runtime": {
       "additive_motor_noise_std": 1e-05,
-      "command_runtime": "Feedbax efferent Channel before force_filter; additive and signal-dependent command noise are both pre-filter",
+      "command_runtime": "Feedbax efferent Channel immediately before LinearStateSpace.force; additive and signal-dependent motor noise are both command-channel noise",
       "plant_process_force_noise_std": 0.03162277660168379,
-      "plant_process_runtime": "RLRMP force-channel node immediately upstream of mechanics; inserted after force_filter and after plant_intervenor when present",
+      "plant_process_runtime": "Task-sampled physical-process/load epsilon bound to LinearStateSpace.epsilon",
       "sensory_noise_std": 0.004791329788133908,
-      "sensory_runtime": "Feedbax feedback Channel before controller",
+      "sensory_runtime": "Feedbax sensory Channel after the 4D delayed LSS feedback selector; the delay itself is represented by the C&S 48D LSS state",
       "signal_dependent_motor_noise_std": 0.02,
-      "state_diffusion": "not_used"
+      "state_diffusion": "mechanics.epsilon"
     },
     "trainable": [
       "nodes.net.hidden",
       "nodes.net.readout"
     ]
   },
-  "n_train_batches": 12000,
-  "nominal_only": true,
-  "provenance": {
-    "dependencies": {
-      "feedbax": "0.1.2",
-      "jax": "0.10.1",
-      "jax_cookbook": "unknown",
-      "modal": "1.4.3",
-      "rlrmp": "local"
-    },
-    "git": {},
-    "gpu": {
-      "device_count": 1,
-      "device_kinds": [
-        "NVIDIA A10"
-      ]
-    },
-    "modal": {
-      "app_name": "rlrmp-cs-stochastic-gru",
-      "launch": "not_requested",
-      "mode": "not_requested"
-    },
-    "runtime": {
-      "feedbax_version": "0.1.2",
-      "jax_version": "0.10.1"
-    }
-  },
   "schema_version": "rlrmp.cs_stochastic_gru.v1",
-  "seed": 42,
-  "spec_dir": "/vol/rlrmp-cs-stochastic-gru/results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty",
   "stochastic_preset": {
     "additive_motor_noise_std": 1e-05,
     "name": "cs2019-rollout",
@@ -490,7 +289,17 @@
       ]
     }
   },
-  "task_timing": {
+  "stochastic_runtime": {
+    "additive_motor_noise_std": 1e-05,
+    "command_runtime": "Feedbax efferent Channel immediately before LinearStateSpace.force; additive and signal-dependent motor noise are both command-channel noise",
+    "plant_process_force_noise_std": 0.03162277660168379,
+    "plant_process_runtime": "Task-sampled physical-process/load epsilon bound to LinearStateSpace.epsilon",
+    "sensory_noise_std": 0.004791329788133908,
+    "sensory_runtime": "Feedbax sensory Channel after the 4D delayed LSS feedback selector; the delay itself is represented by the C&S 48D LSS state",
+    "signal_dependent_motor_noise_std": 0.02,
+    "state_diffusion": "mechanics.epsilon"
+  },
+  "task_spec": {
     "control_cost_stages": 60,
     "coordinate_contract": "Feedbax SimpleReaches supplies mechanics.effector.pos targets in the same Cartesian metre coordinates as the point-mass effector state.",
     "epoch_len_ranges": [
@@ -507,8 +316,8 @@
     "eval_n_directions": 1,
     "eval_reach_length": 0.15,
     "extra_inputs": [
-      "sisu",
-      "intervene:plant_intervenor"
+      "input",
+      "epsilon"
     ],
     "fixed_init_pos": [
       0.0,
@@ -545,8 +354,7 @@
       ]
     ]
   },
-  "training_script": "scripts/train_cs_nominal_gru.py",
-  "training_summary": {
+  "training_spec": {
     "adversarial_phase": "none",
     "analytical_delay_augmented_state_input": false,
     "batch_size": 250,
@@ -554,10 +362,9 @@
     "controller_kind": "gru",
     "dt": 0.01,
     "method": "nominal-cs-gru",
-    "n_adversary_batches": 0,
     "n_replicates": 5,
-    "n_train_batches": 12000,
     "nominal_only": true,
+    "plant_backend": "cs_lss",
     "stochastic_preset": {
       "additive_motor_noise_std": 1e-05,
       "name": "cs2019-rollout",
@@ -608,18 +415,17 @@
     },
     "stochastic_runtime": {
       "additive_motor_noise_std": 1e-05,
-      "command_runtime": "Feedbax efferent Channel before force_filter; additive and signal-dependent command noise are both pre-filter",
+      "command_runtime": "Feedbax efferent Channel immediately before LinearStateSpace.force; additive and signal-dependent motor noise are both command-channel noise",
       "plant_process_force_noise_std": 0.03162277660168379,
-      "plant_process_runtime": "RLRMP force-channel node immediately upstream of mechanics; inserted after force_filter and after plant_intervenor when present",
+      "plant_process_runtime": "Task-sampled physical-process/load epsilon bound to LinearStateSpace.epsilon",
       "sensory_noise_std": 0.004791329788133908,
-      "sensory_runtime": "Feedbax feedback Channel before controller",
+      "sensory_runtime": "Feedbax sensory Channel after the 4D delayed LSS feedback selector; the delay itself is represented by the C&S 48D LSS state",
       "signal_dependent_motor_noise_std": 0.02,
-      "state_diffusion": "not_used"
+      "state_diffusion": "mechanics.epsilon"
     },
     "trainable": [
       "nodes.net.hidden",
       "nodes.net.readout"
-    ],
-    "training_mode": "nominal"
+    ]
   }
 }

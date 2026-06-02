@@ -249,6 +249,8 @@ results/**
 !results/**/model.artifact.manifest.json
 !results/**/migration_summary.json
 !results/**/migration_index.json
+# Analysis-note manifests:
+!results/**/notes/*manifest.json
 # config.json whitelisted at specific depths only — intentionally NOT `!results/**/config.json`.
 # The broad glob is depth-blind and would track bulk per-run configs from cloud providers
 # (runpod/, modal/, coreweave/, etc.) that land deep in the tree. Restrict to the three

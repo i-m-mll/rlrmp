@@ -3,17 +3,17 @@
     "rows": [
       {
         "certificate": {
-          "external_mismatch_ratio": 2.6275718218313364,
+          "external_mismatch_ratio": 640.2921606422148,
           "external_response_map_mismatches": {
             "disturbance_history_to_action_map_mismatch": null,
             "disturbance_history_to_output_map_mismatch": null,
             "disturbance_history_to_state_map_mismatch": null,
-            "measurement_history_to_action_map_mismatch": 1.1351354878713245,
+            "measurement_history_to_action_map_mismatch": 640.2921606422148,
             "measurement_history_to_output_map_mismatch": null,
-            "observation_history_to_action_map_mismatch": 1.1351354878713245
+            "observation_history_to_action_map_mismatch": 640.2921606422148
           },
-          "response_map_mismatch": 1.1351354878713245,
-          "state_weighted_action_mismatch": 2.6275718218313364
+          "response_map_mismatch": 640.2921606422148,
+          "state_weighted_action_mismatch": 0.8403870264287747
         },
         "classification": {
           "classification": "mixed",
@@ -27,8 +27,8 @@
             "external_certificate_evidence_available": true,
             "external_map_representation": {
               "external_map_mismatch_ratios": {
-                "measurement_history_to_action_map_mismatch": 1.1351354878713245,
-                "observation_history_to_action_map_mismatch": 1.1351354878713245
+                "measurement_history_to_action_map_mismatch": 640.2921606422148,
+                "observation_history_to_action_map_mismatch": 640.2921606422148
               },
               "failed_external_maps": [
                 "measurement_history_to_action_map_mismatch",
@@ -51,7 +51,7 @@
             "weak_subspace_dominates": false
           }
         },
-        "controller_label": "cs_stochastic_gru__no_hidden_penalty",
+        "controller_label": "lss_12k__no_hidden_penalty",
         "evaluation_lens": "nominal_clean",
         "gain_error_decomposition": {
           "reason": "Visited gain-error decomposition requires same-coordinate static gains.",
@@ -75,8 +75,8 @@
           "io_response_map_blocker": null,
           "io_response_map_status": "available_4d_observation_contract",
           "nn_hidden": 0.0,
-          "source_issue": "30f2313",
-          "source_run_id": "cs_stochastic_gru__no_hidden_penalty",
+          "source_issue": "3b2af27",
+          "source_run_id": "lss_12k__no_hidden_penalty",
           "stochastic_preset": {
             "additive_motor_noise_std": 1e-05,
             "name": "cs2019-rollout",
@@ -126,23 +126,23 @@
             }
           }
         },
-        "run_id": "cs_stochastic_gru__no_hidden_penalty__nominal_clean",
+        "run_id": "lss_12k__no_hidden_penalty__nominal_clean",
         "source_group": "cs_stochastic_gru",
         "source_standard_status": "partial_standard_certificate_blocked"
       },
       {
         "certificate": {
-          "external_mismatch_ratio": 1.4791098150959678,
+          "external_mismatch_ratio": 1.3380362882675572,
           "external_response_map_mismatches": {
             "disturbance_history_to_action_map_mismatch": null,
             "disturbance_history_to_output_map_mismatch": null,
             "disturbance_history_to_state_map_mismatch": null,
-            "measurement_history_to_action_map_mismatch": 1.1489027497470585,
+            "measurement_history_to_action_map_mismatch": 1.1301833071512992,
             "measurement_history_to_output_map_mismatch": null,
-            "observation_history_to_action_map_mismatch": 1.1489027497470585
+            "observation_history_to_action_map_mismatch": 1.1301833071512992
           },
-          "response_map_mismatch": 1.1489027497470585,
-          "state_weighted_action_mismatch": 1.4791098150959678
+          "response_map_mismatch": 1.1301833071512992,
+          "state_weighted_action_mismatch": 1.3380362882675572
         },
         "classification": {
           "classification": "mixed",
@@ -156,8 +156,8 @@
             "external_certificate_evidence_available": true,
             "external_map_representation": {
               "external_map_mismatch_ratios": {
-                "measurement_history_to_action_map_mismatch": 1.1489027497470585,
-                "observation_history_to_action_map_mismatch": 1.1489027497470585
+                "measurement_history_to_action_map_mismatch": 1.1301833071512992,
+                "observation_history_to_action_map_mismatch": 1.1301833071512992
               },
               "failed_external_maps": [
                 "measurement_history_to_action_map_mismatch",
@@ -180,7 +180,7 @@
             "weak_subspace_dominates": false
           }
         },
-        "controller_label": "cs_stochastic_gru__hidden_penalty",
+        "controller_label": "lss_12k__hidden_penalty",
         "evaluation_lens": "nominal_clean",
         "gain_error_decomposition": {
           "reason": "Visited gain-error decomposition requires same-coordinate static gains.",
@@ -204,8 +204,8 @@
           "io_response_map_blocker": null,
           "io_response_map_status": "available_4d_observation_contract",
           "nn_hidden": 1e-05,
-          "source_issue": "30f2313",
-          "source_run_id": "cs_stochastic_gru__hidden_penalty",
+          "source_issue": "3b2af27",
+          "source_run_id": "lss_12k__hidden_penalty",
           "stochastic_preset": {
             "additive_motor_noise_std": 1e-05,
             "name": "cs2019-rollout",
@@ -255,7 +255,7 @@
             }
           }
         },
-        "run_id": "cs_stochastic_gru__hidden_penalty__nominal_clean",
+        "run_id": "lss_12k__hidden_penalty__nominal_clean",
         "source_group": "cs_stochastic_gru",
         "source_standard_status": "partial_standard_certificate_blocked"
       }
@@ -267,9 +267,9 @@
     {
       "arrays": [],
       "artifacts": {
-        "run_spec": "results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/run.json",
-        "trained_model": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/trained_model.eqx",
-        "training_summary": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/training_summary.json"
+        "run_spec": "results/3b2af27/runs/lss_12k__no_hidden_penalty/run.json",
+        "trained_model": "_artifacts/3b2af27/runs/lss_12k__no_hidden_penalty/trained_model.eqx",
+        "training_summary": "_artifacts/3b2af27/runs/lss_12k__no_hidden_penalty/training_summary.json"
       },
       "certificate_components": [
         {
@@ -278,12 +278,12 @@
           "status": "available",
           "summary": {
             "action_label": "command",
-            "aggregate_delta_energy": 4417.795635533914,
-            "aggregate_mismatch_ratio": 2.6275718218313364,
+            "aggregate_delta_energy": 1412.961619800275,
+            "aggregate_mismatch_ratio": 0.8403870264287747,
             "aggregate_reference_energy": 1681.3225042331464,
-            "delta_rms": 8.580788265590671,
-            "mismatch_ratio_max": 99254.23216929192,
-            "mismatch_ratio_mean": 3281.8486317410293,
+            "delta_rms": 4.852768316126846,
+            "mismatch_ratio_max": 341909971.3741873,
+            "mismatch_ratio_mean": 9030669.049169963,
             "n_samples": 300,
             "reference_rms": 5.293584960801055,
             "state_label": "state"
@@ -305,8 +305,8 @@
             "learning_rate": 0.01,
             "n_train_batches": 12000,
             "optimizer": "adamw",
-            "training_batches_per_second": 5.9594124965329,
-            "training_duration_seconds": 2013.621310319
+            "training_batches_per_second": 2.8416284452427636,
+            "training_duration_seconds": 4222.930700208002
           }
         },
         {
@@ -314,8 +314,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 1.1351354878713245,
-            "delta_frobenius": 9239.866273276166,
+            "aggregate_mismatch_ratio": 640.2921606422148,
+            "delta_frobenius": 219447.64646188094,
             "input_label": "observation_history",
             "map_shape": [
               80,
@@ -324,8 +324,8 @@
               240
             ],
             "map_slices": 4800,
-            "mismatch_ratio_max": 2377231409528564.0,
-            "mismatch_ratio_mean": 92522449418039.14,
+            "mismatch_ratio_max": 5709463584967443.0,
+            "mismatch_ratio_mean": 106994487928817.81,
             "output_label": "action",
             "reference_frobenius": 8672.450609442227,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -336,8 +336,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 1.1351354878713245,
-            "delta_frobenius": 9239.866273276166,
+            "aggregate_mismatch_ratio": 640.2921606422148,
+            "delta_frobenius": 219447.64646188094,
             "input_label": "measurement_history",
             "map_shape": [
               80,
@@ -346,8 +346,8 @@
               240
             ],
             "map_slices": 4800,
-            "mismatch_ratio_max": 2377231409528564.0,
-            "mismatch_ratio_mean": 92522449418039.14,
+            "mismatch_ratio_max": 5709463584967443.0,
+            "mismatch_ratio_mean": 106994487928817.81,
             "output_label": "action",
             "reference_frobenius": 8672.450609442227,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -485,7 +485,7 @@
       },
       "spec": {
         "architecture": "gru",
-        "controller_label": "cs_stochastic_gru__no_hidden_penalty",
+        "controller_label": "lss_12k__no_hidden_penalty",
         "evaluation_lane": "deterministic",
         "gamma_factor": 1.4,
         "issue_id": "e6a32b8",
@@ -498,8 +498,8 @@
           "io_response_map_blocker": null,
           "io_response_map_status": "available_4d_observation_contract",
           "nn_hidden": 0.0,
-          "source_issue": "30f2313",
-          "source_run_id": "cs_stochastic_gru__no_hidden_penalty",
+          "source_issue": "3b2af27",
+          "source_run_id": "lss_12k__no_hidden_penalty",
           "stochastic_preset": {
             "additive_motor_noise_std": 1e-05,
             "name": "cs2019-rollout",
@@ -550,7 +550,7 @@
           }
         },
         "reference_controller": "analytical_lqr_kalman_output_feedback",
-        "run_id": "cs_stochastic_gru__no_hidden_penalty__nominal_clean",
+        "run_id": "lss_12k__no_hidden_penalty__nominal_clean",
         "seed": 42,
         "training_distribution": "nominal"
       },
@@ -559,9 +559,9 @@
     {
       "arrays": [],
       "artifacts": {
-        "run_spec": "results/30f2313/runs/cs_stochastic_gru__hidden_penalty/run.json",
-        "trained_model": "_artifacts/30f2313/runs/cs_stochastic_gru__hidden_penalty/trained_model.eqx",
-        "training_summary": "_artifacts/30f2313/runs/cs_stochastic_gru__hidden_penalty/training_summary.json"
+        "run_spec": "results/3b2af27/runs/lss_12k__hidden_penalty/run.json",
+        "trained_model": "_artifacts/3b2af27/runs/lss_12k__hidden_penalty/trained_model.eqx",
+        "training_summary": "_artifacts/3b2af27/runs/lss_12k__hidden_penalty/training_summary.json"
       },
       "certificate_components": [
         {
@@ -570,12 +570,12 @@
           "status": "available",
           "summary": {
             "action_label": "command",
-            "aggregate_delta_energy": 2486.8606183529787,
-            "aggregate_mismatch_ratio": 1.4791098150959678,
+            "aggregate_delta_energy": 2249.6705229448335,
+            "aggregate_mismatch_ratio": 1.3380362882675572,
             "aggregate_reference_energy": 1681.3225042331464,
-            "delta_rms": 6.437987027988612,
-            "mismatch_ratio_max": 374208.1622506849,
-            "mismatch_ratio_mean": 12277.117428399255,
+            "delta_rms": 6.123275979061145,
+            "mismatch_ratio_max": 2344795.531771104,
+            "mismatch_ratio_mean": 77287.44538106132,
             "n_samples": 300,
             "reference_rms": 5.293584960801055,
             "state_label": "state"
@@ -597,8 +597,8 @@
             "learning_rate": 0.01,
             "n_train_batches": 12000,
             "optimizer": "adamw",
-            "training_batches_per_second": 5.3397005112721905,
-            "training_duration_seconds": 2247.317049836
+            "training_batches_per_second": 2.7068373900592775,
+            "training_duration_seconds": 4433.217911083018
           }
         },
         {
@@ -606,8 +606,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 1.1489027497470585,
-            "delta_frobenius": 9295.729330288792,
+            "aggregate_mismatch_ratio": 1.1301833071512992,
+            "delta_frobenius": 9219.689165320802,
             "input_label": "observation_history",
             "map_shape": [
               80,
@@ -616,8 +616,8 @@
               240
             ],
             "map_slices": 4800,
-            "mismatch_ratio_max": 4052328454126812.0,
-            "mismatch_ratio_mean": 120382837299362.94,
+            "mismatch_ratio_max": 2064502162215543.8,
+            "mismatch_ratio_mean": 98429991015185.6,
             "output_label": "action",
             "reference_frobenius": 8672.450609442227,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -628,8 +628,8 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 1.1489027497470585,
-            "delta_frobenius": 9295.729330288792,
+            "aggregate_mismatch_ratio": 1.1301833071512992,
+            "delta_frobenius": 9219.689165320802,
             "input_label": "measurement_history",
             "map_shape": [
               80,
@@ -638,8 +638,8 @@
               240
             ],
             "map_slices": 4800,
-            "mismatch_ratio_max": 4052328454126812.0,
-            "mismatch_ratio_mean": 120382837299362.94,
+            "mismatch_ratio_max": 2064502162215543.8,
+            "mismatch_ratio_mean": 98429991015185.6,
             "output_label": "action",
             "reference_frobenius": 8672.450609442227,
             "response_map_schema": "finite_horizon_linear_v1"
@@ -777,7 +777,7 @@
       },
       "spec": {
         "architecture": "gru",
-        "controller_label": "cs_stochastic_gru__hidden_penalty",
+        "controller_label": "lss_12k__hidden_penalty",
         "evaluation_lane": "deterministic",
         "gamma_factor": 1.4,
         "issue_id": "e6a32b8",
@@ -790,8 +790,8 @@
           "io_response_map_blocker": null,
           "io_response_map_status": "available_4d_observation_contract",
           "nn_hidden": 1e-05,
-          "source_issue": "30f2313",
-          "source_run_id": "cs_stochastic_gru__hidden_penalty",
+          "source_issue": "3b2af27",
+          "source_run_id": "lss_12k__hidden_penalty",
           "stochastic_preset": {
             "additive_motor_noise_std": 1e-05,
             "name": "cs2019-rollout",
@@ -842,22 +842,22 @@
           }
         },
         "reference_controller": "analytical_lqr_kalman_output_feedback",
-        "run_id": "cs_stochastic_gru__hidden_penalty__nominal_clean",
+        "run_id": "lss_12k__hidden_penalty__nominal_clean",
         "seed": 42,
         "training_distribution": "nominal"
       },
       "status": "partial_standard_certificate_blocked"
     }
   ],
-  "scope": "Two locally synced 30f2313 C&S stochastic GRU pilot rows. The standard certificate is materialized in empirical_nonlinear mode: clean rollout action behavior is available, same-coordinate transition/value/Bellman components are not applicable, and response map rows remain missing until the observation projection contract is defined.",
+  "scope": "C&S stochastic GRU pilot rows from `3b2af27`. The standard certificate is materialized in empirical_nonlinear mode: clean rollout action behavior is available, same-coordinate transition/value/Bellman components are not applicable, and response map rows remain missing until the observation projection contract is defined.",
   "source_artifacts": {
-    "cs_stochastic_gru__hidden_penalty": "_artifacts/30f2313/runs/cs_stochastic_gru__hidden_penalty/trained_model.eqx",
-    "cs_stochastic_gru__no_hidden_penalty": "_artifacts/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/trained_model.eqx"
+    "lss_12k__hidden_penalty": "_artifacts/3b2af27/runs/lss_12k__hidden_penalty/trained_model.eqx",
+    "lss_12k__no_hidden_penalty": "_artifacts/3b2af27/runs/lss_12k__no_hidden_penalty/trained_model.eqx"
   },
-  "source_issue": "30f2313",
+  "source_issue": "3b2af27",
   "source_manifests": {
-    "cs_stochastic_gru__hidden_penalty": "results/30f2313/runs/cs_stochastic_gru__hidden_penalty/run.json",
-    "cs_stochastic_gru__no_hidden_penalty": "results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty/run.json"
+    "lss_12k__hidden_penalty": "results/3b2af27/runs/lss_12k__hidden_penalty/run.json",
+    "lss_12k__no_hidden_penalty": "results/3b2af27/runs/lss_12k__no_hidden_penalty/run.json"
   },
   "summary": {
     "blockers": [],

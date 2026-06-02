@@ -1,6 +1,6 @@
 # GRU Standard Certificates
 
-Issue: `e6a32b8`. Source run issue: `30f2313`.
+Issue: `e6a32b8`. Source run issue: `3b2af27`.
 
 This materialization applies the standard certificate umbrella contract to the
 two locally synced C&S stochastic GRU pilot rows. The rows use
@@ -18,5 +18,5 @@ _None for observation-to-action maps._
 
 | run | status | action mismatch | obs-action map | transition | value | Bellman | class |
 |---|---|---:|---:|---|---|---|---|
-| cs_stochastic_gru__no_hidden_penalty__nominal_clean | partial_standard_certificate_blocked | 2.62757 | 1.13514 | not_applicable | not_applicable | not_applicable | mixed |
-| cs_stochastic_gru__hidden_penalty__nominal_clean | partial_standard_certificate_blocked | 1.47911 | 1.1489 | not_applicable | not_applicable | not_applicable | mixed |
+| lss_12k__no_hidden_penalty__nominal_clean | partial_standard_certificate_blocked | 0.840387 | 640.292 | not_applicable | not_applicable | not_applicable | mixed |
+| lss_12k__hidden_penalty__nominal_clean | partial_standard_certificate_blocked | 1.33804 | 1.13018 | not_applicable | not_applicable | not_applicable | mixed |

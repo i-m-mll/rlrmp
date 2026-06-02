@@ -48,7 +48,11 @@ from rlrmp.feedbax_graph import (
     build_point_mass_sensorimotor_graph_spec,
     write_graph_spec_bundle,
 )
-from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.modules.training.part2 import (
+    CS_LSS_PLANT_BACKEND,
+    LEGACY_CAUSAL_PLANT_BACKEND,
+    setup_task_model_pair,
+)
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.run_specs import validate_nominal_gru_run_spec
 from rlrmp.stochastic_runtime import (
@@ -230,6 +234,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "motor_noise_std": 0.0,
             **preset.hps_fields(),
             "stochastic_preset": preset.name,
+            "plant_backend": str(args.plant_backend),
             "damping": 0.1,
             "tau_rise": 0.066,
             "population_structure": {
@@ -374,9 +379,24 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
     """Return the model/training summary embedded in ``run.json``."""
 
     pop = hps.model.population_structure
-    stochastic_runtime = graphspec_noise_contract(stochastic_runtime_config_from_model(hps.model))
+    stochastic_runtime = _stochastic_runtime_contract(hps)
+    plant_backend = str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND))
+    exact_lss = plant_backend == CS_LSS_PLANT_BACKEND
     return {
         "controller_kind": "gru",
+        "plant_backend": plant_backend,
+        "plant_backend_warning": (
+            "legacy causal SimpleFeedback has a same-step force-filter-to-mechanics "
+            "timing problem"
+            if plant_backend == LEGACY_CAUSAL_PLANT_BACKEND
+            else None
+        ),
+        "exact_cs_linear_state_space": exact_lss,
+        "fixed_plant_parameters": (
+            ["nodes.mechanics.A", "nodes.mechanics.B", "nodes.mechanics.B_w"]
+            if exact_lss
+            else []
+        ),
         "hidden_size": int(hps.model.hidden_size),
         "n_replicates": int(hps.model.n_replicates),
         "trainable": ["nodes.net.hidden", "nodes.net.readout"],
@@ -390,19 +410,49 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
             "delay_steps": int(hps.model.feedback_delay_steps),
             "noise_std": stochastic_runtime["sensory_noise_std"],
             "noise_role": "sensory_feedback",
+            "noise_timing": (
+                "Feedbax sensory Channel after 4D delayed LSS feedback selector"
+                if exact_lss
+                else "Feedbax feedback Channel before controller"
+            ),
+            "delay_source": (
+                "C&S 48D LinearStateSpace delay-augmented state"
+                if exact_lss
+                else "Feedbax feedback Channel queue"
+            ),
         },
         "efferent": {
             "additive_motor_noise_std": stochastic_runtime["additive_motor_noise_std"],
             "signal_dependent_motor_noise_std": (
                 stochastic_runtime["signal_dependent_motor_noise_std"]
             ),
-            "noise_timing": "pre_force_filter",
+            "noise_timing": (
+                "Feedbax efferent Channel immediately before LinearStateSpace.force"
+                if exact_lss
+                else "pre_force_filter"
+            ),
             "force_filter_tau_s": float(hps.model.tau_rise),
+            "force_filter_role": (
+                "coupled inside C&S LinearStateSpace dynamics"
+                if exact_lss
+                else "separate Feedbax FirstOrderFilter node"
+            ),
         },
         "plant_process": {
             "force_noise_std": stochastic_runtime["plant_process_force_noise_std"],
-            "noise_timing": "post_force_filter_pre_mechanics",
-            "state_diffusion": "not_used",
+            "noise_timing": (
+                "mechanics.epsilon_sampled_task_input"
+                if exact_lss
+                else "post_force_filter_pre_mechanics"
+            ),
+            "state_diffusion": "mechanics.epsilon" if exact_lss else "not_used",
+            "epsilon_bridge": (
+                "sampled physical-process/load epsilon Task input bound to C&S "
+                "LinearStateSpace mechanics.epsilon using the physical block of "
+                "the released C&S process covariance"
+                if exact_lss
+                else "not_used"
+            ),
         },
         "stochastic_runtime": stochastic_runtime,
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
@@ -434,15 +484,14 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "batch_size": int(hps.batch_size),
         "n_replicates": int(hps.model.n_replicates),
         "controller_kind": "gru",
+        "plant_backend": str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND)),
         "trainable": ["nodes.net.hidden", "nodes.net.readout"],
         "method": str(hps.method),
         "nominal_only": True,
         "adversarial_phase": "none",
         "certificate_lens": "input_output_map_certificate",
         "analytical_delay_augmented_state_input": False,
-        "stochastic_runtime": graphspec_noise_contract(
-            stochastic_runtime_config_from_model(hps.model)
-        ),
+        "stochastic_runtime": _stochastic_runtime_contract(hps),
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
     }
     manifest = {
@@ -469,9 +518,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "game_card_provenance": build_game_card_provenance(),
         "model_structure": build_model_structure_summary(hps),
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
-        "stochastic_runtime": graphspec_noise_contract(
-            stochastic_runtime_config_from_model(hps.model)
-        ),
+        "stochastic_runtime": _stochastic_runtime_contract(hps),
     }
     return RLRMPFeedbaxGraphBundle(
         graph_spec=graph_spec,
@@ -480,6 +527,27 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         training_spec=training_spec,
         manifest=manifest,
     )
+
+
+def _stochastic_runtime_contract(hps: TreeNamespace) -> dict[str, Any]:
+    contract = graphspec_noise_contract(stochastic_runtime_config_from_model(hps.model))
+    if str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND)) != CS_LSS_PLANT_BACKEND:
+        return contract
+    return {
+        **contract,
+        "sensory_runtime": (
+            "Feedbax sensory Channel after the 4D delayed LSS feedback selector; "
+            "the delay itself is represented by the C&S 48D LSS state"
+        ),
+        "command_runtime": (
+            "Feedbax efferent Channel immediately before LinearStateSpace.force; "
+            "additive and signal-dependent motor noise are both command-channel noise"
+        ),
+        "plant_process_runtime": (
+            "Task-sampled physical-process/load epsilon bound to LinearStateSpace.epsilon"
+        ),
+        "state_diffusion": "mechanics.epsilon",
+    }
 
 
 def build_run_spec(
@@ -494,7 +562,7 @@ def build_run_spec(
     hps = build_hps(args)
     return {
         "schema_version": SCHEMA_VERSION,
-        "issue": ISSUE_ID,
+        "issue": str(args.issue),
         "training_script": "scripts/train_cs_nominal_gru.py",
         "mode": _run_mode(args),
         "artifact_output_dir": str(output_dir),
@@ -687,7 +755,7 @@ def run_full_training(
         fbx_save(final_history_path, state.history)
     final_summary = {
         "schema_version": f"{SCHEMA_VERSION}.training.v1",
-        "issue": ISSUE_ID,
+        "issue": str(args.issue),
         "completed_batches": state.completed_batches,
         "n_train_batches": int(args.n_train_batches),
         "training_duration_seconds": training_duration_seconds,
@@ -739,7 +807,7 @@ def save_training_checkpoint(
         fbx_save(tmp / "history.eqx", state.history)
     metadata = {
         "schema_version": f"{SCHEMA_VERSION}.checkpoint.v1",
-        "issue": ISSUE_ID,
+        "issue": str(args.issue),
         "completed_batches": state.completed_batches,
         "n_train_batches": int(args.n_train_batches),
         "checkpoint_interval_batches": int(args.checkpoint_interval_batches),
@@ -811,12 +879,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--spec-dir", default=None)
+    parser.add_argument("--issue", default=ISSUE_ID)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--n-train-batches", type=int, default=12000)
     parser.add_argument("--batch-size", type=int, default=250)
     parser.add_argument("--controller-lr", type=float, default=1e-2)
     parser.add_argument("--n-replicates", type=int, default=5)
     parser.add_argument("--hidden-size", type=int, default=180)
+    parser.add_argument(
+        "--plant-backend",
+        choices=[CS_LSS_PLANT_BACKEND, LEGACY_CAUSAL_PLANT_BACKEND],
+        default=CS_LSS_PLANT_BACKEND,
+        help=(
+            "Plant backend for nominal GRU training. The default uses exact C&S "
+            "LinearStateSpace mechanics; legacy_causal_simplefeedback preserves the "
+            "old point-mass/force-filter path and emits a timing warning."
+        ),
+    )
     parser.add_argument(
         "--stochastic-preset",
         choices=[DEFAULT_STOCHASTIC_PRESET],
@@ -1018,6 +1097,7 @@ def _remove_tree(path: Path) -> None:
 
 
 def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
+    plant_backend = str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND))
     return {
         "type": str(hps.task.type),
         "n_steps": int(hps.task.n_steps),
@@ -1047,7 +1127,11 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
             "start_transition": 0,
             "end_transition": int(hps.task.n_steps) - 2,
         },
-        "extra_inputs": ["sisu", f"intervene:{PLANT_INTERVENOR_LABEL}"],
+        "extra_inputs": (
+            ["input", "epsilon"]
+            if plant_backend == CS_LSS_PLANT_BACKEND
+            else ["sisu", f"intervene:{PLANT_INTERVENOR_LABEL}"]
+        ),
     }
 
 
@@ -1111,11 +1195,23 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
 def _fidelity_status(hps: TreeNamespace) -> dict[str, Any]:
     nn_hidden = float(hps.loss.weights.nn_hidden)
     exact = nn_hidden == 0.0
+    plant_backend = str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND))
+    exact_lss = plant_backend == CS_LSS_PLANT_BACKEND
     return {
         "objective": "cs_fidelity_stochastic_rollout",
         "exact_fidelity": False,
         "exact_objective_terms": exact,
         "exact_stochastic_rollout": False,
+        "exact_stochastic_noise_sources": exact_lss,
+        "exact_plant_matrices": exact_lss,
+        "plant_backend": plant_backend,
+        "temporary_stochastic_bridge": (
+            "temporary RLRMP LSS wrapper implements sensory Channel, additive and "
+            "signal-dependent motor Channel, and sampled physical-process mechanics.epsilon; "
+            "future Feedbax acausal/ODE plant support should subsume this wrapper"
+            if exact_lss
+            else None
+        ),
         "stochastic_preset": str(hps.model.stochastic_preset),
         "stochastic_projection": (
             "Feedbax GRU rollout uses C&S-shaped sensory, command, signal-dependent, "

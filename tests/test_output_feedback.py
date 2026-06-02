@@ -20,8 +20,10 @@ from rlrmp.analysis.output_feedback import (
     gamma_sweep_summary,
     kalman_estimator_joint_matrices,
     make_cs_output_feedback_initial_state,
+    measurement_covariance,
     output_feedback_cost,
     output_feedback_lqr_bellman_objective,
+    position_velocity_observation_config,
     robust_estimator_covariances,
     robust_output_feedback_feasibility_diagnostics,
     robust_estimator_fixed_adversary_policy,
@@ -53,6 +55,20 @@ def test_delayed_observation_matrix_selects_last_physical_block() -> None:
     assert H.shape == (8, 48)
     assert jnp.allclose(H[:, :40], 0.0)
     assert jnp.allclose(H[:, 40:48], jnp.eye(8))
+
+
+def test_position_velocity_observation_matrix_selects_oldest_4d_feedback_block() -> None:
+    reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
+    config = position_velocity_observation_config(reference.plant)
+    H = delayed_observation_matrix(reference.plant, config)
+    R_obs = measurement_covariance(reference.plant, config)
+
+    assert config.observed_physical_indices == (0, 1, 2, 3)
+    assert H.shape == (4, 48)
+    assert R_obs.shape == (4, 4)
+    assert jnp.allclose(H[:, :40], 0.0)
+    assert jnp.allclose(H[:, 40:44], jnp.eye(4))
+    assert jnp.allclose(H[:, 44:48], 0.0)
 
 
 def test_kalman_estimator_clean_lqr_matches_true_state_rollout() -> None:
