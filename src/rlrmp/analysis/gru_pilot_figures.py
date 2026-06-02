@@ -494,10 +494,11 @@ def write_velocity_figure(
     if not profiles:
         raise ValueError("At least one velocity profile is required")
     fig = make_subplots(
-        rows=1,
-        cols=len(profiles),
-        shared_yaxes=True,
+        rows=len(profiles),
+        cols=1,
+        shared_xaxes=True,
         subplot_titles=[profile.label for profile in profiles],
+        vertical_spacing=0.10,
     )
     colors = ("#2563eb", "#dc2626", "#059669", "#7c3aed", "#ea580c")
     for idx, profile in enumerate(profiles, start=1):
@@ -515,8 +516,8 @@ def write_velocity_figure(
                 name=f"{profile.label} mean +/- 1 SD",
                 showlegend=idx == 1,
             ),
-            row=1,
-            col=idx,
+            row=idx,
+            col=1,
         )
         fig.add_trace(
             go.Scatter(
@@ -527,8 +528,8 @@ def write_velocity_figure(
                 name=profile.label,
                 showlegend=True,
             ),
-            row=1,
-            col=idx,
+            row=idx,
+            col=1,
         )
         for reference in references:
             upper = reference.forward_velocity + reference.forward_velocity_std
@@ -544,8 +545,8 @@ def write_velocity_figure(
                     name=f"{reference.label} mean +/- 1 SD",
                     showlegend=idx == 1,
                 ),
-                row=1,
-                col=idx,
+                row=idx,
+                col=1,
             )
             fig.add_trace(
                 go.Scatter(
@@ -560,17 +561,17 @@ def write_velocity_figure(
                     name=reference.label,
                     showlegend=idx == 1,
                 ),
-                row=1,
-                col=idx,
+                row=idx,
+                col=1,
             )
     fig.update_layout(
         title="GRU pilot stochastic forward velocity",
-        width=max(520, 430 * len(profiles)),
-        height=420,
+        width=780,
+        height=max(420, 300 * len(profiles)),
         margin={"l": 70, "r": 20, "t": 60, "b": 60},
         hovermode="x unified",
     )
-    fig.update_xaxes(title_text="Time (s)")
+    fig.update_xaxes(title_text="Time (s)", row=len(profiles), col=1)
     fig.update_yaxes(title_text="Forward velocity (m/s)", zeroline=True)
     path = output_dir / "forward_velocity_profiles_stochastic.html"
     fig.write_html(path)
