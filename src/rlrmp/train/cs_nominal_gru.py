@@ -219,6 +219,9 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         "n_batches_baseline": 0,
         "batch_size": int(args.batch_size),
         "learning_rate_0": float(args.controller_lr),
+        "gradient_clip_norm": (
+            None if args.gradient_clip_norm is None else float(args.gradient_clip_norm)
+        ),
         "n_scaleup_batches": 0,
         "constant_lr_iterations": 0,
         "cosine_annealing_alpha": 1.0,
@@ -529,6 +532,38 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
     )
 
 
+def _should_write_graph_spec(hps: TreeNamespace) -> bool:
+    return str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND)) != CS_LSS_PLANT_BACKEND
+
+
+def _write_graph_bundle_for_backend(
+    hps: TreeNamespace,
+    graph_bundle: RLRMPFeedbaxGraphBundle,
+    spec_dir: Path,
+) -> Path | None:
+    manifest_path = spec_dir / "model.graph.manifest.json"
+    if _should_write_graph_spec(hps):
+        return write_graph_spec_bundle(graph_bundle, spec_dir)
+    manifest = {
+        **graph_bundle.manifest,
+        "graph_export": {
+            "status": "unavailable",
+            "reason": (
+                "C&S cs_lss runs use LinearStateSpace mechanics and delayed "
+                "position/velocity feedback; the current compatibility GraphSpec "
+                "builder serializes the legacy FirstOrderFilter -> PointMass path."
+            ),
+            "authoritative_sources": [
+                "run.json.model_summary",
+                "run.json.hps.model.plant_backend",
+                "trained_model.eqx",
+            ],
+        },
+    }
+    manifest_path.write_text(_json_dumps(manifest), encoding="utf-8")
+    return None
+
+
 def _stochastic_runtime_contract(hps: TreeNamespace) -> dict[str, Any]:
     contract = graphspec_noise_contract(stochastic_runtime_config_from_model(hps.model))
     if str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND)) != CS_LSS_PLANT_BACKEND:
@@ -575,6 +610,7 @@ def build_run_spec(
         "n_train_batches": int(args.n_train_batches),
         "batch_size": int(args.batch_size),
         "controller_lr": float(args.controller_lr),
+        "optimizer": _optimizer_metadata(args),
         "checkpointing": _checkpoint_metadata(args, output_dir),
         "fidelity_status": _fidelity_status(hps),
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
@@ -620,24 +656,25 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
     )
 
     if args.dry_run:
+        would_write = [str(spec_dir / "run.json"), str(spec_dir / "model.graph.manifest.json")]
+        if _should_write_graph_spec(hps):
+            would_write.append(str(spec_dir / "model.graph.json"))
         return {
             "run_spec": payload,
-            "would_write": [
-                str(spec_dir / "run.json"),
-                str(spec_dir / "model.graph.json"),
-                str(spec_dir / "model.graph.manifest.json"),
-            ],
+            "would_write": would_write,
         }
 
     mkdir_p(spec_dir)
-    graph_path = write_graph_spec_bundle(graph_bundle, spec_dir)
-    payload["feedbax_graph"] = graph_bundle.to_run_metadata(graph_spec_path=graph_path.name)
+    graph_path = _write_graph_bundle_for_backend(hps, graph_bundle, spec_dir)
+    payload["feedbax_graph"] = graph_bundle.to_run_metadata(
+        graph_spec_path=None if graph_path is None else graph_path.name,
+    )
     validate_nominal_gru_run_spec(payload, spec_dir=spec_dir)
     run_path = spec_dir / "run.json"
     run_path.write_text(_json_dumps(payload), encoding="utf-8")
     return {
         "run_spec_path": str(run_path),
-        "graph_spec_path": str(graph_path),
+        "graph_spec_path": None if graph_path is None else str(graph_path),
         "graph_manifest_path": str(spec_dir / "model.graph.manifest.json"),
     }
 
@@ -884,6 +921,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--n-train-batches", type=int, default=12000)
     parser.add_argument("--batch-size", type=int, default=250)
     parser.add_argument("--controller-lr", type=float, default=1e-2)
+    parser.add_argument("--gradient-clip-norm", type=float, default=None)
     parser.add_argument("--n-replicates", type=int, default=5)
     parser.add_argument("--hidden-size", type=int, default=180)
     parser.add_argument(
@@ -990,9 +1028,15 @@ def _build_trainer(hps: TreeNamespace) -> TaskTrainer:
         total_steps=int(hps.n_batches_condition),
         alpha=float(hps.cosine_annealing_alpha),
     )
-    optimizer = optax.inject_hyperparams(
-        partial(optax.adamw, weight_decay=float(hps.weight_decay))
-    )(learning_rate=schedule)
+    transforms = []
+    if hps.gradient_clip_norm is not None:
+        transforms.append(optax.clip_by_global_norm(float(hps.gradient_clip_norm)))
+    transforms.append(
+        optax.inject_hyperparams(
+            partial(optax.adamw, weight_decay=float(hps.weight_decay))
+        )(learning_rate=schedule)
+    )
+    optimizer = optax.chain(*transforms)
     return TaskTrainer(optimizer=optimizer, checkpointing=False)
 
 
@@ -1055,6 +1099,23 @@ def _checkpoint_metadata(args: argparse.Namespace, output_dir: Path) -> dict[str
             "history.eqx",
             "metadata.json",
         ],
+    }
+
+
+def _optimizer_metadata(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "name": "adamw",
+        "learning_rate_0": float(args.controller_lr),
+        "schedule": "delayed_cosine",
+        "constant_lr_iterations": 0,
+        "cosine_annealing_alpha": 1.0,
+        "weight_decay": 0.0,
+        "gradient_clip_norm": (
+            None if args.gradient_clip_norm is None else float(args.gradient_clip_norm)
+        ),
+        "gradient_clip_kind": (
+            None if args.gradient_clip_norm is None else "global_norm"
+        ),
     }
 
 
@@ -1194,13 +1255,54 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
 
 def _fidelity_status(hps: TreeNamespace) -> dict[str, Any]:
     nn_hidden = float(hps.loss.weights.nn_hidden)
-    exact = nn_hidden == 0.0
+    no_extra_regularizer = nn_hidden == 0.0
     plant_backend = str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND))
     exact_lss = plant_backend == CS_LSS_PLANT_BACKEND
+    omitted_terms = [
+        {
+            "term": "force_filter_state_cost",
+            "analytical_role": "unit-weight force/filter state cost in the C&S 8D schedule",
+            "status": "not_synthesized_in_feedbax_gru_loss",
+        },
+        {
+            "term": "disturbance_integrator_state_cost",
+            "analytical_role": "unit-weight disturbance-integrator state cost in the C&S 8D schedule",
+            "status": "not_synthesized_in_feedbax_gru_loss",
+        },
+    ]
+    extra_terms = (
+        []
+        if no_extra_regularizer
+        else [
+            {
+                "term": "nn_hidden",
+                "scale": nn_hidden,
+                "status": "auxiliary_regularizer_not_in_analytical_objective",
+            }
+        ]
+    )
     return {
         "objective": "cs_fidelity_stochastic_rollout",
         "exact_fidelity": False,
-        "exact_objective_terms": exact,
+        "exact_objective_terms": False,
+        "exact_objective_terms_scope": (
+            "false because force/filter-state and disturbance-integrator state costs from "
+            "the analytical C&S schedule are omitted from the current Feedbax GRU loss contract"
+        ),
+        "objective_fidelity": {
+            "implemented_terms": [
+                "running_position_cs_eq15_power6",
+                "terminal_position",
+                "running_velocity_cs_eq15_power6",
+                "terminal_velocity",
+                "command_quadratic_nn_output",
+            ],
+            "omitted_terms": omitted_terms,
+            "extra_terms": extra_terms,
+            "selection_policy": (
+                "rollout validation loss only; analytical action and I/O metrics are audit-only"
+            ),
+        },
         "exact_stochastic_rollout": False,
         "exact_stochastic_noise_sources": exact_lss,
         "exact_plant_matrices": exact_lss,
@@ -1218,8 +1320,8 @@ def _fidelity_status(hps: TreeNamespace) -> dict[str, Any]:
             "and plant/load force noise channels without feeding the 48D "
             "delay-augmented analytical state to the GRU."
         ),
-        "regularized_pair": not exact,
-        "regularizer": "none" if exact else "nn_hidden",
+        "regularized_pair": not no_extra_regularizer,
+        "regularizer": "none" if no_extra_regularizer else "nn_hidden",
         "nn_hidden": nn_hidden,
         "certificate_lens": "input_output_map_certificate",
         "same_coordinate_gain_certificate": False,

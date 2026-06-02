@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Sequence
 
@@ -40,7 +41,7 @@ def test_build_plan_uses_role_based_repo_layout(tmp_path: Path) -> None:
         "--force",
         MODAL_VOLUME_NAME,
         "results/30f2313/runs/cs_stochastic_gru__no_hidden_penalty",
-        str(plan.local_spec_dir),
+        str(plan.local_spec_dir.parent),
     ]
 
 
@@ -56,7 +57,6 @@ def test_sync_pulls_specs_artifacts_and_validates_run_spec(tmp_path: Path) -> No
         else:
             _write_complete_artifacts(
                 destination
-                / "cs_stochastic_gru__no_hidden_penalty"
                 / "cs_stochastic_gru__no_hidden_penalty"
             )
         return 0
@@ -128,7 +128,6 @@ def test_sync_rejects_missing_graph_manifest(tmp_path: Path) -> None:
             nested = destination / "missing_manifest"
             nested.mkdir(parents=True)
             (nested / "run.json").write_text("{}", encoding="utf-8")
-            (nested / "model.graph.json").write_text("{}", encoding="utf-8")
         else:
             _write_complete_artifacts(destination / "missing_manifest")
         return 0
@@ -141,6 +140,26 @@ def test_sync_rejects_missing_graph_manifest(tmp_path: Path) -> None:
             runner=runner,
             run_spec_validator=lambda path: None,
         )
+
+
+def test_sync_accepts_declared_unavailable_graph_export(tmp_path: Path) -> None:
+    def runner(command: Sequence[str]) -> int:
+        destination = Path(command[6])
+        if command[5].startswith("results/"):
+            _write_complete_specs(destination / "no_graph", graph_available=False)
+        else:
+            _write_complete_artifacts(destination / "no_graph")
+        return 0
+
+    results = sync_modal_run_artifacts(
+        issue="3e66604",
+        runs=["no_graph"],
+        repo_root=tmp_path,
+        runner=runner,
+        run_spec_validator=lambda path: None,
+    )
+
+    assert results[0].validated is True
 
 
 def test_sync_rejects_missing_bulk_artifact(tmp_path: Path) -> None:
@@ -201,10 +220,18 @@ def test_nonzero_modal_command_aborts_sync(tmp_path: Path) -> None:
         )
 
 
-def _write_complete_specs(destination: Path) -> None:
+def _write_complete_specs(destination: Path, *, graph_available: bool = True) -> None:
     destination.mkdir(parents=True)
-    (destination / "run.json").write_text("{}", encoding="utf-8")
-    (destination / "model.graph.json").write_text("{}", encoding="utf-8")
+    feedbax_graph = {
+        "graph_spec_path": "model.graph.json" if graph_available else None,
+        "graph_export_status": "available" if graph_available else "unavailable",
+    }
+    (destination / "run.json").write_text(
+        json.dumps({"feedbax_graph": feedbax_graph}),
+        encoding="utf-8",
+    )
+    if graph_available:
+        (destination / "model.graph.json").write_text("{}", encoding="utf-8")
     (destination / "model.graph.manifest.json").write_text("{}", encoding="utf-8")
 
 

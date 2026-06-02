@@ -49,7 +49,7 @@ class RLRMPFeedbaxGraphBundle:
     def to_run_metadata(
         self,
         *,
-        graph_spec_path: str = "model.graph.json",
+        graph_spec_path: str | None = "model.graph.json",
         manifest_path: str = "model.graph.manifest.json",
     ) -> dict[str, Any]:
         """Return the compact metadata embedded into ``run.json``."""
@@ -58,6 +58,7 @@ class RLRMPFeedbaxGraphBundle:
             "schema_version": SCHEMA_VERSION,
             "graph_spec_path": graph_spec_path,
             "manifest_path": manifest_path,
+            "graph_export_status": "unavailable" if graph_spec_path is None else "available",
             "execution_backend": EXECUTION_BACKEND,
             "component_policy": self.manifest["component_policy"],
             "legacy_loader": self.manifest["legacy_loader"],

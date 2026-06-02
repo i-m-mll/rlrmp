@@ -52,6 +52,7 @@ def _valid_nominal_gru_run_spec() -> dict:
             "schema_version": "rlrmp.feedbax_graph.v1",
             "graph_spec_path": "model.graph.json",
             "manifest_path": "model.graph.manifest.json",
+            "graph_export_status": "available",
         },
     }
 
@@ -94,6 +95,15 @@ def test_nominal_gru_run_spec_requires_adjacent_graph_sidecars(tmp_path) -> None
         validate_nominal_gru_run_spec(run_spec, spec_dir=tmp_path)
 
     (tmp_path / "model.graph.manifest.json").write_text("{}", encoding="utf-8")
+    validate_nominal_gru_run_spec(run_spec, spec_dir=tmp_path)
+
+
+def test_nominal_gru_run_spec_allows_declared_unavailable_graph_export(tmp_path) -> None:
+    run_spec = _valid_nominal_gru_run_spec()
+    run_spec["feedbax_graph"]["graph_spec_path"] = None
+    run_spec["feedbax_graph"]["graph_export_status"] = "unavailable"
+    (tmp_path / "model.graph.manifest.json").write_text("{}", encoding="utf-8")
+
     validate_nominal_gru_run_spec(run_spec, spec_dir=tmp_path)
 
 

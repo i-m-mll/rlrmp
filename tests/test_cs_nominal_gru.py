@@ -209,7 +209,8 @@ def test_dry_run_does_not_write_files(tmp_path: Path) -> None:
     assert result["run_spec"]["mode"] == "dry_run"
     assert result["run_spec"]["nominal_only"] is True
     assert result["run_spec"]["fidelity_status"]["exact_fidelity"] is False
-    assert result["run_spec"]["fidelity_status"]["exact_objective_terms"] is True
+    assert result["run_spec"]["fidelity_status"]["exact_objective_terms"] is False
+    assert result["run_spec"]["fidelity_status"]["objective_fidelity"]["omitted_terms"]
     assert result["run_spec"]["fidelity_status"]["exact_stochastic_rollout"] is False
     assert result["run_spec"]["fidelity_status"]["exact_stochastic_noise_sources"] is True
     assert result["run_spec"]["fidelity_status"]["exact_plant_matrices"] is True
@@ -221,6 +222,7 @@ def test_dry_run_does_not_write_files(tmp_path: Path) -> None:
         result["run_spec"]["fidelity_status"]["temporary_stochastic_bridge"]
     )
     assert result["run_spec"]["fidelity_status"]["nn_hidden"] == 0.0
+    assert result["run_spec"]["optimizer"]["schedule"] == "delayed_cosine"
     assert not spec_dir.exists()
 
 
@@ -237,6 +239,7 @@ def test_regularized_run_metadata_marks_non_exact_status(tmp_path: Path) -> None
     fidelity = result["run_spec"]["fidelity_status"]
     assert fidelity["exact_fidelity"] is False
     assert fidelity["exact_objective_terms"] is False
+    assert fidelity["objective_fidelity"]["extra_terms"][0]["term"] == "nn_hidden"
     assert fidelity["regularized_pair"] is True
     assert fidelity["regularizer"] == "nn_hidden"
     assert fidelity["nn_hidden"] == 1e-5
@@ -254,20 +257,24 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     result = write_run_spec(args)
 
     run_path = Path(result["run_spec_path"])
-    graph_path = Path(result["graph_spec_path"])
+    graph_path = result["graph_spec_path"]
     manifest_path = Path(result["graph_manifest_path"])
     payload = json.loads(run_path.read_text())
     manifest = json.loads(manifest_path.read_text())
 
     assert run_path == spec_dir / "run.json"
-    assert graph_path == spec_dir / "model.graph.json"
+    assert graph_path is None
     assert manifest_path == spec_dir / "model.graph.manifest.json"
+    assert not (spec_dir / "model.graph.json").exists()
     assert payload["schema_version"] == "rlrmp.cs_stochastic_gru.v1"
     assert payload["issue"] == "30f2313"
     assert payload["model_summary"]["hidden_size"] == 4
     assert payload["model_summary"]["controller_kind"] == "gru"
     assert payload["model_summary"]["plant_backend"] == CS_LSS_PLANT_BACKEND
     assert payload["model_summary"]["exact_cs_linear_state_space"] is True
+    assert payload["feedbax_graph"]["graph_spec_path"] is None
+    assert payload["feedbax_graph"]["graph_export_status"] == "unavailable"
+    assert manifest["graph_export"]["status"] == "unavailable"
     assert payload["stochastic_preset"]["name"] == DEFAULT_STOCHASTIC_PRESET
     assert payload["stochastic_preset"]["source_contract"]["contract"] == (
         "cs_released_stochastic_v1"

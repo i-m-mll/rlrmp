@@ -674,7 +674,7 @@ def render_gru_standard_markdown(result: dict[str, Any]) -> str:
 Issue: `{result["issue"]}`. Source run issue: `{result["source_issue"]}`.
 
 This materialization applies the standard certificate umbrella contract to the
-two locally synced C&S stochastic GRU pilot rows. The rows use
+locally synced C&S stochastic GRU pilot rows. The rows use
 `empirical_nonlinear` mode. Clean rollout action behavior is available;
 same-coordinate transition, value, and Bellman components are explicitly
 `not_applicable`. Observation-to-action response-map components are evaluated
