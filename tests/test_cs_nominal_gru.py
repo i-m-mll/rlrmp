@@ -324,6 +324,22 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     assert REPO_ROOT not in output_dir.parents
 
 
+def test_write_run_spec_honors_issue_override(tmp_path: Path) -> None:
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        smoke=True,
+        issue="3b2af27",
+    )
+
+    result = write_run_spec(args)
+    payload = json.loads(Path(result["run_spec_path"]).read_text())
+
+    assert payload["issue"] == "3b2af27"
+
+
 def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Path) -> None:
     output_dir = tmp_path / "bulk"
     spec_dir = tmp_path / "spec"

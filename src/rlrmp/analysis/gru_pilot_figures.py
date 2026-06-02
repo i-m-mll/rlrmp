@@ -375,6 +375,9 @@ def initial_effector_velocity(trial_specs: Any) -> jnp.ndarray:
         velocity = getattr(init_state, "vel", None)
         if velocity is not None:
             return velocity
+        shape = getattr(init_state, "shape", None)
+        if shape is not None and len(shape) >= 1 and shape[-1] >= 4:
+            return jnp.asarray(init_state)[..., 2:4]
     raise ValueError("Trial spec does not include an effector velocity initial state")
 
 

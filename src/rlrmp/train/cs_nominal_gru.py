@@ -562,7 +562,7 @@ def build_run_spec(
     hps = build_hps(args)
     return {
         "schema_version": SCHEMA_VERSION,
-        "issue": ISSUE_ID,
+        "issue": str(args.issue),
         "training_script": "scripts/train_cs_nominal_gru.py",
         "mode": _run_mode(args),
         "artifact_output_dir": str(output_dir),
@@ -755,7 +755,7 @@ def run_full_training(
         fbx_save(final_history_path, state.history)
     final_summary = {
         "schema_version": f"{SCHEMA_VERSION}.training.v1",
-        "issue": ISSUE_ID,
+        "issue": str(args.issue),
         "completed_batches": state.completed_batches,
         "n_train_batches": int(args.n_train_batches),
         "training_duration_seconds": training_duration_seconds,
@@ -807,7 +807,7 @@ def save_training_checkpoint(
         fbx_save(tmp / "history.eqx", state.history)
     metadata = {
         "schema_version": f"{SCHEMA_VERSION}.checkpoint.v1",
-        "issue": ISSUE_ID,
+        "issue": str(args.issue),
         "completed_batches": state.completed_batches,
         "n_train_batches": int(args.n_train_batches),
         "checkpoint_interval_batches": int(args.checkpoint_interval_batches),
@@ -879,6 +879,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--spec-dir", default=None)
+    parser.add_argument("--issue", default=ISSUE_ID)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--n-train-batches", type=int, default=12000)
     parser.add_argument("--batch-size", type=int, default=250)

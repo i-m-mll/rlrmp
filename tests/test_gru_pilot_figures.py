@@ -101,6 +101,21 @@ def test_repeat_single_validation_trial_preserves_initial_velocity() -> None:
     )
 
 
+def test_initial_effector_velocity_reads_cs_lss_vector_init() -> None:
+    lss_vector = np.zeros((2, 48), dtype=np.float64)
+    lss_vector[:, 2:4] = np.asarray([[0.1, -0.2], [0.3, -0.4]])
+    trial_specs = TaskTrialSpec(
+        inits={"mechanics.vector": lss_vector},
+        targets={},
+        inputs=np.zeros((2, 2), dtype=np.float64),
+    )
+
+    np.testing.assert_allclose(
+        initial_effector_velocity(trial_specs),
+        np.asarray([[0.1, -0.2], [0.3, -0.4]]),
+    )
+
+
 def test_build_figure_summary_records_8d_and_4d_reference_metadata(tmp_path) -> None:
     run = RunFigureInputs(
         run_id="cs_stochastic_gru__no_hidden_penalty",
