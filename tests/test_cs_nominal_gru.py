@@ -12,6 +12,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
+import numpy as np
 import optax
 from feedbax.mechanics import LinearStateSpace
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
@@ -376,6 +377,7 @@ def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Pat
     checkpoint_2 = output_dir / "checkpoints" / "checkpoint_0000002"
     metadata = json.loads((checkpoint_latest / "metadata.json").read_text())
     summary = json.loads((output_dir / "training_summary.json").read_text())
+    diagnostics_manifest = json.loads((output_dir / "training_diagnostics.json").read_text())
 
     assert result["completed_batches"] == 2
     assert Path(result["final_model_path"]) == output_dir / "trained_model.eqx"
@@ -391,9 +393,33 @@ def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Pat
     assert (checkpoint_latest / "optimizer_state.eqx").exists()
     assert (output_dir / "trained_model.eqx").exists()
     assert (output_dir / "training_history.eqx").exists()
+    assert (output_dir / "training_diagnostics.npz").exists()
+    assert (output_dir / "training_diagnostics.json").exists()
     assert (output_dir / "history_chunks" / "history_0000001.eqx").exists()
     assert (output_dir / "history_chunks" / "history_0000002.eqx").exists()
     assert summary["latest_checkpoint"] == str(checkpoint_latest)
+    assert summary["training_diagnostics"]["enabled"] is True
+    assert summary["training_diagnostics"]["written"] is True
+    assert summary["training_diagnostics"]["sidecar_path"] == str(
+        output_dir / "training_diagnostics.npz"
+    )
+    assert diagnostics_manifest["completed_batches"] == 2
+    assert diagnostics_manifest["gradient_clip_active"] is False
+    assert diagnostics_manifest["training_history_path"] == str(output_dir / "training_history.eqx")
+    assert "optimizer_gradient_norm_pre_clip" in diagnostics_manifest["arrays"]
+    assert "optimizer_update_parameter_norm_ratio" in diagnostics_manifest["arrays"]
+    assert "optimizer_learning_rate" in diagnostics_manifest["arrays"]
+    assert "train_loss__total" in diagnostics_manifest["arrays"]
+    assert "validation_loss__total" in diagnostics_manifest["arrays"]
+    with np.load(output_dir / "training_diagnostics.npz") as diagnostics:
+        assert diagnostics["batch_index"].tolist() == [0, 1]
+        assert diagnostics["optimizer_gradient_norm_pre_clip"].shape[0] == 2
+        assert diagnostics["optimizer_gradient_clipped"].shape[0] == 2
+        assert diagnostics["optimizer_clipping_fraction"].shape == (2,)
+        assert diagnostics["optimizer_update_parameter_norm_ratio"].shape[0] == 2
+        assert diagnostics["optimizer_learning_rate"].shape[0] == 2
+        assert diagnostics["train_loss__total"].shape[0] == 2
+        assert diagnostics["validation_loss__total"].shape[0] == 2
     assert summary["training_duration_seconds"] > 0
     assert summary["training_batches_per_second"] > 0
     assert len(summary["chunks"]) == 2
@@ -401,6 +427,36 @@ def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Pat
     assert summary["chunks"][0]["duration_seconds"] > 0
     assert summary["chunks"][0]["batches_per_second"] > 0
     assert commits == 3
+
+
+def test_full_training_smoke_can_disable_diagnostics(tmp_path: Path) -> None:
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        n_train_batches=1,
+        batch_size=2,
+        n_replicates=1,
+        hidden_size=4,
+        full_train=True,
+        checkpoint_interval_batches=1,
+        disable_progress=True,
+        quiet_progress=True,
+        training_diagnostics=False,
+    )
+
+    result = run_full_training(args)
+    run_spec = json.loads((spec_dir / "run.json").read_text())
+    summary = json.loads((output_dir / "training_summary.json").read_text())
+
+    assert result["completed_batches"] == 1
+    assert run_spec["training_diagnostics"]["enabled"] is False
+    assert run_spec["training_summary"]["training_diagnostics"]["enabled"] is False
+    assert summary["training_diagnostics"]["enabled"] is False
+    assert summary["training_diagnostics"]["sidecar_path"] is None
+    assert not (output_dir / "training_diagnostics.npz").exists()
+    assert not (output_dir / "training_diagnostics.json").exists()
 
 
 def test_setup_task_model_pair_trains_tiny_nominal_simple_reach_batch() -> None:
