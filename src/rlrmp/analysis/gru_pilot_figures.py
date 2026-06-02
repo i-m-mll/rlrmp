@@ -328,6 +328,7 @@ def evaluate_stochastic_forward_velocity_profile(
         setup_func=lambda key, **_kwargs: setup_task_model_pair(hps, key=key).model,
     )
     trial_specs = repeat_single_validation_trial(pair.task.validation_trials, n_rollout_trials)
+    initial_velocity = initial_effector_velocity(trial_specs)
     model_arrays, model_other = eqx.partition(
         model,
         lambda leaf: _is_replicate_array(leaf, n_replicates),
@@ -340,7 +341,13 @@ def evaluate_stochastic_forward_velocity_profile(
             trial_specs,
             jr.split(key, n_rollout_trials),
         )
-        return states.mechanics.effector.vel
+        # Task.eval_trials strips the prepended initial history sample. Reinsert
+        # it here so plotted GRU rollouts share the analytical reference time
+        # convention: sample 0 is the true trial initial state.
+        return jnp.concatenate(
+            [initial_velocity[:, None, :], states.mechanics.effector.vel],
+            axis=1,
+        )
 
     velocity = eqx.filter_vmap(eval_one_replicate, in_axes=(0, 0))(
         model_arrays,
@@ -359,6 +366,16 @@ def evaluate_stochastic_forward_velocity_profile(
         n_replicates=n_replicates,
         n_rollout_trials_per_replicate=n_rollout_trials,
     )
+
+
+def initial_effector_velocity(trial_specs: Any) -> jnp.ndarray:
+    """Return the trial initial effector velocity array, shape ``(trials, 2)``."""
+
+    for init_state in trial_specs.inits.values():
+        velocity = getattr(init_state, "vel", None)
+        if velocity is not None:
+            return velocity
+    raise ValueError("Trial spec does not include an effector velocity initial state")
 
 
 def repeat_single_validation_trial(trial_specs: Any, n_trials: int) -> Any:
@@ -611,7 +628,7 @@ def build_figure_summary(
         ),
         "error_band": (
             "GRU mean +/- 1 SD over pooled stochastic rollout trials across replicates; "
-            "analytical trace has no band"
+            "analytical references mean +/- 1 SD over stochastic C&S rollouts"
         ),
         "summaries": velocity_profiles_summary,
     }

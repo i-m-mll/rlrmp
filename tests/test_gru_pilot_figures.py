@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import numpy as np
+from feedbax.state import CartesianState
+from feedbax.task import TaskTrialSpec
 
 from rlrmp.analysis.gru_pilot_figures import (
     REFERENCE_4D_LABEL,
@@ -12,7 +14,9 @@ from rlrmp.analysis.gru_pilot_figures import (
     VelocityProfile,
     active_loss_term_labels,
     build_figure_summary,
+    initial_effector_velocity,
     load_gru_training_history,
+    repeat_single_validation_trial,
 )
 
 
@@ -75,6 +79,26 @@ def test_load_gru_training_history_rebuilds_feedbax_loss_tree(tmp_path) -> None:
     assert np.asarray(history.loss.children[4].value).shape == (3, 2)
     assert float(history.loss.children[4].weight) == 5.0
     assert np.asarray(history.learning_rate).shape == (3, 2)
+
+
+def test_repeat_single_validation_trial_preserves_initial_velocity() -> None:
+    trial_specs = TaskTrialSpec(
+        inits={
+            lambda state: state.mechanics.effector: CartesianState(
+                pos=np.asarray([[0.0, 0.0]]),
+                vel=np.asarray([[0.0, 0.0]]),
+                force=np.asarray([[0.0, 0.0]]),
+            )
+        },
+        targets={},
+        inputs=np.zeros((1, 2), dtype=np.float64),
+    )
+    repeated = repeat_single_validation_trial(trial_specs, 4)
+
+    np.testing.assert_allclose(
+        initial_effector_velocity(repeated),
+        np.zeros((4, 2), dtype=np.float64),
+    )
 
 
 def test_build_figure_summary_records_8d_and_4d_reference_metadata(tmp_path) -> None:
