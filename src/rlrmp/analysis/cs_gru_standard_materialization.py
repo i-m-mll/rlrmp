@@ -99,10 +99,24 @@ def materialize_gru_standard_result(
     *,
     run_ids: tuple[str, ...] = RUN_IDS,
     load_models: bool = True,
+    experiment: str = SOURCE_ISSUE_ID,
+    materializer_issue_id: str = MATERIALIZER_ISSUE_ID,
+    repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
     """Return standard rows and companion failure diagnostics for GRU pilots."""
 
-    rows = [materialize_gru_standard_row(run_id, load_model=load_models) for run_id in run_ids]
+    result_run_root = repo_root / "results" / experiment / "runs"
+    artifact_run_root = repo_root / "_artifacts" / experiment / "runs"
+    rows = [
+        materialize_gru_standard_row(
+            run_id,
+            load_model=load_models,
+            experiment=experiment,
+            materializer_issue_id=materializer_issue_id,
+            repo_root=repo_root,
+        )
+        for run_id in run_ids
+    ]
     row_dicts = [row.to_json_dict() for row in rows]
     failure_rows = [
         failure_diagnostic_from_standard_row(
@@ -121,14 +135,17 @@ def materialize_gru_standard_result(
     )
     return {
         "format": "rlrmp.cs_gru_standard_certificates.v1",
-        "issue": MATERIALIZER_ISSUE_ID,
-        "source_issue": SOURCE_ISSUE_ID,
+        "issue": materializer_issue_id,
+        "source_issue": experiment,
         "source_manifests": {
-            run_id: repo_relative(RESULT_RUN_ROOT / run_id / "run.json", repo_root=REPO_ROOT)
+            run_id: repo_relative(result_run_root / run_id / "run.json", repo_root=repo_root)
             for run_id in run_ids
         },
         "source_artifacts": {
-            run_id: repo_relative(_default_model_path(run_id), repo_root=REPO_ROOT)
+            run_id: repo_relative(
+                _default_model_path(run_id, experiment=experiment, repo_root=repo_root),
+                repo_root=repo_root,
+            )
             for run_id in run_ids
         },
         "summary": materialization_summary(rows)
@@ -137,7 +154,7 @@ def materialize_gru_standard_result(
             "blockers": blockers,
         },
         "scope": (
-            "Two locally synced 30f2313 C&S stochastic GRU pilot rows. The "
+            f"C&S stochastic GRU pilot rows from `{experiment}`. The "
             "standard certificate is materialized in empirical_nonlinear mode: "
             "clean rollout action behavior is available, same-coordinate "
             "transition/value/Bellman components are not applicable, and response "
@@ -153,12 +170,19 @@ def materialize_gru_standard_row(
     run_id: str,
     *,
     load_model: bool = True,
+    experiment: str = SOURCE_ISSUE_ID,
+    materializer_issue_id: str = MATERIALIZER_ISSUE_ID,
+    repo_root: Path = REPO_ROOT,
 ) -> BridgeRunManifest:
     """Materialize one GRU pilot standard row."""
 
-    run_spec_path = RESULT_RUN_ROOT / run_id / "run.json"
+    run_spec_path = repo_root / "results" / experiment / "runs" / run_id / "run.json"
     run_spec = _read_json(run_spec_path)
-    training_summary_path = _default_training_summary_path(run_id)
+    training_summary_path = _default_training_summary_path(
+        run_id,
+        experiment=experiment,
+        repo_root=repo_root,
+    )
     training_summary = _read_json(training_summary_path) if training_summary_path.exists() else {}
     reference_actions, reference_metadata = cs_output_feedback_reference_actions()
     reference_map, response_reference_metadata = cs_output_feedback_observation_action_map()
@@ -171,6 +195,8 @@ def materialize_gru_standard_row(
         candidate_actions, candidate_map, evaluation_metadata = evaluate_gru_clean_actions(
             run_id,
             run_spec=run_spec,
+            experiment=experiment,
+            repo_root=repo_root,
         )
     else:
         candidate_actions = np.zeros((0, reference_actions.shape[0], reference_actions.shape[1]))
@@ -198,9 +224,12 @@ def materialize_gru_standard_row(
         ),
         evaluation_metadata=evaluation_metadata,
         run_spec_path=run_spec_path,
-        model_path=_default_model_path(run_id),
+        model_path=_default_model_path(run_id, experiment=experiment, repo_root=repo_root),
         training_summary_path=training_summary_path,
         reference_metadata=serializable_reference_metadata,
+        source_issue_id=experiment,
+        materializer_issue_id=materializer_issue_id,
+        repo_root=repo_root,
     )
 
 
@@ -219,6 +248,9 @@ def build_gru_standard_manifest_from_actions(
     model_path: Path | None = None,
     training_summary_path: Path | None = None,
     reference_metadata: dict[str, Any] | None = None,
+    source_issue_id: str = SOURCE_ISSUE_ID,
+    materializer_issue_id: str = MATERIALIZER_ISSUE_ID,
+    repo_root: Path = REPO_ROOT,
 ) -> BridgeRunManifest:
     """Build a GRU empirical/nonlinear standard row from clean action traces."""
 
@@ -233,7 +265,11 @@ def build_gru_standard_manifest_from_actions(
         candidate_observation_to_action_map is not None
         and reference_observation_to_action_map is not None
     )
-    blocker = None if response_map_evidence_available else gru_io_response_map_blocker(run_spec)
+    blocker = (
+        None
+        if response_map_evidence_available
+        else gru_io_response_map_blocker(run_spec, source_issue_id=source_issue_id)
+    )
     model_hps = run_spec.get("hps", {}).get("model", {})
     response_map_status = (
         "available_4d_observation_contract"
@@ -241,7 +277,7 @@ def build_gru_standard_manifest_from_actions(
         else "blocked_missing_observation_contract"
     )
     spec = BridgeRunSpec(
-        issue_id=MATERIALIZER_ISSUE_ID,
+        issue_id=materializer_issue_id,
         run_id=make_bridge_run_id(run_id, "nominal_clean"),
         objective="optimal",
         architecture="gru",
@@ -253,7 +289,7 @@ def build_gru_standard_manifest_from_actions(
         seed=run_spec.get("seed"),
         gamma_factor=OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
         parameters={
-            "source_issue": SOURCE_ISSUE_ID,
+            "source_issue": source_issue_id,
             "source_run_id": run_id,
             "evaluation_lens": "nominal_clean",
             "certificate_mode": "empirical_nonlinear",
@@ -309,6 +345,7 @@ def build_gru_standard_manifest_from_actions(
             run_spec_path=run_spec_path,
             model_path=model_path,
             training_summary_path=training_summary_path,
+            repo_root=repo_root,
         ),
     )
     manifest = build_standard_certificate_manifest(request)
@@ -327,6 +364,8 @@ def evaluate_gru_clean_actions(
     run_id: str,
     *,
     run_spec: dict[str, Any] | None = None,
+    experiment: str = SOURCE_ISSUE_ID,
+    repo_root: Path = REPO_ROOT,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
     """Load a GRU pilot model and return clean action traces and I/O maps.
 
@@ -337,12 +376,14 @@ def evaluate_gru_clean_actions(
         JSON-compatible evaluation metadata.
     """
 
-    run_spec = run_spec or _read_json(RESULT_RUN_ROOT / run_id / "run.json")
+    run_spec = run_spec or _read_json(
+        repo_root / "results" / experiment / "runs" / run_id / "run.json"
+    )
     hps = dict_to_namespace(normalize_gru_hps(run_spec["hps"]), to_type=TreeNamespace)
     n_replicates = int(hps.model.n_replicates)
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(int(run_spec.get("seed", 42))))
     model, _hyperparameters = load_with_hyperparameters(
-        _default_model_path(run_id),
+        _default_model_path(run_id, experiment=experiment, repo_root=repo_root),
         setup_func=lambda key, **_kwargs: setup_task_model_pair(hps, key=key).model,
     )
     clean_model = _disable_stochastic_runtime(model)
@@ -584,7 +625,11 @@ def normalize_gru_hps(hps: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def gru_io_response_map_blocker(run_spec: dict[str, Any]) -> str:
+def gru_io_response_map_blocker(
+    run_spec: dict[str, Any],
+    *,
+    source_issue_id: str = SOURCE_ISSUE_ID,
+) -> str:
     """Return the current reason GRU response maps cannot be compared honestly."""
 
     feedback_dim = 4
@@ -592,7 +637,7 @@ def gru_io_response_map_blocker(run_spec: dict[str, Any]) -> str:
     graph_meta = run_spec.get("feedbax_graph", {})
     graph_path = graph_meta.get("graph_spec_path", "model.graph.json")
     return (
-        "Response-map components are blocked: the 30f2313 Feedbax GraphSpec "
+        f"Response-map components are blocked: the {source_issue_id} Feedbax GraphSpec "
         f"({graph_path}) feeds the GRU delayed position/velocity feedback "
         f"({feedback_dim}D), while the current C&S output-feedback reference "
         f"uses delayed_observation_matrix over the full physical block "
@@ -626,7 +671,7 @@ def render_gru_standard_markdown(result: dict[str, Any]) -> str:
     blocker_section = blocker if blocker else "_None for observation-to-action maps._"
     return f"""# GRU Standard Certificates
 
-Issue: `{MATERIALIZER_ISSUE_ID}`. Source run issue: `{SOURCE_ISSUE_ID}`.
+Issue: `{result["issue"]}`. Source run issue: `{result["source_issue"]}`.
 
 This materialization applies the standard certificate umbrella contract to the
 two locally synced C&S stochastic GRU pilot rows. The rows use
@@ -715,6 +760,7 @@ def _artifact_paths(
     run_spec_path: Path | None,
     model_path: Path | None,
     training_summary_path: Path | None,
+    repo_root: Path = REPO_ROOT,
 ) -> dict[str, str]:
     paths = {
         "run_spec": run_spec_path,
@@ -722,7 +768,7 @@ def _artifact_paths(
         "training_summary": training_summary_path,
     }
     return {
-        key: repo_relative(path, repo_root=REPO_ROOT)
+        key: repo_relative(path, repo_root=repo_root)
         for key, path in paths.items()
         if path is not None
     }
@@ -781,19 +827,46 @@ def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _default_model_path(run_id: str) -> Path:
-    return _run_artifact_path(run_id, "trained_model.eqx")
+def _default_model_path(
+    run_id: str,
+    *,
+    experiment: str = SOURCE_ISSUE_ID,
+    repo_root: Path = REPO_ROOT,
+) -> Path:
+    return _run_artifact_path(
+        run_id,
+        "trained_model.eqx",
+        experiment=experiment,
+        repo_root=repo_root,
+    )
 
 
-def _default_training_summary_path(run_id: str) -> Path:
-    return _run_artifact_path(run_id, "training_summary.json")
+def _default_training_summary_path(
+    run_id: str,
+    *,
+    experiment: str = SOURCE_ISSUE_ID,
+    repo_root: Path = REPO_ROOT,
+) -> Path:
+    return _run_artifact_path(
+        run_id,
+        "training_summary.json",
+        experiment=experiment,
+        repo_root=repo_root,
+    )
 
 
-def _run_artifact_path(run_id: str, file_name: str) -> Path:
-    normalized = ARTIFACT_RUN_ROOT / run_id / file_name
+def _run_artifact_path(
+    run_id: str,
+    file_name: str,
+    *,
+    experiment: str = SOURCE_ISSUE_ID,
+    repo_root: Path = REPO_ROOT,
+) -> Path:
+    artifact_run_root = repo_root / "_artifacts" / experiment / "runs"
+    normalized = artifact_run_root / run_id / file_name
     if normalized.exists():
         return normalized
-    return ARTIFACT_RUN_ROOT / run_id / run_id / file_name
+    return artifact_run_root / run_id / run_id / file_name
 
 
 __all__ = [
