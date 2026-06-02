@@ -6,12 +6,22 @@ import argparse
 import json
 from functools import partial
 from pathlib import Path
+import warnings
 
+import equinox as eqx
+import jax
 import jax.numpy as jnp
 import jax.random as jr
 import optax
+from feedbax.mechanics import LinearStateSpace
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
 
+from rlrmp.cs_lss_gru import CS_EPSILON_DIM
+from rlrmp.modules.training.part2 import (
+    CS_LSS_PLANT_BACKEND,
+    LEGACY_CAUSAL_BACKEND_WARNING,
+    LEGACY_CAUSAL_PLANT_BACKEND,
+)
 from rlrmp.analysis.cs_game_card import OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR
 from rlrmp.modules.training.part2 import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, run_artifact_dir, run_spec_dir
@@ -45,6 +55,7 @@ def test_hps_uses_canonical_cs_nominal_task() -> None:
     hps = build_hps(_args())
 
     assert hps.method == "nominal-cs-gru"
+    assert hps.model.plant_backend == CS_LSS_PLANT_BACKEND
     assert hps.dt == 0.01
     assert hps.task.type == "fixed_simple_reach"
     assert hps.task.n_steps == 61
@@ -80,14 +91,31 @@ def test_runtime_task_executes_sixty_fixed_cs_targets() -> None:
     hps = build_hps(_args(smoke=True))
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
 
-    trial = pair.task.get_train_trial(jr.PRNGKey(1))
+    trial = pair.task.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
     targets = trial.targets["mechanics.effector.pos"].value
 
+    assert isinstance(pair.model.nodes["mechanics"], LinearStateSpace)
+    assert pair.model.input_ports == ("input", "epsilon")
     assert trial.timeline.n_steps == 60
     assert trial.timeline.epoch_bounds.tolist() == [0, 60]
     assert targets.shape == (60, 2)
-    assert jnp.allclose(trial.inits["mechanics.effector"].pos, jnp.array([0.0, 0.0]))
+    assert jnp.allclose(trial.inits["mechanics.vector"][:4], jnp.zeros(4))
+    assert trial.inputs["input"].shape == (60,)
+    assert trial.inputs["epsilon"].shape == (60, CS_EPSILON_DIM)
+    assert jnp.allclose(trial.inputs["epsilon"], 0.0)
     assert jnp.allclose(targets, jnp.broadcast_to(jnp.array([0.15, 0.0]), (60, 2)))
+
+
+def test_legacy_causal_backend_is_explicit_and_warns() -> None:
+    hps = build_hps(_args(smoke=True, plant_backend=LEGACY_CAUSAL_PLANT_BACKEND))
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+
+    assert hps.model.plant_backend == LEGACY_CAUSAL_PLANT_BACKEND
+    assert any(LEGACY_CAUSAL_BACKEND_WARNING in str(item.message) for item in caught)
+    assert pair.model.input_ports != ("input", "epsilon")
 
 
 def test_graph_bundle_records_nominal_provenance() -> None:
@@ -95,6 +123,7 @@ def test_graph_bundle_records_nominal_provenance() -> None:
     bundle = build_graph_bundle(hps)
 
     assert bundle.training_spec["nominal_only"] is True
+    assert bundle.training_spec["plant_backend"] == CS_LSS_PLANT_BACKEND
     assert bundle.training_spec["adversarial_phase"] == "none"
     assert bundle.training_spec["certificate_lens"] == "input_output_map_certificate"
     assert bundle.manifest["game_card_provenance"]["horizon_steps"] == 60
@@ -111,12 +140,28 @@ def test_graph_bundle_records_nominal_provenance() -> None:
         == OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR
     )
     assert bundle.manifest["model_structure"]["controller_kind"] == "gru"
-    assert bundle.manifest["model_structure"]["stochastic_runtime"]["state_diffusion"] == "not_used"
+    assert bundle.manifest["model_structure"]["plant_backend"] == CS_LSS_PLANT_BACKEND
+    assert bundle.manifest["model_structure"]["exact_cs_linear_state_space"] is True
+    assert bundle.manifest["model_structure"]["fixed_plant_parameters"] == [
+        "nodes.mechanics.A",
+        "nodes.mechanics.B",
+        "nodes.mechanics.B_w",
+    ]
+    assert (
+        bundle.manifest["model_structure"]["stochastic_runtime"]["state_diffusion"]
+        == "not_used"
+    )
     assert bundle.manifest["stochastic_preset"]["name"] == DEFAULT_STOCHASTIC_PRESET
     assert bundle.manifest["stochastic_preset"]["signal_dependent_motor_noise_std"] == 0.02
     assert (
         bundle.manifest["model_structure"]["plant_process"]["noise_timing"]
-        == "post_force_filter_pre_mechanics"
+        == "mechanics.epsilon_zero_task_input"
+    )
+    assert bundle.manifest["model_structure"]["plant_process"]["state_diffusion"] == (
+        "mechanics.epsilon"
+    )
+    assert "temporary zero-epsilon" in (
+        bundle.manifest["model_structure"]["plant_process"]["epsilon_bridge"]
     )
     assert bundle.manifest["model_structure"]["population_structure"] == {
         "n_input_only": 0,
@@ -149,6 +194,11 @@ def test_dry_run_does_not_write_files(tmp_path: Path) -> None:
     assert result["run_spec"]["fidelity_status"]["exact_fidelity"] is False
     assert result["run_spec"]["fidelity_status"]["exact_objective_terms"] is True
     assert result["run_spec"]["fidelity_status"]["exact_stochastic_rollout"] is False
+    assert result["run_spec"]["fidelity_status"]["exact_plant_matrices"] is True
+    assert result["run_spec"]["fidelity_status"]["plant_backend"] == CS_LSS_PLANT_BACKEND
+    assert "zero mechanics.epsilon" in (
+        result["run_spec"]["fidelity_status"]["temporary_stochastic_bridge"]
+    )
     assert result["run_spec"]["fidelity_status"]["nn_hidden"] == 0.0
     assert not spec_dir.exists()
 
@@ -195,6 +245,8 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     assert payload["issue"] == "30f2313"
     assert payload["model_summary"]["hidden_size"] == 4
     assert payload["model_summary"]["controller_kind"] == "gru"
+    assert payload["model_summary"]["plant_backend"] == CS_LSS_PLANT_BACKEND
+    assert payload["model_summary"]["exact_cs_linear_state_space"] is True
     assert payload["stochastic_preset"]["name"] == DEFAULT_STOCHASTIC_PRESET
     assert payload["stochastic_preset"]["source_contract"]["contract"] == (
         "cs_released_stochastic_v1"
@@ -206,7 +258,8 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
         == 0.02
     )
     assert payload["model_summary"]["stochastic_runtime"]["plant_process_force_noise_std"] > 0.0
-    assert payload["model_summary"]["plant_process"]["state_diffusion"] == "not_used"
+    assert payload["model_summary"]["plant_process"]["state_diffusion"] == "mechanics.epsilon"
+    assert "zero-epsilon" in payload["model_summary"]["plant_process"]["epsilon_bridge"]
     assert payload["model_summary"]["certificate_lens"] == "input_output_map_certificate"
     assert payload["model_summary"]["analytical_delay_augmented_state_input"] is False
     assert payload["model_summary"]["population_structure"] == {
@@ -222,6 +275,7 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     assert payload["task_timing"]["control_cost_stages"] == 60
     assert payload["task_timing"]["fixed_init_pos"] == [0.0, 0.0]
     assert payload["task_timing"]["fixed_target_pos"] == [0.15, 0.0]
+    assert payload["task_timing"]["extra_inputs"] == ["input", "epsilon"]
     assert payload["task_timing"]["movement_window"] == {
         "kind": "full_simple_reach_trial",
         "start_transition": 0,
@@ -336,6 +390,8 @@ def test_setup_task_model_pair_trains_tiny_nominal_simple_reach_batch() -> None:
     )
 
     assert trained is not None
+    assert isinstance(pair.model.nodes["mechanics"], LinearStateSpace)
+    assert pair.model.input_ports == ("input", "epsilon")
     assert hps.task.type == "fixed_simple_reach"
     assert hps.task.n_steps == 61
     assert hps.loss.effector_pos_running_schedule == "cs_eq15_power6"
@@ -352,3 +408,20 @@ def test_setup_task_model_pair_trains_tiny_nominal_simple_reach_batch() -> None:
         "effector_terminal_vel",
         "nn_output",
     }
+
+
+def test_lss_backend_excludes_fixed_plant_matrices_from_training() -> None:
+    hps = build_hps(_args(smoke=True))
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    where_train = _where_train()[0]
+    from feedbax.train import filter_spec_leaves, get_model_parameters
+
+    where_train_spec = filter_spec_leaves(pair.model, where_train)
+    trainable = get_model_parameters(pair.model, where_train_spec)
+    trainable_arrays = [leaf for leaf in jax.tree.leaves(trainable) if eqx.is_array(leaf)]
+
+    assert trainable.nodes["mechanics"].A is None
+    assert trainable.nodes["mechanics"].B is None
+    assert trainable.nodes["mechanics"].B_w is None
+    assert any(leaf.shape[-2:] == (12, 5) for leaf in trainable_arrays)
+    assert any(leaf.shape[-2:] == (2, 4) for leaf in trainable_arrays)

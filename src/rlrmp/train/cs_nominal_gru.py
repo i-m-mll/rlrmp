@@ -48,7 +48,11 @@ from rlrmp.feedbax_graph import (
     build_point_mass_sensorimotor_graph_spec,
     write_graph_spec_bundle,
 )
-from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.modules.training.part2 import (
+    CS_LSS_PLANT_BACKEND,
+    LEGACY_CAUSAL_PLANT_BACKEND,
+    setup_task_model_pair,
+)
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.run_specs import validate_nominal_gru_run_spec
 from rlrmp.stochastic_runtime import (
@@ -230,6 +234,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "motor_noise_std": 0.0,
             **preset.hps_fields(),
             "stochastic_preset": preset.name,
+            "plant_backend": str(args.plant_backend),
             "damping": 0.1,
             "tau_rise": 0.066,
             "population_structure": {
@@ -375,8 +380,23 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
 
     pop = hps.model.population_structure
     stochastic_runtime = graphspec_noise_contract(stochastic_runtime_config_from_model(hps.model))
+    plant_backend = str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND))
+    exact_lss = plant_backend == CS_LSS_PLANT_BACKEND
     return {
         "controller_kind": "gru",
+        "plant_backend": plant_backend,
+        "plant_backend_warning": (
+            "legacy causal SimpleFeedback has a same-step force-filter-to-mechanics "
+            "timing problem"
+            if plant_backend == LEGACY_CAUSAL_PLANT_BACKEND
+            else None
+        ),
+        "exact_cs_linear_state_space": exact_lss,
+        "fixed_plant_parameters": (
+            ["nodes.mechanics.A", "nodes.mechanics.B", "nodes.mechanics.B_w"]
+            if exact_lss
+            else []
+        ),
         "hidden_size": int(hps.model.hidden_size),
         "n_replicates": int(hps.model.n_replicates),
         "trainable": ["nodes.net.hidden", "nodes.net.readout"],
@@ -401,8 +421,19 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
         },
         "plant_process": {
             "force_noise_std": stochastic_runtime["plant_process_force_noise_std"],
-            "noise_timing": "post_force_filter_pre_mechanics",
-            "state_diffusion": "not_used",
+            "noise_timing": (
+                "mechanics.epsilon_zero_task_input"
+                if exact_lss
+                else "post_force_filter_pre_mechanics"
+            ),
+            "state_diffusion": "mechanics.epsilon" if exact_lss else "not_used",
+            "epsilon_bridge": (
+                "temporary zero-epsilon Task input bound to C&S LinearStateSpace "
+                "mechanics.epsilon for local smoke; stochastic covariance scaling is "
+                "recorded from the preset but not yet sampled through this backend"
+                if exact_lss
+                else "not_used"
+            ),
         },
         "stochastic_runtime": stochastic_runtime,
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
@@ -434,6 +465,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "batch_size": int(hps.batch_size),
         "n_replicates": int(hps.model.n_replicates),
         "controller_kind": "gru",
+        "plant_backend": str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND)),
         "trainable": ["nodes.net.hidden", "nodes.net.readout"],
         "method": str(hps.method),
         "nominal_only": True,
@@ -818,6 +850,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--n-replicates", type=int, default=5)
     parser.add_argument("--hidden-size", type=int, default=180)
     parser.add_argument(
+        "--plant-backend",
+        choices=[CS_LSS_PLANT_BACKEND, LEGACY_CAUSAL_PLANT_BACKEND],
+        default=CS_LSS_PLANT_BACKEND,
+        help=(
+            "Plant backend for nominal GRU training. The default uses exact C&S "
+            "LinearStateSpace mechanics; legacy_causal_simplefeedback preserves the "
+            "old point-mass/force-filter path and emits a timing warning."
+        ),
+    )
+    parser.add_argument(
         "--stochastic-preset",
         choices=[DEFAULT_STOCHASTIC_PRESET],
         default=DEFAULT_STOCHASTIC_PRESET,
@@ -1018,6 +1060,7 @@ def _remove_tree(path: Path) -> None:
 
 
 def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
+    plant_backend = str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND))
     return {
         "type": str(hps.task.type),
         "n_steps": int(hps.task.n_steps),
@@ -1047,7 +1090,11 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
             "start_transition": 0,
             "end_transition": int(hps.task.n_steps) - 2,
         },
-        "extra_inputs": ["sisu", f"intervene:{PLANT_INTERVENOR_LABEL}"],
+        "extra_inputs": (
+            ["input", "epsilon"]
+            if plant_backend == CS_LSS_PLANT_BACKEND
+            else ["sisu", f"intervene:{PLANT_INTERVENOR_LABEL}"]
+        ),
     }
 
 
@@ -1111,11 +1158,20 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
 def _fidelity_status(hps: TreeNamespace) -> dict[str, Any]:
     nn_hidden = float(hps.loss.weights.nn_hidden)
     exact = nn_hidden == 0.0
+    plant_backend = str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND))
+    exact_lss = plant_backend == CS_LSS_PLANT_BACKEND
     return {
         "objective": "cs_fidelity_stochastic_rollout",
         "exact_fidelity": False,
         "exact_objective_terms": exact,
         "exact_stochastic_rollout": False,
+        "exact_plant_matrices": exact_lss,
+        "plant_backend": plant_backend,
+        "temporary_stochastic_bridge": (
+            "zero mechanics.epsilon task input; covariance sampling is not yet enabled"
+            if exact_lss
+            else None
+        ),
         "stochastic_preset": str(hps.model.stochastic_preset),
         "stochastic_projection": (
             "Feedbax GRU rollout uses C&S-shaped sensory, command, signal-dependent, "
