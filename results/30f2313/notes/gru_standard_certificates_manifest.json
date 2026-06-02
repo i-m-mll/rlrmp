@@ -3,17 +3,17 @@
     "rows": [
       {
         "certificate": {
-          "external_mismatch_ratio": 0.9587445016682332,
+          "external_mismatch_ratio": 2.6275718218313364,
           "external_response_map_mismatches": {
             "disturbance_history_to_action_map_mismatch": null,
             "disturbance_history_to_output_map_mismatch": null,
             "disturbance_history_to_state_map_mismatch": null,
-            "measurement_history_to_action_map_mismatch": 0.9587445016682332,
+            "measurement_history_to_action_map_mismatch": 1.1351354878713245,
             "measurement_history_to_output_map_mismatch": null,
-            "observation_history_to_action_map_mismatch": 0.9587445016682332
+            "observation_history_to_action_map_mismatch": 1.1351354878713245
           },
-          "response_map_mismatch": 0.9587445016682332,
-          "state_weighted_action_mismatch": 0.3718608527729889
+          "response_map_mismatch": 1.1351354878713245,
+          "state_weighted_action_mismatch": 2.6275718218313364
         },
         "classification": {
           "classification": "mixed",
@@ -27,8 +27,8 @@
             "external_certificate_evidence_available": true,
             "external_map_representation": {
               "external_map_mismatch_ratios": {
-                "measurement_history_to_action_map_mismatch": 0.9587445016682332,
-                "observation_history_to_action_map_mismatch": 0.9587445016682332
+                "measurement_history_to_action_map_mismatch": 1.1351354878713245,
+                "observation_history_to_action_map_mismatch": 1.1351354878713245
               },
               "failed_external_maps": [
                 "measurement_history_to_action_map_mismatch",
@@ -132,17 +132,17 @@
       },
       {
         "certificate": {
-          "external_mismatch_ratio": 0.9758737651851378,
+          "external_mismatch_ratio": 1.4791098150959678,
           "external_response_map_mismatches": {
             "disturbance_history_to_action_map_mismatch": null,
             "disturbance_history_to_output_map_mismatch": null,
             "disturbance_history_to_state_map_mismatch": null,
-            "measurement_history_to_action_map_mismatch": 0.9758737651851378,
+            "measurement_history_to_action_map_mismatch": 1.1489027497470585,
             "measurement_history_to_output_map_mismatch": null,
-            "observation_history_to_action_map_mismatch": 0.9758737651851378
+            "observation_history_to_action_map_mismatch": 1.1489027497470585
           },
-          "response_map_mismatch": 0.9758737651851378,
-          "state_weighted_action_mismatch": 0.8502054516260569
+          "response_map_mismatch": 1.1489027497470585,
+          "state_weighted_action_mismatch": 1.4791098150959678
         },
         "classification": {
           "classification": "mixed",
@@ -156,8 +156,8 @@
             "external_certificate_evidence_available": true,
             "external_map_representation": {
               "external_map_mismatch_ratios": {
-                "measurement_history_to_action_map_mismatch": 0.9758737651851378,
-                "observation_history_to_action_map_mismatch": 0.9758737651851378
+                "measurement_history_to_action_map_mismatch": 1.1489027497470585,
+                "observation_history_to_action_map_mismatch": 1.1489027497470585
               },
               "failed_external_maps": [
                 "measurement_history_to_action_map_mismatch",
@@ -278,12 +278,12 @@
           "status": "available",
           "summary": {
             "action_label": "command",
-            "aggregate_delta_energy": 625.2180202105551,
-            "aggregate_mismatch_ratio": 0.3718608527729889,
+            "aggregate_delta_energy": 4417.795635533914,
+            "aggregate_mismatch_ratio": 2.6275718218313364,
             "aggregate_reference_energy": 1681.3225042331464,
-            "delta_rms": 3.228048998519475,
-            "mismatch_ratio_max": 303224.8072356692,
-            "mismatch_ratio_mean": 6810.027568589414,
+            "delta_rms": 8.580788265590671,
+            "mismatch_ratio_max": 99254.23216929192,
+            "mismatch_ratio_mean": 3281.8486317410293,
             "n_samples": 300,
             "reference_rms": 5.293584960801055,
             "state_label": "state"
@@ -300,13 +300,13 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "completed_batches": 1000,
+            "completed_batches": 12000,
             "full_training_launch": "requested",
             "learning_rate": 0.01,
-            "n_train_batches": 1000,
+            "n_train_batches": 12000,
             "optimizer": "adamw",
-            "training_batches_per_second": null,
-            "training_duration_seconds": null
+            "training_batches_per_second": 5.9594124965329,
+            "training_duration_seconds": 2013.621310319
           }
         },
         {
@@ -314,20 +314,20 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9587445016682332,
-            "delta_frobenius": 1880.6511244550911,
+            "aggregate_mismatch_ratio": 1.1351354878713245,
+            "delta_frobenius": 9239.866273276166,
             "input_label": "observation_history",
             "map_shape": [
-              5,
+              80,
               60,
               2,
               240
             ],
-            "map_slices": 300,
-            "mismatch_ratio_max": 349652778486722.94,
-            "mismatch_ratio_mean": 8651918428367.7,
+            "map_slices": 4800,
+            "mismatch_ratio_max": 2377231409528564.0,
+            "mismatch_ratio_mean": 92522449418039.14,
             "output_label": "action",
-            "reference_frobenius": 1920.6878753358412,
+            "reference_frobenius": 8672.450609442227,
             "response_map_schema": "finite_horizon_linear_v1"
           }
         },
@@ -336,20 +336,20 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9587445016682332,
-            "delta_frobenius": 1880.6511244550911,
+            "aggregate_mismatch_ratio": 1.1351354878713245,
+            "delta_frobenius": 9239.866273276166,
             "input_label": "measurement_history",
             "map_shape": [
-              5,
+              80,
               60,
               2,
               240
             ],
-            "map_slices": 300,
-            "mismatch_ratio_max": 349652778486722.94,
-            "mismatch_ratio_mean": 8651918428367.7,
+            "map_slices": 4800,
+            "mismatch_ratio_max": 2377231409528564.0,
+            "mismatch_ratio_mean": 92522449418039.14,
             "output_label": "action",
-            "reference_frobenius": 1920.6878753358412,
+            "reference_frobenius": 8672.450609442227,
             "response_map_schema": "finite_horizon_linear_v1"
           }
         },
@@ -433,12 +433,13 @@
           "io_response_map": {
             "input_channel": "4D delayed position/velocity feedback",
             "map_shape": [
-              5,
+              80,
               60,
               2,
               240
             ],
-            "status": "evaluated_controller_local_jacobian"
+            "n_rollout_trials_per_replicate": 16,
+            "status": "evaluated_controller_local_jacobian_on_stochastic_histories"
           },
           "n_replicates": 5,
           "n_trials": 1,
@@ -456,6 +457,9 @@
           "io_response_map": {
             "action_dim": 2,
             "controller": "analytical_lqr_kalman_output_feedback",
+            "controller_variant": "cs_released_extlqg_stochastic_fixed_point",
+            "extlqg_expected_cost": 12201.42433801687,
+            "extlqg_iterations": 6,
             "gamma_factor": 1.4,
             "history_dim": 240,
             "map_shape": [
@@ -464,7 +468,8 @@
               240
             ],
             "observation_channel": "delayed_position_velocity",
-            "observation_dim": 4
+            "observation_dim": 4,
+            "parity_status": "fixed_point: local port of extLQG/computeOFC/computeExtKalman"
           },
           "output_feedback_config": {
             "delay_steps": 5,
@@ -565,12 +570,12 @@
           "status": "available",
           "summary": {
             "action_label": "command",
-            "aggregate_delta_energy": 1429.4695590405952,
-            "aggregate_mismatch_ratio": 0.8502054516260569,
+            "aggregate_delta_energy": 2486.8606183529787,
+            "aggregate_mismatch_ratio": 1.4791098150959678,
             "aggregate_reference_energy": 1681.3225042331464,
-            "delta_rms": 4.881033973522063,
-            "mismatch_ratio_max": 1447389.481327391,
-            "mismatch_ratio_mean": 43574.97735426873,
+            "delta_rms": 6.437987027988612,
+            "mismatch_ratio_max": 374208.1622506849,
+            "mismatch_ratio_mean": 12277.117428399255,
             "n_samples": 300,
             "reference_rms": 5.293584960801055,
             "state_label": "state"
@@ -587,13 +592,13 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "completed_batches": 1000,
+            "completed_batches": 12000,
             "full_training_launch": "requested",
             "learning_rate": 0.01,
-            "n_train_batches": 1000,
+            "n_train_batches": 12000,
             "optimizer": "adamw",
-            "training_batches_per_second": null,
-            "training_duration_seconds": null
+            "training_batches_per_second": 5.3397005112721905,
+            "training_duration_seconds": 2247.317049836
           }
         },
         {
@@ -601,20 +606,20 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9758737651851378,
-            "delta_frobenius": 1897.3769322388018,
+            "aggregate_mismatch_ratio": 1.1489027497470585,
+            "delta_frobenius": 9295.729330288792,
             "input_label": "observation_history",
             "map_shape": [
-              5,
+              80,
               60,
               2,
               240
             ],
-            "map_slices": 300,
-            "mismatch_ratio_max": 715627752568559.0,
-            "mismatch_ratio_mean": 9426549860491.732,
+            "map_slices": 4800,
+            "mismatch_ratio_max": 4052328454126812.0,
+            "mismatch_ratio_mean": 120382837299362.94,
             "output_label": "action",
-            "reference_frobenius": 1920.6878753358412,
+            "reference_frobenius": 8672.450609442227,
             "response_map_schema": "finite_horizon_linear_v1"
           }
         },
@@ -623,20 +628,20 @@
           "reason": "",
           "status": "available",
           "summary": {
-            "aggregate_mismatch_ratio": 0.9758737651851378,
-            "delta_frobenius": 1897.3769322388018,
+            "aggregate_mismatch_ratio": 1.1489027497470585,
+            "delta_frobenius": 9295.729330288792,
             "input_label": "measurement_history",
             "map_shape": [
-              5,
+              80,
               60,
               2,
               240
             ],
-            "map_slices": 300,
-            "mismatch_ratio_max": 715627752568559.0,
-            "mismatch_ratio_mean": 9426549860491.732,
+            "map_slices": 4800,
+            "mismatch_ratio_max": 4052328454126812.0,
+            "mismatch_ratio_mean": 120382837299362.94,
             "output_label": "action",
-            "reference_frobenius": 1920.6878753358412,
+            "reference_frobenius": 8672.450609442227,
             "response_map_schema": "finite_horizon_linear_v1"
           }
         },
@@ -720,12 +725,13 @@
           "io_response_map": {
             "input_channel": "4D delayed position/velocity feedback",
             "map_shape": [
-              5,
+              80,
               60,
               2,
               240
             ],
-            "status": "evaluated_controller_local_jacobian"
+            "n_rollout_trials_per_replicate": 16,
+            "status": "evaluated_controller_local_jacobian_on_stochastic_histories"
           },
           "n_replicates": 5,
           "n_trials": 1,
@@ -743,6 +749,9 @@
           "io_response_map": {
             "action_dim": 2,
             "controller": "analytical_lqr_kalman_output_feedback",
+            "controller_variant": "cs_released_extlqg_stochastic_fixed_point",
+            "extlqg_expected_cost": 12201.42433801687,
+            "extlqg_iterations": 6,
             "gamma_factor": 1.4,
             "history_dim": 240,
             "map_shape": [
@@ -751,7 +760,8 @@
               240
             ],
             "observation_channel": "delayed_position_velocity",
-            "observation_dim": 4
+            "observation_dim": 4,
+            "parity_status": "fixed_point: local port of extLQG/computeOFC/computeExtKalman"
           },
           "output_feedback_config": {
             "delay_steps": 5,

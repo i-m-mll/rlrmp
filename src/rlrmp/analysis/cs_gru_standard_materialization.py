@@ -40,11 +40,14 @@ from rlrmp.analysis.bridge_contracts import (
 )
 from rlrmp.analysis.cs_game_card import OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR
 from rlrmp.analysis.cs_game_card import materialize_reference
+from rlrmp.analysis.cs_released_simulation import (
+    build_extlqg_comparator_path,
+    default_cs_noise_covariances,
+)
 from rlrmp.analysis.failure_decomposition import failure_diagnostic_from_standard_row
 from rlrmp.analysis.output_feedback import (
     OutputFeedbackConfig,
     delayed_observation_matrix,
-    kalman_estimator_gains,
     make_cs_output_feedback_initial_state,
     position_velocity_observation_config,
     rollout_with_kalman_estimator,
@@ -69,6 +72,7 @@ RUN_IDS = (
     "cs_stochastic_gru__no_hidden_penalty",
     "cs_stochastic_gru__hidden_penalty",
 )
+DEFAULT_RESPONSE_MAP_ROLLOUT_TRIALS = 16
 RESULT_RUN_ROOT = REPO_ROOT / "results" / SOURCE_ISSUE_ID / "runs"
 ARTIFACT_RUN_ROOT = REPO_ROOT / "_artifacts" / SOURCE_ISSUE_ID / "runs"
 NOTE_PATH = REPO_ROOT / "results" / SOURCE_ISSUE_ID / "notes" / "gru_standard_certificates.md"
@@ -348,6 +352,10 @@ def evaluate_gru_clean_actions(
         clean_model,
         lambda leaf: _is_replicate_array(leaf, n_replicates),
     )
+    stochastic_model_arrays, stochastic_model_other = eqx.partition(
+        model,
+        lambda leaf: _is_replicate_array(leaf, n_replicates),
+    )
 
     def eval_one_replicate(model_array_leaves: Any, key: Any) -> Any:
         replicate_model = eqx.combine(model_array_leaves, model_other)
@@ -370,7 +378,13 @@ def evaluate_gru_clean_actions(
     response_maps = _gru_observation_to_action_maps(
         model_arrays=model_arrays,
         model_other=model_other,
-        net_inputs=net_inputs,
+        net_inputs=_stochastic_response_map_net_inputs(
+            model_arrays=stochastic_model_arrays,
+            model_other=stochastic_model_other,
+            pair=pair,
+            n_replicates=n_replicates,
+            n_rollout_trials=DEFAULT_RESPONSE_MAP_ROLLOUT_TRIALS,
+        ),
         n_replicates=n_replicates,
         feedback_dim=4,
     )
@@ -380,11 +394,39 @@ def evaluate_gru_clean_actions(
         "n_trials": n_trials,
         "noise": "feedbax Channel noise disabled; plant-process force noise disabled if present",
         "io_response_map": {
-            "status": "evaluated_controller_local_jacobian",
+            "status": "evaluated_controller_local_jacobian_on_stochastic_histories",
             "input_channel": "4D delayed position/velocity feedback",
+            "n_rollout_trials_per_replicate": DEFAULT_RESPONSE_MAP_ROLLOUT_TRIALS,
             "map_shape": [int(dim) for dim in response_maps.shape],
         },
     }
+
+
+def _stochastic_response_map_net_inputs(
+    *,
+    model_arrays: Any,
+    model_other: Any,
+    pair: Any,
+    n_replicates: int,
+    n_rollout_trials: int,
+) -> Any:
+    """Return stochastic network input histories for local I/O linearization."""
+
+    trial_specs = _repeat_single_validation_trial(pair.task.validation_trials, n_rollout_trials)
+
+    def eval_one_replicate(model_array_leaves: Any, key: Any) -> Any:
+        replicate_model = eqx.combine(model_array_leaves, model_other)
+        states = pair.task.eval_trials(
+            replicate_model,
+            trial_specs,
+            jr.split(key, n_rollout_trials),
+        )
+        return states.net.input
+
+    return eqx.filter_vmap(eval_one_replicate, in_axes=(0, 0))(
+        model_arrays,
+        jr.split(jr.PRNGKey(1), n_replicates),
+    )
 
 
 def _gru_observation_to_action_maps(
@@ -474,7 +516,7 @@ def cs_output_feedback_reference_actions(
 def cs_output_feedback_observation_action_map(
     output_config: OutputFeedbackConfig | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
-    """Return the analytical 4D observation-history to command response map."""
+    """Return the stochastic extLQG 4D observation-history to command map."""
 
     reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
     config = (
@@ -482,8 +524,15 @@ def cs_output_feedback_observation_action_map(
         if output_config is None
         else output_config
     )
+    covariances = default_cs_noise_covariances(reference.plant, config)
+    comparator = build_extlqg_comparator_path(
+        reference.plant,
+        reference.lqr_solution.K,
+        covariances,
+        schedule=reference.schedule,
+        config=config,
+    )
     H = delayed_observation_matrix(reference.plant, config)
-    gains = kalman_estimator_gains(reference.plant, reference.lqr_solution.K, config)
     horizon = int(reference.schedule.T)
     observation_dim = int(H.shape[0])
     action_dim = int(reference.plant.m_u)
@@ -492,15 +541,19 @@ def cs_output_feedback_observation_action_map(
     response = np.zeros((horizon, action_dim, history_dim), dtype=np.float64)
     A = np.asarray(reference.plant.A, dtype=np.float64)
     B = np.asarray(reference.plant.B, dtype=np.float64)
-    K = np.asarray(reference.lqr_solution.K, dtype=np.float64)
+    K = np.asarray(comparator.controller_gains, dtype=np.float64)
     H_np = np.asarray(H, dtype=np.float64)
-    G = np.asarray(gains, dtype=np.float64)
+    G = np.asarray(comparator.estimator_gains, dtype=np.float64)
     for t in range(horizon):
         response[t] = -K[t] @ sensitivity
         sensitivity = (A - B @ K[t] - G[t] @ H_np) @ sensitivity
         sensitivity[:, t * observation_dim : (t + 1) * observation_dim] += G[t]
     return response, {
         "controller": "analytical_lqr_kalman_output_feedback",
+        "controller_variant": "cs_released_extlqg_stochastic_fixed_point",
+        "parity_status": comparator.parity_status,
+        "extlqg_iterations": comparator.n_iterations,
+        "extlqg_expected_cost": comparator.expected_cost,
         "gamma_factor": OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
         "observation_channel": "delayed_position_velocity",
         "observation_dim": observation_dim,
@@ -508,6 +561,18 @@ def cs_output_feedback_observation_action_map(
         "history_dim": history_dim,
         "map_shape": [int(dim) for dim in response.shape],
     }
+
+
+def _repeat_single_validation_trial(trial_specs: Any, n_trials: int) -> Any:
+    """Repeat a one-trial validation spec along its leading trial axis."""
+
+    def repeat_leaf(leaf: Any) -> Any:
+        shape = getattr(leaf, "shape", None)
+        if shape is not None and len(shape) >= 1 and shape[0] == 1:
+            return jnp.repeat(leaf, n_trials, axis=0)
+        return leaf
+
+    return jt.map(repeat_leaf, trial_specs)
 
 
 def normalize_gru_hps(hps: dict[str, Any]) -> dict[str, Any]:

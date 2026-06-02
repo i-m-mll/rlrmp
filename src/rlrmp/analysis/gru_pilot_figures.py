@@ -28,6 +28,12 @@ from plotly.subplots import make_subplots
 from rlrmp.analysis.cs_game_card import OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR
 from rlrmp.analysis.cs_game_card import materialize_reference
 from rlrmp.analysis.cs_gru_standard_materialization import normalize_gru_hps
+from rlrmp.analysis.cs_released_simulation import (
+    build_extlqg_comparator_path,
+    default_cs_noise_covariances,
+    sample_forward_noise_draws,
+    simulate_lqg_released_forward,
+)
 from rlrmp.analysis.output_feedback import (
     OutputFeedbackConfig,
     delayed_observation_matrix,
@@ -86,10 +92,13 @@ class ReferenceProfile:
     observed_physical_indices: tuple[int, ...]
     time_s: np.ndarray
     forward_velocity: np.ndarray
+    forward_velocity_std: np.ndarray
+    n_samples: int
     peak_forward_velocity_m_s: float
     time_of_peak_forward_velocity_s: float
     terminal_position_error_m: float
     gamma_factor: float
+    parity_status: str
     line_color: str
     line_dash: str
 
@@ -145,7 +154,12 @@ def materialize_gru_pilot_figures(
         )
         for run in runs
     ]
-    references = cs_output_feedback_reference_profiles() if include_reference else ()
+    reference_n_samples = max(profile.n_pooled_samples for profile in velocity_profiles)
+    references = (
+        cs_output_feedback_reference_profiles(n_samples=reference_n_samples)
+        if include_reference
+        else ()
+    )
     velocity_file = write_velocity_figure(
         velocity_profiles,
         output_dir=output_dir,
@@ -359,18 +373,25 @@ def repeat_single_validation_trial(trial_specs: Any, n_trials: int) -> Any:
     return jt.map(repeat_leaf, trial_specs)
 
 
-def cs_output_feedback_reference_profiles() -> tuple[ReferenceProfile, ...]:
-    """Return analytical C&S output-feedback references for 8D and 4D observations."""
+def cs_output_feedback_reference_profiles(
+    *,
+    n_samples: int = DEFAULT_N_ROLLOUT_TRIALS,
+    key: Any = jr.PRNGKey(0),
+) -> tuple[ReferenceProfile, ...]:
+    """Return stochastic analytical C&S output-feedback references."""
 
     reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
     config_8d = OutputFeedbackConfig()
     config_4d = position_velocity_observation_config(reference.plant, config_8d)
+    keys = jr.split(key, 2)
     return (
         cs_output_feedback_reference_profile(
             reference=reference,
             config=config_8d,
             label=REFERENCE_LABEL,
             observation_channel="oldest_delayed_physical_block_full_8d",
+            n_samples=n_samples,
+            key=keys[0],
             line_color="#111827",
             line_dash="dash",
         ),
@@ -379,6 +400,8 @@ def cs_output_feedback_reference_profiles() -> tuple[ReferenceProfile, ...]:
             config=config_4d,
             label=REFERENCE_4D_LABEL,
             observation_channel="oldest_delayed_position_velocity_4d",
+            n_samples=n_samples,
+            key=keys[1],
             line_color="#f97316",
             line_dash="dot",
         ),
@@ -391,41 +414,70 @@ def cs_output_feedback_reference_profile(
     config: OutputFeedbackConfig = OutputFeedbackConfig(),
     label: str = REFERENCE_LABEL,
     observation_channel: str = "oldest_delayed_physical_block_full_8d",
+    n_samples: int = DEFAULT_N_ROLLOUT_TRIALS,
+    key: Any = jr.PRNGKey(0),
     line_color: str = "#111827",
     line_dash: str = "dash",
 ) -> ReferenceProfile:
-    """Return one analytical C&S output-feedback forward-velocity profile."""
+    """Return one stochastic analytical C&S output-feedback velocity profile."""
 
     reference = reference or materialize_reference(
         gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,)
     )
     x0 = make_cs_output_feedback_initial_state(reference.plant, config)
-    rollout = rollout_with_kalman_estimator(
+    covariances = default_cs_noise_covariances(reference.plant, config)
+    comparator = build_extlqg_comparator_path(
         reference.plant,
         reference.lqr_solution.K,
-        x0,
+        covariances,
+        schedule=reference.schedule,
         config=config,
     )
-    x = np.asarray(rollout.x, dtype=np.float64)
+    sample_keys = jr.split(key, n_samples)
+    rollouts = [
+        simulate_lqg_released_forward(
+            reference.plant,
+            comparator.controller_gains,
+            x0,
+            draws=sample_forward_noise_draws(
+                sample_key,
+                T=reference.schedule.T,
+                covariances=covariances,
+            ),
+            covariances=covariances,
+            estimator_gains=comparator.estimator_gains,
+            config=config,
+        )
+        for sample_key in sample_keys
+    ]
+    x = np.stack([np.asarray(rollout.x, dtype=np.float64) for rollout in rollouts], axis=0)
     vel_lo, _vel_hi = reference.plant.vel_slice
     dt = float(reference.plant.dt)
+    forward = x[:, :, vel_lo]
+    mean_forward = np.mean(forward, axis=0)
     observation_matrix = delayed_observation_matrix(reference.plant, config)
     observed_indices = (
         tuple(range(config.n_phys))
         if config.observed_physical_indices is None
         else tuple(config.observed_physical_indices)
     )
+    peak_idx = int(np.argmax(mean_forward))
     return ReferenceProfile(
         label=label,
         observation_channel=observation_channel,
         observation_dim=int(observation_matrix.shape[0]),
         observed_physical_indices=observed_indices,
-        time_s=np.arange(x.shape[0], dtype=np.float64) * dt,
-        forward_velocity=x[:, vel_lo],
-        peak_forward_velocity_m_s=float(rollout.peak_forward_velocity),
-        time_of_peak_forward_velocity_s=float(rollout.peak_forward_velocity_idx * dt),
-        terminal_position_error_m=float(rollout.terminal_position_error),
+        time_s=np.arange(mean_forward.shape[0], dtype=np.float64) * dt,
+        forward_velocity=mean_forward,
+        forward_velocity_std=np.std(forward, axis=0),
+        n_samples=n_samples,
+        peak_forward_velocity_m_s=float(mean_forward[peak_idx]),
+        time_of_peak_forward_velocity_s=float(peak_idx * dt),
+        terminal_position_error_m=float(
+            np.mean([rollout.terminal_position_error for rollout in rollouts])
+        ),
         gamma_factor=OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+        parity_status=comparator.parity_status,
         line_color=line_color,
         line_dash=line_dash,
     )
@@ -479,6 +531,22 @@ def write_velocity_figure(
             col=idx,
         )
         for reference in references:
+            upper = reference.forward_velocity + reference.forward_velocity_std
+            lower = reference.forward_velocity - reference.forward_velocity_std
+            fig.add_trace(
+                go.Scatter(
+                    x=np.concatenate([reference.time_s, reference.time_s[::-1]]),
+                    y=np.concatenate([upper, lower[::-1]]),
+                    fill="toself",
+                    fillcolor=_rgba(reference.line_color, 0.10),
+                    line={"color": "rgba(0,0,0,0)"},
+                    hoverinfo="skip",
+                    name=f"{reference.label} mean +/- 1 SD",
+                    showlegend=idx == 1,
+                ),
+                row=1,
+                col=idx,
+            )
             fig.add_trace(
                 go.Scatter(
                     x=reference.time_s,
@@ -557,6 +625,8 @@ def build_figure_summary(
                 "observation_dim": reference.observation_dim,
                 "observed_physical_indices": list(reference.observed_physical_indices),
                 "gamma_factor_recorded_for_certificate": reference.gamma_factor,
+                "n_stochastic_samples": reference.n_samples,
+                "parity_status": reference.parity_status,
                 "n_time_steps": int(reference.forward_velocity.shape[0]),
                 "peak_forward_velocity_m_s": reference.peak_forward_velocity_m_s,
                 "time_of_peak_forward_velocity_s": reference.time_of_peak_forward_velocity_s,

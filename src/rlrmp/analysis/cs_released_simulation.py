@@ -356,7 +356,7 @@ def solve_extlqg_fixed_point(
     T = schedule.T
     H = delayed_observation_matrix(plant, config)
     estimator_gains = (
-        jnp.zeros((T, plant.n, config.n_phys), dtype=jnp.float64)
+        jnp.zeros((T, plant.n, H.shape[0]), dtype=jnp.float64)
         if initial_estimator_gains is None
         else initial_estimator_gains.astype(jnp.float64)
     )

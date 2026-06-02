@@ -102,10 +102,13 @@ def test_build_figure_summary_records_8d_and_4d_reference_metadata(tmp_path) -> 
             observed_physical_indices=tuple(range(8)),
             time_s=np.asarray([0.0, 0.01]),
             forward_velocity=np.asarray([0.0, 0.9]),
+            forward_velocity_std=np.asarray([0.0, 0.05]),
+            n_samples=10,
             peak_forward_velocity_m_s=0.9,
             time_of_peak_forward_velocity_s=0.01,
             terminal_position_error_m=0.0,
             gamma_factor=1.05,
+            parity_status="fixed_point",
             line_color="#111827",
             line_dash="dash",
         ),
@@ -116,10 +119,13 @@ def test_build_figure_summary_records_8d_and_4d_reference_metadata(tmp_path) -> 
             observed_physical_indices=(0, 1, 2, 3),
             time_s=np.asarray([0.0, 0.01]),
             forward_velocity=np.asarray([0.0, 0.8]),
+            forward_velocity_std=np.asarray([0.0, 0.04]),
+            n_samples=10,
             peak_forward_velocity_m_s=0.8,
             time_of_peak_forward_velocity_s=0.01,
             terminal_position_error_m=0.0,
             gamma_factor=1.05,
+            parity_status="fixed_point",
             line_color="#f97316",
             line_dash="dot",
         ),
@@ -140,3 +146,4 @@ def test_build_figure_summary_records_8d_and_4d_reference_metadata(tmp_path) -> 
     assert metadata[REFERENCE_LABEL]["observation_dim"] == 8
     assert metadata[REFERENCE_4D_LABEL]["observation_dim"] == 4
     assert metadata[REFERENCE_4D_LABEL]["observed_physical_indices"] == [0, 1, 2, 3]
+    assert metadata[REFERENCE_4D_LABEL]["n_stochastic_samples"] == 10

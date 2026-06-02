@@ -18,5 +18,5 @@ _None for observation-to-action maps._
 
 | run | status | action mismatch | obs-action map | transition | value | Bellman | class |
 |---|---|---:|---:|---|---|---|---|
-| cs_stochastic_gru__no_hidden_penalty__nominal_clean | partial_standard_certificate_blocked | 0.371861 | 0.958745 | not_applicable | not_applicable | not_applicable | mixed |
-| cs_stochastic_gru__hidden_penalty__nominal_clean | partial_standard_certificate_blocked | 0.850205 | 0.975874 | not_applicable | not_applicable | not_applicable | mixed |
+| cs_stochastic_gru__no_hidden_penalty__nominal_clean | partial_standard_certificate_blocked | 2.62757 | 1.13514 | not_applicable | not_applicable | not_applicable | mixed |
+| cs_stochastic_gru__hidden_penalty__nominal_clean | partial_standard_certificate_blocked | 1.47911 | 1.1489 | not_applicable | not_applicable | not_applicable | mixed |
