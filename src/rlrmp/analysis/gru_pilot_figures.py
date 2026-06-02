@@ -28,6 +28,11 @@ from plotly.subplots import make_subplots
 from rlrmp.analysis.cs_game_card import OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR
 from rlrmp.analysis.cs_game_card import materialize_reference
 from rlrmp.analysis.cs_gru_standard_materialization import normalize_gru_hps
+from rlrmp.analysis.gru_checkpoint_selection import (
+    ReplicateCheckpointSelection,
+    load_validation_selected_checkpoint_model,
+    materialize_validation_selected_checkpoint_manifest,
+)
 from rlrmp.analysis.cs_released_simulation import (
     build_extlqg_comparator_path,
     default_cs_noise_covariances,
@@ -76,6 +81,7 @@ class VelocityProfile:
     n_rollout_trials_per_replicate: int
     replicate_mean: np.ndarray | None = None
     replicate_std: np.ndarray | None = None
+    checkpoint_selection: tuple[ReplicateCheckpointSelection, ...] = ()
 
     @property
     def n_pooled_samples(self) -> int:
@@ -113,6 +119,7 @@ def materialize_gru_pilot_figures(
     output_dir: Path | None = None,
     n_rollout_trials: int = DEFAULT_N_ROLLOUT_TRIALS,
     include_reference: bool = True,
+    use_validation_selected_checkpoints: bool = False,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
     """Write loss and velocity figures for listed GRU pilot runs.
@@ -128,6 +135,9 @@ def materialize_gru_pilot_figures(
             fixed validation reach.
         include_reference: Whether to overlay the analytical output-feedback
             reference on velocity panels.
+        use_validation_selected_checkpoints: If true, assemble each run's model
+            from the recoverable validation-selected checkpoint for each
+            replicate before evaluating velocity profiles.
         repo_root: Repository root for tests and local overrides.
 
     Returns:
@@ -142,6 +152,15 @@ def materialize_gru_pilot_figures(
     )
     output_dir = output_dir or default_output_dir(experiment, repo_root=repo_root)
     mkdir_p(output_dir)
+    selection_manifest = (
+        materialize_validation_selected_checkpoint_manifest(
+            experiment=experiment,
+            run_ids=run_ids,
+            repo_root=repo_root,
+        )
+        if use_validation_selected_checkpoints
+        else None
+    )
 
     histories = {
         run.label: load_gru_training_history(run.run_spec, run.artifact_dir / "training_history.eqx")
@@ -153,6 +172,9 @@ def materialize_gru_pilot_figures(
         evaluate_stochastic_forward_velocity_profile(
             run,
             n_rollout_trials=n_rollout_trials,
+            use_validation_selected_checkpoints=use_validation_selected_checkpoints,
+            experiment=experiment,
+            repo_root=repo_root,
         )
         for run in runs
     ]
@@ -185,6 +207,7 @@ def materialize_gru_pilot_figures(
         alias_file=alias_file if include_reference else None,
         velocity_profiles=velocity_profiles,
         references=references,
+        selection_manifest=selection_manifest,
     )
     summary_path = output_dir / "figure_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -321,6 +344,9 @@ def evaluate_stochastic_forward_velocity_profile(
     run: RunFigureInputs,
     *,
     n_rollout_trials: int,
+    use_validation_selected_checkpoints: bool = False,
+    experiment: str = "",
+    repo_root: Path = REPO_ROOT,
 ) -> VelocityProfile:
     """Evaluate one trained GRU under repeated stochastic fixed validation trials."""
 
@@ -331,10 +357,19 @@ def evaluate_stochastic_forward_velocity_profile(
     n_replicates = int(hps.model.n_replicates)
     seed = int(run.run_spec.get("seed", 42))
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
-    model, _hyperparameters = load_with_hyperparameters(
-        run.artifact_dir / "trained_model.eqx",
-        setup_func=lambda key, **_kwargs: setup_task_model_pair(hps, key=key).model,
-    )
+    if use_validation_selected_checkpoints:
+        model, checkpoint_selection = load_validation_selected_checkpoint_model(
+            experiment=experiment,
+            run_id=run.run_id,
+            run_spec=run.run_spec,
+            repo_root=repo_root,
+        )
+    else:
+        model, _hyperparameters = load_with_hyperparameters(
+            run.artifact_dir / "trained_model.eqx",
+            setup_func=lambda key, **_kwargs: setup_task_model_pair(hps, key=key).model,
+        )
+        checkpoint_selection = []
     trial_specs = repeat_single_validation_trial(pair.task.validation_trials, n_rollout_trials)
     initial_velocity = initial_effector_velocity(trial_specs)
     model_arrays, model_other = eqx.partition(
@@ -375,6 +410,7 @@ def evaluate_stochastic_forward_velocity_profile(
         n_rollout_trials_per_replicate=n_rollout_trials,
         replicate_mean=np.mean(forward, axis=1),
         replicate_std=np.std(forward, axis=1),
+        checkpoint_selection=tuple(checkpoint_selection),
     )
 
 
@@ -726,6 +762,7 @@ def build_figure_summary(
     velocity_profiles: Sequence[VelocityProfile],
     replicate_velocity_file: Path | None = None,
     references: Sequence[ReferenceProfile] = (),
+    selection_manifest: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the JSON sidecar summary for generated figures."""
 
@@ -740,6 +777,9 @@ def build_figure_summary(
             "peak_mean_forward_velocity_m_s": float(np.max(profile.mean)),
             "time_of_peak_mean_forward_velocity_s": float(profile.time_s[int(np.argmax(profile.mean))]),
             "replicates": _replicate_velocity_summaries(profile),
+            "checkpoint_selection": [
+                selection.to_json() for selection in profile.checkpoint_selection
+            ],
         }
         for profile in velocity_profiles
     }
@@ -781,7 +821,7 @@ def build_figure_summary(
             for reference in references
         }
 
-    return {
+    summary = {
         "issue": experiment,
         "runs": run_map,
         "loss_plots": {
@@ -792,6 +832,9 @@ def build_figure_summary(
         },
         "velocity_profiles": velocity_summary,
     }
+    if selection_manifest is not None:
+        summary["checkpoint_selection"] = selection_manifest
+    return summary
 
 
 def _read_loss_tree(stream: Any, term_labels: Sequence[str]) -> TermTree:
