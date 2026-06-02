@@ -752,6 +752,7 @@ def run_full_training(
 
     chunks: list[dict[str, float | int | str]] = []
     history_diagnostic_chunks: list[dict[str, np.ndarray]] = []
+    optimizer_diagnostic_chunks: list[dict[str, np.ndarray]] = []
     training_started = time.perf_counter()
     while state.completed_batches < int(args.n_train_batches):
         remaining = int(args.n_train_batches) - state.completed_batches
@@ -780,6 +781,9 @@ def run_full_training(
         chunk_duration_seconds = time.perf_counter() - chunk_started
         history = _append_history(state.history, history_chunk)
         if _training_diagnostics_enabled(args):
+            optimizer_diagnostic_chunks.append(
+                _optimizer_diagnostics_arrays(optimizer_state, chunk_batches)
+            )
             history_diagnostic_chunks.append(
                 _history_diagnostics_arrays(history_chunk, chunk_batches)
             )
@@ -825,6 +829,7 @@ def run_full_training(
         run_spec=run_spec,
         state=state,
         training_history_path=final_history_path,
+        optimizer_diagnostic_chunks=optimizer_diagnostic_chunks,
         history_diagnostic_chunks=history_diagnostic_chunks,
     )
     final_summary = {
@@ -1339,6 +1344,7 @@ def write_training_diagnostics_sidecar(
     run_spec: dict[str, Any],
     state: TrainingState,
     training_history_path: Path,
+    optimizer_diagnostic_chunks: list[dict[str, np.ndarray]] | None = None,
     history_diagnostic_chunks: list[dict[str, np.ndarray]] | None = None,
 ) -> dict[str, Any]:
     """Write compact training-process scalar sidecars for future optimizer audits."""
@@ -1358,9 +1364,11 @@ def write_training_diagnostics_sidecar(
     arrays: dict[str, np.ndarray] = {
         "batch_index": np.arange(state.completed_batches, dtype=np.int64),
     }
-    if gradient_state is not None:
+    if optimizer_diagnostic_chunks:
+        arrays.update(_combine_history_diagnostic_chunks(optimizer_diagnostic_chunks))
+    elif gradient_state is not None:
         arrays.update(_gradient_diagnostics_arrays(gradient_state, state.completed_batches))
-    if update_state is not None:
+    if not optimizer_diagnostic_chunks and update_state is not None:
         arrays.update(_update_diagnostics_arrays(update_state, state.completed_batches))
     if history_diagnostic_chunks:
         arrays.update(_combine_history_diagnostic_chunks(history_diagnostic_chunks))
@@ -1416,6 +1424,25 @@ def _find_diagnostics_state(tree: Any, state_type: type) -> Any | None:
             if found is not None:
                 return found
     return None
+
+
+def _optimizer_diagnostics_arrays(optimizer_state: Any, completed_batches: int) -> dict[str, np.ndarray]:
+    """Return scalar optimizer diagnostics from a chunk-local optimizer state."""
+
+    arrays: dict[str, np.ndarray] = {}
+    gradient_state = _find_diagnostics_state(
+        optimizer_state,
+        GradientDiagnosticsState,
+    )
+    update_state = _find_diagnostics_state(
+        optimizer_state,
+        UpdateDiagnosticsState,
+    )
+    if gradient_state is not None:
+        arrays.update(_gradient_diagnostics_arrays(gradient_state, completed_batches))
+    if update_state is not None:
+        arrays.update(_update_diagnostics_arrays(update_state, completed_batches))
+    return arrays
 
 
 def _diagnostic_series(array: Any, completed_batches: int) -> np.ndarray:
