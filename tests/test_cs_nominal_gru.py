@@ -16,13 +16,19 @@ import optax
 from feedbax.mechanics import LinearStateSpace
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
 
+from rlrmp.analysis.cs_game_card import (
+    OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+    build_canonical_game,
+)
+from rlrmp.analysis.cs_released_simulation import default_cs_noise_covariances
+from rlrmp.analysis.output_feedback import OutputFeedbackConfig
 from rlrmp.cs_lss_gru import CS_EPSILON_DIM
 from rlrmp.modules.training.part2 import (
     CS_LSS_PLANT_BACKEND,
     LEGACY_CAUSAL_BACKEND_WARNING,
     LEGACY_CAUSAL_PLANT_BACKEND,
+    _cs_lss_process_epsilon_factor,
 )
-from rlrmp.analysis.cs_game_card import OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR
 from rlrmp.modules.training.part2 import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, run_artifact_dir, run_spec_dir
 from rlrmp.train.cs_nominal_gru import (
@@ -102,8 +108,19 @@ def test_runtime_task_executes_sixty_fixed_cs_targets() -> None:
     assert jnp.allclose(trial.inits["mechanics.vector"][:4], jnp.zeros(4))
     assert trial.inputs["input"].shape == (60,)
     assert trial.inputs["epsilon"].shape == (60, CS_EPSILON_DIM)
+    assert jnp.allclose(trial.inputs["epsilon"][:, :4], 0.0)
     assert jnp.any(jnp.abs(trial.inputs["epsilon"]) > 0.0)
     assert jnp.allclose(targets, jnp.broadcast_to(jnp.array([0.15, 0.0]), (60, 2)))
+
+
+def test_lss_process_epsilon_factor_matches_cs_physical_covariance() -> None:
+    plant, _schedule = build_canonical_game()
+    covariances = default_cs_noise_covariances(plant, OutputFeedbackConfig())
+    expected = covariances.process[:CS_EPSILON_DIM, :CS_EPSILON_DIM]
+    factor = _cs_lss_process_epsilon_factor()
+
+    assert factor.shape == (CS_EPSILON_DIM, CS_EPSILON_DIM)
+    assert jnp.allclose(factor @ factor.T, expected, atol=1e-14)
 
 
 def test_legacy_causal_backend_is_explicit_and_warns() -> None:
@@ -149,7 +166,7 @@ def test_graph_bundle_records_nominal_provenance() -> None:
     ]
     assert (
         bundle.manifest["model_structure"]["stochastic_runtime"]["state_diffusion"]
-        == "not_used"
+        == "mechanics.epsilon"
     )
     assert bundle.manifest["stochastic_preset"]["name"] == DEFAULT_STOCHASTIC_PRESET
     assert bundle.manifest["stochastic_preset"]["signal_dependent_motor_noise_std"] == 0.02
@@ -160,7 +177,7 @@ def test_graph_bundle_records_nominal_provenance() -> None:
     assert bundle.manifest["model_structure"]["plant_process"]["state_diffusion"] == (
         "mechanics.epsilon"
     )
-    assert "sampled physical-process epsilon" in (
+    assert "physical-process/load epsilon" in (
         bundle.manifest["model_structure"]["plant_process"]["epsilon_bridge"]
     )
     assert bundle.manifest["model_structure"]["population_structure"] == {
@@ -194,9 +211,13 @@ def test_dry_run_does_not_write_files(tmp_path: Path) -> None:
     assert result["run_spec"]["fidelity_status"]["exact_fidelity"] is False
     assert result["run_spec"]["fidelity_status"]["exact_objective_terms"] is True
     assert result["run_spec"]["fidelity_status"]["exact_stochastic_rollout"] is False
+    assert result["run_spec"]["fidelity_status"]["exact_stochastic_noise_sources"] is True
     assert result["run_spec"]["fidelity_status"]["exact_plant_matrices"] is True
     assert result["run_spec"]["fidelity_status"]["plant_backend"] == CS_LSS_PLANT_BACKEND
-    assert "sampled physical-process mechanics.epsilon" in (
+    assert "sensory Channel" in (
+        result["run_spec"]["fidelity_status"]["temporary_stochastic_bridge"]
+    )
+    assert "signal-dependent motor Channel" in (
         result["run_spec"]["fidelity_status"]["temporary_stochastic_bridge"]
     )
     assert result["run_spec"]["fidelity_status"]["nn_hidden"] == 0.0
@@ -259,7 +280,7 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     )
     assert payload["model_summary"]["stochastic_runtime"]["plant_process_force_noise_std"] > 0.0
     assert payload["model_summary"]["plant_process"]["state_diffusion"] == "mechanics.epsilon"
-    assert "sampled physical-process epsilon" in (
+    assert "physical-process/load epsilon" in (
         payload["model_summary"]["plant_process"]["epsilon_bridge"]
     )
     assert payload["model_summary"]["certificate_lens"] == "input_output_map_certificate"

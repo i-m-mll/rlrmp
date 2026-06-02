@@ -101,8 +101,31 @@ def test_graph_runs_multiple_steps_with_zero_epsilon() -> None:
     assert state_history.mechanics.effector.vel.shape == (4, 2)
     assert jnp.allclose(state_history.mechanics.effector.pos, state_history.mechanics.vector[:, :2])
     assert jnp.allclose(state_history.mechanics.effector.vel, state_history.mechanics.vector[:, 2:4])
+    assert state_history.sensory.output.shape == (4, 4)
     assert state_history.net.hidden.shape == (4, 6)
     assert final_state is not None
+
+
+def test_graph_wires_sensory_and_motor_noise_channels() -> None:
+    graph = build_cs_lss_gru_graph(
+        hidden_size=4,
+        sensory_noise_std=0.25,
+        additive_motor_noise_std=1e-5,
+        signal_dependent_motor_noise_std=0.02,
+        bind_epsilon_input=True,
+        key=jax.random.PRNGKey(10),
+    )
+
+    sensory = graph.nodes["sensory"]
+    efferent = graph.nodes["efferent"]
+
+    assert sensory.add_noise is True
+    assert sensory.delay == 0
+    assert sensory.noise_func.std == 0.25
+    assert efferent.add_noise is True
+    assert efferent.delay == 0
+    assert efferent.noise_func[0].noise_func.std == 0.02
+    assert efferent.noise_func[1].std == 1e-5
 
 
 def test_graph_omits_epsilon_binding_for_deterministic_default() -> None:

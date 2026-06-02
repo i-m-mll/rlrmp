@@ -379,7 +379,7 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
     """Return the model/training summary embedded in ``run.json``."""
 
     pop = hps.model.population_structure
-    stochastic_runtime = graphspec_noise_contract(stochastic_runtime_config_from_model(hps.model))
+    stochastic_runtime = _stochastic_runtime_contract(hps)
     plant_backend = str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND))
     exact_lss = plant_backend == CS_LSS_PLANT_BACKEND
     return {
@@ -410,14 +410,33 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
             "delay_steps": int(hps.model.feedback_delay_steps),
             "noise_std": stochastic_runtime["sensory_noise_std"],
             "noise_role": "sensory_feedback",
+            "noise_timing": (
+                "Feedbax sensory Channel after 4D delayed LSS feedback selector"
+                if exact_lss
+                else "Feedbax feedback Channel before controller"
+            ),
+            "delay_source": (
+                "C&S 48D LinearStateSpace delay-augmented state"
+                if exact_lss
+                else "Feedbax feedback Channel queue"
+            ),
         },
         "efferent": {
             "additive_motor_noise_std": stochastic_runtime["additive_motor_noise_std"],
             "signal_dependent_motor_noise_std": (
                 stochastic_runtime["signal_dependent_motor_noise_std"]
             ),
-            "noise_timing": "pre_force_filter",
+            "noise_timing": (
+                "Feedbax efferent Channel immediately before LinearStateSpace.force"
+                if exact_lss
+                else "pre_force_filter"
+            ),
             "force_filter_tau_s": float(hps.model.tau_rise),
+            "force_filter_role": (
+                "coupled inside C&S LinearStateSpace dynamics"
+                if exact_lss
+                else "separate Feedbax FirstOrderFilter node"
+            ),
         },
         "plant_process": {
             "force_noise_std": stochastic_runtime["plant_process_force_noise_std"],
@@ -428,9 +447,9 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
             ),
             "state_diffusion": "mechanics.epsilon" if exact_lss else "not_used",
             "epsilon_bridge": (
-                "temporary sampled physical-process epsilon Task input bound to C&S "
-                "LinearStateSpace mechanics.epsilon; sensory and signal-dependent "
-                "noise still need the future acausal/noisy-observation bridge"
+                "sampled physical-process/load epsilon Task input bound to C&S "
+                "LinearStateSpace mechanics.epsilon using the physical block of "
+                "the released C&S process covariance"
                 if exact_lss
                 else "not_used"
             ),
@@ -472,9 +491,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "adversarial_phase": "none",
         "certificate_lens": "input_output_map_certificate",
         "analytical_delay_augmented_state_input": False,
-        "stochastic_runtime": graphspec_noise_contract(
-            stochastic_runtime_config_from_model(hps.model)
-        ),
+        "stochastic_runtime": _stochastic_runtime_contract(hps),
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
     }
     manifest = {
@@ -501,9 +518,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "game_card_provenance": build_game_card_provenance(),
         "model_structure": build_model_structure_summary(hps),
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
-        "stochastic_runtime": graphspec_noise_contract(
-            stochastic_runtime_config_from_model(hps.model)
-        ),
+        "stochastic_runtime": _stochastic_runtime_contract(hps),
     }
     return RLRMPFeedbaxGraphBundle(
         graph_spec=graph_spec,
@@ -512,6 +527,27 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         training_spec=training_spec,
         manifest=manifest,
     )
+
+
+def _stochastic_runtime_contract(hps: TreeNamespace) -> dict[str, Any]:
+    contract = graphspec_noise_contract(stochastic_runtime_config_from_model(hps.model))
+    if str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND)) != CS_LSS_PLANT_BACKEND:
+        return contract
+    return {
+        **contract,
+        "sensory_runtime": (
+            "Feedbax sensory Channel after the 4D delayed LSS feedback selector; "
+            "the delay itself is represented by the C&S 48D LSS state"
+        ),
+        "command_runtime": (
+            "Feedbax efferent Channel immediately before LinearStateSpace.force; "
+            "additive and signal-dependent motor noise are both command-channel noise"
+        ),
+        "plant_process_runtime": (
+            "Task-sampled physical-process/load epsilon bound to LinearStateSpace.epsilon"
+        ),
+        "state_diffusion": "mechanics.epsilon",
+    }
 
 
 def build_run_spec(
@@ -1165,11 +1201,13 @@ def _fidelity_status(hps: TreeNamespace) -> dict[str, Any]:
         "exact_fidelity": False,
         "exact_objective_terms": exact,
         "exact_stochastic_rollout": False,
+        "exact_stochastic_noise_sources": exact_lss,
         "exact_plant_matrices": exact_lss,
         "plant_backend": plant_backend,
         "temporary_stochastic_bridge": (
-            "sampled physical-process mechanics.epsilon; sensory and signal-dependent "
-            "noise are not yet represented in the LSS bridge"
+            "temporary RLRMP LSS wrapper implements sensory Channel, additive and "
+            "signal-dependent motor Channel, and sampled physical-process mechanics.epsilon; "
+            "future Feedbax acausal/ODE plant support should subsume this wrapper"
             if exact_lss
             else None
         ),

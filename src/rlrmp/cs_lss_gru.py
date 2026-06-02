@@ -27,6 +27,7 @@ from feedbax.channel import Channel, ChannelState
 from feedbax.graph import Component, Graph, Wire
 from feedbax.mechanics import LinearStateSpace
 from feedbax.mechanics.linear_state_space import LinearStateSpaceState
+from feedbax.noise import Multiplicative, Normal
 from feedbax.nn import NetworkState, PopulationStructure, SimpleStagedNetwork
 from feedbax.state import CartesianState
 
@@ -89,6 +90,7 @@ class CsLssGruState(Module):
     """SimpleFeedback-like state view for the C&S LSS GRU graph."""
 
     mechanics: CsLssMechanicsView
+    sensory: ChannelState
     net: NetworkState
     efferent: ChannelState
 
@@ -102,6 +104,9 @@ def build_cs_lss_gru_graph(
     population_structure: PopulationStructure | None = None,
     sisu_gating: str = "additive",
     initial_state: Array | None = None,
+    sensory_noise_std: float = 0.0,
+    additive_motor_noise_std: float = 0.0,
+    signal_dependent_motor_noise_std: float = 0.0,
     bind_epsilon_input: bool = False,
     key: PRNGKeyArray,
 ) -> Graph:
@@ -117,6 +122,12 @@ def build_cs_lss_gru_graph(
         population_structure: Optional Feedbax population mask.
         sisu_gating: Feedbax SISU gating mode for ``SimpleStagedNetwork``.
         initial_state: Optional 48D C&S plant initial state.
+        sensory_noise_std: Additive Gaussian noise standard deviation on the
+            4D delayed position/velocity observation sent to the GRU.
+        additive_motor_noise_std: Additive Gaussian command-channel motor
+            noise standard deviation before the LSS plant input.
+        signal_dependent_motor_noise_std: Multiplicative command-channel motor
+            noise scale before the LSS plant input.
         bind_epsilon_input: If true, expose external graph port ``"epsilon"``
             and bind it to mechanics. If false, mechanics uses its zero-epsilon
             default.
@@ -129,6 +140,12 @@ def build_cs_lss_gru_graph(
 
     if input_size < 0:
         raise ValueError("input_size must be non-negative.")
+    if sensory_noise_std < 0:
+        raise ValueError("sensory_noise_std must be non-negative.")
+    if additive_motor_noise_std < 0:
+        raise ValueError("additive_motor_noise_std must be non-negative.")
+    if signal_dependent_motor_noise_std < 0:
+        raise ValueError("signal_dependent_motor_noise_std must be non-negative.")
 
     mechanics = build_cs2019_feedbax_mechanics(initial_state=initial_state)
     key_net = jr.fold_in(key, 0)
@@ -142,9 +159,24 @@ def build_cs_lss_gru_graph(
         sisu_gating=sisu_gating,
         key=key_net,
     )
+    sensory = Channel(
+        delay=0,
+        noise_func=Normal(std=float(sensory_noise_std)),
+        add_noise=float(sensory_noise_std) != 0.0,
+        input_proto=jnp.zeros((CS_FEEDBACK_DIM,), dtype=mechanics.A.dtype),
+        init_value=0.0,
+    )
+    motor_noise_func = (
+        Multiplicative(Normal(std=float(signal_dependent_motor_noise_std)))
+        + Normal(std=float(additive_motor_noise_std))
+    )
     efferent = Channel(
         delay=0,
-        add_noise=False,
+        noise_func=motor_noise_func,
+        add_noise=(
+            float(additive_motor_noise_std) != 0.0
+            or float(signal_dependent_motor_noise_std) != 0.0
+        ),
         input_proto=jnp.zeros((CS_FORCE_DIM,), dtype=mechanics.A.dtype),
         init_value=0.0,
     )
@@ -152,12 +184,14 @@ def build_cs_lss_gru_graph(
 
     nodes = {
         "feedback": feedback,
+        "sensory": sensory,
         "net": net,
         "efferent": efferent,
         "mechanics": mechanics,
     }
     wires = [
-        Wire("feedback", "feedback", "net", "feedback"),
+        Wire("feedback", "feedback", "sensory", "input"),
+        Wire("sensory", "output", "net", "feedback"),
         Wire("net", "output", "efferent", "input"),
         Wire("efferent", "output", "mechanics", "force"),
         Wire("mechanics", "state", "feedback", "state", temporality="recurrent"),
@@ -180,6 +214,7 @@ def build_cs_lss_gru_graph(
         )
         return CsLssGruState(
             mechanics=mechanics_view,
+            sensory=node_states["sensory"],
             net=node_states["net"],
             efferent=node_states["efferent"],
         )
@@ -188,12 +223,13 @@ def build_cs_lss_gru_graph(
         nodes=nodes,
         wires=tuple(wires),
         input_ports=input_ports,
-        output_ports=("effector", "state", "feedback", "force"),
+        output_ports=("effector", "state", "feedback", "clean_feedback", "force"),
         input_bindings=input_bindings,
         output_bindings={
             "effector": ("mechanics", "effector"),
             "state": ("mechanics", "state"),
-            "feedback": ("feedback", "feedback"),
+            "feedback": ("sensory", "output"),
+            "clean_feedback": ("feedback", "feedback"),
             "force": ("efferent", "output"),
         },
         state_view_fn=_state_view,

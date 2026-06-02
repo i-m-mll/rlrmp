@@ -431,22 +431,22 @@ def _sample_cs_lss_process_epsilon(
     """Sample the temporary physical-process epsilon bridge for C&S LSS GRUs.
 
     ``LinearStateSpace.B_w`` injects an 8D physical epsilon into the current
-    physical block. The full released stochastic contract has additional
-    sensory, additive motor, and signal-dependent terms; those require separate
-    controller-observation and command-dependent paths. This temporary bridge
-    samples only the C&S process/load covariance projected to the physical
-    epsilon coordinates.
+    physical block. Sensory and motor noise are handled by the LSS graph's
+    causal ``Channel`` nodes; this function owns only the process/load noise
+    source.
     """
 
     target = trial_spec.targets["mechanics.effector.pos"].value
     batch_shape = target.shape[:-2] if target.ndim >= 3 else ()
     n_steps = int(trial_spec.timeline.n_steps)
-    std = _cs_lss_process_epsilon_std()
+    factor = _cs_lss_process_epsilon_factor()
     draws = jr.normal(key, (*batch_shape, n_steps, CS_EPSILON_DIM), dtype=jnp.float64)
-    return draws * std
+    return draws @ factor.T
 
 
-def _cs_lss_process_epsilon_std() -> jax.Array:
+def _cs_lss_process_epsilon_factor() -> jax.Array:
+    """Return a square-root factor for the physical process epsilon covariance."""
+
     plant, _schedule = build_canonical_game()
     covariances = default_cs_noise_covariances(
         plant,
@@ -454,8 +454,8 @@ def _cs_lss_process_epsilon_std() -> jax.Array:
         noise_config=DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
     )
     physical_cov = covariances.process[:CS_EPSILON_DIM, :CS_EPSILON_DIM]
-    diag = jnp.clip(jnp.diag(physical_cov), min=0.0)
-    return jnp.sqrt(diag)
+    eigvals, eigvecs = jnp.linalg.eigh(0.5 * (physical_cov + physical_cov.T))
+    return eigvecs @ jnp.diag(jnp.sqrt(jnp.clip(eigvals, min=0.0)))
 
 
 def _create_cs_lss_gru_ensemble(
@@ -487,6 +487,9 @@ def _create_cs_lss_gru_ensemble(
             hidden_type=hidden_type,
             population_structure=population_structure,
             sisu_gating=sisu_gating,
+            sensory_noise_std=float(hps.model.sensory_noise_std),
+            additive_motor_noise_std=float(hps.model.additive_motor_noise_std),
+            signal_dependent_motor_noise_std=float(hps.model.signal_dependent_motor_noise_std),
             bind_epsilon_input=True,
             key=key_one,
         )
