@@ -21,6 +21,12 @@ from feedbax.training.train import always_active, bernoulli_active
 from feedbax.types import LDict, TaskModelPair, TreeNamespace
 from jaxtyping import PRNGKeyArray
 
+from rlrmp.analysis.cs_game_card import build_canonical_game
+from rlrmp.analysis.cs_released_simulation import (
+    DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
+    default_cs_noise_covariances,
+)
+from rlrmp.analysis.output_feedback import OutputFeedbackConfig
 from rlrmp.cs_lss_gru import (
     CS_EPSILON_DIM,
     build_cs_lss_gru_graph,
@@ -414,18 +420,42 @@ def _add_cs_lss_task_inputs(task: _CsLssTaskAdapter) -> _CsLssTaskAdapter:
     )
     return task.add_input(
         name="epsilon",
-        input_fn=_zero_cs_lss_epsilon,
+        input_fn=_sample_cs_lss_process_epsilon,
     )
 
 
-def _zero_cs_lss_epsilon(trial_spec: TaskTrialSpec, key: PRNGKeyArray) -> jax.Array:
-    del key
+def _sample_cs_lss_process_epsilon(
+    trial_spec: TaskTrialSpec,
+    key: PRNGKeyArray,
+) -> jax.Array:
+    """Sample the temporary physical-process epsilon bridge for C&S LSS GRUs.
+
+    ``LinearStateSpace.B_w`` injects an 8D physical epsilon into the current
+    physical block. The full released stochastic contract has additional
+    sensory, additive motor, and signal-dependent terms; those require separate
+    controller-observation and command-dependent paths. This temporary bridge
+    samples only the C&S process/load covariance projected to the physical
+    epsilon coordinates.
+    """
+
     target = trial_spec.targets["mechanics.effector.pos"].value
     batch_shape = target.shape[:-2] if target.ndim >= 3 else ()
-    return jnp.zeros(
-        (*batch_shape, int(trial_spec.timeline.n_steps), CS_EPSILON_DIM),
-        dtype=jnp.float64,
+    n_steps = int(trial_spec.timeline.n_steps)
+    std = _cs_lss_process_epsilon_std()
+    draws = jr.normal(key, (*batch_shape, n_steps, CS_EPSILON_DIM), dtype=jnp.float64)
+    return draws * std
+
+
+def _cs_lss_process_epsilon_std() -> jax.Array:
+    plant, _schedule = build_canonical_game()
+    covariances = default_cs_noise_covariances(
+        plant,
+        OutputFeedbackConfig(),
+        noise_config=DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
     )
+    physical_cov = covariances.process[:CS_EPSILON_DIM, :CS_EPSILON_DIM]
+    diag = jnp.clip(jnp.diag(physical_cov), min=0.0)
+    return jnp.sqrt(diag)
 
 
 def _create_cs_lss_gru_ensemble(

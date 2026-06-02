@@ -102,7 +102,7 @@ def test_runtime_task_executes_sixty_fixed_cs_targets() -> None:
     assert jnp.allclose(trial.inits["mechanics.vector"][:4], jnp.zeros(4))
     assert trial.inputs["input"].shape == (60,)
     assert trial.inputs["epsilon"].shape == (60, CS_EPSILON_DIM)
-    assert jnp.allclose(trial.inputs["epsilon"], 0.0)
+    assert jnp.any(jnp.abs(trial.inputs["epsilon"]) > 0.0)
     assert jnp.allclose(targets, jnp.broadcast_to(jnp.array([0.15, 0.0]), (60, 2)))
 
 
@@ -155,12 +155,12 @@ def test_graph_bundle_records_nominal_provenance() -> None:
     assert bundle.manifest["stochastic_preset"]["signal_dependent_motor_noise_std"] == 0.02
     assert (
         bundle.manifest["model_structure"]["plant_process"]["noise_timing"]
-        == "mechanics.epsilon_zero_task_input"
+        == "mechanics.epsilon_sampled_task_input"
     )
     assert bundle.manifest["model_structure"]["plant_process"]["state_diffusion"] == (
         "mechanics.epsilon"
     )
-    assert "temporary zero-epsilon" in (
+    assert "sampled physical-process epsilon" in (
         bundle.manifest["model_structure"]["plant_process"]["epsilon_bridge"]
     )
     assert bundle.manifest["model_structure"]["population_structure"] == {
@@ -196,7 +196,7 @@ def test_dry_run_does_not_write_files(tmp_path: Path) -> None:
     assert result["run_spec"]["fidelity_status"]["exact_stochastic_rollout"] is False
     assert result["run_spec"]["fidelity_status"]["exact_plant_matrices"] is True
     assert result["run_spec"]["fidelity_status"]["plant_backend"] == CS_LSS_PLANT_BACKEND
-    assert "zero mechanics.epsilon" in (
+    assert "sampled physical-process mechanics.epsilon" in (
         result["run_spec"]["fidelity_status"]["temporary_stochastic_bridge"]
     )
     assert result["run_spec"]["fidelity_status"]["nn_hidden"] == 0.0
@@ -259,7 +259,9 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     )
     assert payload["model_summary"]["stochastic_runtime"]["plant_process_force_noise_std"] > 0.0
     assert payload["model_summary"]["plant_process"]["state_diffusion"] == "mechanics.epsilon"
-    assert "zero-epsilon" in payload["model_summary"]["plant_process"]["epsilon_bridge"]
+    assert "sampled physical-process epsilon" in (
+        payload["model_summary"]["plant_process"]["epsilon_bridge"]
+    )
     assert payload["model_summary"]["certificate_lens"] == "input_output_map_certificate"
     assert payload["model_summary"]["analytical_delay_augmented_state_input"] is False
     assert payload["model_summary"]["population_structure"] == {

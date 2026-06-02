@@ -422,15 +422,15 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
         "plant_process": {
             "force_noise_std": stochastic_runtime["plant_process_force_noise_std"],
             "noise_timing": (
-                "mechanics.epsilon_zero_task_input"
+                "mechanics.epsilon_sampled_task_input"
                 if exact_lss
                 else "post_force_filter_pre_mechanics"
             ),
             "state_diffusion": "mechanics.epsilon" if exact_lss else "not_used",
             "epsilon_bridge": (
-                "temporary zero-epsilon Task input bound to C&S LinearStateSpace "
-                "mechanics.epsilon for local smoke; stochastic covariance scaling is "
-                "recorded from the preset but not yet sampled through this backend"
+                "temporary sampled physical-process epsilon Task input bound to C&S "
+                "LinearStateSpace mechanics.epsilon; sensory and signal-dependent "
+                "noise still need the future acausal/noisy-observation bridge"
                 if exact_lss
                 else "not_used"
             ),
@@ -1168,7 +1168,8 @@ def _fidelity_status(hps: TreeNamespace) -> dict[str, Any]:
         "exact_plant_matrices": exact_lss,
         "plant_backend": plant_backend,
         "temporary_stochastic_bridge": (
-            "zero mechanics.epsilon task input; covariance sampling is not yet enabled"
+            "sampled physical-process mechanics.epsilon; sensory and signal-dependent "
+            "noise are not yet represented in the LSS bridge"
             if exact_lss
             else None
         ),
