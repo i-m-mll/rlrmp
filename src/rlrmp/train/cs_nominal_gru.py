@@ -16,13 +16,14 @@ import time
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, NamedTuple
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
+import numpy as np
 import optax
 from feedbax._io import save as fbx_save
 from feedbax.train import filter_spec_leaves, get_model_parameters
@@ -73,6 +74,8 @@ CS_POSITION_SCALE = 1e6
 CS_VELOCITY_SCALE = 1e5
 CS_CONTROL_SCALE = 1.0
 CS_REGULARIZED_NN_HIDDEN = 1e-5
+TRAINING_DIAGNOSTICS_NPZ = "training_diagnostics.npz"
+TRAINING_DIAGNOSTICS_MANIFEST = "training_diagnostics.json"
 VolumeCommit = Callable[[], None]
 
 
@@ -85,6 +88,24 @@ class TrainingState:
     completed_batches: int
     key: Any
     history: Any | None
+
+
+class GradientDiagnosticsState(NamedTuple):
+    """Optimizer-side scalar diagnostics captured before global-norm clipping."""
+
+    count: Any
+    gradient_norm_pre_clip: Any
+    gradient_clipped: Any
+    learning_rate: Any
+
+
+class UpdateDiagnosticsState(NamedTuple):
+    """Optimizer-side scalar diagnostics captured after the optimizer update."""
+
+    count: Any
+    update_norm: Any
+    parameter_norm: Any
+    update_parameter_norm_ratio: Any
 
 
 @dataclass(frozen=True)
@@ -219,10 +240,14 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         "n_batches_baseline": 0,
         "batch_size": int(args.batch_size),
         "learning_rate_0": float(args.controller_lr),
+        "gradient_clip_norm": (
+            None if args.gradient_clip_norm is None else float(args.gradient_clip_norm)
+        ),
         "n_scaleup_batches": 0,
         "constant_lr_iterations": 0,
         "cosine_annealing_alpha": 1.0,
         "weight_decay": 0.0,
+        "training_diagnostics": _training_diagnostics_enabled(args),
         "state_reset_iterations": [],
         "intervention_scaleup_batches": [0, 0],
         "model": {
@@ -529,6 +554,38 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
     )
 
 
+def _should_write_graph_spec(hps: TreeNamespace) -> bool:
+    return str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND)) != CS_LSS_PLANT_BACKEND
+
+
+def _write_graph_bundle_for_backend(
+    hps: TreeNamespace,
+    graph_bundle: RLRMPFeedbaxGraphBundle,
+    spec_dir: Path,
+) -> Path | None:
+    manifest_path = spec_dir / "model.graph.manifest.json"
+    if _should_write_graph_spec(hps):
+        return write_graph_spec_bundle(graph_bundle, spec_dir)
+    manifest = {
+        **graph_bundle.manifest,
+        "graph_export": {
+            "status": "unavailable",
+            "reason": (
+                "C&S cs_lss runs use LinearStateSpace mechanics and delayed "
+                "position/velocity feedback; the current compatibility GraphSpec "
+                "builder serializes the legacy FirstOrderFilter -> PointMass path."
+            ),
+            "authoritative_sources": [
+                "run.json.model_summary",
+                "run.json.hps.model.plant_backend",
+                "trained_model.eqx",
+            ],
+        },
+    }
+    manifest_path.write_text(_json_dumps(manifest), encoding="utf-8")
+    return None
+
+
 def _stochastic_runtime_contract(hps: TreeNamespace) -> dict[str, Any]:
     contract = graphspec_noise_contract(stochastic_runtime_config_from_model(hps.model))
     if str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND)) != CS_LSS_PLANT_BACKEND:
@@ -575,7 +632,9 @@ def build_run_spec(
         "n_train_batches": int(args.n_train_batches),
         "batch_size": int(args.batch_size),
         "controller_lr": float(args.controller_lr),
+        "optimizer": _optimizer_metadata(args),
         "checkpointing": _checkpoint_metadata(args, output_dir),
+        "training_diagnostics": _training_diagnostics_metadata(args, output_dir),
         "fidelity_status": _fidelity_status(hps),
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
         "game_card": build_game_card_provenance(),
@@ -587,6 +646,7 @@ def build_run_spec(
             "training_mode": "nominal",
             "n_train_batches": int(args.n_train_batches),
             "n_adversary_batches": 0,
+            "training_diagnostics": _training_diagnostics_metadata(args, output_dir),
         },
         "feedbax_graph": graph_bundle.to_run_metadata(),
         "hps": _plain(hps),
@@ -620,24 +680,25 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
     )
 
     if args.dry_run:
+        would_write = [str(spec_dir / "run.json"), str(spec_dir / "model.graph.manifest.json")]
+        if _should_write_graph_spec(hps):
+            would_write.append(str(spec_dir / "model.graph.json"))
         return {
             "run_spec": payload,
-            "would_write": [
-                str(spec_dir / "run.json"),
-                str(spec_dir / "model.graph.json"),
-                str(spec_dir / "model.graph.manifest.json"),
-            ],
+            "would_write": would_write,
         }
 
     mkdir_p(spec_dir)
-    graph_path = write_graph_spec_bundle(graph_bundle, spec_dir)
-    payload["feedbax_graph"] = graph_bundle.to_run_metadata(graph_spec_path=graph_path.name)
+    graph_path = _write_graph_bundle_for_backend(hps, graph_bundle, spec_dir)
+    payload["feedbax_graph"] = graph_bundle.to_run_metadata(
+        graph_spec_path=None if graph_path is None else graph_path.name,
+    )
     validate_nominal_gru_run_spec(payload, spec_dir=spec_dir)
     run_path = spec_dir / "run.json"
     run_path.write_text(_json_dumps(payload), encoding="utf-8")
     return {
         "run_spec_path": str(run_path),
-        "graph_spec_path": str(graph_path),
+        "graph_spec_path": None if graph_path is None else str(graph_path),
         "graph_manifest_path": str(spec_dir / "model.graph.manifest.json"),
     }
 
@@ -690,6 +751,7 @@ def run_full_training(
     )
 
     chunks: list[dict[str, float | int | str]] = []
+    history_diagnostic_chunks: list[dict[str, np.ndarray]] = []
     training_started = time.perf_counter()
     while state.completed_batches < int(args.n_train_batches):
         remaining = int(args.n_train_batches) - state.completed_batches
@@ -717,6 +779,10 @@ def run_full_training(
         )
         chunk_duration_seconds = time.perf_counter() - chunk_started
         history = _append_history(state.history, history_chunk)
+        if _training_diagnostics_enabled(args):
+            history_diagnostic_chunks.append(
+                _history_diagnostics_arrays(history_chunk, chunk_batches)
+            )
         completed = state.completed_batches + chunk_batches
         history_chunk_path = output_dir / "history_chunks" / f"history_{completed:07d}.eqx"
         history_chunk_path.parent.mkdir(parents=True, exist_ok=True)
@@ -753,6 +819,14 @@ def run_full_training(
     fbx_save(final_model_path, state.model, hyperparameters=run_spec)
     if state.history is not None:
         fbx_save(final_history_path, state.history)
+    diagnostics_metadata = write_training_diagnostics_sidecar(
+        output_dir,
+        args=args,
+        run_spec=run_spec,
+        state=state,
+        training_history_path=final_history_path,
+        history_diagnostic_chunks=history_diagnostic_chunks,
+    )
     final_summary = {
         "schema_version": f"{SCHEMA_VERSION}.training.v1",
         "issue": str(args.issue),
@@ -770,6 +844,7 @@ def run_full_training(
         "training_history_path": str(final_history_path),
         "run_spec_path": str(run_spec_path),
         "graph_spec_path": spec_result["graph_spec_path"],
+        "training_diagnostics": diagnostics_metadata,
         "chunks": chunks,
     }
     _atomic_write_json(final_summary_path, final_summary)
@@ -884,6 +959,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--n-train-batches", type=int, default=12000)
     parser.add_argument("--batch-size", type=int, default=250)
     parser.add_argument("--controller-lr", type=float, default=1e-2)
+    parser.add_argument("--gradient-clip-norm", type=float, default=None)
     parser.add_argument("--n-replicates", type=int, default=5)
     parser.add_argument("--hidden-size", type=int, default=180)
     parser.add_argument(
@@ -935,6 +1011,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--full-train", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument(
+        "--training-diagnostics",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Write compact optimizer/loss scalar sidecars for full training runs. "
+            "Use --no-training-diagnostics to opt out."
+        ),
+    )
+    parser.add_argument(
         "--checkpoint-interval-batches",
         type=int,
         default=DEFAULT_CHECKPOINT_INTERVAL_BATCHES,
@@ -983,6 +1068,107 @@ def _apply_smoke_overrides(args: argparse.Namespace) -> argparse.Namespace:
     return argparse.Namespace(**values)
 
 
+def _training_diagnostics_enabled(args: argparse.Namespace) -> bool:
+    return bool(getattr(args, "training_diagnostics", True))
+
+
+def _tree_global_norm(tree: Any) -> Any:
+    leaves = [leaf for leaf in jt.leaves(tree) if eqx.is_array(leaf)]
+    if not leaves:
+        return jnp.asarray(0.0)
+    return jnp.sqrt(sum(jnp.sum(jnp.square(leaf)) for leaf in leaves))
+
+
+def _trainable_parameter_tree(updates: Any, params: Any | None) -> Any:
+    if params is None:
+        return None
+    return jt.map(
+        lambda update, param: param if eqx.is_array(update) else None,
+        updates,
+        params,
+        is_leaf=lambda x: x is None,
+    )
+
+
+def _empty_diagnostic_series(n_batches: int, *, dtype: Any = jnp.float32) -> Any:
+    return jnp.full((n_batches,), jnp.nan, dtype=dtype)
+
+
+def _gradient_diagnostics_transform(
+    *,
+    schedule: Callable[[Any], Any],
+    n_batches: int,
+    gradient_clip_norm: float | None,
+) -> optax.GradientTransformation:
+    """Return an Optax transform that records pre-clip gradient scalar diagnostics."""
+
+    clip_norm = None if gradient_clip_norm is None else float(gradient_clip_norm)
+
+    def init_fn(_params: Any) -> GradientDiagnosticsState:
+        return GradientDiagnosticsState(
+            count=jnp.asarray(0, dtype=jnp.int32),
+            gradient_norm_pre_clip=_empty_diagnostic_series(n_batches),
+            gradient_clipped=jnp.zeros((n_batches,), dtype=bool),
+            learning_rate=_empty_diagnostic_series(n_batches),
+        )
+
+    def update_fn(
+        updates: Any,
+        state: GradientDiagnosticsState,
+        params: Any | None = None,
+    ) -> tuple[Any, GradientDiagnosticsState]:
+        del params
+        index = jnp.minimum(state.count, max(n_batches - 1, 0))
+        grad_norm = _tree_global_norm(updates)
+        clipped = jnp.asarray(False) if clip_norm is None else grad_norm > clip_norm
+        grad_norm = jnp.asarray(grad_norm, dtype=state.gradient_norm_pre_clip.dtype)
+        learning_rate = jnp.asarray(schedule(state.count), dtype=state.learning_rate.dtype)
+        new_state = GradientDiagnosticsState(
+            count=state.count + jnp.asarray(1, dtype=jnp.int32),
+            gradient_norm_pre_clip=state.gradient_norm_pre_clip.at[index].set(grad_norm),
+            gradient_clipped=state.gradient_clipped.at[index].set(clipped),
+            learning_rate=state.learning_rate.at[index].set(learning_rate),
+        )
+        return updates, new_state
+
+    return optax.GradientTransformation(init_fn, update_fn)
+
+
+def _update_diagnostics_transform(*, n_batches: int) -> optax.GradientTransformation:
+    """Return an Optax transform that records post-update scalar diagnostics."""
+
+    def init_fn(_params: Any) -> UpdateDiagnosticsState:
+        return UpdateDiagnosticsState(
+            count=jnp.asarray(0, dtype=jnp.int32),
+            update_norm=_empty_diagnostic_series(n_batches),
+            parameter_norm=_empty_diagnostic_series(n_batches),
+            update_parameter_norm_ratio=_empty_diagnostic_series(n_batches),
+        )
+
+    def update_fn(
+        updates: Any,
+        state: UpdateDiagnosticsState,
+        params: Any | None = None,
+    ) -> tuple[Any, UpdateDiagnosticsState]:
+        index = jnp.minimum(state.count, max(n_batches - 1, 0))
+        update_norm = _tree_global_norm(updates)
+        parameter_tree = _trainable_parameter_tree(updates, params)
+        parameter_norm = _tree_global_norm(parameter_tree)
+        ratio = update_norm / jnp.maximum(parameter_norm, jnp.asarray(1e-12))
+        update_norm = jnp.asarray(update_norm, dtype=state.update_norm.dtype)
+        parameter_norm = jnp.asarray(parameter_norm, dtype=state.parameter_norm.dtype)
+        ratio = jnp.asarray(ratio, dtype=state.update_parameter_norm_ratio.dtype)
+        new_state = UpdateDiagnosticsState(
+            count=state.count + jnp.asarray(1, dtype=jnp.int32),
+            update_norm=state.update_norm.at[index].set(update_norm),
+            parameter_norm=state.parameter_norm.at[index].set(parameter_norm),
+            update_parameter_norm_ratio=state.update_parameter_norm_ratio.at[index].set(ratio),
+        )
+        return updates, new_state
+
+    return optax.GradientTransformation(init_fn, update_fn)
+
+
 def _build_trainer(hps: TreeNamespace) -> TaskTrainer:
     schedule = make_delayed_cosine_schedule(
         float(hps.learning_rate_0),
@@ -990,9 +1176,25 @@ def _build_trainer(hps: TreeNamespace) -> TaskTrainer:
         total_steps=int(hps.n_batches_condition),
         alpha=float(hps.cosine_annealing_alpha),
     )
-    optimizer = optax.inject_hyperparams(
-        partial(optax.adamw, weight_decay=float(hps.weight_decay))
-    )(learning_rate=schedule)
+    transforms = []
+    if bool(getattr(hps, "training_diagnostics", True)):
+        transforms.append(
+            _gradient_diagnostics_transform(
+                schedule=schedule,
+                n_batches=int(hps.n_batches_condition),
+                gradient_clip_norm=hps.gradient_clip_norm,
+            )
+        )
+    if hps.gradient_clip_norm is not None:
+        transforms.append(optax.clip_by_global_norm(float(hps.gradient_clip_norm)))
+    transforms.append(
+        optax.inject_hyperparams(
+            partial(optax.adamw, weight_decay=float(hps.weight_decay))
+        )(learning_rate=schedule)
+    )
+    if bool(getattr(hps, "training_diagnostics", True)):
+        transforms.append(_update_diagnostics_transform(n_batches=int(hps.n_batches_condition)))
+    optimizer = optax.chain(*transforms)
     return TaskTrainer(optimizer=optimizer, checkpointing=False)
 
 
@@ -1058,6 +1260,58 @@ def _checkpoint_metadata(args: argparse.Namespace, output_dir: Path) -> dict[str
     }
 
 
+def _optimizer_metadata(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "name": "adamw",
+        "learning_rate_0": float(args.controller_lr),
+        "schedule": "delayed_cosine",
+        "constant_lr_iterations": 0,
+        "cosine_annealing_alpha": 1.0,
+        "weight_decay": 0.0,
+        "gradient_clip_norm": (
+            None if args.gradient_clip_norm is None else float(args.gradient_clip_norm)
+        ),
+        "gradient_clip_kind": (
+            None if args.gradient_clip_norm is None else "global_norm"
+        ),
+        "training_diagnostics": _training_diagnostics_metadata(
+            args,
+            Path(args.output_dir),
+        ),
+    }
+
+
+def _training_diagnostics_metadata(
+    args: argparse.Namespace,
+    output_dir: Path,
+) -> dict[str, Any]:
+    enabled = _training_diagnostics_enabled(args)
+    return {
+        "enabled": enabled,
+        "default_enabled": True,
+        "opt_out_flag": "--no-training-diagnostics",
+        "schema_version": f"{SCHEMA_VERSION}.training_diagnostics.v1",
+        "format": "npz+json_manifest",
+        "sidecar_path": str(Path(output_dir) / TRAINING_DIAGNOSTICS_NPZ) if enabled else None,
+        "manifest_path": (
+            str(Path(output_dir) / TRAINING_DIAGNOSTICS_MANIFEST) if enabled else None
+        ),
+        "source": (
+            "optimizer_state plus Feedbax TaskTrainer history; no raw gradients, "
+            "batches, or activations are persisted"
+        ),
+        "scalar_groups": [
+            "optimizer_gradient_norm_pre_clip",
+            "optimizer_gradient_clipped",
+            "optimizer_clipping_fraction",
+            "optimizer_update_parameter_norm_ratio",
+            "optimizer_learning_rate",
+            "train_loss_terms",
+            "validation_loss_terms",
+        ],
+    }
+
+
 def _run_mode(args: argparse.Namespace) -> str:
     if args.dry_run:
         return "dry_run"
@@ -1076,6 +1330,223 @@ def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
     tmp = path.with_name(f".{path.name}.tmp")
     tmp.write_text(_json_dumps(payload), encoding="utf-8")
     os.replace(tmp, path)
+
+
+def write_training_diagnostics_sidecar(
+    output_dir: Path,
+    *,
+    args: argparse.Namespace,
+    run_spec: dict[str, Any],
+    state: TrainingState,
+    training_history_path: Path,
+    history_diagnostic_chunks: list[dict[str, np.ndarray]] | None = None,
+) -> dict[str, Any]:
+    """Write compact training-process scalar sidecars for future optimizer audits."""
+
+    metadata = _training_diagnostics_metadata(args, output_dir)
+    if not metadata["enabled"]:
+        return metadata
+
+    gradient_state = _find_diagnostics_state(
+        state.optimizer_state,
+        GradientDiagnosticsState,
+    )
+    update_state = _find_diagnostics_state(
+        state.optimizer_state,
+        UpdateDiagnosticsState,
+    )
+    arrays: dict[str, np.ndarray] = {
+        "batch_index": np.arange(state.completed_batches, dtype=np.int64),
+    }
+    if gradient_state is not None:
+        arrays.update(_gradient_diagnostics_arrays(gradient_state, state.completed_batches))
+    if update_state is not None:
+        arrays.update(_update_diagnostics_arrays(update_state, state.completed_batches))
+    if history_diagnostic_chunks:
+        arrays.update(_combine_history_diagnostic_chunks(history_diagnostic_chunks))
+    elif state.history is not None:
+        arrays.update(_history_diagnostics_arrays(state.history, state.completed_batches))
+
+    npz_path = Path(metadata["sidecar_path"])
+    manifest_path = Path(metadata["manifest_path"])
+    npz_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_npz = npz_path.with_name(f".{npz_path.name}.tmp.npz")
+    np.savez_compressed(tmp_npz, **arrays)
+    os.replace(tmp_npz, npz_path)
+
+    manifest = {
+        **metadata,
+        "issue": str(args.issue),
+        "run_spec_issue": run_spec.get("issue"),
+        "completed_batches": int(state.completed_batches),
+        "n_train_batches": int(args.n_train_batches),
+        "gradient_clip_active": args.gradient_clip_norm is not None,
+        "gradient_clip_norm": (
+            None if args.gradient_clip_norm is None else float(args.gradient_clip_norm)
+        ),
+        "training_history_path": str(training_history_path),
+        "arrays": {
+            name: {
+                "shape": list(value.shape),
+                "dtype": str(value.dtype),
+            }
+            for name, value in sorted(arrays.items())
+        },
+    }
+    _atomic_write_json(manifest_path, manifest)
+    return {
+        **metadata,
+        "written": True,
+        "array_count": len(arrays),
+        "completed_batches": int(state.completed_batches),
+    }
+
+
+def _find_diagnostics_state(tree: Any, state_type: type) -> Any | None:
+    if isinstance(tree, state_type):
+        return tree
+    if isinstance(tree, dict):
+        for value in tree.values():
+            found = _find_diagnostics_state(value, state_type)
+            if found is not None:
+                return found
+    if isinstance(tree, tuple | list):
+        for value in tree:
+            found = _find_diagnostics_state(value, state_type)
+            if found is not None:
+                return found
+    return None
+
+
+def _diagnostic_series(array: Any, completed_batches: int) -> np.ndarray:
+    values = np.asarray(array)
+    if values.ndim == 0:
+        return values.reshape((1,))
+    if values.ndim == 1:
+        return values[:completed_batches]
+    return np.moveaxis(values[..., :completed_batches], -1, 0)
+
+
+def _gradient_diagnostics_arrays(
+    state: GradientDiagnosticsState,
+    completed_batches: int,
+) -> dict[str, np.ndarray]:
+    clipped = _diagnostic_series(state.gradient_clipped, completed_batches).astype(bool)
+    arrays = {
+        "optimizer_gradient_norm_pre_clip": _diagnostic_series(
+            state.gradient_norm_pre_clip,
+            completed_batches,
+        ),
+        "optimizer_gradient_clipped": clipped,
+        "optimizer_learning_rate": _diagnostic_series(state.learning_rate, completed_batches),
+    }
+    clipped_float = clipped.astype(np.float32)
+    if clipped_float.ndim == 1:
+        arrays["optimizer_clipping_fraction"] = clipped_float
+    else:
+        arrays["optimizer_clipping_fraction"] = clipped_float.mean(
+            axis=tuple(range(1, clipped_float.ndim))
+        )
+    return arrays
+
+
+def _update_diagnostics_arrays(
+    state: UpdateDiagnosticsState,
+    completed_batches: int,
+) -> dict[str, np.ndarray]:
+    return {
+        "optimizer_update_norm": _diagnostic_series(state.update_norm, completed_batches),
+        "optimizer_parameter_norm": _diagnostic_series(state.parameter_norm, completed_batches),
+        "optimizer_update_parameter_norm_ratio": _diagnostic_series(
+            state.update_parameter_norm_ratio,
+            completed_batches,
+        ),
+    }
+
+
+def _history_diagnostics_arrays(history: Any, completed_batches: int) -> dict[str, np.ndarray]:
+    arrays: dict[str, np.ndarray] = {}
+    learning_rate = getattr(history, "learning_rate", None)
+    if learning_rate is not None:
+        arrays["history_learning_rate"] = _diagnostic_series(learning_rate, completed_batches)
+    arrays.update(
+        _loss_tree_arrays(
+            getattr(history, "loss", None),
+            prefix="train_loss",
+            completed_batches=completed_batches,
+        )
+    )
+    arrays.update(
+        _loss_tree_arrays(
+            getattr(history, "loss_validation", None),
+            prefix="validation_loss",
+            completed_batches=completed_batches,
+        )
+    )
+    return arrays
+
+
+def _combine_history_diagnostic_chunks(
+    chunks: list[dict[str, np.ndarray]],
+) -> dict[str, np.ndarray]:
+    keys = sorted({key for chunk in chunks for key in chunk})
+    combined: dict[str, np.ndarray] = {}
+    for key in keys:
+        pieces = [chunk[key] for chunk in chunks if key in chunk]
+        if not pieces:
+            continue
+        combined[key] = np.concatenate(pieces, axis=0)
+    return combined
+
+
+def _loss_tree_arrays(
+    loss_tree: Any,
+    *,
+    prefix: str,
+    completed_batches: int,
+) -> dict[str, np.ndarray]:
+    if loss_tree is None:
+        return {}
+    arrays: dict[str, np.ndarray] = {}
+    total = _loss_tree_total_array(loss_tree)
+    if total is not None:
+        arrays[f"{prefix}__total"] = _diagnostic_series(total, completed_batches)
+    if not hasattr(loss_tree, "flatten"):
+        return arrays
+    for name, value in loss_tree.flatten().items():
+        if not eqx.is_array(value):
+            continue
+        arrays[f"{prefix}__{_sanitize_array_name(str(name))}"] = _diagnostic_series(
+            value,
+            completed_batches,
+        )
+    return arrays
+
+
+def _loss_tree_total_array(loss_tree: Any) -> Any | None:
+    value = getattr(loss_tree, "value", None)
+    weight = getattr(loss_tree, "weight", 1.0)
+    if eqx.is_array(value):
+        return value * weight
+    children = getattr(loss_tree, "children", None)
+    if not children:
+        return None
+    child_values = [
+        child_total
+        for child in children
+        if (child_total := _loss_tree_total_array(child)) is not None
+    ]
+    if not child_values:
+        return None
+    total = child_values[0]
+    for child_value in child_values[1:]:
+        total = total + child_value
+    return total * weight
+
+
+def _sanitize_array_name(name: str) -> str:
+    sanitized = [char if char.isalnum() else "_" for char in name]
+    return "_".join("".join(sanitized).split("_"))
 
 
 def _atomic_latest_link(checkpoint_root: Path, checkpoint_name: str) -> None:
@@ -1194,13 +1665,54 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
 
 def _fidelity_status(hps: TreeNamespace) -> dict[str, Any]:
     nn_hidden = float(hps.loss.weights.nn_hidden)
-    exact = nn_hidden == 0.0
+    no_extra_regularizer = nn_hidden == 0.0
     plant_backend = str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND))
     exact_lss = plant_backend == CS_LSS_PLANT_BACKEND
+    omitted_terms = [
+        {
+            "term": "force_filter_state_cost",
+            "analytical_role": "unit-weight force/filter state cost in the C&S 8D schedule",
+            "status": "not_synthesized_in_feedbax_gru_loss",
+        },
+        {
+            "term": "disturbance_integrator_state_cost",
+            "analytical_role": "unit-weight disturbance-integrator state cost in the C&S 8D schedule",
+            "status": "not_synthesized_in_feedbax_gru_loss",
+        },
+    ]
+    extra_terms = (
+        []
+        if no_extra_regularizer
+        else [
+            {
+                "term": "nn_hidden",
+                "scale": nn_hidden,
+                "status": "auxiliary_regularizer_not_in_analytical_objective",
+            }
+        ]
+    )
     return {
         "objective": "cs_fidelity_stochastic_rollout",
         "exact_fidelity": False,
-        "exact_objective_terms": exact,
+        "exact_objective_terms": False,
+        "exact_objective_terms_scope": (
+            "false because force/filter-state and disturbance-integrator state costs from "
+            "the analytical C&S schedule are omitted from the current Feedbax GRU loss contract"
+        ),
+        "objective_fidelity": {
+            "implemented_terms": [
+                "running_position_cs_eq15_power6",
+                "terminal_position",
+                "running_velocity_cs_eq15_power6",
+                "terminal_velocity",
+                "command_quadratic_nn_output",
+            ],
+            "omitted_terms": omitted_terms,
+            "extra_terms": extra_terms,
+            "selection_policy": (
+                "rollout validation loss only; analytical action and I/O metrics are audit-only"
+            ),
+        },
         "exact_stochastic_rollout": False,
         "exact_stochastic_noise_sources": exact_lss,
         "exact_plant_matrices": exact_lss,
@@ -1218,8 +1730,8 @@ def _fidelity_status(hps: TreeNamespace) -> dict[str, Any]:
             "and plant/load force noise channels without feeding the 48D "
             "delay-augmented analytical state to the GRU."
         ),
-        "regularized_pair": not exact,
-        "regularizer": "none" if exact else "nn_hidden",
+        "regularized_pair": not no_extra_regularizer,
+        "regularizer": "none" if no_extra_regularizer else "nn_hidden",
         "nn_hidden": nn_hidden,
         "certificate_lens": "input_output_map_certificate",
         "same_coordinate_gain_certificate": False,

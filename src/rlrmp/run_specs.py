@@ -94,7 +94,16 @@ def validate_nominal_gru_run_spec(run_spec: dict[str, Any], *, spec_dir: Path) -
         )
 
     for key in sorted(FEEDBAX_GRAPH_REQUIRED_POINTER_KEYS):
-        sidecar = spec_dir / str(graph_metadata[key])
+        pointer = graph_metadata[key]
+        if pointer is None and key == "graph_spec_path":
+            status = graph_metadata.get("graph_export_status")
+            if status == "unavailable":
+                continue
+            raise RunSpecValidationError(
+                "nominal GRU run spec has no Feedbax graph sidecar but does not "
+                "declare feedbax_graph.graph_export_status='unavailable'"
+            )
+        sidecar = spec_dir / str(pointer)
         if not sidecar.is_file():
             raise RunSpecValidationError(
                 f"nominal GRU run spec points to missing Feedbax graph sidecar: {sidecar}"

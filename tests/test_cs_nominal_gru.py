@@ -12,6 +12,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
+import numpy as np
 import optax
 from feedbax.mechanics import LinearStateSpace
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
@@ -209,7 +210,8 @@ def test_dry_run_does_not_write_files(tmp_path: Path) -> None:
     assert result["run_spec"]["mode"] == "dry_run"
     assert result["run_spec"]["nominal_only"] is True
     assert result["run_spec"]["fidelity_status"]["exact_fidelity"] is False
-    assert result["run_spec"]["fidelity_status"]["exact_objective_terms"] is True
+    assert result["run_spec"]["fidelity_status"]["exact_objective_terms"] is False
+    assert result["run_spec"]["fidelity_status"]["objective_fidelity"]["omitted_terms"]
     assert result["run_spec"]["fidelity_status"]["exact_stochastic_rollout"] is False
     assert result["run_spec"]["fidelity_status"]["exact_stochastic_noise_sources"] is True
     assert result["run_spec"]["fidelity_status"]["exact_plant_matrices"] is True
@@ -221,6 +223,7 @@ def test_dry_run_does_not_write_files(tmp_path: Path) -> None:
         result["run_spec"]["fidelity_status"]["temporary_stochastic_bridge"]
     )
     assert result["run_spec"]["fidelity_status"]["nn_hidden"] == 0.0
+    assert result["run_spec"]["optimizer"]["schedule"] == "delayed_cosine"
     assert not spec_dir.exists()
 
 
@@ -237,6 +240,7 @@ def test_regularized_run_metadata_marks_non_exact_status(tmp_path: Path) -> None
     fidelity = result["run_spec"]["fidelity_status"]
     assert fidelity["exact_fidelity"] is False
     assert fidelity["exact_objective_terms"] is False
+    assert fidelity["objective_fidelity"]["extra_terms"][0]["term"] == "nn_hidden"
     assert fidelity["regularized_pair"] is True
     assert fidelity["regularizer"] == "nn_hidden"
     assert fidelity["nn_hidden"] == 1e-5
@@ -254,20 +258,24 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     result = write_run_spec(args)
 
     run_path = Path(result["run_spec_path"])
-    graph_path = Path(result["graph_spec_path"])
+    graph_path = result["graph_spec_path"]
     manifest_path = Path(result["graph_manifest_path"])
     payload = json.loads(run_path.read_text())
     manifest = json.loads(manifest_path.read_text())
 
     assert run_path == spec_dir / "run.json"
-    assert graph_path == spec_dir / "model.graph.json"
+    assert graph_path is None
     assert manifest_path == spec_dir / "model.graph.manifest.json"
+    assert not (spec_dir / "model.graph.json").exists()
     assert payload["schema_version"] == "rlrmp.cs_stochastic_gru.v1"
     assert payload["issue"] == "30f2313"
     assert payload["model_summary"]["hidden_size"] == 4
     assert payload["model_summary"]["controller_kind"] == "gru"
     assert payload["model_summary"]["plant_backend"] == CS_LSS_PLANT_BACKEND
     assert payload["model_summary"]["exact_cs_linear_state_space"] is True
+    assert payload["feedbax_graph"]["graph_spec_path"] is None
+    assert payload["feedbax_graph"]["graph_export_status"] == "unavailable"
+    assert manifest["graph_export"]["status"] == "unavailable"
     assert payload["stochastic_preset"]["name"] == DEFAULT_STOCHASTIC_PRESET
     assert payload["stochastic_preset"]["source_contract"]["contract"] == (
         "cs_released_stochastic_v1"
@@ -369,6 +377,7 @@ def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Pat
     checkpoint_2 = output_dir / "checkpoints" / "checkpoint_0000002"
     metadata = json.loads((checkpoint_latest / "metadata.json").read_text())
     summary = json.loads((output_dir / "training_summary.json").read_text())
+    diagnostics_manifest = json.loads((output_dir / "training_diagnostics.json").read_text())
 
     assert result["completed_batches"] == 2
     assert Path(result["final_model_path"]) == output_dir / "trained_model.eqx"
@@ -384,9 +393,33 @@ def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Pat
     assert (checkpoint_latest / "optimizer_state.eqx").exists()
     assert (output_dir / "trained_model.eqx").exists()
     assert (output_dir / "training_history.eqx").exists()
+    assert (output_dir / "training_diagnostics.npz").exists()
+    assert (output_dir / "training_diagnostics.json").exists()
     assert (output_dir / "history_chunks" / "history_0000001.eqx").exists()
     assert (output_dir / "history_chunks" / "history_0000002.eqx").exists()
     assert summary["latest_checkpoint"] == str(checkpoint_latest)
+    assert summary["training_diagnostics"]["enabled"] is True
+    assert summary["training_diagnostics"]["written"] is True
+    assert summary["training_diagnostics"]["sidecar_path"] == str(
+        output_dir / "training_diagnostics.npz"
+    )
+    assert diagnostics_manifest["completed_batches"] == 2
+    assert diagnostics_manifest["gradient_clip_active"] is False
+    assert diagnostics_manifest["training_history_path"] == str(output_dir / "training_history.eqx")
+    assert "optimizer_gradient_norm_pre_clip" in diagnostics_manifest["arrays"]
+    assert "optimizer_update_parameter_norm_ratio" in diagnostics_manifest["arrays"]
+    assert "optimizer_learning_rate" in diagnostics_manifest["arrays"]
+    assert "train_loss__total" in diagnostics_manifest["arrays"]
+    assert "validation_loss__total" in diagnostics_manifest["arrays"]
+    with np.load(output_dir / "training_diagnostics.npz") as diagnostics:
+        assert diagnostics["batch_index"].tolist() == [0, 1]
+        assert diagnostics["optimizer_gradient_norm_pre_clip"].shape[0] == 2
+        assert diagnostics["optimizer_gradient_clipped"].shape[0] == 2
+        assert diagnostics["optimizer_clipping_fraction"].shape == (2,)
+        assert diagnostics["optimizer_update_parameter_norm_ratio"].shape[0] == 2
+        assert diagnostics["optimizer_learning_rate"].shape[0] == 2
+        assert diagnostics["train_loss__total"].shape[0] == 2
+        assert diagnostics["validation_loss__total"].shape[0] == 2
     assert summary["training_duration_seconds"] > 0
     assert summary["training_batches_per_second"] > 0
     assert len(summary["chunks"]) == 2
@@ -394,6 +427,36 @@ def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Pat
     assert summary["chunks"][0]["duration_seconds"] > 0
     assert summary["chunks"][0]["batches_per_second"] > 0
     assert commits == 3
+
+
+def test_full_training_smoke_can_disable_diagnostics(tmp_path: Path) -> None:
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        n_train_batches=1,
+        batch_size=2,
+        n_replicates=1,
+        hidden_size=4,
+        full_train=True,
+        checkpoint_interval_batches=1,
+        disable_progress=True,
+        quiet_progress=True,
+        training_diagnostics=False,
+    )
+
+    result = run_full_training(args)
+    run_spec = json.loads((spec_dir / "run.json").read_text())
+    summary = json.loads((output_dir / "training_summary.json").read_text())
+
+    assert result["completed_batches"] == 1
+    assert run_spec["training_diagnostics"]["enabled"] is False
+    assert run_spec["training_summary"]["training_diagnostics"]["enabled"] is False
+    assert summary["training_diagnostics"]["enabled"] is False
+    assert summary["training_diagnostics"]["sidecar_path"] is None
+    assert not (output_dir / "training_diagnostics.npz").exists()
+    assert not (output_dir / "training_diagnostics.json").exists()
 
 
 def test_setup_task_model_pair_trains_tiny_nominal_simple_reach_batch() -> None:

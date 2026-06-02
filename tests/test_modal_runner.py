@@ -41,12 +41,25 @@ def test_nominal_training_command_is_bounded_and_nominal_only() -> None:
     assert command[:4] == ["uv", "run", "python", "scripts/train_cs_nominal_gru.py"]
     assert "--n-adversary-batches" not in command
     assert command[command.index("--n-train-batches") + 1] == "1"
+    assert command[command.index("--issue") + 1] == "30f2313"
     assert command[command.index("--hidden-size") + 1] == "4"
     assert command[command.index("--stochastic-preset") + 1] == "cs2019-rollout"
     assert command[command.index("--checkpoint-interval-batches") + 1] == "500"
     assert "--full-train" in command
     assert "--resume" not in command
     assert "--regularized-fidelity" not in command
+
+
+def test_training_command_passes_optimizer_grid_parameters() -> None:
+    config = NominalGruRunConfig(
+        controller_lr=3e-3,
+        gradient_clip_norm=5.0,
+    )
+
+    command = build_training_command(config, remote=True)
+
+    assert command[command.index("--controller-lr") + 1] == "0.003"
+    assert command[command.index("--gradient-clip-norm") + 1] == "5.0"
 
 
 def test_regularized_training_command_uses_hidden_penalty_switch() -> None:

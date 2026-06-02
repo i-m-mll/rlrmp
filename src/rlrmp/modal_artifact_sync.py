@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import shutil
 from dataclasses import dataclass
@@ -15,7 +16,7 @@ from rlrmp.run_specs import validate_nominal_gru_run_spec_file
 Runner = Callable[[Sequence[str]], int]
 RunSpecValidator = Callable[[Path], None]
 
-REQUIRED_SPEC_FILES = ("run.json", "model.graph.json", "model.graph.manifest.json")
+REQUIRED_SPEC_FILES = ("run.json", "model.graph.manifest.json")
 REQUIRED_ARTIFACT_FILES = (
     "trained_model.eqx",
     "training_history.eqx",
@@ -45,7 +46,7 @@ class ModalRunSyncPlan:
         return build_modal_volume_get_command(
             volume_name=self.volume_name,
             remote_path=self.remote_spec_dir,
-            local_path=self.local_spec_dir,
+            local_path=self.local_spec_dir.parent,
         )
 
     @property
@@ -53,7 +54,7 @@ class ModalRunSyncPlan:
         return build_modal_volume_get_command(
             volume_name=self.volume_name,
             remote_path=self.remote_artifact_dir,
-            local_path=self.local_artifact_dir,
+            local_path=self.local_artifact_dir.parent,
         )
 
     @property
@@ -181,6 +182,7 @@ def validate_synced_modal_run(
             f"synced run {plan.issue}/{plan.run} is missing tracked spec files: "
             + ", ".join(missing_specs)
         )
+    _validate_optional_graph_spec(plan.local_spec_dir)
     run_spec_validator(plan.local_spec_dir / "run.json")
 
     if not plan.local_artifact_dir.is_dir():
@@ -197,6 +199,25 @@ def validate_synced_modal_run(
         raise ModalArtifactSyncError(
             f"synced run {plan.issue}/{plan.run} is missing bulk artifact files: "
             + ", ".join(missing_artifacts)
+        )
+
+
+def _validate_optional_graph_spec(spec_dir: Path) -> None:
+    run_spec_path = spec_dir / "run.json"
+    if not run_spec_path.is_file():
+        return
+    run_spec = json.loads(run_spec_path.read_text(encoding="utf-8"))
+    feedbax_graph = run_spec.get("feedbax_graph", {})
+    graph_spec_path = feedbax_graph.get("graph_spec_path")
+    if graph_spec_path is None:
+        if feedbax_graph.get("graph_export_status") != "unavailable":
+            raise ModalArtifactSyncError(
+                "synced run omits model.graph.json without declaring unavailable graph export"
+            )
+        return
+    if not (spec_dir / str(graph_spec_path)).is_file():
+        raise ModalArtifactSyncError(
+            f"synced run points to missing Feedbax graph sidecar: {spec_dir / str(graph_spec_path)}"
         )
 
 

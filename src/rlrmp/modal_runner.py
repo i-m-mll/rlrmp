@@ -60,6 +60,7 @@ class NominalGruRunConfig:
     hidden_size: int = DEFAULT_HIDDEN_SIZE
     seed: int = 42
     controller_lr: float = 1e-2
+    gradient_clip_norm: float | None = None
     stochastic_preset: str = DEFAULT_STOCHASTIC_PRESET
     regularized_fidelity: bool = False
     checkpoint_interval_batches: int = DEFAULT_CHECKPOINT_INTERVAL_BATCHES
@@ -122,10 +123,14 @@ def build_training_command(
     ]
     command = [part for part in command if part]
     _append_arg(command, "--n-train-batches", config.n_train_batches)
+    _append_arg(command, "--issue", config.experiment)
     _append_arg(command, "--batch-size", config.batch_size)
     _append_arg(command, "--n-replicates", config.n_replicates)
     _append_arg(command, "--hidden-size", config.hidden_size)
     _append_arg(command, "--seed", config.seed)
+    _append_arg(command, "--controller-lr", config.controller_lr)
+    if config.gradient_clip_norm is not None:
+        _append_arg(command, "--gradient-clip-norm", config.gradient_clip_norm)
     _append_arg(command, "--stochastic-preset", config.stochastic_preset)
     _append_arg(command, "--output-dir", artifact_dir)
     _append_arg(command, "--spec-dir", spec_dir)
@@ -228,6 +233,8 @@ def dry_run_payload(config: NominalGruRunConfig) -> dict[str, Any]:
         "gpu": config.gpu,
         "timeout_seconds": config.timeout_seconds,
         "stochastic_preset": config.stochastic_preset,
+        "controller_lr": config.controller_lr,
+        "gradient_clip_norm": config.gradient_clip_norm,
         "regularized_fidelity": config.regularized_fidelity,
         "warm_containers": 0,
         "min_containers": 0,
@@ -563,6 +570,7 @@ def make_config(args: argparse.Namespace) -> NominalGruRunConfig:
         hidden_size=args.hidden_size,
         seed=args.seed,
         controller_lr=args.controller_lr,
+        gradient_clip_norm=args.gradient_clip_norm,
         stochastic_preset=args.stochastic_preset,
         regularized_fidelity=args.regularized_fidelity,
         checkpoint_interval_batches=args.checkpoint_interval_batches,
@@ -605,6 +613,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--hidden-size", type=int, default=DEFAULT_HIDDEN_SIZE)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--controller-lr", type=float, default=1e-2)
+    parser.add_argument("--gradient-clip-norm", type=float, default=None)
     parser.add_argument("--stochastic-preset", default=DEFAULT_STOCHASTIC_PRESET)
     parser.add_argument(
         "--regularized-fidelity",

@@ -101,10 +101,22 @@ def materialize_gru_standard_result(
     load_models: bool = True,
     experiment: str = SOURCE_ISSUE_ID,
     materializer_issue_id: str = MATERIALIZER_ISSUE_ID,
+    use_validation_selected_checkpoints: bool = False,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
     """Return standard rows and companion failure diagnostics for GRU pilots."""
 
+    selection_manifest = None
+    if use_validation_selected_checkpoints:
+        from rlrmp.analysis.gru_checkpoint_selection import (
+            materialize_validation_selected_checkpoint_manifest,
+        )
+
+        selection_manifest = materialize_validation_selected_checkpoint_manifest(
+            experiment=experiment,
+            run_ids=run_ids,
+            repo_root=repo_root,
+        )
     result_run_root = repo_root / "results" / experiment / "runs"
     artifact_run_root = repo_root / "_artifacts" / experiment / "runs"
     rows = [
@@ -113,6 +125,7 @@ def materialize_gru_standard_result(
             load_model=load_models,
             experiment=experiment,
             materializer_issue_id=materializer_issue_id,
+            use_validation_selected_checkpoints=use_validation_selected_checkpoints,
             repo_root=repo_root,
         )
         for run_id in run_ids
@@ -148,6 +161,7 @@ def materialize_gru_standard_result(
             )
             for run_id in run_ids
         },
+        "checkpoint_selection": selection_manifest,
         "summary": materialization_summary(rows)
         | {
             "failure_classification_counts": _classification_counts(failure_rows),
@@ -172,6 +186,7 @@ def materialize_gru_standard_row(
     load_model: bool = True,
     experiment: str = SOURCE_ISSUE_ID,
     materializer_issue_id: str = MATERIALIZER_ISSUE_ID,
+    use_validation_selected_checkpoints: bool = False,
     repo_root: Path = REPO_ROOT,
 ) -> BridgeRunManifest:
     """Materialize one GRU pilot standard row."""
@@ -196,6 +211,7 @@ def materialize_gru_standard_row(
             run_id,
             run_spec=run_spec,
             experiment=experiment,
+            use_validation_selected_checkpoints=use_validation_selected_checkpoints,
             repo_root=repo_root,
         )
     else:
@@ -365,6 +381,7 @@ def evaluate_gru_clean_actions(
     *,
     run_spec: dict[str, Any] | None = None,
     experiment: str = SOURCE_ISSUE_ID,
+    use_validation_selected_checkpoints: bool = False,
     repo_root: Path = REPO_ROOT,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
     """Load a GRU pilot model and return clean action traces and I/O maps.
@@ -382,10 +399,23 @@ def evaluate_gru_clean_actions(
     hps = dict_to_namespace(normalize_gru_hps(run_spec["hps"]), to_type=TreeNamespace)
     n_replicates = int(hps.model.n_replicates)
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(int(run_spec.get("seed", 42))))
-    model, _hyperparameters = load_with_hyperparameters(
-        _default_model_path(run_id, experiment=experiment, repo_root=repo_root),
-        setup_func=lambda key, **_kwargs: setup_task_model_pair(hps, key=key).model,
-    )
+    if use_validation_selected_checkpoints:
+        from rlrmp.analysis.gru_checkpoint_selection import (
+            load_validation_selected_checkpoint_model,
+        )
+
+        model, checkpoint_selection = load_validation_selected_checkpoint_model(
+            experiment=experiment,
+            run_id=run_id,
+            run_spec=run_spec,
+            repo_root=repo_root,
+        )
+    else:
+        model, _hyperparameters = load_with_hyperparameters(
+            _default_model_path(run_id, experiment=experiment, repo_root=repo_root),
+            setup_func=lambda key, **_kwargs: setup_task_model_pair(hps, key=key).model,
+        )
+        checkpoint_selection = []
     clean_model = _disable_stochastic_runtime(model)
     trial_specs = pair.task.validation_trials
     n_trials = _trial_count(trial_specs)
@@ -431,6 +461,14 @@ def evaluate_gru_clean_actions(
     )
     return actions, response_maps, {
         "status": "evaluated_clean_feedbax_rollout",
+        "checkpoint_selection": (
+            "validation_selected_per_replicate"
+            if use_validation_selected_checkpoints
+            else "final_checkpoint"
+        ),
+        "selected_checkpoints": [
+            selection.to_json(repo_root=repo_root) for selection in checkpoint_selection
+        ],
         "n_replicates": n_replicates,
         "n_trials": n_trials,
         "noise": "feedbax Channel noise disabled; plant-process force noise disabled if present",
@@ -674,7 +712,7 @@ def render_gru_standard_markdown(result: dict[str, Any]) -> str:
 Issue: `{result["issue"]}`. Source run issue: `{result["source_issue"]}`.
 
 This materialization applies the standard certificate umbrella contract to the
-two locally synced C&S stochastic GRU pilot rows. The rows use
+locally synced C&S stochastic GRU pilot rows. The rows use
 `empirical_nonlinear` mode. Clean rollout action behavior is available;
 same-coordinate transition, value, and Bellman components are explicitly
 `not_applicable`. Observation-to-action response-map components are evaluated
