@@ -43,6 +43,22 @@ def test_default_bank_is_json_serializable_with_required_channels() -> None:
     ]
     assert "plant_force" in decoded["legacy_migration"]
     assert not any(row["channel"] == "plant_force" for row in decoded["perturbations"])
+    process_families = {
+        row["family"] for row in decoded["perturbations"] if row["channel"] == "process_epsilon"
+    }
+    assert process_families == {
+        "process_epsilon_position_xy",
+        "process_epsilon_velocity_xy",
+        "process_epsilon_force_state_xy",
+        "process_epsilon_integrator_xy",
+    }
+    force_y_rows = [
+        row
+        for row in decoded["perturbations"]
+        if row.get("epsilon_component") == "force_state_y"
+    ]
+    assert force_y_rows
+    assert {row["epsilon_index"] for row in force_y_rows} == {5}
 
 
 def test_initial_position_adapter_offsets_cartesian_state_without_mutating_source() -> None:
@@ -160,6 +176,35 @@ def test_process_epsilon_pulse_adapter_offsets_epsilon_input() -> None:
     np.testing.assert_allclose(result.trial_specs.inputs["epsilon"][:, :3, :], 0.0)
     np.testing.assert_allclose(trial_specs.inputs["epsilon"], 0.0)
     assert result.adapter_provenance["process_channel"] == "LinearStateSpace.B_w"
+
+
+def test_process_epsilon_adapter_uses_explicit_force_state_epsilon_index() -> None:
+    trial_specs = TaskTrialSpec(
+        inits={"mechanics.vector": np.zeros((2, 8), dtype=np.float64)},
+        targets={},
+        inputs={
+            "effector_target": CartesianState(pos=np.zeros((2, 10, 2))),
+            "epsilon": np.zeros((2, 10, 8), dtype=np.float64),
+        },
+    )
+    perturbation = {
+        "channel": "process_epsilon",
+        "family": "process_epsilon_force_state_xy",
+        "epsilon_component": "force_state_y",
+        "epsilon_index": 5,
+        "amplitude": 0.25,
+        "axis": "y",
+        "sign": -1,
+        "timing": {"start_time_index": 3, "duration_steps": 2},
+    }
+
+    result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
+
+    assert result.status == "evaluated"
+    np.testing.assert_allclose(result.trial_specs.inputs["epsilon"][:, 3:5, 5], -0.25)
+    np.testing.assert_allclose(result.trial_specs.inputs["epsilon"][:, 3:5, 3], 0.0)
+    assert result.adapter_provenance["epsilon_component"] == "force_state_y"
+    assert result.adapter_provenance["epsilon_index"] == 5
 
 
 def test_process_epsilon_adapter_blocks_without_epsilon_input() -> None:

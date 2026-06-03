@@ -67,11 +67,13 @@ class PerturbationSpec:
     timing: Mapping[str, Any]
     adapter: str
     description: str
+    epsilon_component: str | None = None
+    epsilon_index: int | None = None
 
     def to_json(self) -> dict[str, Any]:
         """Return a JSON-serializable perturbation specification."""
 
-        return {
+        row = {
             "perturbation_id": self.perturbation_id,
             "channel": self.channel,
             "family": self.family,
@@ -84,6 +86,11 @@ class PerturbationSpec:
             "adapter": self.adapter,
             "description": self.description,
         }
+        if self.epsilon_component is not None:
+            row["epsilon_component"] = self.epsilon_component
+        if self.epsilon_index is not None:
+            row["epsilon_index"] = int(self.epsilon_index)
+        return row
 
 
 @dataclass(frozen=True)
@@ -133,6 +140,16 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                         ),
                     )
                 )
+    process_epsilon_components = (
+        ("position", "x", 0, "position_x"),
+        ("position", "y", 1, "position_y"),
+        ("velocity", "x", 2, "velocity_x"),
+        ("velocity", "y", 3, "velocity_y"),
+        ("force_state", "x", 4, "force_state_x"),
+        ("force_state", "y", 5, "force_state_y"),
+        ("integrator", "x", 6, "integrator_x"),
+        ("integrator", "y", 7, "integrator_y"),
+    )
     for start in (20, 40, 50):
         for axis in ("x", "y"):
             for sign in (-1, 1):
@@ -160,17 +177,20 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                         ),
                     )
                 )
+        for component_family, axis, epsilon_index, epsilon_component in process_epsilon_components:
+            for sign in (-1, 1):
                 perturbations.append(
                     PerturbationSpec(
                         perturbation_id=(
-                            f"process_epsilon_pulse__t{start}_{axis}_{_sign_label(sign)}"
+                            "process_epsilon_pulse__"
+                            f"{epsilon_component}__t{start}_{_sign_label(sign)}"
                         ),
                         channel="process_epsilon",
-                        family="process_epsilon_pulse",
+                        family=f"process_epsilon_{component_family}_xy",
                         amplitude=0.01,
                         units="epsilon",
                         axis=axis,
-                        basis="cs_lss_process_epsilon_position_xy",
+                        basis="cs_lss_process_epsilon_current_physical_block",
                         sign=sign,
                         timing={
                             "epoch": "movement_indexed",
@@ -180,8 +200,12 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                         adapter="task_trial_spec.inputs['epsilon']",
                         description=(
                             "Add a pulse on the C&S LSS mechanics.epsilon input, which "
-                            "is injected through the plant B_w process channel."
+                            "is injected through the plant B_w process channel. The "
+                            f"component is {epsilon_component} at epsilon index "
+                            f"{epsilon_index}."
                         ),
+                        epsilon_component=epsilon_component,
+                        epsilon_index=epsilon_index,
                     )
                 )
     blocked_specs = (
@@ -274,7 +298,9 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                     "Current eager path edits trial_specs.inputs['epsilon'] only when "
                     "the model exposes an epsilon input bound to mechanics.epsilon. "
                     "Future GraphSpec insertion point: named process channel into "
-                    "LinearStateSpace.epsilon / B_w."
+                    "LinearStateSpace.epsilon / B_w. Rows declare epsilon_component "
+                    "and epsilon_index over the canonical current physical block "
+                    "[px, py, vx, vy, fx, fy, eps_x_int, eps_y_int]."
                 ),
             },
         },
@@ -397,7 +423,9 @@ def materialize_gru_perturbation_response(
         "semantics_correction": (
             "v2 splits the former plant_force rows into command_input_pulse "
             "(post-controller command-port perturbations) and process_epsilon_pulse "
-            "(mechanics.epsilon / B_w process perturbations)."
+            "(mechanics.epsilon / B_w process perturbations). Process-epsilon "
+            "rows span the canonical current physical block [px, py, vx, vy, "
+            "fx, fy, eps_x_int, eps_y_int]."
         ),
         "bank": bank,
         "extlqg_comparator": {
@@ -587,6 +615,11 @@ def render_perturbation_response_markdown(manifest: Mapping[str, Any]) -> str:
     for perturbation in manifest["bank"]["perturbations"]:
         channel_counts[perturbation["channel"]] = channel_counts.get(perturbation["channel"], 0) + 1
     lines.extend(f"| `{channel}` | {count} |" for channel, count in sorted(channel_counts.items()))
+    lines.extend(["", "| Family | Count |", "|---|---:|"])
+    family_counts: dict[str, int] = {}
+    for perturbation in manifest["bank"]["perturbations"]:
+        family_counts[perturbation["family"]] = family_counts.get(perturbation["family"], 0) + 1
+    lines.extend(f"| `{family}` | {count} |" for family, count in sorted(family_counts.items()))
     lines.extend(["", "## Evaluation", ""])
     if not manifest["runs"]:
         lines.append("No checkpoint rollouts were evaluated in this materialization.")
@@ -791,14 +824,18 @@ def _apply_process_epsilon_pulse(
             trial_specs=trial_specs,
             reason=f"epsilon input must have shape (batch, time, dim); got {epsilon.shape}",
         )
-    axis_index = _axis_index(str(perturbation["axis"]))
-    if epsilon.shape[-1] <= axis_index:
+    epsilon_index_raw = perturbation.get("epsilon_index")
+    if epsilon_index_raw is None:
+        epsilon_index = _axis_index(str(perturbation["axis"]))
+    else:
+        epsilon_index = int(epsilon_index_raw)
+    if epsilon_index < 0 or epsilon.shape[-1] <= epsilon_index:
         return AdapterResult(
             status="blocked",
             trial_specs=trial_specs,
             reason=(
                 f"epsilon input has dimension {epsilon.shape[-1]}, cannot address "
-                f"axis index {axis_index}"
+                f"epsilon index {epsilon_index}"
             ),
         )
     timing = perturbation["timing"]
@@ -814,13 +851,14 @@ def _apply_process_epsilon_pulse(
             ),
         )
     amount = float(perturbation["amplitude"]) * int(perturbation["sign"])
-    updated = epsilon.at[..., start : start + duration, axis_index].add(amount)
+    updated = epsilon.at[..., start : start + duration, epsilon_index].add(amount)
     return AdapterResult(
         status="evaluated",
         trial_specs=eqx.tree_at(lambda ts: ts.inputs["epsilon"], trial_specs, updated),
         adapter_provenance={
             "adapter": "trial_specs.inputs['epsilon']",
-            "epsilon_index": axis_index,
+            "epsilon_component": perturbation.get("epsilon_component"),
+            "epsilon_index": epsilon_index,
             "start_time_index": start,
             "duration_steps": duration,
             "future_graphspec_insertion_point": "mechanics.epsilon",
