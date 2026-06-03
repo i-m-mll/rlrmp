@@ -687,10 +687,13 @@ def evaluate_run_perturbation_bank(
                     "format": "np.savez_compressed",
                     "arrays": [
                         "delta_action",
+                        "delta_gru_input",
                         "delta_position",
                         "delta_velocity",
                         "base_position",
                         "perturbed_position",
+                        "base_gru_input",
+                        "perturbed_gru_input",
                     ],
                 },
             }
@@ -723,6 +726,7 @@ def summarize_perturbation_response(
     """Compute paired perturbation-response metrics."""
 
     delta_action = perturbed.command - base.command
+    delta_input = perturbed.gru_input - base.gru_input
     delta_position = perturbed.position - base.position
     delta_velocity = perturbed.velocity - base.velocity
     endpoint_recovery = np.linalg.norm(
@@ -745,6 +749,10 @@ def summarize_perturbation_response(
         "delta_endpoint_error_m": _summary_stats(endpoint_recovery - base_endpoint),
         "terminal_speed_m_s": _summary_stats(terminal_speed),
         "delta_terminal_speed_m_s": _summary_stats(terminal_speed - base_terminal_speed),
+        "controller_io_response": _controller_io_response_summary(
+            delta_input=delta_input,
+            delta_action=delta_action,
+        ),
     }
     if base_full_qrf_cost is None or perturbed_full_qrf_cost is None:
         metrics["extra_full_qrf_cost"] = {
@@ -983,6 +991,8 @@ def compare_response_metric_summaries(
         "delta_velocity_trajectory_norm_m_s",
         "delta_endpoint_error_m",
         "delta_terminal_speed_m_s",
+        "controller_io_response.delta_input_norm",
+        "controller_io_response.action_per_input_gain",
     ):
         gru_mean = _metric_mean(gru_metrics, key)
         ext_mean = _metric_mean(extlqg_metrics, key)
@@ -1573,6 +1583,7 @@ def _write_perturbation_bulk_arrays(
     np.savez_compressed(
         path,
         delta_action=perturbed.command - base.command,
+        delta_gru_input=perturbed.gru_input - base.gru_input,
         delta_position=perturbed.position - base.position,
         delta_velocity=perturbed.velocity - base.velocity,
         base_position=base.position,
@@ -1581,6 +1592,8 @@ def _write_perturbation_bulk_arrays(
         perturbed_velocity=perturbed.velocity,
         base_action=base.command,
         perturbed_action=perturbed.command,
+        base_gru_input=base.gru_input,
+        perturbed_gru_input=perturbed.gru_input,
     )
     return path
 
@@ -1623,6 +1636,35 @@ def _summary_with_values(values: Any) -> dict[str, Any]:
         **_summary_stats(array),
         "shape": list(array.shape),
         "values": array.tolist(),
+    }
+
+
+def _controller_io_response_summary(
+    *,
+    delta_input: Any,
+    delta_action: Any,
+) -> dict[str, Any]:
+    """Summarize perturbation-induced controller input/output response."""
+
+    input_array = np.asarray(delta_input, dtype=np.float64)
+    action_array = np.asarray(delta_action, dtype=np.float64)
+    if input_array.shape[-1] == 0:
+        return {
+            "status": "not_available",
+            "reason": "controller input vector has zero width for this comparator arm",
+            "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        }
+    input_norm = np.linalg.norm(input_array, axis=-1)
+    action_norm = np.linalg.norm(action_array, axis=-1)
+    gain = action_norm / np.maximum(input_norm, 1e-12)
+    return {
+        "status": "available",
+        "lens": "perturbation_controller_input_to_action_response",
+        "input_key": "states.net.input",
+        "output_key": "states.net.output",
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "delta_input_norm": _summary_stats(input_norm),
+        "action_per_input_gain": _summary_stats(gain),
     }
 
 

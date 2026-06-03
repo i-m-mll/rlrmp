@@ -18,7 +18,9 @@ from rlrmp.analysis.gru_perturbation_bank import (
     delta_full_qrf_cost_summary,
     extlqg_comparator_status,
     score_full_qrf_rollout_cost,
+    summarize_perturbation_response,
 )
+from rlrmp.analysis.gru_evaluation_diagnostics import RolloutEvaluation
 from rlrmp.analysis.cs_game_card import build_canonical_game
 from rlrmp.cs_lss_gru import build_cs_lss_gru_graph
 
@@ -361,6 +363,42 @@ def test_full_qrf_cost_scorer_reports_control_and_delta_breakdown() -> None:
     np.testing.assert_allclose(perturbed["control"], 2.0 * schedule.T)
     assert delta["status"] == "available"
     assert delta["delta_cost"]["control"]["mean"] == 2.0 * schedule.T
+
+
+def test_perturbation_response_reports_controller_io_metrics() -> None:
+    zeros_pos = np.zeros((1, 1, 3, 2), dtype=np.float64)
+    target = np.zeros((1, 3, 2), dtype=np.float64)
+    base = RolloutEvaluation(
+        position=zeros_pos,
+        velocity=zeros_pos,
+        command=np.zeros((1, 1, 3, 2), dtype=np.float64),
+        hidden=np.zeros((1, 1, 3, 4), dtype=np.float64),
+        gru_input=np.zeros((1, 1, 3, 3), dtype=np.float64),
+        initial_position=np.zeros((1, 2), dtype=np.float64),
+        initial_velocity=np.zeros((1, 2), dtype=np.float64),
+        target_position=target,
+        dt=0.01,
+    )
+    perturbed = RolloutEvaluation(
+        position=zeros_pos,
+        velocity=zeros_pos,
+        command=np.ones((1, 1, 3, 2), dtype=np.float64),
+        hidden=np.zeros((1, 1, 3, 4), dtype=np.float64),
+        gru_input=np.ones((1, 1, 3, 3), dtype=np.float64),
+        initial_position=np.zeros((1, 2), dtype=np.float64),
+        initial_velocity=np.zeros((1, 2), dtype=np.float64),
+        target_position=target,
+        dt=0.01,
+    )
+
+    metrics = summarize_perturbation_response(base, perturbed)
+
+    io = metrics["controller_io_response"]
+    assert io["status"] == "available"
+    assert io["input_key"] == "states.net.input"
+    assert io["output_key"] == "states.net.output"
+    np.testing.assert_allclose(io["delta_input_norm"]["mean"], np.sqrt(3.0))
+    np.testing.assert_allclose(io["action_per_input_gain"]["mean"], np.sqrt(2.0) / np.sqrt(3.0))
 
 
 def test_extlqg_comparator_status_defers_target_stream_for_fixed_target_rows() -> None:

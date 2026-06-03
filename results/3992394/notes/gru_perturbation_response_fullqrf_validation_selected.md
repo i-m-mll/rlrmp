@@ -38,7 +38,7 @@ v2 splits the former plant_force rows into command_input_pulse (post-controller 
 - Blocked: 0
 - Not implemented: 0
 - Not applicable: 1
-- Rollout trials per replicate: 1
+- Rollout trials per replicate: 8
 
 ### `lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64`
 
@@ -46,7 +46,7 @@ v2 splits the former plant_force rows into command_input_pulse (post-controller 
 - Blocked: 0
 - Not implemented: 0
 - Not applicable: 1
-- Rollout trials per replicate: 1
+- Rollout trials per replicate: 8
 
 ## Residuals
 
