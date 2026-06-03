@@ -13,7 +13,11 @@ from rlrmp.analysis.gru_perturbation_bank import (
     SCHEMA_VERSION,
     apply_perturbation_to_trial_specs,
     default_cs_perturbation_bank,
+    delta_full_qrf_cost_summary,
+    extlqg_comparator_status,
+    score_full_qrf_rollout_cost,
 )
+from rlrmp.analysis.cs_game_card import build_canonical_game
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 
 
@@ -259,3 +263,66 @@ def test_delayed_observation_reason_names_clean_pre_noise_channel() -> None:
     assert result.status == "not_implemented"
     assert "DelayedPositionVelocityFeedback" in result.reason
     assert "before sensory noise" in result.reason
+
+
+def test_full_qrf_cost_scorer_reports_control_and_delta_breakdown() -> None:
+    _plant, schedule = build_canonical_game()
+    states = np.zeros((1, schedule.T, schedule.Q.shape[-1]), dtype=np.float64)
+    initial = np.zeros((1, schedule.Q.shape[-1]), dtype=np.float64)
+    base_commands = np.zeros((1, schedule.T, schedule.R.shape[-1]), dtype=np.float64)
+    perturbed_commands = np.ones_like(base_commands)
+
+    base = score_full_qrf_rollout_cost(
+        states=states,
+        commands=base_commands,
+        initial_states=initial,
+        target_pos=np.zeros((2,), dtype=np.float64),
+    )
+    perturbed = score_full_qrf_rollout_cost(
+        states=states,
+        commands=perturbed_commands,
+        initial_states=initial,
+        target_pos=np.zeros((2,), dtype=np.float64),
+    )
+    delta = delta_full_qrf_cost_summary(
+        {
+            "status": "available",
+            "lens": base["lens"],
+            "basis": base["basis"],
+            "total": {"values": base["total"].tolist()},
+            "stage_state": {"values": base["stage_state"].tolist()},
+            "control": {"values": base["control"].tolist()},
+            "terminal": {"values": base["terminal"].tolist()},
+        },
+        {
+            "status": "available",
+            "lens": perturbed["lens"],
+            "basis": perturbed["basis"],
+            "total": {"values": perturbed["total"].tolist()},
+            "stage_state": {"values": perturbed["stage_state"].tolist()},
+            "control": {"values": perturbed["control"].tolist()},
+            "terminal": {"values": perturbed["terminal"].tolist()},
+        },
+    )
+
+    assert base["status"] == "available"
+    np.testing.assert_allclose(base["total"], 0.0)
+    np.testing.assert_allclose(perturbed["stage_state"], 0.0)
+    np.testing.assert_allclose(perturbed["terminal"], 0.0)
+    np.testing.assert_allclose(perturbed["control"], 2.0 * schedule.T)
+    assert delta["status"] == "available"
+    assert delta["delta_cost"]["control"]["mean"] == 2.0 * schedule.T
+
+
+def test_extlqg_comparator_status_defers_target_stream_for_fixed_target_rows() -> None:
+    perturbation = {
+        "channel": "target_stream",
+        "family": "target_stream_jump",
+        "perturbation_id": "target_stream_jump__x_pos",
+    }
+
+    status = extlqg_comparator_status(perturbation, status="not_applicable")
+
+    assert status["status"] == "not_applicable"
+    assert "fixed-target checkpoints" in status["reason"]
+    assert status["selection_role"] == "audit_only_not_used_for_checkpoint_selection"
