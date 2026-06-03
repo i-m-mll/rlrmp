@@ -11,6 +11,7 @@ from rlrmp.analysis.objective_comparator import (
     SCHEMA_VERSION,
     ExtLQGCostDecomposition,
     build_objective_comparator_sidecar,
+    load_run_objective_metadata,
     materialize_gru_objective_comparator_sidecar,
     render_objective_comparator_markdown,
     write_objective_comparator_sidecar,
@@ -41,6 +42,18 @@ def _checkpoint_selection() -> dict[str, object]:
                     "best_logged_validation_objective": 11.0,
                 },
             ],
+        },
+    }
+
+
+def _full_qrf_run_metadata() -> dict[str, object]:
+    return {
+        "status": "available",
+        "loss_objective": "full_analytical_qrf",
+        "objective_profile": "full_analytical_qrf",
+        "full_qrf_lens": {
+            "status": "available",
+            "active_terms": ["control_r", "state_running_q", "terminal_q_f"],
         },
     }
 
@@ -77,18 +90,62 @@ def test_build_objective_comparator_sidecar_uses_deterministic_comparator_lens()
         ),
         scope="unit scope",
         generated_by="unit",
+        run_metadata_by_id={
+            "run_a": _full_qrf_run_metadata(),
+            "run_b": _full_qrf_run_metadata(),
+        },
     )
 
     assert sidecar["schema_version"] == SCHEMA_VERSION
     assert sidecar["extlqg_decomposition"]["total_expected_cost"] == 44.0
     assert sidecar["same_noise_bank_monte_carlo"]["status"] == "not_implemented"
+    assert sidecar["same_noise_bank_monte_carlo"]["lens"] == "same_noise_bank_monte_carlo_full_qrf"
+    assert sidecar["per_term_realized_scoring"]["status"] == "not_implemented"
+    assert (
+        sidecar["objective_lenses"]["extlqg_covariance_inclusive_expected_cost"]["noise_bank"]
+        == "analytical_covariance_expectation_not_realized_validation_bank"
+    )
 
     first_row = sidecar["rows"][0]
     assert first_row["run_id"] == "run_a"
+    assert first_row["comparability"]["status"] == "comparable_deterministic_full_qrf"
     assert first_row["gru_mean_selected_validation_full_qrf"] == 12.0
     assert first_row["selected_to_extlqg_deterministic_ratio"] == 1.0
     assert first_row["selected_to_extlqg_total_ratio_not_apples_to_apples"] == 12.0 / 44.0
     assert first_row["extlqg_comparable_lens"] == "extlqg_deterministic_initial_state_full_qrf"
+    assert first_row["per_term_realized_scoring"]["status"] == "not_implemented"
+
+
+def test_build_objective_comparator_sidecar_marks_partial_rows_not_comparable() -> None:
+    sidecar = build_objective_comparator_sidecar(
+        issue="abc1234",
+        source_manifest="source.json",
+        checkpoint_selection=_checkpoint_selection(),
+        extlqg=ExtLQGCostDecomposition(
+            deterministic_initial_state=12.0,
+            initial_covariance_trace=30.0,
+            accumulated_noise_scalar=2.0,
+            total_expected_cost=44.0,
+            provenance="unit-test",
+        ),
+        scope="unit scope",
+        generated_by="unit",
+        run_metadata_by_id={
+            "run_a": {
+                "status": "available",
+                "loss_objective": "partial_net_output_force_filter",
+                "objective_profile": "partial_net_output_force_filter",
+            },
+            "run_b": _full_qrf_run_metadata(),
+        },
+    )
+
+    first_row = sidecar["rows"][0]
+
+    assert first_row["comparability"]["status"] == "not_comparable"
+    assert first_row["selected_to_extlqg_deterministic_ratio"] is None
+    assert first_row["selected_to_extlqg_total_ratio_not_apples_to_apples"] is None
+    assert "must not be inferred" in first_row["comparability"]["reason"]
 
 
 def test_write_objective_comparator_sidecar_serializes_json_and_markdown(tmp_path) -> None:
@@ -105,6 +162,10 @@ def test_write_objective_comparator_sidecar_serializes_json_and_markdown(tmp_pat
         ),
         scope="unit scope",
         generated_by="unit",
+        run_metadata_by_id={
+            "run_a": _full_qrf_run_metadata(),
+            "run_b": _full_qrf_run_metadata(),
+        },
     )
     json_path = tmp_path / "sidecar.json"
     markdown_path = tmp_path / "sidecar.md"
@@ -123,6 +184,43 @@ def test_write_objective_comparator_sidecar_serializes_json_and_markdown(tmp_pat
     assert "Scope: unit scope." in markdown
     assert "not directly comparable to GRU validation values" in markdown
     assert "selected/total" in markdown
+    assert "same-noise-bank Monte Carlo" in markdown
+    assert "Per-term realized scoring" in markdown
+
+
+def test_load_run_objective_metadata_extracts_full_qrf_contract(tmp_path: Path) -> None:
+    run_spec_path = tmp_path / "run.json"
+    run_spec_path.write_text(
+        json.dumps(
+            {
+                "loss_objective": "full_analytical_qrf",
+                "loss_summary": {
+                    "objective_profile": "full_analytical_qrf",
+                    "active_cs_terms": {
+                        "state_running_q": {},
+                        "terminal_q_f": {},
+                        "control_r": {},
+                    },
+                    "force_filter_state_cost": "included_via_Q_entries_4_5_each_delay_block",
+                    "disturbance_integrator_state_cost": (
+                        "included_via_Q_entries_6_7_each_delay_block"
+                    ),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    metadata = load_run_objective_metadata(run_spec_path)
+
+    assert metadata["status"] == "available"
+    assert metadata["loss_objective"] == "full_analytical_qrf"
+    assert metadata["full_qrf_lens"]["status"] == "available"
+    assert metadata["full_qrf_lens"]["active_terms"] == [
+        "control_r",
+        "state_running_q",
+        "terminal_q_f",
+    ]
 
 
 def test_materialize_gru_objective_comparator_sidecar_uses_validation_manifest(
@@ -165,5 +263,6 @@ def test_materialize_gru_objective_comparator_sidecar_uses_validation_manifest(
     assert result["status"] == "materialized"
     assert result["n_rows"] == 2
     assert payload["source_manifest"] == "results/abc1234/notes/standard_manifest.json"
-    assert payload["rows"][0]["selected_to_extlqg_deterministic_ratio"] == 1.0
+    assert payload["rows"][0]["comparability"]["status"] == "not_comparable"
+    assert payload["rows"][0]["selected_to_extlqg_deterministic_ratio"] is None
     assert output_md.exists()
