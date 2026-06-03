@@ -50,5 +50,5 @@ v2 splits the former plant_force rows into command_input_pulse (post-controller 
 
 ## Residuals
 
-- ExtLQG comparator: placeholder - The current materializer defines and evaluates the GRU-side bank. ExtLQG perturbation rollout plumbing is not yet wired to the same declarative bank, so comparator rows are explicit placeholders.
-- Full-Q/R/Q_f perturbation cost: not_available - The full analytical Q/R/Q_f loss is available for training and checkpoint selection, but this perturbation materializer does not yet bind that loss object to perturbed post-hoc trial specs.
+- ExtLQG comparator: available_for_initial_state_and_process_epsilon - Deterministic extLQG response rows are evaluated for perturbations with clean analytical interfaces: initial_state and process_epsilon. Command-input, sensory-feedback, and delayed-observation GRU rows are evaluated through temporary external graph adapters, but do not yet have matching analytical extLQG channel adapters; target-stream is deferred for current fixed-target checkpoints.
+- Full-Q/R/Q_f perturbation cost: available - Costs are rescored post hoc from states.mechanics.vector and states.net.output using the canonical C&S Q_t/R_t/Q_f schedule. They are audit-only perturbation diagnostics and are not used for checkpoint selection.

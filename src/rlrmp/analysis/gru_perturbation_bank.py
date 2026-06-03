@@ -562,9 +562,10 @@ def materialize_gru_perturbation_response(
             "reason": (
                 "Deterministic extLQG response rows are evaluated for perturbations "
                 "with clean analytical interfaces: initial_state and process_epsilon. "
-                "Command, sensory, delayed-observation, and target-stream rows remain "
-                "not_applicable until their external graph/channel adapters are owned "
-                "by the matching implementation lane."
+                "Command-input, sensory-feedback, and delayed-observation GRU rows "
+                "are evaluated through temporary external graph adapters, but do not "
+                "yet have matching analytical extLQG channel adapters; target-stream "
+                "is deferred for current fixed-target checkpoints."
             ),
             "checkpoint_selection_role": "audit_only_not_used_for_selection",
         },
@@ -877,7 +878,7 @@ def delta_full_qrf_cost_summary(
     for key in ("total", "stage_state", "control", "terminal"):
         base_values = np.asarray(base[key]["values"], dtype=np.float64)
         perturbed_values = np.asarray(perturbed[key]["values"], dtype=np.float64)
-        deltas[key] = _summary_with_values(perturbed_values - base_values)
+        deltas[key] = _summary_stats(perturbed_values - base_values)
     return {
         "status": "available",
         "lens": "paired_realized_deterministic_rollout_full_qrf",
