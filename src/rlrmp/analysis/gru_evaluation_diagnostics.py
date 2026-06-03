@@ -153,6 +153,11 @@ def materialize_gru_evaluation_diagnostics(
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "issue": experiment,
+        "checkpoint_policy": (
+            "validation_selected_per_replicate"
+            if use_validation_selected_checkpoints
+            else "final_checkpoint"
+        ),
         "scope": "post_hoc_evaluation_non_certificate_diagnostics",
         "standard_certificate_metrics": {
             "status": "excluded",
