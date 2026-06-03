@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -1023,6 +1023,7 @@ def summarize_perturbation_bank(rows: Sequence[Mapping[str, Any]]) -> dict[str, 
     return {
         "status": "available" if evaluated else "not_available",
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "class_summary": _class_summary_by_group(rows),
         "ratio_of_means": _ratio_of_means_by_group(evaluated),
         "signed_pair_response": _signed_pair_response_summary(evaluated),
         "controller_io_response": _controller_io_bank_summary(evaluated),
@@ -1085,6 +1086,38 @@ def render_perturbation_response_markdown(manifest: Mapping[str, Any]) -> str:
                 "",
             ]
         )
+        class_summary = robust_summary.get("class_summary", {})
+        if class_summary.get("status") == "available":
+            lines.extend(
+                [
+                    "#### Class-Binned Summary",
+                    "",
+                    "| Class | Rows | Status | Amplitudes | Mean delta action | "
+                    "Mean delta pos traj | Mean delta vel traj | Mean endpoint delta | "
+                    "Mean terminal-speed delta | Mean full-Q/R/Q_f delta cost | "
+                    "GRU/extLQG delta-cost ratio | Warnings / not applicable |",
+                    "|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---|",
+                ]
+            )
+            for class_key, class_row in class_summary.get("groups", {}).items():
+                metrics = class_row.get("metrics", {})
+                ratio = class_row.get("gru_extlqg_delta_cost_ratio", {})
+                lines.append(
+                    "| "
+                    f"`{class_key}` | "
+                    f"{class_row.get('n_rows', 0)} | "
+                    f"{_format_status_counts(class_row.get('status_counts', {}))} | "
+                    f"{_format_amplitudes(class_row.get('amplitudes', []))} | "
+                    f"{_format_optional_float(_summary_mean(metrics, 'delta_action_norm'))} | "
+                    f"{_format_optional_float(_summary_mean(metrics, 'delta_position_trajectory_norm_m'))} | "
+                    f"{_format_optional_float(_summary_mean(metrics, 'delta_velocity_trajectory_norm_m_s'))} | "
+                    f"{_format_optional_float(_summary_mean(metrics, 'delta_endpoint_error_m'))} | "
+                    f"{_format_optional_float(_summary_mean(metrics, 'delta_terminal_speed_m_s'))} | "
+                    f"{_format_optional_float(_summary_mean(metrics, 'extra_full_qrf_delta_cost_total'))} | "
+                    f"{_format_optional_float(ratio.get('ratio_of_means'))} | "
+                    f"{_format_class_notes(class_row)} |"
+                )
+            lines.append("")
     lines.extend(
         [
             "## Residuals",
@@ -1740,6 +1773,122 @@ _SIGNED_PAIR_METRICS = (
 )
 
 
+_CLASS_SUMMARY_METRICS = (
+    "delta_action_norm",
+    "delta_position_trajectory_norm_m",
+    "delta_velocity_trajectory_norm_m_s",
+    "delta_endpoint_error_m",
+    "delta_terminal_speed_m_s",
+)
+
+
+def _class_summary_by_group(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = {}
+    for row in rows:
+        grouped.setdefault((str(row["channel"]), str(_row_family(row))), []).append(row)
+    groups = {
+        f"{channel}/{family}": _class_group_summary(channel, family, group_rows)
+        for (channel, family), group_rows in sorted(grouped.items())
+    }
+    return {
+        "status": "available" if groups else "not_available",
+        "grouping": "channel/family",
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "groups": groups,
+    }
+
+
+def _class_group_summary(
+    channel: str,
+    family: str,
+    rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    evaluated = [row for row in rows if row.get("status") == "evaluated"]
+    metrics = {
+        metric: _summary_stats_or_not_available(_available_metric_means(evaluated, metric))
+        for metric in _CLASS_SUMMARY_METRICS
+    }
+    metrics["extra_full_qrf_delta_cost_total"] = _summary_stats_or_not_available(
+        _available_metric_means(evaluated, "extra_full_qrf_cost.delta_cost.total")
+    )
+    comparator_rows = [
+        row
+        for row in evaluated
+        if row.get("extlqg_comparator", {}).get("status") == "available"
+    ]
+    cost_ratio = _ratio_of_means(
+        _available_metric_means(evaluated, "extra_full_qrf_cost.delta_cost.total"),
+        _available_extlqg_metric_means(
+            comparator_rows,
+            "extra_full_qrf_cost.delta_cost.total",
+        ),
+    )
+    if cost_ratio["status"] == "not_available":
+        cost_ratio["reason"] = (
+            "no meaningful extLQG full-Q/R/Q_f denominator for this channel/family"
+        )
+    return {
+        "channel": channel,
+        "family": family,
+        "n_rows": len(rows),
+        "status_counts": _status_counts(rows),
+        "amplitudes": sorted({float(_row_amplitude(row)) for row in rows}),
+        "metrics": metrics,
+        "gru_extlqg_delta_cost_ratio": cost_ratio,
+        "not_applicable_reasons": _reason_counts(
+            row for row in rows if row.get("status") == "not_applicable"
+        ),
+        "extlqg_not_applicable_reasons": _reason_counts(
+            row.get("extlqg_comparator", {})
+            for row in rows
+            if row.get("extlqg_comparator", {}).get("status") == "not_applicable"
+        ),
+        "denominator_warnings": _ratio_warnings(cost_ratio),
+    }
+
+
+def _available_extlqg_metric_means(
+    rows: Sequence[Mapping[str, Any]],
+    metric: str,
+) -> list[float]:
+    return [
+        value
+        for row in rows
+        if (
+            value := _metric_mean(
+                row.get("extlqg_comparator", {}).get("reference_response_metrics", {}),
+                metric,
+            )
+        )
+        is not None
+    ]
+
+
+def _summary_stats_or_not_available(values: Sequence[float]) -> dict[str, Any]:
+    if not values:
+        return {"status": "not_available", "count": 0, "mean": None}
+    summary = _summary_stats(values)
+    summary["status"] = "available"
+    return summary
+
+
+def _reason_counts(rows: Iterable[Mapping[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        reason = str(row.get("reason", "unspecified"))
+        counts[reason] = counts.get(reason, 0) + 1
+    return counts
+
+
+def _ratio_warnings(ratio: Mapping[str, Any]) -> list[str]:
+    warnings = []
+    if ratio.get("status") == "denominator_guarded":
+        warnings.append("denominator_guarded")
+    if ratio.get("inflated_ratio") is True:
+        warnings.append("inflated_ratio")
+    return warnings
+
+
 def _ratio_of_means_by_group(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = {}
     for row in rows:
@@ -2025,6 +2174,54 @@ def _summary_stats(values: Any) -> dict[str, float | int]:
         "p50": float(np.quantile(flat, 0.50)),
         "p95": float(np.quantile(flat, 0.95)),
     }
+
+
+def _summary_mean(metrics: Mapping[str, Any], key: str) -> float | None:
+    summary = metrics.get(key)
+    if not isinstance(summary, Mapping):
+        return None
+    value = summary.get("mean")
+    if value is None:
+        return None
+    return float(value)
+
+
+def _format_status_counts(counts: Mapping[str, Any]) -> str:
+    if not counts:
+        return "none"
+    return ", ".join(f"{key}={counts[key]}" for key in sorted(counts))
+
+
+def _format_amplitudes(values: Sequence[Any]) -> str:
+    if not values:
+        return "NA"
+    return ", ".join(_format_optional_float(float(value)) for value in values)
+
+
+def _format_optional_float(value: Any) -> str:
+    if value is None:
+        return "NA"
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "NA"
+    if not np.isfinite(number):
+        return "NA"
+    return f"{number:.6g}"
+
+
+def _format_class_notes(class_row: Mapping[str, Any]) -> str:
+    notes = list(class_row.get("denominator_warnings", []))
+    ratio = class_row.get("gru_extlqg_delta_cost_ratio", {})
+    if isinstance(ratio, Mapping) and ratio.get("status") == "not_available":
+        reason = ratio.get("reason")
+        if reason is not None:
+            notes.append(str(reason))
+    for key in ("not_applicable_reasons", "extlqg_not_applicable_reasons"):
+        reasons = class_row.get(key, {})
+        if isinstance(reasons, Mapping):
+            notes.extend(f"{reason} ({count})" for reason, count in sorted(reasons.items()))
+    return "; ".join(notes) if notes else "none"
 
 
 def _status_counts(rows: Sequence[Mapping[str, Any]]) -> dict[str, int]:
