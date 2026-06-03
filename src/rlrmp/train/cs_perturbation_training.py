@@ -479,11 +479,10 @@ def apply_training_perturbation_mixture(
         duration=trial_specs.timeline.n_steps,
         key=key_delayed,
     )
-    return _with_perturbation_metadata(
-        trial_specs,
-        "randomized_mixture",
-        families=tuple(SINGLE_FAMILY_BINS),
-    )
+    # Train trials are produced inside Feedbax's vmap'd training step, so their
+    # PyTree leaves must be JAX values. Keep string/list provenance in run specs
+    # and validation sidecars rather than returning it through this dynamic path.
+    return trial_specs
 
 
 def apply_validation_bin(

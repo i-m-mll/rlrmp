@@ -610,11 +610,15 @@ def test_randomized_perturbation_training_uses_prng_key_and_preserves_target() -
     assert jnp.allclose(first.inputs["effector_target"].pos, base.inputs["effector_target"].pos)
     assert jnp.any(first.inits["mechanics.vector"] != second.inits["mechanics.vector"])
     assert jnp.any(first.inputs["epsilon"] != second.inputs["epsilon"])
-    assert first.extra["perturbation_training_bin"] == "randomized_mixture"
-    assert set(first.extra["perturbation_training_families"]) == set(VALIDATION_BINS) - {
-        "nominal",
-        "mild_combined",
-    }
+
+    # Training trials are built inside Feedbax's vmapped training step, so per-trial
+    # metadata must stay JAX-compatible. String/list provenance lives in the config
+    # and validation manifest instead of dynamic train-trial leaves.
+    assert first.extra is None or "perturbation_training_bin" not in first.extra
+    manifest = validation_bin_manifest(hps.perturbation_training)
+    assert manifest["validation_role"] == "generalized_held_out_perturbation_rollout_loss"
+    assert tuple(manifest["bins"][-1]["families"]) == MILD_COMBINED_FAMILIES
+    assert hps.perturbation_training.mode == "fixed_target_perturbation_randomized"
 
 
 def test_randomized_perturbation_training_has_signed_component_variation() -> None:
