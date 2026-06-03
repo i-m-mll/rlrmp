@@ -16,7 +16,16 @@ from feedbax.graph import Component, Wire
 from feedbax.types import TreeNamespace, dict_to_namespace
 from jaxtyping import PRNGKeyArray, PyTree
 
+from rlrmp.analysis.cs_game_card import TARGET_POS, build_canonical_game
 from rlrmp.analysis.cs_gru_standard_materialization import normalize_gru_hps
+from rlrmp.analysis.cs_released_simulation import (
+    FixedStepPerturbation,
+    build_extlqg_comparator_path,
+    default_cs_noise_covariances,
+    simulate_lqg_released_forward,
+    zero_forward_noise_draws,
+    zero_noise_covariances,
+)
 from rlrmp.analysis.gru_checkpoint_selection import load_validation_selected_checkpoint_model
 from rlrmp.analysis.gru_evaluation_diagnostics import RolloutEvaluation
 from rlrmp.analysis.gru_pilot_figures import (
@@ -24,6 +33,10 @@ from rlrmp.analysis.gru_pilot_figures import (
     initial_effector_velocity,
     repeat_single_validation_trial,
     resolve_run_inputs,
+)
+from rlrmp.analysis.output_feedback import (
+    OutputFeedbackConfig,
+    make_cs_output_feedback_initial_state,
 )
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.modules.training.part2 import setup_task_model_pair
@@ -545,19 +558,24 @@ def materialize_gru_perturbation_response(
         ),
         "bank": bank,
         "extlqg_comparator": {
-            "status": "placeholder",
+            "status": "available_for_initial_state_and_process_epsilon",
             "reason": (
-                "The current materializer defines and evaluates the GRU-side bank. "
-                "ExtLQG perturbation rollout plumbing is not yet wired to the "
-                "same declarative bank, so comparator rows are explicit placeholders."
+                "Deterministic extLQG response rows are evaluated for perturbations "
+                "with clean analytical interfaces: initial_state and process_epsilon. "
+                "Command, sensory, delayed-observation, and target-stream rows remain "
+                "not_applicable until their external graph/channel adapters are owned "
+                "by the matching implementation lane."
             ),
+            "checkpoint_selection_role": "audit_only_not_used_for_selection",
         },
         "full_qrf_cost": {
-            "status": "not_available",
+            "status": "available",
+            "lens": "realized_deterministic_rollout_full_qrf",
             "reason": (
-                "The full analytical Q/R/Q_f loss is available for training and "
-                "checkpoint selection, but this perturbation materializer does not "
-                "yet bind that loss object to perturbed post-hoc trial specs."
+                "Costs are rescored post hoc from states.mechanics.vector and "
+                "states.net.output using the canonical C&S Q_t/R_t/Q_f schedule. "
+                "They are audit-only perturbation diagnostics and are not used for "
+                "checkpoint selection."
             ),
         },
         "runs": run_summaries,
@@ -597,6 +615,8 @@ def evaluate_run_perturbation_bank(
         n_replicates=n_replicates,
         seed=0,
     )
+    base_cost = full_qrf_cost_summary(base_evaluation, base_trial_specs)
+    extlqg_context = _build_extlqg_comparator_context()
     rows = []
     bulk_files: dict[str, str] = {}
     for perturbation in bank["perturbations"]:
@@ -613,6 +633,10 @@ def evaluate_run_perturbation_bank(
                     "status": adapter.status,
                     "reason": adapter.reason,
                     "adapter": adapter.to_json(),
+                    "extlqg_comparator": extlqg_comparator_status(
+                        perturbation,
+                        status="not_applicable",
+                    ),
                 }
             )
             continue
@@ -623,7 +647,18 @@ def evaluate_run_perturbation_bank(
             n_replicates=n_replicates,
             seed=0,
         )
-        metrics = summarize_perturbation_response(base_evaluation, perturbed_evaluation)
+        perturbed_cost = full_qrf_cost_summary(perturbed_evaluation, adapter.trial_specs)
+        metrics = summarize_perturbation_response(
+            base_evaluation,
+            perturbed_evaluation,
+            base_full_qrf_cost=base_cost,
+            perturbed_full_qrf_cost=perturbed_cost,
+        )
+        extlqg_comparator = evaluate_extlqg_perturbation_comparator(
+            perturbation,
+            context=extlqg_context,
+            gru_metrics=metrics,
+        )
         bulk_file = None
         if write_bulk_arrays:
             bulk_file = _write_perturbation_bulk_arrays(
@@ -643,6 +678,7 @@ def evaluate_run_perturbation_bank(
                 "status": "evaluated",
                 "adapter": adapter.to_json(),
                 "metrics": metrics,
+                "extlqg_comparator": extlqg_comparator,
                 "bulk_arrays": None
                 if bulk_file is None
                 else {
@@ -679,6 +715,9 @@ def evaluate_run_perturbation_bank(
 def summarize_perturbation_response(
     base: RolloutEvaluation,
     perturbed: RolloutEvaluation,
+    *,
+    base_full_qrf_cost: Mapping[str, Any] | None = None,
+    perturbed_full_qrf_cost: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Compute paired perturbation-response metrics."""
 
@@ -695,7 +734,7 @@ def summarize_perturbation_response(
     )
     terminal_speed = np.linalg.norm(perturbed.velocity[:, :, -1, :], axis=-1)
     base_terminal_speed = np.linalg.norm(base.velocity[:, :, -1, :], axis=-1)
-    return {
+    metrics = {
         "delta_action_norm": _summary_stats(np.linalg.norm(delta_action, axis=-1)),
         "delta_position_trajectory_norm_m": _summary_stats(np.linalg.norm(delta_position, axis=-1)),
         "delta_velocity_trajectory_norm_m_s": _summary_stats(
@@ -705,11 +744,252 @@ def summarize_perturbation_response(
         "delta_endpoint_error_m": _summary_stats(endpoint_recovery - base_endpoint),
         "terminal_speed_m_s": _summary_stats(terminal_speed),
         "delta_terminal_speed_m_s": _summary_stats(terminal_speed - base_terminal_speed),
-        "extra_full_qrf_cost": {
-            "status": "not_available",
-            "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
-        },
     }
+    if base_full_qrf_cost is None or perturbed_full_qrf_cost is None:
+        metrics["extra_full_qrf_cost"] = {
+            "status": "not_available",
+            "reason": "full-Q/R/Q_f cost summaries were not provided for this row",
+        }
+    else:
+        metrics["extra_full_qrf_cost"] = delta_full_qrf_cost_summary(
+            base_full_qrf_cost,
+            perturbed_full_qrf_cost,
+        )
+    return metrics
+
+
+def score_full_qrf_rollout_cost(
+    *,
+    states: Any,
+    commands: Any,
+    initial_states: Any,
+    target_pos: Any = TARGET_POS,
+) -> dict[str, Any]:
+    """Score realized full analytical Q/R/Q_f costs with per-term arrays.
+
+    Args:
+        states: Rollout mechanics vectors with shape ``(..., T, 48)``.
+        commands: Controller commands with shape ``(..., T, 2)``.
+        initial_states: Initial mechanics vectors broadcastable to ``(..., 48)``.
+        target_pos: Absolute target position subtracted from every physical
+            delay block's x/y position coordinates before applying Q/Q_f.
+
+    Returns:
+        JSON-compatible arrays for total, stage-state, control, and terminal
+        costs. Arrays retain all leading dimensions so replicate variability is
+        not hidden.
+    """
+
+    _plant, schedule = build_canonical_game()
+    state_array = np.asarray(states, dtype=np.float64)
+    command_array = np.asarray(commands, dtype=np.float64)
+    initial_array = np.asarray(initial_states, dtype=np.float64)
+    if state_array.shape[-1] != schedule.Q.shape[-1]:
+        raise ValueError(
+            f"Full-Q/R/Q_f scorer expected state dim {schedule.Q.shape[-1]}, "
+            f"got {state_array.shape[-1]}."
+        )
+    if command_array.shape[-1] != schedule.R.shape[-1]:
+        raise ValueError(
+            f"Full-Q/R/Q_f scorer expected command dim {schedule.R.shape[-1]}, "
+            f"got {command_array.shape[-1]}."
+        )
+    horizon = int(schedule.T)
+    if state_array.shape[-2] != horizon:
+        raise ValueError(
+            f"Full-Q/R/Q_f scorer expected {horizon} rollout states, "
+            f"got {state_array.shape[-2]}."
+        )
+    if command_array.shape[-2] != horizon:
+        raise ValueError(
+            f"Full-Q/R/Q_f scorer expected {horizon} commands, got {command_array.shape[-2]}."
+        )
+    initial_array = np.broadcast_to(initial_array, (*state_array.shape[:-2], state_array.shape[-1]))
+    x_pre = np.concatenate([initial_array[..., None, :], state_array[..., :-1, :]], axis=-2)
+    x_pre = _goal_centered_vectors(x_pre, target_pos=target_pos)
+    x_terminal = _goal_centered_vectors(state_array[..., -1, :], target_pos=target_pos)
+    q = np.asarray(schedule.Q, dtype=np.float64)
+    r = np.asarray(schedule.R, dtype=np.float64)
+    q_f = np.asarray(schedule.Q_f, dtype=np.float64)
+    state_terms = np.einsum("...ti,tij,...tj->...t", x_pre, q, x_pre)
+    control_terms = np.einsum("...ti,tij,...tj->...t", command_array, r, command_array)
+    terminal_terms = np.einsum("...i,ij,...j->...", x_terminal, q_f, x_terminal)
+    stage_state = np.sum(state_terms, axis=-1)
+    control = np.sum(control_terms, axis=-1)
+    total = stage_state + control + terminal_terms
+    return {
+        "status": "available",
+        "lens": "realized_deterministic_rollout_full_qrf",
+        "basis": {
+            "state_key": "states.mechanics.vector",
+            "command_key": "states.net.output",
+            "state_transform": "subtract TARGET_POS from each physical delay block x/y",
+            "schedule_source": "rlrmp.analysis.cs_game_card.build_canonical_game",
+        },
+        "total": total,
+        "stage_state": stage_state,
+        "control": control,
+        "terminal": terminal_terms,
+        "timewise_stage_state": state_terms,
+        "timewise_control": control_terms,
+    }
+
+
+def full_qrf_cost_summary(
+    evaluation: RolloutEvaluation,
+    trial_specs: Any,
+) -> dict[str, Any]:
+    """Return JSON-compatible full-Q/R/Q_f cost summary for one GRU rollout."""
+
+    mechanics_vector = getattr(evaluation, "mechanics_vector", None)
+    if mechanics_vector is None:
+        return {
+            "status": "not_available",
+            "reason": "RolloutEvaluation does not carry states.mechanics.vector.",
+        }
+    if "mechanics.vector" not in trial_specs.inits:
+        return {
+            "status": "not_available",
+            "reason": "trial_specs.inits lacks mechanics.vector initial state.",
+        }
+    scored = score_full_qrf_rollout_cost(
+        states=mechanics_vector,
+        commands=evaluation.command,
+        initial_states=trial_specs.inits["mechanics.vector"],
+    )
+    return _cost_arrays_to_summary(scored)
+
+
+def delta_full_qrf_cost_summary(
+    base: Mapping[str, Any],
+    perturbed: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return paired base/perturbed/delta full-Q/R/Q_f cost summaries."""
+
+    if base.get("status") != "available" or perturbed.get("status") != "available":
+        return {
+            "status": "not_available",
+            "base": dict(base),
+            "perturbed": dict(perturbed),
+            "reason": "base and perturbed full-Q/R/Q_f summaries must both be available",
+        }
+    deltas: dict[str, Any] = {}
+    for key in ("total", "stage_state", "control", "terminal"):
+        base_values = np.asarray(base[key]["values"], dtype=np.float64)
+        perturbed_values = np.asarray(perturbed[key]["values"], dtype=np.float64)
+        deltas[key] = _summary_with_values(perturbed_values - base_values)
+    return {
+        "status": "available",
+        "lens": "paired_realized_deterministic_rollout_full_qrf",
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "base_cost": _cost_summary_public(base),
+        "perturbed_cost": _cost_summary_public(perturbed),
+        "delta_cost": deltas,
+    }
+
+
+def evaluate_extlqg_perturbation_comparator(
+    perturbation: Mapping[str, Any],
+    *,
+    context: Mapping[str, Any],
+    gru_metrics: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Evaluate the deterministic extLQG comparator for one perturbation row."""
+
+    channel = str(perturbation["channel"])
+    if channel not in {"initial_state", "process_epsilon"}:
+        return extlqg_comparator_status(perturbation, status="not_applicable")
+    try:
+        base = context["base_evaluation"]
+        base_initial_state = np.asarray(context["base_initial_state"], dtype=np.float64)
+        perturbed_evaluation, perturbed_initial_state = _simulate_extlqg_perturbed(
+            perturbation,
+            context=context,
+        )
+        base_cost = _extlqg_cost_summary(base, base_initial_state)
+        perturbed_cost = _extlqg_cost_summary(perturbed_evaluation, perturbed_initial_state)
+        response_metrics = summarize_perturbation_response(
+            base,
+            perturbed_evaluation,
+            base_full_qrf_cost=base_cost,
+            perturbed_full_qrf_cost=perturbed_cost,
+        )
+        return {
+            "status": "available",
+            "lens": "deterministic_extlqg_same_declared_perturbation",
+            "selection_role": "audit_only_not_used_for_checkpoint_selection",
+            "parity_status": str(context["parity_status"]),
+            "n_iterations": int(context["n_iterations"]),
+            "reference_response_metrics": response_metrics,
+            "gru_vs_extlqg": compare_response_metric_summaries(gru_metrics, response_metrics),
+        }
+    except (ValueError, KeyError) as exc:
+        return {
+            "status": "blocked",
+            "lens": "deterministic_extlqg_same_declared_perturbation",
+            "reason": str(exc),
+            "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        }
+
+
+def extlqg_comparator_status(
+    perturbation: Mapping[str, Any],
+    *,
+    status: str,
+) -> dict[str, Any]:
+    """Return a structured not-applicable comparator status for a row."""
+
+    channel = str(perturbation["channel"])
+    reasons = {
+        "command_input": (
+            "command_input rows require the graph/channel adapter lane to define a "
+            "matching analytical command-port intervention"
+        ),
+        "sensory_feedback": (
+            "sensory_feedback rows require a matching extLQG measurement-channel "
+            "adapter rather than controller-internal mutation"
+        ),
+        "delayed_observation": (
+            "delayed_observation rows require a clean pre-noise observation-history "
+            "adapter in both GRU and analytical paths"
+        ),
+        "target_stream": (
+            "target_stream rows are deferred for current fixed-target checkpoints "
+            "without a controller-visible target input stream"
+        ),
+    }
+    return {
+        "status": status,
+        "lens": "deterministic_extlqg_same_declared_perturbation",
+        "reason": reasons.get(
+            channel,
+            "analytical comparator is only defined for evaluated initial_state and process_epsilon rows",
+        ),
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+    }
+
+
+def compare_response_metric_summaries(
+    gru_metrics: Mapping[str, Any],
+    extlqg_metrics: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Compare GRU and extLQG perturbation metrics using their summary means."""
+
+    comparisons: dict[str, Any] = {}
+    for key in (
+        "delta_action_norm",
+        "delta_position_trajectory_norm_m",
+        "delta_velocity_trajectory_norm_m_s",
+        "delta_endpoint_error_m",
+        "delta_terminal_speed_m_s",
+    ):
+        gru_mean = _metric_mean(gru_metrics, key)
+        ext_mean = _metric_mean(extlqg_metrics, key)
+        comparisons[key] = _scalar_delta_ratio(gru_mean, ext_mean)
+    gru_cost = _metric_mean(gru_metrics.get("extra_full_qrf_cost", {}), "delta_cost.total")
+    ext_cost = _metric_mean(extlqg_metrics.get("extra_full_qrf_cost", {}), "delta_cost.total")
+    comparisons["extra_full_qrf_delta_total"] = _scalar_delta_ratio(gru_cost, ext_cost)
+    return comparisons
 
 
 def render_perturbation_response_markdown(manifest: Mapping[str, Any]) -> str:
@@ -1112,7 +1392,7 @@ def _evaluate_model_on_trial_specs(
         jr.split(jr.PRNGKey(seed), n_replicates),
     )
     target_position = np.asarray(trial_specs.inputs["effector_target"].pos, dtype=np.float64)
-    return RolloutEvaluation(
+    evaluation = RolloutEvaluation(
         position=np.asarray(states.mechanics.effector.pos, dtype=np.float64),
         velocity=np.asarray(states.mechanics.effector.vel, dtype=np.float64),
         command=np.asarray(states.net.output, dtype=np.float64),
@@ -1123,6 +1403,161 @@ def _evaluate_model_on_trial_specs(
         target_position=target_position,
         dt=0.01,
     )
+    object.__setattr__(
+        evaluation,
+        "mechanics_vector",
+        np.asarray(states.mechanics.vector, dtype=np.float64),
+    )
+    return evaluation
+
+
+def _build_extlqg_comparator_context() -> dict[str, Any]:
+    """Build deterministic analytical comparator context for perturbation rows."""
+
+    plant, schedule = build_canonical_game()
+    config = OutputFeedbackConfig()
+    covariances = default_cs_noise_covariances(plant, config)
+    comparator = build_extlqg_comparator_path(
+        plant,
+        jnp.zeros((schedule.T, plant.m_u, plant.n), dtype=jnp.float64),
+        covariances,
+        schedule=schedule,
+        config=config,
+    )
+    x0 = make_cs_output_feedback_initial_state(plant, config)
+    base_rollout = simulate_lqg_released_forward(
+        plant,
+        comparator.controller_gains,
+        x0,
+        draws=zero_forward_noise_draws(T=schedule.T, plant=plant, config=config),
+        covariances=zero_noise_covariances(plant, config),
+        estimator_gains=comparator.estimator_gains,
+        config=config,
+    )
+    return {
+        "plant": plant,
+        "schedule": schedule,
+        "config": config,
+        "comparator": comparator,
+        "base_initial_state": np.asarray(x0, dtype=np.float64),
+        "base_evaluation": _evaluation_from_extlqg_rollout(base_rollout, initial_state=x0),
+        "parity_status": comparator.parity_status,
+        "n_iterations": comparator.n_iterations,
+    }
+
+
+def _simulate_extlqg_perturbed(
+    perturbation: Mapping[str, Any],
+    *,
+    context: Mapping[str, Any],
+) -> tuple[RolloutEvaluation, np.ndarray]:
+    """Simulate one deterministic analytical perturbation row."""
+
+    plant = context["plant"]
+    schedule = context["schedule"]
+    config = context["config"]
+    comparator = context["comparator"]
+    x0 = jnp.asarray(context["base_initial_state"], dtype=jnp.float64)
+    adversary_epsilon = None
+    if perturbation["channel"] == "initial_state":
+        x0 = _perturbed_extlqg_initial_state(x0, perturbation)
+    elif perturbation["channel"] == "process_epsilon":
+        adversary_epsilon = _extlqg_process_epsilon(perturbation, schedule.T, plant.m_w)
+    else:
+        raise ValueError(f"extLQG comparator does not support channel {perturbation['channel']!r}")
+    rollout = simulate_lqg_released_forward(
+        plant,
+        comparator.controller_gains,
+        x0,
+        draws=zero_forward_noise_draws(T=schedule.T, plant=plant, config=config),
+        covariances=zero_noise_covariances(plant, config),
+        estimator_gains=comparator.estimator_gains,
+        adversary_epsilon=adversary_epsilon,
+        config=config,
+    )
+    return _evaluation_from_extlqg_rollout(rollout, initial_state=x0), np.asarray(x0)
+
+
+def _evaluation_from_extlqg_rollout(
+    rollout: Any,
+    *,
+    initial_state: Any,
+) -> RolloutEvaluation:
+    """Convert one analytical rollout to the GRU perturbation metric schema."""
+
+    x = np.asarray(rollout.x, dtype=np.float64)
+    command = np.asarray(rollout.u_command, dtype=np.float64)
+    target = np.asarray(TARGET_POS, dtype=np.float64)
+    position = x[1:, 0:2] + target[None, :]
+    velocity = x[1:, 2:4]
+    evaluation = RolloutEvaluation(
+        position=position[None, None, :, :],
+        velocity=velocity[None, None, :, :],
+        command=command[None, None, :, :],
+        hidden=np.zeros((1, 1, command.shape[0], 0), dtype=np.float64),
+        gru_input=np.zeros((1, 1, command.shape[0], 0), dtype=np.float64),
+        initial_position=np.asarray(initial_state, dtype=np.float64)[None, 0:2] + target[None, :],
+        initial_velocity=np.asarray(initial_state, dtype=np.float64)[None, 2:4],
+        target_position=np.broadcast_to(target, (1, command.shape[0], 2)),
+        dt=0.01,
+    )
+    object.__setattr__(evaluation, "mechanics_vector", x[1:][None, None, :, :])
+    return evaluation
+
+
+def _perturbed_extlqg_initial_state(x0: Any, perturbation: Mapping[str, Any]) -> jnp.ndarray:
+    """Apply an initial-state perturbation in the analytical state basis."""
+
+    x = jnp.asarray(x0, dtype=jnp.float64)
+    family = str(perturbation["family"])
+    if family not in {"initial_position_offset", "initial_velocity_offset"}:
+        raise ValueError(f"unsupported analytical initial-state family {family!r}")
+    start = 0 if family == "initial_position_offset" else 2
+    index = start + _axis_index(str(perturbation["axis"]))
+    amount = float(perturbation["amplitude"]) * int(perturbation["sign"])
+    return x.at[index].add(amount)
+
+
+def _extlqg_process_epsilon(
+    perturbation: Mapping[str, Any],
+    horizon: int,
+    epsilon_dim: int,
+) -> jnp.ndarray:
+    """Return an analytical process-epsilon pulse sequence."""
+
+    epsilon_index_raw = perturbation.get("epsilon_index")
+    epsilon_index = (
+        _axis_index(str(perturbation["axis"]))
+        if epsilon_index_raw is None
+        else int(epsilon_index_raw)
+    )
+    if epsilon_index < 0 or epsilon_index >= epsilon_dim:
+        raise ValueError(f"epsilon_index {epsilon_index} outside analytical dim {epsilon_dim}")
+    timing = perturbation["timing"]
+    start = int(timing.get("start_time_index", 0))
+    duration = int(timing.get("duration_steps", 1))
+    if start < 0 or duration < 1 or start + duration > horizon:
+        raise ValueError(
+            f"process_epsilon timing outside analytical horizon: {start=}, "
+            f"{duration=}, {horizon=}"
+        )
+    amount = float(perturbation["amplitude"]) * int(perturbation["sign"])
+    epsilon = jnp.zeros((horizon, epsilon_dim), dtype=jnp.float64)
+    return epsilon.at[start : start + duration, epsilon_index].set(amount)
+
+
+def _extlqg_cost_summary(evaluation: RolloutEvaluation, initial_state: Any) -> dict[str, Any]:
+    """Return full-Q/R/Q_f summary for one analytical rollout."""
+
+    scored = score_full_qrf_rollout_cost(
+        states=getattr(evaluation, "mechanics_vector"),
+        commands=evaluation.command,
+        initial_states=np.asarray(initial_state, dtype=np.float64)[None, None, :],
+        target_pos=np.zeros((2,), dtype=np.float64),
+    )
+    summary = _cost_arrays_to_summary(scored)
+    summary["basis"]["state_transform"] = "analytical extLQG states are already target-centered"
+    return summary
 
 
 def _write_perturbation_bulk_arrays(
@@ -1147,6 +1582,94 @@ def _write_perturbation_bulk_arrays(
         perturbed_action=perturbed.command,
     )
     return path
+
+
+def _goal_centered_vectors(values: Any, *, target_pos: Any) -> np.ndarray:
+    """Subtract target position from every 8D physical block's x/y entries."""
+
+    result = np.array(values, dtype=np.float64, copy=True)
+    target = np.asarray(target_pos, dtype=np.float64)
+    if target.shape != (2,):
+        raise ValueError(f"target_pos must have shape (2,), got {target.shape}")
+    if result.shape[-1] % 8 != 0:
+        raise ValueError(f"state dimension {result.shape[-1]} is not divisible by 8")
+    for start in range(0, result.shape[-1], 8):
+        result[..., start : start + 2] -= target
+    return result
+
+
+def _cost_arrays_to_summary(scored: Mapping[str, Any]) -> dict[str, Any]:
+    """Convert scorer arrays to compact summaries while retaining values."""
+
+    return {
+        "status": str(scored["status"]),
+        "lens": str(scored["lens"]),
+        "basis": dict(scored["basis"]),
+        "total": _summary_with_values(scored["total"]),
+        "stage_state": _summary_with_values(scored["stage_state"]),
+        "control": _summary_with_values(scored["control"]),
+        "terminal": _summary_with_values(scored["terminal"]),
+        "timewise_stage_state": _summary_stats(scored["timewise_stage_state"]),
+        "timewise_control": _summary_stats(scored["timewise_control"]),
+    }
+
+
+def _summary_with_values(values: Any) -> dict[str, Any]:
+    """Return summary statistics plus JSON-compatible leading values."""
+
+    array = np.asarray(values, dtype=np.float64)
+    return {
+        **_summary_stats(array),
+        "shape": list(array.shape),
+        "values": array.tolist(),
+    }
+
+
+def _cost_summary_public(summary: Mapping[str, Any]) -> dict[str, Any]:
+    """Drop large paired value arrays from nested public cost summaries."""
+
+    result = {
+        "status": summary.get("status"),
+        "lens": summary.get("lens"),
+        "basis": dict(summary.get("basis", {})),
+    }
+    for key in ("total", "stage_state", "control", "terminal"):
+        term = dict(summary[key])
+        term.pop("values", None)
+        result[key] = term
+    return result
+
+
+def _metric_mean(metrics: Mapping[str, Any], dotted_key: str) -> float | None:
+    """Read a nested metric summary mean using dot-separated keys."""
+
+    current: Any = metrics
+    for key in dotted_key.split("."):
+        if not isinstance(current, Mapping) or key not in current:
+            return None
+        current = current[key]
+    if not isinstance(current, Mapping) or "mean" not in current:
+        return None
+    value = current["mean"]
+    if value is None:
+        return None
+    return float(value)
+
+
+def _scalar_delta_ratio(value: float | None, reference: float | None) -> dict[str, Any]:
+    """Return a JSON-safe scalar delta and ratio with denominator guard."""
+
+    if value is None or reference is None:
+        return {"status": "not_available", "value": value, "reference": reference}
+    denominator = abs(reference)
+    ratio = None if denominator <= 1e-12 else float(value / reference)
+    return {
+        "status": "available",
+        "gru_mean": float(value),
+        "extlqg_mean": float(reference),
+        "delta_mean": float(value - reference),
+        "ratio_to_extlqg": ratio,
+    }
 
 
 def _summary_stats(values: Any) -> dict[str, float | int]:
@@ -1265,11 +1788,17 @@ __all__ = [
     "GraphAdapterSpec",
     "PerturbationSpec",
     "apply_perturbation_to_trial_specs",
+    "compare_response_metric_summaries",
     "default_cs_perturbation_bank",
+    "delta_full_qrf_cost_summary",
+    "evaluate_extlqg_perturbation_comparator",
     "evaluate_run_perturbation_bank",
+    "extlqg_comparator_status",
+    "full_qrf_cost_summary",
     "insert_additive_graph_channel_adapter",
     "materialize_gru_perturbation_response",
     "render_perturbation_response_markdown",
+    "score_full_qrf_rollout_cost",
     "summarize_perturbation_response",
     "write_default_bank",
 ]
