@@ -68,6 +68,13 @@ def test_active_loss_term_labels_follow_gru_feedbax_order() -> None:
     )
 
 
+def test_active_loss_term_labels_use_full_qrf_objective() -> None:
+    run_spec = _run_spec(hidden_weight=1e-5)
+    run_spec["loss_objective"] = "full_analytical_qrf"
+
+    assert active_loss_term_labels(run_spec) == ("full_analytical_qrf",)
+
+
 def test_load_gru_training_history_rebuilds_feedbax_loss_tree(tmp_path) -> None:
     labels = active_loss_term_labels(_run_spec(hidden_weight=1e-5))
     path = tmp_path / "training_history.eqx"

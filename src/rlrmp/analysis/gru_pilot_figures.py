@@ -312,6 +312,10 @@ def load_gru_training_history(run_spec: Mapping[str, Any], path: Path) -> Simple
 def active_loss_term_labels(run_spec: Mapping[str, Any]) -> tuple[str, ...]:
     """Return active loss labels in Feedbax's serialized term order."""
 
+    loss_objective = str(run_spec.get("loss_objective") or "")
+    if loss_objective == "full_analytical_qrf":
+        return ("full_analytical_qrf",)
+
     weights = run_spec.get("hps", {}).get("loss", {}).get("weights", {})
     candidate_order = (
         "effector_pos_running",

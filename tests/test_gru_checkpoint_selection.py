@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from rlrmp.analysis.gru_checkpoint_selection import (
+    active_loss_term_labels,
     select_validation_checkpoints_for_run,
     validation_objective_history,
 )
@@ -83,6 +84,22 @@ def test_select_validation_checkpoints_ignores_zero_padding(tmp_path: Path) -> N
     assert [selection.checkpoint_batches for selection in selections] == [6, 3]
     assert [selection.scoring_validation_log_batch for selection in selections] == [6, 3]
     assert [selection.best_logged_validation_batch for selection in selections] == [5, 3]
+
+
+def test_active_loss_term_labels_use_full_qrf_objective() -> None:
+    run_spec = {
+        "loss_objective": "full_analytical_qrf",
+        "hps": {
+            "loss": {
+                "weights": {
+                    "effector_pos_running": 1.0,
+                    "nn_output": 1.0,
+                }
+            }
+        },
+    }
+
+    assert active_loss_term_labels(run_spec) == ("full_analytical_qrf",)
 
 
 def _write_loss_tree(stream: object, leaves: tuple[tuple[np.ndarray, float], ...]) -> None:
