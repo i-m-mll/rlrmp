@@ -1,0 +1,1321 @@
+{
+  "checkpoint_policy": "training_trace_all_batches_not_checkpoint_selected",
+  "issue": "3e66604",
+  "runs": {
+    "lss_stabilization_warmcos_fulldiag__lr1e-3_clip5_b1000": {
+      "n_batches": 12000,
+      "n_replicates": 5,
+      "optimizer_clipping_fraction": {
+        "final_mean": 1.0,
+        "finite": true,
+        "max": 1.0,
+        "mean": 1.0,
+        "min": 1.0,
+        "shape": [
+          12000
+        ],
+        "std": 0.0
+      },
+      "optimizer_gradient_clipped": {
+        "all_true": true,
+        "fraction_true_mean_over_all_batches_and_replicates": 1.0,
+        "fraction_true_per_replicate": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "shape": [
+          12000,
+          5
+        ]
+      },
+      "optimizer_gradient_norm_pre_clip": {
+        "final_mean": 1042.356298828125,
+        "finite": true,
+        "max": 12983084.0,
+        "mean": 54674.44778912379,
+        "min": 196.97186279296875,
+        "shape": [
+          12000,
+          5
+        ],
+        "std": 200508.17138845913
+      },
+      "optimizer_learning_rate": {
+        "final_per_replicate": [
+          1.0000018846767489e-05,
+          1.0000018846767489e-05,
+          1.0000018846767489e-05,
+          1.0000018846767489e-05,
+          1.0000018846767489e-05
+        ],
+        "finite": true,
+        "first_per_replicate": [
+          0.00010000006295740604,
+          0.00010000006295740604,
+          0.00010000006295740604,
+          0.00010000006295740604,
+          0.00010000006295740604
+        ],
+        "peak_per_replicate": [
+          0.0010000000474974513,
+          0.0010000000474974513,
+          0.0010000000474974513,
+          0.0010000000474974513,
+          0.0010000000474974513
+        ],
+        "postwarmup_nonincreasing_replicate0": true,
+        "shape": [
+          12000,
+          5
+        ],
+        "warmup_peak_batch_1_based": 501
+      },
+      "optimizer_parameter_norm": {
+        "final_mean": 42.22283172607422,
+        "finite": true,
+        "max": 43.69993209838867,
+        "mean": 36.22526440493266,
+        "min": 23.37779998779297,
+        "shape": [
+          12000,
+          5
+        ],
+        "std": 5.23918678308769
+      },
+      "optimizer_update_norm": {
+        "final_mean": 0.000609272497240454,
+        "finite": true,
+        "max": 0.16780413687229156,
+        "mean": 0.014751439733316269,
+        "min": 0.0003279850061517209,
+        "shape": [
+          12000,
+          5
+        ],
+        "std": 0.014379104165256352
+      },
+      "optimizer_update_parameter_norm_ratio": {
+        "final_mean": 1.4508929052681196e-05,
+        "finite": true,
+        "max": 0.006912052631378174,
+        "mean": 0.0004653894144534964,
+        "min": 7.5685875344788656e-06,
+        "shape": [
+          12000,
+          5
+        ],
+        "std": 0.0005507232961746099
+      },
+      "train_loss_total": {
+        "final_mean": 2714.3751832150638,
+        "finite": true,
+        "max": 238379.31873744098,
+        "mean": 5808.164991954023,
+        "min": 2438.926539288099,
+        "shape": [
+          12000,
+          5
+        ],
+        "std": 16519.46493267051
+      },
+      "training_diagnostics_manifest_path": "_artifacts/3e66604/runs/lss_stabilization_warmcos_fulldiag__lr1e-3_clip5_b1000/training_diagnostics.json",
+      "training_diagnostics_sidecar_path": "_artifacts/3e66604/runs/lss_stabilization_warmcos_fulldiag__lr1e-3_clip5_b1000/training_diagnostics.npz",
+      "training_summary_path": "_artifacts/3e66604/runs/lss_stabilization_warmcos_fulldiag__lr1e-3_clip5_b1000/training_summary.json",
+      "validation_loss_terms": {
+        "effector_pos_running": {
+          "argmin_batch_per_replicate_1_based": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "final_mean": 101.67146834078481,
+          "final_per_replicate": [
+            78.70101079401971,
+            116.81440475455284,
+            109.1610996032634,
+            114.2158509650218,
+            89.46497558706635
+          ],
+          "finite": true,
+          "min_per_replicate": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "shape": [
+            12000,
+            5
+          ]
+        },
+        "effector_terminal_pos": {
+          "argmin_batch_per_replicate_1_based": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "final_mean": 3.1652123069405866,
+          "final_per_replicate": [
+            1.610798327918466,
+            4.550304532082967,
+            3.532074115669929,
+            4.262853910207857,
+            1.8700306488237155
+          ],
+          "finite": true,
+          "min_per_replicate": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "shape": [
+            12000,
+            5
+          ]
+        },
+        "effector_terminal_vel": {
+          "argmin_batch_per_replicate_1_based": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "final_mean": 2.9287931378621366,
+          "final_per_replicate": [
+            2.0714762053058724,
+            0.7252159554324662,
+            3.295188826235922,
+            6.599057518193448,
+            1.9530271841429756
+          ],
+          "finite": true,
+          "min_per_replicate": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "shape": [
+            12000,
+            5
+          ]
+        },
+        "effector_vel_running": {
+          "argmin_batch_per_replicate_1_based": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "final_mean": 1349.6202101810793,
+          "final_per_replicate": [
+            1255.7993998132265,
+            1307.1301114289793,
+            1481.6285942599402,
+            1276.7495400889247,
+            1426.793405314326
+          ],
+          "finite": true,
+          "min_per_replicate": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "shape": [
+            12000,
+            5
+          ]
+        },
+        "nn_output": {
+          "argmin_batch_per_replicate_1_based": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "final_mean": 1248.4801480322446,
+          "final_per_replicate": [
+            1157.9772746190408,
+            1089.4961831843443,
+            1491.8047512810042,
+            1060.5272837613252,
+            1442.595247315508
+          ],
+          "finite": true,
+          "min_per_replicate": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "shape": [
+            12000,
+            5
+          ]
+        },
+        "total": {
+          "argmin_batch_per_replicate_1_based": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "final_mean": 2705.8658319989117,
+          "final_per_replicate": [
+            2496.1599597595114,
+            2518.716219855392,
+            3089.4217080861135,
+            2462.354586243673,
+            2962.6766860498674
+          ],
+          "finite": true,
+          "min_per_replicate": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "shape": [
+            12000,
+            5
+          ]
+        }
+      },
+      "validation_loss_total": {
+        "argmin_batch_per_replicate_1_based": [
+          2,
+          2,
+          2,
+          2,
+          2
+        ],
+        "final_mean": 2705.8658319989117,
+        "final_per_replicate": [
+          2496.1599597595114,
+          2518.716219855392,
+          3089.4217080861135,
+          2462.354586243673,
+          2962.6766860498674
+        ],
+        "finite": true,
+        "min_per_replicate": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "shape": [
+          12000,
+          5
+        ]
+      }
+    },
+    "lss_stabilization_warmcos_fulldiag__lr1e-3_clip5_b250": {
+      "n_batches": 12000,
+      "n_replicates": 5,
+      "optimizer_clipping_fraction": {
+        "final_mean": 1.0,
+        "finite": true,
+        "max": 1.0,
+        "mean": 1.0,
+        "min": 1.0,
+        "shape": [
+          12000
+        ],
+        "std": 0.0
+      },
+      "optimizer_gradient_clipped": {
+        "all_true": true,
+        "fraction_true_mean_over_all_batches_and_replicates": 1.0,
+        "fraction_true_per_replicate": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "shape": [
+          12000,
+          5
+        ]
+      },
+      "optimizer_gradient_norm_pre_clip": {
+        "final_mean": 1212.9941772460938,
+        "finite": true,
+        "max": 10316526.0,
+        "mean": 55479.90916853994,
+        "min": 247.76324462890625,
+        "shape": [
+          12000,
+          5
+        ],
+        "std": 203196.67940478228
+      },
+      "optimizer_learning_rate": {
+        "final_per_replicate": [
+          1.0000018846767489e-05,
+          1.0000018846767489e-05,
+          1.0000018846767489e-05,
+          1.0000018846767489e-05,
+          1.0000018846767489e-05
+        ],
+        "finite": true,
+        "first_per_replicate": [
+          0.00010000006295740604,
+          0.00010000006295740604,
+          0.00010000006295740604,
+          0.00010000006295740604,
+          0.00010000006295740604
+        ],
+        "peak_per_replicate": [
+          0.0010000000474974513,
+          0.0010000000474974513,
+          0.0010000000474974513,
+          0.0010000000474974513,
+          0.0010000000474974513
+        ],
+        "postwarmup_nonincreasing_replicate0": true,
+        "shape": [
+          12000,
+          5
+        ],
+        "warmup_peak_batch_1_based": 501
+      },
+      "optimizer_parameter_norm": {
+        "final_mean": 42.108618927001956,
+        "finite": true,
+        "max": 43.3255615234375,
+        "mean": 36.3153715162913,
+        "min": 23.377798080444336,
+        "shape": [
+          12000,
+          5
+        ],
+        "std": 5.194544221022351
+      },
+      "optimizer_update_norm": {
+        "final_mean": 0.0006905900430865586,
+        "finite": true,
+        "max": 0.1904887855052948,
+        "mean": 0.015078033814504064,
+        "min": 0.00029467695276252925,
+        "shape": [
+          12000,
+          5
+        ],
+        "std": 0.01461633964784134
+      },
+      "optimizer_update_parameter_norm_ratio": {
+        "final_mean": 1.6443382082798053e-05,
+        "finite": true,
+        "max": 0.007298912853002548,
+        "mean": 0.00047251518188123404,
+        "min": 6.933030363143189e-06,
+        "shape": [
+          12000,
+          5
+        ],
+        "std": 0.000557954702852203
+      },
+      "train_loss_total": {
+        "final_mean": 2797.2798871510813,
+        "finite": true,
+        "max": 238523.38879528633,
+        "mean": 5888.472681072953,
+        "min": 2552.012228715723,
+        "shape": [
+          12000,
+          5
+        ],
+        "std": 16640.31387385682
+      },
+      "training_diagnostics_manifest_path": "_artifacts/3e66604/runs/lss_stabilization_warmcos_fulldiag__lr1e-3_clip5_b250/training_diagnostics.json",
+      "training_diagnostics_sidecar_path": "_artifacts/3e66604/runs/lss_stabilization_warmcos_fulldiag__lr1e-3_clip5_b250/training_diagnostics.npz",
+      "training_summary_path": "_artifacts/3e66604/runs/lss_stabilization_warmcos_fulldiag__lr1e-3_clip5_b250/training_summary.json",
+      "validation_loss_terms": {
+        "effector_pos_running": {
+          "argmin_batch_per_replicate_1_based": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "final_mean": 105.94481920203366,
+          "final_per_replicate": [
+            77.06477552954138,
+            133.35679507531955,
+            107.81739574958253,
+            120.36973351829545,
+            91.1153961374294
+          ],
+          "finite": true,
+          "min_per_replicate": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "shape": [
+            12000,
+            5
+          ]
+        },
+        "effector_terminal_pos": {
+          "argmin_batch_per_replicate_1_based": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "final_mean": 3.4531120458796147,
+          "final_per_replicate": [
+            1.1824514306630174,
+            5.45765395788679,
+            3.828174711945494,
+            4.5151198551143334,
+            2.282160273788438
+          ],
+          "finite": true,
+          "min_per_replicate": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "shape": [
+            12000,
+            5
+          ]
+        },
+        "effector_terminal_vel": {
+          "argmin_batch_per_replicate_1_based": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "final_mean": 3.0166245909249576,
+          "final_per_replicate": [
+            1.9282431118059027,
+            0.7569934726789331,
+            3.662940673580498,
+            6.4036279255464885,
+            2.331317771012965
+          ],
+          "finite": true,
+          "min_per_replicate": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "shape": [
+            12000,
+            5
+          ]
+        },
+        "effector_vel_running": {
+          "argmin_batch_per_replicate_1_based": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "final_mean": 1376.8071578504728,
+          "final_per_replicate": [
+            1309.947022690675,
+            1406.647518428266,
+            1442.6176335799419,
+            1310.2780894848593,
+            1414.5455250686216
+          ],
+          "finite": true,
+          "min_per_replicate": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "shape": [
+            12000,
+            5
+          ]
+        },
+        "nn_output": {
+          "argmin_batch_per_replicate_1_based": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "final_mean": 1300.1143502092289,
+          "final_per_replicate": [
+            1256.832312688622,
+            1325.097603762878,
+            1384.8841537112298,
+            1133.4766881401933,
+            1400.280992743222
+          ],
+          "finite": true,
+          "min_per_replicate": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "shape": [
+            12000,
+            5
+          ]
+        },
+        "total": {
+          "argmin_batch_per_replicate_1_based": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "final_mean": 2789.33606389854,
+          "final_per_replicate": [
+            2646.9548054513075,
+            2871.316564697029,
+            2942.8102984262805,
+            2575.043258924009,
+            2910.5553919940744
+          ],
+          "finite": true,
+          "min_per_replicate": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "shape": [
+            12000,
+            5
+          ]
+        }
+      },
+      "validation_loss_total": {
+        "argmin_batch_per_replicate_1_based": [
+          2,
+          2,
+          2,
+          2,
+          2
+        ],
+        "final_mean": 2789.33606389854,
+        "final_per_replicate": [
+          2646.9548054513075,
+          2871.316564697029,
+          2942.8102984262805,
+          2575.043258924009,
+          2910.5553919940744
+        ],
+        "finite": true,
+        "min_per_replicate": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "shape": [
+          12000,
+          5
+        ]
+      }
+    },
+    "lss_stabilization_warmcos_fulldiag__lr3e-3_clip5_b1000": {
+      "n_batches": 12000,
+      "n_replicates": 5,
+      "optimizer_clipping_fraction": {
+        "final_mean": 1.0,
+        "finite": true,
+        "max": 1.0,
+        "mean": 1.0,
+        "min": 1.0,
+        "shape": [
+          12000
+        ],
+        "std": 0.0
+      },
+      "optimizer_gradient_clipped": {
+        "all_true": true,
+        "fraction_true_mean_over_all_batches_and_replicates": 1.0,
+        "fraction_true_per_replicate": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "shape": [
+          12000,
+          5
+        ]
+      },
+      "optimizer_gradient_norm_pre_clip": {
+        "final_mean": 1123.1814697265625,
+        "finite": true,
+        "max": 16232754.0,
+        "mean": 52681.896311184755,
+        "min": 36.7930793762207,
+        "shape": [
+          12000,
+          5
+        ],
+        "std": 260277.1620037797
+      },
+      "optimizer_learning_rate": {
+        "final_per_replicate": [
+          3.0000055630807765e-05,
+          3.0000055630807765e-05,
+          3.0000055630807765e-05,
+          3.0000055630807765e-05,
+          3.0000055630807765e-05
+        ],
+        "finite": true,
+        "first_per_replicate": [
+          0.0002999999560415745,
+          0.0002999999560415745,
+          0.0002999999560415745,
+          0.0002999999560415745,
+          0.0002999999560415745
+        ],
+        "peak_per_replicate": [
+          0.003000000026077032,
+          0.003000000026077032,
+          0.003000000026077032,
+          0.003000000026077032,
+          0.003000000026077032
+        ],
+        "postwarmup_nonincreasing_replicate0": true,
+        "shape": [
+          12000,
+          5
+        ],
+        "warmup_peak_batch_1_based": 501
+      },
+      "optimizer_parameter_norm": {
+        "final_mean": 63.96537628173828,
+        "finite": true,
+        "max": 65.82538604736328,
+        "mean": 52.73311797574361,
+        "min": 23.3778076171875,
+        "shape": [
+          12000,
+          5
+        ],
+        "std": 12.016535849887383
+      },
+      "optimizer_update_norm": {
+        "final_mean": 0.0015777950873598456,
+        "finite": true,
+        "max": 0.3170718848705292,
+        "mean": 0.0315731761317933,
+        "min": 0.0005579030839726329,
+        "shape": [
+          12000,
+          5
+        ],
+        "std": 0.03115655996765626
+      },
+      "optimizer_update_parameter_norm_ratio": {
+        "final_mean": 2.4673914595041424e-05,
+        "finite": true,
+        "max": 0.011397916823625565,
+        "mean": 0.0007678876124422307,
+        "min": 8.680555765749887e-06,
+        "shape": [
+          12000,
+          5
+        ],
+        "std": 0.000996779221734486
+      },
+      "train_loss_total": {
+        "final_mean": 1248.8488113572494,
+        "finite": true,
+        "max": 450180.49744362617,
+        "mean": 3790.1398785431848,
+        "min": 1241.2496524658982,
+        "shape": [
+          12000,
+          5
+        ],
+        "std": 13956.006156170104
+      },
+      "training_diagnostics_manifest_path": "_artifacts/3e66604/runs/lss_stabilization_warmcos_fulldiag__lr3e-3_clip5_b1000/training_diagnostics.json",
+      "training_diagnostics_sidecar_path": "_artifacts/3e66604/runs/lss_stabilization_warmcos_fulldiag__lr3e-3_clip5_b1000/training_diagnostics.npz",
+      "training_summary_path": "_artifacts/3e66604/runs/lss_stabilization_warmcos_fulldiag__lr3e-3_clip5_b1000/training_summary.json",
+      "validation_loss_terms": {
+        "effector_pos_running": {
+          "argmin_batch_per_replicate_1_based": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "final_mean": 30.60634117558398,
+          "final_per_replicate": [
+            24.52418272280617,
+            35.59206212321959,
+            32.26791140814119,
+            35.07358884100011,
+            25.573960782752838
+          ],
+          "finite": true,
+          "min_per_replicate": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "shape": [
+            12000,
+            5
+          ]
+        },
+        "effector_terminal_pos": {
+          "argmin_batch_per_replicate_1_based": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "final_mean": 0.7403871888854615,
+          "final_per_replicate": [
+            0.15685811431012456,
+            1.06786598329158,
+            1.208368757058666,
+            0.9851857627897576,
+            0.2836573269771792
+          ],
+          "finite": true,
+          "min_per_replicate": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "shape": [
+            12000,
+            5
+          ]
+        },
+        "effector_terminal_vel": {
+          "argmin_batch_per_replicate_1_based": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "final_mean": 4.469238296604654,
+          "final_per_replicate": [
+            2.6494243477579134,
+            1.2015021216035957,
+            6.7193376913983185,
+            9.959735850115074,
+            1.8161914721483703
+          ],
+          "finite": true,
+          "min_per_replicate": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "shape": [
+            12000,
+            5
+          ]
+        },
+        "effector_vel_running": {
+          "argmin_batch_per_replicate_1_based": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "final_mean": 615.6681565051969,
+          "final_per_replicate": [
+            562.7806582298296,
+            620.6143705230422,
+            643.418933249084,
+            645.8566077099471,
+            605.670212814081
+          ],
+          "finite": true,
+          "min_per_replicate": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "shape": [
+            12000,
+            5
+          ]
+        },
+        "nn_output": {
+          "argmin_batch_per_replicate_1_based": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "final_mean": 593.2303636569591,
+          "final_per_replicate": [
+            637.0627720231973,
+            570.6290817922954,
+            574.9192786999782,
+            577.3771654257921,
+            606.1635203435321
+          ],
+          "finite": true,
+          "min_per_replicate": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "shape": [
+            12000,
+            5
+          ]
+        },
+        "total": {
+          "argmin_batch_per_replicate_1_based": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "final_mean": 1244.71448682323,
+          "final_per_replicate": [
+            1227.1738954379011,
+            1229.1048825434523,
+            1258.5338298056604,
+            1269.252283589644,
+            1239.5075427394913
+          ],
+          "finite": true,
+          "min_per_replicate": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "shape": [
+            12000,
+            5
+          ]
+        }
+      },
+      "validation_loss_total": {
+        "argmin_batch_per_replicate_1_based": [
+          2,
+          2,
+          2,
+          2,
+          2
+        ],
+        "final_mean": 1244.71448682323,
+        "final_per_replicate": [
+          1227.1738954379011,
+          1229.1048825434523,
+          1258.5338298056604,
+          1269.252283589644,
+          1239.5075427394913
+        ],
+        "finite": true,
+        "min_per_replicate": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "shape": [
+          12000,
+          5
+        ]
+      }
+    },
+    "lss_stabilization_warmcos_fulldiag__lr3e-3_clip5_b250": {
+      "n_batches": 12000,
+      "n_replicates": 5,
+      "optimizer_clipping_fraction": {
+        "final_mean": 1.0,
+        "finite": true,
+        "max": 1.0,
+        "mean": 1.0,
+        "min": 1.0,
+        "shape": [
+          12000
+        ],
+        "std": 0.0
+      },
+      "optimizer_gradient_clipped": {
+        "all_true": true,
+        "fraction_true_mean_over_all_batches_and_replicates": 1.0,
+        "fraction_true_per_replicate": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "shape": [
+          12000,
+          5
+        ]
+      },
+      "optimizer_gradient_norm_pre_clip": {
+        "final_mean": 2285.9407470703127,
+        "finite": true,
+        "max": 31561752.0,
+        "mean": 52931.49929140625,
+        "min": 54.18019104003906,
+        "shape": [
+          12000,
+          5
+        ],
+        "std": 303239.775009966
+      },
+      "optimizer_learning_rate": {
+        "final_per_replicate": [
+          3.0000055630807765e-05,
+          3.0000055630807765e-05,
+          3.0000055630807765e-05,
+          3.0000055630807765e-05,
+          3.0000055630807765e-05
+        ],
+        "finite": true,
+        "first_per_replicate": [
+          0.0002999999560415745,
+          0.0002999999560415745,
+          0.0002999999560415745,
+          0.0002999999560415745,
+          0.0002999999560415745
+        ],
+        "peak_per_replicate": [
+          0.003000000026077032,
+          0.003000000026077032,
+          0.003000000026077032,
+          0.003000000026077032,
+          0.003000000026077032
+        ],
+        "postwarmup_nonincreasing_replicate0": true,
+        "shape": [
+          12000,
+          5
+        ],
+        "warmup_peak_batch_1_based": 501
+      },
+      "optimizer_parameter_norm": {
+        "final_mean": 64.1255859375,
+        "finite": true,
+        "max": 66.67369079589844,
+        "mean": 53.3571139989535,
+        "min": 23.3778076171875,
+        "shape": [
+          12000,
+          5
+        ],
+        "std": 12.188203048849644
+      },
+      "optimizer_update_norm": {
+        "final_mean": 0.0018769351532682776,
+        "finite": true,
+        "max": 0.33070486783981323,
+        "mean": 0.032942353218373806,
+        "min": 0.0006040196167305112,
+        "shape": [
+          12000,
+          5
+        ],
+        "std": 0.030732086632896994
+      },
+      "optimizer_update_parameter_norm_ratio": {
+        "final_mean": 2.9204069141997026e-05,
+        "finite": true,
+        "max": 0.012097300961613655,
+        "mean": 0.0007854138066287609,
+        "min": 9.059727744897828e-06,
+        "shape": [
+          12000,
+          5
+        ],
+        "std": 0.000982979482853033
+      },
+      "train_loss_total": {
+        "final_mean": 1252.677504397151,
+        "finite": true,
+        "max": 809388.210202537,
+        "mean": 3753.085257305633,
+        "min": 1241.5286771357146,
+        "shape": [
+          12000,
+          5
+        ],
+        "std": 14242.181733743746
+      },
+      "training_diagnostics_manifest_path": "_artifacts/3e66604/runs/lss_stabilization_warmcos_fulldiag__lr3e-3_clip5_b250/training_diagnostics.json",
+      "training_diagnostics_sidecar_path": "_artifacts/3e66604/runs/lss_stabilization_warmcos_fulldiag__lr3e-3_clip5_b250/training_diagnostics.npz",
+      "training_summary_path": "_artifacts/3e66604/runs/lss_stabilization_warmcos_fulldiag__lr3e-3_clip5_b250/training_summary.json",
+      "validation_loss_terms": {
+        "effector_pos_running": {
+          "argmin_batch_per_replicate_1_based": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "final_mean": 30.052883233809457,
+          "final_per_replicate": [
+            26.400114718736216,
+            31.05156606226618,
+            30.29005834504845,
+            37.970320098217805,
+            24.552356944778637
+          ],
+          "finite": true,
+          "min_per_replicate": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "shape": [
+            12000,
+            5
+          ]
+        },
+        "effector_terminal_pos": {
+          "argmin_batch_per_replicate_1_based": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "final_mean": 0.6237237036505815,
+          "final_per_replicate": [
+            0.24453147513298787,
+            0.6376978614190609,
+            0.8683519470030505,
+            1.305859831332397,
+            0.06217740336541092
+          ],
+          "finite": true,
+          "min_per_replicate": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "shape": [
+            12000,
+            5
+          ]
+        },
+        "effector_terminal_vel": {
+          "argmin_batch_per_replicate_1_based": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "final_mean": 4.459609205092727,
+          "final_per_replicate": [
+            1.921932799574097,
+            1.8216436936010545,
+            6.892598569751699,
+            9.45276321575549,
+            2.2091077467812905
+          ],
+          "finite": true,
+          "min_per_replicate": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "shape": [
+            12000,
+            5
+          ]
+        },
+        "effector_vel_running": {
+          "argmin_batch_per_replicate_1_based": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "final_mean": 619.1559231489106,
+          "final_per_replicate": [
+            563.653147245578,
+            628.9813809107552,
+            646.9889560229489,
+            638.2195859989947,
+            617.9365455662762
+          ],
+          "finite": true,
+          "min_per_replicate": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "shape": [
+            12000,
+            5
+          ]
+        },
+        "nn_output": {
+          "argmin_batch_per_replicate_1_based": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "final_mean": 590.6518356980225,
+          "final_per_replicate": [
+            633.3280836820136,
+            568.1728812947266,
+            571.9399658933121,
+            578.7152776904827,
+            601.1029699295775
+          ],
+          "finite": true,
+          "min_per_replicate": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "shape": [
+            12000,
+            5
+          ]
+        },
+        "total": {
+          "argmin_batch_per_replicate_1_based": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "final_mean": 1244.943974989486,
+          "final_per_replicate": [
+            1225.547809921035,
+            1230.6651698227681,
+            1256.979930778064,
+            1265.6638068347831,
+            1245.863157590779
+          ],
+          "finite": true,
+          "min_per_replicate": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "shape": [
+            12000,
+            5
+          ]
+        }
+      },
+      "validation_loss_total": {
+        "argmin_batch_per_replicate_1_based": [
+          2,
+          2,
+          2,
+          2,
+          2
+        ],
+        "final_mean": 1244.943974989486,
+        "final_per_replicate": [
+          1225.547809921035,
+          1230.6651698227681,
+          1256.979930778064,
+          1265.6638068347831,
+          1245.863157590779
+        ],
+        "finite": true,
+        "min_per_replicate": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "shape": [
+          12000,
+          5
+        ]
+      }
+    }
+  },
+  "schema_version": "rlrmp.cs_stochastic_gru.training_diagnostics_summary.v1",
+  "scope": "post_hoc_summary_of_per_batch_training_diagnostics_sidecars",
+  "source": "Derived from _artifacts/<issue>/runs/<run>/training_diagnostics.npz; raw sidecars remain untracked bulk artifacts."
+}
