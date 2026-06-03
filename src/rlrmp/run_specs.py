@@ -25,6 +25,12 @@ NOMINAL_GRU_LOSS_OBJECTIVES = frozenset(
         "full_analytical_qrf",
     }
 )
+NOMINAL_GRU_TRAINING_MODES = frozenset(
+    {
+        "nominal",
+        "fixed_target_perturbation_generalized",
+    }
+)
 NOMINAL_GRU_REQUIRED_PROVENANCE_KEYS = frozenset(
     {
         "git",
@@ -74,9 +80,10 @@ def validate_nominal_gru_run_spec(run_spec: dict[str, Any], *, spec_dir: Path) -
 
     training_summary = _mapping(run_spec, "training_summary")
     training_mode = training_summary.get("training_mode")
-    if training_mode != "nominal":
+    if training_mode not in NOMINAL_GRU_TRAINING_MODES:
         raise RunSpecValidationError(
-            f"nominal GRU run spec must declare training_summary.training_mode='nominal'; "
+            "nominal GRU run spec must declare training_summary.training_mode as one of "
+            f"{sorted(NOMINAL_GRU_TRAINING_MODES)}; "
             f"found {training_mode!r}"
         )
 
@@ -158,6 +165,7 @@ __all__ = [
     "NOMINAL_GRU_LOSS_OBJECTIVES",
     "NOMINAL_GRU_REQUIRED_PROVENANCE_KEYS",
     "NOMINAL_GRU_REQUIRED_TOP_LEVEL_KEYS",
+    "NOMINAL_GRU_TRAINING_MODES",
     "RunSpecValidationError",
     "validate_nominal_gru_run_spec",
     "validate_nominal_gru_run_spec_file",

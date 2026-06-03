@@ -49,6 +49,13 @@ from rlrmp.train.cs_nominal_gru import (
     run_full_training,
     write_run_spec,
 )
+from rlrmp.train.cs_perturbation_training import (
+    GRAPH_ADAPTER_SPECS,
+    VALIDATION_BINS,
+    apply_validation_bin,
+    planned_fixed_target_perturbation_rows,
+    validation_bin_manifest,
+)
 
 
 def _args(**overrides) -> argparse.Namespace:
@@ -508,6 +515,108 @@ def test_write_run_spec_honors_issue_override(tmp_path: Path) -> None:
     payload = json.loads(Path(result["run_spec_path"]).read_text())
 
     assert payload["issue"] == "3b2af27"
+
+
+def test_perturbation_training_hps_preserves_fixed_target_semantics() -> None:
+    hps = build_hps(
+        _args(
+            perturbation_training=True,
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            batch_size=64,
+            gradient_clip_norm=5.0,
+            controller_lr=1e-3,
+            lr_warmup_batches=500,
+            lr_cosine_alpha=0.01,
+        )
+    )
+
+    assert hps.task.type == "fixed_simple_reach"
+    assert hps.task.fixed_target_pos == [0.15, 0.0]
+    assert hps.task.eval_n_directions == 1
+    assert hps.task.eval_reach_length == 0.15
+    assert hps.perturbation_training.enabled is True
+    assert hps.perturbation_training.nominal_fraction == pytest.approx(0.45)
+    assert hps.perturbation_training.single_fraction == pytest.approx(0.45)
+    assert hps.perturbation_training.combined_fraction == pytest.approx(0.10)
+    assert hps.perturbation_training.target_stream.status == "not_applicable"
+    assert hps.loss.objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
+    assert hps.loss.weights.nn_hidden == 0.0
+    assert hps.batch_size == 64
+    assert hps.gradient_clip_norm == 5.0
+    assert hps.lr_schedule == "warmup_cosine"
+
+
+def test_perturbation_training_setup_adds_external_adapters_without_target_input() -> None:
+    hps = build_hps(_args(smoke=True, perturbation_training=True))
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    trial = pair.task.validation_trials
+
+    assert pair.model.input_ports[:2] == ("input", "epsilon")
+    for spec in GRAPH_ADAPTER_SPECS.values():
+        assert spec.input_key in pair.model.input_ports
+        assert spec.input_key in trial.inputs
+    assert not any("target" in port for port in pair.model.input_ports)
+    assert trial.inputs["effector_target"].pos.shape == (1, 60, 2)
+    assert jnp.allclose(trial.inputs["effector_target"].pos, 0.15 * jnp.array([1.0, 0.0]))
+    assert trial.extra["perturbation_training_bin"] == "nominal"
+
+
+def test_perturbation_training_validation_bins_are_separate_and_fixed_target() -> None:
+    hps = build_hps(_args(smoke=True, perturbation_training=True))
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    base = pair.task.task.validation_trials
+    manifest = validation_bin_manifest(hps.perturbation_training)
+
+    assert [row["bin"] for row in manifest["bins"]] == list(VALIDATION_BINS)
+    for bin_name in VALIDATION_BINS:
+        trial = apply_validation_bin(base, hps.perturbation_training, bin_name)
+        assert trial.extra["perturbation_training_bin"] == bin_name
+        assert jnp.allclose(trial.inputs["effector_target"].pos, base.inputs["effector_target"].pos)
+
+    nominal = apply_validation_bin(base, hps.perturbation_training, "nominal")
+    initial_position = apply_validation_bin(base, hps.perturbation_training, "initial_position")
+    initial_velocity = apply_validation_bin(base, hps.perturbation_training, "initial_velocity")
+    process = apply_validation_bin(base, hps.perturbation_training, "process_epsilon")
+    command = apply_validation_bin(base, hps.perturbation_training, "command_input")
+
+    assert jnp.allclose(nominal.inits["mechanics.vector"], base.inits["mechanics.vector"])
+    assert jnp.any(initial_position.inits["mechanics.vector"] != base.inits["mechanics.vector"])
+    assert jnp.any(initial_velocity.inits["mechanics.vector"] != base.inits["mechanics.vector"])
+    assert jnp.any(process.inputs["epsilon"] != base.inputs["epsilon"])
+    assert jnp.any(command.inputs[GRAPH_ADAPTER_SPECS["command_input"].input_key] != 0.0)
+
+
+def test_perturbation_training_run_spec_and_planned_rows(tmp_path: Path) -> None:
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        smoke=True,
+        issue="aacb9ed",
+        perturbation_training=True,
+        loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+        batch_size=64,
+        gradient_clip_norm=5.0,
+        controller_lr=1e-3,
+        lr_warmup_batches=500,
+        lr_cosine_alpha=0.01,
+    )
+
+    result = write_run_spec(args)
+    payload = json.loads(Path(result["run_spec_path"]).read_text())
+    rows = planned_fixed_target_perturbation_rows()
+
+    assert payload["issue"] == "aacb9ed"
+    assert payload["nominal_only"] is False
+    assert payload["training_summary"]["training_mode"] == "fixed_target_perturbation_generalized"
+    assert payload["training_summary"]["validation_bins"]["bins"][0]["bin"] == "nominal"
+    assert payload["model_summary"]["training_distribution"]["fixed_target_only"] is True
+    assert payload["hps"]["perturbation_training"]["controller_internal_mutation"] is False
+    assert {row["controller_lr"] for row in rows} == {1e-3, 3e-3}
+    assert all(row["batch_size"] == 64 for row in rows)
+    assert all(row["gradient_clip_norm"] == 5.0 for row in rows)
+    assert all("--perturbation-training" in row["command"] for row in rows)
 
 
 def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Path) -> None:
