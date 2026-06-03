@@ -208,6 +208,11 @@ def materialize_gru_pilot_figures(
         velocity_profiles=velocity_profiles,
         references=references,
         selection_manifest=selection_manifest,
+        checkpoint_policy=(
+            "validation_selected_per_replicate"
+            if use_validation_selected_checkpoints
+            else "final_checkpoint"
+        ),
     )
     summary_path = output_dir / "figure_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -312,6 +317,10 @@ def load_gru_training_history(run_spec: Mapping[str, Any], path: Path) -> Simple
 def active_loss_term_labels(run_spec: Mapping[str, Any]) -> tuple[str, ...]:
     """Return active loss labels in Feedbax's serialized term order."""
 
+    loss_objective = str(run_spec.get("loss_objective") or "")
+    if loss_objective == "full_analytical_qrf":
+        return ("full_analytical_qrf",)
+
     weights = run_spec.get("hps", {}).get("loss", {}).get("weights", {})
     candidate_order = (
         "effector_pos_running",
@@ -332,6 +341,7 @@ def active_loss_term_labels(run_spec: Mapping[str, Any]) -> tuple[str, ...]:
         "nn_output_pre_go",
         "nn_hidden_derivative_pre_go",
         "fix_readout_norm",
+        "mechanics_force_filter",
         "nn_output",
     )
     active = tuple(label for label in candidate_order if float(weights.get(label, 0.0) or 0.0) != 0.0)
@@ -763,6 +773,7 @@ def build_figure_summary(
     replicate_velocity_file: Path | None = None,
     references: Sequence[ReferenceProfile] = (),
     selection_manifest: dict[str, Any] | None = None,
+    checkpoint_policy: str = "final_checkpoint",
 ) -> dict[str, Any]:
     """Build the JSON sidecar summary for generated figures."""
 
@@ -823,6 +834,7 @@ def build_figure_summary(
 
     summary = {
         "issue": experiment,
+        "checkpoint_policy": checkpoint_policy,
         "runs": run_map,
         "loss_plots": {
             "implementation": "feedbax.plot.loss_history_compare",
@@ -843,8 +855,23 @@ def _read_loss_tree(stream: Any, term_labels: Sequence[str]) -> TermTree:
         value = np.load(stream, allow_pickle=False)
         weight = float(np.load(stream, allow_pickle=False))
         children[label] = TermTree.leaf(label, jnp.asarray(value), weight=weight)
-    branch_weight = float(np.load(stream, allow_pickle=False))
+    branch_weight = _scalar_weight(np.load(stream, allow_pickle=False))
     return TermTree.branch("reach_loss", children, weight=branch_weight)
+
+
+def _scalar_weight(value: np.ndarray) -> float:
+    """Return a scalar weight from Feedbax history scalar or broadcast array records."""
+
+    array = np.asarray(value)
+    if array.size == 1:
+        return float(array.reshape(()))
+    nonzero = array[array != 0]
+    if nonzero.size == 0:
+        return 0.0
+    first = float(nonzero.reshape(-1)[0])
+    if not np.allclose(nonzero, first):
+        raise ValueError(f"Expected scalar or broadcast history weight, got shape {array.shape}")
+    return first
 
 
 def _replicate_velocity_summaries(profile: VelocityProfile) -> list[dict[str, float | int]]:

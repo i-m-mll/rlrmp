@@ -68,6 +68,28 @@ def test_active_loss_term_labels_follow_gru_feedbax_order() -> None:
     )
 
 
+def test_active_loss_term_labels_use_full_qrf_objective() -> None:
+    run_spec = _run_spec(hidden_weight=1e-5)
+    run_spec["loss_objective"] = "full_analytical_qrf"
+
+    assert active_loss_term_labels(run_spec) == ("full_analytical_qrf",)
+
+
+def test_active_loss_term_labels_include_force_filter_ablation_term() -> None:
+    run_spec = _run_spec(hidden_weight=0.0)
+    run_spec["loss_objective"] = "partial_net_output_force_filter"
+    run_spec["hps"]["loss"]["weights"]["mechanics_force_filter"] = 1.0 / 6.0
+
+    assert active_loss_term_labels(run_spec) == (
+        "effector_pos_running",
+        "effector_terminal_pos",
+        "effector_terminal_vel",
+        "effector_vel_running",
+        "mechanics_force_filter",
+        "nn_output",
+    )
+
+
 def test_load_gru_training_history_rebuilds_feedbax_loss_tree(tmp_path) -> None:
     labels = active_loss_term_labels(_run_spec(hidden_weight=1e-5))
     path = tmp_path / "training_history.eqx"

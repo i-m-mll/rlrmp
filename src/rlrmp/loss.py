@@ -30,7 +30,18 @@ from feedbax.types import TreeNamespace
 from jax_cookbook.misc import window_take
 from jaxtyping import Array, PyTree
 
+from rlrmp.analysis.cs_game_card import TARGET_POS, build_canonical_game
+
 logger = logging.getLogger(__name__)
+
+CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE = "full_analytical_qrf"
+CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE = "partial_net_output_force_filter"
+CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE = "partial_feedbax_terms"
+CS_LOSS_OBJECTIVES = (
+    CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
+    CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
+    CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+)
 
 
 def softmin_and_alpha(values, tau, axis=-1, eps=1e-12, keepdims=False):
@@ -212,6 +223,167 @@ class SimpleReachPositionLoss(TargetStateLoss):
             trial_axis_specs=0,
             masks=masks,
         )
+
+
+class CsAnalyticalQrfLoss(AbstractLoss):
+    """Full C&S analytical finite-horizon quadratic loss over LSS state and command."""
+
+    label: str
+    Q: Array
+    R: Array
+    Q_f: Array
+    target_pos: Array
+    n_phys: int = eqx.field(static=True)
+
+    def __init__(
+        self,
+        *,
+        Q: Array,
+        R: Array,
+        Q_f: Array,
+        target_pos: Array,
+        n_phys: int = 8,
+        label: str = CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+    ):
+        self.label = label
+        self.Q = jnp.asarray(Q)
+        self.R = jnp.asarray(R)
+        self.Q_f = jnp.asarray(Q_f)
+        self.target_pos = jnp.asarray(target_pos)
+        self.n_phys = int(n_phys)
+
+        if self.Q.ndim != 3:
+            raise ValueError(f"Q must have shape [T, n, n], got {self.Q.shape}.")
+        if self.R.ndim != 3:
+            raise ValueError(f"R must have shape [T, m, m], got {self.R.shape}.")
+        if self.Q_f.shape != self.Q.shape[1:]:
+            raise ValueError(
+                f"Q_f must have shape {self.Q.shape[1:]}, got {self.Q_f.shape}."
+            )
+        if self.Q.shape[0] != self.R.shape[0]:
+            raise ValueError(
+                f"Q and R must have the same horizon length, got {self.Q.shape[0]} "
+                f"and {self.R.shape[0]}."
+            )
+        if self.Q.shape[1] % self.n_phys != 0:
+            raise ValueError(
+                f"state dimension {self.Q.shape[1]} is not divisible by n_phys={self.n_phys}."
+            )
+        if self.target_pos.shape != (2,):
+            raise ValueError(f"target_pos must have shape [2], got {self.target_pos.shape}.")
+
+    def term(
+        self,
+        states: Optional[PyTree],
+        trial_specs: Optional["TaskTrialSpec"],
+        model: Optional[AbstractModel],
+    ) -> Array:
+        del model
+        assert states is not None, "CsAnalyticalQrfLoss requires states, but states is None"
+        assert trial_specs is not None, (
+            "CsAnalyticalQrfLoss requires trial_specs, but trial_specs is None"
+        )
+        if not hasattr(states, "mechanics") or not hasattr(states.mechanics, "vector"):
+            raise ValueError(
+                "Full analytical Q/R/Q_f loss requires states.mechanics.vector from the "
+                "cs_lss LinearStateSpace backend."
+            )
+        if not hasattr(states, "net") or not hasattr(states.net, "output"):
+            raise ValueError(
+                "Full analytical Q/R/Q_f loss requires states.net.output controller command "
+                "history from the cs_lss GRU graph."
+            )
+
+        vector = jnp.asarray(states.mechanics.vector)
+        command = jnp.asarray(states.net.output)
+        if vector.shape[-1] != self.Q.shape[1]:
+            raise ValueError(
+                f"Full analytical Q/R/Q_f loss expected state dim {self.Q.shape[1]}, "
+                f"got {vector.shape[-1]}."
+            )
+        if command.shape[-1] != self.R.shape[-1]:
+            raise ValueError(
+                f"Full analytical Q/R/Q_f loss expected command dim {self.R.shape[-1]}, "
+                f"got {command.shape[-1]}."
+            )
+        horizon = self.Q.shape[0]
+        if vector.shape[-2] != horizon:
+            raise ValueError(
+                f"Full analytical Q/R/Q_f loss expected {horizon} rollout states, "
+                f"got {vector.shape[-2]}."
+            )
+        if command.shape[-2] != horizon:
+            raise ValueError(
+                f"Full analytical Q/R/Q_f loss expected {horizon} commands, "
+                f"got {command.shape[-2]}."
+            )
+
+        initial_vector = self._initial_vector(trial_specs, vector)
+        x_pre = jnp.concatenate([initial_vector[..., None, :], vector[..., :-1, :]], axis=-2)
+        x_pre = self._goal_centered(x_pre)
+        x_terminal = self._goal_centered(vector[..., -1, :])
+        state_terms = jnp.einsum("...ti,tij,...tj->...t", x_pre, self.Q, x_pre)
+        command_terms = jnp.einsum("...ti,tij,...tj->...t", command, self.R, command)
+        terminal = jnp.einsum("...i,ij,...j->...", x_terminal, self.Q_f, x_terminal)
+        return jnp.sum(state_terms + command_terms, axis=-1) + terminal
+
+    def _initial_vector(self, trial_specs: "TaskTrialSpec", vector: Array) -> Array:
+        if "mechanics.vector" not in trial_specs.inits:
+            raise ValueError(
+                "Full analytical Q/R/Q_f loss requires trial_specs.inits['mechanics.vector'] "
+                "from the cs_lss task adapter."
+            )
+        initial = jnp.asarray(trial_specs.inits["mechanics.vector"], dtype=vector.dtype)
+        if initial.shape[-1] != vector.shape[-1]:
+            raise ValueError(
+                f"Initial mechanics.vector shape {initial.shape} is incompatible with "
+                f"rollout state shape {vector.shape}."
+            )
+        return jnp.broadcast_to(initial, (*vector.shape[:-2], vector.shape[-1]))
+
+    def _goal_centered(self, vector: Array) -> Array:
+        result = vector
+        for start in range(0, self.Q.shape[1], self.n_phys):
+            result = result.at[..., start : start + 2].add(-self.target_pos)
+        return result
+
+
+class CsForceFilterStateLoss(AbstractLoss):
+    """Squared C&S force/filter state over every delay block."""
+
+    label: str
+    n_phys: int = eqx.field(static=True)
+
+    def __init__(
+        self,
+        *,
+        label: str = "mechanics_force_filter",
+        n_phys: int = 8,
+    ):
+        self.label = label
+        self.n_phys = int(n_phys)
+
+    def term(
+        self,
+        states: Optional[PyTree],
+        trial_specs: Optional["TaskTrialSpec"],
+        model: Optional[AbstractModel],
+    ) -> Array:
+        del trial_specs, model
+        assert states is not None, "CsForceFilterStateLoss requires states, but states is None"
+        if not hasattr(states, "mechanics") or not hasattr(states.mechanics, "vector"):
+            raise ValueError(
+                "Force/filter ablation loss requires states.mechanics.vector from the "
+                "cs_lss LinearStateSpace backend."
+            )
+        vector = jnp.asarray(states.mechanics.vector)
+        if vector.shape[-1] % self.n_phys != 0:
+            raise ValueError(
+                f"state dimension {vector.shape[-1]} is not divisible by n_phys={self.n_phys}."
+            )
+        blocks = vector.reshape(vector.shape[:-1] + (-1, self.n_phys))
+        force_filter = blocks[..., 4:6]
+        return jnp.sum(force_filter**2, axis=(-3, -2, -1))
 
 
 DEFAULT_TOP_WEIGHTS: dict[str, float] = {
@@ -591,12 +763,55 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
 
     TODO: Refactor all the defaults/merging logic into a preparatory function.
     """
+    loss_objective = str(
+        _nsget(hps, "loss.objective", CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE)
+        or CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE
+    )
+    if loss_objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE:
+        plant_backend = str(_nsget(hps, "model.plant_backend", ""))
+        if plant_backend != "cs_lss":
+            raise ValueError(
+                "loss.objective='full_analytical_qrf' requires model.plant_backend='cs_lss' "
+                f"so the full 48D C&S state is available; got {plant_backend!r}."
+            )
+        _plant, schedule = build_canonical_game()
+        term = CsAnalyticalQrfLoss(
+            Q=schedule.Q,
+            R=schedule.R,
+            Q_f=schedule.Q_f,
+            target_pos=TARGET_POS,
+        )
+        return CompositeLoss(
+            label="reach_loss",
+            terms={CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE: term},
+            weights={CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE: 1.0},
+        )
+    if loss_objective not in {
+        CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
+        CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
+    }:
+        raise ValueError(
+            f"Unknown loss.objective {loss_objective!r}; expected one of {CS_LOSS_OBJECTIVES}."
+        )
+    ablate_net_force_filter = loss_objective == CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE
+    if ablate_net_force_filter:
+        plant_backend = str(_nsget(hps, "model.plant_backend", ""))
+        if plant_backend != "cs_lss":
+            raise ValueError(
+                "loss.objective='partial_net_output_force_filter' requires "
+                f"model.plant_backend='cs_lss'; got {plant_backend!r}."
+            )
+
     user_outer_weights = _nsget(hps, "loss.weights", {}) or {}
 
     terms: Mapping[str, AbstractLoss] = dict(
         nn_output=TargetStateLoss(
             "nn_output",
-            where=lambda state: state.efferent.output,
+            where=(
+                (lambda state: state.net.output)
+                if ablate_net_force_filter
+                else (lambda state: state.efferent.output)
+            ),
             spec=target_zero,
         ),
         nn_hidden=TargetStateLoss(
@@ -650,6 +865,8 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
             epoch_indices=(0, 1),
         ),
     )
+    if ablate_net_force_filter:
+        terms["mechanics_force_filter"] = CsForceFilterStateLoss()
 
     # Power-law schedule parameters (Bug: 2e1a6ad).
     # "flat" (default) keeps existing uniform weighting; "powerlaw" applies

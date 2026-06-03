@@ -1,0 +1,452 @@
+{
+  "component_policy": {
+    "nominal_intervention_policy": "plant_intervenor is present only as an inactive legacy GraphSpec compatibility component; no robust/minimax adversary is scheduled.",
+    "rlrmp_component_types": [
+      "RLRMPFeedbackChannels",
+      "RLRMPSimpleStagedNetwork",
+      "FixedField"
+    ]
+  },
+  "execution_backend": "rlrmp.legacy_simple_feedback_compat",
+  "game_card_provenance": {
+    "canonical_builder": "build_canonical_game",
+    "cost": {
+      "R": "I_2",
+      "fact_t": "((t + 1) / T)^6, capped at 1",
+      "feedbax_force_filter_state_cost": "included_as_partial_ablation_running_term",
+      "feedbax_force_filter_state_cost_note": "This ablation preserves the historical partial Feedbax position/velocity terms, moves command cost to intended net.output, and adds a running force/filter state penalty over mechanics.vector force coordinates. It still omits disturbance-integrator state and terminal full-state Q_f costs.",
+      "force_and_integrator_weight": "1.0",
+      "position_weight": "fact_t * 1e6",
+      "schedule": "C&S Eq. 15 physical 8-state schedule with 5-step delay distribution",
+      "terminal_Q_f": "diag([1e6, 1e6, 1e5, 1e5, 1, 1, 1, 1]) on physical state",
+      "velocity_weight": "fact_t * 1e5"
+    },
+    "discretization": "euler",
+    "dt": 0.01,
+    "feedbax_control_cost_stages": 60,
+    "feedbax_task_n_steps": 61,
+    "gamma_usage": "Recorded for C&S provenance only. This nominal run has no robust/minimax adversarial phase and does not claim a certificate pass.",
+    "hold_free": true,
+    "horizon_steps": 60,
+    "init_pos_m": [
+      0.0,
+      0.0
+    ],
+    "output_feedback_certificate_gamma_factor": 1.4,
+    "output_feedback_gamma_selection_issue": "97604a8",
+    "plant": {
+      "bw_contract": "top physical 8x8 block is identity; lag rows are zero",
+      "bw_shape": [
+        48,
+        8
+      ],
+      "control_dim": 2,
+      "damping": 0.1,
+      "delay_steps": 5,
+      "disturbance_dim": 8,
+      "mass": 1.0,
+      "physical_state_dim": 8,
+      "state_dim": 48,
+      "tau": 0.066
+    },
+    "single_reach": true,
+    "source_module": "rlrmp.analysis.cs_game_card",
+    "target_distance_m": 0.15,
+    "target_pos_m": [
+      0.15,
+      0.0
+    ]
+  },
+  "graph_export": {
+    "authoritative_sources": [
+      "run.json.model_summary",
+      "run.json.hps.model.plant_backend",
+      "trained_model.eqx"
+    ],
+    "reason": "C&S cs_lss runs use LinearStateSpace mechanics and delayed position/velocity feedback; the current compatibility GraphSpec builder serializes the legacy FirstOrderFilter -> PointMass path.",
+    "status": "unavailable"
+  },
+  "legacy_loader": {
+    "checkpoint_format": "feedbax._io.save/load_with_hyperparameters",
+    "setup_function": "rlrmp.modules.training.part2.setup_task_model_pair"
+  },
+  "loss_objective": "partial_net_output_force_filter",
+  "loss_spec": {
+    "active_cs_terms": {
+      "control": {
+        "equivalent_R": "I_2 on intended controller command before noise",
+        "scale": 1.0,
+        "state_key": "states.net.output",
+        "term": "nn_output"
+      },
+      "force_filter": {
+        "basis": "force/filter coordinates from every 8D physical delay block",
+        "scale": 0.16666666666666666,
+        "state_key": "states.mechanics.vector delay blocks[..., 4:6]",
+        "term": "mechanics_force_filter"
+      },
+      "stage_position": {
+        "fact_t": "((t + 1) / T)^6",
+        "scale": 1000000.0,
+        "term": "effector_pos_running"
+      },
+      "stage_velocity": {
+        "fact_t": "((t + 1) / T)^6",
+        "scale": 100000.0,
+        "term": "effector_vel_running"
+      },
+      "terminal_position": {
+        "scale": 1000000.0,
+        "term": "effector_terminal_pos"
+      },
+      "terminal_velocity": {
+        "scale": 100000.0,
+        "term": "effector_terminal_vel"
+      }
+    },
+    "disturbance_integrator_state_cost": "omitted_in_this_ablation",
+    "effector_hold_pos_schedule": "disabled",
+    "effector_pos_late": {
+      "final_scale_factor": 1.0,
+      "start_step_after_go": 60
+    },
+    "effector_pos_running_schedule": "cs_eq15_power6",
+    "effector_vel_late": {
+      "final_scale_factor": 1.0,
+      "start_step_after_go": 60
+    },
+    "force_filter_state_cost": "included_as_partial_ablation_running_term",
+    "hidden_regularizer": {
+      "exact_fidelity_default": 0.0,
+      "regularized_pair_scale": 1e-05,
+      "scale": 0.0,
+      "term": "nn_hidden"
+    },
+    "hypothesis": "historical partial position/velocity terms plus intended-command control cost and LSS force/filter state cost",
+    "movement_ramp_duration_steps": 0,
+    "movement_ramp_power": 1.0,
+    "movement_ramp_shape": "none",
+    "objective_kind": "partial_feedbax_ablation",
+    "objective_profile": "partial_net_output_force_filter",
+    "position_powerlaw_power": 6.0,
+    "simple_reach_position_loss_contract": "effector_pos_running compares mechanics.effector.pos to the SimpleReaches same-coordinate target sequence over every transition, using the configured C&S Eq. 15 power-law discount when requested.",
+    "weights": {
+      "effector_final_vel": 0.0,
+      "effector_hold_pos": 0.0,
+      "effector_hold_vel": 0.0,
+      "effector_pos": 0.0,
+      "effector_pos_late": 0.0,
+      "effector_pos_mid": 0.0,
+      "effector_pos_running": 1000000.0,
+      "effector_terminal_pos": 1000000.0,
+      "effector_terminal_vel": 100000.0,
+      "effector_vel_late": 0.0,
+      "effector_vel_mid": 0.0,
+      "effector_vel_running": 100000.0,
+      "goal_hit_in_window": 0.0,
+      "mechanics_force_filter": 0.16666666666666666,
+      "nn_hidden": 0.0,
+      "nn_hidden_derivative": 0.0,
+      "nn_hidden_derivative_pre_go": 0.0,
+      "nn_output": 1.0,
+      "nn_output_jerk": 0.0,
+      "nn_output_pre_go": 0.0
+    }
+  },
+  "model_structure": {
+    "adversarial_phase": "none",
+    "analytical_delay_augmented_state_input": false,
+    "certificate_claim": "I/O map certificate framing only; the output-feedback GRU is not fed the 48D delay-augmented analytical state and is not claimed to share same-coordinate gains with the analytical controller.",
+    "certificate_coordinate_claim": "not_same_coordinate_gain",
+    "certificate_lens": "input_output_map_certificate",
+    "controller_kind": "gru",
+    "efferent": {
+      "additive_motor_noise_std": 1e-05,
+      "force_filter_role": "coupled inside C&S LinearStateSpace dynamics",
+      "force_filter_tau_s": 0.066,
+      "noise_timing": "Feedbax efferent Channel immediately before LinearStateSpace.force",
+      "signal_dependent_motor_noise_std": 0.02
+    },
+    "exact_cs_linear_state_space": true,
+    "feedback": {
+      "delay_source": "C&S 48D LinearStateSpace delay-augmented state",
+      "delay_steps": 5,
+      "noise_role": "sensory_feedback",
+      "noise_std": 0.004791329788133908,
+      "noise_timing": "Feedbax sensory Channel after 4D delayed LSS feedback selector"
+    },
+    "fixed_plant_parameters": [
+      "nodes.mechanics.A",
+      "nodes.mechanics.B",
+      "nodes.mechanics.B_w"
+    ],
+    "hidden_size": 180,
+    "n_replicates": 5,
+    "nominal_only": true,
+    "plant_backend": "cs_lss",
+    "plant_backend_warning": null,
+    "plant_process": {
+      "epsilon_bridge": "sampled physical-process/load epsilon Task input bound to C&S LinearStateSpace mechanics.epsilon using the physical block of the released C&S process covariance",
+      "force_noise_std": 0.03162277660168379,
+      "noise_timing": "mechanics.epsilon_sampled_task_input",
+      "state_diffusion": "mechanics.epsilon"
+    },
+    "population_structure": {
+      "n_input_only": 0,
+      "n_input_readout": 180,
+      "n_readout_only": 0,
+      "n_recurrent_only": 0
+    },
+    "stochastic_preset": {
+      "additive_motor_noise_std": 1e-05,
+      "name": "cs2019-rollout",
+      "plant_process_force_noise_std": 0.03162277660168379,
+      "projection_notes": {
+        "additive_motor": "Project C&S input-image motor covariance to command-channel additive noise with std sqrt(motor_covariance_scale).",
+        "plant_process": "Project C&S process/load covariance to independent force noise immediately upstream of mechanics, after the force filter.",
+        "sensory": "Use the C&S sensory covariance diagonal standard deviation on the Feedbax delayed pos/vel feedback channel.",
+        "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
+        "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
+      },
+      "sensory_noise_std": 0.004791329788133908,
+      "signal_dependent_motor_noise_std": 0.02,
+      "source_contract": {
+        "additive_motor_covariance": "input_image_state_covariance_B_B_T",
+        "contract": "cs_released_stochastic_v1",
+        "motor_covariance_scale": 1e-10,
+        "motor_covariance_shape": [
+          48,
+          48
+        ],
+        "output_feedback_process_covariance_scale": 0.001,
+        "process_covariance_scale": 1.0,
+        "process_covariance_shape": [
+          48,
+          48
+        ],
+        "process_noise": "separate_output_feedback_process_covariance",
+        "sensory_covariance_diag": [
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05
+        ],
+        "sensory_noise_scale": 1.0,
+        "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
+        "signal_dependent_scale": 0.02,
+        "signal_dependent_state_shape": [
+          48,
+          2,
+          2
+        ]
+      }
+    },
+    "stochastic_runtime": {
+      "additive_motor_noise_std": 1e-05,
+      "command_runtime": "Feedbax efferent Channel immediately before LinearStateSpace.force; additive and signal-dependent motor noise are both command-channel noise",
+      "plant_process_force_noise_std": 0.03162277660168379,
+      "plant_process_runtime": "Task-sampled physical-process/load epsilon bound to LinearStateSpace.epsilon",
+      "sensory_noise_std": 0.004791329788133908,
+      "sensory_runtime": "Feedbax sensory Channel after the 4D delayed LSS feedback selector; the delay itself is represented by the C&S 48D LSS state",
+      "signal_dependent_motor_noise_std": 0.02,
+      "state_diffusion": "mechanics.epsilon"
+    },
+    "trainable": [
+      "nodes.net.hidden",
+      "nodes.net.readout"
+    ]
+  },
+  "schema_version": "rlrmp.cs_stochastic_gru.v1",
+  "stochastic_preset": {
+    "additive_motor_noise_std": 1e-05,
+    "name": "cs2019-rollout",
+    "plant_process_force_noise_std": 0.03162277660168379,
+    "projection_notes": {
+      "additive_motor": "Project C&S input-image motor covariance to command-channel additive noise with std sqrt(motor_covariance_scale).",
+      "plant_process": "Project C&S process/load covariance to independent force noise immediately upstream of mechanics, after the force filter.",
+      "sensory": "Use the C&S sensory covariance diagonal standard deviation on the Feedbax delayed pos/vel feedback channel.",
+      "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
+      "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
+    },
+    "sensory_noise_std": 0.004791329788133908,
+    "signal_dependent_motor_noise_std": 0.02,
+    "source_contract": {
+      "additive_motor_covariance": "input_image_state_covariance_B_B_T",
+      "contract": "cs_released_stochastic_v1",
+      "motor_covariance_scale": 1e-10,
+      "motor_covariance_shape": [
+        48,
+        48
+      ],
+      "output_feedback_process_covariance_scale": 0.001,
+      "process_covariance_scale": 1.0,
+      "process_covariance_shape": [
+        48,
+        48
+      ],
+      "process_noise": "separate_output_feedback_process_covariance",
+      "sensory_covariance_diag": [
+        2.2956841138659323e-05,
+        2.2956841138659323e-05,
+        2.2956841138659323e-05,
+        2.2956841138659323e-05,
+        2.2956841138659323e-05,
+        2.2956841138659323e-05,
+        2.2956841138659323e-05,
+        2.2956841138659323e-05
+      ],
+      "sensory_noise_scale": 1.0,
+      "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
+      "signal_dependent_scale": 0.02,
+      "signal_dependent_state_shape": [
+        48,
+        2,
+        2
+      ]
+    }
+  },
+  "stochastic_runtime": {
+    "additive_motor_noise_std": 1e-05,
+    "command_runtime": "Feedbax efferent Channel immediately before LinearStateSpace.force; additive and signal-dependent motor noise are both command-channel noise",
+    "plant_process_force_noise_std": 0.03162277660168379,
+    "plant_process_runtime": "Task-sampled physical-process/load epsilon bound to LinearStateSpace.epsilon",
+    "sensory_noise_std": 0.004791329788133908,
+    "sensory_runtime": "Feedbax sensory Channel after the 4D delayed LSS feedback selector; the delay itself is represented by the C&S 48D LSS state",
+    "signal_dependent_motor_noise_std": 0.02,
+    "state_diffusion": "mechanics.epsilon"
+  },
+  "task_spec": {
+    "control_cost_stages": 60,
+    "coordinate_contract": "Feedbax SimpleReaches supplies mechanics.effector.pos targets in the same Cartesian metre coordinates as the point-mass effector state.",
+    "epoch_len_ranges": [
+      [
+        0,
+        1
+      ],
+      [
+        60,
+        61
+      ]
+    ],
+    "eval_grid_n": 1,
+    "eval_n_directions": 1,
+    "eval_reach_length": 0.15,
+    "extra_inputs": [
+      "input",
+      "epsilon"
+    ],
+    "fixed_init_pos": [
+      0.0,
+      0.0
+    ],
+    "fixed_target_pos": [
+      0.15,
+      0.0
+    ],
+    "hold_epochs": [],
+    "move_epochs": [
+      0
+    ],
+    "movement_window": {
+      "end_transition": 59,
+      "kind": "full_simple_reach_trial",
+      "start_transition": 0
+    },
+    "n_steps": 61,
+    "p_catch_trial": 0.0,
+    "target_on_epochs": [
+      0
+    ],
+    "time_axis_contract": "Hold-free fixed nominal task: Feedbax n_steps=61 yields exactly 60 transition/control-cost stages and one position target per transition; delayed-reach epoch masks are not used.",
+    "type": "fixed_simple_reach",
+    "workspace": [
+      [
+        -0.02,
+        -0.02
+      ],
+      [
+        0.16999999999999998,
+        0.02
+      ]
+    ]
+  },
+  "training_spec": {
+    "adversarial_phase": "none",
+    "analytical_delay_augmented_state_input": false,
+    "batch_size": 64,
+    "certificate_lens": "input_output_map_certificate",
+    "controller_kind": "gru",
+    "dt": 0.01,
+    "loss_objective": "partial_net_output_force_filter",
+    "method": "nominal-cs-gru",
+    "n_replicates": 5,
+    "nominal_only": true,
+    "plant_backend": "cs_lss",
+    "stochastic_preset": {
+      "additive_motor_noise_std": 1e-05,
+      "name": "cs2019-rollout",
+      "plant_process_force_noise_std": 0.03162277660168379,
+      "projection_notes": {
+        "additive_motor": "Project C&S input-image motor covariance to command-channel additive noise with std sqrt(motor_covariance_scale).",
+        "plant_process": "Project C&S process/load covariance to independent force noise immediately upstream of mechanics, after the force filter.",
+        "sensory": "Use the C&S sensory covariance diagonal standard deviation on the Feedbax delayed pos/vel feedback channel.",
+        "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
+        "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
+      },
+      "sensory_noise_std": 0.004791329788133908,
+      "signal_dependent_motor_noise_std": 0.02,
+      "source_contract": {
+        "additive_motor_covariance": "input_image_state_covariance_B_B_T",
+        "contract": "cs_released_stochastic_v1",
+        "motor_covariance_scale": 1e-10,
+        "motor_covariance_shape": [
+          48,
+          48
+        ],
+        "output_feedback_process_covariance_scale": 0.001,
+        "process_covariance_scale": 1.0,
+        "process_covariance_shape": [
+          48,
+          48
+        ],
+        "process_noise": "separate_output_feedback_process_covariance",
+        "sensory_covariance_diag": [
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05
+        ],
+        "sensory_noise_scale": 1.0,
+        "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
+        "signal_dependent_scale": 0.02,
+        "signal_dependent_state_shape": [
+          48,
+          2,
+          2
+        ]
+      }
+    },
+    "stochastic_runtime": {
+      "additive_motor_noise_std": 1e-05,
+      "command_runtime": "Feedbax efferent Channel immediately before LinearStateSpace.force; additive and signal-dependent motor noise are both command-channel noise",
+      "plant_process_force_noise_std": 0.03162277660168379,
+      "plant_process_runtime": "Task-sampled physical-process/load epsilon bound to LinearStateSpace.epsilon",
+      "sensory_noise_std": 0.004791329788133908,
+      "sensory_runtime": "Feedbax sensory Channel after the 4D delayed LSS feedback selector; the delay itself is represented by the C&S 48D LSS state",
+      "signal_dependent_motor_noise_std": 0.02,
+      "state_diffusion": "mechanics.epsilon"
+    },
+    "trainable": [
+      "nodes.net.hidden",
+      "nodes.net.readout"
+    ]
+  }
+}

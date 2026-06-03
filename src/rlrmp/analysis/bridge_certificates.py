@@ -162,6 +162,10 @@ def response_map_mismatch_summary(
                 ),
                 "covariance_weighted_mismatch_ratio_mean": _json_float(np.mean(weighted_ratios)),
                 "covariance_weighted_mismatch_ratio_max": _json_float(np.max(weighted_ratios)),
+                "covariance_weighted_delta_energy": _json_float(np.sum(weighted_delta)),
+                "covariance_weighted_reference_energy": _json_float(
+                    np.sum(weighted_reference)
+                ),
             }
         )
     return summary
@@ -351,6 +355,7 @@ def response_map_mismatch_component(
     candidate_map: np.ndarray | None,
     reference_map: np.ndarray | None,
     input_covariance: np.ndarray | None = None,
+    input_covariance_metadata: dict[str, Any] | None = None,
     numerics: CertificateNumerics = CertificateNumerics(),
     name: str,
     input_label: str,
@@ -366,6 +371,19 @@ def response_map_mismatch_component(
         input_covariance=input_covariance,
         numerics=numerics,
     )
+    if input_covariance is None and input_covariance_metadata:
+        summary["covariance_weighted_status"] = input_covariance_metadata.get(
+            "status", "missing"
+        )
+        summary["covariance_weighting"] = _json_summary(input_covariance_metadata)
+    elif input_covariance is not None:
+        summary["covariance_weighted_aggregate_mismatch_ratio"] = _json_float(
+            summary["covariance_weighted_delta_energy"]
+            / max(summary["covariance_weighted_reference_energy"], numerics.denominator_floor)
+        )
+        summary["covariance_weighted_status"] = "available"
+        if input_covariance_metadata:
+            summary["covariance_weighting"] = _json_summary(input_covariance_metadata)
     return BridgeCertificateComponent.available(
         name,
         **summary,
@@ -611,7 +629,9 @@ def recurrence_safe_components(
     candidate_measurement_to_output_map: np.ndarray | None = None,
     reference_measurement_to_output_map: np.ndarray | None = None,
     observation_history_covariance: np.ndarray | None = None,
+    observation_history_covariance_metadata: dict[str, Any] | None = None,
     measurement_history_covariance: np.ndarray | None = None,
+    measurement_history_covariance_metadata: dict[str, Any] | None = None,
     candidate_disturbance_to_action_map: np.ndarray | None = None,
     reference_disturbance_to_action_map: np.ndarray | None = None,
     candidate_disturbance_to_state_map: np.ndarray | None = None,
@@ -649,6 +669,7 @@ def recurrence_safe_components(
             candidate_map=candidate_observation_to_action_map,
             reference_map=reference_observation_to_action_map,
             input_covariance=observation_history_covariance,
+            input_covariance_metadata=observation_history_covariance_metadata,
             numerics=numerics,
             name=OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH,
             input_label="observation_history",
@@ -666,6 +687,10 @@ def recurrence_safe_components(
             input_covariance=_first_available(
                 measurement_history_covariance,
                 observation_history_covariance,
+            ),
+            input_covariance_metadata=(
+                measurement_history_covariance_metadata
+                or observation_history_covariance_metadata
             ),
             numerics=numerics,
             name=MEASUREMENT_HISTORY_TO_ACTION_MAP_MISMATCH,
@@ -749,7 +774,9 @@ def augmented_linear_recurrent_components(
     candidate_measurement_to_output_map: np.ndarray | None = None,
     reference_measurement_to_output_map: np.ndarray | None = None,
     observation_history_covariance: np.ndarray | None = None,
+    observation_history_covariance_metadata: dict[str, Any] | None = None,
     measurement_history_covariance: np.ndarray | None = None,
+    measurement_history_covariance_metadata: dict[str, Any] | None = None,
     candidate_disturbance_to_action_map: np.ndarray | None = None,
     reference_disturbance_to_action_map: np.ndarray | None = None,
     candidate_disturbance_to_state_map: np.ndarray | None = None,
@@ -829,6 +856,7 @@ def augmented_linear_recurrent_components(
             candidate_map=candidate_observation_to_action_map,
             reference_map=reference_observation_to_action_map,
             input_covariance=observation_history_covariance,
+            input_covariance_metadata=observation_history_covariance_metadata,
             numerics=numerics,
             name=OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH,
             input_label="observation_history",
@@ -846,6 +874,10 @@ def augmented_linear_recurrent_components(
             input_covariance=_first_available(
                 measurement_history_covariance,
                 observation_history_covariance,
+            ),
+            input_covariance_metadata=(
+                measurement_history_covariance_metadata
+                or observation_history_covariance_metadata
             ),
             numerics=numerics,
             name=MEASUREMENT_HISTORY_TO_ACTION_MAP_MISMATCH,
@@ -944,7 +976,9 @@ def build_standard_certificate_components(
     candidate_measurement_to_output_map: np.ndarray | None = None,
     reference_measurement_to_output_map: np.ndarray | None = None,
     observation_history_covariance: np.ndarray | None = None,
+    observation_history_covariance_metadata: dict[str, Any] | None = None,
     measurement_history_covariance: np.ndarray | None = None,
+    measurement_history_covariance_metadata: dict[str, Any] | None = None,
     candidate_disturbance_to_action_map: np.ndarray | None = None,
     reference_disturbance_to_action_map: np.ndarray | None = None,
     candidate_disturbance_to_state_map: np.ndarray | None = None,
@@ -1002,7 +1036,9 @@ def build_standard_certificate_components(
             candidate_measurement_to_output_map=candidate_measurement_to_output_map,
             reference_measurement_to_output_map=reference_measurement_to_output_map,
             observation_history_covariance=observation_history_covariance,
+            observation_history_covariance_metadata=observation_history_covariance_metadata,
             measurement_history_covariance=measurement_history_covariance,
+            measurement_history_covariance_metadata=measurement_history_covariance_metadata,
             candidate_disturbance_to_action_map=candidate_disturbance_to_action_map,
             reference_disturbance_to_action_map=reference_disturbance_to_action_map,
             candidate_disturbance_to_state_map=candidate_disturbance_to_state_map,
@@ -1072,7 +1108,9 @@ def build_standard_certificate_components(
                 candidate_measurement_to_output_map=candidate_measurement_to_output_map,
                 reference_measurement_to_output_map=reference_measurement_to_output_map,
                 observation_history_covariance=observation_history_covariance,
+                observation_history_covariance_metadata=observation_history_covariance_metadata,
                 measurement_history_covariance=measurement_history_covariance,
+                measurement_history_covariance_metadata=measurement_history_covariance_metadata,
                 candidate_disturbance_to_action_map=candidate_disturbance_to_action_map,
                 reference_disturbance_to_action_map=reference_disturbance_to_action_map,
                 candidate_disturbance_to_state_map=candidate_disturbance_to_state_map,

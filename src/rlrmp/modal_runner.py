@@ -27,6 +27,14 @@ DEFAULT_EXPERIMENT = "30f2313"
 DEFAULT_RUN = "cs_stochastic_gru__no_hidden_penalty"
 REGULARIZED_RUN = "cs_stochastic_gru__hidden_penalty"
 DEFAULT_STOCHASTIC_PRESET = "cs2019-rollout"
+CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE = "partial_feedbax_terms"
+CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE = "partial_net_output_force_filter"
+CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE = "full_analytical_qrf"
+CS_LOSS_OBJECTIVES = (
+    CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
+    CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
+    CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+)
 DEFAULT_GPU = "A10"
 DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_TRAIN_TIMEOUT_SECONDS = 24 * 60 * 60
@@ -65,6 +73,7 @@ class NominalGruRunConfig:
     lr_cosine_alpha: float = 1.0
     gradient_clip_norm: float | None = None
     stochastic_preset: str = DEFAULT_STOCHASTIC_PRESET
+    loss_objective: str = CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE
     regularized_fidelity: bool = False
     checkpoint_interval_batches: int = DEFAULT_CHECKPOINT_INTERVAL_BATCHES
     resume: bool = True
@@ -138,6 +147,7 @@ def build_training_command(
     if config.gradient_clip_norm is not None:
         _append_arg(command, "--gradient-clip-norm", config.gradient_clip_norm)
     _append_arg(command, "--stochastic-preset", config.stochastic_preset)
+    _append_arg(command, "--loss-objective", config.loss_objective)
     _append_arg(command, "--output-dir", artifact_dir)
     _append_arg(command, "--spec-dir", spec_dir)
     _append_arg(command, "--checkpoint-interval-batches", config.checkpoint_interval_batches)
@@ -239,6 +249,7 @@ def dry_run_payload(config: NominalGruRunConfig) -> dict[str, Any]:
         "gpu": config.gpu,
         "timeout_seconds": config.timeout_seconds,
         "stochastic_preset": config.stochastic_preset,
+        "loss_objective": config.loss_objective,
         "controller_lr": config.controller_lr,
         "gradient_clip_norm": config.gradient_clip_norm,
         "regularized_fidelity": config.regularized_fidelity,
@@ -581,6 +592,7 @@ def make_config(args: argparse.Namespace) -> NominalGruRunConfig:
         lr_cosine_alpha=args.lr_cosine_alpha,
         gradient_clip_norm=args.gradient_clip_norm,
         stochastic_preset=args.stochastic_preset,
+        loss_objective=args.loss_objective,
         regularized_fidelity=args.regularized_fidelity,
         checkpoint_interval_batches=args.checkpoint_interval_batches,
         resume=args.resume,
@@ -627,6 +639,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--lr-cosine-alpha", type=float, default=1.0)
     parser.add_argument("--gradient-clip-norm", type=float, default=None)
     parser.add_argument("--stochastic-preset", default=DEFAULT_STOCHASTIC_PRESET)
+    parser.add_argument(
+        "--loss-objective",
+        choices=CS_LOSS_OBJECTIVES,
+        default=CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
+        help="Training objective passed through to scripts/train_cs_nominal_gru.py.",
+    )
     parser.add_argument(
         "--regularized-fidelity",
         action="store_true",

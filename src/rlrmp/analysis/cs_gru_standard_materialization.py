@@ -150,6 +150,11 @@ def materialize_gru_standard_result(
         "format": "rlrmp.cs_gru_standard_certificates.v1",
         "issue": materializer_issue_id,
         "source_issue": experiment,
+        "checkpoint_policy": (
+            "validation_selected_per_replicate"
+            if use_validation_selected_checkpoints
+            else "final_checkpoint"
+        ),
         "source_manifests": {
             run_id: repo_relative(result_run_root / run_id / "run.json", repo_root=repo_root)
             for run_id in run_ids
@@ -214,12 +219,20 @@ def materialize_gru_standard_row(
             use_validation_selected_checkpoints=use_validation_selected_checkpoints,
             repo_root=repo_root,
         )
+        observation_history_covariance = evaluation_metadata.pop(
+            "_observation_history_covariance_array",
+            None,
+        )
     else:
         candidate_actions = np.zeros((0, reference_actions.shape[0], reference_actions.shape[1]))
         candidate_map = None
+        observation_history_covariance = None
         evaluation_metadata = {
             "status": "not_evaluated",
             "reason": "model loading was disabled",
+            "observation_history_covariance": (
+                _missing_observation_history_covariance_metadata("model loading was disabled")
+            ),
         }
     if candidate_actions.size:
         reference_batch = np.broadcast_to(reference_actions[None, :, :], candidate_actions.shape)
@@ -237,6 +250,10 @@ def materialize_gru_standard_row(
             None
             if candidate_map is None
             else np.broadcast_to(reference_map[None, :, :, :], candidate_map.shape)
+        ),
+        observation_history_covariance=observation_history_covariance,
+        observation_history_covariance_metadata=evaluation_metadata.get(
+            "observation_history_covariance"
         ),
         evaluation_metadata=evaluation_metadata,
         run_spec_path=run_spec_path,
@@ -259,6 +276,8 @@ def build_gru_standard_manifest_from_actions(
     action_weight: np.ndarray,
     candidate_observation_to_action_map: np.ndarray | None = None,
     reference_observation_to_action_map: np.ndarray | None = None,
+    observation_history_covariance: np.ndarray | None = None,
+    observation_history_covariance_metadata: dict[str, Any] | None = None,
     evaluation_metadata: dict[str, Any] | None = None,
     run_spec_path: Path | None = None,
     model_path: Path | None = None,
@@ -280,6 +299,11 @@ def build_gru_standard_manifest_from_actions(
     response_map_evidence_available = (
         candidate_observation_to_action_map is not None
         and reference_observation_to_action_map is not None
+    )
+    covariance_metadata = observation_history_covariance_metadata or (
+        _missing_observation_history_covariance_metadata(
+            "sampled observation histories were not supplied"
+        )
     )
     blocker = (
         None
@@ -343,9 +367,12 @@ def build_gru_standard_manifest_from_actions(
                 "io_response_map_status": response_map_status,
                 "io_response_map_observation_dim": 4 if response_map_evidence_available else None,
                 "io_response_map_blocker": blocker,
+                "observation_history_covariance": covariance_metadata,
             },
             "candidate_observation_to_action_map": candidate_observation_to_action_map,
             "reference_observation_to_action_map": reference_observation_to_action_map,
+            "observation_history_covariance": observation_history_covariance,
+            "observation_history_covariance_metadata": covariance_metadata,
             "action_label": "command",
             "state_label": "feedbax_rollout_state_not_used",
         },
@@ -356,6 +383,7 @@ def build_gru_standard_manifest_from_actions(
             "reference": reference_metadata or {},
             "io_response_map_status": response_map_status,
             "io_response_map_blocker": blocker,
+            "observation_history_covariance": covariance_metadata,
         },
         artifacts=_artifact_paths(
             run_spec_path=run_spec_path,
@@ -446,18 +474,26 @@ def evaluate_gru_clean_actions(
         outputs.shape[-2],
         outputs.shape[-1],
     )
+    response_map_net_inputs = _stochastic_response_map_net_inputs(
+        model_arrays=stochastic_model_arrays,
+        model_other=stochastic_model_other,
+        pair=pair,
+        n_replicates=n_replicates,
+        n_rollout_trials=DEFAULT_RESPONSE_MAP_ROLLOUT_TRIALS,
+    )
     response_maps = _gru_observation_to_action_maps(
         model_arrays=model_arrays,
         model_other=model_other,
-        net_inputs=_stochastic_response_map_net_inputs(
-            model_arrays=stochastic_model_arrays,
-            model_other=stochastic_model_other,
-            pair=pair,
-            n_replicates=n_replicates,
-            n_rollout_trials=DEFAULT_RESPONSE_MAP_ROLLOUT_TRIALS,
-        ),
+        net_inputs=response_map_net_inputs,
         n_replicates=n_replicates,
         feedback_dim=4,
+    )
+    observation_history_covariance, observation_history_covariance_metadata = (
+        observation_history_covariance_from_net_inputs(
+            response_map_net_inputs,
+            feedback_dim=4,
+            source="empirical_validation_observation_history",
+        )
     )
     return actions, response_maps, {
         "status": "evaluated_clean_feedbax_rollout",
@@ -478,6 +514,8 @@ def evaluate_gru_clean_actions(
             "n_rollout_trials_per_replicate": DEFAULT_RESPONSE_MAP_ROLLOUT_TRIALS,
             "map_shape": [int(dim) for dim in response_maps.shape],
         },
+        "observation_history_covariance": observation_history_covariance_metadata,
+        "_observation_history_covariance_array": observation_history_covariance,
     }
 
 
@@ -561,6 +599,102 @@ def _gru_observation_to_action_maps(
         maps.shape[-2],
         maps.shape[-1],
     )
+
+
+def observation_history_covariance_from_net_inputs(
+    net_inputs: Any,
+    *,
+    feedback_dim: int,
+    source: str,
+) -> tuple[np.ndarray | None, dict[str, Any]]:
+    """Estimate covariance for flattened delayed-feedback histories.
+
+    Args:
+        net_inputs: Network input histories with leading sample axes followed by
+            ``(horizon, input)``. The final ``feedback_dim`` input channels are
+            the observation/feedback basis used by the GRU response map.
+        feedback_dim: Number of trailing delayed-feedback channels.
+        source: Manifest label for the covariance lens.
+    """
+
+    values = np.asarray(net_inputs, dtype=np.float64)
+    if values.ndim < 3:
+        return None, _missing_observation_history_covariance_metadata(
+            "net input histories must have leading sample axes plus horizon and input axes"
+        )
+    if values.shape[-1] < feedback_dim:
+        return None, _missing_observation_history_covariance_metadata(
+            "net input histories do not contain the declared delayed-feedback channels"
+        )
+    histories = values[..., -feedback_dim:]
+    sample_count = int(np.prod(histories.shape[:-2], dtype=int))
+    horizon = int(histories.shape[-2])
+    history_dim = int(horizon * feedback_dim)
+    if sample_count < 2:
+        return None, _missing_observation_history_covariance_metadata(
+            "at least two sampled histories are required for empirical covariance",
+            sample_count=sample_count,
+            history_dim=history_dim,
+        )
+    flattened = histories.reshape((sample_count, history_dim))
+    if not np.all(np.isfinite(flattened)):
+        return None, _missing_observation_history_covariance_metadata(
+            "sampled histories contain non-finite values",
+            sample_count=sample_count,
+            history_dim=history_dim,
+        )
+
+    centered = flattened - np.mean(flattened, axis=0, keepdims=True)
+    covariance = (centered.T @ centered) / float(sample_count - 1)
+    covariance = 0.5 * (covariance + covariance.T)
+    return covariance, {
+        "status": "available",
+        "source": source,
+        "source_priority": 1,
+        "basis": "flattened_delayed_position_velocity_observation_history",
+        "sample_count": sample_count,
+        "horizon": horizon,
+        "observation_dim": int(feedback_dim),
+        "history_dim": history_dim,
+        "centering": "sample_mean_subtracted",
+        "estimator": "unbiased_sample_covariance",
+        "regularization": {
+            "type": "none",
+            "eigenvalue_floor": 0.0,
+            "diagonal_jitter": 0.0,
+            "ratio_denominator_floor": 1e-12,
+        },
+        "normalization": "expected_squared_output_energy_ratio",
+        "audit_only": True,
+        "future_lenses": {
+            "sensory_noise_covariance": "missing_same_basis_contract",
+            "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+        },
+    }
+
+
+def _missing_observation_history_covariance_metadata(
+    reason: str,
+    *,
+    sample_count: int | None = None,
+    history_dim: int | None = None,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "status": "missing",
+        "reason": reason,
+        "source": None,
+        "sample_count": sample_count,
+        "history_dim": history_dim,
+        "centering": "not_applicable",
+        "regularization": "not_applicable",
+        "normalization": "not_applicable",
+        "audit_only": True,
+        "future_lenses": {
+            "sensory_noise_covariance": "missing_same_basis_contract",
+            "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+        },
+    }
+    return metadata
 
 
 def cs_output_feedback_reference_actions(
@@ -725,8 +859,8 @@ measurement-output response maps remain unavailable for these GRU rows.
 
 ## Rows
 
-| run | status | action mismatch | obs-action map | transition | value | Bellman | class |
-|---|---|---:|---:|---|---|---|---|
+| run | status | action mismatch | obs-action map | cov-weighted obs-action | transition | value | Bellman | class |
+|---|---|---:|---:|---:|---|---|---|---|
 {_markdown_row_table(rows, failure_rows)}
 """
 
@@ -743,6 +877,7 @@ def _markdown_row_table(rows: list[dict[str, Any]], failure_rows: list[dict[str,
             f"{row['status']} | "
             f"{_fmt(_summary(by_name, 'state_weighted_action_mismatch', 'aggregate_mismatch_ratio'))} | "
             f"{_fmt(_summary(by_name, 'observation_history_to_action_map_mismatch', 'aggregate_mismatch_ratio'))} | "
+            f"{_fmt(_summary(by_name, 'observation_history_to_action_map_mismatch', 'covariance_weighted_aggregate_mismatch_ratio'))} | "
             f"{by_name[CLOSED_LOOP_TRANSITION_MISMATCH]['status']} | "
             f"{by_name[VALUE_POLICY_GAP]['status']} | "
             f"{by_name[BELLMAN_HESSIAN_RESIDUAL]['status']} | "
@@ -920,6 +1055,7 @@ __all__ = [
     "materialize_gru_standard_result",
     "materialize_gru_standard_row",
     "normalize_gru_hps",
+    "observation_history_covariance_from_net_inputs",
     "render_gru_standard_markdown",
     "write_gru_standard_result",
 ]

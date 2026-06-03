@@ -17,6 +17,8 @@ from rlrmp.analysis.cs_gru_standard_materialization import (
     build_gru_standard_manifest_from_actions,
     materialize_gru_standard_result,
     normalize_gru_hps,
+    observation_history_covariance_from_net_inputs,
+    render_gru_standard_markdown,
 )
 from rlrmp.analysis.failure_decomposition import failure_diagnostic_from_standard_row
 
@@ -124,6 +126,118 @@ def test_gru_manifest_accepts_4d_observation_response_maps() -> None:
         "aggregate_mismatch_ratio"
     ] == 1.0
     assert by_name[MEASUREMENT_HISTORY_TO_ACTION_MAP_MISMATCH]["status"] == "available"
+
+
+def test_gru_manifest_adds_covariance_weighted_observation_response_map() -> None:
+    actions = np.zeros((2, 3, 2))
+    reference = np.ones_like(actions)
+    candidate_map = np.zeros((2, 3, 2, 12))
+    reference_map = np.ones_like(candidate_map)
+    net_inputs = np.array(
+        [
+            [
+                [100.0, 1.0, 2.0, 3.0, 4.0],
+                [100.0, 5.0, 6.0, 7.0, 8.0],
+                [100.0, 9.0, 10.0, 11.0, 12.0],
+            ],
+            [
+                [200.0, 2.0, 3.0, 4.0, 5.0],
+                [200.0, 6.0, 7.0, 8.0, 9.0],
+                [200.0, 10.0, 11.0, 12.0, 13.0],
+            ],
+        ]
+    )
+    covariance, covariance_metadata = observation_history_covariance_from_net_inputs(
+        net_inputs,
+        feedback_dim=4,
+        source="empirical_validation_observation_history",
+    )
+
+    manifest = build_gru_standard_manifest_from_actions(
+        run_id="cs_stochastic_gru__unit",
+        run_spec=_minimal_run_spec(),
+        training_summary={"completed_batches": 12},
+        candidate_actions=actions,
+        reference_actions=reference,
+        action_weight=np.broadcast_to(np.eye(2), (3, 2, 2)),
+        candidate_observation_to_action_map=candidate_map,
+        reference_observation_to_action_map=reference_map,
+        observation_history_covariance=covariance,
+        observation_history_covariance_metadata=covariance_metadata,
+    )
+    row = manifest.to_json_dict()
+    summary = _components(row)[OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH]["summary"]
+
+    assert row["metrics"]["observation_history_covariance"]["status"] == "available"
+    assert summary["aggregate_mismatch_ratio"] == 1.0
+    assert summary["covariance_weighted_status"] == "available"
+    assert summary["covariance_weighted_aggregate_mismatch_ratio"] == 1.0
+    assert summary["covariance_weighting"]["source"] == (
+        "empirical_validation_observation_history"
+    )
+    assert summary["covariance_weighting"]["sample_count"] == 2
+    assert summary["covariance_weighting"]["centering"] == "sample_mean_subtracted"
+    assert summary["covariance_weighting"]["regularization"] == {
+        "type": "none",
+        "eigenvalue_floor": 0.0,
+        "diagonal_jitter": 0.0,
+        "ratio_denominator_floor": 1e-12,
+    }
+    assert summary["covariance_weighting"]["normalization"] == (
+        "expected_squared_output_energy_ratio"
+    )
+    assert summary["covariance_weighting"]["future_lenses"]["perturbation_bank_covariance"] == (
+        "blocked_pending_issue_3992394"
+    )
+
+    rendered = render_gru_standard_markdown(
+        {
+            "issue": "unit",
+            "source_issue": "unit",
+            "rows": [row],
+            "summary": {},
+            "failure_decomposition": {
+                "rows": [
+                    {
+                        "run_id": row["spec"]["run_id"],
+                        "classification": {"classification": "mixed"},
+                    }
+                ]
+            },
+        }
+    )
+    assert "cov-weighted obs-action" in rendered
+    assert "| cs_stochastic_gru__unit__nominal_clean |" in rendered
+    assert "| 1 | 1 |" in rendered
+
+
+def test_gru_manifest_marks_covariance_weighted_observation_response_map_missing() -> None:
+    actions = np.zeros((2, 3, 2))
+    reference = np.ones_like(actions)
+    candidate_map = np.zeros((2, 3, 2, 12))
+    reference_map = np.ones_like(candidate_map)
+
+    manifest = build_gru_standard_manifest_from_actions(
+        run_id="cs_stochastic_gru__unit",
+        run_spec=_minimal_run_spec(),
+        training_summary={"completed_batches": 12},
+        candidate_actions=actions,
+        reference_actions=reference,
+        action_weight=np.broadcast_to(np.eye(2), (3, 2, 2)),
+        candidate_observation_to_action_map=candidate_map,
+        reference_observation_to_action_map=reference_map,
+    )
+    row = manifest.to_json_dict()
+    summary = _components(row)[OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH]["summary"]
+
+    assert row["metrics"]["observation_history_covariance"]["status"] == "missing"
+    assert _components(row)[OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH]["status"] == "available"
+    assert summary["aggregate_mismatch_ratio"] == 1.0
+    assert summary["covariance_weighted_status"] == "missing"
+    assert summary["covariance_weighting"]["reason"] == (
+        "sampled observation histories were not supplied"
+    )
+    assert "covariance_weighted_aggregate_mismatch_ratio" not in summary
 
 
 def test_gru_materializer_does_not_claim_action_evidence_when_models_are_not_loaded() -> None:

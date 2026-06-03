@@ -1,0 +1,95 @@
+{
+  "checkpoint_policy": "validation_selected_per_replicate",
+  "issue": "0203d1f",
+  "outputs": {
+    "checkpoint_manifest": "results/0203d1f/notes/validation_selected_checkpoints.json",
+    "evaluation_bulk_dir": "_artifacts/0203d1f/evaluation_diagnostics/gru_validation_selected",
+    "evaluation_diagnostics_manifest": "results/0203d1f/notes/gru_evaluation_diagnostics_validation_selected.json",
+    "figure_output_dir": "_artifacts/0203d1f/figures/gru_postrun_validation_selected",
+    "figure_summary": "_artifacts/0203d1f/figures/gru_postrun_validation_selected/figure_summary.json",
+    "objective_comparator": {
+      "json_path": "results/0203d1f/notes/objective_comparator_validation_selected.json",
+      "note_path": "results/0203d1f/notes/objective_comparator_validation_selected.md",
+      "result": {
+        "extlqg_deterministic_full_qrf": 4368.510655149214,
+        "extlqg_total_expected_cost": 12201.42433801687,
+        "n_rows": 1,
+        "schema_version": "rlrmp.objective_comparator_sidecar.v2",
+        "status": "materialized"
+      },
+      "status": "materialized"
+    },
+    "standard_certificate_manifest": "results/0203d1f/notes/gru_standard_certificates_validation_selected_manifest.json",
+    "standard_certificate_note": "results/0203d1f/notes/gru_standard_certificates_validation_selected.md"
+  },
+  "plan": {
+    "checkpoint_manifest_path": "results/0203d1f/notes/validation_selected_checkpoints.json",
+    "checkpoint_policy": "validation_selected_per_replicate",
+    "evaluation_bulk_dir": "_artifacts/0203d1f/evaluation_diagnostics/gru_validation_selected",
+    "evaluation_manifest_path": "results/0203d1f/notes/gru_evaluation_diagnostics_validation_selected.json",
+    "experiment": "0203d1f",
+    "figure_output_dir": "_artifacts/0203d1f/figures/gru_postrun_validation_selected",
+    "notes_dir": "results/0203d1f/notes",
+    "objective_comparator_json_path": "results/0203d1f/notes/objective_comparator_validation_selected.json",
+    "objective_comparator_note_path": "results/0203d1f/notes/objective_comparator_validation_selected.md",
+    "output_tag": "validation_selected",
+    "postrun_manifest_path": "results/0203d1f/notes/gru_postrun_materialization_validation_selected.json",
+    "run_ids": [
+      "lss_ablation_partial_net_force_filter__lr1e-3_clip5_b64"
+    ],
+    "standard_manifest_path": "results/0203d1f/notes/gru_standard_certificates_validation_selected_manifest.json",
+    "standard_note_path": "results/0203d1f/notes/gru_standard_certificates_validation_selected.md"
+  },
+  "run_ids": [
+    "lss_ablation_partial_net_force_filter__lr1e-3_clip5_b64"
+  ],
+  "schema_version": "rlrmp.gru_postrun_materialization.v1",
+  "selection_leakage_guard": {
+    "audit_only_metrics": [
+      "state_weighted_action_mismatch",
+      "clean_action_mismatch",
+      "observation_history_to_action_map_mismatch",
+      "covariance_weighted_map_mismatch",
+      "extlqg_objective_comparator"
+    ],
+    "note": "Checkpoint selection uses rollout validation objective only. Certificate, I/O map, covariance-weighted map, and objective comparator values are audit sidecars.",
+    "status": "audit_only"
+  },
+  "summaries": {
+    "evaluation_diagnostics_schema": "rlrmp.gru_evaluation_diagnostics.v1",
+    "figure_summary_keys": [
+      "checkpoint_policy",
+      "checkpoint_selection",
+      "issue",
+      "loss_plots",
+      "runs",
+      "velocity_profiles"
+    ],
+    "standard_certificate": {
+      "blockers": [],
+      "component_status_counts": {
+        "bellman_hessian_residual:not_applicable": 1,
+        "closed_loop_transition_mismatch:not_applicable": 1,
+        "disturbance_history_to_action_map_mismatch:missing": 1,
+        "disturbance_history_to_cost_quadratic:missing": 1,
+        "disturbance_history_to_output_map_mismatch:missing": 1,
+        "disturbance_history_to_state_map_mismatch:missing": 1,
+        "measurement_history_to_action_map_mismatch:available": 1,
+        "measurement_history_to_output_map_mismatch:missing": 1,
+        "observation_history_to_action_map_mismatch:available": 1,
+        "optimizer_metadata:available": 1,
+        "recurrence_gru_diagnostics:available": 1,
+        "state_weighted_action_mismatch:available": 1,
+        "value_policy_gap:not_applicable": 1,
+        "visited_subspace_diagnostics:missing": 1
+      },
+      "failure_classification_counts": {
+        "mixed": 1
+      },
+      "n_rows": 1,
+      "status_counts": {
+        "partial_standard_certificate_blocked": 1
+      }
+    }
+  }
+}

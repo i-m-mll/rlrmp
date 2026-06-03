@@ -13,8 +13,16 @@ NOMINAL_GRU_REQUIRED_TOP_LEVEL_KEYS = frozenset(
         "task_timing",
         "model_summary",
         "training_summary",
+        "loss_summary",
         "provenance",
         "feedbax_graph",
+    }
+)
+NOMINAL_GRU_LOSS_OBJECTIVES = frozenset(
+    {
+        "partial_feedbax_terms",
+        "partial_net_output_force_filter",
+        "full_analytical_qrf",
     }
 )
 NOMINAL_GRU_REQUIRED_PROVENANCE_KEYS = frozenset(
@@ -70,6 +78,20 @@ def validate_nominal_gru_run_spec(run_spec: dict[str, Any], *, spec_dir: Path) -
         raise RunSpecValidationError(
             f"nominal GRU run spec must declare training_summary.training_mode='nominal'; "
             f"found {training_mode!r}"
+        )
+
+    loss_objective = run_spec.get("loss_objective")
+    if loss_objective not in NOMINAL_GRU_LOSS_OBJECTIVES:
+        raise RunSpecValidationError(
+            "nominal GRU run spec must declare loss_objective as one of "
+            f"{sorted(NOMINAL_GRU_LOSS_OBJECTIVES)}; found {loss_objective!r}"
+        )
+    loss_summary = _mapping(run_spec, "loss_summary")
+    loss_profile = loss_summary.get("objective_profile")
+    if loss_profile != loss_objective:
+        raise RunSpecValidationError(
+            "nominal GRU run spec loss_summary.objective_profile must match "
+            f"loss_objective; found {loss_profile!r} vs {loss_objective!r}"
         )
 
     missing_provenance = _missing_keys(
@@ -133,6 +155,7 @@ def _missing_keys(mapping: dict[str, Any], required_keys: frozenset[str]) -> lis
 
 __all__ = [
     "FEEDBAX_GRAPH_REQUIRED_POINTER_KEYS",
+    "NOMINAL_GRU_LOSS_OBJECTIVES",
     "NOMINAL_GRU_REQUIRED_PROVENANCE_KEYS",
     "NOMINAL_GRU_REQUIRED_TOP_LEVEL_KEYS",
     "RunSpecValidationError",

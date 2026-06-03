@@ -1,0 +1,134 @@
+{
+  "checkpoint_policy": "validation_selected_per_replicate",
+  "history_validation_log_note": "Validation history contains sparse positive records and zero padding. Durable models are only available at numbered checkpoints, so each checkpoint is scored by the most recent positive validation record at or before that checkpoint.",
+  "issue": "5f70333",
+  "runs": {
+    "lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64": [
+      {
+        "best_logged_validation_batch": 9501,
+        "best_logged_validation_objective": 4356.860255788786,
+        "checkpoint_batches": 11000,
+        "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+        "final_validation_objective": 4385.942006784504,
+        "final_vs_selected_validation_degradation": 23.61601836297359,
+        "replicate": 0,
+        "scoring_validation_log_batch": 11000,
+        "scoring_validation_objective": 4362.32598842153,
+        "selection_source": "sparse_history_fallback"
+      },
+      {
+        "best_logged_validation_batch": 9801,
+        "best_logged_validation_objective": 4343.43260005535,
+        "checkpoint_batches": 11000,
+        "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+        "final_validation_objective": 4444.367228147713,
+        "final_vs_selected_validation_degradation": 81.72364946070411,
+        "replicate": 1,
+        "scoring_validation_log_batch": 11000,
+        "scoring_validation_objective": 4362.643578687009,
+        "selection_source": "sparse_history_fallback"
+      },
+      {
+        "best_logged_validation_batch": 10801,
+        "best_logged_validation_objective": 4372.994182542099,
+        "checkpoint_batches": 10500,
+        "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0010500",
+        "final_validation_objective": 4429.602884698525,
+        "final_vs_selected_validation_degradation": 33.6592653505586,
+        "replicate": 2,
+        "scoring_validation_log_batch": 10500,
+        "scoring_validation_objective": 4395.943619347966,
+        "selection_source": "sparse_history_fallback"
+      },
+      {
+        "best_logged_validation_batch": 11901,
+        "best_logged_validation_objective": 4364.581422595764,
+        "checkpoint_batches": 11500,
+        "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0011500",
+        "final_validation_objective": 4425.661560233828,
+        "final_vs_selected_validation_degradation": 60.13319333725758,
+        "replicate": 3,
+        "scoring_validation_log_batch": 11500,
+        "scoring_validation_objective": 4365.52836689657,
+        "selection_source": "sparse_history_fallback"
+      },
+      {
+        "best_logged_validation_batch": 11000,
+        "best_logged_validation_objective": 4350.064377552265,
+        "checkpoint_batches": 11000,
+        "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+        "final_validation_objective": 4408.760131815548,
+        "final_vs_selected_validation_degradation": 58.69575426328356,
+        "replicate": 4,
+        "scoring_validation_log_batch": 11000,
+        "scoring_validation_objective": 4350.064377552265,
+        "selection_source": "sparse_history_fallback"
+      }
+    ],
+    "lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64": [
+      {
+        "best_logged_validation_batch": 9501,
+        "best_logged_validation_objective": 4349.75802138017,
+        "checkpoint_batches": 6000,
+        "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/checkpoints/checkpoint_0006000",
+        "final_validation_objective": 4372.517136150367,
+        "final_vs_selected_validation_degradation": 18.374138799725188,
+        "replicate": 0,
+        "scoring_validation_log_batch": 6000,
+        "scoring_validation_objective": 4354.142997350642,
+        "selection_source": "sparse_history_fallback"
+      },
+      {
+        "best_logged_validation_batch": 5201,
+        "best_logged_validation_objective": 4319.870547837355,
+        "checkpoint_batches": 11000,
+        "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/checkpoints/checkpoint_0011000",
+        "final_validation_objective": 4437.2661290391125,
+        "final_vs_selected_validation_degradation": 85.2319277906372,
+        "replicate": 1,
+        "scoring_validation_log_batch": 11000,
+        "scoring_validation_objective": 4352.034201248475,
+        "selection_source": "sparse_history_fallback"
+      },
+      {
+        "best_logged_validation_batch": 7500,
+        "best_logged_validation_objective": 4334.632236123045,
+        "checkpoint_batches": 7500,
+        "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/checkpoints/checkpoint_0007500",
+        "final_validation_objective": 4409.543937656049,
+        "final_vs_selected_validation_degradation": 74.9117015330039,
+        "replicate": 2,
+        "scoring_validation_log_batch": 7500,
+        "scoring_validation_objective": 4334.632236123045,
+        "selection_source": "sparse_history_fallback"
+      },
+      {
+        "best_logged_validation_batch": 8500,
+        "best_logged_validation_objective": 4333.883214886389,
+        "checkpoint_batches": 8500,
+        "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/checkpoints/checkpoint_0008500",
+        "final_validation_objective": 4432.805031246305,
+        "final_vs_selected_validation_degradation": 98.92181635991528,
+        "replicate": 3,
+        "scoring_validation_log_batch": 8500,
+        "scoring_validation_objective": 4333.883214886389,
+        "selection_source": "sparse_history_fallback"
+      },
+      {
+        "best_logged_validation_batch": 11000,
+        "best_logged_validation_objective": 4338.489947432527,
+        "checkpoint_batches": 11000,
+        "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/checkpoints/checkpoint_0011000",
+        "final_validation_objective": 4398.131346585071,
+        "final_vs_selected_validation_degradation": 59.64139915254418,
+        "replicate": 4,
+        "scoring_validation_log_batch": 11000,
+        "scoring_validation_objective": 4338.489947432527,
+        "selection_source": "sparse_history_fallback"
+      }
+    ]
+  },
+  "schema_version": "rlrmp.validation_selected_gru_checkpoints.v1",
+  "selection_policy": "per-replicate checkpoint selected by minimum positive rollout validation objective among available durable checkpoints; analytical action and I/O metrics are audit-only",
+  "selection_source": "sparse_history_fallback"
+}
