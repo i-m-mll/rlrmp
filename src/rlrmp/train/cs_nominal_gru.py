@@ -244,8 +244,10 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             None if args.gradient_clip_norm is None else float(args.gradient_clip_norm)
         ),
         "n_scaleup_batches": 0,
-        "constant_lr_iterations": 0,
-        "cosine_annealing_alpha": 1.0,
+        "constant_lr_iterations": int(args.lr_warmup_batches),
+        "warmup_init_fraction": float(args.lr_warmup_init_fraction),
+        "cosine_annealing_alpha": float(args.lr_cosine_alpha),
+        "lr_schedule": "warmup_cosine" if int(args.lr_warmup_batches) > 0 else "delayed_cosine",
         "weight_decay": 0.0,
         "training_diagnostics": _training_diagnostics_enabled(args),
         "state_reset_iterations": [],
@@ -752,6 +754,7 @@ def run_full_training(
 
     chunks: list[dict[str, float | int | str]] = []
     history_diagnostic_chunks: list[dict[str, np.ndarray]] = []
+    optimizer_diagnostic_chunks: list[dict[str, np.ndarray]] = []
     training_started = time.perf_counter()
     while state.completed_batches < int(args.n_train_batches):
         remaining = int(args.n_train_batches) - state.completed_batches
@@ -762,28 +765,34 @@ def run_full_training(
             pair.task,
             state.model,
             n_batches=chunk_batches,
-            # Keep each Feedbax trainer call local to the chunk. The optimizer
-            # state carries schedule progress across chunks; passing a nonzero
-            # idx_start here would make Feedbax index past the chunk-local PRNG
-            # key array.
+            # Keep Feedbax's batch index local to the chunk: its PRNG key array
+            # is chunk-local. Passing the stable selector function avoids the
+            # dict-at-local-batch-0 path that would reinitialise optimizer state.
             idx_start=0,
             opt_state=state.optimizer_state,
             key=key_chunk,
             ensembled=True,
             loss_func=pair.task.loss_func,
-            where_train=where_train,
+            where_train=where_train[0],
             batch_size=int(hps.batch_size),
             log_step=max(1, int(args.log_step)),
             disable_progress=bool(args.disable_progress),
             verbose_progress=not bool(args.quiet_progress),
         )
         chunk_duration_seconds = time.perf_counter() - chunk_started
+        completed = state.completed_batches + chunk_batches
         history = _append_history(state.history, history_chunk)
         if _training_diagnostics_enabled(args):
+            optimizer_diagnostic_chunks.append(
+                _optimizer_diagnostics_arrays(
+                    optimizer_state,
+                    start_batches=state.completed_batches,
+                    completed_batches=completed,
+                )
+            )
             history_diagnostic_chunks.append(
                 _history_diagnostics_arrays(history_chunk, chunk_batches)
             )
-        completed = state.completed_batches + chunk_batches
         history_chunk_path = output_dir / "history_chunks" / f"history_{completed:07d}.eqx"
         history_chunk_path.parent.mkdir(parents=True, exist_ok=True)
         fbx_save(history_chunk_path, history_chunk)
@@ -825,6 +834,7 @@ def run_full_training(
         run_spec=run_spec,
         state=state,
         training_history_path=final_history_path,
+        optimizer_diagnostic_chunks=optimizer_diagnostic_chunks,
         history_diagnostic_chunks=history_diagnostic_chunks,
     )
     final_summary = {
@@ -959,6 +969,28 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--n-train-batches", type=int, default=12000)
     parser.add_argument("--batch-size", type=int, default=250)
     parser.add_argument("--controller-lr", type=float, default=1e-2)
+    parser.add_argument(
+        "--lr-warmup-batches",
+        type=int,
+        default=0,
+        help=(
+            "If positive, linearly warm the controller LR from "
+            "--lr-warmup-init-fraction * --controller-lr to --controller-lr over this "
+            "many batches, then cosine-decay."
+        ),
+    )
+    parser.add_argument(
+        "--lr-warmup-init-fraction",
+        type=float,
+        default=0.1,
+        help="Initial LR fraction for warmup-cosine schedules.",
+    )
+    parser.add_argument(
+        "--lr-cosine-alpha",
+        type=float,
+        default=1.0,
+        help="Final LR fraction for cosine schedules.",
+    )
     parser.add_argument("--gradient-clip-norm", type=float, default=None)
     parser.add_argument("--n-replicates", type=int, default=5)
     parser.add_argument("--hidden-size", type=int, default=180)
@@ -1170,12 +1202,7 @@ def _update_diagnostics_transform(*, n_batches: int) -> optax.GradientTransforma
 
 
 def _build_trainer(hps: TreeNamespace) -> TaskTrainer:
-    schedule = make_delayed_cosine_schedule(
-        float(hps.learning_rate_0),
-        constant_steps=int(hps.constant_lr_iterations),
-        total_steps=int(hps.n_batches_condition),
-        alpha=float(hps.cosine_annealing_alpha),
-    )
+    schedule = _learning_rate_schedule(hps)
     transforms = []
     if bool(getattr(hps, "training_diagnostics", True)):
         transforms.append(
@@ -1196,6 +1223,37 @@ def _build_trainer(hps: TreeNamespace) -> TaskTrainer:
         transforms.append(_update_diagnostics_transform(n_batches=int(hps.n_batches_condition)))
     optimizer = optax.chain(*transforms)
     return TaskTrainer(optimizer=optimizer, checkpointing=False)
+
+
+def _learning_rate_schedule(hps: TreeNamespace) -> Callable[[Any], Any]:
+    """Return the controller learning-rate schedule declared by ``hps``."""
+
+    schedule_name = str(getattr(hps, "lr_schedule", "delayed_cosine"))
+    warmup_batches = int(getattr(hps, "constant_lr_iterations", 0))
+    total_batches = int(hps.n_batches_condition)
+    learning_rate = float(hps.learning_rate_0)
+    warmup_init_fraction = float(getattr(hps, "warmup_init_fraction", 0.0))
+    alpha = float(hps.cosine_annealing_alpha)
+    if schedule_name == "warmup_cosine":
+        if warmup_batches < 1:
+            raise ValueError("warmup_cosine requires constant_lr_iterations >= 1")
+        if warmup_batches >= total_batches:
+            raise ValueError("warmup_cosine requires warmup batches < total batches")
+        return optax.warmup_cosine_decay_schedule(
+            init_value=learning_rate * warmup_init_fraction,
+            peak_value=learning_rate,
+            warmup_steps=warmup_batches,
+            decay_steps=total_batches,
+            end_value=learning_rate * alpha,
+        )
+    if schedule_name == "delayed_cosine":
+        return make_delayed_cosine_schedule(
+            learning_rate,
+            constant_steps=warmup_batches,
+            total_steps=total_batches,
+            alpha=alpha,
+        )
+    raise ValueError(f"Unsupported learning-rate schedule {schedule_name!r}")
 
 
 def _where_train() -> dict[int, Callable[[Any], tuple[Any, Any]]]:
@@ -1261,12 +1319,18 @@ def _checkpoint_metadata(args: argparse.Namespace, output_dir: Path) -> dict[str
 
 
 def _optimizer_metadata(args: argparse.Namespace) -> dict[str, Any]:
+    schedule_name = "warmup_cosine" if int(args.lr_warmup_batches) > 0 else "delayed_cosine"
     return {
         "name": "adamw",
         "learning_rate_0": float(args.controller_lr),
-        "schedule": "delayed_cosine",
-        "constant_lr_iterations": 0,
-        "cosine_annealing_alpha": 1.0,
+        "schedule": schedule_name,
+        "warmup_batches": int(args.lr_warmup_batches),
+        "warmup_init_fraction": float(args.lr_warmup_init_fraction),
+        "warmup_initial_learning_rate": float(args.controller_lr)
+        * float(args.lr_warmup_init_fraction),
+        "constant_lr_iterations": int(args.lr_warmup_batches),
+        "cosine_annealing_alpha": float(args.lr_cosine_alpha),
+        "final_learning_rate": float(args.controller_lr) * float(args.lr_cosine_alpha),
         "weight_decay": 0.0,
         "gradient_clip_norm": (
             None if args.gradient_clip_norm is None else float(args.gradient_clip_norm)
@@ -1339,6 +1403,7 @@ def write_training_diagnostics_sidecar(
     run_spec: dict[str, Any],
     state: TrainingState,
     training_history_path: Path,
+    optimizer_diagnostic_chunks: list[dict[str, np.ndarray]] | None = None,
     history_diagnostic_chunks: list[dict[str, np.ndarray]] | None = None,
 ) -> dict[str, Any]:
     """Write compact training-process scalar sidecars for future optimizer audits."""
@@ -1358,9 +1423,11 @@ def write_training_diagnostics_sidecar(
     arrays: dict[str, np.ndarray] = {
         "batch_index": np.arange(state.completed_batches, dtype=np.int64),
     }
-    if gradient_state is not None:
+    if optimizer_diagnostic_chunks:
+        arrays.update(_combine_history_diagnostic_chunks(optimizer_diagnostic_chunks))
+    elif gradient_state is not None:
         arrays.update(_gradient_diagnostics_arrays(gradient_state, state.completed_batches))
-    if update_state is not None:
+    if not optimizer_diagnostic_chunks and update_state is not None:
         arrays.update(_update_diagnostics_arrays(update_state, state.completed_batches))
     if history_diagnostic_chunks:
         arrays.update(_combine_history_diagnostic_chunks(history_diagnostic_chunks))
@@ -1418,7 +1485,58 @@ def _find_diagnostics_state(tree: Any, state_type: type) -> Any | None:
     return None
 
 
+def _optimizer_diagnostics_arrays(
+    optimizer_state: Any,
+    *,
+    start_batches: int = 0,
+    completed_batches: int,
+) -> dict[str, np.ndarray]:
+    """Return scalar optimizer diagnostics for one completed batch range."""
+
+    arrays: dict[str, np.ndarray] = {}
+    gradient_state = _find_diagnostics_state(
+        optimizer_state,
+        GradientDiagnosticsState,
+    )
+    update_state = _find_diagnostics_state(
+        optimizer_state,
+        UpdateDiagnosticsState,
+    )
+    if gradient_state is not None:
+        arrays.update(
+            _gradient_diagnostics_arrays(
+                gradient_state,
+                completed_batches,
+                start_batches=start_batches,
+            )
+        )
+    if update_state is not None:
+        arrays.update(
+            _update_diagnostics_arrays(
+                update_state,
+                completed_batches,
+                start_batches=start_batches,
+            )
+        )
+    return arrays
+
+
 def _diagnostic_series(array: Any, completed_batches: int) -> np.ndarray:
+    values = np.asarray(array)
+    if values.ndim == 0:
+        return values.reshape((1,))
+    if values.ndim == 1:
+        return values[:completed_batches]
+    if values.shape[0] == completed_batches:
+        return values[:completed_batches]
+    return np.moveaxis(values[..., :completed_batches], -1, 0)
+
+
+def _diagnostic_series_range(array: Any, start_batches: int, completed_batches: int) -> np.ndarray:
+    return _diagnostic_series(array, completed_batches)[start_batches:completed_batches]
+
+
+def _optimizer_diagnostic_series(array: Any, completed_batches: int) -> np.ndarray:
     values = np.asarray(array)
     if values.ndim == 0:
         return values.reshape((1,))
@@ -1427,18 +1545,37 @@ def _diagnostic_series(array: Any, completed_batches: int) -> np.ndarray:
     return np.moveaxis(values[..., :completed_batches], -1, 0)
 
 
+def _optimizer_diagnostic_series_range(
+    array: Any,
+    start_batches: int,
+    completed_batches: int,
+) -> np.ndarray:
+    return _optimizer_diagnostic_series(array, completed_batches)[start_batches:completed_batches]
+
+
 def _gradient_diagnostics_arrays(
     state: GradientDiagnosticsState,
     completed_batches: int,
+    *,
+    start_batches: int = 0,
 ) -> dict[str, np.ndarray]:
-    clipped = _diagnostic_series(state.gradient_clipped, completed_batches).astype(bool)
+    clipped = _optimizer_diagnostic_series_range(
+        state.gradient_clipped,
+        start_batches,
+        completed_batches,
+    ).astype(bool)
     arrays = {
-        "optimizer_gradient_norm_pre_clip": _diagnostic_series(
+        "optimizer_gradient_norm_pre_clip": _optimizer_diagnostic_series_range(
             state.gradient_norm_pre_clip,
+            start_batches,
             completed_batches,
         ),
         "optimizer_gradient_clipped": clipped,
-        "optimizer_learning_rate": _diagnostic_series(state.learning_rate, completed_batches),
+        "optimizer_learning_rate": _optimizer_diagnostic_series_range(
+            state.learning_rate,
+            start_batches,
+            completed_batches,
+        ),
     }
     clipped_float = clipped.astype(np.float32)
     if clipped_float.ndim == 1:
@@ -1453,12 +1590,23 @@ def _gradient_diagnostics_arrays(
 def _update_diagnostics_arrays(
     state: UpdateDiagnosticsState,
     completed_batches: int,
+    *,
+    start_batches: int = 0,
 ) -> dict[str, np.ndarray]:
     return {
-        "optimizer_update_norm": _diagnostic_series(state.update_norm, completed_batches),
-        "optimizer_parameter_norm": _diagnostic_series(state.parameter_norm, completed_batches),
-        "optimizer_update_parameter_norm_ratio": _diagnostic_series(
+        "optimizer_update_norm": _optimizer_diagnostic_series_range(
+            state.update_norm,
+            start_batches,
+            completed_batches,
+        ),
+        "optimizer_parameter_norm": _optimizer_diagnostic_series_range(
+            state.parameter_norm,
+            start_batches,
+            completed_batches,
+        ),
+        "optimizer_update_parameter_norm_ratio": _optimizer_diagnostic_series_range(
             state.update_parameter_norm_ratio,
+            start_batches,
             completed_batches,
         ),
     }

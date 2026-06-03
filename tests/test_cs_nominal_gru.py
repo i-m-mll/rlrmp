@@ -354,13 +354,18 @@ def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Pat
     args = _args(
         output_dir=str(output_dir),
         spec_dir=str(spec_dir),
-        n_train_batches=2,
+        n_train_batches=4,
         batch_size=2,
-        n_replicates=1,
+        n_replicates=2,
         hidden_size=4,
         full_train=True,
         resume=True,
-        checkpoint_interval_batches=1,
+        checkpoint_interval_batches=2,
+        controller_lr=1e-3,
+        lr_warmup_batches=1,
+        lr_warmup_init_fraction=0.1,
+        lr_cosine_alpha=0.01,
+        log_step=1,
         disable_progress=True,
         quiet_progress=True,
     )
@@ -373,19 +378,19 @@ def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Pat
     result = run_full_training(args, volume_commit=commit)
 
     checkpoint_latest = output_dir / "checkpoints" / "checkpoint_latest"
-    checkpoint_1 = output_dir / "checkpoints" / "checkpoint_0000001"
     checkpoint_2 = output_dir / "checkpoints" / "checkpoint_0000002"
+    checkpoint_4 = output_dir / "checkpoints" / "checkpoint_0000004"
     metadata = json.loads((checkpoint_latest / "metadata.json").read_text())
     summary = json.loads((output_dir / "training_summary.json").read_text())
     diagnostics_manifest = json.loads((output_dir / "training_diagnostics.json").read_text())
 
-    assert result["completed_batches"] == 2
+    assert result["completed_batches"] == 4
     assert Path(result["final_model_path"]) == output_dir / "trained_model.eqx"
     assert Path(result["training_history_path"]) == output_dir / "training_history.eqx"
     assert checkpoint_latest.exists()
-    assert checkpoint_1.exists()
     assert checkpoint_2.exists()
-    assert metadata["completed_batches"] == 2
+    assert checkpoint_4.exists()
+    assert metadata["completed_batches"] == 4
     assert metadata["next_prng_key"]
     assert metadata["run_spec"]["mode"] == "full_train"
     assert metadata["run_spec"]["schema_version"] == "rlrmp.cs_stochastic_gru.v1"
@@ -395,15 +400,15 @@ def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Pat
     assert (output_dir / "training_history.eqx").exists()
     assert (output_dir / "training_diagnostics.npz").exists()
     assert (output_dir / "training_diagnostics.json").exists()
-    assert (output_dir / "history_chunks" / "history_0000001.eqx").exists()
     assert (output_dir / "history_chunks" / "history_0000002.eqx").exists()
+    assert (output_dir / "history_chunks" / "history_0000004.eqx").exists()
     assert summary["latest_checkpoint"] == str(checkpoint_latest)
     assert summary["training_diagnostics"]["enabled"] is True
     assert summary["training_diagnostics"]["written"] is True
     assert summary["training_diagnostics"]["sidecar_path"] == str(
         output_dir / "training_diagnostics.npz"
     )
-    assert diagnostics_manifest["completed_batches"] == 2
+    assert diagnostics_manifest["completed_batches"] == 4
     assert diagnostics_manifest["gradient_clip_active"] is False
     assert diagnostics_manifest["training_history_path"] == str(output_dir / "training_history.eqx")
     assert "optimizer_gradient_norm_pre_clip" in diagnostics_manifest["arrays"]
@@ -412,18 +417,30 @@ def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Pat
     assert "train_loss__total" in diagnostics_manifest["arrays"]
     assert "validation_loss__total" in diagnostics_manifest["arrays"]
     with np.load(output_dir / "training_diagnostics.npz") as diagnostics:
-        assert diagnostics["batch_index"].tolist() == [0, 1]
-        assert diagnostics["optimizer_gradient_norm_pre_clip"].shape[0] == 2
-        assert diagnostics["optimizer_gradient_clipped"].shape[0] == 2
-        assert diagnostics["optimizer_clipping_fraction"].shape == (2,)
-        assert diagnostics["optimizer_update_parameter_norm_ratio"].shape[0] == 2
-        assert diagnostics["optimizer_learning_rate"].shape[0] == 2
-        assert diagnostics["train_loss__total"].shape[0] == 2
-        assert diagnostics["validation_loss__total"].shape[0] == 2
+        assert diagnostics["batch_index"].tolist() == [0, 1, 2, 3]
+        assert diagnostics["optimizer_gradient_norm_pre_clip"].shape == (4, 2)
+        assert np.isfinite(diagnostics["optimizer_gradient_norm_pre_clip"]).all()
+        assert diagnostics["optimizer_gradient_clipped"].shape == (4, 2)
+        assert diagnostics["optimizer_clipping_fraction"].shape == (4,)
+        assert diagnostics["optimizer_update_norm"].shape == (4, 2)
+        assert np.isfinite(diagnostics["optimizer_update_norm"]).all()
+        assert diagnostics["optimizer_parameter_norm"].shape == (4, 2)
+        assert np.isfinite(diagnostics["optimizer_parameter_norm"]).all()
+        assert diagnostics["optimizer_update_parameter_norm_ratio"].shape == (4, 2)
+        assert np.isfinite(diagnostics["optimizer_update_parameter_norm_ratio"]).all()
+        assert diagnostics["optimizer_learning_rate"].shape == (4, 2)
+        lr_trace = diagnostics["optimizer_learning_rate"][:, 0]
+        assert np.isclose(lr_trace[0], 1e-4)
+        assert np.isclose(lr_trace[1], 1e-3)
+        assert np.all(np.diff(lr_trace[1:]) < 0)
+        assert diagnostics["train_loss__total"].shape == (4, 2)
+        assert np.isfinite(diagnostics["train_loss__total"]).all()
+        assert diagnostics["validation_loss__total"].shape == (4, 2)
+        assert np.isfinite(diagnostics["validation_loss__total"]).all()
     assert summary["training_duration_seconds"] > 0
     assert summary["training_batches_per_second"] > 0
     assert len(summary["chunks"]) == 2
-    assert summary["chunks"][0]["chunk_batches"] == 1
+    assert summary["chunks"][0]["chunk_batches"] == 2
     assert summary["chunks"][0]["duration_seconds"] > 0
     assert summary["chunks"][0]["batches_per_second"] > 0
     assert commits == 3
