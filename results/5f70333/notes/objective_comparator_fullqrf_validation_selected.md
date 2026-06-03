@@ -1,6 +1,6 @@
 # Full-QRF objective comparator sidecar
 
-Schema: `rlrmp.objective_comparator_sidecar.v3`.
+Schema: `rlrmp.objective_comparator_sidecar.v4`.
 
 Scope: validation-selected checkpoints for C&S GRU runs: lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64, lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64.
 
@@ -13,8 +13,9 @@ This is an objective-lens diagnostic, not a standard-certificate gate.
 | deterministic extLQG | available | deterministic full-Q/R/Q_f initial-state term; comparable only to full-Q/R/Q_f realized scalars |
 | covariance-inclusive extLQG expected cost | available | not directly comparable to realized GRU validation scalars |
 | realized GRU validation | available for full-Q/R/Q_f scalar rows | validation-selected audit metric, not checkpoint selection input |
-| same-noise-bank Monte Carlo | not_implemented | requires shared realized noise bank for GRU and extLQG |
+| same-noise-bank Monte Carlo | available_with_limitations | requires shared realized noise bank for GRU and extLQG |
 | realized per-term full-Q/R/Q_f scoring | not_implemented | requires scorer output for running state, terminal, command, force/filter, and disturbance-integrator terms |
+| shared-rollout comparator | available | shared initial-state and process/load epsilon bank; sensory/command noise limits declared |
 
 ## extLQG decomposition
 
@@ -37,8 +38,19 @@ This is an objective-lens diagnostic, not a standard-certificate gate.
 - `selected/total` is retained only as a labeled non-apples-to-apples diagnostic for continuity with the provisional sidecar.
 - The apples-to-apples scalar for the available GRU validation records is restricted to rows whose run spec declares the full analytical Q/R/Q_f objective; the deterministic extLQG term is not interchangeable with the covariance-inclusive expected cost.
 - This sidecar is diagnostic only and is not a standard-certificate gate.
-- GRU values are validation-selected realized full-QRF scalars; same-noise-bank extLQG realized values require separate Monte Carlo materialization.
+- GRU values are validation-selected realized full-QRF scalars; the shared-rollout block is an audit-only post-hoc rescore and is not used for checkpoint selection.
 
-Same-noise-bank Monte Carlo: `not_implemented` - same-noise-bank extLQG-vs-GRU realized comparison was not materialized; the available tracked source only contains validation-selected GRU realized full-QRF scalars and the analytical extLQG expected-cost decomposition
+Same-noise-bank Monte Carlo: `available_with_limitations` - shared-rollout comparator materialized common random inputs for initial state and process/load epsilon; sensory and command/motor noise are explicitly not shared under the current GRU graph contract
 
 Per-term realized scoring: `not_implemented` - validation checkpoint manifests currently expose scalar full-QRF objectives, not running-state, terminal-state, command, force/filter, and disturbance-integrator contributions
+
+## Shared-rollout comparator
+
+Bank `cs_lss_shared_x0_epsilon_v1` uses 32 trials, seed `20260603`, shared initial states, and shared process/load epsilon.
+
+Limitation: This is a shared initial-state plus process/load epsilon comparator. Sensory and command/motor noise are explicitly not claimed as shared.
+
+| run | GRU total | extLQG total | GRU/extLQG | running | terminal | command | force/filter | integrator |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64` | 307479.24 | 195186.48 | 1.5753102 | 1.6206814 | 1.5203112 | 0.45767711 | 0.49109855 | 1 |
+| `lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64` | 302971.21 | 195186.48 | 1.5522141 | 1.5988374 | 1.4790988 | 0.45866649 | 0.48003939 | 1 |
