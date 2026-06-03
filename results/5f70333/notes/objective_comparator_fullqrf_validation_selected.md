@@ -13,7 +13,7 @@ This is an objective-lens diagnostic, not a standard-certificate gate.
 | deterministic extLQG | available | deterministic full-Q/R/Q_f initial-state term; comparable only to full-Q/R/Q_f realized scalars |
 | covariance-inclusive extLQG expected cost | available | not directly comparable to realized GRU validation scalars |
 | realized GRU validation | available for full-Q/R/Q_f scalar rows | validation-selected audit metric, not checkpoint selection input |
-| same-noise-bank Monte Carlo | available_with_limitations | requires shared realized noise bank for GRU and extLQG |
+| full same-noise-bank Monte Carlo | not_implemented | full shared sensory/command/motor noise is not exposed for both arms; see the partial shared-rollout comparator below |
 | realized per-term full-Q/R/Q_f scoring | not_implemented | requires scorer output for running state, terminal, command, force/filter, and disturbance-integrator terms |
 | shared-rollout comparator | available | shared initial-state and process/load epsilon bank; sensory/command noise limits declared |
 
@@ -40,7 +40,7 @@ This is an objective-lens diagnostic, not a standard-certificate gate.
 - This sidecar is diagnostic only and is not a standard-certificate gate.
 - GRU values are validation-selected realized full-QRF scalars; the shared-rollout block is an audit-only post-hoc rescore and is not used for checkpoint selection.
 
-Same-noise-bank Monte Carlo: `available_with_limitations` - shared-rollout comparator materialized common random inputs for initial state and process/load epsilon; sensory and command/motor noise are explicitly not shared under the current GRU graph contract
+Full same-noise-bank Monte Carlo: `not_implemented` - full shared sensory/command/motor noise is not exposed for both arms. Partial shared-rollout replacement: `available_with_limitations` - shared-rollout comparator materialized common random inputs for initial state and process/load epsilon; sensory and command/motor noise are explicitly not shared under the current GRU graph contract
 
 Per-term realized scoring: `not_implemented` - validation checkpoint manifests currently expose scalar full-QRF objectives, not running-state, terminal-state, command, force/filter, and disturbance-integrator contributions
 

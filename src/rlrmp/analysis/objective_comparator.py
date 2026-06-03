@@ -569,8 +569,9 @@ def render_objective_comparator_markdown(sidecar: Mapping[str, Any]) -> str:
             "validation-selected audit metric, not checkpoint selection input |"
         ),
         (
-            "| same-noise-bank Monte Carlo | "
-            f"{same_noise['status']} | requires shared realized noise bank for GRU and extLQG |"
+            "| full same-noise-bank Monte Carlo | not_implemented | full shared "
+            "sensory/command/motor noise is not exposed for both arms; see the "
+            "partial shared-rollout comparator below |"
         ),
         (
             "| realized per-term full-Q/R/Q_f scoring | "
@@ -645,8 +646,9 @@ def render_objective_comparator_markdown(sidecar: Mapping[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "Same-noise-bank Monte Carlo: "
-            f"`{same_noise['status']}` - {same_noise['reason']}",
+            "Full same-noise-bank Monte Carlo: `not_implemented` - full shared "
+            "sensory/command/motor noise is not exposed for both arms. Partial "
+            f"shared-rollout replacement: `{same_noise['status']}` - {same_noise['reason']}",
             "",
             "Per-term realized scoring: "
             f"`{per_term['status']}` - {per_term['reason']}",
