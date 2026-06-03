@@ -18,6 +18,7 @@ from rlrmp.analysis.cs_gru_standard_materialization import (
     materialize_gru_standard_result,
     normalize_gru_hps,
     observation_history_covariance_from_net_inputs,
+    render_gru_standard_markdown,
 )
 from rlrmp.analysis.failure_decomposition import failure_diagnostic_from_standard_row
 
@@ -188,6 +189,26 @@ def test_gru_manifest_adds_covariance_weighted_observation_response_map() -> Non
     assert summary["covariance_weighting"]["future_lenses"]["perturbation_bank_covariance"] == (
         "blocked_pending_issue_3992394"
     )
+
+    rendered = render_gru_standard_markdown(
+        {
+            "issue": "unit",
+            "source_issue": "unit",
+            "rows": [row],
+            "summary": {},
+            "failure_decomposition": {
+                "rows": [
+                    {
+                        "run_id": row["spec"]["run_id"],
+                        "classification": {"classification": "mixed"},
+                    }
+                ]
+            },
+        }
+    )
+    assert "cov-weighted obs-action" in rendered
+    assert "| cs_stochastic_gru__unit__nominal_clean |" in rendered
+    assert "| 1 | 1 |" in rendered
 
 
 def test_gru_manifest_marks_covariance_weighted_observation_response_map_missing() -> None:

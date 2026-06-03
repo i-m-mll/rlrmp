@@ -859,8 +859,8 @@ measurement-output response maps remain unavailable for these GRU rows.
 
 ## Rows
 
-| run | status | action mismatch | obs-action map | transition | value | Bellman | class |
-|---|---|---:|---:|---|---|---|---|
+| run | status | action mismatch | obs-action map | cov-weighted obs-action | transition | value | Bellman | class |
+|---|---|---:|---:|---:|---|---|---|---|
 {_markdown_row_table(rows, failure_rows)}
 """
 
@@ -877,6 +877,7 @@ def _markdown_row_table(rows: list[dict[str, Any]], failure_rows: list[dict[str,
             f"{row['status']} | "
             f"{_fmt(_summary(by_name, 'state_weighted_action_mismatch', 'aggregate_mismatch_ratio'))} | "
             f"{_fmt(_summary(by_name, 'observation_history_to_action_map_mismatch', 'aggregate_mismatch_ratio'))} | "
+            f"{_fmt(_summary(by_name, 'observation_history_to_action_map_mismatch', 'covariance_weighted_aggregate_mismatch_ratio'))} | "
             f"{by_name[CLOSED_LOOP_TRANSITION_MISMATCH]['status']} | "
             f"{by_name[VALUE_POLICY_GAP]['status']} | "
             f"{by_name[BELLMAN_HESSIAN_RESIDUAL]['status']} | "

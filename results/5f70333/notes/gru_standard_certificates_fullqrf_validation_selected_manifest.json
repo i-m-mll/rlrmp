@@ -1,5 +1,7 @@
 {
+  "checkpoint_policy": "validation_selected_per_replicate",
   "checkpoint_selection": {
+    "checkpoint_policy": "validation_selected_per_replicate",
     "history_validation_log_note": "Validation history contains sparse positive records and zero padding. Durable models are only available at numbered checkpoints, so each checkpoint is scored by the most recent positive validation record at or before that checkpoint.",
     "issue": "5f70333",
     "runs": {
@@ -10,9 +12,11 @@
           "checkpoint_batches": 11000,
           "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
           "final_validation_objective": 4385.942006784504,
+          "final_vs_selected_validation_degradation": 23.61601836297359,
           "replicate": 0,
           "scoring_validation_log_batch": 11000,
-          "scoring_validation_objective": 4362.32598842153
+          "scoring_validation_objective": 4362.32598842153,
+          "selection_source": "sparse_history_fallback"
         },
         {
           "best_logged_validation_batch": 9801,
@@ -20,9 +24,11 @@
           "checkpoint_batches": 11000,
           "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
           "final_validation_objective": 4444.367228147713,
+          "final_vs_selected_validation_degradation": 81.72364946070411,
           "replicate": 1,
           "scoring_validation_log_batch": 11000,
-          "scoring_validation_objective": 4362.643578687009
+          "scoring_validation_objective": 4362.643578687009,
+          "selection_source": "sparse_history_fallback"
         },
         {
           "best_logged_validation_batch": 10801,
@@ -30,9 +36,11 @@
           "checkpoint_batches": 10500,
           "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0010500",
           "final_validation_objective": 4429.602884698525,
+          "final_vs_selected_validation_degradation": 33.6592653505586,
           "replicate": 2,
           "scoring_validation_log_batch": 10500,
-          "scoring_validation_objective": 4395.943619347966
+          "scoring_validation_objective": 4395.943619347966,
+          "selection_source": "sparse_history_fallback"
         },
         {
           "best_logged_validation_batch": 11901,
@@ -40,9 +48,11 @@
           "checkpoint_batches": 11500,
           "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0011500",
           "final_validation_objective": 4425.661560233828,
+          "final_vs_selected_validation_degradation": 60.13319333725758,
           "replicate": 3,
           "scoring_validation_log_batch": 11500,
-          "scoring_validation_objective": 4365.52836689657
+          "scoring_validation_objective": 4365.52836689657,
+          "selection_source": "sparse_history_fallback"
         },
         {
           "best_logged_validation_batch": 11000,
@@ -50,9 +60,11 @@
           "checkpoint_batches": 11000,
           "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
           "final_validation_objective": 4408.760131815548,
+          "final_vs_selected_validation_degradation": 58.69575426328356,
           "replicate": 4,
           "scoring_validation_log_batch": 11000,
-          "scoring_validation_objective": 4350.064377552265
+          "scoring_validation_objective": 4350.064377552265,
+          "selection_source": "sparse_history_fallback"
         }
       ],
       "lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64": [
@@ -62,9 +74,11 @@
           "checkpoint_batches": 6000,
           "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/checkpoints/checkpoint_0006000",
           "final_validation_objective": 4372.517136150367,
+          "final_vs_selected_validation_degradation": 18.374138799725188,
           "replicate": 0,
           "scoring_validation_log_batch": 6000,
-          "scoring_validation_objective": 4354.142997350642
+          "scoring_validation_objective": 4354.142997350642,
+          "selection_source": "sparse_history_fallback"
         },
         {
           "best_logged_validation_batch": 5201,
@@ -72,9 +86,11 @@
           "checkpoint_batches": 11000,
           "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/checkpoints/checkpoint_0011000",
           "final_validation_objective": 4437.2661290391125,
+          "final_vs_selected_validation_degradation": 85.2319277906372,
           "replicate": 1,
           "scoring_validation_log_batch": 11000,
-          "scoring_validation_objective": 4352.034201248475
+          "scoring_validation_objective": 4352.034201248475,
+          "selection_source": "sparse_history_fallback"
         },
         {
           "best_logged_validation_batch": 7500,
@@ -82,9 +98,11 @@
           "checkpoint_batches": 7500,
           "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/checkpoints/checkpoint_0007500",
           "final_validation_objective": 4409.543937656049,
+          "final_vs_selected_validation_degradation": 74.9117015330039,
           "replicate": 2,
           "scoring_validation_log_batch": 7500,
-          "scoring_validation_objective": 4334.632236123045
+          "scoring_validation_objective": 4334.632236123045,
+          "selection_source": "sparse_history_fallback"
         },
         {
           "best_logged_validation_batch": 8500,
@@ -92,9 +110,11 @@
           "checkpoint_batches": 8500,
           "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/checkpoints/checkpoint_0008500",
           "final_validation_objective": 4432.805031246305,
+          "final_vs_selected_validation_degradation": 98.92181635991528,
           "replicate": 3,
           "scoring_validation_log_batch": 8500,
-          "scoring_validation_objective": 4333.883214886389
+          "scoring_validation_objective": 4333.883214886389,
+          "selection_source": "sparse_history_fallback"
         },
         {
           "best_logged_validation_batch": 11000,
@@ -102,14 +122,17 @@
           "checkpoint_batches": 11000,
           "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/checkpoints/checkpoint_0011000",
           "final_validation_objective": 4398.131346585071,
+          "final_vs_selected_validation_degradation": 59.64139915254418,
           "replicate": 4,
           "scoring_validation_log_batch": 11000,
-          "scoring_validation_objective": 4338.489947432527
+          "scoring_validation_objective": 4338.489947432527,
+          "selection_source": "sparse_history_fallback"
         }
       ]
     },
     "schema_version": "rlrmp.validation_selected_gru_checkpoints.v1",
-    "selection_policy": "per-replicate checkpoint selected by minimum positive rollout validation objective among available durable checkpoints; analytical action and I/O metrics are audit-only"
+    "selection_policy": "per-replicate checkpoint selected by minimum positive rollout validation objective among available durable checkpoints; analytical action and I/O metrics are audit-only",
+    "selection_source": "sparse_history_fallback"
   },
   "failure_decomposition": {
     "rows": [
@@ -374,7 +397,7 @@
     ]
   },
   "format": "rlrmp.cs_gru_standard_certificates.v1",
-  "issue": "5f70333",
+  "issue": "e6a32b8",
   "rows": [
     {
       "arrays": [],
@@ -427,6 +450,38 @@
           "status": "available",
           "summary": {
             "aggregate_mismatch_ratio": 0.9549033229351799,
+            "covariance_weighted_aggregate_mismatch_ratio": 0.9455302647313286,
+            "covariance_weighted_delta_energy": 1702.8848157797552,
+            "covariance_weighted_delta_rms": 0.5956237654376424,
+            "covariance_weighted_mismatch_ratio_max": 6799054838.462626,
+            "covariance_weighted_mismatch_ratio_mean": 408310947.37194705,
+            "covariance_weighted_reference_energy": 1800.9839338814056,
+            "covariance_weighted_reference_rms": 0.6125397833816942,
+            "covariance_weighted_status": "available",
+            "covariance_weighting": {
+              "audit_only": true,
+              "basis": "flattened_delayed_position_velocity_observation_history",
+              "centering": "sample_mean_subtracted",
+              "estimator": "unbiased_sample_covariance",
+              "future_lenses": {
+                "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                "sensory_noise_covariance": "missing_same_basis_contract"
+              },
+              "history_dim": 240,
+              "horizon": 60,
+              "normalization": "expected_squared_output_energy_ratio",
+              "observation_dim": 4,
+              "regularization": {
+                "diagonal_jitter": 0.0,
+                "eigenvalue_floor": 0.0,
+                "ratio_denominator_floor": 1e-12,
+                "type": "none"
+              },
+              "sample_count": 80,
+              "source": "empirical_validation_observation_history",
+              "source_priority": 1,
+              "status": "available"
+            },
             "delta_frobenius": 8474.645442439964,
             "input_label": "observation_history",
             "map_shape": [
@@ -449,6 +504,38 @@
           "status": "available",
           "summary": {
             "aggregate_mismatch_ratio": 0.9549033229351799,
+            "covariance_weighted_aggregate_mismatch_ratio": 0.9455302647313286,
+            "covariance_weighted_delta_energy": 1702.8848157797552,
+            "covariance_weighted_delta_rms": 0.5956237654376424,
+            "covariance_weighted_mismatch_ratio_max": 6799054838.462626,
+            "covariance_weighted_mismatch_ratio_mean": 408310947.37194705,
+            "covariance_weighted_reference_energy": 1800.9839338814056,
+            "covariance_weighted_reference_rms": 0.6125397833816942,
+            "covariance_weighted_status": "available",
+            "covariance_weighting": {
+              "audit_only": true,
+              "basis": "flattened_delayed_position_velocity_observation_history",
+              "centering": "sample_mean_subtracted",
+              "estimator": "unbiased_sample_covariance",
+              "future_lenses": {
+                "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                "sensory_noise_covariance": "missing_same_basis_contract"
+              },
+              "history_dim": 240,
+              "horizon": 60,
+              "normalization": "expected_squared_output_energy_ratio",
+              "observation_dim": 4,
+              "regularization": {
+                "diagonal_jitter": 0.0,
+                "eigenvalue_floor": 0.0,
+                "ratio_denominator_floor": 1e-12,
+                "type": "none"
+              },
+              "sample_count": 80,
+              "source": "empirical_validation_observation_history",
+              "source_priority": 1,
+              "status": "available"
+            },
             "delta_frobenius": 8474.645442439964,
             "input_label": "measurement_history",
             "map_shape": [
@@ -526,6 +613,30 @@
             "io_response_map_observation_dim": 4,
             "io_response_map_status": "available_4d_observation_contract",
             "n_replicates": 5,
+            "observation_history_covariance": {
+              "audit_only": true,
+              "basis": "flattened_delayed_position_velocity_observation_history",
+              "centering": "sample_mean_subtracted",
+              "estimator": "unbiased_sample_covariance",
+              "future_lenses": {
+                "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                "sensory_noise_covariance": "missing_same_basis_contract"
+              },
+              "history_dim": 240,
+              "horizon": 60,
+              "normalization": "expected_squared_output_energy_ratio",
+              "observation_dim": 4,
+              "regularization": {
+                "diagonal_jitter": 0.0,
+                "eigenvalue_floor": 0.0,
+                "ratio_denominator_floor": 1e-12,
+                "type": "none"
+              },
+              "sample_count": 80,
+              "source": "empirical_validation_observation_history",
+              "source_priority": 1,
+              "status": "available"
+            },
             "population_structure": {
               "n_input_only": 0,
               "n_input_readout": 180,
@@ -557,6 +668,30 @@
           "n_replicates": 5,
           "n_trials": 1,
           "noise": "feedbax Channel noise disabled; plant-process force noise disabled if present",
+          "observation_history_covariance": {
+            "audit_only": true,
+            "basis": "flattened_delayed_position_velocity_observation_history",
+            "centering": "sample_mean_subtracted",
+            "estimator": "unbiased_sample_covariance",
+            "future_lenses": {
+              "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+              "sensory_noise_covariance": "missing_same_basis_contract"
+            },
+            "history_dim": 240,
+            "horizon": 60,
+            "normalization": "expected_squared_output_energy_ratio",
+            "observation_dim": 4,
+            "regularization": {
+              "diagonal_jitter": 0.0,
+              "eigenvalue_floor": 0.0,
+              "ratio_denominator_floor": 1e-12,
+              "type": "none"
+            },
+            "sample_count": 80,
+            "source": "empirical_validation_observation_history",
+            "source_priority": 1,
+            "status": "available"
+          },
           "selected_checkpoints": [
             {
               "best_logged_validation_batch": 9501,
@@ -564,9 +699,11 @@
               "checkpoint_batches": 11000,
               "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
               "final_validation_objective": 4385.942006784504,
+              "final_vs_selected_validation_degradation": 23.61601836297359,
               "replicate": 0,
               "scoring_validation_log_batch": 11000,
-              "scoring_validation_objective": 4362.32598842153
+              "scoring_validation_objective": 4362.32598842153,
+              "selection_source": "sparse_history_fallback"
             },
             {
               "best_logged_validation_batch": 9801,
@@ -574,9 +711,11 @@
               "checkpoint_batches": 11000,
               "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
               "final_validation_objective": 4444.367228147713,
+              "final_vs_selected_validation_degradation": 81.72364946070411,
               "replicate": 1,
               "scoring_validation_log_batch": 11000,
-              "scoring_validation_objective": 4362.643578687009
+              "scoring_validation_objective": 4362.643578687009,
+              "selection_source": "sparse_history_fallback"
             },
             {
               "best_logged_validation_batch": 10801,
@@ -584,9 +723,11 @@
               "checkpoint_batches": 10500,
               "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0010500",
               "final_validation_objective": 4429.602884698525,
+              "final_vs_selected_validation_degradation": 33.6592653505586,
               "replicate": 2,
               "scoring_validation_log_batch": 10500,
-              "scoring_validation_objective": 4395.943619347966
+              "scoring_validation_objective": 4395.943619347966,
+              "selection_source": "sparse_history_fallback"
             },
             {
               "best_logged_validation_batch": 11901,
@@ -594,9 +735,11 @@
               "checkpoint_batches": 11500,
               "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0011500",
               "final_validation_objective": 4425.661560233828,
+              "final_vs_selected_validation_degradation": 60.13319333725758,
               "replicate": 3,
               "scoring_validation_log_batch": 11500,
-              "scoring_validation_objective": 4365.52836689657
+              "scoring_validation_objective": 4365.52836689657,
+              "selection_source": "sparse_history_fallback"
             },
             {
               "best_logged_validation_batch": 11000,
@@ -604,15 +747,41 @@
               "checkpoint_batches": 11000,
               "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
               "final_validation_objective": 4408.760131815548,
+              "final_vs_selected_validation_degradation": 58.69575426328356,
               "replicate": 4,
               "scoring_validation_log_batch": 11000,
-              "scoring_validation_objective": 4350.064377552265
+              "scoring_validation_objective": 4350.064377552265,
+              "selection_source": "sparse_history_fallback"
             }
           ],
           "status": "evaluated_clean_feedbax_rollout"
         },
         "io_response_map_blocker": null,
         "io_response_map_status": "available_4d_observation_contract",
+        "observation_history_covariance": {
+          "audit_only": true,
+          "basis": "flattened_delayed_position_velocity_observation_history",
+          "centering": "sample_mean_subtracted",
+          "estimator": "unbiased_sample_covariance",
+          "future_lenses": {
+            "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+            "sensory_noise_covariance": "missing_same_basis_contract"
+          },
+          "history_dim": 240,
+          "horizon": 60,
+          "normalization": "expected_squared_output_energy_ratio",
+          "observation_dim": 4,
+          "regularization": {
+            "diagonal_jitter": 0.0,
+            "eigenvalue_floor": 0.0,
+            "ratio_denominator_floor": 1e-12,
+            "type": "none"
+          },
+          "sample_count": 80,
+          "source": "empirical_validation_observation_history",
+          "source_priority": 1,
+          "status": "available"
+        },
         "reference": {
           "action_dim": 2,
           "controller": "analytical_lqr_kalman_output_feedback",
@@ -653,7 +822,7 @@
         "controller_label": "lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64",
         "evaluation_lane": "deterministic",
         "gamma_factor": 1.4,
-        "issue_id": "5f70333",
+        "issue_id": "e6a32b8",
         "notes": "GRU empirical/nonlinear standard row. Clean action behavior is evaluated against the C&S output-feedback LQR/Kalman reference; same-coordinate transition/value/Bellman rows are not applicable.",
         "objective": "optimal",
         "optimizer_label": "adamw_nominal_gru",
@@ -772,6 +941,38 @@
           "status": "available",
           "summary": {
             "aggregate_mismatch_ratio": 0.9618441106324866,
+            "covariance_weighted_aggregate_mismatch_ratio": 0.9582722387821994,
+            "covariance_weighted_delta_energy": 1711.421153604676,
+            "covariance_weighted_delta_rms": 0.5971147910307036,
+            "covariance_weighted_mismatch_ratio_max": 8560677277.646858,
+            "covariance_weighted_mismatch_ratio_mean": 528340838.16566336,
+            "covariance_weighted_reference_energy": 1785.9446244415892,
+            "covariance_weighted_reference_rms": 0.6099768821510078,
+            "covariance_weighted_status": "available",
+            "covariance_weighting": {
+              "audit_only": true,
+              "basis": "flattened_delayed_position_velocity_observation_history",
+              "centering": "sample_mean_subtracted",
+              "estimator": "unbiased_sample_covariance",
+              "future_lenses": {
+                "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                "sensory_noise_covariance": "missing_same_basis_contract"
+              },
+              "history_dim": 240,
+              "horizon": 60,
+              "normalization": "expected_squared_output_energy_ratio",
+              "observation_dim": 4,
+              "regularization": {
+                "diagonal_jitter": 0.0,
+                "eigenvalue_floor": 0.0,
+                "ratio_denominator_floor": 1e-12,
+                "type": "none"
+              },
+              "sample_count": 80,
+              "source": "empirical_validation_observation_history",
+              "source_priority": 1,
+              "status": "available"
+            },
             "delta_frobenius": 8505.388981811675,
             "input_label": "observation_history",
             "map_shape": [
@@ -794,6 +995,38 @@
           "status": "available",
           "summary": {
             "aggregate_mismatch_ratio": 0.9618441106324866,
+            "covariance_weighted_aggregate_mismatch_ratio": 0.9582722387821994,
+            "covariance_weighted_delta_energy": 1711.421153604676,
+            "covariance_weighted_delta_rms": 0.5971147910307036,
+            "covariance_weighted_mismatch_ratio_max": 8560677277.646858,
+            "covariance_weighted_mismatch_ratio_mean": 528340838.16566336,
+            "covariance_weighted_reference_energy": 1785.9446244415892,
+            "covariance_weighted_reference_rms": 0.6099768821510078,
+            "covariance_weighted_status": "available",
+            "covariance_weighting": {
+              "audit_only": true,
+              "basis": "flattened_delayed_position_velocity_observation_history",
+              "centering": "sample_mean_subtracted",
+              "estimator": "unbiased_sample_covariance",
+              "future_lenses": {
+                "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                "sensory_noise_covariance": "missing_same_basis_contract"
+              },
+              "history_dim": 240,
+              "horizon": 60,
+              "normalization": "expected_squared_output_energy_ratio",
+              "observation_dim": 4,
+              "regularization": {
+                "diagonal_jitter": 0.0,
+                "eigenvalue_floor": 0.0,
+                "ratio_denominator_floor": 1e-12,
+                "type": "none"
+              },
+              "sample_count": 80,
+              "source": "empirical_validation_observation_history",
+              "source_priority": 1,
+              "status": "available"
+            },
             "delta_frobenius": 8505.388981811675,
             "input_label": "measurement_history",
             "map_shape": [
@@ -871,6 +1104,30 @@
             "io_response_map_observation_dim": 4,
             "io_response_map_status": "available_4d_observation_contract",
             "n_replicates": 5,
+            "observation_history_covariance": {
+              "audit_only": true,
+              "basis": "flattened_delayed_position_velocity_observation_history",
+              "centering": "sample_mean_subtracted",
+              "estimator": "unbiased_sample_covariance",
+              "future_lenses": {
+                "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                "sensory_noise_covariance": "missing_same_basis_contract"
+              },
+              "history_dim": 240,
+              "horizon": 60,
+              "normalization": "expected_squared_output_energy_ratio",
+              "observation_dim": 4,
+              "regularization": {
+                "diagonal_jitter": 0.0,
+                "eigenvalue_floor": 0.0,
+                "ratio_denominator_floor": 1e-12,
+                "type": "none"
+              },
+              "sample_count": 80,
+              "source": "empirical_validation_observation_history",
+              "source_priority": 1,
+              "status": "available"
+            },
             "population_structure": {
               "n_input_only": 0,
               "n_input_readout": 180,
@@ -902,6 +1159,30 @@
           "n_replicates": 5,
           "n_trials": 1,
           "noise": "feedbax Channel noise disabled; plant-process force noise disabled if present",
+          "observation_history_covariance": {
+            "audit_only": true,
+            "basis": "flattened_delayed_position_velocity_observation_history",
+            "centering": "sample_mean_subtracted",
+            "estimator": "unbiased_sample_covariance",
+            "future_lenses": {
+              "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+              "sensory_noise_covariance": "missing_same_basis_contract"
+            },
+            "history_dim": 240,
+            "horizon": 60,
+            "normalization": "expected_squared_output_energy_ratio",
+            "observation_dim": 4,
+            "regularization": {
+              "diagonal_jitter": 0.0,
+              "eigenvalue_floor": 0.0,
+              "ratio_denominator_floor": 1e-12,
+              "type": "none"
+            },
+            "sample_count": 80,
+            "source": "empirical_validation_observation_history",
+            "source_priority": 1,
+            "status": "available"
+          },
           "selected_checkpoints": [
             {
               "best_logged_validation_batch": 9501,
@@ -909,9 +1190,11 @@
               "checkpoint_batches": 6000,
               "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/checkpoints/checkpoint_0006000",
               "final_validation_objective": 4372.517136150367,
+              "final_vs_selected_validation_degradation": 18.374138799725188,
               "replicate": 0,
               "scoring_validation_log_batch": 6000,
-              "scoring_validation_objective": 4354.142997350642
+              "scoring_validation_objective": 4354.142997350642,
+              "selection_source": "sparse_history_fallback"
             },
             {
               "best_logged_validation_batch": 5201,
@@ -919,9 +1202,11 @@
               "checkpoint_batches": 11000,
               "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/checkpoints/checkpoint_0011000",
               "final_validation_objective": 4437.2661290391125,
+              "final_vs_selected_validation_degradation": 85.2319277906372,
               "replicate": 1,
               "scoring_validation_log_batch": 11000,
-              "scoring_validation_objective": 4352.034201248475
+              "scoring_validation_objective": 4352.034201248475,
+              "selection_source": "sparse_history_fallback"
             },
             {
               "best_logged_validation_batch": 7500,
@@ -929,9 +1214,11 @@
               "checkpoint_batches": 7500,
               "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/checkpoints/checkpoint_0007500",
               "final_validation_objective": 4409.543937656049,
+              "final_vs_selected_validation_degradation": 74.9117015330039,
               "replicate": 2,
               "scoring_validation_log_batch": 7500,
-              "scoring_validation_objective": 4334.632236123045
+              "scoring_validation_objective": 4334.632236123045,
+              "selection_source": "sparse_history_fallback"
             },
             {
               "best_logged_validation_batch": 8500,
@@ -939,9 +1226,11 @@
               "checkpoint_batches": 8500,
               "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/checkpoints/checkpoint_0008500",
               "final_validation_objective": 4432.805031246305,
+              "final_vs_selected_validation_degradation": 98.92181635991528,
               "replicate": 3,
               "scoring_validation_log_batch": 8500,
-              "scoring_validation_objective": 4333.883214886389
+              "scoring_validation_objective": 4333.883214886389,
+              "selection_source": "sparse_history_fallback"
             },
             {
               "best_logged_validation_batch": 11000,
@@ -949,15 +1238,41 @@
               "checkpoint_batches": 11000,
               "checkpoint_path": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/checkpoints/checkpoint_0011000",
               "final_validation_objective": 4398.131346585071,
+              "final_vs_selected_validation_degradation": 59.64139915254418,
               "replicate": 4,
               "scoring_validation_log_batch": 11000,
-              "scoring_validation_objective": 4338.489947432527
+              "scoring_validation_objective": 4338.489947432527,
+              "selection_source": "sparse_history_fallback"
             }
           ],
           "status": "evaluated_clean_feedbax_rollout"
         },
         "io_response_map_blocker": null,
         "io_response_map_status": "available_4d_observation_contract",
+        "observation_history_covariance": {
+          "audit_only": true,
+          "basis": "flattened_delayed_position_velocity_observation_history",
+          "centering": "sample_mean_subtracted",
+          "estimator": "unbiased_sample_covariance",
+          "future_lenses": {
+            "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+            "sensory_noise_covariance": "missing_same_basis_contract"
+          },
+          "history_dim": 240,
+          "horizon": 60,
+          "normalization": "expected_squared_output_energy_ratio",
+          "observation_dim": 4,
+          "regularization": {
+            "diagonal_jitter": 0.0,
+            "eigenvalue_floor": 0.0,
+            "ratio_denominator_floor": 1e-12,
+            "type": "none"
+          },
+          "sample_count": 80,
+          "source": "empirical_validation_observation_history",
+          "source_priority": 1,
+          "status": "available"
+        },
         "reference": {
           "action_dim": 2,
           "controller": "analytical_lqr_kalman_output_feedback",
@@ -998,7 +1313,7 @@
         "controller_label": "lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64",
         "evaluation_lane": "deterministic",
         "gamma_factor": 1.4,
-        "issue_id": "5f70333",
+        "issue_id": "e6a32b8",
         "notes": "GRU empirical/nonlinear standard row. Clean action behavior is evaluated against the C&S output-feedback LQR/Kalman reference; same-coordinate transition/value/Bellman rows are not applicable.",
         "objective": "optimal",
         "optimizer_label": "adamw_nominal_gru",

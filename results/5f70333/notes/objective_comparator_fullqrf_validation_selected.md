@@ -2,7 +2,7 @@
 
 Schema: `rlrmp.objective_comparator_sidecar.v3`.
 
-Scope: full-QRF C&S GRU rows, validation-selected checkpoints.
+Scope: validation-selected checkpoints for C&S GRU runs: lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64, lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64.
 
 This is an objective-lens diagnostic, not a standard-certificate gate.
 
