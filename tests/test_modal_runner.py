@@ -7,7 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from rlrmp.loss import CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
+from rlrmp.loss import (
+    CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+    CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
+)
 from rlrmp.modal_runner import (
     DEFAULT_RUN,
     DEFAULT_GPU,
@@ -69,6 +72,13 @@ def test_training_command_passes_loss_objective() -> None:
     command = build_training_command(config, remote=True)
 
     assert command[command.index("--loss-objective") + 1] == "full_analytical_qrf"
+
+    ablation = build_training_command(
+        NominalGruRunConfig(loss_objective=CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE),
+        remote=True,
+    )
+
+    assert ablation[ablation.index("--loss-objective") + 1] == "partial_net_output_force_filter"
 
 
 def test_regularized_training_command_uses_hidden_penalty_switch() -> None:

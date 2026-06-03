@@ -35,9 +35,11 @@ from rlrmp.analysis.cs_game_card import TARGET_POS, build_canonical_game
 logger = logging.getLogger(__name__)
 
 CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE = "full_analytical_qrf"
+CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE = "partial_net_output_force_filter"
 CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE = "partial_feedbax_terms"
 CS_LOSS_OBJECTIVES = (
     CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
+    CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
     CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
 )
 
@@ -344,6 +346,44 @@ class CsAnalyticalQrfLoss(AbstractLoss):
         for start in range(0, self.Q.shape[1], self.n_phys):
             result = result.at[..., start : start + 2].add(-self.target_pos)
         return result
+
+
+class CsForceFilterStateLoss(AbstractLoss):
+    """Squared C&S force/filter state over every delay block."""
+
+    label: str
+    n_phys: int = eqx.field(static=True)
+
+    def __init__(
+        self,
+        *,
+        label: str = "mechanics_force_filter",
+        n_phys: int = 8,
+    ):
+        self.label = label
+        self.n_phys = int(n_phys)
+
+    def term(
+        self,
+        states: Optional[PyTree],
+        trial_specs: Optional["TaskTrialSpec"],
+        model: Optional[AbstractModel],
+    ) -> Array:
+        del trial_specs, model
+        assert states is not None, "CsForceFilterStateLoss requires states, but states is None"
+        if not hasattr(states, "mechanics") or not hasattr(states.mechanics, "vector"):
+            raise ValueError(
+                "Force/filter ablation loss requires states.mechanics.vector from the "
+                "cs_lss LinearStateSpace backend."
+            )
+        vector = jnp.asarray(states.mechanics.vector)
+        if vector.shape[-1] % self.n_phys != 0:
+            raise ValueError(
+                f"state dimension {vector.shape[-1]} is not divisible by n_phys={self.n_phys}."
+            )
+        blocks = vector.reshape(vector.shape[:-1] + (-1, self.n_phys))
+        force_filter = blocks[..., 4:6]
+        return jnp.sum(force_filter**2, axis=(-3, -2, -1))
 
 
 DEFAULT_TOP_WEIGHTS: dict[str, float] = {
@@ -746,17 +786,32 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
             terms={CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE: term},
             weights={CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE: 1.0},
         )
-    if loss_objective != CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE:
+    if loss_objective not in {
+        CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
+        CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
+    }:
         raise ValueError(
             f"Unknown loss.objective {loss_objective!r}; expected one of {CS_LOSS_OBJECTIVES}."
         )
+    ablate_net_force_filter = loss_objective == CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE
+    if ablate_net_force_filter:
+        plant_backend = str(_nsget(hps, "model.plant_backend", ""))
+        if plant_backend != "cs_lss":
+            raise ValueError(
+                "loss.objective='partial_net_output_force_filter' requires "
+                f"model.plant_backend='cs_lss'; got {plant_backend!r}."
+            )
 
     user_outer_weights = _nsget(hps, "loss.weights", {}) or {}
 
     terms: Mapping[str, AbstractLoss] = dict(
         nn_output=TargetStateLoss(
             "nn_output",
-            where=lambda state: state.efferent.output,
+            where=(
+                (lambda state: state.net.output)
+                if ablate_net_force_filter
+                else (lambda state: state.efferent.output)
+            ),
             spec=target_zero,
         ),
         nn_hidden=TargetStateLoss(
@@ -810,6 +865,8 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
             epoch_indices=(0, 1),
         ),
     )
+    if ablate_net_force_filter:
+        terms["mechanics_force_filter"] = CsForceFilterStateLoss()
 
     # Power-law schedule parameters (Bug: 2e1a6ad).
     # "flat" (default) keeps existing uniform weighting; "powerlaw" applies

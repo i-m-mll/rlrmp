@@ -52,6 +52,7 @@ from rlrmp.feedbax_graph import (
 from rlrmp.loss import (
     CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
     CS_LOSS_OBJECTIVES,
+    CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
     CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
 )
 from rlrmp.modules.training.part2 import (
@@ -222,12 +223,12 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
     """Build nominal C&S-aligned GRU hyperparameters from CLI arguments."""
 
     args = _apply_smoke_overrides(args)
-    if (
-        str(args.loss_objective) == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
-        and str(args.plant_backend) != CS_LSS_PLANT_BACKEND
-    ):
+    if str(args.loss_objective) in {
+        CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+        CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
+    } and str(args.plant_backend) != CS_LSS_PLANT_BACKEND:
         raise ValueError(
-            "--loss-objective full_analytical_qrf requires --plant-backend cs_lss "
+            f"--loss-objective {args.loss_objective} requires --plant-backend cs_lss "
             "because the full 48D C&S state is unavailable on the legacy backend."
         )
     if str(args.loss_objective) == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE and bool(
@@ -335,6 +336,11 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
                 "nn_output_jerk": float(args.nn_output_jerk),
                 "nn_output_pre_go": 0.0,
                 "nn_hidden_derivative_pre_go": 0.0,
+                "mechanics_force_filter": (
+                    1.0 / float(schedule.Q.shape[-1] // 8)
+                    if str(args.loss_objective) == CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE
+                    else 0.0
+                ),
             },
             "effector_pos_late": {
                 "start_step_after_go": int(schedule.T),
@@ -422,6 +428,34 @@ def build_game_card_provenance() -> dict[str, Any]:
             "adversarial phase and does not claim a certificate pass."
         ),
     }
+
+
+def build_loss_game_card_provenance(hps: TreeNamespace) -> dict[str, Any]:
+    """Return game-card provenance with objective-specific loss notes."""
+
+    card = build_game_card_provenance()
+    objective = str(getattr(hps.loss, "objective", CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE))
+    if objective == CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE:
+        card["cost"] = {
+            **card["cost"],
+            "feedbax_force_filter_state_cost": "included_as_partial_ablation_running_term",
+            "feedbax_force_filter_state_cost_note": (
+                "This ablation preserves the historical partial Feedbax position/velocity "
+                "terms, moves command cost to intended net.output, and adds a running "
+                "force/filter state penalty over mechanics.vector force coordinates. It "
+                "still omits disturbance-integrator state and terminal full-state Q_f costs."
+            ),
+        }
+    elif objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE:
+        card["cost"] = {
+            **card["cost"],
+            "feedbax_force_filter_state_cost": "included_via_full_qrf",
+            "feedbax_force_filter_state_cost_note": (
+                "Full analytical Q/R/Q_f loss scores force/filter and disturbance-integrator "
+                "state through the canonical delay-augmented C&S Q_t and Q_f matrices."
+            ),
+        }
+    return card
 
 
 def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
@@ -565,7 +599,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "task_spec": task_spec,
         "loss_spec": loss_spec,
         "training_spec": training_spec,
-        "game_card_provenance": build_game_card_provenance(),
+        "game_card_provenance": build_loss_game_card_provenance(hps),
         "model_structure": build_model_structure_summary(hps),
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
         "stochastic_runtime": _stochastic_runtime_contract(hps),
@@ -664,7 +698,7 @@ def build_run_spec(
         "loss_objective": str(hps.loss.objective),
         "fidelity_status": _fidelity_status(hps),
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
-        "game_card": build_game_card_provenance(),
+        "game_card": build_loss_game_card_provenance(hps),
         "model_summary": build_model_structure_summary(hps),
         "task_timing": graph_bundle.task_spec,
         "loss_summary": graph_bundle.loss_spec,
@@ -1847,6 +1881,69 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
                 "configured_weight": float(hps.loss.weights.nn_hidden),
             },
         }
+    if objective == CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE:
+        return {
+            "weights": _plain(hps.loss.weights),
+            "effector_pos_late": _plain(hps.loss.effector_pos_late),
+            "effector_vel_late": _plain(hps.loss.effector_vel_late),
+            "effector_pos_running_schedule": str(hps.loss.effector_pos_running_schedule),
+            "objective_profile": CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
+            "objective_kind": "partial_feedbax_ablation",
+            "hypothesis": (
+                "historical partial position/velocity terms plus intended-command "
+                "control cost and LSS force/filter state cost"
+            ),
+            "active_cs_terms": {
+                "stage_position": {
+                    "term": "effector_pos_running",
+                    "scale": float(hps.loss.weights.effector_pos_running),
+                    "fact_t": "((t + 1) / T)^6",
+                },
+                "stage_velocity": {
+                    "term": "effector_vel_running",
+                    "scale": float(hps.loss.weights.effector_vel_running),
+                    "fact_t": "((t + 1) / T)^6",
+                },
+                "control": {
+                    "term": "nn_output",
+                    "state_key": "states.net.output",
+                    "scale": float(hps.loss.weights.nn_output),
+                    "equivalent_R": "I_2 on intended controller command before noise",
+                },
+                "force_filter": {
+                    "term": "mechanics_force_filter",
+                    "state_key": "states.mechanics.vector delay blocks[..., 4:6]",
+                    "scale": float(hps.loss.weights.mechanics_force_filter),
+                    "basis": "force/filter coordinates from every 8D physical delay block",
+                },
+                "terminal_position": {
+                    "term": "effector_terminal_pos",
+                    "scale": float(hps.loss.weights.effector_terminal_pos),
+                },
+                "terminal_velocity": {
+                    "term": "effector_terminal_vel",
+                    "scale": float(hps.loss.weights.effector_terminal_vel),
+                },
+            },
+            "force_filter_state_cost": "included_as_partial_ablation_running_term",
+            "disturbance_integrator_state_cost": "omitted_in_this_ablation",
+            "hidden_regularizer": {
+                "term": "nn_hidden",
+                "scale": float(hps.loss.weights.nn_hidden),
+                "exact_fidelity_default": 0.0,
+                "regularized_pair_scale": CS_REGULARIZED_NN_HIDDEN,
+            },
+            "simple_reach_position_loss_contract": (
+                "effector_pos_running compares mechanics.effector.pos to the SimpleReaches "
+                "same-coordinate target sequence over every transition, using the configured "
+                "C&S Eq. 15 power-law discount when requested."
+            ),
+            "effector_hold_pos_schedule": str(hps.loss.effector_hold_pos_schedule),
+            "position_powerlaw_power": float(hps.loss.position_powerlaw_power),
+            "movement_ramp_shape": str(hps.loss.movement_ramp_shape),
+            "movement_ramp_duration_steps": int(hps.loss.movement_ramp_duration_steps),
+            "movement_ramp_power": float(hps.loss.movement_ramp_power),
+        }
 
     return {
         "weights": _plain(hps.loss.weights),
@@ -1956,6 +2053,80 @@ def _fidelity_status(hps: TreeNamespace) -> dict[str, Any]:
             "nn_hidden": nn_hidden,
             "certificate_lens": "input_output_map_certificate",
             "same_coordinate_gain_certificate": False,
+        }
+    if objective == CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE:
+        extra_terms = (
+            []
+            if no_extra_regularizer
+            else [
+                {
+                    "term": "nn_hidden",
+                    "scale": nn_hidden,
+                    "status": "auxiliary_regularizer_not_in_analytical_objective",
+                }
+            ]
+        )
+        return {
+            "objective": "cs_fidelity_stochastic_rollout",
+            "loss_objective": objective,
+            "exact_fidelity": False,
+            "exact_objective_terms": False,
+            "exact_objective_terms_scope": (
+                "ablation only: old partial position/velocity terms are kept, "
+                "control is moved to intended net.output, and running force/filter "
+                "state cost is added; this is not the full Q/R/Q_f objective"
+            ),
+            "objective_fidelity": {
+                "implemented_terms": [
+                    "running_position_cs_eq15_power6",
+                    "terminal_position",
+                    "running_velocity_cs_eq15_power6",
+                    "terminal_velocity",
+                    "intended_command_quadratic_net_output",
+                    "running_force_filter_state_cost",
+                ],
+                "omitted_terms": [
+                    {
+                        "term": "disturbance_integrator_state_cost",
+                        "analytical_role": (
+                            "unit-weight disturbance-integrator state cost in the C&S 8D schedule"
+                        ),
+                        "status": "intentionally_omitted_for_force_filter_ablation",
+                    },
+                    {
+                        "term": "terminal_force_filter_and_integrator_Q_f",
+                        "analytical_role": "terminal full-state Q_f costs",
+                        "status": "not_synthesized_in_partial_ablation",
+                    },
+                ],
+                "extra_terms": extra_terms,
+                "selection_policy": (
+                    "rollout validation loss only; analytical action and I/O metrics are audit-only"
+                ),
+            },
+            "exact_stochastic_rollout": False,
+            "exact_stochastic_noise_sources": exact_lss,
+            "exact_plant_matrices": exact_lss,
+            "plant_backend": plant_backend,
+            "temporary_stochastic_bridge": (
+                "temporary RLRMP LSS wrapper implements sensory Channel, additive and "
+                "signal-dependent motor Channel, and sampled physical-process mechanics.epsilon; "
+                "future Feedbax acausal/ODE plant support should subsume this wrapper"
+                if exact_lss
+                else None
+            ),
+            "stochastic_preset": str(hps.model.stochastic_preset),
+            "stochastic_projection": (
+                "Feedbax GRU rollout uses C&S-shaped sensory, command, signal-dependent, "
+                "and plant/load force noise channels without feeding the 48D "
+                "delay-augmented analytical state to the GRU."
+            ),
+            "regularized_pair": not no_extra_regularizer,
+            "regularizer": "none" if no_extra_regularizer else "nn_hidden",
+            "nn_hidden": nn_hidden,
+            "certificate_lens": "input_output_map_certificate",
+            "same_coordinate_gain_certificate": False,
+            "analytical_delay_augmented_state_input": False,
         }
     omitted_terms = [
         {

@@ -28,6 +28,7 @@ from rlrmp.analysis.output_feedback import OutputFeedbackConfig
 from rlrmp.cs_lss_gru import CS_EPSILON_DIM
 from rlrmp.loss import (
     CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+    CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
     CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
     CsAnalyticalQrfLoss,
 )
@@ -156,6 +157,50 @@ def test_full_analytical_qrf_loss_scores_non_pos_vel_state_and_command() -> None
     assert jnp.all(loss.term(force_states, trial, pair.model) > base_value)
     assert jnp.all(loss.term(command_states, trial, pair.model) > base_value)
     assert jnp.allclose(loss.term(applied_only_states, trial, pair.model), base_value)
+
+
+def test_partial_net_force_filter_ablation_scores_net_output_and_force_filter() -> None:
+    hps = build_hps(
+        _args(smoke=True, loss_objective=CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE)
+    )
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    trial = pair.task.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
+
+    terms = pair.task.loss_func.terms
+    assert "mechanics_force_filter" in terms
+    assert pair.task.loss_func.weights["mechanics_force_filter"] == pytest.approx(1 / 6)
+
+    zeros = jnp.zeros((1, 60, 48), dtype=jnp.float64)
+    zero_command = jnp.zeros((1, 60, 2), dtype=jnp.float64)
+    base_states = TreeNamespace(
+        mechanics=TreeNamespace(vector=zeros),
+        net=TreeNamespace(output=zero_command),
+        efferent=TreeNamespace(output=zero_command),
+    )
+    net_command_states = TreeNamespace(
+        mechanics=TreeNamespace(vector=zeros),
+        net=TreeNamespace(output=zero_command.at[:, :, 0].set(3.0)),
+        efferent=TreeNamespace(output=zero_command),
+    )
+    applied_only_states = TreeNamespace(
+        mechanics=TreeNamespace(vector=zeros),
+        net=TreeNamespace(output=zero_command),
+        efferent=TreeNamespace(output=zero_command.at[:, :, 0].set(3.0)),
+    )
+    force_filter_states = TreeNamespace(
+        mechanics=TreeNamespace(vector=zeros.at[:, :, 4].set(2.0)),
+        net=TreeNamespace(output=zero_command),
+        efferent=TreeNamespace(output=zero_command),
+    )
+
+    base_output = terms["nn_output"].where(base_states)
+    assert jnp.any(terms["nn_output"].where(net_command_states) != base_output)
+    assert jnp.allclose(terms["nn_output"].where(applied_only_states), base_output)
+
+    base_force = terms["mechanics_force_filter"].term(base_states, trial, pair.model)
+    force_value = terms["mechanics_force_filter"].term(force_filter_states, trial, pair.model)
+    assert force_value.shape == (1,)
+    assert jnp.all(force_value > base_force)
 
 
 def test_runtime_task_executes_sixty_fixed_cs_targets() -> None:
@@ -423,6 +468,30 @@ def test_full_analytical_qrf_run_spec_records_exact_objective_metadata(tmp_path:
     assert payload["fidelity_status"]["exact_objective_terms"] is True
     assert payload["fidelity_status"]["objective_fidelity"]["omitted_terms"] == []
     assert payload["fidelity_status"]["objective_fidelity"]["extra_terms"] == []
+
+
+def test_partial_net_force_filter_run_spec_records_ablation_metadata(tmp_path: Path) -> None:
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        smoke=True,
+        loss_objective=CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
+    )
+
+    result = write_run_spec(args)
+    payload = json.loads(Path(result["run_spec_path"]).read_text())
+
+    assert payload["loss_objective"] == CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE
+    assert payload["loss_summary"]["objective_profile"] == CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE
+    assert payload["loss_summary"]["active_cs_terms"]["control"]["state_key"] == "states.net.output"
+    assert payload["loss_summary"]["active_cs_terms"]["force_filter"]["scale"] == pytest.approx(1 / 6)
+    assert payload["loss_summary"]["disturbance_integrator_state_cost"] == "omitted_in_this_ablation"
+    fidelity = payload["fidelity_status"]["objective_fidelity"]
+    assert "intended_command_quadratic_net_output" in fidelity["implemented_terms"]
+    assert "running_force_filter_state_cost" in fidelity["implemented_terms"]
+    assert payload["game_card"]["cost"]["feedbax_force_filter_state_cost"].startswith("included")
 
 
 def test_write_run_spec_honors_issue_override(tmp_path: Path) -> None:

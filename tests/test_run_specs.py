@@ -104,6 +104,14 @@ def test_nominal_gru_run_spec_requires_consistent_loss_objective(tmp_path) -> No
     with pytest.raises(RunSpecValidationError, match="objective_profile"):
         validate_nominal_gru_run_spec(run_spec, spec_dir=tmp_path)
 
+    run_spec = _valid_nominal_gru_run_spec()
+    run_spec["loss_objective"] = "partial_net_output_force_filter"
+    run_spec["loss_summary"]["objective_profile"] = "partial_net_output_force_filter"
+    run_spec["feedbax_graph"]["graph_spec_path"] = None
+    run_spec["feedbax_graph"]["graph_export_status"] = "unavailable"
+    (tmp_path / "model.graph.manifest.json").write_text("{}", encoding="utf-8")
+    validate_nominal_gru_run_spec(run_spec, spec_dir=tmp_path)
+
 
 def test_nominal_gru_run_spec_requires_adjacent_graph_sidecars(tmp_path) -> None:
     run_spec = _valid_nominal_gru_run_spec()

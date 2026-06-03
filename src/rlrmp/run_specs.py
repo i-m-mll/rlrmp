@@ -21,6 +21,7 @@ NOMINAL_GRU_REQUIRED_TOP_LEVEL_KEYS = frozenset(
 NOMINAL_GRU_LOSS_OBJECTIVES = frozenset(
     {
         "partial_feedbax_terms",
+        "partial_net_output_force_filter",
         "full_analytical_qrf",
     }
 )
