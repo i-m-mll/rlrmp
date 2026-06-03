@@ -18,6 +18,7 @@ from rlrmp.analysis.gru_perturbation_bank import (
     delta_full_qrf_cost_summary,
     extlqg_comparator_status,
     score_full_qrf_rollout_cost,
+    summarize_perturbation_bank,
     summarize_perturbation_response,
 )
 from rlrmp.analysis.gru_evaluation_diagnostics import RolloutEvaluation
@@ -399,6 +400,104 @@ def test_perturbation_response_reports_controller_io_metrics() -> None:
     assert io["output_key"] == "states.net.output"
     np.testing.assert_allclose(io["delta_input_norm"]["mean"], np.sqrt(3.0))
     np.testing.assert_allclose(io["action_per_input_gain"]["mean"], np.sqrt(2.0) / np.sqrt(3.0))
+
+
+def test_perturbation_bank_summary_reports_ratio_of_means_and_signed_pairs() -> None:
+    rows = [
+        {
+            "perturbation_id": "initial_position_offset__x_pos",
+            "channel": "initial_state",
+            "family": "initial_position_offset",
+            "axis": "x",
+            "sign": 1,
+            "amplitude": 0.5,
+            "timing": {"time_index": 0},
+            "status": "evaluated",
+            "metrics": {
+                "delta_action_norm": {"mean": 6.0},
+                "delta_endpoint_error_m": {"mean": 4.0},
+                "controller_io_response": {
+                    "status": "available",
+                    "delta_input_norm": {"mean": 3.0},
+                    "action_per_input_gain": {"mean": 2.0},
+                },
+                "extra_full_qrf_cost": {
+                    "delta_cost": {
+                        "total": {"mean": 8.0},
+                    },
+                },
+            },
+            "extlqg_comparator": {
+                "status": "available",
+                "reference_response_metrics": {
+                    "delta_action_norm": {"mean": 2.0},
+                    "delta_endpoint_error_m": {"mean": 1.0},
+                    "controller_io_response": {
+                        "status": "not_available",
+                    },
+                    "extra_full_qrf_cost": {
+                        "delta_cost": {
+                            "total": {"mean": 0.5},
+                        },
+                    },
+                },
+            },
+        },
+        {
+            "perturbation_id": "initial_position_offset__x_neg",
+            "channel": "initial_state",
+            "family": "initial_position_offset",
+            "axis": "x",
+            "sign": -1,
+            "amplitude": 0.5,
+            "timing": {"time_index": 0},
+            "status": "evaluated",
+            "metrics": {
+                "delta_action_norm": {"mean": 2.0},
+                "delta_endpoint_error_m": {"mean": 2.0},
+                "controller_io_response": {
+                    "status": "available",
+                    "delta_input_norm": {"mean": 1.0},
+                    "action_per_input_gain": {"mean": 1.0},
+                },
+                "extra_full_qrf_cost": {
+                    "delta_cost": {
+                        "total": {"mean": 4.0},
+                    },
+                },
+            },
+            "extlqg_comparator": {
+                "status": "available",
+                "reference_response_metrics": {
+                    "delta_action_norm": {"mean": 2.0},
+                    "delta_endpoint_error_m": {"mean": 1.0},
+                    "extra_full_qrf_cost": {
+                        "delta_cost": {
+                            "total": {"mean": 0.25},
+                        },
+                    },
+                },
+            },
+        },
+    ]
+
+    summary = summarize_perturbation_bank(rows)
+
+    assert summary["status"] == "available"
+    ratio = summary["ratio_of_means"]["initial_state/initial_position_offset"]["metrics"]
+    assert ratio["delta_action_norm"]["ratio_of_means"] == 2.0
+    assert ratio["extra_full_qrf_cost.delta_cost.total"]["inflated_ratio"] is True
+    assert ratio["extra_full_qrf_cost.delta_cost.total"]["raw_numerator_values"] == [8.0, 4.0]
+    assert ratio["extra_full_qrf_cost.delta_cost.total"]["raw_denominator_values"] == [0.5, 0.25]
+    signed = summary["signed_pair_response"]
+    assert signed["status"] == "available"
+    assert signed["n_pairs"] == 1
+    endpoint = signed["pairs"][0]["metrics"]["delta_endpoint_error_m"]
+    assert endpoint["odd_response"] == 1.0
+    assert endpoint["even_nonlinear_residual"] == 3.0
+    assert endpoint["curvature_like_symmetric_response"] == 12.0
+    assert summary["controller_io_response"]["status"] == "available"
+    assert summary["controller_io_response"]["delta_input_norm"]["mean"] == 2.0
 
 
 def test_extlqg_comparator_status_defers_target_stream_for_fixed_target_rows() -> None:

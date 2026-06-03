@@ -14,6 +14,7 @@ from rlrmp.analysis.objective_comparator import (
     ExtLQGCostDecomposition,
     SharedRolloutBank,
     build_objective_comparator_sidecar,
+    extlqg_x0_only_sanity_check,
     load_run_objective_metadata,
     materialize_gru_objective_comparator_sidecar,
     render_objective_comparator_markdown,
@@ -84,6 +85,7 @@ def test_build_objective_comparator_sidecar_uses_deterministic_comparator_lens()
     shared_rollout = {
         "status": "available",
         "lens": "shared_rollout_full_qrf",
+        "interpretation": "stress_test_only",
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
         "bank": {
             "bank_id": "unit-bank",
@@ -98,6 +100,37 @@ def test_build_objective_comparator_sidecar_uses_deterministic_comparator_lens()
                 "status": "available",
                 "gru_vs_extlqg": {"terms": {"total": {"ratio_to_extlqg": 1.25}}},
             }
+        },
+        "standard_split_bank_comparator": {
+            "status": "available",
+            "lens": "standard_split_rollout_bank_full_qrf",
+            "selection_role": "audit_only_not_used_for_checkpoint_selection",
+            "lenses": {
+                "deterministic_nominal": {"status": "available"},
+                "x0_only": {"status": "available"},
+                "epsilon_only": {"status": "available"},
+                "x0_plus_epsilon": {
+                    "status": "available",
+                    "interpretation": "stress_test_only",
+                },
+            },
+            "extlqg_x0_only_sanity_check": {
+                "status": "pass",
+                "expected_cost_wording_allowed": True,
+            },
+            "runs": {
+                "run_a": {
+                    "status": "available",
+                    "lenses": {
+                        "x0_only": {
+                            "status": "available",
+                            "gru_vs_extlqg": {
+                                "terms": {"total": {"ratio_to_extlqg": 1.1}}
+                            },
+                        },
+                    },
+                },
+            },
         },
     }
     sidecar = build_objective_comparator_sidecar(
@@ -139,7 +172,22 @@ def test_build_objective_comparator_sidecar_uses_deterministic_comparator_lens()
     assert first_row["extlqg_comparable_lens"] == "extlqg_deterministic_initial_state_full_qrf"
     assert first_row["per_term_realized_scoring"]["status"] == "not_implemented"
     assert sidecar["shared_rollout_comparator"]["status"] == "available"
+    assert sidecar["shared_rollout_comparator"]["interpretation"] == "stress_test_only"
+    assert sidecar["standard_split_bank_comparator"]["status"] == "available"
+    assert (
+        sidecar["standard_split_bank_comparator"]["lenses"]["x0_plus_epsilon"][
+            "interpretation"
+        ]
+        == "stress_test_only"
+    )
+    assert (
+        sidecar["standard_split_bank_comparator"]["extlqg_x0_only_sanity_check"][
+            "expected_cost_wording_allowed"
+        ]
+        is True
+    )
     assert first_row["shared_rollout_comparator"]["status"] == "available"
+    assert first_row["standard_split_bank_comparator"]["status"] == "available"
     assert sidecar["rows"][1]["shared_rollout_comparator"]["status"] == "not_available"
 
 
@@ -187,6 +235,31 @@ def test_shared_full_qrf_cost_summary_decomposes_zero_rollout() -> None:
     assert total == term_sum
     assert summary["command_control"]["mean"] == 0.0
     assert summary["total"]["shape"] == [2]
+
+
+def test_extlqg_x0_only_sanity_check_reports_pass_and_warning() -> None:
+    extlqg = ExtLQGCostDecomposition(
+        deterministic_initial_state=10.0,
+        initial_covariance_trace=2.0,
+        accumulated_noise_scalar=7.0,
+        provenance="unit-test",
+    )
+    passing = extlqg_x0_only_sanity_check(
+        x0_only_cost={"total": {"mean": 12.1}},
+        extlqg=extlqg,
+        relative_tolerance=0.02,
+    )
+    warning = extlqg_x0_only_sanity_check(
+        x0_only_cost={"total": {"mean": 15.0}},
+        extlqg=extlqg,
+        relative_tolerance=0.02,
+    )
+
+    assert passing["status"] == "pass"
+    assert passing["expected_deterministic_plus_initial_covariance_trace"] == 12.0
+    assert passing["expected_cost_wording_allowed"] is True
+    assert warning["status"] == "warning"
+    assert warning["expected_cost_wording_allowed"] is False
 
 
 def test_build_objective_comparator_sidecar_marks_partial_rows_not_comparable() -> None:

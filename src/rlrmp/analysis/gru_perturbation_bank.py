@@ -631,6 +631,12 @@ def evaluate_run_perturbation_bank(
                 {
                     "perturbation_id": perturbation["perturbation_id"],
                     "channel": perturbation["channel"],
+                    "family": perturbation.get("family"),
+                    "axis": perturbation.get("axis"),
+                    "sign": perturbation.get("sign"),
+                    "amplitude": perturbation.get("amplitude"),
+                    "timing": perturbation.get("timing"),
+                    "perturbation": dict(perturbation),
                     "status": adapter.status,
                     "reason": adapter.reason,
                     "adapter": adapter.to_json(),
@@ -676,6 +682,12 @@ def evaluate_run_perturbation_bank(
             {
                 "perturbation_id": perturbation["perturbation_id"],
                 "channel": perturbation["channel"],
+                "family": perturbation.get("family"),
+                "axis": perturbation.get("axis"),
+                "sign": perturbation.get("sign"),
+                "amplitude": perturbation.get("amplitude"),
+                "timing": perturbation.get("timing"),
+                "perturbation": dict(perturbation),
                 "status": "evaluated",
                 "adapter": adapter.to_json(),
                 "metrics": metrics,
@@ -711,6 +723,7 @@ def evaluate_run_perturbation_bank(
         "n_time_steps": int(base_evaluation.command.shape[2]),
         "dt_s": float(base_evaluation.dt),
         "status_counts": _status_counts(rows),
+        "robust_response_summary": summarize_perturbation_bank(rows),
         "perturbations": rows,
         "bulk_files": bulk_files,
     }
@@ -1003,6 +1016,28 @@ def compare_response_metric_summaries(
     return comparisons
 
 
+def summarize_perturbation_bank(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Aggregate evaluated perturbation rows into robust bank-level diagnostics."""
+
+    evaluated = [row for row in rows if row.get("status") == "evaluated"]
+    return {
+        "status": "available" if evaluated else "not_available",
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "ratio_of_means": _ratio_of_means_by_group(evaluated),
+        "signed_pair_response": _signed_pair_response_summary(evaluated),
+        "controller_io_response": _controller_io_bank_summary(evaluated),
+        "denominator_guard": {
+            "epsilon": 1e-12,
+            "inflated_ratio_threshold": 10.0,
+            "policy": (
+                "Ratios whose denominator is at or below epsilon are suppressed; "
+                "ratios above the inflated threshold retain raw numerator and "
+                "denominator means."
+            ),
+        },
+    }
+
+
 def render_perturbation_response_markdown(manifest: Mapping[str, Any]) -> str:
     """Render a compact Markdown summary for tracked notes."""
 
@@ -1036,6 +1071,7 @@ def render_perturbation_response_markdown(manifest: Mapping[str, Any]) -> str:
         lines.append("No checkpoint rollouts were evaluated in this materialization.")
     for run_id, run in manifest["runs"].items():
         counts = run["status_counts"]
+        robust_summary = run.get("robust_response_summary", {})
         lines.extend(
             [
                 f"### `{run_id}`",
@@ -1045,6 +1081,7 @@ def render_perturbation_response_markdown(manifest: Mapping[str, Any]) -> str:
                 f"- Not implemented: {counts.get('not_implemented', 0)}",
                 f"- Not applicable: {counts.get('not_applicable', 0)}",
                 f"- Rollout trials per replicate: {run['n_rollout_trials_per_replicate']}",
+                f"- Robust summaries: {robust_summary.get('status', 'not_available')}",
                 "",
             ]
         )
@@ -1683,6 +1720,265 @@ def _cost_summary_public(summary: Mapping[str, Any]) -> dict[str, Any]:
     return result
 
 
+_ROBUST_RATIO_METRICS = (
+    "delta_action_norm",
+    "delta_position_trajectory_norm_m",
+    "delta_velocity_trajectory_norm_m_s",
+    "delta_endpoint_error_m",
+    "delta_terminal_speed_m_s",
+    "controller_io_response.delta_input_norm",
+    "controller_io_response.action_per_input_gain",
+    "extra_full_qrf_cost.delta_cost.total",
+)
+
+_SIGNED_PAIR_METRICS = (
+    "delta_endpoint_error_m",
+    "delta_terminal_speed_m_s",
+    "extra_full_qrf_cost.delta_cost.total",
+    "controller_io_response.delta_input_norm",
+    "controller_io_response.action_per_input_gain",
+)
+
+
+def _ratio_of_means_by_group(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = {}
+    for row in rows:
+        grouped.setdefault((str(row["channel"]), str(_row_family(row))), []).append(row)
+    return {
+        f"{channel}/{family}": _ratio_group_summary(group_rows)
+        for (channel, family), group_rows in sorted(grouped.items())
+    }
+
+
+def _ratio_group_summary(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    summary: dict[str, Any] = {
+        "n_rows": len(rows),
+        "metrics": {},
+    }
+    for metric in _ROBUST_RATIO_METRICS:
+        numerators = [
+            value
+            for row in rows
+            if (value := _metric_mean(row.get("metrics", {}), metric)) is not None
+        ]
+        denominators = [
+            value
+            for row in rows
+            if (
+                value := _metric_mean(
+                    row.get("extlqg_comparator", {}).get("reference_response_metrics", {}),
+                    metric,
+                )
+            )
+            is not None
+        ]
+        summary["metrics"][metric] = _ratio_of_means(numerators, denominators)
+    return summary
+
+
+def _ratio_of_means(
+    numerators: Sequence[float],
+    denominators: Sequence[float],
+    *,
+    denominator_epsilon: float = 1e-12,
+    inflated_threshold: float = 10.0,
+) -> dict[str, Any]:
+    if not numerators or not denominators:
+        return {
+            "status": "not_available",
+            "n_numerator": len(numerators),
+            "n_denominator": len(denominators),
+        }
+    numerator_mean = float(np.mean(np.asarray(numerators, dtype=np.float64)))
+    denominator_mean = float(np.mean(np.asarray(denominators, dtype=np.float64)))
+    if abs(denominator_mean) <= denominator_epsilon:
+        return {
+            "status": "denominator_guarded",
+            "numerator_mean": numerator_mean,
+            "denominator_mean": denominator_mean,
+            "ratio_of_means": None,
+            "denominator_epsilon": denominator_epsilon,
+        }
+    ratio = numerator_mean / denominator_mean
+    payload = {
+        "status": "available",
+        "numerator_mean": numerator_mean,
+        "denominator_mean": denominator_mean,
+        "ratio_of_means": float(ratio),
+        "n_numerator": len(numerators),
+        "n_denominator": len(denominators),
+    }
+    if abs(ratio) >= inflated_threshold:
+        payload["inflated_ratio"] = True
+        payload["inflated_ratio_threshold"] = inflated_threshold
+        payload["raw_numerator_values"] = [float(value) for value in numerators]
+        payload["raw_denominator_values"] = [float(value) for value in denominators]
+    return payload
+
+
+def _signed_pair_response_summary(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    pairs = _signed_pairs(rows)
+    if not pairs:
+        return {
+            "status": "not_available",
+            "reason": "no evaluated +/- signed perturbation pairs were available",
+        }
+    pair_summaries = []
+    aggregate_by_metric: dict[str, dict[str, list[float]]] = {
+        metric: {
+            "odd_response": [],
+            "even_nonlinear_residual": [],
+            "curvature_like_symmetric_response": [],
+        }
+        for metric in _SIGNED_PAIR_METRICS
+    }
+    for key, pair in pairs.items():
+        pair_metrics: dict[str, Any] = {}
+        amplitude = _pair_amplitude(pair)
+        for metric in _SIGNED_PAIR_METRICS:
+            positive = _metric_mean(pair[1].get("metrics", {}), metric)
+            negative = _metric_mean(pair[-1].get("metrics", {}), metric)
+            if positive is None or negative is None:
+                pair_metrics[metric] = {
+                    "status": "not_available",
+                    "positive_mean": positive,
+                    "negative_mean": negative,
+                }
+                continue
+            odd = 0.5 * (positive - negative)
+            even = 0.5 * (positive + negative)
+            curvature = even / max(amplitude * amplitude, 1e-12)
+            pair_metrics[metric] = {
+                "status": "available",
+                "positive_mean": float(positive),
+                "negative_mean": float(negative),
+                "odd_response": float(odd),
+                "even_nonlinear_residual": float(even),
+                "curvature_like_symmetric_response": float(curvature),
+                "amplitude": float(amplitude),
+            }
+            aggregate_by_metric[metric]["odd_response"].append(float(odd))
+            aggregate_by_metric[metric]["even_nonlinear_residual"].append(float(even))
+            aggregate_by_metric[metric]["curvature_like_symmetric_response"].append(
+                float(curvature)
+            )
+        pair_summaries.append(
+            {
+                "pair_key": {
+                    "channel": key[0],
+                    "family": key[1],
+                    "axis": key[2],
+                    "timing": key[3],
+                },
+                "positive_perturbation_id": pair[1]["perturbation_id"],
+                "negative_perturbation_id": pair[-1]["perturbation_id"],
+                "metrics": pair_metrics,
+            }
+        )
+    return {
+        "status": "available",
+        "n_pairs": len(pair_summaries),
+        "pairing_rule": "channel/family/axis/timing/amplitude +/- pairs",
+        "pairs": pair_summaries,
+        "aggregate": {
+            metric: {
+                key: _summary_stats(values)
+                for key, values in metric_values.items()
+                if values
+            }
+            for metric, metric_values in aggregate_by_metric.items()
+        },
+    }
+
+
+def _controller_io_bank_summary(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    available = [
+        row
+        for row in rows
+        if row.get("metrics", {}).get("controller_io_response", {}).get("status") == "available"
+    ]
+    if not available:
+        return {
+            "status": "not_available",
+            "reason": "no evaluated rows carried controller I/O response metrics",
+        }
+    return {
+        "status": "available",
+        "n_rows": len(available),
+        "delta_input_norm": _summary_stats(
+            _available_metric_means(
+                available,
+                "controller_io_response.delta_input_norm",
+            )
+        ),
+        "action_per_input_gain": _summary_stats(
+            _available_metric_means(
+                available,
+                "controller_io_response.action_per_input_gain",
+            )
+        ),
+    }
+
+
+def _available_metric_means(rows: Sequence[Mapping[str, Any]], metric: str) -> list[float]:
+    return [
+        value
+        for row in rows
+        if (value := _metric_mean(row.get("metrics", {}), metric)) is not None
+    ]
+
+
+def _signed_pairs(
+    rows: Sequence[Mapping[str, Any]],
+) -> dict[tuple[str, str, str, str, float], dict[int, Mapping[str, Any]]]:
+    pairs: dict[tuple[str, str, str, str, float], dict[int, Mapping[str, Any]]] = {}
+    for row in rows:
+        sign = _row_sign(row)
+        if sign not in {-1, 1}:
+            continue
+        key = (
+            str(row["channel"]),
+            str(_row_family(row)),
+            str(_row_axis(row)),
+            json.dumps(_row_timing(row), sort_keys=True),
+            float(_row_amplitude(row)),
+        )
+        pairs.setdefault(key, {})[sign] = row
+    return {key: pair for key, pair in pairs.items() if -1 in pair and 1 in pair}
+
+
+def _pair_amplitude(pair: Mapping[int, Mapping[str, Any]]) -> float:
+    return max(abs(_row_amplitude(pair[1])), abs(_row_amplitude(pair[-1])), 1e-12)
+
+
+def _row_family(row: Mapping[str, Any]) -> str:
+    return str(row.get("family") or _row_spec(row).get("family") or "unknown")
+
+
+def _row_axis(row: Mapping[str, Any]) -> str:
+    return str(row.get("axis") or _row_spec(row).get("axis") or "unknown")
+
+
+def _row_sign(row: Mapping[str, Any]) -> int | None:
+    value = row.get("sign", _row_spec(row).get("sign"))
+    return None if value is None else int(value)
+
+
+def _row_amplitude(row: Mapping[str, Any]) -> float:
+    value = row.get("amplitude", _row_spec(row).get("amplitude", 1.0))
+    return float(value)
+
+
+def _row_timing(row: Mapping[str, Any]) -> Mapping[str, Any]:
+    timing = row.get("timing", _row_spec(row).get("timing", {}))
+    return timing if isinstance(timing, Mapping) else {}
+
+
+def _row_spec(row: Mapping[str, Any]) -> Mapping[str, Any]:
+    spec = row.get("perturbation")
+    return spec if isinstance(spec, Mapping) else row
+
+
 def _metric_mean(metrics: Mapping[str, Any], dotted_key: str) -> float | None:
     """Read a nested metric summary mean using dot-separated keys."""
 
@@ -1842,6 +2138,7 @@ __all__ = [
     "materialize_gru_perturbation_response",
     "render_perturbation_response_markdown",
     "score_full_qrf_rollout_cost",
+    "summarize_perturbation_bank",
     "summarize_perturbation_response",
     "write_default_bank",
 ]

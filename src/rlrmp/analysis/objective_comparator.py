@@ -16,7 +16,7 @@ import numpy as np
 from rlrmp.paths import REPO_ROOT
 
 
-SCHEMA_VERSION = "rlrmp.objective_comparator_sidecar.v4"
+SCHEMA_VERSION = "rlrmp.objective_comparator_sidecar.v5"
 FULL_ANALYTICAL_QRF_OBJECTIVE = "full_analytical_qrf"
 FULL_QRF_TERM_NAMES = (
     "running_state_q",
@@ -56,6 +56,34 @@ DEFAULT_SHARED_ROLLOUT_STATUS = {
     "lens": "shared_rollout_full_qrf",
     "reason": "shared-rollout comparator was not supplied to the sidecar builder",
     "selection_role": "audit_only_not_used_for_checkpoint_selection",
+}
+DEFAULT_SPLIT_BANK_STATUS = {
+    "status": "not_available",
+    "lens": "standard_split_rollout_bank_full_qrf",
+    "reason": "standard split-bank comparator was not supplied to the sidecar builder",
+    "selection_role": "audit_only_not_used_for_checkpoint_selection",
+    "lenses": {
+        "deterministic_nominal": {
+            "status": "not_available",
+            "shared_initial_state": False,
+            "shared_process_load_epsilon": False,
+        },
+        "x0_only": {
+            "status": "not_available",
+            "shared_initial_state": True,
+            "shared_process_load_epsilon": False,
+        },
+        "epsilon_only": {
+            "status": "not_available",
+            "shared_initial_state": False,
+            "shared_process_load_epsilon": True,
+        },
+        "x0_plus_epsilon": {
+            "status": "not_available",
+            "shared_initial_state": True,
+            "shared_process_load_epsilon": True,
+        },
+    },
 }
 
 
@@ -212,6 +240,7 @@ def build_objective_comparator_sidecar(
     run_metadata_by_id: Mapping[str, Mapping[str, Any]] | None = None,
     per_term_realized_scoring: Mapping[str, Any] | None = None,
     shared_rollout_comparator: Mapping[str, Any] | None = None,
+    split_bank_comparator: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a JSON sidecar from validation-selected checkpoint records."""
 
@@ -221,6 +250,7 @@ def build_objective_comparator_sidecar(
 
     metadata_by_id = run_metadata_by_id or {}
     shared_rollout = dict(shared_rollout_comparator or DEFAULT_SHARED_ROLLOUT_STATUS)
+    split_bank = dict(split_bank_comparator or _split_bank_from_shared_rollout(shared_rollout))
     sidecar_rows = [
         _build_run_row(
             run_id=str(run_id),
@@ -228,6 +258,7 @@ def build_objective_comparator_sidecar(
             extlqg=extlqg,
             run_metadata=metadata_by_id.get(str(run_id)),
             shared_rollout_run=_shared_rollout_run(shared_rollout, str(run_id)),
+            split_bank_run=_split_bank_run(split_bank, str(run_id)),
         )
         for run_id, selections in sorted(runs.items())
     ]
@@ -291,6 +322,19 @@ def build_objective_comparator_sidecar(
                     "same sampled initial-state/process-epsilon bank, then scored by "
                     "the same full-Q/R/Q_f cost and per-term decomposition"
                 ),
+                "interpretation": (
+                    "stress-test-only unless the extLQG x0-only sanity check passes; "
+                    "the split-bank block separates deterministic, x0-only, "
+                    "epsilon-only, and x0+epsilon lenses"
+                ),
+            },
+            "standard_split_rollout_bank_full_qrf": {
+                "kind": "realized_shared_rollout_split_bank",
+                "definition": (
+                    "audit-only deterministic nominal, x0-only, epsilon-only, and "
+                    "x0+epsilon realized full-QRF rescoring on standardized banks"
+                ),
+                "checkpoint_selection_role": "audit_only_not_used_for_checkpoint_selection",
             },
         },
         "extlqg_decomposition": extlqg.to_json(),
@@ -299,6 +343,7 @@ def build_objective_comparator_sidecar(
         ),
         "per_term_realized_scoring": dict(per_term_realized_scoring or DEFAULT_PER_TERM_STATUS),
         "shared_rollout_comparator": shared_rollout,
+        "standard_split_bank_comparator": split_bank,
         "rows": sidecar_rows,
         "caveats": [
             (
@@ -311,8 +356,12 @@ def build_objective_comparator_sidecar(
             "This sidecar is diagnostic only and is not a standard-certificate gate.",
             (
                 "GRU values are validation-selected realized full-QRF scalars; "
-                "the shared-rollout block is an audit-only post-hoc rescore and "
-                "is not used for checkpoint selection."
+                "the shared-rollout and split-bank blocks are audit-only post-hoc "
+                "rescores and are not used for checkpoint selection."
+            ),
+            (
+                "The x0+epsilon shared-rollout block is stress-test-only unless "
+                "the extLQG x0-only sanity check supports expected-cost wording."
             ),
         ],
     }
@@ -449,25 +498,20 @@ def materialize_shared_rollout_comparator(
         config=config,
     )
     zero_draws = zero_forward_noise_draws(T=schedule.T, plant=plant, config=config)
-    ext_states = []
-    ext_commands = []
-    for initial_state, epsilon in zip(bank.initial_states, bank.process_epsilon, strict=True):
-        rollout = simulate_lqg_released_forward(
-            plant,
-            extlqg_path.controller_gains,
-            jnp.asarray(initial_state, dtype=jnp.float64),
-            draws=zero_draws,
-            covariances=covariances,
-            estimator_gains=extlqg_path.estimator_gains,
-            adversary_epsilon=jnp.asarray(epsilon, dtype=jnp.float64),
-            config=config,
-        )
-        ext_states.append(np.asarray(rollout.x[1:], dtype=np.float64))
-        ext_commands.append(np.asarray(rollout.u_command, dtype=np.float64))
-    extlqg_cost = shared_full_qrf_cost_summary(
-        states=np.stack(ext_states, axis=0),
-        commands=np.stack(ext_commands, axis=0),
-        initial_states=bank.initial_states,
+    extlqg_cost_by_lens = _extlqg_split_bank_costs(
+        bank=bank,
+        extlqg_path=extlqg_path,
+        plant=plant,
+        schedule=schedule,
+        config=config,
+        covariances=covariances,
+        zero_draws=zero_draws,
+    )
+    extlqg_cost = extlqg_cost_by_lens["x0_plus_epsilon"]
+    extlqg_decomposition = compute_default_extlqg_cost_decomposition()
+    x0_sanity = extlqg_x0_only_sanity_check(
+        x0_only_cost=extlqg_cost_by_lens["x0_only"],
+        extlqg=extlqg_decomposition,
     )
 
     runs = resolve_run_inputs(experiment=experiment, run_ids=run_ids, labels=None, repo_root=repo_root)
@@ -482,22 +526,16 @@ def materialize_shared_rollout_comparator(
             run_spec=run.run_spec,
             repo_root=repo_root,
         )
-        trial_specs = _trial_specs_with_shared_bank(
-            repeat_single_validation_trial(pair.task.validation_trials, bank.n_trials),
-            bank,
-        )
-        states = _evaluate_replicate_model_states(
+        base_trial_specs = repeat_single_validation_trial(pair.task.validation_trials, bank.n_trials)
+        gru_cost_by_lens = _gru_split_bank_costs(
             model=model,
             task=pair.task,
-            trial_specs=trial_specs,
+            base_trial_specs=base_trial_specs,
+            bank=bank,
             n_replicates=n_replicates,
             seed=seed,
         )
-        gru_cost = shared_full_qrf_cost_summary(
-            states=np.asarray(states.mechanics.vector, dtype=np.float64),
-            commands=np.asarray(states.net.output, dtype=np.float64),
-            initial_states=bank.initial_states,
-        )
+        gru_cost = gru_cost_by_lens["x0_plus_epsilon"]
         run_results[run.run_id] = {
             "status": "available",
             "checkpoint_policy": "validation_selected_per_replicate",
@@ -509,10 +547,24 @@ def materialize_shared_rollout_comparator(
             "gru_cost": _public_cost_summary(gru_cost),
             "extlqg_cost": _public_cost_summary(extlqg_cost),
             "gru_vs_extlqg": _cost_comparison(gru_cost, extlqg_cost),
+            "standard_split_bank": {
+                lens: {
+                    "status": "available",
+                    "selection_role": "audit_only_not_used_for_checkpoint_selection",
+                    "gru_cost": _public_cost_summary(gru_cost_by_lens[lens]),
+                    "extlqg_cost": _public_cost_summary(extlqg_cost_by_lens[lens]),
+                    "gru_vs_extlqg": _cost_comparison(
+                        gru_cost_by_lens[lens],
+                        extlqg_cost_by_lens[lens],
+                    ),
+                }
+                for lens in _STANDARD_SPLIT_BANK_LENSES
+            },
         }
     return {
         "status": "available",
         "lens": "shared_rollout_full_qrf",
+        "interpretation": "stress_test_only",
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
         "bank": bank.to_json(),
         "extlqg": {
@@ -521,6 +573,11 @@ def materialize_shared_rollout_comparator(
             "n_iterations": int(extlqg_path.n_iterations),
             "expected_cost": extlqg_path.expected_cost,
             "cost": _public_cost_summary(extlqg_cost),
+            "standard_split_bank": {
+                lens: _public_cost_summary(cost)
+                for lens, cost in extlqg_cost_by_lens.items()
+            },
+            "x0_only_sanity_check": x0_sanity,
         },
         "noise_comparability": {
             "shared_channels": ["initial_state", "process_load_epsilon"],
@@ -531,7 +588,56 @@ def materialize_shared_rollout_comparator(
             ),
         },
         "runs": run_results,
+        "standard_split_bank_comparator": _standard_split_bank_public(
+            bank=bank,
+            extlqg_path=extlqg_path,
+            extlqg_cost_by_lens=extlqg_cost_by_lens,
+            x0_sanity=x0_sanity,
+            run_results=run_results,
+        ),
         "source_checkpoint_manifest_schema": checkpoint_manifest.get("schema_version"),
+    }
+
+
+_STANDARD_SPLIT_BANK_LENSES = (
+    "deterministic_nominal",
+    "x0_only",
+    "epsilon_only",
+    "x0_plus_epsilon",
+)
+
+
+def extlqg_x0_only_sanity_check(
+    *,
+    x0_only_cost: Mapping[str, Any],
+    extlqg: ExtLQGCostDecomposition,
+    relative_tolerance: float = 0.05,
+) -> dict[str, Any]:
+    """Compare realized extLQG x0-only cost with deterministic+trace expectation."""
+
+    observed = _summary_mean(x0_only_cost, "total")
+    expected = extlqg.deterministic_initial_state + extlqg.initial_covariance_trace
+    if observed is None:
+        return {
+            "status": "blocked",
+            "reason": "x0-only total cost mean is unavailable",
+            "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        }
+    absolute_delta = float(observed - expected)
+    relative_delta = abs(absolute_delta) / max(abs(expected), 1e-12)
+    status = "pass" if relative_delta <= relative_tolerance else "warning"
+    return {
+        "status": status,
+        "lens": "extlqg_x0_only_realized_vs_expected_trace",
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "realized_x0_only_cost_mean": float(observed),
+        "expected_deterministic_plus_initial_covariance_trace": float(expected),
+        "deterministic_initial_state": float(extlqg.deterministic_initial_state),
+        "initial_covariance_trace": float(extlqg.initial_covariance_trace),
+        "absolute_delta": absolute_delta,
+        "relative_delta": float(relative_delta),
+        "relative_tolerance": float(relative_tolerance),
+        "expected_cost_wording_allowed": status == "pass",
     }
 
 
@@ -543,6 +649,8 @@ def render_objective_comparator_markdown(sidecar: Mapping[str, Any]) -> str:
     same_noise = _expect_mapping(sidecar["same_noise_bank_monte_carlo"])
     per_term = _expect_mapping(sidecar["per_term_realized_scoring"])
     shared_rollout = _expect_mapping(sidecar.get("shared_rollout_comparator", {}))
+    split_bank = _expect_mapping(sidecar.get("standard_split_bank_comparator", {}))
+    sanity = _expect_mapping(split_bank.get("extlqg_x0_only_sanity_check", {}))
     lines = [
         "# Full-QRF objective comparator sidecar",
         "",
@@ -583,6 +691,11 @@ def render_objective_comparator_markdown(sidecar: Mapping[str, Any]) -> str:
             f"{shared_rollout.get('status', 'not_available')} | shared initial-state and "
             "process/load epsilon bank; sensory/command noise limits declared |"
         ),
+        (
+            "| standard split-bank comparator | "
+            f"{split_bank.get('status', 'not_available')} | deterministic nominal, "
+            "x0-only, epsilon-only, and x0+epsilon audit-only lenses |"
+        ),
         "",
         "## extLQG decomposition",
         "",
@@ -605,6 +718,11 @@ def render_objective_comparator_markdown(sidecar: Mapping[str, Any]) -> str:
             "| total expected cost | "
             f"{_fmt(decomposition['total_expected_cost'])} | not directly comparable to GRU "
             "validation values |"
+        ),
+        (
+            "| x0-only realized sanity | "
+            f"{sanity.get('status', 'not_available')} | realized extLQG x0-only cost "
+            "vs deterministic + initial-covariance-trace expectation |"
         ),
         "",
         "## GRU comparison",
@@ -638,6 +756,11 @@ def render_objective_comparator_markdown(sidecar: Mapping[str, Any]) -> str:
             (
                 "- `selected/total` is retained only as a labeled non-apples-to-apples "
                 "diagnostic for continuity with the provisional sidecar."
+            ),
+            (
+                "- The partial x0+epsilon shared-rollout comparator is stress-test-only; "
+                "expected-cost wording is allowed only when the extLQG x0-only sanity "
+                f"check passes. Current status: `{sanity.get('status', 'not_available')}`."
             ),
         ]
     )
@@ -834,6 +957,7 @@ def _build_run_row(
     extlqg: ExtLQGCostDecomposition,
     run_metadata: Mapping[str, Any] | None = None,
     shared_rollout_run: Mapping[str, Any] | None = None,
+    split_bank_run: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     selected = [_float_from_selection(item, "scoring_validation_objective") for item in selections]
     best_logged = [
@@ -872,6 +996,13 @@ def _build_run_row(
             or {
                 "status": "not_available",
                 "reason": "shared-rollout comparator has no row for this run",
+            }
+        ),
+        "standard_split_bank_comparator": dict(
+            split_bank_run
+            or {
+                "status": "not_available",
+                "reason": "standard split-bank comparator has no row for this run",
             }
         ),
         "selected_checkpoints": list(selections),
@@ -996,6 +1127,24 @@ def _shared_rollout_run(
     return _expect_mapping(run) if isinstance(run, Mapping) else None
 
 
+def _split_bank_run(
+    split_bank: Mapping[str, Any],
+    run_id: str,
+) -> Mapping[str, Any] | None:
+    runs = split_bank.get("runs")
+    if not isinstance(runs, Mapping):
+        return None
+    run = runs.get(run_id)
+    return _expect_mapping(run) if isinstance(run, Mapping) else None
+
+
+def _split_bank_from_shared_rollout(shared_rollout: Mapping[str, Any]) -> dict[str, Any]:
+    split_bank = shared_rollout.get("standard_split_bank_comparator")
+    if isinstance(split_bank, Mapping):
+        return dict(split_bank)
+    return dict(DEFAULT_SPLIT_BANK_STATUS)
+
+
 def _same_noise_status_from_shared_rollout(shared_rollout: Mapping[str, Any]) -> dict[str, Any]:
     if shared_rollout.get("status") != "available":
         return dict(DEFAULT_MONTE_CARLO_STATUS)
@@ -1010,8 +1159,183 @@ def _same_noise_status_from_shared_rollout(shared_rollout: Mapping[str, Any]) ->
         "shared_channels": ["initial_state", "process_load_epsilon"],
         "not_shared_channels": ["sensory_noise", "command_or_motor_noise"],
         "replacement_block": "shared_rollout_comparator",
+        "interpretation": "stress_test_only_partial_x0_plus_epsilon",
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
     }
+
+
+def _extlqg_split_bank_costs(
+    *,
+    bank: SharedRolloutBank,
+    extlqg_path: Any,
+    plant: Any,
+    schedule: Any,
+    config: Any,
+    covariances: Any,
+    zero_draws: Any,
+) -> dict[str, dict[str, Any]]:
+    """Evaluate extLQG costs for the standard split-bank rollout lenses."""
+
+    from rlrmp.analysis.cs_released_simulation import (
+        _default_output_feedback_initial_state,
+        simulate_lqg_released_forward,
+    )
+
+    default_initial = np.asarray(
+        _default_output_feedback_initial_state(plant, config),
+        dtype=np.float64,
+    )
+    zero_epsilon = np.zeros_like(bank.process_epsilon)
+    initial_by_lens = {
+        "deterministic_nominal": np.broadcast_to(default_initial, bank.initial_states.shape),
+        "x0_only": bank.initial_states,
+        "epsilon_only": np.broadcast_to(default_initial, bank.initial_states.shape),
+        "x0_plus_epsilon": bank.initial_states,
+    }
+    epsilon_by_lens = {
+        "deterministic_nominal": zero_epsilon,
+        "x0_only": zero_epsilon,
+        "epsilon_only": bank.process_epsilon,
+        "x0_plus_epsilon": bank.process_epsilon,
+    }
+    costs: dict[str, dict[str, Any]] = {}
+    for lens in _STANDARD_SPLIT_BANK_LENSES:
+        states = []
+        commands = []
+        for initial_state, epsilon in zip(
+            initial_by_lens[lens],
+            epsilon_by_lens[lens],
+            strict=True,
+        ):
+            rollout = simulate_lqg_released_forward(
+                plant,
+                extlqg_path.controller_gains,
+                jnp.asarray(initial_state, dtype=jnp.float64),
+                draws=zero_draws,
+                covariances=covariances,
+                estimator_gains=extlqg_path.estimator_gains,
+                adversary_epsilon=jnp.asarray(epsilon, dtype=jnp.float64),
+                config=config,
+            )
+            states.append(np.asarray(rollout.x[1:], dtype=np.float64))
+            commands.append(np.asarray(rollout.u_command, dtype=np.float64))
+        costs[lens] = shared_full_qrf_cost_summary(
+            states=np.stack(states, axis=0),
+            commands=np.stack(commands, axis=0),
+            initial_states=initial_by_lens[lens],
+        )
+    return costs
+
+
+def _gru_split_bank_costs(
+    *,
+    model: Any,
+    task: Any,
+    base_trial_specs: Any,
+    bank: SharedRolloutBank,
+    n_replicates: int,
+    seed: int,
+) -> dict[str, dict[str, Any]]:
+    """Evaluate GRU costs for the standard split-bank rollout lenses."""
+
+    default_initial = np.asarray(base_trial_specs.inits["mechanics.vector"], dtype=np.float64)
+    if default_initial.ndim == 1:
+        default_initial = np.broadcast_to(default_initial, bank.initial_states.shape)
+    else:
+        default_initial = np.broadcast_to(default_initial[:1], bank.initial_states.shape)
+    zero_epsilon = np.zeros_like(bank.process_epsilon)
+    initial_by_lens = {
+        "deterministic_nominal": default_initial,
+        "x0_only": bank.initial_states,
+        "epsilon_only": default_initial,
+        "x0_plus_epsilon": bank.initial_states,
+    }
+    epsilon_by_lens = {
+        "deterministic_nominal": zero_epsilon,
+        "x0_only": zero_epsilon,
+        "epsilon_only": bank.process_epsilon,
+        "x0_plus_epsilon": bank.process_epsilon,
+    }
+    costs: dict[str, dict[str, Any]] = {}
+    for lens in _STANDARD_SPLIT_BANK_LENSES:
+        lens_bank = SharedRolloutBank(
+            bank_id=f"{bank.bank_id}:{lens}",
+            seed=bank.seed,
+            initial_states=np.asarray(initial_by_lens[lens], dtype=np.float64),
+            process_epsilon=np.asarray(epsilon_by_lens[lens], dtype=np.float64),
+            initial_covariance=bank.initial_covariance,
+        )
+        trial_specs = _trial_specs_with_shared_bank(base_trial_specs, lens_bank)
+        states = _evaluate_replicate_model_states(
+            model=model,
+            task=task,
+            trial_specs=trial_specs,
+            n_replicates=n_replicates,
+            seed=seed,
+        )
+        costs[lens] = shared_full_qrf_cost_summary(
+            states=np.asarray(states.mechanics.vector, dtype=np.float64),
+            commands=np.asarray(states.net.output, dtype=np.float64),
+            initial_states=lens_bank.initial_states,
+        )
+    return costs
+
+
+def _standard_split_bank_public(
+    *,
+    bank: SharedRolloutBank,
+    extlqg_path: Any,
+    extlqg_cost_by_lens: Mapping[str, Mapping[str, Any]],
+    x0_sanity: Mapping[str, Any],
+    run_results: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Return the public split-bank comparator block."""
+
+    return {
+        "status": "available",
+        "lens": "standard_split_rollout_bank_full_qrf",
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "bank": bank.to_json(),
+        "lenses": {
+            lens: {
+                "status": "available",
+                "shared_initial_state": lens in {"x0_only", "x0_plus_epsilon"},
+                "shared_process_load_epsilon": lens in {"epsilon_only", "x0_plus_epsilon"},
+                "interpretation": (
+                    "stress_test_only"
+                    if lens == "x0_plus_epsilon"
+                    else "apples_to_apples_split_bank_sidecar"
+                ),
+            }
+            for lens in _STANDARD_SPLIT_BANK_LENSES
+        },
+        "extlqg": {
+            "status": "available",
+            "parity_status": extlqg_path.parity_status,
+            "n_iterations": int(extlqg_path.n_iterations),
+            "cost_by_lens": {
+                lens: _public_cost_summary(cost)
+                for lens, cost in extlqg_cost_by_lens.items()
+            },
+        },
+        "extlqg_x0_only_sanity_check": dict(x0_sanity),
+        "runs": {
+            run_id: {
+                "status": run.get("status"),
+                "selection_role": "audit_only_not_used_for_checkpoint_selection",
+                "lenses": dict(run.get("standard_split_bank", {})),
+            }
+            for run_id, run in run_results.items()
+        },
+    }
+
+
+def _summary_mean(summary: Mapping[str, Any], key: str) -> float | None:
+    item = summary.get(key)
+    if not isinstance(item, Mapping):
+        return None
+    value = item.get("mean")
+    return None if value is None else float(value)
 
 
 def _trial_specs_with_shared_bank(trial_specs: Any, bank: SharedRolloutBank) -> Any:
