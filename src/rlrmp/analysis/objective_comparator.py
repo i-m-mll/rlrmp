@@ -372,11 +372,29 @@ def shared_full_qrf_cost_summary(
     states: Any,
     commands: Any,
     initial_states: Any,
+    state_basis: str = "absolute_workspace",
 ) -> dict[str, Any]:
-    """Score realized full-Q/R/Q_f rollout costs with standard sidecar terms."""
+    """Score realized full-Q/R/Q_f rollout costs with standard sidecar terms.
+
+    Args:
+        states: Rollout mechanics vectors with shape ``(..., T, 48)``.
+        commands: Controller commands with shape ``(..., T, 2)``.
+        initial_states: Initial mechanics vectors broadcastable to ``(..., 48)``.
+        state_basis: Coordinate basis for ``states`` and ``initial_states``.
+            ``"absolute_workspace"`` means the x/y position channels are absolute
+            Feedbax mechanics coordinates and must be target-centered before
+            scoring. ``"target_centered"`` means analytical extLQG-style states
+            are already expressed relative to the target and must not be shifted
+            again.
+    """
 
     from rlrmp.analysis.cs_game_card import TARGET_POS, build_canonical_game
 
+    if state_basis not in {"absolute_workspace", "target_centered"}:
+        raise ValueError(
+            "state_basis must be 'absolute_workspace' or 'target_centered', "
+            f"got {state_basis!r}."
+        )
     _plant, schedule = build_canonical_game()
     state_array = np.asarray(states, dtype=np.float64)
     command_array = np.asarray(commands, dtype=np.float64)
@@ -398,8 +416,13 @@ def shared_full_qrf_cost_summary(
         raise ValueError(f"Full-Q/R/Q_f scorer expected {horizon} commands.")
     initial_array = np.broadcast_to(initial_array, (*state_array.shape[:-2], state_array.shape[-1]))
     x_pre = np.concatenate([initial_array[..., None, :], state_array[..., :-1, :]], axis=-2)
-    x_pre = _goal_centered_vectors(x_pre, target_pos=TARGET_POS)
-    x_terminal = _goal_centered_vectors(state_array[..., -1, :], target_pos=TARGET_POS)
+    if state_basis == "absolute_workspace":
+        x_pre = _goal_centered_vectors(x_pre, target_pos=TARGET_POS)
+        x_terminal = _goal_centered_vectors(state_array[..., -1, :], target_pos=TARGET_POS)
+        state_transform = "subtract TARGET_POS from each physical delay block x/y"
+    else:
+        x_terminal = np.asarray(state_array[..., -1, :], dtype=np.float64)
+        state_transform = "none; states are already target-centered"
     q = np.asarray(schedule.Q, dtype=np.float64)
     r = np.asarray(schedule.R, dtype=np.float64)
     q_f = np.asarray(schedule.Q_f, dtype=np.float64)
@@ -437,7 +460,8 @@ def shared_full_qrf_cost_summary(
         "basis": {
             "state_key": "states.mechanics.vector",
             "command_key": "states.net.output or extLQG u_command",
-            "state_transform": "subtract TARGET_POS from each physical delay block x/y",
+            "state_basis": state_basis,
+            "state_transform": state_transform,
             "schedule_source": "rlrmp.analysis.cs_game_card.build_canonical_game",
             "term_split": "coordinate masks over each 8D delay block",
         },
@@ -1223,6 +1247,7 @@ def _extlqg_split_bank_costs(
             states=np.stack(states, axis=0),
             commands=np.stack(commands, axis=0),
             initial_states=initial_by_lens[lens],
+            state_basis="target_centered",
         )
     return costs
 
@@ -1277,6 +1302,7 @@ def _gru_split_bank_costs(
             states=np.asarray(states.mechanics.vector, dtype=np.float64),
             commands=np.asarray(states.net.output, dtype=np.float64),
             initial_states=lens_bank.initial_states,
+            state_basis="absolute_workspace",
         )
     return costs
 
