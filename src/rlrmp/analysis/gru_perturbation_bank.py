@@ -29,8 +29,8 @@ from rlrmp.modules.training.part2 import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
-SCHEMA_VERSION = "rlrmp.gru_perturbation_bank.v1"
-DEFAULT_BANK_ID = "cs_standard_perturbation_response_v1"
+SCHEMA_VERSION = "rlrmp.gru_perturbation_bank.v2"
+DEFAULT_BANK_ID = "cs_standard_perturbation_response_v2"
 DEFAULT_OUTPUT_FILENAME = "gru_perturbation_response_fullqrf_validation_selected_manifest.json"
 DEFAULT_NOTE_FILENAME = "gru_perturbation_response_fullqrf_validation_selected.md"
 DEFAULT_BULK_SUBDIR = "perturbation_response/gru_fullqrf_validation_selected"
@@ -43,7 +43,8 @@ DEFAULT_RUN_IDS = (
 
 PerturbationChannel = Literal[
     "initial_state",
-    "plant_force",
+    "command_input",
+    "process_epsilon",
     "sensory_feedback",
     "delayed_observation",
     "target_stream",
@@ -66,11 +67,13 @@ class PerturbationSpec:
     timing: Mapping[str, Any]
     adapter: str
     description: str
+    epsilon_component: str | None = None
+    epsilon_index: int | None = None
 
     def to_json(self) -> dict[str, Any]:
         """Return a JSON-serializable perturbation specification."""
 
-        return {
+        row = {
             "perturbation_id": self.perturbation_id,
             "channel": self.channel,
             "family": self.family,
@@ -83,6 +86,11 @@ class PerturbationSpec:
             "adapter": self.adapter,
             "description": self.description,
         }
+        if self.epsilon_component is not None:
+            row["epsilon_component"] = self.epsilon_component
+        if self.epsilon_index is not None:
+            row["epsilon_index"] = int(self.epsilon_index)
+        return row
 
 
 @dataclass(frozen=True)
@@ -132,18 +140,30 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                         ),
                     )
                 )
-    for start in (20, 50, 80):
+    process_epsilon_components = (
+        ("position", "x", 0, "position_x"),
+        ("position", "y", 1, "position_y"),
+        ("velocity", "x", 2, "velocity_x"),
+        ("velocity", "y", 3, "velocity_y"),
+        ("force_state", "x", 4, "force_state_x"),
+        ("force_state", "y", 5, "force_state_y"),
+        ("integrator", "x", 6, "integrator_x"),
+        ("integrator", "y", 7, "integrator_y"),
+    )
+    for start in (20, 40, 50):
         for axis in ("x", "y"):
             for sign in (-1, 1):
                 perturbations.append(
                     PerturbationSpec(
-                        perturbation_id=f"plant_force_pulse__t{start}_{axis}_{_sign_label(sign)}",
-                        channel="plant_force",
-                        family="plant_force_pulse",
+                        perturbation_id=(
+                            f"command_input_pulse__t{start}_{axis}_{_sign_label(sign)}"
+                        ),
+                        channel="command_input",
+                        family="command_input_pulse",
                         amplitude=1.0,
                         units="N",
                         axis=axis,
-                        basis="plant_cartesian_force_xy",
+                        basis="command_cartesian_force_xy",
                         sign=sign,
                         timing={
                             "epoch": "movement_indexed",
@@ -152,8 +172,40 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                         },
                         adapter=f"task_trial_spec.intervene[{PLANT_INTERVENOR_LABEL!r}]",
                         description=(
-                            "Inject an external plant-force pulse when the task exposes it."
+                            "Add a pulse at the post-controller command port that feeds "
+                            "mechanics.force. This is not an external load-force row."
                         ),
+                    )
+                )
+        for component_family, axis, epsilon_index, epsilon_component in process_epsilon_components:
+            for sign in (-1, 1):
+                perturbations.append(
+                    PerturbationSpec(
+                        perturbation_id=(
+                            "process_epsilon_pulse__"
+                            f"{epsilon_component}__t{start}_{_sign_label(sign)}"
+                        ),
+                        channel="process_epsilon",
+                        family=f"process_epsilon_{component_family}_xy",
+                        amplitude=0.01,
+                        units="epsilon",
+                        axis=axis,
+                        basis="cs_lss_process_epsilon_current_physical_block",
+                        sign=sign,
+                        timing={
+                            "epoch": "movement_indexed",
+                            "start_time_index": start,
+                            "duration_steps": 5,
+                        },
+                        adapter="task_trial_spec.inputs['epsilon']",
+                        description=(
+                            "Add a pulse on the C&S LSS mechanics.epsilon input, which "
+                            "is injected through the plant B_w process channel. The "
+                            f"component is {epsilon_component} at epsilon index "
+                            f"{epsilon_index}."
+                        ),
+                        epsilon_component=epsilon_component,
+                        epsilon_index=epsilon_index,
                     )
                 )
     blocked_specs = (
@@ -185,7 +237,7 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
             0.01,
             "x",
             "target_cartesian_xy",
-            "blocked until target stream semantics are verified for this GRU input",
+            "blocked because current C&S GRU input is scalar SISU, not a target stream",
         ),
     )
     for row in blocked_specs:
@@ -213,10 +265,20 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
             "target interfaces. GRU hidden state, readout state, and controller "
             "input tensors are not edited directly."
         ),
+        "legacy_migration": {
+            "plant_force": (
+                "Deprecated v1 channel name. The C&S LSS graph path is "
+                "net.output -> efferent -> mechanics.force, with the force/filter "
+                "state inside mechanics, so the former plant_force_pulse rows are "
+                "command_input_pulse rows in v2. True process rows use "
+                "process_epsilon_pulse through mechanics.epsilon / B_w."
+            ),
+        },
         "graphspec_alignment": {
             "named_channels": [
                 "initial_state",
-                "plant_force",
+                "command_input",
+                "process_epsilon",
                 "sensory_feedback",
                 "delayed_observation",
                 "target_stream",
@@ -225,6 +287,22 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                 "Each row records the current eager adapter and remains portable "
                 "to future GraphSpec named-channel adapters."
             ),
+            "temporary_eager_adapters": {
+                "command_input_pulse": (
+                    "Current eager path edits TimeSeriesParam leaves under "
+                    f"trial_specs.intervene[{PLANT_INTERVENOR_LABEL!r}] when that "
+                    "external adapter is present. Future GraphSpec insertion point: "
+                    "additive named channel on efferent.output -> mechanics.force."
+                ),
+                "process_epsilon_pulse": (
+                    "Current eager path edits trial_specs.inputs['epsilon'] only when "
+                    "the model exposes an epsilon input bound to mechanics.epsilon. "
+                    "Future GraphSpec insertion point: named process channel into "
+                    "LinearStateSpace.epsilon / B_w. Rows declare epsilon_component "
+                    "and epsilon_index over the canonical current physical block "
+                    "[px, py, vx, vy, fx, fy, eps_x_int, eps_y_int]."
+                ),
+            },
         },
         "signed_pairing_rule": "signed_axis_pairs; aggregate absolute and signed responses",
         "perturbations": [spec.to_json() for spec in perturbations],
@@ -243,19 +321,40 @@ def apply_perturbation_to_trial_specs(
     if channel == "initial_state":
         return _apply_initial_state_perturbation(trial_specs, perturbation)
     if channel == "plant_force":
-        return _apply_plant_force_pulse(
+        return _apply_legacy_plant_force_pulse(
             trial_specs,
             perturbation,
             plant_intervenor_label=plant_intervenor_label,
         )
+    if channel == "command_input":
+        return _apply_command_input_pulse(
+            trial_specs,
+            perturbation,
+            plant_intervenor_label=plant_intervenor_label,
+        )
+    if channel == "process_epsilon":
+        return _apply_process_epsilon_pulse(trial_specs, perturbation)
     if channel in {"sensory_feedback", "delayed_observation", "target_stream"}:
+        reasons = {
+            "sensory_feedback": (
+                "sensory_feedback perturbations require a named adapter at sensory.output "
+                "after noise; controller-input hacks are intentionally excluded"
+            ),
+            "delayed_observation": (
+                "delayed_observation perturbations require a named adapter on the clean "
+                "DelayedPositionVelocityFeedback output before sensory noise; GRU hidden "
+                "state/input mutation is intentionally excluded"
+            ),
+            "target_stream": (
+                "target_stream perturbations require a task target stream bound to the "
+                "controller; current C&S GRU validation specs expose scalar SISU input, "
+                "not a target stream"
+            ),
+        }
         return AdapterResult(
             status="not_implemented",
             trial_specs=trial_specs,
-            reason=(
-                f"{channel} perturbations require a clean named external adapter; "
-                "controller-input hacks are intentionally excluded"
-            ),
+            reason=reasons[channel],
             adapter_provenance={
                 "adapter": "not_available_in_current_eager_adapter",
                 "controller_input_mutated": False,
@@ -321,6 +420,13 @@ def materialize_gru_perturbation_response(
         "source_experiment": source_experiment,
         "checkpoint_policy": "validation_selected_per_replicate",
         "scope": "controller_independent_perturbation_response",
+        "semantics_correction": (
+            "v2 splits the former plant_force rows into command_input_pulse "
+            "(post-controller command-port perturbations) and process_epsilon_pulse "
+            "(mechanics.epsilon / B_w process perturbations). Process-epsilon "
+            "rows span the canonical current physical block [px, py, vx, vy, "
+            "fx, fy, eps_x_int, eps_y_int]."
+        ),
         "bank": bank,
         "extlqg_comparator": {
             "status": "placeholder",
@@ -494,8 +600,11 @@ def render_perturbation_response_markdown(manifest: Mapping[str, Any]) -> str:
         "",
         f"Issue: `{manifest['issue']}`. Source experiment: `{manifest['source_experiment']}`.",
         "",
-        "The bank is controller-independent: it perturbs external task, plant, sensory, "
-        "observation, or target interfaces and does not mutate GRU internals.",
+        "The bank is controller-independent: it perturbs external task, command-port, "
+        "process, sensory, observation, or target interfaces and does not mutate GRU "
+        "internals.",
+        "",
+        manifest.get("semantics_correction", ""),
         "",
         "## Bank",
         "",
@@ -506,6 +615,11 @@ def render_perturbation_response_markdown(manifest: Mapping[str, Any]) -> str:
     for perturbation in manifest["bank"]["perturbations"]:
         channel_counts[perturbation["channel"]] = channel_counts.get(perturbation["channel"], 0) + 1
     lines.extend(f"| `{channel}` | {count} |" for channel, count in sorted(channel_counts.items()))
+    lines.extend(["", "| Family | Count |", "|---|---:|"])
+    family_counts: dict[str, int] = {}
+    for perturbation in manifest["bank"]["perturbations"]:
+        family_counts[perturbation["family"]] = family_counts.get(perturbation["family"], 0) + 1
+    lines.extend(f"| `{family}` | {count} |" for family, count in sorted(family_counts.items()))
     lines.extend(["", "## Evaluation", ""])
     if not manifest["runs"]:
         lines.append("No checkpoint rollouts were evaluated in this materialization.")
@@ -587,7 +701,32 @@ def _apply_initial_state_perturbation(
     )
 
 
-def _apply_plant_force_pulse(
+def _apply_legacy_plant_force_pulse(
+    trial_specs: Any,
+    perturbation: Mapping[str, Any],
+    *,
+    plant_intervenor_label: str,
+) -> AdapterResult:
+    migrated = dict(perturbation)
+    migrated["channel"] = "command_input"
+    migrated["family"] = "command_input_pulse"
+    result = _apply_command_input_pulse(
+        trial_specs,
+        migrated,
+        plant_intervenor_label=plant_intervenor_label,
+    )
+    provenance = dict(result.adapter_provenance or {})
+    provenance["deprecated_channel"] = "plant_force"
+    provenance["migration"] = "plant_force_pulse -> command_input_pulse"
+    return AdapterResult(
+        status=result.status,
+        trial_specs=result.trial_specs,
+        reason=result.reason,
+        adapter_provenance=provenance,
+    )
+
+
+def _apply_command_input_pulse(
     trial_specs: Any,
     perturbation: Mapping[str, Any],
     *,
@@ -597,10 +736,16 @@ def _apply_plant_force_pulse(
         return AdapterResult(
             status="blocked",
             trial_specs=trial_specs,
-            reason=f"trial_specs.intervene lacks {plant_intervenor_label!r}",
+            reason=(
+                f"trial_specs.intervene lacks {plant_intervenor_label!r}; current validation "
+                "specs do not expose a clean command-port adapter on "
+                "efferent.output -> mechanics.force"
+            ),
             adapter_provenance={
                 "adapter": "trial_specs.intervene",
                 "label": plant_intervenor_label,
+                "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
+                "external_load_force": False,
             },
         )
     params = trial_specs.intervene[plant_intervenor_label]
@@ -622,7 +767,7 @@ def _apply_plant_force_pulse(
         return AdapterResult(
             status="blocked",
             trial_specs=trial_specs,
-            reason=f"{plant_intervenor_label!r} params do not expose a field leaf",
+            reason=f"{plant_intervenor_label!r} command-input params do not expose a field leaf",
         )
     if hasattr(updated, "scale"):
         updated = eqx.tree_at(
@@ -644,10 +789,81 @@ def _apply_plant_force_pulse(
             updated,
         ),
         adapter_provenance={
-            "adapter": "trial_specs.intervene.plant_force",
+            "adapter": "trial_specs.intervene.command_input",
             "label": plant_intervenor_label,
             "start_time_index": start,
             "duration_steps": duration,
+            "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
+            "external_load_force": False,
+            "temporary_eager_adapter": True,
+        },
+    )
+
+
+def _apply_process_epsilon_pulse(
+    trial_specs: Any,
+    perturbation: Mapping[str, Any],
+) -> AdapterResult:
+    if "epsilon" not in trial_specs.inputs:
+        return AdapterResult(
+            status="blocked",
+            trial_specs=trial_specs,
+            reason=(
+                "trial_specs.inputs lacks 'epsilon'; process_epsilon_pulse requires a "
+                "model input bound to mechanics.epsilon / B_w"
+            ),
+            adapter_provenance={
+                "adapter": "trial_specs.inputs['epsilon']",
+                "future_graphspec_insertion_point": "mechanics.epsilon",
+            },
+        )
+    epsilon = jnp.asarray(trial_specs.inputs["epsilon"])
+    if epsilon.ndim < 3:
+        return AdapterResult(
+            status="blocked",
+            trial_specs=trial_specs,
+            reason=f"epsilon input must have shape (batch, time, dim); got {epsilon.shape}",
+        )
+    epsilon_index_raw = perturbation.get("epsilon_index")
+    if epsilon_index_raw is None:
+        epsilon_index = _axis_index(str(perturbation["axis"]))
+    else:
+        epsilon_index = int(epsilon_index_raw)
+    if epsilon_index < 0 or epsilon.shape[-1] <= epsilon_index:
+        return AdapterResult(
+            status="blocked",
+            trial_specs=trial_specs,
+            reason=(
+                f"epsilon input has dimension {epsilon.shape[-1]}, cannot address "
+                f"epsilon index {epsilon_index}"
+            ),
+        )
+    timing = perturbation["timing"]
+    start = int(timing.get("start_time_index", 0))
+    duration = int(timing.get("duration_steps", 1))
+    if start < 0 or duration < 1 or start + duration > epsilon.shape[-2]:
+        return AdapterResult(
+            status="blocked",
+            trial_specs=trial_specs,
+            reason=(
+                "process_epsilon_pulse timing is outside epsilon time axis: "
+                f"start={start}, duration={duration}, n_time={epsilon.shape[-2]}"
+            ),
+        )
+    amount = float(perturbation["amplitude"]) * int(perturbation["sign"])
+    updated = epsilon.at[..., start : start + duration, epsilon_index].add(amount)
+    return AdapterResult(
+        status="evaluated",
+        trial_specs=eqx.tree_at(lambda ts: ts.inputs["epsilon"], trial_specs, updated),
+        adapter_provenance={
+            "adapter": "trial_specs.inputs['epsilon']",
+            "epsilon_component": perturbation.get("epsilon_component"),
+            "epsilon_index": epsilon_index,
+            "start_time_index": start,
+            "duration_steps": duration,
+            "future_graphspec_insertion_point": "mechanics.epsilon",
+            "process_channel": "LinearStateSpace.B_w",
+            "temporary_eager_adapter": True,
         },
     )
 
