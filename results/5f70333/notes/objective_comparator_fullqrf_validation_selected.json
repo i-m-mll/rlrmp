@@ -1,15 +1,54 @@
 {
-  "comparison_caveat": "GRU values are per-replicate validation-selected training-validation objectives from the implemented full_analytical_qrf scalar. The extLQG value is the standard-certificate reference sidecar extlqg_expected_cost emitted by the local extLQG/computeOFC/computeExtKalman fixed-point comparator. Treat ratios as objective-lens diagnostics, not bridge pass/fail evidence.",
+  "caveats": [
+    "The apples-to-apples scalar for the available GRU validation records is the deterministic extLQG term, not the covariance-inclusive expected cost.",
+    "This sidecar is diagnostic only and is not a standard-certificate gate.",
+    "GRU values are validation-selected realized full-QRF scalars; same-noise-bank extLQG realized values require separate Monte Carlo materialization."
+  ],
+  "checkpoint_policy": {
+    "caveat": "Checkpoint selection is inherited from the validation-selected GRU manifest. Analytical action, I/O, and extLQG comparator metrics are audit-only and are not used for checkpoint selection.",
+    "label": "validation_selected_per_replicate",
+    "selection_policy": "per-replicate checkpoint selected by minimum positive rollout validation objective among available durable checkpoints; analytical action and I/O metrics are audit-only",
+    "source": "rlrmp.validation_selected_gru_checkpoints.v1"
+  },
+  "extlqg_decomposition": {
+    "accumulated_noise_scalar": 57.383523357158495,
+    "comparable_scalar": 4368.510655149214,
+    "comparable_scalar_lens": "extlqg_deterministic_initial_state_full_qrf",
+    "component_sum": 12201.42433801687,
+    "component_sum_delta": 0.0,
+    "deterministic_initial_state": 4368.510655149214,
+    "initial_covariance_trace": 7775.530159510498,
+    "lens": "extlqg_covariance_inclusive_expected_cost",
+    "provenance": "C&S extLQG/computeOFC/computeExtKalman fixed-point decomposition from issue a8462de source facts",
+    "total_expected_cost": 12201.42433801687
+  },
+  "generated_by": "python -m rlrmp.analysis.objective_comparator",
   "issue": "5f70333",
-  "placement_recommendation": "Keep as an optional objective-comparator sidecar, adjacent to evaluation diagnostics. It should not be a standard-certificate gate because it requires a named analytical comparator and implemented validation objective.",
+  "objective_lenses": {
+    "extlqg_covariance_inclusive_expected_cost": {
+      "definition": "deterministic initial-state term plus initial covariance trace plus accumulated process/sensory/motor noise scalar",
+      "kind": "expected_cost"
+    },
+    "extlqg_deterministic_initial_state_full_qrf": {
+      "definition": "x0^T Sx0 x0 from the extLQG/computeOFC recursion",
+      "kind": "deterministic_analytical_term"
+    },
+    "gru_validation_selected_realized_full_qrf": {
+      "definition": "sum_t x_t^T Q_t x_t + u_t^T R_t u_t + x_T^T Q_f x_T using states.mechanics.vector for x and states.net.output for u",
+      "kind": "realized_validation_objective"
+    }
+  },
   "rows": [
     {
+      "best_logged_to_extlqg_deterministic_ratio": 0.9974993565760255,
       "checkpoint_policy": "validation_selected_per_replicate",
-      "extlqg_reference_expected_cost": 12201.42433801687,
-      "gru_best_logged_to_extlqg_ratio": 0.3571375314052148,
-      "gru_mean_best_logged_validation_objective": 4357.586567706852,
-      "gru_mean_selected_checkpoint_validation_objective": 4367.301186181068,
-      "gru_selected_to_extlqg_ratio": 0.35793371865394014,
+      "extlqg_comparable_lens": "extlqg_deterministic_initial_state_full_qrf",
+      "extlqg_deterministic_full_qrf": 4368.510655149214,
+      "extlqg_total_expected_cost": 12201.42433801687,
+      "gru_mean_best_logged_validation_full_qrf": 4357.586567706852,
+      "gru_mean_selected_validation_full_qrf": 4367.301186181068,
+      "gru_realized_lens": "gru_validation_selected_realized_full_qrf",
+      "n_replicates": 5,
       "run_id": "lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64",
       "selected_checkpoints": [
         {
@@ -62,15 +101,20 @@
           "scoring_validation_log_batch": 11000,
           "scoring_validation_objective": 4350.064377552265
         }
-      ]
+      ],
+      "selected_to_extlqg_deterministic_ratio": 0.999723139288508,
+      "selected_to_extlqg_total_ratio_not_apples_to_apples": 0.35793371865394014
     },
     {
+      "best_logged_to_extlqg_deterministic_ratio": 0.9924038501363841,
       "checkpoint_policy": "validation_selected_per_replicate",
-      "extlqg_reference_expected_cost": 12201.42433801687,
-      "gru_best_logged_to_extlqg_ratio": 0.3553131727436118,
-      "gru_mean_best_logged_validation_objective": 4335.326793531897,
-      "gru_mean_selected_checkpoint_validation_objective": 4342.6365194082155,
-      "gru_selected_to_extlqg_ratio": 0.3559122606594007,
+      "extlqg_comparable_lens": "extlqg_deterministic_initial_state_full_qrf",
+      "extlqg_deterministic_full_qrf": 4368.510655149214,
+      "extlqg_total_expected_cost": 12201.42433801687,
+      "gru_mean_best_logged_validation_full_qrf": 4335.326793531897,
+      "gru_mean_selected_validation_full_qrf": 4342.6365194082155,
+      "gru_realized_lens": "gru_validation_selected_realized_full_qrf",
+      "n_replicates": 5,
       "run_id": "lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64",
       "selected_checkpoints": [
         {
@@ -123,10 +167,16 @@
           "scoring_validation_log_batch": 11000,
           "scoring_validation_objective": 4338.489947432527
         }
-      ]
+      ],
+      "selected_to_extlqg_deterministic_ratio": 0.9940771265578808,
+      "selected_to_extlqg_total_ratio_not_apples_to_apples": 0.3559122606594007
     }
   ],
-  "schema_version": "rlrmp.objective_comparator_sidecar.v1",
+  "same_noise_bank_monte_carlo": {
+    "reason": "same-noise-bank extLQG-vs-GRU realized comparison was not materialized; the available tracked source only contains validation-selected GRU realized full-QRF scalars and the analytical extLQG expected-cost decomposition",
+    "status": "not_implemented"
+  },
+  "schema_version": "rlrmp.objective_comparator_sidecar.v2",
   "scope": "full-QRF C&S GRU rows, validation-selected checkpoints",
   "source_manifest": "results/5f70333/notes/gru_standard_certificates_fullqrf_validation_selected_manifest.json"
 }

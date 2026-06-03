@@ -1,14 +1,30 @@
 # Full-QRF objective comparator sidecar
 
-Scope: validation-selected checkpoints for the two full-QRF C&S GRU rows.
+Schema: `rlrmp.objective_comparator_sidecar.v2`.
 
-Placement recommendation: keep this as an optional objective-comparator sidecar adjacent to evaluation diagnostics, not as a standard-certificate gate. It depends on a named analytical comparator and implemented validation scalar.
+Scope: validation-selected checkpoints for the two full-QRF C&S GRU rows. This is an objective-lens diagnostic, not a standard-certificate gate.
 
-Caveat: GRU values are validation-selected training-validation objectives under `full_analytical_qrf`; the extLQG value is the reference sidecar `extlqg_expected_cost` from the local `extLQG -> computeOFC -> computeExtKalman` fixed-point comparator. Ratios are objective-lens diagnostics only.
+## extLQG decomposition
 
-| run | mean selected validation | mean best logged validation | extLQG expected cost | selected/extLQG | best/extLQG |
+| component | value | lens |
+|---|---:|---|
+| deterministic initial-state term | 4368.5107 | comparable to realized/validation full-QRF values |
+| initial covariance trace term | 7775.5302 | expected-cost sidecar only |
+| accumulated noise scalar | 57.383523 | expected-cost sidecar only |
+| total expected cost | 12201.424 | not directly comparable to GRU validation values |
+
+## GRU comparison
+
+| run | mean selected validation | deterministic extLQG | selected/deterministic | total expected cost | selected/total |
 |---|---:|---:|---:|---:|---:|
-| `lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64` | 4367.3 | 4357.59 | 12201.4 | 0.357934 | 0.357138 |
-| `lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64` | 4342.64 | 4335.33 | 12201.4 | 0.355912 | 0.355313 |
+| `lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64` | 4367.3012 | 4368.5107 | 0.99972314 | 12201.424 | 0.35793372 |
+| `lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64` | 4342.6365 | 4368.5107 | 0.99407713 | 12201.424 | 0.35591226 |
 
-JSON sidecar: `results/5f70333/notes/objective_comparator_fullqrf_validation_selected.json`
+## Caveats
+
+- `selected/total` is retained only as a labeled non-apples-to-apples diagnostic for continuity with the provisional sidecar.
+- The apples-to-apples scalar for the available GRU validation records is the deterministic extLQG term, not the covariance-inclusive expected cost.
+- This sidecar is diagnostic only and is not a standard-certificate gate.
+- GRU values are validation-selected realized full-QRF scalars; same-noise-bank extLQG realized values require separate Monte Carlo materialization.
+
+Same-noise-bank Monte Carlo: `not_implemented`.
