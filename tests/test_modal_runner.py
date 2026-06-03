@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from rlrmp.loss import CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
 from rlrmp.modal_runner import (
     DEFAULT_RUN,
     DEFAULT_GPU,
@@ -62,6 +63,14 @@ def test_training_command_passes_optimizer_grid_parameters() -> None:
     assert command[command.index("--gradient-clip-norm") + 1] == "5.0"
 
 
+def test_training_command_passes_loss_objective() -> None:
+    config = NominalGruRunConfig(loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE)
+
+    command = build_training_command(config, remote=True)
+
+    assert command[command.index("--loss-objective") + 1] == "full_analytical_qrf"
+
+
 def test_regularized_training_command_uses_hidden_penalty_switch() -> None:
     config = NominalGruRunConfig(run=REGULARIZED_RUN, regularized_fidelity=True)
 
@@ -112,11 +121,18 @@ def test_regularized_modal_command_selects_hidden_penalty_pair() -> None:
 
 
 def test_dry_run_payload_exposes_no_warm_container_settings() -> None:
-    payload = dry_run_payload(NominalGruRunConfig(gpu="A10G", timeout_seconds=90))
+    payload = dry_run_payload(
+        NominalGruRunConfig(
+            gpu="A10G",
+            timeout_seconds=90,
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+        )
+    )
 
     assert payload["gpu"] == "A10G"
     assert payload["timeout_seconds"] == 90
     assert payload["stochastic_preset"] == "cs2019-rollout"
+    assert payload["loss_objective"] == "full_analytical_qrf"
     assert payload["modal_volume_name"] == MODAL_VOLUME_NAME
     assert payload["warm_containers"] == 0
     assert payload["min_containers"] == 0
@@ -151,12 +167,15 @@ def test_dry_run_payload_exposes_no_warm_container_settings() -> None:
 
 
 def test_modal_run_defaults_to_training_timeout() -> None:
-    args = build_parser().parse_args(["modal-run"])
+    args = build_parser().parse_args(
+        ["modal-run", "--loss-objective", "full_analytical_qrf"]
+    )
 
     config = make_config(args)
 
     assert config.timeout_seconds == DEFAULT_TRAIN_TIMEOUT_SECONDS
     assert config.gpu == DEFAULT_GPU == "A10"
+    assert config.loss_objective == "full_analytical_qrf"
 
 
 def test_activate_project_venv_exposes_uv_site_packages(

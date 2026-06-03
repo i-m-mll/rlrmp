@@ -49,6 +49,11 @@ from rlrmp.feedbax_graph import (
     build_point_mass_sensorimotor_graph_spec,
     write_graph_spec_bundle,
 )
+from rlrmp.loss import (
+    CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+    CS_LOSS_OBJECTIVES,
+    CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
+)
 from rlrmp.modules.training.part2 import (
     CS_LSS_PLANT_BACKEND,
     LEGACY_CAUSAL_PLANT_BACKEND,
@@ -217,6 +222,22 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
     """Build nominal C&S-aligned GRU hyperparameters from CLI arguments."""
 
     args = _apply_smoke_overrides(args)
+    if (
+        str(args.loss_objective) == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
+        and str(args.plant_backend) != CS_LSS_PLANT_BACKEND
+    ):
+        raise ValueError(
+            "--loss-objective full_analytical_qrf requires --plant-backend cs_lss "
+            "because the full 48D C&S state is unavailable on the legacy backend."
+        )
+    if str(args.loss_objective) == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE and bool(
+        args.regularized_fidelity
+    ):
+        raise ValueError(
+            "--regularized-fidelity cannot be combined with "
+            "--loss-objective full_analytical_qrf because nn_hidden is not an analytical "
+            "Q/R/Q_f objective term."
+        )
     plant, schedule = build_canonical_game()
     preset = stochastic_preset(args.stochastic_preset)
     if int(schedule.T) != CS_STAGE_COUNT:
@@ -293,6 +314,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "n_expected": 0,
         },
         "loss": {
+            "objective": str(args.loss_objective),
             "weights": {
                 "goal_hit_in_window": 0.0,
                 "effector_pos": 0.0,
@@ -520,6 +542,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "analytical_delay_augmented_state_input": False,
         "stochastic_runtime": _stochastic_runtime_contract(hps),
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
+        "loss_objective": str(hps.loss.objective),
     }
     manifest = {
         "schema_version": SCHEMA_VERSION,
@@ -546,6 +569,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "model_structure": build_model_structure_summary(hps),
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
         "stochastic_runtime": _stochastic_runtime_contract(hps),
+        "loss_objective": str(hps.loss.objective),
     }
     return RLRMPFeedbaxGraphBundle(
         graph_spec=graph_spec,
@@ -637,6 +661,7 @@ def build_run_spec(
         "optimizer": _optimizer_metadata(args),
         "checkpointing": _checkpoint_metadata(args, output_dir),
         "training_diagnostics": _training_diagnostics_metadata(args, output_dir),
+        "loss_objective": str(hps.loss.objective),
         "fidelity_status": _fidelity_status(hps),
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
         "game_card": build_game_card_provenance(),
@@ -1030,6 +1055,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--effector-final-vel", type=float, default=0.0)
     parser.add_argument("--nn-output", type=float, default=CS_CONTROL_SCALE)
     parser.add_argument("--nn-output-jerk", type=float, default=0.0)
+    parser.add_argument(
+        "--loss-objective",
+        choices=CS_LOSS_OBJECTIVES,
+        default=CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
+        help=(
+            "Training objective. Default partial_feedbax_terms preserves the historical "
+            "Feedbax pos/vel/control term subset. full_analytical_qrf uses the canonical "
+            "C&S Q/R/Q_f matrices on the cs_lss 48D state plus command history."
+        ),
+    )
     parser.add_argument(
         "--regularized-fidelity",
         action="store_true",
@@ -1755,12 +1790,70 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
 
 
 def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
+    objective = str(getattr(hps.loss, "objective", CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE))
+    if objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE:
+        _plant, schedule = build_canonical_game()
+        q_diag = jnp.diag(schedule.Q[0])
+        qf_diag = jnp.diag(schedule.Q_f)
+        return {
+            "weights": _plain(hps.loss.weights),
+            "objective_profile": CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            "objective_kind": "finite_horizon_quadratic",
+            "source_module": "rlrmp.analysis.cs_game_card.build_canonical_game",
+            "state_basis": {
+                "state_key": "states.mechanics.vector",
+                "dimension": int(schedule.Q.shape[-1]),
+                "physical_block_size": 8,
+                "delay_blocks": int(schedule.Q.shape[-1] // 8),
+                "coordinate_transform": (
+                    "absolute Feedbax position entries are converted to target-centred "
+                    "analytical coordinates before applying Q_t and Q_f"
+                ),
+            },
+            "time_indexing": {
+                "running_state": "trial init plus rollout states[:-1], paired with commands",
+                "terminal_state": "rollout states[-1]",
+                "horizon_steps": int(schedule.T),
+            },
+            "matrix_shapes": {
+                "Q": list(schedule.Q.shape),
+                "R": list(schedule.R.shape),
+                "Q_f": list(schedule.Q_f.shape),
+            },
+            "active_cs_terms": {
+                "state_running_q": {
+                    "term": "mechanics.vector^T Q_t mechanics.vector",
+                    "source": "canonical delay-augmented C&S schedule.Q",
+                    "initial_diag_first_block": [float(x) for x in q_diag[:8].tolist()],
+                },
+                "control_r": {
+                    "term": "net.output^T R_t net.output",
+                    "source": (
+                        "canonical C&S schedule.R on intended controller command "
+                        "before efferent/motor-channel noise"
+                    ),
+                    "diag": [float(x) for x in jnp.diag(schedule.R[0]).tolist()],
+                },
+                "terminal_q_f": {
+                    "term": "mechanics.vector_T^T Q_f mechanics.vector_T",
+                    "source": "canonical delay-augmented C&S schedule.Q_f",
+                    "diag_first_block": [float(x) for x in qf_diag[:8].tolist()],
+                },
+            },
+            "force_filter_state_cost": "included_via_Q_entries_4_5_each_delay_block",
+            "disturbance_integrator_state_cost": "included_via_Q_entries_6_7_each_delay_block",
+            "hidden_regularizer": {
+                "term": "not_in_full_analytical_qrf_loss",
+                "configured_weight": float(hps.loss.weights.nn_hidden),
+            },
+        }
+
     return {
         "weights": _plain(hps.loss.weights),
         "effector_pos_late": _plain(hps.loss.effector_pos_late),
         "effector_vel_late": _plain(hps.loss.effector_vel_late),
         "effector_pos_running_schedule": str(hps.loss.effector_pos_running_schedule),
-        "objective_profile": "cs_fidelity",
+        "objective_profile": CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
         "active_cs_terms": {
             "stage_position": {
                 "term": "effector_pos_running",
@@ -1816,6 +1909,54 @@ def _fidelity_status(hps: TreeNamespace) -> dict[str, Any]:
     no_extra_regularizer = nn_hidden == 0.0
     plant_backend = str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND))
     exact_lss = plant_backend == CS_LSS_PLANT_BACKEND
+    objective = str(getattr(hps.loss, "objective", CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE))
+    if objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE:
+        return {
+            "objective": "cs_fidelity_stochastic_rollout",
+            "loss_objective": objective,
+            "exact_fidelity": False,
+            "exact_objective_terms": exact_lss,
+            "exact_objective_terms_scope": (
+                "true for the implemented training scalar when plant_backend='cs_lss': "
+                "the loss evaluates canonical C&S delay-augmented Q_t, R_t, and Q_f "
+                "on the exposed LinearStateSpace state and command history"
+            ),
+            "objective_fidelity": {
+                "implemented_terms": [
+                    "delay_augmented_state_running_Q_t",
+                    "command_running_R_t",
+                    "delay_augmented_terminal_Q_f",
+                ],
+                "omitted_terms": [] if exact_lss else ["cs_lss_state_unavailable"],
+                "extra_terms": [],
+                "selection_policy": (
+                    "rollout validation loss uses the same full analytical Q/R/Q_f "
+                    "training scalar; analytical action and I/O metrics remain audit-only"
+                ),
+            },
+            "exact_stochastic_rollout": False,
+            "exact_stochastic_noise_sources": exact_lss,
+            "exact_plant_matrices": exact_lss,
+            "plant_backend": plant_backend,
+            "temporary_stochastic_bridge": (
+                "temporary RLRMP LSS wrapper implements sensory Channel, additive and "
+                "signal-dependent motor Channel, and sampled physical-process mechanics.epsilon; "
+                "future Feedbax acausal/ODE plant support should subsume this wrapper"
+                if exact_lss
+                else None
+            ),
+            "stochastic_preset": str(hps.model.stochastic_preset),
+            "stochastic_projection": (
+                "Feedbax GRU rollout uses C&S-shaped sensory, command, signal-dependent, "
+                "and plant/load force noise channels without feeding the 48D "
+                "delay-augmented analytical state to the GRU."
+            ),
+            "regularized_pair": False,
+            "regularizer": "none",
+            "nn_hidden": nn_hidden,
+            "certificate_lens": "input_output_map_certificate",
+            "same_coordinate_gain_certificate": False,
+        }
     omitted_terms = [
         {
             "term": "force_filter_state_cost",
@@ -1824,7 +1965,9 @@ def _fidelity_status(hps: TreeNamespace) -> dict[str, Any]:
         },
         {
             "term": "disturbance_integrator_state_cost",
-            "analytical_role": "unit-weight disturbance-integrator state cost in the C&S 8D schedule",
+            "analytical_role": (
+                "unit-weight disturbance-integrator state cost in the C&S 8D schedule"
+            ),
             "status": "not_synthesized_in_feedbax_gru_loss",
         },
     ]
@@ -1841,6 +1984,7 @@ def _fidelity_status(hps: TreeNamespace) -> dict[str, Any]:
     )
     return {
         "objective": "cs_fidelity_stochastic_rollout",
+        "loss_objective": objective,
         "exact_fidelity": False,
         "exact_objective_terms": False,
         "exact_objective_terms_scope": (

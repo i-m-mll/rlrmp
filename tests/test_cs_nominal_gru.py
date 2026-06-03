@@ -14,8 +14,10 @@ import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
 import optax
+import pytest
 from feedbax.mechanics import LinearStateSpace
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
+from feedbax.types import TreeNamespace
 
 from rlrmp.analysis.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
@@ -24,6 +26,11 @@ from rlrmp.analysis.cs_game_card import (
 from rlrmp.analysis.cs_released_simulation import default_cs_noise_covariances
 from rlrmp.analysis.output_feedback import OutputFeedbackConfig
 from rlrmp.cs_lss_gru import CS_EPSILON_DIM
+from rlrmp.loss import (
+    CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+    CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
+    CsAnalyticalQrfLoss,
+)
 from rlrmp.modules.training.part2 import (
     CS_LSS_PLANT_BACKEND,
     LEGACY_CAUSAL_BACKEND_WARNING,
@@ -90,8 +97,65 @@ def test_hps_uses_canonical_cs_nominal_task() -> None:
     assert hps.loss.weights.effector_terminal_vel == 1e5
     assert hps.loss.weights.nn_output == 1.0
     assert hps.loss.weights.nn_hidden == 0.0
+    assert hps.loss.objective == CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE
     assert hps.loss.effector_pos_running_schedule == "cs_eq15_power6"
     assert hps.pert.std == 0.0
+
+
+def test_full_analytical_qrf_loss_requires_cs_lss_and_no_hidden_regularizer() -> None:
+    with pytest.raises(ValueError, match="requires --plant-backend cs_lss"):
+        build_hps(
+            _args(
+                loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+                plant_backend=LEGACY_CAUSAL_PLANT_BACKEND,
+            )
+        )
+
+    with pytest.raises(ValueError, match="nn_hidden is not an analytical"):
+        build_hps(
+            _args(
+                loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+                regularized_fidelity=True,
+            )
+        )
+
+
+def test_full_analytical_qrf_loss_scores_non_pos_vel_state_and_command() -> None:
+    hps = build_hps(_args(smoke=True, loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE))
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    trial = pair.task.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
+    loss = pair.task.loss_func.terms[CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE]
+
+    assert isinstance(loss, CsAnalyticalQrfLoss)
+
+    zeros = jnp.zeros((1, 60, 48), dtype=jnp.float64)
+    zero_command = jnp.zeros((1, 60, 2), dtype=jnp.float64)
+    base_states = TreeNamespace(
+        mechanics=TreeNamespace(vector=zeros),
+        net=TreeNamespace(output=zero_command),
+        efferent=TreeNamespace(output=zero_command),
+    )
+    base_value = loss.term(base_states, trial, pair.model)
+
+    force_states = TreeNamespace(
+        mechanics=TreeNamespace(vector=zeros.at[:, :, 4].set(2.0)),
+        net=TreeNamespace(output=zero_command),
+        efferent=TreeNamespace(output=zero_command),
+    )
+    command_states = TreeNamespace(
+        mechanics=TreeNamespace(vector=zeros),
+        net=TreeNamespace(output=zero_command.at[:, :, 0].set(3.0)),
+        efferent=TreeNamespace(output=zero_command.at[:, :, 0].set(3.0)),
+    )
+    applied_only_states = TreeNamespace(
+        mechanics=TreeNamespace(vector=zeros),
+        net=TreeNamespace(output=zero_command),
+        efferent=TreeNamespace(output=zero_command.at[:, :, 0].set(3.0)),
+    )
+
+    assert jnp.all(loss.term(force_states, trial, pair.model) > base_value)
+    assert jnp.all(loss.term(command_states, trial, pair.model) > base_value)
+    assert jnp.allclose(loss.term(applied_only_states, trial, pair.model), base_value)
 
 
 def test_runtime_task_executes_sixty_fixed_cs_targets() -> None:
@@ -208,6 +272,7 @@ def test_dry_run_does_not_write_files(tmp_path: Path) -> None:
 
     assert "run_spec" in result
     assert result["run_spec"]["mode"] == "dry_run"
+    assert result["run_spec"]["loss_objective"] == CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE
     assert result["run_spec"]["nominal_only"] is True
     assert result["run_spec"]["fidelity_status"]["exact_fidelity"] is False
     assert result["run_spec"]["fidelity_status"]["exact_objective_terms"] is False
@@ -318,7 +383,7 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
         "same-coordinate target sequence"
         in payload["loss_summary"]["simple_reach_position_loss_contract"]
     )
-    assert payload["loss_summary"]["objective_profile"] == "cs_fidelity"
+    assert payload["loss_summary"]["objective_profile"] == CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE
     assert payload["loss_summary"]["active_cs_terms"]["stage_position"]["scale"] == 1e6
     assert payload["loss_summary"]["active_cs_terms"]["stage_velocity"]["scale"] == 1e5
     assert payload["loss_summary"]["active_cs_terms"]["control"]["scale"] == 1.0
@@ -330,6 +395,34 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     assert manifest["training_spec"]["nominal_only"] is True
     assert not output_dir.exists()
     assert REPO_ROOT not in output_dir.parents
+
+
+def test_full_analytical_qrf_run_spec_records_exact_objective_metadata(tmp_path: Path) -> None:
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        smoke=True,
+        loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+    )
+
+    result = write_run_spec(args)
+    payload = json.loads(Path(result["run_spec_path"]).read_text())
+
+    assert payload["loss_objective"] == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
+    assert payload["training_summary"]["loss_objective"] == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
+    assert payload["loss_summary"]["objective_profile"] == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
+    assert payload["loss_summary"]["matrix_shapes"] == {
+        "Q": [60, 48, 48],
+        "R": [60, 2, 2],
+        "Q_f": [48, 48],
+    }
+    assert payload["loss_summary"]["force_filter_state_cost"].startswith("included")
+    assert payload["loss_summary"]["disturbance_integrator_state_cost"].startswith("included")
+    assert payload["fidelity_status"]["exact_objective_terms"] is True
+    assert payload["fidelity_status"]["objective_fidelity"]["omitted_terms"] == []
+    assert payload["fidelity_status"]["objective_fidelity"]["extra_terms"] == []
 
 
 def test_write_run_spec_honors_issue_override(tmp_path: Path) -> None:
