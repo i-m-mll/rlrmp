@@ -68,6 +68,9 @@ class FixedValidationBankSpec:
     seed: int | None = None
     n_trials: int | None = None
     scorer_version: str | None = None
+    validation_role: str | None = None
+    selection_metric: str | None = None
+    nominal_quality_role: str | None = None
 
     def to_json(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -80,6 +83,12 @@ class FixedValidationBankSpec:
             payload["n_trials"] = self.n_trials
         if self.scorer_version is not None:
             payload["scorer_version"] = self.scorer_version
+        if self.validation_role is not None:
+            payload["validation_role"] = self.validation_role
+        if self.selection_metric is not None:
+            payload["selection_metric"] = self.selection_metric
+        if self.nominal_quality_role is not None:
+            payload["nominal_quality_role"] = self.nominal_quality_role
         return payload
 
 
@@ -191,6 +200,15 @@ def plan_fixed_bank_checkpoint_rescore(
         "selection_source": "fixed_bank_rescore",
         "materialization_status": "planned",
         "validation_bank": validation_bank.to_json(),
+        "validation_role": (
+            validation_bank.validation_role or "fixed_bank_rollout_validation"
+        ),
+        "selection_metric": (
+            validation_bank.selection_metric or "aggregate_rollout_validation_objective"
+        ),
+        "nominal_quality_role": (
+            validation_bank.nominal_quality_role or "reported_sidecar"
+        ),
         "checkpoint_lists": checkpoint_lists,
         "output_path": _repo_relative(output_path, repo_root=repo_root),
         "selection_policy": (

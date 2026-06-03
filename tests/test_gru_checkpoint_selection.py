@@ -114,6 +114,9 @@ def test_fixed_bank_rescore_manifest_scores_all_durable_checkpoints(tmp_path: Pa
         scorer_identity="rollout_validation_objective:test",
         seed=123,
         n_trials=8,
+        validation_role="generalized_held_out_perturbation_validation",
+        selection_metric="aggregate_rollout_validation_objective",
+        nominal_quality_role="reported_quality_sidecar_gate",
     )
     scores = {
         (0, 3): 10.0,
@@ -149,7 +152,13 @@ def test_fixed_bank_rescore_manifest_scores_all_durable_checkpoints(tmp_path: Pa
         "scorer_identity": "rollout_validation_objective:test",
         "seed": 123,
         "n_trials": 8,
+        "validation_role": "generalized_held_out_perturbation_validation",
+        "selection_metric": "aggregate_rollout_validation_objective",
+        "nominal_quality_role": "reported_quality_sidecar_gate",
     }
+    assert manifest["validation_role"] == "generalized_held_out_perturbation_validation"
+    assert manifest["selection_metric"] == "aggregate_rollout_validation_objective"
+    assert manifest["nominal_quality_role"] == "reported_quality_sidecar_gate"
     selections = manifest["runs"][run_id]
     assert [selection["checkpoint_batches"] for selection in selections] == [6, 3]
     assert [selection["scoring_validation_objective"] for selection in selections] == [4.0, 2.0]

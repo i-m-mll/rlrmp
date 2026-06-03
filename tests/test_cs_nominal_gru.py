@@ -51,7 +51,10 @@ from rlrmp.train.cs_nominal_gru import (
 )
 from rlrmp.train.cs_perturbation_training import (
     GRAPH_ADAPTER_SPECS,
+    MILD_COMBINED_FAMILIES,
+    PERTURBATION_TRAINING_MODE,
     VALIDATION_BINS,
+    apply_training_perturbation_mixture,
     apply_validation_bin,
     planned_fixed_target_perturbation_rows,
     validation_bin_manifest,
@@ -584,6 +587,66 @@ def test_perturbation_training_validation_bins_are_separate_and_fixed_target() -
     assert jnp.any(initial_velocity.inits["mechanics.vector"] != base.inits["mechanics.vector"])
     assert jnp.any(process.inputs["epsilon"] != base.inputs["epsilon"])
     assert jnp.any(command.inputs[GRAPH_ADAPTER_SPECS["command_input"].input_key] != 0.0)
+    assert tuple(manifest["bins"][-1]["families"]) == MILD_COMBINED_FAMILIES
+    assert manifest["validation_role"] == "generalized_held_out_perturbation_rollout_loss"
+
+
+def test_randomized_perturbation_training_uses_prng_key_and_preserves_target() -> None:
+    hps = build_hps(_args(smoke=True, perturbation_training=True, batch_size=32))
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    base = pair.task.task.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
+
+    first = apply_training_perturbation_mixture(
+        base,
+        hps.perturbation_training,
+        jr.PRNGKey(10),
+    )
+    second = apply_training_perturbation_mixture(
+        base,
+        hps.perturbation_training,
+        jr.PRNGKey(11),
+    )
+
+    assert jnp.allclose(first.inputs["effector_target"].pos, base.inputs["effector_target"].pos)
+    assert jnp.any(first.inits["mechanics.vector"] != second.inits["mechanics.vector"])
+    assert jnp.any(first.inputs["epsilon"] != second.inputs["epsilon"])
+    assert first.extra["perturbation_training_bin"] == "randomized_mixture"
+    assert set(first.extra["perturbation_training_families"]) == set(VALIDATION_BINS) - {
+        "nominal",
+        "mild_combined",
+    }
+
+
+def test_randomized_perturbation_training_has_signed_component_variation() -> None:
+    hps = build_hps(
+        _args(perturbation_training=True, batch_size=96, hidden_size=4, n_replicates=1)
+    )
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    base = pair.task.task.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
+
+    trials = [
+        apply_training_perturbation_mixture(
+            base,
+            hps.perturbation_training,
+            jr.PRNGKey(seed),
+        )
+        for seed in range(64)
+    ]
+
+    init_delta = jnp.stack(
+        [trial.inits["mechanics.vector"] - base.inits["mechanics.vector"] for trial in trials]
+    )
+    assert jnp.any(init_delta[..., 0] > 0.0) or jnp.any(init_delta[..., 1] > 0.0)
+    assert jnp.any(init_delta[..., 0] < 0.0) or jnp.any(init_delta[..., 1] < 0.0)
+    assert jnp.count_nonzero(jnp.any(init_delta[..., :2] != 0.0, axis=0)) >= 2
+
+    command = jnp.stack(
+        [trial.inputs[GRAPH_ADAPTER_SPECS["command_input"].input_key] for trial in trials]
+    )
+    assert jnp.any(command[..., 0] != 0.0)
+    assert jnp.any(command[..., 1] != 0.0)
+    assert jnp.any(command > 0.0)
+    assert jnp.any(command < 0.0)
 
 
 def test_perturbation_training_run_spec_and_planned_rows(tmp_path: Path) -> None:
@@ -609,14 +672,25 @@ def test_perturbation_training_run_spec_and_planned_rows(tmp_path: Path) -> None
 
     assert payload["issue"] == "aacb9ed"
     assert payload["nominal_only"] is False
-    assert payload["training_summary"]["training_mode"] == "fixed_target_perturbation_generalized"
+    assert payload["training_summary"]["training_mode"] == PERTURBATION_TRAINING_MODE
     assert payload["training_summary"]["validation_bins"]["bins"][0]["bin"] == "nominal"
+    assert payload["training_summary"]["validation_bins"]["selection_role"].startswith(
+        "aggregate rollout loss"
+    )
     assert payload["model_summary"]["training_distribution"]["fixed_target_only"] is True
+    assert payload["model_summary"]["training_distribution"]["checkpoint_selection_role"] == (
+        "generalized_held_out_perturbation_validation"
+    )
     assert payload["hps"]["perturbation_training"]["controller_internal_mutation"] is False
     assert {row["controller_lr"] for row in rows} == {1e-3, 3e-3}
     assert all(row["batch_size"] == 64 for row in rows)
     assert all(row["gradient_clip_norm"] == 5.0 for row in rows)
     assert all("--perturbation-training" in row["command"] for row in rows)
+    assert all("fixed_target_random_perturb" in row["run"] for row in rows)
+    assert all(
+        row["checkpoint_selection"] == "generalized_held_out_perturbation_validation"
+        for row in rows
+    )
 
 
 def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Path) -> None:

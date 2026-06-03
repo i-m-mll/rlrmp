@@ -64,6 +64,8 @@ from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.run_specs import validate_nominal_gru_run_spec
 from rlrmp.train.cs_perturbation_training import (
     FixedTargetPerturbationTrainingConfig,
+    LEGACY_PERTURBATION_TRAINING_MODE,
+    PERTURBATION_TRAINING_MODE,
     planned_fixed_target_perturbation_rows,
     validation_bin_manifest,
 )
@@ -1478,7 +1480,7 @@ def _perturbation_training_enabled(hps: TreeNamespace) -> bool:
 
 def _training_mode(hps: TreeNamespace) -> str:
     if _perturbation_training_enabled(hps):
-        return "fixed_target_perturbation_generalized"
+        return PERTURBATION_TRAINING_MODE
     return "nominal"
 
 
@@ -1491,7 +1493,8 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
             "target_stream": "not_consumed",
         }
     return {
-        "mode": "fixed_target_perturbation_generalized",
+        "mode": PERTURBATION_TRAINING_MODE,
+        "legacy_mode": LEGACY_PERTURBATION_TRAINING_MODE,
         "fixed_target_only": True,
         "target_stream": {
             "status": "not_consumed",
@@ -1505,9 +1508,13 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
             "single_family_fraction": float(config.single_fraction),
             "mild_combined_fraction": float(config.combined_fraction),
             "combined_amplitude_scale": float(config.combined_amplitude_scale),
+            "sampling": "prng_driven_signed_random_axes_components_timings_levels",
         },
+        "mild_combined_families": ["initial_position", "command_input"],
         "single_family_bins": list(config.single_family_bins),
         "validation_bins": list(config.validation_bins),
+        "checkpoint_selection_role": "generalized_held_out_perturbation_validation",
+        "nominal_quality_role": "reported_quality_sidecar_gate",
         "controller_internal_mutation": False,
         "adversarial_phase": "none",
     }
