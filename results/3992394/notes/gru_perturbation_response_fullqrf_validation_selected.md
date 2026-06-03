@@ -34,16 +34,18 @@ v2 splits the former plant_force rows into command_input_pulse (post-controller 
 
 ### `lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64`
 
-- Evaluated: 56
-- Blocked: 12
-- Not implemented: 3
+- Evaluated: 70
+- Blocked: 0
+- Not implemented: 0
+- Not applicable: 1
 - Rollout trials per replicate: 1
 
 ### `lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64`
 
-- Evaluated: 56
-- Blocked: 12
-- Not implemented: 3
+- Evaluated: 70
+- Blocked: 0
+- Not implemented: 0
+- Not applicable: 1
 - Rollout trials per replicate: 1
 
 ## Residuals

@@ -12,8 +12,9 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
-from feedbax.intervene import TimeSeriesParam
+from feedbax.graph import Component, Wire
 from feedbax.types import TreeNamespace, dict_to_namespace
+from jaxtyping import PRNGKeyArray, PyTree
 
 from rlrmp.analysis.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.analysis.gru_checkpoint_selection import load_validation_selected_checkpoint_model
@@ -49,7 +50,73 @@ PerturbationChannel = Literal[
     "delayed_observation",
     "target_stream",
 ]
-PerturbationStatus = Literal["evaluated", "blocked", "not_implemented"]
+PerturbationStatus = Literal["evaluated", "blocked", "not_implemented", "not_applicable"]
+
+GRAPH_ADAPTER_INPUT_PREFIX = "perturbation_adapter"
+
+
+@dataclass(frozen=True)
+class GraphAdapterSpec:
+    """Temporary pre-GraphSpec additive graph insertion contract."""
+
+    label: str
+    input_key: str
+    source_node: str
+    source_port: str
+    target_node: str
+    target_port: str
+    input_port: str
+    output_port: str
+    future_graphspec_mapping: str
+
+    @property
+    def insertion_point(self) -> str:
+        """Return the source-to-target wire represented by this adapter."""
+
+        return (
+            f"{self.source_node}.{self.source_port} -> "
+            f"{self.target_node}.{self.target_port}"
+        )
+
+    def to_json(self) -> dict[str, Any]:
+        """Return JSON-serializable adapter provenance."""
+
+        return {
+            "adapter": "temporary_external_additive_graph_channel",
+            "label": self.label,
+            "input_key": self.input_key,
+            "insertion_point": self.insertion_point,
+            "source_node": self.source_node,
+            "source_port": self.source_port,
+            "target_node": self.target_node,
+            "target_port": self.target_port,
+            "temporary_pre_graphspec": True,
+            "future_graphspec_mapping": self.future_graphspec_mapping,
+            "controller_input_mutated": False,
+            "controller_internal_state_mutated": False,
+        }
+
+
+class AdditiveGraphChannelAdapter(Component):
+    """Add an external time-varying offset to a graph edge payload."""
+
+    input_ports = ("signal", "offset")
+    output_ports = ("signal",)
+
+    label: str = eqx.field(static=True)
+
+    def __init__(self, *, label: str):
+        self.label = str(label)
+
+    def __call__(
+        self,
+        inputs: dict[str, PyTree],
+        state: eqx.nn.State,
+        *,
+        key: PRNGKeyArray,
+    ) -> tuple[dict[str, PyTree], eqx.nn.State]:
+        del key
+        return {"signal": inputs["signal"] + inputs["offset"]}, state
 
 
 @dataclass(frozen=True)
@@ -99,6 +166,7 @@ class AdapterResult:
 
     status: PerturbationStatus
     trial_specs: Any
+    model: Any | None = None
     reason: str | None = None
     adapter_provenance: Mapping[str, Any] | None = None
 
@@ -170,7 +238,7 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                             "start_time_index": start,
                             "duration_steps": 5,
                         },
-                        adapter=f"task_trial_spec.intervene[{PLANT_INTERVENOR_LABEL!r}]",
+                        adapter="temporary_external_graph_adapter.command_input",
                         description=(
                             "Add a pulse at the post-controller command port that feeds "
                             "mechanics.force. This is not an external load-force row."
@@ -217,7 +285,7 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
             0.01,
             "x",
             "sensory_feedback_named_channel",
-            "blocked until a clean named sensory-feedback intervention exists",
+            "Offset the external sensory channel between sensory.output and net.feedback.",
         ),
         (
             "delayed_observation_offset__x_pos",
@@ -227,7 +295,7 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
             0.01,
             "x",
             "observation_history_named_channel",
-            "blocked until delayed-observation history is externally addressable",
+            "Offset the clean delayed-observation channel before sensory noise.",
         ),
         (
             "target_stream_jump__x_pos",
@@ -252,7 +320,11 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                 basis=row[6],
                 sign=1,
                 timing={"epoch": "adapter_defined"},
-                adapter="not_available_in_current_eager_adapter",
+                adapter=(
+                    "not_applicable_current_fixed_target_checkpoint"
+                    if row[1] == "target_stream"
+                    else f"temporary_external_graph_adapter.{row[1]}"
+                ),
                 description=row[7],
             )
         )
@@ -289,10 +361,10 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
             ),
             "temporary_eager_adapters": {
                 "command_input_pulse": (
-                    "Current eager path edits TimeSeriesParam leaves under "
-                    f"trial_specs.intervene[{PLANT_INTERVENOR_LABEL!r}] when that "
-                    "external adapter is present. Future GraphSpec insertion point: "
-                    "additive named channel on efferent.output -> mechanics.force."
+                    "Temporary eager path inserts an external additive graph component "
+                    "on efferent.output -> mechanics.force and binds the row payload "
+                    "from trial_specs.inputs. Future GraphSpec insertion point: "
+                    "named additive command_input channel on that same edge."
                 ),
                 "process_epsilon_pulse": (
                     "Current eager path edits trial_specs.inputs['epsilon'] only when "
@@ -301,6 +373,21 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                     "LinearStateSpace.epsilon / B_w. Rows declare epsilon_component "
                     "and epsilon_index over the canonical current physical block "
                     "[px, py, vx, vy, fx, fy, eps_x_int, eps_y_int]."
+                ),
+                "sensory_feedback_offset": (
+                    "Temporary eager path inserts an external additive graph component "
+                    "on sensory.output -> net.feedback. Future GraphSpec mapping: "
+                    "named additive sensory_feedback channel after sensory noise and "
+                    "before the controller feedback port."
+                ),
+                "delayed_observation_offset": (
+                    "Temporary eager path inserts an external additive graph component "
+                    "on feedback.feedback -> sensory.input. Future GraphSpec mapping: "
+                    "named additive delayed_observation channel before sensory noise."
+                ),
+                "target_stream_jump": (
+                    "Deferred: current fixed-target C&S GRU checkpoints do not consume "
+                    "a target-position input stream."
                 ),
             },
         },
@@ -313,6 +400,7 @@ def apply_perturbation_to_trial_specs(
     trial_specs: Any,
     perturbation: Mapping[str, Any],
     *,
+    model: Any | None = None,
     plant_intervenor_label: str = PLANT_INTERVENOR_LABEL,
 ) -> AdapterResult:
     """Apply one perturbation row to external TaskTrialSpec interfaces."""
@@ -330,39 +418,67 @@ def apply_perturbation_to_trial_specs(
         return _apply_command_input_pulse(
             trial_specs,
             perturbation,
+            model=model,
             plant_intervenor_label=plant_intervenor_label,
         )
     if channel == "process_epsilon":
         return _apply_process_epsilon_pulse(trial_specs, perturbation)
-    if channel in {"sensory_feedback", "delayed_observation", "target_stream"}:
-        reasons = {
-            "sensory_feedback": (
-                "sensory_feedback perturbations require a named adapter at sensory.output "
-                "after noise; controller-input hacks are intentionally excluded"
+    if channel == "sensory_feedback":
+        return _apply_named_graph_channel_offset(
+            trial_specs,
+            perturbation,
+            model=model,
+            adapter_spec=_graph_adapter_spec(
+                perturbation,
+                label_prefix="sensory_feedback",
+                source_node="sensory",
+                source_port="output",
+                target_node="net",
+                target_port="feedback",
+                future_graphspec_mapping=(
+                    "named additive sensory_feedback channel after sensory noise and "
+                    "before net.feedback"
+                ),
             ),
-            "delayed_observation": (
-                "delayed_observation perturbations require a named adapter on the clean "
-                "DelayedPositionVelocityFeedback output before sensory noise; GRU hidden "
-                "state/input mutation is intentionally excluded"
+        )
+    if channel == "delayed_observation":
+        return _apply_named_graph_channel_offset(
+            trial_specs,
+            perturbation,
+            model=model,
+            adapter_spec=_graph_adapter_spec(
+                perturbation,
+                label_prefix="delayed_observation",
+                source_node="feedback",
+                source_port="feedback",
+                target_node="sensory",
+                target_port="input",
+                future_graphspec_mapping=(
+                    "named additive delayed_observation channel before sensory.input "
+                    "noise"
+                ),
             ),
-            "target_stream": (
-                "target_stream perturbations require a task target stream bound to the "
-                "controller; current C&S GRU validation specs expose scalar SISU input, "
-                "not a target stream"
-            ),
-        }
+        )
+    if channel == "target_stream":
         return AdapterResult(
-            status="not_implemented",
+            status="not_applicable",
             trial_specs=trial_specs,
-            reason=reasons[channel],
+            model=model,
+            reason=(
+                "target_stream is deferred: current fixed-target C&S GRU validation "
+                "checkpoints do not consume a target-position input stream"
+            ),
             adapter_provenance={
-                "adapter": "not_available_in_current_eager_adapter",
+                "adapter": "not_applicable_current_fixed_target_checkpoint",
+                "temporary_pre_graphspec": False,
+                "future_graphspec_mapping": "target_stream named graph input when models consume it",
                 "controller_input_mutated": False,
             },
         )
     return AdapterResult(
         status="blocked",
         trial_specs=trial_specs,
+        model=model,
         reason=f"unknown perturbation channel {channel!r}",
     )
 
@@ -484,7 +600,11 @@ def evaluate_run_perturbation_bank(
     rows = []
     bulk_files: dict[str, str] = {}
     for perturbation in bank["perturbations"]:
-        adapter = apply_perturbation_to_trial_specs(base_trial_specs, perturbation)
+        adapter = apply_perturbation_to_trial_specs(
+            base_trial_specs,
+            perturbation,
+            model=model,
+        )
         if adapter.status != "evaluated":
             rows.append(
                 {
@@ -497,7 +617,7 @@ def evaluate_run_perturbation_bank(
             )
             continue
         perturbed_evaluation = _evaluate_model_on_trial_specs(
-            model=model,
+            model=adapter.model if adapter.model is not None else model,
             task=pair.task,
             trial_specs=adapter.trial_specs,
             n_replicates=n_replicates,
@@ -632,6 +752,7 @@ def render_perturbation_response_markdown(manifest: Mapping[str, Any]) -> str:
                 f"- Evaluated: {counts.get('evaluated', 0)}",
                 f"- Blocked: {counts.get('blocked', 0)}",
                 f"- Not implemented: {counts.get('not_implemented', 0)}",
+                f"- Not applicable: {counts.get('not_applicable', 0)}",
                 f"- Rollout trials per replicate: {run['n_rollout_trials_per_replicate']}",
                 "",
             ]
@@ -713,6 +834,7 @@ def _apply_legacy_plant_force_pulse(
     result = _apply_command_input_pulse(
         trial_specs,
         migrated,
+        model=None,
         plant_intervenor_label=plant_intervenor_label,
     )
     provenance = dict(result.adapter_provenance or {})
@@ -730,73 +852,82 @@ def _apply_command_input_pulse(
     trial_specs: Any,
     perturbation: Mapping[str, Any],
     *,
+    model: Any | None,
     plant_intervenor_label: str,
 ) -> AdapterResult:
-    if plant_intervenor_label not in trial_specs.intervene:
-        return AdapterResult(
-            status="blocked",
-            trial_specs=trial_specs,
-            reason=(
-                f"trial_specs.intervene lacks {plant_intervenor_label!r}; current validation "
-                "specs do not expose a clean command-port adapter on "
-                "efferent.output -> mechanics.force"
+    del plant_intervenor_label
+    return _apply_named_graph_channel_offset(
+        trial_specs,
+        perturbation,
+        model=model,
+        adapter_spec=_graph_adapter_spec(
+            perturbation,
+            label_prefix="command_input",
+            source_node="efferent",
+            source_port="output",
+            target_node="mechanics",
+            target_port="force",
+            future_graphspec_mapping=(
+                "named additive command_input channel on efferent.output -> "
+                "mechanics.force"
             ),
-            adapter_provenance={
-                "adapter": "trial_specs.intervene",
-                "label": plant_intervenor_label,
-                "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-                "external_load_force": False,
-            },
-        )
-    params = trial_specs.intervene[plant_intervenor_label]
+        ),
+    )
+
+
+def _apply_named_graph_channel_offset(
+    trial_specs: Any,
+    perturbation: Mapping[str, Any],
+    *,
+    model: Any | None,
+    adapter_spec: GraphAdapterSpec,
+) -> AdapterResult:
+    """Add a time-varying graph-channel offset payload for one perturbation row."""
+
     batch_size = _infer_batch_size(trial_specs)
     timing = perturbation["timing"]
     start = int(timing.get("start_time_index", 0))
     duration = int(timing.get("duration_steps", 1))
-    n_time = _infer_n_time(params, start + duration)
-    force = np.zeros((batch_size, n_time, 2), dtype=np.float32)
-    force[:, start : start + duration, _axis_index(str(perturbation["axis"]))] = (
+    n_time = _infer_trial_n_time(trial_specs, start + duration)
+    payload = np.zeros((batch_size, n_time, _adapter_payload_dim(adapter_spec)), dtype=np.float32)
+    axis_index = _axis_index(str(perturbation["axis"]))
+    payload[:, start : start + duration, axis_index] = (
         float(perturbation["amplitude"]) * int(perturbation["sign"])
     )
-    active = np.zeros((batch_size, n_time), dtype=bool)
-    active[:, start : start + duration] = True
-    updated = params
-    if hasattr(updated, "field"):
-        updated = eqx.tree_at(lambda spec: spec.field, updated, TimeSeriesParam(jnp.asarray(force)))
+    updated_trial_specs = _add_trial_input(
+        trial_specs,
+        adapter_spec.input_key,
+        jnp.asarray(payload),
+    )
+    updated_model = None
+    provenance = {
+        **adapter_spec.to_json(),
+        "start_time_index": start,
+        "duration_steps": duration,
+        "axis_index": axis_index,
+    }
+    if adapter_spec.target_node == "mechanics" and adapter_spec.target_port == "force":
+        provenance["external_load_force"] = False
+    if model is not None:
+        try:
+            updated_model = insert_additive_graph_channel_adapter(model, adapter_spec)
+        except ValueError as exc:
+            return AdapterResult(
+                status="blocked",
+                trial_specs=trial_specs,
+                model=model,
+                reason=str(exc),
+                adapter_provenance=provenance,
+            )
+        provenance["graph_inserted"] = True
     else:
-        return AdapterResult(
-            status="blocked",
-            trial_specs=trial_specs,
-            reason=f"{plant_intervenor_label!r} command-input params do not expose a field leaf",
-        )
-    if hasattr(updated, "scale"):
-        updated = eqx.tree_at(
-            lambda spec: spec.scale,
-            updated,
-            jnp.ones((batch_size,), dtype=jnp.float32),
-        )
-    if hasattr(updated, "active"):
-        updated = eqx.tree_at(
-            lambda spec: spec.active,
-            updated,
-            TimeSeriesParam(jnp.asarray(active)),
-        )
+        provenance["graph_inserted"] = False
+        provenance["graph_insertion_requires_model"] = True
     return AdapterResult(
         status="evaluated",
-        trial_specs=eqx.tree_at(
-            lambda ts: ts.intervene[plant_intervenor_label],
-            trial_specs,
-            updated,
-        ),
-        adapter_provenance={
-            "adapter": "trial_specs.intervene.command_input",
-            "label": plant_intervenor_label,
-            "start_time_index": start,
-            "duration_steps": duration,
-            "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-            "external_load_force": False,
-            "temporary_eager_adapter": True,
-        },
+        trial_specs=updated_trial_specs,
+        model=updated_model,
+        adapter_provenance=provenance,
     )
 
 
@@ -866,6 +997,93 @@ def _apply_process_epsilon_pulse(
             "temporary_eager_adapter": True,
         },
     )
+
+
+def insert_additive_graph_channel_adapter(model: Any, adapter_spec: GraphAdapterSpec) -> Any:
+    """Insert a temporary external additive adapter and bind its input payload."""
+
+    if adapter_spec.label in getattr(model, "nodes", {}):
+        return model
+    old_wire = Wire(
+        adapter_spec.source_node,
+        adapter_spec.source_port,
+        adapter_spec.target_node,
+        adapter_spec.target_port,
+    )
+    graph = model.remove_wire(old_wire)
+    graph = graph.add_node(
+        adapter_spec.label,
+        AdditiveGraphChannelAdapter(label=adapter_spec.label),
+    )
+    graph = graph.add_wire(
+        Wire(
+            adapter_spec.source_node,
+            adapter_spec.source_port,
+            adapter_spec.label,
+            adapter_spec.input_port,
+        )
+    )
+    graph = graph.add_wire(
+        Wire(
+            adapter_spec.label,
+            adapter_spec.output_port,
+            adapter_spec.target_node,
+            adapter_spec.target_port,
+        )
+    )
+    graph = eqx.tree_at(
+        lambda g: g.input_ports,
+        graph,
+        (*graph.input_ports, adapter_spec.input_key),
+    )
+    graph = eqx.tree_at(
+        lambda g: g.input_bindings,
+        graph,
+        {**graph.input_bindings, adapter_spec.input_key: (adapter_spec.label, "offset")},
+    )
+    return graph
+
+
+def _graph_adapter_spec(
+    perturbation: Mapping[str, Any],
+    *,
+    label_prefix: str,
+    source_node: str,
+    source_port: str,
+    target_node: str,
+    target_port: str,
+    future_graphspec_mapping: str,
+) -> GraphAdapterSpec:
+    perturbation_id = str(perturbation["perturbation_id"])
+    label = f"{GRAPH_ADAPTER_INPUT_PREFIX}_{label_prefix}_{_stable_label(perturbation_id)}"
+    input_key = f"{GRAPH_ADAPTER_INPUT_PREFIX}:{perturbation_id}"
+    return GraphAdapterSpec(
+        label=label,
+        input_key=input_key,
+        source_node=source_node,
+        source_port=source_port,
+        target_node=target_node,
+        target_port=target_port,
+        input_port="signal",
+        output_port="signal",
+        future_graphspec_mapping=future_graphspec_mapping,
+    )
+
+
+def _add_trial_input(trial_specs: Any, key: str, value: Any) -> Any:
+    inputs = dict(trial_specs.inputs)
+    inputs[key] = value
+    return eqx.tree_at(lambda ts: ts.inputs, trial_specs, inputs)
+
+
+def _adapter_payload_dim(adapter_spec: GraphAdapterSpec) -> int:
+    if adapter_spec.target_node == "net" and adapter_spec.target_port == "feedback":
+        return 4
+    if adapter_spec.target_node == "sensory" and adapter_spec.target_port == "input":
+        return 4
+    if adapter_spec.target_node == "mechanics" and adapter_spec.target_port == "force":
+        return 2
+    raise ValueError(f"Unsupported graph adapter insertion point {adapter_spec.insertion_point!r}")
 
 
 def _evaluate_model_on_trial_specs(
@@ -994,12 +1212,14 @@ def _infer_batch_size(trial_specs: Any) -> int:
     raise ValueError("Unable to infer trial batch size")
 
 
-def _infer_n_time(params: Any, minimum: int) -> int:
-    field = getattr(params, "field", None)
-    value = getattr(field, "value", None)
-    shape = getattr(value, "shape", None)
-    if shape is not None and len(shape) >= 2:
-        return max(int(shape[-2]), minimum)
+def _infer_trial_n_time(trial_specs: Any, minimum: int) -> int:
+    target = trial_specs.inputs.get("effector_target")
+    if target is not None and hasattr(target, "pos"):
+        return max(int(target.pos.shape[-2]), minimum)
+    for value in trial_specs.inputs.values():
+        shape = getattr(value, "shape", None)
+        if shape is not None and len(shape) >= 2:
+            return max(int(shape[-2]), minimum)
     return minimum
 
 
@@ -1009,6 +1229,10 @@ def _is_replicate_array(leaf: Any, n_replicates: int) -> bool:
 
 def _sign_label(sign: int) -> str:
     return "pos" if sign > 0 else "neg"
+
+
+def _stable_label(value: str) -> str:
+    return "".join(char if char.isalnum() else "_" for char in value)
 
 
 def _repo_relative(path: Path, *, repo_root: Path = REPO_ROOT) -> str:
@@ -1034,12 +1258,16 @@ __all__ = [
     "DEFAULT_OUTPUT_FILENAME",
     "DEFAULT_RUN_IDS",
     "DEFAULT_SOURCE_EXPERIMENT",
+    "GRAPH_ADAPTER_INPUT_PREFIX",
     "SCHEMA_VERSION",
+    "AdditiveGraphChannelAdapter",
     "AdapterResult",
+    "GraphAdapterSpec",
     "PerturbationSpec",
     "apply_perturbation_to_trial_specs",
     "default_cs_perturbation_bank",
     "evaluate_run_perturbation_bank",
+    "insert_additive_graph_channel_adapter",
     "materialize_gru_perturbation_response",
     "render_perturbation_response_markdown",
     "summarize_perturbation_response",
