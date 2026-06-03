@@ -9,10 +9,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import equinox as eqx
+import jax.numpy as jnp
+import jax.random as jr
+import numpy as np
 from rlrmp.paths import REPO_ROOT
 
 
-SCHEMA_VERSION = "rlrmp.objective_comparator_sidecar.v3"
+SCHEMA_VERSION = "rlrmp.objective_comparator_sidecar.v4"
 FULL_ANALYTICAL_QRF_OBJECTIVE = "full_analytical_qrf"
 FULL_QRF_TERM_NAMES = (
     "running_state_q",
@@ -47,6 +51,108 @@ DEFAULT_PER_TERM_STATUS = {
         "disturbance-integrator contributions"
     ),
 }
+DEFAULT_SHARED_ROLLOUT_STATUS = {
+    "status": "not_implemented",
+    "lens": "shared_rollout_full_qrf",
+    "reason": "shared-rollout comparator was not supplied to the sidecar builder",
+    "selection_role": "audit_only_not_used_for_checkpoint_selection",
+}
+
+
+@dataclass(frozen=True)
+class SharedRolloutBank:
+    """Shared C&S rollout bank for extLQG-vs-GRU objective comparison."""
+
+    bank_id: str
+    seed: int
+    initial_states: np.ndarray
+    process_epsilon: np.ndarray
+    initial_covariance: float
+
+    @property
+    def n_trials(self) -> int:
+        """Return the number of rollout trials in the shared bank."""
+
+        return int(self.initial_states.shape[0])
+
+    def to_json(self) -> dict[str, Any]:
+        """Return public bank provenance without large sampled arrays."""
+
+        return {
+            "bank_id": self.bank_id,
+            "seed": self.seed,
+            "n_trials": self.n_trials,
+            "initial_state": {
+                "status": "shared",
+                "source": "analytical_output_feedback_initial_state_covariance",
+                "covariance": self.initial_covariance,
+                "shape": list(self.initial_states.shape),
+            },
+            "process_load_epsilon": {
+                "status": "shared",
+                "source": "rlrmp.modules.training.part2._sample_cs_lss_process_epsilon",
+                "channel": "TaskTrialSpec.inputs['epsilon'] -> mechanics.epsilon",
+                "shape": list(self.process_epsilon.shape),
+            },
+            "sensory_noise": {
+                "status": "not_shared",
+                "reason": (
+                    "GRU sensory noise is sampled inside the Feedbax graph during "
+                    "eval_trials, while extLQG uses explicit sensory draw arrays; "
+                    "the current graph contract does not expose an equivalent "
+                    "sampled sensory-noise input channel for both arms."
+                ),
+            },
+            "command_or_motor_noise": {
+                "status": "not_shared",
+                "reason": (
+                    "GRU motor/command noise is sampled by internal graph channels; "
+                    "only the external process/load epsilon input is shared in this "
+                    "materialization."
+                ),
+            },
+        }
+
+
+def build_shared_rollout_bank(
+    *,
+    seed: int = 20260603,
+    n_trials: int = 32,
+    bank_id: str = "cs_lss_shared_x0_epsilon_v1",
+) -> SharedRolloutBank:
+    """Sample the standard shared initial-state/process-epsilon bank."""
+
+    from rlrmp.analysis.cs_game_card import build_canonical_game
+    from rlrmp.analysis.cs_released_simulation import _default_output_feedback_initial_state
+    from rlrmp.analysis.output_feedback import OutputFeedbackConfig
+    from rlrmp.modules.training.part2 import _cs_lss_process_epsilon_factor
+
+    if n_trials < 1:
+        raise ValueError("n_trials must be at least 1")
+    plant, schedule = build_canonical_game()
+    config = OutputFeedbackConfig()
+    x0 = _default_output_feedback_initial_state(plant, config)
+    key_x0, key_epsilon = jr.split(jr.PRNGKey(seed))
+    initial_covariance = float(config.estimator_initial_covariance)
+    initial_states = x0[None, :] + jnp.sqrt(initial_covariance) * jr.normal(
+        key_x0,
+        (n_trials, plant.n),
+        dtype=jnp.float64,
+    )
+    epsilon_factor = _cs_lss_process_epsilon_factor()
+    epsilon_standard = jr.normal(
+        key_epsilon,
+        (n_trials, schedule.T, epsilon_factor.shape[0]),
+        dtype=jnp.float64,
+    )
+    process_epsilon = jnp.einsum("btd,ed->bte", epsilon_standard, epsilon_factor)
+    return SharedRolloutBank(
+        bank_id=bank_id,
+        seed=seed,
+        initial_states=np.asarray(initial_states, dtype=np.float64),
+        process_epsilon=np.asarray(process_epsilon, dtype=np.float64),
+        initial_covariance=initial_covariance,
+    )
 
 
 @dataclass(frozen=True)
@@ -105,6 +211,7 @@ def build_objective_comparator_sidecar(
     same_noise_bank_monte_carlo: Mapping[str, Any] | None = None,
     run_metadata_by_id: Mapping[str, Mapping[str, Any]] | None = None,
     per_term_realized_scoring: Mapping[str, Any] | None = None,
+    shared_rollout_comparator: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a JSON sidecar from validation-selected checkpoint records."""
 
@@ -113,12 +220,14 @@ def build_objective_comparator_sidecar(
         raise ValueError("checkpoint_selection must contain a mapping at key 'runs'")
 
     metadata_by_id = run_metadata_by_id or {}
+    shared_rollout = dict(shared_rollout_comparator or DEFAULT_SHARED_ROLLOUT_STATUS)
     sidecar_rows = [
         _build_run_row(
             run_id=str(run_id),
             selections=_expect_sequence(selections),
             extlqg=extlqg,
             run_metadata=metadata_by_id.get(str(run_id)),
+            shared_rollout_run=_shared_rollout_run(shared_rollout, str(run_id)),
         )
         for run_id, selections in sorted(runs.items())
     ]
@@ -175,12 +284,21 @@ def build_objective_comparator_sidecar(
                     "state, command, force/filter, and disturbance-integrator terms"
                 ),
             },
+            "shared_rollout_full_qrf": {
+                "kind": "realized_shared_rollout_comparison",
+                "definition": (
+                    "validation-selected GRU checkpoints and extLQG evaluated on the "
+                    "same sampled initial-state/process-epsilon bank, then scored by "
+                    "the same full-Q/R/Q_f cost and per-term decomposition"
+                ),
+            },
         },
         "extlqg_decomposition": extlqg.to_json(),
         "same_noise_bank_monte_carlo": dict(
-            same_noise_bank_monte_carlo or DEFAULT_MONTE_CARLO_STATUS
+            same_noise_bank_monte_carlo or _same_noise_status_from_shared_rollout(shared_rollout)
         ),
         "per_term_realized_scoring": dict(per_term_realized_scoring or DEFAULT_PER_TERM_STATUS),
+        "shared_rollout_comparator": shared_rollout,
         "rows": sidecar_rows,
         "caveats": [
             (
@@ -193,10 +311,227 @@ def build_objective_comparator_sidecar(
             "This sidecar is diagnostic only and is not a standard-certificate gate.",
             (
                 "GRU values are validation-selected realized full-QRF scalars; "
-                "same-noise-bank extLQG realized values require separate Monte "
-                "Carlo materialization."
+                "the shared-rollout block is an audit-only post-hoc rescore and "
+                "is not used for checkpoint selection."
             ),
         ],
+    }
+
+
+def shared_full_qrf_cost_summary(
+    *,
+    states: Any,
+    commands: Any,
+    initial_states: Any,
+) -> dict[str, Any]:
+    """Score realized full-Q/R/Q_f rollout costs with standard sidecar terms."""
+
+    from rlrmp.analysis.cs_game_card import TARGET_POS, build_canonical_game
+
+    _plant, schedule = build_canonical_game()
+    state_array = np.asarray(states, dtype=np.float64)
+    command_array = np.asarray(commands, dtype=np.float64)
+    initial_array = np.asarray(initial_states, dtype=np.float64)
+    if state_array.shape[-1] != schedule.Q.shape[-1]:
+        raise ValueError(
+            f"Full-Q/R/Q_f scorer expected state dim {schedule.Q.shape[-1]}, "
+            f"got {state_array.shape[-1]}."
+        )
+    if command_array.shape[-1] != schedule.R.shape[-1]:
+        raise ValueError(
+            f"Full-Q/R/Q_f scorer expected command dim {schedule.R.shape[-1]}, "
+            f"got {command_array.shape[-1]}."
+        )
+    horizon = int(schedule.T)
+    if state_array.shape[-2] != horizon:
+        raise ValueError(f"Full-Q/R/Q_f scorer expected {horizon} states.")
+    if command_array.shape[-2] != horizon:
+        raise ValueError(f"Full-Q/R/Q_f scorer expected {horizon} commands.")
+    initial_array = np.broadcast_to(initial_array, (*state_array.shape[:-2], state_array.shape[-1]))
+    x_pre = np.concatenate([initial_array[..., None, :], state_array[..., :-1, :]], axis=-2)
+    x_pre = _goal_centered_vectors(x_pre, target_pos=TARGET_POS)
+    x_terminal = _goal_centered_vectors(state_array[..., -1, :], target_pos=TARGET_POS)
+    q = np.asarray(schedule.Q, dtype=np.float64)
+    r = np.asarray(schedule.R, dtype=np.float64)
+    q_f = np.asarray(schedule.Q_f, dtype=np.float64)
+    groups = _state_term_groups(state_array.shape[-1])
+    running_state = _state_quadratic_group(x_pre, q, groups["running_state"])
+    force_filter = _state_quadratic_group(x_pre, q, groups["force_filter_state"])
+    disturbance_integrator = _state_quadratic_group(
+        x_pre,
+        q,
+        groups["disturbance_integrator_state"],
+    )
+    terminal_state = _terminal_quadratic_group(x_terminal, q_f, groups["running_state"])
+    terminal_force = _terminal_quadratic_group(x_terminal, q_f, groups["force_filter_state"])
+    terminal_integrator = _terminal_quadratic_group(
+        x_terminal,
+        q_f,
+        groups["disturbance_integrator_state"],
+    )
+    command_control = np.sum(
+        np.einsum("...ti,tij,...tj->...t", command_array, r, command_array),
+        axis=-1,
+    )
+    force_filter = force_filter + terminal_force
+    disturbance_integrator = disturbance_integrator + terminal_integrator
+    total = (
+        running_state
+        + terminal_state
+        + command_control
+        + force_filter
+        + disturbance_integrator
+    )
+    return {
+        "status": "available",
+        "lens": "shared_rollout_realized_full_qrf",
+        "basis": {
+            "state_key": "states.mechanics.vector",
+            "command_key": "states.net.output or extLQG u_command",
+            "state_transform": "subtract TARGET_POS from each physical delay block x/y",
+            "schedule_source": "rlrmp.analysis.cs_game_card.build_canonical_game",
+            "term_split": "coordinate masks over each 8D delay block",
+        },
+        "total": _summary_with_values(total),
+        "running_state": _summary_with_values(running_state),
+        "terminal_state": _summary_with_values(terminal_state),
+        "command_control": _summary_with_values(command_control),
+        "force_filter_state": _summary_with_values(force_filter),
+        "disturbance_integrator_state": _summary_with_values(disturbance_integrator),
+        "term_sum_delta": _summary_stats(
+            total
+            - (
+                running_state
+                + terminal_state
+                + command_control
+                + force_filter
+                + disturbance_integrator
+            )
+        ),
+    }
+
+
+def materialize_shared_rollout_comparator(
+    *,
+    experiment: str,
+    run_ids: Sequence[str],
+    checkpoint_manifest: Mapping[str, Any],
+    bank: SharedRolloutBank | None = None,
+    n_trials: int = 32,
+    seed: int = 20260603,
+    repo_root: Path = REPO_ROOT,
+) -> dict[str, Any]:
+    """Evaluate extLQG and validation-selected GRUs on one shared bank."""
+
+    from feedbax.types import TreeNamespace, dict_to_namespace
+    from rlrmp.analysis.cs_game_card import build_canonical_game
+    from rlrmp.analysis.cs_gru_standard_materialization import normalize_gru_hps
+    from rlrmp.analysis.cs_released_simulation import (
+        build_extlqg_comparator_path,
+        default_cs_noise_covariances,
+        simulate_lqg_released_forward,
+        zero_forward_noise_draws,
+    )
+    from rlrmp.analysis.gru_checkpoint_selection import load_validation_selected_checkpoint_model
+    from rlrmp.analysis.gru_pilot_figures import repeat_single_validation_trial, resolve_run_inputs
+    from rlrmp.analysis.output_feedback import OutputFeedbackConfig
+    from rlrmp.modules.training.part2 import setup_task_model_pair
+
+    bank = bank or build_shared_rollout_bank(seed=seed, n_trials=n_trials)
+    plant, schedule = build_canonical_game()
+    config = OutputFeedbackConfig()
+    covariances = default_cs_noise_covariances(plant, config)
+    extlqg_path = build_extlqg_comparator_path(
+        plant,
+        jnp.zeros((schedule.T, plant.m_u, plant.n), dtype=jnp.float64),
+        covariances,
+        schedule=schedule,
+        config=config,
+    )
+    zero_draws = zero_forward_noise_draws(T=schedule.T, plant=plant, config=config)
+    ext_states = []
+    ext_commands = []
+    for initial_state, epsilon in zip(bank.initial_states, bank.process_epsilon, strict=True):
+        rollout = simulate_lqg_released_forward(
+            plant,
+            extlqg_path.controller_gains,
+            jnp.asarray(initial_state, dtype=jnp.float64),
+            draws=zero_draws,
+            covariances=covariances,
+            estimator_gains=extlqg_path.estimator_gains,
+            adversary_epsilon=jnp.asarray(epsilon, dtype=jnp.float64),
+            config=config,
+        )
+        ext_states.append(np.asarray(rollout.x[1:], dtype=np.float64))
+        ext_commands.append(np.asarray(rollout.u_command, dtype=np.float64))
+    extlqg_cost = shared_full_qrf_cost_summary(
+        states=np.stack(ext_states, axis=0),
+        commands=np.stack(ext_commands, axis=0),
+        initial_states=bank.initial_states,
+    )
+
+    runs = resolve_run_inputs(experiment=experiment, run_ids=run_ids, labels=None, repo_root=repo_root)
+    run_results = {}
+    for run in runs:
+        hps = dict_to_namespace(normalize_gru_hps(run.run_spec["hps"]), to_type=TreeNamespace)
+        n_replicates = int(hps.model.n_replicates)
+        pair = setup_task_model_pair(hps, key=jr.PRNGKey(int(run.run_spec.get("seed", 42))))
+        model, checkpoint_selection = load_validation_selected_checkpoint_model(
+            experiment=experiment,
+            run_id=run.run_id,
+            run_spec=run.run_spec,
+            repo_root=repo_root,
+        )
+        trial_specs = _trial_specs_with_shared_bank(
+            repeat_single_validation_trial(pair.task.validation_trials, bank.n_trials),
+            bank,
+        )
+        states = _evaluate_replicate_model_states(
+            model=model,
+            task=pair.task,
+            trial_specs=trial_specs,
+            n_replicates=n_replicates,
+            seed=seed,
+        )
+        gru_cost = shared_full_qrf_cost_summary(
+            states=np.asarray(states.mechanics.vector, dtype=np.float64),
+            commands=np.asarray(states.net.output, dtype=np.float64),
+            initial_states=bank.initial_states,
+        )
+        run_results[run.run_id] = {
+            "status": "available",
+            "checkpoint_policy": "validation_selected_per_replicate",
+            "selection_role": "audit_only_not_used_for_checkpoint_selection",
+            "checkpoint_selection": [
+                selection.to_json(repo_root=repo_root) for selection in checkpoint_selection
+            ],
+            "n_replicates": n_replicates,
+            "gru_cost": _public_cost_summary(gru_cost),
+            "extlqg_cost": _public_cost_summary(extlqg_cost),
+            "gru_vs_extlqg": _cost_comparison(gru_cost, extlqg_cost),
+        }
+    return {
+        "status": "available",
+        "lens": "shared_rollout_full_qrf",
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "bank": bank.to_json(),
+        "extlqg": {
+            "status": "available",
+            "parity_status": extlqg_path.parity_status,
+            "n_iterations": int(extlqg_path.n_iterations),
+            "expected_cost": extlqg_path.expected_cost,
+            "cost": _public_cost_summary(extlqg_cost),
+        },
+        "noise_comparability": {
+            "shared_channels": ["initial_state", "process_load_epsilon"],
+            "not_shared_channels": ["sensory_noise", "command_or_motor_noise"],
+            "limitation": (
+                "This is a shared initial-state plus process/load epsilon comparator. "
+                "Sensory and command/motor noise are explicitly not claimed as shared."
+            ),
+        },
+        "runs": run_results,
+        "source_checkpoint_manifest_schema": checkpoint_manifest.get("schema_version"),
     }
 
 
@@ -207,6 +542,7 @@ def render_objective_comparator_markdown(sidecar: Mapping[str, Any]) -> str:
     rows = _expect_sequence(sidecar["rows"])
     same_noise = _expect_mapping(sidecar["same_noise_bank_monte_carlo"])
     per_term = _expect_mapping(sidecar["per_term_realized_scoring"])
+    shared_rollout = _expect_mapping(sidecar.get("shared_rollout_comparator", {}))
     lines = [
         "# Full-QRF objective comparator sidecar",
         "",
@@ -240,6 +576,11 @@ def render_objective_comparator_markdown(sidecar: Mapping[str, Any]) -> str:
             "| realized per-term full-Q/R/Q_f scoring | "
             f"{per_term['status']} | requires scorer output for running state, terminal, "
             "command, force/filter, and disturbance-integrator terms |"
+        ),
+        (
+            "| shared-rollout comparator | "
+            f"{shared_rollout.get('status', 'not_available')} | shared initial-state and "
+            "process/load epsilon bank; sensory/command noise limits declared |"
         ),
         "",
         "## extLQG decomposition",
@@ -312,6 +653,7 @@ def render_objective_comparator_markdown(sidecar: Mapping[str, Any]) -> str:
             "",
         ]
     )
+    lines.extend(_render_shared_rollout_markdown(shared_rollout))
     return "\n".join(lines)
 
 
@@ -462,6 +804,12 @@ def materialize_gru_objective_comparator_sidecar(
         ),
         generated_by="rlrmp.analysis.objective_comparator.materialize_gru_objective_comparator_sidecar",
         run_metadata_by_id=run_metadata_by_id,
+        shared_rollout_comparator=_try_materialize_shared_rollout_comparator(
+            experiment=experiment,
+            run_ids=run_ids,
+            checkpoint_manifest=checkpoint_manifest,
+            repo_root=repo_root,
+        ),
     )
     write_objective_comparator_sidecar(
         sidecar,
@@ -483,6 +831,7 @@ def _build_run_row(
     selections: Sequence[Any],
     extlqg: ExtLQGCostDecomposition,
     run_metadata: Mapping[str, Any] | None = None,
+    shared_rollout_run: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     selected = [_float_from_selection(item, "scoring_validation_objective") for item in selections]
     best_logged = [
@@ -516,6 +865,13 @@ def _build_run_row(
         ),
         "per_term_realized_scoring": dict(DEFAULT_PER_TERM_STATUS),
         "same_noise_bank_monte_carlo": dict(DEFAULT_MONTE_CARLO_STATUS),
+        "shared_rollout_comparator": dict(
+            shared_rollout_run
+            or {
+                "status": "not_available",
+                "reason": "shared-rollout comparator has no row for this run",
+            }
+        ),
         "selected_checkpoints": list(selections),
     }
 
@@ -600,6 +956,273 @@ def _row_comparability(run_metadata: Mapping[str, Any]) -> dict[str, Any]:
         "loss_objective": loss_objective,
         "objective_profile": objective_profile,
     }
+
+
+def _try_materialize_shared_rollout_comparator(
+    *,
+    experiment: str,
+    run_ids: Sequence[str],
+    checkpoint_manifest: Mapping[str, Any],
+    repo_root: Path,
+) -> dict[str, Any]:
+    """Materialize the shared rollout comparator, returning a structured blocker."""
+
+    try:
+        return materialize_shared_rollout_comparator(
+            experiment=experiment,
+            run_ids=run_ids,
+            checkpoint_manifest=checkpoint_manifest,
+            repo_root=repo_root,
+        )
+    except (FileNotFoundError, ValueError, KeyError, AttributeError) as exc:
+        return {
+            "status": "blocked",
+            "lens": "shared_rollout_full_qrf",
+            "reason": str(exc),
+            "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        }
+
+
+def _shared_rollout_run(
+    shared_rollout: Mapping[str, Any],
+    run_id: str,
+) -> Mapping[str, Any] | None:
+    runs = shared_rollout.get("runs")
+    if not isinstance(runs, Mapping):
+        return None
+    run = runs.get(run_id)
+    return _expect_mapping(run) if isinstance(run, Mapping) else None
+
+
+def _same_noise_status_from_shared_rollout(shared_rollout: Mapping[str, Any]) -> dict[str, Any]:
+    if shared_rollout.get("status") != "available":
+        return dict(DEFAULT_MONTE_CARLO_STATUS)
+    return {
+        "status": "available_with_limitations",
+        "lens": "shared_rollout_full_qrf",
+        "reason": (
+            "shared-rollout comparator materialized common random inputs for initial "
+            "state and process/load epsilon; sensory and command/motor noise are "
+            "explicitly not shared under the current GRU graph contract"
+        ),
+        "shared_channels": ["initial_state", "process_load_epsilon"],
+        "not_shared_channels": ["sensory_noise", "command_or_motor_noise"],
+        "replacement_block": "shared_rollout_comparator",
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+    }
+
+
+def _trial_specs_with_shared_bank(trial_specs: Any, bank: SharedRolloutBank) -> Any:
+    if "mechanics.vector" not in trial_specs.inits:
+        raise ValueError("shared rollout requires trial_specs.inits['mechanics.vector']")
+    if "epsilon" not in trial_specs.inputs:
+        raise ValueError("shared rollout requires trial_specs.inputs['epsilon']")
+    updated = eqx.tree_at(
+        lambda ts: ts.inits["mechanics.vector"],
+        trial_specs,
+        jnp.asarray(bank.initial_states, dtype=jnp.float64),
+    )
+    return eqx.tree_at(
+        lambda ts: ts.inputs["epsilon"],
+        updated,
+        jnp.asarray(bank.process_epsilon, dtype=jnp.float64),
+    )
+
+
+def _evaluate_replicate_model_states(
+    *,
+    model: Any,
+    task: Any,
+    trial_specs: Any,
+    n_replicates: int,
+    seed: int,
+) -> Any:
+    model_arrays, model_other = eqx.partition(
+        model,
+        lambda leaf: _is_replicate_array(leaf, n_replicates),
+    )
+
+    def eval_one_replicate(model_array_leaves: Any, key: Any) -> Any:
+        replicate_model = eqx.combine(model_array_leaves, model_other)
+        return task.eval_trials(
+            replicate_model,
+            trial_specs,
+            jr.split(key, bank_batch_size(trial_specs)),
+        )
+
+    return eqx.filter_vmap(eval_one_replicate, in_axes=(0, 0))(
+        model_arrays,
+        jr.split(jr.PRNGKey(seed), n_replicates),
+    )
+
+
+def bank_batch_size(trial_specs: Any) -> int:
+    for initial_state in trial_specs.inits.values():
+        shape = getattr(initial_state, "shape", None)
+        if shape is not None and len(shape) >= 1:
+            return int(shape[0])
+    target = trial_specs.inputs.get("effector_target")
+    if target is not None and hasattr(target, "pos"):
+        return int(target.pos.shape[0])
+    raise ValueError("could not infer shared rollout bank size")
+
+
+def _is_replicate_array(leaf: Any, n_replicates: int) -> bool:
+    shape = getattr(leaf, "shape", None)
+    return bool(shape) and int(shape[0]) == n_replicates
+
+
+def _state_term_groups(state_dim: int) -> dict[str, list[int]]:
+    if state_dim % 8 != 0:
+        raise ValueError(f"state dimension {state_dim} is not divisible by 8")
+    groups = {
+        "running_state": [],
+        "force_filter_state": [],
+        "disturbance_integrator_state": [],
+    }
+    for start in range(0, state_dim, 8):
+        groups["running_state"].extend(range(start, start + 4))
+        groups["force_filter_state"].extend(range(start + 4, start + 6))
+        groups["disturbance_integrator_state"].extend(range(start + 6, start + 8))
+    return groups
+
+
+def _state_quadratic_group(values: np.ndarray, matrices: np.ndarray, indices: Sequence[int]) -> Any:
+    idx = np.asarray(indices, dtype=np.int64)
+    selected = values[..., idx]
+    selected_matrices = matrices[:, idx[:, None], idx]
+    return np.sum(np.einsum("...ti,tij,...tj->...t", selected, selected_matrices, selected), axis=-1)
+
+
+def _terminal_quadratic_group(values: np.ndarray, matrix: np.ndarray, indices: Sequence[int]) -> Any:
+    idx = np.asarray(indices, dtype=np.int64)
+    selected = values[..., idx]
+    selected_matrix = matrix[idx[:, None], idx]
+    return np.einsum("...i,ij,...j->...", selected, selected_matrix, selected)
+
+
+def _goal_centered_vectors(values: Any, *, target_pos: Any) -> np.ndarray:
+    result = np.array(values, dtype=np.float64, copy=True)
+    target = np.asarray(target_pos, dtype=np.float64)
+    if result.shape[-1] % 8 != 0:
+        raise ValueError(f"state dimension {result.shape[-1]} is not divisible by 8")
+    for start in range(0, result.shape[-1], 8):
+        result[..., start : start + 2] -= target
+    return result
+
+
+def _summary_with_values(values: Any) -> dict[str, Any]:
+    array = np.asarray(values, dtype=np.float64)
+    return {
+        **_summary_stats(array),
+        "shape": list(array.shape),
+        "values": array.tolist(),
+    }
+
+
+def _summary_stats(values: Any) -> dict[str, float | int]:
+    array = np.asarray(values, dtype=np.float64)
+    if array.size == 0:
+        return {"count": 0, "mean": np.nan, "std": np.nan, "min": np.nan, "max": np.nan}
+    flat = array.reshape(-1)
+    return {
+        "count": int(flat.size),
+        "mean": float(np.mean(flat)),
+        "std": float(np.std(flat)),
+        "min": float(np.min(flat)),
+        "max": float(np.max(flat)),
+        "p50": float(np.quantile(flat, 0.50)),
+        "p95": float(np.quantile(flat, 0.95)),
+    }
+
+
+def _public_cost_summary(cost: Mapping[str, Any]) -> dict[str, Any]:
+    result = {
+        "status": cost.get("status"),
+        "lens": cost.get("lens"),
+        "basis": dict(cost.get("basis", {})),
+    }
+    for key in FULL_QRF_TERM_NAMES:
+        source_key = _cost_source_key(key)
+        result[key] = _without_values(_expect_mapping(cost[source_key]))
+    result["total"] = _without_values(_expect_mapping(cost["total"]))
+    result["term_sum_delta"] = dict(_expect_mapping(cost["term_sum_delta"]))
+    return result
+
+
+def _without_values(summary: Mapping[str, Any]) -> dict[str, Any]:
+    payload = dict(summary)
+    payload.pop("values", None)
+    return payload
+
+
+def _cost_source_key(term_name: str) -> str:
+    return {
+        "running_state_q": "running_state",
+        "terminal_state_q_f": "terminal_state",
+        "command_r": "command_control",
+        "force_filter_state": "force_filter_state",
+        "disturbance_integrator_state": "disturbance_integrator_state",
+    }[term_name]
+
+
+def _cost_comparison(gru_cost: Mapping[str, Any], extlqg_cost: Mapping[str, Any]) -> dict[str, Any]:
+    comparison = {"status": "available", "terms": {}}
+    terms = _expect_mapping(comparison["terms"])
+    for term in ("total", *FULL_QRF_TERM_NAMES):
+        source_key = "total" if term == "total" else _cost_source_key(term)
+        gru_mean = float(_expect_mapping(gru_cost[source_key])["mean"])
+        extlqg_mean = float(_expect_mapping(extlqg_cost[source_key])["mean"])
+        terms[term] = {
+            "gru_mean": gru_mean,
+            "extlqg_mean": extlqg_mean,
+            "delta_mean": gru_mean - extlqg_mean,
+            "ratio_to_extlqg": (
+                None if abs(extlqg_mean) <= 1e-300 else gru_mean / extlqg_mean
+            ),
+        }
+    return comparison
+
+
+def _render_shared_rollout_markdown(shared_rollout: Mapping[str, Any]) -> list[str]:
+    status = shared_rollout.get("status", "not_available")
+    lines = ["## Shared-rollout comparator", ""]
+    if status != "available":
+        lines.extend([f"Status: `{status}` - {shared_rollout.get('reason', 'not available')}", ""])
+        return lines
+    bank = _expect_mapping(shared_rollout["bank"])
+    noise = _expect_mapping(shared_rollout["noise_comparability"])
+    lines.extend(
+        [
+            (
+                f"Bank `{bank['bank_id']}` uses {bank['n_trials']} trials, seed "
+                f"`{bank['seed']}`, shared initial states, and shared process/load epsilon."
+            ),
+            "",
+            f"Limitation: {noise['limitation']}",
+            "",
+            "| run | GRU total | extLQG total | GRU/extLQG | running | terminal | command | force/filter | integrator |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+    )
+    for run_id, run in sorted(_expect_mapping(shared_rollout["runs"]).items()):
+        comparison = _expect_mapping(_expect_mapping(run)["gru_vs_extlqg"])
+        terms = _expect_mapping(comparison["terms"])
+        total = _expect_mapping(terms["total"])
+        lines.append(
+            "| "
+            f"`{run_id}` | "
+            f"{_fmt(total['gru_mean'])} | "
+            f"{_fmt(total['extlqg_mean'])} | "
+            f"{_fmt(total['ratio_to_extlqg'])} | "
+            f"{_fmt(_expect_mapping(terms['running_state_q'])['ratio_to_extlqg'])} | "
+            f"{_fmt(_expect_mapping(terms['terminal_state_q_f'])['ratio_to_extlqg'])} | "
+            f"{_fmt(_expect_mapping(terms['command_r'])['ratio_to_extlqg'])} | "
+            f"{_fmt(_expect_mapping(terms['force_filter_state'])['ratio_to_extlqg'])} | "
+            f"{_fmt(_expect_mapping(terms['disturbance_integrator_state'])['ratio_to_extlqg'])} |"
+        )
+    lines.append("")
+    return lines
 
 
 def _float_from_selection(selection: Any, key: str) -> float:

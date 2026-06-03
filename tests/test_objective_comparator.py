@@ -6,14 +6,18 @@ import json
 
 from pathlib import Path
 
+import numpy as np
+
 import rlrmp.analysis.objective_comparator as objective_comparator
 from rlrmp.analysis.objective_comparator import (
     SCHEMA_VERSION,
     ExtLQGCostDecomposition,
+    SharedRolloutBank,
     build_objective_comparator_sidecar,
     load_run_objective_metadata,
     materialize_gru_objective_comparator_sidecar,
     render_objective_comparator_markdown,
+    shared_full_qrf_cost_summary,
     write_objective_comparator_sidecar,
 )
 
@@ -77,6 +81,25 @@ def test_extlqg_decomposition_reports_component_sum_and_declared_total() -> None
 
 
 def test_build_objective_comparator_sidecar_uses_deterministic_comparator_lens() -> None:
+    shared_rollout = {
+        "status": "available",
+        "lens": "shared_rollout_full_qrf",
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "bank": {
+            "bank_id": "unit-bank",
+            "seed": 7,
+            "n_trials": 2,
+        },
+        "noise_comparability": {
+            "limitation": "unit limitation",
+        },
+        "runs": {
+            "run_a": {
+                "status": "available",
+                "gru_vs_extlqg": {"terms": {"total": {"ratio_to_extlqg": 1.25}}},
+            }
+        },
+    }
     sidecar = build_objective_comparator_sidecar(
         issue="abc1234",
         source_manifest="source.json",
@@ -94,12 +117,13 @@ def test_build_objective_comparator_sidecar_uses_deterministic_comparator_lens()
             "run_a": _full_qrf_run_metadata(),
             "run_b": _full_qrf_run_metadata(),
         },
+        shared_rollout_comparator=shared_rollout,
     )
 
     assert sidecar["schema_version"] == SCHEMA_VERSION
     assert sidecar["extlqg_decomposition"]["total_expected_cost"] == 44.0
-    assert sidecar["same_noise_bank_monte_carlo"]["status"] == "not_implemented"
-    assert sidecar["same_noise_bank_monte_carlo"]["lens"] == "same_noise_bank_monte_carlo_full_qrf"
+    assert sidecar["same_noise_bank_monte_carlo"]["status"] == "available_with_limitations"
+    assert sidecar["same_noise_bank_monte_carlo"]["lens"] == "shared_rollout_full_qrf"
     assert sidecar["per_term_realized_scoring"]["status"] == "not_implemented"
     assert (
         sidecar["objective_lenses"]["extlqg_covariance_inclusive_expected_cost"]["noise_bank"]
@@ -114,6 +138,55 @@ def test_build_objective_comparator_sidecar_uses_deterministic_comparator_lens()
     assert first_row["selected_to_extlqg_total_ratio_not_apples_to_apples"] == 12.0 / 44.0
     assert first_row["extlqg_comparable_lens"] == "extlqg_deterministic_initial_state_full_qrf"
     assert first_row["per_term_realized_scoring"]["status"] == "not_implemented"
+    assert sidecar["shared_rollout_comparator"]["status"] == "available"
+    assert first_row["shared_rollout_comparator"]["status"] == "available"
+    assert sidecar["rows"][1]["shared_rollout_comparator"]["status"] == "not_available"
+
+
+def test_shared_rollout_bank_serializes_declared_shared_channels() -> None:
+    bank = SharedRolloutBank(
+        bank_id="unit-bank",
+        seed=123,
+        initial_states=np.zeros((3, 48), dtype=np.float64),
+        process_epsilon=np.zeros((3, 60, 8), dtype=np.float64),
+        initial_covariance=0.01,
+    )
+
+    payload = bank.to_json()
+
+    assert payload["n_trials"] == 3
+    assert payload["initial_state"]["status"] == "shared"
+    assert payload["process_load_epsilon"]["status"] == "shared"
+    assert payload["sensory_noise"]["status"] == "not_shared"
+    assert payload["command_or_motor_noise"]["status"] == "not_shared"
+
+
+def test_shared_full_qrf_cost_summary_decomposes_zero_rollout() -> None:
+    states = np.zeros((2, 60, 48), dtype=np.float64)
+    commands = np.zeros((2, 60, 2), dtype=np.float64)
+    initial_states = np.zeros((2, 48), dtype=np.float64)
+
+    summary = shared_full_qrf_cost_summary(
+        states=states,
+        commands=commands,
+        initial_states=initial_states,
+    )
+
+    total = summary["total"]["mean"]
+    term_sum = sum(
+        summary[key]["mean"]
+        for key in (
+            "running_state",
+            "terminal_state",
+            "command_control",
+            "force_filter_state",
+            "disturbance_integrator_state",
+        )
+    )
+    assert summary["status"] == "available"
+    assert total == term_sum
+    assert summary["command_control"]["mean"] == 0.0
+    assert summary["total"]["shape"] == [2]
 
 
 def test_build_objective_comparator_sidecar_marks_partial_rows_not_comparable() -> None:
