@@ -46,6 +46,11 @@ from rlrmp.stochastic_runtime import (
     apply_stochastic_runtime_to_ensemble,
     stochastic_runtime_config_from_model,
 )
+from rlrmp.train.cs_perturbation_training import (
+    FixedTargetPerturbationTrainingTaskAdapter,
+    config_from_hps,
+    install_perturbation_training_graph_adapters,
+)
 from rlrmp.task import TASK_TYPES
 
 TrainingMethodLabel: TypeAlias = L["bcs", "dai", "pai-asf", "pai-n", "nominal-cs-gru"]
@@ -243,6 +248,15 @@ def setup_task_model_pair(
             sisu_gating=sisu_gating,
             key=key,
         )
+        perturbation_training = config_from_hps(
+            getattr(hps, "perturbation_training", TreeNamespace(enabled=False))
+        )
+        if perturbation_training.enabled:
+            models = install_perturbation_training_graph_adapters(models)
+            task = FixedTargetPerturbationTrainingTaskAdapter(
+                task,
+                perturbation_training,
+            )
         return TaskModelPair(task, models)
 
     if hps.method == "nominal-cs-gru" and plant_backend == LEGACY_CAUSAL_PLANT_BACKEND:

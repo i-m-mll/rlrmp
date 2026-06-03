@@ -62,6 +62,11 @@ from rlrmp.modules.training.part2 import (
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.run_specs import validate_nominal_gru_run_spec
+from rlrmp.train.cs_perturbation_training import (
+    FixedTargetPerturbationTrainingConfig,
+    planned_fixed_target_perturbation_rows,
+    validation_bin_manifest,
+)
 from rlrmp.stochastic_runtime import (
     graphspec_noise_contract,
     stochastic_runtime_config_from_model,
@@ -255,6 +260,21 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             f"n_readout_only={args.n_readout_only}, "
             f"n_recurrent_only={args.n_recurrent_only}"
         )
+    perturbation_training = FixedTargetPerturbationTrainingConfig(
+        enabled=bool(args.perturbation_training),
+        nominal_fraction=float(args.perturbation_nominal_fraction),
+        single_fraction=float(args.perturbation_single_fraction),
+        combined_fraction=float(args.perturbation_combined_fraction),
+        combined_amplitude_scale=float(args.perturbation_combined_amplitude_scale),
+        initial_position_offset_m=float(args.perturbation_initial_position_offset_m),
+        initial_velocity_offset_m_s=float(args.perturbation_initial_velocity_offset_m_s),
+        process_epsilon_scale=float(args.perturbation_process_epsilon_scale),
+        command_input_pulse_n=float(args.perturbation_command_input_pulse_n),
+        sensory_feedback_offset_m=float(args.perturbation_sensory_feedback_offset_m),
+        delayed_observation_offset_m=float(args.perturbation_delayed_observation_offset_m),
+        pulse_start_step=int(args.perturbation_pulse_start_step),
+        pulse_duration_steps=int(args.perturbation_pulse_duration_steps),
+    )
     hps_dict = {
         "method": "nominal-cs-gru",
         "dt": float(plant.dt),
@@ -314,6 +334,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "duration_mean": 0,
             "n_expected": 0,
         },
+        "perturbation_training": perturbation_training.to_hps_dict(),
         "loss": {
             "objective": str(args.loss_objective),
             "weights": {
@@ -539,7 +560,8 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
         },
         "stochastic_runtime": stochastic_runtime,
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
-        "nominal_only": True,
+        "nominal_only": not _perturbation_training_enabled(hps),
+        "training_distribution": _training_distribution_metadata(hps),
         "adversarial_phase": "none",
         "certificate_lens": "input_output_map_certificate",
         "certificate_coordinate_claim": "not_same_coordinate_gain",
@@ -570,7 +592,8 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "plant_backend": str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND)),
         "trainable": ["nodes.net.hidden", "nodes.net.readout"],
         "method": str(hps.method),
-        "nominal_only": True,
+        "nominal_only": not _perturbation_training_enabled(hps),
+        "training_distribution": _training_distribution_metadata(hps),
         "adversarial_phase": "none",
         "certificate_lens": "input_output_map_certificate",
         "analytical_delay_augmented_state_input": False,
@@ -684,7 +707,9 @@ def build_run_spec(
         "mode": _run_mode(args),
         "artifact_output_dir": str(output_dir),
         "spec_dir": str(spec_dir),
-        "nominal_only": True,
+        "nominal_only": not _perturbation_training_enabled(hps),
+        "training_distribution": _training_distribution_metadata(hps),
+        "validation_bins": validation_bin_manifest(hps.perturbation_training),
         "adversarial_phase": "none",
         "modal_launch": "not_requested",
         "full_training_launch": "requested" if args.full_train else "not_requested",
@@ -704,9 +729,10 @@ def build_run_spec(
         "loss_summary": graph_bundle.loss_spec,
         "training_summary": {
             **graph_bundle.training_spec,
-            "training_mode": "nominal",
+            "training_mode": _training_mode(hps),
             "n_train_batches": int(args.n_train_batches),
             "n_adversary_batches": 0,
+            "validation_bins": validation_bin_manifest(hps.perturbation_training),
             "training_diagnostics": _training_diagnostics_metadata(args, output_dir),
         },
         "feedbax_graph": graph_bundle.to_run_metadata(),
@@ -1105,6 +1131,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="Mark the paired non-exact run and use nn_hidden=1e-5.",
     )
     parser.add_argument(
+        "--perturbation-training",
+        action="store_true",
+        help=(
+            "Enable fixed-target perturbation-generalized training using external "
+            "task/plant/channel adapters. Target-position streams are not added."
+        ),
+    )
+    parser.add_argument("--perturbation-nominal-fraction", type=float, default=0.45)
+    parser.add_argument("--perturbation-single-fraction", type=float, default=0.45)
+    parser.add_argument("--perturbation-combined-fraction", type=float, default=0.10)
+    parser.add_argument("--perturbation-combined-amplitude-scale", type=float, default=0.5)
+    parser.add_argument("--perturbation-initial-position-offset-m", type=float, default=0.01)
+    parser.add_argument("--perturbation-initial-velocity-offset-m-s", type=float, default=0.05)
+    parser.add_argument("--perturbation-process-epsilon-scale", type=float, default=0.01)
+    parser.add_argument("--perturbation-command-input-pulse-n", type=float, default=1.0)
+    parser.add_argument("--perturbation-sensory-feedback-offset-m", type=float, default=0.01)
+    parser.add_argument("--perturbation-delayed-observation-offset-m", type=float, default=0.01)
+    parser.add_argument("--perturbation-pulse-start-step", type=int, default=20)
+    parser.add_argument("--perturbation-pulse-duration-steps", type=int, default=5)
+    parser.add_argument(
+        "--planned-perturbation-rows",
+        action="store_true",
+        help="Print the two planned issue aacb9ed local training row commands and exit.",
+    )
+    parser.add_argument(
         "--smoke",
         action="store_true",
         help="Use tiny local values; with --full-train this runs a one-batch smoke.",
@@ -1144,7 +1195,14 @@ def main(
     """CLI entry point."""
 
     args = build_parser().parse_args(argv)
-    result = run_full_training(args, volume_commit=volume_commit) if args.full_train else write_run_spec(args)
+    if args.planned_perturbation_rows:
+        print(_json_dumps({"planned_rows": planned_fixed_target_perturbation_rows()}), end="")
+        return 0
+    result = (
+        run_full_training(args, volume_commit=volume_commit)
+        if args.full_train
+        else write_run_spec(args)
+    )
     print(_json_dumps(result), end="")
     return 0
 
@@ -1411,6 +1469,47 @@ def _optimizer_metadata(args: argparse.Namespace) -> dict[str, Any]:
             args,
             Path(args.output_dir),
         ),
+    }
+
+
+def _perturbation_training_enabled(hps: TreeNamespace) -> bool:
+    return bool(getattr(hps.perturbation_training, "enabled", False))
+
+
+def _training_mode(hps: TreeNamespace) -> str:
+    if _perturbation_training_enabled(hps):
+        return "fixed_target_perturbation_generalized"
+    return "nominal"
+
+
+def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
+    config = hps.perturbation_training
+    if not bool(getattr(config, "enabled", False)):
+        return {
+            "mode": "nominal",
+            "fixed_target_only": True,
+            "target_stream": "not_consumed",
+        }
+    return {
+        "mode": "fixed_target_perturbation_generalized",
+        "fixed_target_only": True,
+        "target_stream": {
+            "status": "not_consumed",
+            "reason": (
+                "Current C&S GRU input is scalar external input plus delayed "
+                "feedback; no target-position stream is supplied to the controller."
+            ),
+        },
+        "mixture": {
+            "nominal_fraction": float(config.nominal_fraction),
+            "single_family_fraction": float(config.single_fraction),
+            "mild_combined_fraction": float(config.combined_fraction),
+            "combined_amplitude_scale": float(config.combined_amplitude_scale),
+        },
+        "single_family_bins": list(config.single_family_bins),
+        "validation_bins": list(config.validation_bins),
+        "controller_internal_mutation": False,
+        "adversarial_phase": "none",
     }
 
 
