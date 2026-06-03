@@ -13,8 +13,11 @@
         "target_stream"
       ],
       "temporary_eager_adapters": {
-        "command_input_pulse": "Current eager path edits TimeSeriesParam leaves under trial_specs.intervene['DisturbanceField'] when that external adapter is present. Future GraphSpec insertion point: additive named channel on efferent.output -> mechanics.force.",
-        "process_epsilon_pulse": "Current eager path edits trial_specs.inputs['epsilon'] only when the model exposes an epsilon input bound to mechanics.epsilon. Future GraphSpec insertion point: named process channel into LinearStateSpace.epsilon / B_w. Rows declare epsilon_component and epsilon_index over the canonical current physical block [px, py, vx, vy, fx, fy, eps_x_int, eps_y_int]."
+        "command_input_pulse": "Temporary eager path inserts an external additive graph component on efferent.output -> mechanics.force and binds the row payload from trial_specs.inputs. Future GraphSpec insertion point: named additive command_input channel on that same edge.",
+        "delayed_observation_offset": "Temporary eager path inserts an external additive graph component on feedback.feedback -> sensory.input. Future GraphSpec mapping: named additive delayed_observation channel before sensory noise.",
+        "process_epsilon_pulse": "Current eager path edits trial_specs.inputs['epsilon'] only when the model exposes an epsilon input bound to mechanics.epsilon. Future GraphSpec insertion point: named process channel into LinearStateSpace.epsilon / B_w. Rows declare epsilon_component and epsilon_index over the canonical current physical block [px, py, vx, vy, fx, fy, eps_x_int, eps_y_int].",
+        "sensory_feedback_offset": "Temporary eager path inserts an external additive graph component on sensory.output -> net.feedback. Future GraphSpec mapping: named additive sensory_feedback channel after sensory noise and before the controller feedback port.",
+        "target_stream_jump": "Deferred: current fixed-target C&S GRU checkpoints do not consume a target-position input stream."
       }
     },
     "legacy_migration": {
@@ -150,7 +153,7 @@
         "units": "m/s"
       },
       {
-        "adapter": "task_trial_spec.intervene['DisturbanceField']",
+        "adapter": "temporary_external_graph_adapter.command_input",
         "amplitude": 1.0,
         "axis": "x",
         "basis": "command_cartesian_force_xy",
@@ -167,7 +170,7 @@
         "units": "N"
       },
       {
-        "adapter": "task_trial_spec.intervene['DisturbanceField']",
+        "adapter": "temporary_external_graph_adapter.command_input",
         "amplitude": 1.0,
         "axis": "x",
         "basis": "command_cartesian_force_xy",
@@ -184,7 +187,7 @@
         "units": "N"
       },
       {
-        "adapter": "task_trial_spec.intervene['DisturbanceField']",
+        "adapter": "temporary_external_graph_adapter.command_input",
         "amplitude": 1.0,
         "axis": "y",
         "basis": "command_cartesian_force_xy",
@@ -201,7 +204,7 @@
         "units": "N"
       },
       {
-        "adapter": "task_trial_spec.intervene['DisturbanceField']",
+        "adapter": "temporary_external_graph_adapter.command_input",
         "amplitude": 1.0,
         "axis": "y",
         "basis": "command_cartesian_force_xy",
@@ -522,7 +525,7 @@
         "units": "epsilon"
       },
       {
-        "adapter": "task_trial_spec.intervene['DisturbanceField']",
+        "adapter": "temporary_external_graph_adapter.command_input",
         "amplitude": 1.0,
         "axis": "x",
         "basis": "command_cartesian_force_xy",
@@ -539,7 +542,7 @@
         "units": "N"
       },
       {
-        "adapter": "task_trial_spec.intervene['DisturbanceField']",
+        "adapter": "temporary_external_graph_adapter.command_input",
         "amplitude": 1.0,
         "axis": "x",
         "basis": "command_cartesian_force_xy",
@@ -556,7 +559,7 @@
         "units": "N"
       },
       {
-        "adapter": "task_trial_spec.intervene['DisturbanceField']",
+        "adapter": "temporary_external_graph_adapter.command_input",
         "amplitude": 1.0,
         "axis": "y",
         "basis": "command_cartesian_force_xy",
@@ -573,7 +576,7 @@
         "units": "N"
       },
       {
-        "adapter": "task_trial_spec.intervene['DisturbanceField']",
+        "adapter": "temporary_external_graph_adapter.command_input",
         "amplitude": 1.0,
         "axis": "y",
         "basis": "command_cartesian_force_xy",
@@ -894,7 +897,7 @@
         "units": "epsilon"
       },
       {
-        "adapter": "task_trial_spec.intervene['DisturbanceField']",
+        "adapter": "temporary_external_graph_adapter.command_input",
         "amplitude": 1.0,
         "axis": "x",
         "basis": "command_cartesian_force_xy",
@@ -911,7 +914,7 @@
         "units": "N"
       },
       {
-        "adapter": "task_trial_spec.intervene['DisturbanceField']",
+        "adapter": "temporary_external_graph_adapter.command_input",
         "amplitude": 1.0,
         "axis": "x",
         "basis": "command_cartesian_force_xy",
@@ -928,7 +931,7 @@
         "units": "N"
       },
       {
-        "adapter": "task_trial_spec.intervene['DisturbanceField']",
+        "adapter": "temporary_external_graph_adapter.command_input",
         "amplitude": 1.0,
         "axis": "y",
         "basis": "command_cartesian_force_xy",
@@ -945,7 +948,7 @@
         "units": "N"
       },
       {
-        "adapter": "task_trial_spec.intervene['DisturbanceField']",
+        "adapter": "temporary_external_graph_adapter.command_input",
         "amplitude": 1.0,
         "axis": "y",
         "basis": "command_cartesian_force_xy",
@@ -1266,12 +1269,12 @@
         "units": "epsilon"
       },
       {
-        "adapter": "not_available_in_current_eager_adapter",
+        "adapter": "temporary_external_graph_adapter.sensory_feedback",
         "amplitude": 0.01,
         "axis": "x",
         "basis": "sensory_feedback_named_channel",
         "channel": "sensory_feedback",
-        "description": "blocked until a clean named sensory-feedback intervention exists",
+        "description": "Offset the external sensory channel between sensory.output and net.feedback.",
         "family": "sensory_feedback_offset",
         "perturbation_id": "sensory_feedback_offset__x_pos",
         "sign": 1,
@@ -1281,12 +1284,12 @@
         "units": "m"
       },
       {
-        "adapter": "not_available_in_current_eager_adapter",
+        "adapter": "temporary_external_graph_adapter.delayed_observation",
         "amplitude": 0.01,
         "axis": "x",
         "basis": "observation_history_named_channel",
         "channel": "delayed_observation",
-        "description": "blocked until delayed-observation history is externally addressable",
+        "description": "Offset the clean delayed-observation channel before sensory noise.",
         "family": "delayed_observation_offset",
         "perturbation_id": "delayed_observation_offset__x_pos",
         "sign": 1,
@@ -1296,7 +1299,7 @@
         "units": "m"
       },
       {
-        "adapter": "not_available_in_current_eager_adapter",
+        "adapter": "not_applicable_current_fixed_target_checkpoint",
         "amplitude": 0.01,
         "axis": "x",
         "basis": "target_cartesian_xy",
@@ -1328,6 +1331,19 @@
     "lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64": {
       "artifact_dir": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64",
       "bulk_files": {
+        "command_input_pulse__t20_x_neg": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t20_x_neg.npz",
+        "command_input_pulse__t20_x_pos": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t20_x_pos.npz",
+        "command_input_pulse__t20_y_neg": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t20_y_neg.npz",
+        "command_input_pulse__t20_y_pos": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t20_y_pos.npz",
+        "command_input_pulse__t40_x_neg": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t40_x_neg.npz",
+        "command_input_pulse__t40_x_pos": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t40_x_pos.npz",
+        "command_input_pulse__t40_y_neg": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t40_y_neg.npz",
+        "command_input_pulse__t40_y_pos": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t40_y_pos.npz",
+        "command_input_pulse__t50_x_neg": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t50_x_neg.npz",
+        "command_input_pulse__t50_x_pos": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t50_x_pos.npz",
+        "command_input_pulse__t50_y_neg": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t50_y_neg.npz",
+        "command_input_pulse__t50_y_pos": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t50_y_pos.npz",
+        "delayed_observation_offset__x_pos": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/delayed_observation_offset__x_pos.npz",
         "initial_position_offset__x_neg": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/initial_position_offset__x_neg.npz",
         "initial_position_offset__x_pos": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/initial_position_offset__x_pos.npz",
         "initial_position_offset__y_neg": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/initial_position_offset__y_neg.npz",
@@ -1383,7 +1399,8 @@
         "process_epsilon_pulse__velocity_y__t40_neg": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__velocity_y__t40_neg.npz",
         "process_epsilon_pulse__velocity_y__t40_pos": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__velocity_y__t40_pos.npz",
         "process_epsilon_pulse__velocity_y__t50_neg": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__velocity_y__t50_neg.npz",
-        "process_epsilon_pulse__velocity_y__t50_pos": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__velocity_y__t50_pos.npz"
+        "process_epsilon_pulse__velocity_y__t50_pos": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__velocity_y__t50_pos.npz",
+        "sensory_feedback_offset__x_pos": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/sensory_feedback_offset__x_pos.npz"
       },
       "checkpoint_selection": [
         {
@@ -2208,66 +2225,434 @@
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "trial_specs.intervene",
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 0,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 5,
               "external_load_force": false,
-              "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-              "label": "DisturbanceField"
+              "future_graphspec_mapping": "named additive command_input channel on efferent.output -> mechanics.force",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:command_input_pulse__t20_x_neg",
+              "insertion_point": "efferent.output -> mechanics.force",
+              "label": "perturbation_adapter_command_input_command_input_pulse__t20_x_neg",
+              "source_node": "efferent",
+              "source_port": "output",
+              "start_time_index": 20,
+              "target_node": "mechanics",
+              "target_port": "force",
+              "temporary_pre_graphspec": true
             },
-            "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-            "status": "blocked"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t20_x_neg.npz"
           },
           "channel": "command_input",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.7527582637423434,
+              "mean": 0.14816325130733524,
+              "min": 0.0,
+              "p50": 0.04363338211284802,
+              "p95": 0.5493502979433046,
+              "std": 0.19208234121889756
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 0.004390518141761476,
+              "mean": 0.0037795833758690915,
+              "min": 0.003199539045566536,
+              "p50": 0.0036080746841579796,
+              "p95": 0.004344119818577347,
+              "std": 0.00043347539966275185
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.005858615911849793,
+              "mean": 0.0022313949376097184,
+              "min": 0.0,
+              "p50": 0.0014379107806539498,
+              "p95": 0.005497500457314053,
+              "std": 0.0022527363808934513
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.01020565286197576,
+              "mean": 0.007164374271744352,
+              "min": 0.0025503440490070115,
+              "p50": 0.008072866389910506,
+              "p95": 0.010049370333838703,
+              "std": 0.0027934552902988607
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.03800853359172488,
+              "mean": 0.01209996261915567,
+              "min": 0.0,
+              "p50": 0.009216211253634022,
+              "p95": 0.036954838020579424,
+              "std": 0.012611373790664442
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.007512101020638116,
+              "mean": 0.0068247444073639306,
+              "min": 0.006032780042840603,
+              "p50": 0.006720283712062342,
+              "p95": 0.007458316696968266,
+              "std": 0.0005156550982789639
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.013821850888496355,
+              "mean": 0.011931064098797428,
+              "min": 0.011306576663265653,
+              "p50": 0.011413905674053903,
+              "p95": 0.013410302999331316,
+              "std": 0.0009590962884374867
+            }
+          },
           "perturbation_id": "command_input_pulse__t20_x_neg",
-          "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-          "status": "blocked"
+          "status": "evaluated"
         },
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "trial_specs.intervene",
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 0,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 5,
               "external_load_force": false,
-              "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-              "label": "DisturbanceField"
+              "future_graphspec_mapping": "named additive command_input channel on efferent.output -> mechanics.force",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:command_input_pulse__t20_x_pos",
+              "insertion_point": "efferent.output -> mechanics.force",
+              "label": "perturbation_adapter_command_input_command_input_pulse__t20_x_pos",
+              "source_node": "efferent",
+              "source_port": "output",
+              "start_time_index": 20,
+              "target_node": "mechanics",
+              "target_port": "force",
+              "temporary_pre_graphspec": true
             },
-            "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-            "status": "blocked"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t20_x_pos.npz"
           },
           "channel": "command_input",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.7588494277680498,
+              "mean": 0.12597467749855507,
+              "min": 0.0,
+              "p50": 0.032442243260399455,
+              "p95": 0.5584629513716554,
+              "std": 0.18441201571168328
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": -0.00015608142157128545,
+              "mean": -0.0015209491416361357,
+              "min": -0.004255982833016757,
+              "p50": -0.0005510709175520906,
+              "p95": -0.00021690922338363892,
+              "std": 0.001539172805164388
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.005974171151299089,
+              "mean": 0.002318601998427661,
+              "min": 0.0,
+              "p50": 0.001437911042828075,
+              "p95": 0.005569638332841999,
+              "std": 0.002341909582754791
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.011918941131132836,
+              "mean": 0.00999800369874709,
+              "min": 0.007847093668947246,
+              "p50": 0.009553032784825818,
+              "p95": 0.011907198362650348,
+              "std": 0.0016365771826500463
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.03801869979127093,
+              "mean": 0.01113320690189562,
+              "min": 0.0,
+              "p50": 0.007570372436369937,
+              "p95": 0.03694843695606551,
+              "std": 0.012574083550698232
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.002301590342975295,
+              "mean": 0.0015242118898587038,
+              "min": 5.657914205482329e-05,
+              "p50": 0.001964484928049571,
+              "p95": 0.0023014262566957598,
+              "std": 0.0008754917407631336
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.020723788913767287,
+              "mean": 0.014764693525800166,
+              "min": 0.01018696489032794,
+              "p50": 0.0145485324468368,
+              "p95": 0.019686058962544516,
+              "std": 0.003488652328984694
+            }
+          },
           "perturbation_id": "command_input_pulse__t20_x_pos",
-          "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-          "status": "blocked"
+          "status": "evaluated"
         },
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "trial_specs.intervene",
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 1,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 5,
               "external_load_force": false,
-              "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-              "label": "DisturbanceField"
+              "future_graphspec_mapping": "named additive command_input channel on efferent.output -> mechanics.force",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:command_input_pulse__t20_y_neg",
+              "insertion_point": "efferent.output -> mechanics.force",
+              "label": "perturbation_adapter_command_input_command_input_pulse__t20_y_neg",
+              "source_node": "efferent",
+              "source_port": "output",
+              "start_time_index": 20,
+              "target_node": "mechanics",
+              "target_port": "force",
+              "temporary_pre_graphspec": true
             },
-            "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-            "status": "blocked"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t20_y_neg.npz"
           },
           "channel": "command_input",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.5974452444167017,
+              "mean": 0.18331572349235836,
+              "min": 0.0,
+              "p50": 0.05615948080433138,
+              "p95": 0.5825240705504554,
+              "std": 0.21560655911575627
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 0.001315876991728852,
+              "mean": 0.0010098153920994825,
+              "min": 0.0008691027104473265,
+              "p50": 0.0009592981271976378,
+              "p95": 0.001250370733122604,
+              "std": 0.0001582423197804172
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.005767102262657084,
+              "mean": 0.002222155614702562,
+              "min": 0.0,
+              "p50": 0.0014376245024109407,
+              "p95": 0.005692857607970531,
+              "std": 0.002273018024368881
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.026593090536116915,
+              "mean": 0.02234139139802147,
+              "min": 0.016699566830158556,
+              "p50": 0.023416951514718433,
+              "p95": 0.02617494898882243,
+              "std": 0.0034392770379377212
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.03828680495419878,
+              "mean": 0.014934038978011948,
+              "min": 0.0,
+              "p50": 0.013010445223757019,
+              "p95": 0.03721908295489081,
+              "std": 0.014275972961317846
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.005300907673769193,
+              "mean": 0.004054976423594322,
+              "min": 0.0033259540435962315,
+              "p50": 0.0038119593877250233,
+              "p95": 0.005059821871509292,
+              "std": 0.0006698297776345144
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.02893296175749761,
+              "mean": 0.02710808122507454,
+              "min": 0.025563128455205447,
+              "p50": 0.027033149541239025,
+              "p95": 0.028702047853044897,
+              "std": 0.0011779781089788024
+            }
+          },
           "perturbation_id": "command_input_pulse__t20_y_neg",
-          "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-          "status": "blocked"
+          "status": "evaluated"
         },
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "trial_specs.intervene",
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 1,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 5,
               "external_load_force": false,
-              "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-              "label": "DisturbanceField"
+              "future_graphspec_mapping": "named additive command_input channel on efferent.output -> mechanics.force",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:command_input_pulse__t20_y_pos",
+              "insertion_point": "efferent.output -> mechanics.force",
+              "label": "perturbation_adapter_command_input_command_input_pulse__t20_y_pos",
+              "source_node": "efferent",
+              "source_port": "output",
+              "start_time_index": 20,
+              "target_node": "mechanics",
+              "target_port": "force",
+              "temporary_pre_graphspec": true
             },
-            "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-            "status": "blocked"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t20_y_pos.npz"
           },
           "channel": "command_input",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.5968311424908093,
+              "mean": 0.1835506912557301,
+              "min": 0.0,
+              "p50": 0.056163364599325846,
+              "p95": 0.5824331058786779,
+              "std": 0.21588388904832997
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 0.0017364022188792187,
+              "mean": 0.0014041054410103893,
+              "min": 0.0008416325044275485,
+              "p50": 0.0014688925054786818,
+              "p95": 0.0017096107367442109,
+              "std": 0.00030705652305682577
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.0057676409203773855,
+              "mean": 0.0022200958628956144,
+              "min": 0.0,
+              "p50": 0.001437624758640216,
+              "p95": 0.005693831560580746,
+              "std": 0.0022711320817755893
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.029734457332628896,
+              "mean": 0.028637572689442347,
+              "min": 0.02713719338894943,
+              "p50": 0.02870955744362598,
+              "p95": 0.02957649576312379,
+              "std": 0.0008431333116197769
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.038287764276393126,
+              "mean": 0.0149474102867421,
+              "min": 0.0,
+              "p50": 0.01301044522375702,
+              "p95": 0.037218600918606126,
+              "std": 0.014283939832965015
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.005154194479499129,
+              "mean": 0.004449266472505228,
+              "min": 0.0038935978641613054,
+              "p50": 0.004455106068731565,
+              "p95": 0.005033391663220507,
+              "std": 0.0004198693687466924
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.03600075501399632,
+              "mean": 0.03340426251649543,
+              "min": 0.03207432855400959,
+              "p50": 0.03227820382342465,
+              "p95": 0.03569007726526778,
+              "std": 0.001566364499578667
+            }
+          },
           "perturbation_id": "command_input_pulse__t20_y_pos",
-          "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-          "status": "blocked"
+          "status": "evaluated"
         },
         {
           "adapter": {
@@ -3856,66 +4241,434 @@
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "trial_specs.intervene",
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 0,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 5,
               "external_load_force": false,
-              "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-              "label": "DisturbanceField"
+              "future_graphspec_mapping": "named additive command_input channel on efferent.output -> mechanics.force",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:command_input_pulse__t40_x_neg",
+              "insertion_point": "efferent.output -> mechanics.force",
+              "label": "perturbation_adapter_command_input_command_input_pulse__t40_x_neg",
+              "source_node": "efferent",
+              "source_port": "output",
+              "start_time_index": 40,
+              "target_node": "mechanics",
+              "target_port": "force",
+              "temporary_pre_graphspec": true
             },
-            "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-            "status": "blocked"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t40_x_neg.npz"
           },
           "channel": "command_input",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.5916053601445306,
+              "mean": 0.07529535906153478,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.523959812662414,
+              "std": 0.17092511551009715
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 0.004873671963843929,
+              "mean": 0.004833271186070709,
+              "min": 0.00478861174986657,
+              "p50": 0.004826087742588529,
+              "p95": 0.004871313156958292,
+              "std": 3.095564771510984e-05
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.004904263004028445,
+              "mean": 0.0006092486931991511,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.0038937781023565196,
+              "std": 0.0012847067347418516
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.028101121046836174,
+              "mean": 0.026255789853849732,
+              "min": 0.025311266016479633,
+              "p50": 0.025724667550627897,
+              "p95": 0.02782355152898863,
+              "std": 0.0010462277596731513
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.038924861278139794,
+              "mean": 0.00854139105868438,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.03787723241578775,
+              "std": 0.014202301382749152
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.009128668519710356,
+              "mean": 0.007878432217565548,
+              "min": 0.007245463083015474,
+              "p50": 0.00771453918994313,
+              "p95": 0.008903957410294731,
+              "std": 0.0006845602027521028
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.034174827641526524,
+              "mean": 0.031022479680902805,
+              "min": 0.02776849241908718,
+              "p50": 0.031717319073356766,
+              "p95": 0.03383007857008644,
+              "std": 0.0023296834154432843
+            }
+          },
           "perturbation_id": "command_input_pulse__t40_x_neg",
-          "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-          "status": "blocked"
+          "status": "evaluated"
         },
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "trial_specs.intervene",
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 0,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 5,
               "external_load_force": false,
-              "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-              "label": "DisturbanceField"
+              "future_graphspec_mapping": "named additive command_input channel on efferent.output -> mechanics.force",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:command_input_pulse__t40_x_pos",
+              "insertion_point": "efferent.output -> mechanics.force",
+              "label": "perturbation_adapter_command_input_command_input_pulse__t40_x_pos",
+              "source_node": "efferent",
+              "source_port": "output",
+              "start_time_index": 40,
+              "target_node": "mechanics",
+              "target_port": "force",
+              "temporary_pre_graphspec": true
             },
-            "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-            "status": "blocked"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t40_x_pos.npz"
           },
           "channel": "command_input",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.530975727435144,
+              "mean": 0.06969236588335843,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.4752073945005895,
+              "std": 0.1562248823837543
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 6.778179522691627e-05,
+              "mean": -0.0011619502427279837,
+              "min": -0.003784094182716526,
+              "p50": -0.0006368873362080857,
+              "p95": 6.0901822957107413e-05,
+              "std": 0.0014282830785599236
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.004915033628205035,
+              "mean": 0.0006096594814455214,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.0038952633889642097,
+              "std": 0.0012859691996397152
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.023518923610033618,
+              "mean": 0.02005908863391357,
+              "min": 0.012638374559008899,
+              "p50": 0.02191510236609136,
+              "p95": 0.023422295994978914,
+              "std": 0.004002575597814703
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.03893806453978078,
+              "mean": 0.008575274974284758,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.037955978254260586,
+              "std": 0.014255215533728674
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.0025246331283758213,
+              "mean": 0.001883210788766856,
+              "min": 0.0005284677923550545,
+              "p50": 0.0022157739243193,
+              "p95": 0.0025113239612127563,
+              "std": 0.0007383108582707371
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.02713512163655421,
+              "mean": 0.024825778460966647,
+              "min": 0.02150193618405579,
+              "p50": 0.025191111801680918,
+              "p95": 0.026783228660471527,
+              "std": 0.0018344855395748619
+            }
+          },
           "perturbation_id": "command_input_pulse__t40_x_pos",
-          "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-          "status": "blocked"
+          "status": "evaluated"
         },
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "trial_specs.intervene",
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 1,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 5,
               "external_load_force": false,
-              "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-              "label": "DisturbanceField"
+              "future_graphspec_mapping": "named additive command_input channel on efferent.output -> mechanics.force",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:command_input_pulse__t40_y_neg",
+              "insertion_point": "efferent.output -> mechanics.force",
+              "label": "perturbation_adapter_command_input_command_input_pulse__t40_y_neg",
+              "source_node": "efferent",
+              "source_port": "output",
+              "start_time_index": 40,
+              "target_node": "mechanics",
+              "target_port": "force",
+              "temporary_pre_graphspec": true
             },
-            "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-            "status": "blocked"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t40_y_neg.npz"
           },
           "channel": "command_input",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.590364626940675,
+              "mean": 0.07685742322291045,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.5454315658365012,
+              "std": 0.17208477565541347
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 0.002950725467102475,
+              "mean": 0.0024435898257904208,
+              "min": 0.0021975435905664193,
+              "p50": 0.002395806921299606,
+              "p95": 0.002845146393615096,
+              "std": 0.00026739997811969524
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.004833069162872688,
+              "mean": 0.0006071065697782294,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.003862300198103048,
+              "std": 0.0012789837667799137
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.026612381016404507,
+              "mean": 0.025709113577352383,
+              "min": 0.024306520594424185,
+              "p50": 0.025878319190929356,
+              "p95": 0.026538335192868676,
+              "std": 0.0007920978989197324
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.03832427216594577,
+              "mean": 0.008490336617566999,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.03719824149642543,
+              "std": 0.0141044887176811
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.006563605025389605,
+              "mean": 0.005488750857285262,
+              "min": 0.004879681432814484,
+              "p50": 0.005375430825785099,
+              "p95": 0.006365850450580346,
+              "std": 0.0005897204532299735
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.03317008221947108,
+              "mean": 0.03047580340440546,
+              "min": 0.028952252237785202,
+              "p50": 0.02985834992524594,
+              "p95": 0.0327848665781781,
+              "std": 0.00156831266354591
+            }
+          },
           "perturbation_id": "command_input_pulse__t40_y_neg",
-          "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-          "status": "blocked"
+          "status": "evaluated"
         },
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "trial_specs.intervene",
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 1,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 5,
               "external_load_force": false,
-              "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-              "label": "DisturbanceField"
+              "future_graphspec_mapping": "named additive command_input channel on efferent.output -> mechanics.force",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:command_input_pulse__t40_y_pos",
+              "insertion_point": "efferent.output -> mechanics.force",
+              "label": "perturbation_adapter_command_input_command_input_pulse__t40_y_pos",
+              "source_node": "efferent",
+              "source_port": "output",
+              "start_time_index": 40,
+              "target_node": "mechanics",
+              "target_port": "force",
+              "temporary_pre_graphspec": true
             },
-            "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-            "status": "blocked"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t40_y_pos.npz"
           },
           "channel": "command_input",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.5893318726079892,
+              "mean": 0.07705080737925779,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.5450957524010968,
+              "std": 0.17255561832252536
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 0.0034348707300004863,
+              "mean": 0.0029175260393818144,
+              "min": 0.002091966909899842,
+              "p50": 0.003000127499287259,
+              "p95": 0.00340122168572712,
+              "std": 0.0004675758246697351
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.004832915327494404,
+              "mean": 0.0006070632035865554,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.003862287564785173,
+              "std": 0.0012788545830937307
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.023410673218779682,
+              "mean": 0.019403585053164092,
+              "min": 0.013735712068131862,
+              "p50": 0.021235596367109227,
+              "p95": 0.022983393119451183,
+              "std": 0.003441124554614498
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.03832372180221221,
+              "mean": 0.00848766740155964,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.03719841916168151,
+              "std": 0.014100158281612506
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.006404528884971422,
+              "mean": 0.005962687070876654,
+              "min": 0.005424832857969883,
+              "p50": 0.005973064779131535,
+              "p95": 0.006347480461809346,
+              "std": 0.00032068007037458143
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.025750544440160374,
+              "mean": 0.02417027488021717,
+              "min": 0.022599273693178754,
+              "p50": 0.024511605802698785,
+              "p95": 0.025578529701859858,
+              "std": 0.0011616443330207092
+            }
+          },
           "perturbation_id": "command_input_pulse__t40_y_pos",
-          "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-          "status": "blocked"
+          "status": "evaluated"
         },
         {
           "adapter": {
@@ -5504,66 +6257,434 @@
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "trial_specs.intervene",
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 0,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 5,
               "external_load_force": false,
-              "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-              "label": "DisturbanceField"
+              "future_graphspec_mapping": "named additive command_input channel on efferent.output -> mechanics.force",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:command_input_pulse__t50_x_neg",
+              "insertion_point": "efferent.output -> mechanics.force",
+              "label": "perturbation_adapter_command_input_command_input_pulse__t50_x_neg",
+              "source_node": "efferent",
+              "source_port": "output",
+              "start_time_index": 50,
+              "target_node": "mechanics",
+              "target_port": "force",
+              "temporary_pre_graphspec": true
             },
-            "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-            "status": "blocked"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t50_x_neg.npz"
           },
           "channel": "command_input",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.10327683344552198,
+              "mean": 0.0026030170710048357,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.0005688488770059355,
+              "std": 0.013788913065373502
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 0.001270306438557921,
+              "mean": 0.0012610328389566824,
+              "min": 0.001247005224135267,
+              "p50": 0.0012679770107518434,
+              "p95": 0.0012702803539568163,
+              "std": 1.0421489990220348e-05
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.001270429740381468,
+              "mean": 6.439930894918014e-05,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.00046808078481397607,
+              "std": 0.00022632502014049408
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.03293211171293214,
+              "mean": 0.03245119336564263,
+              "min": 0.03193457041084333,
+              "p50": 0.03264710341628059,
+              "p95": 0.032880274276643036,
+              "std": 0.0003825186963550734
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.03351895248139295,
+              "mean": 0.002675782675346466,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.023535195271391994,
+              "std": 0.007672937811938669
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.005582737990623978,
+              "mean": 0.004306193870451522,
+              "min": 0.0036950117972405446,
+              "p50": 0.004102360766313368,
+              "p95": 0.005355590840658292,
+              "std": 0.0006967486760226438
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.040798132035890215,
+              "mean": 0.0372178831926957,
+              "min": 0.03527198293431283,
+              "p50": 0.03628912255800724,
+              "p95": 0.04019991874539179,
+              "std": 0.001974379499301612
+            }
+          },
           "perturbation_id": "command_input_pulse__t50_x_neg",
-          "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-          "status": "blocked"
+          "status": "evaluated"
         },
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "trial_specs.intervene",
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 0,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 5,
               "external_load_force": false,
-              "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-              "label": "DisturbanceField"
+              "future_graphspec_mapping": "named additive command_input channel on efferent.output -> mechanics.force",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:command_input_pulse__t50_x_pos",
+              "insertion_point": "efferent.output -> mechanics.force",
+              "label": "perturbation_adapter_command_input_command_input_pulse__t50_x_pos",
+              "source_node": "efferent",
+              "source_port": "output",
+              "start_time_index": 50,
+              "target_node": "mechanics",
+              "target_port": "force",
+              "temporary_pre_graphspec": true
             },
-            "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-            "status": "blocked"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t50_x_pos.npz"
           },
           "channel": "command_input",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.10316979607950455,
+              "mean": 0.002601556348437399,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.0005689006301350319,
+              "std": 0.013778676026889428
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": -0.001199273323122835,
+              "mean": -0.0012443118351503405,
+              "min": -0.0012700954482212233,
+              "p50": -0.001264764402441003,
+              "p95": -0.0012029052149494417,
+              "std": 2.9978614960883197e-05
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.0012704297247407015,
+              "mean": 6.439930868346845e-05,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.0004680807848139497,
+              "std": 0.00022632501872461657
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.029469115472263108,
+              "mean": 0.02539726678124269,
+              "min": 0.018286300329167525,
+              "p50": 0.027307797228498725,
+              "p95": 0.029167898740884362,
+              "std": 0.003986089618790569
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.03351894871480181,
+              "mean": 0.0026757826283165414,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.023535195271391997,
+              "std": 0.007672937632591501
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.003042568755360808,
+              "mean": 0.0018008491963444992,
+              "min": 0.0011546099104614003,
+              "p50": 0.001635228478271517,
+              "p95": 0.0028169071698091862,
+              "std": 0.0006774848603630702
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.0318089866936438,
+              "mean": 0.030163956608295767,
+              "min": 0.027149861954214417,
+              "p50": 0.030923995255019317,
+              "p95": 0.03169499760510683,
+              "std": 0.001657803789956011
+            }
+          },
           "perturbation_id": "command_input_pulse__t50_x_pos",
-          "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-          "status": "blocked"
+          "status": "evaluated"
         },
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "trial_specs.intervene",
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 1,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 5,
               "external_load_force": false,
-              "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-              "label": "DisturbanceField"
+              "future_graphspec_mapping": "named additive command_input channel on efferent.output -> mechanics.force",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:command_input_pulse__t50_y_neg",
+              "insertion_point": "efferent.output -> mechanics.force",
+              "label": "perturbation_adapter_command_input_command_input_pulse__t50_y_neg",
+              "source_node": "efferent",
+              "source_port": "output",
+              "start_time_index": 50,
+              "target_node": "mechanics",
+              "target_port": "force",
+              "temporary_pre_graphspec": true
             },
-            "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-            "status": "blocked"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t50_y_neg.npz"
           },
           "channel": "command_input",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.11983828696926839,
+              "mean": 0.0033263488129453914,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.0010064086565143688,
+              "std": 0.01700247114282343
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 0.0002954805661564814,
+              "mean": 0.00014019636427298172,
+              "min": 8.867913160431028e-06,
+              "p50": 0.00015720153212476053,
+              "p95": 0.000278163043084113,
+              "std": 0.0001080680439298342
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.0012703042359443826,
+              "mean": 6.439732885484731e-05,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.0004680807848139391,
+              "std": 0.0002263144691886514
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.03274546661110922,
+              "mean": 0.032075587999245335,
+              "min": 0.030748936196000744,
+              "p50": 0.03236193260775715,
+              "p95": 0.032706107405454175,
+              "std": 0.000710644858036317
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.03347011073096061,
+              "mean": 0.0026748680351598043,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.023535195271392,
+              "std": 0.007669335829671485
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.00452145492586622,
+              "mean": 0.003185357395767821,
+              "min": 0.002487390192277501,
+              "p50": 0.0028615291736878165,
+              "p95": 0.004284409293126668,
+              "std": 0.0007233706667515283
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.039612497821047636,
+              "mean": 0.03684227782629841,
+              "min": 0.03508533783248991,
+              "p50": 0.035978130634277745,
+              "p95": 0.039232146821888754,
+              "std": 0.001630793922212781
+            }
+          },
           "perturbation_id": "command_input_pulse__t50_y_neg",
-          "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-          "status": "blocked"
+          "status": "evaluated"
         },
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "trial_specs.intervene",
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 1,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 5,
               "external_load_force": false,
-              "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-              "label": "DisturbanceField"
+              "future_graphspec_mapping": "named additive command_input channel on efferent.output -> mechanics.force",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:command_input_pulse__t50_y_pos",
+              "insertion_point": "efferent.output -> mechanics.force",
+              "label": "perturbation_adapter_command_input_command_input_pulse__t50_y_pos",
+              "source_node": "efferent",
+              "source_port": "output",
+              "start_time_index": 50,
+              "target_node": "mechanics",
+              "target_port": "force",
+              "temporary_pre_graphspec": true
             },
-            "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-            "status": "blocked"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t50_y_pos.npz"
           },
           "channel": "command_input",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.11971915723886592,
+              "mean": 0.003328079390681364,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.0010062782373973568,
+              "std": 0.017012458536824638
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 0.0005618165397827573,
+              "mean": 0.0003778404814740196,
+              "min": 0.0001573573266974394,
+              "p50": 0.0003295961653348033,
+              "p95": 0.0005516540298582366,
+              "std": 0.00014481973394752932
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.0012703041933664052,
+              "mean": 6.439732793980332e-05,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.0004680807848139391,
+              "std": 0.00022631446431295666
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.02960487903329189,
+              "mean": 0.02580408593775698,
+              "min": 0.019910425043449958,
+              "p50": 0.02754472882563474,
+              "p95": 0.02928159498918914,
+              "std": 0.003473884153936376
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.03347009285104846,
+              "mean": 0.0026748670170330976,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.023535195271392,
+              "std": 0.007669331775548614
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.00446991930176902,
+              "mean": 0.003423001512968859,
+              "min": 0.002754301524017427,
+              "p50": 0.0033636652506875394,
+              "p95": 0.004277626164502945,
+              "std": 0.0005860895969105094
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.03194475025467258,
+              "mean": 0.03057077576481006,
+              "min": 0.02877398666849685,
+              "p50": 0.03116092685215533,
+              "p95": 0.031808693853411604,
+              "std": 0.0011564700947873962
+            }
+          },
           "perturbation_id": "command_input_pulse__t50_y_pos",
-          "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-          "status": "blocked"
+          "status": "evaluated"
         },
         {
           "adapter": {
@@ -7152,56 +8273,256 @@
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "not_available_in_current_eager_adapter",
-              "controller_input_mutated": false
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 0,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 1,
+              "future_graphspec_mapping": "named additive sensory_feedback channel after sensory noise and before net.feedback",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:sensory_feedback_offset__x_pos",
+              "insertion_point": "sensory.output -> net.feedback",
+              "label": "perturbation_adapter_sensory_feedback_sensory_feedback_offset__x_pos",
+              "source_node": "sensory",
+              "source_port": "output",
+              "start_time_index": 0,
+              "target_node": "net",
+              "target_port": "feedback",
+              "temporary_pre_graphspec": true
             },
-            "reason": "sensory_feedback perturbations require a named adapter at sensory.output after noise; controller-input hacks are intentionally excluded",
-            "status": "not_implemented"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/sensory_feedback_offset__x_pos.npz"
           },
           "channel": "sensory_feedback",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.4507044971326122,
+              "mean": 0.05583515858404245,
+              "min": 7.072019603555655e-05,
+              "p50": 0.03507342080509254,
+              "p95": 0.1963932516078033,
+              "std": 0.0750515456883481
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 0.0008833584814260504,
+              "mean": 8.834323502105801e-05,
+              "min": -0.00042289958017953334,
+              "p50": -4.873403708777202e-07,
+              "p95": 0.0007768946817704651,
+              "std": 0.0004857471116110699
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.0021805963113578964,
+              "mean": 0.0005643354231535447,
+              "min": 0.0,
+              "p50": 0.0004776856008526896,
+              "p95": 0.001391455134265661,
+              "std": 0.0004871166378188108
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.0015522747655028757,
+              "mean": 0.00011272572666317813,
+              "min": -0.001291380590415894,
+              "p50": 0.00038520778086816986,
+              "p95": 0.0014253034993536974,
+              "std": 0.0010957655292117463
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.020210961881691532,
+              "mean": 0.0037877369418649344,
+              "min": 0.0,
+              "p50": 0.002610627385305572,
+              "p95": 0.013785468959919427,
+              "std": 0.003997453058301729
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.003889662394892047,
+              "mean": 0.0031335042665158975,
+              "min": 0.00205541048976415,
+              "p50": 0.0033402098145749555,
+              "p95": 0.003817742858552003,
+              "std": 0.0006345384845427536
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.007572181034630998,
+              "mean": 0.004879415553716254,
+              "min": 0.00227611767819331,
+              "p50": 0.004001405807388763,
+              "p95": 0.007388790280001724,
+              "std": 0.0019456235657287664
+            }
+          },
           "perturbation_id": "sensory_feedback_offset__x_pos",
-          "reason": "sensory_feedback perturbations require a named adapter at sensory.output after noise; controller-input hacks are intentionally excluded",
-          "status": "not_implemented"
+          "status": "evaluated"
         },
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "not_available_in_current_eager_adapter",
-              "controller_input_mutated": false
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 0,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 1,
+              "future_graphspec_mapping": "named additive delayed_observation channel before sensory.input noise",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:delayed_observation_offset__x_pos",
+              "insertion_point": "feedback.feedback -> sensory.input",
+              "label": "perturbation_adapter_delayed_observation_delayed_observation_offset__x_pos",
+              "source_node": "feedback",
+              "source_port": "feedback",
+              "start_time_index": 0,
+              "target_node": "sensory",
+              "target_port": "input",
+              "temporary_pre_graphspec": true
             },
-            "reason": "delayed_observation perturbations require a named adapter on the clean DelayedPositionVelocityFeedback output before sensory noise; GRU hidden state/input mutation is intentionally excluded",
-            "status": "not_implemented"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/delayed_observation_offset__x_pos.npz"
           },
           "channel": "delayed_observation",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.44622235741334365,
+              "mean": 0.14772665991578188,
+              "min": 0.018016982638203647,
+              "p50": 0.1235422999245482,
+              "p95": 0.30226455509389133,
+              "std": 0.08613325681171591
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 0.0010159422695089028,
+              "mean": 0.00028112577992142444,
+              "min": -0.0010657891611276313,
+              "p50": 0.000459451457867703,
+              "p95": 0.0010145157781166131,
+              "std": 0.0007748345705732008
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.0019992177066891024,
+              "mean": 0.0007493158584474673,
+              "min": 0.0,
+              "p50": 0.0007204069921358061,
+              "p95": 0.001475693897961997,
+              "std": 0.00048658153536130215
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.006857138577382276,
+              "mean": 0.0014189402674954518,
+              "min": -0.004532296383707101,
+              "p50": 0.0008117846224674516,
+              "p95": 0.006206110963287859,
+              "std": 0.003775057435176122
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.0223476471471258,
+              "mean": 0.005568475980923413,
+              "min": 0.0,
+              "p50": 0.004617633472102289,
+              "p95": 0.013599857425856465,
+              "std": 0.004350424076956869
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.0036384766879114065,
+              "mean": 0.003326286811416264,
+              "min": 0.0028398757813380784,
+              "p50": 0.0034406476281915264,
+              "p95": 0.003603913579468397,
+              "std": 0.0002730876366411802
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.00919700979876297,
+              "mean": 0.006185630094548528,
+              "min": 0.004087794058057008,
+              "p50": 0.0060938828411520865,
+              "p95": 0.008801247545696533,
+              "std": 0.0018964497307998704
+            }
+          },
           "perturbation_id": "delayed_observation_offset__x_pos",
-          "reason": "delayed_observation perturbations require a named adapter on the clean DelayedPositionVelocityFeedback output before sensory noise; GRU hidden state/input mutation is intentionally excluded",
-          "status": "not_implemented"
+          "status": "evaluated"
         },
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "not_available_in_current_eager_adapter",
-              "controller_input_mutated": false
+              "adapter": "not_applicable_current_fixed_target_checkpoint",
+              "controller_input_mutated": false,
+              "future_graphspec_mapping": "target_stream named graph input when models consume it",
+              "temporary_pre_graphspec": false
             },
-            "reason": "target_stream perturbations require a task target stream bound to the controller; current C&S GRU validation specs expose scalar SISU input, not a target stream",
-            "status": "not_implemented"
+            "reason": "target_stream is deferred: current fixed-target C&S GRU validation checkpoints do not consume a target-position input stream",
+            "status": "not_applicable"
           },
           "channel": "target_stream",
           "perturbation_id": "target_stream_jump__x_pos",
-          "reason": "target_stream perturbations require a task target stream bound to the controller; current C&S GRU validation specs expose scalar SISU input, not a target stream",
-          "status": "not_implemented"
+          "reason": "target_stream is deferred: current fixed-target C&S GRU validation checkpoints do not consume a target-position input stream",
+          "status": "not_applicable"
         }
       ],
       "run_spec_path": "results/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64/run.json",
       "status_counts": {
-        "blocked": 12,
-        "evaluated": 56,
-        "not_implemented": 3
+        "evaluated": 70,
+        "not_applicable": 1
       }
     },
     "lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64": {
       "artifact_dir": "_artifacts/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64",
       "bulk_files": {
+        "command_input_pulse__t20_x_neg": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t20_x_neg.npz",
+        "command_input_pulse__t20_x_pos": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t20_x_pos.npz",
+        "command_input_pulse__t20_y_neg": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t20_y_neg.npz",
+        "command_input_pulse__t20_y_pos": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t20_y_pos.npz",
+        "command_input_pulse__t40_x_neg": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t40_x_neg.npz",
+        "command_input_pulse__t40_x_pos": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t40_x_pos.npz",
+        "command_input_pulse__t40_y_neg": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t40_y_neg.npz",
+        "command_input_pulse__t40_y_pos": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t40_y_pos.npz",
+        "command_input_pulse__t50_x_neg": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t50_x_neg.npz",
+        "command_input_pulse__t50_x_pos": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t50_x_pos.npz",
+        "command_input_pulse__t50_y_neg": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t50_y_neg.npz",
+        "command_input_pulse__t50_y_pos": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t50_y_pos.npz",
+        "delayed_observation_offset__x_pos": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/delayed_observation_offset__x_pos.npz",
         "initial_position_offset__x_neg": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/initial_position_offset__x_neg.npz",
         "initial_position_offset__x_pos": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/initial_position_offset__x_pos.npz",
         "initial_position_offset__y_neg": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/initial_position_offset__y_neg.npz",
@@ -7257,7 +8578,8 @@
         "process_epsilon_pulse__velocity_y__t40_neg": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__velocity_y__t40_neg.npz",
         "process_epsilon_pulse__velocity_y__t40_pos": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__velocity_y__t40_pos.npz",
         "process_epsilon_pulse__velocity_y__t50_neg": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__velocity_y__t50_neg.npz",
-        "process_epsilon_pulse__velocity_y__t50_pos": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__velocity_y__t50_pos.npz"
+        "process_epsilon_pulse__velocity_y__t50_pos": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__velocity_y__t50_pos.npz",
+        "sensory_feedback_offset__x_pos": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/sensory_feedback_offset__x_pos.npz"
       },
       "checkpoint_selection": [
         {
@@ -8082,66 +9404,434 @@
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "trial_specs.intervene",
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 0,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 5,
               "external_load_force": false,
-              "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-              "label": "DisturbanceField"
+              "future_graphspec_mapping": "named additive command_input channel on efferent.output -> mechanics.force",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:command_input_pulse__t20_x_neg",
+              "insertion_point": "efferent.output -> mechanics.force",
+              "label": "perturbation_adapter_command_input_command_input_pulse__t20_x_neg",
+              "source_node": "efferent",
+              "source_port": "output",
+              "start_time_index": 20,
+              "target_node": "mechanics",
+              "target_port": "force",
+              "temporary_pre_graphspec": true
             },
-            "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-            "status": "blocked"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t20_x_neg.npz"
           },
           "channel": "command_input",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.9933506091200252,
+              "mean": 0.14571417318080498,
+              "min": 0.0,
+              "p50": 0.037896184651554116,
+              "p95": 0.6607620813992189,
+              "std": 0.21630518002036206
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 0.005601925745481273,
+              "mean": 0.003967318510139093,
+              "min": 0.0028661559211304037,
+              "p50": 0.004035814723246759,
+              "p95": 0.005310435822180762,
+              "std": 0.0009515850832424571
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.006190217889402184,
+              "mean": 0.002178535038639033,
+              "min": 0.0,
+              "p50": 0.0014374370217676538,
+              "p95": 0.0056992144412818,
+              "std": 0.0022163093973907593
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.004997053332075891,
+              "mean": 0.0022826411617678233,
+              "min": -0.002828804274087187,
+              "p50": 0.002665260655109373,
+              "p95": 0.004910482750788105,
+              "std": 0.002789917021668848
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.03786471959318698,
+              "mean": 0.010956599657474817,
+              "min": 0.0,
+              "p50": 0.007079127175506389,
+              "p95": 0.03666128191683421,
+              "std": 0.012403301468096579
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.007302552126931185,
+              "mean": 0.006397885350742953,
+              "min": 0.00530469248454398,
+              "p50": 0.006266255905126475,
+              "p95": 0.007251997309248988,
+              "std": 0.0007163564118641637
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.010674342142829073,
+              "mean": 0.006452292618664164,
+              "min": 0.004121044497334012,
+              "p50": 0.0055850852219029405,
+              "p95": 0.00988873423740527,
+              "std": 0.002273103202413087
+            }
+          },
           "perturbation_id": "command_input_pulse__t20_x_neg",
-          "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-          "status": "blocked"
+          "status": "evaluated"
         },
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "trial_specs.intervene",
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 0,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 5,
               "external_load_force": false,
-              "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-              "label": "DisturbanceField"
+              "future_graphspec_mapping": "named additive command_input channel on efferent.output -> mechanics.force",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:command_input_pulse__t20_x_pos",
+              "insertion_point": "efferent.output -> mechanics.force",
+              "label": "perturbation_adapter_command_input_command_input_pulse__t20_x_pos",
+              "source_node": "efferent",
+              "source_port": "output",
+              "start_time_index": 20,
+              "target_node": "mechanics",
+              "target_port": "force",
+              "temporary_pre_graphspec": true
             },
-            "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-            "status": "blocked"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t20_x_pos.npz"
           },
           "channel": "command_input",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.8976076155299734,
+              "mean": 0.11563781238147319,
+              "min": 0.0,
+              "p50": 0.015404205691583042,
+              "p95": 0.5992416430974952,
+              "std": 0.20366919894256746
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 0.003841596166393546,
+              "mean": 0.00025423679085384224,
+              "min": -0.0038753343395203153,
+              "p50": 0.0009382553714542118,
+              "p95": 0.0034039913483874295,
+              "std": 0.002635285361288794
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.006499982644156629,
+              "mean": 0.0023178331255194837,
+              "min": 0.0,
+              "p50": 0.0014374375715618456,
+              "p95": 0.005788310421593772,
+              "std": 0.0023721227888552823
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.004948352902538367,
+              "mean": 0.003918806749466893,
+              "min": 0.0030842254693760297,
+              "p50": 0.0037986863842656943,
+              "p95": 0.004851989980283739,
+              "std": 0.0007012176375287562
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.037870697113437206,
+              "mean": 0.010122942851328164,
+              "min": 0.0,
+              "p50": 0.004314370982552829,
+              "p95": 0.036675305974650255,
+              "std": 0.01263643300622811
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.005289448459432477,
+              "mean": 0.0026848036314577007,
+              "min": 0.00023899775555255692,
+              "p50": 0.0031686965533339276,
+              "p95": 0.004946607596741414,
+              "std": 0.0017968748039304207
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.010625641713291549,
+              "mean": 0.008088458206363234,
+              "min": 0.003866718889796918,
+              "p50": 0.008547580251865914,
+              "p95": 0.010507328218792685,
+              "std": 0.0023989689582583876
+            }
+          },
           "perturbation_id": "command_input_pulse__t20_x_pos",
-          "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-          "status": "blocked"
+          "status": "evaluated"
         },
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "trial_specs.intervene",
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 1,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 5,
               "external_load_force": false,
-              "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-              "label": "DisturbanceField"
+              "future_graphspec_mapping": "named additive command_input channel on efferent.output -> mechanics.force",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:command_input_pulse__t20_y_neg",
+              "insertion_point": "efferent.output -> mechanics.force",
+              "label": "perturbation_adapter_command_input_command_input_pulse__t20_y_neg",
+              "source_node": "efferent",
+              "source_port": "output",
+              "start_time_index": 20,
+              "target_node": "mechanics",
+              "target_port": "force",
+              "temporary_pre_graphspec": true
             },
-            "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-            "status": "blocked"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t20_y_neg.npz"
           },
           "channel": "command_input",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.6549712641954246,
+              "mean": 0.19439555357339236,
+              "min": 0.0,
+              "p50": 0.06545535008681329,
+              "p95": 0.594528078032122,
+              "std": 0.22572384672827803
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 0.0011857753652434158,
+              "mean": 0.0008718144473232471,
+              "min": 0.00028905759580327445,
+              "p50": 0.0008972749526165978,
+              "p95": 0.0011834022108747522,
+              "std": 0.00032666172871035547
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.00569858121831972,
+              "mean": 0.0021503461230473766,
+              "min": 0.0,
+              "p50": 0.0014374019887139597,
+              "p95": 0.005544553470823398,
+              "std": 0.0021997925519405526
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.024188005691923326,
+              "mean": 0.02049559395775824,
+              "min": 0.018715476595818233,
+              "p50": 0.019409256020530653,
+              "p95": 0.02361855889054352,
+              "std": 0.002073155427346974
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.038034476725686016,
+              "mean": 0.014766126649731698,
+              "min": 0.0,
+              "p50": 0.013010445223757022,
+              "p95": 0.037060798186772,
+              "std": 0.014067449053188099
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.004403389690876147,
+              "mean": 0.003302381287927106,
+              "min": 0.0022609070225917812,
+              "p50": 0.0034162165471231317,
+              "p95": 0.004245200984063652,
+              "std": 0.0007265941820746096
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.02775759524372219,
+              "mean": 0.024665245414654584,
+              "min": 0.01997974421043842,
+              "p50": 0.025421813645624985,
+              "p95": 0.02733914126842564,
+              "std": 0.002573551460767029
+            }
+          },
           "perturbation_id": "command_input_pulse__t20_y_neg",
-          "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-          "status": "blocked"
+          "status": "evaluated"
         },
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "trial_specs.intervene",
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 1,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 5,
               "external_load_force": false,
-              "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-              "label": "DisturbanceField"
+              "future_graphspec_mapping": "named additive command_input channel on efferent.output -> mechanics.force",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:command_input_pulse__t20_y_pos",
+              "insertion_point": "efferent.output -> mechanics.force",
+              "label": "perturbation_adapter_command_input_command_input_pulse__t20_y_pos",
+              "source_node": "efferent",
+              "source_port": "output",
+              "start_time_index": 20,
+              "target_node": "mechanics",
+              "target_port": "force",
+              "temporary_pre_graphspec": true
             },
-            "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-            "status": "blocked"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t20_y_pos.npz"
           },
           "channel": "command_input",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.6601683170964059,
+              "mean": 0.19350330918827444,
+              "min": 0.0,
+              "p50": 0.06772654440902606,
+              "p95": 0.5934146867808752,
+              "std": 0.2240521622992136
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 0.002431803452577742,
+              "mean": 0.0013899258194486378,
+              "min": 0.0004094114839650123,
+              "p50": 0.0013571925394209392,
+              "p95": 0.0022309619289246864,
+              "std": 0.0006409061641850349
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.0056987278297281375,
+              "mean": 0.0021556341929933765,
+              "min": 0.0,
+              "p50": 0.001437402139036302,
+              "p95": 0.005556311763747578,
+              "std": 0.0022046822944671233
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.029193678881508832,
+              "mean": 0.02570604289864717,
+              "min": 0.020113037131973665,
+              "p50": 0.02611623434759694,
+              "p95": 0.028945850603489313,
+              "std": 0.003129711235712774
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.03804697277746949,
+              "mean": 0.014738979848049132,
+              "min": 0.0,
+              "p50": 0.013010445223757022,
+              "p95": 0.03706241961203919,
+              "std": 0.01404615751650132
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.004523743579037885,
+              "mean": 0.003820492660052496,
+              "min": 0.0032788646090351364,
+              "p50": 0.0037621623503806072,
+              "p95": 0.004394926012353642,
+              "std": 0.0004052696220159166
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.034870967692262014,
+              "mean": 0.02987569435554351,
+              "min": 0.020683525321881432,
+              "p50": 0.032035579452011916,
+              "p95": 0.03431728923624289,
+              "std": 0.004880755697888529
+            }
+          },
           "perturbation_id": "command_input_pulse__t20_y_pos",
-          "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-          "status": "blocked"
+          "status": "evaluated"
         },
         {
           "adapter": {
@@ -9730,66 +11420,434 @@
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "trial_specs.intervene",
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 0,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 5,
               "external_load_force": false,
-              "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-              "label": "DisturbanceField"
+              "future_graphspec_mapping": "named additive command_input channel on efferent.output -> mechanics.force",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:command_input_pulse__t40_x_neg",
+              "insertion_point": "efferent.output -> mechanics.force",
+              "label": "perturbation_adapter_command_input_command_input_pulse__t40_x_neg",
+              "source_node": "efferent",
+              "source_port": "output",
+              "start_time_index": 40,
+              "target_node": "mechanics",
+              "target_port": "force",
+              "temporary_pre_graphspec": true
             },
-            "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-            "status": "blocked"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t40_x_neg.npz"
           },
           "channel": "command_input",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.8879248448907218,
+              "mean": 0.10668585816570535,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.7746968352771653,
+              "std": 0.24359808064614022
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 0.004670724869669098,
+              "mean": 0.004547745134623711,
+              "min": 0.00444662270548831,
+              "p50": 0.004490894098166363,
+              "p95": 0.004670060868567111,
+              "std": 0.00010006856000712674
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.004861929454229693,
+              "mean": 0.0005966404364968148,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.0038634073547889154,
+              "std": 0.0012486551660096604
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.028106095510729876,
+              "mean": 0.017377150669761775,
+              "min": 0.012722084575511019,
+              "p50": 0.014665273899537357,
+              "p95": 0.026140111094867233,
+              "std": 0.00571137018769302
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.03850598611606833,
+              "mean": 0.007960895142330317,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.036745552746068715,
+              "std": 0.013349894899755162
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.008560954800561182,
+              "mean": 0.006978311975227569,
+              "min": 0.00611525715719809,
+              "p50": 0.006901166051548814,
+              "p95": 0.008229086980258786,
+              "std": 0.0008463479263834234
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.03167568506252874,
+              "mean": 0.021546802126658115,
+              "min": 0.013686614121521735,
+              "p50": 0.021615122670958557,
+              "p95": 0.03013124049845696,
+              "std": 0.006207672087366975
+            }
+          },
           "perturbation_id": "command_input_pulse__t40_x_neg",
-          "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-          "status": "blocked"
+          "status": "evaluated"
         },
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "trial_specs.intervene",
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 0,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 5,
               "external_load_force": false,
-              "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-              "label": "DisturbanceField"
+              "future_graphspec_mapping": "named additive command_input channel on efferent.output -> mechanics.force",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:command_input_pulse__t40_x_pos",
+              "insertion_point": "efferent.output -> mechanics.force",
+              "label": "perturbation_adapter_command_input_command_input_pulse__t40_x_pos",
+              "source_node": "efferent",
+              "source_port": "output",
+              "start_time_index": 40,
+              "target_node": "mechanics",
+              "target_port": "force",
+              "temporary_pre_graphspec": true
             },
-            "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-            "status": "blocked"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t40_x_pos.npz"
           },
           "channel": "command_input",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.7648062562313273,
+              "mean": 0.08998165635804072,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.6252508297772276,
+              "std": 0.201604710309721
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 0.0023181369938568602,
+              "mean": -0.00014223002166655432,
+              "min": -0.003731589758424239,
+              "p50": 0.00024825809840384704,
+              "p95": 0.002009763801524884,
+              "std": 0.0019982709051468367
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.004876931683919112,
+              "mean": 0.0005982131725736087,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.003866064201872325,
+              "std": 0.0012533076978593965
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.022192449068772466,
+              "mean": 0.01438707540647761,
+              "min": 0.006081865215805217,
+              "p50": 0.014745887685833708,
+              "p95": 0.020978252000972135,
+              "std": 0.005207226373037132
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.03853004582171914,
+              "mean": 0.008077661005948674,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.036787661166342314,
+              "std": 0.013482514949820496
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.003765989286895791,
+              "mean": 0.002288336818937304,
+              "min": 0.0003827423366486331,
+              "p50": 0.002478699280283563,
+              "p95": 0.0035523800498788683,
+              "std": 0.0010998504913349834
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.02576203862057133,
+              "mean": 0.018556726863373944,
+              "min": 0.013031713987226416,
+              "p50": 0.016874753292806525,
+              "p95": 0.02469426619577444,
+              "std": 0.004294935150058613
+            }
+          },
           "perturbation_id": "command_input_pulse__t40_x_pos",
-          "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-          "status": "blocked"
+          "status": "evaluated"
         },
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "trial_specs.intervene",
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 1,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 5,
               "external_load_force": false,
-              "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-              "label": "DisturbanceField"
+              "future_graphspec_mapping": "named additive command_input channel on efferent.output -> mechanics.force",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:command_input_pulse__t40_y_neg",
+              "insertion_point": "efferent.output -> mechanics.force",
+              "label": "perturbation_adapter_command_input_command_input_pulse__t40_y_neg",
+              "source_node": "efferent",
+              "source_port": "output",
+              "start_time_index": 40,
+              "target_node": "mechanics",
+              "target_port": "force",
+              "temporary_pre_graphspec": true
             },
-            "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-            "status": "blocked"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t40_y_neg.npz"
           },
           "channel": "command_input",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.6675278936357869,
+              "mean": 0.08256163672976859,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.5629618000809863,
+              "std": 0.184150284769273
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 0.0029020703535775983,
+              "mean": 0.0027199145182317214,
+              "min": 0.0022177207079631892,
+              "p50": 0.0028523983817586953,
+              "p95": 0.002898225932253666,
+              "std": 0.00025693770012087897
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.0048306746292875085,
+              "mean": 0.000604236655611944,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.003857169079863464,
+              "std": 0.001270831984787949
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.025937295484964068,
+              "mean": 0.023994775946356742,
+              "min": 0.02139399594359892,
+              "p50": 0.02497713146544937,
+              "p95": 0.025746898410948283,
+              "std": 0.0016859341078899234
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.03828257184247098,
+              "mean": 0.008370737480451328,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.03706719980890091,
+              "std": 0.013907597875086632
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.006332052803036062,
+              "mean": 0.00515048135883558,
+              "min": 0.004192387193940119,
+              "p50": 0.005132511535457314,
+              "p95": 0.006123829231463303,
+              "std": 0.0007005418865118397
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.03161458429571725,
+              "mean": 0.028164427403253083,
+              "min": 0.023250634912793968,
+              "p50": 0.02855489966668401,
+              "p95": 0.03110330212178381,
+              "std": 0.0027214841662389433
+            }
+          },
           "perturbation_id": "command_input_pulse__t40_y_neg",
-          "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-          "status": "blocked"
+          "status": "evaluated"
         },
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "trial_specs.intervene",
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 1,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 5,
               "external_load_force": false,
-              "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-              "label": "DisturbanceField"
+              "future_graphspec_mapping": "named additive command_input channel on efferent.output -> mechanics.force",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:command_input_pulse__t40_y_pos",
+              "insertion_point": "efferent.output -> mechanics.force",
+              "label": "perturbation_adapter_command_input_command_input_pulse__t40_y_pos",
+              "source_node": "efferent",
+              "source_port": "output",
+              "start_time_index": 40,
+              "target_node": "mechanics",
+              "target_port": "force",
+              "temporary_pre_graphspec": true
             },
-            "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-            "status": "blocked"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t40_y_pos.npz"
           },
           "channel": "command_input",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.6625855329071427,
+              "mean": 0.08270994471316025,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.562774376781424,
+              "std": 0.18451102420763818
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 0.004323616305595692,
+              "mean": 0.003220560680218785,
+              "min": 0.0020547538182568185,
+              "p50": 0.003218978021409245,
+              "p95": 0.0041570485946330026,
+              "std": 0.0007336545513964546
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.004831276341945501,
+              "mean": 0.0006041958070653623,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.0038572875047799197,
+              "std": 0.0012707106900117387
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.023117763203327556,
+              "mean": 0.01880949393162334,
+              "min": 0.015159723958867007,
+              "p50": 0.018508694365623513,
+              "p95": 0.022809735675419027,
+              "std": 0.003143433148852596
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.03828496114496272,
+              "mean": 0.008367976437606152,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.037066321658910904,
+              "std": 0.013903551916243404
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.006169085913329691,
+              "mean": 0.005651127520822644,
+              "min": 0.005412449820396444,
+              "p50": 0.005453214068463499,
+              "p95": 0.006089562450390677,
+              "std": 0.0002896846202493864
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.02668735275512642,
+              "mean": 0.022979145388519688,
+              "min": 0.02136095137726691,
+              "p50": 0.02214811375369268,
+              "p95": 0.025867829469345977,
+              "std": 0.0018956668133211414
+            }
+          },
           "perturbation_id": "command_input_pulse__t40_y_pos",
-          "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-          "status": "blocked"
+          "status": "evaluated"
         },
         {
           "adapter": {
@@ -11378,66 +13436,434 @@
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "trial_specs.intervene",
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 0,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 5,
               "external_load_force": false,
-              "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-              "label": "DisturbanceField"
+              "future_graphspec_mapping": "named additive command_input channel on efferent.output -> mechanics.force",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:command_input_pulse__t50_x_neg",
+              "insertion_point": "efferent.output -> mechanics.force",
+              "label": "perturbation_adapter_command_input_command_input_pulse__t50_x_neg",
+              "source_node": "efferent",
+              "source_port": "output",
+              "start_time_index": 50,
+              "target_node": "mechanics",
+              "target_port": "force",
+              "temporary_pre_graphspec": true
             },
-            "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-            "status": "blocked"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t50_x_neg.npz"
           },
           "channel": "command_input",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.1740018441894768,
+              "mean": 0.0038513000381649996,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.0008663728579423688,
+              "std": 0.020691683018620403
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 0.001270019698288832,
+              "mean": 0.001243600919813366,
+              "min": 0.0011514568056833398,
+              "p50": 0.00126788420338574,
+              "p95": 0.0012699473251809805,
+              "std": 4.6246800331062054e-05
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.00127033997032545,
+              "mean": 6.439777025195606e-05,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.0004680807848139469,
+              "std": 0.00022631682114792028
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.033349984605066094,
+              "mean": 0.032277589839565836,
+              "min": 0.030596319586241566,
+              "p50": 0.03259849728882728,
+              "p95": 0.03324494684260053,
+              "std": 0.0009430080000016474
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.03347942688131833,
+              "mean": 0.0026748082731796255,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.023535195271391997,
+              "std": 0.0076690803787249325
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.005384351793361704,
+              "mean": 0.0036741677604172247,
+              "min": 0.0025993090987222705,
+              "p50": 0.003498325385265456,
+              "p95": 0.005049120313921993,
+              "std": 0.0009333467392904529
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.03977464456415947,
+              "mean": 0.036447241296462166,
+              "min": 0.03316898547873504,
+              "p50": 0.03627360839699475,
+              "p95": 0.03920363048270056,
+              "std": 0.0021067898921540247
+            }
+          },
           "perturbation_id": "command_input_pulse__t50_x_neg",
-          "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-          "status": "blocked"
+          "status": "evaluated"
         },
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "trial_specs.intervene",
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 0,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 5,
               "external_load_force": false,
-              "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-              "label": "DisturbanceField"
+              "future_graphspec_mapping": "named additive command_input channel on efferent.output -> mechanics.force",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:command_input_pulse__t50_x_pos",
+              "insertion_point": "efferent.output -> mechanics.force",
+              "label": "perturbation_adapter_command_input_command_input_pulse__t50_x_pos",
+              "source_node": "efferent",
+              "source_port": "output",
+              "start_time_index": 50,
+              "target_node": "mechanics",
+              "target_port": "force",
+              "temporary_pre_graphspec": true
             },
-            "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-            "status": "blocked"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t50_x_pos.npz"
           },
           "channel": "command_input",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.17369511861086595,
+              "mean": 0.003848741884237738,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.000866472066729559,
+              "std": 0.020671743928453914
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": -0.0006332110222565595,
+              "mean": -0.0011299557341150016,
+              "min": -0.0012697921520617764,
+              "p50": -0.0012614300526174627,
+              "p95": -0.000749985345549609,
+              "std": 0.0002491244557683978
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.0012703399403927965,
+              "mean": 6.439776971175787e-05,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.0004680807848139511,
+              "std": 0.0002263168182695082
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.033141622102830386,
+              "mean": 0.026585186811206668,
+              "min": 0.020477041087061224,
+              "p50": 0.026499869638667982,
+              "p95": 0.03191845709313524,
+              "std": 0.004028484811518543
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.033479415933318164,
+              "mean": 0.0026748080526155116,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.023535195271392,
+              "std": 0.0076690795124994965
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.002844539943011096,
+              "mean": 0.0013006111064888571,
+              "min": 0.0007045894308923903,
+              "p50": 0.0009690111292622531,
+              "p95": 0.0025096867061081113,
+              "std": 0.0007876637785782424
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.03371211029273815,
+              "mean": 0.030754838268103008,
+              "min": 0.027426889858482423,
+              "p50": 0.031106839014955336,
+              "p95": 0.033261466830964974,
+              "std": 0.0020449958676451527
+            }
+          },
           "perturbation_id": "command_input_pulse__t50_x_pos",
-          "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-          "status": "blocked"
+          "status": "evaluated"
         },
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "trial_specs.intervene",
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 1,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 5,
               "external_load_force": false,
-              "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-              "label": "DisturbanceField"
+              "future_graphspec_mapping": "named additive command_input channel on efferent.output -> mechanics.force",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:command_input_pulse__t50_y_neg",
+              "insertion_point": "efferent.output -> mechanics.force",
+              "label": "perturbation_adapter_command_input_command_input_pulse__t50_y_neg",
+              "source_node": "efferent",
+              "source_port": "output",
+              "start_time_index": 50,
+              "target_node": "mechanics",
+              "target_port": "force",
+              "temporary_pre_graphspec": true
             },
-            "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-            "status": "blocked"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t50_y_neg.npz"
           },
           "channel": "command_input",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.1492325142729946,
+              "mean": 0.0037443905234022436,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.0010875809564062037,
+              "std": 0.019152809812750624
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 0.0002664783203514655,
+              "mean": 0.00015265562690950697,
+              "min": -0.0001640428364417983,
+              "p50": 0.0002193499139913676,
+              "p95": 0.0002629719160742211,
+              "std": 0.00016035262421911948
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.0012702722931016237,
+              "mean": 6.439656677219805e-05,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.000468080784813939,
+              "std": 0.00022631040857922798
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.03336160075342344,
+              "mean": 0.032041872988130896,
+              "min": 0.03014504661849446,
+              "p50": 0.032665304412024705,
+              "p95": 0.03328469652569417,
+              "std": 0.001230148731681861
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.03346000128041007,
+              "mean": 0.002674454275906946,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.023535195271391997,
+              "std": 0.007667702560324925
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.00433368200906424,
+              "mean": 0.0025832224675133653,
+              "min": 0.0012838094565971324,
+              "p50": 0.0024793874808449593,
+              "p95": 0.0040079485840044,
+              "std": 0.0009998162422523273
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.03865436842553028,
+              "mean": 0.036211524445027225,
+              "min": 0.033932088943331204,
+              "p50": 0.036746346372625395,
+              "p95": 0.03834247381840736,
+              "std": 0.001716458824114279
+            }
+          },
           "perturbation_id": "command_input_pulse__t50_y_neg",
-          "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-          "status": "blocked"
+          "status": "evaluated"
         },
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "trial_specs.intervene",
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 1,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 5,
               "external_load_force": false,
-              "future_graphspec_insertion_point": "efferent.output -> mechanics.force",
-              "label": "DisturbanceField"
+              "future_graphspec_mapping": "named additive command_input channel on efferent.output -> mechanics.force",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:command_input_pulse__t50_y_pos",
+              "insertion_point": "efferent.output -> mechanics.force",
+              "label": "perturbation_adapter_command_input_command_input_pulse__t50_y_pos",
+              "source_node": "efferent",
+              "source_port": "output",
+              "start_time_index": 50,
+              "target_node": "mechanics",
+              "target_port": "force",
+              "temporary_pre_graphspec": true
             },
-            "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-            "status": "blocked"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t50_y_pos.npz"
           },
           "channel": "command_input",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.1494640317498293,
+              "mean": 0.0037468703800097266,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.0010875251500538292,
+              "std": 0.019168479193059744
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 0.0009545569095646095,
+              "mean": 0.0004901416989283595,
+              "min": 0.0001637033523135623,
+              "p50": 0.0004208751833895993,
+              "p95": 0.0008749975415732048,
+              "std": 0.0002644969571574526
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.0012702723138094483,
+              "mean": 6.43965659368146e-05,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.000468080784813939,
+              "std": 0.00022631040412816604
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.032358214388579776,
+              "mean": 0.02688010473889531,
+              "min": 0.022748636030161116,
+              "p50": 0.026243532045219793,
+              "p95": 0.03170074850941425,
+              "std": 0.0034842038966385195
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.03346004385957001,
+              "mean": 0.0026744532058724786,
+              "min": 0.0,
+              "p50": 0.0,
+              "p95": 0.023535195271391997,
+              "std": 0.007667698297572039
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.004278035447386435,
+              "mean": 0.002920708539532218,
+              "min": 0.00240240920260354,
+              "p50": 0.002651316365269315,
+              "p95": 0.003981098266545151,
+              "std": 0.0006921519210727203
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.03292870257848754,
+              "mean": 0.031049756195791655,
+              "min": 0.028425924840914298,
+              "p50": 0.030929105009184964,
+              "p95": 0.03287105697170023,
+              "std": 0.00164230090241978
+            }
+          },
           "perturbation_id": "command_input_pulse__t50_y_pos",
-          "reason": "trial_specs.intervene lacks 'DisturbanceField'; current validation specs do not expose a clean command-port adapter on efferent.output -> mechanics.force",
-          "status": "blocked"
+          "status": "evaluated"
         },
         {
           "adapter": {
@@ -13026,51 +15452,238 @@
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "not_available_in_current_eager_adapter",
-              "controller_input_mutated": false
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 0,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 1,
+              "future_graphspec_mapping": "named additive sensory_feedback channel after sensory noise and before net.feedback",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:sensory_feedback_offset__x_pos",
+              "insertion_point": "sensory.output -> net.feedback",
+              "label": "perturbation_adapter_sensory_feedback_sensory_feedback_offset__x_pos",
+              "source_node": "sensory",
+              "source_port": "output",
+              "start_time_index": 0,
+              "target_node": "net",
+              "target_port": "feedback",
+              "temporary_pre_graphspec": true
             },
-            "reason": "sensory_feedback perturbations require a named adapter at sensory.output after noise; controller-input hacks are intentionally excluded",
-            "status": "not_implemented"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/sensory_feedback_offset__x_pos.npz"
           },
           "channel": "sensory_feedback",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.5195893387142102,
+              "mean": 0.05306461376239462,
+              "min": 2.2541282206651527e-05,
+              "p50": 0.031082279276595993,
+              "p95": 0.20414625302817532,
+              "std": 0.07985469541741422
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 0.0011211954333888601,
+              "mean": 0.0002165597551409259,
+              "min": -0.00041284770615001134,
+              "p50": -6.832407899093774e-05,
+              "p95": 0.0010145919463325338,
+              "std": 0.0005594274434835439
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.002037993978129453,
+              "mean": 0.0005576364948433951,
+              "min": 0.0,
+              "p50": 0.00045260594145982006,
+              "p95": 0.0013254359046518899,
+              "std": 0.000477016193661312
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.0005326776809330449,
+              "mean": -0.00010291491320976955,
+              "min": -0.0009532664044706761,
+              "p50": 2.4196201074615058e-05,
+              "p95": 0.00046239173642268,
+              "std": 0.0005025135933472005
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.02046964872583101,
+              "mean": 0.003378494101942522,
+              "min": 0.0,
+              "p50": 0.002385768958207563,
+              "p95": 0.013243133920652576,
+              "std": 0.003951668266016837
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.003968929224422361,
+              "mean": 0.0026471265957447843,
+              "min": 0.002025688857263565,
+              "p50": 0.0025098500677214267,
+              "p95": 0.003688952924823447,
+              "std": 0.0006918847324703751
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.006650418769454146,
+              "mean": 0.004066736543686571,
+              "min": 0.0011031658708408121,
+              "p50": 0.004262289918981908,
+              "p95": 0.006460632017928876,
+              "std": 0.002013579284444201
+            }
+          },
           "perturbation_id": "sensory_feedback_offset__x_pos",
-          "reason": "sensory_feedback perturbations require a named adapter at sensory.output after noise; controller-input hacks are intentionally excluded",
-          "status": "not_implemented"
+          "status": "evaluated"
         },
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "not_available_in_current_eager_adapter",
-              "controller_input_mutated": false
+              "adapter": "temporary_external_additive_graph_channel",
+              "axis_index": 0,
+              "controller_input_mutated": false,
+              "controller_internal_state_mutated": false,
+              "duration_steps": 1,
+              "future_graphspec_mapping": "named additive delayed_observation channel before sensory.input noise",
+              "graph_inserted": true,
+              "input_key": "perturbation_adapter:delayed_observation_offset__x_pos",
+              "insertion_point": "feedback.feedback -> sensory.input",
+              "label": "perturbation_adapter_delayed_observation_delayed_observation_offset__x_pos",
+              "source_node": "feedback",
+              "source_port": "feedback",
+              "start_time_index": 0,
+              "target_node": "sensory",
+              "target_port": "input",
+              "temporary_pre_graphspec": true
             },
-            "reason": "delayed_observation perturbations require a named adapter on the clean DelayedPositionVelocityFeedback output before sensory noise; GRU hidden state/input mutation is intentionally excluded",
-            "status": "not_implemented"
+            "reason": null,
+            "status": "evaluated"
+          },
+          "bulk_arrays": {
+            "arrays": [
+              "delta_action",
+              "delta_position",
+              "delta_velocity",
+              "base_position",
+              "perturbed_position"
+            ],
+            "format": "np.savez_compressed",
+            "path": "_artifacts/3992394/perturbation_response/gru_fullqrf_validation_selected/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/delayed_observation_offset__x_pos.npz"
           },
           "channel": "delayed_observation",
+          "metrics": {
+            "delta_action_norm": {
+              "count": 300,
+              "max": 0.5395480707451278,
+              "mean": 0.1680765604210417,
+              "min": 0.013953320086136003,
+              "p50": 0.14471982497146002,
+              "p95": 0.37908829821909196,
+              "std": 0.10575597962421546
+            },
+            "delta_endpoint_error_m": {
+              "count": 5,
+              "max": 0.0012093643105724034,
+              "mean": 0.0003769470100019921,
+              "min": -0.0007887036587486914,
+              "p50": 0.0007905505859225406,
+              "p95": 0.0011306485497553848,
+              "std": 0.0007327871268524343
+            },
+            "delta_position_trajectory_norm_m": {
+              "count": 300,
+              "max": 0.0019136485625070208,
+              "mean": 0.0007375410286890607,
+              "min": 0.0,
+              "p50": 0.0007156555068659423,
+              "p95": 0.001647067562203682,
+              "std": 0.0004955284250145326
+            },
+            "delta_terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.0071018376818621,
+              "mean": 0.001063983566594849,
+              "min": -0.004790771457699297,
+              "p50": 0.0002434078129238586,
+              "p95": 0.0064577103595579635,
+              "std": 0.004101101507566269
+            },
+            "delta_velocity_trajectory_norm_m_s": {
+              "count": 300,
+              "max": 0.024369975194943043,
+              "mean": 0.005117612724814916,
+              "min": 0.0,
+              "p50": 0.003924962042533966,
+              "p95": 0.013283412939029576,
+              "std": 0.004416854847659022
+            },
+            "endpoint_error_m": {
+              "count": 5,
+              "max": 0.003325628436324181,
+              "mean": 0.0028075138506058503,
+              "min": 0.002088179487656113,
+              "p50": 0.002737457576101508,
+              "p95": 0.003306320178926568,
+              "std": 0.0004452203589029278
+            },
+            "extra_full_qrf_cost": {
+              "reason": "full-Q/R/Q_f loss object is not bound in this post-hoc adapter",
+              "status": "not_available"
+            },
+            "terminal_speed_m_s": {
+              "count": 5,
+              "max": 0.009558489881094602,
+              "mean": 0.00523363502349119,
+              "min": 0.0021590773137219015,
+              "p50": 0.004324449773524546,
+              "p95": 0.009181257079229654,
+              "std": 0.0029209042719594365
+            }
+          },
           "perturbation_id": "delayed_observation_offset__x_pos",
-          "reason": "delayed_observation perturbations require a named adapter on the clean DelayedPositionVelocityFeedback output before sensory noise; GRU hidden state/input mutation is intentionally excluded",
-          "status": "not_implemented"
+          "status": "evaluated"
         },
         {
           "adapter": {
             "adapter_provenance": {
-              "adapter": "not_available_in_current_eager_adapter",
-              "controller_input_mutated": false
+              "adapter": "not_applicable_current_fixed_target_checkpoint",
+              "controller_input_mutated": false,
+              "future_graphspec_mapping": "target_stream named graph input when models consume it",
+              "temporary_pre_graphspec": false
             },
-            "reason": "target_stream perturbations require a task target stream bound to the controller; current C&S GRU validation specs expose scalar SISU input, not a target stream",
-            "status": "not_implemented"
+            "reason": "target_stream is deferred: current fixed-target C&S GRU validation checkpoints do not consume a target-position input stream",
+            "status": "not_applicable"
           },
           "channel": "target_stream",
           "perturbation_id": "target_stream_jump__x_pos",
-          "reason": "target_stream perturbations require a task target stream bound to the controller; current C&S GRU validation specs expose scalar SISU input, not a target stream",
-          "status": "not_implemented"
+          "reason": "target_stream is deferred: current fixed-target C&S GRU validation checkpoints do not consume a target-position input stream",
+          "status": "not_applicable"
         }
       ],
       "run_spec_path": "results/5f70333/runs/lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64/run.json",
       "status_counts": {
-        "blocked": 12,
-        "evaluated": 56,
-        "not_implemented": 3
+        "evaluated": 70,
+        "not_applicable": 1
       }
     }
   },

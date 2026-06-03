@@ -4,17 +4,19 @@ from __future__ import annotations
 
 import json
 
+import jax.random as jr
 import numpy as np
-from feedbax.intervene import FixedFieldParams
+from feedbax.graph import Wire
 from feedbax.state import CartesianState
 from feedbax.task import TaskTrialSpec
 
 from rlrmp.analysis.gru_perturbation_bank import (
     SCHEMA_VERSION,
+    GRAPH_ADAPTER_INPUT_PREFIX,
     apply_perturbation_to_trial_specs,
     default_cs_perturbation_bank,
 )
-from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
+from rlrmp.cs_lss_gru import build_cs_lss_gru_graph
 
 
 def test_default_bank_is_json_serializable_with_required_channels() -> None:
@@ -115,20 +117,14 @@ def test_initial_velocity_adapter_offsets_vector_state() -> None:
     np.testing.assert_allclose(trial_specs.inits["mechanics.vector"], 0.0)
 
 
-def test_command_input_pulse_adapter_sets_named_intervention_params() -> None:
+def test_command_input_pulse_adapter_sets_external_graph_input_payload() -> None:
     trial_specs = TaskTrialSpec(
         inits={"mechanics.vector": np.zeros((2, 8), dtype=np.float64)},
         targets={},
         inputs={"effector_target": CartesianState(pos=np.zeros((2, 10, 2)))},
-        intervene={
-            PLANT_INTERVENOR_LABEL: FixedFieldParams(
-                scale=np.zeros((2,), dtype=np.float32),
-                field=np.zeros((2,), dtype=np.float32),
-                active=False,
-            )
-        },
     )
     perturbation = {
+        "perturbation_id": "command_input_pulse__t3_y_neg",
         "channel": "command_input",
         "family": "command_input_pulse",
         "amplitude": 2.0,
@@ -140,14 +136,46 @@ def test_command_input_pulse_adapter_sets_named_intervention_params() -> None:
     result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
 
     assert result.status == "evaluated"
-    params = result.trial_specs.intervene[PLANT_INTERVENOR_LABEL]
-    np.testing.assert_allclose(params.field.value[:, 3:5, 1], -2.0)
-    np.testing.assert_allclose(params.field.value[:, :3, :], 0.0)
-    np.testing.assert_allclose(params.scale, 1.0)
-    assert params.active.value[:, 3:5].all()
+    input_key = f"{GRAPH_ADAPTER_INPUT_PREFIX}:command_input_pulse__t3_y_neg"
+    payload = result.trial_specs.inputs[input_key]
+    np.testing.assert_allclose(payload[:, 3:5, 1], -2.0)
+    np.testing.assert_allclose(payload[:, :3, :], 0.0)
     assert result.adapter_provenance["external_load_force"] is False
-    assert "efferent.output -> mechanics.force" in (
-        result.adapter_provenance["future_graphspec_insertion_point"]
+    assert result.adapter_provenance["insertion_point"] == "efferent.output -> mechanics.force"
+    assert result.adapter_provenance["temporary_pre_graphspec"] is True
+    assert result.adapter_provenance["controller_input_mutated"] is False
+
+
+def test_command_input_graph_adapter_inserts_external_node_on_force_edge() -> None:
+    trial_specs = TaskTrialSpec(
+        inits={"mechanics.vector": np.zeros((2, 8), dtype=np.float64)},
+        targets={},
+        inputs={"effector_target": CartesianState(pos=np.zeros((2, 10, 2)))},
+    )
+    graph = build_cs_lss_gru_graph(hidden_size=3, key=jr.PRNGKey(0))
+    perturbation = {
+        "perturbation_id": "command_input_pulse__t3_x_pos",
+        "channel": "command_input",
+        "family": "command_input_pulse",
+        "amplitude": 1.0,
+        "axis": "x",
+        "sign": 1,
+        "timing": {"start_time_index": 3, "duration_steps": 2},
+    }
+
+    result = apply_perturbation_to_trial_specs(trial_specs, perturbation, model=graph)
+
+    assert result.status == "evaluated"
+    assert result.model is not None
+    adapter_label = result.adapter_provenance["label"]
+    assert adapter_label in result.model.nodes
+    assert Wire("efferent", "output", "mechanics", "force") not in result.model.wires
+    assert Wire("efferent", "output", adapter_label, "signal") in result.model.wires
+    assert Wire(adapter_label, "signal", "mechanics", "force") in result.model.wires
+    assert result.adapter_provenance["input_key"] in result.model.input_ports
+    assert result.model.input_bindings[result.adapter_provenance["input_key"]] == (
+        adapter_label,
+        "offset",
     )
 
 
@@ -228,34 +256,55 @@ def test_process_epsilon_adapter_blocks_without_epsilon_input() -> None:
     assert "mechanics.epsilon / B_w" in result.reason
 
 
-def test_sensory_adapter_is_explicitly_not_implemented() -> None:
-    trial_specs = TaskTrialSpec(inits={}, targets={}, inputs={})
+def test_sensory_adapter_uses_external_graph_channel_payload() -> None:
+    trial_specs = TaskTrialSpec(
+        inits={"mechanics.vector": np.zeros((2, 8), dtype=np.float64)},
+        targets={},
+        inputs={"effector_target": CartesianState(pos=np.zeros((2, 10, 2)))},
+    )
     perturbation = {
+        "perturbation_id": "sensory_feedback_offset__x_pos",
         "channel": "sensory_feedback",
         "family": "sensory_feedback_offset",
         "amplitude": 0.01,
         "axis": "x",
         "sign": 1,
+        "timing": {"start_time_index": 0, "duration_steps": 10},
     }
 
     result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
 
-    assert result.status == "not_implemented"
-    assert "controller-input hacks" in result.reason
+    assert result.status == "evaluated"
+    payload = result.trial_specs.inputs[f"{GRAPH_ADAPTER_INPUT_PREFIX}:sensory_feedback_offset__x_pos"]
+    assert payload.shape == (2, 10, 4)
+    np.testing.assert_allclose(payload[:, :, 0], 0.01)
+    assert result.adapter_provenance["insertion_point"] == "sensory.output -> net.feedback"
+    assert result.adapter_provenance["controller_input_mutated"] is False
 
 
-def test_delayed_observation_reason_names_clean_pre_noise_channel() -> None:
-    trial_specs = TaskTrialSpec(inits={}, targets={}, inputs={})
+def test_delayed_observation_adapter_uses_clean_pre_noise_graph_channel() -> None:
+    trial_specs = TaskTrialSpec(
+        inits={"mechanics.vector": np.zeros((2, 8), dtype=np.float64)},
+        targets={},
+        inputs={"effector_target": CartesianState(pos=np.zeros((2, 10, 2)))},
+    )
     perturbation = {
+        "perturbation_id": "delayed_observation_offset__x_pos",
         "channel": "delayed_observation",
         "family": "delayed_observation_offset",
         "amplitude": 0.01,
         "axis": "x",
         "sign": 1,
+        "timing": {"start_time_index": 0, "duration_steps": 10},
     }
 
     result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
 
-    assert result.status == "not_implemented"
-    assert "DelayedPositionVelocityFeedback" in result.reason
-    assert "before sensory noise" in result.reason
+    assert result.status == "evaluated"
+    payload = result.trial_specs.inputs[
+        f"{GRAPH_ADAPTER_INPUT_PREFIX}:delayed_observation_offset__x_pos"
+    ]
+    assert payload.shape == (2, 10, 4)
+    np.testing.assert_allclose(payload[:, :, 0], 0.01)
+    assert result.adapter_provenance["insertion_point"] == "feedback.feedback -> sensory.input"
+    assert "before sensory.input noise" in result.adapter_provenance["future_graphspec_mapping"]
