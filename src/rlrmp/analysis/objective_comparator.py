@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from rlrmp.paths import REPO_ROOT
+
 
 SCHEMA_VERSION = "rlrmp.objective_comparator_sidecar.v2"
 DEFAULT_MONTE_CARLO_STATUS = {
@@ -239,6 +241,146 @@ def write_objective_comparator_sidecar(
     markdown_path.write_text(render_objective_comparator_markdown(sidecar), encoding="utf-8")
 
 
+def compute_default_extlqg_cost_decomposition() -> ExtLQGCostDecomposition:
+    """Compute the canonical C&S extLQG expected-cost decomposition."""
+
+    import jax.numpy as jnp
+
+    from rlrmp.analysis.cs_game_card import (
+        OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+        materialize_reference,
+    )
+    from rlrmp.analysis.cs_released_simulation import (
+        _compute_ext_kalman,
+        _compute_ofc,
+        _default_output_feedback_initial_state,
+        default_cs_noise_covariances,
+    )
+    from rlrmp.analysis.output_feedback import (
+        delayed_observation_matrix,
+        position_velocity_observation_config,
+    )
+
+    reference = materialize_reference(gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,))
+    plant = reference.plant
+    schedule = reference.schedule
+    config = position_velocity_observation_config(plant)
+    covariances = default_cs_noise_covariances(plant, config)
+    h_matrix = delayed_observation_matrix(plant, config)
+    state_noise = covariances.motor + covariances.process
+    initial_covariance = jnp.eye(plant.n, dtype=jnp.float64) * jnp.asarray(
+        config.estimator_initial_covariance,
+        dtype=jnp.float64,
+    )
+    estimator_gains = jnp.zeros((schedule.T, plant.n, h_matrix.shape[0]), dtype=jnp.float64)
+    current = 1.0e6
+    deterministic = 0.0
+    initial_trace = 0.0
+    scalar = 0.0
+    expected = current
+    iteration = 0
+    for iteration in range(1, 101):
+        controller_gains, sx0, se0, scalar_cost = _compute_ofc(
+            plant,
+            schedule,
+            estimator_gains,
+            h_matrix,
+            covariances.signal_dependent_state,
+            state_noise,
+            covariances.sensory,
+        )
+        estimator_gains, _state_covariances = _compute_ext_kalman(
+            plant,
+            h_matrix,
+            controller_gains,
+            covariances.signal_dependent_state,
+            state_noise,
+            covariances.sensory,
+            initial_covariance,
+            initial_covariance,
+        )
+        x0 = _default_output_feedback_initial_state(plant, config)
+        deterministic = float(x0 @ sx0 @ x0)
+        initial_trace = float(jnp.trace((sx0 + se0) @ initial_covariance))
+        scalar = float(scalar_cost)
+        expected = deterministic + initial_trace + scalar
+        relative_change = abs(current - expected) / max(abs(expected), 1e-300)
+        current = expected
+        if relative_change <= 1e-14:
+            break
+
+    return ExtLQGCostDecomposition(
+        deterministic_initial_state=deterministic,
+        initial_covariance_trace=initial_trace,
+        accumulated_noise_scalar=scalar,
+        total_expected_cost=expected,
+        provenance=(
+            "canonical C&S extLQG fixed-point decomposition from "
+            "materialize_reference(output_feedback_certificate_gamma_factor), "
+            f"{iteration} iterations"
+        ),
+    )
+
+
+def materialize_gru_objective_comparator_sidecar(
+    *,
+    experiment: str,
+    run_ids: Sequence[str],
+    labels: Sequence[str] | None = None,
+    checkpoint_policy: str,
+    use_validation_selected_checkpoints: bool,
+    checkpoint_manifest: Mapping[str, Any] | None,
+    checkpoint_manifest_path: Path | None,
+    standard_manifest_path: Path,
+    output_path: Path,
+    note_path: Path,
+    repo_root: Path = REPO_ROOT,
+) -> dict[str, Any]:
+    """Materialize the GRU objective-comparator sidecar for a post-run bundle."""
+
+    del labels
+    if not use_validation_selected_checkpoints:
+        return {
+            "status": "skipped",
+            "reason": "objective_comparator_requires_validation_selected_checkpoints",
+        }
+    if checkpoint_policy != "validation_selected_per_replicate":
+        return {
+            "status": "skipped",
+            "reason": "unsupported_checkpoint_policy",
+            "checkpoint_policy": checkpoint_policy,
+        }
+    if checkpoint_manifest is None:
+        if checkpoint_manifest_path is None:
+            raise ValueError("checkpoint_manifest or checkpoint_manifest_path is required")
+        checkpoint_manifest = json.loads(checkpoint_manifest_path.read_text(encoding="utf-8"))
+
+    extlqg = compute_default_extlqg_cost_decomposition()
+    sidecar = build_objective_comparator_sidecar(
+        issue=experiment,
+        source_manifest=_repo_relative(standard_manifest_path, repo_root=repo_root),
+        checkpoint_selection=checkpoint_manifest,
+        extlqg=extlqg,
+        scope=(
+            "validation-selected checkpoints for C&S GRU runs: "
+            + ", ".join(str(run_id) for run_id in run_ids)
+        ),
+        generated_by="rlrmp.analysis.objective_comparator.materialize_gru_objective_comparator_sidecar",
+    )
+    write_objective_comparator_sidecar(
+        sidecar,
+        json_path=output_path,
+        markdown_path=note_path,
+    )
+    return {
+        "status": "materialized",
+        "schema_version": sidecar["schema_version"],
+        "n_rows": len(sidecar["rows"]),
+        "extlqg_deterministic_full_qrf": extlqg.deterministic_initial_state,
+        "extlqg_total_expected_cost": extlqg.expected_cost,
+    }
+
+
 def _build_run_row(
     *,
     run_id: str,
@@ -298,6 +440,13 @@ def _fmt(value: Any) -> str:
 def _load_checkpoint_selection(manifest: Mapping[str, Any]) -> Mapping[str, Any]:
     checkpoint_selection = manifest.get("checkpoint_selection", manifest)
     return _expect_mapping(checkpoint_selection)
+
+
+def _repo_relative(path: Path, *, repo_root: Path) -> str:
+    try:
+        return str(path.relative_to(repo_root))
+    except ValueError:
+        return str(path)
 
 
 def main(argv: Sequence[str] | None = None) -> None:

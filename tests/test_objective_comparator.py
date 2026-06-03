@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import json
 
+from pathlib import Path
+
+import rlrmp.analysis.objective_comparator as objective_comparator
 from rlrmp.analysis.objective_comparator import (
     SCHEMA_VERSION,
     ExtLQGCostDecomposition,
     build_objective_comparator_sidecar,
+    materialize_gru_objective_comparator_sidecar,
     render_objective_comparator_markdown,
     write_objective_comparator_sidecar,
 )
@@ -118,3 +122,47 @@ def test_write_objective_comparator_sidecar_serializes_json_and_markdown(tmp_pat
     assert render_objective_comparator_markdown(sidecar) == markdown
     assert "not directly comparable to GRU validation values" in markdown
     assert "selected/total" in markdown
+
+
+def test_materialize_gru_objective_comparator_sidecar_uses_validation_manifest(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    manifest_path = tmp_path / "results" / "abc1234" / "notes" / "standard_manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text("{}", encoding="utf-8")
+    output_json = tmp_path / "results" / "abc1234" / "notes" / "objective.json"
+    output_md = tmp_path / "results" / "abc1234" / "notes" / "objective.md"
+
+    monkeypatch.setattr(
+        objective_comparator,
+        "compute_default_extlqg_cost_decomposition",
+        lambda: ExtLQGCostDecomposition(
+            deterministic_initial_state=12.0,
+            initial_covariance_trace=30.0,
+            accumulated_noise_scalar=2.0,
+            total_expected_cost=44.0,
+            provenance="unit-test",
+        ),
+    )
+
+    result = materialize_gru_objective_comparator_sidecar(
+        experiment="abc1234",
+        run_ids=("run_a", "run_b"),
+        checkpoint_policy="validation_selected_per_replicate",
+        use_validation_selected_checkpoints=True,
+        checkpoint_manifest=_checkpoint_selection(),
+        checkpoint_manifest_path=None,
+        standard_manifest_path=manifest_path,
+        output_path=output_json,
+        note_path=output_md,
+        repo_root=tmp_path,
+    )
+
+    payload = json.loads(output_json.read_text(encoding="utf-8"))
+
+    assert result["status"] == "materialized"
+    assert result["n_rows"] == 2
+    assert payload["source_manifest"] == "results/abc1234/notes/standard_manifest.json"
+    assert payload["rows"][0]["selected_to_extlqg_deterministic_ratio"] == 1.0
+    assert output_md.exists()

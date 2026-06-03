@@ -272,7 +272,7 @@ def materialize_optional_objective_comparator(
     """Call the optional objective-comparator sidecar when that module exists."""
 
     try:
-        module = importlib.import_module("rlrmp.analysis.gru_objective_comparator")
+        module = importlib.import_module("rlrmp.analysis.objective_comparator")
         materializer = getattr(module, "materialize_gru_objective_comparator_sidecar")
     except (ImportError, AttributeError) as exc:
         return {
@@ -280,7 +280,7 @@ def materialize_optional_objective_comparator(
             "reason": "optional_comparator_unavailable",
             "detail": str(exc),
             "expected_hook": (
-                "rlrmp.analysis.gru_objective_comparator."
+                "rlrmp.analysis.objective_comparator."
                 "materialize_gru_objective_comparator_sidecar"
             ),
         }
