@@ -150,6 +150,11 @@ def materialize_gru_standard_result(
         "format": "rlrmp.cs_gru_standard_certificates.v1",
         "issue": materializer_issue_id,
         "source_issue": experiment,
+        "checkpoint_policy": (
+            "validation_selected_per_replicate"
+            if use_validation_selected_checkpoints
+            else "final_checkpoint"
+        ),
         "source_manifests": {
             run_id: repo_relative(result_run_root / run_id / "run.json", repo_root=repo_root)
             for run_id in run_ids

@@ -44,6 +44,11 @@ def main() -> None:
             "results/<experiment>/notes/gru_standard_certificates_manifest.json"
         ),
     )
+    parser.add_argument(
+        "--validation-selected-checkpoints",
+        action="store_true",
+        help="Use validation-selected per-replicate checkpoints instead of final checkpoints.",
+    )
     args = parser.parse_args()
 
     run_ids = tuple(args.run_id) if args.run_id else RUN_IDS
@@ -64,6 +69,7 @@ def main() -> None:
         run_ids=run_ids,
         experiment=args.experiment,
         materializer_issue_id=MATERIALIZER_ISSUE_ID,
+        use_validation_selected_checkpoints=args.validation_selected_checkpoints,
     )
     write_gru_standard_result(
         result,

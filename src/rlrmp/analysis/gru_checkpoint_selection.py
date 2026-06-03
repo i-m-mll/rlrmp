@@ -69,6 +69,7 @@ def materialize_validation_selected_checkpoint_manifest(
     manifest = {
         "schema_version": "rlrmp.validation_selected_gru_checkpoints.v1",
         "issue": experiment,
+        "checkpoint_policy": "validation_selected_per_replicate",
         "selection_policy": (
             "per-replicate checkpoint selected by minimum positive rollout validation "
             "objective among available durable checkpoints; analytical action and I/O "

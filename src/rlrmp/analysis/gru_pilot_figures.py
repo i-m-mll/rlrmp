@@ -208,6 +208,11 @@ def materialize_gru_pilot_figures(
         velocity_profiles=velocity_profiles,
         references=references,
         selection_manifest=selection_manifest,
+        checkpoint_policy=(
+            "validation_selected_per_replicate"
+            if use_validation_selected_checkpoints
+            else "final_checkpoint"
+        ),
     )
     summary_path = output_dir / "figure_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -767,6 +772,7 @@ def build_figure_summary(
     replicate_velocity_file: Path | None = None,
     references: Sequence[ReferenceProfile] = (),
     selection_manifest: dict[str, Any] | None = None,
+    checkpoint_policy: str = "final_checkpoint",
 ) -> dict[str, Any]:
     """Build the JSON sidecar summary for generated figures."""
 
@@ -827,6 +833,7 @@ def build_figure_summary(
 
     summary = {
         "issue": experiment,
+        "checkpoint_policy": checkpoint_policy,
         "runs": run_map,
         "loss_plots": {
             "implementation": "feedbax.plot.loss_history_compare",
