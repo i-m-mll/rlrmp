@@ -15,6 +15,8 @@ from rlrmp.analysis.cs_gru_standard_materialization import (
     write_gru_standard_result,
 )
 from rlrmp.analysis.gru_checkpoint_selection import (
+    fixed_bank_manifest_path,
+    load_materialized_fixed_bank_manifest,
     materialize_validation_selected_checkpoint_manifest,
 )
 from rlrmp.analysis.gru_evaluation_diagnostics import (
@@ -41,8 +43,10 @@ class GruPostrunMaterializationPlan:
     run_ids: tuple[str, ...]
     output_tag: str
     checkpoint_policy: str
+    checkpoint_selection_source: str
     notes_dir: Path
     checkpoint_manifest_path: Path | None
+    fixed_bank_rescore_manifest_path: Path | None
     standard_note_path: Path
     standard_manifest_path: Path
     evaluation_manifest_path: Path
@@ -71,6 +75,7 @@ def plan_gru_postrun_materialization(
     run_ids: Sequence[str],
     output_tag: str = DEFAULT_OUTPUT_TAG,
     use_validation_selected_checkpoints: bool = True,
+    fixed_bank_rescore_manifest_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> GruPostrunMaterializationPlan:
     """Return the tracked and ignored output paths for a post-run materialization."""
@@ -80,16 +85,38 @@ def plan_gru_postrun_materialization(
     checkpoint_policy = checkpoint_policy_name(use_validation_selected_checkpoints)
     notes_dir = repo_root / "results" / experiment / "notes"
     artifact_dir = repo_root / "_artifacts" / experiment
+    fixed_bank_rescore_manifest_path = (
+        fixed_bank_rescore_manifest_path
+        if fixed_bank_rescore_manifest_path is not None
+        else fixed_bank_manifest_path(experiment, repo_root=repo_root)
+    )
+    fixed_bank_available = False
+    if use_validation_selected_checkpoints:
+        fixed_bank_manifest = load_materialized_fixed_bank_manifest(
+            experiment=experiment,
+            repo_root=repo_root,
+            manifest_path=fixed_bank_rescore_manifest_path,
+        )
+        fixed_bank_available = (
+            fixed_bank_manifest is not None
+            and all(run_id in fixed_bank_manifest.get("runs", {}) for run_id in run_ids)
+        )
     return GruPostrunMaterializationPlan(
         experiment=experiment,
         run_ids=tuple(run_ids),
         output_tag=output_tag,
         checkpoint_policy=checkpoint_policy,
+        checkpoint_selection_source=(
+            "fixed_bank_rescore" if fixed_bank_available else checkpoint_policy
+        ),
         notes_dir=notes_dir,
         checkpoint_manifest_path=(
             notes_dir / "validation_selected_checkpoints.json"
             if use_validation_selected_checkpoints
             else None
+        ),
+        fixed_bank_rescore_manifest_path=(
+            fixed_bank_rescore_manifest_path if use_validation_selected_checkpoints else None
         ),
         standard_note_path=notes_dir / f"gru_standard_certificates_{output_tag}.md",
         standard_manifest_path=notes_dir
@@ -110,6 +137,7 @@ def materialize_gru_postrun_analysis(
     labels: Sequence[str] | None = None,
     output_tag: str = DEFAULT_OUTPUT_TAG,
     use_validation_selected_checkpoints: bool = True,
+    fixed_bank_rescore_manifest_path: Path | None = None,
     include_reference: bool = True,
     n_rollout_trials: int = DEFAULT_N_ROLLOUT_TRIALS,
     materializer_issue_id: str = MATERIALIZER_ISSUE_ID,
@@ -129,6 +157,7 @@ def materialize_gru_postrun_analysis(
         run_ids=run_ids,
         output_tag=output_tag,
         use_validation_selected_checkpoints=use_validation_selected_checkpoints,
+        fixed_bank_rescore_manifest_path=fixed_bank_rescore_manifest_path,
         repo_root=repo_root,
     )
     mkdir_p(plan.notes_dir)
@@ -139,6 +168,7 @@ def materialize_gru_postrun_analysis(
             experiment=experiment,
             run_ids=run_ids,
             output_path=plan.checkpoint_manifest_path,
+            preferred_manifest_path=plan.fixed_bank_rescore_manifest_path,
             repo_root=repo_root,
         )
 
@@ -200,6 +230,7 @@ def materialize_gru_postrun_analysis(
         "issue": experiment,
         "run_ids": list(run_ids),
         "checkpoint_policy": plan.checkpoint_policy,
+        "checkpoint_selection_source": plan.checkpoint_selection_source,
         "selection_leakage_guard": {
             "status": "audit_only",
             "audit_only_metrics": [
@@ -221,6 +252,14 @@ def materialize_gru_postrun_analysis(
                 None
                 if plan.checkpoint_manifest_path is None
                 else _repo_relative(plan.checkpoint_manifest_path, repo_root=repo_root)
+            ),
+            "fixed_bank_rescore_manifest": (
+                None
+                if plan.fixed_bank_rescore_manifest_path is None
+                else fixed_bank_rescore_manifest_status(
+                    plan.fixed_bank_rescore_manifest_path,
+                    repo_root=repo_root,
+                )
             ),
             "standard_certificate_note": _repo_relative(
                 plan.standard_note_path,
@@ -316,6 +355,31 @@ def checkpoint_policy_name(use_validation_selected_checkpoints: bool) -> str:
     )
 
 
+def fixed_bank_rescore_manifest_status(
+    path: Path,
+    *,
+    repo_root: Path = REPO_ROOT,
+) -> dict[str, Any]:
+    """Return postrun provenance for a fixed-bank rescore manifest path."""
+
+    status: dict[str, Any] = {"path": _repo_relative(path, repo_root=repo_root)}
+    if not path.exists():
+        return status | {"status": "missing", "selection_use": "sparse_history_fallback"}
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    materialization_status = str(manifest.get("materialization_status", "unknown"))
+    return status | {
+        "status": materialization_status,
+        "schema_version": manifest.get("schema_version"),
+        "selection_use": (
+            "fixed_bank_rescore"
+            if materialization_status == "materialized"
+            else "sparse_history_fallback"
+        ),
+        "validation_bank": manifest.get("validation_bank"),
+        "not_materialized_reason": manifest.get("not_materialized_reason"),
+    }
+
+
 def _repo_relative(path: Path, *, repo_root: Path) -> str:
     try:
         return str(path.relative_to(repo_root))
@@ -330,6 +394,7 @@ __all__ = [
     "SCHEMA_VERSION",
     "VALIDATION_SELECTED_CHECKPOINT_POLICY",
     "checkpoint_policy_name",
+    "fixed_bank_rescore_manifest_status",
     "materialize_gru_postrun_analysis",
     "materialize_optional_objective_comparator",
     "plan_gru_postrun_materialization",

@@ -23,6 +23,7 @@ def main() -> None:
         labels=None if args.label is None else tuple(args.label),
         output_tag=args.output_tag,
         use_validation_selected_checkpoints=not args.final_checkpoints,
+        fixed_bank_rescore_manifest_path=args.fixed_bank_rescore_manifest,
         include_reference=not args.no_reference,
         n_rollout_trials=args.n_rollout_trials,
         include_objective_comparator=not args.no_objective_comparator,
@@ -61,6 +62,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Override the default validation-selected per-replicate checkpoint "
             "policy and use final checkpoints."
+        ),
+    )
+    parser.add_argument(
+        "--fixed-bank-rescore-manifest",
+        type=Path,
+        help=(
+            "Optional fixed-bank checkpoint rescore manifest to prefer for "
+            "validation-selected materialization. Non-materialized manifests are "
+            "recorded as provenance and fall back to sparse logged validation."
         ),
     )
     parser.add_argument("--n-rollout-trials", type=int, default=DEFAULT_N_ROLLOUT_TRIALS)
