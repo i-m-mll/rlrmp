@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
@@ -14,6 +15,14 @@ from feedbax.graph import Component, Wire
 from feedbax.task import AbstractTask, TaskTrialSpec
 from jaxtyping import PRNGKeyArray, PyTree
 
+
+PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_randomized"
+LEGACY_PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_generalized"
+MILD_COMBINED_FAMILIES: tuple["PerturbationBin", ...] = (
+    "initial_position",
+    "command_input",
+)
+AMPLITUDE_LEVELS: tuple[float, ...] = (0.5, 1.0)
 
 PerturbationBin = Literal[
     "nominal",
@@ -199,7 +208,24 @@ class FixedTargetPerturbationTrainingConfig:
 
         return {
             "enabled": self.enabled,
-            "mode": "fixed_target_perturbation_generalized" if self.enabled else "nominal",
+            "mode": PERTURBATION_TRAINING_MODE if self.enabled else "nominal",
+            "legacy_mode": (
+                LEGACY_PERTURBATION_TRAINING_MODE if self.enabled else None
+            ),
+            "sampling": {
+                "kind": "prng_driven_fixed_target",
+                "uses_supplied_key": True,
+                "randomized_fields": [
+                    "mixture_membership",
+                    "single_family",
+                    "sign",
+                    "axis_or_component",
+                    "pulse_start",
+                    "amplitude_level",
+                ],
+                "amplitude_levels": list(AMPLITUDE_LEVELS),
+                "mild_combined_families": list(MILD_COMBINED_FAMILIES),
+            },
             "nominal_fraction": self.nominal_fraction,
             "single_fraction": self.single_fraction,
             "combined_fraction": self.combined_fraction,
@@ -375,63 +401,88 @@ def apply_training_perturbation_mixture(
     key: PRNGKeyArray,
     batch_info=None,
 ) -> TaskTrialSpec:
-    """Apply one configured training-mixture row.
+    """Apply one PRNG-driven fixed-target perturbation-training batch."""
 
-    The first C&S GRU training screen uses a deterministic 20-batch cycle:
-    9 nominal, 9 single-family, and 2 mild-combined batches. This realizes the
-    requested 45% / 45% / 10% mixture without Python control flow on traced PRNG
-    values inside Feedbax's JIT-compiled training step.
-    """
-
-    del key
     cfg = config_from_hps(config)
     trial_specs = add_zero_graph_channel_inputs(trial_specs)
-    if batch_info is None:
-        return _with_perturbation_metadata(trial_specs, "nominal")
+    batch_shape = _batch_shape(trial_specs)
+    (
+        key_mix,
+        key_family,
+        key_pos,
+        key_vel,
+        key_process,
+        key_command,
+        key_sensory,
+        key_delayed,
+    ) = jr.split(key, 8)
+    mixture = jr.uniform(key_mix, batch_shape)
+    single_mask = (
+        (mixture >= float(cfg.nominal_fraction))
+        & (mixture < float(cfg.nominal_fraction + cfg.single_fraction))
+    ).astype(jnp.float32)
+    combined_mask = (
+        mixture >= float(cfg.nominal_fraction + cfg.single_fraction)
+    ).astype(jnp.float32)
+    family_index = jr.randint(key_family, batch_shape, 0, len(SINGLE_FAMILY_BINS))
 
-    index = jnp.mod(jnp.asarray(batch_info.current), 20)
-    trial_specs = _offset_initial_vector(
+    trial_specs = _offset_initial_random_components(
         trial_specs,
-        axis=1,
-        amount=cfg.initial_position_offset_m
-        * _cycle_amplitude(index, single_indices=(9, 15), combined_indices=(18,), cfg=cfg),
+        base_amount=cfg.initial_position_offset_m,
+        component_offset=0,
+        n_components=2,
+        active_mask=(
+            single_mask * _family_mask(family_index, "initial_position")
+            + combined_mask * float(cfg.combined_amplitude_scale)
+        ),
+        key=key_pos,
     )
-    trial_specs = _offset_initial_vector(
+    trial_specs = _offset_initial_random_components(
         trial_specs,
-        axis=3,
-        amount=cfg.initial_velocity_offset_m_s
-        * _cycle_amplitude(index, single_indices=(10,), combined_indices=(), cfg=cfg),
+        base_amount=cfg.initial_velocity_offset_m_s,
+        component_offset=2,
+        n_components=2,
+        active_mask=single_mask * _family_mask(family_index, "initial_velocity"),
+        key=key_vel,
     )
-    trial_specs = _add_process_epsilon_pulse(
+    trial_specs = _add_process_epsilon_random_pulse(
         trial_specs,
-        amount=cfg.process_epsilon_scale
-        * _cycle_amplitude(index, single_indices=(11, 16), combined_indices=(18,), cfg=cfg),
-        start=cfg.pulse_start_step,
+        base_amount=cfg.process_epsilon_scale,
+        active_mask=single_mask * _family_mask(family_index, "process_epsilon"),
         duration=cfg.pulse_duration_steps,
+        key=key_process,
     )
-    trial_specs = _add_graph_channel_pulse(
+    trial_specs = _add_graph_channel_random_pulse(
         trial_specs,
         GRAPH_ADAPTER_SPECS["command_input"],
-        amount=cfg.command_input_pulse_n
-        * _cycle_amplitude(index, single_indices=(12, 17), combined_indices=(), cfg=cfg),
-        start=cfg.pulse_start_step,
+        base_amount=cfg.command_input_pulse_n,
+        active_mask=(
+            single_mask * _family_mask(family_index, "command_input")
+            + combined_mask * float(cfg.combined_amplitude_scale)
+        ),
         duration=cfg.pulse_duration_steps,
+        key=key_command,
     )
-    trial_specs = _add_graph_channel_pulse(
+    trial_specs = _add_graph_channel_random_pulse(
         trial_specs,
         GRAPH_ADAPTER_SPECS["sensory_feedback"],
-        amount=cfg.sensory_feedback_offset_m
-        * _cycle_amplitude(index, single_indices=(13,), combined_indices=(19,), cfg=cfg),
-        start=0,
+        base_amount=cfg.sensory_feedback_offset_m,
+        active_mask=single_mask * _family_mask(family_index, "sensory_feedback"),
         duration=trial_specs.timeline.n_steps,
+        key=key_sensory,
     )
-    return _add_graph_channel_pulse(
+    trial_specs = _add_graph_channel_random_pulse(
         trial_specs,
         GRAPH_ADAPTER_SPECS["delayed_observation"],
-        amount=cfg.delayed_observation_offset_m
-        * _cycle_amplitude(index, single_indices=(14,), combined_indices=(19,), cfg=cfg),
-        start=0,
+        base_amount=cfg.delayed_observation_offset_m,
+        active_mask=single_mask * _family_mask(family_index, "delayed_observation"),
         duration=trial_specs.timeline.n_steps,
+        key=key_delayed,
+    )
+    return _with_perturbation_metadata(
+        trial_specs,
+        "randomized_mixture",
+        families=tuple(SINGLE_FAMILY_BINS),
     )
 
 
@@ -480,10 +531,24 @@ def validation_bin_manifest(config: Any) -> dict[str, Any]:
         if not isinstance(config, FixedTargetPerturbationTrainingConfig)
         else config
     )
+    selection_role = (
+        "aggregate rollout loss over predeclared held-out perturbation bins selects "
+        "checkpoints; analytical action, I/O, and Jacobian metrics are audit-only"
+        if cfg.enabled
+        else "nominal rollout validation loss selects checkpoints"
+    )
+    validation_role = (
+        "generalized_held_out_perturbation_rollout_loss"
+        if cfg.enabled
+        else "nominal_rollout_validation_loss"
+    )
     return {
         "schema_version": "rlrmp.cs_fixed_target_perturbation_validation_bins.v1",
-        "selection_role": (
-            "scalar validation loss may select checkpoints; bin metrics are sidecar/audit"
+        "validation_role": validation_role,
+        "selection_role": selection_role,
+        "nominal_quality_role": (
+            "nominal bin remains a reported quality sidecar/gate and is not an "
+            "analytical-fidelity selector"
         ),
         "bins": [
             {
@@ -579,6 +644,10 @@ def _cycle_amplitude(
     )
 
 
+def _family_mask(family_index: jnp.ndarray, bin_name: PerturbationBin) -> jnp.ndarray:
+    return (family_index == SINGLE_FAMILY_BINS.index(bin_name)).astype(jnp.float32)
+
+
 def _insert_additive_graph_channel_adapter(model: Any, spec: GraphAdapterSpec) -> Any:
     if spec.label in getattr(model, "nodes", {}):
         return model
@@ -609,6 +678,27 @@ def _offset_initial_vector(
     return eqx.tree_at(lambda ts: ts.inits["mechanics.vector"], trial_specs, updated)
 
 
+def _offset_initial_random_components(
+    trial_specs: TaskTrialSpec,
+    *,
+    base_amount: float,
+    component_offset: int,
+    n_components: int,
+    active_mask: jnp.ndarray,
+    key: PRNGKeyArray,
+) -> TaskTrialSpec:
+    key_component, key_sign, key_level = jr.split(key, 3)
+    vector = jnp.asarray(trial_specs.inits["mechanics.vector"])
+    batch_shape = _batch_shape(trial_specs)
+    component = jr.randint(key_component, batch_shape, 0, n_components) + int(component_offset)
+    sign = _random_sign(key_sign, batch_shape)
+    level = _random_amplitude_level(key_level, batch_shape)
+    amount = jnp.asarray(base_amount, dtype=vector.dtype) * sign * level * active_mask
+    component_mask = jax.nn.one_hot(component, vector.shape[-1], dtype=vector.dtype)
+    updated = vector + _expand_to_rank(amount, vector.ndim) * component_mask
+    return eqx.tree_at(lambda ts: ts.inits["mechanics.vector"], trial_specs, updated)
+
+
 def _add_process_epsilon_pulse(
     trial_specs: TaskTrialSpec,
     *,
@@ -620,6 +710,37 @@ def _add_process_epsilon_pulse(
     end = min(int(start) + int(duration), epsilon.shape[-2])
     updated = epsilon.at[..., int(start) : end, 5].add(jnp.asarray(amount, dtype=epsilon.dtype))
     return eqx.tree_at(lambda ts: ts.inputs["epsilon"], trial_specs, updated)
+
+
+def _add_process_epsilon_random_pulse(
+    trial_specs: TaskTrialSpec,
+    *,
+    base_amount: float,
+    active_mask: jnp.ndarray,
+    duration: int,
+    key: PRNGKeyArray,
+) -> TaskTrialSpec:
+    key_component, key_start, key_sign, key_level = jr.split(key, 4)
+    epsilon = jnp.asarray(trial_specs.inputs["epsilon"])
+    batch_shape = _batch_shape(trial_specs)
+    component = jr.randint(key_component, batch_shape, 0, epsilon.shape[-1])
+    amount = (
+        jnp.asarray(base_amount, dtype=epsilon.dtype)
+        * _random_sign(key_sign, batch_shape)
+        * _random_amplitude_level(key_level, batch_shape)
+        * active_mask
+    )
+    pulse = _random_pulse_tensor(
+        batch_shape=batch_shape,
+        n_steps=epsilon.shape[-2],
+        width=epsilon.shape[-1],
+        component=component,
+        amount=amount,
+        duration=duration,
+        key=key_start,
+        dtype=epsilon.dtype,
+    )
+    return eqx.tree_at(lambda ts: ts.inputs["epsilon"], trial_specs, epsilon + pulse)
 
 
 def _add_graph_channel_pulse(
@@ -634,6 +755,80 @@ def _add_graph_channel_pulse(
     end = min(int(start) + int(duration), payload.shape[-2])
     updated = payload.at[..., int(start) : end, 0].add(jnp.asarray(amount, dtype=payload.dtype))
     return _set_input(trial_specs, spec.input_key, updated)
+
+
+def _add_graph_channel_random_pulse(
+    trial_specs: TaskTrialSpec,
+    spec: GraphAdapterSpec,
+    *,
+    base_amount: float,
+    active_mask: jnp.ndarray,
+    duration: int,
+    key: PRNGKeyArray,
+) -> TaskTrialSpec:
+    key_component, key_start, key_sign, key_level = jr.split(key, 4)
+    payload = _zero_graph_payload(trial_specs, spec)
+    batch_shape = _batch_shape(trial_specs)
+    component = jr.randint(key_component, batch_shape, 0, payload.shape[-1])
+    amount = (
+        jnp.asarray(base_amount, dtype=payload.dtype)
+        * _random_sign(key_sign, batch_shape)
+        * _random_amplitude_level(key_level, batch_shape)
+        * active_mask
+    )
+    updated = payload + _random_pulse_tensor(
+        batch_shape=batch_shape,
+        n_steps=payload.shape[-2],
+        width=payload.shape[-1],
+        component=component,
+        amount=amount,
+        duration=duration,
+        key=key_start,
+        dtype=payload.dtype,
+    )
+    return _set_input(trial_specs, spec.input_key, updated)
+
+
+def _random_pulse_tensor(
+    *,
+    batch_shape: tuple[int, ...],
+    n_steps: int,
+    width: int,
+    component: jnp.ndarray,
+    amount: jnp.ndarray,
+    duration: int,
+    key: PRNGKeyArray,
+    dtype: Any,
+) -> jnp.ndarray:
+    max_start = max(1, int(n_steps) - int(duration) + 1)
+    start = jr.randint(key, batch_shape, 0, max_start)
+    time = jnp.arange(int(n_steps))
+    time_mask = (
+        (time >= jnp.expand_dims(start, axis=-1))
+        & (time < jnp.expand_dims(start, axis=-1) + int(duration))
+    ).astype(dtype)
+    component_mask = jax.nn.one_hot(component, int(width), dtype=dtype)
+    return (
+        _expand_to_rank(amount, len(batch_shape) + 2)
+        * jnp.expand_dims(time_mask, axis=-1)
+        * jnp.expand_dims(component_mask, axis=-2)
+    )
+
+
+def _random_sign(key: PRNGKeyArray, shape: tuple[int, ...]) -> jnp.ndarray:
+    return jnp.where(jr.bernoulli(key, 0.5, shape), 1.0, -1.0).astype(jnp.float32)
+
+
+def _random_amplitude_level(key: PRNGKeyArray, shape: tuple[int, ...]) -> jnp.ndarray:
+    index = jr.randint(key, shape, 0, len(AMPLITUDE_LEVELS))
+    return jnp.asarray(AMPLITUDE_LEVELS, dtype=jnp.float32)[index]
+
+
+def _expand_to_rank(value: jnp.ndarray, rank: int) -> jnp.ndarray:
+    expanded = jnp.asarray(value)
+    while expanded.ndim < rank:
+        expanded = jnp.expand_dims(expanded, axis=-1)
+    return expanded
 
 
 def _zero_graph_payload(trial_specs: TaskTrialSpec, spec: GraphAdapterSpec) -> jnp.ndarray:
@@ -691,7 +886,7 @@ def _bin_families(bin_name: str) -> tuple[str, ...]:
     if bin_name == "nominal":
         return ()
     if bin_name == "mild_combined":
-        return ("initial_position", "command_input")
+        return MILD_COMBINED_FAMILIES
     return (bin_name,)
 
 
@@ -703,7 +898,7 @@ def planned_fixed_target_perturbation_rows(
 
     rows = []
     for lr_label, lr in (("lr1e-3", 1e-3), ("lr3e-3", 3e-3)):
-        run = f"fixed_target_perturbation_fullqrf_warmcos__{lr_label}_clip5_b64"
+        run = f"fixed_target_random_perturb_fullqrf_warmcos__{lr_label}_clip5_b64"
         rows.append(
             {
                 "experiment": experiment,
@@ -714,7 +909,8 @@ def planned_fixed_target_perturbation_rows(
                 "n_replicates": 5,
                 "loss_objective": "full_analytical_qrf",
                 "lr_schedule": "warmup_cosine",
-                "perturbation_training": "fixed_target_perturbation_generalized",
+                "perturbation_training": PERTURBATION_TRAINING_MODE,
+                "checkpoint_selection": "generalized_held_out_perturbation_validation",
                 "command": [
                     "uv",
                     "run",
