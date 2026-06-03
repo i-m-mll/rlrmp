@@ -1,0 +1,116 @@
+{
+  "caveats": [
+    "The apples-to-apples scalar for the available GRU validation records is the deterministic extLQG term, not the covariance-inclusive expected cost.",
+    "This sidecar is diagnostic only and is not a standard-certificate gate.",
+    "GRU values are validation-selected realized full-QRF scalars; same-noise-bank extLQG realized values require separate Monte Carlo materialization."
+  ],
+  "checkpoint_policy": {
+    "caveat": "Checkpoint selection is inherited from the validation-selected GRU manifest. Analytical action, I/O, and extLQG comparator metrics are audit-only and are not used for checkpoint selection.",
+    "label": "validation_selected_per_replicate",
+    "selection_policy": "per-replicate checkpoint selected by minimum positive rollout validation objective among available durable checkpoints; analytical action and I/O metrics are audit-only",
+    "source": "rlrmp.validation_selected_gru_checkpoints.v1"
+  },
+  "extlqg_decomposition": {
+    "accumulated_noise_scalar": 57.383523357158495,
+    "comparable_scalar": 4368.510655149214,
+    "comparable_scalar_lens": "extlqg_deterministic_initial_state_full_qrf",
+    "component_sum": 12201.42433801687,
+    "component_sum_delta": 0.0,
+    "deterministic_initial_state": 4368.510655149214,
+    "initial_covariance_trace": 7775.530159510498,
+    "lens": "extlqg_covariance_inclusive_expected_cost",
+    "provenance": "canonical C&S extLQG fixed-point decomposition from materialize_reference(output_feedback_certificate_gamma_factor), 6 iterations",
+    "total_expected_cost": 12201.42433801687
+  },
+  "generated_by": "rlrmp.analysis.objective_comparator.materialize_gru_objective_comparator_sidecar",
+  "issue": "0203d1f",
+  "objective_lenses": {
+    "extlqg_covariance_inclusive_expected_cost": {
+      "definition": "deterministic initial-state term plus initial covariance trace plus accumulated process/sensory/motor noise scalar",
+      "kind": "expected_cost"
+    },
+    "extlqg_deterministic_initial_state_full_qrf": {
+      "definition": "x0^T Sx0 x0 from the extLQG/computeOFC recursion",
+      "kind": "deterministic_analytical_term"
+    },
+    "gru_validation_selected_realized_full_qrf": {
+      "definition": "sum_t x_t^T Q_t x_t + u_t^T R_t u_t + x_T^T Q_f x_T using states.mechanics.vector for x and states.net.output for u",
+      "kind": "realized_validation_objective"
+    }
+  },
+  "rows": [
+    {
+      "best_logged_to_extlqg_deterministic_ratio": 0.6952699847936143,
+      "checkpoint_policy": "validation_selected_per_replicate",
+      "extlqg_comparable_lens": "extlqg_deterministic_initial_state_full_qrf",
+      "extlqg_deterministic_full_qrf": 4368.510655149214,
+      "extlqg_total_expected_cost": 12201.42433801687,
+      "gru_mean_best_logged_validation_full_qrf": 3037.294336776336,
+      "gru_mean_selected_validation_full_qrf": 3045.403417370616,
+      "gru_realized_lens": "gru_validation_selected_realized_full_qrf",
+      "n_replicates": 5,
+      "run_id": "lss_ablation_partial_net_force_filter__lr1e-3_clip5_b64",
+      "selected_checkpoints": [
+        {
+          "best_logged_validation_batch": 12000,
+          "best_logged_validation_objective": 2233.99395926905,
+          "checkpoint_batches": 12000,
+          "checkpoint_path": "_artifacts/0203d1f/runs/lss_ablation_partial_net_force_filter__lr1e-3_clip5_b64/checkpoints/checkpoint_0012000",
+          "final_validation_objective": 2233.99395926905,
+          "replicate": 0,
+          "scoring_validation_log_batch": 12000,
+          "scoring_validation_objective": 2233.99395926905
+        },
+        {
+          "best_logged_validation_batch": 11801,
+          "best_logged_validation_objective": 2867.530828501266,
+          "checkpoint_batches": 11000,
+          "checkpoint_path": "_artifacts/0203d1f/runs/lss_ablation_partial_net_force_filter__lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+          "final_validation_objective": 2911.204008536619,
+          "replicate": 1,
+          "scoring_validation_log_batch": 11000,
+          "scoring_validation_objective": 2881.418342369202
+        },
+        {
+          "best_logged_validation_batch": 11501,
+          "best_logged_validation_objective": 3512.4232998753,
+          "checkpoint_batches": 11500,
+          "checkpoint_path": "_artifacts/0203d1f/runs/lss_ablation_partial_net_force_filter__lr1e-3_clip5_b64/checkpoints/checkpoint_0011500",
+          "final_validation_objective": 3545.4869412589615,
+          "replicate": 2,
+          "scoring_validation_log_batch": 11500,
+          "scoring_validation_objective": 3519.131415971257
+        },
+        {
+          "best_logged_validation_batch": 11901,
+          "best_logged_validation_objective": 3124.5126518085635,
+          "checkpoint_batches": 11500,
+          "checkpoint_path": "_artifacts/0203d1f/runs/lss_ablation_partial_net_force_filter__lr1e-3_clip5_b64/checkpoints/checkpoint_0011500",
+          "final_validation_objective": 3190.3317057584254,
+          "replicate": 3,
+          "scoring_validation_log_batch": 11500,
+          "scoring_validation_objective": 3134.586125615726
+        },
+        {
+          "best_logged_validation_batch": 11901,
+          "best_logged_validation_objective": 3448.010944427501,
+          "checkpoint_batches": 11000,
+          "checkpoint_path": "_artifacts/0203d1f/runs/lss_ablation_partial_net_force_filter__lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+          "final_validation_objective": 3482.308013439537,
+          "replicate": 4,
+          "scoring_validation_log_batch": 11000,
+          "scoring_validation_objective": 3457.8872436278434
+        }
+      ],
+      "selected_to_extlqg_deterministic_ratio": 0.6971262422768648,
+      "selected_to_extlqg_total_ratio_not_apples_to_apples": 0.24959409106704286
+    }
+  ],
+  "same_noise_bank_monte_carlo": {
+    "reason": "same-noise-bank extLQG-vs-GRU realized comparison was not materialized; the available tracked source only contains validation-selected GRU realized full-QRF scalars and the analytical extLQG expected-cost decomposition",
+    "status": "not_implemented"
+  },
+  "schema_version": "rlrmp.objective_comparator_sidecar.v2",
+  "scope": "validation-selected checkpoints for C&S GRU runs: lss_ablation_partial_net_force_filter__lr1e-3_clip5_b64",
+  "source_manifest": "results/0203d1f/notes/gru_standard_certificates_validation_selected_manifest.json"
+}

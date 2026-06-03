@@ -66,7 +66,11 @@ def test_select_validation_checkpoints_ignores_zero_padding(tmp_path: Path) -> N
     with (artifact_dir / "training_history.eqx").open("wb") as stream:
         stream.write(b"null\n")
         _write_loss_tree(stream, ((training_pos, 2.0), (training_control, 1.0)))
-        _write_loss_tree(stream, ((validation_pos, 2.0), (validation_control, 1.0)))
+        _write_loss_tree(
+            stream,
+            ((validation_pos, 2.0), (validation_control, 1.0)),
+            branch_weight=np.ones_like(validation_pos),
+        )
         np.save(stream, zeros, allow_pickle=False)
 
     objective, valid_records = validation_objective_history(
@@ -102,8 +106,29 @@ def test_active_loss_term_labels_use_full_qrf_objective() -> None:
     assert active_loss_term_labels(run_spec) == ("full_analytical_qrf",)
 
 
-def _write_loss_tree(stream: object, leaves: tuple[tuple[np.ndarray, float], ...]) -> None:
+def test_active_loss_term_labels_include_force_filter_ablation_term() -> None:
+    run_spec = {
+        "loss_objective": "partial_net_output_force_filter",
+        "hps": {
+            "loss": {
+                "weights": {
+                    "mechanics_force_filter": 1.0 / 6.0,
+                    "nn_output": 1.0,
+                }
+            }
+        },
+    }
+
+    assert active_loss_term_labels(run_spec) == ("mechanics_force_filter", "nn_output")
+
+
+def _write_loss_tree(
+    stream: object,
+    leaves: tuple[tuple[np.ndarray, float], ...],
+    *,
+    branch_weight: float | np.ndarray = 1.0,
+) -> None:
     for value, weight in leaves:
         np.save(stream, value, allow_pickle=False)
         np.save(stream, np.asarray(weight), allow_pickle=False)
-    np.save(stream, np.asarray(1.0), allow_pickle=False)
+    np.save(stream, np.asarray(branch_weight), allow_pickle=False)

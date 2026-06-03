@@ -207,7 +207,7 @@ def validation_objective_history(
             weight = float(np.load(stream, allow_pickle=False))
             components.append(np.asarray(value, dtype=np.float64) * weight)
             real_record_terms.append(np.asarray(value) != 0)
-        branch_weight = float(np.load(stream, allow_pickle=False))
+        branch_weight = _scalar_weight(np.load(stream, allow_pickle=False))
     objective = np.sum(np.stack(components), axis=0) * branch_weight
     valid_records = np.any(np.stack(real_record_terms), axis=0)
     return objective, valid_records
@@ -240,6 +240,7 @@ def active_loss_term_labels(run_spec: Mapping[str, Any]) -> tuple[str, ...]:
         "nn_output_pre_go",
         "nn_hidden_derivative_pre_go",
         "fix_readout_norm",
+        "mechanics_force_filter",
         "nn_output",
     )
     active = tuple(label for label in candidate_order if float(weights.get(label, 0.0) or 0.0) != 0.0)
@@ -272,6 +273,21 @@ def _skip_loss_tree(stream: Any, labels: Sequence[str]) -> None:
         np.load(stream, allow_pickle=False)
         np.load(stream, allow_pickle=False)
     np.load(stream, allow_pickle=False)
+
+
+def _scalar_weight(value: np.ndarray) -> float:
+    """Return a scalar weight from Feedbax history scalar or broadcast array records."""
+
+    array = np.asarray(value)
+    if array.size == 1:
+        return float(array.reshape(()))
+    nonzero = array[array != 0]
+    if nonzero.size == 0:
+        return 0.0
+    first = float(nonzero.reshape(-1)[0])
+    if not np.allclose(nonzero, first):
+        raise ValueError(f"Expected scalar or broadcast history weight, got shape {array.shape}")
+    return first
 
 
 def _repo_relative(path: Path, *, repo_root: Path = REPO_ROOT) -> str:

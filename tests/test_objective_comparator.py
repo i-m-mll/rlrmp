@@ -120,6 +120,7 @@ def test_write_objective_comparator_sidecar_serializes_json_and_markdown(tmp_pat
 
     assert reloaded["schema_version"] == SCHEMA_VERSION
     assert render_objective_comparator_markdown(sidecar) == markdown
+    assert "Scope: unit scope." in markdown
     assert "not directly comparable to GRU validation values" in markdown
     assert "selected/total" in markdown
 

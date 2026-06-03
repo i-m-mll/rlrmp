@@ -341,6 +341,7 @@ def active_loss_term_labels(run_spec: Mapping[str, Any]) -> tuple[str, ...]:
         "nn_output_pre_go",
         "nn_hidden_derivative_pre_go",
         "fix_readout_norm",
+        "mechanics_force_filter",
         "nn_output",
     )
     active = tuple(label for label in candidate_order if float(weights.get(label, 0.0) or 0.0) != 0.0)
@@ -854,8 +855,23 @@ def _read_loss_tree(stream: Any, term_labels: Sequence[str]) -> TermTree:
         value = np.load(stream, allow_pickle=False)
         weight = float(np.load(stream, allow_pickle=False))
         children[label] = TermTree.leaf(label, jnp.asarray(value), weight=weight)
-    branch_weight = float(np.load(stream, allow_pickle=False))
+    branch_weight = _scalar_weight(np.load(stream, allow_pickle=False))
     return TermTree.branch("reach_loss", children, weight=branch_weight)
+
+
+def _scalar_weight(value: np.ndarray) -> float:
+    """Return a scalar weight from Feedbax history scalar or broadcast array records."""
+
+    array = np.asarray(value)
+    if array.size == 1:
+        return float(array.reshape(()))
+    nonzero = array[array != 0]
+    if nonzero.size == 0:
+        return 0.0
+    first = float(nonzero.reshape(-1)[0])
+    if not np.allclose(nonzero, first):
+        raise ValueError(f"Expected scalar or broadcast history weight, got shape {array.shape}")
+    return first
 
 
 def _replicate_velocity_summaries(profile: VelocityProfile) -> list[dict[str, float | int]]:

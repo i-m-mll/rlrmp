@@ -156,10 +156,9 @@ def render_objective_comparator_markdown(sidecar: Mapping[str, Any]) -> str:
         "",
         f"Schema: `{sidecar['schema_version']}`.",
         "",
-        (
-            "Scope: validation-selected checkpoints for the two full-QRF C&S GRU "
-            "rows. This is an objective-lens diagnostic, not a standard-certificate gate."
-        ),
+        f"Scope: {sidecar['scope']}.",
+        "",
+        "This is an objective-lens diagnostic, not a standard-certificate gate.",
         "",
         "## extLQG decomposition",
         "",
