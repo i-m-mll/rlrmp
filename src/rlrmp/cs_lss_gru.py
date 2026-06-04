@@ -39,6 +39,7 @@ CS_DELAYED_POS_VEL_INDICES = (40, 41, 42, 43)
 CS_EPSILON_DIM = 8
 CS_FORCE_DIM = 2
 CS_FEEDBACK_DIM = 4
+CS_TARGET_DIM = 2
 
 
 class DelayedPositionVelocityFeedback(Component):
@@ -79,6 +80,46 @@ class DelayedPositionVelocityFeedback(Component):
         return {"feedback": feedback}, state
 
 
+class TargetRelativeDelayedFeedback(Component):
+    """Return static-target-relative delayed feedback for C&S GRU controllers.
+
+    The sign convention is ``[target_x - delayed_x, target_y - delayed_y,
+    -delayed_vx, -delayed_vy]``. Static targets are task inputs and are not
+    delayed; only the plant feedback is delayed by the C&S 48D state.
+    """
+
+    input_ports = ("state", "target")
+    output_ports = ("feedback",)
+
+    indices: tuple[int, ...] = field(static=True)
+
+    def __init__(self, indices: tuple[int, ...] = CS_DELAYED_POS_VEL_INDICES):
+        self.indices = tuple(int(index) for index in indices)
+        if self.indices != CS_DELAYED_POS_VEL_INDICES:
+            raise ValueError(
+                "This first C&S GRU path is fixed to oldest delayed pos/vel indices "
+                f"{CS_DELAYED_POS_VEL_INDICES}; got {self.indices}."
+            )
+
+    def __call__(
+        self,
+        inputs: dict[str, PyTree],
+        state: eqx.nn.State,
+        *,
+        key: PRNGKeyArray,
+    ) -> tuple[dict[str, PyTree], eqx.nn.State]:
+        del key
+        vector = jnp.asarray(inputs["state"])
+        target = jnp.asarray(inputs["target"])
+        if vector.shape[-1] != 48:
+            raise ValueError(f"Expected a 48D C&S state vector; got shape {vector.shape}.")
+        if target.shape[-1] != CS_TARGET_DIM:
+            raise ValueError(f"Expected a 2D target vector; got shape {target.shape}.")
+        delayed = vector[jnp.asarray(self.indices, dtype=jnp.int32)]
+        feedback = jnp.concatenate([target - delayed[:2], -delayed[2:4]], axis=-1)
+        return {"feedback": feedback}, state
+
+
 class CsLssMechanicsView(Module):
     """Mechanics view exposing semantic effector observables over the 48D state."""
 
@@ -108,6 +149,7 @@ def build_cs_lss_gru_graph(
     additive_motor_noise_std: float = 0.0,
     signal_dependent_motor_noise_std: float = 0.0,
     bind_epsilon_input: bool = False,
+    target_relative_feedback: bool = False,
     key: PRNGKeyArray,
 ) -> Graph:
     """Build the C&S LinearStateSpace GRU feedback graph.
@@ -131,6 +173,9 @@ def build_cs_lss_gru_graph(
         bind_epsilon_input: If true, expose external graph port ``"epsilon"``
             and bind it to mechanics. If false, mechanics uses its zero-epsilon
             default.
+        target_relative_feedback: If true, replace raw delayed feedback with
+            ``[target_x - delayed_x, target_y - delayed_y, -delayed_vx, -delayed_vy]``
+            and expose external graph port ``"target"``.
         key: PRNG key for network construction.
 
     Returns:
@@ -180,7 +225,11 @@ def build_cs_lss_gru_graph(
         input_proto=jnp.zeros((CS_FORCE_DIM,), dtype=mechanics.A.dtype),
         init_value=0.0,
     )
-    feedback = DelayedPositionVelocityFeedback()
+    feedback = (
+        TargetRelativeDelayedFeedback()
+        if bool(target_relative_feedback)
+        else DelayedPositionVelocityFeedback()
+    )
 
     nodes = {
         "feedback": feedback,
@@ -199,6 +248,9 @@ def build_cs_lss_gru_graph(
 
     input_ports = ("input",) if input_size > 0 else ()
     input_bindings = {"input": ("net", "input")} if input_size > 0 else {}
+    if target_relative_feedback:
+        input_ports = (*input_ports, "target")
+        input_bindings["target"] = ("feedback", "target")
     if bind_epsilon_input:
         input_ports = (*input_ports, "epsilon")
         input_bindings["epsilon"] = ("mechanics", "epsilon")

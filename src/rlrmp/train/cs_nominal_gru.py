@@ -66,7 +66,11 @@ from rlrmp.train.cs_perturbation_training import (
     FixedTargetPerturbationTrainingConfig,
     LEGACY_PERTURBATION_TRAINING_MODE,
     PERTURBATION_TRAINING_MODE,
+    TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
+    TargetRelativeMultiTargetTrainingConfig,
     planned_fixed_target_perturbation_rows,
+    planned_target_relative_multitarget_rows,
+    target_relative_validation_manifest,
     validation_bin_manifest,
 )
 from rlrmp.stochastic_runtime import (
@@ -277,6 +281,9 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         pulse_start_step=int(args.perturbation_pulse_start_step),
         pulse_duration_steps=int(args.perturbation_pulse_duration_steps),
     )
+    target_relative_multitarget = TargetRelativeMultiTargetTrainingConfig(
+        enabled=bool(args.target_relative_multitarget),
+    )
     hps_dict = {
         "method": "nominal-cs-gru",
         "dt": float(plant.dt),
@@ -337,6 +344,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "n_expected": 0,
         },
         "perturbation_training": perturbation_training.to_hps_dict(),
+        "target_relative_multitarget": target_relative_multitarget.to_hps_dict(),
         "loss": {
             "objective": str(args.loss_objective),
             "weights": {
@@ -514,6 +522,7 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
         },
         "feedback": {
             "delay_steps": int(hps.model.feedback_delay_steps),
+            "basis": _controller_feedback_basis(hps),
             "noise_std": stochastic_runtime["sensory_noise_std"],
             "noise_role": "sensory_feedback",
             "noise_timing": (
@@ -562,7 +571,7 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
         },
         "stochastic_runtime": stochastic_runtime,
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
-        "nominal_only": not _perturbation_training_enabled(hps),
+        "nominal_only": _nominal_only(hps),
         "training_distribution": _training_distribution_metadata(hps),
         "adversarial_phase": "none",
         "certificate_lens": "input_output_map_certificate",
@@ -594,7 +603,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "plant_backend": str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND)),
         "trainable": ["nodes.net.hidden", "nodes.net.readout"],
         "method": str(hps.method),
-        "nominal_only": not _perturbation_training_enabled(hps),
+        "nominal_only": _nominal_only(hps),
         "training_distribution": _training_distribution_metadata(hps),
         "adversarial_phase": "none",
         "certificate_lens": "input_output_map_certificate",
@@ -709,9 +718,9 @@ def build_run_spec(
         "mode": _run_mode(args),
         "artifact_output_dir": str(output_dir),
         "spec_dir": str(spec_dir),
-        "nominal_only": not _perturbation_training_enabled(hps),
+        "nominal_only": _nominal_only(hps),
         "training_distribution": _training_distribution_metadata(hps),
-        "validation_bins": validation_bin_manifest(hps.perturbation_training),
+        "validation_bins": _validation_bins_metadata(hps),
         "adversarial_phase": "none",
         "modal_launch": "not_requested",
         "full_training_launch": "requested" if args.full_train else "not_requested",
@@ -734,7 +743,7 @@ def build_run_spec(
             "training_mode": _training_mode(hps),
             "n_train_batches": int(args.n_train_batches),
             "n_adversary_batches": 0,
-            "validation_bins": validation_bin_manifest(hps.perturbation_training),
+            "validation_bins": _validation_bins_metadata(hps),
             "training_diagnostics": _training_diagnostics_metadata(args, output_dir),
         },
         "feedbax_graph": graph_bundle.to_run_metadata(),
@@ -1153,9 +1162,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--perturbation-pulse-start-step", type=int, default=20)
     parser.add_argument("--perturbation-pulse-duration-steps", type=int, default=5)
     parser.add_argument(
+        "--target-relative-multitarget",
+        action="store_true",
+        help=(
+            "Enable static target-relative multi-target training. The C&S LSS GRU "
+            "receives [target_x - delayed_x, target_y - delayed_y, -delayed_vx, "
+            "-delayed_vy] feedback and uses structured seen/held-out target bins."
+        ),
+    )
+    parser.add_argument(
         "--planned-perturbation-rows",
         action="store_true",
         help="Print the two planned issue aacb9ed local training row commands and exit.",
+    )
+    parser.add_argument(
+        "--planned-target-relative-rows",
+        action="store_true",
+        help="Print the planned issue ba82f3d smoke/main target-relative rows and exit.",
     )
     parser.add_argument(
         "--smoke",
@@ -1199,6 +1222,9 @@ def main(
     args = build_parser().parse_args(argv)
     if args.planned_perturbation_rows:
         print(_json_dumps({"planned_rows": planned_fixed_target_perturbation_rows()}), end="")
+        return 0
+    if args.planned_target_relative_rows:
+        print(_json_dumps({"planned_rows": planned_target_relative_multitarget_rows()}), end="")
         return 0
     result = (
         run_full_training(args, volume_commit=volume_commit)
@@ -1478,14 +1504,65 @@ def _perturbation_training_enabled(hps: TreeNamespace) -> bool:
     return bool(getattr(hps.perturbation_training, "enabled", False))
 
 
+def _target_relative_multitarget_enabled(hps: TreeNamespace) -> bool:
+    return bool(getattr(hps.target_relative_multitarget, "enabled", False))
+
+
+def _nominal_only(hps: TreeNamespace) -> bool:
+    return (
+        not _perturbation_training_enabled(hps)
+        and not _target_relative_multitarget_enabled(hps)
+    )
+
+
 def _training_mode(hps: TreeNamespace) -> str:
+    if _target_relative_multitarget_enabled(hps):
+        return TARGET_RELATIVE_MULTITARGET_TRAINING_MODE
     if _perturbation_training_enabled(hps):
         return PERTURBATION_TRAINING_MODE
     return "nominal"
 
 
+def _controller_feedback_basis(hps: TreeNamespace) -> str:
+    if _target_relative_multitarget_enabled(hps):
+        return "target_relative_delayed_feedback"
+    return "raw_delayed_position_velocity"
+
+
+def _validation_bins_metadata(hps: TreeNamespace) -> dict[str, Any]:
+    if _target_relative_multitarget_enabled(hps):
+        return target_relative_validation_manifest(hps.target_relative_multitarget)
+    return validation_bin_manifest(hps.perturbation_training)
+
+
 def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
     config = hps.perturbation_training
+    target_config = hps.target_relative_multitarget
+    if _target_relative_multitarget_enabled(hps):
+        target_payload = target_config.target_distribution
+        return {
+            "mode": TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
+            "fixed_target_only": False,
+            "target_stream": {
+                "status": "consumed_as_static_target_relative_feedback",
+                "input_port": "target",
+                "contract": _plain(target_config.input_contract),
+            },
+            "target_distribution": _plain(target_payload),
+            "original_target_anchor_m": _plain(target_payload.original_target_anchor_m),
+            "seen_targets_m": _plain(target_payload.seen_targets_m),
+            "held_out_targets_m": _plain(target_payload.held_out_targets_m),
+            "validation_bins": _plain(target_config.validation_bins),
+            "perturbation_mixture_emphasis": _plain(
+                target_config.perturbation_mixture_emphasis
+            ),
+            "checkpoint_selection_role": (
+                "target_relative_multitarget_rollout_validation"
+            ),
+            "nominal_quality_role": "original_anchor_and_seen_held_out_targets_reported",
+            "controller_internal_mutation": False,
+            "adversarial_phase": "none",
+        }
     if not bool(getattr(config, "enabled", False)):
         return {
             "mode": "nominal",
@@ -1892,6 +1969,7 @@ def _remove_tree(path: Path) -> None:
 
 def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
     plant_backend = str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND))
+    target_relative = _target_relative_multitarget_enabled(hps)
     return {
         "type": str(hps.task.type),
         "n_steps": int(hps.task.n_steps),
@@ -1922,9 +2000,16 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
             "end_transition": int(hps.task.n_steps) - 2,
         },
         "extra_inputs": (
-            ["input", "epsilon"]
+            ["target", "epsilon"]
+            if plant_backend == CS_LSS_PLANT_BACKEND and target_relative
+            else ["input", "epsilon"]
             if plant_backend == CS_LSS_PLANT_BACKEND
             else ["sisu", f"intervene:{PLANT_INTERVENOR_LABEL}"]
+        ),
+        "target_relative_multitarget": (
+            _plain(hps.target_relative_multitarget)
+            if target_relative
+            else {"enabled": False}
         ),
     }
 

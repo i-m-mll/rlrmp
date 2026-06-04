@@ -25,7 +25,7 @@ from rlrmp.analysis.cs_game_card import (
 )
 from rlrmp.analysis.cs_released_simulation import default_cs_noise_covariances
 from rlrmp.analysis.output_feedback import OutputFeedbackConfig
-from rlrmp.cs_lss_gru import CS_EPSILON_DIM
+from rlrmp.cs_lss_gru import CS_EPSILON_DIM, TargetRelativeDelayedFeedback
 from rlrmp.loss import (
     CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
     CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
@@ -53,9 +53,14 @@ from rlrmp.train.cs_perturbation_training import (
     GRAPH_ADAPTER_SPECS,
     MILD_COMBINED_FAMILIES,
     PERTURBATION_TRAINING_MODE,
+    TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
+    TargetRelativeMultiTargetTrainingConfig,
     VALIDATION_BINS,
     apply_training_perturbation_mixture,
+    apply_training_target_distribution,
     apply_validation_bin,
+    planned_target_relative_multitarget_rows,
+    target_relative_validation_manifest,
     planned_fixed_target_perturbation_rows,
     validation_bin_manifest,
 )
@@ -167,6 +172,40 @@ def test_full_analytical_qrf_loss_scores_non_pos_vel_state_and_command() -> None
     assert jnp.all(loss.term(force_states, trial, pair.model) > base_value)
     assert jnp.all(loss.term(command_states, trial, pair.model) > base_value)
     assert jnp.allclose(loss.term(applied_only_states, trial, pair.model), base_value)
+
+
+def test_full_analytical_qrf_loss_uses_trial_static_target_for_goal_centering() -> None:
+    hps = build_hps(_args(smoke=True, loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE))
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    trial = pair.task.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
+    loss = pair.task.loss_func.terms[CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE]
+
+    zeros = jnp.zeros((1, 60, 48), dtype=jnp.float64)
+    zero_command = jnp.zeros((1, 60, 2), dtype=jnp.float64)
+    states = TreeNamespace(
+        mechanics=TreeNamespace(vector=zeros.at[:, :, 0].set(0.12)),
+        net=TreeNamespace(output=zero_command),
+        efferent=TreeNamespace(output=zero_command),
+    )
+    default_value = loss.term(states, trial, pair.model)
+    target_config = TargetRelativeMultiTargetTrainingConfig(
+        enabled=True,
+        seen_directions_deg=(90.0,),
+        held_out_directions_deg=(270.0,),
+        seen_amplitudes_m=(0.12,),
+        held_out_amplitudes_m=(0.12,),
+        original_target_anchor_m=(0.0, 0.12),
+    )
+    retargeted = apply_training_target_distribution(
+        trial,
+        target_config,
+        jr.PRNGKey(3),
+    )
+    target = retargeted.targets["mechanics.effector.pos"].value[..., -1, :]
+    retargeted_value = loss.term(states, retargeted, pair.model)
+
+    assert not jnp.allclose(target, jnp.array([0.15, 0.0]))
+    assert not jnp.allclose(retargeted_value, default_value)
 
 
 def test_partial_net_force_filter_ablation_scores_net_output_and_force_filter() -> None:
@@ -694,6 +733,120 @@ def test_perturbation_training_run_spec_and_planned_rows(tmp_path: Path) -> None
     assert all(
         row["checkpoint_selection"] == "generalized_held_out_perturbation_validation"
         for row in rows
+    )
+
+
+def test_target_relative_feedback_sign_contract() -> None:
+    component = TargetRelativeDelayedFeedback()
+    state = jnp.zeros((48,), dtype=jnp.float32).at[40:44].set(
+        jnp.array([0.02, -0.03, 0.40, -0.20], dtype=jnp.float32)
+    )
+    outputs, _ = component(
+        {"state": state, "target": jnp.array([0.15, 0.01], dtype=jnp.float32)},
+        None,
+        key=jr.PRNGKey(0),
+    )
+
+    assert jnp.allclose(
+        outputs["feedback"],
+        jnp.array([0.13, 0.04, -0.40, 0.20], dtype=jnp.float32),
+    )
+
+
+def test_target_relative_multitarget_setup_uses_target_input_and_anchor() -> None:
+    hps = build_hps(
+        _args(
+            smoke=True,
+            target_relative_multitarget=True,
+            perturbation_training=True,
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+        )
+    )
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    trial = pair.task.validation_trials
+    manifest = target_relative_validation_manifest(hps.target_relative_multitarget)
+
+    assert pair.model.input_ports[:2] == ("target", "epsilon")
+    assert "input" not in pair.model.input_ports
+    assert "target" in trial.inputs
+    assert trial.inputs["target"].shape[-2:] == (60, 2)
+    assert trial.inputs["effector_target"].pos.shape[-2:] == (60, 2)
+    assert hps.target_relative_multitarget.input_contract.sign_convention == [
+        "target_x - delayed_x",
+        "target_y - delayed_y",
+        "-delayed_vx",
+        "-delayed_vy",
+    ]
+    assert hps.target_relative_multitarget.target_distribution.original_target_anchor_m == [
+        0.15,
+        0.0,
+    ]
+    assert [row["bin"] for row in manifest["bins"][:3]] == [
+        "original_target_nominal",
+        "seen_multitarget_nominal",
+        "held_out_multitarget_nominal",
+    ]
+    assert manifest["target_centered_scoring"] == "trial_static_target"
+    assert any(
+        row["bin"] == "command_input_diagnostic"
+        and row["checkpoint_selection"] == "excluded_unless_comparator_defined"
+        for row in manifest["bins"]
+    )
+    assert jnp.any(trial.inputs["target"][..., -1, :] != jnp.array([0.15, 0.0]))
+
+
+def test_target_relative_multitarget_run_spec_and_planned_rows(tmp_path: Path) -> None:
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        smoke=True,
+        issue="ba82f3d",
+        target_relative_multitarget=True,
+        perturbation_training=True,
+        loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+        batch_size=64,
+        gradient_clip_norm=5.0,
+        controller_lr=1e-3,
+        lr_warmup_batches=500,
+        lr_cosine_alpha=0.01,
+    )
+
+    result = write_run_spec(args)
+    payload = json.loads(Path(result["run_spec_path"]).read_text())
+    rows = planned_target_relative_multitarget_rows()
+
+    assert payload["issue"] == "ba82f3d"
+    assert payload["training_summary"]["training_mode"] == (
+        TARGET_RELATIVE_MULTITARGET_TRAINING_MODE
+    )
+    assert payload["model_summary"]["feedback"]["basis"] == "target_relative_delayed_feedback"
+    distribution = payload["model_summary"]["training_distribution"]
+    assert distribution["fixed_target_only"] is False
+    assert distribution["target_stream"]["status"] == "consumed_as_static_target_relative_feedback"
+    assert distribution["original_target_anchor_m"] == [0.15, 0.0]
+    assert payload["task_timing"]["extra_inputs"] == ["target", "epsilon"]
+    assert payload["task_timing"]["target_relative_multitarget"]["enabled"] is True
+    assert payload["validation_bins"]["validation_role"] == (
+        "target_relative_multitarget_rollout_loss"
+    )
+    assert payload["validation_bins"]["input_contract"]["sign_convention"][0] == (
+        "target_x - delayed_x"
+    )
+    assert payload["loss_summary"]["objective_profile"] == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
+    assert {row["controller_lr"] for row in rows if row["row_kind"] == "main"} == {
+        1e-3,
+        3e-3,
+    }
+    assert all(
+        "--target-relative-multitarget" in row["command"]
+        for row in rows
+    )
+    assert all(
+        row["checkpoint_selection"] == "target_relative_multitarget_rollout_validation"
+        for row in rows
+        if row["row_kind"] == "main"
     )
 
 
