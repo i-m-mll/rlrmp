@@ -12,6 +12,8 @@ from rlrmp.paths import REPO_ROOT
 
 OBSERVATION_CHANNELS = ("px", "py", "vx", "vy")
 ACTION_CHANNELS = ("ux", "uy")
+ALIGNED_OBSERVATION_CHANNELS = ("p_parallel", "p_lateral", "v_parallel", "v_lateral")
+ALIGNED_ACTION_CHANNELS = ("u_parallel", "u_lateral")
 FORMAT_VERSION = "rlrmp.gru_map_error_decomposition.v1"
 ISSUE_ID = "ddf7f43"
 SOURCE_ISSUE_ID = "aacb9ed"
@@ -31,6 +33,8 @@ def materialize_gru_map_error_decomposition(
     experiment: str = SOURCE_ISSUE_ID,
     run_ids: tuple[str, ...] | None = None,
     use_validation_selected_checkpoints: bool = True,
+    alignment_basis: str = "raw_cartesian",
+    reference_feedback_basis: str = "auto",
     top_k: int = 5,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
@@ -57,10 +61,29 @@ def materialize_gru_map_error_decomposition(
         covariance = evaluation_metadata.pop("_observation_history_covariance_array", None)
         covariance_metadata = evaluation_metadata.get("observation_history_covariance")
         reference_batch = np.broadcast_to(reference_map[None, :, :, :], candidate_map.shape)
+        candidate_feedback_basis = _candidate_feedback_basis(run_spec)
+        reference_input_transform = _reference_observation_from_candidate_feedback_transform(
+            candidate_feedback_basis=candidate_feedback_basis,
+            reference_feedback_basis=reference_feedback_basis,
+        )
+        alignment_directions = _alignment_directions_from_run_spec(
+            run_spec,
+            alignment_basis=alignment_basis,
+        )
         decomposition = decompose_gru_map_error(
             candidate_map=candidate_map,
             reference_map=reference_batch,
             observation_dim=int(reference_metadata["observation_dim"]),
+            reference_observation_from_candidate_transform=reference_input_transform,
+            candidate_feedback_basis=candidate_feedback_basis,
+            reference_feedback_basis=(
+                "raw_delayed_position_velocity"
+                if reference_feedback_basis == "auto"
+                else reference_feedback_basis
+            ),
+            alignment_directions=alignment_directions,
+            alignment_frame_source=_alignment_frame_source(alignment_basis, run_spec),
+            target_time_convention=_target_time_convention(alignment_basis, run_spec),
             input_covariance=covariance,
             input_covariance_metadata=covariance_metadata,
             top_k=top_k,
@@ -97,6 +120,14 @@ def decompose_gru_map_error(
     observation_dim: int = 4,
     observation_channel_names: tuple[str, ...] = OBSERVATION_CHANNELS,
     action_channel_names: tuple[str, ...] = ACTION_CHANNELS,
+    reference_observation_from_candidate_transform: np.ndarray | None = None,
+    candidate_feedback_basis: str = "raw_delayed_position_velocity",
+    reference_feedback_basis: str = "raw_delayed_position_velocity",
+    alignment_directions: np.ndarray | None = None,
+    alignment_frame_source: str = "raw_cartesian_observation_action_basis",
+    target_time_convention: str = "not_applicable_static_or_raw",
+    moving_target_status: str = "not_applicable",
+    moving_target_deferred_note: str | None = None,
     input_covariance: np.ndarray | None = None,
     input_covariance_metadata: dict[str, Any] | None = None,
     top_k: int = 5,
@@ -111,6 +142,22 @@ def decompose_gru_map_error(
         observation_dim: Number of observation channels per history time.
         observation_channel_names: Labels for the observation channels.
         action_channel_names: Labels for the action channels.
+        reference_observation_from_candidate_transform: Optional ``(observation,
+            observation)`` matrix ``C`` such that ``reference_observation = C @
+            candidate_feedback``. This converts the analytical reference map into the
+            controller-visible input basis before any task-frame alignment. For the
+            target-relative GRU contract, ``C = -I`` because the feedback is
+            ``[target - position, -velocity]``.
+        candidate_feedback_basis: Metadata label for the GRU/controller feedback basis.
+        reference_feedback_basis: Metadata label for the analytical reference map basis.
+        alignment_directions: Optional reach direction vectors with shape ``(2,)`` or
+            ``(*samples, 2)``. When supplied, maps are transformed into the Feedbax-compatible
+            parallel/lateral basis before decomposition.
+        alignment_frame_source: Metadata describing where ``alignment_directions`` came from.
+        target_time_convention: Metadata for static-target timing, or a deferred moving-target
+            convention note.
+        moving_target_status: ``not_applicable``/``deferred`` metadata for tracking tasks.
+        moving_target_deferred_note: Optional note explaining the missing moving-target contract.
         input_covariance: Optional covariance in the flattened observation-history basis.
         input_covariance_metadata: JSON metadata for ``input_covariance``.
         top_k: Number of singular directions to report.
@@ -130,6 +177,49 @@ def decompose_gru_map_error(
         raise ValueError("observation_dim must be positive")
     if len(observation_channel_names) != observation_dim:
         raise ValueError("observation_channel_names length must match observation_dim")
+
+    candidate_observation_basis_metadata = _candidate_observation_basis_metadata(
+        candidate_feedback_basis=candidate_feedback_basis,
+        reference_feedback_basis=reference_feedback_basis,
+        reference_observation_from_candidate_transform=(
+            reference_observation_from_candidate_transform
+        ),
+    )
+    if reference_observation_from_candidate_transform is not None:
+        reference = _apply_reference_observation_basis_transform(
+            reference,
+            observation_dim=observation_dim,
+            transform=reference_observation_from_candidate_transform,
+        )
+
+    alignment_metadata = _raw_alignment_metadata(
+        frame_source=alignment_frame_source,
+        target_time_convention=target_time_convention,
+        moving_target_status=moving_target_status,
+        moving_target_deferred_note=moving_target_deferred_note,
+    )
+    if alignment_directions is not None:
+        (
+            candidate,
+            reference,
+            observation_channel_names,
+            action_channel_names,
+            input_covariance,
+            input_covariance_metadata,
+            alignment_metadata,
+        ) = _align_maps_to_reach_basis(
+            candidate=candidate,
+            reference=reference,
+            observation_dim=observation_dim,
+            action_channel_names=action_channel_names,
+            directions=alignment_directions,
+            frame_source=alignment_frame_source,
+            target_time_convention=target_time_convention,
+            moving_target_status=moving_target_status,
+            moving_target_deferred_note=moving_target_deferred_note,
+            input_covariance=input_covariance,
+            input_covariance_metadata=input_covariance_metadata,
+        )
 
     action_time_count = int(candidate.shape[-3])
     action_dim = int(candidate.shape[-2])
@@ -191,12 +281,14 @@ def decompose_gru_map_error(
             "input": "flattened_observation_history",
             "observation_dim": observation_dim,
             "observation_channels": list(observation_channel_names),
+            "candidate_observation_basis": candidate_observation_basis_metadata,
             "observation_time_count": observation_time_count,
             "output": "action_history",
             "action_dim": action_dim,
             "action_channels": list(action_channel_names),
             "action_time_count": action_time_count,
         },
+        "alignment": alignment_metadata,
         "summary": {
             "candidate_frobenius": _json_float(candidate_norm),
             "reference_frobenius": _json_float(reference_norm),
@@ -368,6 +460,359 @@ def _repo_relative(path: Path, *, repo_root: Path) -> str:
         return str(path.resolve().relative_to(repo_root.resolve()))
     except ValueError:
         return str(path)
+
+
+def _raw_alignment_metadata(
+    *,
+    frame_source: str,
+    target_time_convention: str,
+    moving_target_status: str,
+    moving_target_deferred_note: str | None,
+) -> dict[str, Any]:
+    return {
+        "alignment_basis": "raw_cartesian",
+        "frame_source": frame_source,
+        "target_time_convention": target_time_convention,
+        "sign_convention": "raw ux/uy and px/py/vx/vy Cartesian channels",
+        "direction_vectors": None,
+        "target_velocity_used": False,
+        "moving_target": _moving_target_metadata(
+            status=moving_target_status,
+            deferred_note=moving_target_deferred_note,
+        ),
+    }
+
+
+def _candidate_observation_basis_metadata(
+    *,
+    candidate_feedback_basis: str,
+    reference_feedback_basis: str,
+    reference_observation_from_candidate_transform: np.ndarray | None,
+) -> dict[str, Any]:
+    metadata = {
+        "candidate_feedback_basis": candidate_feedback_basis,
+        "reference_feedback_basis": reference_feedback_basis,
+        "reference_converted_to_candidate_basis": (
+            reference_observation_from_candidate_transform is not None
+        ),
+    }
+    if reference_observation_from_candidate_transform is not None:
+        transform = _as_float_array(
+            reference_observation_from_candidate_transform,
+            name="reference_observation_from_candidate_transform",
+        )
+        metadata["reference_observation_from_candidate_transform"] = [
+            [_json_float(value) for value in row] for row in transform
+        ]
+        if np.allclose(transform, -np.eye(transform.shape[0])):
+            metadata["sign_convention"] = (
+                "candidate feedback is [target_x - delayed_x, target_y - delayed_y, "
+                "-delayed_vx, -delayed_vy]; analytical reference input derivatives are "
+                "therefore multiplied by -1 before comparison"
+            )
+    return metadata
+
+
+def _apply_reference_observation_basis_transform(
+    values: np.ndarray,
+    *,
+    observation_dim: int,
+    transform: np.ndarray,
+) -> np.ndarray:
+    """Convert a reference map from its observation basis to the candidate basis."""
+
+    matrix = _as_float_array(transform, name="reference_observation_from_candidate_transform")
+    if matrix.shape != (observation_dim, observation_dim):
+        raise ValueError(
+            "reference_observation_from_candidate_transform must have shape "
+            f"({observation_dim}, {observation_dim})"
+        )
+    if values.shape[-1] % observation_dim:
+        raise ValueError("history dimension must be divisible by observation_dim")
+    observation_time_count = values.shape[-1] // observation_dim
+    maps = values.reshape(values.shape[:-1] + (observation_time_count, observation_dim))
+    converted = np.einsum("...ti,ij->...tj", maps, matrix)
+    return converted.reshape(values.shape)
+
+
+def _align_maps_to_reach_basis(
+    *,
+    candidate: np.ndarray,
+    reference: np.ndarray,
+    observation_dim: int,
+    action_channel_names: tuple[str, ...],
+    directions: np.ndarray,
+    frame_source: str,
+    target_time_convention: str,
+    moving_target_status: str,
+    moving_target_deferred_note: str | None,
+    input_covariance: np.ndarray | None,
+    input_covariance_metadata: dict[str, Any] | None,
+) -> tuple[
+    np.ndarray,
+    np.ndarray,
+    tuple[str, ...],
+    tuple[str, ...],
+    np.ndarray | None,
+    dict[str, Any] | None,
+    dict[str, Any],
+]:
+    if observation_dim != 4:
+        raise ValueError("reach-aligned decomposition currently requires observation_dim=4")
+    if candidate.shape[-2] != 2:
+        raise ValueError("reach-aligned decomposition currently requires 2D action channels")
+
+    sample_shape = tuple(int(dim) for dim in candidate.shape[:-3])
+    direction_vectors = _broadcast_direction_vectors(directions, sample_shape=sample_shape)
+    transform = _projection_matrices(direction_vectors)
+    candidate_aligned = _apply_reach_alignment_to_map(candidate, transform)
+    reference_aligned = _apply_reach_alignment_to_map(reference, transform)
+    covariance_aligned, covariance_metadata = _align_input_covariance(
+        input_covariance,
+        input_covariance_metadata=input_covariance_metadata,
+        transforms=transform,
+        observation_time_count=candidate.shape[-1] // observation_dim,
+    )
+    # This mirrors Feedbax AlignedVars/project_onto_direction today. Keep it isolated so
+    # future GraphSpec retained-observable selectors can replace only the frame source.
+    metadata = {
+        "alignment_basis": "reach_aligned_parallel_lateral",
+        "frame_source": frame_source,
+        "target_time_convention": target_time_convention,
+        "sign_convention": (
+            "parallel = dot(unit_reach_direction, vector); "
+            "lateral = cross(unit_reach_direction, vector)"
+        ),
+        "direction_vectors": _direction_metadata(direction_vectors),
+        "target_velocity_used": False,
+        "moving_target": _moving_target_metadata(
+            status=moving_target_status,
+            deferred_note=moving_target_deferred_note,
+        ),
+        "feedbax_reference": "feedbax.analysis.aligned.project_onto_direction",
+    }
+    return (
+        candidate_aligned,
+        reference_aligned,
+        ALIGNED_OBSERVATION_CHANNELS,
+        ALIGNED_ACTION_CHANNELS if len(action_channel_names) == 2 else action_channel_names,
+        covariance_aligned,
+        covariance_metadata,
+        metadata,
+    )
+
+
+def _candidate_feedback_basis(run_spec: dict[str, Any]) -> str:
+    model_basis = (
+        run_spec.get("model_summary", {})
+        .get("feedback", {})
+        .get("basis")
+    )
+    input_basis = (
+        run_spec.get("task_timing", {})
+        .get("target_relative_multitarget", {})
+        .get("input_contract", {})
+        .get("controller_feedback_basis")
+    )
+    return str(model_basis or input_basis or "raw_delayed_position_velocity")
+
+
+def _reference_observation_from_candidate_feedback_transform(
+    *,
+    candidate_feedback_basis: str,
+    reference_feedback_basis: str,
+) -> np.ndarray | None:
+    if reference_feedback_basis not in {"auto", "raw_delayed_position_velocity"}:
+        raise ValueError(
+            "reference_feedback_basis must be 'auto' or 'raw_delayed_position_velocity'"
+        )
+    if candidate_feedback_basis == "target_relative_delayed_feedback":
+        return -np.eye(4, dtype=np.float64)
+    if candidate_feedback_basis in {
+        "raw_delayed_position_velocity",
+        "4D delayed position/velocity feedback",
+    }:
+        return None
+    raise ValueError(f"unsupported candidate feedback basis: {candidate_feedback_basis}")
+
+
+def _alignment_directions_from_run_spec(
+    run_spec: dict[str, Any],
+    *,
+    alignment_basis: str,
+) -> np.ndarray | None:
+    if alignment_basis == "raw_cartesian":
+        return None
+    if alignment_basis not in {"static_reach_aligned", "auto_static_reach_aligned"}:
+        raise ValueError(
+            "alignment_basis must be 'raw_cartesian', 'static_reach_aligned', "
+            "or 'auto_static_reach_aligned'"
+        )
+    return np.asarray(_static_reach_vector_from_run_spec(run_spec), dtype=np.float64)
+
+
+def _static_reach_vector_from_run_spec(run_spec: dict[str, Any]) -> list[float]:
+    task_timing = run_spec.get("task_timing", {})
+    target_cfg = task_timing.get("target_relative_multitarget", {})
+    distribution = target_cfg.get("target_distribution", {})
+    if target_cfg.get("enabled") and distribution.get("original_target_anchor_m"):
+        target = distribution["original_target_anchor_m"]
+        start = distribution.get("start_position_m", [0.0, 0.0])
+        return [float(target[0]) - float(start[0]), float(target[1]) - float(start[1])]
+
+    hps_task = run_spec.get("hps", {}).get("task", {})
+    if hps_task.get("fixed_target_pos") is not None:
+        target = hps_task["fixed_target_pos"]
+        start = hps_task.get("fixed_init_pos", [0.0, 0.0])
+        return [float(target[0]) - float(start[0]), float(target[1]) - float(start[1])]
+
+    raise ValueError("run spec does not declare a static reach direction")
+
+
+def _alignment_frame_source(alignment_basis: str, run_spec: dict[str, Any]) -> str:
+    if alignment_basis == "raw_cartesian":
+        return "raw_cartesian_observation_action_basis"
+    if (
+        run_spec.get("task_timing", {})
+        .get("target_relative_multitarget", {})
+        .get("enabled")
+    ):
+        return "declared_target_relative_original_target_anchor"
+    return "declared_fixed_target_endpoint_minus_start"
+
+
+def _target_time_convention(alignment_basis: str, run_spec: dict[str, Any]) -> str:
+    if alignment_basis == "raw_cartesian":
+        return "not_applicable_static_or_raw"
+    if (
+        run_spec.get("task_timing", {})
+        .get("target_relative_multitarget", {})
+        .get("enabled")
+    ):
+        return (
+            "static_target_known_immediately; current local response-map bank repeats the "
+            "first validation target for stochastic histories"
+        )
+    return "static_fixed_target_endpoint_minus_start"
+
+
+def _broadcast_direction_vectors(directions: np.ndarray, *, sample_shape: tuple[int, ...]) -> np.ndarray:
+    direction_vectors = _as_float_array(directions, name="alignment_directions")
+    if direction_vectors.shape[-1:] != (2,):
+        raise ValueError("alignment_directions must end with an xy dimension of length 2")
+    if direction_vectors.shape == (2,):
+        direction_vectors = np.broadcast_to(direction_vectors, sample_shape + (2,))
+    else:
+        direction_vectors = np.broadcast_to(direction_vectors, sample_shape + (2,))
+    norms = np.linalg.norm(direction_vectors, axis=-1, keepdims=True)
+    if np.any(norms <= 0.0):
+        raise ValueError("alignment_directions must contain nonzero reach vectors")
+    return direction_vectors / norms
+
+
+def _projection_matrices(unit_directions: np.ndarray) -> np.ndarray:
+    matrices = np.empty(unit_directions.shape[:-1] + (2, 2), dtype=np.float64)
+    matrices[..., 0, 0] = unit_directions[..., 0]
+    matrices[..., 0, 1] = unit_directions[..., 1]
+    matrices[..., 1, 0] = -unit_directions[..., 1]
+    matrices[..., 1, 1] = unit_directions[..., 0]
+    return matrices
+
+
+def _apply_reach_alignment_to_map(values: np.ndarray, transforms: np.ndarray) -> np.ndarray:
+    sample_shape = values.shape[:-3]
+    observation_time_count = values.shape[-1] // 4
+    action_time_count = values.shape[-3]
+    sample_count = int(np.prod(sample_shape, dtype=np.int64)) if sample_shape else 1
+    maps = values.reshape((sample_count, action_time_count, 2, observation_time_count, 2, 2))
+    transform = transforms.reshape((sample_count, 2, 2))
+    input_inverse = np.swapaxes(transform, -1, -2)
+    aligned = np.einsum("nab,ntbopc,ncd->ntaopd", transform, maps, input_inverse)
+    return aligned.reshape(values.shape)
+
+
+def _align_input_covariance(
+    covariance: np.ndarray | None,
+    *,
+    input_covariance_metadata: dict[str, Any] | None,
+    transforms: np.ndarray,
+    observation_time_count: int,
+) -> tuple[np.ndarray | None, dict[str, Any] | None]:
+    if covariance is None:
+        return None, input_covariance_metadata
+    if not _all_transforms_equal(transforms):
+        metadata = dict(input_covariance_metadata or {})
+        metadata.update(
+            {
+                "status": "not_applicable",
+                "reason": (
+                    "condition-wise reach alignment has no single pooled flattened "
+                    "observation-history covariance basis"
+                ),
+                "original_covariance_status": input_covariance_metadata or {"status": "available"},
+            }
+        )
+        return None, metadata
+    transform = transforms.reshape((-1, 2, 2))[0]
+    per_observation = _block_diag(transform, transform)
+    history_transform = _block_diag(*(per_observation for _ in range(observation_time_count)))
+    cov = _as_float_array(covariance, name="input_covariance")
+    if cov.shape != history_transform.shape:
+        return cov, input_covariance_metadata
+    return history_transform @ cov @ history_transform.T, input_covariance_metadata
+
+
+def _all_transforms_equal(transforms: np.ndarray) -> bool:
+    flat = transforms.reshape((-1, 2, 2))
+    return bool(np.allclose(flat, flat[0]))
+
+
+def _block_diag(*blocks: np.ndarray) -> np.ndarray:
+    rows = sum(block.shape[0] for block in blocks)
+    cols = sum(block.shape[1] for block in blocks)
+    result = np.zeros((rows, cols), dtype=np.float64)
+    row_start = 0
+    col_start = 0
+    for block in blocks:
+        row_end = row_start + block.shape[0]
+        col_end = col_start + block.shape[1]
+        result[row_start:row_end, col_start:col_end] = block
+        row_start = row_end
+        col_start = col_end
+    return result
+
+
+def _direction_metadata(direction_vectors: np.ndarray) -> dict[str, Any]:
+    flat = direction_vectors.reshape((-1, 2))
+    if _all_transforms_equal(_projection_matrices(direction_vectors)):
+        return {
+            "mode": "static",
+            "unit_direction": [_json_float(value) for value in flat[0]],
+        }
+    return {
+        "mode": "condition_wise",
+        "sample_shape": [int(dim) for dim in direction_vectors.shape[:-1]],
+        "unit_directions": [
+            [_json_float(value) for value in direction]
+            for direction in flat
+        ],
+    }
+
+
+def _moving_target_metadata(
+    *,
+    status: str,
+    deferred_note: str | None,
+) -> dict[str, Any]:
+    metadata = {"status": status}
+    if status == "deferred" and deferred_note is None:
+        deferred_note = (
+            "Moving-target/tracking alignment is deferred until a reference trajectory, "
+            "target-velocity, and information-delay contract exists."
+        )
+    if deferred_note is not None:
+        metadata["deferred_note"] = deferred_note
+    return metadata
 
 
 def _top_singular_directions(
@@ -558,6 +1003,8 @@ def _fmt(value: Any) -> str:
 
 __all__ = [
     "ACTION_CHANNELS",
+    "ALIGNED_ACTION_CHANNELS",
+    "ALIGNED_OBSERVATION_CHANNELS",
     "DEFAULT_LABEL",
     "DEFAULT_STANDARD_MANIFEST",
     "FORMAT_VERSION",

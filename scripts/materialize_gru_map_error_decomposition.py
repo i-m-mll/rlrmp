@@ -32,6 +32,25 @@ def main() -> None:
         action="store_true",
         help="Use final checkpoints instead of validation-selected checkpoints.",
     )
+    parser.add_argument(
+        "--alignment-basis",
+        choices=("raw_cartesian", "static_reach_aligned", "auto_static_reach_aligned"),
+        default="raw_cartesian",
+        help=(
+            "Map-decomposition basis. Use static_reach_aligned for fixed/static targets; "
+            "raw_cartesian preserves the historical decomposition."
+        ),
+    )
+    parser.add_argument(
+        "--reference-feedback-basis",
+        choices=("auto", "raw_delayed_position_velocity"),
+        default="auto",
+        help=(
+            "Analytical reference feedback basis. With auto, target-relative GRU rows "
+            "convert the raw delayed position/velocity reference into the controller-visible "
+            "target-relative sign convention before comparison."
+        ),
+    )
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument(
         "--json-output",
@@ -62,6 +81,8 @@ def main() -> None:
         experiment=args.experiment,
         run_ids=tuple(args.run_id) if args.run_id else None,
         use_validation_selected_checkpoints=not args.final_checkpoints,
+        alignment_basis=args.alignment_basis,
+        reference_feedback_basis=args.reference_feedback_basis,
         top_k=args.top_k,
     )
     write_map_error_decomposition_result(
