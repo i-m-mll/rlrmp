@@ -984,12 +984,16 @@ def materialize_gru_objective_comparator_sidecar(
         json_path=output_path,
         markdown_path=note_path,
     )
+    split_bank = sidecar.get("standard_split_bank_comparator", {})
     return {
         "status": "materialized",
         "schema_version": sidecar["schema_version"],
         "n_rows": len(sidecar["rows"]),
         "extlqg_deterministic_full_qrf": extlqg.deterministic_initial_state,
         "extlqg_total_expected_cost": extlqg.expected_cost,
+        "standard_split_bank_comparator_status": (
+            split_bank.get("status") if isinstance(split_bank, dict) else None
+        ),
     }
 
 
