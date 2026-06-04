@@ -16,11 +16,14 @@ from rlrmp.analysis.gru_perturbation_bank import (
     apply_perturbation_to_trial_specs,
     default_cs_perturbation_bank,
     delta_full_qrf_cost_summary,
+    evaluate_extlqg_perturbation_comparator,
     extlqg_comparator_status,
+    render_perturbation_response_markdown,
     score_full_qrf_rollout_cost,
     summarize_perturbation_bank,
     summarize_perturbation_response,
 )
+import rlrmp.analysis.gru_perturbation_bank as perturbation_bank
 from rlrmp.analysis.gru_evaluation_diagnostics import RolloutEvaluation
 from rlrmp.analysis.cs_game_card import build_canonical_game
 from rlrmp.cs_lss_gru import build_cs_lss_gru_graph
@@ -282,7 +285,8 @@ def test_sensory_adapter_uses_external_graph_channel_payload() -> None:
     result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
 
     assert result.status == "evaluated"
-    payload = result.trial_specs.inputs[f"{GRAPH_ADAPTER_INPUT_PREFIX}:sensory_feedback_offset__x_pos"]
+    input_key = f"{GRAPH_ADAPTER_INPUT_PREFIX}:sensory_feedback_offset__x_pos"
+    payload = result.trial_specs.inputs[input_key]
     assert payload.shape == (2, 10, 4)
     np.testing.assert_allclose(payload[:, :, 0], 0.01)
     assert result.adapter_provenance["insertion_point"] == "sensory.output -> net.feedback"
@@ -500,6 +504,170 @@ def test_perturbation_bank_summary_reports_ratio_of_means_and_signed_pairs() -> 
     assert summary["controller_io_response"]["delta_input_norm"]["mean"] == 2.0
 
 
+def test_perturbation_bank_summary_reports_class_bins_and_na_ratios() -> None:
+    rows = [
+        {
+            "perturbation_id": "initial_position_offset__x_pos",
+            "channel": "initial_state",
+            "family": "initial_position_offset",
+            "axis": "x",
+            "sign": 1,
+            "amplitude": 0.5,
+            "timing": {"time_index": 0},
+            "status": "evaluated",
+            "metrics": {
+                "delta_action_norm": {"mean": 6.0},
+                "delta_position_trajectory_norm_m": {"mean": 0.4},
+                "delta_velocity_trajectory_norm_m_s": {"mean": 0.3},
+                "delta_endpoint_error_m": {"mean": 0.2},
+                "delta_terminal_speed_m_s": {"mean": 0.1},
+                "extra_full_qrf_cost": {
+                    "delta_cost": {
+                        "total": {"mean": 9.0},
+                    },
+                },
+            },
+            "extlqg_comparator": {
+                "status": "available",
+                "reference_response_metrics": {
+                    "extra_full_qrf_cost": {
+                        "delta_cost": {
+                            "total": {"mean": 3.0},
+                        },
+                    },
+                },
+            },
+        },
+        {
+            "perturbation_id": "command_input_pulse__t3_x_pos",
+            "channel": "command_input",
+            "family": "command_input_pulse",
+            "axis": "x",
+            "sign": 1,
+            "amplitude": 0.25,
+            "timing": {"start_time_index": 3, "duration_steps": 2},
+            "status": "evaluated",
+            "metrics": {
+                "delta_action_norm": {"mean": 1.5},
+                "delta_position_trajectory_norm_m": {"mean": 0.2},
+                "delta_velocity_trajectory_norm_m_s": {"mean": 0.1},
+                "delta_endpoint_error_m": {"mean": 0.05},
+                "delta_terminal_speed_m_s": {"mean": 0.025},
+                "extra_full_qrf_cost": {
+                    "delta_cost": {
+                        "total": {"mean": 4.0},
+                    },
+                },
+            },
+            "extlqg_comparator": extlqg_comparator_status(
+                {"channel": "command_input", "family": "command_input_pulse"},
+                status="not_applicable",
+            ),
+        },
+        {
+            "perturbation_id": "target_stream_jump__x_pos",
+            "channel": "target_stream",
+            "family": "target_stream_jump",
+            "status": "not_applicable",
+            "reason": "fixed-target checkpoints do not expose a target stream",
+            "extlqg_comparator": extlqg_comparator_status(
+                {"channel": "target_stream", "family": "target_stream_jump"},
+                status="not_applicable",
+            ),
+        },
+    ]
+
+    summary = summarize_perturbation_bank(rows)
+    class_summary = summary["class_summary"]["groups"]
+
+    initial = class_summary["initial_state/initial_position_offset"]
+    assert initial["n_rows"] == 1
+    assert initial["status_counts"] == {"evaluated": 1}
+    assert initial["metrics"]["delta_action_norm"]["mean"] == 6.0
+    assert initial["metrics"]["extra_full_qrf_delta_cost_total"]["mean"] == 9.0
+    assert initial["gru_extlqg_delta_cost_ratio"]["ratio_of_means"] == 3.0
+
+    command = class_summary["command_input/command_input_pulse"]
+    assert command["gru_extlqg_delta_cost_ratio"]["status"] == "not_available"
+    assert "no meaningful extLQG" in command["gru_extlqg_delta_cost_ratio"]["reason"]
+    assert command["extlqg_not_applicable_reasons"]
+
+    target = class_summary["target_stream/target_stream_jump"]
+    assert target["status_counts"] == {"not_applicable": 1}
+    assert target["metrics"]["delta_action_norm"]["status"] == "not_available"
+    assert target["not_applicable_reasons"] == {
+        "fixed-target checkpoints do not expose a target stream": 1
+    }
+
+
+def test_perturbation_markdown_renders_class_binned_summary() -> None:
+    rows = [
+        {
+            "perturbation_id": "command_input_pulse__t3_x_pos",
+            "channel": "command_input",
+            "family": "command_input_pulse",
+            "axis": "x",
+            "sign": 1,
+            "amplitude": 0.25,
+            "timing": {"start_time_index": 3, "duration_steps": 2},
+            "status": "evaluated",
+            "metrics": {
+                "delta_action_norm": {"mean": 1.5},
+                "delta_position_trajectory_norm_m": {"mean": 0.2},
+                "delta_velocity_trajectory_norm_m_s": {"mean": 0.1},
+                "delta_endpoint_error_m": {"mean": 0.05},
+                "delta_terminal_speed_m_s": {"mean": 0.025},
+                "extra_full_qrf_cost": {
+                    "delta_cost": {
+                        "total": {"mean": 4.0},
+                    },
+                },
+            },
+            "extlqg_comparator": extlqg_comparator_status(
+                {"channel": "command_input", "family": "command_input_pulse"},
+                status="not_applicable",
+            ),
+        },
+        {
+            "perturbation_id": "target_stream_jump__x_pos",
+            "channel": "target_stream",
+            "family": "target_stream_jump",
+            "status": "not_applicable",
+            "reason": "fixed-target checkpoints do not expose a target stream",
+            "extlqg_comparator": extlqg_comparator_status(
+                {"channel": "target_stream", "family": "target_stream_jump"},
+                status="not_applicable",
+            ),
+        },
+    ]
+    manifest = {
+        "issue": "3992394",
+        "source_experiment": "aacb9ed",
+        "semantics_correction": "",
+        "bank": {
+            "perturbations": [
+                {"channel": row["channel"], "family": row["family"]} for row in rows
+            ],
+        },
+        "runs": {
+            "synthetic": {
+                "status_counts": {"evaluated": 1, "not_applicable": 1},
+                "n_rollout_trials_per_replicate": 1,
+                "robust_response_summary": summarize_perturbation_bank(rows),
+            },
+        },
+        "extlqg_comparator": {"status": "available", "reason": "synthetic"},
+        "full_qrf_cost": {"status": "available", "reason": "synthetic"},
+    }
+
+    markdown = render_perturbation_response_markdown(manifest)
+
+    assert "#### Class-Binned Summary" in markdown
+    assert "`command_input/command_input_pulse`" in markdown
+    assert "no meaningful extLQG" in markdown
+    assert "fixed-target checkpoints do not expose a target stream" in markdown
+
+
 def test_extlqg_comparator_status_defers_target_stream_for_fixed_target_rows() -> None:
     perturbation = {
         "channel": "target_stream",
@@ -512,3 +680,103 @@ def test_extlqg_comparator_status_defers_target_stream_for_fixed_target_rows() -
     assert status["status"] == "not_applicable"
     assert "fixed-target checkpoints" in status["reason"]
     assert status["selection_role"] == "audit_only_not_used_for_checkpoint_selection"
+
+
+def test_extlqg_comparator_evaluates_sensory_and_delayed_observation_offsets(
+    monkeypatch,
+) -> None:
+    base = _minimal_rollout_evaluation(command_value=0.0)
+    perturbed = _minimal_rollout_evaluation(command_value=1.0)
+    initial_state = np.zeros((48,), dtype=np.float64)
+    calls = []
+
+    def fake_simulate_extlqg_perturbed(perturbation, *, context):
+        calls.append(perturbation["channel"])
+        adapter = {
+            "adapter": f"fake_{perturbation['channel']}",
+            "controller_input_mutated": False,
+            "controller_internal_state_mutated": False,
+        }
+        return perturbed, initial_state, adapter
+
+    def fake_extlqg_cost_summary(evaluation, initial_state):
+        del evaluation, initial_state
+        cost = {"values": [0.0]}
+        return {
+            "status": "available",
+            "total": cost,
+            "stage_state": cost,
+            "control": cost,
+            "terminal": cost,
+        }
+
+    monkeypatch.setattr(
+        perturbation_bank,
+        "_simulate_extlqg_perturbed",
+        fake_simulate_extlqg_perturbed,
+    )
+    monkeypatch.setattr(perturbation_bank, "_extlqg_cost_summary", fake_extlqg_cost_summary)
+    context = {
+        "base_evaluation": base,
+        "base_initial_state": initial_state,
+        "parity_status": "test",
+        "n_iterations": 0,
+    }
+
+    for channel, family, expected_adapter in (
+        ("sensory_feedback", "sensory_feedback_offset", "fake_sensory_feedback"),
+        ("delayed_observation", "delayed_observation_offset", "fake_delayed_observation"),
+    ):
+        comparator = evaluate_extlqg_perturbation_comparator(
+            {
+                "channel": channel,
+                "family": family,
+                "axis": "x",
+                "amplitude": 0.01,
+                "sign": 1,
+                "timing": {"start_time_index": 0, "duration_steps": 2},
+            },
+            context=context,
+            gru_metrics={"delta_action_norm": {"mean": 1.0}},
+        )
+
+        assert comparator["status"] == "available"
+        assert comparator["analytical_adapter"]["adapter"] == expected_adapter
+        assert comparator["analytical_adapter"]["controller_internal_state_mutated"] is False
+
+    assert calls == ["sensory_feedback", "delayed_observation"]
+
+
+def test_extlqg_comparator_keeps_command_input_not_applicable() -> None:
+    comparator = evaluate_extlqg_perturbation_comparator(
+        {
+            "channel": "command_input",
+            "family": "command_input_pulse",
+            "axis": "x",
+            "amplitude": 1.0,
+            "sign": 1,
+            "timing": {"start_time_index": 0, "duration_steps": 1},
+        },
+        context={},
+        gru_metrics={},
+    )
+
+    assert comparator["status"] == "not_applicable"
+    assert "command-port intervention" in comparator["reason"]
+
+
+def _minimal_rollout_evaluation(*, command_value: float) -> RolloutEvaluation:
+    position = np.zeros((1, 1, 2, 2), dtype=np.float64)
+    velocity = np.zeros_like(position)
+    command = np.full((1, 1, 2, 2), command_value, dtype=np.float64)
+    return RolloutEvaluation(
+        position=position,
+        velocity=velocity,
+        command=command,
+        hidden=np.zeros((1, 1, 2, 0), dtype=np.float64),
+        gru_input=np.zeros((1, 1, 2, 0), dtype=np.float64),
+        initial_position=np.zeros((1, 2), dtype=np.float64),
+        initial_velocity=np.zeros((1, 2), dtype=np.float64),
+        target_position=np.zeros((1, 2, 2), dtype=np.float64),
+        dt=0.01,
+    )

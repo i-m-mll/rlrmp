@@ -54,6 +54,11 @@ class GruPostrunMaterializationPlan:
     figure_output_dir: Path
     objective_comparator_json_path: Path
     objective_comparator_note_path: Path
+    map_decomposition_json_path: Path
+    map_decomposition_note_path: Path
+    perturbation_response_json_path: Path
+    perturbation_response_note_path: Path
+    perturbation_response_bulk_dir: Path
     postrun_manifest_path: Path
 
     def to_json(self, *, repo_root: Path = REPO_ROOT) -> dict[str, Any]:
@@ -126,6 +131,15 @@ def plan_gru_postrun_materialization(
         figure_output_dir=artifact_dir / "figures" / f"gru_postrun_{output_tag}",
         objective_comparator_json_path=notes_dir / f"objective_comparator_{output_tag}.json",
         objective_comparator_note_path=notes_dir / f"objective_comparator_{output_tag}.md",
+        map_decomposition_json_path=notes_dir / f"gru_map_error_decomposition_{output_tag}.json",
+        map_decomposition_note_path=notes_dir / f"gru_map_error_decomposition_{output_tag}.md",
+        perturbation_response_json_path=(
+            notes_dir / f"gru_perturbation_response_{output_tag}_manifest.json"
+        ),
+        perturbation_response_note_path=notes_dir / f"gru_perturbation_response_{output_tag}.md",
+        perturbation_response_bulk_dir=(
+            artifact_dir / "perturbation_response" / f"gru_{output_tag}"
+        ),
         postrun_manifest_path=notes_dir / f"gru_postrun_materialization_{output_tag}.json",
     )
 
@@ -142,6 +156,8 @@ def materialize_gru_postrun_analysis(
     n_rollout_trials: int = DEFAULT_N_ROLLOUT_TRIALS,
     materializer_issue_id: str = MATERIALIZER_ISSUE_ID,
     include_objective_comparator: bool = True,
+    include_map_decomposition: bool = True,
+    include_perturbation_response: bool = True,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
     """Materialize the standard post-run GRU analysis bundle.
@@ -224,11 +240,42 @@ def materialize_gru_postrun_analysis(
         if include_objective_comparator
         else {"status": "skipped", "reason": "disabled_by_cli"}
     )
+    map_decomposition = (
+        materialize_optional_map_error_decomposition(
+            experiment=experiment,
+            run_ids=run_ids,
+            use_validation_selected_checkpoints=use_validation_selected_checkpoints,
+            standard_manifest_path=plan.standard_manifest_path,
+            output_path=plan.map_decomposition_json_path,
+            note_path=plan.map_decomposition_note_path,
+            repo_root=repo_root,
+        )
+        if include_map_decomposition
+        else {"status": "skipped", "reason": "disabled_by_cli"}
+    )
+    split_stress_objective_comparator = split_stress_objective_comparator_status(
+        objective_comparator
+    )
+    perturbation_response = (
+        materialize_optional_perturbation_response(
+            experiment=experiment,
+            run_ids=run_ids,
+            labels=labels,
+            n_rollout_trials=n_rollout_trials,
+            output_path=plan.perturbation_response_json_path,
+            note_path=plan.perturbation_response_note_path,
+            bulk_dir=plan.perturbation_response_bulk_dir,
+            repo_root=repo_root,
+        )
+        if include_perturbation_response
+        else {"status": "skipped", "reason": "disabled_by_cli"}
+    )
 
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "issue": experiment,
         "run_ids": list(run_ids),
+        "labels": None if labels is None else list(labels),
         "checkpoint_policy": plan.checkpoint_policy,
         "checkpoint_selection_source": plan.checkpoint_selection_source,
         "selection_leakage_guard": {
@@ -238,12 +285,16 @@ def materialize_gru_postrun_analysis(
                 "clean_action_mismatch",
                 "observation_history_to_action_map_mismatch",
                 "covariance_weighted_map_mismatch",
+                "map_error_decomposition",
                 "extlqg_objective_comparator",
+                "split_stress_bank_objective_comparator",
+                "perturbation_response_bank",
             ],
             "note": (
                 "Checkpoint selection uses rollout validation objective only. "
-                "Certificate, I/O map, covariance-weighted map, and objective "
-                "comparator values are audit sidecars."
+                "Certificate, I/O map, covariance-weighted map, map-decomposition, "
+                "objective-comparator, split-stress-bank, and perturbation-response "
+                "values are audit sidecars."
             ),
         },
         "plan": plan.to_json(repo_root=repo_root),
@@ -280,6 +331,9 @@ def materialize_gru_postrun_analysis(
                 repo_root=repo_root,
             ),
             "objective_comparator": objective_comparator,
+            "split_stress_objective_comparator": split_stress_objective_comparator,
+            "map_decomposition": map_decomposition,
+            "perturbation_response": perturbation_response,
         },
         "summaries": {
             "standard_certificate": standard_result.get("summary", {}),
@@ -292,6 +346,136 @@ def materialize_gru_postrun_analysis(
         encoding="utf-8",
     )
     return manifest
+
+
+def materialize_optional_perturbation_response(
+    *,
+    experiment: str,
+    run_ids: Sequence[str],
+    labels: Sequence[str] | None,
+    n_rollout_trials: int,
+    output_path: Path,
+    note_path: Path,
+    bulk_dir: Path,
+    repo_root: Path = REPO_ROOT,
+) -> dict[str, Any]:
+    """Call the optional perturbation-response bank materializer."""
+
+    try:
+        module = importlib.import_module("rlrmp.analysis.gru_perturbation_bank")
+        materializer = getattr(module, "materialize_gru_perturbation_response")
+    except (ImportError, AttributeError) as exc:
+        return {
+            "status": "skipped",
+            "reason": "optional_perturbation_response_unavailable",
+            "detail": str(exc),
+            "expected_hook": (
+                "rlrmp.analysis.gru_perturbation_bank."
+                "materialize_gru_perturbation_response"
+            ),
+        }
+
+    try:
+        result = materializer(
+            source_experiment=experiment,
+            result_experiment=experiment,
+            run_ids=tuple(run_ids),
+            labels=None if labels is None else tuple(labels),
+            n_rollout_trials=n_rollout_trials,
+            evaluate=True,
+            write_bulk_arrays=True,
+            output_path=output_path,
+            note_path=note_path,
+            bulk_dir=bulk_dir,
+            repo_root=repo_root,
+        )
+    except (FileNotFoundError, ValueError, KeyError, AttributeError) as exc:
+        return {
+            "status": "skipped",
+            "reason": "perturbation_response_inputs_unavailable",
+            "detail": str(exc),
+            "json_path": _repo_relative(output_path, repo_root=repo_root),
+            "note_path": _repo_relative(note_path, repo_root=repo_root),
+            "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        }
+
+    runs = result.get("runs", {}) if isinstance(result, dict) else {}
+    bank = result.get("bank", {}) if isinstance(result, dict) else {}
+    perturbations = bank.get("perturbations", ()) if isinstance(bank, dict) else ()
+    return {
+        "status": "materialized",
+        "json_path": _repo_relative(output_path, repo_root=repo_root),
+        "note_path": _repo_relative(note_path, repo_root=repo_root),
+        "bulk_dir": _repo_relative(bulk_dir, repo_root=repo_root),
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "result": {
+            "schema_version": result.get("schema_version") if isinstance(result, dict) else None,
+            "n_runs": len(runs),
+            "n_perturbations": len(perturbations),
+            "checkpoint_policy": (
+                result.get("checkpoint_policy") if isinstance(result, dict) else None
+            ),
+        },
+    }
+
+
+def materialize_optional_map_error_decomposition(
+    *,
+    experiment: str,
+    run_ids: Sequence[str],
+    use_validation_selected_checkpoints: bool,
+    standard_manifest_path: Path,
+    output_path: Path,
+    note_path: Path,
+    repo_root: Path = REPO_ROOT,
+) -> dict[str, Any]:
+    """Call the optional map-error decomposition sidecar where inputs are available."""
+
+    try:
+        module = importlib.import_module("rlrmp.analysis.gru_map_error_decomposition")
+        materializer = getattr(module, "materialize_gru_map_error_decomposition")
+        writer = getattr(module, "write_map_error_decomposition_result")
+    except (ImportError, AttributeError) as exc:
+        return {
+            "status": "skipped",
+            "reason": "optional_map_decomposition_unavailable",
+            "detail": str(exc),
+            "expected_hook": (
+                "rlrmp.analysis.gru_map_error_decomposition."
+                "materialize_gru_map_error_decomposition"
+            ),
+        }
+
+    try:
+        result = materializer(
+            standard_manifest_path=standard_manifest_path,
+            experiment=experiment,
+            run_ids=tuple(run_ids),
+            use_validation_selected_checkpoints=use_validation_selected_checkpoints,
+            repo_root=repo_root,
+        )
+    except (FileNotFoundError, ValueError, KeyError, AttributeError) as exc:
+        return {
+            "status": "skipped",
+            "reason": "map_decomposition_inputs_unavailable",
+            "detail": str(exc),
+            "json_path": _repo_relative(output_path, repo_root=repo_root),
+            "note_path": _repo_relative(note_path, repo_root=repo_root),
+            "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        }
+
+    writer(result, json_path=output_path, markdown_path=note_path)
+    return {
+        "status": "materialized",
+        "json_path": _repo_relative(output_path, repo_root=repo_root),
+        "note_path": _repo_relative(note_path, repo_root=repo_root),
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "result": {
+            "schema_version": result.get("format"),
+            "n_rows": len(result.get("rows", ())),
+            "checkpoint_policy": result.get("checkpoint_policy"),
+        },
+    }
 
 
 def materialize_optional_objective_comparator(
@@ -337,12 +521,55 @@ def materialize_optional_objective_comparator(
         note_path=note_path,
         repo_root=repo_root,
     )
+    result_status = result.get("status") if isinstance(result, dict) else None
+    if result_status not in (None, "materialized"):
+        return {
+            "status": result_status,
+            "json_path": _repo_relative(output_path, repo_root=repo_root),
+            "note_path": _repo_relative(note_path, repo_root=repo_root),
+            "result": result,
+        }
     return {
         "status": "materialized",
         "json_path": _repo_relative(output_path, repo_root=repo_root),
         "note_path": _repo_relative(note_path, repo_root=repo_root),
         "result": result,
     }
+
+
+def split_stress_objective_comparator_status(
+    objective_comparator: dict[str, Any],
+) -> dict[str, Any]:
+    """Return the post-run manifest entry for the split stress-bank comparator."""
+
+    status = objective_comparator.get("status", "unknown")
+    payload = {
+        "status": status,
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "source_sidecar": "objective_comparator",
+    }
+    for key in ("json_path", "note_path"):
+        if key in objective_comparator:
+            payload[key] = objective_comparator[key]
+    if status != "materialized":
+        result = objective_comparator.get("result", {})
+        result_reason = result.get("reason") if isinstance(result, dict) else None
+        return payload | {
+            "reason": (
+                objective_comparator.get("reason")
+                or result_reason
+                or "objective_comparator_not_materialized"
+            )
+        }
+    result = objective_comparator.get("result", {})
+    if isinstance(result, dict):
+        split_status = result.get("standard_split_bank_comparator_status")
+        if split_status is not None:
+            payload["standard_split_bank_comparator_status"] = split_status
+        schema_version = result.get("schema_version")
+        if schema_version is not None:
+            payload["schema_version"] = schema_version
+    return payload
 
 
 def checkpoint_policy_name(use_validation_selected_checkpoints: bool) -> str:
@@ -396,6 +623,9 @@ __all__ = [
     "checkpoint_policy_name",
     "fixed_bank_rescore_manifest_status",
     "materialize_gru_postrun_analysis",
+    "materialize_optional_map_error_decomposition",
     "materialize_optional_objective_comparator",
+    "materialize_optional_perturbation_response",
     "plan_gru_postrun_materialization",
+    "split_stress_objective_comparator_status",
 ]

@@ -532,6 +532,8 @@ def simulate_lqg_released_forward(
     estimator_gains: Float[Array, "T n n_obs"] | None = None,
     adversary_epsilon: Float[Array, "T m_w"] | None = None,
     perturbation: FixedStepPerturbation = FixedStepPerturbation(),
+    clean_observation_offset: Float[Array, "T n_obs"] | None = None,
+    sensory_feedback_offset: Float[Array, "T n_obs"] | None = None,
     config: OutputFeedbackConfig = OutputFeedbackConfig(),
 ) -> CSStochasticRollout:
     """Simulate the released-code stochastic lane for the LQG comparator arm."""
@@ -561,6 +563,8 @@ def simulate_lqg_released_forward(
         estimator_update,
         adversary_epsilon=adversary_epsilon,
         perturbation=perturbation,
+        clean_observation_offset=clean_observation_offset,
+        sensory_feedback_offset=sensory_feedback_offset,
         config=config,
     )
 
@@ -671,6 +675,8 @@ def _simulate_released_forward(
     *,
     adversary_epsilon: Float[Array, "T m_w"] | None,
     perturbation: FixedStepPerturbation,
+    clean_observation_offset: Float[Array, "T n_obs"] | None = None,
+    sensory_feedback_offset: Float[Array, "T n_obs"] | None = None,
     config: OutputFeedbackConfig,
 ) -> CSStochasticRollout:
     """Shared released-code stochastic forward simulation core."""
@@ -681,6 +687,18 @@ def _simulate_released_forward(
         jnp.zeros((T, plant.m_w), dtype=jnp.float64)
         if adversary_epsilon is None
         else adversary_epsilon.astype(jnp.float64)
+    )
+    clean_offset = _observation_offset_sequence(
+        T,
+        H.shape[0],
+        clean_observation_offset,
+        label="clean_observation_offset",
+    )
+    feedback_offset = _observation_offset_sequence(
+        T,
+        H.shape[0],
+        sensory_feedback_offset,
+        label="sensory_feedback_offset",
     )
     perturb = _perturbation_sequence(T, plant.n, perturbation)
     x_seq = [x0.astype(jnp.float64)]
@@ -697,9 +715,9 @@ def _simulate_released_forward(
     for t in range(T):
         x_t = x_seq[-1]
         xhat_t = xhat_seq[-1]
-        y_clean = H @ x_t
+        y_clean = H @ x_t + clean_offset[t]
         sensory = draws.sensory[t]
-        y_t = y_clean + sensory
+        y_t = y_clean + sensory + feedback_offset[t]
         u_command = -controller_gains[t] @ xhat_t
         motor = draws.motor[t]
         signal_dependent = jnp.einsum(
@@ -727,7 +745,7 @@ def _simulate_released_forward(
         motor_seq.append(motor)
         sdn_seq.append(signal_dependent)
         process_seq.append(process)
-        sensory_seq.append(sensory)
+        sensory_seq.append(sensory + feedback_offset[t])
         x_seq.append(x_next)
         xhat_seq.append(xhat_next)
 
@@ -814,6 +832,23 @@ def _perturbation_sequence(
     if value.shape != (n,):
         raise ValueError(f"perturbation value shape must be ({n},); got {value.shape}.")
     return perturb.at[perturbation.step].set(value)
+
+
+def _observation_offset_sequence(
+    T: int,
+    n_obs: int,
+    offset: Float[Array, "T n_obs"] | None,
+    *,
+    label: str,
+) -> Float[Array, "T n_obs"]:
+    """Return a validated dense observation-channel offset sequence."""
+
+    if offset is None:
+        return jnp.zeros((T, n_obs), dtype=jnp.float64)
+    values = offset.astype(jnp.float64)
+    if values.shape != (T, n_obs):
+        raise ValueError(f"{label} shape must be ({T}, {n_obs}); got {values.shape}.")
+    return values
 
 
 def _summary_fields(

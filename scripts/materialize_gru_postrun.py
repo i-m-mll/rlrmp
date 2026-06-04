@@ -27,6 +27,8 @@ def main() -> None:
         include_reference=not args.no_reference,
         n_rollout_trials=args.n_rollout_trials,
         include_objective_comparator=not args.no_objective_comparator,
+        include_map_decomposition=not args.no_map_decomposition,
+        include_perturbation_response=not args.no_perturbation_response,
         repo_root=args.repo_root,
     )
     print(json.dumps(manifest, indent=2, sort_keys=True))
@@ -79,6 +81,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-objective-comparator",
         action="store_true",
         help="Skip the optional objective-comparator hook.",
+    )
+    parser.add_argument(
+        "--no-map-decomposition",
+        action="store_true",
+        help="Skip the optional map-error decomposition hook.",
+    )
+    parser.add_argument(
+        "--no-perturbation-response",
+        action="store_true",
+        help="Skip the optional perturbation-response bank hook.",
     )
     parser.add_argument("--repo-root", type=Path, default=Path.cwd())
     return parser

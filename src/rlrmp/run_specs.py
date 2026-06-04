@@ -28,7 +28,9 @@ NOMINAL_GRU_LOSS_OBJECTIVES = frozenset(
 NOMINAL_GRU_TRAINING_MODES = frozenset(
     {
         "nominal",
+        "fixed_target_perturbation_randomized",
         "fixed_target_perturbation_generalized",
+        "target_relative_multitarget_static",
     }
 )
 NOMINAL_GRU_REQUIRED_PROVENANCE_KEYS = frozenset(

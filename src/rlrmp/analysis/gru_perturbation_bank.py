@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -558,14 +558,19 @@ def materialize_gru_perturbation_response(
         ),
         "bank": bank,
         "extlqg_comparator": {
-            "status": "available_for_initial_state_and_process_epsilon",
+            "status": (
+                "available_for_initial_state_process_epsilon_sensory_feedback_"
+                "and_delayed_observation"
+            ),
             "reason": (
                 "Deterministic extLQG response rows are evaluated for perturbations "
-                "with clean analytical interfaces: initial_state and process_epsilon. "
-                "Command-input, sensory-feedback, and delayed-observation GRU rows "
-                "are evaluated through temporary external graph adapters, but do not "
-                "yet have matching analytical extLQG channel adapters; target-stream "
-                "is deferred for current fixed-target checkpoints."
+                "with clean analytical interfaces: initial_state, process_epsilon, "
+                "sensory_feedback, and delayed_observation. Sensory-feedback rows "
+                "offset the post-noise measurement delivered to the estimator; "
+                "delayed-observation rows offset the clean delayed measurement before "
+                "sensory noise. Command-input rows still require a separate "
+                "analytical command-port intervention, and target-stream is deferred "
+                "for current fixed-target checkpoints."
             ),
             "checkpoint_selection_role": "audit_only_not_used_for_selection",
         },
@@ -919,12 +924,22 @@ def evaluate_extlqg_perturbation_comparator(
     """Evaluate the deterministic extLQG comparator for one perturbation row."""
 
     channel = str(perturbation["channel"])
-    if channel not in {"initial_state", "process_epsilon"}:
+    supported_channels = {
+        "initial_state",
+        "process_epsilon",
+        "sensory_feedback",
+        "delayed_observation",
+    }
+    if channel not in supported_channels:
         return extlqg_comparator_status(perturbation, status="not_applicable")
     try:
         base = context["base_evaluation"]
         base_initial_state = np.asarray(context["base_initial_state"], dtype=np.float64)
-        perturbed_evaluation, perturbed_initial_state = _simulate_extlqg_perturbed(
+        (
+            perturbed_evaluation,
+            perturbed_initial_state,
+            adapter_provenance,
+        ) = _simulate_extlqg_perturbed(
             perturbation,
             context=context,
         )
@@ -942,6 +957,7 @@ def evaluate_extlqg_perturbation_comparator(
             "selection_role": "audit_only_not_used_for_checkpoint_selection",
             "parity_status": str(context["parity_status"]),
             "n_iterations": int(context["n_iterations"]),
+            "analytical_adapter": adapter_provenance,
             "reference_response_metrics": response_metrics,
             "gru_vs_extlqg": compare_response_metric_summaries(gru_metrics, response_metrics),
         }
@@ -968,12 +984,12 @@ def extlqg_comparator_status(
             "matching analytical command-port intervention"
         ),
         "sensory_feedback": (
-            "sensory_feedback rows require a matching extLQG measurement-channel "
-            "adapter rather than controller-internal mutation"
+            "sensory_feedback rows are supported as post-noise measurement-channel "
+            "offsets when evaluated by the extLQG comparator"
         ),
         "delayed_observation": (
-            "delayed_observation rows require a clean pre-noise observation-history "
-            "adapter in both GRU and analytical paths"
+            "delayed_observation rows are supported as clean pre-noise delayed-"
+            "measurement offsets when evaluated by the extLQG comparator"
         ),
         "target_stream": (
             "target_stream rows are deferred for current fixed-target checkpoints "
@@ -985,7 +1001,8 @@ def extlqg_comparator_status(
         "lens": "deterministic_extlqg_same_declared_perturbation",
         "reason": reasons.get(
             channel,
-            "analytical comparator is only defined for evaluated initial_state and process_epsilon rows",
+            "analytical comparator is only defined for evaluated rows with "
+            "supported external analytical adapters",
         ),
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
     }
@@ -1023,6 +1040,7 @@ def summarize_perturbation_bank(rows: Sequence[Mapping[str, Any]]) -> dict[str, 
     return {
         "status": "available" if evaluated else "not_available",
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "class_summary": _class_summary_by_group(rows),
         "ratio_of_means": _ratio_of_means_by_group(evaluated),
         "signed_pair_response": _signed_pair_response_summary(evaluated),
         "controller_io_response": _controller_io_bank_summary(evaluated),
@@ -1085,6 +1103,38 @@ def render_perturbation_response_markdown(manifest: Mapping[str, Any]) -> str:
                 "",
             ]
         )
+        class_summary = robust_summary.get("class_summary", {})
+        if class_summary.get("status") == "available":
+            lines.extend(
+                [
+                    "#### Class-Binned Summary",
+                    "",
+                    "| Class | Rows | Status | Amplitudes | Mean delta action | "
+                    "Mean delta pos traj | Mean delta vel traj | Mean endpoint delta | "
+                    "Mean terminal-speed delta | Mean full-Q/R/Q_f delta cost | "
+                    "GRU/extLQG delta-cost ratio | Warnings / not applicable |",
+                    "|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---|",
+                ]
+            )
+            for class_key, class_row in class_summary.get("groups", {}).items():
+                metrics = class_row.get("metrics", {})
+                ratio = class_row.get("gru_extlqg_delta_cost_ratio", {})
+                lines.append(
+                    "| "
+                    f"`{class_key}` | "
+                    f"{class_row.get('n_rows', 0)} | "
+                    f"{_format_status_counts(class_row.get('status_counts', {}))} | "
+                    f"{_format_amplitudes(class_row.get('amplitudes', []))} | "
+                    f"{_format_optional_float(_summary_mean(metrics, 'delta_action_norm'))} | "
+                    f"{_format_optional_float(_summary_mean(metrics, 'delta_position_trajectory_norm_m'))} | "
+                    f"{_format_optional_float(_summary_mean(metrics, 'delta_velocity_trajectory_norm_m_s'))} | "
+                    f"{_format_optional_float(_summary_mean(metrics, 'delta_endpoint_error_m'))} | "
+                    f"{_format_optional_float(_summary_mean(metrics, 'delta_terminal_speed_m_s'))} | "
+                    f"{_format_optional_float(_summary_mean(metrics, 'extra_full_qrf_delta_cost_total'))} | "
+                    f"{_format_optional_float(ratio.get('ratio_of_means'))} | "
+                    f"{_format_class_notes(class_row)} |"
+                )
+            lines.append("")
     lines.extend(
         [
             "## Residuals",
@@ -1498,7 +1548,7 @@ def _simulate_extlqg_perturbed(
     perturbation: Mapping[str, Any],
     *,
     context: Mapping[str, Any],
-) -> tuple[RolloutEvaluation, np.ndarray]:
+) -> tuple[RolloutEvaluation, np.ndarray, dict[str, Any]]:
     """Simulate one deterministic analytical perturbation row."""
 
     plant = context["plant"]
@@ -1507,10 +1557,50 @@ def _simulate_extlqg_perturbed(
     comparator = context["comparator"]
     x0 = jnp.asarray(context["base_initial_state"], dtype=jnp.float64)
     adversary_epsilon = None
+    clean_observation_offset = None
+    sensory_feedback_offset = None
+    adapter_provenance: dict[str, Any]
     if perturbation["channel"] == "initial_state":
         x0 = _perturbed_extlqg_initial_state(x0, perturbation)
+        adapter_provenance = {
+            "adapter": "analytical_initial_state_offset",
+            "controller_input_mutated": False,
+            "controller_internal_state_mutated": False,
+        }
     elif perturbation["channel"] == "process_epsilon":
         adversary_epsilon = _extlqg_process_epsilon(perturbation, schedule.T, plant.m_w)
+        adapter_provenance = {
+            "adapter": "analytical_process_epsilon_sequence",
+            "process_channel": "PlantLinearization.Bw",
+            "controller_input_mutated": False,
+            "controller_internal_state_mutated": False,
+        }
+    elif perturbation["channel"] == "sensory_feedback":
+        sensory_feedback_offset = _extlqg_observation_offset(
+            perturbation,
+            horizon=schedule.T,
+            observation_dim=config.n_phys,
+        )
+        adapter_provenance = {
+            "adapter": "analytical_post_noise_measurement_offset",
+            "insertion_point": "y_clean + sensory_noise -> estimator innovation",
+            "information_structure": "post_noise_feedback_channel",
+            "controller_input_mutated": False,
+            "controller_internal_state_mutated": False,
+        }
+    elif perturbation["channel"] == "delayed_observation":
+        clean_observation_offset = _extlqg_observation_offset(
+            perturbation,
+            horizon=schedule.T,
+            observation_dim=config.n_phys,
+        )
+        adapter_provenance = {
+            "adapter": "analytical_clean_delayed_measurement_offset",
+            "insertion_point": "H @ x_t -> sensory measurement before noise",
+            "information_structure": "pre_noise_delayed_observation_channel",
+            "controller_input_mutated": False,
+            "controller_internal_state_mutated": False,
+        }
     else:
         raise ValueError(f"extLQG comparator does not support channel {perturbation['channel']!r}")
     rollout = simulate_lqg_released_forward(
@@ -1521,9 +1611,15 @@ def _simulate_extlqg_perturbed(
         covariances=zero_noise_covariances(plant, config),
         estimator_gains=comparator.estimator_gains,
         adversary_epsilon=adversary_epsilon,
+        clean_observation_offset=clean_observation_offset,
+        sensory_feedback_offset=sensory_feedback_offset,
         config=config,
     )
-    return _evaluation_from_extlqg_rollout(rollout, initial_state=x0), np.asarray(x0)
+    return (
+        _evaluation_from_extlqg_rollout(rollout, initial_state=x0),
+        np.asarray(x0),
+        adapter_provenance,
+    )
 
 
 def _evaluation_from_extlqg_rollout(
@@ -1592,6 +1688,35 @@ def _extlqg_process_epsilon(
     amount = float(perturbation["amplitude"]) * int(perturbation["sign"])
     epsilon = jnp.zeros((horizon, epsilon_dim), dtype=jnp.float64)
     return epsilon.at[start : start + duration, epsilon_index].set(amount)
+
+
+def _extlqg_observation_offset(
+    perturbation: Mapping[str, Any],
+    *,
+    horizon: int,
+    observation_dim: int,
+) -> jnp.ndarray:
+    """Return a timed analytical observation-channel offset sequence."""
+
+    family = str(perturbation["family"])
+    if family not in {"sensory_feedback_offset", "delayed_observation_offset"}:
+        raise ValueError(f"unsupported analytical observation-offset family {family!r}")
+    observation_index = _axis_index(str(perturbation["axis"]))
+    if observation_index < 0 or observation_index >= observation_dim:
+        raise ValueError(
+            f"observation axis index {observation_index} outside analytical dim {observation_dim}"
+        )
+    timing = perturbation["timing"]
+    start = int(timing.get("start_time_index", 0))
+    duration = int(timing.get("duration_steps", 1))
+    if start < 0 or duration < 1 or start + duration > horizon:
+        raise ValueError(
+            f"observation-offset timing outside analytical horizon: {start=}, "
+            f"{duration=}, {horizon=}"
+        )
+    amount = float(perturbation["amplitude"]) * int(perturbation["sign"])
+    offset = jnp.zeros((horizon, observation_dim), dtype=jnp.float64)
+    return offset.at[start : start + duration, observation_index].set(amount)
 
 
 def _extlqg_cost_summary(evaluation: RolloutEvaluation, initial_state: Any) -> dict[str, Any]:
@@ -1738,6 +1863,122 @@ _SIGNED_PAIR_METRICS = (
     "controller_io_response.delta_input_norm",
     "controller_io_response.action_per_input_gain",
 )
+
+
+_CLASS_SUMMARY_METRICS = (
+    "delta_action_norm",
+    "delta_position_trajectory_norm_m",
+    "delta_velocity_trajectory_norm_m_s",
+    "delta_endpoint_error_m",
+    "delta_terminal_speed_m_s",
+)
+
+
+def _class_summary_by_group(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = {}
+    for row in rows:
+        grouped.setdefault((str(row["channel"]), str(_row_family(row))), []).append(row)
+    groups = {
+        f"{channel}/{family}": _class_group_summary(channel, family, group_rows)
+        for (channel, family), group_rows in sorted(grouped.items())
+    }
+    return {
+        "status": "available" if groups else "not_available",
+        "grouping": "channel/family",
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "groups": groups,
+    }
+
+
+def _class_group_summary(
+    channel: str,
+    family: str,
+    rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    evaluated = [row for row in rows if row.get("status") == "evaluated"]
+    metrics = {
+        metric: _summary_stats_or_not_available(_available_metric_means(evaluated, metric))
+        for metric in _CLASS_SUMMARY_METRICS
+    }
+    metrics["extra_full_qrf_delta_cost_total"] = _summary_stats_or_not_available(
+        _available_metric_means(evaluated, "extra_full_qrf_cost.delta_cost.total")
+    )
+    comparator_rows = [
+        row
+        for row in evaluated
+        if row.get("extlqg_comparator", {}).get("status") == "available"
+    ]
+    cost_ratio = _ratio_of_means(
+        _available_metric_means(evaluated, "extra_full_qrf_cost.delta_cost.total"),
+        _available_extlqg_metric_means(
+            comparator_rows,
+            "extra_full_qrf_cost.delta_cost.total",
+        ),
+    )
+    if cost_ratio["status"] == "not_available":
+        cost_ratio["reason"] = (
+            "no meaningful extLQG full-Q/R/Q_f denominator for this channel/family"
+        )
+    return {
+        "channel": channel,
+        "family": family,
+        "n_rows": len(rows),
+        "status_counts": _status_counts(rows),
+        "amplitudes": sorted({float(_row_amplitude(row)) for row in rows}),
+        "metrics": metrics,
+        "gru_extlqg_delta_cost_ratio": cost_ratio,
+        "not_applicable_reasons": _reason_counts(
+            row for row in rows if row.get("status") == "not_applicable"
+        ),
+        "extlqg_not_applicable_reasons": _reason_counts(
+            row.get("extlqg_comparator", {})
+            for row in rows
+            if row.get("extlqg_comparator", {}).get("status") == "not_applicable"
+        ),
+        "denominator_warnings": _ratio_warnings(cost_ratio),
+    }
+
+
+def _available_extlqg_metric_means(
+    rows: Sequence[Mapping[str, Any]],
+    metric: str,
+) -> list[float]:
+    return [
+        value
+        for row in rows
+        if (
+            value := _metric_mean(
+                row.get("extlqg_comparator", {}).get("reference_response_metrics", {}),
+                metric,
+            )
+        )
+        is not None
+    ]
+
+
+def _summary_stats_or_not_available(values: Sequence[float]) -> dict[str, Any]:
+    if not values:
+        return {"status": "not_available", "count": 0, "mean": None}
+    summary = _summary_stats(values)
+    summary["status"] = "available"
+    return summary
+
+
+def _reason_counts(rows: Iterable[Mapping[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        reason = str(row.get("reason", "unspecified"))
+        counts[reason] = counts.get(reason, 0) + 1
+    return counts
+
+
+def _ratio_warnings(ratio: Mapping[str, Any]) -> list[str]:
+    warnings = []
+    if ratio.get("status") == "denominator_guarded":
+        warnings.append("denominator_guarded")
+    if ratio.get("inflated_ratio") is True:
+        warnings.append("inflated_ratio")
+    return warnings
 
 
 def _ratio_of_means_by_group(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
@@ -2025,6 +2266,54 @@ def _summary_stats(values: Any) -> dict[str, float | int]:
         "p50": float(np.quantile(flat, 0.50)),
         "p95": float(np.quantile(flat, 0.95)),
     }
+
+
+def _summary_mean(metrics: Mapping[str, Any], key: str) -> float | None:
+    summary = metrics.get(key)
+    if not isinstance(summary, Mapping):
+        return None
+    value = summary.get("mean")
+    if value is None:
+        return None
+    return float(value)
+
+
+def _format_status_counts(counts: Mapping[str, Any]) -> str:
+    if not counts:
+        return "none"
+    return ", ".join(f"{key}={counts[key]}" for key in sorted(counts))
+
+
+def _format_amplitudes(values: Sequence[Any]) -> str:
+    if not values:
+        return "NA"
+    return ", ".join(_format_optional_float(float(value)) for value in values)
+
+
+def _format_optional_float(value: Any) -> str:
+    if value is None:
+        return "NA"
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "NA"
+    if not np.isfinite(number):
+        return "NA"
+    return f"{number:.6g}"
+
+
+def _format_class_notes(class_row: Mapping[str, Any]) -> str:
+    notes = list(class_row.get("denominator_warnings", []))
+    ratio = class_row.get("gru_extlqg_delta_cost_ratio", {})
+    if isinstance(ratio, Mapping) and ratio.get("status") == "not_available":
+        reason = ratio.get("reason")
+        if reason is not None:
+            notes.append(str(reason))
+    for key in ("not_applicable_reasons", "extlqg_not_applicable_reasons"):
+        reasons = class_row.get(key, {})
+        if isinstance(reasons, Mapping):
+            notes.extend(f"{reason} ({count})" for reason, count in sorted(reasons.items()))
+    return "; ".join(notes) if notes else "none"
 
 
 def _status_counts(rows: Sequence[Mapping[str, Any]]) -> dict[str, int]:

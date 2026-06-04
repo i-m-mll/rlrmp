@@ -63,6 +63,26 @@ def _full_qrf_run_metadata() -> dict[str, object]:
     }
 
 
+def _unit_split_lenses() -> dict[str, object]:
+    return {
+        lens: {
+            "status": "available",
+            "gru_vs_extlqg": {
+                "terms": {
+                    term: {
+                        "gru_mean": 2.0,
+                        "extlqg_mean": 1.0,
+                        "delta_mean": 1.0,
+                        "ratio_to_extlqg": 2.0,
+                    }
+                    for term in ("total", *objective_comparator.FULL_QRF_TERM_NAMES)
+                }
+            },
+        }
+        for lens in objective_comparator._STANDARD_SPLIT_BANK_LENSES
+    }
+
+
 def test_extlqg_decomposition_reports_component_sum_and_declared_total() -> None:
     decomposition = ExtLQGCostDecomposition(
         deterministic_initial_state=4.0,
@@ -107,8 +127,15 @@ def test_build_objective_comparator_sidecar_uses_deterministic_comparator_lens()
             "selection_role": "audit_only_not_used_for_checkpoint_selection",
             "lenses": {
                 "deterministic_nominal": {"status": "available"},
-                "x0_only": {"status": "available"},
-                "epsilon_only": {"status": "available"},
+                "x0_position_only": {"status": "available"},
+                "x0_velocity_only": {"status": "available"},
+                "x0_force_filter_only": {"status": "available"},
+                "x0_disturbance_integrator_only": {"status": "available"},
+                "process_epsilon_position_only": {"status": "available"},
+                "process_epsilon_velocity_only": {"status": "available"},
+                "process_epsilon_force_filter_only": {"status": "available"},
+                "process_epsilon_integrator_only": {"status": "available"},
+                "x0_position_velocity": {"status": "available"},
                 "x0_plus_epsilon": {
                     "status": "available",
                     "interpretation": "stress_test_only",
@@ -121,14 +148,7 @@ def test_build_objective_comparator_sidecar_uses_deterministic_comparator_lens()
             "runs": {
                 "run_a": {
                     "status": "available",
-                    "lenses": {
-                        "x0_only": {
-                            "status": "available",
-                            "gru_vs_extlqg": {
-                                "terms": {"total": {"ratio_to_extlqg": 1.1}}
-                            },
-                        },
-                    },
+                    "lenses": _unit_split_lenses(),
                 },
             },
         },
@@ -174,6 +194,19 @@ def test_build_objective_comparator_sidecar_uses_deterministic_comparator_lens()
     assert sidecar["shared_rollout_comparator"]["status"] == "available"
     assert sidecar["shared_rollout_comparator"]["interpretation"] == "stress_test_only"
     assert sidecar["standard_split_bank_comparator"]["status"] == "available"
+    assert tuple(sidecar["standard_split_bank_comparator"]["lenses"]) == (
+        "deterministic_nominal",
+        "x0_position_only",
+        "x0_velocity_only",
+        "x0_force_filter_only",
+        "x0_disturbance_integrator_only",
+        "process_epsilon_position_only",
+        "process_epsilon_velocity_only",
+        "process_epsilon_force_filter_only",
+        "process_epsilon_integrator_only",
+        "x0_position_velocity",
+        "x0_plus_epsilon",
+    )
     assert (
         sidecar["standard_split_bank_comparator"]["lenses"]["x0_plus_epsilon"][
             "interpretation"
@@ -209,6 +242,43 @@ def test_shared_rollout_bank_serializes_declared_shared_channels() -> None:
     assert payload["command_or_motor_noise"]["status"] == "not_shared"
 
 
+def test_split_bank_inputs_mask_x0_and_process_components() -> None:
+    bank = SharedRolloutBank(
+        bank_id="unit-bank",
+        seed=123,
+        initial_states=np.arange(16, dtype=np.float64).reshape(1, 16),
+        process_epsilon=np.arange(8, dtype=np.float64).reshape(1, 1, 8),
+        initial_covariance=0.01,
+    )
+    default_initial = np.zeros((1, 16), dtype=np.float64)
+
+    lens_inputs = objective_comparator._split_bank_inputs(
+        bank=bank,
+        default_initial=default_initial,
+    )
+
+    np.testing.assert_allclose(
+        lens_inputs["x0_position_only"]["initial_states"],
+        np.array([[0, 1, 0, 0, 0, 0, 0, 0, 8, 9, 0, 0, 0, 0, 0, 0]], dtype=np.float64),
+    )
+    np.testing.assert_allclose(
+        lens_inputs["x0_velocity_only"]["initial_states"],
+        np.array([[0, 0, 2, 3, 0, 0, 0, 0, 0, 0, 10, 11, 0, 0, 0, 0]], dtype=np.float64),
+    )
+    np.testing.assert_allclose(
+        lens_inputs["process_epsilon_force_filter_only"]["process_epsilon"],
+        np.array([[[0, 0, 0, 0, 4, 5, 0, 0]]], dtype=np.float64),
+    )
+    np.testing.assert_allclose(
+        lens_inputs["x0_plus_epsilon"]["initial_states"],
+        bank.initial_states,
+    )
+    np.testing.assert_allclose(
+        lens_inputs["x0_plus_epsilon"]["process_epsilon"],
+        bank.process_epsilon,
+    )
+
+
 def test_shared_full_qrf_cost_summary_decomposes_zero_rollout() -> None:
     states = np.zeros((2, 60, 48), dtype=np.float64)
     commands = np.zeros((2, 60, 2), dtype=np.float64)
@@ -235,6 +305,94 @@ def test_shared_full_qrf_cost_summary_decomposes_zero_rollout() -> None:
     assert total == term_sum
     assert summary["command_control"]["mean"] == 0.0
     assert summary["total"]["shape"] == [2]
+
+
+def test_shared_full_qrf_cost_summary_declares_state_basis_contract() -> None:
+    from rlrmp.analysis.cs_game_card import TARGET_POS
+
+    states = np.zeros((1, 60, 48), dtype=np.float64)
+    commands = np.zeros((1, 60, 2), dtype=np.float64)
+    initial_states = np.zeros((1, 48), dtype=np.float64)
+
+    target_centered = shared_full_qrf_cost_summary(
+        states=states,
+        commands=commands,
+        initial_states=initial_states,
+        state_basis="target_centered",
+    )
+    absolute_workspace = shared_full_qrf_cost_summary(
+        states=states,
+        commands=commands,
+        initial_states=initial_states,
+        state_basis="absolute_workspace",
+    )
+    absolute_at_target = shared_full_qrf_cost_summary(
+        states=_states_at_target(states, TARGET_POS),
+        commands=commands,
+        initial_states=_states_at_target(initial_states, TARGET_POS),
+        state_basis="absolute_workspace",
+    )
+
+    assert target_centered["basis"]["state_transform"] == "none; states are already target-centered"
+    assert target_centered["total"]["mean"] == 0.0
+    assert absolute_workspace["basis"]["state_basis"] == "absolute_workspace"
+    assert absolute_workspace["total"]["mean"] > 0.0
+    assert absolute_at_target["total"]["mean"] == 0.0
+
+
+def test_extlqg_deterministic_nominal_realized_cost_uses_target_centered_basis() -> None:
+    import jax.numpy as jnp
+
+    from rlrmp.analysis.cs_game_card import build_canonical_game
+    from rlrmp.analysis.cs_released_simulation import (
+        _default_output_feedback_initial_state,
+        build_extlqg_comparator_path,
+        default_cs_noise_covariances,
+        simulate_lqg_released_forward,
+        zero_forward_noise_draws,
+    )
+    from rlrmp.analysis.output_feedback import OutputFeedbackConfig
+
+    plant, schedule = build_canonical_game()
+    config = OutputFeedbackConfig()
+    covariances = default_cs_noise_covariances(plant, config)
+    comparator_path = build_extlqg_comparator_path(
+        plant,
+        jnp.zeros((schedule.T, plant.m_u, plant.n), dtype=jnp.float64),
+        covariances,
+        schedule=schedule,
+        config=config,
+    )
+    x0 = _default_output_feedback_initial_state(plant, config)
+    rollout = simulate_lqg_released_forward(
+        plant,
+        comparator_path.controller_gains,
+        x0,
+        draws=zero_forward_noise_draws(T=schedule.T, plant=plant, config=config),
+        covariances=covariances,
+        estimator_gains=comparator_path.estimator_gains,
+        adversary_epsilon=jnp.zeros((schedule.T, plant.m_w), dtype=jnp.float64),
+        config=config,
+    )
+    summary = shared_full_qrf_cost_summary(
+        states=np.asarray(rollout.x[1:], dtype=np.float64)[None, ...],
+        commands=np.asarray(rollout.u_command, dtype=np.float64)[None, ...],
+        initial_states=np.asarray(x0, dtype=np.float64)[None, :],
+        state_basis="target_centered",
+    )
+
+    realized = summary["total"]["mean"]
+
+    assert summary["basis"]["state_basis"] == "target_centered"
+    assert np.isclose(realized, 4368.510655149214, rtol=2e-3)
+    assert realized < 10_000.0
+
+
+def _states_at_target(values: np.ndarray, target_pos: np.ndarray) -> np.ndarray:
+    result = np.array(values, dtype=np.float64, copy=True)
+    for start in range(0, result.shape[-1], 8):
+        result[..., start : start + 2] = target_pos
+    return result
 
 
 def test_extlqg_x0_only_sanity_check_reports_pass_and_warning() -> None:

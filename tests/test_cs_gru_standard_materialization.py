@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import numpy as np
+import jax.numpy as jnp
+from feedbax._mapping import WhereDict
+from feedbax.loss import TargetSpec
+from feedbax.task import TaskTrialSpec
 
 from rlrmp.analysis.bridge_certificates import (
     BELLMAN_HESSIAN_RESIDUAL,
@@ -19,6 +23,7 @@ from rlrmp.analysis.cs_gru_standard_materialization import (
     normalize_gru_hps,
     observation_history_covariance_from_net_inputs,
     render_gru_standard_markdown,
+    _repeat_single_validation_trial,
 )
 from rlrmp.analysis.failure_decomposition import failure_diagnostic_from_standard_row
 
@@ -238,6 +243,31 @@ def test_gru_manifest_marks_covariance_weighted_observation_response_map_missing
         "sampled observation histories were not supplied"
     )
     assert "covariance_weighted_aggregate_mismatch_ratio" not in summary
+
+
+def test_response_map_sampling_repeats_first_trial_from_multitarget_bank() -> None:
+    trial_specs = TaskTrialSpec(
+        inits=WhereDict({"mechanics.vector": jnp.arange(20 * 48).reshape(20, 48)}),
+        targets=WhereDict(
+            {
+                "mechanics.effector.pos": TargetSpec(
+                    value=jnp.arange(20 * 60 * 2).reshape(20, 60, 2)
+                )
+            }
+        ),
+        inputs={"target": jnp.arange(20 * 60 * 2).reshape(20, 60, 2)},
+    )
+
+    repeated = _repeat_single_validation_trial(trial_specs, 16)
+
+    assert repeated.inits["mechanics.vector"].shape == (16, 48)
+    assert repeated.targets["mechanics.effector.pos"].value.shape == (16, 60, 2)
+    assert repeated.inputs["target"].shape == (16, 60, 2)
+    assert jnp.all(repeated.inits["mechanics.vector"] == trial_specs.inits["mechanics.vector"][0])
+    assert jnp.all(
+        repeated.targets["mechanics.effector.pos"].value
+        == trial_specs.targets["mechanics.effector.pos"].value[0]
+    )
 
 
 def test_gru_materializer_does_not_claim_action_evidence_when_models_are_not_loaded() -> None:

@@ -438,15 +438,45 @@ def initial_effector_velocity(trial_specs: Any) -> jnp.ndarray:
 
 
 def repeat_single_validation_trial(trial_specs: Any, n_trials: int) -> Any:
-    """Repeat a one-trial validation spec along its leading trial axis."""
+    """Repeat the first validation trial along its leading trial axis.
+
+    Fixed-target rows normally expose one validation trial, but target-relative
+    multi-target rows expose a structured validation bank. Plotting and rollout
+    diagnostics use ``n_trials`` stochastic samples, so every leading trial-axis
+    array must be sliced to a representative trial before repeating.
+    """
+
+    source_trials = _trial_count_from_spec(trial_specs)
 
     def repeat_leaf(leaf: Any) -> Any:
         shape = getattr(leaf, "shape", None)
-        if shape is not None and len(shape) >= 1 and shape[0] == 1:
-            return jnp.repeat(leaf, n_trials, axis=0)
+        if shape is not None and len(shape) >= 1 and shape[0] == source_trials:
+            return jnp.repeat(leaf[:1], n_trials, axis=0)
         return leaf
 
     return jt.map(repeat_leaf, trial_specs)
+
+
+def _trial_count_from_spec(trial_specs: Any) -> int:
+    for target_spec in getattr(trial_specs, "targets", {}).values():
+        value = getattr(target_spec, "value", None)
+        shape = getattr(value, "shape", None)
+        if shape is not None and len(shape) >= 1:
+            return int(shape[0])
+    for init in getattr(trial_specs, "inits", {}).values():
+        shape = getattr(init, "shape", None)
+        if shape is not None and len(shape) >= 1:
+            return int(shape[0])
+    inputs = getattr(trial_specs, "inputs", None)
+    if isinstance(inputs, dict):
+        values = inputs.values()
+    else:
+        values = (inputs,)
+    for value in values:
+        shape = getattr(value, "shape", None)
+        if shape is not None and len(shape) >= 1:
+            return int(shape[0])
+    return 1
 
 
 def cs_output_feedback_reference_profiles(
