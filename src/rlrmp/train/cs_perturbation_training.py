@@ -18,11 +18,17 @@ from jaxtyping import PRNGKeyArray, PyTree
 
 PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_randomized"
 LEGACY_PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_generalized"
+TARGET_RELATIVE_MULTITARGET_TRAINING_MODE = "target_relative_multitarget_static"
 MILD_COMBINED_FAMILIES: tuple["PerturbationBin", ...] = (
     "initial_position",
     "command_input",
 )
 AMPLITUDE_LEVELS: tuple[float, ...] = (0.5, 1.0)
+ORIGINAL_TARGET_ANCHOR_M: tuple[float, float] = (0.15, 0.0)
+DEFAULT_SEEN_TARGET_DIRECTIONS_DEG: tuple[float, ...] = (0.0, 60.0, 120.0, 180.0, 240.0, 300.0)
+DEFAULT_HELD_OUT_TARGET_DIRECTIONS_DEG: tuple[float, ...] = (30.0, 150.0, 210.0, 330.0)
+DEFAULT_SEEN_TARGET_AMPLITUDES_M: tuple[float, ...] = (0.10, 0.15)
+DEFAULT_HELD_OUT_TARGET_AMPLITUDES_M: tuple[float, ...] = (0.12, 0.18)
 
 PerturbationBin = Literal[
     "nominal",
@@ -292,6 +298,159 @@ class FixedTargetPerturbationTrainingConfig:
         return payload
 
 
+@dataclass(frozen=True)
+class TargetRelativeMultiTargetTrainingConfig:
+    """Structured static-target distribution for target-relative GRU training."""
+
+    enabled: bool = False
+    seen_directions_deg: tuple[float, ...] = DEFAULT_SEEN_TARGET_DIRECTIONS_DEG
+    held_out_directions_deg: tuple[float, ...] = DEFAULT_HELD_OUT_TARGET_DIRECTIONS_DEG
+    seen_amplitudes_m: tuple[float, ...] = DEFAULT_SEEN_TARGET_AMPLITUDES_M
+    held_out_amplitudes_m: tuple[float, ...] = DEFAULT_HELD_OUT_TARGET_AMPLITUDES_M
+    original_target_anchor_m: tuple[float, float] = ORIGINAL_TARGET_ANCHOR_M
+
+    def __post_init__(self) -> None:
+        if len(self.original_target_anchor_m) != 2:
+            raise ValueError("original_target_anchor_m must be a 2D target.")
+        if not self.seen_directions_deg:
+            raise ValueError("At least one seen target direction is required.")
+        if not self.held_out_directions_deg:
+            raise ValueError("At least one held-out target direction is required.")
+        if not self.seen_amplitudes_m:
+            raise ValueError("At least one seen target amplitude is required.")
+        if not self.held_out_amplitudes_m:
+            raise ValueError("At least one held-out target amplitude is required.")
+        if any(float(value) <= 0.0 for value in self.seen_amplitudes_m):
+            raise ValueError("Seen target amplitudes must be positive.")
+        if any(float(value) <= 0.0 for value in self.held_out_amplitudes_m):
+            raise ValueError("Held-out target amplitudes must be positive.")
+        seen = _target_tuples(self.seen_directions_deg, self.seen_amplitudes_m)
+        if tuple(float(x) for x in self.original_target_anchor_m) not in seen:
+            raise ValueError(
+                "The structured seen target distribution must include the original "
+                "15 cm forward target anchor."
+            )
+
+    @property
+    def seen_targets_m(self) -> tuple[tuple[float, float], ...]:
+        """Return train/seen target positions in metres."""
+
+        return _target_tuples(self.seen_directions_deg, self.seen_amplitudes_m)
+
+    @property
+    def held_out_targets_m(self) -> tuple[tuple[float, float], ...]:
+        """Return held-out validation target positions in metres."""
+
+        return _target_tuples(self.held_out_directions_deg, self.held_out_amplitudes_m)
+
+    @property
+    def validation_targets_m(self) -> tuple[tuple[float, float], ...]:
+        """Return validation targets, including the original anchor."""
+
+        return _dedupe_targets(
+            (
+                tuple(float(x) for x in self.original_target_anchor_m),
+                *self.seen_targets_m,
+                *self.held_out_targets_m,
+            )
+        )
+
+    def to_hps_dict(self) -> dict[str, Any]:
+        """Return the TreeNamespace-compatible config payload."""
+
+        return {
+            "enabled": self.enabled,
+            "mode": (
+                TARGET_RELATIVE_MULTITARGET_TRAINING_MODE if self.enabled else "disabled"
+            ),
+            "input_contract": target_relative_input_contract(),
+            "target_distribution": {
+                "kind": "structured_static_targets",
+                "original_target_anchor_m": list(self.original_target_anchor_m),
+                "seen_directions_deg": list(self.seen_directions_deg),
+                "seen_amplitudes_m": list(self.seen_amplitudes_m),
+                "held_out_directions_deg": list(self.held_out_directions_deg),
+                "held_out_amplitudes_m": list(self.held_out_amplitudes_m),
+                "seen_targets_m": [list(row) for row in self.seen_targets_m],
+                "held_out_targets_m": [list(row) for row in self.held_out_targets_m],
+                "validation_targets_m": [list(row) for row in self.validation_targets_m],
+            },
+            "validation_bins": target_relative_validation_bins(self),
+            "perturbation_mixture_emphasis": target_relative_perturbation_emphasis(),
+            "moving_targets": False,
+            "teacher_or_jacobian_supervision": False,
+            "command_port_comparator": "diagnostic_only",
+        }
+
+    def to_json(self) -> dict[str, Any]:
+        """Return run-spec metadata."""
+
+        return self.to_hps_dict()
+
+
+class TargetRelativeMultiTargetTrainingTaskAdapter(AbstractTask):
+    """Rewrite static target trials and expose controller-visible target input."""
+
+    task: object
+    config: Any
+
+    def __getattr__(self, name: str):
+        return getattr(self.task, name)
+
+    @property
+    def loss_func(self):
+        return self.task.loss_func
+
+    @property
+    def n_steps(self) -> int:
+        return int(self.task.n_steps)
+
+    @property
+    def seed_validation(self) -> int:
+        return int(self.task.seed_validation)
+
+    @property
+    def intervention_specs(self):
+        return self.task.intervention_specs
+
+    @property
+    def input_dependencies(self):
+        return self.task.input_dependencies
+
+    def add_input(self, name: str, input_fn, exist_ok: bool = True):
+        return eqx.tree_at(
+            lambda adapter: adapter.task,
+            self,
+            self.task.add_input(name, input_fn, exist_ok=exist_ok),
+        )
+
+    def get_train_trial(self, key: PRNGKeyArray, batch_info=None) -> TaskTrialSpec:
+        return self.get_train_trial_with_intervenor_params(key, batch_info)
+
+    def get_train_trial_with_intervenor_params(
+        self,
+        key: PRNGKeyArray,
+        batch_info=None,
+    ) -> TaskTrialSpec:
+        base = self.task.get_train_trial_with_intervenor_params(key, batch_info)
+        return apply_training_target_distribution(base, self.config, key)
+
+    def get_validation_trials(self, key: PRNGKeyArray) -> TaskTrialSpec:
+        del key
+        return apply_validation_target_distribution(self.task.validation_trials, self.config)
+
+    @property
+    def n_validation_trials(self) -> int:
+        return len(config_from_target_hps(self.config).validation_targets_m)
+
+    def validation_plots(self, states, trial_specs=None):
+        return self.task.validation_plots(states, trial_specs=trial_specs)
+
+    @property
+    def validation_trials(self) -> TaskTrialSpec:
+        return apply_validation_target_distribution(self.task.validation_trials, self.config)
+
+
 class FixedTargetPerturbationTrainingTaskAdapter(AbstractTask):
     """Apply fixed-target perturbation mixture and validation bins to a task."""
 
@@ -387,12 +546,97 @@ def config_from_hps(config: Any) -> FixedTargetPerturbationTrainingConfig:
     )
 
 
+def config_from_target_hps(config: Any) -> TargetRelativeMultiTargetTrainingConfig:
+    """Normalize an hps target-distribution payload to a dataclass."""
+
+    return TargetRelativeMultiTargetTrainingConfig(
+        enabled=bool(getattr(config, "enabled", False)),
+        seen_directions_deg=tuple(
+            float(x)
+            for x in getattr(
+                config,
+                "seen_directions_deg",
+                DEFAULT_SEEN_TARGET_DIRECTIONS_DEG,
+            )
+        ),
+        held_out_directions_deg=tuple(
+            float(x)
+            for x in getattr(
+                config,
+                "held_out_directions_deg",
+                DEFAULT_HELD_OUT_TARGET_DIRECTIONS_DEG,
+            )
+        ),
+        seen_amplitudes_m=tuple(
+            float(x)
+            for x in getattr(
+                config,
+                "seen_amplitudes_m",
+                DEFAULT_SEEN_TARGET_AMPLITUDES_M,
+            )
+        ),
+        held_out_amplitudes_m=tuple(
+            float(x)
+            for x in getattr(
+                config,
+                "held_out_amplitudes_m",
+                DEFAULT_HELD_OUT_TARGET_AMPLITUDES_M,
+            )
+        ),
+        original_target_anchor_m=tuple(
+            float(x)
+            for x in getattr(
+                config,
+                "original_target_anchor_m",
+                ORIGINAL_TARGET_ANCHOR_M,
+            )
+        ),
+    )
+
+
 def install_perturbation_training_graph_adapters(model: Any) -> Any:
     """Install the fixed external additive channel adapters on a C&S GRU graph."""
 
     for spec in GRAPH_ADAPTER_SPECS.values():
         model = _insert_additive_graph_channel_adapter(model, spec)
     return model
+
+
+def apply_training_target_distribution(
+    trial_specs: TaskTrialSpec,
+    config: Any,
+    key: PRNGKeyArray,
+) -> TaskTrialSpec:
+    """Apply one PRNG-driven static target draw from the seen target set."""
+
+    cfg = config_from_target_hps(config)
+    targets = jnp.asarray(cfg.seen_targets_m, dtype=jnp.float32)
+    batch_shape = _batch_shape(trial_specs)
+    index = jr.randint(key, batch_shape, 0, targets.shape[0])
+    target = targets[index]
+    return _with_static_target(trial_specs, target, metadata=None)
+
+
+def apply_validation_target_distribution(
+    trial_specs: TaskTrialSpec,
+    config: Any,
+) -> TaskTrialSpec:
+    """Return validation trials covering original, seen, and held-out targets."""
+
+    cfg = config_from_target_hps(config)
+    targets = jnp.asarray(cfg.validation_targets_m, dtype=jnp.float32)
+    trial_specs = _with_static_target(trial_specs, targets, metadata=None)
+    extra = dict(trial_specs.extra or {})
+    extra["target_relative_multitarget_bins"] = target_relative_validation_bins(cfg)
+    extra["target_relative_input_contract"] = target_relative_input_contract()
+    return TaskTrialSpec(
+        inits=WhereDict(trial_specs.inits),
+        inputs=trial_specs.inputs,
+        targets=trial_specs.targets,
+        intervene=trial_specs.intervene,
+        timeline=trial_specs.timeline,
+        extra=extra,
+    )
 
 
 def apply_training_perturbation_mixture(
@@ -558,6 +802,124 @@ def validation_bin_manifest(config: Any) -> dict[str, Any]:
             for bin_name in VALIDATION_BINS
         ],
         "config": cfg.to_json(),
+    }
+
+
+def target_relative_validation_manifest(config: Any) -> dict[str, Any]:
+    """Return target-relative validation-bin metadata for run specs."""
+
+    cfg = config_from_target_hps(config)
+    return {
+        "schema_version": "rlrmp.cs_target_relative_multitarget_validation_bins.v1",
+        "validation_role": "target_relative_multitarget_rollout_loss",
+        "selection_role": (
+            "rollout loss over original-anchor, seen-target, held-out-target, and "
+            "perturbation-emphasis bins selects checkpoints; analytical action and "
+            "I/O metrics remain audit-only"
+        ),
+        "target_centered_scoring": "trial_static_target",
+        "bins": target_relative_validation_bins(cfg),
+        "input_contract": target_relative_input_contract(),
+        "config": cfg.to_json(),
+    }
+
+
+def target_relative_validation_bins(config: TargetRelativeMultiTargetTrainingConfig) -> list[dict[str, Any]]:
+    """Return target validation-bin rows."""
+
+    anchor = tuple(float(x) for x in config.original_target_anchor_m)
+    seen = config.seen_targets_m
+    held_out = config.held_out_targets_m
+    validation_targets = config.validation_targets_m
+    seen_held_out_targets = _dedupe_targets((*seen, *held_out))
+    return [
+        {
+            "bin": "original_target_nominal",
+            "target_role": "anchor",
+            "targets_m": [list(anchor)],
+        },
+        {
+            "bin": "seen_multitarget_nominal",
+            "target_role": "seen_training_support",
+            "targets_m": [list(row) for row in seen],
+        },
+        {
+            "bin": "held_out_multitarget_nominal",
+            "target_role": "held_out_validation_support",
+            "targets_m": [list(row) for row in held_out],
+        },
+        {
+            "bin": "initial_position_offsets",
+            "target_role": "seen_and_held_out_static_targets",
+            "targets_m": [list(row) for row in seen_held_out_targets],
+            "families": ["initial_position"],
+        },
+        {
+            "bin": "initial_velocity_offsets",
+            "target_role": "seen_and_held_out_static_targets",
+            "targets_m": [list(row) for row in seen_held_out_targets],
+            "families": ["initial_velocity"],
+        },
+        {
+            "bin": "sensory_feedback_offsets",
+            "target_role": "seen_and_held_out_static_targets",
+            "targets_m": [list(row) for row in seen_held_out_targets],
+            "families": ["sensory_feedback"],
+        },
+        {
+            "bin": "delayed_observation_offsets",
+            "target_role": "seen_and_held_out_static_targets",
+            "targets_m": [list(row) for row in seen_held_out_targets],
+            "families": ["delayed_observation"],
+        },
+        {
+            "bin": "process_load_epsilon",
+            "target_role": "seen_and_held_out_static_targets",
+            "targets_m": [list(row) for row in seen_held_out_targets],
+            "families": ["process_epsilon"],
+        },
+        {
+            "bin": "mild_combined",
+            "target_role": "seen_and_held_out_static_targets",
+            "targets_m": [list(row) for row in seen_held_out_targets],
+            "families": ["initial_position", "sensory_feedback", "process_epsilon"],
+        },
+        {
+            "bin": "command_input_diagnostic",
+            "target_role": "diagnostic_only",
+            "targets_m": [list(row) for row in validation_targets],
+            "families": ["command_input"],
+            "checkpoint_selection": "excluded_unless_comparator_defined",
+        },
+    ]
+
+
+def target_relative_input_contract() -> dict[str, Any]:
+    """Return the documented controller-visible target-relative sign contract."""
+
+    return {
+        "controller_feedback_basis": "target_relative_delayed_feedback",
+        "static_target_input": "known_immediately_not_visually_delayed",
+        "sign_convention": [
+            "target_x - delayed_x",
+            "target_y - delayed_y",
+            "-delayed_vx",
+            "-delayed_vy",
+        ],
+        "shape": [4],
+        "moving_targets": "out_of_scope",
+    }
+
+
+def target_relative_perturbation_emphasis() -> dict[str, Any]:
+    """Return the target-relative perturbation-mixture design intent."""
+
+    return {
+        "nominal_multitarget_fraction": [0.50, 0.70],
+        "initial_position_velocity_fraction": [0.10, 0.20],
+        "sensory_or_delayed_observation_fraction": [0.10, 0.20],
+        "process_or_load_fraction": [0.05, 0.15],
+        "command_input": "optional_diagnostic_only",
     }
 
 
@@ -856,6 +1218,87 @@ def _set_input(trial_specs: TaskTrialSpec, key: str, value: Any) -> TaskTrialSpe
     return eqx.tree_at(lambda ts: ts.inputs, trial_specs, inputs)
 
 
+def _with_static_target(
+    trial_specs: TaskTrialSpec,
+    target: jnp.ndarray,
+    *,
+    metadata: dict[str, Any] | None,
+) -> TaskTrialSpec:
+    target_array = jnp.asarray(target)
+    n_steps = int(trial_specs.timeline.n_steps)
+    batch_shape = target_array.shape[:-1]
+    target_sequence = jnp.broadcast_to(
+        jnp.expand_dims(target_array, axis=-2),
+        (*batch_shape, n_steps, 2),
+    )
+    target_spec = trial_specs.targets["mechanics.effector.pos"]
+    updated_target_spec = eqx.tree_at(lambda spec: spec.value, target_spec, target_sequence)
+    updated_target_spec = jax.tree.map(
+        lambda leaf: _broadcast_trial_array(leaf, batch_shape),
+        updated_target_spec,
+    )
+    targets = dict(trial_specs.targets)
+    targets["mechanics.effector.pos"] = updated_target_spec
+    inits = {
+        key: _broadcast_trial_array(value, batch_shape)
+        for key, value in dict(trial_specs.inits).items()
+    }
+    inputs = dict(trial_specs.inputs)
+    if "effector_target" in inputs and hasattr(inputs["effector_target"], "pos"):
+        inputs["effector_target"] = eqx.tree_at(
+            lambda state: state.pos,
+            inputs["effector_target"],
+            target_sequence,
+        )
+        inputs["effector_target"] = jax.tree.map(
+            lambda leaf: _broadcast_trial_array(leaf, batch_shape),
+            inputs["effector_target"],
+        )
+    inputs["target"] = target_sequence
+    inputs = {
+        key: (
+            value
+            if key in {"target", "effector_target"}
+            else _broadcast_trial_array(value, batch_shape)
+        )
+        for key, value in inputs.items()
+    }
+    timeline = jax.tree.map(
+        lambda leaf: _broadcast_trial_array(leaf, batch_shape),
+        trial_specs.timeline,
+    )
+    intervene = jax.tree.map(
+        lambda leaf: _broadcast_trial_array(leaf, batch_shape),
+        trial_specs.intervene,
+    )
+    extra = trial_specs.extra if metadata is None else {**dict(trial_specs.extra or {}), **metadata}
+    return TaskTrialSpec(
+        inits=WhereDict(inits),
+        inputs=inputs,
+        targets=WhereDict(targets),
+        intervene=intervene,
+        timeline=timeline,
+        extra=extra,
+    )
+
+
+def _broadcast_trial_array(value: Any, batch_shape: tuple[int, ...]) -> Any:
+    if not batch_shape:
+        return value
+    if not eqx.is_array(value):
+        return value
+    array = jnp.asarray(value)
+    if array.ndim == 0:
+        return value
+    if array.shape[: len(batch_shape)] == batch_shape:
+        return value
+    tail = array.shape[-1:] if array.ndim <= 2 else array.shape[-2:]
+    try:
+        return jnp.broadcast_to(array, (*batch_shape, *tail))
+    except ValueError:
+        return value
+
+
 def _with_perturbation_metadata(
     trial_specs: TaskTrialSpec,
     bin_name: str,
@@ -887,6 +1330,35 @@ def _bin_families(bin_name: str) -> tuple[str, ...]:
     if bin_name == "mild_combined":
         return MILD_COMBINED_FAMILIES
     return (bin_name,)
+
+
+def _target_tuples(
+    directions_deg: tuple[float, ...],
+    amplitudes_m: tuple[float, ...],
+) -> tuple[tuple[float, float], ...]:
+    rows: list[tuple[float, float]] = []
+    for amplitude in amplitudes_m:
+        for direction in directions_deg:
+            radians = np.deg2rad(float(direction))
+            rows.append(
+                (
+                    round(float(amplitude) * float(np.cos(radians)), 12),
+                    round(float(amplitude) * float(np.sin(radians)), 12),
+                )
+            )
+    return _dedupe_targets(tuple(rows))
+
+
+def _dedupe_targets(targets: tuple[tuple[float, float], ...]) -> tuple[tuple[float, float], ...]:
+    seen: set[tuple[float, float]] = set()
+    rows: list[tuple[float, float]] = []
+    for target in targets:
+        key = (round(float(target[0]), 12), round(float(target[1]), 12))
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(key)
+    return tuple(rows)
 
 
 def planned_fixed_target_perturbation_rows(
@@ -937,6 +1409,98 @@ def planned_fixed_target_perturbation_rows(
                     "5",
                     "--loss-objective",
                     "full_analytical_qrf",
+                    "--perturbation-training",
+                    "--full-train",
+                    "--resume",
+                ],
+            }
+        )
+    return rows
+
+
+def planned_target_relative_multitarget_rows(
+    *,
+    experiment: str = "ba82f3d",
+) -> list[dict[str, Any]]:
+    """Return the planned target-relative smoke/main run rows."""
+
+    rows = [
+        {
+            "experiment": experiment,
+            "run": "target_relative_multitarget_fullqrf_smoke",
+            "controller_lr": 1e-3,
+            "batch_size": 2,
+            "gradient_clip_norm": 5.0,
+            "n_replicates": 1,
+            "loss_objective": "full_analytical_qrf",
+            "row_kind": "smoke",
+            "training": TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
+            "command": [
+                "uv",
+                "run",
+                "python",
+                "scripts/train_cs_nominal_gru.py",
+                "--issue",
+                "ba82f3d",
+                "--output-dir",
+                f"/tmp/{experiment}_target_relative_smoke",
+                "--target-relative-multitarget",
+                "--perturbation-training",
+                "--loss-objective",
+                "full_analytical_qrf",
+                "--controller-lr",
+                "0.001",
+                "--gradient-clip-norm",
+                "5",
+                "--smoke",
+                "--full-train",
+                "--resume",
+            ],
+        }
+    ]
+    for lr_label, lr in (("lr1e-3", 1e-3), ("lr3e-3", 3e-3)):
+        run = f"target_relative_multitarget_fullqrf_warmcos__{lr_label}_clip5_b64"
+        rows.append(
+            {
+                "experiment": experiment,
+                "run": run,
+                "controller_lr": lr,
+                "batch_size": 64,
+                "gradient_clip_norm": 5.0,
+                "n_replicates": 5,
+                "loss_objective": "full_analytical_qrf",
+                "lr_schedule": "warmup_cosine",
+                "row_kind": "main",
+                "training": TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
+                "checkpoint_selection": "target_relative_multitarget_rollout_validation",
+                "command": [
+                    "uv",
+                    "run",
+                    "python",
+                    "scripts/train_cs_nominal_gru.py",
+                    "--issue",
+                    "ba82f3d",
+                    "--output-dir",
+                    f"_artifacts/{experiment}/runs/{run}",
+                    "--n-train-batches",
+                    "12000",
+                    "--batch-size",
+                    "64",
+                    "--controller-lr",
+                    str(lr),
+                    "--gradient-clip-norm",
+                    "5",
+                    "--lr-warmup-batches",
+                    "500",
+                    "--lr-warmup-init-fraction",
+                    "0.1",
+                    "--lr-cosine-alpha",
+                    "0.01",
+                    "--n-replicates",
+                    "5",
+                    "--loss-objective",
+                    "full_analytical_qrf",
+                    "--target-relative-multitarget",
                     "--perturbation-training",
                     "--full-train",
                     "--resume",

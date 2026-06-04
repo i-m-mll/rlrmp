@@ -48,7 +48,9 @@ from rlrmp.stochastic_runtime import (
 )
 from rlrmp.train.cs_perturbation_training import (
     FixedTargetPerturbationTrainingTaskAdapter,
+    TargetRelativeMultiTargetTrainingTaskAdapter,
     config_from_hps,
+    config_from_target_hps,
     install_perturbation_training_graph_adapters,
 )
 from rlrmp.task import TASK_TYPES
@@ -241,13 +243,21 @@ def setup_task_model_pair(
     if hps.method == "nominal-cs-gru" and plant_backend == CS_LSS_PLANT_BACKEND:
         if isinstance(hidden_type, str) and hidden_type in LINEAR_HIDDEN_TYPES:
             raise ValueError("The C&S LSS nominal GRU backend requires a recurrent cell type.")
-        task = _add_cs_lss_task_inputs(_CsLssTaskAdapter(task_base))
+        target_training = config_from_target_hps(
+            getattr(hps, "target_relative_multitarget", TreeNamespace(enabled=False))
+        )
+        task = _add_cs_lss_task_inputs(
+            _CsLssTaskAdapter(task_base),
+            target_relative=target_training.enabled,
+        )
         models = _create_cs_lss_gru_ensemble(
             hps,
             hidden_type=hidden_type,
             sisu_gating=sisu_gating,
             key=key,
         )
+        if target_training.enabled:
+            task = TargetRelativeMultiTargetTrainingTaskAdapter(task, target_training)
         perturbation_training = config_from_hps(
             getattr(hps, "perturbation_training", TreeNamespace(enabled=False))
         )
@@ -427,11 +437,16 @@ def _effector_init_to_lss_vector(effector_init: CartesianState) -> jax.Array:
     )
 
 
-def _add_cs_lss_task_inputs(task: _CsLssTaskAdapter) -> _CsLssTaskAdapter:
-    task = task.add_input(
-        name="input",
-        input_fn=SISU_FNS["nominal-cs-gru"],
-    )
+def _add_cs_lss_task_inputs(
+    task: _CsLssTaskAdapter,
+    *,
+    target_relative: bool = False,
+) -> _CsLssTaskAdapter:
+    if not target_relative:
+        task = task.add_input(
+            name="input",
+            input_fn=SISU_FNS["nominal-cs-gru"],
+        )
     return task.add_input(
         name="epsilon",
         input_fn=_sample_cs_lss_process_epsilon,
@@ -495,9 +510,12 @@ def _create_cs_lss_gru_ensemble(
     keys = jr.split(key_models, int(hps.model.n_replicates))
 
     def build_one(key_one):
+        target_training = config_from_target_hps(
+            getattr(hps, "target_relative_multitarget", TreeNamespace(enabled=False))
+        )
         return build_cs_lss_gru_graph(
             hidden_size=int(hps.model.hidden_size),
-            input_size=1,
+            input_size=0 if target_training.enabled else 1,
             hidden_type=hidden_type,
             population_structure=population_structure,
             sisu_gating=sisu_gating,
@@ -505,6 +523,7 @@ def _create_cs_lss_gru_ensemble(
             additive_motor_noise_std=float(hps.model.additive_motor_noise_std),
             signal_dependent_motor_noise_std=float(hps.model.signal_dependent_motor_noise_std),
             bind_epsilon_input=True,
+            target_relative_feedback=target_training.enabled,
             key=key_one,
         )
 

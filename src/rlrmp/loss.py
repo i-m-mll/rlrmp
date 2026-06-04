@@ -319,9 +319,10 @@ class CsAnalyticalQrfLoss(AbstractLoss):
             )
 
         initial_vector = self._initial_vector(trial_specs, vector)
+        target_pos = self._target_pos_for_trial(trial_specs, vector)
         x_pre = jnp.concatenate([initial_vector[..., None, :], vector[..., :-1, :]], axis=-2)
-        x_pre = self._goal_centered(x_pre)
-        x_terminal = self._goal_centered(vector[..., -1, :])
+        x_pre = self._goal_centered(x_pre, target_pos)
+        x_terminal = self._goal_centered(vector[..., -1, :], target_pos)
         state_terms = jnp.einsum("...ti,tij,...tj->...t", x_pre, self.Q, x_pre)
         command_terms = jnp.einsum("...ti,tij,...tj->...t", command, self.R, command)
         terminal = jnp.einsum("...i,ij,...j->...", x_terminal, self.Q_f, x_terminal)
@@ -341,10 +342,21 @@ class CsAnalyticalQrfLoss(AbstractLoss):
             )
         return jnp.broadcast_to(initial, (*vector.shape[:-2], vector.shape[-1]))
 
-    def _goal_centered(self, vector: Array) -> Array:
+    def _target_pos_for_trial(self, trial_specs: "TaskTrialSpec", vector: Array) -> Array:
+        target_spec = trial_specs.targets.get("mechanics.effector.pos", None)
+        if target_spec is None or not hasattr(target_spec, "value"):
+            return jnp.broadcast_to(self.target_pos, (*vector.shape[:-2], 2))
+        target_value = jnp.asarray(target_spec.value, dtype=vector.dtype)
+        target_pos = target_value[..., -1, :]
+        return jnp.broadcast_to(target_pos, (*vector.shape[:-2], 2))
+
+    def _goal_centered(self, vector: Array, target_pos: Array) -> Array:
         result = vector
+        target = jnp.asarray(target_pos, dtype=vector.dtype)
+        while target.ndim < result.ndim:
+            target = jnp.expand_dims(target, axis=-2)
         for start in range(0, self.Q.shape[1], self.n_phys):
-            result = result.at[..., start : start + 2].add(-self.target_pos)
+            result = result.at[..., start : start + 2].add(-target)
         return result
 
 
