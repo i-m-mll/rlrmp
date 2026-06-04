@@ -32,9 +32,11 @@ Use this stack from bottom to top:
 3. Use the objective comparator to interpret scalar cost claims.
 4. Use the perturbation-response bank and feedback ablation to test recovery
    behavior.
-5. Use map-error decomposition to identify local feedback-law failures.
-6. Use training diagnostics to explain why a row may have learned or failed.
-7. Use the H-infinity phenotype sidecar only as an integrated interpretation.
+5. Use the feedback-control quality lens bundle to judge whether the controller
+   actually recovers from perturbations.
+6. Use map-error decomposition to identify local feedback-law failures.
+7. Use training diagnostics to explain why a row may have learned or failed.
+8. Use the H-infinity phenotype sidecar only as an integrated interpretation.
 
 If a higher layer conflicts with a lower certificate or provenance guardrail,
 the lower layer wins.
@@ -48,6 +50,7 @@ the lower layer wins.
 | Objective comparator | Whether scalar costs are apples-to-apples across GRU and analytical references, including deterministic full-Q/R/Q_f, covariance-inclusive expected cost, shared-rollout stress rows, and split-bank rescores. | When cost ratios, full-Q/R/Q_f values, or "near extLQG objective" claims are reported. | Treating covariance-inclusive expected cost as comparable to realized GRU validation scalars, treating stress-bank shared rollouts as expected cost without the required sanity checks, or using cost-sidecar values as certificate gates. | Diagnostic only for current rows. GRU values may be validation-selected realized scalars, but post-hoc shared-rollout and split-bank blocks are audit-only. | Run spec objective contract, validation scalar records, extLQG deterministic and expected-cost terms, shared initial-state/process-epsilon banks, per-term scorer status. | `results/aacb9ed/notes/objective_comparator_*_validation_selected.md`, `results/ba82f3d/notes/objective_comparator_*_validation_selected.md`. |
 | Standard perturbation-response bank | How nominal and trained controllers respond to predeclared perturbation families: initial-state offsets, process/load epsilon, sensory feedback, delayed observation, command input where supported, target stream where meaningful, and transfer rows. | When evaluating feedback competence, recovery, disturbance attenuation, perturbation-family transfer, or stress-bank failures. | Calling a restricted perturbation family H-infinity-equivalent unless the game card embeds that channel; using perturbation rows as checkpoint selectors unless declared by the run spec. | Usually audit-only after validation selection. Some run contracts select by aggregate rollout loss over held-out perturbation bins; the bank's post-hoc analytical rows remain diagnostic unless explicitly declared. | Perturbation taxonomy, bank manifest, controller-visible channels, extLQG comparator availability, full-Q/R/Q_f rescoring, perturbation amplitudes and seeds. | `results/3992394/notes/gru_perturbation_response_fullqrf_validation_selected.md`, `results/aacb9ed/notes/gru_perturbation_response_*_validation_selected.md`, `results/ba82f3d/notes/gru_perturbation_response_*_validation_selected.md`, taxonomy in `results/c99ad9d/notes/perturbation_taxonomy.md`. |
 | Feedback ablation | Whether performance depends on feedback input, recurrent state, or a specific perturbation/recovery signal rather than only feedforward reach timing. | Useful for GRU rows with suspiciously good nominal behavior but weak recovery or response-map evidence. | Proving same-game equivalence or H-infinity optimality. Ablation says a signal matters, not that the implemented law matches the analytical law. | Audit-only unless a future training contract makes ablation robustness a selector. | Paired evaluations with feedback, hidden state, observation, or channel interventions; same validation/task bins as the source run when possible. | Expected under `results/<run-issue>/notes/*feedback_ablation*.md` or folded into `results/<run-issue>/notes/gru_evaluation_diagnostics_*_validation_selected.json` until a stable note exists. |
+| Feedback-control quality lens bundle | Whether feedback control is good enough for the claim being made, combining absolute recovery, feedback-dependence, and reference-relative perturbation cost. | Standard interpretation layer for C&S GRU rows evaluated under perturbations, especially when extLQG map identity is not required. | Replacing the standard certificate, hiding per-class failures in one scalar, or claiming extLQG policy identity from good perturbation cost alone. | Audit-only unless a future run contract explicitly selects on perturbation-bin validation loss. The post-hoc lens bundle itself is not a hidden selector. | Standard perturbation-response bank, feedback ablation, objective comparator on shared perturbation banks, evaluation diagnostics, optional response plots, and standard certificate context. | Usually assembled from `results/<issue>/notes/gru_perturbation_response_*`, `results/<issue>/notes/*feedback_ablation*`, `results/<issue>/notes/objective_comparator_*`, and response figures/specs when requested. |
 | Map-error decomposition | Where the GRU observation-history-to-action response map differs from the reference: raw norm, covariance-weighted mismatch, task-aligned directions, norm ratio, cosine, scalar gain, residual, singular directions, and weakly visited directions. | When standard certificates report poor observation-to-action maps, or when good nominal cost coexists with poor perturbation recovery. | Rescuing a failed certificate by explaining it away. Decomposition classifies the failure; it does not change the bridge gate. | Audit-only for current C&S GRU rows. Analytical map metrics are not checkpoint selectors unless a guided lane explicitly declares them as training or selection objectives. | Fitted GRU and reference response maps, observation covariance, task-aligned basis/probes, row identity, validation-selected checkpoint. | `results/aacb9ed/notes/gru_map_error_decomposition_*_validation_selected.md`, `results/aacb9ed/notes/*_aligned.md`, `results/ba82f3d/notes/gru_map_error_decomposition_*_validation_selected.md`, `results/ba82f3d/notes/*_aligned.md`. |
 | Training diagnostics | Why a row did or did not learn: loss curves, validation-bin breakdowns, pre-go drift, reach kinematics, perturbation-bin losses, optimizer stability, hidden-state support, and supervision/teacher terms when present. | Every training run, especially when a sidecar suggests robustness or when a certificate fails despite good nominal behavior. | Treating training loss improvement as proof of analytical equivalence, or comparing methods without separating training axes from evaluation lenses. | Owns checkpoint selection only through the predeclared validation rule in the run spec. Kinematic and analytical diagnostics are sidecars unless declared. | `run.json`, training logs, validation histories, checkpoint manifests, postrun materialization, training-method taxonomy. | `results/<issue>/runs/<variant>/run.json`, `results/<issue>/notes/validation_selected_checkpoints*.json`, `results/<issue>/notes/gru_postrun_materialization*.json`, bulk logs under `_artifacts/<issue>/runs/<variant>/`. |
 | H-infinity phenotype sidecar | Whether the row looks robust-control-like in the behavioral sense: nominal efficiency, recovery competence, feedback gain/signature, disturbance attenuation, Delta-v or peak-forward-velocity inflation, early acceleration, induced-gain/exact-audit sidecars where available, and paired baseline-vs-robust contrasts. | After the lower layers have produced enough provenance to aggregate. Most useful for GRU interpretation and method triage. | Calling a row a standard certificate pass, formal H-infinity solution, same-game proof, or robust-game proof. Missing components must be `unavailable` or `not_applicable`, not silently omitted. | Audit-only for current issue `abe33da`. It must not select checkpoints unless a future issue explicitly changes the claim and run contract. | Pointers back to the standard certificate, objective comparator, perturbation-response bank, feedback ablation, map-error decomposition, induced-gain/exact-audit outputs, and evaluation diagnostics. | Expected under `results/abe33da/notes/h_infinity_phenotype_*_validation_selected.md` and matching JSON manifests; may aggregate existing `results/aacb9ed/`, `results/ba82f3d/`, `results/3992394/`, and future robust-training rows. |
@@ -85,6 +88,50 @@ disturbance channel, information pattern, and exact audit or induced-gain check
 are present. If exact-L2/gamma or induced-gain sidecars improve while standard
 action/value/transition/reference-equivalence metrics still fail, use the
 existing `sidecar_improving_non_equivalent` framing rather than a pass label.
+
+## Feedback-Control Quality Lens Bundle
+
+This is a standard interpretation bundle, not a new single diagnostic metric.
+Use it when the question is whether a controller has useful feedback control
+under perturbations, especially when exact extLQG observation-to-action map
+identity is not the claim. The bundle combines three lenses:
+
+1. Absolute recovery behavior. Check whether perturbation responses are stable,
+   vigorous enough, and task-useful. Relevant quantities include endpoint error,
+   terminal speed, recovery time, overshoot, post-peak sign changes, command
+   norm, first-few-step command norm, command jerk, displacement reduction, and
+   class-binned full-Q/R/Q_f perturbation cost. Response plots are legitimate
+   evidence here, but the source of truth remains the perturbation-response
+   manifest and evaluation table.
+2. Feedback-dependence / ablation. Check whether the controller actually uses
+   feedback rather than replaying an open-loop motor tape. Normal rollouts should
+   degrade under feedback removal, delayed-observation scrambling, sensory
+   channel masking, or related ablations in the perturbation bins where feedback
+   should matter. This demonstrates feedback sensitivity, not analytical-law
+   identity.
+3. Reference-relative perturbation performance. Compare GRU and extLQG on the
+   same sampled initial-state/noise/perturbation bank with the same full-Q/R/Q_f
+   scoring objective, reported separately by perturbation class. A GRU can be a
+   good feedback controller if its perturbation cost is near extLQG even when
+   its local I/O map differs. Conversely, nominal kinematics or good absolute
+   recovery do not by themselves establish extLQG-level feedback performance if
+   same-bank cost is much worse.
+
+Report these lenses together. Do not collapse them into one pass/fail scalar
+unless a specific issue defines a task gate. A typical summary should say:
+
+- whether absolute perturbation recovery is stable and task-useful;
+- whether feedback ablation shows genuine feedback dependence;
+- how GRU cost compares with extLQG on the same perturbation bank, by class;
+- whether failures are concentrated in initial state, process/load, sensory,
+  delayed-observation, command-input, target-stream, or combined perturbations;
+- whether the standard certificate and map decomposition show policy identity,
+  partial mismatch, or a different but effective feedback law.
+
+This bundle is allowed to judge feedback-control performance without requiring
+deep extLQG I/O identity. It is not allowed to turn good feedback performance
+into a formal H-infinity claim; that still requires the game card, disturbance
+channel, gamma or budget, and exact audit or induced-gain evidence.
 
 ## Checkpoint-Selection Guardrail
 
