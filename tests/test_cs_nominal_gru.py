@@ -53,12 +53,14 @@ from rlrmp.train.cs_perturbation_training import (
     GRAPH_ADAPTER_SPECS,
     MILD_COMBINED_FAMILIES,
     PERTURBATION_TRAINING_MODE,
+    TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
     TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
     TargetRelativeMultiTargetTrainingConfig,
     VALIDATION_BINS,
     apply_training_perturbation_mixture,
     apply_training_target_distribution,
     apply_validation_bin,
+    planned_target_relative_multitarget_h0_rows,
     planned_target_relative_multitarget_rows,
     target_relative_validation_manifest,
     planned_fixed_target_perturbation_rows,
@@ -96,6 +98,8 @@ def test_hps_uses_canonical_cs_nominal_task() -> None:
     assert hps.task.p_catch_trial == 0.0
     assert hps.model.feedback_delay_steps == 5
     assert hps.model.feedback_noise_std == 0.0
+    assert hps.model.initial_hidden_encoder is False
+    assert hps.model.initial_hidden_encoder_config.enabled is False
     assert hps.model.stochastic_preset == DEFAULT_STOCHASTIC_PRESET
     assert hps.model.sensory_noise_std > 0.0
     assert hps.model.additive_motor_noise_std == 1e-5
@@ -896,6 +900,77 @@ def test_target_relative_multitarget_run_spec_and_planned_rows(tmp_path: Path) -
     )
 
 
+def test_initial_hidden_encoder_requires_target_relative_hps() -> None:
+    with pytest.raises(ValueError, match="requires --target-relative-multitarget"):
+        build_hps(_args(initial_hidden_encoder=True))
+
+
+def test_target_relative_h0_run_spec_and_planned_rows(tmp_path: Path) -> None:
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        smoke=True,
+        issue="643f101",
+        target_relative_multitarget=True,
+        initial_hidden_encoder=True,
+        perturbation_training=True,
+        loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+        batch_size=64,
+        gradient_clip_norm=5.0,
+        controller_lr=1e-3,
+        lr_warmup_batches=500,
+        lr_cosine_alpha=0.01,
+    )
+
+    result = write_run_spec(args)
+    payload = json.loads(Path(result["run_spec_path"]).read_text())
+    rows = planned_target_relative_multitarget_h0_rows()
+
+    assert payload["issue"] == "643f101"
+    assert payload["training_summary"]["training_mode"] == (
+        TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE
+    )
+    h0 = payload["model_summary"]["initial_hidden_encoder"]
+    assert h0["enabled"] is True
+    assert h0["architecture"] == "affine"
+    assert h0["context_source"] == "first_controller_visible_target_relative_delayed_feedback"
+    assert h0["context_shape"] == [4]
+    assert h0["output_shape"] == [4]
+    assert h0["initialization"] == "zero_affine"
+    assert h0["teacher_or_jacobian_supervision"] is False
+    assert h0["plant_live_preview"] is False
+    assert h0["delayed_reach"] is False
+    assert payload["model_summary"]["trainable"] == [
+        "nodes.net.hidden",
+        "nodes.net.readout",
+        "nodes.net.h0_encoder",
+    ]
+    assert payload["training_summary"]["initial_hidden_encoder"]["enabled"] is True
+    assert payload["training_summary"]["training_distribution"]["initial_hidden_encoder"][
+        "enabled"
+    ] is True
+    assert payload["hps"]["where"]["0"] == [
+        "nodes.net.hidden",
+        "nodes.net.readout",
+        "nodes.net.h0_encoder",
+    ]
+    main_rows = [row for row in rows if row["row_kind"] == "main"]
+    assert {row["controller_lr"] for row in main_rows} == {1e-3, 3e-3}
+    assert all(row["batch_size"] == 64 for row in main_rows)
+    assert all(row["gradient_clip_norm"] == 5.0 for row in main_rows)
+    assert all(row["n_replicates"] == 5 for row in main_rows)
+    assert all(row["n_train_batches"] == 12000 for row in main_rows)
+    assert all(row["training_diagnostics"] == "default_enabled" for row in main_rows)
+    assert all("--initial-hidden-encoder" in row["command"] for row in rows)
+    assert all("--target-relative-multitarget" in row["command"] for row in rows)
+    assert all(
+        row["checkpoint_selection"] == "target_relative_multitarget_rollout_validation"
+        for row in main_rows
+    )
+
+
 def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Path) -> None:
     output_dir = tmp_path / "bulk"
     spec_dir = tmp_path / "spec"
@@ -992,6 +1067,54 @@ def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Pat
     assert summary["chunks"][0]["duration_seconds"] > 0
     assert summary["chunks"][0]["batches_per_second"] > 0
     assert commits == 3
+
+
+def test_target_relative_h0_full_training_smoke_emits_diagnostics(tmp_path: Path) -> None:
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        issue="643f101",
+        n_train_batches=2,
+        batch_size=2,
+        n_replicates=1,
+        hidden_size=4,
+        target_relative_multitarget=True,
+        initial_hidden_encoder=True,
+        perturbation_training=True,
+        loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+        full_train=True,
+        checkpoint_interval_batches=1,
+        controller_lr=1e-3,
+        gradient_clip_norm=5.0,
+        lr_warmup_batches=1,
+        lr_warmup_init_fraction=0.1,
+        lr_cosine_alpha=0.01,
+        log_step=1,
+        disable_progress=True,
+        quiet_progress=True,
+    )
+
+    result = run_full_training(args)
+    run_spec = json.loads((spec_dir / "run.json").read_text())
+    summary = json.loads((output_dir / "training_summary.json").read_text())
+    diagnostics_manifest = json.loads((output_dir / "training_diagnostics.json").read_text())
+
+    assert result["completed_batches"] == 2
+    assert run_spec["training_summary"]["training_mode"] == (
+        TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE
+    )
+    assert run_spec["model_summary"]["initial_hidden_encoder"]["enabled"] is True
+    assert summary["training_diagnostics"]["enabled"] is True
+    assert summary["training_diagnostics"]["written"] is True
+    assert diagnostics_manifest["completed_batches"] == 2
+    assert "optimizer_gradient_norm_pre_clip" in diagnostics_manifest["arrays"]
+    with np.load(output_dir / "training_diagnostics.npz") as diagnostics:
+        assert diagnostics["batch_index"].tolist() == [0, 1]
+        assert diagnostics["optimizer_gradient_norm_pre_clip"].shape == (2, 1)
+        assert diagnostics["train_loss__total"].shape == (2, 1)
+        assert diagnostics["validation_loss__total"].shape == (2, 1)
 
 
 def test_full_training_smoke_can_disable_diagnostics(tmp_path: Path) -> None:

@@ -524,6 +524,7 @@ def _create_cs_lss_gru_ensemble(
             signal_dependent_motor_noise_std=float(hps.model.signal_dependent_motor_noise_std),
             bind_epsilon_input=True,
             target_relative_feedback=target_training.enabled,
+            initial_hidden_encoder=bool(getattr(hps.model, "initial_hidden_encoder", False)),
             key=key_one,
         )
 

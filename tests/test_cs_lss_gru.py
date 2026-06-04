@@ -5,6 +5,7 @@ from __future__ import annotations
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import pytest
 from feedbax.graph import init_state_from_component
 from feedbax.train import filter_spec_leaves, get_model_parameters
 
@@ -13,6 +14,7 @@ from rlrmp.cs_lss_gru import (
     CS_DELAYED_POS_VEL_INDICES,
     CS_EPSILON_DIM,
     DelayedPositionVelocityFeedback,
+    InitialHiddenStagedNetwork,
     build_cs_lss_gru_graph,
     cs_lss_gru_where_train,
     is_canonical_cs_lss_mechanics,
@@ -148,6 +150,46 @@ def test_graph_omits_epsilon_binding_for_deterministic_default() -> None:
     assert outputs["feedback"].shape == (2, 4)
 
 
+def test_default_graph_uses_plain_zero_h0_network() -> None:
+    graph = build_cs_lss_gru_graph(
+        hidden_size=4,
+        bind_epsilon_input=True,
+        key=jax.random.PRNGKey(11),
+    )
+    state = init_state_from_component(graph)
+
+    assert not isinstance(graph.nodes["net"], InitialHiddenStagedNetwork)
+    assert jnp.allclose(graph.state_view(state).net.hidden, jnp.zeros((4,)))
+
+
+def test_initial_hidden_encoder_uses_target_relative_feedback_context_shape() -> None:
+    graph = build_cs_lss_gru_graph(
+        hidden_size=7,
+        bind_epsilon_input=True,
+        target_relative_feedback=True,
+        initial_hidden_encoder=True,
+        key=jax.random.PRNGKey(12),
+    )
+    net = graph.nodes["net"]
+    context = jnp.array([0.15, 0.0, 0.0, 0.0], dtype=jnp.float32)
+
+    assert isinstance(net, InitialHiddenStagedNetwork)
+    assert net.h0_encoder.weight.shape == (7, 4)
+    assert net.h0_encoder.bias.shape == (7,)
+    assert net.h0_encoder(context).shape == (7,)
+    assert jnp.allclose(net.h0_encoder(context), jnp.zeros((7,)))
+
+
+def test_initial_hidden_encoder_requires_target_relative_context() -> None:
+    with pytest.raises(ValueError, match="requires target_relative_feedback"):
+        build_cs_lss_gru_graph(
+            hidden_size=4,
+            bind_epsilon_input=True,
+            initial_hidden_encoder=True,
+            key=jax.random.PRNGKey(13),
+        )
+
+
 def test_train_filter_excludes_canonical_lss_matrices() -> None:
     graph = build_cs_lss_gru_graph(
         hidden_size=6,
@@ -165,3 +207,22 @@ def test_train_filter_excludes_canonical_lss_matrices() -> None:
     assert trainable.nodes["mechanics"].B_w is None
     assert mechanics.A is graph.nodes["mechanics"].A
     assert any(leaf.shape == (18, 4) for leaf in trainable_arrays)
+
+
+def test_train_filter_includes_h0_encoder_only_when_present() -> None:
+    graph = build_cs_lss_gru_graph(
+        hidden_size=6,
+        bind_epsilon_input=True,
+        target_relative_feedback=True,
+        initial_hidden_encoder=True,
+        key=jax.random.PRNGKey(14),
+    )
+    where_train = cs_lss_gru_where_train()[0]
+    where_train_spec = filter_spec_leaves(graph, where_train)
+    trainable = get_model_parameters(graph, where_train_spec)
+    trainable_arrays = [leaf for leaf in jax.tree.leaves(trainable) if eqx.is_array(leaf)]
+
+    assert trainable.nodes["mechanics"].A is None
+    assert trainable.nodes["net"].h0_encoder.weight.shape == (6, 4)
+    assert trainable.nodes["net"].h0_encoder.bias.shape == (6,)
+    assert any(leaf.shape == (6, 4) for leaf in trainable_arrays)
