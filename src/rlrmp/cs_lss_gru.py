@@ -115,8 +115,9 @@ class TargetRelativeDelayedFeedback(Component):
             raise ValueError(f"Expected a 48D C&S state vector; got shape {vector.shape}.")
         if target.shape[-1] != CS_TARGET_DIM:
             raise ValueError(f"Expected a 2D target vector; got shape {target.shape}.")
-        delayed = vector[jnp.asarray(self.indices, dtype=jnp.int32)]
-        feedback = jnp.concatenate([target - delayed[:2], -delayed[2:4]], axis=-1)
+        delayed = jnp.take(vector, jnp.asarray(self.indices, dtype=jnp.int32), axis=-1)
+        target = jnp.broadcast_to(target, delayed[..., :2].shape)
+        feedback = jnp.concatenate([target - delayed[..., :2], -delayed[..., 2:4]], axis=-1)
         return {"feedback": feedback}, state
 
 

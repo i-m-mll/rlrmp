@@ -830,6 +830,8 @@ def target_relative_validation_bins(config: TargetRelativeMultiTargetTrainingCon
     anchor = tuple(float(x) for x in config.original_target_anchor_m)
     seen = config.seen_targets_m
     held_out = config.held_out_targets_m
+    validation_targets = config.validation_targets_m
+    seen_held_out_targets = _dedupe_targets((*seen, *held_out))
     return [
         {
             "bin": "original_target_nominal",
@@ -849,36 +851,43 @@ def target_relative_validation_bins(config: TargetRelativeMultiTargetTrainingCon
         {
             "bin": "initial_position_offsets",
             "target_role": "seen_and_held_out_static_targets",
+            "targets_m": [list(row) for row in seen_held_out_targets],
             "families": ["initial_position"],
         },
         {
             "bin": "initial_velocity_offsets",
             "target_role": "seen_and_held_out_static_targets",
+            "targets_m": [list(row) for row in seen_held_out_targets],
             "families": ["initial_velocity"],
         },
         {
             "bin": "sensory_feedback_offsets",
             "target_role": "seen_and_held_out_static_targets",
+            "targets_m": [list(row) for row in seen_held_out_targets],
             "families": ["sensory_feedback"],
         },
         {
             "bin": "delayed_observation_offsets",
             "target_role": "seen_and_held_out_static_targets",
+            "targets_m": [list(row) for row in seen_held_out_targets],
             "families": ["delayed_observation"],
         },
         {
             "bin": "process_load_epsilon",
             "target_role": "seen_and_held_out_static_targets",
+            "targets_m": [list(row) for row in seen_held_out_targets],
             "families": ["process_epsilon"],
         },
         {
             "bin": "mild_combined",
             "target_role": "seen_and_held_out_static_targets",
+            "targets_m": [list(row) for row in seen_held_out_targets],
             "families": ["initial_position", "sensory_feedback", "process_epsilon"],
         },
         {
             "bin": "command_input_diagnostic",
             "target_role": "diagnostic_only",
+            "targets_m": [list(row) for row in validation_targets],
             "families": ["command_input"],
             "checkpoint_selection": "excluded_unless_comparator_defined",
         },

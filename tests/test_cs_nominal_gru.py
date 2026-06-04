@@ -753,6 +753,37 @@ def test_target_relative_feedback_sign_contract() -> None:
     )
 
 
+def test_target_relative_feedback_batches_over_last_state_axis() -> None:
+    component = TargetRelativeDelayedFeedback()
+    state = jnp.zeros((2, 48), dtype=jnp.float32)
+    state = state.at[:, 40:44].set(
+        jnp.array(
+            [
+                [0.02, -0.03, 0.40, -0.20],
+                [0.05, 0.04, -0.10, 0.30],
+            ],
+            dtype=jnp.float32,
+        )
+    )
+    outputs, _ = component(
+        {"state": state, "target": jnp.array([0.15, 0.01], dtype=jnp.float32)},
+        None,
+        key=jr.PRNGKey(0),
+    )
+
+    assert outputs["feedback"].shape == (2, 4)
+    assert jnp.allclose(
+        outputs["feedback"],
+        jnp.array(
+            [
+                [0.13, 0.04, -0.40, 0.20],
+                [0.10, -0.03, 0.10, -0.30],
+            ],
+            dtype=jnp.float32,
+        ),
+    )
+
+
 def test_target_relative_multitarget_setup_uses_target_input_and_anchor() -> None:
     hps = build_hps(
         _args(
@@ -792,6 +823,16 @@ def test_target_relative_multitarget_setup_uses_target_input_and_anchor() -> Non
         and row["checkpoint_selection"] == "excluded_unless_comparator_defined"
         for row in manifest["bins"]
     )
+    perturbation_bins = [
+        row
+        for row in manifest["bins"]
+        if row["target_role"] == "seen_and_held_out_static_targets"
+    ]
+    assert perturbation_bins
+    for row in perturbation_bins:
+        assert row["targets_m"]
+        assert row["targets_m"] == perturbation_bins[0]["targets_m"]
+    assert perturbation_bins[0]["targets_m"] != manifest["bins"][0]["targets_m"]
     assert jnp.any(trial.inputs["target"][..., -1, :] != jnp.array([0.15, 0.0]))
 
 
@@ -833,6 +874,11 @@ def test_target_relative_multitarget_run_spec_and_planned_rows(tmp_path: Path) -
     )
     assert payload["validation_bins"]["input_contract"]["sign_convention"][0] == (
         "target_x - delayed_x"
+    )
+    assert all(
+        "targets_m" in row and row["targets_m"]
+        for row in payload["validation_bins"]["bins"]
+        if row["target_role"] == "seen_and_held_out_static_targets"
     )
     assert payload["loss_summary"]["objective_profile"] == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
     assert {row["controller_lr"] for row in rows if row["row_kind"] == "main"} == {
