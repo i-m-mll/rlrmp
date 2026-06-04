@@ -777,12 +777,20 @@ def cs_output_feedback_observation_action_map(
 
 
 def _repeat_single_validation_trial(trial_specs: Any, n_trials: int) -> Any:
-    """Repeat a one-trial validation spec along its leading trial axis."""
+    """Repeat the first validation trial along its leading trial axis.
+
+    Older fixed-target rows have a one-trial validation spec, but target-relative
+    multi-target rows expose a larger validation bank. The response-map
+    linearization uses a fixed number of stochastic histories, so it needs a
+    trial spec whose leading trial axis exactly matches ``n_trials``.
+    """
+
+    source_trials = _trial_count(trial_specs)
 
     def repeat_leaf(leaf: Any) -> Any:
         shape = getattr(leaf, "shape", None)
-        if shape is not None and len(shape) >= 1 and shape[0] == 1:
-            return jnp.repeat(leaf, n_trials, axis=0)
+        if shape is not None and len(shape) >= 1 and shape[0] == source_trials:
+            return jnp.repeat(leaf[:1], n_trials, axis=0)
         return leaf
 
     return jt.map(repeat_leaf, trial_specs)

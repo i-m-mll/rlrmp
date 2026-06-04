@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import plotly.graph_objects as go
+from feedbax.loss import TargetSpec
 from feedbax.state import CartesianState
 from feedbax.task import TaskTrialSpec
 
@@ -122,6 +123,28 @@ def test_repeat_single_validation_trial_preserves_initial_velocity() -> None:
     np.testing.assert_allclose(
         initial_effector_velocity(repeated),
         np.zeros((4, 2), dtype=np.float64),
+    )
+
+
+def test_repeat_single_validation_trial_slices_multitarget_bank() -> None:
+    trial_specs = TaskTrialSpec(
+        inits={"mechanics.vector": np.arange(20 * 48, dtype=np.float64).reshape(20, 48)},
+        targets={
+            "mechanics.effector.pos": TargetSpec(
+                value=np.arange(20 * 60 * 2, dtype=np.float64).reshape(20, 60, 2)
+            )
+        },
+        inputs={"target": np.arange(20 * 60 * 2, dtype=np.float64).reshape(20, 60, 2)},
+    )
+
+    repeated = repeat_single_validation_trial(trial_specs, 4)
+
+    assert repeated.inits["mechanics.vector"].shape == (4, 48)
+    assert repeated.targets["mechanics.effector.pos"].value.shape == (4, 60, 2)
+    assert repeated.inputs["target"].shape == (4, 60, 2)
+    np.testing.assert_allclose(
+        repeated.inits["mechanics.vector"],
+        np.repeat(trial_specs.inits["mechanics.vector"][:1], 4, axis=0),
     )
 
 
