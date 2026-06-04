@@ -55,6 +55,20 @@ def test_plan_gru_postrun_materialization_routes_tracked_and_bulk_outputs(
         / "evaluation_diagnostics"
         / "gru_fullqrf_validation_selected"
     )
+    assert plan.map_decomposition_json_path == (
+        tmp_path
+        / "results"
+        / "5f70333"
+        / "notes"
+        / "gru_map_error_decomposition_fullqrf_validation_selected.json"
+    )
+    assert plan.map_decomposition_note_path == (
+        tmp_path
+        / "results"
+        / "5f70333"
+        / "notes"
+        / "gru_map_error_decomposition_fullqrf_validation_selected.md"
+    )
 
 
 def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materializers(
@@ -99,7 +113,34 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
 
     def fake_objective(**kwargs: Any) -> dict[str, Any]:
         calls["objective"] = kwargs
-        return {"status": "skipped", "reason": "test"}
+        return {
+            "status": "materialized",
+            "json_path": "results/5f70333/notes/objective_comparator_fullqrf_validation_selected.json",
+            "note_path": "results/5f70333/notes/objective_comparator_fullqrf_validation_selected.md",
+            "result": {
+                "schema_version": "rlrmp.objective_comparator_sidecar.v6",
+                "standard_split_bank_comparator_status": "available",
+            },
+        }
+
+    def fake_map_decomposition(**kwargs: Any) -> dict[str, Any]:
+        calls["map"] = kwargs
+        return {
+            "status": "materialized",
+            "json_path": (
+                "results/5f70333/notes/"
+                "gru_map_error_decomposition_fullqrf_validation_selected.json"
+            ),
+            "note_path": (
+                "results/5f70333/notes/"
+                "gru_map_error_decomposition_fullqrf_validation_selected.md"
+            ),
+            "selection_role": "audit_only_not_used_for_checkpoint_selection",
+            "result": {
+                "schema_version": "rlrmp.gru_map_error_decomposition.v1",
+                "n_rows": 2,
+            },
+        }
 
     monkeypatch.setattr(
         postrun,
@@ -111,6 +152,11 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
     monkeypatch.setattr(postrun, "materialize_gru_evaluation_diagnostics", fake_evaluation)
     monkeypatch.setattr(postrun, "materialize_gru_pilot_figures", fake_figures)
     monkeypatch.setattr(postrun, "materialize_optional_objective_comparator", fake_objective)
+    monkeypatch.setattr(
+        postrun,
+        "materialize_optional_map_error_decomposition",
+        fake_map_decomposition,
+    )
 
     manifest = postrun.materialize_gru_postrun_analysis(
         experiment="5f70333",
@@ -125,6 +171,21 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
     assert calls["figures"]["use_validation_selected_checkpoints"] is True
     assert calls["objective"]["use_validation_selected_checkpoints"] is True
     assert calls["objective"]["checkpoint_policy"] == "validation_selected_per_replicate"
+    assert calls["map"]["use_validation_selected_checkpoints"] is True
+    assert calls["map"]["standard_manifest_path"] == (
+        tmp_path
+        / "results"
+        / "5f70333"
+        / "notes"
+        / "gru_standard_certificates_fullqrf_validation_selected_manifest.json"
+    )
+    assert calls["map"]["output_path"] == (
+        tmp_path
+        / "results"
+        / "5f70333"
+        / "notes"
+        / "gru_map_error_decomposition_fullqrf_validation_selected.json"
+    )
     assert calls["checkpoint"]["preferred_manifest_path"] == (
         tmp_path / "results" / "5f70333" / "notes" / "fixed_bank_rescored_checkpoints.json"
     )
@@ -150,12 +211,33 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         / "gru_postrun_fullqrf_validation_selected"
     )
     assert manifest["checkpoint_policy"] == "validation_selected_per_replicate"
+    assert manifest["labels"] == ["A", "B"]
     assert manifest["checkpoint_selection_source"] == "validation_selected_per_replicate"
     assert manifest["selection_leakage_guard"]["status"] == "audit_only"
     assert manifest["outputs"]["fixed_bank_rescore_manifest"]["status"] == "missing"
     assert (
         manifest["outputs"]["fixed_bank_rescore_manifest"]["selection_use"]
         == "sparse_history_fallback"
+    )
+    assert manifest["outputs"]["map_decomposition"]["status"] == "materialized"
+    assert manifest["outputs"]["map_decomposition"]["selection_role"] == (
+        "audit_only_not_used_for_checkpoint_selection"
+    )
+    assert manifest["outputs"]["split_stress_objective_comparator"]["status"] == "materialized"
+    assert (
+        manifest["outputs"]["split_stress_objective_comparator"][
+            "standard_split_bank_comparator_status"
+        ]
+        == "available"
+    )
+    assert (
+        manifest["outputs"]["split_stress_objective_comparator"]["selection_role"]
+        == "audit_only_not_used_for_checkpoint_selection"
+    )
+    assert "map_error_decomposition" in manifest["selection_leakage_guard"]["audit_only_metrics"]
+    assert (
+        "split_stress_bank_objective_comparator"
+        in manifest["selection_leakage_guard"]["audit_only_metrics"]
     )
 
     postrun_manifest = (
@@ -168,6 +250,7 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
     written = json.loads(postrun_manifest.read_text(encoding="utf-8"))
     assert written["outputs"]["evaluation_bulk_dir"].startswith("_artifacts/")
     assert written["outputs"]["standard_certificate_manifest"].startswith("results/")
+    assert written["outputs"]["map_decomposition"]["json_path"].startswith("results/")
 
 
 def test_plan_gru_postrun_materialization_final_checkpoint_override(tmp_path: Path) -> None:
@@ -258,6 +341,11 @@ def test_materialize_gru_postrun_analysis_prefers_provided_fixed_bank_manifest(
         "materialize_optional_objective_comparator",
         lambda **_kwargs: {"status": "skipped"},
     )
+    monkeypatch.setattr(
+        postrun,
+        "materialize_optional_map_error_decomposition",
+        lambda **_kwargs: {"status": "skipped"},
+    )
 
     manifest = postrun.materialize_gru_postrun_analysis(
         experiment="5f70333",
@@ -273,3 +361,61 @@ def test_materialize_gru_postrun_analysis_prefers_provided_fixed_bank_manifest(
         manifest["outputs"]["fixed_bank_rescore_manifest"]["selection_use"]
         == "fixed_bank_rescore"
     )
+
+
+def test_materialize_gru_postrun_analysis_preserves_audit_only_skip_semantics(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    def fake_standard_result(**_kwargs: Any) -> dict[str, Any]:
+        return {"summary": {}}
+
+    def fake_write_standard(
+        _result: dict[str, Any],
+        *,
+        note_path: Path,
+        manifest_path: Path,
+    ) -> None:
+        note_path.write_text("", encoding="utf-8")
+        manifest_path.write_text("{}", encoding="utf-8")
+
+    def fake_evaluation(**kwargs: Any) -> dict[str, Any]:
+        kwargs["output_path"].write_text("{}", encoding="utf-8")
+        return {"schema_version": "rlrmp.gru_evaluation_diagnostics.v1"}
+
+    def fake_figures(**kwargs: Any) -> dict[str, Any]:
+        kwargs["output_dir"].mkdir(parents=True)
+        (kwargs["output_dir"] / "figure_summary.json").write_text("{}", encoding="utf-8")
+        return {}
+
+    monkeypatch.setattr(postrun, "materialize_gru_standard_result", fake_standard_result)
+    monkeypatch.setattr(postrun, "write_gru_standard_result", fake_write_standard)
+    monkeypatch.setattr(postrun, "materialize_gru_evaluation_diagnostics", fake_evaluation)
+    monkeypatch.setattr(postrun, "materialize_gru_pilot_figures", fake_figures)
+
+    manifest = postrun.materialize_gru_postrun_analysis(
+        experiment="5f70333",
+        run_ids=("run_a",),
+        output_tag="audit_skip",
+        use_validation_selected_checkpoints=False,
+        include_objective_comparator=False,
+        include_map_decomposition=False,
+        repo_root=tmp_path,
+    )
+
+    assert manifest["outputs"]["objective_comparator"] == {
+        "status": "skipped",
+        "reason": "disabled_by_cli",
+    }
+    assert manifest["outputs"]["map_decomposition"] == {
+        "status": "skipped",
+        "reason": "disabled_by_cli",
+    }
+    assert manifest["outputs"]["split_stress_objective_comparator"] == {
+        "status": "skipped",
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "source_sidecar": "objective_comparator",
+        "reason": "disabled_by_cli",
+    }
+    assert manifest["selection_leakage_guard"]["status"] == "audit_only"
+    assert "map_error_decomposition" in manifest["selection_leakage_guard"]["audit_only_metrics"]
