@@ -69,6 +69,27 @@ def test_plan_gru_postrun_materialization_routes_tracked_and_bulk_outputs(
         / "notes"
         / "gru_map_error_decomposition_fullqrf_validation_selected.md"
     )
+    assert plan.perturbation_response_json_path == (
+        tmp_path
+        / "results"
+        / "5f70333"
+        / "notes"
+        / "gru_perturbation_response_fullqrf_validation_selected_manifest.json"
+    )
+    assert plan.perturbation_response_note_path == (
+        tmp_path
+        / "results"
+        / "5f70333"
+        / "notes"
+        / "gru_perturbation_response_fullqrf_validation_selected.md"
+    )
+    assert plan.perturbation_response_bulk_dir == (
+        tmp_path
+        / "_artifacts"
+        / "5f70333"
+        / "perturbation_response"
+        / "gru_fullqrf_validation_selected"
+    )
 
 
 def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materializers(
@@ -142,6 +163,26 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
             },
         }
 
+    def fake_perturbation_response(**kwargs: Any) -> dict[str, Any]:
+        calls["perturbation"] = kwargs
+        return {
+            "status": "materialized",
+            "json_path": (
+                "results/5f70333/notes/"
+                "gru_perturbation_response_fullqrf_validation_selected_manifest.json"
+            ),
+            "note_path": (
+                "results/5f70333/notes/"
+                "gru_perturbation_response_fullqrf_validation_selected.md"
+            ),
+            "selection_role": "audit_only_not_used_for_checkpoint_selection",
+            "result": {
+                "schema_version": "rlrmp.gru_perturbation_response.v2",
+                "n_runs": 2,
+                "n_perturbations": 12,
+            },
+        }
+
     monkeypatch.setattr(
         postrun,
         "materialize_validation_selected_checkpoint_manifest",
@@ -156,6 +197,11 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         postrun,
         "materialize_optional_map_error_decomposition",
         fake_map_decomposition,
+    )
+    monkeypatch.setattr(
+        postrun,
+        "materialize_optional_perturbation_response",
+        fake_perturbation_response,
     )
 
     manifest = postrun.materialize_gru_postrun_analysis(
@@ -178,6 +224,21 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         / "5f70333"
         / "notes"
         / "gru_standard_certificates_fullqrf_validation_selected_manifest.json"
+    )
+    assert calls["perturbation"]["n_rollout_trials"] == postrun.DEFAULT_N_ROLLOUT_TRIALS
+    assert calls["perturbation"]["output_path"] == (
+        tmp_path
+        / "results"
+        / "5f70333"
+        / "notes"
+        / "gru_perturbation_response_fullqrf_validation_selected_manifest.json"
+    )
+    assert calls["perturbation"]["bulk_dir"] == (
+        tmp_path
+        / "_artifacts"
+        / "5f70333"
+        / "perturbation_response"
+        / "gru_fullqrf_validation_selected"
     )
     assert calls["map"]["output_path"] == (
         tmp_path
@@ -224,6 +285,7 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         "audit_only_not_used_for_checkpoint_selection"
     )
     assert manifest["outputs"]["split_stress_objective_comparator"]["status"] == "materialized"
+    assert manifest["outputs"]["perturbation_response"]["status"] == "materialized"
     assert (
         manifest["outputs"]["split_stress_objective_comparator"][
             "standard_split_bank_comparator_status"
@@ -239,6 +301,10 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         "split_stress_bank_objective_comparator"
         in manifest["selection_leakage_guard"]["audit_only_metrics"]
     )
+    assert (
+        "perturbation_response_bank"
+        in manifest["selection_leakage_guard"]["audit_only_metrics"]
+    )
 
     postrun_manifest = (
         tmp_path
@@ -251,6 +317,7 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
     assert written["outputs"]["evaluation_bulk_dir"].startswith("_artifacts/")
     assert written["outputs"]["standard_certificate_manifest"].startswith("results/")
     assert written["outputs"]["map_decomposition"]["json_path"].startswith("results/")
+    assert written["outputs"]["perturbation_response"]["json_path"].startswith("results/")
 
 
 def test_plan_gru_postrun_materialization_final_checkpoint_override(tmp_path: Path) -> None:
@@ -346,6 +413,11 @@ def test_materialize_gru_postrun_analysis_prefers_provided_fixed_bank_manifest(
         "materialize_optional_map_error_decomposition",
         lambda **_kwargs: {"status": "skipped"},
     )
+    monkeypatch.setattr(
+        postrun,
+        "materialize_optional_perturbation_response",
+        lambda **_kwargs: {"status": "skipped"},
+    )
 
     manifest = postrun.materialize_gru_postrun_analysis(
         experiment="5f70333",
@@ -392,6 +464,11 @@ def test_materialize_gru_postrun_analysis_preserves_audit_only_skip_semantics(
     monkeypatch.setattr(postrun, "write_gru_standard_result", fake_write_standard)
     monkeypatch.setattr(postrun, "materialize_gru_evaluation_diagnostics", fake_evaluation)
     monkeypatch.setattr(postrun, "materialize_gru_pilot_figures", fake_figures)
+    monkeypatch.setattr(
+        postrun,
+        "materialize_optional_perturbation_response",
+        lambda **_kwargs: {"status": "skipped"},
+    )
 
     manifest = postrun.materialize_gru_postrun_analysis(
         experiment="5f70333",
@@ -400,6 +477,7 @@ def test_materialize_gru_postrun_analysis_preserves_audit_only_skip_semantics(
         use_validation_selected_checkpoints=False,
         include_objective_comparator=False,
         include_map_decomposition=False,
+        include_perturbation_response=False,
         repo_root=tmp_path,
     )
 
@@ -408,6 +486,10 @@ def test_materialize_gru_postrun_analysis_preserves_audit_only_skip_semantics(
         "reason": "disabled_by_cli",
     }
     assert manifest["outputs"]["map_decomposition"] == {
+        "status": "skipped",
+        "reason": "disabled_by_cli",
+    }
+    assert manifest["outputs"]["perturbation_response"] == {
         "status": "skipped",
         "reason": "disabled_by_cli",
     }
