@@ -63,6 +63,26 @@ def _full_qrf_run_metadata() -> dict[str, object]:
     }
 
 
+def _unit_split_lenses() -> dict[str, object]:
+    return {
+        lens: {
+            "status": "available",
+            "gru_vs_extlqg": {
+                "terms": {
+                    term: {
+                        "gru_mean": 2.0,
+                        "extlqg_mean": 1.0,
+                        "delta_mean": 1.0,
+                        "ratio_to_extlqg": 2.0,
+                    }
+                    for term in ("total", *objective_comparator.FULL_QRF_TERM_NAMES)
+                }
+            },
+        }
+        for lens in objective_comparator._STANDARD_SPLIT_BANK_LENSES
+    }
+
+
 def test_extlqg_decomposition_reports_component_sum_and_declared_total() -> None:
     decomposition = ExtLQGCostDecomposition(
         deterministic_initial_state=4.0,
@@ -107,8 +127,15 @@ def test_build_objective_comparator_sidecar_uses_deterministic_comparator_lens()
             "selection_role": "audit_only_not_used_for_checkpoint_selection",
             "lenses": {
                 "deterministic_nominal": {"status": "available"},
-                "x0_only": {"status": "available"},
-                "epsilon_only": {"status": "available"},
+                "x0_position_only": {"status": "available"},
+                "x0_velocity_only": {"status": "available"},
+                "x0_force_filter_only": {"status": "available"},
+                "x0_disturbance_integrator_only": {"status": "available"},
+                "process_epsilon_position_only": {"status": "available"},
+                "process_epsilon_velocity_only": {"status": "available"},
+                "process_epsilon_force_filter_only": {"status": "available"},
+                "process_epsilon_integrator_only": {"status": "available"},
+                "x0_position_velocity": {"status": "available"},
                 "x0_plus_epsilon": {
                     "status": "available",
                     "interpretation": "stress_test_only",
@@ -121,14 +148,7 @@ def test_build_objective_comparator_sidecar_uses_deterministic_comparator_lens()
             "runs": {
                 "run_a": {
                     "status": "available",
-                    "lenses": {
-                        "x0_only": {
-                            "status": "available",
-                            "gru_vs_extlqg": {
-                                "terms": {"total": {"ratio_to_extlqg": 1.1}}
-                            },
-                        },
-                    },
+                    "lenses": _unit_split_lenses(),
                 },
             },
         },
@@ -174,6 +194,19 @@ def test_build_objective_comparator_sidecar_uses_deterministic_comparator_lens()
     assert sidecar["shared_rollout_comparator"]["status"] == "available"
     assert sidecar["shared_rollout_comparator"]["interpretation"] == "stress_test_only"
     assert sidecar["standard_split_bank_comparator"]["status"] == "available"
+    assert tuple(sidecar["standard_split_bank_comparator"]["lenses"]) == (
+        "deterministic_nominal",
+        "x0_position_only",
+        "x0_velocity_only",
+        "x0_force_filter_only",
+        "x0_disturbance_integrator_only",
+        "process_epsilon_position_only",
+        "process_epsilon_velocity_only",
+        "process_epsilon_force_filter_only",
+        "process_epsilon_integrator_only",
+        "x0_position_velocity",
+        "x0_plus_epsilon",
+    )
     assert (
         sidecar["standard_split_bank_comparator"]["lenses"]["x0_plus_epsilon"][
             "interpretation"
@@ -207,6 +240,43 @@ def test_shared_rollout_bank_serializes_declared_shared_channels() -> None:
     assert payload["process_load_epsilon"]["status"] == "shared"
     assert payload["sensory_noise"]["status"] == "not_shared"
     assert payload["command_or_motor_noise"]["status"] == "not_shared"
+
+
+def test_split_bank_inputs_mask_x0_and_process_components() -> None:
+    bank = SharedRolloutBank(
+        bank_id="unit-bank",
+        seed=123,
+        initial_states=np.arange(16, dtype=np.float64).reshape(1, 16),
+        process_epsilon=np.arange(8, dtype=np.float64).reshape(1, 1, 8),
+        initial_covariance=0.01,
+    )
+    default_initial = np.zeros((1, 16), dtype=np.float64)
+
+    lens_inputs = objective_comparator._split_bank_inputs(
+        bank=bank,
+        default_initial=default_initial,
+    )
+
+    np.testing.assert_allclose(
+        lens_inputs["x0_position_only"]["initial_states"],
+        np.array([[0, 1, 0, 0, 0, 0, 0, 0, 8, 9, 0, 0, 0, 0, 0, 0]], dtype=np.float64),
+    )
+    np.testing.assert_allclose(
+        lens_inputs["x0_velocity_only"]["initial_states"],
+        np.array([[0, 0, 2, 3, 0, 0, 0, 0, 0, 0, 10, 11, 0, 0, 0, 0]], dtype=np.float64),
+    )
+    np.testing.assert_allclose(
+        lens_inputs["process_epsilon_force_filter_only"]["process_epsilon"],
+        np.array([[[0, 0, 0, 0, 4, 5, 0, 0]]], dtype=np.float64),
+    )
+    np.testing.assert_allclose(
+        lens_inputs["x0_plus_epsilon"]["initial_states"],
+        bank.initial_states,
+    )
+    np.testing.assert_allclose(
+        lens_inputs["x0_plus_epsilon"]["process_epsilon"],
+        bank.process_epsilon,
+    )
 
 
 def test_shared_full_qrf_cost_summary_decomposes_zero_rollout() -> None:

@@ -16,7 +16,7 @@ import numpy as np
 from rlrmp.paths import REPO_ROOT
 
 
-SCHEMA_VERSION = "rlrmp.objective_comparator_sidecar.v5"
+SCHEMA_VERSION = "rlrmp.objective_comparator_sidecar.v6"
 FULL_ANALYTICAL_QRF_OBJECTIVE = "full_analytical_qrf"
 FULL_QRF_TERM_NAMES = (
     "running_state_q",
@@ -57,32 +57,41 @@ DEFAULT_SHARED_ROLLOUT_STATUS = {
     "reason": "shared-rollout comparator was not supplied to the sidecar builder",
     "selection_role": "audit_only_not_used_for_checkpoint_selection",
 }
+STATE_COMPONENT_SLICES = {
+    "position": (0, 2),
+    "velocity": (2, 4),
+    "force_filter": (4, 6),
+    "disturbance_integrator": (6, 8),
+}
+_STANDARD_SPLIT_BANK_LENS_SPECS = {
+    "deterministic_nominal": {"x0": (), "epsilon": ()},
+    "x0_position_only": {"x0": ("position",), "epsilon": ()},
+    "x0_velocity_only": {"x0": ("velocity",), "epsilon": ()},
+    "x0_force_filter_only": {"x0": ("force_filter",), "epsilon": ()},
+    "x0_disturbance_integrator_only": {"x0": ("disturbance_integrator",), "epsilon": ()},
+    "process_epsilon_position_only": {"x0": (), "epsilon": ("position",)},
+    "process_epsilon_velocity_only": {"x0": (), "epsilon": ("velocity",)},
+    "process_epsilon_force_filter_only": {"x0": (), "epsilon": ("force_filter",)},
+    "process_epsilon_integrator_only": {"x0": (), "epsilon": ("disturbance_integrator",)},
+    "x0_position_velocity": {"x0": ("position", "velocity"), "epsilon": ()},
+    "x0_plus_epsilon": {
+        "x0": ("position", "velocity", "force_filter", "disturbance_integrator"),
+        "epsilon": ("position", "velocity", "force_filter", "disturbance_integrator"),
+    },
+}
+_STANDARD_SPLIT_BANK_LENSES = tuple(_STANDARD_SPLIT_BANK_LENS_SPECS)
 DEFAULT_SPLIT_BANK_STATUS = {
     "status": "not_available",
     "lens": "standard_split_rollout_bank_full_qrf",
     "reason": "standard split-bank comparator was not supplied to the sidecar builder",
     "selection_role": "audit_only_not_used_for_checkpoint_selection",
     "lenses": {
-        "deterministic_nominal": {
+        lens: {
             "status": "not_available",
-            "shared_initial_state": False,
-            "shared_process_load_epsilon": False,
-        },
-        "x0_only": {
-            "status": "not_available",
-            "shared_initial_state": True,
-            "shared_process_load_epsilon": False,
-        },
-        "epsilon_only": {
-            "status": "not_available",
-            "shared_initial_state": False,
-            "shared_process_load_epsilon": True,
-        },
-        "x0_plus_epsilon": {
-            "status": "not_available",
-            "shared_initial_state": True,
-            "shared_process_load_epsilon": True,
-        },
+            "shared_initial_state_components": list(spec["x0"]),
+            "shared_process_load_epsilon_components": list(spec["epsilon"]),
+        }
+        for lens, spec in _STANDARD_SPLIT_BANK_LENS_SPECS.items()
     },
 }
 
@@ -324,14 +333,16 @@ def build_objective_comparator_sidecar(
                 ),
                 "interpretation": (
                     "stress-test-only unless the extLQG x0-only sanity check passes; "
-                    "the split-bank block separates deterministic, x0-only, "
-                    "epsilon-only, and x0+epsilon lenses"
+                    "the split-bank block separates deterministic, component-specific "
+                    "x0, component-specific process-epsilon, x0 position+velocity, "
+                    "and x0+epsilon lenses"
                 ),
             },
             "standard_split_rollout_bank_full_qrf": {
                 "kind": "realized_shared_rollout_split_bank",
                 "definition": (
-                    "audit-only deterministic nominal, x0-only, epsilon-only, and "
+                    "audit-only deterministic nominal, component-specific x0, "
+                    "component-specific process-epsilon, x0 position+velocity, and "
                     "x0+epsilon realized full-QRF rescoring on standardized banks"
                 ),
                 "checkpoint_selection_role": "audit_only_not_used_for_checkpoint_selection",
@@ -362,6 +373,12 @@ def build_objective_comparator_sidecar(
             (
                 "The x0+epsilon shared-rollout block is stress-test-only unless "
                 "the extLQG x0-only sanity check supports expected-cost wording."
+            ),
+            (
+                "Split-bank GRU hidden states are initialized from the checkpoint "
+                "model default rather than conditioned on the perturbed x0, so x0 "
+                "lenses are recovery stress tests rather than expected-cost "
+                "comparisons."
             ),
         ],
     }
@@ -533,10 +550,17 @@ def materialize_shared_rollout_comparator(
     )
     extlqg_cost = extlqg_cost_by_lens["x0_plus_epsilon"]
     extlqg_decomposition = compute_default_extlqg_cost_decomposition()
-    x0_sanity = extlqg_x0_only_sanity_check(
-        x0_only_cost=extlqg_cost_by_lens["x0_only"],
-        extlqg=extlqg_decomposition,
-    )
+    x0_sanity = {
+        "status": "not_applicable",
+        "lens": "extlqg_x0_only_realized_vs_expected_trace",
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "reason": (
+            "The v6 split-bank lens set intentionally separates x0 components and "
+            "does not materialize an all-components x0-only lens; use the per-lens "
+            "component ratios rather than expected-cost wording."
+        ),
+        "expected_cost_wording_allowed": False,
+    }
 
     runs = resolve_run_inputs(experiment=experiment, run_ids=run_ids, labels=None, repo_root=repo_root)
     run_results = {}
@@ -611,6 +635,7 @@ def materialize_shared_rollout_comparator(
                 "Sensory and command/motor noise are explicitly not claimed as shared."
             ),
         },
+        "fairness_residuals": _split_bank_fairness_residuals(),
         "runs": run_results,
         "standard_split_bank_comparator": _standard_split_bank_public(
             bank=bank,
@@ -621,14 +646,6 @@ def materialize_shared_rollout_comparator(
         ),
         "source_checkpoint_manifest_schema": checkpoint_manifest.get("schema_version"),
     }
-
-
-_STANDARD_SPLIT_BANK_LENSES = (
-    "deterministic_nominal",
-    "x0_only",
-    "epsilon_only",
-    "x0_plus_epsilon",
-)
 
 
 def extlqg_x0_only_sanity_check(
@@ -718,7 +735,8 @@ def render_objective_comparator_markdown(sidecar: Mapping[str, Any]) -> str:
         (
             "| standard split-bank comparator | "
             f"{split_bank.get('status', 'not_available')} | deterministic nominal, "
-            "x0-only, epsilon-only, and x0+epsilon audit-only lenses |"
+            "component-specific x0/process-epsilon, x0 position+velocity, and "
+            "x0+epsilon audit-only lenses |"
         ),
         "",
         "## extLQG decomposition",
@@ -783,7 +801,7 @@ def render_objective_comparator_markdown(sidecar: Mapping[str, Any]) -> str:
             ),
             (
                 "- The partial x0+epsilon shared-rollout comparator is stress-test-only; "
-                "expected-cost wording is allowed only when the extLQG x0-only sanity "
+                "expected-cost wording is allowed only when an extLQG x0-only sanity "
                 f"check passes. Current status: `{sanity.get('status', 'not_available')}`."
             ),
         ]
@@ -803,6 +821,7 @@ def render_objective_comparator_markdown(sidecar: Mapping[str, Any]) -> str:
         ]
     )
     lines.extend(_render_shared_rollout_markdown(shared_rollout))
+    lines.extend(_render_split_bank_markdown(split_bank))
     return "\n".join(lines)
 
 
@@ -1209,26 +1228,19 @@ def _extlqg_split_bank_costs(
         _default_output_feedback_initial_state(plant, config),
         dtype=np.float64,
     )
-    zero_epsilon = np.zeros_like(bank.process_epsilon)
-    initial_by_lens = {
-        "deterministic_nominal": np.broadcast_to(default_initial, bank.initial_states.shape),
-        "x0_only": bank.initial_states,
-        "epsilon_only": np.broadcast_to(default_initial, bank.initial_states.shape),
-        "x0_plus_epsilon": bank.initial_states,
-    }
-    epsilon_by_lens = {
-        "deterministic_nominal": zero_epsilon,
-        "x0_only": zero_epsilon,
-        "epsilon_only": bank.process_epsilon,
-        "x0_plus_epsilon": bank.process_epsilon,
-    }
+    lens_inputs = _split_bank_inputs(
+        bank=bank,
+        default_initial=np.broadcast_to(default_initial, bank.initial_states.shape),
+    )
     costs: dict[str, dict[str, Any]] = {}
     for lens in _STANDARD_SPLIT_BANK_LENSES:
         states = []
         commands = []
+        initial_states = lens_inputs[lens]["initial_states"]
+        process_epsilon = lens_inputs[lens]["process_epsilon"]
         for initial_state, epsilon in zip(
-            initial_by_lens[lens],
-            epsilon_by_lens[lens],
+            initial_states,
+            process_epsilon,
             strict=True,
         ):
             rollout = simulate_lqg_released_forward(
@@ -1246,7 +1258,7 @@ def _extlqg_split_bank_costs(
         costs[lens] = shared_full_qrf_cost_summary(
             states=np.stack(states, axis=0),
             commands=np.stack(commands, axis=0),
-            initial_states=initial_by_lens[lens],
+            initial_states=initial_states,
             state_basis="target_centered",
         )
     return costs
@@ -1268,26 +1280,16 @@ def _gru_split_bank_costs(
         default_initial = np.broadcast_to(default_initial, bank.initial_states.shape)
     else:
         default_initial = np.broadcast_to(default_initial[:1], bank.initial_states.shape)
-    zero_epsilon = np.zeros_like(bank.process_epsilon)
-    initial_by_lens = {
-        "deterministic_nominal": default_initial,
-        "x0_only": bank.initial_states,
-        "epsilon_only": default_initial,
-        "x0_plus_epsilon": bank.initial_states,
-    }
-    epsilon_by_lens = {
-        "deterministic_nominal": zero_epsilon,
-        "x0_only": zero_epsilon,
-        "epsilon_only": bank.process_epsilon,
-        "x0_plus_epsilon": bank.process_epsilon,
-    }
+    lens_inputs = _split_bank_inputs(bank=bank, default_initial=default_initial)
     costs: dict[str, dict[str, Any]] = {}
     for lens in _STANDARD_SPLIT_BANK_LENSES:
+        initial_states = lens_inputs[lens]["initial_states"]
+        process_epsilon = lens_inputs[lens]["process_epsilon"]
         lens_bank = SharedRolloutBank(
             bank_id=f"{bank.bank_id}:{lens}",
             seed=bank.seed,
-            initial_states=np.asarray(initial_by_lens[lens], dtype=np.float64),
-            process_epsilon=np.asarray(epsilon_by_lens[lens], dtype=np.float64),
+            initial_states=np.asarray(initial_states, dtype=np.float64),
+            process_epsilon=np.asarray(process_epsilon, dtype=np.float64),
             initial_covariance=bank.initial_covariance,
         )
         trial_specs = _trial_specs_with_shared_bank(base_trial_specs, lens_bank)
@@ -1307,6 +1309,99 @@ def _gru_split_bank_costs(
     return costs
 
 
+def _split_bank_inputs(
+    *,
+    bank: SharedRolloutBank,
+    default_initial: np.ndarray,
+) -> dict[str, dict[str, np.ndarray]]:
+    """Return component-masked initial states and process epsilons for each lens."""
+
+    default_initial = np.asarray(default_initial, dtype=np.float64)
+    initial_states = np.asarray(bank.initial_states, dtype=np.float64)
+    process_epsilon = np.asarray(bank.process_epsilon, dtype=np.float64)
+    default_initial = np.broadcast_to(default_initial, initial_states.shape)
+    initial_delta = initial_states - default_initial
+    return {
+        lens: {
+            "initial_states": default_initial
+            + _mask_state_components(initial_delta, spec["x0"]),
+            "process_epsilon": _mask_physical_components(process_epsilon, spec["epsilon"]),
+        }
+        for lens, spec in _STANDARD_SPLIT_BANK_LENS_SPECS.items()
+    }
+
+
+def _mask_state_components(values: np.ndarray, components: Sequence[str]) -> np.ndarray:
+    mask = np.zeros(values.shape[-1], dtype=bool)
+    if values.shape[-1] % 8 != 0:
+        raise ValueError(f"state dimension {values.shape[-1]} is not divisible by 8")
+    for start in range(0, values.shape[-1], 8):
+        for component in components:
+            component_start, component_stop = STATE_COMPONENT_SLICES[component]
+            mask[start + component_start : start + component_stop] = True
+    return np.where(mask, values, 0.0)
+
+
+def _mask_physical_components(values: np.ndarray, components: Sequence[str]) -> np.ndarray:
+    mask = np.zeros(values.shape[-1], dtype=bool)
+    for component in components:
+        component_start, component_stop = STATE_COMPONENT_SLICES[component]
+        if component_stop > values.shape[-1]:
+            raise ValueError(
+                f"component {component!r} exceeds epsilon dimension {values.shape[-1]}"
+            )
+        mask[component_start:component_stop] = True
+    return np.where(mask, values, 0.0)
+
+
+def _split_bank_lens_metadata(lens: str) -> dict[str, Any]:
+    spec = _STANDARD_SPLIT_BANK_LENS_SPECS[lens]
+    x0_components = list(spec["x0"])
+    epsilon_components = list(spec["epsilon"])
+    return {
+        "status": "available",
+        "shared_initial_state": bool(x0_components),
+        "shared_process_load_epsilon": bool(epsilon_components),
+        "shared_initial_state_components": x0_components,
+        "shared_process_load_epsilon_components": epsilon_components,
+        "interpretation": (
+            "stress_test_only"
+            if x0_components
+            else "apples_to_apples_split_bank_sidecar"
+        ),
+    }
+
+
+def _split_bank_fairness_residuals() -> dict[str, Any]:
+    return {
+        "initial_observation_history": {
+            "status": "partially_consistent",
+            "note": (
+                "The comparator replaces trial_specs.inits['mechanics.vector'] for "
+                "x0 lenses. It does not separately rewrite any pre-existing "
+                "observation-history buffers; the C&S LSS graph observes the "
+                "perturbed initial mechanics state from the rollout start."
+            ),
+        },
+        "gru_hidden_state_initialization": {
+            "status": "stress_test_only",
+            "note": (
+                "GRU recurrent hidden state starts from the checkpoint/model default "
+                "during eval_trials and is not conditioned on the perturbed x0."
+            ),
+        },
+        "noise_channels": {
+            "shared": ["initial_state", "process_load_epsilon"],
+            "not_shared": ["sensory_noise", "command_or_motor_noise"],
+            "note": (
+                "Process/load epsilon is injected through TaskTrialSpec.inputs['epsilon']; "
+                "sensory and command/motor noise remain graph-internal for the GRU arm "
+                "and explicit zero draws for the extLQG arm in this materialization."
+            ),
+        },
+    }
+
+
 def _standard_split_bank_public(
     *,
     bank: SharedRolloutBank,
@@ -1323,18 +1418,10 @@ def _standard_split_bank_public(
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
         "bank": bank.to_json(),
         "lenses": {
-            lens: {
-                "status": "available",
-                "shared_initial_state": lens in {"x0_only", "x0_plus_epsilon"},
-                "shared_process_load_epsilon": lens in {"epsilon_only", "x0_plus_epsilon"},
-                "interpretation": (
-                    "stress_test_only"
-                    if lens == "x0_plus_epsilon"
-                    else "apples_to_apples_split_bank_sidecar"
-                ),
-            }
+            lens: _split_bank_lens_metadata(lens)
             for lens in _STANDARD_SPLIT_BANK_LENSES
         },
+        "fairness_residuals": _split_bank_fairness_residuals(),
         "extlqg": {
             "status": "available",
             "parity_status": extlqg_path.parity_status,
@@ -1573,6 +1660,52 @@ def _render_shared_rollout_markdown(shared_rollout: Mapping[str, Any]) -> list[s
             f"{_fmt(_expect_mapping(terms['force_filter_state'])['ratio_to_extlqg'])} | "
             f"{_fmt(_expect_mapping(terms['disturbance_integrator_state'])['ratio_to_extlqg'])} |"
         )
+    lines.append("")
+    return lines
+
+
+def _render_split_bank_markdown(split_bank: Mapping[str, Any]) -> list[str]:
+    status = split_bank.get("status", "not_available")
+    lines = ["## Standard split-bank comparator", ""]
+    if status != "available":
+        lines.extend([f"Status: `{status}` - {split_bank.get('reason', 'not available')}", ""])
+        return lines
+    lines.extend(
+        [
+            "| run | lens | GRU total | extLQG total | GRU/extLQG | running | terminal | command | force/filter | integrator |",
+            "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+    )
+    for run_id, run in sorted(_expect_mapping(split_bank["runs"]).items()):
+        lenses = _expect_mapping(_expect_mapping(run)["lenses"])
+        for lens in _STANDARD_SPLIT_BANK_LENSES:
+            lens_result = _expect_mapping(lenses[lens])
+            comparison = _expect_mapping(lens_result["gru_vs_extlqg"])
+            terms = _expect_mapping(comparison["terms"])
+            total = _expect_mapping(terms["total"])
+            lines.append(
+                "| "
+                f"`{run_id}` | "
+                f"`{lens}` | "
+                f"{_fmt(total['gru_mean'])} | "
+                f"{_fmt(total['extlqg_mean'])} | "
+                f"{_fmt(total['ratio_to_extlqg'])} | "
+                f"{_fmt(_expect_mapping(terms['running_state_q'])['ratio_to_extlqg'])} | "
+                f"{_fmt(_expect_mapping(terms['terminal_state_q_f'])['ratio_to_extlqg'])} | "
+                f"{_fmt(_expect_mapping(terms['command_r'])['ratio_to_extlqg'])} | "
+                f"{_fmt(_expect_mapping(terms['force_filter_state'])['ratio_to_extlqg'])} | "
+                f"{_fmt(_expect_mapping(terms['disturbance_integrator_state'])['ratio_to_extlqg'])} |"
+            )
+    residuals = _expect_mapping(split_bank.get("fairness_residuals", {}))
+    if residuals:
+        lines.extend(["", "Fairness/residual notes:", ""])
+        for key in (
+            "initial_observation_history",
+            "gru_hidden_state_initialization",
+            "noise_channels",
+        ):
+            item = _expect_mapping(residuals.get(key, {}))
+            lines.append(f"- `{key}`: {item.get('status', 'declared')} - {item.get('note', '')}")
     lines.append("")
     return lines
 

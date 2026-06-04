@@ -3,7 +3,7 @@
   "checkpoint_selection_source": "validation_selected_per_replicate",
   "issue": "aacb9ed",
   "outputs": {
-    "checkpoint_manifest": "results/aacb9ed/notes/validation_selected_checkpoints.json",
+    "checkpoint_manifest": "results/aacb9ed/notes/validation_selected_checkpoints_fixed_target_random_perturb_validation_selected.json",
     "evaluation_bulk_dir": "_artifacts/aacb9ed/evaluation_diagnostics/gru_fixed_target_random_perturb_validation_selected",
     "evaluation_diagnostics_manifest": "results/aacb9ed/notes/gru_evaluation_diagnostics_fixed_target_random_perturb_validation_selected.json",
     "figure_output_dir": "_artifacts/aacb9ed/figures/gru_postrun_fixed_target_random_perturb_validation_selected",
@@ -20,7 +20,7 @@
         "extlqg_deterministic_full_qrf": 4368.510655149214,
         "extlqg_total_expected_cost": 12201.42433801687,
         "n_rows": 2,
-        "schema_version": "rlrmp.objective_comparator_sidecar.v5",
+        "schema_version": "rlrmp.objective_comparator_sidecar.v6",
         "status": "materialized"
       },
       "status": "materialized"
@@ -29,7 +29,7 @@
     "standard_certificate_note": "results/aacb9ed/notes/gru_standard_certificates_fixed_target_random_perturb_validation_selected.md"
   },
   "plan": {
-    "checkpoint_manifest_path": "results/aacb9ed/notes/validation_selected_checkpoints.json",
+    "checkpoint_manifest_path": "results/aacb9ed/notes/validation_selected_checkpoints_fixed_target_random_perturb_validation_selected.json",
     "checkpoint_policy": "validation_selected_per_replicate",
     "checkpoint_selection_source": "validation_selected_per_replicate",
     "evaluation_bulk_dir": "_artifacts/aacb9ed/evaluation_diagnostics/gru_fixed_target_random_perturb_validation_selected",
