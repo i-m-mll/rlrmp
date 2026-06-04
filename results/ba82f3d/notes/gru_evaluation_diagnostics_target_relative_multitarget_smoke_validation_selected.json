@@ -1,0 +1,428 @@
+{
+  "checkpoint_policy": "validation_selected_per_replicate",
+  "issue": "ba82f3d",
+  "runs": {
+    "target_relative_multitarget_fullqrf_smoke": {
+      "artifact_dir": "_artifacts/ba82f3d/runs/target_relative_multitarget_fullqrf_smoke",
+      "behavior": {
+        "command_jerk_norm": {
+          "count": 116,
+          "max": 0.042573022367289624,
+          "mean": 0.0031725429457256137,
+          "min": 0.0002679506264583459,
+          "p05": 0.0005122696972671492,
+          "p50": 0.0016699134592040228,
+          "p95": 0.008497678102922773,
+          "std": 0.006163235919404231
+        },
+        "command_norm": {
+          "count": 120,
+          "max": 0.37383129649958324,
+          "mean": 0.35806154012058106,
+          "min": 0.16872875708266155,
+          "p05": 0.33263401477530097,
+          "p50": 0.3641027456601886,
+          "p95": 0.3711468299992565,
+          "std": 0.029319823678693152
+        },
+        "endpoint_error_m": {
+          "count": 2,
+          "max": 0.1872664028109751,
+          "mean": 0.18720149394260494,
+          "min": 0.18713658507423478,
+          "p05": 0.1871430759610718,
+          "p50": 0.18720149394260494,
+          "p95": 0.18725991192413807,
+          "std": 6.490886837015597e-05
+        },
+        "first_five_step_command_norm": {
+          "count": 10,
+          "max": 0.3490852735013733,
+          "mean": 0.2844563837096844,
+          "min": 0.16872875708266155,
+          "p05": 0.1690707855462759,
+          "p50": 0.30967535684170866,
+          "p95": 0.3484425702309253,
+          "std": 0.06501415294946833
+        },
+        "hidden_state_norm": {
+          "count": 120,
+          "max": 0.7215859482003866,
+          "mean": 0.6947393614352916,
+          "min": 0.2768442388593959,
+          "p05": 0.6068559077900936,
+          "p50": 0.7123719701017421,
+          "p95": 0.7185978733927495,
+          "std": 0.06909362061053617
+        },
+        "overshoot_m": {
+          "count": 2,
+          "max": 0.0,
+          "mean": 0.0,
+          "min": 0.0,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "std": 0.0
+        },
+        "per_replicate": [
+          {
+            "command_jerk_norm": {
+              "count": 116,
+              "max": 0.042573022367289624,
+              "mean": 0.0031725429457256137,
+              "min": 0.0002679506264583459,
+              "p05": 0.0005122696972671492,
+              "p50": 0.0016699134592040228,
+              "p95": 0.008497678102922773,
+              "std": 0.006163235919404231
+            },
+            "command_norm": {
+              "count": 120,
+              "max": 0.37383129649958324,
+              "mean": 0.35806154012058106,
+              "min": 0.16872875708266155,
+              "p05": 0.33263401477530097,
+              "p50": 0.3641027456601886,
+              "p95": 0.3711468299992565,
+              "std": 0.029319823678693152
+            },
+            "endpoint_error_m": {
+              "count": 2,
+              "max": 0.1872664028109751,
+              "mean": 0.18720149394260494,
+              "min": 0.18713658507423478,
+              "p05": 0.1871430759610718,
+              "p50": 0.18720149394260494,
+              "p95": 0.18725991192413807,
+              "std": 6.490886837015597e-05
+            },
+            "first_five_step_command_norm": {
+              "count": 10,
+              "max": 0.3490852735013733,
+              "mean": 0.2844563837096844,
+              "min": 0.16872875708266155,
+              "p05": 0.1690707855462759,
+              "p50": 0.30967535684170866,
+              "p95": 0.3484425702309253,
+              "std": 0.06501415294946833
+            },
+            "hidden_state_norm": {
+              "count": 120,
+              "max": 0.7215859482003866,
+              "mean": 0.6947393614352916,
+              "min": 0.2768442388593959,
+              "p05": 0.6068559077900936,
+              "p50": 0.7123719701017421,
+              "p95": 0.7185978733927495,
+              "std": 0.06909362061053617
+            },
+            "overshoot_m": {
+              "count": 2,
+              "max": 0.0,
+              "mean": 0.0,
+              "min": 0.0,
+              "p05": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "std": 0.0
+            },
+            "post_peak_forward_velocity_sign_changes": {
+              "count": 2,
+              "max": 0.0,
+              "mean": 0.0,
+              "min": 0.0,
+              "p05": 0.0,
+              "p50": 0.0,
+              "p95": 0.0,
+              "std": 0.0
+            },
+            "replicate": 0,
+            "terminal_speed_m_s": {
+              "count": 2,
+              "max": 0.18427382575766635,
+              "mean": 0.18425132401465147,
+              "min": 0.1842288222716366,
+              "p05": 0.1842310724459381,
+              "p50": 0.18425132401465147,
+              "p95": 0.18427157558336485,
+              "std": 2.250174301487995e-05
+            },
+            "velocity_profile": {
+              "mean_profile_peak_forward_velocity_m_s": 0.0,
+              "mean_profile_terminal_forward_velocity_m_s": -0.13707705062625114,
+              "mean_profile_time_to_peak_forward_velocity_s": 0.0,
+              "peak_forward_velocity_m_s": {
+                "count": 2,
+                "max": 0.0,
+                "mean": 0.0,
+                "min": 0.0,
+                "p05": 0.0,
+                "p50": 0.0,
+                "p95": 0.0,
+                "std": 0.0
+              },
+              "time_to_peak_forward_velocity_s": {
+                "count": 2,
+                "max": 0.0,
+                "mean": 0.0,
+                "min": 0.0,
+                "p05": 0.0,
+                "p50": 0.0,
+                "p95": 0.0,
+                "std": 0.0
+              }
+            }
+          }
+        ],
+        "post_peak_forward_velocity_sign_changes": {
+          "count": 2,
+          "max": 0.0,
+          "mean": 0.0,
+          "min": 0.0,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 0.0,
+          "std": 0.0
+        },
+        "terminal_speed_m_s": {
+          "count": 2,
+          "max": 0.18427382575766635,
+          "mean": 0.18425132401465147,
+          "min": 0.1842288222716366,
+          "p05": 0.1842310724459381,
+          "p50": 0.18425132401465147,
+          "p95": 0.18427157558336485,
+          "std": 2.250174301487995e-05
+        },
+        "velocity_profile": {
+          "mean_profile_peak_forward_velocity_m_s": 0.0,
+          "mean_profile_terminal_forward_velocity_m_s": -0.13707705062625114,
+          "mean_profile_time_to_peak_forward_velocity_s": 0.0,
+          "peak_forward_velocity_m_s": {
+            "count": 2,
+            "max": 0.0,
+            "mean": 0.0,
+            "min": 0.0,
+            "p05": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "std": 0.0
+          },
+          "time_to_peak_forward_velocity_s": {
+            "count": 2,
+            "max": 0.0,
+            "mean": 0.0,
+            "min": 0.0,
+            "p05": 0.0,
+            "p50": 0.0,
+            "p95": 0.0,
+            "std": 0.0
+          }
+        }
+      },
+      "bulk_arrays": {
+        "arrays": [
+          "position",
+          "velocity",
+          "command",
+          "hidden_norm",
+          "gru_input",
+          "target_position"
+        ],
+        "format": "np.savez_compressed",
+        "path": "_artifacts/ba82f3d/evaluation_diagnostics/gru_target_relative_multitarget_smoke_validation_selected/target_relative_multitarget_fullqrf_smoke.npz"
+      },
+      "checkpoint_policy": "validation_selected_per_replicate",
+      "checkpoint_selection": [
+        {
+          "best_logged_validation_batch": 1,
+          "best_logged_validation_objective": 168935.60137663348,
+          "checkpoint_batches": 1,
+          "checkpoint_path": "_artifacts/ba82f3d/runs/target_relative_multitarget_fullqrf_smoke/checkpoints/checkpoint_0000001",
+          "final_validation_objective": 168935.60137663348,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 0,
+          "scoring_validation_log_batch": 1,
+          "scoring_validation_objective": 168935.60137663348,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "definitions": {
+        "command": "controller output before efferent/motor-channel noise, from state.net.output",
+        "command_jerk_norm": "Euclidean norm of the second finite difference of command along time",
+        "command_norm": "Euclidean norm of command at every evaluated time step",
+        "endpoint_error_m": "Euclidean distance between final effector position and final target",
+        "first_five_step_command_norm": "command_norm restricted to the first min(5, n_time_steps) evaluated samples",
+        "gru_gate_saturation": "bounded gate saturation uses value < 0.05 and value > 0.95; candidate saturation uses abs(value) > 0.95",
+        "hidden_state_norm": "Euclidean norm of GRU hidden state at every evaluated time step",
+        "local_recurrent_jacobian": "sampled hidden-to-hidden Jacobian of the GRU cell at rollout states; not a standard-certificate transition metric",
+        "overshoot_m": "maximum positive projection past the final target along the initial-to-target reach axis; zero when the trajectory never crosses beyond the target",
+        "post_peak_forward_velocity_sign_changes": "number of sign flips in reach-axis velocity after its per-trial peak, ignoring samples with absolute value <= 1e-06",
+        "terminal_speed_m_s": "Euclidean norm of final effector velocity"
+      },
+      "dt_s": 0.01,
+      "gru_gates": {
+        "candidate_activation": {
+          "abs_high_saturation_fraction": 0.0,
+          "count": 480,
+          "max": 0.5417748769868582,
+          "mean": 0.016344797513784533,
+          "min": -0.40974249306598415,
+          "p05": -0.3410255427193778,
+          "p50": -0.07342055402615556,
+          "p95": 0.5354603713596464,
+          "std": 0.3554173752185237
+        },
+        "equations": "Equinox GRUCell reset/update/candidate gates evaluated on rollout states",
+        "per_replicate": [
+          {
+            "candidate_activation": {
+              "abs_high_saturation_fraction": 0.0,
+              "count": 480,
+              "max": 0.5417748769868582,
+              "mean": 0.016344797513784533,
+              "min": -0.40974249306598415,
+              "p05": -0.3410255427193778,
+              "p50": -0.07342055402615556,
+              "p95": 0.5354603713596464,
+              "std": 0.3554173752185237
+            },
+            "replicate": 0,
+            "reset_gate": {
+              "count": 480,
+              "high_saturation_fraction": 0.0,
+              "low_saturation_fraction": 0.0,
+              "max": 0.6350467091911821,
+              "mean": 0.5226782975474846,
+              "min": 0.38451285322062845,
+              "p05": 0.3961289780584759,
+              "p50": 0.5131599441709003,
+              "p95": 0.6332134279108508,
+              "std": 0.10250271893951153
+            },
+            "update_gate": {
+              "count": 480,
+              "high_saturation_fraction": 0.0,
+              "low_saturation_fraction": 0.0,
+              "max": 0.6224909619730348,
+              "mean": 0.5541428080126525,
+              "min": 0.4727947297963421,
+              "p05": 0.47898408923240765,
+              "p50": 0.5639664931134483,
+              "p95": 0.6178489047424142,
+              "std": 0.05879455818177022
+            }
+          }
+        ],
+        "reset_gate": {
+          "count": 480,
+          "high_saturation_fraction": 0.0,
+          "low_saturation_fraction": 0.0,
+          "max": 0.6350467091911821,
+          "mean": 0.5226782975474846,
+          "min": 0.38451285322062845,
+          "p05": 0.3961289780584759,
+          "p50": 0.5131599441709003,
+          "p95": 0.6332134279108508,
+          "std": 0.10250271893951153
+        },
+        "update_gate": {
+          "count": 480,
+          "high_saturation_fraction": 0.0,
+          "low_saturation_fraction": 0.0,
+          "max": 0.6224909619730348,
+          "mean": 0.5541428080126525,
+          "min": 0.4727947297963421,
+          "p05": 0.47898408923240765,
+          "p50": 0.5639664931134483,
+          "p95": 0.6178489047424142,
+          "std": 0.05879455818177022
+        }
+      },
+      "label": "target_relative_smoke",
+      "local_recurrent_jacobians": {
+        "frobenius_norm": {
+          "count": 3,
+          "max": 1.1110875154114523,
+          "mean": 1.107164907539292,
+          "min": 1.105203603603212,
+          "p05": 1.105203603603212,
+          "p50": 1.105203603603212,
+          "p95": 1.1104991242306284,
+          "std": 0.0027737026263402243
+        },
+        "n_samples": 3,
+        "sample_policy": "hidden-to-hidden Jacobian d h_t / d h_{t-1}; trial 0 only; timepoints=('first', 'peak_forward_velocity', 'terminal')",
+        "samples": [
+          {
+            "frobenius_norm": 1.105203603603212,
+            "replicate": 0,
+            "spectral_norm": 0.6468336869808166,
+            "spectral_radius": 0.607942183417003,
+            "time_index": 0,
+            "timepoint": "first",
+            "trial": 0
+          },
+          {
+            "frobenius_norm": 1.105203603603212,
+            "replicate": 0,
+            "spectral_norm": 0.6468336869808166,
+            "spectral_radius": 0.607942183417003,
+            "time_index": 0,
+            "timepoint": "peak_forward_velocity",
+            "trial": 0
+          },
+          {
+            "frobenius_norm": 1.1110875154114523,
+            "replicate": 0,
+            "spectral_norm": 0.6552279735746441,
+            "spectral_radius": 0.6139169011289956,
+            "time_index": 59,
+            "timepoint": "terminal",
+            "trial": 0
+          }
+        ],
+        "spectral_norm": {
+          "count": 3,
+          "max": 0.6552279735746441,
+          "mean": 0.6496317825120924,
+          "min": 0.6468336869808166,
+          "p05": 0.6468336869808166,
+          "p50": 0.6468336869808166,
+          "p95": 0.6543885449152613,
+          "std": 0.003957104649145868
+        },
+        "spectral_radius": {
+          "count": 3,
+          "max": 0.6139169011289956,
+          "mean": 0.6099337559876672,
+          "min": 0.607942183417003,
+          "p05": 0.607942183417003,
+          "p50": 0.607942183417003,
+          "p95": 0.6133194293577963,
+          "std": 0.002816508939883532
+        },
+        "status": "sampled"
+      },
+      "n_replicates": 1,
+      "n_rollout_trials_per_replicate": 2,
+      "n_time_steps": 60,
+      "run_spec_path": "results/ba82f3d/runs/target_relative_multitarget_fullqrf_smoke/run.json"
+    }
+  },
+  "schema_version": "rlrmp.gru_evaluation_diagnostics.v1",
+  "scope": "post_hoc_evaluation_non_certificate_diagnostics",
+  "standard_certificate_metrics": {
+    "excluded_metrics": [
+      "state_weighted_action_mismatch",
+      "clean_action_mismatch",
+      "4d_observation_history_to_action_map_mismatch",
+      "closed_loop_transition_mismatch",
+      "value_gap",
+      "bellman_hessian_residual"
+    ],
+    "note": "This sidecar records rollout behavior and recurrent-controller diagnostics only. Standard certificate and action/I/O mismatch metrics remain in the standard-certificate manifests.",
+    "status": "excluded"
+  }
+}

@@ -1,0 +1,131 @@
+{
+  "checkpoint_policy": "validation_selected_per_replicate",
+  "checkpoint_selection_source": "validation_selected_per_replicate",
+  "issue": "ba82f3d",
+  "labels": [
+    "target_relative_smoke"
+  ],
+  "outputs": {
+    "checkpoint_manifest": "results/ba82f3d/notes/validation_selected_checkpoints.json",
+    "evaluation_bulk_dir": "_artifacts/ba82f3d/evaluation_diagnostics/gru_target_relative_multitarget_smoke_validation_selected",
+    "evaluation_diagnostics_manifest": "results/ba82f3d/notes/gru_evaluation_diagnostics_target_relative_multitarget_smoke_validation_selected.json",
+    "figure_output_dir": "_artifacts/ba82f3d/figures/gru_postrun_target_relative_multitarget_smoke_validation_selected",
+    "figure_summary": "_artifacts/ba82f3d/figures/gru_postrun_target_relative_multitarget_smoke_validation_selected/figure_summary.json",
+    "fixed_bank_rescore_manifest": {
+      "path": "results/ba82f3d/notes/fixed_bank_rescored_checkpoints.json",
+      "selection_use": "sparse_history_fallback",
+      "status": "missing"
+    },
+    "map_decomposition": {
+      "json_path": "results/ba82f3d/notes/gru_map_error_decomposition_target_relative_multitarget_smoke_validation_selected.json",
+      "note_path": "results/ba82f3d/notes/gru_map_error_decomposition_target_relative_multitarget_smoke_validation_selected.md",
+      "result": {
+        "checkpoint_policy": "validation_selected_per_replicate",
+        "n_rows": 1,
+        "schema_version": "rlrmp.gru_map_error_decomposition.v1"
+      },
+      "selection_role": "audit_only_not_used_for_checkpoint_selection",
+      "status": "materialized"
+    },
+    "objective_comparator": {
+      "json_path": "results/ba82f3d/notes/objective_comparator_target_relative_multitarget_smoke_validation_selected.json",
+      "note_path": "results/ba82f3d/notes/objective_comparator_target_relative_multitarget_smoke_validation_selected.md",
+      "result": {
+        "extlqg_deterministic_full_qrf": 4368.510655149214,
+        "extlqg_total_expected_cost": 12201.42433801687,
+        "n_rows": 1,
+        "schema_version": "rlrmp.objective_comparator_sidecar.v6",
+        "standard_split_bank_comparator_status": "available",
+        "status": "materialized"
+      },
+      "status": "materialized"
+    },
+    "split_stress_objective_comparator": {
+      "json_path": "results/ba82f3d/notes/objective_comparator_target_relative_multitarget_smoke_validation_selected.json",
+      "note_path": "results/ba82f3d/notes/objective_comparator_target_relative_multitarget_smoke_validation_selected.md",
+      "schema_version": "rlrmp.objective_comparator_sidecar.v6",
+      "selection_role": "audit_only_not_used_for_checkpoint_selection",
+      "source_sidecar": "objective_comparator",
+      "standard_split_bank_comparator_status": "available",
+      "status": "materialized"
+    },
+    "standard_certificate_manifest": "results/ba82f3d/notes/gru_standard_certificates_target_relative_multitarget_smoke_validation_selected_manifest.json",
+    "standard_certificate_note": "results/ba82f3d/notes/gru_standard_certificates_target_relative_multitarget_smoke_validation_selected.md"
+  },
+  "plan": {
+    "checkpoint_manifest_path": "results/ba82f3d/notes/validation_selected_checkpoints.json",
+    "checkpoint_policy": "validation_selected_per_replicate",
+    "checkpoint_selection_source": "validation_selected_per_replicate",
+    "evaluation_bulk_dir": "_artifacts/ba82f3d/evaluation_diagnostics/gru_target_relative_multitarget_smoke_validation_selected",
+    "evaluation_manifest_path": "results/ba82f3d/notes/gru_evaluation_diagnostics_target_relative_multitarget_smoke_validation_selected.json",
+    "experiment": "ba82f3d",
+    "figure_output_dir": "_artifacts/ba82f3d/figures/gru_postrun_target_relative_multitarget_smoke_validation_selected",
+    "fixed_bank_rescore_manifest_path": "results/ba82f3d/notes/fixed_bank_rescored_checkpoints.json",
+    "map_decomposition_json_path": "results/ba82f3d/notes/gru_map_error_decomposition_target_relative_multitarget_smoke_validation_selected.json",
+    "map_decomposition_note_path": "results/ba82f3d/notes/gru_map_error_decomposition_target_relative_multitarget_smoke_validation_selected.md",
+    "notes_dir": "results/ba82f3d/notes",
+    "objective_comparator_json_path": "results/ba82f3d/notes/objective_comparator_target_relative_multitarget_smoke_validation_selected.json",
+    "objective_comparator_note_path": "results/ba82f3d/notes/objective_comparator_target_relative_multitarget_smoke_validation_selected.md",
+    "output_tag": "target_relative_multitarget_smoke_validation_selected",
+    "postrun_manifest_path": "results/ba82f3d/notes/gru_postrun_materialization_target_relative_multitarget_smoke_validation_selected.json",
+    "run_ids": [
+      "target_relative_multitarget_fullqrf_smoke"
+    ],
+    "standard_manifest_path": "results/ba82f3d/notes/gru_standard_certificates_target_relative_multitarget_smoke_validation_selected_manifest.json",
+    "standard_note_path": "results/ba82f3d/notes/gru_standard_certificates_target_relative_multitarget_smoke_validation_selected.md"
+  },
+  "run_ids": [
+    "target_relative_multitarget_fullqrf_smoke"
+  ],
+  "schema_version": "rlrmp.gru_postrun_materialization.v1",
+  "selection_leakage_guard": {
+    "audit_only_metrics": [
+      "state_weighted_action_mismatch",
+      "clean_action_mismatch",
+      "observation_history_to_action_map_mismatch",
+      "covariance_weighted_map_mismatch",
+      "map_error_decomposition",
+      "extlqg_objective_comparator",
+      "split_stress_bank_objective_comparator"
+    ],
+    "note": "Checkpoint selection uses rollout validation objective only. Certificate, I/O map, covariance-weighted map, map-decomposition, objective-comparator, and split-stress-bank values are audit sidecars.",
+    "status": "audit_only"
+  },
+  "summaries": {
+    "evaluation_diagnostics_schema": "rlrmp.gru_evaluation_diagnostics.v1",
+    "figure_summary_keys": [
+      "checkpoint_policy",
+      "checkpoint_selection",
+      "issue",
+      "loss_plots",
+      "runs",
+      "velocity_profiles"
+    ],
+    "standard_certificate": {
+      "blockers": [],
+      "component_status_counts": {
+        "bellman_hessian_residual:not_applicable": 1,
+        "closed_loop_transition_mismatch:not_applicable": 1,
+        "disturbance_history_to_action_map_mismatch:missing": 1,
+        "disturbance_history_to_cost_quadratic:missing": 1,
+        "disturbance_history_to_output_map_mismatch:missing": 1,
+        "disturbance_history_to_state_map_mismatch:missing": 1,
+        "measurement_history_to_action_map_mismatch:available": 1,
+        "measurement_history_to_output_map_mismatch:missing": 1,
+        "observation_history_to_action_map_mismatch:available": 1,
+        "optimizer_metadata:available": 1,
+        "recurrence_gru_diagnostics:available": 1,
+        "state_weighted_action_mismatch:available": 1,
+        "value_policy_gap:not_applicable": 1,
+        "visited_subspace_diagnostics:missing": 1
+      },
+      "failure_classification_counts": {
+        "mixed": 1
+      },
+      "n_rows": 1,
+      "status_counts": {
+        "partial_standard_certificate_blocked": 1
+      }
+    }
+  }
+}

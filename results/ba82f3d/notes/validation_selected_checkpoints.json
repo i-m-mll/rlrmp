@@ -1,0 +1,24 @@
+{
+  "checkpoint_policy": "validation_selected_per_replicate",
+  "history_validation_log_note": "Validation history contains sparse positive records and zero padding. Durable models are only available at numbered checkpoints, so each checkpoint is scored by the most recent positive validation record at or before that checkpoint.",
+  "issue": "ba82f3d",
+  "runs": {
+    "target_relative_multitarget_fullqrf_smoke": [
+      {
+        "best_logged_validation_batch": 1,
+        "best_logged_validation_objective": 168935.60137663348,
+        "checkpoint_batches": 1,
+        "checkpoint_path": "_artifacts/ba82f3d/runs/target_relative_multitarget_fullqrf_smoke/checkpoints/checkpoint_0000001",
+        "final_validation_objective": 168935.60137663348,
+        "final_vs_selected_validation_degradation": 0.0,
+        "replicate": 0,
+        "scoring_validation_log_batch": 1,
+        "scoring_validation_objective": 168935.60137663348,
+        "selection_source": "sparse_history_fallback"
+      }
+    ]
+  },
+  "schema_version": "rlrmp.validation_selected_gru_checkpoints.v1",
+  "selection_policy": "per-replicate checkpoint selected by minimum positive rollout validation objective among available durable checkpoints; analytical action and I/O metrics are audit-only",
+  "selection_source": "sparse_history_fallback"
+}
