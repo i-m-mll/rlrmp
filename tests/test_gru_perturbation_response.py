@@ -16,12 +16,14 @@ from rlrmp.analysis.gru_perturbation_bank import (
     apply_perturbation_to_trial_specs,
     default_cs_perturbation_bank,
     delta_full_qrf_cost_summary,
+    evaluate_extlqg_perturbation_comparator,
     extlqg_comparator_status,
     render_perturbation_response_markdown,
     score_full_qrf_rollout_cost,
     summarize_perturbation_bank,
     summarize_perturbation_response,
 )
+import rlrmp.analysis.gru_perturbation_bank as perturbation_bank
 from rlrmp.analysis.gru_evaluation_diagnostics import RolloutEvaluation
 from rlrmp.analysis.cs_game_card import build_canonical_game
 from rlrmp.cs_lss_gru import build_cs_lss_gru_graph
@@ -283,7 +285,8 @@ def test_sensory_adapter_uses_external_graph_channel_payload() -> None:
     result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
 
     assert result.status == "evaluated"
-    payload = result.trial_specs.inputs[f"{GRAPH_ADAPTER_INPUT_PREFIX}:sensory_feedback_offset__x_pos"]
+    input_key = f"{GRAPH_ADAPTER_INPUT_PREFIX}:sensory_feedback_offset__x_pos"
+    payload = result.trial_specs.inputs[input_key]
     assert payload.shape == (2, 10, 4)
     np.testing.assert_allclose(payload[:, :, 0], 0.01)
     assert result.adapter_provenance["insertion_point"] == "sensory.output -> net.feedback"
@@ -677,3 +680,103 @@ def test_extlqg_comparator_status_defers_target_stream_for_fixed_target_rows() -
     assert status["status"] == "not_applicable"
     assert "fixed-target checkpoints" in status["reason"]
     assert status["selection_role"] == "audit_only_not_used_for_checkpoint_selection"
+
+
+def test_extlqg_comparator_evaluates_sensory_and_delayed_observation_offsets(
+    monkeypatch,
+) -> None:
+    base = _minimal_rollout_evaluation(command_value=0.0)
+    perturbed = _minimal_rollout_evaluation(command_value=1.0)
+    initial_state = np.zeros((48,), dtype=np.float64)
+    calls = []
+
+    def fake_simulate_extlqg_perturbed(perturbation, *, context):
+        calls.append(perturbation["channel"])
+        adapter = {
+            "adapter": f"fake_{perturbation['channel']}",
+            "controller_input_mutated": False,
+            "controller_internal_state_mutated": False,
+        }
+        return perturbed, initial_state, adapter
+
+    def fake_extlqg_cost_summary(evaluation, initial_state):
+        del evaluation, initial_state
+        cost = {"values": [0.0]}
+        return {
+            "status": "available",
+            "total": cost,
+            "stage_state": cost,
+            "control": cost,
+            "terminal": cost,
+        }
+
+    monkeypatch.setattr(
+        perturbation_bank,
+        "_simulate_extlqg_perturbed",
+        fake_simulate_extlqg_perturbed,
+    )
+    monkeypatch.setattr(perturbation_bank, "_extlqg_cost_summary", fake_extlqg_cost_summary)
+    context = {
+        "base_evaluation": base,
+        "base_initial_state": initial_state,
+        "parity_status": "test",
+        "n_iterations": 0,
+    }
+
+    for channel, family, expected_adapter in (
+        ("sensory_feedback", "sensory_feedback_offset", "fake_sensory_feedback"),
+        ("delayed_observation", "delayed_observation_offset", "fake_delayed_observation"),
+    ):
+        comparator = evaluate_extlqg_perturbation_comparator(
+            {
+                "channel": channel,
+                "family": family,
+                "axis": "x",
+                "amplitude": 0.01,
+                "sign": 1,
+                "timing": {"start_time_index": 0, "duration_steps": 2},
+            },
+            context=context,
+            gru_metrics={"delta_action_norm": {"mean": 1.0}},
+        )
+
+        assert comparator["status"] == "available"
+        assert comparator["analytical_adapter"]["adapter"] == expected_adapter
+        assert comparator["analytical_adapter"]["controller_internal_state_mutated"] is False
+
+    assert calls == ["sensory_feedback", "delayed_observation"]
+
+
+def test_extlqg_comparator_keeps_command_input_not_applicable() -> None:
+    comparator = evaluate_extlqg_perturbation_comparator(
+        {
+            "channel": "command_input",
+            "family": "command_input_pulse",
+            "axis": "x",
+            "amplitude": 1.0,
+            "sign": 1,
+            "timing": {"start_time_index": 0, "duration_steps": 1},
+        },
+        context={},
+        gru_metrics={},
+    )
+
+    assert comparator["status"] == "not_applicable"
+    assert "command-port intervention" in comparator["reason"]
+
+
+def _minimal_rollout_evaluation(*, command_value: float) -> RolloutEvaluation:
+    position = np.zeros((1, 1, 2, 2), dtype=np.float64)
+    velocity = np.zeros_like(position)
+    command = np.full((1, 1, 2, 2), command_value, dtype=np.float64)
+    return RolloutEvaluation(
+        position=position,
+        velocity=velocity,
+        command=command,
+        hidden=np.zeros((1, 1, 2, 0), dtype=np.float64),
+        gru_input=np.zeros((1, 1, 2, 0), dtype=np.float64),
+        initial_position=np.zeros((1, 2), dtype=np.float64),
+        initial_velocity=np.zeros((1, 2), dtype=np.float64),
+        target_position=np.zeros((1, 2, 2), dtype=np.float64),
+        dt=0.01,
+    )

@@ -558,14 +558,19 @@ def materialize_gru_perturbation_response(
         ),
         "bank": bank,
         "extlqg_comparator": {
-            "status": "available_for_initial_state_and_process_epsilon",
+            "status": (
+                "available_for_initial_state_process_epsilon_sensory_feedback_"
+                "and_delayed_observation"
+            ),
             "reason": (
                 "Deterministic extLQG response rows are evaluated for perturbations "
-                "with clean analytical interfaces: initial_state and process_epsilon. "
-                "Command-input, sensory-feedback, and delayed-observation GRU rows "
-                "are evaluated through temporary external graph adapters, but do not "
-                "yet have matching analytical extLQG channel adapters; target-stream "
-                "is deferred for current fixed-target checkpoints."
+                "with clean analytical interfaces: initial_state, process_epsilon, "
+                "sensory_feedback, and delayed_observation. Sensory-feedback rows "
+                "offset the post-noise measurement delivered to the estimator; "
+                "delayed-observation rows offset the clean delayed measurement before "
+                "sensory noise. Command-input rows still require a separate "
+                "analytical command-port intervention, and target-stream is deferred "
+                "for current fixed-target checkpoints."
             ),
             "checkpoint_selection_role": "audit_only_not_used_for_selection",
         },
@@ -919,12 +924,22 @@ def evaluate_extlqg_perturbation_comparator(
     """Evaluate the deterministic extLQG comparator for one perturbation row."""
 
     channel = str(perturbation["channel"])
-    if channel not in {"initial_state", "process_epsilon"}:
+    supported_channels = {
+        "initial_state",
+        "process_epsilon",
+        "sensory_feedback",
+        "delayed_observation",
+    }
+    if channel not in supported_channels:
         return extlqg_comparator_status(perturbation, status="not_applicable")
     try:
         base = context["base_evaluation"]
         base_initial_state = np.asarray(context["base_initial_state"], dtype=np.float64)
-        perturbed_evaluation, perturbed_initial_state = _simulate_extlqg_perturbed(
+        (
+            perturbed_evaluation,
+            perturbed_initial_state,
+            adapter_provenance,
+        ) = _simulate_extlqg_perturbed(
             perturbation,
             context=context,
         )
@@ -942,6 +957,7 @@ def evaluate_extlqg_perturbation_comparator(
             "selection_role": "audit_only_not_used_for_checkpoint_selection",
             "parity_status": str(context["parity_status"]),
             "n_iterations": int(context["n_iterations"]),
+            "analytical_adapter": adapter_provenance,
             "reference_response_metrics": response_metrics,
             "gru_vs_extlqg": compare_response_metric_summaries(gru_metrics, response_metrics),
         }
@@ -968,12 +984,12 @@ def extlqg_comparator_status(
             "matching analytical command-port intervention"
         ),
         "sensory_feedback": (
-            "sensory_feedback rows require a matching extLQG measurement-channel "
-            "adapter rather than controller-internal mutation"
+            "sensory_feedback rows are supported as post-noise measurement-channel "
+            "offsets when evaluated by the extLQG comparator"
         ),
         "delayed_observation": (
-            "delayed_observation rows require a clean pre-noise observation-history "
-            "adapter in both GRU and analytical paths"
+            "delayed_observation rows are supported as clean pre-noise delayed-"
+            "measurement offsets when evaluated by the extLQG comparator"
         ),
         "target_stream": (
             "target_stream rows are deferred for current fixed-target checkpoints "
@@ -985,7 +1001,8 @@ def extlqg_comparator_status(
         "lens": "deterministic_extlqg_same_declared_perturbation",
         "reason": reasons.get(
             channel,
-            "analytical comparator is only defined for evaluated initial_state and process_epsilon rows",
+            "analytical comparator is only defined for evaluated rows with "
+            "supported external analytical adapters",
         ),
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
     }
@@ -1531,7 +1548,7 @@ def _simulate_extlqg_perturbed(
     perturbation: Mapping[str, Any],
     *,
     context: Mapping[str, Any],
-) -> tuple[RolloutEvaluation, np.ndarray]:
+) -> tuple[RolloutEvaluation, np.ndarray, dict[str, Any]]:
     """Simulate one deterministic analytical perturbation row."""
 
     plant = context["plant"]
@@ -1540,10 +1557,50 @@ def _simulate_extlqg_perturbed(
     comparator = context["comparator"]
     x0 = jnp.asarray(context["base_initial_state"], dtype=jnp.float64)
     adversary_epsilon = None
+    clean_observation_offset = None
+    sensory_feedback_offset = None
+    adapter_provenance: dict[str, Any]
     if perturbation["channel"] == "initial_state":
         x0 = _perturbed_extlqg_initial_state(x0, perturbation)
+        adapter_provenance = {
+            "adapter": "analytical_initial_state_offset",
+            "controller_input_mutated": False,
+            "controller_internal_state_mutated": False,
+        }
     elif perturbation["channel"] == "process_epsilon":
         adversary_epsilon = _extlqg_process_epsilon(perturbation, schedule.T, plant.m_w)
+        adapter_provenance = {
+            "adapter": "analytical_process_epsilon_sequence",
+            "process_channel": "PlantLinearization.Bw",
+            "controller_input_mutated": False,
+            "controller_internal_state_mutated": False,
+        }
+    elif perturbation["channel"] == "sensory_feedback":
+        sensory_feedback_offset = _extlqg_observation_offset(
+            perturbation,
+            horizon=schedule.T,
+            observation_dim=config.n_phys,
+        )
+        adapter_provenance = {
+            "adapter": "analytical_post_noise_measurement_offset",
+            "insertion_point": "y_clean + sensory_noise -> estimator innovation",
+            "information_structure": "post_noise_feedback_channel",
+            "controller_input_mutated": False,
+            "controller_internal_state_mutated": False,
+        }
+    elif perturbation["channel"] == "delayed_observation":
+        clean_observation_offset = _extlqg_observation_offset(
+            perturbation,
+            horizon=schedule.T,
+            observation_dim=config.n_phys,
+        )
+        adapter_provenance = {
+            "adapter": "analytical_clean_delayed_measurement_offset",
+            "insertion_point": "H @ x_t -> sensory measurement before noise",
+            "information_structure": "pre_noise_delayed_observation_channel",
+            "controller_input_mutated": False,
+            "controller_internal_state_mutated": False,
+        }
     else:
         raise ValueError(f"extLQG comparator does not support channel {perturbation['channel']!r}")
     rollout = simulate_lqg_released_forward(
@@ -1554,9 +1611,15 @@ def _simulate_extlqg_perturbed(
         covariances=zero_noise_covariances(plant, config),
         estimator_gains=comparator.estimator_gains,
         adversary_epsilon=adversary_epsilon,
+        clean_observation_offset=clean_observation_offset,
+        sensory_feedback_offset=sensory_feedback_offset,
         config=config,
     )
-    return _evaluation_from_extlqg_rollout(rollout, initial_state=x0), np.asarray(x0)
+    return (
+        _evaluation_from_extlqg_rollout(rollout, initial_state=x0),
+        np.asarray(x0),
+        adapter_provenance,
+    )
 
 
 def _evaluation_from_extlqg_rollout(
@@ -1625,6 +1688,35 @@ def _extlqg_process_epsilon(
     amount = float(perturbation["amplitude"]) * int(perturbation["sign"])
     epsilon = jnp.zeros((horizon, epsilon_dim), dtype=jnp.float64)
     return epsilon.at[start : start + duration, epsilon_index].set(amount)
+
+
+def _extlqg_observation_offset(
+    perturbation: Mapping[str, Any],
+    *,
+    horizon: int,
+    observation_dim: int,
+) -> jnp.ndarray:
+    """Return a timed analytical observation-channel offset sequence."""
+
+    family = str(perturbation["family"])
+    if family not in {"sensory_feedback_offset", "delayed_observation_offset"}:
+        raise ValueError(f"unsupported analytical observation-offset family {family!r}")
+    observation_index = _axis_index(str(perturbation["axis"]))
+    if observation_index < 0 or observation_index >= observation_dim:
+        raise ValueError(
+            f"observation axis index {observation_index} outside analytical dim {observation_dim}"
+        )
+    timing = perturbation["timing"]
+    start = int(timing.get("start_time_index", 0))
+    duration = int(timing.get("duration_steps", 1))
+    if start < 0 or duration < 1 or start + duration > horizon:
+        raise ValueError(
+            f"observation-offset timing outside analytical horizon: {start=}, "
+            f"{duration=}, {horizon=}"
+        )
+    amount = float(perturbation["amplitude"]) * int(perturbation["sign"])
+    offset = jnp.zeros((horizon, observation_dim), dtype=jnp.float64)
+    return offset.at[start : start + duration, observation_index].set(amount)
 
 
 def _extlqg_cost_summary(evaluation: RolloutEvaluation, initial_state: Any) -> dict[str, Any]:
