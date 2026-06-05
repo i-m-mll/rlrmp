@@ -1086,6 +1086,29 @@ def render_feedback_ablation_markdown(manifest: Mapping[str, Any]) -> str:
         selected = audit.get("selected_candidate", {})
         if isinstance(selected, Mapping):
             lines.append(f"- Feedback-selected candidate: `{selected.get('run_id')}`")
+    elif isinstance(audit, Mapping) and audit.get("status") == "materialized":
+        lines.extend(
+            [
+                "",
+                "| Run | Replicate | Validation checkpoint | Feedback checkpoint | "
+                "Feedback - validation | Feedback score | Bins |",
+                "|---|---:|---:|---:|---:|---:|---:|",
+            ]
+        )
+        for run_id, audit_run in audit.get("runs", {}).items():
+            if not isinstance(audit_run, Mapping):
+                continue
+            for selection in audit_run.get("feedback_selected_checkpoints", ()):
+                if not isinstance(selection, Mapping):
+                    continue
+                lines.append(
+                    f"| `{run_id}` | {selection.get('replicate')} | "
+                    f"{selection.get('validation_selected_checkpoint_batches')} | "
+                    f"{selection.get('feedback_selected_checkpoint_batches')} | "
+                    f"{selection.get('feedback_minus_validation_batches')} | "
+                    f"{_format_float(selection.get('feedback_score'))} | "
+                    f"{selection.get('n_available_feedback_bins', 0)} |"
+                )
     elif isinstance(audit, Mapping) and audit.get("reason"):
         lines.append(f"- Reason: {audit.get('reason')}")
     lines.extend(
