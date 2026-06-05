@@ -57,6 +57,13 @@ DEFAULT_AMPLITUDE_FACTORS = (
     1000.0,
 )
 OPEN_LOOP_SUPPORTED_CHANNELS = {"initial_state", "command_input", "process_epsilon"}
+TIMED_PLANT_SIDE_FAMILIES = {
+    "command_input_pulse",
+    "process_epsilon_position_xy",
+    "process_epsilon_velocity_xy",
+    "process_epsilon_force_state_xy",
+    "process_epsilon_integrator_xy",
+}
 
 
 @dataclass(frozen=True)
@@ -97,6 +104,50 @@ class ReachRelativeLevel:
         }
 
 
+@dataclass(frozen=True)
+class TimingCalibrationBin:
+    """A deterministic timing bin used by perturbation calibration."""
+
+    label: str
+    start_time_index: int
+    duration_steps: int
+    role: str
+
+    def to_json(self) -> dict[str, Any]:
+        """Return a JSON-serializable timing-bin definition."""
+
+        return {
+            "label": self.label,
+            "start_time_index": int(self.start_time_index),
+            "duration_steps": int(self.duration_steps),
+            "role": self.role,
+        }
+
+
+@dataclass(frozen=True)
+class NativeConvention:
+    """Native-unit convention for rows that are not open-loop plant calibrations."""
+
+    family: str
+    channel: str
+    native_unit_rule: str
+    timing_rule: str
+    report_metric: str
+    role: str
+
+    def to_json(self) -> dict[str, Any]:
+        """Return a JSON-serializable native convention."""
+
+        return {
+            "family": self.family,
+            "channel": self.channel,
+            "native_unit_rule": self.native_unit_rule,
+            "timing_rule": self.timing_rule,
+            "report_metric": self.report_metric,
+            "role": self.role,
+        }
+
+
 DEFAULT_REACH_CALIBRATION_POINTS = (
     ReachCalibrationPoint(
         label="seen_train_0p10",
@@ -128,6 +179,87 @@ DEFAULT_REACH_RELATIVE_LEVELS = (
     ReachRelativeLevel(name="moderate", fraction_of_reach=0.10, role="moderate_probe"),
     ReachRelativeLevel(name="stress", fraction_of_reach=0.25, role="stress_probe"),
 )
+DEFAULT_PLANT_TIMING_BINS = (
+    TimingCalibrationBin(
+        label="early",
+        start_time_index=5,
+        duration_steps=5,
+        role="plant_side_open_loop_calibration",
+    ),
+    TimingCalibrationBin(
+        label="mid",
+        start_time_index=15,
+        duration_steps=5,
+        role="plant_side_open_loop_calibration",
+    ),
+    TimingCalibrationBin(
+        label="late",
+        start_time_index=35,
+        duration_steps=5,
+        role="plant_side_open_loop_calibration",
+    ),
+)
+DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS = (
+    TimingCalibrationBin(
+        label="early_visible",
+        start_time_index=10,
+        duration_steps=5,
+        role="controller_visible_offset_convention",
+    ),
+    TimingCalibrationBin(
+        label="mid_visible",
+        start_time_index=20,
+        duration_steps=5,
+        role="controller_visible_offset_convention",
+    ),
+    TimingCalibrationBin(
+        label="late_visible",
+        start_time_index=40,
+        duration_steps=5,
+        role="controller_visible_offset_convention",
+    ),
+)
+DEFAULT_NATIVE_CONVENTIONS = (
+    NativeConvention(
+        family="sensory_feedback_offset",
+        channel="sensory_feedback",
+        native_unit_rule=(
+            "position offsets are fractions of reach length; velocity offsets are "
+            "fractions of nominal peak speed when available"
+        ),
+        timing_rule="controller-visible starts 10/20/40 with 5-step duration",
+        report_metric="closed-loop induced discrepancy against paired nominal rollout",
+        role="metadata_only_not_open_loop_physical_calibration",
+    ),
+    NativeConvention(
+        family="delayed_observation_offset",
+        channel="delayed_observation",
+        native_unit_rule=(
+            "pre-noise delayed-measurement position offsets are fractions of reach "
+            "length; velocity offsets use nominal peak speed placeholder when the "
+            "actual peak speed is unavailable"
+        ),
+        timing_rule="controller-visible starts 10/20/40 with 5-step duration",
+        report_metric="closed-loop induced discrepancy against paired nominal rollout",
+        role="metadata_only_not_open_loop_physical_calibration",
+    ),
+    NativeConvention(
+        family="target_stream_jump",
+        channel="target_stream",
+        native_unit_rule="target offsets are fractions of reach length",
+        timing_rule="controller-visible starts 10/20/40 with 5-step duration",
+        report_metric="closed-loop induced discrepancy once target-stream rows exist",
+        role="metadata_only_not_open_loop_physical_calibration",
+    ),
+    NativeConvention(
+        family="true_extra_delay_steps",
+        channel="feedback_delay",
+        native_unit_rule="integer extra delay steps, not a reach-relative amplitude",
+        timing_rule="applies to the feedback path delay schedule rather than pulse timing",
+        report_metric="induced discrepancy from added delay, to be reported in future rows",
+        role="metadata_only_not_open_loop_physical_calibration",
+    ),
+)
 
 
 def materialize_perturbation_open_loop_calibration(
@@ -135,6 +267,11 @@ def materialize_perturbation_open_loop_calibration(
     amplitude_factors: Sequence[float] = DEFAULT_AMPLITUDE_FACTORS,
     reach_points: Sequence[ReachCalibrationPoint] = DEFAULT_REACH_CALIBRATION_POINTS,
     levels: Sequence[ReachRelativeLevel] = DEFAULT_REACH_RELATIVE_LEVELS,
+    plant_timing_bins: Sequence[TimingCalibrationBin] = DEFAULT_PLANT_TIMING_BINS,
+    controller_visible_timing_bins: Sequence[
+        TimingCalibrationBin
+    ] = DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS,
+    native_conventions: Sequence[NativeConvention] = DEFAULT_NATIVE_CONVENTIONS,
     result_experiment: str = DEFAULT_RESULT_EXPERIMENT,
     output_path: Path | None = None,
     note_path: Path | None = None,
@@ -155,6 +292,7 @@ def materialize_perturbation_open_loop_calibration(
     base_cost = _extlqg_cost_summary(base, context["base_initial_state"])
     sensitivities = _family_sensitivities(
         bank["perturbations"],
+        plant_timing_bins=plant_timing_bins,
         context=context,
         base=base,
         base_cost=base_cost,
@@ -163,24 +301,18 @@ def materialize_perturbation_open_loop_calibration(
     for reach in reach_points:
         for level in levels:
             target_peak_delta_x_m = float(reach.reach_length_m) * float(level.fraction_of_reach)
-            for family, sensitivity in sensitivities.items():
+            for sensitivity_key, sensitivity in sensitivities.items():
                 if sensitivity.get("status") != "available":
-                    rows.append(
-                        _unsupported_open_loop_row(
-                            sensitivity["perturbation"],
-                            reach=reach,
-                            level=level,
-                            target_peak_delta_x_m=target_peak_delta_x_m,
-                            reason=sensitivity.get("reason"),
-                        )
-                    )
                     continue
-                amplitude = target_peak_delta_x_m / float(sensitivity["peak_delta_x_per_unit"])
+                amplitude = calibrated_amplitude_from_unit_sensitivity(
+                    target_peak_delta_x_m=target_peak_delta_x_m,
+                    peak_delta_x_per_unit_m=float(sensitivity["peak_delta_x_per_unit"]),
+                )
                 scaled = _set_perturbation_amplitude(
                     sensitivity["perturbation"],
                     amplitude=float(amplitude),
                     suffix=(
-                        f"{reach.label}__{level.name}"
+                        f"{sensitivity_key}__{reach.label}__{level.name}"
                         f"__target_{target_peak_delta_x_m * 1000.0:.3f}mm"
                     ),
                 )
@@ -198,17 +330,19 @@ def materialize_perturbation_open_loop_calibration(
                         sensitivity=sensitivity,
                     )
                 )
-    for family, sensitivity in sensitivities.items():
+    for sensitivity in sensitivities.values():
         if sensitivity.get("status") != "available":
             continue
         rows.append(
             {
                 "row_kind": "unit_sensitivity",
+                "sensitivity_id": sensitivity["sensitivity_id"],
                 "perturbation_id": sensitivity["perturbation_id"],
                 "channel": sensitivity["channel"],
-                "family": family,
+                "family": sensitivity["family"],
                 "axis": sensitivity.get("axis"),
                 "sign": sensitivity.get("sign"),
+                "timing_bin": sensitivity.get("timing_bin"),
                 "timing": sensitivity.get("timing"),
                 "amplitude": 1.0,
                 "open_loop_peak_delta_x_per_unit_m": sensitivity["peak_delta_x_per_unit"],
@@ -225,13 +359,19 @@ def materialize_perturbation_open_loop_calibration(
         "calibration_mode": "reach_relative_peak_delta_x",
         "reach_points": [reach.to_json() for reach in reach_points],
         "level_definitions": [level.to_json() for level in levels],
+        "plant_timing_bins": [timing_bin.to_json() for timing_bin in plant_timing_bins],
+        "controller_visible_timing_bins": [
+            timing_bin.to_json() for timing_bin in controller_visible_timing_bins
+        ],
+        "native_conventions": [convention.to_json() for convention in native_conventions],
         "legacy_fixed_mm_amplitude_factors": list(amplitude_factors),
         "target_rule": "target_peak_delta_x_m = reach_length_m * fraction_of_reach",
         "selection_rule": (
-            "For each supported family, use the deterministic representative row "
-            "chosen by earliest timing, x axis, positive sign, and stable "
-            "perturbation_id tie-breaks; solve amplitude from the unit-amplitude "
-            "open-loop peak delta x sensitivity, then re-evaluate the solved row."
+            "For timed plant-side rows, calibrate one unit sensitivity for each "
+            "family x plant timing bin, using x axis, positive sign, and stable "
+            "perturbation_id tie-breaks. Initial-condition rows keep t=0 and one "
+            "unit sensitivity per family. Reach and severity rows are derived by "
+            "scaling those unit sensitivities; they are not independently calibrated."
         ),
         "open_loop_replay_geometry": {
             "nominal_reach_length_m": 0.15,
@@ -261,6 +401,18 @@ def materialize_perturbation_open_loop_calibration(
     return manifest
 
 
+def calibrated_amplitude_from_unit_sensitivity(
+    *,
+    target_peak_delta_x_m: float,
+    peak_delta_x_per_unit_m: float,
+) -> float:
+    """Return amplitude derived from a unit open-loop sensitivity."""
+
+    if peak_delta_x_per_unit_m <= 0.0:
+        raise ValueError("peak_delta_x_per_unit_m must be positive")
+    return float(target_peak_delta_x_m) / float(peak_delta_x_per_unit_m)
+
+
 def render_calibration_markdown(manifest: Mapping[str, Any]) -> str:
     """Render a compact calibration summary."""
 
@@ -273,6 +425,9 @@ def render_calibration_markdown(manifest: Mapping[str, Any]) -> str:
         "- Closed-loop extLQG is reported at the same amplitudes where supported.",
         "- Calibration mode: reach-relative peak `delta x`, with target peak "
         "`delta x = fraction * reach_length`.",
+        "- Unit sensitivities are calibrated by perturbation family and timing bin; "
+        "reach/level rows are deterministic scalings from those sensitivities, not "
+        "independent calibrations.",
         "- Replay geometry: canonical 0.15 m +x extLQG nominal command replay; "
         "the reach-relative targets vary the requested physical effect size, not "
         "the nominal replay task.",
@@ -312,17 +467,47 @@ def render_calibration_markdown(manifest: Mapping[str, Any]) -> str:
     lines.extend(
         [
             "",
+            "Plant-side timing bins:",
+            "",
+            "| Bin | Start step | Duration | Role |",
+            "|---|---:|---:|---|",
+        ]
+    )
+    for timing_bin in manifest.get("plant_timing_bins", []):
+        lines.append(
+            f"| `{timing_bin['label']}` | {timing_bin['start_time_index']} | "
+            f"{timing_bin['duration_steps']} | {timing_bin['role']} |"
+        )
+    lines.extend(
+        [
+            "",
+            "Controller-visible/native conventions:",
+            "",
+            "| Family | Channel | Native rule | Timing rule | Report metric |",
+            "|---|---|---|---|---|",
+        ]
+    )
+    for convention in manifest.get("native_conventions", []):
+        lines.append(
+            f"| `{convention['family']}` | `{convention['channel']}` | "
+            f"{convention['native_unit_rule']} | {convention['timing_rule']} | "
+            f"{convention['report_metric']} |"
+        )
+    lines.extend(
+        [
+            "",
             "## Selected Reach-Relative Amplitudes",
             "",
-            "| Reach | Level | Family | Amplitude | Target peak dx | Achieved peak dx | "
+            "| Reach | Level | Family | Timing bin | Amplitude | Target peak dx | Achieved peak dx | "
             "Achieved % reach | AUC dx | Notes |",
-            "|---|---|---|---:|---:|---:|---:|---:|---|",
+            "|---|---|---|---|---:|---:|---:|---:|---:|---|",
         ]
     )
     for row in _selected_calibration_rows(manifest["rows"]):
         notes = row.get("warning") or "none"
         lines.append(
             f"| `{row['reach_label']}` | `{row['level_name']}` | `{row['family']}` | "
+            f"`{row.get('timing_bin', 'initial_condition')}` | "
             f"{_fmt(row['amplitude'])} | "
             f"{_fmt_mm(row['target_peak_delta_x_m'])} | "
             f"{_fmt_mm(row['achieved_peak_delta_x_m'])} | "
@@ -415,6 +600,7 @@ def _evaluate_calibration_row(
         "target_peak_error_m": target_error,
         "warning": warning,
         "sensitivity_reference": {
+            "sensitivity_id": sensitivity["sensitivity_id"],
             "perturbation_id": sensitivity["perturbation_id"],
             "peak_delta_x_per_unit_m": sensitivity["peak_delta_x_per_unit"],
             "auc_delta_x_per_unit_m_s": sensitivity["auc_delta_x_per_unit"],
@@ -427,6 +613,7 @@ def _evaluate_calibration_row(
         "sign": perturbation.get("sign"),
         "amplitude": perturbation["amplitude"],
         "amplitude_factor": amplitude_factor,
+        "timing_bin": sensitivity.get("timing_bin"),
         "timing": perturbation.get("timing"),
         "open_loop": {
             "status": "available",
@@ -547,6 +734,7 @@ def _unsupported_open_loop_row(
 def _family_sensitivities(
     perturbations: Sequence[Mapping[str, Any]],
     *,
+    plant_timing_bins: Sequence[TimingCalibrationBin],
     context: Mapping[str, Any],
     base: RolloutEvaluation,
     base_cost: Mapping[str, Any],
@@ -567,42 +755,90 @@ def _family_sensitivities(
                 "perturbation": representative,
             }
             continue
-        unit = _set_perturbation_amplitude(
-            representative,
-            amplitude=1.0,
-            suffix="unit_sensitivity",
+        representatives = _calibration_representatives(
+            family=family,
+            representative=representative,
+            plant_timing_bins=plant_timing_bins,
         )
-        row = _evaluate_unit_sensitivity_row(
-            unit,
-            context=context,
-            base=base,
-            base_cost=base_cost,
-        )
-        peak = _metric_mean(row["open_loop"]["response_metrics"], "delta_position_response_m.max")
-        auc = _metric_mean(row["open_loop"]["response_metrics"], "delta_position_response_m.auc")
-        if peak is None or abs(peak) <= 1e-12:
-            sensitivities[family] = {
-                "status": "blocked",
-                "reason": "unit-amplitude open-loop peak delta x was unavailable or near zero",
+        for sensitivity_id, timing_bin_label, representative in representatives:
+            unit = _set_perturbation_amplitude(
+                representative,
+                amplitude=1.0,
+                suffix=f"{sensitivity_id}__unit_sensitivity",
+            )
+            row = _evaluate_unit_sensitivity_row(
+                unit,
+                context=context,
+                base=base,
+                base_cost=base_cost,
+            )
+            peak = _metric_mean(row["open_loop"]["response_metrics"], "delta_position_response_m.max")
+            auc = _metric_mean(row["open_loop"]["response_metrics"], "delta_position_response_m.auc")
+            if peak is None or abs(peak) <= 1e-12:
+                sensitivities[sensitivity_id] = {
+                    "status": "blocked",
+                    "reason": "unit-amplitude open-loop peak delta x was unavailable or near zero",
+                    "perturbation": representative,
+                    "timing_bin": timing_bin_label,
+                    "open_loop": row["open_loop"],
+                }
+                continue
+            sensitivities[sensitivity_id] = {
+                "status": "available",
+                "sensitivity_id": sensitivity_id,
                 "perturbation": representative,
+                "perturbation_id": representative["perturbation_id"],
+                "channel": representative["channel"],
+                "family": family,
+                "axis": representative.get("axis"),
+                "sign": representative.get("sign"),
+                "timing_bin": timing_bin_label,
+                "timing": representative.get("timing"),
+                "peak_delta_x_per_unit": float(abs(peak)),
+                "auc_delta_x_per_unit": auc,
                 "open_loop": row["open_loop"],
+                "selection_rule": _representative_selection_rule(family),
             }
-            continue
-        sensitivities[family] = {
-            "status": "available",
-            "perturbation": representative,
-            "perturbation_id": representative["perturbation_id"],
-            "channel": representative["channel"],
-            "family": family,
-            "axis": representative.get("axis"),
-            "sign": representative.get("sign"),
-            "timing": representative.get("timing"),
-            "peak_delta_x_per_unit": float(abs(peak)),
-            "auc_delta_x_per_unit": auc,
-            "open_loop": row["open_loop"],
-            "selection_rule": _representative_selection_rule(),
-        }
     return sensitivities
+
+
+def _calibration_representatives(
+    *,
+    family: str,
+    representative: Mapping[str, Any],
+    plant_timing_bins: Sequence[TimingCalibrationBin],
+) -> list[tuple[str, str, Mapping[str, Any]]]:
+    if family not in TIMED_PLANT_SIDE_FAMILIES:
+        return [(f"{family}__initial_condition", "initial_condition", representative)]
+    rows = []
+    for timing_bin in plant_timing_bins:
+        rows.append(
+            (
+                f"{family}__{timing_bin.label}",
+                timing_bin.label,
+                _with_timing_bin(representative, timing_bin),
+            )
+        )
+    return rows
+
+
+def _with_timing_bin(
+    perturbation: Mapping[str, Any],
+    timing_bin: TimingCalibrationBin,
+) -> dict[str, Any]:
+    row = dict(perturbation)
+    timing = dict(row.get("timing", {}))
+    timing["epoch"] = "movement_indexed"
+    timing["start_time_index"] = int(timing_bin.start_time_index)
+    timing["duration_steps"] = int(timing_bin.duration_steps)
+    timing["calibration_timing_bin"] = timing_bin.label
+    row["timing"] = timing
+    row["calibration_timing_bin"] = timing_bin.label
+    row["perturbation_id"] = (
+        f"{perturbation['family']}__{timing_bin.label}_t{timing_bin.start_time_index}"
+        f"__{perturbation.get('axis', 'axis')}_{_sign_label(int(perturbation.get('sign', 1)))}"
+    )
+    return row
 
 
 def _representative_perturbation(rows: Sequence[Mapping[str, Any]]) -> Mapping[str, Any]:
@@ -617,8 +853,17 @@ def _representative_perturbation(rows: Sequence[Mapping[str, Any]]) -> Mapping[s
     )
 
 
-def _representative_selection_rule() -> str:
-    return "earliest timing, x axis, positive sign, perturbation_id tie-break"
+def _representative_selection_rule(family: str) -> str:
+    if family in TIMED_PLANT_SIDE_FAMILIES:
+        return (
+            "family x timing_bin unit sensitivity; x axis, positive sign, "
+            "perturbation_id tie-break"
+        )
+    return "initial-condition unit sensitivity; x axis, positive sign, perturbation_id tie-break"
+
+
+def _sign_label(sign: int) -> str:
+    return "pos" if sign > 0 else "neg"
 
 
 def _evaluate_unit_sensitivity_row(
@@ -758,10 +1003,16 @@ def _repo_relative(path: Path, *, repo_root: Path) -> str:
 __all__ = [
     "DEFAULT_REACH_CALIBRATION_POINTS",
     "DEFAULT_REACH_RELATIVE_LEVELS",
+    "DEFAULT_PLANT_TIMING_BINS",
+    "DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS",
+    "DEFAULT_NATIVE_CONVENTIONS",
     "DEFAULT_NOMINAL_GRU_BASELINE",
+    "NativeConvention",
     "ReachCalibrationPoint",
     "ReachRelativeLevel",
     "SCHEMA_VERSION",
+    "TimingCalibrationBin",
+    "calibrated_amplitude_from_unit_sensitivity",
     "materialize_perturbation_open_loop_calibration",
     "render_calibration_markdown",
 ]
