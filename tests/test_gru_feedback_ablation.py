@@ -24,6 +24,7 @@ from rlrmp.analysis.gru_feedback_ablation import (
     selected_feedback_ablation_bins,
     summarize_normalized_feedback_use,
 )
+from rlrmp.analysis.gru_perturbation_bank import default_cs_perturbation_bank
 from rlrmp.cs_lss_gru import build_cs_lss_gru_graph
 
 
@@ -53,6 +54,17 @@ def test_standard_modes_and_bins_are_json_serializable() -> None:
         "sensory_feedback",
         "delayed_observation",
     }
+
+
+def test_selected_feedback_ablation_bins_exist_in_current_bank() -> None:
+    perturbations = {
+        str(row["perturbation_id"])
+        for row in default_cs_perturbation_bank()["perturbations"]
+    }
+
+    for perturbation_id in selected_feedback_ablation_bins().values():
+        if perturbation_id is not None:
+            assert perturbation_id in perturbations
 
 
 def test_observation_tape_modes_transform_expected_axes() -> None:

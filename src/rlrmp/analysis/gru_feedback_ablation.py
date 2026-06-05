@@ -191,9 +191,9 @@ def selected_feedback_ablation_bins() -> dict[EvaluationBin, str | None]:
     return {
         "nominal": None,
         "initial_state": "initial_position_offset__x_pos",
-        "process_epsilon": "process_epsilon_pulse__position_x__t40_pos",
-        "sensory_feedback": "sensory_feedback_offset__x_pos",
-        "delayed_observation": "delayed_observation_offset__x_pos",
+        "process_epsilon": "process_epsilon_pulse__force_state_x__mid_t15_pos",
+        "sensory_feedback": "sensory_feedback_offset__mid_visible_t20_x_pos",
+        "delayed_observation": "delayed_observation_offset__mid_visible_t20_x_pos",
     }
 
 
