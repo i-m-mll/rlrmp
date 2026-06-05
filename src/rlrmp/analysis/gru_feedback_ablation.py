@@ -37,6 +37,7 @@ from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
 SCHEMA_VERSION = "rlrmp.gru_feedback_ablation.v1"
+FEEDBACK_SELECTION_SCHEMA_VERSION = "rlrmp.gru_feedback_checkpoint_selection_audit.v1"
 DEFAULT_SOURCE_EXPERIMENT = "aacb9ed"
 DEFAULT_RESULT_EXPERIMENT = "57ab156"
 DEFAULT_SCOPE = "fixed_target_random_perturb_validation_selected"
@@ -291,6 +292,12 @@ def summarize_ablation_delta(
     """Return compact per-ablation deltas against a normal-observation baseline."""
 
     return {
+        "baseline_action_norm": _summary_stats(
+            np.linalg.norm(baseline.rollout.command, axis=-1)
+        ),
+        "ablated_action_norm": _summary_stats(
+            np.linalg.norm(ablated.rollout.command, axis=-1)
+        ),
         "delta_action_norm": _summary_stats(
             np.linalg.norm(ablated.rollout.command - baseline.rollout.command, axis=-1)
         ),
@@ -313,6 +320,129 @@ def summarize_ablation_delta(
                 "full-Q/R/Q_f substitute on the same rollout bank"
             ),
         },
+    }
+
+
+def summarize_normalized_feedback_use(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    open_loop_reference: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return normalized feedback-use indices from evaluated ablation rows.
+
+    The returned indices are audit metrics. Missing denominators and unavailable
+    open-loop references are represented explicitly rather than silently
+    converted to zero.
+    """
+
+    evaluated = [row for row in rows if row.get("status") == "evaluated"]
+    warnings: list[str] = []
+    ablation_dependence = _ablation_dependence_index(evaluated, warnings=warnings)
+    perturbation_rescue = _perturbation_rescue_index(evaluated, warnings=warnings)
+    correction = _correction_index_vs_open_loop(
+        evaluated,
+        open_loop_reference=open_loop_reference,
+        warnings=warnings,
+    )
+    available_scores = [
+        metric.get("value")
+        for metric in (ablation_dependence, perturbation_rescue, correction)
+        if metric.get("status") == "available"
+    ]
+    score = (
+        float(np.nanmean(np.asarray(available_scores, dtype=np.float64)))
+        if available_scores
+        else None
+    )
+    return {
+        "status": "available" if available_scores else "not_available",
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "score": score,
+        "score_components": [
+            name
+            for name, metric in (
+                ("ablation_dependence_index", ablation_dependence),
+                ("perturbation_rescue_index", perturbation_rescue),
+                ("correction_index_vs_open_loop", correction),
+            )
+            if metric.get("status") == "available"
+        ],
+        "ablation_dependence_index": ablation_dependence,
+        "perturbation_rescue_index": perturbation_rescue,
+        "correction_index_vs_open_loop": correction,
+        "warnings": warnings,
+    }
+
+
+def feedback_checkpoint_selection_audit(
+    manifest: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return an audit-only feedback-selected candidate sidecar.
+
+    This compares run-level feedback-ablation scores when every run has an
+    available normalized score. It intentionally does not alter the primary
+    validation-selected checkpoint policy.
+    """
+
+    runs = manifest.get("runs", {})
+    if not isinstance(runs, Mapping) or not runs:
+        return {
+            "schema_version": FEEDBACK_SELECTION_SCHEMA_VERSION,
+            "status": "not_available",
+            "reason": "no_feedback_ablation_runs_available",
+            "selection_use": "audit_only_not_primary_checkpoint_selection",
+            "primary_checkpoint_policy": manifest.get("checkpoint_policy"),
+        }
+    candidates: list[dict[str, Any]] = []
+    missing: list[str] = []
+    for run_id, run in runs.items():
+        if not isinstance(run, Mapping):
+            missing.append(str(run_id))
+            continue
+        normalized = run.get("normalized_feedback_use", {})
+        score = normalized.get("score") if isinstance(normalized, Mapping) else None
+        score_float = _coerce_reference_float(score)
+        if score_float is None:
+            missing.append(str(run_id))
+            continue
+        candidates.append(
+            {
+                "run_id": str(run_id),
+                "label": run.get("label"),
+                "feedback_score": score_float,
+                "score_components": list(normalized.get("score_components", ())),
+                "checkpoint_selection": run.get("checkpoint_selection", []),
+            }
+        )
+    if missing:
+        return {
+            "schema_version": FEEDBACK_SELECTION_SCHEMA_VERSION,
+            "status": "not_available",
+            "reason": "feedback_scores_missing_for_some_candidates",
+            "missing_candidates": missing,
+            "n_candidates": len(runs),
+            "n_scored_candidates": len(candidates),
+            "selection_use": "audit_only_not_primary_checkpoint_selection",
+            "primary_checkpoint_policy": manifest.get("checkpoint_policy"),
+        }
+    selected = max(candidates, key=lambda candidate: candidate["feedback_score"])
+    return {
+        "schema_version": FEEDBACK_SELECTION_SCHEMA_VERSION,
+        "status": "available",
+        "selection_use": "audit_only_not_primary_checkpoint_selection",
+        "primary_checkpoint_policy": manifest.get("checkpoint_policy"),
+        "feedback_selection_policy": "max_normalized_feedback_use_score",
+        "candidate_granularity": "run",
+        "selected_candidate": selected,
+        "candidates": sorted(
+            candidates,
+            key=lambda candidate: candidate["feedback_score"],
+            reverse=True,
+        ),
+        "note": (
+            "Feedback-selected candidates are reported for audit only. The primary "
+            "materialization path still loads validation-selected checkpoints."
+        ),
     }
 
 
@@ -388,6 +518,7 @@ def materialize_gru_feedback_ablation(
     result_experiment: str = DEFAULT_RESULT_EXPERIMENT,
     scope: str = DEFAULT_SCOPE,
     run_ids: Sequence[str] = DEFAULT_RUN_IDS,
+    labels: Sequence[str] | None = None,
     n_rollout_trials: int = 4,
     output_path: Path | None = None,
     note_path: Path | None = None,
@@ -402,7 +533,7 @@ def materialize_gru_feedback_ablation(
     run_inputs = resolve_run_inputs(
         experiment=source_experiment,
         run_ids=run_ids,
-        labels=None,
+        labels=labels,
         repo_root=repo_root,
     )
     runs = {
@@ -419,6 +550,7 @@ def materialize_gru_feedback_ablation(
         "issue": result_experiment,
         "source_experiment": source_experiment,
         "scope": scope,
+        "labels": None if labels is None else list(labels),
         "checkpoint_policy": "validation_selected_per_replicate",
         "selection_role": "validation_selected_checkpoints_only",
         "analytical_action_io_metrics_role": "audit_only_not_used_for_checkpoint_selection",
@@ -426,6 +558,7 @@ def materialize_gru_feedback_ablation(
         "evaluation_bins": selected_feedback_ablation_bins(),
         "runs": runs,
     }
+    manifest["feedback_checkpoint_selection_audit"] = feedback_checkpoint_selection_audit(manifest)
     output_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     note_path.write_text(render_feedback_ablation_markdown(manifest))
     return manifest
@@ -567,7 +700,7 @@ def evaluate_run_feedback_ablation(
                     ),
                 }
             )
-    return {
+    run_result = {
         "label": run.label,
         "run_spec_path": _repo_relative(run.run_spec_path, repo_root=repo_root),
         "artifact_dir": _repo_relative(run.artifact_dir, repo_root=repo_root),
@@ -580,8 +713,10 @@ def evaluate_run_feedback_ablation(
         "dt_s": float(nominal.rollout.dt),
         "status_counts": _status_counts(rows),
         "interpretation": interpret_run_feedback_ablation(rows),
+        "normalized_feedback_use": summarize_normalized_feedback_use(rows),
         "ablations": rows,
     }
+    return run_result
 
 
 def render_feedback_ablation_markdown(manifest: Mapping[str, Any]) -> str:
@@ -632,6 +767,45 @@ def render_feedback_ablation_markdown(manifest: Mapping[str, Any]) -> str:
     lines.extend(
         [
             "",
+            "## Normalized Feedback-Use Indices",
+            "",
+            "| Run | Status | Score | Ablation dependence | Perturbation rescue | "
+            "Correction vs open-loop | Warnings |",
+            "|---|---|---:|---:|---:|---:|---|",
+        ]
+    )
+    for run_id, run in manifest["runs"].items():
+        normalized = run.get("normalized_feedback_use", {})
+        lines.append(
+            f"| `{run_id}` | {normalized.get('status', 'not_available')} | "
+            f"{_format_float(normalized.get('score'))} | "
+            f"{_format_float(_index_value(normalized, 'ablation_dependence_index'))} | "
+            f"{_format_float(_index_value(normalized, 'perturbation_rescue_index'))} | "
+            f"{_format_float(_index_value(normalized, 'correction_index_vs_open_loop'))} | "
+            f"{'; '.join(normalized.get('warnings', ())) or 'none'} |"
+        )
+    audit = manifest.get("feedback_checkpoint_selection_audit", {})
+    lines.extend(
+        [
+            "",
+            "## Feedback-Selected Checkpoint Audit",
+            "",
+            f"- Status: `{audit.get('status', 'not_available')}`",
+            "- Selection use: "
+            f"`{audit.get('selection_use', 'audit_only_not_primary_checkpoint_selection')}`",
+            "- Primary checkpoint policy: "
+            f"`{audit.get('primary_checkpoint_policy', manifest.get('checkpoint_policy'))}`",
+        ]
+    )
+    if isinstance(audit, Mapping) and audit.get("status") == "available":
+        selected = audit.get("selected_candidate", {})
+        if isinstance(selected, Mapping):
+            lines.append(f"- Feedback-selected candidate: `{selected.get('run_id')}`")
+    elif isinstance(audit, Mapping) and audit.get("reason"):
+        lines.append(f"- Reason: {audit.get('reason')}")
+    lines.extend(
+        [
+            "",
             "## Notes",
             "",
             "- `normal` is the per-bin baseline; all other rows are paired deltas against it.",
@@ -644,6 +818,160 @@ def render_feedback_ablation_markdown(manifest: Mapping[str, Any]) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def _ablation_dependence_index(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    warnings: list[str],
+) -> dict[str, Any]:
+    candidates: list[float] = []
+    for row in rows:
+        if row.get("mode") == "normal":
+            continue
+        metrics = row.get("metrics", {})
+        delta_action = _summary_mean(metrics.get("delta_action_norm"))
+        baseline_action = _summary_mean(metrics.get("baseline_action_norm"))
+        if delta_action is None:
+            continue
+        if baseline_action is None or abs(baseline_action) <= 1e-12:
+            warnings.append(
+                "ablation_dependence_index denominator unavailable or near zero for "
+                f"{row.get('bin')}:{row.get('mode')}"
+            )
+            continue
+        candidates.append(float(delta_action) / abs(float(baseline_action)))
+    if not candidates:
+        return {
+            "status": "not_available",
+            "reason": "no evaluated ablation rows with nonzero baseline action denominator",
+        }
+    return {
+        "status": "available",
+        "value": float(max(candidates)),
+        "normalization": "max_delta_action_norm_mean_over_baseline_action_norm_mean",
+    }
+
+
+def _perturbation_rescue_index(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    warnings: list[str],
+) -> dict[str, Any]:
+    candidates: list[float] = []
+    for row in rows:
+        if row.get("bin") == "nominal" or row.get("mode") not in {
+            "frozen_nominal_observation_tape",
+            "zeroed_perturbation_observation_deviation",
+        }:
+            continue
+        rollout_full_qrf = row.get("metrics", {}).get("rollout_full_qrf", {})
+        if (
+            not isinstance(rollout_full_qrf, Mapping)
+            or rollout_full_qrf.get("status") != "available"
+        ):
+            warnings.append(
+                "perturbation_rescue_index full-Q/R/Q_f denominator unavailable for "
+                f"{row.get('bin')}:{row.get('mode')}"
+            )
+            continue
+        delta_total = _summary_mean(rollout_full_qrf.get("delta_cost", {}).get("total", {}))
+        perturbed_total = _summary_mean(
+            rollout_full_qrf.get("perturbed_cost", {}).get("total", {})
+        )
+        if delta_total is None:
+            continue
+        if perturbed_total is None or abs(perturbed_total) <= 1e-12:
+            warnings.append(
+                "perturbation_rescue_index denominator unavailable or near zero for "
+                f"{row.get('bin')}:{row.get('mode')}"
+            )
+            continue
+        candidates.append(float(delta_total) / abs(float(perturbed_total)))
+    if not candidates:
+        return {
+            "status": "not_available",
+            "reason": "no perturbation rows with available paired full-Q/R/Q_f costs",
+        }
+    return {
+        "status": "available",
+        "value": float(max(candidates)),
+        "normalization": "max_ablation_extra_full_qrf_cost_over_ablated_full_qrf_cost",
+    }
+
+
+def _correction_index_vs_open_loop(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    open_loop_reference: Mapping[str, Any] | None,
+    warnings: list[str],
+) -> dict[str, Any]:
+    if open_loop_reference is None:
+        warnings.append("correction_index_vs_open_loop not available: open-loop data not supplied")
+        return {
+            "status": "not_available",
+            "reason": "open_loop_reference_not_supplied",
+        }
+    values = []
+    for row in rows:
+        if row.get("mode") != "normal" or row.get("bin") == "nominal":
+            continue
+        bin_id = str(row.get("bin"))
+        open_loop_delta = _coerce_reference_float(open_loop_reference.get(bin_id))
+        if open_loop_delta is None or abs(open_loop_delta) <= 1e-12:
+            warnings.append(
+                f"correction_index_vs_open_loop denominator unavailable or near zero for {bin_id}"
+            )
+            continue
+        closed_loop_delta = _summary_mean(
+            row.get("metrics", {})
+            .get("rollout_full_qrf", {})
+            .get("delta_cost", {})
+            .get("total", {})
+        )
+        if closed_loop_delta is None:
+            continue
+        values.append(
+            (float(open_loop_delta) - float(closed_loop_delta))
+            / abs(float(open_loop_delta))
+        )
+    if not values:
+        return {
+            "status": "not_available",
+            "reason": "no perturbation rows had both closed-loop and open-loop cost deltas",
+        }
+    return {
+        "status": "available",
+        "value": float(np.nanmean(np.asarray(values, dtype=np.float64))),
+        "normalization": "mean_open_loop_minus_closed_loop_delta_cost_over_open_loop_delta_cost",
+    }
+
+
+def _coerce_reference_float(value: Any) -> float | None:
+    if isinstance(value, Mapping):
+        if "delta_cost" in value:
+            return _coerce_reference_float(value["delta_cost"])
+        if "total" in value:
+            return _coerce_reference_float(value["total"])
+        if "mean" in value:
+            return _coerce_reference_float(value["mean"])
+    if value is None:
+        return None
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    return result if np.isfinite(result) else None
+
+
+def _index_value(normalized: Mapping[str, Any], key: str) -> float | None:
+    metric = normalized.get(key, {})
+    if not isinstance(metric, Mapping):
+        return None
+    value = metric.get("value")
+    if value is None:
+        return None
+    return float(value)
 
 
 def _evaluate_model_on_trial_specs(
@@ -877,10 +1205,12 @@ __all__ = [
     "build_observation_tape",
     "default_ablation_modes",
     "evaluate_run_feedback_ablation",
+    "feedback_checkpoint_selection_audit",
     "insert_observation_ablation",
     "interpret_run_feedback_ablation",
     "materialize_gru_feedback_ablation",
     "render_feedback_ablation_markdown",
     "selected_feedback_ablation_bins",
     "summarize_ablation_delta",
+    "summarize_normalized_feedback_use",
 ]

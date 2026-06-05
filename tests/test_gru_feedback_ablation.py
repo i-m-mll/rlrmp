@@ -18,8 +18,10 @@ from rlrmp.analysis.gru_feedback_ablation import (
     default_ablation_modes,
     insert_observation_ablation,
     interpret_run_feedback_ablation,
+    feedback_checkpoint_selection_audit,
     render_feedback_ablation_markdown,
     selected_feedback_ablation_bins,
+    summarize_normalized_feedback_use,
 )
 from rlrmp.cs_lss_gru import build_cs_lss_gru_graph
 
@@ -131,6 +133,85 @@ def test_interpretation_labels_feedback_and_motor_tape_cases() -> None:
     assert interpret_run_feedback_ablation(sensitive_rows)["label"] == "feedback_sensitive"
     assert interpret_run_feedback_ablation(tape_rows)["label"] == "motor_tape_like"
     assert interpret_run_feedback_ablation([])["label"] == "inconclusive"
+
+
+def test_normalized_feedback_use_reports_ratios_and_denominator_warnings() -> None:
+    rows = [
+        {
+            "status": "evaluated",
+            "bin": "initial_state",
+            "mode": "normal",
+            "metrics": {
+                "rollout_full_qrf": {
+                    "status": "available",
+                    "delta_cost": {"total": {"mean": 2.0}},
+                }
+            },
+        },
+        {
+            "status": "evaluated",
+            "bin": "initial_state",
+            "mode": "frozen_nominal_observation_tape",
+            "metrics": {
+                "baseline_action_norm": {"mean": 2.0},
+                "delta_action_norm": {"mean": 0.5},
+                "rollout_full_qrf": {
+                    "status": "available",
+                    "delta_cost": {"total": {"mean": 3.0}},
+                    "perturbed_cost": {"total": {"mean": 12.0}},
+                },
+            },
+        },
+        {
+            "status": "evaluated",
+            "bin": "sensory_feedback",
+            "mode": "lagged_observation_history",
+            "metrics": {
+                "baseline_action_norm": {"mean": 0.0},
+                "delta_action_norm": {"mean": 1.0},
+            },
+        },
+    ]
+
+    summary = summarize_normalized_feedback_use(rows)
+
+    assert summary["status"] == "available"
+    assert summary["ablation_dependence_index"]["value"] == 0.25
+    assert summary["perturbation_rescue_index"]["value"] == 0.25
+    assert summary["correction_index_vs_open_loop"]["status"] == "not_available"
+    assert any("open-loop data not supplied" in warning for warning in summary["warnings"])
+    assert any("denominator unavailable or near zero" in warning for warning in summary["warnings"])
+
+
+def test_feedback_checkpoint_selection_audit_selects_candidate_without_primary_leakage() -> None:
+    manifest = {
+        "checkpoint_policy": "validation_selected_per_replicate",
+        "runs": {
+            "run_a": {
+                "label": "A",
+                "checkpoint_selection": [{"replicate": 0, "batch": 500}],
+                "normalized_feedback_use": {
+                    "score": 0.2,
+                    "score_components": ["ablation_dependence_index"],
+                },
+            },
+            "run_b": {
+                "label": "B",
+                "checkpoint_selection": [{"replicate": 0, "batch": 1000}],
+                "normalized_feedback_use": {
+                    "score": 0.7,
+                    "score_components": ["perturbation_rescue_index"],
+                },
+            },
+        },
+    }
+
+    audit = feedback_checkpoint_selection_audit(manifest)
+
+    assert audit["status"] == "available"
+    assert audit["selection_use"] == "audit_only_not_primary_checkpoint_selection"
+    assert audit["primary_checkpoint_policy"] == "validation_selected_per_replicate"
+    assert audit["selected_candidate"]["run_id"] == "run_b"
 
 
 def test_markdown_renders_not_available_rows() -> None:

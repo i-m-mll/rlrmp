@@ -22,6 +22,7 @@ def main() -> None:
     parser.add_argument("--result-experiment", default=DEFAULT_RESULT_EXPERIMENT)
     parser.add_argument("--scope", default=DEFAULT_SCOPE)
     parser.add_argument("--run-id", action="append", dest="run_ids")
+    parser.add_argument("--label", action="append", dest="labels")
     parser.add_argument("--n-rollout-trials", type=int, default=4)
     parser.add_argument("--output-path", type=Path)
     parser.add_argument("--note-path", type=Path)
@@ -32,6 +33,7 @@ def main() -> None:
         result_experiment=args.result_experiment,
         scope=args.scope,
         run_ids=tuple(args.run_ids or DEFAULT_RUN_IDS),
+        labels=None if args.labels is None else tuple(args.labels),
         n_rollout_trials=args.n_rollout_trials,
         output_path=args.output_path,
         note_path=args.note_path,
