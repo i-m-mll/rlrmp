@@ -30,6 +30,7 @@ SCHEMA_VERSION = "rlrmp.perturbation_open_loop_calibration.v1"
 DEFAULT_RESULT_EXPERIMENT = "1ad3c16"
 DEFAULT_OUTPUT_FILENAME = "perturbation_open_loop_calibration.json"
 DEFAULT_NOTE_FILENAME = "perturbation_open_loop_calibration.md"
+DEFAULT_BULK_SUBDIR = "perturbation_open_loop_calibration"
 DEFAULT_NOMINAL_GRU_BASELINE = {
     "experiment": "5f70333",
     "run_id": "lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64",
@@ -74,7 +75,7 @@ def materialize_perturbation_open_loop_calibration(
     """Materialize physical effect-size calibration for perturbation amplitudes."""
 
     output_path = output_path or (
-        repo_root / "results" / result_experiment / "notes" / DEFAULT_OUTPUT_FILENAME
+        repo_root / "_artifacts" / result_experiment / DEFAULT_BULK_SUBDIR / DEFAULT_OUTPUT_FILENAME
     )
     note_path = note_path or (
         repo_root / "results" / result_experiment / "notes" / DEFAULT_NOTE_FILENAME
@@ -120,6 +121,7 @@ def materialize_perturbation_open_loop_calibration(
             ),
         },
         "nominal_gru_baseline_for_later_closed_loop_calibration": DEFAULT_NOMINAL_GRU_BASELINE,
+        "bulk_manifest_path": _repo_relative(output_path, repo_root=repo_root),
         "rows": rows,
         "family_summary": _summarize_family_bins(rows),
     }
@@ -142,6 +144,7 @@ def render_calibration_markdown(manifest: Mapping[str, Any]) -> str:
         f"`{manifest['nominal_gru_baseline_for_later_closed_loop_calibration']['experiment']}` / "
         f"`{manifest['nominal_gru_baseline_for_later_closed_loop_calibration']['run_id']}` "
         "(single-target nominal-only).",
+        f"- Bulk row manifest: `{manifest.get('bulk_manifest_path', 'not_materialized')}`",
         "",
         "## Selected Amplitude Candidates",
         "",
@@ -383,6 +386,13 @@ def _fmt(value: float | None) -> str:
     if abs(value) >= 1e3 or (abs(value) > 0.0 and abs(value) < 1e-3):
         return f"{value:.4e}"
     return f"{value:.6g}"
+
+
+def _repo_relative(path: Path, *, repo_root: Path) -> str:
+    try:
+        return str(path.relative_to(repo_root))
+    except ValueError:
+        return str(path)
 
 
 __all__ = [
