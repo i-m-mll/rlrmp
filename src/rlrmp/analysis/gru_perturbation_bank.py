@@ -43,8 +43,8 @@ from rlrmp.modules.training.part2 import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
-SCHEMA_VERSION = "rlrmp.gru_perturbation_bank.v2"
-DEFAULT_BANK_ID = "cs_standard_perturbation_response_v2"
+SCHEMA_VERSION = "rlrmp.gru_perturbation_bank.v3"
+DEFAULT_BANK_ID = "cs_standard_perturbation_response_v3"
 DEFAULT_OUTPUT_FILENAME = "gru_perturbation_response_fullqrf_validation_selected_manifest.json"
 DEFAULT_NOTE_FILENAME = "gru_perturbation_response_fullqrf_validation_selected.md"
 DEFAULT_BULK_SUBDIR = "perturbation_response/gru_fullqrf_validation_selected"
@@ -149,6 +149,8 @@ class PerturbationSpec:
     description: str
     epsilon_component: str | None = None
     epsilon_index: int | None = None
+    initial_position_case: str | None = None
+    calibration_role: str | None = None
 
     def to_json(self) -> dict[str, Any]:
         """Return a JSON-serializable perturbation specification."""
@@ -170,6 +172,10 @@ class PerturbationSpec:
             row["epsilon_component"] = self.epsilon_component
         if self.epsilon_index is not None:
             row["epsilon_index"] = int(self.epsilon_index)
+        if self.initial_position_case is not None:
+            row["initial_position_case"] = self.initial_position_case
+        if self.calibration_role is not None:
+            row["calibration_role"] = self.calibration_role
         return row
 
 
@@ -219,6 +225,12 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                             "Offset the external task initial effector "
                             f"{'position' if 'position' in family else 'velocity'}."
                         ),
+                        initial_position_case=(
+                            "D_current_state_immediately_visible"
+                            if family == "initial_position_offset"
+                            else None
+                        ),
+                        calibration_role="raw_default_unscaled_effect_size",
                     )
                 )
     process_epsilon_components = (
@@ -256,6 +268,7 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                             "Add a pulse at the post-controller command port that feeds "
                             "mechanics.force. This is not an external load-force row."
                         ),
+                        calibration_role="raw_default_requires_same_bank_calibration",
                     )
                 )
         for component_family, axis, epsilon_index, epsilon_component in process_epsilon_components:
@@ -287,6 +300,7 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                         ),
                         epsilon_component=epsilon_component,
                         epsilon_index=epsilon_index,
+                        calibration_role="raw_coordinate_not_scale_normalized",
                     )
                 )
     blocked_specs = (
@@ -339,6 +353,7 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                     else f"temporary_external_graph_adapter.{row[1]}"
                 ),
                 description=row[7],
+                calibration_role="raw_default_requires_same_bank_calibration",
             )
         )
 
@@ -351,6 +366,12 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
             "input tensors are not edited directly."
         ),
         "legacy_migration": {
+            "v2": (
+                "v3 preserves v2 row identity and status fields while adding "
+                "response-shape summaries, target-relative alignment summaries, "
+                "initial-position information-contract metadata, and calibration "
+                "metadata hooks."
+            ),
             "plant_force": (
                 "Deprecated v1 channel name. The C&S LSS graph path is "
                 "net.output -> efferent -> mechanics.force, with the force/filter "
@@ -403,6 +424,33 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                     "a target-position input stream."
                 ),
             },
+        },
+        "initial_position_information_contracts": _initial_position_contract_manifest(),
+        "target_relative_alignment": {
+            "default": "radial_tangential_when_target_and_current_geometry_available",
+            "basis": (
+                "Per-time radial axis points from current base hand position to the "
+                "current target position; tangential is the signed 2D orthogonal axis."
+            ),
+            "missing_inputs_status": "not_available",
+        },
+        "calibration_metadata_hooks": {
+            "status": "declared_unbound",
+            "coordinating_issue": "1ad3c16",
+            "policy": (
+                "Raw amplitudes are not interpreted as cross-coordinate normalized "
+                "effect sizes. Same-bank open-loop, extLQG, and GRU calibration "
+                "metadata can be attached here once parent coordination materializes "
+                "the calibrated amplitude sets."
+            ),
+            "fields": [
+                "calibrated_amplitude_set_id",
+                "physical_units",
+                "effect_size_reference",
+                "open_loop_command_replay_response",
+                "extlqg_same_bank_response",
+                "gru_same_bank_response",
+            ],
         },
         "signed_pairing_rule": "signed_axis_pairs; aggregate absolute and signed responses",
         "perturbations": [spec.to_json() for spec in perturbations],
@@ -494,6 +542,64 @@ def apply_perturbation_to_trial_specs(
         model=model,
         reason=f"unknown perturbation channel {channel!r}",
     )
+
+
+def _initial_position_contract_manifest() -> dict[str, Any]:
+    """Return explicit information-contract cases for initial-position offsets."""
+
+    return {
+        "status": "declared",
+        "default_current_adapter_case": "D_current_state_immediately_visible",
+        "cases": {
+            "A_target_changed_hand_start_nominal": {
+                "status": "not_available",
+                "reason": (
+                    "Current fixed-target checkpoints do not consume a controller-visible "
+                    "target stream, so a target-only initial-position contract cannot be "
+                    "applied without changing the model input contract."
+                ),
+                "future_graphspec_mapping": "task target transform with nominal hand start",
+            },
+            "B_hand_start_and_delay_history_changed_consistently": {
+                "status": "not_available",
+                "reason": (
+                    "Current eager validation specs do not expose a separate delayed "
+                    "history/buffer initializer that can be shifted consistently with "
+                    "the hand start."
+                ),
+                "future_graphspec_mapping": (
+                    "task-data initial hand transform plus delayed-observation buffer "
+                    "initializer transform"
+                ),
+            },
+            "C_hand_start_changed_history_nominal_until_delay_elapses": {
+                "status": "not_available",
+                "reason": (
+                    "Blind-delay stress rows require explicit delayed-history buffer "
+                    "control so the nominal history can be preserved until the delay "
+                    "horizon elapses."
+                ),
+                "future_graphspec_mapping": (
+                    "task-data initial hand transform with delayed-observation buffer "
+                    "held at nominal values"
+                ),
+            },
+            "D_current_state_immediately_visible": {
+                "status": "implemented",
+                "current_adapter": "task_trial_spec.inits",
+                "row_family": "initial_position_offset",
+                "reason": (
+                    "The current adapter shifts the exposed initial effector/current "
+                    "mechanics state. It is the feasible eager contract for current "
+                    "validation-selected checkpoints."
+                ),
+                "future_graphspec_mapping": (
+                    "task-data initial hand transform with immediate current-state "
+                    "visibility"
+                ),
+            },
+        },
+    }
 
 
 def materialize_gru_perturbation_response(
@@ -747,6 +853,13 @@ def summarize_perturbation_response(
     delta_input = perturbed.gru_input - base.gru_input
     delta_position = perturbed.position - base.position
     delta_velocity = perturbed.velocity - base.velocity
+    delta_position_norm = np.linalg.norm(delta_position, axis=-1)
+    delta_velocity_norm = np.linalg.norm(delta_velocity, axis=-1)
+    delta_state_norm = np.linalg.norm(
+        np.concatenate([delta_position, delta_velocity], axis=-1),
+        axis=-1,
+    )
+    delta_action_norm = np.linalg.norm(delta_action, axis=-1)
     endpoint_recovery = np.linalg.norm(
         perturbed.position[:, :, -1, :] - perturbed.target_position[None, :, -1, :],
         axis=-1,
@@ -758,10 +871,34 @@ def summarize_perturbation_response(
     terminal_speed = np.linalg.norm(perturbed.velocity[:, :, -1, :], axis=-1)
     base_terminal_speed = np.linalg.norm(base.velocity[:, :, -1, :], axis=-1)
     metrics = {
-        "delta_action_norm": _summary_stats(np.linalg.norm(delta_action, axis=-1)),
-        "delta_position_trajectory_norm_m": _summary_stats(np.linalg.norm(delta_position, axis=-1)),
-        "delta_velocity_trajectory_norm_m_s": _summary_stats(
-            np.linalg.norm(delta_velocity, axis=-1)
+        "delta_action_norm": _summary_stats(delta_action_norm),
+        "delta_position_trajectory_norm_m": _summary_stats(delta_position_norm),
+        "delta_velocity_trajectory_norm_m_s": _summary_stats(delta_velocity_norm),
+        "delta_state_trajectory_norm": _summary_stats(delta_state_norm),
+        "delta_position_response_m": _response_magnitude_summary(
+            delta_position_norm,
+            dt=float(base.dt),
+            value_label="delta_position_norm_m",
+        ),
+        "delta_state_response": _response_magnitude_summary(
+            delta_state_norm,
+            dt=float(base.dt),
+            value_label="delta_state_norm",
+        ),
+        "delta_action_response": _response_magnitude_summary(
+            delta_action_norm,
+            dt=float(base.dt),
+            value_label="delta_action_norm",
+        ),
+        "response_shape": _response_shape_summary(
+            delta_position_norm,
+            dt=float(base.dt),
+            value_label="delta_position_norm_m",
+        ),
+        "target_relative_alignment": _target_relative_alignment_summary(
+            base=base,
+            delta_position=delta_position,
+            delta_action=delta_action,
         ),
         "endpoint_error_m": _summary_stats(endpoint_recovery),
         "delta_endpoint_error_m": _summary_stats(endpoint_recovery - base_endpoint),
@@ -1019,6 +1156,17 @@ def compare_response_metric_summaries(
         "delta_action_norm",
         "delta_position_trajectory_norm_m",
         "delta_velocity_trajectory_norm_m_s",
+        "delta_state_trajectory_norm",
+        "delta_position_response_m.max",
+        "delta_position_response_m.auc",
+        "delta_state_response.max",
+        "delta_state_response.auc",
+        "delta_action_response.max",
+        "delta_action_response.auc",
+        "response_shape.peak_time_s",
+        "response_shape.recovery_time_s",
+        "target_relative_alignment.delta_position.abs_radial_component",
+        "target_relative_alignment.delta_position.abs_tangential_component",
         "delta_endpoint_error_m",
         "delta_terminal_speed_m_s",
         "controller_io_response.delta_input_norm",
@@ -1110,10 +1258,12 @@ def render_perturbation_response_markdown(manifest: Mapping[str, Any]) -> str:
                     "#### Class-Binned Summary",
                     "",
                     "| Class | Rows | Status | Amplitudes | Mean delta action | "
-                    "Mean delta pos traj | Mean delta vel traj | Mean endpoint delta | "
-                    "Mean terminal-speed delta | Mean full-Q/R/Q_f delta cost | "
+                    "Max delta x | AUC delta x | Max delta state | AUC delta state | "
+                    "Max delta u | AUC delta u | Peak time | Recovery time | "
+                    "Mean endpoint delta | Mean terminal-speed delta | "
+                    "Mean full-Q/R/Q_f delta cost | "
                     "GRU/extLQG delta-cost ratio | Warnings / not applicable |",
-                    "|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---|",
+                    "|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
                 ]
             )
             for class_key, class_row in class_summary.get("groups", {}).items():
@@ -1125,12 +1275,18 @@ def render_perturbation_response_markdown(manifest: Mapping[str, Any]) -> str:
                     f"{class_row.get('n_rows', 0)} | "
                     f"{_format_status_counts(class_row.get('status_counts', {}))} | "
                     f"{_format_amplitudes(class_row.get('amplitudes', []))} | "
-                    f"{_format_optional_float(_summary_mean(metrics, 'delta_action_norm'))} | "
-                    f"{_format_optional_float(_summary_mean(metrics, 'delta_position_trajectory_norm_m'))} | "
-                    f"{_format_optional_float(_summary_mean(metrics, 'delta_velocity_trajectory_norm_m_s'))} | "
-                    f"{_format_optional_float(_summary_mean(metrics, 'delta_endpoint_error_m'))} | "
-                    f"{_format_optional_float(_summary_mean(metrics, 'delta_terminal_speed_m_s'))} | "
-                    f"{_format_optional_float(_summary_mean(metrics, 'extra_full_qrf_delta_cost_total'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_action_norm'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_position_response_m.max'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_position_response_m.auc'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_state_response.max'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_state_response.auc'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_action_response.max'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_action_response.auc'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'response_shape.peak_time_s'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'response_shape.recovery_time_s'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_endpoint_error_m'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_terminal_speed_m_s'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'extra_full_qrf_delta_cost_total'))} | "
                     f"{_format_optional_float(ratio.get('ratio_of_means'))} | "
                     f"{_format_class_notes(class_row)} |"
                 )
@@ -1830,6 +1986,162 @@ def _controller_io_response_summary(
     }
 
 
+def _response_magnitude_summary(
+    norm: Any,
+    *,
+    dt: float,
+    value_label: str,
+) -> dict[str, Any]:
+    """Summarize max and time-integrated trajectory response magnitudes."""
+
+    array = np.asarray(norm, dtype=np.float64)
+    if array.ndim < 1 or array.shape[-1] == 0:
+        return {
+            "status": "not_available",
+            "reason": f"{value_label} has no time axis",
+        }
+    return {
+        "status": "available",
+        "value": value_label,
+        "dt_s": float(dt),
+        "max": _summary_stats(np.max(array, axis=-1)),
+        "auc": _summary_stats(np.sum(array, axis=-1) * float(dt)),
+    }
+
+
+def _response_shape_summary(
+    norm: Any,
+    *,
+    dt: float,
+    value_label: str,
+    recovery_fraction: float = 0.1,
+) -> dict[str, Any]:
+    """Summarize peak and recovery timing for a nonnegative response trace."""
+
+    array = np.asarray(norm, dtype=np.float64)
+    if array.ndim < 1 or array.shape[-1] == 0:
+        return {
+            "status": "not_available",
+            "reason": f"{value_label} has no time axis",
+        }
+    flat = array.reshape((-1, array.shape[-1]))
+    peak_indices = np.argmax(flat, axis=-1)
+    peak_values = np.take_along_axis(flat, peak_indices[:, None], axis=-1)[:, 0]
+    recovery_times = []
+    unrecovered = 0
+    for trace, peak_index, peak_value in zip(flat, peak_indices, peak_values, strict=True):
+        if peak_value <= 0.0:
+            recovery_times.append(0.0)
+            continue
+        threshold = recovery_fraction * peak_value
+        candidates = np.nonzero(trace[peak_index:] <= threshold)[0]
+        if candidates.size == 0:
+            unrecovered += 1
+            continue
+        recovery_times.append(float((peak_index + int(candidates[0])) * dt))
+    return {
+        "status": "available",
+        "value": value_label,
+        "dt_s": float(dt),
+        "recovery_fraction_of_peak": float(recovery_fraction),
+        "peak_time_s": _summary_stats(peak_indices * float(dt)),
+        "peak_value": _summary_stats(peak_values),
+        "recovery_time_s": _summary_stats_or_not_available(recovery_times),
+        "n_unrecovered": int(unrecovered),
+    }
+
+
+def _target_relative_alignment_summary(
+    *,
+    base: RolloutEvaluation,
+    delta_position: Any,
+    delta_action: Any,
+) -> dict[str, Any]:
+    """Decompose response vectors into radial/tangential target-relative axes."""
+
+    try:
+        base_position = np.asarray(base.position, dtype=np.float64)
+        target = np.asarray(base.target_position, dtype=np.float64)
+        delta_pos = np.asarray(delta_position, dtype=np.float64)
+        delta_act = np.asarray(delta_action, dtype=np.float64)
+    except (TypeError, ValueError) as exc:
+        return {"status": "not_available", "reason": str(exc)}
+    if base_position.shape[-1] != 2 or target.shape[-1] != 2:
+        return {
+            "status": "not_available",
+            "reason": "target-relative alignment requires 2D position and target geometry",
+        }
+    try:
+        target = np.broadcast_to(target[None, ...], base_position.shape)
+    except ValueError as exc:
+        return {
+            "status": "not_available",
+            "reason": f"target geometry could not broadcast to rollout positions: {exc}",
+        }
+    radial = target - base_position
+    radial_norm = np.linalg.norm(radial, axis=-1, keepdims=True)
+    valid = radial_norm[..., 0] > 1e-12
+    if not np.any(valid):
+        return {
+            "status": "not_available",
+            "reason": "no nonzero target-relative radial axis is available",
+        }
+    radial_unit = radial / np.maximum(radial_norm, 1e-12)
+    tangential_unit = np.stack(
+        [-radial_unit[..., 1], radial_unit[..., 0]],
+        axis=-1,
+    )
+    result = {
+        "status": "available",
+        "basis": "target_relative_radial_tangential",
+        "radial_axis": "target_position - base_position at each time step",
+        "valid_fraction": float(np.mean(valid)),
+        "delta_position": _radial_tangential_component_summary(
+            delta_pos,
+            radial_unit=radial_unit,
+            tangential_unit=tangential_unit,
+            valid=valid,
+        ),
+    }
+    if delta_act.shape == delta_pos.shape:
+        result["delta_action"] = _radial_tangential_component_summary(
+            delta_act,
+            radial_unit=radial_unit,
+            tangential_unit=tangential_unit,
+            valid=valid,
+        )
+    else:
+        result["delta_action"] = {
+            "status": "not_available",
+            "reason": (
+                "delta action shape does not match target-relative position geometry: "
+                f"{delta_act.shape} vs {delta_pos.shape}"
+            ),
+        }
+    return result
+
+
+def _radial_tangential_component_summary(
+    values: np.ndarray,
+    *,
+    radial_unit: np.ndarray,
+    tangential_unit: np.ndarray,
+    valid: np.ndarray,
+) -> dict[str, Any]:
+    radial_component = np.sum(values * radial_unit, axis=-1)
+    tangential_component = np.sum(values * tangential_unit, axis=-1)
+    magnitude = np.linalg.norm(values, axis=-1)
+    alignment = radial_component / np.maximum(magnitude, 1e-12)
+    return {
+        "status": "available",
+        "radial_component": _summary_stats(radial_component[valid]),
+        "tangential_component": _summary_stats(tangential_component[valid]),
+        "abs_radial_component": _summary_stats(np.abs(radial_component[valid])),
+        "abs_tangential_component": _summary_stats(np.abs(tangential_component[valid])),
+        "radial_alignment_cosine": _summary_stats(alignment[valid]),
+    }
+
+
 def _cost_summary_public(summary: Mapping[str, Any]) -> dict[str, Any]:
     """Drop large paired value arrays from nested public cost summaries."""
 
@@ -1849,6 +2161,7 @@ _ROBUST_RATIO_METRICS = (
     "delta_action_norm",
     "delta_position_trajectory_norm_m",
     "delta_velocity_trajectory_norm_m_s",
+    "delta_state_trajectory_norm",
     "delta_endpoint_error_m",
     "delta_terminal_speed_m_s",
     "controller_io_response.delta_input_norm",
@@ -1869,6 +2182,17 @@ _CLASS_SUMMARY_METRICS = (
     "delta_action_norm",
     "delta_position_trajectory_norm_m",
     "delta_velocity_trajectory_norm_m_s",
+    "delta_state_trajectory_norm",
+    "delta_position_response_m.max",
+    "delta_position_response_m.auc",
+    "delta_state_response.max",
+    "delta_state_response.auc",
+    "delta_action_response.max",
+    "delta_action_response.auc",
+    "response_shape.peak_time_s",
+    "response_shape.recovery_time_s",
+    "target_relative_alignment.delta_position.abs_radial_component",
+    "target_relative_alignment.delta_position.abs_tangential_component",
     "delta_endpoint_error_m",
     "delta_terminal_speed_m_s",
 )
@@ -2276,6 +2600,13 @@ def _summary_mean(metrics: Mapping[str, Any], key: str) -> float | None:
     if value is None:
         return None
     return float(value)
+
+
+def _class_metric_mean(metrics: Mapping[str, Any], key: str) -> float | None:
+    """Read a class-summary metric stored either flat or nested."""
+
+    value = _summary_mean(metrics, key)
+    return _metric_mean(metrics, key) if value is None else value
 
 
 def _format_status_counts(counts: Mapping[str, Any]) -> str:

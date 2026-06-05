@@ -36,6 +36,15 @@ def test_default_bank_is_json_serializable_with_required_channels() -> None:
     decoded = json.loads(encoded)
 
     assert decoded["schema_version"] == SCHEMA_VERSION
+    assert decoded["bank_id"] == "cs_standard_perturbation_response_v3"
+    assert decoded["initial_position_information_contracts"]["cases"][
+        "D_current_state_immediately_visible"
+    ]["status"] == "implemented"
+    assert decoded["initial_position_information_contracts"]["cases"][
+        "A_target_changed_hand_start_nominal"
+    ]["status"] == "not_available"
+    assert decoded["target_relative_alignment"]["missing_inputs_status"] == "not_available"
+    assert decoded["calibration_metadata_hooks"]["coordinating_issue"] == "1ad3c16"
     channels = {row["channel"] for row in decoded["perturbations"]}
     assert channels == {
         "initial_state",
@@ -71,6 +80,12 @@ def test_default_bank_is_json_serializable_with_required_channels() -> None:
     ]
     assert force_y_rows
     assert {row["epsilon_index"] for row in force_y_rows} == {5}
+    initial_position_rows = [
+        row for row in decoded["perturbations"] if row["family"] == "initial_position_offset"
+    ]
+    assert {row["initial_position_case"] for row in initial_position_rows} == {
+        "D_current_state_immediately_visible"
+    }
 
 
 def test_initial_position_adapter_offsets_cartesian_state_without_mutating_source() -> None:
@@ -406,6 +421,56 @@ def test_perturbation_response_reports_controller_io_metrics() -> None:
     np.testing.assert_allclose(io["action_per_input_gain"]["mean"], np.sqrt(2.0) / np.sqrt(3.0))
 
 
+def test_perturbation_response_reports_v3_shape_and_alignment_metrics() -> None:
+    target = np.broadcast_to(
+        np.asarray([10.0, 0.0], dtype=np.float64),
+        (1, 4, 2),
+    )
+    base = RolloutEvaluation(
+        position=np.zeros((1, 1, 4, 2), dtype=np.float64),
+        velocity=np.zeros((1, 1, 4, 2), dtype=np.float64),
+        command=np.zeros((1, 1, 4, 2), dtype=np.float64),
+        hidden=np.zeros((1, 1, 4, 4), dtype=np.float64),
+        gru_input=np.zeros((1, 1, 4, 3), dtype=np.float64),
+        initial_position=np.zeros((1, 2), dtype=np.float64),
+        initial_velocity=np.zeros((1, 2), dtype=np.float64),
+        target_position=target,
+        dt=0.5,
+    )
+    perturbed_position = np.zeros((1, 1, 4, 2), dtype=np.float64)
+    perturbed_position[0, 0, :, 0] = [0.0, 1.0, 3.0, 0.0]
+    perturbed_action = np.zeros((1, 1, 4, 2), dtype=np.float64)
+    perturbed_action[0, 0, :, 1] = [0.0, 2.0, 4.0, 0.0]
+    perturbed = RolloutEvaluation(
+        position=perturbed_position,
+        velocity=np.ones((1, 1, 4, 2), dtype=np.float64),
+        command=perturbed_action,
+        hidden=np.zeros((1, 1, 4, 4), dtype=np.float64),
+        gru_input=np.ones((1, 1, 4, 3), dtype=np.float64),
+        initial_position=np.zeros((1, 2), dtype=np.float64),
+        initial_velocity=np.zeros((1, 2), dtype=np.float64),
+        target_position=target,
+        dt=0.5,
+    )
+
+    metrics = summarize_perturbation_response(base, perturbed)
+
+    assert metrics["delta_position_response_m"]["status"] == "available"
+    assert metrics["delta_position_response_m"]["max"]["mean"] == 3.0
+    assert metrics["delta_position_response_m"]["auc"]["mean"] == 2.0
+    assert metrics["delta_action_response"]["max"]["mean"] == 4.0
+    assert metrics["delta_action_response"]["auc"]["mean"] == 3.0
+    assert metrics["response_shape"]["peak_time_s"]["mean"] == 1.0
+    assert metrics["response_shape"]["recovery_time_s"]["mean"] == 1.5
+    assert metrics["response_shape"]["n_unrecovered"] == 0
+    alignment = metrics["target_relative_alignment"]
+    assert alignment["status"] == "available"
+    assert alignment["delta_position"]["abs_radial_component"]["max"] == 3.0
+    assert alignment["delta_position"]["abs_tangential_component"]["max"] == 0.0
+    assert alignment["delta_action"]["abs_radial_component"]["max"] == 0.0
+    assert alignment["delta_action"]["abs_tangential_component"]["max"] == 4.0
+
+
 def test_perturbation_bank_summary_reports_ratio_of_means_and_signed_pairs() -> None:
     rows = [
         {
@@ -519,6 +584,29 @@ def test_perturbation_bank_summary_reports_class_bins_and_na_ratios() -> None:
                 "delta_action_norm": {"mean": 6.0},
                 "delta_position_trajectory_norm_m": {"mean": 0.4},
                 "delta_velocity_trajectory_norm_m_s": {"mean": 0.3},
+                "delta_state_trajectory_norm": {"mean": 0.5},
+                "delta_position_response_m": {
+                    "max": {"mean": 0.7},
+                    "auc": {"mean": 0.8},
+                },
+                "delta_state_response": {
+                    "max": {"mean": 0.9},
+                    "auc": {"mean": 1.0},
+                },
+                "delta_action_response": {
+                    "max": {"mean": 6.5},
+                    "auc": {"mean": 6.75},
+                },
+                "response_shape": {
+                    "peak_time_s": {"mean": 0.2},
+                    "recovery_time_s": {"mean": 0.6},
+                },
+                "target_relative_alignment": {
+                    "delta_position": {
+                        "abs_radial_component": {"mean": 0.35},
+                        "abs_tangential_component": {"mean": 0.05},
+                    },
+                },
                 "delta_endpoint_error_m": {"mean": 0.2},
                 "delta_terminal_speed_m_s": {"mean": 0.1},
                 "extra_full_qrf_cost": {
@@ -584,6 +672,14 @@ def test_perturbation_bank_summary_reports_class_bins_and_na_ratios() -> None:
     assert initial["n_rows"] == 1
     assert initial["status_counts"] == {"evaluated": 1}
     assert initial["metrics"]["delta_action_norm"]["mean"] == 6.0
+    assert initial["metrics"]["delta_position_response_m.max"]["mean"] == 0.7
+    assert initial["metrics"]["delta_position_response_m.auc"]["mean"] == 0.8
+    assert initial["metrics"]["delta_state_response.max"]["mean"] == 0.9
+    assert initial["metrics"]["delta_action_response.max"]["mean"] == 6.5
+    assert initial["metrics"]["response_shape.peak_time_s"]["mean"] == 0.2
+    assert initial["metrics"][
+        "target_relative_alignment.delta_position.abs_radial_component"
+    ]["mean"] == 0.35
     assert initial["metrics"]["extra_full_qrf_delta_cost_total"]["mean"] == 9.0
     assert initial["gru_extlqg_delta_cost_ratio"]["ratio_of_means"] == 3.0
 
