@@ -929,7 +929,11 @@ def _score_feedback_checkpoint_batch(
         )
         perturbed_cost = full_qrf_cost_summary(perturbed.rollout, adapter.trial_specs)
         delta_cost = delta_full_qrf_cost_summary(baseline_cost, perturbed_cost)
-        values = _per_replicate_delta_values(delta_cost, n_replicates=n_replicates)
+        values = _per_replicate_cost_delta_values(
+            baseline_cost,
+            perturbed_cost,
+            n_replicates=n_replicates,
+        )
         for replicate, value in enumerate(values):
             if value is not None:
                 per_replicate_values[replicate].append(float(value))
@@ -972,21 +976,28 @@ def _score_feedback_checkpoint_batch(
     }
 
 
-def _per_replicate_delta_values(
-    delta_cost: Mapping[str, Any],
+def _per_replicate_cost_delta_values(
+    base_cost: Mapping[str, Any],
+    perturbed_cost: Mapping[str, Any],
     *,
     n_replicates: int,
 ) -> list[float | None]:
     """Return mean total delta cost per replicate from a paired cost summary."""
 
-    if delta_cost.get("status") != "available":
+    if base_cost.get("status") != "available" or perturbed_cost.get("status") != "available":
         return [None for _ in range(n_replicates)]
-    values = np.asarray(
-        delta_cost.get("delta_cost", {}).get("total", {}).get("values"),
+    base_values = np.asarray(base_cost.get("total", {}).get("values"), dtype=np.float64)
+    perturbed_values = np.asarray(
+        perturbed_cost.get("total", {}).get("values"),
         dtype=np.float64,
     )
-    if values.shape[:1] != (n_replicates,):
+    if (
+        base_values.shape[:1] != (n_replicates,)
+        or perturbed_values.shape[:1] != (n_replicates,)
+        or base_values.shape != perturbed_values.shape
+    ):
         return [None for _ in range(n_replicates)]
+    values = perturbed_values - base_values
     if values.ndim == 1:
         return [float(value) for value in values]
     reduced = np.mean(values.reshape((n_replicates, -1)), axis=1)

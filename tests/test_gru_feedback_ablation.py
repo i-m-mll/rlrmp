@@ -13,7 +13,7 @@ from feedbax.task import TaskTrialSpec
 
 from rlrmp.analysis.gru_feedback_ablation import (
     SCHEMA_VERSION,
-    _per_replicate_delta_values,
+    _per_replicate_cost_delta_values,
     build_observation_ablation_spec,
     build_observation_tape,
     default_ablation_modes,
@@ -249,13 +249,21 @@ def test_feedback_checkpoint_selection_audit_has_legacy_run_fallback() -> None:
     assert audit["candidate_granularity"] == "run_legacy_fallback"
 
 
-def test_per_replicate_delta_values_reduces_trials_only() -> None:
-    delta_cost = {
+def test_per_replicate_cost_delta_values_reduces_trials_only() -> None:
+    base_cost = {
         "status": "available",
-        "delta_cost": {"total": {"values": [[1.0, 3.0], [10.0, 14.0]]}},
+        "total": {"values": [[10.0, 12.0], [20.0, 22.0]]},
+    }
+    perturbed_cost = {
+        "status": "available",
+        "total": {"values": [[11.0, 15.0], [30.0, 36.0]]},
     }
 
-    assert _per_replicate_delta_values(delta_cost, n_replicates=2) == [2.0, 12.0]
+    assert _per_replicate_cost_delta_values(
+        base_cost,
+        perturbed_cost,
+        n_replicates=2,
+    ) == [2.0, 12.0]
 
 
 def test_markdown_renders_not_available_rows() -> None:
