@@ -252,6 +252,41 @@ DEFAULT_NATIVE_CONVENTIONS = (
     ),
 )
 
+DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT = {
+    "command_input_pulse": {
+        "early": 0.022194585242892,
+        "mid": 0.01739291144150351,
+        "late": 0.007727047798606057,
+    },
+    "initial_position_offset": {
+        "initial_condition": 1.0,
+    },
+    "initial_velocity_offset": {
+        "initial_condition": 0.5826373777683177,
+    },
+    "process_epsilon_force_state_xy": {
+        "early": 0.146484262603,
+        "mid": 0.114793215514,
+        "late": 0.0509985154708,
+    },
+    "process_epsilon_integrator_xy": {
+        "early": 0.652559200439,
+        "mid": 0.425295447092,
+        "late": 0.115223248806,
+    },
+    "process_epsilon_position_xy": {
+        "early": 5.0,
+        "mid": 5.0,
+        "late": 5.0,
+    },
+    "process_epsilon_velocity_xy": {
+        "early": 2.53474407996,
+        "mid": 2.05747045529,
+        "late": 1.08847767512,
+    },
+}
+DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S = 0.7310094144305818
+
 
 def materialize_perturbation_open_loop_calibration(
     *,

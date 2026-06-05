@@ -24,6 +24,9 @@ from rlrmp.analysis.cs_game_card import (
     build_canonical_game,
 )
 from rlrmp.analysis.cs_released_simulation import default_cs_noise_covariances
+from rlrmp.analysis.gru_perturbation_calibration import (
+    DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT,
+)
 from rlrmp.analysis.output_feedback import OutputFeedbackConfig
 from rlrmp.cs_lss_gru import CS_EPSILON_DIM, TargetRelativeDelayedFeedback
 from rlrmp.loss import (
@@ -763,6 +766,108 @@ def test_calibrated_timing_sampler_uses_family_timing_bins() -> None:
     assert hps.perturbation_training.mode == CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE
 
 
+def _unique_abs_nonzero(values: jnp.ndarray) -> np.ndarray:
+    flat = np.asarray(jnp.abs(values)).reshape(-1)
+    return np.unique(np.round(flat[flat > 0.0], 8))
+
+
+def _assert_values_close_to_expected(values: np.ndarray, expected: set[float]) -> None:
+    expected_values = np.asarray(sorted(expected), dtype=float)
+    assert values.size > 0
+    for value in values:
+        assert np.any(np.isclose(value, expected_values, rtol=5e-5, atol=5e-7)), value
+
+
+def test_calibrated_timing_sampler_consumes_calibrated_amplitudes() -> None:
+    hps = build_hps(
+        _args(
+            perturbation_training=True,
+            perturbation_calibrated_timing=True,
+            perturbation_physical_level="moderate",
+            batch_size=2048,
+            hidden_size=4,
+            n_replicates=1,
+        )
+    )
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    base = pair.task.task.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
+    target_peak_delta_x = 0.15 * 0.10
+
+    initial_position_bin = apply_validation_bin(
+        base,
+        hps.perturbation_training,
+        "initial_position",
+    )
+    init_delta = (
+        initial_position_bin.inits["mechanics.vector"]
+        - base.inits["mechanics.vector"]
+    )
+    _assert_values_close_to_expected(
+        _unique_abs_nonzero(init_delta[..., :2]),
+        {target_peak_delta_x},
+    )
+    initial_velocity_bin = apply_validation_bin(
+        base,
+        hps.perturbation_training,
+        "initial_velocity",
+    )
+    init_delta = (
+        initial_velocity_bin.inits["mechanics.vector"]
+        - base.inits["mechanics.vector"]
+    )
+    _assert_values_close_to_expected(
+        _unique_abs_nonzero(init_delta[..., 2:4]),
+        {
+            target_peak_delta_x
+            / DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[
+                "initial_velocity_offset"
+            ]["initial_condition"]
+        },
+    )
+
+    process_bin = apply_validation_bin(base, hps.perturbation_training, "process_epsilon")
+    process_delta = process_bin.inputs["epsilon"] - base.inputs["epsilon"]
+    process_expected = {
+        target_peak_delta_x
+        / DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[
+            "process_epsilon_force_state_xy"
+        ]["early"]
+    }
+    _assert_values_close_to_expected(
+        _unique_abs_nonzero(process_delta),
+        process_expected,
+    )
+
+    command_bin = apply_validation_bin(base, hps.perturbation_training, "command_input")
+    command = command_bin.inputs[GRAPH_ADAPTER_SPECS["command_input"].input_key]
+    command_full = {
+        target_peak_delta_x
+        / DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT["command_input_pulse"]["early"]
+    }
+    _assert_values_close_to_expected(
+        _unique_abs_nonzero(command),
+        command_full,
+    )
+
+    sensory_expected = {
+        target_peak_delta_x,
+    }
+    sensory_bin = apply_validation_bin(base, hps.perturbation_training, "sensory_feedback")
+    _assert_values_close_to_expected(
+        _unique_abs_nonzero(
+            sensory_bin.inputs[GRAPH_ADAPTER_SPECS["sensory_feedback"].input_key]
+        ),
+        sensory_expected,
+    )
+    delayed_bin = apply_validation_bin(base, hps.perturbation_training, "delayed_observation")
+    _assert_values_close_to_expected(
+        _unique_abs_nonzero(
+            delayed_bin.inputs[GRAPH_ADAPTER_SPECS["delayed_observation"].input_key]
+        ),
+        sensory_expected,
+    )
+
+
 def test_perturbation_training_run_spec_and_planned_rows(tmp_path: Path) -> None:
     output_dir = tmp_path / "bulk"
     spec_dir = tmp_path / "spec"
@@ -853,7 +958,10 @@ def test_calibrated_timing_run_spec_exposes_family_timing_bins(tmp_path: Path) -
     )
     assert (
         hps_config["mixture_semantics"]["calibrated_levels"]["amplitude_wiring_status"]
-        .startswith("schema_declared")
+        == "wired_in_sampler_when_calibrated_timing_true"
+    )
+    assert hps_config["calibrated_amplitude_policy"]["artifact_dependency"] == (
+        "none_at_runtime"
     )
 
 
