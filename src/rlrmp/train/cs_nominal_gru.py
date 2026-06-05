@@ -283,6 +283,8 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         delayed_observation_offset_m=float(args.perturbation_delayed_observation_offset_m),
         pulse_start_step=int(args.perturbation_pulse_start_step),
         pulse_duration_steps=int(args.perturbation_pulse_duration_steps),
+        calibrated_timing=bool(args.perturbation_calibrated_timing),
+        physical_level=str(args.perturbation_physical_level),
     )
     target_relative_multitarget = TargetRelativeMultiTargetTrainingConfig(
         enabled=bool(args.target_relative_multitarget),
@@ -1191,6 +1193,25 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--perturbation-pulse-start-step", type=int, default=20)
     parser.add_argument("--perturbation-pulse-duration-steps", type=int, default=5)
     parser.add_argument(
+        "--perturbation-calibrated-timing",
+        action="store_true",
+        help=(
+            "Use timing-bin calibrated perturbation training: plant process/command "
+            "pulses sample starts 5/15/35 uniformly, controller-visible sensory and "
+            "delayed-observation offsets sample starts 10/20/40 uniformly, all with "
+            "5-step pulses."
+        ),
+    )
+    parser.add_argument(
+        "--perturbation-physical-level",
+        choices=("small", "moderate", "stress"),
+        default="moderate",
+        help=(
+            "Declared reach-relative perturbation level for calibrated screens. "
+            "Small/moderate are training rows; stress is reserved for evaluation."
+        ),
+    )
+    parser.add_argument(
         "--target-relative-multitarget",
         action="store_true",
         help=(
@@ -1664,7 +1685,7 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
             "target_stream": "not_consumed",
         }
     return {
-        "mode": PERTURBATION_TRAINING_MODE,
+        "mode": str(getattr(config, "mode", PERTURBATION_TRAINING_MODE)),
         "legacy_mode": LEGACY_PERTURBATION_TRAINING_MODE,
         "fixed_target_only": True,
         "target_stream": {
@@ -1679,11 +1700,22 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
             "single_family_fraction": float(config.single_fraction),
             "mild_combined_fraction": float(config.combined_fraction),
             "combined_amplitude_scale": float(config.combined_amplitude_scale),
-            "sampling": "prng_driven_signed_random_axes_components_timings_levels",
+            "sampling": (
+                "prng_driven_signed_random_axes_components_calibrated_timing_levels"
+                if bool(getattr(config, "calibrated_timing", False))
+                else "prng_driven_signed_random_axes_components_timings_levels"
+            ),
+            "calibrated_timing": bool(getattr(config, "calibrated_timing", False)),
+            "physical_level": str(getattr(config, "physical_level", "moderate")),
+            "physical_level_fraction_of_reach": float(
+                getattr(config, "physical_level_fraction_of_reach", 0.10)
+            ),
         },
         "mild_combined_families": ["initial_position", "command_input"],
         "single_family_bins": list(config.single_family_bins),
         "validation_bins": list(config.validation_bins),
+        "timing_bins": _plain(config.timing_bins),
+        "calibrated_levels": _plain(config.mixture_semantics.calibrated_levels),
         "checkpoint_selection_role": "generalized_held_out_perturbation_validation",
         "nominal_quality_role": "reported_quality_sidecar_gate",
         "controller_internal_mutation": False,

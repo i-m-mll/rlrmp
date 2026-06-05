@@ -15,8 +15,17 @@ from feedbax.graph import Component, Wire
 from feedbax.task import AbstractTask, TaskTrialSpec
 from jaxtyping import PRNGKeyArray, PyTree
 
+from rlrmp.analysis.gru_perturbation_calibration import (
+    DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS,
+    DEFAULT_PLANT_TIMING_BINS,
+    DEFAULT_REACH_RELATIVE_LEVELS,
+)
+
 
 PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_randomized"
+CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE = (
+    "fixed_target_perturbation_calibrated_timing"
+)
 LEGACY_PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_generalized"
 TARGET_RELATIVE_MULTITARGET_TRAINING_MODE = "target_relative_multitarget_static"
 TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE = "target_relative_multitarget_static_h0"
@@ -67,6 +76,17 @@ GRAPH_CHANNEL_BINS: tuple[PerturbationBin, ...] = (
     "sensory_feedback",
     "delayed_observation",
 )
+PLANT_TIMED_BINS: tuple[PerturbationBin, ...] = ("process_epsilon", "command_input")
+CONTROLLER_VISIBLE_TIMED_BINS: tuple[PerturbationBin, ...] = (
+    "sensory_feedback",
+    "delayed_observation",
+)
+REACH_RELATIVE_LEVELS: dict[str, float] = {
+    level.name: float(level.fraction_of_reach)
+    for level in DEFAULT_REACH_RELATIVE_LEVELS
+}
+TRAINING_REACH_RELATIVE_LEVELS: tuple[str, ...] = ("small", "moderate")
+EVAL_ONLY_REACH_RELATIVE_LEVELS: tuple[str, ...] = ("stress",)
 
 
 @dataclass(frozen=True)
@@ -193,6 +213,8 @@ class FixedTargetPerturbationTrainingConfig:
     delayed_observation_offset_m: float = 0.01
     pulse_start_step: int = 20
     pulse_duration_steps: int = 5
+    calibrated_timing: bool = False
+    physical_level: str = "moderate"
 
     def __post_init__(self) -> None:
         total = self.nominal_fraction + self.single_fraction + self.combined_fraction
@@ -209,25 +231,45 @@ class FixedTargetPerturbationTrainingConfig:
             raise ValueError("Mild-combined perturbation-training fraction must be 5-15%.")
         if self.combined_amplitude_scale <= 0.0 or self.combined_amplitude_scale > 1.0:
             raise ValueError("Combined perturbation amplitude scale must be in (0, 1].")
+        if self.physical_level not in REACH_RELATIVE_LEVELS:
+            levels = ", ".join(REACH_RELATIVE_LEVELS)
+            raise ValueError(
+                f"Unknown perturbation physical level {self.physical_level!r}; "
+                f"expected one of {levels}."
+            )
+
+    @property
+    def mode(self) -> str:
+        """Return the declared training-mode identifier."""
+
+        if not self.enabled:
+            return "nominal"
+        if self.calibrated_timing:
+            return CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE
+        return PERTURBATION_TRAINING_MODE
 
     def to_hps_dict(self) -> dict[str, Any]:
         """Return the TreeNamespace-compatible config payload."""
 
         return {
             "enabled": self.enabled,
-            "mode": PERTURBATION_TRAINING_MODE if self.enabled else "nominal",
+            "mode": self.mode,
             "legacy_mode": (
                 LEGACY_PERTURBATION_TRAINING_MODE if self.enabled else None
             ),
             "sampling": {
-                "kind": "prng_driven_fixed_target",
+                "kind": (
+                    "prng_driven_calibrated_timing"
+                    if self.calibrated_timing
+                    else "prng_driven_fixed_target"
+                ),
                 "uses_supplied_key": True,
                 "randomized_fields": [
                     "mixture_membership",
                     "single_family",
                     "sign",
                     "axis_or_component",
-                    "pulse_start",
+                    "timing_bin" if self.calibrated_timing else "pulse_start",
                     "amplitude_level",
                 ],
                 "amplitude_levels": list(AMPLITUDE_LEVELS),
@@ -238,6 +280,13 @@ class FixedTargetPerturbationTrainingConfig:
             "single_fraction": self.single_fraction,
             "combined_fraction": self.combined_fraction,
             "combined_amplitude_scale": self.combined_amplitude_scale,
+            "calibrated_timing": self.calibrated_timing,
+            "physical_level": self.physical_level,
+            "physical_level_fraction_of_reach": REACH_RELATIVE_LEVELS[
+                self.physical_level
+            ],
+            "training_physical_levels": list(TRAINING_REACH_RELATIVE_LEVELS),
+            "eval_only_physical_levels": list(EVAL_ONLY_REACH_RELATIVE_LEVELS),
             "single_family_bins": list(SINGLE_FAMILY_BINS),
             "validation_bins": list(VALIDATION_BINS),
             "families": {
@@ -282,6 +331,7 @@ class FixedTargetPerturbationTrainingConfig:
                 "start_step": self.pulse_start_step,
                 "duration_steps": self.pulse_duration_steps,
             },
+            "timing_bins": calibrated_timing_bins_manifest(),
             "target_stream": {
                 "status": "not_applicable",
                 "reason": "fixed-target C&S GRU does not consume a target-position stream",
@@ -545,7 +595,105 @@ def config_from_hps(config: Any) -> FixedTargetPerturbationTrainingConfig:
         ),
         pulse_start_step=int(getattr(config, "pulse_start_step", 20)),
         pulse_duration_steps=int(getattr(config, "pulse_duration_steps", 5)),
+        calibrated_timing=bool(getattr(config, "calibrated_timing", False)),
+        physical_level=str(getattr(config, "physical_level", "moderate")),
     )
+
+
+def calibrated_timing_bins_manifest() -> dict[str, Any]:
+    """Return the calibrated timing-bin contract for training/run specs."""
+
+    plant_bins = [bin_.to_json() for bin_ in DEFAULT_PLANT_TIMING_BINS]
+    visible_bins = [
+        bin_.to_json() for bin_ in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS
+    ]
+    return {
+        "schema_version": "rlrmp.cs_perturbation_calibrated_timing_bins.v1",
+        "sampling": "uniform_per_active_family_trial",
+        "pulse_duration_steps": 5,
+        "initial_state": {
+            "families": ["initial_position", "initial_velocity"],
+            "start_time_index": 0,
+            "duration_steps": 1,
+            "timing_role": "initial_condition_not_pulse",
+        },
+        "plant_side": {
+            "families": list(PLANT_TIMED_BINS),
+            "bins": plant_bins,
+        },
+        "controller_visible": {
+            "families": list(CONTROLLER_VISIBLE_TIMED_BINS),
+            "bins": visible_bins,
+            "delayed_observation_semantics": (
+                "offset to clean delayed measurement before sensory noise, not literal "
+                "extra temporal delay"
+            ),
+        },
+        "family_timing_bins": {
+            "initial_position": {
+                "start_time_indices": [0],
+                "duration_steps": 1,
+                "timing_set": "initial_state",
+            },
+            "initial_velocity": {
+                "start_time_indices": [0],
+                "duration_steps": 1,
+                "timing_set": "initial_state",
+            },
+            **{
+                family: {
+                    "start_time_indices": [
+                        int(bin_.start_time_index)
+                        for bin_ in DEFAULT_PLANT_TIMING_BINS
+                    ],
+                    "duration_steps": 5,
+                    "timing_set": "plant_side",
+                }
+                for family in PLANT_TIMED_BINS
+            },
+            **{
+                family: {
+                    "start_time_indices": [
+                        int(bin_.start_time_index)
+                        for bin_ in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS
+                    ],
+                    "duration_steps": 5,
+                    "timing_set": "controller_visible",
+                }
+                for family in CONTROLLER_VISIBLE_TIMED_BINS
+            },
+        },
+    }
+
+
+def calibrated_level_manifest(
+    config: FixedTargetPerturbationTrainingConfig,
+) -> dict[str, Any]:
+    """Return small/moderate/stress physical-level semantics."""
+
+    levels = {
+        name: {
+            "fraction_of_reach": fraction,
+            "training_role": (
+                "training_row"
+                if name in TRAINING_REACH_RELATIVE_LEVELS
+                else "evaluation_only"
+            ),
+        }
+        for name, fraction in REACH_RELATIVE_LEVELS.items()
+    }
+    return {
+        "schema_version": "rlrmp.cs_perturbation_reach_relative_levels.v1",
+        "active_level": config.physical_level,
+        "active_fraction_of_reach": REACH_RELATIVE_LEVELS[config.physical_level],
+        "levels": levels,
+        "training_levels": list(TRAINING_REACH_RELATIVE_LEVELS),
+        "eval_only_levels": list(EVAL_ONLY_REACH_RELATIVE_LEVELS),
+        "amplitude_wiring_status": (
+            "schema_declared; per-family calibrated amplitudes from the calibration "
+            "manifest are not yet consumed by this training sampler"
+        ),
+    }
 
 
 def perturbation_training_mixture_semantics(
@@ -554,7 +702,8 @@ def perturbation_training_mixture_semantics(
     """Return explicit fixed-target perturbation-training sampling semantics."""
 
     return {
-        "schema_version": "rlrmp.cs_perturbation_training_mixture_semantics.v1",
+        "schema_version": "rlrmp.cs_perturbation_training_mixture_semantics.v2",
+        "mode": config.mode,
         "experimental_factor_note": (
             "Perturbation uncertainty level is an experimental factor distinct from "
             "physical perturbation amplitude. Broader randomized families, signs, "
@@ -562,11 +711,13 @@ def perturbation_training_mixture_semantics(
             "only testing ordinary feedback control."
         ),
         "calibration_note": (
-            "Raw amplitudes are not physical-effect calibrated. Calibration should "
-            "bin each family by nominal open-loop command-replay peak delta x, then "
-            "report closed-loop extLQG and GRU responses at the same calibrated "
-            "amplitudes."
+            "Calibrated timing mode samples timing bins uniformly by family. "
+            "Small/moderate/stress physical-effect levels are declared as "
+            "reach-relative row semantics; per-family calibrated amplitudes from "
+            "the calibration manifest are not yet consumed here."
         ),
+        "calibrated_levels": calibrated_level_manifest(config),
+        "timing_bins": calibrated_timing_bins_manifest(),
         "membership": {
             "unit": "per training trial",
             "nominal_fraction": float(config.nominal_fraction),
@@ -608,10 +759,20 @@ def perturbation_training_mixture_semantics(
                 "base_amplitude": float(config.process_epsilon_scale),
                 "units": "epsilon",
                 "emission": (
-                    "add a duration-limited pulse to one random epsilon component "
-                    "over a random start time"
+                    "add a duration-limited pulse to one random epsilon component over "
+                    "a calibrated timing bin"
+                    if config.calibrated_timing
+                    else (
+                        "add a duration-limited pulse to one random epsilon component "
+                        "over a random start time"
+                    )
                 ),
-                "randomized": ["epsilon_component", "start_time", "sign", "amplitude_level"],
+                "randomized": [
+                    "epsilon_component",
+                    "timing_bin" if config.calibrated_timing else "start_time",
+                    "sign",
+                    "amplitude_level",
+                ],
                 "duration_steps": int(config.pulse_duration_steps),
             },
             "command_input": {
@@ -619,9 +780,19 @@ def perturbation_training_mixture_semantics(
                 "units": "N",
                 "emission": (
                     "add a duration-limited pulse to one random command-channel "
-                    "component over a random start time"
+                    "component over a calibrated timing bin"
+                    if config.calibrated_timing
+                    else (
+                        "add a duration-limited pulse to one random command-channel "
+                        "component over a random start time"
+                    )
                 ),
-                "randomized": ["axis", "start_time", "sign", "amplitude_level"],
+                "randomized": [
+                    "axis",
+                    "timing_bin" if config.calibrated_timing else "start_time",
+                    "sign",
+                    "amplitude_level",
+                ],
                 "duration_steps": int(config.pulse_duration_steps),
             },
             "sensory_feedback": {
@@ -629,18 +800,50 @@ def perturbation_training_mixture_semantics(
                 "units": "m_or_m_s_channel_units",
                 "emission": (
                     "add an offset pulse on one random 4D sensory-feedback component; "
-                    "current training uses full-trial duration"
+                    "calibrated timing mode uses controller-visible 5-step bins"
+                    if config.calibrated_timing
+                    else (
+                        "add an offset pulse on one random 4D sensory-feedback "
+                        "component; current training uses full-trial duration"
+                    )
                 ),
-                "randomized": ["feedback_component", "start_time", "sign", "amplitude_level"],
+                "randomized": [
+                    "feedback_component",
+                    "timing_bin" if config.calibrated_timing else "start_time",
+                    "sign",
+                    "amplitude_level",
+                ],
+                "duration_steps": (
+                    int(config.pulse_duration_steps)
+                    if config.calibrated_timing
+                    else "full_trial"
+                ),
             },
             "delayed_observation": {
                 "base_amplitude": float(config.delayed_observation_offset_m),
                 "units": "m_or_m_s_channel_units",
                 "emission": (
                     "add an offset pulse on one random 4D delayed-observation component; "
-                    "current training uses full-trial duration"
+                    "calibrated timing mode uses controller-visible 5-step bins. "
+                    "This is an offset to clean delayed measurement before sensory "
+                    "noise, not literal extra temporal delay"
+                    if config.calibrated_timing
+                    else (
+                        "add an offset pulse on one random 4D delayed-observation "
+                        "component; current training uses full-trial duration"
+                    )
                 ),
-                "randomized": ["observation_component", "start_time", "sign", "amplitude_level"],
+                "randomized": [
+                    "observation_component",
+                    "timing_bin" if config.calibrated_timing else "start_time",
+                    "sign",
+                    "amplitude_level",
+                ],
+                "duration_steps": (
+                    int(config.pulse_duration_steps)
+                    if config.calibrated_timing
+                    else "full_trial"
+                ),
             },
         },
         "validation_difference": (
@@ -799,6 +1002,7 @@ def apply_training_perturbation_mixture(
         base_amount=cfg.process_epsilon_scale,
         active_mask=single_mask * _family_mask(family_index, "process_epsilon"),
         duration=cfg.pulse_duration_steps,
+        starts=_plant_timing_starts() if cfg.calibrated_timing else None,
         key=key_process,
     )
     trial_specs = _add_graph_channel_random_pulse(
@@ -810,6 +1014,7 @@ def apply_training_perturbation_mixture(
             + combined_mask * float(cfg.combined_amplitude_scale)
         ),
         duration=cfg.pulse_duration_steps,
+        starts=_plant_timing_starts() if cfg.calibrated_timing else None,
         key=key_command,
     )
     trial_specs = _add_graph_channel_random_pulse(
@@ -817,7 +1022,12 @@ def apply_training_perturbation_mixture(
         GRAPH_ADAPTER_SPECS["sensory_feedback"],
         base_amount=cfg.sensory_feedback_offset_m,
         active_mask=single_mask * _family_mask(family_index, "sensory_feedback"),
-        duration=trial_specs.timeline.n_steps,
+        duration=(
+            cfg.pulse_duration_steps
+            if cfg.calibrated_timing
+            else trial_specs.timeline.n_steps
+        ),
+        starts=_controller_visible_timing_starts() if cfg.calibrated_timing else None,
         key=key_sensory,
     )
     trial_specs = _add_graph_channel_random_pulse(
@@ -825,7 +1035,12 @@ def apply_training_perturbation_mixture(
         GRAPH_ADAPTER_SPECS["delayed_observation"],
         base_amount=cfg.delayed_observation_offset_m,
         active_mask=single_mask * _family_mask(family_index, "delayed_observation"),
-        duration=trial_specs.timeline.n_steps,
+        duration=(
+            cfg.pulse_duration_steps
+            if cfg.calibrated_timing
+            else trial_specs.timeline.n_steps
+        ),
+        starts=_controller_visible_timing_starts() if cfg.calibrated_timing else None,
         key=key_delayed,
     )
     # Train trials are produced inside Feedbax's vmap'd training step, so their
@@ -1062,7 +1277,7 @@ def _apply_single_bin_raw(
         return _add_process_epsilon_pulse(
             trial_specs,
             amount=config.process_epsilon_scale * amplitude_scale,
-            start=config.pulse_start_step,
+            start=_deterministic_validation_start(config, "process_epsilon"),
             duration=config.pulse_duration_steps,
         )
     if bin_name == "command_input":
@@ -1070,7 +1285,7 @@ def _apply_single_bin_raw(
             trial_specs,
             GRAPH_ADAPTER_SPECS["command_input"],
             amount=config.command_input_pulse_n * amplitude_scale,
-            start=config.pulse_start_step,
+            start=_deterministic_validation_start(config, "command_input"),
             duration=config.pulse_duration_steps,
         )
     if bin_name == "sensory_feedback":
@@ -1078,16 +1293,24 @@ def _apply_single_bin_raw(
             trial_specs,
             GRAPH_ADAPTER_SPECS["sensory_feedback"],
             amount=config.sensory_feedback_offset_m * amplitude_scale,
-            start=0,
-            duration=trial_specs.timeline.n_steps,
+            start=_deterministic_validation_start(config, "sensory_feedback"),
+            duration=(
+                config.pulse_duration_steps
+                if config.calibrated_timing
+                else trial_specs.timeline.n_steps
+            ),
         )
     if bin_name == "delayed_observation":
         return _add_graph_channel_pulse(
             trial_specs,
             GRAPH_ADAPTER_SPECS["delayed_observation"],
             amount=config.delayed_observation_offset_m * amplitude_scale,
-            start=0,
-            duration=trial_specs.timeline.n_steps,
+            start=_deterministic_validation_start(config, "delayed_observation"),
+            duration=(
+                config.pulse_duration_steps
+                if config.calibrated_timing
+                else trial_specs.timeline.n_steps
+            ),
         )
     raise ValueError(f"Unsupported perturbation bin {bin_name!r}.")
 
@@ -1184,6 +1407,7 @@ def _add_process_epsilon_random_pulse(
     base_amount: float,
     active_mask: jnp.ndarray,
     duration: int,
+    starts: tuple[int, ...] | None = None,
     key: PRNGKeyArray,
 ) -> TaskTrialSpec:
     key_component, key_start, key_sign, key_level = jr.split(key, 4)
@@ -1203,6 +1427,7 @@ def _add_process_epsilon_random_pulse(
         component=component,
         amount=amount,
         duration=duration,
+        starts=starts,
         key=key_start,
         dtype=epsilon.dtype,
     )
@@ -1230,6 +1455,7 @@ def _add_graph_channel_random_pulse(
     base_amount: float,
     active_mask: jnp.ndarray,
     duration: int,
+    starts: tuple[int, ...] | None = None,
     key: PRNGKeyArray,
 ) -> TaskTrialSpec:
     key_component, key_start, key_sign, key_level = jr.split(key, 4)
@@ -1249,6 +1475,7 @@ def _add_graph_channel_random_pulse(
         component=component,
         amount=amount,
         duration=duration,
+        starts=starts,
         key=key_start,
         dtype=payload.dtype,
     )
@@ -1263,11 +1490,25 @@ def _random_pulse_tensor(
     component: jnp.ndarray,
     amount: jnp.ndarray,
     duration: int,
+    starts: tuple[int, ...] | None,
     key: PRNGKeyArray,
     dtype: Any,
 ) -> jnp.ndarray:
-    max_start = max(1, int(n_steps) - int(duration) + 1)
-    start = jr.randint(key, batch_shape, 0, max_start)
+    if starts is None:
+        max_start = max(1, int(n_steps) - int(duration) + 1)
+        start = jr.randint(key, batch_shape, 0, max_start)
+    else:
+        valid_starts = tuple(
+            int(start)
+            for start in starts
+            if 0 <= int(start) < int(n_steps)
+            and int(start) + int(duration) <= int(n_steps)
+        )
+        if not valid_starts:
+            raise ValueError("At least one calibrated timing-bin start must fit the trial.")
+        start_values = jnp.asarray(valid_starts, dtype=jnp.int32)
+        start_index = jr.randint(key, batch_shape, 0, len(valid_starts))
+        start = start_values[start_index]
     time = jnp.arange(int(n_steps))
     time_mask = (
         (time >= jnp.expand_dims(start, axis=-1))
@@ -1279,6 +1520,30 @@ def _random_pulse_tensor(
         * jnp.expand_dims(time_mask, axis=-1)
         * jnp.expand_dims(component_mask, axis=-2)
     )
+
+
+def _plant_timing_starts() -> tuple[int, ...]:
+    return tuple(int(bin_.start_time_index) for bin_ in DEFAULT_PLANT_TIMING_BINS)
+
+
+def _controller_visible_timing_starts() -> tuple[int, ...]:
+    return tuple(
+        int(bin_.start_time_index)
+        for bin_ in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS
+    )
+
+
+def _deterministic_validation_start(
+    config: FixedTargetPerturbationTrainingConfig,
+    bin_name: PerturbationBin,
+) -> int:
+    if not config.calibrated_timing:
+        return 0 if bin_name in CONTROLLER_VISIBLE_TIMED_BINS else config.pulse_start_step
+    if bin_name in PLANT_TIMED_BINS:
+        return _plant_timing_starts()[0]
+    if bin_name in CONTROLLER_VISIBLE_TIMED_BINS:
+        return _controller_visible_timing_starts()[0]
+    return 0
 
 
 def _random_sign(key: PRNGKeyArray, shape: tuple[int, ...]) -> jnp.ndarray:
