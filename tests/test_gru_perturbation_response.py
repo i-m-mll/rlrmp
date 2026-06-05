@@ -86,6 +86,55 @@ def test_default_bank_is_json_serializable_with_required_channels() -> None:
     assert {row["initial_position_case"] for row in initial_position_rows} == {
         "D_current_state_immediately_visible"
     }
+    assert len(decoded["perturbations"]) == 75
+
+
+def test_default_bank_emits_timing_bin_specific_rows() -> None:
+    bank = default_cs_perturbation_bank()
+    rows = bank["perturbations"]
+
+    command_rows = [row for row in rows if row["family"] == "command_input_pulse"]
+    assert len(command_rows) == 12
+    assert {
+        (row["timing_bin"], row["timing"]["start_time_index"], row["timing"]["duration_steps"])
+        for row in command_rows
+    } == {("early", 5, 5), ("mid", 15, 5), ("late", 35, 5)}
+
+    process_rows = [row for row in rows if row["channel"] == "process_epsilon"]
+    assert len(process_rows) == 48
+    assert {
+        (row["family"], row["timing_bin"])
+        for row in process_rows
+        if row["epsilon_component"] == "force_state_y"
+    } == {
+        ("process_epsilon_force_state_xy", "early"),
+        ("process_epsilon_force_state_xy", "mid"),
+        ("process_epsilon_force_state_xy", "late"),
+    }
+
+    sensory_rows = [row for row in rows if row["family"] == "sensory_feedback_offset"]
+    delayed_rows = [row for row in rows if row["family"] == "delayed_observation_offset"]
+    assert {
+        (row["timing_bin"], row["timing"]["start_time_index"], row["timing"]["duration_steps"])
+        for row in sensory_rows
+    } == {("early_visible", 10, 5), ("mid_visible", 20, 5), ("late_visible", 40, 5)}
+    assert {
+        (row["timing_bin"], row["timing"]["start_time_index"], row["timing"]["duration_steps"])
+        for row in delayed_rows
+    } == {("early_visible", 10, 5), ("mid_visible", 20, 5), ("late_visible", 40, 5)}
+    assert {row["channel"] for row in delayed_rows} == {"delayed_observation"}
+    assert {row["semantic_family"] for row in delayed_rows} == {
+        "pre_noise_delayed_measurement_offset"
+    }
+    assert all(
+        row["channel_provenance"]["not_literal_extra_delay"] is True for row in delayed_rows
+    )
+
+    initial_rows = [row for row in rows if row["channel"] == "initial_state"]
+    assert {row["timing_bin"] for row in initial_rows} == {"initial_condition"}
+    assert {row["timing"]["time_index"] for row in initial_rows} == {0}
+    assert bank["timing_bin_conventions"]["plant_side"][0]["start_time_index"] == 5
+    assert bank["timing_bin_conventions"]["controller_visible"][0]["start_time_index"] == 10
 
 
 def test_initial_position_adapter_offsets_cartesian_state_without_mutating_source() -> None:
@@ -334,6 +383,10 @@ def test_delayed_observation_adapter_uses_clean_pre_noise_graph_channel() -> Non
     np.testing.assert_allclose(payload[:, :, 0], 0.01)
     assert result.adapter_provenance["insertion_point"] == "feedback.feedback -> sensory.input"
     assert "before sensory.input noise" in result.adapter_provenance["future_graphspec_mapping"]
+    assert "pre_noise_delayed_measurement" in result.adapter_provenance[
+        "future_graphspec_mapping"
+    ]
+    assert "compatibility alias" in result.adapter_provenance["future_graphspec_mapping"]
 
 
 def test_full_qrf_cost_scorer_reports_control_and_delta_breakdown() -> None:
@@ -633,6 +686,7 @@ def test_perturbation_bank_summary_reports_class_bins_and_na_ratios() -> None:
             "axis": "x",
             "sign": 1,
             "amplitude": 0.25,
+            "timing_bin": "early",
             "timing": {"start_time_index": 3, "duration_steps": 2},
             "status": "evaluated",
             "metrics": {
@@ -687,6 +741,15 @@ def test_perturbation_bank_summary_reports_class_bins_and_na_ratios() -> None:
     assert command["gru_extlqg_delta_cost_ratio"]["status"] == "not_available"
     assert "no meaningful extLQG" in command["gru_extlqg_delta_cost_ratio"]["reason"]
     assert command["extlqg_not_applicable_reasons"]
+    timing_cells = summary["timing_cell_summary"]["groups"]
+    assert timing_cells["command_input/command_input_pulse/early"]["timing_bin"] == "early"
+    assert timing_cells["command_input/command_input_pulse/early"]["n_rows"] == 1
+    assert (
+        summary["ratio_of_means_by_timing"]["command_input/command_input_pulse/early"][
+            "metrics"
+        ]["delta_action_norm"]["status"]
+        == "not_available"
+    )
 
     target = class_summary["target_stream/target_stream_jump"]
     assert target["status_counts"] == {"not_applicable": 1}

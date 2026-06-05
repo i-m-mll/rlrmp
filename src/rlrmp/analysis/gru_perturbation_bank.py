@@ -151,6 +151,9 @@ class PerturbationSpec:
     epsilon_index: int | None = None
     initial_position_case: str | None = None
     calibration_role: str | None = None
+    timing_bin: str | None = None
+    semantic_family: str | None = None
+    channel_provenance: Mapping[str, Any] | None = None
 
     def to_json(self) -> dict[str, Any]:
         """Return a JSON-serializable perturbation specification."""
@@ -176,6 +179,12 @@ class PerturbationSpec:
             row["initial_position_case"] = self.initial_position_case
         if self.calibration_role is not None:
             row["calibration_role"] = self.calibration_role
+        if self.timing_bin is not None:
+            row["timing_bin"] = self.timing_bin
+        if self.semantic_family is not None:
+            row["semantic_family"] = self.semantic_family
+        if self.channel_provenance is not None:
+            row["channel_provenance"] = dict(self.channel_provenance)
         return row
 
 
@@ -201,6 +210,11 @@ class AdapterResult:
 
 def default_cs_perturbation_bank() -> dict[str, Any]:
     """Return the JSON-serializable default C&S perturbation-response bank."""
+
+    from rlrmp.analysis.gru_perturbation_calibration import (
+        DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS,
+        DEFAULT_PLANT_TIMING_BINS,
+    )
 
     perturbations: list[PerturbationSpec] = []
     for family, units, amplitude in (
@@ -231,6 +245,7 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                             else None
                         ),
                         calibration_role="raw_default_unscaled_effect_size",
+                        timing_bin="initial_condition",
                     )
                 )
     process_epsilon_components = (
@@ -243,13 +258,16 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
         ("integrator", "x", 6, "integrator_x"),
         ("integrator", "y", 7, "integrator_y"),
     )
-    for start in (20, 40, 50):
+    for timing_bin in DEFAULT_PLANT_TIMING_BINS:
+        start = int(timing_bin.start_time_index)
+        duration = int(timing_bin.duration_steps)
         for axis in ("x", "y"):
             for sign in (-1, 1):
                 perturbations.append(
                     PerturbationSpec(
                         perturbation_id=(
-                            f"command_input_pulse__t{start}_{axis}_{_sign_label(sign)}"
+                            "command_input_pulse__"
+                            f"{timing_bin.label}_t{start}_{axis}_{_sign_label(sign)}"
                         ),
                         channel="command_input",
                         family="command_input_pulse",
@@ -261,7 +279,9 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                         timing={
                             "epoch": "movement_indexed",
                             "start_time_index": start,
-                            "duration_steps": 5,
+                            "duration_steps": duration,
+                            "timing_bin": timing_bin.label,
+                            "timing_bin_role": timing_bin.role,
                         },
                         adapter="temporary_external_graph_adapter.command_input",
                         description=(
@@ -269,6 +289,7 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                             "mechanics.force. This is not an external load-force row."
                         ),
                         calibration_role="raw_default_requires_same_bank_calibration",
+                        timing_bin=timing_bin.label,
                     )
                 )
         for component_family, axis, epsilon_index, epsilon_component in process_epsilon_components:
@@ -277,7 +298,8 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                     PerturbationSpec(
                         perturbation_id=(
                             "process_epsilon_pulse__"
-                            f"{epsilon_component}__t{start}_{_sign_label(sign)}"
+                            f"{epsilon_component}__{timing_bin.label}_t{start}_"
+                            f"{_sign_label(sign)}"
                         ),
                         channel="process_epsilon",
                         family=f"process_epsilon_{component_family}_xy",
@@ -289,7 +311,9 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                         timing={
                             "epoch": "movement_indexed",
                             "start_time_index": start,
-                            "duration_steps": 5,
+                            "duration_steps": duration,
+                            "timing_bin": timing_bin.label,
+                            "timing_bin_role": timing_bin.role,
                         },
                         adapter="task_trial_spec.inputs['epsilon']",
                         description=(
@@ -301,61 +325,85 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                         epsilon_component=epsilon_component,
                         epsilon_index=epsilon_index,
                         calibration_role="raw_coordinate_not_scale_normalized",
+                        timing_bin=timing_bin.label,
                     )
                 )
-    blocked_specs = (
-        (
-            "sensory_feedback_offset__x_pos",
-            "sensory_feedback",
-            "sensory_feedback_offset",
-            "m",
-            0.01,
-            "x",
-            "sensory_feedback_named_channel",
-            "Offset the external sensory channel between sensory.output and net.feedback.",
-        ),
-        (
-            "delayed_observation_offset__x_pos",
-            "delayed_observation",
-            "delayed_observation_offset",
-            "m",
-            0.01,
-            "x",
-            "observation_history_named_channel",
-            "Offset the clean delayed-observation channel before sensory noise.",
-        ),
-        (
-            "target_stream_jump__x_pos",
-            "target_stream",
-            "target_stream_jump",
-            "m",
-            0.01,
-            "x",
-            "target_cartesian_xy",
-            "blocked because current C&S GRU input is scalar SISU, not a target stream",
-        ),
-    )
-    for row in blocked_specs:
-        perturbations.append(
-            PerturbationSpec(
-                perturbation_id=row[0],
-                channel=row[1],
-                family=row[2],
-                amplitude=row[4],
-                units=row[3],
-                axis=row[5],
-                basis=row[6],
-                sign=1,
-                timing={"epoch": "adapter_defined"},
-                adapter=(
-                    "not_applicable_current_fixed_target_checkpoint"
-                    if row[1] == "target_stream"
-                    else f"temporary_external_graph_adapter.{row[1]}"
-                ),
-                description=row[7],
-                calibration_role="raw_default_requires_same_bank_calibration",
+    for timing_bin in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS:
+        start = int(timing_bin.start_time_index)
+        duration = int(timing_bin.duration_steps)
+        for channel, family, basis, description, semantic_family, provenance in (
+            (
+                "sensory_feedback",
+                "sensory_feedback_offset",
+                "sensory_feedback_named_channel",
+                "Offset the external post-noise sensory channel between "
+                "sensory.output and net.feedback.",
+                None,
+                {
+                    "information_structure": "post_noise_controller_visible_feedback",
+                    "insertion_point": "sensory.output -> net.feedback",
+                },
+            ),
+            (
+                "delayed_observation",
+                "delayed_observation_offset",
+                "pre_noise_delayed_measurement_named_channel",
+                "Offset the clean pre-noise delayed measurement on "
+                "feedback.feedback -> sensory.input. This is not literal extra "
+                "observation delay.",
+                "pre_noise_delayed_measurement_offset",
+                {
+                    "compatibility_channel": "delayed_observation",
+                    "information_structure": "pre_noise_delayed_measurement_offset",
+                    "insertion_point": "feedback.feedback -> sensory.input",
+                    "not_literal_extra_delay": True,
+                },
+            ),
+        ):
+            perturbations.append(
+                PerturbationSpec(
+                    perturbation_id=(
+                        f"{family}__{timing_bin.label}_t{start}_x_pos"
+                    ),
+                    channel=channel,
+                    family=family,
+                    amplitude=0.01,
+                    units="m",
+                    axis="x",
+                    basis=basis,
+                    sign=1,
+                    timing={
+                        "epoch": "controller_visible",
+                        "start_time_index": start,
+                        "duration_steps": duration,
+                        "timing_bin": timing_bin.label,
+                        "timing_bin_role": timing_bin.role,
+                    },
+                    adapter=f"temporary_external_graph_adapter.{channel}",
+                    description=description,
+                    calibration_role="raw_default_requires_same_bank_calibration",
+                    timing_bin=timing_bin.label,
+                    semantic_family=semantic_family,
+                    channel_provenance=provenance,
+                )
             )
+    perturbations.append(
+        PerturbationSpec(
+            perturbation_id="target_stream_jump__x_pos",
+            channel="target_stream",
+            family="target_stream_jump",
+            amplitude=0.01,
+            units="m",
+            axis="x",
+            basis="target_cartesian_xy",
+            sign=1,
+            timing={"epoch": "adapter_defined"},
+            adapter="not_applicable_current_fixed_target_checkpoint",
+            description="blocked because current C&S GRU input is scalar SISU, not a target stream",
+            calibration_role="raw_default_requires_same_bank_calibration",
+            timing_bin="not_applicable",
         )
+    )
 
     return {
         "schema_version": SCHEMA_VERSION,
@@ -416,8 +464,12 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                 ),
                 "delayed_observation_offset": (
                     "Temporary eager path inserts an external additive graph component "
-                    "on feedback.feedback -> sensory.input. Future GraphSpec mapping: "
-                    "named additive delayed_observation channel before sensory noise."
+                    "on feedback.feedback -> sensory.input. This preserves the legacy "
+                    "delayed_observation channel name for compatibility, but the "
+                    "family semantics are a pre-noise delayed-measurement offset, "
+                    "not literal extra observation delay. Future GraphSpec mapping: "
+                    "named additive pre_noise_delayed_measurement channel before "
+                    "sensory noise."
                 ),
                 "target_stream_jump": (
                     "Deferred: current fixed-target C&S GRU checkpoints do not consume "
@@ -451,6 +503,18 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                 "extlqg_same_bank_response",
                 "gru_same_bank_response",
             ],
+        },
+        "timing_bin_conventions": {
+            "plant_side": [timing_bin.to_json() for timing_bin in DEFAULT_PLANT_TIMING_BINS],
+            "controller_visible": [
+                timing_bin.to_json() for timing_bin in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS
+            ],
+            "policy": (
+                "Initial-condition rows stay at t=0. Plant-side command_input and "
+                "process_epsilon rows use early/mid/late bins. Controller-visible "
+                "sensory and pre-noise delayed-measurement offsets use "
+                "early_visible/mid_visible/late_visible bins."
+            ),
         },
         "signed_pairing_rule": "signed_axis_pairs; aggregate absolute and signed responses",
         "perturbations": [spec.to_json() for spec in perturbations],
@@ -515,8 +579,9 @@ def apply_perturbation_to_trial_specs(
                 target_node="sensory",
                 target_port="input",
                 future_graphspec_mapping=(
-                    "named additive delayed_observation channel before sensory.input "
-                    "noise"
+                    "named additive pre_noise_delayed_measurement channel before "
+                    "sensory.input noise; legacy delayed_observation channel remains "
+                    "a compatibility alias"
                 ),
             ),
         )
@@ -660,7 +725,10 @@ def materialize_gru_perturbation_response(
             "(post-controller command-port perturbations) and process_epsilon_pulse "
             "(mechanics.epsilon / B_w process perturbations). Process-epsilon "
             "rows span the canonical current physical block [px, py, vx, vy, "
-            "fx, fy, eps_x_int, eps_y_int]."
+            "fx, fy, eps_x_int, eps_y_int]. v3 timing-aware rows evaluate "
+            "plant-side command/process pulses at early/mid/late bins and "
+            "controller-visible sensory/pre-noise delayed-measurement offsets at "
+            "early_visible/mid_visible/late_visible bins."
         ),
         "bank": bank,
         "extlqg_comparator": {
@@ -746,6 +814,8 @@ def evaluate_run_perturbation_bank(
                     "axis": perturbation.get("axis"),
                     "sign": perturbation.get("sign"),
                     "amplitude": perturbation.get("amplitude"),
+                    "timing_bin": perturbation.get("timing_bin"),
+                    "semantic_family": perturbation.get("semantic_family"),
                     "timing": perturbation.get("timing"),
                     "perturbation": dict(perturbation),
                     "status": adapter.status,
@@ -797,6 +867,8 @@ def evaluate_run_perturbation_bank(
                 "axis": perturbation.get("axis"),
                 "sign": perturbation.get("sign"),
                 "amplitude": perturbation.get("amplitude"),
+                "timing_bin": perturbation.get("timing_bin"),
+                "semantic_family": perturbation.get("semantic_family"),
                 "timing": perturbation.get("timing"),
                 "perturbation": dict(perturbation),
                 "status": "evaluated",
@@ -1189,7 +1261,12 @@ def summarize_perturbation_bank(rows: Sequence[Mapping[str, Any]]) -> dict[str, 
         "status": "available" if evaluated else "not_available",
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
         "class_summary": _class_summary_by_group(rows),
+        "timing_cell_summary": _class_summary_by_group(rows, include_timing_bin=True),
         "ratio_of_means": _ratio_of_means_by_group(evaluated),
+        "ratio_of_means_by_timing": _ratio_of_means_by_group(
+            evaluated,
+            include_timing_bin=True,
+        ),
         "signed_pair_response": _signed_pair_response_summary(evaluated),
         "controller_io_response": _controller_io_bank_summary(evaluated),
         "denominator_guard": {
@@ -1289,6 +1366,35 @@ def render_perturbation_response_markdown(manifest: Mapping[str, Any]) -> str:
                     f"{_format_optional_float(_class_metric_mean(metrics, 'extra_full_qrf_delta_cost_total'))} | "
                     f"{_format_optional_float(ratio.get('ratio_of_means'))} | "
                     f"{_format_class_notes(class_row)} |"
+                )
+            lines.append("")
+        timing_cell_summary = robust_summary.get("timing_cell_summary", {})
+        if timing_cell_summary.get("status") == "available":
+            lines.extend(
+                [
+                    "#### Timing-Cell Summary",
+                    "",
+                    "| Cell | Rows | Status | Amplitudes | Mean delta action | "
+                    "Max delta x | AUC delta x | Mean full-Q/R/Q_f delta cost | "
+                    "GRU/extLQG delta-cost ratio | Warnings / not applicable |",
+                    "|---|---:|---|---|---:|---:|---:|---:|---|---|",
+                ]
+            )
+            for cell_key, cell_row in timing_cell_summary.get("groups", {}).items():
+                metrics = cell_row.get("metrics", {})
+                ratio = cell_row.get("gru_extlqg_delta_cost_ratio", {})
+                lines.append(
+                    "| "
+                    f"`{cell_key}` | "
+                    f"{cell_row.get('n_rows', 0)} | "
+                    f"{_format_status_counts(cell_row.get('status_counts', {}))} | "
+                    f"{_format_amplitudes(cell_row.get('amplitudes', []))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_action_norm'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_position_response_m.max'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_position_response_m.auc'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'extra_full_qrf_delta_cost_total'))} | "
+                    f"{_format_optional_float(ratio.get('ratio_of_means'))} | "
+                    f"{_format_class_notes(cell_row)} |"
                 )
             lines.append("")
     lines.extend(
@@ -2198,17 +2304,31 @@ _CLASS_SUMMARY_METRICS = (
 )
 
 
-def _class_summary_by_group(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = {}
+def _class_summary_by_group(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    include_timing_bin: bool = False,
+) -> dict[str, Any]:
+    grouped: dict[tuple[str, str, str | None], list[Mapping[str, Any]]] = {}
     for row in rows:
-        grouped.setdefault((str(row["channel"]), str(_row_family(row))), []).append(row)
+        key = (
+            str(row["channel"]),
+            str(_row_family(row)),
+            _row_timing_bin(row) if include_timing_bin else None,
+        )
+        grouped.setdefault(key, []).append(row)
     groups = {
-        f"{channel}/{family}": _class_group_summary(channel, family, group_rows)
-        for (channel, family), group_rows in sorted(grouped.items())
+        _class_group_key(channel, family, timing_bin): _class_group_summary(
+            channel,
+            family,
+            group_rows,
+            timing_bin=timing_bin,
+        )
+        for (channel, family, timing_bin), group_rows in sorted(grouped.items())
     }
     return {
         "status": "available" if groups else "not_available",
-        "grouping": "channel/family",
+        "grouping": "channel/family/timing_bin" if include_timing_bin else "channel/family",
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
         "groups": groups,
     }
@@ -2218,6 +2338,8 @@ def _class_group_summary(
     channel: str,
     family: str,
     rows: Sequence[Mapping[str, Any]],
+    *,
+    timing_bin: str | None = None,
 ) -> dict[str, Any]:
     evaluated = [row for row in rows if row.get("status") == "evaluated"]
     metrics = {
@@ -2246,6 +2368,7 @@ def _class_group_summary(
     return {
         "channel": channel,
         "family": family,
+        "timing_bin": timing_bin,
         "n_rows": len(rows),
         "status_counts": _status_counts(rows),
         "amplitudes": sorted({float(_row_amplitude(row)) for row in rows}),
@@ -2305,13 +2428,22 @@ def _ratio_warnings(ratio: Mapping[str, Any]) -> list[str]:
     return warnings
 
 
-def _ratio_of_means_by_group(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = {}
+def _ratio_of_means_by_group(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    include_timing_bin: bool = False,
+) -> dict[str, Any]:
+    grouped: dict[tuple[str, str, str | None], list[Mapping[str, Any]]] = {}
     for row in rows:
-        grouped.setdefault((str(row["channel"]), str(_row_family(row))), []).append(row)
+        key = (
+            str(row["channel"]),
+            str(_row_family(row)),
+            _row_timing_bin(row) if include_timing_bin else None,
+        )
+        grouped.setdefault(key, []).append(row)
     return {
-        f"{channel}/{family}": _ratio_group_summary(group_rows)
-        for (channel, family), group_rows in sorted(grouped.items())
+        _class_group_key(channel, family, timing_bin): _ratio_group_summary(group_rows)
+        for (channel, family, timing_bin), group_rows in sorted(grouped.items())
     }
 
 
@@ -2518,6 +2650,26 @@ def _pair_amplitude(pair: Mapping[int, Mapping[str, Any]]) -> float:
 
 def _row_family(row: Mapping[str, Any]) -> str:
     return str(row.get("family") or _row_spec(row).get("family") or "unknown")
+
+
+def _row_timing_bin(row: Mapping[str, Any]) -> str:
+    spec = _row_spec(row)
+    timing = _row_timing(row)
+    return str(
+        row.get("timing_bin")
+        or spec.get("timing_bin")
+        or timing.get("timing_bin")
+        or timing.get("calibration_timing_bin")
+        or timing.get("epoch")
+        or "unspecified"
+    )
+
+
+def _class_group_key(channel: str, family: str, timing_bin: str | None) -> str:
+    key = f"{channel}/{family}"
+    if timing_bin is not None:
+        key = f"{key}/{timing_bin}"
+    return key
 
 
 def _row_axis(row: Mapping[str, Any]) -> str:
