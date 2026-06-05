@@ -31,6 +31,7 @@ NOMINAL_GRU_TRAINING_MODES = frozenset(
         "fixed_target_perturbation_randomized",
         "fixed_target_perturbation_generalized",
         "target_relative_multitarget_static",
+        "target_relative_multitarget_static_h0",
     }
 )
 NOMINAL_GRU_REQUIRED_PROVENANCE_KEYS = frozenset(

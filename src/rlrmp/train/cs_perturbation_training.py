@@ -19,6 +19,7 @@ from jaxtyping import PRNGKeyArray, PyTree
 PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_randomized"
 LEGACY_PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_generalized"
 TARGET_RELATIVE_MULTITARGET_TRAINING_MODE = "target_relative_multitarget_static"
+TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE = "target_relative_multitarget_static_h0"
 MILD_COMBINED_FAMILIES: tuple["PerturbationBin", ...] = (
     "initial_position",
     "command_input",
@@ -1501,6 +1502,110 @@ def planned_target_relative_multitarget_rows(
                     "--loss-objective",
                     "full_analytical_qrf",
                     "--target-relative-multitarget",
+                    "--perturbation-training",
+                    "--full-train",
+                    "--resume",
+                ],
+            }
+        )
+    return rows
+
+
+def planned_target_relative_multitarget_h0_rows(
+    *,
+    experiment: str = "643f101",
+) -> list[dict[str, Any]]:
+    """Return the planned H0 target-relative smoke/main run rows."""
+
+    rows = [
+        {
+            "experiment": experiment,
+            "run": "target_relative_multitarget_h0_fullqrf_smoke",
+            "controller_lr": 1e-3,
+            "batch_size": 2,
+            "gradient_clip_norm": 5.0,
+            "n_replicates": 1,
+            "loss_objective": "full_analytical_qrf",
+            "row_kind": "smoke",
+            "training": TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
+            "initial_hidden_encoder": "zero_affine_target_relative_feedback",
+            "command": [
+                "uv",
+                "run",
+                "python",
+                "scripts/train_cs_nominal_gru.py",
+                "--issue",
+                "643f101",
+                "--output-dir",
+                f"/tmp/{experiment}_target_relative_h0_smoke",
+                "--target-relative-multitarget",
+                "--initial-hidden-encoder",
+                "--perturbation-training",
+                "--loss-objective",
+                "full_analytical_qrf",
+                "--controller-lr",
+                "0.001",
+                "--gradient-clip-norm",
+                "5",
+                "--smoke",
+                "--full-train",
+                "--resume",
+            ],
+        }
+    ]
+    for lr_label, lr in (("lr1e-3", 1e-3), ("lr3e-3", 3e-3)):
+        run = f"target_relative_multitarget_h0_fullqrf_warmcos__{lr_label}_clip5_b64"
+        rows.append(
+            {
+                "experiment": experiment,
+                "run": run,
+                "controller_lr": lr,
+                "batch_size": 64,
+                "gradient_clip_norm": 5.0,
+                "n_replicates": 5,
+                "n_train_batches": 12000,
+                "loss_objective": "full_analytical_qrf",
+                "lr_schedule": "warmup_cosine",
+                "row_kind": "main",
+                "training": TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
+                "initial_hidden_encoder": "zero_affine_target_relative_feedback",
+                "training_diagnostics": "default_enabled",
+                "checkpoint_selection": "target_relative_multitarget_rollout_validation",
+                "comparison_rows": [
+                    (
+                        "results/ba82f3d/runs/"
+                        f"target_relative_multitarget_fullqrf_warmcos__{lr_label}_clip5_b64"
+                    )
+                ],
+                "command": [
+                    "uv",
+                    "run",
+                    "python",
+                    "scripts/train_cs_nominal_gru.py",
+                    "--issue",
+                    "643f101",
+                    "--output-dir",
+                    f"_artifacts/{experiment}/runs/{run}",
+                    "--n-train-batches",
+                    "12000",
+                    "--batch-size",
+                    "64",
+                    "--controller-lr",
+                    str(lr),
+                    "--gradient-clip-norm",
+                    "5",
+                    "--lr-warmup-batches",
+                    "500",
+                    "--lr-warmup-init-fraction",
+                    "0.1",
+                    "--lr-cosine-alpha",
+                    "0.01",
+                    "--n-replicates",
+                    "5",
+                    "--loss-objective",
+                    "full_analytical_qrf",
+                    "--target-relative-multitarget",
+                    "--initial-hidden-encoder",
                     "--perturbation-training",
                     "--full-train",
                     "--resume",

@@ -42,6 +42,7 @@ from rlrmp.analysis.cs_released_simulation import (
     default_cs_noise_covariances,
 )
 from rlrmp.analysis.output_feedback import OutputFeedbackConfig
+from rlrmp.cs_lss_gru import CS_H0_CONTEXT_DIM, CS_H0_ENCODER_INIT
 from rlrmp.feedbax_graph import (
     EXECUTION_BACKEND,
     PLANT_INTERVENOR_LABEL,
@@ -66,9 +67,11 @@ from rlrmp.train.cs_perturbation_training import (
     FixedTargetPerturbationTrainingConfig,
     LEGACY_PERTURBATION_TRAINING_MODE,
     PERTURBATION_TRAINING_MODE,
+    TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
     TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
     TargetRelativeMultiTargetTrainingConfig,
     planned_fixed_target_perturbation_rows,
+    planned_target_relative_multitarget_h0_rows,
     planned_target_relative_multitarget_rows,
     target_relative_validation_manifest,
     validation_bin_manifest,
@@ -284,6 +287,12 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
     target_relative_multitarget = TargetRelativeMultiTargetTrainingConfig(
         enabled=bool(args.target_relative_multitarget),
     )
+    initial_hidden_encoder = bool(args.initial_hidden_encoder)
+    if initial_hidden_encoder and not target_relative_multitarget.enabled:
+        raise ValueError(
+            "--initial-hidden-encoder currently requires --target-relative-multitarget so "
+            "H0 is conditioned only on controller-visible target-relative feedback."
+        )
     hps_dict = {
         "method": "nominal-cs-gru",
         "dt": float(plant.dt),
@@ -313,6 +322,11 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             **preset.hps_fields(),
             "stochastic_preset": preset.name,
             "plant_backend": str(args.plant_backend),
+            "initial_hidden_encoder": initial_hidden_encoder,
+            "initial_hidden_encoder_config": _initial_hidden_encoder_config(
+                enabled=initial_hidden_encoder,
+                hidden_size=int(args.hidden_size),
+            ),
             "damping": 0.1,
             "tau_rise": 0.066,
             "population_structure": {
@@ -397,7 +411,11 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "start_iteration": 0,
         },
         "where": {
-            0: ["nodes.net.hidden", "nodes.net.readout"],
+            0: (
+                ["nodes.net.hidden", "nodes.net.readout", "nodes.net.h0_encoder"]
+                if initial_hidden_encoder
+                else ["nodes.net.hidden", "nodes.net.readout"]
+            ),
         },
         "hidden_type": eqx.nn.GRUCell,
         "sisu_gating": "additive",
@@ -496,6 +514,7 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
     stochastic_runtime = _stochastic_runtime_contract(hps)
     plant_backend = str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND))
     exact_lss = plant_backend == CS_LSS_PLANT_BACKEND
+    h0 = _initial_hidden_encoder_metadata(hps)
     return {
         "controller_kind": "gru",
         "plant_backend": plant_backend,
@@ -513,7 +532,12 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
         ),
         "hidden_size": int(hps.model.hidden_size),
         "n_replicates": int(hps.model.n_replicates),
-        "trainable": ["nodes.net.hidden", "nodes.net.readout"],
+        "trainable": (
+            ["nodes.net.hidden", "nodes.net.readout", "nodes.net.h0_encoder"]
+            if h0["enabled"]
+            else ["nodes.net.hidden", "nodes.net.readout"]
+        ),
+        "initial_hidden_encoder": h0,
         "population_structure": {
             "n_input_only": int(pop.n_input_only),
             "n_readout_only": int(pop.n_readout_only),
@@ -601,7 +625,11 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "n_replicates": int(hps.model.n_replicates),
         "controller_kind": "gru",
         "plant_backend": str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND)),
-        "trainable": ["nodes.net.hidden", "nodes.net.readout"],
+        "trainable": (
+            ["nodes.net.hidden", "nodes.net.readout", "nodes.net.h0_encoder"]
+            if _initial_hidden_encoder_enabled(hps)
+            else ["nodes.net.hidden", "nodes.net.readout"]
+        ),
         "method": str(hps.method),
         "nominal_only": _nominal_only(hps),
         "training_distribution": _training_distribution_metadata(hps),
@@ -611,6 +639,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "stochastic_runtime": _stochastic_runtime_contract(hps),
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
         "loss_objective": str(hps.loss.objective),
+        "initial_hidden_encoder": _initial_hidden_encoder_metadata(hps),
     }
     manifest = {
         "schema_version": SCHEMA_VERSION,
@@ -1171,6 +1200,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--initial-hidden-encoder",
+        "--h0-encoder",
+        action="store_true",
+        help=(
+            "Enable the conservative C&S GRU H0 path: a zero-initialized affine map "
+            "from the first controller-visible target-relative delayed feedback vector "
+            "to the GRU hidden state. Requires --target-relative-multitarget."
+        ),
+    )
+    parser.add_argument(
         "--planned-perturbation-rows",
         action="store_true",
         help="Print the two planned issue aacb9ed local training row commands and exit.",
@@ -1179,6 +1218,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--planned-target-relative-rows",
         action="store_true",
         help="Print the planned issue ba82f3d smoke/main target-relative rows and exit.",
+    )
+    parser.add_argument(
+        "--planned-target-relative-h0-rows",
+        action="store_true",
+        help="Print the planned issue 643f101 smoke/main target-relative H0 rows and exit.",
     )
     parser.add_argument(
         "--smoke",
@@ -1225,6 +1269,9 @@ def main(
         return 0
     if args.planned_target_relative_rows:
         print(_json_dumps({"planned_rows": planned_target_relative_multitarget_rows()}), end="")
+        return 0
+    if args.planned_target_relative_h0_rows:
+        print(_json_dumps({"planned_rows": planned_target_relative_multitarget_h0_rows()}), end="")
         return 0
     result = (
         run_full_training(args, volume_commit=volume_commit)
@@ -1414,6 +1461,8 @@ def _learning_rate_schedule(hps: TreeNamespace) -> Callable[[Any], Any]:
 def _where_train() -> dict[int, Callable[[Any], tuple[Any, Any]]]:
     def where_train_fn(model):
         net = model.nodes["net"]
+        if hasattr(net, "h0_encoder"):
+            return (net.hidden, net.readout, net.h0_encoder)
         return (net.hidden, net.readout)
 
     return {0: where_train_fn}
@@ -1508,16 +1557,55 @@ def _target_relative_multitarget_enabled(hps: TreeNamespace) -> bool:
     return bool(getattr(hps.target_relative_multitarget, "enabled", False))
 
 
+def _initial_hidden_encoder_enabled(hps: TreeNamespace) -> bool:
+    return bool(getattr(hps.model, "initial_hidden_encoder", False))
+
+
+def _initial_hidden_encoder_config(*, enabled: bool, hidden_size: int) -> dict[str, Any]:
+    return {
+        "enabled": bool(enabled),
+        "architecture": "affine",
+        "context_source": "first_controller_visible_target_relative_delayed_feedback",
+        "context_basis": "target_relative_delayed_feedback",
+        "context_shape": [CS_H0_CONTEXT_DIM],
+        "output_shape": [int(hidden_size)],
+        "initialization": CS_H0_ENCODER_INIT,
+        "initialization_note": (
+            "Exact zero affine weights and bias preserve the zero-H0 baseline at "
+            "initialization while remaining trainable through ordinary rollout loss."
+        ),
+        "separate_hidden_width": None,
+        "teacher_or_jacobian_supervision": False,
+        "plant_live_preview": False,
+        "delayed_reach": False,
+    }
+
+
+def _initial_hidden_encoder_metadata(hps: TreeNamespace) -> dict[str, Any]:
+    config = getattr(hps.model, "initial_hidden_encoder_config", None)
+    if config is None:
+        return _initial_hidden_encoder_config(
+            enabled=_initial_hidden_encoder_enabled(hps),
+            hidden_size=int(hps.model.hidden_size),
+        )
+    return _plain(config)
+
+
 def _nominal_only(hps: TreeNamespace) -> bool:
     return (
         not _perturbation_training_enabled(hps)
         and not _target_relative_multitarget_enabled(hps)
+        and not _initial_hidden_encoder_enabled(hps)
     )
 
 
 def _training_mode(hps: TreeNamespace) -> str:
     if _target_relative_multitarget_enabled(hps):
-        return TARGET_RELATIVE_MULTITARGET_TRAINING_MODE
+        return (
+            TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE
+            if _initial_hidden_encoder_enabled(hps)
+            else TARGET_RELATIVE_MULTITARGET_TRAINING_MODE
+        )
     if _perturbation_training_enabled(hps):
         return PERTURBATION_TRAINING_MODE
     return "nominal"
@@ -1540,14 +1628,20 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
     target_config = hps.target_relative_multitarget
     if _target_relative_multitarget_enabled(hps):
         target_payload = target_config.target_distribution
+        h0 = _initial_hidden_encoder_metadata(hps)
         return {
-            "mode": TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
+            "mode": (
+                TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE
+                if h0["enabled"]
+                else TARGET_RELATIVE_MULTITARGET_TRAINING_MODE
+            ),
             "fixed_target_only": False,
             "target_stream": {
                 "status": "consumed_as_static_target_relative_feedback",
                 "input_port": "target",
                 "contract": _plain(target_config.input_contract),
             },
+            "initial_hidden_encoder": h0,
             "target_distribution": _plain(target_payload),
             "original_target_anchor_m": _plain(target_payload.original_target_anchor_m),
             "seen_targets_m": _plain(target_payload.seen_targets_m),
@@ -2011,6 +2105,7 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
             if target_relative
             else {"enabled": False}
         ),
+        "initial_hidden_encoder": _initial_hidden_encoder_metadata(hps),
     }
 
 

@@ -40,6 +40,8 @@ CS_EPSILON_DIM = 8
 CS_FORCE_DIM = 2
 CS_FEEDBACK_DIM = 4
 CS_TARGET_DIM = 2
+CS_H0_CONTEXT_DIM = CS_FEEDBACK_DIM
+CS_H0_ENCODER_INIT = "zero_affine"
 
 
 class DelayedPositionVelocityFeedback(Component):
@@ -121,6 +123,105 @@ class TargetRelativeDelayedFeedback(Component):
         return {"feedback": feedback}, state
 
 
+class InitialHiddenEncoder(Module):
+    """Minimal affine map from trial-start feedback context to GRU hidden state."""
+
+    weight: Array
+    bias: Array
+
+    def __init__(
+        self,
+        *,
+        input_size: int,
+        hidden_size: int,
+        dtype: jnp.dtype = jnp.float32,
+        init: str = CS_H0_ENCODER_INIT,
+    ):
+        if input_size <= 0:
+            raise ValueError("H0 encoder input_size must be positive.")
+        if hidden_size <= 0:
+            raise ValueError("H0 encoder hidden_size must be positive.")
+        if init != CS_H0_ENCODER_INIT:
+            raise ValueError(
+                f"Unknown H0 encoder init {init!r}; expected {CS_H0_ENCODER_INIT!r}."
+            )
+        self.weight = jnp.zeros((int(hidden_size), int(input_size)), dtype=dtype)
+        self.bias = jnp.zeros((int(hidden_size),), dtype=dtype)
+
+    def __call__(self, context: Array) -> Array:
+        context = jnp.asarray(context, dtype=self.weight.dtype)
+        return self.weight @ context + self.bias
+
+
+class InitialHiddenStagedNetwork(Component):
+    """Simple staged network with first-step H0 conditioning.
+
+    The H0 encoder consumes the same controller-visible feedback vector that is
+    wired into the GRU. It only replaces the recurrent hidden state on the first
+    graph step; later steps use the GRU's own recurrent state.
+    """
+
+    input_ports = SimpleStagedNetwork.input_ports
+    output_ports = SimpleStagedNetwork.output_ports
+
+    net: SimpleStagedNetwork
+    h0_encoder: InitialHiddenEncoder
+    h0_state_index: eqx.nn.StateIndex
+    h0_context_source: str = field(static=True)
+    h0_initialization: str = field(static=True)
+
+    def __init__(
+        self,
+        *,
+        net: SimpleStagedNetwork,
+        h0_encoder: InitialHiddenEncoder,
+        h0_context_source: str = "target_relative_delayed_feedback",
+        h0_initialization: str = CS_H0_ENCODER_INIT,
+    ):
+        self.net = net
+        self.h0_encoder = h0_encoder
+        self.h0_state_index = eqx.nn.StateIndex(jnp.asarray(False))
+        self.h0_context_source = str(h0_context_source)
+        self.h0_initialization = str(h0_initialization)
+
+    @property
+    def hidden(self) -> Module:
+        return self.net.hidden
+
+    @property
+    def readout(self) -> Module | None:
+        return self.net.readout
+
+    @property
+    def hidden_size(self) -> int:
+        return self.net.hidden_size
+
+    def __call__(
+        self,
+        inputs: dict[str, PyTree],
+        state: eqx.nn.State,
+        *,
+        key: PRNGKeyArray,
+    ) -> tuple[dict[str, PyTree], eqx.nn.State]:
+        applied = state.get(self.h0_state_index)
+        feedback = jnp.asarray(inputs["feedback"])
+        h0 = self.h0_encoder(feedback)
+        net_state = state.get(self.net.state_index)
+        initial_net_state = NetworkState(
+            input=net_state.input,
+            hidden=jnp.where(applied, net_state.hidden, h0),
+            output=net_state.output,
+            encoding=net_state.encoding,
+        )
+        state = state.set(self.net.state_index, initial_net_state)
+        outputs, state = self.net(inputs, state, key=key)
+        state = state.set(self.h0_state_index, jnp.asarray(True))
+        return outputs, state
+
+    def state_view(self, state: eqx.nn.State) -> NetworkState:
+        return self.net.state_view(state)
+
+
 class CsLssMechanicsView(Module):
     """Mechanics view exposing semantic effector observables over the 48D state."""
 
@@ -151,6 +252,7 @@ def build_cs_lss_gru_graph(
     signal_dependent_motor_noise_std: float = 0.0,
     bind_epsilon_input: bool = False,
     target_relative_feedback: bool = False,
+    initial_hidden_encoder: bool = False,
     key: PRNGKeyArray,
 ) -> Graph:
     """Build the C&S LinearStateSpace GRU feedback graph.
@@ -177,6 +279,8 @@ def build_cs_lss_gru_graph(
         target_relative_feedback: If true, replace raw delayed feedback with
             ``[target_x - delayed_x, target_y - delayed_y, -delayed_vx, -delayed_vy]``
             and expose external graph port ``"target"``.
+        initial_hidden_encoder: If true, initialize the GRU hidden state on the
+            first graph step from the first controller-visible feedback vector.
         key: PRNG key for network construction.
 
     Returns:
@@ -192,6 +296,11 @@ def build_cs_lss_gru_graph(
         raise ValueError("additive_motor_noise_std must be non-negative.")
     if signal_dependent_motor_noise_std < 0:
         raise ValueError("signal_dependent_motor_noise_std must be non-negative.")
+    if initial_hidden_encoder and not target_relative_feedback:
+        raise ValueError(
+            "initial_hidden_encoder currently requires target_relative_feedback so "
+            "the trial-start context is the controller-visible target-relative vector."
+        )
 
     mechanics = build_cs2019_feedbax_mechanics(initial_state=initial_state)
     key_net = jr.fold_in(key, 0)
@@ -205,6 +314,15 @@ def build_cs_lss_gru_graph(
         sisu_gating=sisu_gating,
         key=key_net,
     )
+    if initial_hidden_encoder:
+        net = InitialHiddenStagedNetwork(
+            net=net,
+            h0_encoder=InitialHiddenEncoder(
+                input_size=CS_H0_CONTEXT_DIM,
+                hidden_size=hidden_size,
+                dtype=mechanics.A.dtype,
+            ),
+        )
     sensory = Channel(
         delay=0,
         noise_func=Normal(std=float(sensory_noise_std)),
@@ -292,8 +410,10 @@ def build_cs_lss_gru_graph(
 def cs_lss_gru_where_train() -> dict[int, Callable[[Graph], tuple[Module, Module | None]]]:
     """Return a train filter that excludes the fixed C&S plant matrices."""
 
-    def where_train_fn(model: Graph) -> tuple[Module, Module | None]:
+    def where_train_fn(model: Graph) -> tuple[Module, ...]:
         net = model.nodes["net"]
+        if hasattr(net, "h0_encoder"):
+            return (net.hidden, net.readout, net.h0_encoder)
         return (net.hidden, net.readout)
 
     return {0: where_train_fn}
