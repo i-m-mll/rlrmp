@@ -17,7 +17,11 @@ from feedbax.graph import Component, Wire
 from feedbax.types import TreeNamespace, dict_to_namespace
 from jaxtyping import PRNGKeyArray, PyTree
 
-from rlrmp.analysis.gru_checkpoint_selection import load_validation_selected_checkpoint_model
+from rlrmp.analysis.gru_checkpoint_selection import (
+    available_checkpoint_batches,
+    checkpoint_path_for_batches,
+    load_validation_selected_checkpoint_model,
+)
 from rlrmp.analysis.gru_evaluation_diagnostics import RolloutEvaluation
 from rlrmp.analysis.gru_perturbation_bank import (
     apply_perturbation_to_trial_specs,
@@ -377,11 +381,12 @@ def summarize_normalized_feedback_use(
 def feedback_checkpoint_selection_audit(
     manifest: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Return an audit-only feedback-selected candidate sidecar.
+    """Return an audit-only feedback-selected checkpoint sidecar.
 
-    This compares run-level feedback-ablation scores when every run has an
-    available normalized score. It intentionally does not alter the primary
-    validation-selected checkpoint policy.
+    Prefer a per-replicate checkpoint rescore when it has been materialized.
+    Older manifests without that pass fall back to the legacy run-level summary
+    so consumers get an explicit status rather than silent primary-selection
+    changes.
     """
 
     runs = manifest.get("runs", {})
@@ -393,6 +398,33 @@ def feedback_checkpoint_selection_audit(
             "selection_use": "audit_only_not_primary_checkpoint_selection",
             "primary_checkpoint_policy": manifest.get("checkpoint_policy"),
         }
+    checkpoint_audits = {
+        str(run_id): run.get("feedback_checkpoint_rescore")
+        for run_id, run in runs.items()
+        if isinstance(run, Mapping)
+    }
+    materialized = {
+        run_id: audit
+        for run_id, audit in checkpoint_audits.items()
+        if isinstance(audit, Mapping) and audit.get("status") == "materialized"
+    }
+    if materialized:
+        return {
+            "schema_version": FEEDBACK_SELECTION_SCHEMA_VERSION,
+            "status": "materialized",
+            "selection_use": "audit_only_not_primary_checkpoint_selection",
+            "primary_checkpoint_policy": manifest.get("checkpoint_policy"),
+            "feedback_selection_policy": (
+                "per-replicate minimum mean feedback-bank full-Q/R/Q_f delta cost"
+            ),
+            "candidate_granularity": "checkpoint_batch_per_replicate",
+            "runs": materialized,
+            "note": (
+                "Feedback-selected checkpoints are reported for audit only. The primary "
+                "materialization path still loads validation-selected checkpoints."
+            ),
+        }
+
     candidates: list[dict[str, Any]] = []
     missing: list[str] = []
     for run_id, run in runs.items():
@@ -432,7 +464,7 @@ def feedback_checkpoint_selection_audit(
         "selection_use": "audit_only_not_primary_checkpoint_selection",
         "primary_checkpoint_policy": manifest.get("checkpoint_policy"),
         "feedback_selection_policy": "max_normalized_feedback_use_score",
-        "candidate_granularity": "run",
+        "candidate_granularity": "run_legacy_fallback",
         "selected_candidate": selected,
         "candidates": sorted(
             candidates,
@@ -520,6 +552,7 @@ def materialize_gru_feedback_ablation(
     run_ids: Sequence[str] = DEFAULT_RUN_IDS,
     labels: Sequence[str] | None = None,
     n_rollout_trials: int = 4,
+    include_checkpoint_rescore: bool = True,
     output_path: Path | None = None,
     note_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
@@ -541,6 +574,7 @@ def materialize_gru_feedback_ablation(
             run,
             source_experiment=source_experiment,
             n_rollout_trials=n_rollout_trials,
+            include_checkpoint_rescore=include_checkpoint_rescore,
             repo_root=repo_root,
         )
         for run in run_inputs
@@ -553,6 +587,11 @@ def materialize_gru_feedback_ablation(
         "labels": None if labels is None else list(labels),
         "checkpoint_policy": "validation_selected_per_replicate",
         "selection_role": "validation_selected_checkpoints_only",
+        "feedback_checkpoint_rescore_policy": (
+            "audit_only_per_replicate_argmin_on_feedback_bank"
+            if include_checkpoint_rescore
+            else "disabled"
+        ),
         "analytical_action_io_metrics_role": "audit_only_not_used_for_checkpoint_selection",
         "ablation_modes": list(default_ablation_modes()),
         "evaluation_bins": selected_feedback_ablation_bins(),
@@ -569,6 +608,7 @@ def evaluate_run_feedback_ablation(
     *,
     source_experiment: str,
     n_rollout_trials: int,
+    include_checkpoint_rescore: bool = True,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
     """Evaluate feedback ablations for one validation-selected GRU run."""
@@ -716,7 +756,241 @@ def evaluate_run_feedback_ablation(
         "normalized_feedback_use": summarize_normalized_feedback_use(rows),
         "ablations": rows,
     }
+    if include_checkpoint_rescore:
+        run_result["feedback_checkpoint_rescore"] = feedback_checkpoint_rescore_audit_for_run(
+            run=run,
+            source_experiment=source_experiment,
+            pair=pair,
+            base_trial_specs=base_trial_specs,
+            perturbations=perturbations,
+            validation_checkpoint_selection=checkpoint_selection,
+            n_replicates=n_replicates,
+            repo_root=repo_root,
+        )
+    else:
+        run_result["feedback_checkpoint_rescore"] = {
+            "status": "skipped",
+            "reason": "disabled_by_materializer",
+            "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        }
     return run_result
+
+
+def feedback_checkpoint_rescore_audit_for_run(
+    *,
+    run: RunFigureInputs,
+    source_experiment: str,
+    pair: Any,
+    base_trial_specs: Any,
+    perturbations: Mapping[str, Mapping[str, Any]],
+    validation_checkpoint_selection: Sequence[Any],
+    n_replicates: int,
+    repo_root: Path = REPO_ROOT,
+) -> dict[str, Any]:
+    """Score every durable checkpoint on a declared feedback perturbation bank."""
+
+    del source_experiment
+    checkpoint_batches = available_checkpoint_batches(run.artifact_dir)
+    if not checkpoint_batches:
+        return {
+            "status": "not_available",
+            "reason": f"no numbered checkpoints under {run.artifact_dir / 'checkpoints'}",
+            "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        }
+
+    scored_rows: list[dict[str, Any]] = []
+    for checkpoint_batch in checkpoint_batches:
+        checkpoint_path = checkpoint_path_for_batches(run.artifact_dir, checkpoint_batch)
+        model = eqx.tree_deserialise_leaves(checkpoint_path / "model.eqx", pair.model)
+        scored_rows.append(
+            _score_feedback_checkpoint_batch(
+                model=model,
+                task=pair.task,
+                trial_specs=base_trial_specs,
+                perturbations=perturbations,
+                checkpoint_batch=checkpoint_batch,
+                checkpoint_path=checkpoint_path,
+                n_replicates=n_replicates,
+                repo_root=repo_root,
+            )
+        )
+
+    selected = []
+    validation_by_replicate = {
+        int(selection.replicate): selection for selection in validation_checkpoint_selection
+    }
+    for replicate in range(n_replicates):
+        candidates = [
+            row
+            for row in scored_rows
+            if row["per_replicate_scores"][replicate]["status"] == "available"
+        ]
+        if not candidates:
+            selected.append(
+                {
+                    "replicate": replicate,
+                    "status": "not_available",
+                    "reason": "no checkpoint had an available feedback-bank score",
+                }
+            )
+            continue
+        best = min(
+            candidates,
+            key=lambda row: row["per_replicate_scores"][replicate]["score"],
+        )
+        validation_selection = validation_by_replicate.get(replicate)
+        validation_batch = (
+            None if validation_selection is None else validation_selection.checkpoint_batches
+        )
+        selected.append(
+            {
+                "replicate": replicate,
+                "status": "available",
+                "feedback_selected_checkpoint_batches": int(best["checkpoint_batches"]),
+                "feedback_score": float(best["per_replicate_scores"][replicate]["score"]),
+                "validation_selected_checkpoint_batches": validation_batch,
+                "feedback_minus_validation_batches": (
+                    None
+                    if validation_batch is None
+                    else int(best["checkpoint_batches"]) - int(validation_batch)
+                ),
+                "n_available_feedback_bins": int(
+                    best["per_replicate_scores"][replicate]["n_available_bins"]
+                ),
+            }
+        )
+
+    return {
+        "status": "materialized",
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "selection_policy": (
+            "per-replicate argmin of mean full-Q/R/Q_f delta cost over evaluated "
+            "feedback-bank perturbation bins"
+        ),
+        "feedback_bank_bins": [
+            bin_id
+            for bin_id, perturbation_id in selected_feedback_ablation_bins().items()
+            if perturbation_id is not None
+        ],
+        "n_checkpoint_candidates": len(scored_rows),
+        "checkpoint_scores": scored_rows,
+        "feedback_selected_checkpoints": selected,
+        "primary_checkpoint_policy": "validation_selected_per_replicate",
+    }
+
+
+def _score_feedback_checkpoint_batch(
+    *,
+    model: Any,
+    task: Any,
+    trial_specs: Any,
+    perturbations: Mapping[str, Mapping[str, Any]],
+    checkpoint_batch: int,
+    checkpoint_path: Path,
+    n_replicates: int,
+    repo_root: Path,
+) -> dict[str, Any]:
+    """Score one checkpoint on normal-controller feedback perturbation bins."""
+
+    baseline = _evaluate_model_on_trial_specs(
+        model=model,
+        task=task,
+        trial_specs=trial_specs,
+        n_replicates=n_replicates,
+        seed=0,
+    )
+    baseline_cost = full_qrf_cost_summary(baseline.rollout, trial_specs)
+    bin_scores = []
+    per_replicate_values: list[list[float]] = [[] for _ in range(n_replicates)]
+    for bin_id, perturbation_id in selected_feedback_ablation_bins().items():
+        if perturbation_id is None:
+            continue
+        adapter = apply_perturbation_to_trial_specs(
+            trial_specs,
+            perturbations[perturbation_id],
+            model=model,
+        )
+        if adapter.status != "evaluated":
+            bin_scores.append(
+                {
+                    "bin": bin_id,
+                    "perturbation_id": perturbation_id,
+                    "status": adapter.status,
+                    "reason": adapter.reason,
+                }
+            )
+            continue
+        perturbed = _evaluate_model_on_trial_specs(
+            model=adapter.model if adapter.model is not None else model,
+            task=task,
+            trial_specs=adapter.trial_specs,
+            n_replicates=n_replicates,
+            seed=0,
+        )
+        perturbed_cost = full_qrf_cost_summary(perturbed.rollout, adapter.trial_specs)
+        delta_cost = delta_full_qrf_cost_summary(baseline_cost, perturbed_cost)
+        values = _per_replicate_delta_values(delta_cost, n_replicates=n_replicates)
+        for replicate, value in enumerate(values):
+            if value is not None:
+                per_replicate_values[replicate].append(float(value))
+        bin_scores.append(
+            {
+                "bin": bin_id,
+                "perturbation_id": perturbation_id,
+                "status": delta_cost.get("status", "not_available"),
+                "mean_delta_full_qrf_cost": _summary_mean(
+                    delta_cost.get("delta_cost", {}).get("total", {})
+                ),
+                "per_replicate_mean_delta_full_qrf_cost": values,
+            }
+        )
+    per_replicate_scores = []
+    for replicate, values in enumerate(per_replicate_values):
+        if not values:
+            per_replicate_scores.append(
+                {
+                    "replicate": replicate,
+                    "status": "not_available",
+                    "reason": "no evaluated feedback bins",
+                    "n_available_bins": 0,
+                }
+            )
+        else:
+            per_replicate_scores.append(
+                {
+                    "replicate": replicate,
+                    "status": "available",
+                    "score": float(np.mean(np.asarray(values, dtype=np.float64))),
+                    "n_available_bins": len(values),
+                }
+            )
+    return {
+        "checkpoint_batches": int(checkpoint_batch),
+        "checkpoint_path": _repo_relative(checkpoint_path, repo_root=repo_root),
+        "per_replicate_scores": per_replicate_scores,
+        "bin_scores": bin_scores,
+    }
+
+
+def _per_replicate_delta_values(
+    delta_cost: Mapping[str, Any],
+    *,
+    n_replicates: int,
+) -> list[float | None]:
+    """Return mean total delta cost per replicate from a paired cost summary."""
+
+    if delta_cost.get("status") != "available":
+        return [None for _ in range(n_replicates)]
+    values = np.asarray(
+        delta_cost.get("delta_cost", {}).get("total", {}).get("values"),
+        dtype=np.float64,
+    )
+    if values.shape[:1] != (n_replicates,):
+        return [None for _ in range(n_replicates)]
+    if values.ndim == 1:
+        return [float(value) for value in values]
+    reduced = np.mean(values.reshape((n_replicates, -1)), axis=1)
+    return [float(value) for value in reduced]
 
 
 def render_feedback_ablation_markdown(manifest: Mapping[str, Any]) -> str:
