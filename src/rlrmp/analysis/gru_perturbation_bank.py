@@ -43,8 +43,8 @@ from rlrmp.modules.training.part2 import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
-SCHEMA_VERSION = "rlrmp.gru_perturbation_bank.v2"
-DEFAULT_BANK_ID = "cs_standard_perturbation_response_v2"
+SCHEMA_VERSION = "rlrmp.gru_perturbation_bank.v3"
+DEFAULT_BANK_ID = "cs_standard_perturbation_response_v3"
 DEFAULT_OUTPUT_FILENAME = "gru_perturbation_response_fullqrf_validation_selected_manifest.json"
 DEFAULT_NOTE_FILENAME = "gru_perturbation_response_fullqrf_validation_selected.md"
 DEFAULT_BULK_SUBDIR = "perturbation_response/gru_fullqrf_validation_selected"
@@ -149,6 +149,11 @@ class PerturbationSpec:
     description: str
     epsilon_component: str | None = None
     epsilon_index: int | None = None
+    initial_position_case: str | None = None
+    calibration_role: str | None = None
+    timing_bin: str | None = None
+    semantic_family: str | None = None
+    channel_provenance: Mapping[str, Any] | None = None
 
     def to_json(self) -> dict[str, Any]:
         """Return a JSON-serializable perturbation specification."""
@@ -170,6 +175,16 @@ class PerturbationSpec:
             row["epsilon_component"] = self.epsilon_component
         if self.epsilon_index is not None:
             row["epsilon_index"] = int(self.epsilon_index)
+        if self.initial_position_case is not None:
+            row["initial_position_case"] = self.initial_position_case
+        if self.calibration_role is not None:
+            row["calibration_role"] = self.calibration_role
+        if self.timing_bin is not None:
+            row["timing_bin"] = self.timing_bin
+        if self.semantic_family is not None:
+            row["semantic_family"] = self.semantic_family
+        if self.channel_provenance is not None:
+            row["channel_provenance"] = dict(self.channel_provenance)
         return row
 
 
@@ -196,6 +211,11 @@ class AdapterResult:
 def default_cs_perturbation_bank() -> dict[str, Any]:
     """Return the JSON-serializable default C&S perturbation-response bank."""
 
+    from rlrmp.analysis.gru_perturbation_calibration import (
+        DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS,
+        DEFAULT_PLANT_TIMING_BINS,
+    )
+
     perturbations: list[PerturbationSpec] = []
     for family, units, amplitude in (
         ("initial_position_offset", "m", 0.01),
@@ -219,6 +239,13 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                             "Offset the external task initial effector "
                             f"{'position' if 'position' in family else 'velocity'}."
                         ),
+                        initial_position_case=(
+                            "D_current_state_immediately_visible"
+                            if family == "initial_position_offset"
+                            else None
+                        ),
+                        calibration_role="raw_default_unscaled_effect_size",
+                        timing_bin="initial_condition",
                     )
                 )
     process_epsilon_components = (
@@ -231,13 +258,16 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
         ("integrator", "x", 6, "integrator_x"),
         ("integrator", "y", 7, "integrator_y"),
     )
-    for start in (20, 40, 50):
+    for timing_bin in DEFAULT_PLANT_TIMING_BINS:
+        start = int(timing_bin.start_time_index)
+        duration = int(timing_bin.duration_steps)
         for axis in ("x", "y"):
             for sign in (-1, 1):
                 perturbations.append(
                     PerturbationSpec(
                         perturbation_id=(
-                            f"command_input_pulse__t{start}_{axis}_{_sign_label(sign)}"
+                            "command_input_pulse__"
+                            f"{timing_bin.label}_t{start}_{axis}_{_sign_label(sign)}"
                         ),
                         channel="command_input",
                         family="command_input_pulse",
@@ -249,13 +279,17 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                         timing={
                             "epoch": "movement_indexed",
                             "start_time_index": start,
-                            "duration_steps": 5,
+                            "duration_steps": duration,
+                            "timing_bin": timing_bin.label,
+                            "timing_bin_role": timing_bin.role,
                         },
                         adapter="temporary_external_graph_adapter.command_input",
                         description=(
                             "Add a pulse at the post-controller command port that feeds "
                             "mechanics.force. This is not an external load-force row."
                         ),
+                        calibration_role="raw_default_requires_same_bank_calibration",
+                        timing_bin=timing_bin.label,
                     )
                 )
         for component_family, axis, epsilon_index, epsilon_component in process_epsilon_components:
@@ -264,7 +298,8 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                     PerturbationSpec(
                         perturbation_id=(
                             "process_epsilon_pulse__"
-                            f"{epsilon_component}__t{start}_{_sign_label(sign)}"
+                            f"{epsilon_component}__{timing_bin.label}_t{start}_"
+                            f"{_sign_label(sign)}"
                         ),
                         channel="process_epsilon",
                         family=f"process_epsilon_{component_family}_xy",
@@ -276,7 +311,9 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                         timing={
                             "epoch": "movement_indexed",
                             "start_time_index": start,
-                            "duration_steps": 5,
+                            "duration_steps": duration,
+                            "timing_bin": timing_bin.label,
+                            "timing_bin_role": timing_bin.role,
                         },
                         adapter="task_trial_spec.inputs['epsilon']",
                         description=(
@@ -287,60 +324,86 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                         ),
                         epsilon_component=epsilon_component,
                         epsilon_index=epsilon_index,
+                        calibration_role="raw_coordinate_not_scale_normalized",
+                        timing_bin=timing_bin.label,
                     )
                 )
-    blocked_specs = (
-        (
-            "sensory_feedback_offset__x_pos",
-            "sensory_feedback",
-            "sensory_feedback_offset",
-            "m",
-            0.01,
-            "x",
-            "sensory_feedback_named_channel",
-            "Offset the external sensory channel between sensory.output and net.feedback.",
-        ),
-        (
-            "delayed_observation_offset__x_pos",
-            "delayed_observation",
-            "delayed_observation_offset",
-            "m",
-            0.01,
-            "x",
-            "observation_history_named_channel",
-            "Offset the clean delayed-observation channel before sensory noise.",
-        ),
-        (
-            "target_stream_jump__x_pos",
-            "target_stream",
-            "target_stream_jump",
-            "m",
-            0.01,
-            "x",
-            "target_cartesian_xy",
-            "blocked because current C&S GRU input is scalar SISU, not a target stream",
-        ),
-    )
-    for row in blocked_specs:
-        perturbations.append(
-            PerturbationSpec(
-                perturbation_id=row[0],
-                channel=row[1],
-                family=row[2],
-                amplitude=row[4],
-                units=row[3],
-                axis=row[5],
-                basis=row[6],
-                sign=1,
-                timing={"epoch": "adapter_defined"},
-                adapter=(
-                    "not_applicable_current_fixed_target_checkpoint"
-                    if row[1] == "target_stream"
-                    else f"temporary_external_graph_adapter.{row[1]}"
-                ),
-                description=row[7],
+    for timing_bin in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS:
+        start = int(timing_bin.start_time_index)
+        duration = int(timing_bin.duration_steps)
+        for channel, family, basis, description, semantic_family, provenance in (
+            (
+                "sensory_feedback",
+                "sensory_feedback_offset",
+                "sensory_feedback_named_channel",
+                "Offset the external post-noise sensory channel between "
+                "sensory.output and net.feedback.",
+                None,
+                {
+                    "information_structure": "post_noise_controller_visible_feedback",
+                    "insertion_point": "sensory.output -> net.feedback",
+                },
+            ),
+            (
+                "delayed_observation",
+                "delayed_observation_offset",
+                "pre_noise_delayed_measurement_named_channel",
+                "Offset the clean pre-noise delayed measurement on "
+                "feedback.feedback -> sensory.input. This is not literal extra "
+                "observation delay.",
+                "pre_noise_delayed_measurement_offset",
+                {
+                    "compatibility_channel": "delayed_observation",
+                    "information_structure": "pre_noise_delayed_measurement_offset",
+                    "insertion_point": "feedback.feedback -> sensory.input",
+                    "not_literal_extra_delay": True,
+                },
+            ),
+        ):
+            perturbations.append(
+                PerturbationSpec(
+                    perturbation_id=(
+                        f"{family}__{timing_bin.label}_t{start}_x_pos"
+                    ),
+                    channel=channel,
+                    family=family,
+                    amplitude=0.01,
+                    units="m",
+                    axis="x",
+                    basis=basis,
+                    sign=1,
+                    timing={
+                        "epoch": "controller_visible",
+                        "start_time_index": start,
+                        "duration_steps": duration,
+                        "timing_bin": timing_bin.label,
+                        "timing_bin_role": timing_bin.role,
+                    },
+                    adapter=f"temporary_external_graph_adapter.{channel}",
+                    description=description,
+                    calibration_role="raw_default_requires_same_bank_calibration",
+                    timing_bin=timing_bin.label,
+                    semantic_family=semantic_family,
+                    channel_provenance=provenance,
+                )
             )
+    perturbations.append(
+        PerturbationSpec(
+            perturbation_id="target_stream_jump__x_pos",
+            channel="target_stream",
+            family="target_stream_jump",
+            amplitude=0.01,
+            units="m",
+            axis="x",
+            basis="target_cartesian_xy",
+            sign=1,
+            timing={"epoch": "adapter_defined"},
+            adapter="not_applicable_current_fixed_target_checkpoint",
+            description="blocked because current C&S GRU input is scalar SISU, not a target stream",
+            calibration_role="raw_default_requires_same_bank_calibration",
+            timing_bin="not_applicable",
         )
+    )
 
     return {
         "schema_version": SCHEMA_VERSION,
@@ -351,6 +414,12 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
             "input tensors are not edited directly."
         ),
         "legacy_migration": {
+            "v2": (
+                "v3 preserves v2 row identity and status fields while adding "
+                "response-shape summaries, target-relative alignment summaries, "
+                "initial-position information-contract metadata, and calibration "
+                "metadata hooks."
+            ),
             "plant_force": (
                 "Deprecated v1 channel name. The C&S LSS graph path is "
                 "net.output -> efferent -> mechanics.force, with the force/filter "
@@ -395,14 +464,57 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
                 ),
                 "delayed_observation_offset": (
                     "Temporary eager path inserts an external additive graph component "
-                    "on feedback.feedback -> sensory.input. Future GraphSpec mapping: "
-                    "named additive delayed_observation channel before sensory noise."
+                    "on feedback.feedback -> sensory.input. This preserves the legacy "
+                    "delayed_observation channel name for compatibility, but the "
+                    "family semantics are a pre-noise delayed-measurement offset, "
+                    "not literal extra observation delay. Future GraphSpec mapping: "
+                    "named additive pre_noise_delayed_measurement channel before "
+                    "sensory noise."
                 ),
                 "target_stream_jump": (
                     "Deferred: current fixed-target C&S GRU checkpoints do not consume "
                     "a target-position input stream."
                 ),
             },
+        },
+        "initial_position_information_contracts": _initial_position_contract_manifest(),
+        "target_relative_alignment": {
+            "default": "radial_tangential_when_target_and_current_geometry_available",
+            "basis": (
+                "Per-time radial axis points from current base hand position to the "
+                "current target position; tangential is the signed 2D orthogonal axis."
+            ),
+            "missing_inputs_status": "not_available",
+        },
+        "calibration_metadata_hooks": {
+            "status": "declared_unbound",
+            "coordinating_issue": "1ad3c16",
+            "policy": (
+                "Raw amplitudes are not interpreted as cross-coordinate normalized "
+                "effect sizes. Same-bank open-loop, extLQG, and GRU calibration "
+                "metadata can be attached here once parent coordination materializes "
+                "the calibrated amplitude sets."
+            ),
+            "fields": [
+                "calibrated_amplitude_set_id",
+                "physical_units",
+                "effect_size_reference",
+                "open_loop_command_replay_response",
+                "extlqg_same_bank_response",
+                "gru_same_bank_response",
+            ],
+        },
+        "timing_bin_conventions": {
+            "plant_side": [timing_bin.to_json() for timing_bin in DEFAULT_PLANT_TIMING_BINS],
+            "controller_visible": [
+                timing_bin.to_json() for timing_bin in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS
+            ],
+            "policy": (
+                "Initial-condition rows stay at t=0. Plant-side command_input and "
+                "process_epsilon rows use early/mid/late bins. Controller-visible "
+                "sensory and pre-noise delayed-measurement offsets use "
+                "early_visible/mid_visible/late_visible bins."
+            ),
         },
         "signed_pairing_rule": "signed_axis_pairs; aggregate absolute and signed responses",
         "perturbations": [spec.to_json() for spec in perturbations],
@@ -467,8 +579,9 @@ def apply_perturbation_to_trial_specs(
                 target_node="sensory",
                 target_port="input",
                 future_graphspec_mapping=(
-                    "named additive delayed_observation channel before sensory.input "
-                    "noise"
+                    "named additive pre_noise_delayed_measurement channel before "
+                    "sensory.input noise; legacy delayed_observation channel remains "
+                    "a compatibility alias"
                 ),
             ),
         )
@@ -494,6 +607,64 @@ def apply_perturbation_to_trial_specs(
         model=model,
         reason=f"unknown perturbation channel {channel!r}",
     )
+
+
+def _initial_position_contract_manifest() -> dict[str, Any]:
+    """Return explicit information-contract cases for initial-position offsets."""
+
+    return {
+        "status": "declared",
+        "default_current_adapter_case": "D_current_state_immediately_visible",
+        "cases": {
+            "A_target_changed_hand_start_nominal": {
+                "status": "not_available",
+                "reason": (
+                    "Current fixed-target checkpoints do not consume a controller-visible "
+                    "target stream, so a target-only initial-position contract cannot be "
+                    "applied without changing the model input contract."
+                ),
+                "future_graphspec_mapping": "task target transform with nominal hand start",
+            },
+            "B_hand_start_and_delay_history_changed_consistently": {
+                "status": "not_available",
+                "reason": (
+                    "Current eager validation specs do not expose a separate delayed "
+                    "history/buffer initializer that can be shifted consistently with "
+                    "the hand start."
+                ),
+                "future_graphspec_mapping": (
+                    "task-data initial hand transform plus delayed-observation buffer "
+                    "initializer transform"
+                ),
+            },
+            "C_hand_start_changed_history_nominal_until_delay_elapses": {
+                "status": "not_available",
+                "reason": (
+                    "Blind-delay stress rows require explicit delayed-history buffer "
+                    "control so the nominal history can be preserved until the delay "
+                    "horizon elapses."
+                ),
+                "future_graphspec_mapping": (
+                    "task-data initial hand transform with delayed-observation buffer "
+                    "held at nominal values"
+                ),
+            },
+            "D_current_state_immediately_visible": {
+                "status": "implemented",
+                "current_adapter": "task_trial_spec.inits",
+                "row_family": "initial_position_offset",
+                "reason": (
+                    "The current adapter shifts the exposed initial effector/current "
+                    "mechanics state. It is the feasible eager contract for current "
+                    "validation-selected checkpoints."
+                ),
+                "future_graphspec_mapping": (
+                    "task-data initial hand transform with immediate current-state "
+                    "visibility"
+                ),
+            },
+        },
+    }
 
 
 def materialize_gru_perturbation_response(
@@ -554,7 +725,10 @@ def materialize_gru_perturbation_response(
             "(post-controller command-port perturbations) and process_epsilon_pulse "
             "(mechanics.epsilon / B_w process perturbations). Process-epsilon "
             "rows span the canonical current physical block [px, py, vx, vy, "
-            "fx, fy, eps_x_int, eps_y_int]."
+            "fx, fy, eps_x_int, eps_y_int]. v3 timing-aware rows evaluate "
+            "plant-side command/process pulses at early/mid/late bins and "
+            "controller-visible sensory/pre-noise delayed-measurement offsets at "
+            "early_visible/mid_visible/late_visible bins."
         ),
         "bank": bank,
         "extlqg_comparator": {
@@ -640,6 +814,8 @@ def evaluate_run_perturbation_bank(
                     "axis": perturbation.get("axis"),
                     "sign": perturbation.get("sign"),
                     "amplitude": perturbation.get("amplitude"),
+                    "timing_bin": perturbation.get("timing_bin"),
+                    "semantic_family": perturbation.get("semantic_family"),
                     "timing": perturbation.get("timing"),
                     "perturbation": dict(perturbation),
                     "status": adapter.status,
@@ -691,6 +867,8 @@ def evaluate_run_perturbation_bank(
                 "axis": perturbation.get("axis"),
                 "sign": perturbation.get("sign"),
                 "amplitude": perturbation.get("amplitude"),
+                "timing_bin": perturbation.get("timing_bin"),
+                "semantic_family": perturbation.get("semantic_family"),
                 "timing": perturbation.get("timing"),
                 "perturbation": dict(perturbation),
                 "status": "evaluated",
@@ -747,6 +925,13 @@ def summarize_perturbation_response(
     delta_input = perturbed.gru_input - base.gru_input
     delta_position = perturbed.position - base.position
     delta_velocity = perturbed.velocity - base.velocity
+    delta_position_norm = np.linalg.norm(delta_position, axis=-1)
+    delta_velocity_norm = np.linalg.norm(delta_velocity, axis=-1)
+    delta_state_norm = np.linalg.norm(
+        np.concatenate([delta_position, delta_velocity], axis=-1),
+        axis=-1,
+    )
+    delta_action_norm = np.linalg.norm(delta_action, axis=-1)
     endpoint_recovery = np.linalg.norm(
         perturbed.position[:, :, -1, :] - perturbed.target_position[None, :, -1, :],
         axis=-1,
@@ -758,10 +943,34 @@ def summarize_perturbation_response(
     terminal_speed = np.linalg.norm(perturbed.velocity[:, :, -1, :], axis=-1)
     base_terminal_speed = np.linalg.norm(base.velocity[:, :, -1, :], axis=-1)
     metrics = {
-        "delta_action_norm": _summary_stats(np.linalg.norm(delta_action, axis=-1)),
-        "delta_position_trajectory_norm_m": _summary_stats(np.linalg.norm(delta_position, axis=-1)),
-        "delta_velocity_trajectory_norm_m_s": _summary_stats(
-            np.linalg.norm(delta_velocity, axis=-1)
+        "delta_action_norm": _summary_stats(delta_action_norm),
+        "delta_position_trajectory_norm_m": _summary_stats(delta_position_norm),
+        "delta_velocity_trajectory_norm_m_s": _summary_stats(delta_velocity_norm),
+        "delta_state_trajectory_norm": _summary_stats(delta_state_norm),
+        "delta_position_response_m": _response_magnitude_summary(
+            delta_position_norm,
+            dt=float(base.dt),
+            value_label="delta_position_norm_m",
+        ),
+        "delta_state_response": _response_magnitude_summary(
+            delta_state_norm,
+            dt=float(base.dt),
+            value_label="delta_state_norm",
+        ),
+        "delta_action_response": _response_magnitude_summary(
+            delta_action_norm,
+            dt=float(base.dt),
+            value_label="delta_action_norm",
+        ),
+        "response_shape": _response_shape_summary(
+            delta_position_norm,
+            dt=float(base.dt),
+            value_label="delta_position_norm_m",
+        ),
+        "target_relative_alignment": _target_relative_alignment_summary(
+            base=base,
+            delta_position=delta_position,
+            delta_action=delta_action,
         ),
         "endpoint_error_m": _summary_stats(endpoint_recovery),
         "delta_endpoint_error_m": _summary_stats(endpoint_recovery - base_endpoint),
@@ -1019,6 +1228,17 @@ def compare_response_metric_summaries(
         "delta_action_norm",
         "delta_position_trajectory_norm_m",
         "delta_velocity_trajectory_norm_m_s",
+        "delta_state_trajectory_norm",
+        "delta_position_response_m.max",
+        "delta_position_response_m.auc",
+        "delta_state_response.max",
+        "delta_state_response.auc",
+        "delta_action_response.max",
+        "delta_action_response.auc",
+        "response_shape.peak_time_s",
+        "response_shape.recovery_time_s",
+        "target_relative_alignment.delta_position.abs_radial_component",
+        "target_relative_alignment.delta_position.abs_tangential_component",
         "delta_endpoint_error_m",
         "delta_terminal_speed_m_s",
         "controller_io_response.delta_input_norm",
@@ -1041,7 +1261,12 @@ def summarize_perturbation_bank(rows: Sequence[Mapping[str, Any]]) -> dict[str, 
         "status": "available" if evaluated else "not_available",
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
         "class_summary": _class_summary_by_group(rows),
+        "timing_cell_summary": _class_summary_by_group(rows, include_timing_bin=True),
         "ratio_of_means": _ratio_of_means_by_group(evaluated),
+        "ratio_of_means_by_timing": _ratio_of_means_by_group(
+            evaluated,
+            include_timing_bin=True,
+        ),
         "signed_pair_response": _signed_pair_response_summary(evaluated),
         "controller_io_response": _controller_io_bank_summary(evaluated),
         "denominator_guard": {
@@ -1110,10 +1335,12 @@ def render_perturbation_response_markdown(manifest: Mapping[str, Any]) -> str:
                     "#### Class-Binned Summary",
                     "",
                     "| Class | Rows | Status | Amplitudes | Mean delta action | "
-                    "Mean delta pos traj | Mean delta vel traj | Mean endpoint delta | "
-                    "Mean terminal-speed delta | Mean full-Q/R/Q_f delta cost | "
+                    "Max delta x | AUC delta x | Max delta state | AUC delta state | "
+                    "Max delta u | AUC delta u | Peak time | Recovery time | "
+                    "Mean endpoint delta | Mean terminal-speed delta | "
+                    "Mean full-Q/R/Q_f delta cost | "
                     "GRU/extLQG delta-cost ratio | Warnings / not applicable |",
-                    "|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---|",
+                    "|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
                 ]
             )
             for class_key, class_row in class_summary.get("groups", {}).items():
@@ -1125,14 +1352,49 @@ def render_perturbation_response_markdown(manifest: Mapping[str, Any]) -> str:
                     f"{class_row.get('n_rows', 0)} | "
                     f"{_format_status_counts(class_row.get('status_counts', {}))} | "
                     f"{_format_amplitudes(class_row.get('amplitudes', []))} | "
-                    f"{_format_optional_float(_summary_mean(metrics, 'delta_action_norm'))} | "
-                    f"{_format_optional_float(_summary_mean(metrics, 'delta_position_trajectory_norm_m'))} | "
-                    f"{_format_optional_float(_summary_mean(metrics, 'delta_velocity_trajectory_norm_m_s'))} | "
-                    f"{_format_optional_float(_summary_mean(metrics, 'delta_endpoint_error_m'))} | "
-                    f"{_format_optional_float(_summary_mean(metrics, 'delta_terminal_speed_m_s'))} | "
-                    f"{_format_optional_float(_summary_mean(metrics, 'extra_full_qrf_delta_cost_total'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_action_norm'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_position_response_m.max'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_position_response_m.auc'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_state_response.max'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_state_response.auc'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_action_response.max'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_action_response.auc'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'response_shape.peak_time_s'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'response_shape.recovery_time_s'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_endpoint_error_m'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_terminal_speed_m_s'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'extra_full_qrf_delta_cost_total'))} | "
                     f"{_format_optional_float(ratio.get('ratio_of_means'))} | "
                     f"{_format_class_notes(class_row)} |"
+                )
+            lines.append("")
+        timing_cell_summary = robust_summary.get("timing_cell_summary", {})
+        if timing_cell_summary.get("status") == "available":
+            lines.extend(
+                [
+                    "#### Timing-Cell Summary",
+                    "",
+                    "| Cell | Rows | Status | Amplitudes | Mean delta action | "
+                    "Max delta x | AUC delta x | Mean full-Q/R/Q_f delta cost | "
+                    "GRU/extLQG delta-cost ratio | Warnings / not applicable |",
+                    "|---|---:|---|---|---:|---:|---:|---:|---|---|",
+                ]
+            )
+            for cell_key, cell_row in timing_cell_summary.get("groups", {}).items():
+                metrics = cell_row.get("metrics", {})
+                ratio = cell_row.get("gru_extlqg_delta_cost_ratio", {})
+                lines.append(
+                    "| "
+                    f"`{cell_key}` | "
+                    f"{cell_row.get('n_rows', 0)} | "
+                    f"{_format_status_counts(cell_row.get('status_counts', {}))} | "
+                    f"{_format_amplitudes(cell_row.get('amplitudes', []))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_action_norm'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_position_response_m.max'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'delta_position_response_m.auc'))} | "
+                    f"{_format_optional_float(_class_metric_mean(metrics, 'extra_full_qrf_delta_cost_total'))} | "
+                    f"{_format_optional_float(ratio.get('ratio_of_means'))} | "
+                    f"{_format_class_notes(cell_row)} |"
                 )
             lines.append("")
     lines.extend(
@@ -1830,6 +2092,162 @@ def _controller_io_response_summary(
     }
 
 
+def _response_magnitude_summary(
+    norm: Any,
+    *,
+    dt: float,
+    value_label: str,
+) -> dict[str, Any]:
+    """Summarize max and time-integrated trajectory response magnitudes."""
+
+    array = np.asarray(norm, dtype=np.float64)
+    if array.ndim < 1 or array.shape[-1] == 0:
+        return {
+            "status": "not_available",
+            "reason": f"{value_label} has no time axis",
+        }
+    return {
+        "status": "available",
+        "value": value_label,
+        "dt_s": float(dt),
+        "max": _summary_stats(np.max(array, axis=-1)),
+        "auc": _summary_stats(np.sum(array, axis=-1) * float(dt)),
+    }
+
+
+def _response_shape_summary(
+    norm: Any,
+    *,
+    dt: float,
+    value_label: str,
+    recovery_fraction: float = 0.1,
+) -> dict[str, Any]:
+    """Summarize peak and recovery timing for a nonnegative response trace."""
+
+    array = np.asarray(norm, dtype=np.float64)
+    if array.ndim < 1 or array.shape[-1] == 0:
+        return {
+            "status": "not_available",
+            "reason": f"{value_label} has no time axis",
+        }
+    flat = array.reshape((-1, array.shape[-1]))
+    peak_indices = np.argmax(flat, axis=-1)
+    peak_values = np.take_along_axis(flat, peak_indices[:, None], axis=-1)[:, 0]
+    recovery_times = []
+    unrecovered = 0
+    for trace, peak_index, peak_value in zip(flat, peak_indices, peak_values, strict=True):
+        if peak_value <= 0.0:
+            recovery_times.append(0.0)
+            continue
+        threshold = recovery_fraction * peak_value
+        candidates = np.nonzero(trace[peak_index:] <= threshold)[0]
+        if candidates.size == 0:
+            unrecovered += 1
+            continue
+        recovery_times.append(float((peak_index + int(candidates[0])) * dt))
+    return {
+        "status": "available",
+        "value": value_label,
+        "dt_s": float(dt),
+        "recovery_fraction_of_peak": float(recovery_fraction),
+        "peak_time_s": _summary_stats(peak_indices * float(dt)),
+        "peak_value": _summary_stats(peak_values),
+        "recovery_time_s": _summary_stats_or_not_available(recovery_times),
+        "n_unrecovered": int(unrecovered),
+    }
+
+
+def _target_relative_alignment_summary(
+    *,
+    base: RolloutEvaluation,
+    delta_position: Any,
+    delta_action: Any,
+) -> dict[str, Any]:
+    """Decompose response vectors into radial/tangential target-relative axes."""
+
+    try:
+        base_position = np.asarray(base.position, dtype=np.float64)
+        target = np.asarray(base.target_position, dtype=np.float64)
+        delta_pos = np.asarray(delta_position, dtype=np.float64)
+        delta_act = np.asarray(delta_action, dtype=np.float64)
+    except (TypeError, ValueError) as exc:
+        return {"status": "not_available", "reason": str(exc)}
+    if base_position.shape[-1] != 2 or target.shape[-1] != 2:
+        return {
+            "status": "not_available",
+            "reason": "target-relative alignment requires 2D position and target geometry",
+        }
+    try:
+        target = np.broadcast_to(target[None, ...], base_position.shape)
+    except ValueError as exc:
+        return {
+            "status": "not_available",
+            "reason": f"target geometry could not broadcast to rollout positions: {exc}",
+        }
+    radial = target - base_position
+    radial_norm = np.linalg.norm(radial, axis=-1, keepdims=True)
+    valid = radial_norm[..., 0] > 1e-12
+    if not np.any(valid):
+        return {
+            "status": "not_available",
+            "reason": "no nonzero target-relative radial axis is available",
+        }
+    radial_unit = radial / np.maximum(radial_norm, 1e-12)
+    tangential_unit = np.stack(
+        [-radial_unit[..., 1], radial_unit[..., 0]],
+        axis=-1,
+    )
+    result = {
+        "status": "available",
+        "basis": "target_relative_radial_tangential",
+        "radial_axis": "target_position - base_position at each time step",
+        "valid_fraction": float(np.mean(valid)),
+        "delta_position": _radial_tangential_component_summary(
+            delta_pos,
+            radial_unit=radial_unit,
+            tangential_unit=tangential_unit,
+            valid=valid,
+        ),
+    }
+    if delta_act.shape == delta_pos.shape:
+        result["delta_action"] = _radial_tangential_component_summary(
+            delta_act,
+            radial_unit=radial_unit,
+            tangential_unit=tangential_unit,
+            valid=valid,
+        )
+    else:
+        result["delta_action"] = {
+            "status": "not_available",
+            "reason": (
+                "delta action shape does not match target-relative position geometry: "
+                f"{delta_act.shape} vs {delta_pos.shape}"
+            ),
+        }
+    return result
+
+
+def _radial_tangential_component_summary(
+    values: np.ndarray,
+    *,
+    radial_unit: np.ndarray,
+    tangential_unit: np.ndarray,
+    valid: np.ndarray,
+) -> dict[str, Any]:
+    radial_component = np.sum(values * radial_unit, axis=-1)
+    tangential_component = np.sum(values * tangential_unit, axis=-1)
+    magnitude = np.linalg.norm(values, axis=-1)
+    alignment = radial_component / np.maximum(magnitude, 1e-12)
+    return {
+        "status": "available",
+        "radial_component": _summary_stats(radial_component[valid]),
+        "tangential_component": _summary_stats(tangential_component[valid]),
+        "abs_radial_component": _summary_stats(np.abs(radial_component[valid])),
+        "abs_tangential_component": _summary_stats(np.abs(tangential_component[valid])),
+        "radial_alignment_cosine": _summary_stats(alignment[valid]),
+    }
+
+
 def _cost_summary_public(summary: Mapping[str, Any]) -> dict[str, Any]:
     """Drop large paired value arrays from nested public cost summaries."""
 
@@ -1849,6 +2267,7 @@ _ROBUST_RATIO_METRICS = (
     "delta_action_norm",
     "delta_position_trajectory_norm_m",
     "delta_velocity_trajectory_norm_m_s",
+    "delta_state_trajectory_norm",
     "delta_endpoint_error_m",
     "delta_terminal_speed_m_s",
     "controller_io_response.delta_input_norm",
@@ -1869,22 +2288,47 @@ _CLASS_SUMMARY_METRICS = (
     "delta_action_norm",
     "delta_position_trajectory_norm_m",
     "delta_velocity_trajectory_norm_m_s",
+    "delta_state_trajectory_norm",
+    "delta_position_response_m.max",
+    "delta_position_response_m.auc",
+    "delta_state_response.max",
+    "delta_state_response.auc",
+    "delta_action_response.max",
+    "delta_action_response.auc",
+    "response_shape.peak_time_s",
+    "response_shape.recovery_time_s",
+    "target_relative_alignment.delta_position.abs_radial_component",
+    "target_relative_alignment.delta_position.abs_tangential_component",
     "delta_endpoint_error_m",
     "delta_terminal_speed_m_s",
 )
 
 
-def _class_summary_by_group(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = {}
+def _class_summary_by_group(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    include_timing_bin: bool = False,
+) -> dict[str, Any]:
+    grouped: dict[tuple[str, str, str | None], list[Mapping[str, Any]]] = {}
     for row in rows:
-        grouped.setdefault((str(row["channel"]), str(_row_family(row))), []).append(row)
+        key = (
+            str(row["channel"]),
+            str(_row_family(row)),
+            _row_timing_bin(row) if include_timing_bin else None,
+        )
+        grouped.setdefault(key, []).append(row)
     groups = {
-        f"{channel}/{family}": _class_group_summary(channel, family, group_rows)
-        for (channel, family), group_rows in sorted(grouped.items())
+        _class_group_key(channel, family, timing_bin): _class_group_summary(
+            channel,
+            family,
+            group_rows,
+            timing_bin=timing_bin,
+        )
+        for (channel, family, timing_bin), group_rows in sorted(grouped.items())
     }
     return {
         "status": "available" if groups else "not_available",
-        "grouping": "channel/family",
+        "grouping": "channel/family/timing_bin" if include_timing_bin else "channel/family",
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
         "groups": groups,
     }
@@ -1894,6 +2338,8 @@ def _class_group_summary(
     channel: str,
     family: str,
     rows: Sequence[Mapping[str, Any]],
+    *,
+    timing_bin: str | None = None,
 ) -> dict[str, Any]:
     evaluated = [row for row in rows if row.get("status") == "evaluated"]
     metrics = {
@@ -1922,6 +2368,7 @@ def _class_group_summary(
     return {
         "channel": channel,
         "family": family,
+        "timing_bin": timing_bin,
         "n_rows": len(rows),
         "status_counts": _status_counts(rows),
         "amplitudes": sorted({float(_row_amplitude(row)) for row in rows}),
@@ -1981,13 +2428,22 @@ def _ratio_warnings(ratio: Mapping[str, Any]) -> list[str]:
     return warnings
 
 
-def _ratio_of_means_by_group(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = {}
+def _ratio_of_means_by_group(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    include_timing_bin: bool = False,
+) -> dict[str, Any]:
+    grouped: dict[tuple[str, str, str | None], list[Mapping[str, Any]]] = {}
     for row in rows:
-        grouped.setdefault((str(row["channel"]), str(_row_family(row))), []).append(row)
+        key = (
+            str(row["channel"]),
+            str(_row_family(row)),
+            _row_timing_bin(row) if include_timing_bin else None,
+        )
+        grouped.setdefault(key, []).append(row)
     return {
-        f"{channel}/{family}": _ratio_group_summary(group_rows)
-        for (channel, family), group_rows in sorted(grouped.items())
+        _class_group_key(channel, family, timing_bin): _ratio_group_summary(group_rows)
+        for (channel, family, timing_bin), group_rows in sorted(grouped.items())
     }
 
 
@@ -2196,6 +2652,26 @@ def _row_family(row: Mapping[str, Any]) -> str:
     return str(row.get("family") or _row_spec(row).get("family") or "unknown")
 
 
+def _row_timing_bin(row: Mapping[str, Any]) -> str:
+    spec = _row_spec(row)
+    timing = _row_timing(row)
+    return str(
+        row.get("timing_bin")
+        or spec.get("timing_bin")
+        or timing.get("timing_bin")
+        or timing.get("calibration_timing_bin")
+        or timing.get("epoch")
+        or "unspecified"
+    )
+
+
+def _class_group_key(channel: str, family: str, timing_bin: str | None) -> str:
+    key = f"{channel}/{family}"
+    if timing_bin is not None:
+        key = f"{key}/{timing_bin}"
+    return key
+
+
 def _row_axis(row: Mapping[str, Any]) -> str:
     return str(row.get("axis") or _row_spec(row).get("axis") or "unknown")
 
@@ -2276,6 +2752,13 @@ def _summary_mean(metrics: Mapping[str, Any], key: str) -> float | None:
     if value is None:
         return None
     return float(value)
+
+
+def _class_metric_mean(metrics: Mapping[str, Any], key: str) -> float | None:
+    """Read a class-summary metric stored either flat or nested."""
+
+    value = _summary_mean(metrics, key)
+    return _metric_mean(metrics, key) if value is None else value
 
 
 def _format_status_counts(counts: Mapping[str, Any]) -> str:

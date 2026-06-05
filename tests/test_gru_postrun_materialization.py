@@ -90,6 +90,20 @@ def test_plan_gru_postrun_materialization_routes_tracked_and_bulk_outputs(
         / "perturbation_response"
         / "gru_fullqrf_validation_selected"
     )
+    assert plan.feedback_ablation_json_path == (
+        tmp_path
+        / "results"
+        / "5f70333"
+        / "notes"
+        / "gru_feedback_ablation_fullqrf_validation_selected.json"
+    )
+    assert plan.feedback_ablation_note_path == (
+        tmp_path
+        / "results"
+        / "5f70333"
+        / "notes"
+        / "gru_feedback_ablation_fullqrf_validation_selected.md"
+    )
 
 
 def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materializers(
@@ -136,8 +150,14 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         calls["objective"] = kwargs
         return {
             "status": "materialized",
-            "json_path": "results/5f70333/notes/objective_comparator_fullqrf_validation_selected.json",
-            "note_path": "results/5f70333/notes/objective_comparator_fullqrf_validation_selected.md",
+            "json_path": (
+                "results/5f70333/notes/"
+                "objective_comparator_fullqrf_validation_selected.json"
+            ),
+            "note_path": (
+                "results/5f70333/notes/"
+                "objective_comparator_fullqrf_validation_selected.md"
+            ),
             "result": {
                 "schema_version": "rlrmp.objective_comparator_sidecar.v6",
                 "standard_split_bank_comparator_status": "available",
@@ -183,6 +203,34 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
             },
         }
 
+    def fake_feedback_ablation(**kwargs: Any) -> dict[str, Any]:
+        calls["feedback"] = kwargs
+        return {
+            "status": "materialized",
+            "json_path": (
+                "results/5f70333/notes/"
+                "gru_feedback_ablation_fullqrf_validation_selected.json"
+            ),
+            "note_path": (
+                "results/5f70333/notes/"
+                "gru_feedback_ablation_fullqrf_validation_selected.md"
+            ),
+            "selection_role": "audit_only_not_used_for_checkpoint_selection",
+            "result": {
+                "schema_version": "rlrmp.gru_feedback_ablation.v1",
+                "n_runs": 2,
+                "checkpoint_policy": "validation_selected_per_replicate",
+                "feedback_checkpoint_selection_audit_status": "available",
+            },
+            "feedback_checkpoint_selection_audit": {
+                "schema_version": "rlrmp.gru_feedback_checkpoint_selection_audit.v1",
+                "status": "available",
+                "selection_use": "audit_only_not_primary_checkpoint_selection",
+                "primary_checkpoint_policy": "validation_selected_per_replicate",
+                "selected_candidate": {"run_id": "run_b", "feedback_score": 0.7},
+            },
+        }
+
     monkeypatch.setattr(
         postrun,
         "materialize_validation_selected_checkpoint_manifest",
@@ -202,6 +250,11 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         postrun,
         "materialize_optional_perturbation_response",
         fake_perturbation_response,
+    )
+    monkeypatch.setattr(
+        postrun,
+        "materialize_optional_feedback_ablation",
+        fake_feedback_ablation,
     )
 
     manifest = postrun.materialize_gru_postrun_analysis(
@@ -239,6 +292,15 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         / "5f70333"
         / "perturbation_response"
         / "gru_fullqrf_validation_selected"
+    )
+    assert calls["feedback"]["n_rollout_trials"] == postrun.DEFAULT_N_ROLLOUT_TRIALS
+    assert calls["feedback"]["labels"] == ("A", "B")
+    assert calls["feedback"]["output_path"] == (
+        tmp_path
+        / "results"
+        / "5f70333"
+        / "notes"
+        / "gru_feedback_ablation_fullqrf_validation_selected.json"
     )
     assert calls["map"]["output_path"] == (
         tmp_path
@@ -286,6 +348,12 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
     )
     assert manifest["outputs"]["split_stress_objective_comparator"]["status"] == "materialized"
     assert manifest["outputs"]["perturbation_response"]["status"] == "materialized"
+    assert manifest["outputs"]["feedback_ablation"]["status"] == "materialized"
+    assert manifest["outputs"]["feedback_checkpoint_selection"]["status"] == "available"
+    assert (
+        manifest["outputs"]["feedback_checkpoint_selection"]["selection_use"]
+        == "audit_only_not_primary_checkpoint_selection"
+    )
     assert (
         manifest["outputs"]["split_stress_objective_comparator"][
             "standard_split_bank_comparator_status"
@@ -305,6 +373,11 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         "perturbation_response_bank"
         in manifest["selection_leakage_guard"]["audit_only_metrics"]
     )
+    assert "feedback_ablation" in manifest["selection_leakage_guard"]["audit_only_metrics"]
+    assert (
+        "feedback_selected_checkpoint_audit"
+        in manifest["selection_leakage_guard"]["audit_only_metrics"]
+    )
 
     postrun_manifest = (
         tmp_path
@@ -318,6 +391,7 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
     assert written["outputs"]["standard_certificate_manifest"].startswith("results/")
     assert written["outputs"]["map_decomposition"]["json_path"].startswith("results/")
     assert written["outputs"]["perturbation_response"]["json_path"].startswith("results/")
+    assert written["outputs"]["feedback_ablation"]["json_path"].startswith("results/")
 
 
 def test_plan_gru_postrun_materialization_final_checkpoint_override(tmp_path: Path) -> None:
@@ -418,6 +492,11 @@ def test_materialize_gru_postrun_analysis_prefers_provided_fixed_bank_manifest(
         "materialize_optional_perturbation_response",
         lambda **_kwargs: {"status": "skipped"},
     )
+    monkeypatch.setattr(
+        postrun,
+        "materialize_optional_feedback_ablation",
+        lambda **_kwargs: {"status": "skipped"},
+    )
 
     manifest = postrun.materialize_gru_postrun_analysis(
         experiment="5f70333",
@@ -478,6 +557,7 @@ def test_materialize_gru_postrun_analysis_preserves_audit_only_skip_semantics(
         include_objective_comparator=False,
         include_map_decomposition=False,
         include_perturbation_response=False,
+        include_feedback_ablation=False,
         repo_root=tmp_path,
     )
 
@@ -491,6 +571,17 @@ def test_materialize_gru_postrun_analysis_preserves_audit_only_skip_semantics(
     }
     assert manifest["outputs"]["perturbation_response"] == {
         "status": "skipped",
+        "reason": "disabled_by_cli",
+    }
+    assert manifest["outputs"]["feedback_ablation"] == {
+        "status": "skipped",
+        "reason": "disabled_by_cli",
+    }
+    assert manifest["outputs"]["feedback_checkpoint_selection"] == {
+        "status": "skipped",
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "selection_use": "audit_only_not_primary_checkpoint_selection",
+        "source_sidecar": "feedback_ablation",
         "reason": "disabled_by_cli",
     }
     assert manifest["outputs"]["split_stress_objective_comparator"] == {

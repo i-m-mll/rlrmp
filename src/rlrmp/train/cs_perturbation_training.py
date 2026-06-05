@@ -15,8 +15,19 @@ from feedbax.graph import Component, Wire
 from feedbax.task import AbstractTask, TaskTrialSpec
 from jaxtyping import PRNGKeyArray, PyTree
 
+from rlrmp.analysis.gru_perturbation_calibration import (
+    DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S,
+    DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS,
+    DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT,
+    DEFAULT_PLANT_TIMING_BINS,
+    DEFAULT_REACH_RELATIVE_LEVELS,
+)
+
 
 PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_randomized"
+CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE = (
+    "fixed_target_perturbation_calibrated_timing"
+)
 LEGACY_PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_generalized"
 TARGET_RELATIVE_MULTITARGET_TRAINING_MODE = "target_relative_multitarget_static"
 TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE = "target_relative_multitarget_static_h0"
@@ -67,6 +78,28 @@ GRAPH_CHANNEL_BINS: tuple[PerturbationBin, ...] = (
     "sensory_feedback",
     "delayed_observation",
 )
+PLANT_TIMED_BINS: tuple[PerturbationBin, ...] = ("process_epsilon", "command_input")
+CONTROLLER_VISIBLE_TIMED_BINS: tuple[PerturbationBin, ...] = (
+    "sensory_feedback",
+    "delayed_observation",
+)
+REACH_RELATIVE_LEVELS: dict[str, float] = {
+    level.name: float(level.fraction_of_reach)
+    for level in DEFAULT_REACH_RELATIVE_LEVELS
+}
+TRAINING_REACH_RELATIVE_LEVELS: tuple[str, ...] = ("small", "moderate")
+EVAL_ONLY_REACH_RELATIVE_LEVELS: tuple[str, ...] = ("stress",)
+PROCESS_EPSILON_COMPONENT_FAMILIES: tuple[str, ...] = (
+    "process_epsilon_position_xy",
+    "process_epsilon_position_xy",
+    "process_epsilon_velocity_xy",
+    "process_epsilon_velocity_xy",
+    "process_epsilon_force_state_xy",
+    "process_epsilon_force_state_xy",
+    "process_epsilon_integrator_xy",
+    "process_epsilon_integrator_xy",
+)
+TIMING_LABELS_PLANT = tuple(bin_.label for bin_ in DEFAULT_PLANT_TIMING_BINS)
 
 
 @dataclass(frozen=True)
@@ -193,6 +226,8 @@ class FixedTargetPerturbationTrainingConfig:
     delayed_observation_offset_m: float = 0.01
     pulse_start_step: int = 20
     pulse_duration_steps: int = 5
+    calibrated_timing: bool = False
+    physical_level: str = "moderate"
 
     def __post_init__(self) -> None:
         total = self.nominal_fraction + self.single_fraction + self.combined_fraction
@@ -209,34 +244,64 @@ class FixedTargetPerturbationTrainingConfig:
             raise ValueError("Mild-combined perturbation-training fraction must be 5-15%.")
         if self.combined_amplitude_scale <= 0.0 or self.combined_amplitude_scale > 1.0:
             raise ValueError("Combined perturbation amplitude scale must be in (0, 1].")
+        if self.physical_level not in REACH_RELATIVE_LEVELS:
+            levels = ", ".join(REACH_RELATIVE_LEVELS)
+            raise ValueError(
+                f"Unknown perturbation physical level {self.physical_level!r}; "
+                f"expected one of {levels}."
+            )
+
+    @property
+    def mode(self) -> str:
+        """Return the declared training-mode identifier."""
+
+        if not self.enabled:
+            return "nominal"
+        if self.calibrated_timing:
+            return CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE
+        return PERTURBATION_TRAINING_MODE
 
     def to_hps_dict(self) -> dict[str, Any]:
         """Return the TreeNamespace-compatible config payload."""
 
         return {
             "enabled": self.enabled,
-            "mode": PERTURBATION_TRAINING_MODE if self.enabled else "nominal",
+            "mode": self.mode,
             "legacy_mode": (
                 LEGACY_PERTURBATION_TRAINING_MODE if self.enabled else None
             ),
             "sampling": {
-                "kind": "prng_driven_fixed_target",
+                "kind": (
+                    "prng_driven_calibrated_timing"
+                    if self.calibrated_timing
+                    else "prng_driven_fixed_target"
+                ),
                 "uses_supplied_key": True,
                 "randomized_fields": [
                     "mixture_membership",
                     "single_family",
                     "sign",
                     "axis_or_component",
-                    "pulse_start",
-                    "amplitude_level",
+                    "timing_bin" if self.calibrated_timing else "pulse_start",
+                    "physical_level" if self.calibrated_timing else "amplitude_level",
                 ],
-                "amplitude_levels": list(AMPLITUDE_LEVELS),
+                "amplitude_levels": (
+                    [self.physical_level] if self.calibrated_timing else list(AMPLITUDE_LEVELS)
+                ),
                 "mild_combined_families": list(MILD_COMBINED_FAMILIES),
             },
+            "mixture_semantics": perturbation_training_mixture_semantics(self),
             "nominal_fraction": self.nominal_fraction,
             "single_fraction": self.single_fraction,
             "combined_fraction": self.combined_fraction,
             "combined_amplitude_scale": self.combined_amplitude_scale,
+            "calibrated_timing": self.calibrated_timing,
+            "physical_level": self.physical_level,
+            "physical_level_fraction_of_reach": REACH_RELATIVE_LEVELS[
+                self.physical_level
+            ],
+            "training_physical_levels": list(TRAINING_REACH_RELATIVE_LEVELS),
+            "eval_only_physical_levels": list(EVAL_ONLY_REACH_RELATIVE_LEVELS),
             "single_family_bins": list(SINGLE_FAMILY_BINS),
             "validation_bins": list(VALIDATION_BINS),
             "families": {
@@ -281,6 +346,8 @@ class FixedTargetPerturbationTrainingConfig:
                 "start_step": self.pulse_start_step,
                 "duration_steps": self.pulse_duration_steps,
             },
+            "timing_bins": calibrated_timing_bins_manifest(),
+            "calibrated_amplitude_policy": calibrated_amplitude_policy_manifest(self),
             "target_stream": {
                 "status": "not_applicable",
                 "reason": "fixed-target C&S GRU does not consume a target-position stream",
@@ -544,7 +611,314 @@ def config_from_hps(config: Any) -> FixedTargetPerturbationTrainingConfig:
         ),
         pulse_start_step=int(getattr(config, "pulse_start_step", 20)),
         pulse_duration_steps=int(getattr(config, "pulse_duration_steps", 5)),
+        calibrated_timing=bool(getattr(config, "calibrated_timing", False)),
+        physical_level=str(getattr(config, "physical_level", "moderate")),
     )
+
+
+def calibrated_timing_bins_manifest() -> dict[str, Any]:
+    """Return the calibrated timing-bin contract for training/run specs."""
+
+    plant_bins = [bin_.to_json() for bin_ in DEFAULT_PLANT_TIMING_BINS]
+    visible_bins = [
+        bin_.to_json() for bin_ in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS
+    ]
+    return {
+        "schema_version": "rlrmp.cs_perturbation_calibrated_timing_bins.v1",
+        "sampling": "uniform_per_active_family_trial",
+        "pulse_duration_steps": 5,
+        "initial_state": {
+            "families": ["initial_position", "initial_velocity"],
+            "start_time_index": 0,
+            "duration_steps": 1,
+            "timing_role": "initial_condition_not_pulse",
+        },
+        "plant_side": {
+            "families": list(PLANT_TIMED_BINS),
+            "bins": plant_bins,
+        },
+        "controller_visible": {
+            "families": list(CONTROLLER_VISIBLE_TIMED_BINS),
+            "bins": visible_bins,
+            "delayed_observation_semantics": (
+                "offset to clean delayed measurement before sensory noise, not literal "
+                "extra temporal delay"
+            ),
+        },
+        "family_timing_bins": {
+            "initial_position": {
+                "start_time_indices": [0],
+                "duration_steps": 1,
+                "timing_set": "initial_state",
+            },
+            "initial_velocity": {
+                "start_time_indices": [0],
+                "duration_steps": 1,
+                "timing_set": "initial_state",
+            },
+            **{
+                family: {
+                    "start_time_indices": [
+                        int(bin_.start_time_index)
+                        for bin_ in DEFAULT_PLANT_TIMING_BINS
+                    ],
+                    "duration_steps": 5,
+                    "timing_set": "plant_side",
+                }
+                for family in PLANT_TIMED_BINS
+            },
+            **{
+                family: {
+                    "start_time_indices": [
+                        int(bin_.start_time_index)
+                        for bin_ in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS
+                    ],
+                    "duration_steps": 5,
+                    "timing_set": "controller_visible",
+                }
+                for family in CONTROLLER_VISIBLE_TIMED_BINS
+            },
+        },
+    }
+
+
+def calibrated_level_manifest(
+    config: FixedTargetPerturbationTrainingConfig,
+) -> dict[str, Any]:
+    """Return small/moderate/stress physical-level semantics."""
+
+    levels = {
+        name: {
+            "fraction_of_reach": fraction,
+            "training_role": (
+                "training_row"
+                if name in TRAINING_REACH_RELATIVE_LEVELS
+                else "evaluation_only"
+            ),
+        }
+        for name, fraction in REACH_RELATIVE_LEVELS.items()
+    }
+    return {
+        "schema_version": "rlrmp.cs_perturbation_reach_relative_levels.v1",
+        "active_level": config.physical_level,
+        "active_fraction_of_reach": REACH_RELATIVE_LEVELS[config.physical_level],
+        "levels": levels,
+        "training_levels": list(TRAINING_REACH_RELATIVE_LEVELS),
+        "eval_only_levels": list(EVAL_ONLY_REACH_RELATIVE_LEVELS),
+        "amplitude_wiring_status": (
+            "wired_in_sampler_when_calibrated_timing_true"
+        ),
+    }
+
+
+def calibrated_amplitude_policy_manifest(
+    config: FixedTargetPerturbationTrainingConfig,
+) -> dict[str, Any]:
+    """Return the calibrated amplitude rule consumed by the training sampler."""
+
+    return {
+        "schema_version": "rlrmp.cs_perturbation_calibrated_amplitude_policy.v1",
+        "active": bool(config.calibrated_timing),
+        "active_level": config.physical_level,
+        "active_fraction_of_reach": REACH_RELATIVE_LEVELS[config.physical_level],
+        "plant_side_rule": (
+            "amount = reach_length_m * level_fraction / "
+            "open_loop_peak_delta_x_per_unit[family,timing]"
+        ),
+        "initial_state_rule": (
+            "position amount = reach_length_m * level_fraction; velocity amount = "
+            "reach_length_m * level_fraction / initial_velocity_peak_delta_x_per_unit"
+        ),
+        "controller_visible_rule": (
+            "position components are native reach_length_m * level_fraction offsets; "
+            "velocity components are native nominal_peak_speed_m_s * level_fraction offsets"
+        ),
+        "controller_visible_velocity_scale_m_s": DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S,
+        "open_loop_peak_delta_x_per_unit": DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT,
+        "amplitude_level_randomization": (
+            "disabled in calibrated_timing mode; the declared physical_level fixes the "
+            "effect-size target"
+        ),
+        "artifact_dependency": "none_at_runtime",
+    }
+
+
+def perturbation_training_mixture_semantics(
+    config: FixedTargetPerturbationTrainingConfig,
+) -> dict[str, Any]:
+    """Return explicit fixed-target perturbation-training sampling semantics."""
+
+    return {
+        "schema_version": "rlrmp.cs_perturbation_training_mixture_semantics.v2",
+        "mode": config.mode,
+        "experimental_factor_note": (
+            "Perturbation uncertainty level is an experimental factor distinct from "
+            "physical perturbation amplitude. Broader randomized families, signs, "
+            "components, timings, or mixtures can induce robustness rather than "
+            "only testing ordinary feedback control."
+        ),
+        "calibration_note": (
+            "Calibrated timing mode samples timing bins uniformly by family. "
+            "Small/moderate/stress physical-effect levels are reach-relative; "
+            "calibrated training consumes the checked-in unit-sensitivity table "
+            "to set plant-side amplitudes per family, timing bin, and reach length."
+        ),
+        "calibrated_levels": calibrated_level_manifest(config),
+        "calibrated_amplitude_policy": calibrated_amplitude_policy_manifest(config),
+        "timing_bins": calibrated_timing_bins_manifest(),
+        "membership": {
+            "unit": "per training trial",
+            "nominal_fraction": float(config.nominal_fraction),
+            "single_family_fraction": float(config.single_fraction),
+            "mild_combined_fraction": float(config.combined_fraction),
+            "nominal": "no explicit perturbation beyond ordinary stochastic runtime",
+            "single_family": (
+                "one family sampled uniformly from single_family_bins, then "
+                "family-specific component/sign/timing/level randomization is applied"
+            ),
+            "mild_combined": (
+                "initial_position and command_input are both active, scaled by "
+                "combined_amplitude_scale; the other families are inactive"
+            ),
+        },
+        "single_family_bins": list(SINGLE_FAMILY_BINS),
+        "mild_combined_families": list(MILD_COMBINED_FAMILIES),
+        "amplitude_levels": list(AMPLITUDE_LEVELS),
+        "families": {
+            "initial_position": {
+                "base_amplitude": float(config.initial_position_offset_m),
+                "units": "m",
+                "emission": (
+                    "offset one random mechanics.vector position component among x/y "
+                    "at t=0 by sign * reach_length * physical_level_fraction"
+                    if config.calibrated_timing
+                    else (
+                        "offset one random mechanics.vector position component among x/y "
+                        "at t=0 by sign * amplitude_level * base_amplitude"
+                    )
+                ),
+                "randomized": [
+                    "axis",
+                    "sign",
+                    "physical_level" if config.calibrated_timing else "amplitude_level",
+                ],
+            },
+            "initial_velocity": {
+                "base_amplitude": float(config.initial_velocity_offset_m_s),
+                "units": "m/s",
+                "emission": (
+                    "offset one random mechanics.vector velocity component among x/y "
+                    "at t=0 by sign * reach_length * physical_level_fraction / "
+                    "initial_velocity_peak_delta_x_per_unit"
+                    if config.calibrated_timing
+                    else (
+                        "offset one random mechanics.vector velocity component among x/y "
+                        "at t=0 by sign * amplitude_level * base_amplitude"
+                    )
+                ),
+                "randomized": [
+                    "axis",
+                    "sign",
+                    "physical_level" if config.calibrated_timing else "amplitude_level",
+                ],
+            },
+            "process_epsilon": {
+                "base_amplitude": float(config.process_epsilon_scale),
+                "units": "epsilon",
+                "emission": (
+                    "add a duration-limited pulse to one random epsilon component over "
+                    "a calibrated timing bin"
+                    if config.calibrated_timing
+                    else (
+                        "add a duration-limited pulse to one random epsilon component "
+                        "over a random start time"
+                    )
+                ),
+                "randomized": [
+                    "epsilon_component",
+                    "timing_bin" if config.calibrated_timing else "start_time",
+                    "sign",
+                    "physical_level" if config.calibrated_timing else "amplitude_level",
+                ],
+                "duration_steps": int(config.pulse_duration_steps),
+            },
+            "command_input": {
+                "base_amplitude": float(config.command_input_pulse_n),
+                "units": "N",
+                "emission": (
+                    "add a duration-limited pulse to one random command-channel "
+                    "component over a calibrated timing bin"
+                    if config.calibrated_timing
+                    else (
+                        "add a duration-limited pulse to one random command-channel "
+                        "component over a random start time"
+                    )
+                ),
+                "randomized": [
+                    "axis",
+                    "timing_bin" if config.calibrated_timing else "start_time",
+                    "sign",
+                    "physical_level" if config.calibrated_timing else "amplitude_level",
+                ],
+                "duration_steps": int(config.pulse_duration_steps),
+            },
+            "sensory_feedback": {
+                "base_amplitude": float(config.sensory_feedback_offset_m),
+                "units": "m_or_m_s_channel_units",
+                "emission": (
+                    "add an offset pulse on one random 4D sensory-feedback component; "
+                    "calibrated timing mode uses controller-visible 5-step bins"
+                    if config.calibrated_timing
+                    else (
+                        "add an offset pulse on one random 4D sensory-feedback "
+                        "component; current training uses full-trial duration"
+                    )
+                ),
+                "randomized": [
+                    "feedback_component",
+                    "timing_bin" if config.calibrated_timing else "start_time",
+                    "sign",
+                    "physical_level" if config.calibrated_timing else "amplitude_level",
+                ],
+                "duration_steps": (
+                    int(config.pulse_duration_steps)
+                    if config.calibrated_timing
+                    else "full_trial"
+                ),
+            },
+            "delayed_observation": {
+                "base_amplitude": float(config.delayed_observation_offset_m),
+                "units": "m_or_m_s_channel_units",
+                "emission": (
+                    "add an offset pulse on one random 4D delayed-observation component; "
+                    "calibrated timing mode uses controller-visible 5-step bins. "
+                    "This is an offset to clean delayed measurement before sensory "
+                    "noise, not literal extra temporal delay"
+                    if config.calibrated_timing
+                    else (
+                        "add an offset pulse on one random 4D delayed-observation "
+                        "component; current training uses full-trial duration"
+                    )
+                ),
+                "randomized": [
+                    "observation_component",
+                    "timing_bin" if config.calibrated_timing else "start_time",
+                    "sign",
+                    "physical_level" if config.calibrated_timing else "amplitude_level",
+                ],
+                "duration_steps": (
+                    int(config.pulse_duration_steps)
+                    if config.calibrated_timing
+                    else "full_trial"
+                ),
+            },
+        },
+        "validation_difference": (
+            "Validation bins are deterministic family-separated probes, not a replay "
+            "of the full training mixture. They expose separate nominal, "
+            "single-family, and mild-combined bins for checkpoint selection/reporting."
+        ),
+    }
 
 
 def config_from_target_hps(config: Any) -> TargetRelativeMultiTargetTrainingConfig:
@@ -671,59 +1045,120 @@ def apply_training_perturbation_mixture(
     ).astype(jnp.float32)
     family_index = jr.randint(key_family, batch_shape, 0, len(SINGLE_FAMILY_BINS))
 
-    trial_specs = _offset_initial_random_components(
-        trial_specs,
-        base_amount=cfg.initial_position_offset_m,
-        component_offset=0,
-        n_components=2,
-        active_mask=(
-            single_mask * _family_mask(family_index, "initial_position")
-            + combined_mask * float(cfg.combined_amplitude_scale)
-        ),
-        key=key_pos,
-    )
-    trial_specs = _offset_initial_random_components(
-        trial_specs,
-        base_amount=cfg.initial_velocity_offset_m_s,
-        component_offset=2,
-        n_components=2,
-        active_mask=single_mask * _family_mask(family_index, "initial_velocity"),
-        key=key_vel,
-    )
-    trial_specs = _add_process_epsilon_random_pulse(
-        trial_specs,
-        base_amount=cfg.process_epsilon_scale,
-        active_mask=single_mask * _family_mask(family_index, "process_epsilon"),
-        duration=cfg.pulse_duration_steps,
-        key=key_process,
-    )
-    trial_specs = _add_graph_channel_random_pulse(
-        trial_specs,
-        GRAPH_ADAPTER_SPECS["command_input"],
-        base_amount=cfg.command_input_pulse_n,
-        active_mask=(
-            single_mask * _family_mask(family_index, "command_input")
-            + combined_mask * float(cfg.combined_amplitude_scale)
-        ),
-        duration=cfg.pulse_duration_steps,
-        key=key_command,
-    )
-    trial_specs = _add_graph_channel_random_pulse(
-        trial_specs,
-        GRAPH_ADAPTER_SPECS["sensory_feedback"],
-        base_amount=cfg.sensory_feedback_offset_m,
-        active_mask=single_mask * _family_mask(family_index, "sensory_feedback"),
-        duration=trial_specs.timeline.n_steps,
-        key=key_sensory,
-    )
-    trial_specs = _add_graph_channel_random_pulse(
-        trial_specs,
-        GRAPH_ADAPTER_SPECS["delayed_observation"],
-        base_amount=cfg.delayed_observation_offset_m,
-        active_mask=single_mask * _family_mask(family_index, "delayed_observation"),
-        duration=trial_specs.timeline.n_steps,
-        key=key_delayed,
-    )
+    if cfg.calibrated_timing:
+        trial_specs = _offset_initial_random_components(
+            trial_specs,
+            base_amount=_calibrated_initial_amount(
+                trial_specs,
+                cfg,
+                "initial_position",
+            ),
+            component_offset=0,
+            n_components=2,
+            active_mask=(
+                single_mask * _family_mask(family_index, "initial_position")
+                + combined_mask * float(cfg.combined_amplitude_scale)
+            ),
+            randomize_amplitude_level=False,
+            key=key_pos,
+        )
+        trial_specs = _offset_initial_random_components(
+            trial_specs,
+            base_amount=_calibrated_initial_amount(
+                trial_specs,
+                cfg,
+                "initial_velocity",
+            ),
+            component_offset=2,
+            n_components=2,
+            active_mask=single_mask * _family_mask(family_index, "initial_velocity"),
+            randomize_amplitude_level=False,
+            key=key_vel,
+        )
+        trial_specs = _add_process_epsilon_calibrated_random_pulse(
+            trial_specs,
+            cfg,
+            active_mask=single_mask * _family_mask(family_index, "process_epsilon"),
+            key=key_process,
+        )
+        trial_specs = _add_graph_channel_calibrated_random_pulse(
+            trial_specs,
+            cfg,
+            GRAPH_ADAPTER_SPECS["command_input"],
+            active_mask=(
+                single_mask * _family_mask(family_index, "command_input")
+                + combined_mask * float(cfg.combined_amplitude_scale)
+            ),
+            key=key_command,
+        )
+        trial_specs = _add_graph_channel_calibrated_random_pulse(
+            trial_specs,
+            cfg,
+            GRAPH_ADAPTER_SPECS["sensory_feedback"],
+            active_mask=single_mask * _family_mask(family_index, "sensory_feedback"),
+            key=key_sensory,
+        )
+        trial_specs = _add_graph_channel_calibrated_random_pulse(
+            trial_specs,
+            cfg,
+            GRAPH_ADAPTER_SPECS["delayed_observation"],
+            active_mask=single_mask * _family_mask(family_index, "delayed_observation"),
+            key=key_delayed,
+        )
+    else:
+        trial_specs = _offset_initial_random_components(
+            trial_specs,
+            base_amount=cfg.initial_position_offset_m,
+            component_offset=0,
+            n_components=2,
+            active_mask=(
+                single_mask * _family_mask(family_index, "initial_position")
+                + combined_mask * float(cfg.combined_amplitude_scale)
+            ),
+            key=key_pos,
+        )
+        trial_specs = _offset_initial_random_components(
+            trial_specs,
+            base_amount=cfg.initial_velocity_offset_m_s,
+            component_offset=2,
+            n_components=2,
+            active_mask=single_mask * _family_mask(family_index, "initial_velocity"),
+            key=key_vel,
+        )
+        trial_specs = _add_process_epsilon_random_pulse(
+            trial_specs,
+            base_amount=cfg.process_epsilon_scale,
+            active_mask=single_mask * _family_mask(family_index, "process_epsilon"),
+            duration=cfg.pulse_duration_steps,
+            key=key_process,
+        )
+        trial_specs = _add_graph_channel_random_pulse(
+            trial_specs,
+            GRAPH_ADAPTER_SPECS["command_input"],
+            base_amount=cfg.command_input_pulse_n,
+            active_mask=(
+                single_mask * _family_mask(family_index, "command_input")
+                + combined_mask * float(cfg.combined_amplitude_scale)
+            ),
+            duration=cfg.pulse_duration_steps,
+            key=key_command,
+        )
+        trial_specs = _add_graph_channel_random_pulse(
+            trial_specs,
+            GRAPH_ADAPTER_SPECS["sensory_feedback"],
+            base_amount=cfg.sensory_feedback_offset_m,
+            active_mask=single_mask * _family_mask(family_index, "sensory_feedback"),
+            duration=trial_specs.timeline.n_steps,
+            key=key_sensory,
+        )
+        trial_specs = _add_graph_channel_random_pulse(
+            trial_specs,
+            GRAPH_ADAPTER_SPECS["delayed_observation"],
+            base_amount=cfg.delayed_observation_offset_m,
+            active_mask=single_mask * _family_mask(family_index, "delayed_observation"),
+            duration=trial_specs.timeline.n_steps,
+            key=key_delayed,
+        )
     # Train trials are produced inside Feedbax's vmap'd training step, so their
     # PyTree leaves must be JAX values. Keep string/list provenance in run specs
     # and validation sidecars rather than returning it through this dynamic path.
@@ -946,45 +1381,124 @@ def _apply_single_bin_raw(
         return _offset_initial_vector(
             trial_specs,
             axis=1,
-            amount=config.initial_position_offset_m * amplitude_scale,
+            amount=_single_bin_amount(
+                trial_specs,
+                config,
+                "initial_position",
+            )
+            * amplitude_scale,
         )
     if bin_name == "initial_velocity":
         return _offset_initial_vector(
             trial_specs,
             axis=3,
-            amount=config.initial_velocity_offset_m_s * amplitude_scale,
+            amount=_single_bin_amount(
+                trial_specs,
+                config,
+                "initial_velocity",
+            )
+            * amplitude_scale,
         )
     if bin_name == "process_epsilon":
         return _add_process_epsilon_pulse(
             trial_specs,
-            amount=config.process_epsilon_scale * amplitude_scale,
-            start=config.pulse_start_step,
+            amount=_single_bin_amount(
+                trial_specs,
+                config,
+                "process_epsilon",
+            )
+            * amplitude_scale,
+            start=_deterministic_validation_start(config, "process_epsilon"),
             duration=config.pulse_duration_steps,
         )
     if bin_name == "command_input":
         return _add_graph_channel_pulse(
             trial_specs,
             GRAPH_ADAPTER_SPECS["command_input"],
-            amount=config.command_input_pulse_n * amplitude_scale,
-            start=config.pulse_start_step,
+            amount=_single_bin_amount(
+                trial_specs,
+                config,
+                "command_input",
+            )
+            * amplitude_scale,
+            start=_deterministic_validation_start(config, "command_input"),
             duration=config.pulse_duration_steps,
         )
     if bin_name == "sensory_feedback":
         return _add_graph_channel_pulse(
             trial_specs,
             GRAPH_ADAPTER_SPECS["sensory_feedback"],
-            amount=config.sensory_feedback_offset_m * amplitude_scale,
-            start=0,
-            duration=trial_specs.timeline.n_steps,
+            amount=_single_bin_amount(
+                trial_specs,
+                config,
+                "sensory_feedback",
+            )
+            * amplitude_scale,
+            start=_deterministic_validation_start(config, "sensory_feedback"),
+            duration=(
+                config.pulse_duration_steps
+                if config.calibrated_timing
+                else trial_specs.timeline.n_steps
+            ),
         )
     if bin_name == "delayed_observation":
         return _add_graph_channel_pulse(
             trial_specs,
             GRAPH_ADAPTER_SPECS["delayed_observation"],
-            amount=config.delayed_observation_offset_m * amplitude_scale,
-            start=0,
-            duration=trial_specs.timeline.n_steps,
+            amount=_single_bin_amount(
+                trial_specs,
+                config,
+                "delayed_observation",
+            )
+            * amplitude_scale,
+            start=_deterministic_validation_start(config, "delayed_observation"),
+            duration=(
+                config.pulse_duration_steps
+                if config.calibrated_timing
+                else trial_specs.timeline.n_steps
+            ),
         )
+    raise ValueError(f"Unsupported perturbation bin {bin_name!r}.")
+
+
+def _single_bin_amount(
+    trial_specs: TaskTrialSpec,
+    config: FixedTargetPerturbationTrainingConfig,
+    bin_name: PerturbationBin,
+) -> float | jnp.ndarray:
+    if not config.calibrated_timing:
+        if bin_name == "initial_position":
+            return config.initial_position_offset_m
+        if bin_name == "initial_velocity":
+            return config.initial_velocity_offset_m_s
+        if bin_name == "process_epsilon":
+            return config.process_epsilon_scale
+        if bin_name == "command_input":
+            return config.command_input_pulse_n
+        if bin_name == "sensory_feedback":
+            return config.sensory_feedback_offset_m
+        if bin_name == "delayed_observation":
+            return config.delayed_observation_offset_m
+    target_peak_delta_x = _target_peak_delta_x_m(trial_specs, config)
+    if bin_name == "initial_position":
+        return target_peak_delta_x
+    if bin_name == "initial_velocity":
+        sensitivity = DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[
+            "initial_velocity_offset"
+        ]["initial_condition"]
+        return target_peak_delta_x / sensitivity
+    if bin_name == "process_epsilon":
+        sensitivity = DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[
+            "process_epsilon_force_state_xy"
+        ][TIMING_LABELS_PLANT[0]]
+        return target_peak_delta_x / sensitivity
+    if bin_name == "command_input":
+        sensitivity = DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[
+            "command_input_pulse"
+        ][TIMING_LABELS_PLANT[0]]
+        return target_peak_delta_x / sensitivity
+    if bin_name in {"sensory_feedback", "delayed_observation"}:
+        return target_peak_delta_x
     raise ValueError(f"Unsupported perturbation bin {bin_name!r}.")
 
 
@@ -1008,6 +1522,76 @@ def _cycle_amplitude(
 
 def _family_mask(family_index: jnp.ndarray, bin_name: PerturbationBin) -> jnp.ndarray:
     return (family_index == SINGLE_FAMILY_BINS.index(bin_name)).astype(jnp.float32)
+
+
+def _calibrated_initial_amount(
+    trial_specs: TaskTrialSpec,
+    config: FixedTargetPerturbationTrainingConfig,
+    bin_name: Literal["initial_position", "initial_velocity"],
+) -> jnp.ndarray:
+    target_peak_delta_x = _target_peak_delta_x_m(trial_specs, config)
+    if bin_name == "initial_position":
+        return target_peak_delta_x
+    sensitivity = DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[
+        "initial_velocity_offset"
+    ]["initial_condition"]
+    return target_peak_delta_x / jnp.asarray(sensitivity, dtype=jnp.float32)
+
+
+def _target_peak_delta_x_m(
+    trial_specs: TaskTrialSpec,
+    config: FixedTargetPerturbationTrainingConfig,
+) -> jnp.ndarray:
+    reach_length = _trial_reach_length_m(trial_specs)
+    return reach_length * jnp.asarray(
+        REACH_RELATIVE_LEVELS[config.physical_level],
+        dtype=jnp.float32,
+    )
+
+
+def _trial_reach_length_m(trial_specs: TaskTrialSpec) -> jnp.ndarray:
+    target_spec = trial_specs.targets["mechanics.effector.pos"]
+    target = jnp.asarray(target_spec.value)
+    if target.ndim >= 2:
+        target_pos = target[..., -1, :]
+    else:
+        target_pos = target
+    init_vector = jnp.asarray(trial_specs.inits["mechanics.vector"])
+    init_pos = init_vector[..., :2]
+    try:
+        delta = target_pos - init_pos
+    except TypeError:
+        delta = target_pos
+    return jnp.linalg.norm(delta, axis=-1)
+
+
+def _calibrated_timing_indexed_amounts(
+    *,
+    family: str,
+    timing_labels: tuple[str, ...],
+    target_peak_delta_x: jnp.ndarray,
+    dtype: Any,
+) -> jnp.ndarray:
+    sensitivities = jnp.asarray(
+        [
+            DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[family][timing_label]
+            for timing_label in timing_labels
+        ],
+        dtype=dtype,
+    )
+    return jnp.expand_dims(jnp.asarray(target_peak_delta_x, dtype=dtype), -1) / sensitivities
+
+
+def _process_epsilon_sensitivity_table(dtype: Any) -> jnp.ndarray:
+    rows = []
+    for family in PROCESS_EPSILON_COMPONENT_FAMILIES:
+        rows.append(
+            [
+                DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[family][timing_label]
+                for timing_label in TIMING_LABELS_PLANT
+            ]
+        )
+    return jnp.asarray(rows, dtype=dtype)
 
 
 def _insert_additive_graph_channel_adapter(model: Any, spec: GraphAdapterSpec) -> Any:
@@ -1043,18 +1627,23 @@ def _offset_initial_vector(
 def _offset_initial_random_components(
     trial_specs: TaskTrialSpec,
     *,
-    base_amount: float,
+    base_amount: float | jnp.ndarray,
     component_offset: int,
     n_components: int,
     active_mask: jnp.ndarray,
     key: PRNGKeyArray,
+    randomize_amplitude_level: bool = True,
 ) -> TaskTrialSpec:
     key_component, key_sign, key_level = jr.split(key, 3)
     vector = jnp.asarray(trial_specs.inits["mechanics.vector"])
     batch_shape = _batch_shape(trial_specs)
     component = jr.randint(key_component, batch_shape, 0, n_components) + int(component_offset)
     sign = _random_sign(key_sign, batch_shape)
-    level = _random_amplitude_level(key_level, batch_shape)
+    level = (
+        _random_amplitude_level(key_level, batch_shape)
+        if randomize_amplitude_level
+        else jnp.ones(batch_shape, dtype=jnp.float32)
+    )
     amount = jnp.asarray(base_amount, dtype=vector.dtype) * sign * level * active_mask
     component_mask = jax.nn.one_hot(component, vector.shape[-1], dtype=vector.dtype)
     updated = vector + _expand_to_rank(amount, vector.ndim) * component_mask
@@ -1080,6 +1669,7 @@ def _add_process_epsilon_random_pulse(
     base_amount: float,
     active_mask: jnp.ndarray,
     duration: int,
+    starts: tuple[int, ...] | None = None,
     key: PRNGKeyArray,
 ) -> TaskTrialSpec:
     key_component, key_start, key_sign, key_level = jr.split(key, 4)
@@ -1099,7 +1689,47 @@ def _add_process_epsilon_random_pulse(
         component=component,
         amount=amount,
         duration=duration,
+        starts=starts,
         key=key_start,
+        dtype=epsilon.dtype,
+    )
+    return eqx.tree_at(lambda ts: ts.inputs["epsilon"], trial_specs, epsilon + pulse)
+
+
+def _add_process_epsilon_calibrated_random_pulse(
+    trial_specs: TaskTrialSpec,
+    config: FixedTargetPerturbationTrainingConfig,
+    *,
+    active_mask: jnp.ndarray,
+    key: PRNGKeyArray,
+) -> TaskTrialSpec:
+    key_component, key_start, key_sign = jr.split(key, 3)
+    epsilon = jnp.asarray(trial_specs.inputs["epsilon"])
+    batch_shape = _batch_shape(trial_specs)
+    component = jr.randint(key_component, batch_shape, 0, epsilon.shape[-1])
+    start, start_index = _sample_pulse_start(
+        batch_shape=batch_shape,
+        n_steps=epsilon.shape[-2],
+        duration=config.pulse_duration_steps,
+        starts=_plant_timing_starts(),
+        key=key_start,
+    )
+    target_peak_delta_x = _target_peak_delta_x_m(trial_specs, config)
+    sensitivity = _process_epsilon_sensitivity_table(epsilon.dtype)[component, start_index]
+    amount = (
+        jnp.asarray(target_peak_delta_x, dtype=epsilon.dtype)
+        / sensitivity
+        * _random_sign(key_sign, batch_shape)
+        * active_mask
+    )
+    pulse = _pulse_tensor_from_start(
+        batch_shape=batch_shape,
+        n_steps=epsilon.shape[-2],
+        width=epsilon.shape[-1],
+        component=component,
+        amount=amount,
+        duration=config.pulse_duration_steps,
+        start=start,
         dtype=epsilon.dtype,
     )
     return eqx.tree_at(lambda ts: ts.inputs["epsilon"], trial_specs, epsilon + pulse)
@@ -1126,6 +1756,7 @@ def _add_graph_channel_random_pulse(
     base_amount: float,
     active_mask: jnp.ndarray,
     duration: int,
+    starts: tuple[int, ...] | None = None,
     key: PRNGKeyArray,
 ) -> TaskTrialSpec:
     key_component, key_start, key_sign, key_level = jr.split(key, 4)
@@ -1145,10 +1776,96 @@ def _add_graph_channel_random_pulse(
         component=component,
         amount=amount,
         duration=duration,
+        starts=starts,
         key=key_start,
         dtype=payload.dtype,
     )
     return _set_input(trial_specs, spec.input_key, updated)
+
+
+def _add_graph_channel_calibrated_random_pulse(
+    trial_specs: TaskTrialSpec,
+    config: FixedTargetPerturbationTrainingConfig,
+    spec: GraphAdapterSpec,
+    *,
+    active_mask: jnp.ndarray,
+    key: PRNGKeyArray,
+) -> TaskTrialSpec:
+    key_component, key_start, key_sign = jr.split(key, 3)
+    payload = _zero_graph_payload(trial_specs, spec)
+    batch_shape = _batch_shape(trial_specs)
+    component = jr.randint(key_component, batch_shape, 0, payload.shape[-1])
+    starts = (
+        _plant_timing_starts()
+        if spec.label == GRAPH_ADAPTER_SPECS["command_input"].label
+        else _controller_visible_timing_starts()
+    )
+    start, start_index = _sample_pulse_start(
+        batch_shape=batch_shape,
+        n_steps=payload.shape[-2],
+        duration=config.pulse_duration_steps,
+        starts=starts,
+        key=key_start,
+    )
+    if spec.label == GRAPH_ADAPTER_SPECS["command_input"].label:
+        target_peak_delta_x = _target_peak_delta_x_m(trial_specs, config)
+        amount_by_timing = _calibrated_timing_indexed_amounts(
+            family="command_input_pulse",
+            timing_labels=TIMING_LABELS_PLANT,
+            target_peak_delta_x=target_peak_delta_x,
+            dtype=payload.dtype,
+        )
+        amount = jnp.take_along_axis(
+            amount_by_timing,
+            jnp.expand_dims(start_index, axis=-1),
+            axis=-1,
+        )[..., 0]
+    else:
+        amount_by_component = _controller_visible_component_amounts(
+            trial_specs,
+            config,
+            dtype=payload.dtype,
+        )
+        amount = jnp.take_along_axis(
+            amount_by_component,
+            jnp.expand_dims(component, axis=-1),
+            axis=-1,
+        )[..., 0]
+    amount = amount * _random_sign(key_sign, batch_shape) * active_mask
+    updated = payload + _pulse_tensor_from_start(
+        batch_shape=batch_shape,
+        n_steps=payload.shape[-2],
+        width=payload.shape[-1],
+        component=component,
+        amount=amount,
+        duration=config.pulse_duration_steps,
+        start=start,
+        dtype=payload.dtype,
+    )
+    return _set_input(trial_specs, spec.input_key, updated)
+
+
+def _controller_visible_component_amounts(
+    trial_specs: TaskTrialSpec,
+    config: FixedTargetPerturbationTrainingConfig,
+    *,
+    dtype: Any,
+) -> jnp.ndarray:
+    position_amount = _target_peak_delta_x_m(trial_specs, config)
+    velocity_amount = jnp.asarray(
+        DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S
+        * REACH_RELATIVE_LEVELS[config.physical_level],
+        dtype=dtype,
+    )
+    return jnp.stack(
+        [
+            jnp.asarray(position_amount, dtype=dtype),
+            jnp.asarray(position_amount, dtype=dtype),
+            jnp.broadcast_to(velocity_amount, jnp.shape(position_amount)),
+            jnp.broadcast_to(velocity_amount, jnp.shape(position_amount)),
+        ],
+        axis=-1,
+    )
 
 
 def _random_pulse_tensor(
@@ -1159,11 +1876,69 @@ def _random_pulse_tensor(
     component: jnp.ndarray,
     amount: jnp.ndarray,
     duration: int,
+    starts: tuple[int, ...] | None,
     key: PRNGKeyArray,
     dtype: Any,
 ) -> jnp.ndarray:
-    max_start = max(1, int(n_steps) - int(duration) + 1)
-    start = jr.randint(key, batch_shape, 0, max_start)
+    start, _ = _sample_pulse_start(
+        batch_shape=batch_shape,
+        n_steps=n_steps,
+        duration=duration,
+        starts=starts,
+        key=key,
+    )
+    return _pulse_tensor_from_start(
+        batch_shape=batch_shape,
+        n_steps=n_steps,
+        width=width,
+        component=component,
+        amount=amount,
+        duration=duration,
+        start=start,
+        dtype=dtype,
+    )
+
+
+def _sample_pulse_start(
+    *,
+    batch_shape: tuple[int, ...],
+    n_steps: int,
+    duration: int,
+    starts: tuple[int, ...] | None,
+    key: PRNGKeyArray,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    if starts is None:
+        max_start = max(1, int(n_steps) - int(duration) + 1)
+        start_index = jr.randint(key, batch_shape, 0, max_start)
+        return start_index, start_index
+    valid_starts = tuple(
+        int(start)
+        for start in starts
+        if 0 <= int(start) < int(n_steps)
+        and int(start) + int(duration) <= int(n_steps)
+    )
+    if not valid_starts:
+        raise ValueError("At least one calibrated timing-bin start must fit the trial.")
+    if valid_starts != starts:
+        raise ValueError(
+            "Calibrated timing mode requires all declared timing bins to fit the trial."
+        )
+    start_values = jnp.asarray(valid_starts, dtype=jnp.int32)
+    start_index = jr.randint(key, batch_shape, 0, len(valid_starts))
+    return start_values[start_index], start_index
+
+
+def _pulse_tensor_from_start(
+    *,
+    batch_shape: tuple[int, ...],
+    n_steps: int,
+    width: int,
+    component: jnp.ndarray,
+    amount: jnp.ndarray,
+    duration: int,
+    start: jnp.ndarray,
+    dtype: Any,
+) -> jnp.ndarray:
     time = jnp.arange(int(n_steps))
     time_mask = (
         (time >= jnp.expand_dims(start, axis=-1))
@@ -1175,6 +1950,30 @@ def _random_pulse_tensor(
         * jnp.expand_dims(time_mask, axis=-1)
         * jnp.expand_dims(component_mask, axis=-2)
     )
+
+
+def _plant_timing_starts() -> tuple[int, ...]:
+    return tuple(int(bin_.start_time_index) for bin_ in DEFAULT_PLANT_TIMING_BINS)
+
+
+def _controller_visible_timing_starts() -> tuple[int, ...]:
+    return tuple(
+        int(bin_.start_time_index)
+        for bin_ in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS
+    )
+
+
+def _deterministic_validation_start(
+    config: FixedTargetPerturbationTrainingConfig,
+    bin_name: PerturbationBin,
+) -> int:
+    if not config.calibrated_timing:
+        return 0 if bin_name in CONTROLLER_VISIBLE_TIMED_BINS else config.pulse_start_step
+    if bin_name in PLANT_TIMED_BINS:
+        return _plant_timing_starts()[0]
+    if bin_name in CONTROLLER_VISIBLE_TIMED_BINS:
+        return _controller_visible_timing_starts()[0]
+    return 0
 
 
 def _random_sign(key: PRNGKeyArray, shape: tuple[int, ...]) -> jnp.ndarray:

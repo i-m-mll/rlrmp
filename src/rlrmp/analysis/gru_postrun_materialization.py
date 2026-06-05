@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -59,6 +59,8 @@ class GruPostrunMaterializationPlan:
     perturbation_response_json_path: Path
     perturbation_response_note_path: Path
     perturbation_response_bulk_dir: Path
+    feedback_ablation_json_path: Path
+    feedback_ablation_note_path: Path
     postrun_manifest_path: Path
 
     def to_json(self, *, repo_root: Path = REPO_ROOT) -> dict[str, Any]:
@@ -140,6 +142,8 @@ def plan_gru_postrun_materialization(
         perturbation_response_bulk_dir=(
             artifact_dir / "perturbation_response" / f"gru_{output_tag}"
         ),
+        feedback_ablation_json_path=notes_dir / f"gru_feedback_ablation_{output_tag}.json",
+        feedback_ablation_note_path=notes_dir / f"gru_feedback_ablation_{output_tag}.md",
         postrun_manifest_path=notes_dir / f"gru_postrun_materialization_{output_tag}.json",
     )
 
@@ -158,6 +162,7 @@ def materialize_gru_postrun_analysis(
     include_objective_comparator: bool = True,
     include_map_decomposition: bool = True,
     include_perturbation_response: bool = True,
+    include_feedback_ablation: bool = True,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
     """Materialize the standard post-run GRU analysis bundle.
@@ -270,6 +275,20 @@ def materialize_gru_postrun_analysis(
         if include_perturbation_response
         else {"status": "skipped", "reason": "disabled_by_cli"}
     )
+    feedback_ablation = (
+        materialize_optional_feedback_ablation(
+            experiment=experiment,
+            run_ids=run_ids,
+            labels=labels,
+            n_rollout_trials=n_rollout_trials,
+            output_path=plan.feedback_ablation_json_path,
+            note_path=plan.feedback_ablation_note_path,
+            repo_root=repo_root,
+        )
+        if include_feedback_ablation
+        else {"status": "skipped", "reason": "disabled_by_cli"}
+    )
+    feedback_checkpoint_selection = feedback_checkpoint_selection_status(feedback_ablation)
 
     manifest = {
         "schema_version": SCHEMA_VERSION,
@@ -289,12 +308,16 @@ def materialize_gru_postrun_analysis(
                 "extlqg_objective_comparator",
                 "split_stress_bank_objective_comparator",
                 "perturbation_response_bank",
+                "feedback_ablation",
+                "feedback_selected_checkpoint_audit",
             ],
             "note": (
                 "Checkpoint selection uses rollout validation objective only. "
                 "Certificate, I/O map, covariance-weighted map, map-decomposition, "
                 "objective-comparator, split-stress-bank, and perturbation-response "
-                "values are audit sidecars."
+                "values are audit sidecars. Feedback-ablation and feedback-selected "
+                "checkpoint reports are also audit-only and never replace primary "
+                "validation-selected checkpoint loading."
             ),
         },
         "plan": plan.to_json(repo_root=repo_root),
@@ -334,6 +357,8 @@ def materialize_gru_postrun_analysis(
             "split_stress_objective_comparator": split_stress_objective_comparator,
             "map_decomposition": map_decomposition,
             "perturbation_response": perturbation_response,
+            "feedback_ablation": feedback_ablation,
+            "feedback_checkpoint_selection": feedback_checkpoint_selection,
         },
         "summaries": {
             "standard_certificate": standard_result.get("summary", {}),
@@ -346,6 +371,110 @@ def materialize_gru_postrun_analysis(
         encoding="utf-8",
     )
     return manifest
+
+
+def materialize_optional_feedback_ablation(
+    *,
+    experiment: str,
+    run_ids: Sequence[str],
+    labels: Sequence[str] | None,
+    n_rollout_trials: int,
+    output_path: Path,
+    note_path: Path,
+    repo_root: Path = REPO_ROOT,
+) -> dict[str, Any]:
+    """Call the optional feedback-ablation sidecar materializer."""
+
+    try:
+        module = importlib.import_module("rlrmp.analysis.gru_feedback_ablation")
+        materializer = getattr(module, "materialize_gru_feedback_ablation")
+    except (ImportError, AttributeError) as exc:
+        return {
+            "status": "skipped",
+            "reason": "optional_feedback_ablation_unavailable",
+            "detail": str(exc),
+            "expected_hook": (
+                "rlrmp.analysis.gru_feedback_ablation.materialize_gru_feedback_ablation"
+            ),
+        }
+
+    try:
+        result = materializer(
+            source_experiment=experiment,
+            result_experiment=experiment,
+            scope="postrun_feedback_ablation",
+            run_ids=tuple(run_ids),
+            labels=None if labels is None else tuple(labels),
+            n_rollout_trials=n_rollout_trials,
+            output_path=output_path,
+            note_path=note_path,
+            repo_root=repo_root,
+        )
+    except (FileNotFoundError, ValueError, KeyError, AttributeError) as exc:
+        return {
+            "status": "skipped",
+            "reason": "feedback_ablation_inputs_unavailable",
+            "detail": str(exc),
+            "json_path": _repo_relative(output_path, repo_root=repo_root),
+            "note_path": _repo_relative(note_path, repo_root=repo_root),
+            "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        }
+
+    runs = result.get("runs", {}) if isinstance(result, dict) else {}
+    audit = (
+        result.get("feedback_checkpoint_selection_audit", {})
+        if isinstance(result, dict)
+        else {}
+    )
+    return {
+        "status": "materialized",
+        "json_path": _repo_relative(output_path, repo_root=repo_root),
+        "note_path": _repo_relative(note_path, repo_root=repo_root),
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "result": {
+            "schema_version": result.get("schema_version") if isinstance(result, dict) else None,
+            "n_runs": len(runs),
+            "checkpoint_policy": (
+                result.get("checkpoint_policy") if isinstance(result, dict) else None
+            ),
+            "feedback_checkpoint_selection_audit_status": (
+                audit.get("status") if isinstance(audit, dict) else None
+            ),
+        },
+        "feedback_checkpoint_selection_audit": audit,
+    }
+
+
+def feedback_checkpoint_selection_status(
+    feedback_ablation: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return the post-run manifest entry for feedback-selected checkpoints."""
+
+    status = feedback_ablation.get("status", "unknown")
+    payload = {
+        "status": status,
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "selection_use": "audit_only_not_primary_checkpoint_selection",
+        "source_sidecar": "feedback_ablation",
+    }
+    for key in ("json_path", "note_path"):
+        if key in feedback_ablation:
+            payload[key] = feedback_ablation[key]
+    if status != "materialized":
+        return payload | {
+            "reason": feedback_ablation.get("reason", "feedback_ablation_not_materialized")
+        }
+    audit = feedback_ablation.get("feedback_checkpoint_selection_audit", {})
+    if not isinstance(audit, Mapping):
+        return payload | {"reason": "feedback_selection_audit_missing"}
+    payload["status"] = audit.get("status", "not_available")
+    payload["schema_version"] = audit.get("schema_version")
+    payload["primary_checkpoint_policy"] = audit.get("primary_checkpoint_policy")
+    if audit.get("reason") is not None:
+        payload["reason"] = audit.get("reason")
+    if audit.get("selected_candidate") is not None:
+        payload["selected_candidate"] = audit.get("selected_candidate")
+    return payload
 
 
 def materialize_optional_perturbation_response(
@@ -622,7 +751,9 @@ __all__ = [
     "VALIDATION_SELECTED_CHECKPOINT_POLICY",
     "checkpoint_policy_name",
     "fixed_bank_rescore_manifest_status",
+    "feedback_checkpoint_selection_status",
     "materialize_gru_postrun_analysis",
+    "materialize_optional_feedback_ablation",
     "materialize_optional_map_error_decomposition",
     "materialize_optional_objective_comparator",
     "materialize_optional_perturbation_response",
