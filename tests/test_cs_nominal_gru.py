@@ -584,6 +584,19 @@ def test_perturbation_training_hps_preserves_fixed_target_semantics() -> None:
     assert hps.perturbation_training.nominal_fraction == pytest.approx(0.45)
     assert hps.perturbation_training.single_fraction == pytest.approx(0.45)
     assert hps.perturbation_training.combined_fraction == pytest.approx(0.10)
+    semantics = hps.perturbation_training.mixture_semantics
+    assert semantics.experimental_factor_note.startswith("Perturbation uncertainty level")
+    assert "nominal open-loop command-replay peak delta x" in semantics.calibration_note
+    assert semantics.membership.nominal_fraction == pytest.approx(0.45)
+    assert semantics.membership.single_family_fraction == pytest.approx(0.45)
+    assert semantics.membership.mild_combined_fraction == pytest.approx(0.10)
+    assert semantics.mild_combined_families == list(MILD_COMBINED_FAMILIES)
+    assert semantics.families.initial_position.randomized == [
+        "axis",
+        "sign",
+        "amplitude_level",
+    ]
+    assert "not a replay" in semantics.validation_difference
     assert hps.perturbation_training.target_stream.status == "not_applicable"
     assert hps.loss.objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
     assert hps.loss.weights.nn_hidden == 0.0
@@ -728,6 +741,13 @@ def test_perturbation_training_run_spec_and_planned_rows(tmp_path: Path) -> None
     assert payload["model_summary"]["training_distribution"]["checkpoint_selection_role"] == (
         "generalized_held_out_perturbation_validation"
     )
+    semantics = payload["hps"]["perturbation_training"]["mixture_semantics"]
+    assert semantics["experimental_factor_note"].startswith(
+        "Perturbation uncertainty level"
+    )
+    assert "nominal open-loop command-replay peak delta x" in semantics["calibration_note"]
+    assert semantics["families"]["process_epsilon"]["duration_steps"] == 5
+    assert semantics["validation_difference"].startswith("Validation bins are")
     assert payload["hps"]["perturbation_training"]["controller_internal_mutation"] is False
     assert {row["controller_lr"] for row in rows} == {1e-3, 3e-3}
     assert all(row["batch_size"] == 64 for row in rows)

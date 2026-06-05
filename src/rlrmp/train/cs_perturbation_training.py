@@ -233,6 +233,7 @@ class FixedTargetPerturbationTrainingConfig:
                 "amplitude_levels": list(AMPLITUDE_LEVELS),
                 "mild_combined_families": list(MILD_COMBINED_FAMILIES),
             },
+            "mixture_semantics": perturbation_training_mixture_semantics(self),
             "nominal_fraction": self.nominal_fraction,
             "single_fraction": self.single_fraction,
             "combined_fraction": self.combined_fraction,
@@ -545,6 +546,109 @@ def config_from_hps(config: Any) -> FixedTargetPerturbationTrainingConfig:
         pulse_start_step=int(getattr(config, "pulse_start_step", 20)),
         pulse_duration_steps=int(getattr(config, "pulse_duration_steps", 5)),
     )
+
+
+def perturbation_training_mixture_semantics(
+    config: FixedTargetPerturbationTrainingConfig,
+) -> dict[str, Any]:
+    """Return explicit fixed-target perturbation-training sampling semantics."""
+
+    return {
+        "schema_version": "rlrmp.cs_perturbation_training_mixture_semantics.v1",
+        "experimental_factor_note": (
+            "Perturbation uncertainty level is an experimental factor distinct from "
+            "physical perturbation amplitude. Broader randomized families, signs, "
+            "components, timings, or mixtures can induce robustness rather than "
+            "only testing ordinary feedback control."
+        ),
+        "calibration_note": (
+            "Raw amplitudes are not physical-effect calibrated. Calibration should "
+            "bin each family by nominal open-loop command-replay peak delta x, then "
+            "report closed-loop extLQG and GRU responses at the same calibrated "
+            "amplitudes."
+        ),
+        "membership": {
+            "unit": "per training trial",
+            "nominal_fraction": float(config.nominal_fraction),
+            "single_family_fraction": float(config.single_fraction),
+            "mild_combined_fraction": float(config.combined_fraction),
+            "nominal": "no explicit perturbation beyond ordinary stochastic runtime",
+            "single_family": (
+                "one family sampled uniformly from single_family_bins, then "
+                "family-specific component/sign/timing/level randomization is applied"
+            ),
+            "mild_combined": (
+                "initial_position and command_input are both active, scaled by "
+                "combined_amplitude_scale; the other families are inactive"
+            ),
+        },
+        "single_family_bins": list(SINGLE_FAMILY_BINS),
+        "mild_combined_families": list(MILD_COMBINED_FAMILIES),
+        "amplitude_levels": list(AMPLITUDE_LEVELS),
+        "families": {
+            "initial_position": {
+                "base_amplitude": float(config.initial_position_offset_m),
+                "units": "m",
+                "emission": (
+                    "offset one random mechanics.vector position component among x/y "
+                    "at t=0 by sign * amplitude_level * base_amplitude"
+                ),
+                "randomized": ["axis", "sign", "amplitude_level"],
+            },
+            "initial_velocity": {
+                "base_amplitude": float(config.initial_velocity_offset_m_s),
+                "units": "m/s",
+                "emission": (
+                    "offset one random mechanics.vector velocity component among x/y "
+                    "at t=0 by sign * amplitude_level * base_amplitude"
+                ),
+                "randomized": ["axis", "sign", "amplitude_level"],
+            },
+            "process_epsilon": {
+                "base_amplitude": float(config.process_epsilon_scale),
+                "units": "epsilon",
+                "emission": (
+                    "add a duration-limited pulse to one random epsilon component "
+                    "over a random start time"
+                ),
+                "randomized": ["epsilon_component", "start_time", "sign", "amplitude_level"],
+                "duration_steps": int(config.pulse_duration_steps),
+            },
+            "command_input": {
+                "base_amplitude": float(config.command_input_pulse_n),
+                "units": "N",
+                "emission": (
+                    "add a duration-limited pulse to one random command-channel "
+                    "component over a random start time"
+                ),
+                "randomized": ["axis", "start_time", "sign", "amplitude_level"],
+                "duration_steps": int(config.pulse_duration_steps),
+            },
+            "sensory_feedback": {
+                "base_amplitude": float(config.sensory_feedback_offset_m),
+                "units": "m_or_m_s_channel_units",
+                "emission": (
+                    "add an offset pulse on one random 4D sensory-feedback component; "
+                    "current training uses full-trial duration"
+                ),
+                "randomized": ["feedback_component", "start_time", "sign", "amplitude_level"],
+            },
+            "delayed_observation": {
+                "base_amplitude": float(config.delayed_observation_offset_m),
+                "units": "m_or_m_s_channel_units",
+                "emission": (
+                    "add an offset pulse on one random 4D delayed-observation component; "
+                    "current training uses full-trial duration"
+                ),
+                "randomized": ["observation_component", "start_time", "sign", "amplitude_level"],
+            },
+        },
+        "validation_difference": (
+            "Validation bins are deterministic family-separated probes, not a replay "
+            "of the full training mixture. They expose separate nominal, "
+            "single-family, and mild-combined bins for checkpoint selection/reporting."
+        ),
+    }
 
 
 def config_from_target_hps(config: Any) -> TargetRelativeMultiTargetTrainingConfig:
