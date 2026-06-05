@@ -850,6 +850,16 @@ def run_full_training(
         raise ValueError("--n-train-batches must be positive for --full-train")
     if int(args.checkpoint_interval_batches) < 1:
         raise ValueError("--checkpoint-interval-batches must be positive")
+    stop_after_batches = (
+        None
+        if args.stop_after_batches is None
+        else int(args.stop_after_batches)
+    )
+    if stop_after_batches is not None:
+        if stop_after_batches < 1:
+            raise ValueError("--stop-after-batches must be positive when provided")
+        if stop_after_batches > int(args.n_train_batches):
+            raise ValueError("--stop-after-batches cannot exceed --n-train-batches")
 
     spec_result = write_run_spec(args)
     output_dir = mkdir_p(Path(args.output_dir))
@@ -947,6 +957,8 @@ def run_full_training(
                 "batches_per_second": chunk_batches / chunk_duration_seconds,
             }
         )
+        if stop_after_batches is not None and state.completed_batches >= stop_after_batches:
+            break
     training_duration_seconds = time.perf_counter() - training_started
 
     final_model_path = output_dir / "trained_model.eqx"
@@ -969,6 +981,11 @@ def run_full_training(
         "issue": str(args.issue),
         "completed_batches": state.completed_batches,
         "n_train_batches": int(args.n_train_batches),
+        "stopped_early_for_checkpoint_gate": (
+            stop_after_batches is not None
+            and state.completed_batches < int(args.n_train_batches)
+        ),
+        "stop_after_batches": stop_after_batches,
         "training_duration_seconds": training_duration_seconds,
         "training_batches_per_second": (
             state.completed_batches / training_duration_seconds
@@ -1252,6 +1269,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--full-train", action="store_true")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument(
+        "--stop-after-batches",
+        type=int,
+        default=None,
+        help=(
+            "For full-train checkpoint-gate smoke runs, stop cleanly after the "
+            "first checkpoint at or beyond this completed-batch count while "
+            "preserving the original --n-train-batches run contract for resume."
+        ),
+    )
     parser.add_argument(
         "--training-diagnostics",
         action=argparse.BooleanOptionalAction,
@@ -1814,6 +1841,12 @@ def write_training_diagnostics_sidecar(
 
     npz_path = Path(metadata["sidecar_path"])
     manifest_path = Path(metadata["manifest_path"])
+    if bool(args.resume):
+        arrays = _prepend_existing_training_diagnostics(
+            npz_path,
+            arrays,
+            completed_batches=state.completed_batches,
+        )
     npz_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_npz = npz_path.with_name(f".{npz_path.name}.tmp.npz")
     np.savez_compressed(tmp_npz, **arrays)
@@ -2023,6 +2056,44 @@ def _combine_history_diagnostic_chunks(
             continue
         combined[key] = np.concatenate(pieces, axis=0)
     return combined
+
+
+def _prepend_existing_training_diagnostics(
+    npz_path: Path,
+    arrays: dict[str, np.ndarray],
+    *,
+    completed_batches: int,
+) -> dict[str, np.ndarray]:
+    """Prepend prior sidecar arrays when a resumed run writes only new chunks."""
+
+    if not npz_path.exists():
+        return arrays
+    with np.load(npz_path) as prior_npz:
+        prior = {name: prior_npz[name] for name in prior_npz.files}
+    stitched = dict(arrays)
+    for name, current in arrays.items():
+        if name == "batch_index" or current.ndim == 0:
+            continue
+        if current.shape[0] == int(completed_batches):
+            continue
+        previous = prior.get(name)
+        if previous is None:
+            raise ValueError(
+                f"Cannot stitch resumed training diagnostics for {name!r}: "
+                "no prior array is available."
+            )
+        if previous.ndim != current.ndim or previous.shape[1:] != current.shape[1:]:
+            raise ValueError(
+                f"Cannot stitch resumed training diagnostics for {name!r}: "
+                f"prior shape {previous.shape} and current shape {current.shape} differ."
+            )
+        if previous.shape[0] + current.shape[0] != int(completed_batches):
+            raise ValueError(
+                f"Cannot stitch resumed training diagnostics for {name!r}: "
+                f"{previous.shape[0]} + {current.shape[0]} != {completed_batches}."
+            )
+        stitched[name] = np.concatenate([previous, current], axis=0)
+    return stitched
 
 
 def _loss_tree_arrays(
