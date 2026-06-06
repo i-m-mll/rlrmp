@@ -3160,7 +3160,7 @@
     },
     "git": {
       "rlrmp_branch": "feature/b35595c-calibrated-perturb-screen",
-      "rlrmp_commit": "9c230f78f1dfefdcf8672c9c5677db3b54b8227b"
+      "rlrmp_commit": "657cf89ec88c833756ba3c3b31243becee4e6b4d"
     },
     "gpu": {
       "device_count": 1,
