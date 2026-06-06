@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 import jax.numpy as jnp
 import numpy as np
 
+from rlrmp.analysis.diagnostic_provenance import repo_relative, write_regeneration_spec
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 if TYPE_CHECKING:
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
 SCHEMA_VERSION = "rlrmp.perturbation_open_loop_calibration.v2"
 DEFAULT_RESULT_EXPERIMENT = "1ad3c16"
 DEFAULT_OUTPUT_FILENAME = "perturbation_open_loop_calibration.json"
+DEFAULT_REGENERATION_SPEC_FILENAME = "perturbation_open_loop_calibration_regeneration_spec.json"
 DEFAULT_NOTE_FILENAME = "perturbation_open_loop_calibration.md"
 DEFAULT_BULK_SUBDIR = "perturbation_open_loop_calibration"
 DEFAULT_NOMINAL_GRU_BASELINE = {
@@ -301,6 +303,7 @@ def materialize_perturbation_open_loop_calibration(
     result_experiment: str = DEFAULT_RESULT_EXPERIMENT,
     output_path: Path | None = None,
     note_path: Path | None = None,
+    regeneration_spec_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
     """Materialize physical effect-size calibration for perturbation amplitudes."""
@@ -316,6 +319,9 @@ def materialize_perturbation_open_loop_calibration(
     )
     note_path = note_path or (
         repo_root / "results" / result_experiment / "notes" / DEFAULT_NOTE_FILENAME
+    )
+    regeneration_spec_path = regeneration_spec_path or (
+        output_path.parent / DEFAULT_REGENERATION_SPEC_FILENAME
     )
     mkdir_p(output_path.parent)
     bank = default_cs_perturbation_bank()
@@ -425,11 +431,21 @@ def materialize_perturbation_open_loop_calibration(
         },
         "nominal_gru_baseline_for_later_closed_loop_calibration": DEFAULT_NOMINAL_GRU_BASELINE,
         "bulk_manifest_path": _repo_relative(output_path, repo_root=repo_root),
+        "regeneration_spec_path": repo_relative(regeneration_spec_path, repo_root=repo_root),
         "rows": rows,
         "family_summary": _summarize_reach_relative_rows(rows),
     }
     output_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     note_path.write_text(render_calibration_markdown(manifest), encoding="utf-8")
+    _write_calibration_regeneration_spec(
+        spec_path=regeneration_spec_path,
+        output_path=output_path,
+        note_path=note_path,
+        manifest=manifest,
+        amplitude_factors=amplitude_factors,
+        result_experiment=result_experiment,
+        repo_root=repo_root,
+    )
     return manifest
 
 
@@ -469,6 +485,7 @@ def render_calibration_markdown(manifest: Mapping[str, Any]) -> str:
         "(single-target nominal-only; documented for later closed-loop comparison, "
         "not retrained here).",
         f"- Bulk row manifest: `{manifest.get('bulk_manifest_path', 'not_materialized')}`",
+        f"- Regeneration spec: `{manifest.get('regeneration_spec_path', 'not_materialized')}`",
         "",
         "## Deterministic Config",
         "",
@@ -991,6 +1008,94 @@ def _summarize_reach_relative_family(rows: Sequence[Mapping[str, Any]]) -> dict[
     }
 
 
+def _write_calibration_regeneration_spec(
+    *,
+    spec_path: Path,
+    output_path: Path,
+    note_path: Path,
+    manifest: Mapping[str, Any],
+    amplitude_factors: Sequence[float],
+    result_experiment: str,
+    repo_root: Path,
+) -> dict[str, Any]:
+    command = [
+        "uv",
+        "run",
+        "python",
+        "scripts/materialize_perturbation_open_loop_calibration.py",
+        "--result-experiment",
+        result_experiment,
+        "--output-path",
+        repo_relative(output_path, repo_root=repo_root),
+        "--note-path",
+        repo_relative(note_path, repo_root=repo_root),
+        "--regeneration-spec-path",
+        repo_relative(spec_path, repo_root=repo_root),
+    ]
+    for factor in amplitude_factors:
+        command.extend(["--amplitude-factor", str(float(factor))])
+    source_model = dict(DEFAULT_NOMINAL_GRU_BASELINE)
+    source_run_ids = [
+        str(source_model["run_id"]),
+        "extLQG nominal command replay",
+    ]
+    return write_regeneration_spec(
+        spec_path=spec_path,
+        diagnostic_name="perturbation_open_loop_calibration",
+        materializer=(
+            "rlrmp.analysis.gru_perturbation_calibration."
+            "materialize_perturbation_open_loop_calibration"
+        ),
+        command=command,
+        parameters={
+            "result_experiment": result_experiment,
+            "amplitude_factors": [float(factor) for factor in amplitude_factors],
+            "source_model": source_model,
+            "source_run_ids": source_run_ids,
+            "reach_points": manifest.get("reach_points", []),
+            "level_definitions": manifest.get("level_definitions", []),
+            "plant_timing_bins": manifest.get("plant_timing_bins", []),
+            "controller_visible_timing_bins": manifest.get(
+                "controller_visible_timing_bins",
+                [],
+            ),
+        },
+        inputs=[
+            {
+                "role": "perturbation_bank",
+                "description": "default_cs_perturbation_bank generated in-process",
+                "bank_schema_version": manifest.get("bank_schema_version"),
+            },
+            {
+                "role": "source_model",
+                "description": "declared nominal GRU baseline for later closed-loop calibration",
+                **source_model,
+            },
+            {
+                "role": "source_run_ids",
+                "run_ids": source_run_ids,
+            },
+        ],
+        outputs=[
+            {"role": "calibration_bulk_manifest", "path": output_path},
+            {"role": "calibration_markdown_note", "path": note_path},
+        ],
+        source_files=[
+            "src/rlrmp/analysis/gru_perturbation_calibration.py",
+            "scripts/materialize_perturbation_open_loop_calibration.py",
+            "src/rlrmp/analysis/diagnostic_provenance.py",
+        ],
+        notes=[
+            (
+                "Open-loop calibration replays extLQG nominal commands; "
+                "it does not regenerate GRU model outputs."
+            ),
+            "Nominal GRU baseline metadata is recorded for later closed-loop calibration context.",
+        ],
+        repo_root=repo_root,
+    )
+
+
 def _metric_mean(metrics: Mapping[str, Any], key: str) -> float | None:
     current: Any = metrics
     for part in key.split("."):
@@ -1057,6 +1162,7 @@ __all__ = [
     "DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS",
     "DEFAULT_NATIVE_CONVENTIONS",
     "DEFAULT_NOMINAL_GRU_BASELINE",
+    "DEFAULT_REGENERATION_SPEC_FILENAME",
     "NativeConvention",
     "ReachCalibrationPoint",
     "ReachRelativeLevel",

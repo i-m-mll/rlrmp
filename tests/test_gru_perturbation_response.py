@@ -11,9 +11,11 @@ from feedbax.state import CartesianState
 from feedbax.task import TaskTrialSpec
 
 from rlrmp.analysis.gru_perturbation_bank import (
+    CALIBRATED_BANK_ID,
     GRAPH_ADAPTER_INPUT_PREFIX,
     SCHEMA_VERSION,
     apply_perturbation_to_trial_specs,
+    default_cs_calibrated_perturbation_bank,
     default_cs_perturbation_bank,
     delta_full_qrf_cost_summary,
     evaluate_extlqg_perturbation_comparator,
@@ -27,6 +29,10 @@ import rlrmp.analysis.gru_perturbation_bank as perturbation_bank
 from rlrmp.analysis.gru_evaluation_diagnostics import RolloutEvaluation
 from rlrmp.analysis.cs_game_card import build_canonical_game
 from rlrmp.cs_lss_gru import build_cs_lss_gru_graph
+from rlrmp.train.cs_perturbation_training import (
+    GRAPH_ADAPTER_SPECS as TRAINING_GRAPH_ADAPTER_SPECS,
+    install_perturbation_training_graph_adapters,
+)
 
 
 def test_default_bank_is_json_serializable_with_required_channels() -> None:
@@ -87,6 +93,11 @@ def test_default_bank_is_json_serializable_with_required_channels() -> None:
         "D_current_state_immediately_visible"
     }
     assert len(decoded["perturbations"]) == 75
+    assert {row["calibration_role"] for row in decoded["perturbations"]} == {
+        "raw_coordinate_not_scale_normalized",
+        "raw_default_requires_same_bank_calibration",
+        "raw_default_unscaled_effect_size",
+    }
 
 
 def test_default_bank_emits_timing_bin_specific_rows() -> None:
@@ -135,6 +146,83 @@ def test_default_bank_emits_timing_bin_specific_rows() -> None:
     assert {row["timing"]["time_index"] for row in initial_rows} == {0}
     assert bank["timing_bin_conventions"]["plant_side"][0]["start_time_index"] == 5
     assert bank["timing_bin_conventions"]["controller_visible"][0]["start_time_index"] == 10
+
+
+def test_calibrated_bank_emits_severity_timing_amplitudes_and_provenance() -> None:
+    bank = default_cs_calibrated_perturbation_bank(calibration_reach="seen_train_anchor_0p15")
+    rows = bank["perturbations"]
+
+    assert bank["bank_id"] == CALIBRATED_BANK_ID
+    assert len(default_cs_perturbation_bank()["perturbations"]) == 75
+    assert {row["level_name"] for row in rows if row["channel"] != "target_stream"} == {
+        "small",
+        "moderate",
+        "stress",
+    }
+    assert {
+        row["calibration_role"] for row in rows if row["channel"] != "target_stream"
+    } == {
+        "reach_relative_calibrated_native_units",
+        "reach_relative_calibrated_open_loop",
+    }
+    assert all(
+        row["calibration_role"] != "raw_default_requires_same_bank_calibration"
+        for row in rows
+    )
+    assert all(
+        row["reach_label"] == "seen_train_anchor_0p15"
+        for row in rows
+    )
+
+    command_rows = [row for row in rows if row["family"] == "command_input_pulse"]
+    assert {row["timing_bin"] for row in command_rows} == {"early", "mid", "late"}
+    assert {row["level_name"] for row in command_rows} == {"small", "moderate", "stress"}
+    command_amplitudes_by_timing = {
+        row["timing_bin"]: row["amplitude"]
+        for row in command_rows
+        if row["level_name"] == "moderate" and row["axis"] == "x" and row["sign"] == 1
+    }
+    assert len(set(command_amplitudes_by_timing.values())) == 3
+
+    initial_position = [
+        row
+        for row in rows
+        if row["family"] == "initial_position_offset" and row["axis"] == "x" and row["sign"] == 1
+    ]
+    assert {row["amplitude"] for row in initial_position} == {0.0075, 0.015, 0.0375}
+    assert {
+        row["target_open_loop_peak_dx_m"] for row in initial_position
+    } == {0.0075, 0.015, 0.0375}
+
+    sensory_rows = [row for row in rows if row["family"] == "sensory_feedback_offset"]
+    assert {row["timing_bin"] for row in sensory_rows} == {
+        "early_visible",
+        "mid_visible",
+        "late_visible",
+    }
+    assert {"m", "m/s"} <= {row["units"] for row in sensory_rows}
+    assert any("nominal_peak_speed_m_s" in row for row in sensory_rows)
+
+    target_rows = [row for row in rows if row["channel"] == "target_stream"]
+    assert len(target_rows) == 1
+    assert target_rows[0]["calibration_role"] == "reach_relative_calibrated_not_applicable"
+
+
+def test_parameterized_bank_preserves_raw_default_and_selects_calibrated_subset() -> None:
+    raw = default_cs_perturbation_bank()
+    calibrated = default_cs_perturbation_bank(
+        mode="calibrated",
+        calibration_level="small",
+        calibration_reach="0.2",
+    )
+
+    assert raw["bank_id"] == "cs_standard_perturbation_response_v3"
+    assert len(raw["perturbations"]) == 75
+    assert calibrated["bank_id"] == CALIBRATED_BANK_ID
+    assert {row["level_name"] for row in calibrated["perturbations"] if "level_name" in row} == {
+        "small",
+    }
+    assert calibrated["calibration_metadata_hooks"]["reach_length_m"] == 0.2
 
 
 def test_initial_position_adapter_offsets_cartesian_state_without_mutating_source() -> None:
@@ -220,6 +308,51 @@ def test_command_input_pulse_adapter_sets_external_graph_input_payload() -> None
     assert result.adapter_provenance["controller_input_mutated"] is False
 
 
+def test_command_input_no_op_guard_blocks_nonzero_payload_with_zero_graph_effect() -> None:
+    trial_specs = TaskTrialSpec(
+        inits={"mechanics.vector": np.zeros((2, 8), dtype=np.float64)},
+        targets={},
+        inputs={"effector_target": CartesianState(pos=np.zeros((2, 10, 2)))},
+    )
+    perturbation = {
+        "perturbation_id": "command_input_pulse__t3_x_pos",
+        "channel": "command_input",
+        "family": "command_input_pulse",
+        "amplitude": 2.0,
+        "axis": "x",
+        "sign": 1,
+        "timing": {"start_time_index": 3, "duration_steps": 2},
+    }
+    adapter = apply_perturbation_to_trial_specs(trial_specs, perturbation)
+    zero_metrics = {
+        "delta_position_response_m": {"max": {"max": 0.0}},
+        "delta_state_response": {"max": {"max": 0.0}},
+        "delta_action_response": {"max": {"max": 0.0}},
+    }
+
+    guard = perturbation_bank._command_input_no_op_guard(
+        perturbation=perturbation,
+        adapter=adapter,
+        metrics=zero_metrics,
+    )
+
+    assert guard["status"] == "blocked"
+    assert guard["guard"] == "command_input_nonzero_payload_zero_effect"
+    assert guard["payload_abs_max"] == 2.0
+
+    nonzero_metrics = {
+        "delta_position_response_m": {"max": {"max": 0.1}},
+        "delta_state_response": {"max": {"max": 0.0}},
+        "delta_action_response": {"max": {"max": 0.0}},
+    }
+    guard = perturbation_bank._command_input_no_op_guard(
+        perturbation=perturbation,
+        adapter=adapter,
+        metrics=nonzero_metrics,
+    )
+    assert guard["status"] == "passed"
+
+
 def test_command_input_graph_adapter_inserts_external_node_on_force_edge() -> None:
     trial_specs = TaskTrialSpec(
         inits={"mechanics.vector": np.zeros((2, 8), dtype=np.float64)},
@@ -251,6 +384,87 @@ def test_command_input_graph_adapter_inserts_external_node_on_force_edge() -> No
         adapter_label,
         "offset",
     )
+
+
+def test_command_input_graph_adapter_reuses_existing_training_channel() -> None:
+    command_spec = TRAINING_GRAPH_ADAPTER_SPECS["command_input"]
+    trial_specs = TaskTrialSpec(
+        inits={"mechanics.vector": np.zeros((2, 8), dtype=np.float64)},
+        targets={},
+        inputs={
+            "effector_target": CartesianState(pos=np.zeros((2, 10, 2))),
+            command_spec.input_key: np.zeros((2, 10, 2), dtype=np.float32),
+        },
+    )
+    graph = install_perturbation_training_graph_adapters(
+        build_cs_lss_gru_graph(hidden_size=3, key=jr.PRNGKey(0))
+    )
+    perturbation = {
+        "perturbation_id": "command_input_pulse__t3_x_pos",
+        "channel": "command_input",
+        "family": "command_input_pulse",
+        "amplitude": 1.0,
+        "axis": "x",
+        "sign": 1,
+        "timing": {"start_time_index": 3, "duration_steps": 2},
+    }
+
+    result = apply_perturbation_to_trial_specs(trial_specs, perturbation, model=graph)
+
+    assert result.status == "evaluated"
+    assert result.model is graph
+    assert result.adapter_provenance["graph_adapter_reused"] is True
+    assert result.adapter_provenance["graph_inserted"] is False
+    assert result.adapter_provenance["input_key"] == command_spec.input_key
+    assert result.adapter_provenance["label"] == command_spec.label
+    assert result.adapter_provenance["diagnostic_requested_input_key"].startswith(
+        f"{GRAPH_ADAPTER_INPUT_PREFIX}:"
+    )
+    np.testing.assert_allclose(
+        result.trial_specs.inputs[command_spec.input_key][:, 3:5, 0],
+        1.0,
+    )
+    assert not any(
+        key.startswith(f"{GRAPH_ADAPTER_INPUT_PREFIX}:")
+        for key in result.trial_specs.inputs
+    )
+
+
+def test_paired_base_for_graph_adapter_uses_same_graph_with_zero_payload() -> None:
+    base_trial_specs = TaskTrialSpec(
+        inits={"mechanics.vector": np.zeros((2, 8), dtype=np.float64)},
+        targets={},
+        inputs={"effector_target": CartesianState(pos=np.zeros((2, 10, 2)))},
+    )
+    adapter_trial_specs = TaskTrialSpec(
+        inits={"mechanics.vector": np.zeros((2, 8), dtype=np.float64)},
+        targets={},
+        inputs={
+            "effector_target": CartesianState(pos=np.zeros((2, 10, 2))),
+            "perturbation_adapter:test": np.ones((2, 10, 2), dtype=np.float32),
+        },
+    )
+    adapter_model = object()
+    adapter = perturbation_bank.AdapterResult(
+        status="evaluated",
+        trial_specs=adapter_trial_specs,
+        model=adapter_model,
+        adapter_provenance={
+            "graph_inserted": True,
+            "requires_zero_payload_base": True,
+            "input_key": "perturbation_adapter:test",
+        },
+    )
+
+    paired_model, paired_trial_specs = perturbation_bank._paired_base_for_adapter(
+        model=object(),
+        base_trial_specs=base_trial_specs,
+        adapter=adapter,
+    )
+
+    assert paired_model is adapter_model
+    assert "perturbation_adapter:test" not in base_trial_specs.inputs
+    np.testing.assert_allclose(paired_trial_specs.inputs["perturbation_adapter:test"], 0.0)
 
 
 def test_process_epsilon_pulse_adapter_offsets_epsilon_input() -> None:
@@ -701,10 +915,17 @@ def test_perturbation_bank_summary_reports_class_bins_and_na_ratios() -> None:
                     },
                 },
             },
-            "extlqg_comparator": extlqg_comparator_status(
-                {"channel": "command_input", "family": "command_input_pulse"},
-                status="not_applicable",
-            ),
+            "extlqg_comparator": {
+                "status": "available",
+                "reference_response_metrics": {
+                    "delta_action_norm": {"mean": 0.75},
+                    "extra_full_qrf_cost": {
+                        "delta_cost": {
+                            "total": {"mean": 2.0},
+                        },
+                    },
+                },
+            },
         },
         {
             "perturbation_id": "target_stream_jump__x_pos",
@@ -738,17 +959,16 @@ def test_perturbation_bank_summary_reports_class_bins_and_na_ratios() -> None:
     assert initial["gru_extlqg_delta_cost_ratio"]["ratio_of_means"] == 3.0
 
     command = class_summary["command_input/command_input_pulse"]
-    assert command["gru_extlqg_delta_cost_ratio"]["status"] == "not_available"
-    assert "no meaningful extLQG" in command["gru_extlqg_delta_cost_ratio"]["reason"]
-    assert command["extlqg_not_applicable_reasons"]
+    assert command["gru_extlqg_delta_cost_ratio"]["ratio_of_means"] == 2.0
+    assert command["extlqg_not_applicable_reasons"] == {}
     timing_cells = summary["timing_cell_summary"]["groups"]
     assert timing_cells["command_input/command_input_pulse/early"]["timing_bin"] == "early"
     assert timing_cells["command_input/command_input_pulse/early"]["n_rows"] == 1
     assert (
         summary["ratio_of_means_by_timing"]["command_input/command_input_pulse/early"][
             "metrics"
-        ]["delta_action_norm"]["status"]
-        == "not_available"
+        ]["delta_action_norm"]["ratio_of_means"]
+        == 2.0
     )
 
     target = class_summary["target_stream/target_stream_jump"]
@@ -757,6 +977,93 @@ def test_perturbation_bank_summary_reports_class_bins_and_na_ratios() -> None:
     assert target["not_applicable_reasons"] == {
         "fixed-target checkpoints do not expose a target stream": 1
     }
+
+
+def test_attenuation_metrics_serialize_and_class_summary_guards_denominators() -> None:
+    metrics = {
+        "delta_position_response_m": {
+            "max": {"mean": 0.006},
+            "auc": {"mean": 0.012},
+        },
+        "delta_action_response": {
+            "auc": {"mean": 0.4},
+        },
+        "delta_endpoint_error_m": {"mean": 0.003},
+    }
+    perturbation = {
+        "amplitude": 2.0,
+        "target_open_loop_peak_dx_m": 0.012,
+        "open_loop_auc_dx_per_unit_m_s": 0.01,
+        "reach_length_m": 0.15,
+    }
+
+    enriched = perturbation_bank._with_attenuation_metrics(metrics, perturbation)
+
+    encoded = json.loads(json.dumps(enriched))
+    attenuation = encoded["attenuation_metrics"]
+    assert attenuation["closed_loop_peak_dx_over_open_loop_peak_dx"]["ratio"] == 0.5
+    assert attenuation["closed_loop_auc_dx_over_open_loop_auc_dx"]["ratio"] == 0.6
+    assert np.isclose(attenuation["endpoint_delta_over_reach_length"]["ratio"], 0.02)
+    assert np.isclose(attenuation["auc_du_over_open_loop_peak_dx"]["ratio"], 0.4 / 0.012)
+
+    guarded = perturbation_bank._with_attenuation_metrics(
+        metrics,
+        {
+            "target_open_loop_peak_dx_m": 0.0,
+            "open_loop_auc_dx_per_unit_m_s": 0.0,
+            "amplitude": 1.0,
+            "reach_length_m": 0.0,
+        },
+    )
+    assert (
+        guarded["attenuation_metrics"]["closed_loop_peak_dx_over_open_loop_peak_dx"]["status"]
+        == "denominator_guarded"
+    )
+
+    summary = summarize_perturbation_bank(
+        [
+            {
+                "perturbation_id": "command_input_pulse__small__early_t5_x_pos",
+                "channel": "command_input",
+                "family": "command_input_pulse",
+                "axis": "x",
+                "sign": 1,
+                "amplitude": 0.25,
+                "timing_bin": "early",
+                "timing": {"start_time_index": 5, "duration_steps": 5},
+                "status": "evaluated",
+                "metrics": encoded,
+            },
+            {
+                "perturbation_id": "command_input_pulse__small__early_t5_y_pos",
+                "channel": "command_input",
+                "family": "command_input_pulse",
+                "axis": "y",
+                "sign": 1,
+                "amplitude": 0.25,
+                "timing_bin": "early",
+                "timing": {"start_time_index": 5, "duration_steps": 5},
+                "status": "evaluated",
+                "metrics": guarded,
+            },
+        ]
+    )
+
+    class_metrics = summary["class_summary"]["groups"]["command_input/command_input_pulse"][
+        "metrics"
+    ]
+    assert (
+        class_metrics["attenuation_metrics.closed_loop_peak_dx_over_open_loop_peak_dx"][
+            "status"
+        ]
+        == "available"
+    )
+    assert (
+        class_metrics["attenuation_metrics.closed_loop_peak_dx_over_open_loop_peak_dx"][
+            "mean"
+        ]
+        == 0.5
+    )
 
 
 def test_perturbation_markdown_renders_class_binned_summary() -> None:
@@ -782,10 +1089,16 @@ def test_perturbation_markdown_renders_class_binned_summary() -> None:
                     },
                 },
             },
-            "extlqg_comparator": extlqg_comparator_status(
-                {"channel": "command_input", "family": "command_input_pulse"},
-                status="not_applicable",
-            ),
+            "extlqg_comparator": {
+                "status": "available",
+                "reference_response_metrics": {
+                    "extra_full_qrf_cost": {
+                        "delta_cost": {
+                            "total": {"mean": 2.0},
+                        },
+                    },
+                },
+            },
         },
         {
             "perturbation_id": "target_stream_jump__x_pos",
@@ -823,8 +1136,39 @@ def test_perturbation_markdown_renders_class_binned_summary() -> None:
 
     assert "#### Class-Binned Summary" in markdown
     assert "`command_input/command_input_pulse`" in markdown
-    assert "no meaningful extLQG" in markdown
+    assert "| `command_input/command_input_pulse` | 1 | evaluated=1" in markdown
     assert "fixed-target checkpoints do not expose a target stream" in markdown
+
+
+def test_slim_manifest_keeps_tracked_response_manifest_summary_only(tmp_path) -> None:
+    manifest = {
+        "runs": {
+            "run": {
+                "label": "none_lr1e-3_clip5_b64",
+                "status_counts": {"evaluated": 1},
+                "bulk_files": {"row": "_artifacts/example/row.npz"},
+                "perturbations": [
+                    {
+                        "perturbation_id": "row",
+                        "status": "evaluated",
+                        "metrics": {"delta_position_response_m": {"max": {"mean": 0.1}}},
+                    }
+                ],
+            }
+        }
+    }
+
+    slim = perturbation_bank._slim_perturbation_response_manifest(
+        manifest,
+        detail_manifest_path=tmp_path / "_artifacts" / "detail.json",
+        repo_root=tmp_path,
+    )
+
+    run = slim["runs"]["run"]
+    assert "perturbations" not in run
+    assert run["n_perturbation_rows"] == 1
+    assert run["bulk_files"] == {"row": "_artifacts/example/row.npz"}
+    assert slim["bulk_detail_manifest"]["path"] == "_artifacts/detail.json"
 
 
 def test_extlqg_comparator_status_defers_target_stream_for_fixed_target_rows() -> None:
@@ -841,7 +1185,7 @@ def test_extlqg_comparator_status_defers_target_stream_for_fixed_target_rows() -
     assert status["selection_role"] == "audit_only_not_used_for_checkpoint_selection"
 
 
-def test_extlqg_comparator_evaluates_sensory_and_delayed_observation_offsets(
+def test_extlqg_comparator_evaluates_external_channel_offsets(
     monkeypatch,
 ) -> None:
     base = _minimal_rollout_evaluation(command_value=0.0)
@@ -883,6 +1227,7 @@ def test_extlqg_comparator_evaluates_sensory_and_delayed_observation_offsets(
     }
 
     for channel, family, expected_adapter in (
+        ("command_input", "command_input_pulse", "fake_command_input"),
         ("sensory_feedback", "sensory_feedback_offset", "fake_sensory_feedback"),
         ("delayed_observation", "delayed_observation_offset", "fake_delayed_observation"),
     ):
@@ -903,25 +1248,7 @@ def test_extlqg_comparator_evaluates_sensory_and_delayed_observation_offsets(
         assert comparator["analytical_adapter"]["adapter"] == expected_adapter
         assert comparator["analytical_adapter"]["controller_internal_state_mutated"] is False
 
-    assert calls == ["sensory_feedback", "delayed_observation"]
-
-
-def test_extlqg_comparator_keeps_command_input_not_applicable() -> None:
-    comparator = evaluate_extlqg_perturbation_comparator(
-        {
-            "channel": "command_input",
-            "family": "command_input_pulse",
-            "axis": "x",
-            "amplitude": 1.0,
-            "sign": 1,
-            "timing": {"start_time_index": 0, "duration_steps": 1},
-        },
-        context={},
-        gru_metrics={},
-    )
-
-    assert comparator["status"] == "not_applicable"
-    assert "command-port intervention" in comparator["reason"]
+    assert calls == ["command_input", "sensory_feedback", "delayed_observation"]
 
 
 def _minimal_rollout_evaluation(*, command_value: float) -> RolloutEvaluation:

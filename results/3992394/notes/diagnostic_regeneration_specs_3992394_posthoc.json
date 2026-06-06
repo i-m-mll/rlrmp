@@ -1,0 +1,10 @@
+{
+  "created_or_updated_specs": [
+    "results/3992394/notes/gru_perturbation_response_fullqrf_validation_selected_manifest_regeneration_spec.json"
+  ],
+  "issue": "3992394",
+  "posthoc_backfill": true,
+  "schema_version": "rlrmp.diagnostic_regeneration_backfill_index.v1",
+  "scope": "active_gru_diagnostics_only",
+  "tracking_issue": "25c4c36"
+}

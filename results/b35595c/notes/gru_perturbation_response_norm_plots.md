@@ -1,0 +1,120 @@
+# GRU Perturbation-Response Norm Plots
+
+This sidecar materializes Plotly response-curve HTML from existing calibrated perturbation-response bulk arrays. It does not rerun GRU diagnostics.
+
+- Source manifest: `results/b35595c/notes/gru_perturbation_response_calibrated_perturb_level_screen_validation_selected_corrected_manifest.json`
+- Selector: `validation_selected_corrected`
+- Spec: `results/b35595c/figures/perturbation_response_norms/spec.json`
+- Manifest: `results/b35595c/notes/gru_perturbation_response_norm_plots_manifest.json`
+- HTML inventory: 100 files under `_artifacts/b35595c/figures/perturbation_response_norms/_assets/`
+- Aggregation: target-relative/sign-equalized xy responses are converted to Euclidean norms before pooling. Mean-norm panels show mean +/- SEM over pooled replicate x eval-seed samples; max-norm panels are unbanded pooled extreme-response curves.
+- ExtLQG: deterministic dotted traces are reconstructed for command-input, initial-state, process-epsilon, sensory-feedback, and delayed-observation rows.
+- ExtLQG trace status counts: available: 1104.
+
+## Interpretation Caveats
+
+- Graph-adapter rows are paired against base rows evaluated on the same adapter-augmented graph with a zero payload, so pre-window differences reflect the declared perturbation path rather than a graph-topology change.
+- Initial-state extLQG traces use a nominal estimator/controller initial state while perturbing the plant initial state, matching the delayed visibility contract used by the GRU rows.
+
+## Inventory
+
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_position__command_input_pulse__early.html` - class_a / delta_position / command_input_pulse / early
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_position__command_input_pulse__mid.html` - class_a / delta_position / command_input_pulse / mid
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_position__command_input_pulse__late.html` - class_a / delta_position / command_input_pulse / late
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_position__delayed_observation_offset__early.html` - class_a / delta_position / delayed_observation_offset / early
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_position__delayed_observation_offset__mid.html` - class_a / delta_position / delayed_observation_offset / mid
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_position__delayed_observation_offset__late.html` - class_a / delta_position / delayed_observation_offset / late
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_position__initial_position_offset__initial_condition.html` - class_a / delta_position / initial_position_offset / initial_condition
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_position__initial_velocity_offset__initial_condition.html` - class_a / delta_position / initial_velocity_offset / initial_condition
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_position__process_epsilon_force_state_xy__early.html` - class_a / delta_position / process_epsilon_force_state_xy / early
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_position__process_epsilon_force_state_xy__mid.html` - class_a / delta_position / process_epsilon_force_state_xy / mid
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_position__process_epsilon_force_state_xy__late.html` - class_a / delta_position / process_epsilon_force_state_xy / late
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_position__process_epsilon_integrator_xy__early.html` - class_a / delta_position / process_epsilon_integrator_xy / early
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_position__process_epsilon_integrator_xy__mid.html` - class_a / delta_position / process_epsilon_integrator_xy / mid
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_position__process_epsilon_integrator_xy__late.html` - class_a / delta_position / process_epsilon_integrator_xy / late
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_position__process_epsilon_position_xy__early.html` - class_a / delta_position / process_epsilon_position_xy / early
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_position__process_epsilon_position_xy__mid.html` - class_a / delta_position / process_epsilon_position_xy / mid
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_position__process_epsilon_position_xy__late.html` - class_a / delta_position / process_epsilon_position_xy / late
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_position__process_epsilon_velocity_xy__early.html` - class_a / delta_position / process_epsilon_velocity_xy / early
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_position__process_epsilon_velocity_xy__mid.html` - class_a / delta_position / process_epsilon_velocity_xy / mid
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_position__process_epsilon_velocity_xy__late.html` - class_a / delta_position / process_epsilon_velocity_xy / late
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_position__sensory_feedback_offset__early.html` - class_a / delta_position / sensory_feedback_offset / early
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_position__sensory_feedback_offset__mid.html` - class_a / delta_position / sensory_feedback_offset / mid
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_position__sensory_feedback_offset__late.html` - class_a / delta_position / sensory_feedback_offset / late
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__command_input_pulse__small.html` - class_b / delta_position / command_input_pulse / small
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__command_input_pulse__moderate.html` - class_b / delta_position / command_input_pulse / moderate
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__command_input_pulse__stress.html` - class_b / delta_position / command_input_pulse / stress
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__delayed_observation_offset__small.html` - class_b / delta_position / delayed_observation_offset / small
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__delayed_observation_offset__moderate.html` - class_b / delta_position / delayed_observation_offset / moderate
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__delayed_observation_offset__stress.html` - class_b / delta_position / delayed_observation_offset / stress
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__initial_position_offset__small.html` - class_b / delta_position / initial_position_offset / small
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__initial_position_offset__moderate.html` - class_b / delta_position / initial_position_offset / moderate
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__initial_position_offset__stress.html` - class_b / delta_position / initial_position_offset / stress
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__initial_velocity_offset__small.html` - class_b / delta_position / initial_velocity_offset / small
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__initial_velocity_offset__moderate.html` - class_b / delta_position / initial_velocity_offset / moderate
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__initial_velocity_offset__stress.html` - class_b / delta_position / initial_velocity_offset / stress
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__process_epsilon_force_state_xy__small.html` - class_b / delta_position / process_epsilon_force_state_xy / small
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__process_epsilon_force_state_xy__moderate.html` - class_b / delta_position / process_epsilon_force_state_xy / moderate
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__process_epsilon_force_state_xy__stress.html` - class_b / delta_position / process_epsilon_force_state_xy / stress
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__process_epsilon_integrator_xy__small.html` - class_b / delta_position / process_epsilon_integrator_xy / small
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__process_epsilon_integrator_xy__moderate.html` - class_b / delta_position / process_epsilon_integrator_xy / moderate
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__process_epsilon_integrator_xy__stress.html` - class_b / delta_position / process_epsilon_integrator_xy / stress
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__process_epsilon_position_xy__small.html` - class_b / delta_position / process_epsilon_position_xy / small
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__process_epsilon_position_xy__moderate.html` - class_b / delta_position / process_epsilon_position_xy / moderate
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__process_epsilon_position_xy__stress.html` - class_b / delta_position / process_epsilon_position_xy / stress
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__process_epsilon_velocity_xy__small.html` - class_b / delta_position / process_epsilon_velocity_xy / small
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__process_epsilon_velocity_xy__moderate.html` - class_b / delta_position / process_epsilon_velocity_xy / moderate
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__process_epsilon_velocity_xy__stress.html` - class_b / delta_position / process_epsilon_velocity_xy / stress
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__sensory_feedback_offset__small.html` - class_b / delta_position / sensory_feedback_offset / small
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__sensory_feedback_offset__moderate.html` - class_b / delta_position / sensory_feedback_offset / moderate
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_position__sensory_feedback_offset__stress.html` - class_b / delta_position / sensory_feedback_offset / stress
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_action__command_input_pulse__early.html` - class_a / delta_action / command_input_pulse / early
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_action__command_input_pulse__mid.html` - class_a / delta_action / command_input_pulse / mid
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_action__command_input_pulse__late.html` - class_a / delta_action / command_input_pulse / late
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_action__delayed_observation_offset__early.html` - class_a / delta_action / delayed_observation_offset / early
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_action__delayed_observation_offset__mid.html` - class_a / delta_action / delayed_observation_offset / mid
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_action__delayed_observation_offset__late.html` - class_a / delta_action / delayed_observation_offset / late
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_action__initial_position_offset__initial_condition.html` - class_a / delta_action / initial_position_offset / initial_condition
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_action__initial_velocity_offset__initial_condition.html` - class_a / delta_action / initial_velocity_offset / initial_condition
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_action__process_epsilon_force_state_xy__early.html` - class_a / delta_action / process_epsilon_force_state_xy / early
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_action__process_epsilon_force_state_xy__mid.html` - class_a / delta_action / process_epsilon_force_state_xy / mid
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_action__process_epsilon_force_state_xy__late.html` - class_a / delta_action / process_epsilon_force_state_xy / late
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_action__process_epsilon_integrator_xy__early.html` - class_a / delta_action / process_epsilon_integrator_xy / early
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_action__process_epsilon_integrator_xy__mid.html` - class_a / delta_action / process_epsilon_integrator_xy / mid
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_action__process_epsilon_integrator_xy__late.html` - class_a / delta_action / process_epsilon_integrator_xy / late
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_action__process_epsilon_position_xy__early.html` - class_a / delta_action / process_epsilon_position_xy / early
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_action__process_epsilon_position_xy__mid.html` - class_a / delta_action / process_epsilon_position_xy / mid
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_action__process_epsilon_position_xy__late.html` - class_a / delta_action / process_epsilon_position_xy / late
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_action__process_epsilon_velocity_xy__early.html` - class_a / delta_action / process_epsilon_velocity_xy / early
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_action__process_epsilon_velocity_xy__mid.html` - class_a / delta_action / process_epsilon_velocity_xy / mid
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_action__process_epsilon_velocity_xy__late.html` - class_a / delta_action / process_epsilon_velocity_xy / late
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_action__sensory_feedback_offset__early.html` - class_a / delta_action / sensory_feedback_offset / early
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_action__sensory_feedback_offset__mid.html` - class_a / delta_action / sensory_feedback_offset / mid
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_a__delta_action__sensory_feedback_offset__late.html` - class_a / delta_action / sensory_feedback_offset / late
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__command_input_pulse__small.html` - class_b / delta_action / command_input_pulse / small
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__command_input_pulse__moderate.html` - class_b / delta_action / command_input_pulse / moderate
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__command_input_pulse__stress.html` - class_b / delta_action / command_input_pulse / stress
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__delayed_observation_offset__small.html` - class_b / delta_action / delayed_observation_offset / small
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__delayed_observation_offset__moderate.html` - class_b / delta_action / delayed_observation_offset / moderate
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__delayed_observation_offset__stress.html` - class_b / delta_action / delayed_observation_offset / stress
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__initial_position_offset__small.html` - class_b / delta_action / initial_position_offset / small
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__initial_position_offset__moderate.html` - class_b / delta_action / initial_position_offset / moderate
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__initial_position_offset__stress.html` - class_b / delta_action / initial_position_offset / stress
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__initial_velocity_offset__small.html` - class_b / delta_action / initial_velocity_offset / small
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__initial_velocity_offset__moderate.html` - class_b / delta_action / initial_velocity_offset / moderate
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__initial_velocity_offset__stress.html` - class_b / delta_action / initial_velocity_offset / stress
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__process_epsilon_force_state_xy__small.html` - class_b / delta_action / process_epsilon_force_state_xy / small
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__process_epsilon_force_state_xy__moderate.html` - class_b / delta_action / process_epsilon_force_state_xy / moderate
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__process_epsilon_force_state_xy__stress.html` - class_b / delta_action / process_epsilon_force_state_xy / stress
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__process_epsilon_integrator_xy__small.html` - class_b / delta_action / process_epsilon_integrator_xy / small
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__process_epsilon_integrator_xy__moderate.html` - class_b / delta_action / process_epsilon_integrator_xy / moderate
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__process_epsilon_integrator_xy__stress.html` - class_b / delta_action / process_epsilon_integrator_xy / stress
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__process_epsilon_position_xy__small.html` - class_b / delta_action / process_epsilon_position_xy / small
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__process_epsilon_position_xy__moderate.html` - class_b / delta_action / process_epsilon_position_xy / moderate
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__process_epsilon_position_xy__stress.html` - class_b / delta_action / process_epsilon_position_xy / stress
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__process_epsilon_velocity_xy__small.html` - class_b / delta_action / process_epsilon_velocity_xy / small
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__process_epsilon_velocity_xy__moderate.html` - class_b / delta_action / process_epsilon_velocity_xy / moderate
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__process_epsilon_velocity_xy__stress.html` - class_b / delta_action / process_epsilon_velocity_xy / stress
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__sensory_feedback_offset__small.html` - class_b / delta_action / sensory_feedback_offset / small
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__sensory_feedback_offset__moderate.html` - class_b / delta_action / sensory_feedback_offset / moderate
+- `_artifacts/b35595c/figures/perturbation_response_norms/_assets/class_b__delta_action__sensory_feedback_offset__stress.html` - class_b / delta_action / sensory_feedback_offset / stress

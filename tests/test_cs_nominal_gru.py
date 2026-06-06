@@ -1260,6 +1260,76 @@ def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Pat
     assert diagnostics_manifest["gradient_clip_active"] is False
     assert diagnostics_manifest["training_history_path"] == str(output_dir / "training_history.eqx")
     assert "optimizer_gradient_norm_pre_clip" in diagnostics_manifest["arrays"]
+    assert summary["training_duration_seconds"] > 0
+    assert summary["training_batches_per_second"] > 0
+    assert len(summary["chunks"]) == 2
+    assert summary["chunks"][0]["chunk_batches"] == 2
+    assert summary["chunks"][0]["duration_seconds"] > 0
+    assert summary["chunks"][0]["batches_per_second"] > 0
+    assert commits == 3
+
+
+def test_full_training_stop_after_batches_resumes_to_full_count(tmp_path: Path) -> None:
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        n_train_batches=4,
+        batch_size=2,
+        n_replicates=2,
+        hidden_size=4,
+        full_train=True,
+        resume=True,
+        checkpoint_interval_batches=2,
+        stop_after_batches=2,
+        controller_lr=1e-3,
+        lr_warmup_batches=1,
+        lr_warmup_init_fraction=0.1,
+        lr_cosine_alpha=0.01,
+        log_step=1,
+        disable_progress=True,
+        quiet_progress=True,
+    )
+
+    partial = run_full_training(args)
+    partial_summary = json.loads((output_dir / "training_summary.json").read_text())
+
+    assert partial["completed_batches"] == 2
+    assert partial_summary["completed_batches"] == 2
+    assert partial_summary["n_train_batches"] == 4
+    assert partial_summary["stopped_early_for_checkpoint_gate"] is True
+    assert partial_summary["stop_after_batches"] == 2
+    assert (output_dir / "checkpoints" / "checkpoint_0000002").exists()
+
+    resumed_args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        n_train_batches=4,
+        batch_size=2,
+        n_replicates=2,
+        hidden_size=4,
+        full_train=True,
+        resume=True,
+        checkpoint_interval_batches=2,
+        stop_after_batches=None,
+        controller_lr=1e-3,
+        lr_warmup_batches=1,
+        lr_warmup_init_fraction=0.1,
+        lr_cosine_alpha=0.01,
+        log_step=1,
+        disable_progress=True,
+        quiet_progress=True,
+    )
+    resumed = run_full_training(resumed_args)
+    resumed_summary = json.loads((output_dir / "training_summary.json").read_text())
+    diagnostics_manifest = json.loads((output_dir / "training_diagnostics.json").read_text())
+
+    assert resumed["completed_batches"] == 4
+    assert resumed_summary["completed_batches"] == 4
+    assert resumed_summary["stopped_early_for_checkpoint_gate"] is False
+    assert resumed_summary["stop_after_batches"] is None
+    assert (output_dir / "checkpoints" / "checkpoint_0000004").exists()
     assert "optimizer_update_parameter_norm_ratio" in diagnostics_manifest["arrays"]
     assert "optimizer_learning_rate" in diagnostics_manifest["arrays"]
     assert "train_loss__total" in diagnostics_manifest["arrays"]
@@ -1285,13 +1355,6 @@ def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Pat
         assert np.isfinite(diagnostics["train_loss__total"]).all()
         assert diagnostics["validation_loss__total"].shape == (4, 2)
         assert np.isfinite(diagnostics["validation_loss__total"]).all()
-    assert summary["training_duration_seconds"] > 0
-    assert summary["training_batches_per_second"] > 0
-    assert len(summary["chunks"]) == 2
-    assert summary["chunks"][0]["chunk_batches"] == 2
-    assert summary["chunks"][0]["duration_seconds"] > 0
-    assert summary["chunks"][0]["batches_per_second"] > 0
-    assert commits == 3
 
 
 def test_target_relative_h0_full_training_smoke_emits_diagnostics(tmp_path: Path) -> None:

@@ -104,6 +104,13 @@ def test_plan_gru_postrun_materialization_routes_tracked_and_bulk_outputs(
         / "notes"
         / "gru_feedback_ablation_fullqrf_validation_selected.md"
     )
+    assert plan.postrun_regeneration_spec_path == (
+        tmp_path
+        / "results"
+        / "5f70333"
+        / "notes"
+        / "gru_postrun_materialization_fullqrf_validation_selected_regeneration_spec.json"
+    )
 
 
 def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materializers(
@@ -126,11 +133,15 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         *,
         note_path: Path,
         manifest_path: Path,
+        regeneration_spec_path: Path,
+        repo_root: Path,
     ) -> None:
         calls["standard_write"] = {
             "result": result,
             "note_path": note_path,
             "manifest_path": manifest_path,
+            "regeneration_spec_path": regeneration_spec_path,
+            "repo_root": repo_root,
         }
         note_path.write_text("# standard\n", encoding="utf-8")
         manifest_path.write_text("{}", encoding="utf-8")
@@ -309,9 +320,8 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         / "notes"
         / "gru_map_error_decomposition_fullqrf_validation_selected.json"
     )
-    assert calls["checkpoint"]["preferred_manifest_path"] == (
-        tmp_path / "results" / "5f70333" / "notes" / "fixed_bank_rescored_checkpoints.json"
-    )
+    assert calls["checkpoint"]["preferred_manifest_path"] is None
+    assert calls["checkpoint"]["checkpoint_selection_mode"] == "sparse_history"
     assert calls["standard_write"]["manifest_path"] == (
         tmp_path
         / "results"
@@ -326,6 +336,27 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         / "evaluation_diagnostics"
         / "gru_fullqrf_validation_selected"
     )
+    assert calls["evaluation"]["regeneration_spec_path"] == (
+        tmp_path
+        / "results"
+        / "5f70333"
+        / "notes"
+        / "gru_evaluation_diagnostics_fullqrf_validation_selected_regeneration_spec.json"
+    )
+    assert calls["perturbation"]["regeneration_spec_path"] == (
+        tmp_path
+        / "results"
+        / "5f70333"
+        / "notes"
+        / "gru_perturbation_response_fullqrf_validation_selected_manifest_regeneration_spec.json"
+    )
+    assert calls["feedback"]["regeneration_spec_path"] == (
+        tmp_path
+        / "results"
+        / "5f70333"
+        / "notes"
+        / "gru_feedback_ablation_fullqrf_validation_selected_regeneration_spec.json"
+    )
     assert calls["figures"]["output_dir"] == (
         tmp_path
         / "_artifacts"
@@ -335,6 +366,8 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
     )
     assert manifest["checkpoint_policy"] == "validation_selected_per_replicate"
     assert manifest["labels"] == ["A", "B"]
+    assert manifest["regeneration_specs"]["standard_certificate"].startswith("results/")
+    assert manifest["regeneration_specs"]["postrun"].endswith("_regeneration_spec.json")
     assert manifest["checkpoint_selection_source"] == "validation_selected_per_replicate"
     assert manifest["selection_leakage_guard"]["status"] == "audit_only"
     assert manifest["outputs"]["fixed_bank_rescore_manifest"]["status"] == "missing"
@@ -392,6 +425,17 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
     assert written["outputs"]["map_decomposition"]["json_path"].startswith("results/")
     assert written["outputs"]["perturbation_response"]["json_path"].startswith("results/")
     assert written["outputs"]["feedback_ablation"]["json_path"].startswith("results/")
+    postrun_spec = (
+        tmp_path
+        / "results"
+        / "5f70333"
+        / "notes"
+        / "gru_postrun_materialization_fullqrf_validation_selected_regeneration_spec.json"
+    )
+    assert postrun_spec.exists()
+    assert json.loads(postrun_spec.read_text(encoding="utf-8"))["diagnostic_name"] == (
+        "gru_postrun_materialization_bundle"
+    )
 
 
 def test_plan_gru_postrun_materialization_final_checkpoint_override(tmp_path: Path) -> None:
@@ -455,6 +499,8 @@ def test_materialize_gru_postrun_analysis_prefers_provided_fixed_bank_manifest(
         *,
         note_path: Path,
         manifest_path: Path,
+        regeneration_spec_path: Path,
+        repo_root: Path,
     ) -> None:
         note_path.write_text("", encoding="utf-8")
         manifest_path.write_text("{}", encoding="utf-8")
@@ -506,6 +552,7 @@ def test_materialize_gru_postrun_analysis_prefers_provided_fixed_bank_manifest(
     )
 
     assert calls["checkpoint"]["preferred_manifest_path"] == fixed_manifest_path
+    assert calls["checkpoint"]["checkpoint_selection_mode"] == "fixed_bank_manifest"
     assert manifest["checkpoint_selection_source"] == "fixed_bank_rescore"
     assert manifest["outputs"]["fixed_bank_rescore_manifest"]["status"] == "materialized"
     assert (
@@ -526,6 +573,8 @@ def test_materialize_gru_postrun_analysis_preserves_audit_only_skip_semantics(
         *,
         note_path: Path,
         manifest_path: Path,
+        regeneration_spec_path: Path,
+        repo_root: Path,
     ) -> None:
         note_path.write_text("", encoding="utf-8")
         manifest_path.write_text("{}", encoding="utf-8")

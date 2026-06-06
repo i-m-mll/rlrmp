@@ -1,5 +1,6 @@
 {
   "issue": "3e66604",
+  "regeneration_spec": "results/3e66604/notes/gru_evaluation_diagnostics_warmcos_fulldiag_validation_selected_regeneration_spec.json",
   "runs": {
     "lss_stabilization_warmcos_fulldiag__lr1e-3_clip5_b1000": {
       "artifact_dir": "_artifacts/3e66604/runs/lss_stabilization_warmcos_fulldiag__lr1e-3_clip5_b1000",

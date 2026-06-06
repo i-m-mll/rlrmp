@@ -66,6 +66,7 @@
       "disturbance_integrator_state"
     ]
   },
+  "regeneration_spec": "results/5f70333/notes/objective_comparator_fullqrf_validation_selected_regeneration_spec.json",
   "rows": [
     {
       "best_logged_to_extlqg_deterministic_ratio": 0.9974993565760255,

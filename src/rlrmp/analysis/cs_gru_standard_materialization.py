@@ -6,7 +6,7 @@ import copy
 import json
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import equinox as eqx
 import jax
@@ -44,6 +44,7 @@ from rlrmp.analysis.cs_released_simulation import (
     build_extlqg_comparator_path,
     default_cs_noise_covariances,
 )
+from rlrmp.analysis.diagnostic_provenance import write_regeneration_spec
 from rlrmp.analysis.failure_decomposition import failure_diagnostic_from_standard_row
 from rlrmp.analysis.output_feedback import (
     OutputFeedbackConfig,
@@ -102,6 +103,7 @@ def materialize_gru_standard_result(
     experiment: str = SOURCE_ISSUE_ID,
     materializer_issue_id: str = MATERIALIZER_ISSUE_ID,
     use_validation_selected_checkpoints: bool = False,
+    preferred_checkpoint_manifest_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
     """Return standard rows and companion failure diagnostics for GRU pilots."""
@@ -115,6 +117,12 @@ def materialize_gru_standard_result(
         selection_manifest = materialize_validation_selected_checkpoint_manifest(
             experiment=experiment,
             run_ids=run_ids,
+            preferred_manifest_path=preferred_checkpoint_manifest_path,
+            checkpoint_selection_mode=(
+                "fixed_bank_manifest"
+                if preferred_checkpoint_manifest_path is not None
+                else "sparse_history"
+            ),
             repo_root=repo_root,
         )
     result_run_root = repo_root / "results" / experiment / "runs"
@@ -126,6 +134,7 @@ def materialize_gru_standard_result(
             experiment=experiment,
             materializer_issue_id=materializer_issue_id,
             use_validation_selected_checkpoints=use_validation_selected_checkpoints,
+            preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
             repo_root=repo_root,
         )
         for run_id in run_ids
@@ -146,15 +155,21 @@ def materialize_gru_standard_result(
             if row["metrics"].get("io_response_map_blocker")
         }
     )
+    effective_checkpoint_policy = (
+        str(selection_manifest.get("checkpoint_policy"))
+        if isinstance(selection_manifest, Mapping)
+        and selection_manifest.get("checkpoint_policy") is not None
+        else (
+            "validation_selected_per_replicate"
+            if use_validation_selected_checkpoints
+            else "final_checkpoint"
+        )
+    )
     return {
         "format": "rlrmp.cs_gru_standard_certificates.v1",
         "issue": materializer_issue_id,
         "source_issue": experiment,
-        "checkpoint_policy": (
-            "validation_selected_per_replicate"
-            if use_validation_selected_checkpoints
-            else "final_checkpoint"
-        ),
+        "checkpoint_policy": effective_checkpoint_policy,
         "source_manifests": {
             run_id: repo_relative(result_run_root / run_id / "run.json", repo_root=repo_root)
             for run_id in run_ids
@@ -192,6 +207,7 @@ def materialize_gru_standard_row(
     experiment: str = SOURCE_ISSUE_ID,
     materializer_issue_id: str = MATERIALIZER_ISSUE_ID,
     use_validation_selected_checkpoints: bool = False,
+    preferred_checkpoint_manifest_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> BridgeRunManifest:
     """Materialize one GRU pilot standard row."""
@@ -217,6 +233,7 @@ def materialize_gru_standard_row(
             run_spec=run_spec,
             experiment=experiment,
             use_validation_selected_checkpoints=use_validation_selected_checkpoints,
+            preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
             repo_root=repo_root,
         )
         observation_history_covariance = evaluation_metadata.pop(
@@ -410,6 +427,7 @@ def evaluate_gru_clean_actions(
     run_spec: dict[str, Any] | None = None,
     experiment: str = SOURCE_ISSUE_ID,
     use_validation_selected_checkpoints: bool = False,
+    preferred_checkpoint_manifest_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
     """Load a GRU pilot model and return clean action traces and I/O maps.
@@ -436,6 +454,12 @@ def evaluate_gru_clean_actions(
             experiment=experiment,
             run_id=run_id,
             run_spec=run_spec,
+            preferred_manifest_path=preferred_checkpoint_manifest_path,
+            checkpoint_selection_mode=(
+                "fixed_bank_manifest"
+                if preferred_checkpoint_manifest_path is not None
+                else "sparse_history"
+            ),
             repo_root=repo_root,
         )
     else:
@@ -831,15 +855,58 @@ def write_gru_standard_result(
     *,
     note_path: Path = NOTE_PATH,
     manifest_path: Path = MANIFEST_PATH,
+    regeneration_spec_path: Path | None = None,
+    repo_root: Path = REPO_ROOT,
 ) -> None:
     """Write the GRU standard-certificate note and manifest."""
 
     mkdir_p(note_path.parent)
+    regeneration_spec_path = regeneration_spec_path or _regeneration_spec_path(manifest_path)
+    result = copy.deepcopy(result)
+    result["regeneration_spec"] = repo_relative(regeneration_spec_path, repo_root=repo_root)
     note_path.write_text(render_gru_standard_markdown(result), encoding="utf-8")
     manifest_path.write_text(
         json.dumps(result, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    write_regeneration_spec(
+        spec_path=regeneration_spec_path,
+        diagnostic_name="gru_standard_certificate",
+        materializer="rlrmp.analysis.cs_gru_standard_materialization.write_gru_standard_result",
+        command=None,
+        parameters={
+            "experiment": result.get("source_issue"),
+            "run_ids": list(result.get("source_manifests", {}).keys()),
+            "checkpoint_policy": result.get("checkpoint_policy"),
+            "materializer_issue_id": result.get("issue"),
+        },
+        inputs=[
+            {"role": "run_spec", "path": path}
+            for path in result.get("source_manifests", {}).values()
+        ]
+        + [
+            {"role": "model_or_checkpoint_artifact", "path": path}
+            for path in result.get("source_artifacts", {}).values()
+        ],
+        outputs=[
+            {"role": "standard_certificate_manifest", "path": manifest_path},
+            {"role": "standard_certificate_note", "path": note_path},
+        ],
+        source_files=[
+            "src/rlrmp/analysis/cs_gru_standard_materialization.py",
+            "src/rlrmp/analysis/bridge_certificates.py",
+            "src/rlrmp/analysis/standard_certificate_materialization.py",
+        ],
+        notes=[
+            "Standard certificate is in scope for regeneration specs.",
+            "This spec records materialization provenance only; certificate values remain in the manifest.",
+        ],
+        repo_root=repo_root,
+    )
+
+
+def _regeneration_spec_path(path: Path) -> Path:
+    return path.with_name(f"{path.stem}_regeneration_spec.json")
 
 
 def render_gru_standard_markdown(result: dict[str, Any]) -> str:

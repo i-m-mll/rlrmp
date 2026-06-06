@@ -1,0 +1,10 @@
+{
+  "created_or_updated_specs": [
+    "results/57ab156/notes/gru_feedback_ablation_fixed_target_random_perturb_validation_selected_regeneration_spec.json"
+  ],
+  "issue": "57ab156",
+  "posthoc_backfill": true,
+  "schema_version": "rlrmp.diagnostic_regeneration_backfill_index.v1",
+  "scope": "active_gru_diagnostics_only",
+  "tracking_issue": "25c4c36"
+}

@@ -1,0 +1,18 @@
+{
+  "created_or_updated_specs": [
+    "results/ba82f3d/notes/gru_evaluation_diagnostics_target_relative_multitarget_validation_selected_regeneration_spec.json",
+    "results/ba82f3d/notes/gru_map_error_decomposition_target_relative_multitarget_validation_selected_aligned_regeneration_spec.json",
+    "results/ba82f3d/notes/gru_map_error_decomposition_target_relative_multitarget_validation_selected_regeneration_spec.json",
+    "results/ba82f3d/notes/gru_perturbation_response_target_relative_multitarget_validation_selected_manifest_regeneration_spec.json",
+    "results/ba82f3d/notes/gru_postrun_materialization_target_relative_multitarget_validation_selected_regeneration_spec.json",
+    "results/ba82f3d/notes/gru_standard_certificates_feedback_v2_target_relative_multitarget_validation_selected_manifest_regeneration_spec.json",
+    "results/ba82f3d/notes/gru_standard_certificates_target_relative_multitarget_validation_selected_manifest_regeneration_spec.json",
+    "results/ba82f3d/notes/objective_comparator_target_relative_multitarget_validation_selected_regeneration_spec.json",
+    "results/ba82f3d/notes/validation_selected_checkpoints_regeneration_spec.json"
+  ],
+  "issue": "ba82f3d",
+  "posthoc_backfill": true,
+  "schema_version": "rlrmp.diagnostic_regeneration_backfill_index.v1",
+  "scope": "active_gru_diagnostics_only",
+  "tracking_issue": "25c4c36"
+}

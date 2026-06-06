@@ -14,6 +14,7 @@ from rlrmp.analysis.cs_gru_standard_materialization import (
     materialize_gru_standard_result,
     write_gru_standard_result,
 )
+from rlrmp.analysis.diagnostic_provenance import write_regeneration_spec
 from rlrmp.analysis.gru_checkpoint_selection import (
     fixed_bank_manifest_path,
     load_materialized_fixed_bank_manifest,
@@ -62,6 +63,7 @@ class GruPostrunMaterializationPlan:
     feedback_ablation_json_path: Path
     feedback_ablation_note_path: Path
     postrun_manifest_path: Path
+    postrun_regeneration_spec_path: Path
 
     def to_json(self, *, repo_root: Path = REPO_ROOT) -> dict[str, Any]:
         """Return a JSON-compatible plan with repo-relative paths."""
@@ -97,6 +99,7 @@ def plan_gru_postrun_materialization(
         if fixed_bank_rescore_manifest_path is not None
         else fixed_bank_manifest_path(experiment, repo_root=repo_root)
     )
+    fixed_bank_manifest = None
     fixed_bank_available = False
     if use_validation_selected_checkpoints:
         fixed_bank_manifest = load_materialized_fixed_bank_manifest(
@@ -108,11 +111,16 @@ def plan_gru_postrun_materialization(
             fixed_bank_manifest is not None
             and all(run_id in fixed_bank_manifest.get("runs", {}) for run_id in run_ids)
         )
+    effective_checkpoint_policy = (
+        str(fixed_bank_manifest.get("checkpoint_policy") or "fixed_bank_rescored_per_replicate")
+        if fixed_bank_available and fixed_bank_manifest is not None
+        else checkpoint_policy
+    )
     return GruPostrunMaterializationPlan(
         experiment=experiment,
         run_ids=tuple(run_ids),
         output_tag=output_tag,
-        checkpoint_policy=checkpoint_policy,
+        checkpoint_policy=effective_checkpoint_policy,
         checkpoint_selection_source=(
             "fixed_bank_rescore" if fixed_bank_available else checkpoint_policy
         ),
@@ -145,6 +153,9 @@ def plan_gru_postrun_materialization(
         feedback_ablation_json_path=notes_dir / f"gru_feedback_ablation_{output_tag}.json",
         feedback_ablation_note_path=notes_dir / f"gru_feedback_ablation_{output_tag}.md",
         postrun_manifest_path=notes_dir / f"gru_postrun_materialization_{output_tag}.json",
+        postrun_regeneration_spec_path=(
+            notes_dir / f"gru_postrun_materialization_{output_tag}_regeneration_spec.json"
+        ),
     )
 
 
@@ -163,6 +174,10 @@ def materialize_gru_postrun_analysis(
     include_map_decomposition: bool = True,
     include_perturbation_response: bool = True,
     include_feedback_ablation: bool = True,
+    perturbation_bank_mode: str = "raw",
+    perturbation_calibration_level: str | Sequence[str] | None = None,
+    perturbation_calibration_reach: str | float | None = None,
+    feedback_selection_level: str = "small",
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
     """Materialize the standard post-run GRU analysis bundle.
@@ -182,6 +197,11 @@ def materialize_gru_postrun_analysis(
         repo_root=repo_root,
     )
     mkdir_p(plan.notes_dir)
+    effective_checkpoint_manifest_path = (
+        plan.fixed_bank_rescore_manifest_path
+        if plan.checkpoint_selection_source == "fixed_bank_rescore"
+        else None
+    )
 
     checkpoint_manifest: dict[str, Any] | None = None
     if plan.checkpoint_manifest_path is not None:
@@ -189,7 +209,12 @@ def materialize_gru_postrun_analysis(
             experiment=experiment,
             run_ids=run_ids,
             output_path=plan.checkpoint_manifest_path,
-            preferred_manifest_path=plan.fixed_bank_rescore_manifest_path,
+            preferred_manifest_path=effective_checkpoint_manifest_path,
+            checkpoint_selection_mode=(
+                "fixed_bank_manifest"
+                if effective_checkpoint_manifest_path is not None
+                else "sparse_history"
+            ),
             repo_root=repo_root,
         )
 
@@ -198,12 +223,15 @@ def materialize_gru_postrun_analysis(
         experiment=experiment,
         materializer_issue_id=materializer_issue_id,
         use_validation_selected_checkpoints=use_validation_selected_checkpoints,
+        preferred_checkpoint_manifest_path=effective_checkpoint_manifest_path,
         repo_root=repo_root,
     )
     write_gru_standard_result(
         standard_result,
         note_path=plan.standard_note_path,
         manifest_path=plan.standard_manifest_path,
+        regeneration_spec_path=_regeneration_spec_path(plan.standard_manifest_path),
+        repo_root=repo_root,
     )
 
     evaluation_manifest = materialize_gru_evaluation_diagnostics(
@@ -214,6 +242,8 @@ def materialize_gru_postrun_analysis(
         bulk_dir=plan.evaluation_bulk_dir,
         n_rollout_trials=n_rollout_trials,
         use_validation_selected_checkpoints=use_validation_selected_checkpoints,
+        preferred_checkpoint_manifest_path=effective_checkpoint_manifest_path,
+        regeneration_spec_path=_regeneration_spec_path(plan.evaluation_manifest_path),
         repo_root=repo_root,
     )
 
@@ -225,6 +255,7 @@ def materialize_gru_postrun_analysis(
         n_rollout_trials=n_rollout_trials,
         include_reference=include_reference,
         use_validation_selected_checkpoints=use_validation_selected_checkpoints,
+        preferred_checkpoint_manifest_path=effective_checkpoint_manifest_path,
         repo_root=repo_root,
     )
 
@@ -251,6 +282,7 @@ def materialize_gru_postrun_analysis(
             run_ids=run_ids,
             use_validation_selected_checkpoints=use_validation_selected_checkpoints,
             standard_manifest_path=plan.standard_manifest_path,
+            preferred_checkpoint_manifest_path=effective_checkpoint_manifest_path,
             output_path=plan.map_decomposition_json_path,
             note_path=plan.map_decomposition_note_path,
             repo_root=repo_root,
@@ -270,6 +302,11 @@ def materialize_gru_postrun_analysis(
             output_path=plan.perturbation_response_json_path,
             note_path=plan.perturbation_response_note_path,
             bulk_dir=plan.perturbation_response_bulk_dir,
+            bank_mode=perturbation_bank_mode,
+            calibration_level=perturbation_calibration_level,
+            calibration_reach=perturbation_calibration_reach,
+            preferred_checkpoint_manifest_path=effective_checkpoint_manifest_path,
+            regeneration_spec_path=_regeneration_spec_path(plan.perturbation_response_json_path),
             repo_root=repo_root,
         )
         if include_perturbation_response
@@ -283,12 +320,19 @@ def materialize_gru_postrun_analysis(
             n_rollout_trials=n_rollout_trials,
             output_path=plan.feedback_ablation_json_path,
             note_path=plan.feedback_ablation_note_path,
+            bank_mode=perturbation_bank_mode,
+            calibration_level=perturbation_calibration_level,
+            calibration_reach=perturbation_calibration_reach,
+            feedback_selection_level=feedback_selection_level,
+            preferred_checkpoint_manifest_path=effective_checkpoint_manifest_path,
+            regeneration_spec_path=_regeneration_spec_path(plan.feedback_ablation_json_path),
             repo_root=repo_root,
         )
         if include_feedback_ablation
         else {"status": "skipped", "reason": "disabled_by_cli"}
     )
     feedback_checkpoint_selection = feedback_checkpoint_selection_status(feedback_ablation)
+    regeneration_specs = _postrun_regeneration_specs(plan, repo_root=repo_root)
 
     manifest = {
         "schema_version": SCHEMA_VERSION,
@@ -311,16 +355,22 @@ def materialize_gru_postrun_analysis(
                 "feedback_ablation",
                 "feedback_selected_checkpoint_audit",
             ],
-            "note": (
-                "Checkpoint selection uses rollout validation objective only. "
-                "Certificate, I/O map, covariance-weighted map, map-decomposition, "
-                "objective-comparator, split-stress-bank, and perturbation-response "
-                "values are audit sidecars. Feedback-ablation and feedback-selected "
-                "checkpoint reports are also audit-only and never replace primary "
-                "validation-selected checkpoint loading."
-            ),
+            "note": _selection_leakage_guard_note(plan),
         },
         "plan": plan.to_json(repo_root=repo_root),
+        "regeneration_specs": regeneration_specs,
+        "perturbation_bank": {
+            "mode": perturbation_bank_mode,
+            "calibration_level": (
+                None
+                if perturbation_calibration_level is None
+                else list(perturbation_calibration_level)
+                if not isinstance(perturbation_calibration_level, str)
+                else perturbation_calibration_level
+            ),
+            "calibration_reach": perturbation_calibration_reach,
+            "feedback_selection_level": feedback_selection_level,
+        },
         "outputs": {
             "checkpoint_manifest": (
                 None
@@ -370,6 +420,24 @@ def materialize_gru_postrun_analysis(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    _write_postrun_auxiliary_regeneration_specs(
+        plan=plan,
+        run_ids=run_ids,
+        labels=labels,
+        include_reference=include_reference,
+        n_rollout_trials=n_rollout_trials,
+        use_validation_selected_checkpoints=use_validation_selected_checkpoints,
+        effective_checkpoint_manifest_path=effective_checkpoint_manifest_path,
+        include_objective_comparator=include_objective_comparator,
+        include_map_decomposition=include_map_decomposition,
+        include_perturbation_response=include_perturbation_response,
+        include_feedback_ablation=include_feedback_ablation,
+        perturbation_bank_mode=perturbation_bank_mode,
+        perturbation_calibration_level=perturbation_calibration_level,
+        perturbation_calibration_reach=perturbation_calibration_reach,
+        feedback_selection_level=feedback_selection_level,
+        repo_root=repo_root,
+    )
     return manifest
 
 
@@ -381,6 +449,12 @@ def materialize_optional_feedback_ablation(
     n_rollout_trials: int,
     output_path: Path,
     note_path: Path,
+    bank_mode: str = "raw",
+    calibration_level: str | Sequence[str] | None = None,
+    calibration_reach: str | float | None = None,
+    feedback_selection_level: str = "small",
+    preferred_checkpoint_manifest_path: Path | None = None,
+    regeneration_spec_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
     """Call the optional feedback-ablation sidecar materializer."""
@@ -406,8 +480,14 @@ def materialize_optional_feedback_ablation(
             run_ids=tuple(run_ids),
             labels=None if labels is None else tuple(labels),
             n_rollout_trials=n_rollout_trials,
+            bank_mode=bank_mode,
+            calibration_level=calibration_level,
+            calibration_reach=calibration_reach,
+            feedback_selection_level=feedback_selection_level,
+            preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
             output_path=output_path,
             note_path=note_path,
+            regeneration_spec_path=regeneration_spec_path,
             repo_root=repo_root,
         )
     except (FileNotFoundError, ValueError, KeyError, AttributeError) as exc:
@@ -430,6 +510,11 @@ def materialize_optional_feedback_ablation(
         "status": "materialized",
         "json_path": _repo_relative(output_path, repo_root=repo_root),
         "note_path": _repo_relative(note_path, repo_root=repo_root),
+        "regeneration_spec": (
+            None
+            if regeneration_spec_path is None
+            else _repo_relative(regeneration_spec_path, repo_root=repo_root)
+        ),
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
         "result": {
             "schema_version": result.get("schema_version") if isinstance(result, dict) else None,
@@ -443,6 +528,232 @@ def materialize_optional_feedback_ablation(
         },
         "feedback_checkpoint_selection_audit": audit,
     }
+
+
+def _postrun_regeneration_specs(
+    plan: GruPostrunMaterializationPlan,
+    *,
+    repo_root: Path,
+) -> dict[str, str]:
+    """Return the tracked regeneration-spec index for a post-run bundle."""
+
+    return {
+        "postrun": _repo_relative(plan.postrun_regeneration_spec_path, repo_root=repo_root),
+        "standard_certificate": _repo_relative(
+            _regeneration_spec_path(plan.standard_manifest_path),
+            repo_root=repo_root,
+        ),
+        "evaluation_diagnostics": _repo_relative(
+            _regeneration_spec_path(plan.evaluation_manifest_path),
+            repo_root=repo_root,
+        ),
+        "pilot_figures": _repo_relative(
+            plan.notes_dir / f"gru_pilot_figures_{plan.output_tag}_regeneration_spec.json",
+            repo_root=repo_root,
+        ),
+        "objective_comparator": _repo_relative(
+            _regeneration_spec_path(plan.objective_comparator_json_path),
+            repo_root=repo_root,
+        ),
+        "map_decomposition": _repo_relative(
+            _regeneration_spec_path(plan.map_decomposition_json_path),
+            repo_root=repo_root,
+        ),
+        "perturbation_response": _repo_relative(
+            _regeneration_spec_path(plan.perturbation_response_json_path),
+            repo_root=repo_root,
+        ),
+        "feedback_ablation": _repo_relative(
+            _regeneration_spec_path(plan.feedback_ablation_json_path),
+            repo_root=repo_root,
+        ),
+    }
+
+
+def _write_postrun_auxiliary_regeneration_specs(
+    *,
+    plan: GruPostrunMaterializationPlan,
+    run_ids: Sequence[str],
+    labels: Sequence[str] | None,
+    include_reference: bool,
+    n_rollout_trials: int,
+    use_validation_selected_checkpoints: bool,
+    effective_checkpoint_manifest_path: Path | None,
+    include_objective_comparator: bool,
+    include_map_decomposition: bool,
+    include_perturbation_response: bool,
+    include_feedback_ablation: bool,
+    perturbation_bank_mode: str,
+    perturbation_calibration_level: str | Sequence[str] | None,
+    perturbation_calibration_reach: str | float | None,
+    feedback_selection_level: str,
+    repo_root: Path,
+) -> None:
+    """Write postrun-owned specs for optional hooks without native spec support."""
+
+    run_inputs = _run_input_refs(plan.experiment, run_ids, repo_root=repo_root)
+    checkpoint_inputs = (
+        []
+        if effective_checkpoint_manifest_path is None
+        else [{"role": "checkpoint_manifest", "path": effective_checkpoint_manifest_path}]
+    )
+    write_regeneration_spec(
+        spec_path=plan.notes_dir / f"gru_pilot_figures_{plan.output_tag}_regeneration_spec.json",
+        diagnostic_name="gru_pilot_figures",
+        materializer="rlrmp.analysis.gru_pilot_figures.materialize_gru_pilot_figures",
+        command=None,
+        parameters={
+            "experiment": plan.experiment,
+            "run_ids": list(run_ids),
+            "labels": None if labels is None else list(labels),
+            "n_rollout_trials": n_rollout_trials,
+            "include_reference": include_reference,
+            "use_validation_selected_checkpoints": use_validation_selected_checkpoints,
+            "preferred_checkpoint_manifest_path": (
+                None
+                if effective_checkpoint_manifest_path is None
+                else _repo_relative(effective_checkpoint_manifest_path, repo_root=repo_root)
+            ),
+        },
+        inputs=run_inputs + checkpoint_inputs,
+        outputs=[
+            {"role": "pilot_figure_dir", "path": plan.figure_output_dir},
+            {"role": "pilot_figure_summary", "path": plan.figure_output_dir / "figure_summary.json"},
+        ],
+        source_files=["src/rlrmp/analysis/gru_pilot_figures.py"],
+        notes=["Postrun-owned regeneration spec for pilot loss/velocity figures."],
+        repo_root=repo_root,
+    )
+    if include_objective_comparator:
+        write_regeneration_spec(
+            spec_path=_regeneration_spec_path(plan.objective_comparator_json_path),
+            diagnostic_name="gru_objective_comparator",
+            materializer="rlrmp.analysis.objective_comparator.materialize_gru_objective_comparator_sidecar",
+            command=None,
+            parameters={
+                "experiment": plan.experiment,
+                "run_ids": list(run_ids),
+                "labels": None if labels is None else list(labels),
+                "checkpoint_policy": plan.checkpoint_policy,
+                "use_validation_selected_checkpoints": use_validation_selected_checkpoints,
+            },
+            inputs=run_inputs
+            + checkpoint_inputs
+            + [{"role": "standard_certificate_manifest", "path": plan.standard_manifest_path}],
+            outputs=[
+                {"role": "objective_comparator_manifest", "path": plan.objective_comparator_json_path},
+                {"role": "objective_comparator_note", "path": plan.objective_comparator_note_path},
+            ],
+            source_files=[
+                "src/rlrmp/analysis/objective_comparator.py",
+                "src/rlrmp/analysis/cs_released_simulation.py",
+            ],
+            notes=["Postrun-owned regeneration spec for objective-comparator sidecar."],
+            repo_root=repo_root,
+        )
+    if include_map_decomposition:
+        write_regeneration_spec(
+            spec_path=_regeneration_spec_path(plan.map_decomposition_json_path),
+            diagnostic_name="gru_map_error_decomposition",
+            materializer="rlrmp.analysis.gru_map_error_decomposition.materialize_gru_map_error_decomposition",
+            command=None,
+            parameters={
+                "experiment": plan.experiment,
+                "run_ids": list(run_ids),
+                "use_validation_selected_checkpoints": use_validation_selected_checkpoints,
+            },
+            inputs=run_inputs
+            + checkpoint_inputs
+            + [{"role": "standard_certificate_manifest", "path": plan.standard_manifest_path}],
+            outputs=[
+                {"role": "map_decomposition_manifest", "path": plan.map_decomposition_json_path},
+                {"role": "map_decomposition_note", "path": plan.map_decomposition_note_path},
+            ],
+            source_files=["src/rlrmp/analysis/gru_map_error_decomposition.py"],
+            notes=[
+                "Postrun-owned regeneration spec for target-relative map-error decomposition."
+            ],
+            repo_root=repo_root,
+        )
+    write_regeneration_spec(
+        spec_path=plan.postrun_regeneration_spec_path,
+        diagnostic_name="gru_postrun_materialization_bundle",
+        materializer="rlrmp.analysis.gru_postrun_materialization.materialize_gru_postrun_analysis",
+        command=None,
+        parameters={
+            "experiment": plan.experiment,
+            "run_ids": list(run_ids),
+            "labels": None if labels is None else list(labels),
+            "output_tag": plan.output_tag,
+            "use_validation_selected_checkpoints": use_validation_selected_checkpoints,
+            "include_reference": include_reference,
+            "n_rollout_trials": n_rollout_trials,
+            "include_objective_comparator": include_objective_comparator,
+            "include_map_decomposition": include_map_decomposition,
+            "include_perturbation_response": include_perturbation_response,
+            "include_feedback_ablation": include_feedback_ablation,
+            "perturbation_bank_mode": perturbation_bank_mode,
+            "perturbation_calibration_level": perturbation_calibration_level,
+            "perturbation_calibration_reach": perturbation_calibration_reach,
+            "feedback_selection_level": feedback_selection_level,
+            "effective_checkpoint_manifest_path": (
+                None
+                if effective_checkpoint_manifest_path is None
+                else _repo_relative(effective_checkpoint_manifest_path, repo_root=repo_root)
+            ),
+        },
+        inputs=run_inputs + checkpoint_inputs,
+        outputs=[
+            {"role": "postrun_manifest", "path": plan.postrun_manifest_path},
+            {"role": "standard_certificate_manifest", "path": plan.standard_manifest_path},
+            {"role": "evaluation_diagnostics_manifest", "path": plan.evaluation_manifest_path},
+            {"role": "pilot_figure_dir", "path": plan.figure_output_dir},
+            {"role": "objective_comparator_manifest", "path": plan.objective_comparator_json_path},
+            {"role": "map_decomposition_manifest", "path": plan.map_decomposition_json_path},
+            {"role": "perturbation_response_manifest", "path": plan.perturbation_response_json_path},
+            {"role": "feedback_ablation_manifest", "path": plan.feedback_ablation_json_path},
+        ],
+        source_files=[
+            "src/rlrmp/analysis/gru_postrun_materialization.py",
+            "src/rlrmp/analysis/cs_gru_standard_materialization.py",
+            "src/rlrmp/analysis/gru_evaluation_diagnostics.py",
+            "src/rlrmp/analysis/gru_pilot_figures.py",
+            "src/rlrmp/analysis/gru_perturbation_bank.py",
+            "src/rlrmp/analysis/gru_feedback_ablation.py",
+        ],
+        notes=[
+            "Bundle-level index for active GRU postrun diagnostics.",
+            "This rlrmp-local spec is expected to be superseded by Feedbax-native GraphSpec/provider manifests.",
+        ],
+        repo_root=repo_root,
+    )
+
+
+def _run_input_refs(
+    experiment: str,
+    run_ids: Sequence[str],
+    *,
+    repo_root: Path,
+) -> list[dict[str, Path | str]]:
+    refs: list[dict[str, Path | str]] = []
+    for run_id in run_ids:
+        refs.append(
+            {
+                "role": "run_spec",
+                "path": repo_root / "results" / experiment / "runs" / run_id / "run.json",
+            }
+        )
+        refs.append(
+            {
+                "role": "run_artifact_dir",
+                "path": repo_root / "_artifacts" / experiment / "runs" / run_id,
+            }
+        )
+    return refs
+
+
+def _regeneration_spec_path(path: Path) -> Path:
+    return path.with_name(f"{path.stem}_regeneration_spec.json")
 
 
 def feedback_checkpoint_selection_status(
@@ -486,6 +797,11 @@ def materialize_optional_perturbation_response(
     output_path: Path,
     note_path: Path,
     bulk_dir: Path,
+    bank_mode: str = "raw",
+    calibration_level: str | Sequence[str] | None = None,
+    calibration_reach: str | float | None = None,
+    preferred_checkpoint_manifest_path: Path | None = None,
+    regeneration_spec_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
     """Call the optional perturbation-response bank materializer."""
@@ -516,6 +832,16 @@ def materialize_optional_perturbation_response(
             output_path=output_path,
             note_path=note_path,
             bulk_dir=bulk_dir,
+            bank_mode=bank_mode,
+            calibration_level=calibration_level,
+            calibration_reach=calibration_reach,
+            preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
+            checkpoint_selection_mode=(
+                "fixed_bank_manifest"
+                if preferred_checkpoint_manifest_path is not None
+                else "sparse_history"
+            ),
+            regeneration_spec_path=regeneration_spec_path,
             repo_root=repo_root,
         )
     except (FileNotFoundError, ValueError, KeyError, AttributeError) as exc:
@@ -536,6 +862,11 @@ def materialize_optional_perturbation_response(
         "json_path": _repo_relative(output_path, repo_root=repo_root),
         "note_path": _repo_relative(note_path, repo_root=repo_root),
         "bulk_dir": _repo_relative(bulk_dir, repo_root=repo_root),
+        "regeneration_spec": (
+            None
+            if regeneration_spec_path is None
+            else _repo_relative(regeneration_spec_path, repo_root=repo_root)
+        ),
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
         "result": {
             "schema_version": result.get("schema_version") if isinstance(result, dict) else None,
@@ -554,6 +885,7 @@ def materialize_optional_map_error_decomposition(
     run_ids: Sequence[str],
     use_validation_selected_checkpoints: bool,
     standard_manifest_path: Path,
+    preferred_checkpoint_manifest_path: Path | None,
     output_path: Path,
     note_path: Path,
     repo_root: Path = REPO_ROOT,
@@ -581,6 +913,7 @@ def materialize_optional_map_error_decomposition(
             experiment=experiment,
             run_ids=tuple(run_ids),
             use_validation_selected_checkpoints=use_validation_selected_checkpoints,
+            preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
             repo_root=repo_root,
         )
     except (FileNotFoundError, ValueError, KeyError, AttributeError) as exc:
@@ -708,6 +1041,23 @@ def checkpoint_policy_name(use_validation_selected_checkpoints: bool) -> str:
         VALIDATION_SELECTED_CHECKPOINT_POLICY
         if use_validation_selected_checkpoints
         else FINAL_CHECKPOINT_POLICY
+    )
+
+
+def _selection_leakage_guard_note(plan: PostrunMaterializationPlan) -> str:
+    if plan.fixed_bank_rescore_manifest_path is not None:
+        return (
+            "This materialization explicitly loads the supplied fixed-bank checkpoint "
+            "manifest. Certificate, I/O map, covariance-weighted map, "
+            "map-decomposition, objective-comparator, split-stress-bank, "
+            "perturbation-response, and feedback-ablation values remain audit "
+            "sidecars and are not silently used to choose checkpoints."
+        )
+    return (
+        "Checkpoint selection uses rollout validation objective only. Certificate, "
+        "I/O map, covariance-weighted map, map-decomposition, objective-comparator, "
+        "split-stress-bank, perturbation-response, and feedback-ablation values are "
+        "audit sidecars and do not replace validation-selected checkpoint loading."
     )
 
 

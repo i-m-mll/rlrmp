@@ -260,10 +260,14 @@ def build_objective_comparator_sidecar(
     metadata_by_id = run_metadata_by_id or {}
     shared_rollout = dict(shared_rollout_comparator or DEFAULT_SHARED_ROLLOUT_STATUS)
     split_bank = dict(split_bank_comparator or _split_bank_from_shared_rollout(shared_rollout))
+    checkpoint_policy = str(
+        checkpoint_selection.get("checkpoint_policy") or "validation_selected_per_replicate"
+    )
     sidecar_rows = [
         _build_run_row(
             run_id=str(run_id),
             selections=_expect_sequence(selections),
+            checkpoint_policy=checkpoint_policy,
             extlqg=extlqg,
             run_metadata=metadata_by_id.get(str(run_id)),
             shared_rollout_run=_shared_rollout_run(shared_rollout, str(run_id)),
@@ -278,13 +282,14 @@ def build_objective_comparator_sidecar(
         "source_manifest": source_manifest,
         "generated_by": generated_by,
         "checkpoint_policy": {
-            "label": "validation_selected_per_replicate",
+            "label": checkpoint_policy,
             "source": checkpoint_selection.get("schema_version"),
+            "selection_source": checkpoint_selection.get("selection_source"),
             "selection_policy": checkpoint_selection.get("selection_policy"),
             "caveat": (
-                "Checkpoint selection is inherited from the validation-selected "
-                "GRU manifest. Analytical action, I/O, and extLQG comparator "
-                "metrics are audit-only and are not used for checkpoint selection."
+                "Checkpoint selection is inherited from the supplied checkpoint "
+                "manifest. Analytical action, I/O, and extLQG comparator metrics "
+                "are audit-only and are not used for checkpoint selection."
             ),
         },
         "objective_lenses": {
@@ -511,7 +516,7 @@ def materialize_shared_rollout_comparator(
     seed: int = 20260603,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
-    """Evaluate extLQG and validation-selected GRUs on one shared bank."""
+    """Evaluate extLQG and selected GRUs on one shared bank."""
 
     from feedbax.types import TreeNamespace, dict_to_namespace
     from rlrmp.analysis.cs_game_card import build_canonical_game
@@ -550,6 +555,9 @@ def materialize_shared_rollout_comparator(
     )
     extlqg_cost = extlqg_cost_by_lens["x0_plus_epsilon"]
     extlqg_decomposition = compute_default_extlqg_cost_decomposition()
+    checkpoint_policy = str(
+        checkpoint_manifest.get("checkpoint_policy") or "validation_selected_per_replicate"
+    )
     x0_sanity = {
         "status": "not_applicable",
         "lens": "extlqg_x0_only_realized_vs_expected_trace",
@@ -572,6 +580,12 @@ def materialize_shared_rollout_comparator(
             experiment=experiment,
             run_id=run.run_id,
             run_spec=run.run_spec,
+            preferred_manifest=checkpoint_manifest,
+            checkpoint_selection_mode=(
+                "fixed_bank_manifest"
+                if checkpoint_policy == "fixed_bank_rescored_per_replicate"
+                else "sparse_history"
+            ),
             repo_root=repo_root,
         )
         base_trial_specs = repeat_single_validation_trial(pair.task.validation_trials, bank.n_trials)
@@ -586,7 +600,7 @@ def materialize_shared_rollout_comparator(
         gru_cost = gru_cost_by_lens["x0_plus_epsilon"]
         run_results[run.run_id] = {
             "status": "available",
-            "checkpoint_policy": "validation_selected_per_replicate",
+            "checkpoint_policy": checkpoint_policy,
             "selection_role": "audit_only_not_used_for_checkpoint_selection",
             "checkpoint_selection": [
                 selection.to_json(repo_root=repo_root) for selection in checkpoint_selection
@@ -612,6 +626,7 @@ def materialize_shared_rollout_comparator(
     return {
         "status": "available",
         "lens": "shared_rollout_full_qrf",
+        "checkpoint_policy": checkpoint_policy,
         "interpretation": "stress_test_only",
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
         "bank": bank.to_json(),
@@ -942,7 +957,10 @@ def materialize_gru_objective_comparator_sidecar(
             "status": "skipped",
             "reason": "objective_comparator_requires_validation_selected_checkpoints",
         }
-    if checkpoint_policy != "validation_selected_per_replicate":
+    if checkpoint_policy not in {
+        "validation_selected_per_replicate",
+        "fixed_bank_rescored_per_replicate",
+    }:
         return {
             "status": "skipped",
             "reason": "unsupported_checkpoint_policy",
@@ -967,7 +985,7 @@ def materialize_gru_objective_comparator_sidecar(
         checkpoint_selection=checkpoint_manifest,
         extlqg=extlqg,
         scope=(
-            "validation-selected checkpoints for C&S GRU runs: "
+            f"{checkpoint_policy} checkpoints for C&S GRU runs: "
             + ", ".join(str(run_id) for run_id in run_ids)
         ),
         generated_by="rlrmp.analysis.objective_comparator.materialize_gru_objective_comparator_sidecar",
@@ -1001,6 +1019,7 @@ def _build_run_row(
     *,
     run_id: str,
     selections: Sequence[Any],
+    checkpoint_policy: str,
     extlqg: ExtLQGCostDecomposition,
     run_metadata: Mapping[str, Any] | None = None,
     shared_rollout_run: Mapping[str, Any] | None = None,
@@ -1017,11 +1036,11 @@ def _build_run_row(
     is_comparable = comparability["status"] == "comparable_deterministic_full_qrf"
     return {
         "run_id": run_id,
-        "checkpoint_policy": "validation_selected_per_replicate",
+        "checkpoint_policy": checkpoint_policy,
         "n_replicates": len(selections),
         "training_objective": metadata,
         "comparability": comparability,
-        "gru_realized_lens": "gru_validation_selected_realized_full_qrf",
+        "gru_realized_lens": "gru_selected_checkpoint_realized_full_qrf",
         "extlqg_comparable_lens": "extlqg_deterministic_initial_state_full_qrf",
         "gru_mean_selected_validation_full_qrf": mean_selected,
         "gru_mean_best_logged_validation_full_qrf": mean_best_logged,

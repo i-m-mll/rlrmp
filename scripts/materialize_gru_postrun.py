@@ -30,6 +30,10 @@ def main() -> None:
         include_map_decomposition=not args.no_map_decomposition,
         include_perturbation_response=not args.no_perturbation_response,
         include_feedback_ablation=not args.no_feedback_ablation,
+        perturbation_bank_mode=args.perturbation_bank_mode,
+        perturbation_calibration_level=args.perturbation_calibration_level,
+        perturbation_calibration_reach=args.perturbation_calibration_reach,
+        feedback_selection_level=args.feedback_selection_level,
         repo_root=args.repo_root,
     )
     print(json.dumps(manifest, indent=2, sort_keys=True))
@@ -97,6 +101,29 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-feedback-ablation",
         action="store_true",
         help="Skip the optional feedback-ablation hook.",
+    )
+    parser.add_argument(
+        "--perturbation-bank-mode",
+        choices=("raw", "calibrated"),
+        default="raw",
+        help="Perturbation-response and feedback-ablation bank mode.",
+    )
+    parser.add_argument(
+        "--perturbation-calibration-level",
+        action="append",
+        help=(
+            "Calibrated perturbation level to include. May be passed more than once; "
+            "omitted means all calibrated levels."
+        ),
+    )
+    parser.add_argument(
+        "--perturbation-calibration-reach",
+        help="Calibrated perturbation reach selector, e.g. canonical_15cm or a meter value.",
+    )
+    parser.add_argument(
+        "--feedback-selection-level",
+        default="small",
+        help="Calibrated severity level used by the feedback-selection audit.",
     )
     parser.add_argument("--repo-root", type=Path, default=Path.cwd())
     return parser

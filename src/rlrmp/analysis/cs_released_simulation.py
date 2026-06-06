@@ -534,6 +534,8 @@ def simulate_lqg_released_forward(
     perturbation: FixedStepPerturbation = FixedStepPerturbation(),
     clean_observation_offset: Float[Array, "T n_obs"] | None = None,
     sensory_feedback_offset: Float[Array, "T n_obs"] | None = None,
+    command_input_offset: Float[Array, "T m_u"] | None = None,
+    initial_estimator_state: Float[Array, " n"] | None = None,
     config: OutputFeedbackConfig = OutputFeedbackConfig(),
 ) -> CSStochasticRollout:
     """Simulate the released-code stochastic lane for the LQG comparator arm."""
@@ -565,6 +567,8 @@ def simulate_lqg_released_forward(
         perturbation=perturbation,
         clean_observation_offset=clean_observation_offset,
         sensory_feedback_offset=sensory_feedback_offset,
+        command_input_offset=command_input_offset,
+        initial_estimator_state=initial_estimator_state,
         config=config,
     )
 
@@ -580,6 +584,8 @@ def simulate_robust_released_forward(
     gains: Float[Array, "T m_u n"] | None = None,
     adversary_epsilon: Float[Array, "T m_w"] | None = None,
     perturbation: FixedStepPerturbation = FixedStepPerturbation(),
+    command_input_offset: Float[Array, "T m_u"] | None = None,
+    initial_estimator_state: Float[Array, " n"] | None = None,
     config: OutputFeedbackConfig = OutputFeedbackConfig(),
 ) -> CSStochasticRollout:
     """Simulate the released-code stochastic lane for the robust arm."""
@@ -622,6 +628,8 @@ def simulate_robust_released_forward(
         estimator_update,
         adversary_epsilon=adversary_epsilon,
         perturbation=perturbation,
+        command_input_offset=command_input_offset,
+        initial_estimator_state=initial_estimator_state,
         config=config,
     )
 
@@ -677,6 +685,8 @@ def _simulate_released_forward(
     perturbation: FixedStepPerturbation,
     clean_observation_offset: Float[Array, "T n_obs"] | None = None,
     sensory_feedback_offset: Float[Array, "T n_obs"] | None = None,
+    command_input_offset: Float[Array, "T m_u"] | None = None,
+    initial_estimator_state: Float[Array, " n"] | None = None,
     config: OutputFeedbackConfig,
 ) -> CSStochasticRollout:
     """Shared released-code stochastic forward simulation core."""
@@ -700,9 +710,22 @@ def _simulate_released_forward(
         sensory_feedback_offset,
         label="sensory_feedback_offset",
     )
+    command_offset = _command_input_offset_sequence(
+        T,
+        plant.m_u,
+        command_input_offset,
+        label="command_input_offset",
+    )
     perturb = _perturbation_sequence(T, plant.n, perturbation)
     x_seq = [x0.astype(jnp.float64)]
-    xhat_seq = [x0.astype(jnp.float64)]
+    xhat0 = (
+        x0.astype(jnp.float64)
+        if initial_estimator_state is None
+        else initial_estimator_state.astype(jnp.float64)
+    )
+    if xhat0.shape != (plant.n,):
+        raise ValueError(f"initial_estimator_state shape must be ({plant.n},); got {xhat0.shape}.")
+    xhat_seq = [xhat0]
     y_clean_seq = []
     y_seq = []
     u_command_seq = []
@@ -726,12 +749,12 @@ def _simulate_released_forward(
             covariances.signal_dependent_state,
             u_command,
         )
-        u_applied = u_command
+        u_applied = u_command + command_offset[t]
         process = draws.process[t]
         xhat_next = estimator_update(t, x_t, xhat_t, y_t, u_command)
         x_next = (
             plant.A @ x_t
-            + plant.B @ u_command
+            + plant.B @ u_applied
             + plant.Bw @ eps[t]
             + motor
             + signal_dependent
@@ -848,6 +871,23 @@ def _observation_offset_sequence(
     values = offset.astype(jnp.float64)
     if values.shape != (T, n_obs):
         raise ValueError(f"{label} shape must be ({T}, {n_obs}); got {values.shape}.")
+    return values
+
+
+def _command_input_offset_sequence(
+    T: int,
+    m_u: int,
+    offset: Float[Array, "T m_u"] | None,
+    *,
+    label: str,
+) -> Float[Array, "T m_u"]:
+    """Return a validated dense command-input offset sequence."""
+
+    if offset is None:
+        return jnp.zeros((T, m_u), dtype=jnp.float64)
+    values = offset.astype(jnp.float64)
+    if values.shape != (T, m_u):
+        raise ValueError(f"{label} shape must be ({T}, {m_u}); got {values.shape}.")
     return values
 
 

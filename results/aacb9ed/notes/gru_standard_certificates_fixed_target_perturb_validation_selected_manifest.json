@@ -398,6 +398,7 @@
   },
   "format": "rlrmp.cs_gru_standard_certificates.v1",
   "issue": "e6a32b8",
+  "regeneration_spec": "results/aacb9ed/notes/gru_standard_certificates_fixed_target_perturb_validation_selected_manifest_regeneration_spec.json",
   "rows": [
     {
       "arrays": [],

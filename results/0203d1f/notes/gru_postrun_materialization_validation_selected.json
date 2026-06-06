@@ -40,6 +40,7 @@
     "standard_manifest_path": "results/0203d1f/notes/gru_standard_certificates_validation_selected_manifest.json",
     "standard_note_path": "results/0203d1f/notes/gru_standard_certificates_validation_selected.md"
   },
+  "regeneration_spec": "results/0203d1f/notes/gru_postrun_materialization_validation_selected_regeneration_spec.json",
   "run_ids": [
     "lss_ablation_partial_net_force_filter__lr1e-3_clip5_b64"
   ],

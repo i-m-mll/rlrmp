@@ -6,7 +6,7 @@ import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import equinox as eqx
 import jax.numpy as jnp
@@ -25,6 +25,7 @@ FIXED_BANK_SCHEMA_VERSION = "rlrmp.fixed_bank_gru_checkpoint_rescore.v1"
 SPARSE_HISTORY_CHECKPOINT_POLICY = "validation_selected_per_replicate"
 FIXED_BANK_CHECKPOINT_POLICY = "fixed_bank_rescored_per_replicate"
 DEFAULT_FIXED_BANK_MANIFEST_NAME = "fixed_bank_rescored_checkpoints.json"
+CheckpointSelectionMode = Literal["sparse_history", "fixed_bank_manifest"]
 
 
 @dataclass(frozen=True)
@@ -105,18 +106,21 @@ def materialize_validation_selected_checkpoint_manifest(
     repo_root: Path = REPO_ROOT,
     output_path: Path | None = None,
     preferred_manifest_path: Path | None = None,
+    checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
 ) -> dict[str, Any]:
     """Write a JSON manifest of recoverable validation-selected checkpoints.
 
-    If a materialized fixed-bank rescore manifest is available, it is copied into
-    the output slot. Otherwise the legacy sparse-history selector is materialized
-    with explicit fallback provenance.
+    The default mode selects from sparse training-history validation records.
+    Callers that deliberately want a supplied fixed-bank rescore manifest must
+    pass ``checkpoint_selection_mode="fixed_bank_manifest"``.
     """
 
-    preferred_manifest = load_materialized_fixed_bank_manifest(
+    preferred_manifest = _resolve_checkpoint_selection_manifest(
+        checkpoint_selection_mode=checkpoint_selection_mode,
         experiment=experiment,
+        run_ids=run_ids,
         repo_root=repo_root,
-        manifest_path=preferred_manifest_path,
+        preferred_manifest_path=preferred_manifest_path,
     )
     selections = {
         run_id: [
@@ -126,6 +130,7 @@ def materialize_validation_selected_checkpoint_manifest(
                 run_id=run_id,
                 repo_root=repo_root,
                 preferred_manifest=preferred_manifest,
+                checkpoint_selection_mode=checkpoint_selection_mode,
             )
         ]
         for run_id in run_ids
@@ -338,17 +343,31 @@ def select_validation_checkpoints_for_run(
     repo_root: Path = REPO_ROOT,
     preferred_manifest: Mapping[str, Any] | None = None,
     preferred_manifest_path: Path | None = None,
+    checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
 ) -> list[ReplicateCheckpointSelection]:
     """Select the best available checkpoint for each replicate in a run.
 
-    A materialized fixed-bank manifest is preferred when supplied or available.
-    If not, selection falls back to sparse positive validation-history records.
+    ``sparse_history`` uses positive validation-history records only.
+    ``fixed_bank_manifest`` uses a supplied materialized fixed-bank manifest and
+    never falls back silently.
     """
 
-    manifest = preferred_manifest or load_materialized_fixed_bank_manifest(
+    if checkpoint_selection_mode == "sparse_history":
+        return select_sparse_history_validation_checkpoints_for_run(
+            experiment=experiment,
+            run_id=run_id,
+            repo_root=repo_root,
+        )
+    if checkpoint_selection_mode != "fixed_bank_manifest":
+        raise ValueError(f"unsupported checkpoint selection mode {checkpoint_selection_mode!r}")
+
+    manifest = _resolve_checkpoint_selection_manifest(
+        checkpoint_selection_mode=checkpoint_selection_mode,
         experiment=experiment,
+        run_ids=(run_id,),
         repo_root=repo_root,
-        manifest_path=preferred_manifest_path,
+        preferred_manifest=preferred_manifest,
+        preferred_manifest_path=preferred_manifest_path,
     )
     if manifest is not None and run_id in manifest.get("runs", {}):
         return selections_from_manifest_run(
@@ -358,10 +377,9 @@ def select_validation_checkpoints_for_run(
             repo_root=repo_root,
         )
 
-    return select_sparse_history_validation_checkpoints_for_run(
-        experiment=experiment,
-        run_id=run_id,
-        repo_root=repo_root,
+    raise ValueError(
+        f"Fixed-bank checkpoint manifest does not contain run {run_id!r} for "
+        f"experiment {experiment!r}"
     )
 
 
@@ -434,13 +452,24 @@ def load_validation_selected_checkpoint_model(
     experiment: str,
     run_id: str,
     run_spec: Mapping[str, Any],
+    preferred_manifest: Mapping[str, Any] | None = None,
+    preferred_manifest_path: Path | None = None,
+    checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
     repo_root: Path = REPO_ROOT,
 ) -> tuple[Any, list[ReplicateCheckpointSelection]]:
     """Load a model ensemble assembled from per-replicate selected checkpoints."""
 
+    effective_selection_mode = checkpoint_selection_mode
+    if effective_selection_mode == "sparse_history" and (
+        preferred_manifest is not None or preferred_manifest_path is not None
+    ):
+        effective_selection_mode = "fixed_bank_manifest"
     selections = select_validation_checkpoints_for_run(
         experiment=experiment,
         run_id=run_id,
+        preferred_manifest=preferred_manifest,
+        preferred_manifest_path=preferred_manifest_path,
+        checkpoint_selection_mode=effective_selection_mode,
         repo_root=repo_root,
     )
     hps = dict_to_namespace(normalize_gru_hps(run_spec["hps"]), to_type=TreeNamespace)
@@ -615,6 +644,43 @@ def fixed_bank_manifest_for_runs(
     }
 
 
+def _resolve_checkpoint_selection_manifest(
+    *,
+    checkpoint_selection_mode: CheckpointSelectionMode,
+    experiment: str,
+    run_ids: Sequence[str],
+    repo_root: Path = REPO_ROOT,
+    preferred_manifest: Mapping[str, Any] | None = None,
+    preferred_manifest_path: Path | None = None,
+) -> Mapping[str, Any] | None:
+    """Return the explicit fixed-bank manifest for ``run_ids`` when requested."""
+
+    if checkpoint_selection_mode == "sparse_history":
+        return None
+    if checkpoint_selection_mode != "fixed_bank_manifest":
+        raise ValueError(f"unsupported checkpoint selection mode {checkpoint_selection_mode!r}")
+    manifest = preferred_manifest or load_materialized_fixed_bank_manifest(
+        experiment=experiment,
+        repo_root=repo_root,
+        manifest_path=preferred_manifest_path,
+    )
+    if manifest is None:
+        raise ValueError(
+            "checkpoint_selection_mode='fixed_bank_manifest' requires a materialized "
+            "fixed-bank checkpoint manifest"
+        )
+    runs = manifest.get("runs", {})
+    if not isinstance(runs, Mapping):
+        raise ValueError("fixed-bank checkpoint manifest has no run mapping")
+    missing = [run_id for run_id in run_ids if run_id not in runs]
+    if missing:
+        raise ValueError(
+            "fixed-bank checkpoint manifest is missing requested run(s): "
+            + ", ".join(missing)
+        )
+    return manifest
+
+
 def selections_from_manifest_run(
     rows: Sequence[Mapping[str, Any]],
     *,
@@ -700,6 +766,7 @@ def _repo_relative(path: Path, *, repo_root: Path = REPO_ROOT) -> str:
 
 
 __all__ = [
+    "CheckpointSelectionMode",
     "ReplicateCheckpointSelection",
     "FixedValidationBankSpec",
     "active_loss_term_labels",

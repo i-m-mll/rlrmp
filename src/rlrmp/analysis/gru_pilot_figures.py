@@ -120,6 +120,7 @@ def materialize_gru_pilot_figures(
     n_rollout_trials: int = DEFAULT_N_ROLLOUT_TRIALS,
     include_reference: bool = True,
     use_validation_selected_checkpoints: bool = False,
+    preferred_checkpoint_manifest_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
     """Write loss and velocity figures for listed GRU pilot runs.
@@ -156,6 +157,12 @@ def materialize_gru_pilot_figures(
         materialize_validation_selected_checkpoint_manifest(
             experiment=experiment,
             run_ids=run_ids,
+            preferred_manifest_path=preferred_checkpoint_manifest_path,
+            checkpoint_selection_mode=(
+                "fixed_bank_manifest"
+                if preferred_checkpoint_manifest_path is not None
+                else "sparse_history"
+            ),
             repo_root=repo_root,
         )
         if use_validation_selected_checkpoints
@@ -173,6 +180,7 @@ def materialize_gru_pilot_figures(
             run,
             n_rollout_trials=n_rollout_trials,
             use_validation_selected_checkpoints=use_validation_selected_checkpoints,
+            preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
             experiment=experiment,
             repo_root=repo_root,
         )
@@ -356,6 +364,7 @@ def evaluate_stochastic_forward_velocity_profile(
     n_rollout_trials: int,
     use_validation_selected_checkpoints: bool = False,
     experiment: str = "",
+    preferred_checkpoint_manifest_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> VelocityProfile:
     """Evaluate one trained GRU under repeated stochastic fixed validation trials."""
@@ -372,6 +381,12 @@ def evaluate_stochastic_forward_velocity_profile(
             experiment=experiment,
             run_id=run.run_id,
             run_spec=run.run_spec,
+            preferred_manifest_path=preferred_checkpoint_manifest_path,
+            checkpoint_selection_mode=(
+                "fixed_bank_manifest"
+                if preferred_checkpoint_manifest_path is not None
+                else "sparse_history"
+            ),
             repo_root=repo_root,
         )
     else:
