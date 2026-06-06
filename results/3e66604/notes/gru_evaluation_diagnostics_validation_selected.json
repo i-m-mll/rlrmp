@@ -1,5 +1,6 @@
 {
   "issue": "3e66604",
+  "regeneration_spec": "results/3e66604/notes/gru_evaluation_diagnostics_validation_selected_regeneration_spec.json",
   "runs": {
     "lss_stabilization__lr1e-3_clip1_b250": {
       "artifact_dir": "_artifacts/3e66604/runs/lss_stabilization__lr1e-3_clip1_b250",

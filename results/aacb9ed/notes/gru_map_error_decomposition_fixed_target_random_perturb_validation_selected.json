@@ -2,6 +2,7 @@
   "checkpoint_policy": "validation_selected_per_replicate",
   "format": "rlrmp.gru_map_error_decomposition.v1",
   "issue": "ddf7f43",
+  "regeneration_spec": "results/aacb9ed/notes/gru_map_error_decomposition_fixed_target_random_perturb_validation_selected_regeneration_spec.json",
   "rows": [
     {
       "decomposition": {

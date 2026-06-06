@@ -1,0 +1,24 @@
+{
+  "created_or_updated_specs": [
+    "results/aacb9ed/notes/gru_evaluation_diagnostics_fixed_target_perturb_validation_selected_regeneration_spec.json",
+    "results/aacb9ed/notes/gru_evaluation_diagnostics_fixed_target_random_perturb_validation_selected_regeneration_spec.json",
+    "results/aacb9ed/notes/gru_map_error_decomposition_fixed_target_random_perturb_validation_selected_aligned_regeneration_spec.json",
+    "results/aacb9ed/notes/gru_map_error_decomposition_fixed_target_random_perturb_validation_selected_regeneration_spec.json",
+    "results/aacb9ed/notes/gru_perturbation_response_fixed_target_perturb_validation_selected_manifest_regeneration_spec.json",
+    "results/aacb9ed/notes/gru_perturbation_response_fixed_target_random_perturb_validation_selected_manifest_regeneration_spec.json",
+    "results/aacb9ed/notes/gru_postrun_materialization_fixed_target_perturb_validation_selected_regeneration_spec.json",
+    "results/aacb9ed/notes/gru_postrun_materialization_fixed_target_random_perturb_validation_selected_regeneration_spec.json",
+    "results/aacb9ed/notes/gru_standard_certificates_feedback_v2_fixed_target_random_perturb_validation_selected_manifest_regeneration_spec.json",
+    "results/aacb9ed/notes/gru_standard_certificates_fixed_target_perturb_validation_selected_manifest_regeneration_spec.json",
+    "results/aacb9ed/notes/gru_standard_certificates_fixed_target_random_perturb_validation_selected_manifest_regeneration_spec.json",
+    "results/aacb9ed/notes/objective_comparator_fixed_target_perturb_validation_selected_regeneration_spec.json",
+    "results/aacb9ed/notes/objective_comparator_fixed_target_random_perturb_validation_selected_regeneration_spec.json",
+    "results/aacb9ed/notes/validation_selected_checkpoints_fixed_target_random_perturb_validation_selected_regeneration_spec.json",
+    "results/aacb9ed/notes/validation_selected_checkpoints_regeneration_spec.json"
+  ],
+  "issue": "aacb9ed",
+  "posthoc_backfill": true,
+  "schema_version": "rlrmp.diagnostic_regeneration_backfill_index.v1",
+  "scope": "active_gru_diagnostics_only",
+  "tracking_issue": "25c4c36"
+}

@@ -49,6 +49,7 @@
     "standard_manifest_path": "results/5f70333/notes/gru_standard_certificates_fullqrf_validation_selected_manifest.json",
     "standard_note_path": "results/5f70333/notes/gru_standard_certificates_fullqrf_validation_selected.md"
   },
+  "regeneration_spec": "results/5f70333/notes/gru_postrun_materialization_fullqrf_validation_selected_regeneration_spec.json",
   "run_ids": [
     "lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64",
     "lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64"

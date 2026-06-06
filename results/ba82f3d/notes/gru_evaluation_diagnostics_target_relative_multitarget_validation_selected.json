@@ -1,6 +1,7 @@
 {
   "checkpoint_policy": "validation_selected_per_replicate",
   "issue": "ba82f3d",
+  "regeneration_spec": "results/ba82f3d/notes/gru_evaluation_diagnostics_target_relative_multitarget_validation_selected_regeneration_spec.json",
   "runs": {
     "target_relative_multitarget_fullqrf_warmcos__lr1e-3_clip5_b64": {
       "artifact_dir": "_artifacts/ba82f3d/runs/target_relative_multitarget_fullqrf_warmcos__lr1e-3_clip5_b64",

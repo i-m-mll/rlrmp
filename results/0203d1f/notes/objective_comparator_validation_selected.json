@@ -38,6 +38,7 @@
       "kind": "realized_validation_objective"
     }
   },
+  "regeneration_spec": "results/0203d1f/notes/objective_comparator_validation_selected_regeneration_spec.json",
   "rows": [
     {
       "best_logged_to_extlqg_deterministic_ratio": 0.6952699847936143,

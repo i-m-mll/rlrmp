@@ -2,6 +2,7 @@
   "checkpoint_policy": "validation_selected_per_replicate",
   "history_validation_log_note": "Validation history contains sparse positive records and zero padding. Durable models are only available at numbered checkpoints, so each checkpoint is scored by the most recent positive validation record at or before that checkpoint.",
   "issue": "aacb9ed",
+  "regeneration_spec": "results/aacb9ed/notes/validation_selected_checkpoints_fixed_target_random_perturb_validation_selected_regeneration_spec.json",
   "runs": {
     "fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64": [
       {

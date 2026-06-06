@@ -7,6 +7,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from rlrmp.analysis.diagnostic_provenance import repo_relative, write_regeneration_spec
 from rlrmp.paths import REPO_ROOT
 
 
@@ -18,6 +19,9 @@ DEFAULT_OUTPUT_JSON = (
 )
 DEFAULT_OUTPUT_MARKDOWN = (
     REPO_ROOT / "results" / ISSUE_ID / "notes" / "hinf_phenotype_sidecar.md"
+)
+DEFAULT_REGENERATION_SPEC = (
+    REPO_ROOT / "results" / ISSUE_ID / "notes" / "hinf_phenotype_sidecar_regeneration_spec.json"
 )
 
 DEFAULT_SOURCE_NAMES = (
@@ -117,13 +121,29 @@ def write_hinf_phenotype_sidecar(
     *,
     json_path: Path = DEFAULT_OUTPUT_JSON,
     markdown_path: Path = DEFAULT_OUTPUT_MARKDOWN,
+    regeneration_spec_path: Path | None = DEFAULT_REGENERATION_SPEC,
+    repo_root: Path = REPO_ROOT,
 ) -> None:
     """Write compact JSON and Markdown H-infinity phenotype sidecars."""
 
     json_path.parent.mkdir(parents=True, exist_ok=True)
     markdown_path.parent.mkdir(parents=True, exist_ok=True)
-    json_path.write_text(json.dumps(sidecar, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    markdown_path.write_text(render_hinf_phenotype_markdown(sidecar), encoding="utf-8")
+    payload = dict(sidecar)
+    if regeneration_spec_path is not None:
+        payload["regeneration_spec_path"] = repo_relative(
+            regeneration_spec_path,
+            repo_root=repo_root,
+        )
+    json_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    markdown_path.write_text(render_hinf_phenotype_markdown(payload), encoding="utf-8")
+    if regeneration_spec_path is not None:
+        _write_hinf_regeneration_spec(
+            sidecar=payload,
+            spec_path=regeneration_spec_path,
+            json_path=json_path,
+            markdown_path=markdown_path,
+            repo_root=repo_root,
+        )
 
 
 def render_hinf_phenotype_markdown(sidecar: Mapping[str, Any]) -> str:
@@ -136,6 +156,8 @@ def render_hinf_phenotype_markdown(sidecar: Mapping[str, Any]) -> str:
             "Interpretive robustness phenotype report. This is not a standard "
             "certificate and is not a checkpoint-selection input."
         ),
+        "",
+        f"Regeneration spec: `{sidecar.get('regeneration_spec_path', 'not_materialized')}`",
         "",
         "## Component Status",
         "",
@@ -898,9 +920,83 @@ def _repo_relative(path: Path, *, repo_root: Path) -> str:
         return path.as_posix()
 
 
+def _write_hinf_regeneration_spec(
+    *,
+    sidecar: Mapping[str, Any],
+    spec_path: Path,
+    json_path: Path,
+    markdown_path: Path,
+    repo_root: Path,
+) -> dict[str, Any]:
+    source_inputs = []
+    source_args: list[str] = []
+    for component_name, component in sidecar.get("components", {}).items():
+        if not isinstance(component, Mapping):
+            continue
+        source_path = component.get("source_path")
+        if source_path:
+            source_inputs.append(
+                {
+                    "role": f"{component_name}_manifest",
+                    "path": source_path,
+                    "status": component.get("status"),
+                }
+            )
+            source_args.extend([f"--{component_name.replace('_', '-')}", str(source_path)])
+        else:
+            source_inputs.append(
+                {
+                    "role": f"{component_name}_manifest",
+                    "status": component.get("status"),
+                    "reason": component.get("reason", "source path not provided"),
+                }
+            )
+    return write_regeneration_spec(
+        spec_path=spec_path,
+        diagnostic_name="hinf_phenotype_sidecar",
+        materializer="rlrmp.analysis.hinf_phenotype_sidecar.write_hinf_phenotype_sidecar",
+        command=[
+            "uv",
+            "run",
+            "python",
+            "scripts/materialize_hinf_phenotype_sidecar.py",
+            "--scope",
+            str(sidecar.get("scope", DEFAULT_SCOPE)),
+            *source_args,
+            "--json-output",
+            repo_relative(json_path, repo_root=repo_root),
+            "--markdown-output",
+            repo_relative(markdown_path, repo_root=repo_root),
+            "--regeneration-spec-path",
+            repo_relative(spec_path, repo_root=repo_root),
+        ],
+        parameters={
+            "issue": sidecar.get("issue"),
+            "scope": sidecar.get("scope"),
+            "component_names": sorted(str(name) for name in sidecar.get("components", {})),
+        },
+        inputs=source_inputs,
+        outputs=[
+            {"role": "sidecar_json", "path": json_path},
+            {"role": "sidecar_markdown", "path": markdown_path},
+        ],
+        source_files=[
+            "src/rlrmp/analysis/hinf_phenotype_sidecar.py",
+            "scripts/materialize_hinf_phenotype_sidecar.py",
+            "src/rlrmp/analysis/diagnostic_provenance.py",
+        ],
+        notes=[
+            "Interpretive phenotype sidecar only; not a formal H-infinity certificate.",
+            "Spec records source manifests loaded for aggregation and the JSON/Markdown outputs.",
+        ],
+        repo_root=repo_root,
+    )
+
+
 __all__ = [
     "DEFAULT_OUTPUT_JSON",
     "DEFAULT_OUTPUT_MARKDOWN",
+    "DEFAULT_REGENERATION_SPEC",
     "DEFAULT_SCOPE",
     "ISSUE_ID",
     "SCHEMA_VERSION",

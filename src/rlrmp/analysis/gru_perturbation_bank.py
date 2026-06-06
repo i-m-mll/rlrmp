@@ -26,7 +26,12 @@ from rlrmp.analysis.cs_released_simulation import (
     zero_forward_noise_draws,
     zero_noise_covariances,
 )
-from rlrmp.analysis.gru_checkpoint_selection import load_validation_selected_checkpoint_model
+from rlrmp.analysis.diagnostic_provenance import write_regeneration_spec
+from rlrmp.analysis.gru_checkpoint_selection import (
+    CheckpointSelectionMode,
+    load_materialized_fixed_bank_manifest,
+    load_validation_selected_checkpoint_model,
+)
 from rlrmp.analysis.gru_evaluation_diagnostics import RolloutEvaluation
 from rlrmp.analysis.gru_pilot_figures import (
     RunFigureInputs,
@@ -45,6 +50,7 @@ from rlrmp.paths import REPO_ROOT, mkdir_p
 
 SCHEMA_VERSION = "rlrmp.gru_perturbation_bank.v3"
 DEFAULT_BANK_ID = "cs_standard_perturbation_response_v3"
+CALIBRATED_BANK_ID = "cs_calibrated_perturbation_response_v3"
 DEFAULT_OUTPUT_FILENAME = "gru_perturbation_response_fullqrf_validation_selected_manifest.json"
 DEFAULT_NOTE_FILENAME = "gru_perturbation_response_fullqrf_validation_selected.md"
 DEFAULT_BULK_SUBDIR = "perturbation_response/gru_fullqrf_validation_selected"
@@ -154,6 +160,7 @@ class PerturbationSpec:
     timing_bin: str | None = None
     semantic_family: str | None = None
     channel_provenance: Mapping[str, Any] | None = None
+    calibration_provenance: Mapping[str, Any] | None = None
 
     def to_json(self) -> dict[str, Any]:
         """Return a JSON-serializable perturbation specification."""
@@ -185,6 +192,8 @@ class PerturbationSpec:
             row["semantic_family"] = self.semantic_family
         if self.channel_provenance is not None:
             row["channel_provenance"] = dict(self.channel_provenance)
+        if self.calibration_provenance is not None:
+            row.update(dict(self.calibration_provenance))
         return row
 
 
@@ -208,8 +217,21 @@ class AdapterResult:
         }
 
 
-def default_cs_perturbation_bank() -> dict[str, Any]:
+def default_cs_perturbation_bank(
+    *,
+    mode: Literal["raw", "calibrated"] = "raw",
+    calibration_level: str | Sequence[str] | None = None,
+    calibration_reach: str | float | None = None,
+) -> dict[str, Any]:
     """Return the JSON-serializable default C&S perturbation-response bank."""
+
+    if mode == "calibrated":
+        return default_cs_calibrated_perturbation_bank(
+            calibration_level=calibration_level,
+            calibration_reach=calibration_reach,
+        )
+    if mode != "raw":
+        raise ValueError(f"unsupported perturbation bank mode {mode!r}")
 
     from rlrmp.analysis.gru_perturbation_calibration import (
         DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS,
@@ -521,6 +543,369 @@ def default_cs_perturbation_bank() -> dict[str, Any]:
     }
 
 
+def default_cs_calibrated_perturbation_bank(
+    *,
+    calibration_level: str | Sequence[str] | None = None,
+    calibration_reach: str | float | None = None,
+) -> dict[str, Any]:
+    """Return a reach-relative calibrated C&S perturbation-response bank."""
+
+    from rlrmp.analysis.gru_perturbation_calibration import (
+        DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS,
+        DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S,
+        DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT,
+        DEFAULT_PLANT_TIMING_BINS,
+        DEFAULT_REACH_CALIBRATION_POINTS,
+        DEFAULT_REACH_RELATIVE_LEVELS,
+        calibrated_amplitude_from_unit_sensitivity,
+    )
+
+    reach = _select_reach_calibration_point(
+        calibration_reach,
+        reach_points=DEFAULT_REACH_CALIBRATION_POINTS,
+    )
+    levels = _select_reach_relative_levels(
+        calibration_level,
+        levels=DEFAULT_REACH_RELATIVE_LEVELS,
+    )
+    perturbations: list[PerturbationSpec] = []
+
+    def provenance(
+        *,
+        level: Any,
+        calibration_role: str,
+        open_loop_peak_dx_per_unit_m: float | None = None,
+        open_loop_auc_dx_per_unit_m_s: float | None = None,
+        target_open_loop_peak_dx_m: float | None = None,
+        target_open_loop_auc_dx_m_s: float | None = None,
+        native_unit_rule: str | None = None,
+    ) -> dict[str, Any]:
+        row: dict[str, Any] = {
+            "calibration_mode": "reach_relative_peak_delta_x",
+            "calibration_role": calibration_role,
+            "level_name": level.name,
+            "level_fraction_of_reach": float(level.fraction_of_reach),
+            "reach_label": reach.label,
+            "reach_length_m": float(reach.reach_length_m),
+        }
+        if open_loop_peak_dx_per_unit_m is not None:
+            row["open_loop_peak_dx_per_unit_m"] = float(open_loop_peak_dx_per_unit_m)
+        if open_loop_auc_dx_per_unit_m_s is not None:
+            row["open_loop_auc_dx_per_unit_m_s"] = float(open_loop_auc_dx_per_unit_m_s)
+        if target_open_loop_peak_dx_m is not None:
+            row["target_open_loop_peak_dx_m"] = float(target_open_loop_peak_dx_m)
+        if target_open_loop_auc_dx_m_s is not None:
+            row["target_open_loop_auc_dx_m_s"] = float(target_open_loop_auc_dx_m_s)
+        if native_unit_rule is not None:
+            row["native_unit_rule"] = native_unit_rule
+        return row
+
+    for level in levels:
+        target_peak = float(reach.reach_length_m) * float(level.fraction_of_reach)
+        for family, units in (
+            ("initial_position_offset", "m"),
+            ("initial_velocity_offset", "m/s"),
+        ):
+            sensitivity = DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[family]["initial_condition"]
+            amplitude = calibrated_amplitude_from_unit_sensitivity(
+                target_peak_delta_x_m=target_peak,
+                peak_delta_x_per_unit_m=float(sensitivity),
+            )
+            for axis in ("x", "y"):
+                for sign in (-1, 1):
+                    perturbations.append(
+                        PerturbationSpec(
+                            perturbation_id=(
+                                f"{family}__{level.name}__{axis}_{_sign_label(sign)}"
+                            ),
+                            channel="initial_state",
+                            family=family,
+                            amplitude=amplitude,
+                            units=units,
+                            axis=axis,
+                            basis="plant_cartesian_xy",
+                            sign=sign,
+                            timing={"epoch": "initial_condition", "time_index": 0},
+                            adapter="task_trial_spec.inits",
+                            description=(
+                                "Reach-relative calibrated initial effector "
+                                f"{'position' if 'position' in family else 'velocity'} offset."
+                            ),
+                            initial_position_case=(
+                                "D_current_state_immediately_visible"
+                                if family == "initial_position_offset"
+                                else None
+                            ),
+                            timing_bin="initial_condition",
+                            calibration_provenance=provenance(
+                                level=level,
+                                calibration_role="reach_relative_calibrated_open_loop",
+                                open_loop_peak_dx_per_unit_m=float(sensitivity),
+                                target_open_loop_peak_dx_m=target_peak,
+                            ),
+                        )
+                    )
+
+        for timing_bin in DEFAULT_PLANT_TIMING_BINS:
+            start = int(timing_bin.start_time_index)
+            duration = int(timing_bin.duration_steps)
+            for family, channel, units, basis, adapter, extra in (
+                (
+                    "command_input_pulse",
+                    "command_input",
+                    "N",
+                    "command_cartesian_force_xy",
+                    "temporary_external_graph_adapter.command_input",
+                    {},
+                ),
+                (
+                    "process_epsilon_position_xy",
+                    "process_epsilon",
+                    "epsilon",
+                    "cs_lss_process_epsilon_current_physical_block",
+                    "task_trial_spec.inputs['epsilon']",
+                    {"epsilon_index_offset": 0, "epsilon_component_prefix": "position"},
+                ),
+                (
+                    "process_epsilon_velocity_xy",
+                    "process_epsilon",
+                    "epsilon",
+                    "cs_lss_process_epsilon_current_physical_block",
+                    "task_trial_spec.inputs['epsilon']",
+                    {"epsilon_index_offset": 2, "epsilon_component_prefix": "velocity"},
+                ),
+                (
+                    "process_epsilon_force_state_xy",
+                    "process_epsilon",
+                    "epsilon",
+                    "cs_lss_process_epsilon_current_physical_block",
+                    "task_trial_spec.inputs['epsilon']",
+                    {"epsilon_index_offset": 4, "epsilon_component_prefix": "force_state"},
+                ),
+                (
+                    "process_epsilon_integrator_xy",
+                    "process_epsilon",
+                    "epsilon",
+                    "cs_lss_process_epsilon_current_physical_block",
+                    "task_trial_spec.inputs['epsilon']",
+                    {"epsilon_index_offset": 6, "epsilon_component_prefix": "integrator"},
+                ),
+            ):
+                sensitivity = float(
+                    DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[family][timing_bin.label]
+                )
+                amplitude = calibrated_amplitude_from_unit_sensitivity(
+                    target_peak_delta_x_m=target_peak,
+                    peak_delta_x_per_unit_m=sensitivity,
+                )
+                for axis in ("x", "y"):
+                    axis_index = _axis_index(axis)
+                    for sign in (-1, 1):
+                        epsilon_index = None
+                        epsilon_component = None
+                        if channel == "process_epsilon":
+                            epsilon_index = int(extra["epsilon_index_offset"]) + axis_index
+                            epsilon_component = f"{extra['epsilon_component_prefix']}_{axis}"
+                        perturbations.append(
+                            PerturbationSpec(
+                                perturbation_id=(
+                                    f"{family}__{level.name}__{timing_bin.label}_t{start}_"
+                                    f"{axis}_{_sign_label(sign)}"
+                                ),
+                                channel=channel,  # type: ignore[arg-type]
+                                family=family,
+                                amplitude=amplitude,
+                                units=units,
+                                axis=axis,
+                                basis=basis,
+                                sign=sign,
+                                timing={
+                                    "epoch": "movement_indexed",
+                                    "start_time_index": start,
+                                    "duration_steps": duration,
+                                    "timing_bin": timing_bin.label,
+                                    "timing_bin_role": timing_bin.role,
+                                },
+                                adapter=adapter,
+                                description=(
+                                    "Reach-relative calibrated plant-side perturbation "
+                                    "using open-loop peak delta-x sensitivity."
+                                ),
+                                epsilon_component=epsilon_component,
+                                epsilon_index=epsilon_index,
+                                timing_bin=timing_bin.label,
+                                calibration_provenance=provenance(
+                                    level=level,
+                                    calibration_role="reach_relative_calibrated_open_loop",
+                                    open_loop_peak_dx_per_unit_m=sensitivity,
+                                    target_open_loop_peak_dx_m=target_peak,
+                                ),
+                            )
+                        )
+
+        for timing_bin in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS:
+            start = int(timing_bin.start_time_index)
+            duration = int(timing_bin.duration_steps)
+            for channel, family, basis, semantic_family, channel_provenance in (
+                (
+                    "sensory_feedback",
+                    "sensory_feedback_offset",
+                    "sensory_feedback_named_channel",
+                    None,
+                    {
+                        "information_structure": "post_noise_controller_visible_feedback",
+                        "insertion_point": "sensory.output -> net.feedback",
+                    },
+                ),
+                (
+                    "delayed_observation",
+                    "delayed_observation_offset",
+                    "pre_noise_delayed_measurement_named_channel",
+                    "pre_noise_delayed_measurement_offset",
+                    {
+                        "compatibility_channel": "delayed_observation",
+                        "information_structure": "pre_noise_delayed_measurement_offset",
+                        "insertion_point": "feedback.feedback -> sensory.input",
+                        "not_literal_extra_delay": True,
+                    },
+                ),
+            ):
+                for axis in ("x", "y"):
+                    for sign in (-1, 1):
+                        perturbations.append(
+                            PerturbationSpec(
+                                perturbation_id=(
+                                    f"{family}__position_{level.name}__"
+                                    f"{timing_bin.label}_t{start}_{axis}_{_sign_label(sign)}"
+                                ),
+                                channel=channel,  # type: ignore[arg-type]
+                                family=family,
+                                amplitude=target_peak,
+                                units="m",
+                                axis=axis,
+                                basis=basis,
+                                sign=sign,
+                                timing={
+                                    "epoch": "controller_visible",
+                                    "start_time_index": start,
+                                    "duration_steps": duration,
+                                    "timing_bin": timing_bin.label,
+                                    "timing_bin_role": timing_bin.role,
+                                },
+                                adapter=f"temporary_external_graph_adapter.{channel}",
+                                description=(
+                                    "Native controller-visible position offset scaled "
+                                    "as a fraction of reach length."
+                                ),
+                                timing_bin=timing_bin.label,
+                                semantic_family=semantic_family,
+                                channel_provenance=channel_provenance,
+                                calibration_provenance=provenance(
+                                    level=level,
+                                    calibration_role="reach_relative_calibrated_native_units",
+                                    target_open_loop_peak_dx_m=target_peak,
+                                    native_unit_rule=(
+                                        "position_offset_m = reach_length_m "
+                                        "* level_fraction_of_reach"
+                                    ),
+                                ),
+                            )
+                        )
+                velocity_amplitude = (
+                    float(DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S)
+                    * float(level.fraction_of_reach)
+                )
+                for axis in ("vx", "vy"):
+                    for sign in (-1, 1):
+                        perturbations.append(
+                            PerturbationSpec(
+                                perturbation_id=(
+                                    f"{family}__velocity_{level.name}__"
+                                    f"{timing_bin.label}_t{start}_{axis}_{_sign_label(sign)}"
+                                ),
+                                channel=channel,  # type: ignore[arg-type]
+                                family=family,
+                                amplitude=velocity_amplitude,
+                                units="m/s",
+                                axis=axis,
+                                basis=basis,
+                                sign=sign,
+                                timing={
+                                    "epoch": "controller_visible",
+                                    "start_time_index": start,
+                                    "duration_steps": duration,
+                                    "timing_bin": timing_bin.label,
+                                    "timing_bin_role": timing_bin.role,
+                                },
+                                adapter=f"temporary_external_graph_adapter.{channel}",
+                                description=(
+                                    "Native controller-visible velocity offset scaled "
+                                    "as a fraction of nominal peak speed."
+                                ),
+                                timing_bin=timing_bin.label,
+                                semantic_family=semantic_family,
+                                channel_provenance=channel_provenance,
+                                calibration_provenance=provenance(
+                                    level=level,
+                                    calibration_role="reach_relative_calibrated_native_units",
+                                    native_unit_rule=(
+                                        "velocity_offset_m_s = nominal_peak_speed_m_s "
+                                        "* level_fraction_of_reach"
+                                    ),
+                                )
+                                | {
+                                    "nominal_peak_speed_m_s": float(
+                                        DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S
+                                    )
+                                },
+                            )
+                        )
+
+    perturbations.append(
+        PerturbationSpec(
+            perturbation_id="target_stream_jump__calibrated_not_applicable",
+            channel="target_stream",
+            family="target_stream_jump",
+            amplitude=0.0,
+            units="m",
+            axis="x",
+            basis="target_cartesian_xy",
+            sign=1,
+            timing={"epoch": "adapter_defined"},
+            adapter="not_applicable_current_fixed_target_checkpoint",
+            description="blocked because current C&S GRU input is scalar SISU, not a target stream",
+            timing_bin="not_applicable",
+            calibration_provenance={
+                "calibration_mode": "reach_relative_peak_delta_x",
+                "calibration_role": "reach_relative_calibrated_not_applicable",
+                "reach_label": reach.label,
+                "reach_length_m": float(reach.reach_length_m),
+            },
+        )
+    )
+
+    bank = default_cs_perturbation_bank()
+    bank.update(
+        {
+            "bank_id": CALIBRATED_BANK_ID,
+            "calibration_metadata_hooks": {
+                "status": "bound_to_reach_relative_defaults",
+                "coordinating_issue": "1ad3c16",
+                "calibration_mode": "reach_relative_peak_delta_x",
+                "reach_label": reach.label,
+                "reach_length_m": float(reach.reach_length_m),
+                "level_definitions": [level.to_json() for level in levels],
+                "source": (
+                    "src/rlrmp/analysis/gru_perturbation_calibration.py "
+                    "DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT and native conventions"
+                ),
+            },
+            "perturbations": [spec.to_json() for spec in perturbations],
+        }
+    )
+    return bank
+
+
 def apply_perturbation_to_trial_specs(
     trial_specs: Any,
     perturbation: Mapping[str, Any],
@@ -680,10 +1065,20 @@ def materialize_gru_perturbation_response(
     note_path: Path | None = None,
     bulk_dir: Path | None = None,
     repo_root: Path = REPO_ROOT,
+    bank_mode: Literal["raw", "calibrated"] = "raw",
+    calibration_level: str | Sequence[str] | None = None,
+    calibration_reach: str | float | None = None,
+    preferred_checkpoint_manifest_path: Path | None = None,
+    checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
+    regeneration_spec_path: Path | None = None,
 ) -> dict[str, Any]:
     """Materialize the standard C&S perturbation-response bank and GRU responses."""
 
-    bank = default_cs_perturbation_bank()
+    bank = default_cs_perturbation_bank(
+        mode=bank_mode,
+        calibration_level=calibration_level,
+        calibration_reach=calibration_reach,
+    )
     output_path = output_path or (
         repo_root / "results" / result_experiment / "notes" / DEFAULT_OUTPUT_FILENAME
     )
@@ -691,6 +1086,7 @@ def materialize_gru_perturbation_response(
         repo_root / "results" / result_experiment / "notes" / DEFAULT_NOTE_FILENAME
     )
     bulk_dir = bulk_dir or repo_root / "_artifacts" / result_experiment / DEFAULT_BULK_SUBDIR
+    regeneration_spec_path = regeneration_spec_path or _regeneration_spec_path(output_path)
     mkdir_p(output_path.parent)
     if write_bulk_arrays and evaluate:
         mkdir_p(bulk_dir)
@@ -711,6 +1107,8 @@ def materialize_gru_perturbation_response(
                 n_rollout_trials=n_rollout_trials,
                 write_bulk_arrays=write_bulk_arrays,
                 bulk_dir=bulk_dir,
+                preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
+                checkpoint_selection_mode=checkpoint_selection_mode,
                 repo_root=repo_root,
             )
 
@@ -718,8 +1116,15 @@ def materialize_gru_perturbation_response(
         "schema_version": SCHEMA_VERSION,
         "issue": result_experiment,
         "source_experiment": source_experiment,
-        "checkpoint_policy": "validation_selected_per_replicate",
+        "checkpoint_policy": _effective_checkpoint_policy_from_manifest(
+            source_experiment,
+            preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
+            checkpoint_selection_mode=checkpoint_selection_mode,
+            repo_root=repo_root,
+        ),
         "scope": "controller_independent_perturbation_response",
+        "regeneration_spec": _repo_relative(regeneration_spec_path, repo_root=repo_root),
+        "bank_mode": bank_mode,
         "semantics_correction": (
             "v2 splits the former plant_force rows into command_input_pulse "
             "(post-controller command-port perturbations) and process_epsilon_pulse "
@@ -733,18 +1138,19 @@ def materialize_gru_perturbation_response(
         "bank": bank,
         "extlqg_comparator": {
             "status": (
-                "available_for_initial_state_process_epsilon_sensory_feedback_"
-                "and_delayed_observation"
+                "available_for_initial_state_command_input_process_epsilon_"
+                "sensory_feedback_and_delayed_observation"
             ),
             "reason": (
                 "Deterministic extLQG response rows are evaluated for perturbations "
-                "with clean analytical interfaces: initial_state, process_epsilon, "
-                "sensory_feedback, and delayed_observation. Sensory-feedback rows "
-                "offset the post-noise measurement delivered to the estimator; "
-                "delayed-observation rows offset the clean delayed measurement before "
-                "sensory noise. Command-input rows still require a separate "
-                "analytical command-port intervention, and target-stream is deferred "
-                "for current fixed-target checkpoints."
+                "with clean analytical interfaces: initial_state, command_input, "
+                "process_epsilon, sensory_feedback, and delayed_observation. "
+                "Command-input rows add an external pulse after the controller "
+                "command and before the plant input. Sensory-feedback rows offset "
+                "the post-noise measurement delivered to the estimator; delayed-"
+                "observation rows offset the clean delayed measurement before "
+                "sensory noise. Target-stream remains deferred for current "
+                "fixed-target checkpoints."
             ),
             "checkpoint_selection_role": "audit_only_not_used_for_selection",
         },
@@ -760,9 +1166,164 @@ def materialize_gru_perturbation_response(
         },
         "runs": run_summaries,
     }
-    output_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    detail_manifest_path = bulk_dir / f"{output_path.stem}_detail.json"
+    tracked_manifest = _slim_perturbation_response_manifest(
+        manifest,
+        detail_manifest_path=detail_manifest_path if evaluate else None,
+        repo_root=repo_root,
+    )
+    if evaluate:
+        mkdir_p(detail_manifest_path.parent)
+        detail_manifest_path.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    output_path.write_text(
+        json.dumps(tracked_manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     note_path.write_text(render_perturbation_response_markdown(manifest), encoding="utf-8")
-    return manifest
+    runs = resolve_run_inputs(
+        experiment=source_experiment,
+        run_ids=run_ids,
+        labels=labels,
+        repo_root=repo_root,
+    )
+    write_regeneration_spec(
+        spec_path=regeneration_spec_path,
+        diagnostic_name="gru_perturbation_response_bank",
+        materializer="rlrmp.analysis.gru_perturbation_bank.materialize_gru_perturbation_response",
+        command=None,
+        parameters={
+            "source_experiment": source_experiment,
+            "result_experiment": result_experiment,
+            "run_ids": list(run_ids),
+            "labels": None if labels is None else list(labels),
+            "n_rollout_trials": n_rollout_trials,
+            "evaluate": evaluate,
+            "write_bulk_arrays": write_bulk_arrays,
+            "bank_mode": bank_mode,
+            "calibration_level": calibration_level,
+            "calibration_reach": calibration_reach,
+            "preferred_checkpoint_manifest_path": (
+                None
+                if preferred_checkpoint_manifest_path is None
+                else _repo_relative(preferred_checkpoint_manifest_path, repo_root=repo_root)
+            ),
+            "checkpoint_selection_mode": checkpoint_selection_mode,
+        },
+        inputs=[
+            {"role": "run_spec", "path": run.run_spec_path}
+            for run in runs
+        ]
+        + [
+            {"role": "run_artifact_dir", "path": run.artifact_dir}
+            for run in runs
+        ]
+        + (
+            []
+            if preferred_checkpoint_manifest_path is None
+            else [{"role": "checkpoint_manifest", "path": preferred_checkpoint_manifest_path}]
+        ),
+        outputs=[
+            {"role": "perturbation_response_manifest", "path": output_path},
+            {"role": "perturbation_response_note", "path": note_path},
+            {"role": "perturbation_response_bulk_dir", "path": bulk_dir},
+        ]
+        + (
+            [{"role": "perturbation_response_detail_manifest", "path": detail_manifest_path}]
+            if evaluate
+            else []
+        ),
+        source_files=[
+            "src/rlrmp/analysis/gru_perturbation_bank.py",
+            "src/rlrmp/analysis/cs_released_simulation.py",
+            "src/rlrmp/analysis/gru_checkpoint_selection.py",
+        ],
+        notes=[
+            "Perturbation-response arrays are large; this spec is the regeneration handle.",
+            "Graph adapter provenance remains row-level in the manifest.",
+        ],
+        repo_root=repo_root,
+    )
+    return tracked_manifest
+
+
+def _slim_perturbation_response_manifest(
+    manifest: Mapping[str, Any],
+    *,
+    detail_manifest_path: Path | None,
+    repo_root: Path,
+) -> dict[str, Any]:
+    """Remove per-row response payloads from the tracked response manifest.
+
+    Full row-level response summaries are useful for plotting and audits, but they
+    are bulk analysis payloads. The tracked manifest keeps bank metadata,
+    per-run summary tables, bulk-array indexes, and a pointer to the ignored
+    detail manifest.
+    """
+
+    slim = dict(manifest)
+    if detail_manifest_path is not None:
+        slim["bulk_detail_manifest"] = {
+            "path": _repo_relative(detail_manifest_path, repo_root=repo_root),
+            "format": "json",
+            "contains": "full per-run perturbation rows and row-level metric summaries",
+        }
+    slim_runs: dict[str, Any] = {}
+    for run_id, run_payload in dict(manifest.get("runs", {})).items():
+        run = dict(run_payload)
+        perturbations = run.pop("perturbations", [])
+        robust_summary = run.pop("robust_response_summary", None)
+        run["n_perturbation_rows"] = len(perturbations) if isinstance(perturbations, Sequence) else 0
+        if detail_manifest_path is not None:
+            run["perturbation_rows_detail_manifest"] = _repo_relative(
+                detail_manifest_path,
+                repo_root=repo_root,
+            )
+            if robust_summary is not None:
+                run["robust_response_summary_detail_manifest"] = _repo_relative(
+                    detail_manifest_path,
+                    repo_root=repo_root,
+                )
+        if isinstance(robust_summary, Mapping):
+            run["robust_response_summary_status"] = robust_summary.get("status", "available")
+        slim_runs[str(run_id)] = run
+    slim["runs"] = slim_runs
+    return slim
+
+
+def _regeneration_spec_path(path: Path) -> Path:
+    return path.with_name(f"{path.stem}_regeneration_spec.json")
+
+
+def _effective_checkpoint_policy_from_manifest(
+    experiment: str,
+    *,
+    preferred_checkpoint_manifest_path: Path | None = None,
+    checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
+    repo_root: Path = REPO_ROOT,
+) -> str:
+    """Return the checkpoint policy represented by an optional preferred manifest."""
+
+    effective_selection_mode = checkpoint_selection_mode
+    if effective_selection_mode == "sparse_history" and preferred_checkpoint_manifest_path is not None:
+        effective_selection_mode = "fixed_bank_manifest"
+    if effective_selection_mode == "sparse_history":
+        return "validation_selected_per_replicate"
+    if effective_selection_mode != "fixed_bank_manifest":
+        raise ValueError(f"unsupported checkpoint selection mode {checkpoint_selection_mode!r}")
+    manifest = load_materialized_fixed_bank_manifest(
+        experiment=experiment,
+        manifest_path=preferred_checkpoint_manifest_path,
+        repo_root=repo_root,
+    )
+    if manifest is not None:
+        return str(manifest.get("checkpoint_policy") or "fixed_bank_rescored_per_replicate")
+    raise ValueError(
+        "checkpoint_selection_mode='fixed_bank_manifest' requires a materialized "
+        "fixed-bank checkpoint manifest"
+    )
 
 
 def evaluate_run_perturbation_bank(
@@ -773,6 +1334,8 @@ def evaluate_run_perturbation_bank(
     n_rollout_trials: int,
     write_bulk_arrays: bool,
     bulk_dir: Path,
+    preferred_checkpoint_manifest_path: Path | None = None,
+    checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
     """Evaluate one validation-selected GRU run on a perturbation bank."""
@@ -785,17 +1348,19 @@ def evaluate_run_perturbation_bank(
         experiment=source_experiment,
         run_id=run.run_id,
         run_spec=run.run_spec,
+        preferred_manifest_path=preferred_checkpoint_manifest_path,
+        checkpoint_selection_mode=checkpoint_selection_mode,
         repo_root=repo_root,
     )
     base_trial_specs = repeat_single_validation_trial(pair.task.validation_trials, n_rollout_trials)
-    base_evaluation = _evaluate_model_on_trial_specs(
+    nominal_base_evaluation = _evaluate_model_on_trial_specs(
         model=model,
         task=pair.task,
         trial_specs=base_trial_specs,
         n_replicates=n_replicates,
         seed=0,
     )
-    base_cost = full_qrf_cost_summary(base_evaluation, base_trial_specs)
+    nominal_base_cost = full_qrf_cost_summary(nominal_base_evaluation, base_trial_specs)
     extlqg_context = _build_extlqg_comparator_context()
     rows = []
     bulk_files: dict[str, str] = {}
@@ -828,6 +1393,23 @@ def evaluate_run_perturbation_bank(
                 }
             )
             continue
+        row_base_model, row_base_trial_specs = _paired_base_for_adapter(
+            model=model,
+            base_trial_specs=base_trial_specs,
+            adapter=adapter,
+        )
+        if row_base_model is model and row_base_trial_specs is base_trial_specs:
+            base_evaluation = nominal_base_evaluation
+            base_cost = nominal_base_cost
+        else:
+            base_evaluation = _evaluate_model_on_trial_specs(
+                model=row_base_model,
+                task=pair.task,
+                trial_specs=row_base_trial_specs,
+                n_replicates=n_replicates,
+                seed=0,
+            )
+            base_cost = full_qrf_cost_summary(base_evaluation, row_base_trial_specs)
         perturbed_evaluation = _evaluate_model_on_trial_specs(
             model=adapter.model if adapter.model is not None else model,
             task=pair.task,
@@ -842,6 +1424,37 @@ def evaluate_run_perturbation_bank(
             base_full_qrf_cost=base_cost,
             perturbed_full_qrf_cost=perturbed_cost,
         )
+        metrics = _with_attenuation_metrics(metrics, perturbation)
+        no_op_guard = _command_input_no_op_guard(
+            perturbation=perturbation,
+            adapter=adapter,
+            metrics=metrics,
+        )
+        if no_op_guard is not None and no_op_guard["status"] == "blocked":
+            rows.append(
+                {
+                    "perturbation_id": perturbation["perturbation_id"],
+                    "channel": perturbation["channel"],
+                    "family": perturbation.get("family"),
+                    "axis": perturbation.get("axis"),
+                    "sign": perturbation.get("sign"),
+                    "amplitude": perturbation.get("amplitude"),
+                    "timing_bin": perturbation.get("timing_bin"),
+                    "semantic_family": perturbation.get("semantic_family"),
+                    "timing": perturbation.get("timing"),
+                    "perturbation": dict(perturbation),
+                    "status": "blocked",
+                    "reason": no_op_guard["reason"],
+                    "adapter": adapter.to_json(),
+                    "metrics": metrics,
+                    "evaluation_guard": no_op_guard,
+                    "extlqg_comparator": extlqg_comparator_status(
+                        perturbation,
+                        status="not_applicable",
+                    ),
+                }
+            )
+            continue
         extlqg_comparator = evaluate_extlqg_perturbation_comparator(
             perturbation,
             context=extlqg_context,
@@ -874,6 +1487,8 @@ def evaluate_run_perturbation_bank(
                 "status": "evaluated",
                 "adapter": adapter.to_json(),
                 "metrics": metrics,
+                "evaluation_guard": no_op_guard
+                or {"status": "passed", "guard": "command_input_nonzero_payload_nonzero_effect"},
                 "extlqg_comparator": extlqg_comparator,
                 "bulk_arrays": None
                 if bulk_file is None
@@ -910,6 +1525,33 @@ def evaluate_run_perturbation_bank(
         "perturbations": rows,
         "bulk_files": bulk_files,
     }
+
+
+def _paired_base_for_adapter(
+    *,
+    model: Any,
+    base_trial_specs: Any,
+    adapter: AdapterResult,
+) -> tuple[Any, Any]:
+    """Use the same graph topology and zero payload for graph-adapter base rows.
+
+    Temporary graph adapters add an extra component node. Evaluating the base
+    trajectory on the unmodified graph can change stochastic key paths relative
+    to the perturbed trajectory before a timed payload begins. Therefore the
+    paired base path uses the adapter-modified graph with an all-zero copy of
+    the same external input payload.
+    """
+
+    provenance = adapter.adapter_provenance or {}
+    if provenance.get("requires_zero_payload_base") is True and adapter.model is not None:
+        input_key = provenance.get("input_key")
+        if isinstance(input_key, str) and input_key in getattr(adapter.trial_specs, "inputs", {}):
+            if input_key in getattr(base_trial_specs, "inputs", {}):
+                return adapter.model, base_trial_specs
+            payload = jnp.zeros_like(jnp.asarray(adapter.trial_specs.inputs[input_key]))
+            return adapter.model, _add_trial_input(base_trial_specs, input_key, payload)
+        return adapter.model, base_trial_specs
+    return model, base_trial_specs
 
 
 def summarize_perturbation_response(
@@ -992,6 +1634,124 @@ def summarize_perturbation_response(
             perturbed_full_qrf_cost,
         )
     return metrics
+
+
+def _command_input_no_op_guard(
+    *,
+    perturbation: Mapping[str, Any],
+    adapter: AdapterResult,
+    metrics: Mapping[str, Any],
+    tolerance: float = 1e-12,
+) -> dict[str, Any] | None:
+    """Block command-input rows whose nonzero payload had no measured effect."""
+
+    if perturbation.get("channel") != "command_input":
+        return None
+    provenance = dict(adapter.adapter_provenance or {})
+    input_key = provenance.get("input_key")
+    if input_key is None or input_key not in getattr(adapter.trial_specs, "inputs", {}):
+        return {
+            "status": "blocked",
+            "guard": "command_input_payload_missing",
+            "reason": (
+                "command_input perturbation adapter was evaluated but did not expose "
+                "the declared external graph input payload"
+            ),
+            "input_key": input_key,
+            "adapter_provenance": provenance,
+        }
+    payload = np.asarray(adapter.trial_specs.inputs[input_key], dtype=np.float64)
+    payload_abs_max = float(np.max(np.abs(payload))) if payload.size else 0.0
+    duration = int(_row_timing(perturbation).get("duration_steps", 1) or 1)
+    if payload_abs_max <= tolerance or duration <= 0:
+        return {"status": "not_applicable", "reason": "zero_command_input_payload"}
+
+    state_max = _metric_summary_value(metrics, "delta_state_response.max", "max")
+    position_max = _metric_summary_value(metrics, "delta_position_response_m.max", "max")
+    action_max = _metric_summary_value(metrics, "delta_action_response.max", "max")
+    input_max = _metric_summary_value(metrics, "controller_io_response.delta_input_norm", "max")
+    cost_abs_max = _cost_delta_abs_max(metrics)
+    observed = {
+        "state_response_max": state_max,
+        "position_response_max_m": position_max,
+        "action_response_max": action_max,
+        "input_response_max": input_max,
+        "full_qrf_delta_abs_max": cost_abs_max,
+    }
+    finite_values = [value for value in observed.values() if value is not None and np.isfinite(value)]
+    if finite_values and max(abs(value) for value in finite_values) > tolerance:
+        return {
+            "status": "passed",
+            "guard": "command_input_nonzero_payload_nonzero_effect",
+            "tolerance": tolerance,
+            "input_key": input_key,
+            "payload_abs_max": payload_abs_max,
+            "observed": observed,
+        }
+    if bool(perturbation.get("allow_zero_graph_effect", False)):
+        return {
+            "status": "allowed",
+            "guard": "command_input_nonzero_payload_zero_effect_allowed",
+            "reason": (
+                "nonzero command_input payload produced all-zero paired response, "
+                "but the row explicitly set allow_zero_graph_effect"
+            ),
+            "tolerance": tolerance,
+            "input_key": input_key,
+            "payload_abs_max": payload_abs_max,
+            "duration_steps": duration,
+            "adapter_provenance": provenance,
+            "observed": observed,
+        }
+    return {
+        "status": "blocked",
+        "guard": "command_input_nonzero_payload_zero_effect",
+        "reason": (
+            "nonzero command_input payload produced all-zero paired response; "
+            "this indicates an adapter/materialization failure rather than a "
+            "valid controller response"
+        ),
+        "tolerance": tolerance,
+        "input_key": input_key,
+        "payload_abs_max": payload_abs_max,
+        "duration_steps": duration,
+        "adapter_provenance": provenance,
+        "observed": observed,
+    }
+
+
+def _metric_summary_value(
+    metrics: Mapping[str, Any],
+    dotted_key: str,
+    summary_key: str,
+) -> float | None:
+    current: Any = metrics
+    for key in dotted_key.split("."):
+        if not isinstance(current, Mapping) or key not in current:
+            return None
+        current = current[key]
+    if not isinstance(current, Mapping) or summary_key not in current:
+        return None
+    value = current[summary_key]
+    if value is None:
+        return None
+    return float(value)
+
+
+def _cost_delta_abs_max(metrics: Mapping[str, Any]) -> float | None:
+    current: Any = metrics
+    for key in ("extra_full_qrf_cost", "delta_cost", "total"):
+        if not isinstance(current, Mapping) or key not in current:
+            return None
+        current = current[key]
+    values = [
+        float(current[key])
+        for key in ("min", "max", "mean")
+        if key in current and current[key] is not None
+    ]
+    if not values:
+        return None
+    return max(abs(value) for value in values)
 
 
 def score_full_qrf_rollout_cost(
@@ -1134,6 +1894,7 @@ def evaluate_extlqg_perturbation_comparator(
 
     channel = str(perturbation["channel"])
     supported_channels = {
+        "command_input",
         "initial_state",
         "process_epsilon",
         "sensory_feedback",
@@ -1188,10 +1949,6 @@ def extlqg_comparator_status(
 
     channel = str(perturbation["channel"])
     reasons = {
-        "command_input": (
-            "command_input rows require the graph/channel adapter lane to define a "
-            "matching analytical command-port intervention"
-        ),
         "sensory_feedback": (
             "sensory_feedback rows are supported as post-noise measurement-channel "
             "offsets when evaluated by the extLQG comparator"
@@ -1524,33 +2281,48 @@ def _apply_named_graph_channel_offset(
 ) -> AdapterResult:
     """Add a time-varying graph-channel offset payload for one perturbation row."""
 
+    effective_spec = (
+        _find_existing_additive_graph_channel_adapter(model, adapter_spec)
+        if model is not None
+        else None
+    ) or adapter_spec
     batch_size = _infer_batch_size(trial_specs)
     timing = perturbation["timing"]
     start = int(timing.get("start_time_index", 0))
     duration = int(timing.get("duration_steps", 1))
     n_time = _infer_trial_n_time(trial_specs, start + duration)
-    payload = np.zeros((batch_size, n_time, _adapter_payload_dim(adapter_spec)), dtype=np.float32)
+    payload = np.zeros((batch_size, n_time, _adapter_payload_dim(effective_spec)), dtype=np.float32)
     axis_index = _axis_index(str(perturbation["axis"]))
     payload[:, start : start + duration, axis_index] = (
         float(perturbation["amplitude"]) * int(perturbation["sign"])
     )
+    payload_array = jnp.asarray(payload)
+    if effective_spec.input_key in getattr(trial_specs, "inputs", {}):
+        payload_array = jnp.asarray(trial_specs.inputs[effective_spec.input_key]) + payload_array
     updated_trial_specs = _add_trial_input(
         trial_specs,
-        adapter_spec.input_key,
-        jnp.asarray(payload),
+        effective_spec.input_key,
+        payload_array,
     )
     updated_model = None
     provenance = {
-        **adapter_spec.to_json(),
+        **effective_spec.to_json(),
         "start_time_index": start,
         "duration_steps": duration,
         "axis_index": axis_index,
+        "requires_zero_payload_base": True,
     }
-    if adapter_spec.target_node == "mechanics" and adapter_spec.target_port == "force":
+    if effective_spec.target_node == "mechanics" and effective_spec.target_port == "force":
         provenance["external_load_force"] = False
-    if model is not None:
+    if effective_spec is not adapter_spec:
+        updated_model = model
+        provenance["graph_inserted"] = False
+        provenance["graph_adapter_reused"] = True
+        provenance["diagnostic_requested_label"] = adapter_spec.label
+        provenance["diagnostic_requested_input_key"] = adapter_spec.input_key
+    elif model is not None:
         try:
-            updated_model = insert_additive_graph_channel_adapter(model, adapter_spec)
+            updated_model = insert_additive_graph_channel_adapter(model, effective_spec)
         except ValueError as exc:
             return AdapterResult(
                 status="blocked",
@@ -1560,8 +2332,10 @@ def _apply_named_graph_channel_offset(
                 adapter_provenance=provenance,
             )
         provenance["graph_inserted"] = True
+        provenance["graph_adapter_reused"] = False
     else:
         provenance["graph_inserted"] = False
+        provenance["graph_adapter_reused"] = False
         provenance["graph_insertion_requires_model"] = True
     return AdapterResult(
         status="evaluated",
@@ -1682,6 +2456,51 @@ def insert_additive_graph_channel_adapter(model: Any, adapter_spec: GraphAdapter
         {**graph.input_bindings, adapter_spec.input_key: (adapter_spec.label, "offset")},
     )
     return graph
+
+
+def _find_existing_additive_graph_channel_adapter(
+    model: Any,
+    adapter_spec: GraphAdapterSpec,
+) -> GraphAdapterSpec | None:
+    """Find an already installed additive adapter for this source-target edge."""
+
+    wires = set(getattr(model, "wires", ()))
+    input_bindings = getattr(model, "input_bindings", {})
+    for input_key, binding in input_bindings.items():
+        if not isinstance(binding, tuple) or len(binding) != 2:
+            continue
+        label, port = binding
+        label = str(label)
+        if port != "offset":
+            continue
+        if (
+            Wire(
+                adapter_spec.source_node,
+                adapter_spec.source_port,
+                label,
+                adapter_spec.input_port,
+            )
+            in wires
+            and Wire(
+                label,
+                adapter_spec.output_port,
+                adapter_spec.target_node,
+                adapter_spec.target_port,
+            )
+            in wires
+        ):
+            return GraphAdapterSpec(
+                label=label,
+                input_key=str(input_key),
+                source_node=adapter_spec.source_node,
+                source_port=adapter_spec.source_port,
+                target_node=adapter_spec.target_node,
+                target_port=adapter_spec.target_port,
+                input_port=adapter_spec.input_port,
+                output_port=adapter_spec.output_port,
+                future_graphspec_mapping=adapter_spec.future_graphspec_mapping,
+            )
+    return None
 
 
 def _graph_adapter_spec(
@@ -1821,13 +2640,33 @@ def _simulate_extlqg_perturbed(
     adversary_epsilon = None
     clean_observation_offset = None
     sensory_feedback_offset = None
+    command_input_offset = None
+    initial_estimator_state = None
     adapter_provenance: dict[str, Any]
     if perturbation["channel"] == "initial_state":
         x0 = _perturbed_extlqg_initial_state(x0, perturbation)
+        initial_estimator_state = jnp.asarray(context["base_initial_state"], dtype=jnp.float64)
         adapter_provenance = {
-            "adapter": "analytical_initial_state_offset",
+            "adapter": "analytical_initial_state_offset_with_nominal_estimator",
             "controller_input_mutated": False,
             "controller_internal_state_mutated": False,
+            "information_structure": (
+                "plant initial state is perturbed while estimator/controller "
+                "initial state remains nominal, matching delayed GRU visibility"
+            ),
+        }
+    elif perturbation["channel"] == "command_input":
+        command_input_offset = _extlqg_command_input_offset(
+            perturbation,
+            schedule.T,
+            plant.m_u,
+        )
+        adapter_provenance = {
+            "adapter": "analytical_command_input_offset",
+            "insertion_point": "plant.B @ (u_command + command_input_offset)",
+            "controller_input_mutated": False,
+            "controller_internal_state_mutated": False,
+            "information_structure": "external actuator/plant-input pulse after controller command",
         }
     elif perturbation["channel"] == "process_epsilon":
         adversary_epsilon = _extlqg_process_epsilon(perturbation, schedule.T, plant.m_w)
@@ -1875,6 +2714,8 @@ def _simulate_extlqg_perturbed(
         adversary_epsilon=adversary_epsilon,
         clean_observation_offset=clean_observation_offset,
         sensory_feedback_offset=sensory_feedback_offset,
+        command_input_offset=command_input_offset,
+        initial_estimator_state=initial_estimator_state,
         config=config,
     )
     return (
@@ -1950,6 +2791,29 @@ def _extlqg_process_epsilon(
     amount = float(perturbation["amplitude"]) * int(perturbation["sign"])
     epsilon = jnp.zeros((horizon, epsilon_dim), dtype=jnp.float64)
     return epsilon.at[start : start + duration, epsilon_index].set(amount)
+
+
+def _extlqg_command_input_offset(
+    perturbation: Mapping[str, Any],
+    horizon: int,
+    action_dim: int,
+) -> jnp.ndarray:
+    """Return an analytical external command-input pulse sequence."""
+
+    action_index = _axis_index(str(perturbation["axis"]))
+    if action_index < 0 or action_index >= action_dim:
+        raise ValueError(f"command axis index {action_index} outside action dim {action_dim}")
+    timing = perturbation["timing"]
+    start = int(timing.get("start_time_index", 0))
+    duration = int(timing.get("duration_steps", 1))
+    if start < 0 or duration < 1 or start + duration > horizon:
+        raise ValueError(
+            f"command-input timing outside analytical horizon: {start=}, "
+            f"{duration=}, {horizon=}"
+        )
+    amount = float(perturbation["amplitude"]) * int(perturbation["sign"])
+    offset = jnp.zeros((horizon, action_dim), dtype=jnp.float64)
+    return offset.at[start : start + duration, action_index].set(amount)
 
 
 def _extlqg_observation_offset(
@@ -2301,6 +3165,10 @@ _CLASS_SUMMARY_METRICS = (
     "target_relative_alignment.delta_position.abs_tangential_component",
     "delta_endpoint_error_m",
     "delta_terminal_speed_m_s",
+    "attenuation_metrics.closed_loop_peak_dx_over_open_loop_peak_dx",
+    "attenuation_metrics.closed_loop_auc_dx_over_open_loop_auc_dx",
+    "attenuation_metrics.endpoint_delta_over_reach_length",
+    "attenuation_metrics.auc_du_over_open_loop_peak_dx",
 )
 
 
@@ -2409,6 +3277,81 @@ def _summary_stats_or_not_available(values: Sequence[float]) -> dict[str, Any]:
     summary = _summary_stats(values)
     summary["status"] = "available"
     return summary
+
+
+def _with_attenuation_metrics(
+    metrics: Mapping[str, Any],
+    perturbation: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Attach calibrated attenuation ratios when row provenance supplies denominators."""
+
+    result = dict(metrics)
+    open_loop_peak = _optional_float(perturbation.get("target_open_loop_peak_dx_m"))
+    open_loop_auc = _optional_float(perturbation.get("target_open_loop_auc_dx_m_s"))
+    if open_loop_auc is None:
+        amplitude = _optional_float(perturbation.get("amplitude"))
+        auc_per_unit = _optional_float(perturbation.get("open_loop_auc_dx_per_unit_m_s"))
+        if amplitude is not None and auc_per_unit is not None:
+            open_loop_auc = abs(amplitude) * auc_per_unit
+    reach_length = _optional_float(perturbation.get("reach_length_m"))
+    attenuation = {
+        "closed_loop_peak_dx_over_open_loop_peak_dx": _scalar_ratio(
+            _metric_mean(metrics, "delta_position_response_m.max"),
+            open_loop_peak,
+        ),
+        "closed_loop_auc_dx_over_open_loop_auc_dx": _scalar_ratio(
+            _metric_mean(metrics, "delta_position_response_m.auc"),
+            open_loop_auc,
+        ),
+        "endpoint_delta_over_reach_length": _scalar_ratio(
+            _metric_mean(metrics, "delta_endpoint_error_m"),
+            reach_length,
+        ),
+        "auc_du_over_open_loop_peak_dx": _scalar_ratio(
+            _metric_mean(metrics, "delta_action_response.auc"),
+            open_loop_peak,
+        ),
+    }
+    if any(value["status"] != "not_available" for value in attenuation.values()):
+        result["attenuation_metrics"] = attenuation
+    return result
+
+
+def _scalar_ratio(
+    numerator: float | None,
+    denominator: float | None,
+    *,
+    denominator_epsilon: float = 1e-12,
+) -> dict[str, Any]:
+    """Return a JSON-safe scalar ratio with the bank denominator guard policy."""
+
+    if numerator is None or denominator is None:
+        return {
+            "status": "not_available",
+            "numerator": numerator,
+            "denominator": denominator,
+        }
+    if abs(denominator) <= denominator_epsilon:
+        return {
+            "status": "denominator_guarded",
+            "numerator": float(numerator),
+            "denominator": float(denominator),
+            "ratio": None,
+            "denominator_epsilon": denominator_epsilon,
+        }
+    return {
+        "status": "available",
+        "numerator": float(numerator),
+        "denominator": float(denominator),
+        "ratio": float(numerator / denominator),
+        "mean": float(numerator / denominator),
+    }
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    return float(value)
 
 
 def _reason_counts(rows: Iterable[Mapping[str, Any]]) -> dict[str, int]:
@@ -2744,6 +3687,15 @@ def _summary_stats(values: Any) -> dict[str, float | int]:
     }
 
 
+def _nested_metric_max(metrics: Mapping[str, Any], outer: str, inner: str) -> float:
+    value = metrics.get(outer, {})
+    if isinstance(value, Mapping):
+        value = value.get(inner, {})
+    if isinstance(value, Mapping):
+        value = value.get("max", np.nan)
+    return float(value)
+
+
 def _summary_mean(metrics: Mapping[str, Any], key: str) -> float | None:
     summary = metrics.get(key)
     if not isinstance(summary, Mapping):
@@ -2829,7 +3781,11 @@ def _axis_index(axis: str) -> int:
         return 0
     if axis == "y":
         return 1
-    raise ValueError(f"Unsupported axis {axis!r}; expected 'x' or 'y'")
+    if axis == "vx":
+        return 2
+    if axis == "vy":
+        return 3
+    raise ValueError(f"Unsupported axis {axis!r}; expected 'x', 'y', 'vx', or 'vy'")
 
 
 def _infer_batch_size(trial_specs: Any) -> int:
@@ -2869,6 +3825,48 @@ def _stable_label(value: str) -> str:
     return "".join(char if char.isalnum() else "_" for char in value)
 
 
+def _select_reach_calibration_point(
+    calibration_reach: str | float | None,
+    *,
+    reach_points: Sequence[Any],
+) -> Any:
+    if calibration_reach is None:
+        return next(reach for reach in reach_points if reach.label == "seen_train_anchor_0p15")
+    if isinstance(calibration_reach, str):
+        for reach in reach_points:
+            if reach.label == calibration_reach:
+                return reach
+        try:
+            reach_length = float(calibration_reach)
+        except ValueError as exc:
+            raise ValueError(f"unknown calibration reach {calibration_reach!r}") from exc
+    else:
+        reach_length = float(calibration_reach)
+    from rlrmp.analysis.gru_perturbation_calibration import ReachCalibrationPoint
+
+    return ReachCalibrationPoint(
+        label=f"fixed_{reach_length:g}m",
+        split="fixed/user",
+        reach_length_m=reach_length,
+        role="user_selected_fixed_reach_length",
+    )
+
+
+def _select_reach_relative_levels(
+    calibration_level: str | Sequence[str] | None,
+    *,
+    levels: Sequence[Any],
+) -> tuple[Any, ...]:
+    if calibration_level is None:
+        return tuple(levels)
+    names = (calibration_level,) if isinstance(calibration_level, str) else tuple(calibration_level)
+    by_name = {level.name: level for level in levels}
+    missing = sorted(set(names) - set(by_name))
+    if missing:
+        raise ValueError(f"unknown calibration level(s): {', '.join(missing)}")
+    return tuple(by_name[name] for name in names)
+
+
 def _repo_relative(path: Path, *, repo_root: Path = REPO_ROOT) -> str:
     try:
         return str(path.relative_to(repo_root))
@@ -2887,6 +3885,7 @@ def write_default_bank(path: Path) -> None:
 
 
 __all__ = [
+    "CALIBRATED_BANK_ID",
     "DEFAULT_BANK_ID",
     "DEFAULT_BULK_SUBDIR",
     "DEFAULT_OUTPUT_FILENAME",
@@ -2900,6 +3899,7 @@ __all__ = [
     "PerturbationSpec",
     "apply_perturbation_to_trial_specs",
     "compare_response_metric_summaries",
+    "default_cs_calibrated_perturbation_bank",
     "default_cs_perturbation_bank",
     "delta_full_qrf_cost_summary",
     "evaluate_extlqg_perturbation_comparator",

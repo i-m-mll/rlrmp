@@ -1,0 +1,10 @@
+{
+  "created_or_updated_specs": [
+    "results/1ad3c16/notes/perturbation_open_loop_calibration_regeneration_spec.json"
+  ],
+  "issue": "1ad3c16",
+  "posthoc_backfill": true,
+  "schema_version": "rlrmp.diagnostic_regeneration_backfill_index.v1",
+  "scope": "active_gru_diagnostics_only",
+  "tracking_issue": "25c4c36"
+}

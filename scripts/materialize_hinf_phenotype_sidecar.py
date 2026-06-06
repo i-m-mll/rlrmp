@@ -8,11 +8,13 @@ from pathlib import Path
 from rlrmp.analysis.hinf_phenotype_sidecar import (
     DEFAULT_OUTPUT_JSON,
     DEFAULT_OUTPUT_MARKDOWN,
+    DEFAULT_REGENERATION_SPEC,
     DEFAULT_SCOPE,
     build_hinf_phenotype_sidecar,
     load_hinf_phenotype_sources,
     write_hinf_phenotype_sidecar,
 )
+from rlrmp.paths import REPO_ROOT
 
 
 def main() -> None:
@@ -30,6 +32,11 @@ def main() -> None:
     parser.add_argument("--exact-audit", type=Path)
     parser.add_argument("--json-output", type=Path, default=DEFAULT_OUTPUT_JSON)
     parser.add_argument("--markdown-output", type=Path, default=DEFAULT_OUTPUT_MARKDOWN)
+    parser.add_argument(
+        "--regeneration-spec-path",
+        type=Path,
+        default=DEFAULT_REGENERATION_SPEC,
+    )
     args = parser.parse_args()
 
     sources = load_hinf_phenotype_sources(
@@ -49,6 +56,8 @@ def main() -> None:
         sidecar,
         json_path=args.json_output,
         markdown_path=args.markdown_output,
+        regeneration_spec_path=args.regeneration_spec_path,
+        repo_root=REPO_ROOT,
     )
     print(f"Wrote {args.markdown_output}")
     print(f"Wrote {args.json_output}")

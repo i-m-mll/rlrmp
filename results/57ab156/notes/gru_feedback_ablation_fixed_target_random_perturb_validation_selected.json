@@ -18,6 +18,7 @@
     "sensory_feedback": "sensory_feedback_offset__x_pos"
   },
   "issue": "57ab156",
+  "regeneration_spec": "results/57ab156/notes/gru_feedback_ablation_fixed_target_random_perturb_validation_selected_regeneration_spec.json",
   "runs": {
     "fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64": {
       "ablations": [

@@ -49,6 +49,7 @@
     "standard_manifest_path": "results/aacb9ed/notes/gru_standard_certificates_fixed_target_random_perturb_validation_selected_manifest.json",
     "standard_note_path": "results/aacb9ed/notes/gru_standard_certificates_fixed_target_random_perturb_validation_selected.md"
   },
+  "regeneration_spec": "results/aacb9ed/notes/gru_postrun_materialization_fixed_target_random_perturb_validation_selected_regeneration_spec.json",
   "run_ids": [
     "fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64",
     "fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64"

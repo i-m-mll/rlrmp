@@ -12,8 +12,11 @@ from feedbax.state import CartesianState
 from feedbax.task import TaskTrialSpec
 
 from rlrmp.analysis.gru_feedback_ablation import (
+    FEEDBACK_AUDIT_SELECTION_ROLE,
     SCHEMA_VERSION,
+    _aggregate_feedback_checkpoint_score,
     _per_replicate_cost_delta_values,
+    _per_replicate_feedback_response_scores,
     build_observation_ablation_spec,
     build_observation_tape,
     default_ablation_modes,
@@ -22,6 +25,7 @@ from rlrmp.analysis.gru_feedback_ablation import (
     interpret_run_feedback_ablation,
     render_feedback_ablation_markdown,
     selected_feedback_ablation_bins,
+    summarize_feedback_pass_audit,
     summarize_normalized_feedback_use,
 )
 from rlrmp.analysis.gru_perturbation_bank import default_cs_perturbation_bank
@@ -220,7 +224,8 @@ def test_feedback_checkpoint_selection_audit_selects_candidate_without_primary_l
 
     assert audit["status"] == "materialized"
     assert audit["candidate_granularity"] == "checkpoint_batch_per_replicate"
-    assert audit["selection_use"] == "audit_only_not_primary_checkpoint_selection"
+    assert audit["selection_use"] == FEEDBACK_AUDIT_SELECTION_ROLE
+    assert audit["primary_checkpoint_policy"] == "validation_selected_per_replicate"
     assert (
         audit["runs"]["run_a"]["feedback_selected_checkpoints"][0][
             "feedback_minus_validation_batches"
@@ -255,10 +260,132 @@ def test_feedback_checkpoint_selection_audit_has_legacy_run_fallback() -> None:
     audit = feedback_checkpoint_selection_audit(manifest)
 
     assert audit["status"] == "available"
-    assert audit["selection_use"] == "audit_only_not_primary_checkpoint_selection"
+    assert audit["selection_use"] == FEEDBACK_AUDIT_SELECTION_ROLE
     assert audit["primary_checkpoint_policy"] == "validation_selected_per_replicate"
     assert audit["selected_candidate"]["run_id"] == "run_b"
     assert audit["candidate_granularity"] == "run_legacy_fallback"
+
+
+def test_feedback_response_score_uses_absolute_cost_and_penalty_warnings() -> None:
+    scores = _per_replicate_feedback_response_scores(
+        [-3.0, 2.0],
+        command_metrics=[
+            {
+                "replicate": 0,
+                "status": "partial",
+                "command_energy_ratio": 1.0,
+                "command_smoothness_ratio": None,
+                "command_oscillation_ratio": None,
+            },
+            {
+                "replicate": 1,
+                "status": "available",
+                "command_energy_ratio": 5.0,
+                "command_smoothness_ratio": 1.0,
+                "command_oscillation_ratio": 1.0,
+            },
+        ],
+    )
+
+    assert scores[0]["score"] == 3.0
+    assert scores[0]["absolute_delta_full_qrf_cost"] == 3.0
+    assert scores[0]["excess_delta_full_qrf_cost"] == 0.0
+    assert any("not available" in warning for warning in scores[0]["warnings"])
+    assert scores[1]["score"] == 7.0
+    assert any("exceeds fail" in warning for warning in scores[1]["warnings"])
+
+
+def test_feedback_checkpoint_score_family_balances_signed_pairs() -> None:
+    bin_scores = [
+        _score_row("fam_a_pos", "family_a", "pair_a", 1, 10.0),
+        _score_row("fam_a_neg", "family_a", "pair_a", -1, 14.0),
+        _score_row("fam_a_extra", "family_a", "pair_extra", 1, 100.0),
+        _score_row("fam_b", "family_b", "pair_b", None, 2.0),
+    ]
+
+    score = _aggregate_feedback_checkpoint_score(
+        bin_scores,
+        replicate=0,
+        nominal_gate={"status": "pass", "warnings": []},
+    )
+
+    assert score["status"] == "available"
+    assert score["family_scores"]["family_a"] == 56.0
+    assert score["family_scores"]["family_b"] == 2.0
+    assert score["score"] == 29.0
+    assert any(
+        component["type"] == "signed_pair" and set(component["members"]) == {
+            "fam_a_pos",
+            "fam_a_neg",
+        }
+        for component in score["score_components"]
+    )
+    assert any("signed-pair counterpart not available" in warning for warning in score["warnings"])
+
+
+def test_feedback_checkpoint_score_nominal_gate_failure_blocks_audit_selection() -> None:
+    score = _aggregate_feedback_checkpoint_score(
+        [_score_row("row", "family", "pair", 1, 1.0)],
+        replicate=0,
+        nominal_gate={"status": "fail", "warnings": ["bad nominal"]},
+    )
+
+    assert score["status"] == "not_available"
+    assert score["reason"] == "nominal_quality_gate_failed"
+    assert "bad nominal" in score["warnings"]
+
+
+def test_feedback_pass_audit_reports_nominal_gate_failure() -> None:
+    rows = [
+        {
+            "status": "evaluated",
+            "bin": "nominal",
+            "mode": "normal",
+            "metrics": {
+                "baseline_endpoint_error_m": {"mean": 0.2},
+                "baseline_terminal_speed_m_s": {"mean": 0.1},
+                "baseline_full_qrf_cost": {
+                    "status": "available",
+                    "total": {"mean": 1.0},
+                },
+                "baseline_action_norm": {"mean": 1.0},
+            },
+        }
+    ]
+
+    audit = summarize_feedback_pass_audit(rows)
+
+    assert audit["status"] in {"warn", "inconclusive"}
+    assert audit["selection_role"] == FEEDBACK_AUDIT_SELECTION_ROLE
+    assert (
+        audit["components"]["nominal_quality_gate"]["warnings"]
+        == ["endpoint_error_above_warn_threshold"]
+    )
+
+
+def _score_row(
+    perturbation_id: str,
+    family: str,
+    signed_pair_key: str,
+    sign: int | None,
+    score: float,
+) -> dict[str, object]:
+    return {
+        "bin": family,
+        "perturbation_id": perturbation_id,
+        "family": family,
+        "signed_pair_key": signed_pair_key,
+        "sign": sign,
+        "status": "available",
+        "per_replicate_feedback_response_score": [
+            {
+                "replicate": 0,
+                "status": "available",
+                "score": score,
+                "warnings": [],
+            }
+        ],
+    }
 
 
 def test_per_replicate_cost_delta_values_reduces_trials_only() -> None:

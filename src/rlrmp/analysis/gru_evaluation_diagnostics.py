@@ -20,6 +20,7 @@ from feedbax.types import TreeNamespace, dict_to_namespace
 from rlrmp.analysis.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.analysis.gru_checkpoint_selection import (
     ReplicateCheckpointSelection,
+    load_materialized_fixed_bank_manifest,
     load_validation_selected_checkpoint_model,
 )
 from rlrmp.analysis.gru_pilot_figures import (
@@ -29,6 +30,7 @@ from rlrmp.analysis.gru_pilot_figures import (
     repeat_single_validation_trial,
     resolve_run_inputs,
 )
+from rlrmp.analysis.diagnostic_provenance import write_regeneration_spec
 from rlrmp.modules.training.part2 import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
@@ -67,8 +69,10 @@ def materialize_gru_evaluation_diagnostics(
     bulk_dir: Path | None = None,
     n_rollout_trials: int = DEFAULT_N_ROLLOUT_TRIALS,
     use_validation_selected_checkpoints: bool = True,
+    preferred_checkpoint_manifest_path: Path | None = None,
     jacobian_timepoints: Sequence[str] = DEFAULT_JACOBIAN_TIMEPOINTS,
     write_bulk_arrays: bool = True,
+    regeneration_spec_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
     """Write non-certificate rollout/RNN diagnostics for selected GRU checkpoints."""
@@ -83,6 +87,7 @@ def materialize_gru_evaluation_diagnostics(
         repo_root / "results" / experiment / "notes" / DEFAULT_OUTPUT_FILENAME
     )
     bulk_dir = bulk_dir or repo_root / "_artifacts" / experiment / DEFAULT_BULK_SUBDIR
+    regeneration_spec_path = regeneration_spec_path or _regeneration_spec_path(output_path)
     mkdir_p(output_path.parent)
     if write_bulk_arrays:
         mkdir_p(bulk_dir)
@@ -94,6 +99,7 @@ def materialize_gru_evaluation_diagnostics(
             experiment=experiment,
             n_rollout_trials=n_rollout_trials,
             use_validation_selected_checkpoints=use_validation_selected_checkpoints,
+            preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
             repo_root=repo_root,
         )
         behavior = summarize_rollout_behavior(evaluation)
@@ -111,15 +117,16 @@ def materialize_gru_evaluation_diagnostics(
                 run_id=run.run_id,
                 repo_root=repo_root,
             )
+        checkpoint_policy = _effective_checkpoint_policy_from_manifest(
+            experiment,
+            preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
+            repo_root=repo_root,
+        )
         run_summaries[run.run_id] = {
             "label": run.label,
             "run_spec_path": _repo_relative(run.run_spec_path, repo_root=repo_root),
             "artifact_dir": _repo_relative(run.artifact_dir, repo_root=repo_root),
-            "checkpoint_policy": (
-                "validation_selected_per_replicate"
-                if use_validation_selected_checkpoints
-                else "final_checkpoint"
-            ),
+            "checkpoint_policy": checkpoint_policy,
             "checkpoint_selection": [
                 selection.to_json(repo_root=repo_root)
                 for selection in evaluation.checkpoint_selection
@@ -154,11 +161,16 @@ def materialize_gru_evaluation_diagnostics(
         "schema_version": SCHEMA_VERSION,
         "issue": experiment,
         "checkpoint_policy": (
-            "validation_selected_per_replicate"
+            _effective_checkpoint_policy_from_manifest(
+                experiment,
+                preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
+                repo_root=repo_root,
+            )
             if use_validation_selected_checkpoints
             else "final_checkpoint"
         ),
         "scope": "post_hoc_evaluation_non_certificate_diagnostics",
+        "regeneration_spec": _repo_relative(regeneration_spec_path, repo_root=repo_root),
         "standard_certificate_metrics": {
             "status": "excluded",
             "excluded_metrics": [
@@ -178,7 +190,75 @@ def materialize_gru_evaluation_diagnostics(
         "runs": run_summaries,
     }
     output_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_regeneration_spec(
+        spec_path=regeneration_spec_path,
+        diagnostic_name="gru_evaluation_diagnostics",
+        materializer="rlrmp.analysis.gru_evaluation_diagnostics.materialize_gru_evaluation_diagnostics",
+        command=None,
+        parameters={
+            "experiment": experiment,
+            "run_ids": list(run_ids),
+            "labels": None if labels is None else list(labels),
+            "n_rollout_trials": n_rollout_trials,
+            "use_validation_selected_checkpoints": use_validation_selected_checkpoints,
+            "preferred_checkpoint_manifest_path": (
+                None
+                if preferred_checkpoint_manifest_path is None
+                else _repo_relative(preferred_checkpoint_manifest_path, repo_root=repo_root)
+            ),
+            "jacobian_timepoints": list(jacobian_timepoints),
+            "write_bulk_arrays": write_bulk_arrays,
+        },
+        inputs=[
+            {"role": "run_spec", "path": run.run_spec_path}
+            for run in runs
+        ]
+        + [
+            {"role": "run_artifact_dir", "path": run.artifact_dir}
+            for run in runs
+        ]
+        + (
+            []
+            if preferred_checkpoint_manifest_path is None
+            else [{"role": "checkpoint_manifest", "path": preferred_checkpoint_manifest_path}]
+        ),
+        outputs=[
+            {"role": "evaluation_diagnostics_manifest", "path": output_path},
+            {"role": "bulk_rollout_dir", "path": bulk_dir},
+        ],
+        source_files=[
+            "src/rlrmp/analysis/gru_evaluation_diagnostics.py",
+            "src/rlrmp/analysis/gru_checkpoint_selection.py",
+        ],
+        notes=[
+            "Evaluation diagnostics are non-certificate sidecars.",
+            "Bulk rollout arrays may be deleted and regenerated from this spec if checkpoints remain.",
+        ],
+        repo_root=repo_root,
+    )
     return manifest
+
+
+def _regeneration_spec_path(path: Path) -> Path:
+    return path.with_name(f"{path.stem}_regeneration_spec.json")
+
+
+def _effective_checkpoint_policy_from_manifest(
+    experiment: str,
+    *,
+    preferred_checkpoint_manifest_path: Path | None = None,
+    repo_root: Path = REPO_ROOT,
+) -> str:
+    """Return the checkpoint policy represented by an optional preferred manifest."""
+
+    manifest = load_materialized_fixed_bank_manifest(
+        experiment=experiment,
+        manifest_path=preferred_checkpoint_manifest_path,
+        repo_root=repo_root,
+    )
+    if manifest is not None:
+        return str(manifest.get("checkpoint_policy") or "fixed_bank_rescored_per_replicate")
+    return "validation_selected_per_replicate"
 
 
 def evaluate_run_rollouts(
@@ -187,6 +267,7 @@ def evaluate_run_rollouts(
     experiment: str,
     n_rollout_trials: int,
     use_validation_selected_checkpoints: bool,
+    preferred_checkpoint_manifest_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> tuple[RolloutEvaluation, Any]:
     """Evaluate one run's final or validation-selected GRU checkpoints."""
@@ -203,6 +284,12 @@ def evaluate_run_rollouts(
             experiment=experiment,
             run_id=run.run_id,
             run_spec=run.run_spec,
+            preferred_manifest_path=preferred_checkpoint_manifest_path,
+            checkpoint_selection_mode=(
+                "fixed_bank_manifest"
+                if preferred_checkpoint_manifest_path is not None
+                else "sparse_history"
+            ),
             repo_root=repo_root,
         )
     else:

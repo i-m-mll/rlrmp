@@ -8,6 +8,7 @@ from typing import Any
 
 import numpy as np
 
+from rlrmp.analysis.gru_checkpoint_selection import load_materialized_fixed_bank_manifest
 from rlrmp.paths import REPO_ROOT
 
 OBSERVATION_CHANNELS = ("px", "py", "vx", "vy")
@@ -33,6 +34,7 @@ def materialize_gru_map_error_decomposition(
     experiment: str = SOURCE_ISSUE_ID,
     run_ids: tuple[str, ...] | None = None,
     use_validation_selected_checkpoints: bool = True,
+    preferred_checkpoint_manifest_path: Path | None = None,
     alignment_basis: str = "raw_cartesian",
     reference_feedback_basis: str = "auto",
     top_k: int = 5,
@@ -56,6 +58,7 @@ def materialize_gru_map_error_decomposition(
             run_spec=run_spec,
             experiment=experiment,
             use_validation_selected_checkpoints=use_validation_selected_checkpoints,
+            preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
             repo_root=repo_root,
         )
         covariance = evaluation_metadata.pop("_observation_history_covariance_array", None)
@@ -104,13 +107,35 @@ def materialize_gru_map_error_decomposition(
         "source_issue": experiment,
         "source_standard_manifest": _repo_relative(standard_manifest_path, repo_root=repo_root),
         "checkpoint_policy": (
-            "validation_selected_per_replicate"
+            _effective_checkpoint_policy_from_manifest(
+                experiment,
+                preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
+                repo_root=repo_root,
+            )
             if use_validation_selected_checkpoints
             else "final_checkpoint"
         ),
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
         "rows": rows,
     }
+
+
+def _effective_checkpoint_policy_from_manifest(
+    experiment: str,
+    *,
+    preferred_checkpoint_manifest_path: Path | None = None,
+    repo_root: Path = REPO_ROOT,
+) -> str:
+    """Return the checkpoint policy represented by an optional preferred manifest."""
+
+    manifest = load_materialized_fixed_bank_manifest(
+        experiment=experiment,
+        manifest_path=preferred_checkpoint_manifest_path,
+        repo_root=repo_root,
+    )
+    if manifest is not None:
+        return str(manifest.get("checkpoint_policy") or "fixed_bank_rescored_per_replicate")
+    return "validation_selected_per_replicate"
 
 
 def decompose_gru_map_error(

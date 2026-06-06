@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from rlrmp.analysis.gru_perturbation_calibration import (
     DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS,
     DEFAULT_NATIVE_CONVENTIONS,
     DEFAULT_PLANT_TIMING_BINS,
     DEFAULT_REACH_CALIBRATION_POINTS,
     DEFAULT_REACH_RELATIVE_LEVELS,
+    _write_calibration_regeneration_spec,
     calibrated_amplitude_from_unit_sensitivity,
     render_calibration_markdown,
 )
@@ -89,6 +93,10 @@ def test_reach_relative_markdown_reports_targets_and_rerun_command() -> None:
             "run_id": "lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64",
         },
         "bulk_manifest_path": "_artifacts/1ad3c16/perturbation_open_loop_calibration/test.json",
+        "regeneration_spec_path": (
+            "_artifacts/1ad3c16/perturbation_open_loop_calibration/"
+            "perturbation_open_loop_calibration_regeneration_spec.json"
+        ),
         "reach_points": [point.to_json() for point in DEFAULT_REACH_CALIBRATION_POINTS[:1]],
         "level_definitions": [level.to_json() for level in DEFAULT_REACH_RELATIVE_LEVELS[:1]],
         "plant_timing_bins": [timing_bin.to_json() for timing_bin in DEFAULT_PLANT_TIMING_BINS],
@@ -131,3 +139,39 @@ def test_reach_relative_markdown_reports_targets_and_rerun_command() -> None:
     assert "5.000%" in markdown
     assert "uv run python scripts/materialize_perturbation_open_loop_calibration.py" in markdown
     assert "single-target nominal-only; documented for later closed-loop comparison" in markdown
+    assert "Regeneration spec:" in markdown
+
+
+def test_calibration_regeneration_spec_records_source_model_and_outputs(tmp_path: Path) -> None:
+    output_path = tmp_path / "_artifacts" / "1ad3c16" / "calibration.json"
+    note_path = tmp_path / "results" / "1ad3c16" / "notes" / "calibration.md"
+    spec_path = tmp_path / "_artifacts" / "1ad3c16" / "calibration_regeneration_spec.json"
+    output_path.parent.mkdir(parents=True)
+    note_path.parent.mkdir(parents=True)
+    output_path.write_text("{}", encoding="utf-8")
+    note_path.write_text("# note\n", encoding="utf-8")
+
+    _write_calibration_regeneration_spec(
+        spec_path=spec_path,
+        output_path=output_path,
+        note_path=note_path,
+        manifest={
+            "bank_schema_version": "bank.v1",
+            "reach_points": [DEFAULT_REACH_CALIBRATION_POINTS[0].to_json()],
+            "level_definitions": [DEFAULT_REACH_RELATIVE_LEVELS[0].to_json()],
+            "plant_timing_bins": [DEFAULT_PLANT_TIMING_BINS[0].to_json()],
+            "controller_visible_timing_bins": [DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS[0].to_json()],
+        },
+        amplitude_factors=(0.1, 1.0),
+        result_experiment="1ad3c16",
+        repo_root=tmp_path,
+    )
+
+    regeneration = json.loads(spec_path.read_text())
+    assert regeneration["diagnostic_name"] == "perturbation_open_loop_calibration"
+    assert regeneration["parameters"]["source_model"]["run_id"]
+    assert "extLQG nominal command replay" in regeneration["parameters"]["source_run_ids"]
+    assert {item["role"] for item in regeneration["outputs"]} == {
+        "calibration_bulk_manifest",
+        "calibration_markdown_note",
+    }

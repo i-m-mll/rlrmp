@@ -1,6 +1,7 @@
 {
   "checkpoint_policy": "training_trace_all_batches_not_checkpoint_selected",
   "issue": "3e66604",
+  "regeneration_spec": "results/3e66604/notes/training_diagnostics_warmcos_fulldiag_summary_regeneration_spec.json",
   "runs": {
     "lss_stabilization_warmcos_fulldiag__lr1e-3_clip5_b1000": {
       "n_batches": 12000,

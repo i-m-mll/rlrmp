@@ -194,6 +194,68 @@ def test_fixed_step_perturbation_hook_adds_state_impulse() -> None:
     assert jnp.allclose(perturbed.x[3] - baseline.x[3], value)
 
 
+def test_command_input_offset_is_external_to_controller_command() -> None:
+    reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
+    plant = reference.plant
+    T = reference.schedule.T
+    x0 = jnp.zeros((plant.n,), dtype=jnp.float64)
+    zero_gains = jnp.zeros_like(reference.lqr_solution.K)
+    command_offset = jnp.zeros((T, plant.m_u), dtype=jnp.float64)
+    command_offset = command_offset.at[2, 0].set(0.125)
+
+    baseline = simulate_lqg_released_forward(
+        plant,
+        zero_gains,
+        x0,
+        draws=zero_forward_noise_draws(T=T, plant=plant),
+        covariances=zero_noise_covariances(plant),
+    )
+    perturbed = simulate_lqg_released_forward(
+        plant,
+        zero_gains,
+        x0,
+        draws=zero_forward_noise_draws(T=T, plant=plant),
+        covariances=zero_noise_covariances(plant),
+        command_input_offset=command_offset,
+    )
+
+    assert jnp.allclose(perturbed.u_command, baseline.u_command)
+    assert jnp.allclose(perturbed.u_command, 0.0)
+    assert jnp.allclose(perturbed.u_applied[2], command_offset[2])
+    assert jnp.allclose(perturbed.x[3] - baseline.x[3], plant.B @ command_offset[2])
+
+
+def test_initial_estimator_state_can_remain_nominal_when_plant_x0_is_perturbed() -> None:
+    reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
+    plant = reference.plant
+    T = reference.schedule.T
+    x0 = jnp.zeros((plant.n,), dtype=jnp.float64).at[0].set(0.5)
+    nominal_xhat0 = jnp.zeros((plant.n,), dtype=jnp.float64)
+    gains = jnp.zeros_like(reference.lqr_solution.K).at[0, 0, 0].set(2.0)
+
+    visible = simulate_lqg_released_forward(
+        plant,
+        gains,
+        x0,
+        draws=zero_forward_noise_draws(T=T, plant=plant),
+        covariances=zero_noise_covariances(plant),
+    )
+    hidden = simulate_lqg_released_forward(
+        plant,
+        gains,
+        x0,
+        draws=zero_forward_noise_draws(T=T, plant=plant),
+        covariances=zero_noise_covariances(plant),
+        initial_estimator_state=nominal_xhat0,
+    )
+
+    assert jnp.allclose(hidden.x[0], x0)
+    assert jnp.allclose(hidden.x_hat[0], nominal_xhat0)
+    assert jnp.allclose(visible.x_hat[0], x0)
+    assert jnp.allclose(visible.u_command[0, 0], -1.0)
+    assert jnp.allclose(hidden.u_command[0, 0], 0.0)
+
+
 def test_signal_dependent_noise_is_state_space_csdn_times_command() -> None:
     reference = materialize_reference(gamma_factors=(PRIMARY_GAMMA_FACTOR,))
     plant = reference.plant

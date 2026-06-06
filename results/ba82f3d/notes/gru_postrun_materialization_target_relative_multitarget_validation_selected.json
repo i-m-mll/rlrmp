@@ -92,6 +92,7 @@
     "standard_manifest_path": "results/ba82f3d/notes/gru_standard_certificates_target_relative_multitarget_validation_selected_manifest.json",
     "standard_note_path": "results/ba82f3d/notes/gru_standard_certificates_target_relative_multitarget_validation_selected.md"
   },
+  "regeneration_spec": "results/ba82f3d/notes/gru_postrun_materialization_target_relative_multitarget_validation_selected_regeneration_spec.json",
   "run_ids": [
     "target_relative_multitarget_fullqrf_warmcos__lr1e-3_clip5_b64",
     "target_relative_multitarget_fullqrf_warmcos__lr3e-3_clip5_b64"

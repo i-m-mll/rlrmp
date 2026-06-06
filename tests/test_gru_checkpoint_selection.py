@@ -171,12 +171,50 @@ def test_fixed_bank_rescore_manifest_scores_all_durable_checkpoints(tmp_path: Pa
         experiment=experiment,
         run_id=run_id,
         repo_root=tmp_path,
+        checkpoint_selection_mode="fixed_bank_manifest",
     )
     assert [selection.checkpoint_batches for selection in selected] == [6, 3]
     assert [selection.selection_source for selection in selected] == [
         "fixed_bank_rescore",
         "fixed_bank_rescore",
     ]
+
+
+def test_sparse_history_mode_ignores_materialized_fixed_bank_manifest(tmp_path: Path) -> None:
+    experiment = "issue123"
+    run_id = "run_a"
+    _make_checkpoint_fixture(
+        tmp_path,
+        experiment=experiment,
+        run_id=run_id,
+        n_replicates=1,
+        checkpoints=(3, 6),
+    )
+    _write_sparse_history_fixture(
+        tmp_path,
+        experiment=experiment,
+        run_id=run_id,
+        validation_values=np.array([[5.0], [0.0], [2.0], [0.0], [3.0], [4.0]]),
+    )
+    materialize_fixed_bank_checkpoint_rescore_manifest(
+        experiment=experiment,
+        run_ids=(run_id,),
+        validation_bank=FixedValidationBankSpec(
+            bank_identity="fixed-validation-bank:test",
+            scorer_identity="rollout_validation_objective:test",
+        ),
+        scorer=lambda *_args: 1.0,
+        repo_root=tmp_path,
+    )
+
+    selected = select_validation_checkpoints_for_run(
+        experiment=experiment,
+        run_id=run_id,
+        repo_root=tmp_path,
+    )
+
+    assert selected[0].checkpoint_batches == 3
+    assert selected[0].selection_source == "sparse_history_fallback"
 
 
 def test_not_materialized_fixed_bank_manifest_falls_back_to_sparse_history(
