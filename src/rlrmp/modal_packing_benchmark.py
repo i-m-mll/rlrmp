@@ -31,8 +31,26 @@ class WorkerConfig:
     measure_seconds: float
     chunk_batches: int
     controller_lr: float
+    lr_warmup_batches: int
+    lr_warmup_init_fraction: float
+    lr_cosine_alpha: float
+    gradient_clip_norm: float | None
+    plant_backend: str
     stochastic_preset: str
+    loss_objective: str
     regularized_fidelity: bool
+    target_relative_multitarget: bool
+    force_filter_feedback: bool
+    perturbation_training: bool
+    perturbation_calibrated_timing: bool
+    perturbation_physical_level: str
+    broad_epsilon_training: bool
+    broad_epsilon_level: str
+    broad_epsilon_budget_scale: float
+    broad_epsilon_reach_scaling: bool
+    initial_hidden_encoder: bool
+    training_diagnostics: bool
+    schedule_total_batches: int
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -54,8 +72,43 @@ def build_parser() -> argparse.ArgumentParser:
     parent.add_argument("--n-replicates", type=int, default=5)
     parent.add_argument("--hidden-size", type=int, default=180)
     parent.add_argument("--controller-lr", type=float, default=1e-2)
+    parent.add_argument("--lr-warmup-batches", type=int, default=0)
+    parent.add_argument("--lr-warmup-init-fraction", type=float, default=0.1)
+    parent.add_argument("--lr-cosine-alpha", type=float, default=1.0)
+    parent.add_argument("--gradient-clip-norm", type=float, default=None)
+    parent.add_argument("--plant-backend", default="cs_lss")
     parent.add_argument("--stochastic-preset", default="cs2019-rollout")
+    parent.add_argument("--loss-objective", default="partial_feedbax_terms")
     parent.add_argument("--regularized-fidelity", action="store_true")
+    parent.add_argument("--target-relative-multitarget", action="store_true")
+    parent.add_argument("--force-filter-feedback", "--proprioceptive-feedback", action="store_true")
+    parent.add_argument("--perturbation-training", action="store_true")
+    parent.add_argument("--perturbation-calibrated-timing", action="store_true")
+    parent.add_argument("--perturbation-physical-level", default="moderate")
+    parent.add_argument("--broad-epsilon-training", action="store_true")
+    parent.add_argument("--broad-epsilon-level", default="moderate")
+    parent.add_argument("--broad-epsilon-budget-scale", type=float, default=1.0)
+    parent.add_argument(
+        "--broad-epsilon-reach-scaling",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parent.add_argument("--initial-hidden-encoder", "--h0-encoder", action="store_true")
+    parent.add_argument(
+        "--training-diagnostics",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parent.add_argument(
+        "--schedule-total-batches",
+        type=int,
+        default=1000,
+        help=(
+            "Total step horizon used for optimizer schedules in benchmark chunks. "
+            "Use this to preserve the shape of a full run's schedule without running "
+            "all 12k batches."
+        ),
+    )
     parent.add_argument("--seed", type=int, default=42)
     parent.add_argument("--sample-seconds", type=float, default=5.0)
 
@@ -107,8 +160,28 @@ def run_parent(args: argparse.Namespace) -> int:
             measure_seconds=float(args.measure_seconds),
             chunk_batches=int(args.chunk_batches),
             controller_lr=float(args.controller_lr),
+            lr_warmup_batches=int(args.lr_warmup_batches),
+            lr_warmup_init_fraction=float(args.lr_warmup_init_fraction),
+            lr_cosine_alpha=float(args.lr_cosine_alpha),
+            gradient_clip_norm=(
+                None if args.gradient_clip_norm is None else float(args.gradient_clip_norm)
+            ),
+            plant_backend=str(args.plant_backend),
             stochastic_preset=str(args.stochastic_preset),
+            loss_objective=str(args.loss_objective),
             regularized_fidelity=bool(args.regularized_fidelity),
+            target_relative_multitarget=bool(args.target_relative_multitarget),
+            force_filter_feedback=bool(args.force_filter_feedback),
+            perturbation_training=bool(args.perturbation_training),
+            perturbation_calibrated_timing=bool(args.perturbation_calibrated_timing),
+            perturbation_physical_level=str(args.perturbation_physical_level),
+            broad_epsilon_training=bool(args.broad_epsilon_training),
+            broad_epsilon_level=str(args.broad_epsilon_level),
+            broad_epsilon_budget_scale=float(args.broad_epsilon_budget_scale),
+            broad_epsilon_reach_scaling=bool(args.broad_epsilon_reach_scaling),
+            initial_hidden_encoder=bool(args.initial_hidden_encoder),
+            training_diagnostics=bool(args.training_diagnostics),
+            schedule_total_batches=int(args.schedule_total_batches),
         )
         command = [
             sys.executable,
@@ -180,14 +253,16 @@ def run_worker(config: WorkerConfig) -> int:
     os.environ[PREALLOC_ENV] = "false"
 
     import argparse as _argparse
-    from functools import partial
 
     import jax.random as jr
-    import optax
-    from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
+    from feedbax.training.train import train_pair
 
-    from rlrmp.train.cs_nominal_gru import build_hps, build_parser as build_nominal_parser
     from rlrmp.modules.training.part2 import setup_task_model_pair
+    from rlrmp.train.cs_nominal_gru import (
+        _build_trainer,
+        build_hps,
+        build_parser as build_nominal_parser,
+    )
 
     output_dir = Path(config.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -205,9 +280,26 @@ def run_worker(config: WorkerConfig) -> int:
         "n_readout_only": 0,
         "n_recurrent_only": 0,
         "controller_lr": config.controller_lr,
+        "lr_warmup_batches": config.lr_warmup_batches,
+        "lr_warmup_init_fraction": config.lr_warmup_init_fraction,
+        "lr_cosine_alpha": config.lr_cosine_alpha,
+        "gradient_clip_norm": config.gradient_clip_norm,
+        "plant_backend": config.plant_backend,
         "stochastic_preset": config.stochastic_preset,
-        "n_train_batches": max(1, config.warmup_batches + config.chunk_batches),
+        "loss_objective": config.loss_objective,
+        "n_train_batches": max(1, config.schedule_total_batches),
         "regularized_fidelity": config.regularized_fidelity,
+        "target_relative_multitarget": config.target_relative_multitarget,
+        "force_filter_feedback": config.force_filter_feedback,
+        "perturbation_training": config.perturbation_training,
+        "perturbation_calibrated_timing": config.perturbation_calibrated_timing,
+        "perturbation_physical_level": config.perturbation_physical_level,
+        "broad_epsilon_training": config.broad_epsilon_training,
+        "broad_epsilon_level": config.broad_epsilon_level,
+        "broad_epsilon_budget_scale": config.broad_epsilon_budget_scale,
+        "broad_epsilon_reach_scaling": config.broad_epsilon_reach_scaling,
+        "initial_hidden_encoder": config.initial_hidden_encoder,
+        "training_diagnostics": config.training_diagnostics,
     }
     nominal_args = _argparse.Namespace(**{**vars(nominal_args), **overrides})
     hps = build_hps(nominal_args)
@@ -217,21 +309,13 @@ def run_worker(config: WorkerConfig) -> int:
     pair = setup_task_model_pair(hps, key=key_init)
     where_train = _make_where_train()
 
-    def make_trainer(total_steps: int) -> TaskTrainer:
-        schedule = make_delayed_cosine_schedule(
-            config.controller_lr,
-            constant_steps=0,
-            total_steps=max(1, total_steps),
-        )
-        optimizer = optax.inject_hyperparams(partial(optax.adamw, weight_decay=0.0))(
-            learning_rate=schedule
-        )
-        return TaskTrainer(optimizer=optimizer, checkpointing=False)
+    def make_trainer():
+        return _build_trainer(hps)
 
     _write_json(status_path, {"status": "compiling", "captured_at": _utc_now()})
     compile_start = time.monotonic()
     model, _history = train_pair(
-        make_trainer(config.warmup_batches),
+        make_trainer(),
         pair,
         n_batches=config.warmup_batches,
         key=key_warmup,
@@ -251,6 +335,7 @@ def run_worker(config: WorkerConfig) -> int:
             "captured_at": _utc_now(),
             "compile_and_warmup_seconds": compile_seconds,
             "config": asdict(config),
+            "hps_contract": _hps_contract(hps),
         },
     )
 
@@ -259,7 +344,7 @@ def run_worker(config: WorkerConfig) -> int:
         time.sleep(0.2)
 
     burn = _timed_train(
-        trainer=make_trainer(max(1, config.chunk_batches)),
+        trainer=make_trainer(),
         pair=pair,
         model=model,
         seconds=config.burn_in_seconds,
@@ -269,7 +354,7 @@ def run_worker(config: WorkerConfig) -> int:
         batch_size=config.batch_size,
     )
     measured = _timed_train(
-        trainer=make_trainer(max(1, config.chunk_batches)),
+        trainer=make_trainer(),
         pair=pair,
         model=burn["model"],
         seconds=config.measure_seconds,
@@ -287,6 +372,7 @@ def run_worker(config: WorkerConfig) -> int:
         "burn_in": _strip_model(burn),
         "measured": _strip_model(measured),
         "config": asdict(config),
+        "hps_contract": _hps_contract(hps),
     }
     _write_json(summary_path, payload)
     _write_json(status_path, payload)
@@ -347,9 +433,42 @@ def _timed_train(
 def _make_where_train() -> dict[int, Any]:
     def where_train_fn(model: Any) -> tuple[Any, ...]:
         net = model.nodes["net"]
+        if hasattr(net, "h0_encoder"):
+            return (net.hidden, net.readout, net.h0_encoder)
         return (net.hidden, net.readout)
 
     return {0: where_train_fn}
+
+
+def _hps_contract(hps: Any) -> dict[str, Any]:
+    broad_epsilon = getattr(hps, "broad_epsilon_training", None)
+    initial_hidden_encoder = getattr(hps, "initial_hidden_encoder", None)
+    return {
+        "batch_size": int(hps.batch_size),
+        "controller_lr": float(hps.learning_rate_0),
+        "lr_schedule": str(hps.lr_schedule),
+        "lr_warmup_batches": int(hps.constant_lr_iterations),
+        "lr_warmup_init_fraction": float(hps.warmup_init_fraction),
+        "lr_cosine_alpha": float(hps.cosine_annealing_alpha),
+        "gradient_clip_norm": (
+            None if hps.gradient_clip_norm is None else float(hps.gradient_clip_norm)
+        ),
+        "plant_backend": str(hps.model.plant_backend),
+        "stochastic_preset": str(hps.model.stochastic_preset),
+        "loss_objective": str(hps.loss.objective),
+        "n_replicates": int(hps.model.n_replicates),
+        "hidden_size": int(hps.model.hidden_size),
+        "target_relative_multitarget": bool(hps.target_relative_multitarget.enabled),
+        "force_filter_feedback": bool(hps.target_relative_multitarget.force_filter_feedback),
+        "perturbation_training": bool(hps.perturbation_training.enabled),
+        "perturbation_calibrated_timing": bool(hps.perturbation_training.calibrated_timing),
+        "perturbation_physical_level": str(hps.perturbation_training.physical_level),
+        "broad_epsilon_training": bool(getattr(broad_epsilon, "enabled", False)),
+        "broad_epsilon_level": str(getattr(broad_epsilon, "level", "not_applicable")),
+        "initial_hidden_encoder": bool(getattr(initial_hidden_encoder, "enabled", False)),
+        "training_diagnostics": bool(hps.training_diagnostics),
+        "schedule_total_batches": int(hps.n_batches_condition),
+    }
 
 
 def _wait_for_ready(

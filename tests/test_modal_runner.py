@@ -149,7 +149,11 @@ def test_dry_run_payload_exposes_no_warm_container_settings() -> None:
     assert payload["max_containers"] == 1
     assert payload["remote_smoke_command"] == build_remote_smoke_command()
     assert payload["remote_packing_benchmark_command"] == build_packing_benchmark_command(
-        NominalGruRunConfig(gpu="A10G", timeout_seconds=90),
+        NominalGruRunConfig(
+            gpu="A10G",
+            timeout_seconds=90,
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+        ),
         remote=True,
     )
     planned = payload["planned_stochastic_runs"]
@@ -282,3 +286,42 @@ def test_packing_benchmark_command_disables_sync_and_sets_worker_count() -> None
     assert command[command.index("--stochastic-preset") + 1] == "cs2019-rollout"
     assert "--nn-hidden" not in command
     assert "--regularized-fidelity" not in command
+
+
+def test_packing_benchmark_command_can_match_b8aa38e_proprio_contract() -> None:
+    command = build_packing_benchmark_command(
+        NominalGruRunConfig(
+            experiment="b8aa38e",
+            run="packing_titan_proprio_cal_stress_b64_n2",
+            n_workers=2,
+            batch_size=64,
+            controller_lr=1e-3,
+            lr_warmup_batches=500,
+            lr_warmup_init_fraction=0.1,
+            lr_cosine_alpha=0.01,
+            gradient_clip_norm=5.0,
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            target_relative_multitarget=True,
+            force_filter_feedback=True,
+            perturbation_training=True,
+            perturbation_calibrated_timing=True,
+            perturbation_physical_level="stress",
+            schedule_total_batches=1000,
+            training_diagnostics=True,
+        ),
+        remote=True,
+    )
+
+    assert command[command.index("--batch-size") + 1] == "64"
+    assert command[command.index("--controller-lr") + 1] == "0.001"
+    assert command[command.index("--lr-warmup-batches") + 1] == "500"
+    assert command[command.index("--lr-cosine-alpha") + 1] == "0.01"
+    assert command[command.index("--gradient-clip-norm") + 1] == "5.0"
+    assert command[command.index("--loss-objective") + 1] == "full_analytical_qrf"
+    assert command[command.index("--schedule-total-batches") + 1] == "1000"
+    assert command[command.index("--perturbation-physical-level") + 1] == "stress"
+    assert "--target-relative-multitarget" in command
+    assert "--force-filter-feedback" in command
+    assert "--perturbation-training" in command
+    assert "--perturbation-calibrated-timing" in command
+    assert "--training-diagnostics" in command

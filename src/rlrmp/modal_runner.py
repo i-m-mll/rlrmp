@@ -90,6 +90,18 @@ class NominalGruRunConfig:
     chunk_batches: int = 4
     ready_timeout_seconds: float = 900.0
     sample_seconds: float = 5.0
+    target_relative_multitarget: bool = False
+    force_filter_feedback: bool = False
+    perturbation_training: bool = False
+    perturbation_calibrated_timing: bool = False
+    perturbation_physical_level: str = "moderate"
+    broad_epsilon_training: bool = False
+    broad_epsilon_level: str = "moderate"
+    broad_epsilon_budget_scale: float = 1.0
+    broad_epsilon_reach_scaling: bool = True
+    initial_hidden_encoder: bool = False
+    training_diagnostics: bool = True
+    schedule_total_batches: int = 1000
 
     def local_artifact_dir(self) -> Path:
         return run_artifact_dir(self.experiment, self.run)
@@ -226,11 +238,44 @@ def build_packing_benchmark_command(
         ("--n-replicates", config.n_replicates),
         ("--hidden-size", config.hidden_size),
         ("--controller-lr", config.controller_lr),
+        ("--lr-warmup-batches", config.lr_warmup_batches),
+        ("--lr-warmup-init-fraction", config.lr_warmup_init_fraction),
+        ("--lr-cosine-alpha", config.lr_cosine_alpha),
+        ("--plant-backend", "cs_lss"),
         ("--stochastic-preset", config.stochastic_preset),
+        ("--loss-objective", config.loss_objective),
         ("--seed", config.seed),
         ("--sample-seconds", config.sample_seconds),
+        ("--schedule-total-batches", config.schedule_total_batches),
     ]:
         _append_arg(command, flag, value)
+    if config.gradient_clip_norm is not None:
+        _append_arg(command, "--gradient-clip-norm", config.gradient_clip_norm)
+    if config.regularized_fidelity:
+        command.append("--regularized-fidelity")
+    if config.target_relative_multitarget:
+        command.append("--target-relative-multitarget")
+    if config.force_filter_feedback:
+        command.append("--force-filter-feedback")
+    if config.perturbation_training:
+        command.append("--perturbation-training")
+    if config.perturbation_calibrated_timing:
+        command.append("--perturbation-calibrated-timing")
+    _append_arg(command, "--perturbation-physical-level", config.perturbation_physical_level)
+    if config.broad_epsilon_training:
+        command.append("--broad-epsilon-training")
+    _append_arg(command, "--broad-epsilon-level", config.broad_epsilon_level)
+    _append_arg(command, "--broad-epsilon-budget-scale", config.broad_epsilon_budget_scale)
+    command.append(
+        "--broad-epsilon-reach-scaling"
+        if config.broad_epsilon_reach_scaling
+        else "--no-broad-epsilon-reach-scaling"
+    )
+    if config.initial_hidden_encoder:
+        command.append("--initial-hidden-encoder")
+    command.append(
+        "--training-diagnostics" if config.training_diagnostics else "--no-training-diagnostics"
+    )
     return command
 
 
