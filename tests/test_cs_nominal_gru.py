@@ -16,6 +16,9 @@ import numpy as np
 import optax
 import pytest
 from feedbax.mechanics import LinearStateSpace
+from feedbax._mapping import WhereDict
+from feedbax.loss import TargetSpec
+from feedbax.task import TaskTrialSpec, TrialTimeline
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
 from feedbax.types import TreeNamespace
 
@@ -30,6 +33,7 @@ from rlrmp.analysis.gru_perturbation_calibration import (
 from rlrmp.analysis.output_feedback import OutputFeedbackConfig
 from rlrmp.cs_lss_gru import (
     CS_EPSILON_DIM,
+    CS_REDUCED_EPSILON_DIM,
     TargetRelativeDelayedFeedback,
     TargetRelativeDelayedProprioceptiveFeedback,
 )
@@ -78,6 +82,7 @@ from rlrmp.train.cs_perturbation_training import (
     apply_validation_bin,
     planned_target_relative_multitarget_h0_rows,
     planned_target_relative_multitarget_rows,
+    run_broad_epsilon_pgd_inner_maximizer,
     target_relative_validation_manifest,
     planned_fixed_target_perturbation_rows,
     validation_bin_manifest,
@@ -1200,6 +1205,35 @@ def test_delayed_reach_setup_adds_go_cue_and_preserves_target_visibility() -> No
     assert validation.inputs["target"].shape == validation_targets.shape
 
 
+def test_delayed_reach_no_integrator_setup_uses_36d_state_and_6d_epsilon() -> None:
+    hps = build_hps(
+        _args(
+            smoke=True,
+            delayed_reach=True,
+            target_relative_multitarget=True,
+            force_filter_feedback=True,
+            no_integrator_state=True,
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            hidden_size=8,
+            n_replicates=1,
+        )
+    )
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    trial = pair.task.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
+    loss = pair.task.loss_func.terms[CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE]
+    mechanics = pair.model.nodes["mechanics"]
+
+    assert hps.model.no_integrator_state is True
+    assert hps.model.state_dim == 36
+    assert hps.model.physical_state_dim == 6
+    assert mechanics.A.shape[-2:] == (36, 36)
+    assert mechanics.B_w.shape[-2:] == (36, 6)
+    assert trial.inits["mechanics.vector"].shape[-1] == 36
+    assert trial.inputs["epsilon"].shape == (90, CS_REDUCED_EPSILON_DIM)
+    assert loss.Q.shape[-1] == 36
+    assert loss.n_phys == 6
+
+
 def test_delayed_reach_movement_costs_and_broad_epsilon_are_go_cue_gated() -> None:
     hps = build_hps(
         _args(
@@ -1302,6 +1336,44 @@ def test_delayed_reach_run_spec_declares_task_and_movement_pgd_mask(tmp_path: Pa
         "movement_age_from_go_cue"
     )
     assert DELAYED_REACH_TRAINING_MODE in payload["training_summary"]["training_mode"]
+
+
+def test_delayed_no_integrator_run_spec_declares_reduced_state_and_pgd_dim(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        smoke=True,
+        dry_run=True,
+        issue="ffff699",
+        delayed_reach=True,
+        target_relative_multitarget=True,
+        force_filter_feedback=True,
+        no_integrator_state=True,
+        broad_epsilon_pgd_training=True,
+        loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+    )
+
+    result = write_run_spec(args)
+    payload = result["run_spec"]
+
+    assert payload["hps"]["model"]["no_integrator_state"] is True
+    assert payload["hps"]["model"]["state_dim"] == 36
+    assert payload["hps"]["model"]["physical_state_dim"] == 6
+    assert payload["hps"]["broad_epsilon_pgd_training"]["epsilon_dim"] == 6
+    assert payload["hps"]["broad_epsilon_pgd_training"]["epsilon_channel"]["shape"] == [
+        "batch",
+        "time",
+        6,
+    ]
+    assert payload["model_summary"]["state_dim"] == 36
+    assert payload["model_summary"]["physical_state_dim"] == 6
+    assert payload["loss_summary"]["source_module"].endswith("build_no_integrator_game")
+    assert payload["loss_summary"]["state_basis"]["physical_block_size"] == 6
+    assert payload["loss_summary"]["state_basis"]["dimension"] == 36
 
 
 def test_target_relative_proprioceptive_feedback_extends_sign_contract() -> None:
@@ -1743,6 +1815,61 @@ def test_target_relative_h0_full_training_smoke_emits_diagnostics(tmp_path: Path
         assert diagnostics["validation_loss__total"].shape == (2, 2)
 
 
+def test_pgd_broad_epsilon_keeps_best_seen_endpoint_for_nonmonotone_ascent() -> None:
+    class EchoTask:
+        def eval_trials(self, model, trial_specs, keys_model):
+            del model, keys_model
+            return trial_specs.inputs["epsilon"]
+
+    class TinyTargetLoss:
+        def __call__(self, states, trial_specs, model):
+            del states, model
+            epsilon = trial_specs.inputs["epsilon"]
+            return TreeNamespace(total=-jnp.sum((epsilon - 1e-4) ** 2))
+
+    trial_specs = TaskTrialSpec(
+        inits=WhereDict({}),
+        targets=WhereDict(
+            {
+                "mechanics.effector.pos": TargetSpec(
+                    value=jnp.zeros((1, 1, 2), dtype=jnp.float32),
+                )
+            }
+        ),
+        inputs={"epsilon": jnp.zeros((1, 1, 1), dtype=jnp.float32)},
+        timeline=TrialTimeline(n_steps=1),
+    )
+    config = {
+        "enabled": True,
+        "level": "moderate",
+        "budget_scale": 1000.0,
+        "reach_length_scaling": False,
+        "n_steps": 1,
+        "step_size_fraction": 2.0,
+        "epsilon_dim": 1,
+    }
+
+    updated, diagnostics = run_broad_epsilon_pgd_inner_maximizer(
+        EchoTask(),
+        model=None,
+        trial_specs=trial_specs,
+        loss_func=TinyTargetLoss(),
+        keys_model=None,
+        config=config,
+        return_diagnostics=True,
+    )
+
+    assert jnp.allclose(updated.inputs["epsilon"], 0.0)
+    assert diagnostics["inner_objective_after"] == pytest.approx(
+        diagnostics["inner_objective_before"]
+    )
+    assert diagnostics["inner_objective_best"] == pytest.approx(
+        diagnostics["inner_objective_before"]
+    )
+    assert diagnostics["inner_objective_final_endpoint"] < diagnostics["inner_objective_best"]
+    assert diagnostics["inner_objective_final_endpoint_gap"] > 0.0
+
+
 def test_pgd_broad_epsilon_full_training_emits_inner_diagnostics(tmp_path: Path) -> None:
     output_dir = tmp_path / "bulk"
     spec_dir = tmp_path / "spec"
@@ -1784,6 +1911,9 @@ def test_pgd_broad_epsilon_full_training_emits_inner_diagnostics(tmp_path: Path)
     assert "pgd_broad_epsilon_inner_objective_before" in diagnostics_manifest["arrays"]
     assert "pgd_broad_epsilon_inner_objective_after" in diagnostics_manifest["arrays"]
     assert "pgd_broad_epsilon_inner_objective_improvement" in diagnostics_manifest["arrays"]
+    assert "pgd_broad_epsilon_inner_objective_best" in diagnostics_manifest["arrays"]
+    assert "pgd_broad_epsilon_inner_objective_final_endpoint" in diagnostics_manifest["arrays"]
+    assert "pgd_broad_epsilon_inner_objective_final_endpoint_gap" in diagnostics_manifest["arrays"]
     assert "pgd_broad_epsilon_epsilon_norm_radius_ratio_mean" in diagnostics_manifest["arrays"]
     assert "pgd_broad_epsilon_boundary_fraction" in diagnostics_manifest["arrays"]
     with np.load(output_dir / "training_diagnostics.npz") as diagnostics:
@@ -1799,6 +1929,16 @@ def test_pgd_broad_epsilon_full_training_emits_inner_diagnostics(tmp_path: Path)
         assert np.isfinite(diagnostics["pgd_broad_epsilon_inner_objective_before"]).all()
         assert np.isfinite(diagnostics["pgd_broad_epsilon_inner_objective_after"]).all()
         assert np.isfinite(diagnostics["pgd_broad_epsilon_inner_objective_improvement"]).all()
+        assert np.isfinite(diagnostics["pgd_broad_epsilon_inner_objective_best"]).all()
+        assert np.isfinite(
+            diagnostics["pgd_broad_epsilon_inner_objective_final_endpoint"]
+        ).all()
+        assert np.isfinite(
+            diagnostics["pgd_broad_epsilon_inner_objective_final_endpoint_gap"]
+        ).all()
+        assert np.all(
+            diagnostics["pgd_broad_epsilon_inner_objective_final_endpoint_gap"] >= -1e-6
+        )
         assert np.any(diagnostics["pgd_broad_epsilon_epsilon_norm_mean"] > 0.0)
 
 

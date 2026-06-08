@@ -35,9 +35,13 @@ from rlrmp.analysis.cs_game_card import build_canonical_game
 from rlrmp.analysis.feedbax_parity import build_cs2019_feedbax_mechanics
 
 
+CS_PHYSICAL_STATE_DIM = 8
+CS_REDUCED_PHYSICAL_STATE_DIM = 6
+CS_DELAY_BLOCKS = 6
 CS_DELAYED_POS_VEL_INDICES = (40, 41, 42, 43)
 CS_DELAYED_POS_VEL_FORCE_INDICES = (40, 41, 42, 43, 44, 45)
 CS_EPSILON_DIM = 8
+CS_REDUCED_EPSILON_DIM = 6
 CS_FORCE_DIM = 2
 CS_FEEDBACK_DIM = 4
 CS_PROPRIOCEPTIVE_FEEDBACK_DIM = 6
@@ -60,14 +64,18 @@ class DelayedPositionVelocityFeedback(Component):
     output_ports = ("feedback",)
 
     indices: tuple[int, ...] = field(static=True)
+    expected_state_dim: int = field(static=True)
 
-    def __init__(self, indices: tuple[int, ...] = CS_DELAYED_POS_VEL_INDICES):
+    def __init__(
+        self,
+        indices: tuple[int, ...] = CS_DELAYED_POS_VEL_INDICES,
+        *,
+        expected_state_dim: int = CS_PHYSICAL_STATE_DIM * CS_DELAY_BLOCKS,
+    ):
         self.indices = tuple(int(index) for index in indices)
-        if self.indices != CS_DELAYED_POS_VEL_INDICES:
-            raise ValueError(
-                "This first C&S GRU path is fixed to oldest delayed pos/vel indices "
-                f"{CS_DELAYED_POS_VEL_INDICES}; got {self.indices}."
-            )
+        self.expected_state_dim = int(expected_state_dim)
+        if len(self.indices) != CS_FEEDBACK_DIM:
+            raise ValueError(f"Delayed pos/vel feedback needs 4 indices; got {self.indices}.")
 
     def __call__(
         self,
@@ -78,8 +86,11 @@ class DelayedPositionVelocityFeedback(Component):
     ) -> tuple[dict[str, PyTree], eqx.nn.State]:
         del key
         vector = jnp.asarray(inputs["state"])
-        if vector.shape[-1] != 48:
-            raise ValueError(f"Expected a 48D C&S state vector; got shape {vector.shape}.")
+        if vector.shape[-1] != self.expected_state_dim:
+            raise ValueError(
+                f"Expected a {self.expected_state_dim}D C&S state vector; got shape "
+                f"{vector.shape}."
+            )
         feedback = vector[jnp.asarray(self.indices, dtype=jnp.int32)]
         return {"feedback": feedback}, state
 
@@ -96,14 +107,18 @@ class TargetRelativeDelayedFeedback(Component):
     output_ports = ("feedback",)
 
     indices: tuple[int, ...] = field(static=True)
+    expected_state_dim: int = field(static=True)
 
-    def __init__(self, indices: tuple[int, ...] = CS_DELAYED_POS_VEL_INDICES):
+    def __init__(
+        self,
+        indices: tuple[int, ...] = CS_DELAYED_POS_VEL_INDICES,
+        *,
+        expected_state_dim: int = CS_PHYSICAL_STATE_DIM * CS_DELAY_BLOCKS,
+    ):
         self.indices = tuple(int(index) for index in indices)
-        if self.indices != CS_DELAYED_POS_VEL_INDICES:
-            raise ValueError(
-                "This first C&S GRU path is fixed to oldest delayed pos/vel indices "
-                f"{CS_DELAYED_POS_VEL_INDICES}; got {self.indices}."
-            )
+        self.expected_state_dim = int(expected_state_dim)
+        if len(self.indices) != CS_FEEDBACK_DIM:
+            raise ValueError(f"Target-relative delayed feedback needs 4 indices; got {self.indices}.")
 
     def __call__(
         self,
@@ -115,8 +130,11 @@ class TargetRelativeDelayedFeedback(Component):
         del key
         vector = jnp.asarray(inputs["state"])
         target = jnp.asarray(inputs["target"])
-        if vector.shape[-1] != 48:
-            raise ValueError(f"Expected a 48D C&S state vector; got shape {vector.shape}.")
+        if vector.shape[-1] != self.expected_state_dim:
+            raise ValueError(
+                f"Expected a {self.expected_state_dim}D C&S state vector; got shape "
+                f"{vector.shape}."
+            )
         if target.shape[-1] != CS_TARGET_DIM:
             raise ValueError(f"Expected a 2D target vector; got shape {target.shape}.")
         delayed = jnp.take(vector, jnp.asarray(self.indices, dtype=jnp.int32), axis=-1)
@@ -139,13 +157,19 @@ class TargetRelativeDelayedProprioceptiveFeedback(Component):
     output_ports = ("feedback",)
 
     indices: tuple[int, ...] = field(static=True)
+    expected_state_dim: int = field(static=True)
 
-    def __init__(self, indices: tuple[int, ...] = CS_DELAYED_POS_VEL_FORCE_INDICES):
+    def __init__(
+        self,
+        indices: tuple[int, ...] = CS_DELAYED_POS_VEL_FORCE_INDICES,
+        *,
+        expected_state_dim: int = CS_PHYSICAL_STATE_DIM * CS_DELAY_BLOCKS,
+    ):
         self.indices = tuple(int(index) for index in indices)
-        if self.indices != CS_DELAYED_POS_VEL_FORCE_INDICES:
+        self.expected_state_dim = int(expected_state_dim)
+        if len(self.indices) != CS_PROPRIOCEPTIVE_FEEDBACK_DIM:
             raise ValueError(
-                "The proprioceptive C&S GRU path is fixed to oldest delayed "
-                f"pos/vel/force indices {CS_DELAYED_POS_VEL_FORCE_INDICES}; "
+                "Target-relative proprioceptive delayed feedback needs 6 indices; "
                 f"got {self.indices}."
             )
 
@@ -159,8 +183,11 @@ class TargetRelativeDelayedProprioceptiveFeedback(Component):
         del key
         vector = jnp.asarray(inputs["state"])
         target = jnp.asarray(inputs["target"])
-        if vector.shape[-1] != 48:
-            raise ValueError(f"Expected a 48D C&S state vector; got shape {vector.shape}.")
+        if vector.shape[-1] != self.expected_state_dim:
+            raise ValueError(
+                f"Expected a {self.expected_state_dim}D C&S state vector; got shape "
+                f"{vector.shape}."
+            )
         if target.shape[-1] != CS_TARGET_DIM:
             raise ValueError(f"Expected a 2D target vector; got shape {target.shape}.")
         delayed = jnp.take(vector, jnp.asarray(self.indices, dtype=jnp.int32), axis=-1)
@@ -303,6 +330,7 @@ def build_cs_lss_gru_graph(
     target_relative_feedback: bool = False,
     force_filter_feedback: bool = False,
     initial_hidden_encoder: bool = False,
+    no_integrator_state: bool = False,
     key: PRNGKeyArray,
 ) -> Graph:
     """Build the C&S LinearStateSpace GRU feedback graph.
@@ -361,7 +389,26 @@ def build_cs_lss_gru_graph(
             "controller-visible basis."
         )
 
-    mechanics = build_cs2019_feedbax_mechanics(initial_state=initial_state)
+    physical_state_dim = (
+        CS_REDUCED_PHYSICAL_STATE_DIM
+        if bool(no_integrator_state)
+        else CS_PHYSICAL_STATE_DIM
+    )
+    mechanics = build_cs2019_feedbax_mechanics(
+        initial_state=initial_state,
+        no_integrator_state=bool(no_integrator_state),
+    )
+    state_dim = int(mechanics.A.shape[0])
+    delayed_pos_vel_indices = _delayed_feedback_indices(
+        state_dim=state_dim,
+        physical_state_dim=physical_state_dim,
+        include_force=False,
+    )
+    delayed_pos_vel_force_indices = _delayed_feedback_indices(
+        state_dim=state_dim,
+        physical_state_dim=physical_state_dim,
+        include_force=True,
+    )
     feedback_dim = (
         CS_PROPRIOCEPTIVE_FEEDBACK_DIM
         if bool(force_filter_feedback)
@@ -409,11 +456,20 @@ def build_cs_lss_gru_graph(
         init_value=0.0,
     )
     if bool(force_filter_feedback):
-        feedback = TargetRelativeDelayedProprioceptiveFeedback()
+        feedback = TargetRelativeDelayedProprioceptiveFeedback(
+            delayed_pos_vel_force_indices,
+            expected_state_dim=state_dim,
+        )
     elif bool(target_relative_feedback):
-        feedback = TargetRelativeDelayedFeedback()
+        feedback = TargetRelativeDelayedFeedback(
+            delayed_pos_vel_indices,
+            expected_state_dim=state_dim,
+        )
     else:
-        feedback = DelayedPositionVelocityFeedback()
+        feedback = DelayedPositionVelocityFeedback(
+            delayed_pos_vel_indices,
+            expected_state_dim=state_dim,
+        )
 
     nodes = {
         "feedback": feedback,
@@ -472,6 +528,23 @@ def build_cs_lss_gru_graph(
     )
 
 
+def _delayed_feedback_indices(
+    *,
+    state_dim: int,
+    physical_state_dim: int,
+    include_force: bool,
+) -> tuple[int, ...]:
+    if physical_state_dim < CS_REDUCED_PHYSICAL_STATE_DIM:
+        raise ValueError(f"physical_state_dim must be >= 6; got {physical_state_dim}.")
+    if state_dim % physical_state_dim != 0:
+        raise ValueError(
+            f"state_dim={state_dim} is not divisible by physical_state_dim={physical_state_dim}."
+        )
+    delayed_start = state_dim - physical_state_dim
+    width = CS_PROPRIOCEPTIVE_FEEDBACK_DIM if include_force else CS_FEEDBACK_DIM
+    return tuple(range(delayed_start, delayed_start + width))
+
+
 def cs_lss_gru_where_train() -> dict[int, Callable[[Graph], tuple[Module, Module | None]]]:
     """Return a train filter that excludes the fixed C&S plant matrices."""
 
@@ -488,6 +561,12 @@ def is_canonical_cs_lss_mechanics(mechanics: LinearStateSpace) -> bool:
     """Return whether mechanics matrices exactly match the canonical C&S plant."""
 
     plant, _schedule = build_canonical_game()
+    if (
+        mechanics.A.shape != plant.A.shape
+        or mechanics.B.shape != plant.B.shape
+        or mechanics.B_w.shape != plant.Bw.shape
+    ):
+        return False
     return bool(
         jnp.allclose(mechanics.A, plant.A, atol=0.0)
         and jnp.allclose(mechanics.B, plant.B, atol=0.0)

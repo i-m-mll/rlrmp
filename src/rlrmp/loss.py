@@ -30,7 +30,7 @@ from feedbax.types import TreeNamespace
 from jax_cookbook.misc import window_take
 from jaxtyping import Array, PyTree
 
-from rlrmp.analysis.cs_game_card import TARGET_POS, build_canonical_game
+from rlrmp.analysis.cs_game_card import TARGET_POS, build_canonical_game, build_no_integrator_game
 
 logger = logging.getLogger(__name__)
 
@@ -861,12 +861,16 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
                 "loss.objective='full_analytical_qrf' requires model.plant_backend='cs_lss' "
                 f"so the full 48D C&S state is available; got {plant_backend!r}."
             )
-        _plant, schedule = build_canonical_game()
+        no_integrator_state = bool(_nsget(hps, "model.no_integrator_state", False))
+        _plant, schedule = (
+            build_no_integrator_game() if no_integrator_state else build_canonical_game()
+        )
         term = CsAnalyticalQrfLoss(
             Q=schedule.Q,
             R=schedule.R,
             Q_f=schedule.Q_f,
             target_pos=TARGET_POS,
+            n_phys=6 if no_integrator_state else 8,
         )
         return CompositeLoss(
             label="reach_loss",
@@ -955,7 +959,10 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
         ),
     )
     if ablate_net_force_filter:
-        terms["mechanics_force_filter"] = CsForceFilterStateLoss()
+        no_integrator_state = bool(_nsget(hps, "model.no_integrator_state", False))
+        terms["mechanics_force_filter"] = CsForceFilterStateLoss(
+            n_phys=6 if no_integrator_state else 8,
+        )
 
     # Power-law schedule parameters (Bug: 2e1a6ad).
     # "flat" (default) keeps existing uniform weighting; "powerlaw" applies

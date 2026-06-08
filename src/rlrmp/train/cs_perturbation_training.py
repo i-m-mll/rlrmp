@@ -134,6 +134,7 @@ class BroadFullStateEpsilonTrainingConfig:
     reach_length_scaling: bool = True
     nominal_reach_length_m: float = BROAD_EPSILON_REFERENCE_REACH_M
     movement_epoch_only: bool = False
+    epsilon_dim: int = BROAD_EPSILON_DIM
 
     def __post_init__(self) -> None:
         if self.level not in BROAD_EPSILON_LEVELS:
@@ -145,6 +146,8 @@ class BroadFullStateEpsilonTrainingConfig:
             raise ValueError("broad epsilon budget_scale must be positive.")
         if float(self.nominal_reach_length_m) <= 0.0:
             raise ValueError("broad epsilon nominal_reach_length_m must be positive.")
+        if int(self.epsilon_dim) < 1:
+            raise ValueError("broad epsilon epsilon_dim must be positive.")
 
     @property
     def level_contract(self) -> dict[str, Any]:
@@ -173,10 +176,14 @@ class BroadFullStateEpsilonTrainingConfig:
             "reach_length_scaling": bool(self.reach_length_scaling),
             "nominal_reach_length_m": float(self.nominal_reach_length_m),
             "movement_epoch_only": bool(self.movement_epoch_only),
+            "epsilon_dim": int(self.epsilon_dim),
             "epsilon_channel": {
-                "state_basis": "C&S 48D delay-augmented LinearStateSpace state",
-                "shape": ["batch", "time", BROAD_EPSILON_DIM],
-                "injection": "B_w[:8, :] = I_8; B_w[8:, :] = 0",
+                "state_basis": _broad_epsilon_state_basis(int(self.epsilon_dim)),
+                "shape": ["batch", "time", int(self.epsilon_dim)],
+                "injection": (
+                    f"B_w[:{int(self.epsilon_dim)}, :] = I_{int(self.epsilon_dim)}; "
+                    f"B_w[{int(self.epsilon_dim)}:, :] = 0"
+                ),
                 "lag_history_direct_write": False,
                 "dt_scaling": "none",
             },
@@ -221,6 +228,7 @@ class PgdFullStateEpsilonTrainingConfig:
     step_size_fraction: float = 0.25
     init: str = "zero"
     movement_epoch_only: bool = False
+    epsilon_dim: int = BROAD_EPSILON_DIM
 
     def __post_init__(self) -> None:
         if self.level not in BROAD_EPSILON_LEVELS:
@@ -236,6 +244,8 @@ class PgdFullStateEpsilonTrainingConfig:
             raise ValueError("PGD broad epsilon n_steps must be positive.")
         if float(self.step_size_fraction) <= 0.0:
             raise ValueError("PGD broad epsilon step_size_fraction must be positive.")
+        if int(self.epsilon_dim) < 1:
+            raise ValueError("PGD broad epsilon epsilon_dim must be positive.")
         if self.init != "zero":
             raise ValueError("Only zero-initialized PGD broad epsilon is currently supported.")
 
@@ -266,10 +276,14 @@ class PgdFullStateEpsilonTrainingConfig:
             "reach_length_scaling": bool(self.reach_length_scaling),
             "nominal_reach_length_m": float(self.nominal_reach_length_m),
             "movement_epoch_only": bool(self.movement_epoch_only),
+            "epsilon_dim": int(self.epsilon_dim),
             "epsilon_channel": {
-                "state_basis": "C&S 48D delay-augmented LinearStateSpace state",
-                "shape": ["batch", "time", BROAD_EPSILON_DIM],
-                "injection": "B_w[:8, :] = I_8; B_w[8:, :] = 0",
+                "state_basis": _broad_epsilon_state_basis(int(self.epsilon_dim)),
+                "shape": ["batch", "time", int(self.epsilon_dim)],
+                "injection": (
+                    f"B_w[:{int(self.epsilon_dim)}, :] = I_{int(self.epsilon_dim)}; "
+                    f"B_w[{int(self.epsilon_dim)}:, :] = 0"
+                ),
                 "lag_history_direct_write": False,
                 "dt_scaling": "none",
             },
@@ -1265,6 +1279,7 @@ def config_from_broad_epsilon_hps(config: Any) -> BroadFullStateEpsilonTrainingC
             getattr(config, "nominal_reach_length_m", BROAD_EPSILON_REFERENCE_REACH_M)
         ),
         movement_epoch_only=bool(getattr(config, "movement_epoch_only", False)),
+        epsilon_dim=int(getattr(config, "epsilon_dim", BROAD_EPSILON_DIM)),
     )
 
 
@@ -1300,6 +1315,7 @@ def config_from_broad_epsilon_pgd_hps(config: Any) -> PgdFullStateEpsilonTrainin
             )
         ),
         movement_epoch_only=bool(_payload_get(config, "movement_epoch_only", False)),
+        epsilon_dim=int(_payload_get(config, "epsilon_dim", BROAD_EPSILON_DIM)),
     )
 
 
@@ -1359,7 +1375,7 @@ def run_broad_epsilon_pgd_inner_maximizer(
     """Run the PGD inner maximizer and optionally return compact scalar diagnostics."""
 
     cfg = config_from_broad_epsilon_pgd_hps(config)
-    specs = _ensure_broad_epsilon_input(trial_specs)
+    specs = _ensure_broad_epsilon_input(trial_specs, epsilon_dim=cfg.epsilon_dim)
     base_epsilon = jnp.asarray(specs.inputs["epsilon"])
     radius = _broad_epsilon_l2_radius(specs, cfg).astype(base_epsilon.dtype)
     time_mask = _epsilon_time_mask(specs, base_epsilon, cfg.movement_epoch_only)
@@ -1370,25 +1386,39 @@ def run_broad_epsilon_pgd_inner_maximizer(
         candidate_states = task.eval_trials(model, candidate, keys_model)
         return loss_func(candidate_states, candidate, model).total
 
-    def body(_, delta_current):
+    zero_delta = jnp.zeros_like(base_epsilon)
+    objective_initial = objective(zero_delta)
+
+    def body(_, state):
+        delta_current, best_delta, best_objective, _last_objective = state
         grad = jax.grad(objective)(delta_current) * time_mask
         step = _normalize_flattened_per_trial(grad) * _expand_radius(
             radius * jnp.asarray(cfg.step_size_fraction, dtype=base_epsilon.dtype),
             base_epsilon.ndim,
         )
-        return _project_flattened_per_trial_l2_ball(
+        proposal = _project_flattened_per_trial_l2_ball(
             (delta_current + step) * time_mask,
             radius,
         )
+        proposal_objective = objective(proposal)
+        improved = proposal_objective > best_objective
+        best_delta = jnp.where(_expand_bool_like(improved, proposal), proposal, best_delta)
+        best_objective = jnp.where(improved, proposal_objective, best_objective)
+        return proposal, best_delta, best_objective, proposal_objective
 
-    delta = jax.lax.fori_loop(0, int(cfg.n_steps), body, delta)
-    delta = jax.lax.stop_gradient(delta * time_mask)
+    final_delta, best_delta, objective_best, objective_final_endpoint = jax.lax.fori_loop(
+        0,
+        int(cfg.n_steps),
+        body,
+        (zero_delta, zero_delta, objective_initial, objective_initial),
+    )
+    del final_delta
+    delta = jax.lax.stop_gradient(best_delta * time_mask)
     updated = _set_input(specs, "epsilon", base_epsilon + delta)
     if not return_diagnostics:
         return updated, {}
 
-    objective_initial = objective(jnp.zeros_like(delta))
-    objective_final = objective(delta)
+    objective_selected = objective(delta)
     delta_norm = _flattened_per_trial_norm(delta).astype(radius.dtype)
     ratio = delta_norm / jnp.maximum(radius, jnp.asarray(1e-12, dtype=radius.dtype))
     boundary = ratio >= jnp.asarray(1.0 - 1e-4, dtype=ratio.dtype)
@@ -1400,8 +1430,13 @@ def run_broad_epsilon_pgd_inner_maximizer(
         "epsilon_norm_radius_ratio_mean": jnp.mean(ratio),
         "epsilon_norm_radius_ratio_max": jnp.max(ratio),
         "inner_objective_before": jnp.asarray(objective_initial),
-        "inner_objective_after": jnp.asarray(objective_final),
-        "inner_objective_improvement": jnp.asarray(objective_final - objective_initial),
+        "inner_objective_after": jnp.asarray(objective_selected),
+        "inner_objective_improvement": jnp.asarray(objective_selected - objective_initial),
+        "inner_objective_best": jnp.asarray(objective_best),
+        "inner_objective_final_endpoint": jnp.asarray(objective_final_endpoint),
+        "inner_objective_final_endpoint_gap": jnp.asarray(
+            objective_best - objective_final_endpoint
+        ),
         "boundary_fraction": jnp.mean(boundary.astype(radius.dtype)),
         "n_steps": jnp.asarray(cfg.n_steps, dtype=jnp.float32),
         "step_size_fraction_of_l2_radius": jnp.asarray(
@@ -1412,19 +1447,31 @@ def run_broad_epsilon_pgd_inner_maximizer(
     return updated, diagnostics
 
 
-def _ensure_broad_epsilon_input(trial_specs: TaskTrialSpec) -> TaskTrialSpec:
-    """Ensure an 8D epsilon input exists and is broadcast to the trial batch."""
+def _expand_bool_like(mask: jnp.ndarray | bool, values: jnp.ndarray) -> jnp.ndarray:
+    mask_array = jnp.asarray(mask)
+    while mask_array.ndim < values.ndim:
+        mask_array = jnp.expand_dims(mask_array, axis=-1)
+    return mask_array
+
+
+def _ensure_broad_epsilon_input(
+    trial_specs: TaskTrialSpec,
+    *,
+    epsilon_dim: int = BROAD_EPSILON_DIM,
+) -> TaskTrialSpec:
+    """Ensure an epsilon input exists and is broadcast to the trial batch."""
 
     if "epsilon" not in trial_specs.inputs:
         zeros = jnp.zeros(
-            (*_batch_shape(trial_specs), int(trial_specs.timeline.n_steps), BROAD_EPSILON_DIM),
+            (*_batch_shape(trial_specs), int(trial_specs.timeline.n_steps), int(epsilon_dim)),
             dtype=jnp.float32,
         )
         trial_specs = _set_input(trial_specs, "epsilon", zeros)
     epsilon = jnp.asarray(trial_specs.inputs["epsilon"])
-    if epsilon.shape[-1] != BROAD_EPSILON_DIM:
+    if epsilon.shape[-1] != int(epsilon_dim):
         raise ValueError(
-            "PGD broad full-state epsilon expects an 8D process epsilon input; "
+            f"PGD broad full-state epsilon expects a {int(epsilon_dim)}D process "
+            "epsilon input; "
             f"got trailing dimension {epsilon.shape[-1]}."
         )
     batch_shape = _batch_shape(trial_specs)
@@ -1478,6 +1525,11 @@ def _epsilon_time_mask_contract(movement_epoch_only: bool) -> dict[str, Any]:
         "prep_support": "zero",
         "projection_support": "movement_epoch_time_component_axes_only",
     }
+
+
+def _broad_epsilon_state_basis(epsilon_dim: int) -> str:
+    state_dim = int(epsilon_dim) * 6
+    return f"C&S {state_dim}D delay-augmented LinearStateSpace state"
 
 
 def _epsilon_time_mask(
@@ -1557,21 +1609,22 @@ def apply_broad_epsilon_training(
     config: Any,
     key: PRNGKeyArray,
 ) -> TaskTrialSpec:
-    """Add a per-trial L2-projected 8D C&S epsilon sequence to training inputs."""
+    """Add a per-trial L2-projected C&S epsilon sequence to training inputs."""
 
     cfg = config_from_broad_epsilon_hps(config)
     if not cfg.enabled:
         return trial_specs
     if "epsilon" not in trial_specs.inputs:
         zeros = jnp.zeros(
-            (*_batch_shape(trial_specs), int(trial_specs.timeline.n_steps), BROAD_EPSILON_DIM),
+            (*_batch_shape(trial_specs), int(trial_specs.timeline.n_steps), int(cfg.epsilon_dim)),
             dtype=jnp.float32,
         )
         trial_specs = _set_input(trial_specs, "epsilon", zeros)
     epsilon = jnp.asarray(trial_specs.inputs["epsilon"])
-    if epsilon.shape[-1] != BROAD_EPSILON_DIM:
+    if epsilon.shape[-1] != int(cfg.epsilon_dim):
         raise ValueError(
-            "Broad full-state epsilon expects an 8D process epsilon input; "
+            f"Broad full-state epsilon expects a {int(cfg.epsilon_dim)}D process "
+            "epsilon input; "
             f"got trailing dimension {epsilon.shape[-1]}."
         )
     batch_shape = _batch_shape(trial_specs)

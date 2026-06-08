@@ -22,14 +22,14 @@ from feedbax.training.train import always_active, bernoulli_active
 from feedbax.types import LDict, TaskModelPair, TreeNamespace
 from jaxtyping import PRNGKeyArray
 
-from rlrmp.analysis.cs_game_card import build_canonical_game
+from rlrmp.analysis.cs_game_card import build_canonical_game, build_no_integrator_game
 from rlrmp.analysis.cs_released_simulation import (
     DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
-    default_cs_noise_covariances,
 )
-from rlrmp.analysis.output_feedback import OutputFeedbackConfig
+from rlrmp.analysis.output_feedback import OutputFeedbackConfig, process_covariance
 from rlrmp.cs_lss_gru import (
-    CS_EPSILON_DIM,
+    CS_PHYSICAL_STATE_DIM,
+    CS_REDUCED_PHYSICAL_STATE_DIM,
     build_cs_lss_gru_graph,
 )
 from rlrmp.disturbance import (
@@ -249,11 +249,16 @@ def setup_task_model_pair(
         target_training = config_from_target_hps(
             getattr(hps, "target_relative_multitarget", TreeNamespace(enabled=False))
         )
+        no_integrator_state = bool(getattr(hps.model, "no_integrator_state", False))
+        physical_state_dim = (
+            CS_REDUCED_PHYSICAL_STATE_DIM if no_integrator_state else CS_PHYSICAL_STATE_DIM
+        )
         delayed_reach = _cs_delayed_reach_enabled(hps)
         task = _add_cs_lss_task_inputs(
-            _CsLssTaskAdapter(task_base),
+            _CsLssTaskAdapter(task_base, physical_state_dim=physical_state_dim),
             target_relative=target_training.enabled,
             go_cue_input=target_training.enabled and delayed_reach,
+            physical_state_dim=physical_state_dim,
         )
         models = _create_cs_lss_gru_ensemble(
             hps,
@@ -363,6 +368,7 @@ class _CsLssTaskAdapter(AbstractTask):
     """
 
     task: object
+    physical_state_dim: int = eqx.field(default=CS_PHYSICAL_STATE_DIM, static=True)
 
     def __getattr__(self, name: str):
         return getattr(self.task, name)
@@ -393,7 +399,10 @@ class _CsLssTaskAdapter(AbstractTask):
         input_fn: Callable[[TaskTrialSpec, PRNGKeyArray], object],
         exist_ok: bool = True,
     ):
-        return _CsLssTaskAdapter(self.task.add_input(name, input_fn, exist_ok=exist_ok))
+        return _CsLssTaskAdapter(
+            self.task.add_input(name, input_fn, exist_ok=exist_ok),
+            physical_state_dim=self.physical_state_dim,
+        )
 
     def get_train_trial(self, key: PRNGKeyArray, batch_info=None) -> TaskTrialSpec:
         return self._rewrite_trial(self.task.get_train_trial(key, batch_info))
@@ -423,7 +432,10 @@ class _CsLssTaskAdapter(AbstractTask):
 
     def _rewrite_trial(self, trial_spec: TaskTrialSpec) -> TaskTrialSpec:
         effector_init = trial_spec.inits["mechanics.effector"]
-        lss_vector = _effector_init_to_lss_vector(effector_init)
+        lss_vector = _effector_init_to_lss_vector(
+            effector_init,
+            physical_state_dim=self.physical_state_dim,
+        )
         return TaskTrialSpec(
             inits=WhereDict({"mechanics.vector": lss_vector}),
             inputs=trial_spec.inputs,
@@ -434,12 +446,21 @@ class _CsLssTaskAdapter(AbstractTask):
         )
 
 
-def _effector_init_to_lss_vector(effector_init: CartesianState) -> jax.Array:
+def _effector_init_to_lss_vector(
+    effector_init: CartesianState,
+    *,
+    physical_state_dim: int = CS_PHYSICAL_STATE_DIM,
+) -> jax.Array:
     pos = jnp.asarray(effector_init.pos)
     vel = jnp.asarray(effector_init.vel)
     force = jnp.asarray(effector_init.force)
+    if int(physical_state_dim) < CS_REDUCED_PHYSICAL_STATE_DIM:
+        raise ValueError(f"physical_state_dim must be >= 6; got {physical_state_dim}.")
     batch_shape = jnp.broadcast_shapes(pos.shape[:-1], vel.shape[:-1], force.shape[:-1])
-    vector = jnp.zeros((*batch_shape, 48), dtype=jnp.result_type(pos, vel, force, float))
+    vector = jnp.zeros(
+        (*batch_shape, 6 * int(physical_state_dim)),
+        dtype=jnp.result_type(pos, vel, force, float),
+    )
     return vector.at[..., 0:2].set(jnp.broadcast_to(pos, (*batch_shape, 2))).at[
         ..., 2:4
     ].set(jnp.broadcast_to(vel, (*batch_shape, 2))).at[..., 4:6].set(
@@ -452,6 +473,7 @@ def _add_cs_lss_task_inputs(
     *,
     target_relative: bool = False,
     go_cue_input: bool = False,
+    physical_state_dim: int = CS_PHYSICAL_STATE_DIM,
 ) -> _CsLssTaskAdapter:
     if go_cue_input:
         task = task.add_input(
@@ -465,7 +487,11 @@ def _add_cs_lss_task_inputs(
         )
     return task.add_input(
         name="epsilon",
-        input_fn=_sample_cs_lss_process_epsilon,
+        input_fn=lambda trial_spec, key: _sample_cs_lss_process_epsilon(
+            trial_spec,
+            key,
+            physical_state_dim=physical_state_dim,
+        ),
     )
 
 
@@ -494,10 +520,12 @@ def _cs_delayed_go_cue_input(
 def _sample_cs_lss_process_epsilon(
     trial_spec: TaskTrialSpec,
     key: PRNGKeyArray,
+    *,
+    physical_state_dim: int = CS_PHYSICAL_STATE_DIM,
 ) -> jax.Array:
     """Sample the temporary physical-process epsilon bridge for C&S LSS GRUs.
 
-    ``LinearStateSpace.B_w`` injects an 8D physical epsilon into the current
+    ``LinearStateSpace.B_w`` injects a physical epsilon into the current
     physical block. Sensory and motor noise are handled by the LSS graph's
     causal ``Channel`` nodes; this function owns only the process/load noise
     source.
@@ -506,21 +534,32 @@ def _sample_cs_lss_process_epsilon(
     target = trial_spec.targets["mechanics.effector.pos"].value
     batch_shape = target.shape[:-2] if target.ndim >= 3 else ()
     n_steps = int(target.shape[-2])
-    factor = _cs_lss_process_epsilon_factor()
-    draws = jr.normal(key, (*batch_shape, n_steps, CS_EPSILON_DIM), dtype=jnp.float64)
+    factor = _cs_lss_process_epsilon_factor(physical_state_dim=physical_state_dim)
+    epsilon_dim = int(factor.shape[0])
+    draws = jr.normal(key, (*batch_shape, n_steps, epsilon_dim), dtype=jnp.float64)
     return draws @ factor.T
 
 
-def _cs_lss_process_epsilon_factor() -> jax.Array:
+def _cs_lss_process_epsilon_factor(
+    *,
+    physical_state_dim: int = CS_PHYSICAL_STATE_DIM,
+) -> jax.Array:
     """Return a square-root factor for the physical process epsilon covariance."""
 
-    plant, _schedule = build_canonical_game()
-    covariances = default_cs_noise_covariances(
+    if int(physical_state_dim) == CS_REDUCED_PHYSICAL_STATE_DIM:
+        plant, _schedule = build_no_integrator_game()
+    elif int(physical_state_dim) == CS_PHYSICAL_STATE_DIM:
+        plant, _schedule = build_canonical_game()
+    else:
+        raise ValueError(f"Unsupported C&S LSS physical_state_dim {physical_state_dim}.")
+    process_cov = process_covariance(
         plant,
-        OutputFeedbackConfig(),
-        noise_config=DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
+        OutputFeedbackConfig(n_phys=int(physical_state_dim)),
+    ) * jnp.asarray(
+        DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG.process_covariance_scale,
+        dtype=jnp.float64,
     )
-    physical_cov = covariances.process[:CS_EPSILON_DIM, :CS_EPSILON_DIM]
+    physical_cov = process_cov[: int(physical_state_dim), : int(physical_state_dim)]
     eigvals, eigvecs = jnp.linalg.eigh(0.5 * (physical_cov + physical_cov.T))
     return eigvecs @ jnp.diag(jnp.sqrt(jnp.clip(eigvals, min=0.0)))
 
@@ -551,6 +590,7 @@ def _create_cs_lss_gru_ensemble(
         target_training = config_from_target_hps(
             getattr(hps, "target_relative_multitarget", TreeNamespace(enabled=False))
         )
+        no_integrator_state = bool(getattr(hps.model, "no_integrator_state", False))
         delayed_reach = _cs_delayed_reach_enabled(hps)
         return build_cs_lss_gru_graph(
             hidden_size=int(hps.model.hidden_size),
@@ -565,6 +605,7 @@ def _create_cs_lss_gru_ensemble(
             target_relative_feedback=target_training.enabled,
             force_filter_feedback=target_training.force_filter_feedback,
             initial_hidden_encoder=bool(getattr(hps.model, "initial_hidden_encoder", False)),
+            no_integrator_state=no_integrator_state,
             key=key_one,
         )
 

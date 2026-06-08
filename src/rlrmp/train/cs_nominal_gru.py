@@ -37,6 +37,7 @@ from rlrmp.analysis.cs_game_card import (
     OUTPUT_FEEDBACK_GAMMA_SELECTION_ISSUE_ID,
     TARGET_POS,
     build_canonical_game,
+    build_no_integrator_game,
 )
 from rlrmp.analysis.cs_released_simulation import (
     DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
@@ -315,7 +316,12 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "--loss-objective full_analytical_qrf because nn_hidden is not an analytical "
             "Q/R/Q_f objective term."
         )
-    plant, schedule = build_canonical_game()
+    no_integrator_state = bool(getattr(args, "no_integrator_state", False))
+    if no_integrator_state and str(args.plant_backend) != CS_LSS_PLANT_BACKEND:
+        raise ValueError("--no-integrator-state requires --plant-backend cs_lss.")
+    plant, schedule = (
+        build_no_integrator_game() if no_integrator_state else build_canonical_game()
+    )
     preset = stochastic_preset(args.stochastic_preset)
     delayed_reach = bool(getattr(args, "delayed_reach", False))
     delayed_go_min = int(getattr(args, "delayed_reach_go_cue_min_step", 10))
@@ -366,6 +372,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         budget_scale=float(args.broad_epsilon_budget_scale),
         reach_length_scaling=bool(args.broad_epsilon_reach_scaling),
         movement_epoch_only=delayed_reach,
+        epsilon_dim=int(plant.m_w),
     )
     broad_epsilon_pgd_training = PgdFullStateEpsilonTrainingConfig(
         enabled=bool(args.broad_epsilon_pgd_training),
@@ -375,6 +382,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         n_steps=int(args.broad_epsilon_pgd_steps),
         step_size_fraction=float(args.broad_epsilon_pgd_step_size_fraction),
         movement_epoch_only=delayed_reach,
+        epsilon_dim=int(plant.m_w),
     )
     target_relative_multitarget = TargetRelativeMultiTargetTrainingConfig(
         enabled=bool(args.target_relative_multitarget),
@@ -454,6 +462,10 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             **preset.hps_fields(),
             "stochastic_preset": preset.name,
             "plant_backend": str(args.plant_backend),
+            "no_integrator_state": no_integrator_state,
+            "state_dim": int(plant.n),
+            "physical_state_dim": int(plant.m_w),
+            "delay_blocks": int(plant.n // plant.m_w),
             "force_filter_feedback": bool(args.force_filter_feedback),
             "initial_hidden_encoder": initial_hidden_encoder,
             "initial_hidden_encoder_config": _initial_hidden_encoder_config(
@@ -637,6 +649,32 @@ def build_loss_game_card_provenance(hps: TreeNamespace) -> dict[str, Any]:
     """Return game-card provenance with objective-specific loss notes."""
 
     card = build_game_card_provenance()
+    no_integrator_state = bool(getattr(hps.model, "no_integrator_state", False))
+    if no_integrator_state:
+        card["canonical_builder"] = "build_no_integrator_game"
+        card["comparator_variant"] = {
+            "enabled": True,
+            "name": "no_integrator_state",
+            "canonical_cs2019_fidelity": False,
+            "omitted_coordinates": ["eps_x_int", "eps_y_int"],
+        }
+        card["plant"] = {
+            **card["plant"],
+            "state_dim": int(getattr(hps.model, "state_dim", 36)),
+            "disturbance_dim": int(getattr(hps.model, "physical_state_dim", 6)),
+            "physical_state_dim": int(getattr(hps.model, "physical_state_dim", 6)),
+            "bw_shape": [
+                int(getattr(hps.model, "state_dim", 36)),
+                int(getattr(hps.model, "physical_state_dim", 6)),
+            ],
+            "bw_contract": "top physical 6x6 block is identity; lag rows are zero",
+        }
+        card["cost"] = {
+            **card["cost"],
+            "schedule": "C&S Eq. 15 physical 6-state schedule with 5-step delay distribution",
+            "force_and_integrator_weight": "force/filter entries only; integrator entries omitted",
+            "terminal_Q_f": "diag([1e6, 1e6, 1e5, 1e5, 1, 1]) on physical state",
+        }
     if _delayed_reach_enabled(hps):
         card["delayed_reach_projection"] = {
             "enabled": True,
@@ -662,8 +700,14 @@ def build_loss_game_card_provenance(hps: TreeNamespace) -> dict[str, Any]:
             **card["cost"],
             "feedbax_force_filter_state_cost": "included_via_full_qrf",
             "feedbax_force_filter_state_cost_note": (
-                "Full analytical Q/R/Q_f loss scores force/filter and disturbance-integrator "
-                "state through the canonical delay-augmented C&S Q_t and Q_f matrices."
+                "Full analytical Q/R/Q_f loss scores force/filter state through the "
+                "delay-augmented Q_t and Q_f matrices."
+                if no_integrator_state
+                else (
+                    "Full analytical Q/R/Q_f loss scores force/filter and "
+                    "disturbance-integrator state through the canonical delay-augmented "
+                    "C&S Q_t and Q_f matrices."
+                )
             ),
         }
     return card
@@ -678,6 +722,9 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
     exact_lss = plant_backend == CS_LSS_PLANT_BACKEND
     h0 = _initial_hidden_encoder_metadata(hps)
     delayed_reach = _delayed_reach_enabled(hps)
+    physical_state_dim = int(getattr(hps.model, "physical_state_dim", 8))
+    state_dim = int(getattr(hps.model, "state_dim", 48))
+    no_integrator_state = bool(getattr(hps.model, "no_integrator_state", False))
     go_cue_dim = 1 if delayed_reach else 0
     return {
         "controller_kind": "gru",
@@ -689,6 +736,9 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
             else None
         ),
         "exact_cs_linear_state_space": exact_lss,
+        "no_integrator_state": no_integrator_state,
+        "state_dim": state_dim,
+        "physical_state_dim": physical_state_dim,
         "fixed_plant_parameters": (
             ["nodes.mechanics.A", "nodes.mechanics.B", "nodes.mechanics.B_w"]
             if exact_lss
@@ -720,7 +770,7 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
                 else "Feedbax feedback Channel before controller"
             ),
             "delay_source": (
-                "C&S 48D LinearStateSpace delay-augmented state"
+                f"C&S {state_dim}D LinearStateSpace delay-augmented state"
                 if exact_lss
                 else "Feedbax feedback Channel queue"
             ),
@@ -1333,6 +1383,14 @@ def build_parser() -> argparse.ArgumentParser:
             "Plant backend for nominal GRU training. The default uses exact C&S "
             "LinearStateSpace mechanics; legacy_causal_simplefeedback preserves the "
             "old point-mass/force-filter path and emits a timing warning."
+        ),
+    )
+    parser.add_argument(
+        "--no-integrator-state",
+        action="store_true",
+        help=(
+            "Use the reduced C&S LSS comparator with 6D physical state "
+            "[pos, vel, force/filter] and no disturbance-integrator coordinates."
         ),
     )
     parser.add_argument(
@@ -2739,7 +2797,11 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
         else "((t + 1) / T)^6"
     )
     if objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE:
-        _plant, schedule = build_canonical_game()
+        no_integrator_state = bool(getattr(hps.model, "no_integrator_state", False))
+        _plant, schedule = (
+            build_no_integrator_game() if no_integrator_state else build_canonical_game()
+        )
+        physical_state_dim = 6 if no_integrator_state else 8
         q_diag = jnp.diag(schedule.Q[0])
         qf_diag = jnp.diag(schedule.Q_f)
         return {
@@ -2747,12 +2809,17 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
             "delayed_reach": _plain(hps.delayed_reach),
             "objective_profile": CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
             "objective_kind": "finite_horizon_quadratic",
-            "source_module": "rlrmp.analysis.cs_game_card.build_canonical_game",
+            "source_module": (
+                "rlrmp.analysis.cs_game_card.build_no_integrator_game"
+                if no_integrator_state
+                else "rlrmp.analysis.cs_game_card.build_canonical_game"
+            ),
+            "comparator_variant": "no_integrator_state" if no_integrator_state else None,
             "state_basis": {
                 "state_key": "states.mechanics.vector",
                 "dimension": int(schedule.Q.shape[-1]),
-                "physical_block_size": 8,
-                "delay_blocks": int(schedule.Q.shape[-1] // 8),
+                "physical_block_size": physical_state_dim,
+                "delay_blocks": int(schedule.Q.shape[-1] // physical_state_dim),
                 "coordinate_transform": (
                     "absolute Feedbax position entries are converted to target-centred "
                     "analytical coordinates before applying Q_t and Q_f"
