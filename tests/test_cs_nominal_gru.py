@@ -48,7 +48,9 @@ from rlrmp.modules.training.part2 import (
 from rlrmp.modules.training.part2 import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, run_artifact_dir, run_spec_dir
 from rlrmp.train.cs_nominal_gru import (
+    CS_DELAYED_REACH_TASK_TYPE,
     DEFAULT_STOCHASTIC_PRESET,
+    DELAYED_REACH_TRAINING_MODE,
     build_graph_bundle,
     build_hps,
     build_parser,
@@ -1152,6 +1154,154 @@ def test_target_relative_multitarget_setup_uses_target_input_and_anchor() -> Non
         assert row["targets_m"] == perturbation_bins[0]["targets_m"]
     assert perturbation_bins[0]["targets_m"] != manifest["bins"][0]["targets_m"]
     assert jnp.any(trial.inputs["target"][..., -1, :] != jnp.array([0.15, 0.0]))
+
+
+def test_delayed_reach_requires_target_relative_contract() -> None:
+    with pytest.raises(ValueError, match="requires --target-relative-multitarget"):
+        build_hps(_args(delayed_reach=True))
+
+
+def test_delayed_reach_setup_adds_go_cue_and_preserves_target_visibility() -> None:
+    hps = build_hps(
+        _args(
+            smoke=True,
+            delayed_reach=True,
+            target_relative_multitarget=True,
+            hidden_size=8,
+            n_replicates=1,
+        )
+    )
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    trial = pair.task.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
+    go_step = int(trial.timeline.epoch_bounds[-2])
+
+    assert hps.task.type == CS_DELAYED_REACH_TASK_TYPE
+    assert hps.task.n_steps == 90
+    assert hps.task.epoch_len_ranges == [[10, 31]]
+    assert hps.loss.weights.nn_output_pre_go == pytest.approx(1.0)
+    assert pair.model.input_ports[:3] == ("input", "target", "epsilon")
+    assert pair.model.nodes["net"].input_size == 5
+    assert trial.timeline.epoch_names == ("prep", "movement")
+    assert 10 <= go_step <= 30
+    assert trial.inputs["input"].shape == (90,)
+    assert jnp.allclose(trial.inputs["input"][:go_step], 0.0)
+    assert jnp.allclose(trial.inputs["input"][go_step:], 1.0)
+    assert trial.inputs["target"].shape[-2:] == (90, 2)
+    assert jnp.allclose(
+        trial.inputs["target"],
+        jnp.broadcast_to(trial.inputs["target"][..., :1, :], trial.inputs["target"].shape),
+    )
+    assert trial.inputs["epsilon"].shape == (90, CS_EPSILON_DIM)
+
+    validation = pair.task.validation_trials
+    validation_targets = validation.targets["mechanics.effector.pos"].value
+    assert validation.inputs["task"].effector_target.pos.shape == validation_targets.shape
+    assert validation.inputs["task"].hold.shape[:2] == validation_targets.shape[:2]
+    assert validation.inputs["target"].shape == validation_targets.shape
+
+
+def test_delayed_reach_movement_costs_and_broad_epsilon_are_go_cue_gated() -> None:
+    hps = build_hps(
+        _args(
+            smoke=True,
+            delayed_reach=True,
+            target_relative_multitarget=True,
+            broad_epsilon_training=True,
+            broad_epsilon_pgd_training=False,
+            hidden_size=8,
+            n_replicates=1,
+        )
+    )
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    base = pair.task.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
+    go_step = int(base.timeline.epoch_bounds[-2])
+    pos_loss = pair.task.loss_func.terms["effector_pos_running"]
+    pre_go_loss = pair.task.loss_func.terms["nn_output_pre_go"]
+    discount = pos_loss.spec.discount(base)
+    sampled = apply_broad_epsilon_training(base, hps.broad_epsilon_training, jr.PRNGKey(2))
+    delta = sampled.inputs["epsilon"] - base.inputs["epsilon"]
+
+    assert hps.broad_epsilon_training.movement_epoch_only is True
+    assert pre_go_loss.epoch_indices == (0,)
+    assert jnp.allclose(discount[:go_step], 0.0)
+    assert discount[go_step] == pytest.approx((1.0 / 60.0) ** 6)
+    assert discount[go_step + 59] == pytest.approx(1.0)
+    assert jnp.allclose(delta[..., :go_step, :], 0.0)
+    assert jnp.any(delta[..., go_step:, :] != 0.0)
+
+
+def test_delayed_reach_full_qrf_ignores_pre_go_commands() -> None:
+    hps = build_hps(
+        _args(
+            smoke=True,
+            delayed_reach=True,
+            target_relative_multitarget=True,
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            hidden_size=8,
+            n_replicates=1,
+        )
+    )
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    trial = pair.task.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
+    go_step = int(trial.timeline.epoch_bounds[-2])
+    loss = pair.task.loss_func.terms[CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE]
+    zeros = jnp.zeros((1, 90, 48), dtype=jnp.float64)
+    zero_command = jnp.zeros((1, 90, 2), dtype=jnp.float64)
+    base_states = TreeNamespace(
+        mechanics=TreeNamespace(vector=zeros),
+        net=TreeNamespace(output=zero_command),
+    )
+    pre_go_states = TreeNamespace(
+        mechanics=TreeNamespace(vector=zeros),
+        net=TreeNamespace(output=zero_command.at[:, max(go_step - 1, 0), 0].set(3.0)),
+    )
+    movement_states = TreeNamespace(
+        mechanics=TreeNamespace(vector=zeros),
+        net=TreeNamespace(output=zero_command.at[:, go_step, 0].set(3.0)),
+    )
+
+    assert isinstance(loss, CsAnalyticalQrfLoss)
+    assert jnp.allclose(loss.term(pre_go_states, trial, pair.model), loss.term(base_states, trial, pair.model))
+    assert jnp.all(loss.term(movement_states, trial, pair.model) > loss.term(base_states, trial, pair.model))
+
+
+def test_delayed_reach_run_spec_declares_task_and_movement_pgd_mask(tmp_path: Path) -> None:
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        smoke=True,
+        dry_run=True,
+        issue="6c36536",
+        delayed_reach=True,
+        target_relative_multitarget=True,
+        broad_epsilon_pgd_training=True,
+        loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+    )
+
+    result = write_run_spec(args)
+    payload = result["run_spec"]
+
+    assert payload["issue"] == "6c36536"
+    assert payload["delayed_reach"]["enabled"] is True
+    assert payload["delayed_reach"]["mode"] == DELAYED_REACH_TRAINING_MODE
+    assert payload["task_timing"]["type"] == CS_DELAYED_REACH_TASK_TYPE
+    assert payload["task_timing"]["extra_inputs"] == ["input", "target", "epsilon"]
+    assert payload["task_timing"]["movement_window"]["cost_indexing"] == (
+        "movement_age_not_trial_age"
+    )
+    assert payload["model_summary"]["go_cue"]["enabled"] is True
+    assert payload["model_summary"]["controller_input_dimension"] == 5
+    assert payload["hps"]["loss"]["weights"]["nn_output_pre_go"] == 1.0
+    assert payload["hps"]["broad_epsilon_pgd_training"]["movement_epoch_only"] is True
+    assert payload["hps"]["broad_epsilon_pgd_training"]["time_mask"]["mode"] == (
+        "movement_epoch_only"
+    )
+    assert payload["loss_summary"]["time_indexing"]["stage_schedule"] == (
+        "movement_age_from_go_cue"
+    )
+    assert DELAYED_REACH_TRAINING_MODE in payload["training_summary"]["training_mode"]
 
 
 def test_target_relative_proprioceptive_feedback_extends_sign_contract() -> None:

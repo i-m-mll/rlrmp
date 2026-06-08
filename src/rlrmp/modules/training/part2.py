@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from collections.abc import Mapping
 from typing import Literal as L
 from typing import TypeAlias
 import warnings
@@ -248,9 +249,11 @@ def setup_task_model_pair(
         target_training = config_from_target_hps(
             getattr(hps, "target_relative_multitarget", TreeNamespace(enabled=False))
         )
+        delayed_reach = _cs_delayed_reach_enabled(hps)
         task = _add_cs_lss_task_inputs(
             _CsLssTaskAdapter(task_base),
             target_relative=target_training.enabled,
+            go_cue_input=target_training.enabled and delayed_reach,
         )
         models = _create_cs_lss_gru_ensemble(
             hps,
@@ -448,8 +451,14 @@ def _add_cs_lss_task_inputs(
     task: _CsLssTaskAdapter,
     *,
     target_relative: bool = False,
+    go_cue_input: bool = False,
 ) -> _CsLssTaskAdapter:
-    if not target_relative:
+    if go_cue_input:
+        task = task.add_input(
+            name="input",
+            input_fn=_cs_delayed_go_cue_input,
+        )
+    elif not target_relative:
         task = task.add_input(
             name="input",
             input_fn=SISU_FNS["nominal-cs-gru"],
@@ -458,6 +467,28 @@ def _add_cs_lss_task_inputs(
         name="epsilon",
         input_fn=_sample_cs_lss_process_epsilon,
     )
+
+
+def _cs_delayed_reach_enabled(hps: TreeNamespace) -> bool:
+    return str(getattr(getattr(hps, "task", TreeNamespace()), "type", "")) == (
+        "cs_delayed_center_out_reach"
+    )
+
+
+def _cs_delayed_go_cue_input(
+    trial_spec: TaskTrialSpec,
+    key: PRNGKeyArray,
+) -> jax.Array:
+    """Return a scalar go cue where 0 is prep/hold and 1 is movement."""
+
+    del key
+    inputs = trial_spec.inputs
+    task_inputs = inputs.get("task", inputs) if isinstance(inputs, Mapping) else inputs
+    if not hasattr(task_inputs, "hold"):
+        raise ValueError("Delayed C&S go-cue input requires task inputs with a hold signal.")
+    hold = jnp.asarray(task_inputs.hold, dtype=jnp.float32)
+    go = 1.0 - hold
+    return go[..., 0] if go.ndim > 0 and go.shape[-1] == 1 else go
 
 
 def _sample_cs_lss_process_epsilon(
@@ -474,7 +505,7 @@ def _sample_cs_lss_process_epsilon(
 
     target = trial_spec.targets["mechanics.effector.pos"].value
     batch_shape = target.shape[:-2] if target.ndim >= 3 else ()
-    n_steps = int(trial_spec.timeline.n_steps)
+    n_steps = int(target.shape[-2])
     factor = _cs_lss_process_epsilon_factor()
     draws = jr.normal(key, (*batch_shape, n_steps, CS_EPSILON_DIM), dtype=jnp.float64)
     return draws @ factor.T
@@ -520,9 +551,10 @@ def _create_cs_lss_gru_ensemble(
         target_training = config_from_target_hps(
             getattr(hps, "target_relative_multitarget", TreeNamespace(enabled=False))
         )
+        delayed_reach = _cs_delayed_reach_enabled(hps)
         return build_cs_lss_gru_graph(
             hidden_size=int(hps.model.hidden_size),
-            input_size=0 if target_training.enabled else 1,
+            input_size=1 if (delayed_reach or not target_training.enabled) else 0,
             hidden_type=hidden_type,
             population_structure=population_structure,
             sisu_gating=sisu_gating,

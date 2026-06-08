@@ -307,26 +307,71 @@ class CsAnalyticalQrfLoss(AbstractLoss):
                 f"got {command.shape[-1]}."
             )
         horizon = self.Q.shape[0]
-        if vector.shape[-2] != horizon:
+        movement_start = self._movement_start(trial_specs)
+        if vector.shape[-2] != horizon and movement_start is None:
             raise ValueError(
-                f"Full analytical Q/R/Q_f loss expected {horizon} rollout states, "
-                f"got {vector.shape[-2]}."
+                f"Full analytical Q/R/Q_f loss expected {horizon} rollout states for "
+                "non-delayed rows, or delayed-reach epoch bounds for movement slicing; "
+                f"got {vector.shape[-2]} states."
             )
-        if command.shape[-2] != horizon:
+        if command.shape[-2] != vector.shape[-2]:
             raise ValueError(
-                f"Full analytical Q/R/Q_f loss expected {horizon} commands, "
-                f"got {command.shape[-2]}."
+                "Full analytical Q/R/Q_f loss expected command and state histories to "
+                f"have the same time length; got {command.shape[-2]} and {vector.shape[-2]}."
             )
 
         initial_vector = self._initial_vector(trial_specs, vector)
         target_pos = self._target_pos_for_trial(trial_specs, vector)
-        x_pre = jnp.concatenate([initial_vector[..., None, :], vector[..., :-1, :]], axis=-2)
+        x_pre_all = jnp.concatenate([initial_vector[..., None, :], vector[..., :-1, :]], axis=-2)
+        if movement_start is None:
+            x_pre = x_pre_all
+            command_window = command
+            x_terminal_raw = vector[..., -1, :]
+        else:
+            x_pre = self._time_window(x_pre_all, movement_start, horizon)
+            command_window = self._time_window(command, movement_start, horizon)
+            x_terminal_raw = self._time_index(vector, movement_start + horizon - 1)
         x_pre = self._goal_centered(x_pre, target_pos)
-        x_terminal = self._goal_centered(vector[..., -1, :], target_pos)
+        x_terminal = self._goal_centered(x_terminal_raw, target_pos)
         state_terms = jnp.einsum("...ti,tij,...tj->...t", x_pre, self.Q, x_pre)
-        command_terms = jnp.einsum("...ti,tij,...tj->...t", command, self.R, command)
+        command_terms = jnp.einsum("...ti,tij,...tj->...t", command_window, self.R, command_window)
         terminal = jnp.einsum("...i,ij,...j->...", x_terminal, self.Q_f, x_terminal)
         return jnp.sum(state_terms + command_terms, axis=-1) + terminal
+
+    def _movement_start(self, trial_specs: "TaskTrialSpec") -> Array | None:
+        bounds = trial_specs.timeline.epoch_bounds
+        if bounds is None:
+            return None
+        bounds = jnp.asarray(bounds)
+        if bounds.shape[-1] < 3:
+            return None
+        return bounds[..., -2]
+
+    def _time_window(self, values: Array, start: Array, length: int) -> Array:
+        start = jnp.asarray(start, dtype=jnp.int32)
+        if start.ndim == 0:
+            return jax.lax.dynamic_slice_in_dim(values, start, int(length), axis=-2)
+        flat_values = values.reshape((-1, values.shape[-2], values.shape[-1]))
+        flat_start = start.reshape((-1,))
+
+        def take_one(value, start_one):
+            return jax.lax.dynamic_slice_in_dim(value, start_one, int(length), axis=0)
+
+        sliced = jax.vmap(take_one)(flat_values, flat_start)
+        return sliced.reshape((*start.shape, int(length), values.shape[-1]))
+
+    def _time_index(self, values: Array, index: Array) -> Array:
+        start = jnp.asarray(index, dtype=jnp.int32)
+        if start.ndim == 0:
+            return jax.lax.dynamic_index_in_dim(values, start, axis=-2, keepdims=False)
+        flat_values = values.reshape((-1, values.shape[-2], values.shape[-1]))
+        flat_start = start.reshape((-1,))
+
+        def take_one(value, start_one):
+            return jax.lax.dynamic_index_in_dim(value, start_one, axis=0, keepdims=False)
+
+        sliced = jax.vmap(take_one)(flat_values, flat_start)
+        return sliced.reshape((*start.shape, values.shape[-1]))
 
     def _initial_vector(self, trial_specs: "TaskTrialSpec", vector: Array) -> Array:
         if "mechanics.vector" not in trial_specs.inits:
@@ -619,6 +664,34 @@ def make_cs_eq15_stage_schedule(n_steps: int, power: float = 6.0) -> Array:
     return jnp.minimum(1.0, (t_plus_1 / float(T)) ** power)
 
 
+def make_movement_cs_eq15_stage_schedule(
+    *,
+    horizon_steps: int,
+    start_epoch: int = -2,
+    power: float = 6.0,
+):
+    """Return C&S Eq. 15 weights indexed by movement age, not trial age."""
+
+    if horizon_steps <= 0:
+        raise ValueError(f"horizon_steps must be positive, got {horizon_steps}")
+
+    def schedule(spec):
+        T = spec.timeline.n_steps
+        bounds = spec.timeline.epoch_bounds
+        if bounds is None:
+            raise ValueError("Movement-epoch C&S schedule requires epoch bounds")
+        t = jnp.arange(T, dtype=jnp.float32)
+        start = jnp.asarray(bounds[..., start_epoch], dtype=jnp.float32)
+        if start.ndim > 0:
+            start = jnp.expand_dims(start, axis=-1)
+        age = t - start
+        weights = ((age + 1.0) / float(horizon_steps)) ** power
+        weights = jnp.minimum(1.0, weights)
+        return jnp.where(age >= 0.0, weights, 0.0).astype(jnp.float32)
+
+    return schedule
+
+
 def make_epoch_locked_ramp(
     *,
     duration_steps: int,
@@ -645,7 +718,9 @@ def make_epoch_locked_ramp(
             raise ValueError("Trial spec supplies no epoch_bounds")
 
         t = jnp.arange(T, dtype=jnp.float32)
-        start = jnp.asarray(bounds[start_epoch], dtype=jnp.float32)
+        start = jnp.asarray(bounds[..., start_epoch], dtype=jnp.float32)
+        if start.ndim > 0:
+            start = jnp.expand_dims(start, axis=-1)
         frac = jnp.clip((t - start) / float(duration_steps), 0.0, 1.0)
 
         if shape == "cosine":
@@ -815,6 +890,8 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
             )
 
     user_outer_weights = _nsget(hps, "loss.weights", {}) or {}
+    task_type = str(getattr(hps.task, "type", ""))
+    pre_go_epoch_indices = (0,) if task_type == "cs_delayed_center_out_reach" else (0, 1)
 
     terms: Mapping[str, AbstractLoss] = dict(
         nn_output=TargetStateLoss(
@@ -863,7 +940,7 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
                 where=lambda state: state.efferent.output,
                 spec=target_zero,
             ),
-            epoch_indices=(0, 1),
+            epoch_indices=pre_go_epoch_indices,
         ),
         # Anti-preparation companion: same epoch mask wrapped around the
         # hidden-state first-difference term. Exposed so the comparator run
@@ -874,7 +951,7 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
                 label="nn_hidden_derivative_pre_go",
                 where=lambda state: state.net.hidden,
             ),
-            epoch_indices=(0, 1),
+            epoch_indices=pre_go_epoch_indices,
         ),
     )
     if ablate_net_force_filter:
@@ -889,12 +966,13 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
     _movement_ramp_shape = _nsget(hps, "loss.movement_ramp_shape", "linear") or "linear"
     _movement_ramp_duration = int(_nsget(hps, "loss.movement_ramp_duration_steps", 60) or 60)
     _movement_ramp_power = float(_nsget(hps, "loss.movement_ramp_power", 2.0) or 2.0)
-    task_type = getattr(hps.task, "type", "")
     is_simple_reach = task_type in {"simple_reach", "fixed_simple_reach"}
+    is_cs_delayed_reach = task_type == "cs_delayed_center_out_reach"
+    is_transition_aligned_reach = is_simple_reach or is_cs_delayed_reach
 
     # "center_out_delayed_reach" is a subclass of DelayedReaches and shares the
     # same hold-period structure — match on suffix. Bug: 2e1a6ad.
-    if "delayed_reach" in getattr(hps.task, "type", ""):
+    if "delayed_reach" in task_type or is_cs_delayed_reach:
         if _hold_pos_sched == "powerlaw":
             # (t/T-1)^power applied over the entire trial; the epoch mask still
             # comes from `during_hold` (time_mask), but the weight rises with t.
@@ -949,8 +1027,10 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
     # MODE 1: Simple mode (effector_pos weight > 0)
     # Creates simple effector_pos term + final velocity penalty only
     if use_simple_effector_pos:
-        effector_pos_loss_cls = SimpleReachPositionLoss if is_simple_reach else TargetStateLoss
-        effector_pos_spec = None if is_simple_reach else during_movement
+        effector_pos_loss_cls = (
+            SimpleReachPositionLoss if is_transition_aligned_reach else TargetStateLoss
+        )
+        effector_pos_spec = None if is_transition_aligned_reach else during_movement
         terms["effector_pos"] = effector_pos_loss_cls(
             "effector_pos",
             where=lambda state: state.mechanics.effector.pos,
@@ -1063,12 +1143,19 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
         # Bug: 2e1a6ad
         if getattr(user_outer_weights, "effector_pos_running", 0.0) != 0.0:
             effector_pos_running_loss_cls = (
-                SimpleReachPositionLoss if is_simple_reach else TargetStateLoss
+                SimpleReachPositionLoss if is_transition_aligned_reach else TargetStateLoss
             )
             if _pos_running_sched == "cs_eq15_power6":
                 if is_simple_reach:
                     running_spec = TargetSpec(
                         discount=make_cs_eq15_stage_schedule(hps.task.n_steps, power=6.0)
+                    )
+                elif is_cs_delayed_reach:
+                    running_spec = TargetSpec(
+                        discount=make_movement_cs_eq15_stage_schedule(
+                            horizon_steps=60,
+                            power=6.0,
+                        )
                     )
                 else:
                     running_spec = during_movement & TargetSpec(
@@ -1098,7 +1185,11 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
                     )
                 )
             else:
-                running_spec = TargetSpec() if is_simple_reach else during_movement
+                running_spec = (
+                    TargetSpec()
+                    if is_transition_aligned_reach
+                    else during_movement
+                )
 
             terms["effector_pos_running"] = effector_pos_running_loss_cls(
                 "effector_pos_running",
@@ -1108,12 +1199,20 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
 
         if getattr(user_outer_weights, "effector_vel_running", 0.0) != 0.0:
             effector_vel_running_loss_cls = (
-                SimpleReachPositionLoss if is_simple_reach else TargetStateLoss
+                SimpleReachPositionLoss if is_transition_aligned_reach else TargetStateLoss
             )
             if _pos_running_sched == "cs_eq15_power6":
-                vel_running_spec = target_zero & TargetSpec(
-                    discount=make_cs_eq15_stage_schedule(hps.task.n_steps, power=6.0)
-                )
+                if is_cs_delayed_reach:
+                    vel_running_spec = target_zero & TargetSpec(
+                        discount=make_movement_cs_eq15_stage_schedule(
+                            horizon_steps=60,
+                            power=6.0,
+                        )
+                    )
+                else:
+                    vel_running_spec = target_zero & TargetSpec(
+                        discount=make_cs_eq15_stage_schedule(hps.task.n_steps, power=6.0)
+                    )
             elif _pos_running_sched == "powerlaw":
                 if is_simple_reach:
                     vel_running_spec = target_zero & TargetSpec(
@@ -1127,7 +1226,11 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
                         discount=make_power_law_schedule(power=_powerlaw_power)
                     )
             else:
-                vel_running_spec = target_zero if is_simple_reach else target_zero & during_movement
+                vel_running_spec = (
+                    target_zero
+                    if is_transition_aligned_reach
+                    else target_zero & during_movement
+                )
 
             terms["effector_vel_running"] = effector_vel_running_loss_cls(
                 "effector_vel_running",
@@ -1137,21 +1240,21 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
 
         if getattr(user_outer_weights, "effector_terminal_pos", 0.0) != 0.0:
             effector_terminal_pos_loss_cls = (
-                SimpleReachPositionLoss if is_simple_reach else TargetStateLoss
+                SimpleReachPositionLoss if is_transition_aligned_reach else TargetStateLoss
             )
             terms["effector_terminal_pos"] = effector_terminal_pos_loss_cls(
                 "effector_terminal_pos",
                 where=lambda state: state.mechanics.effector.pos,
                 spec=(
                     target_final_state
-                    if is_simple_reach
+                    if is_transition_aligned_reach
                     else during_movement & target_final_state
                 ),
             )
 
         if getattr(user_outer_weights, "effector_terminal_vel", 0.0) != 0.0:
             effector_terminal_vel_loss_cls = (
-                SimpleReachPositionLoss if is_simple_reach else TargetStateLoss
+                SimpleReachPositionLoss if is_transition_aligned_reach else TargetStateLoss
             )
             terms["effector_terminal_vel"] = effector_terminal_vel_loss_cls(
                 "effector_terminal_vel",
