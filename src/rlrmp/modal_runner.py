@@ -99,6 +99,12 @@ class NominalGruRunConfig:
     broad_epsilon_level: str = "moderate"
     broad_epsilon_budget_scale: float = 1.0
     broad_epsilon_reach_scaling: bool = True
+    broad_epsilon_pgd_training: bool = False
+    broad_epsilon_pgd_level: str = "moderate"
+    broad_epsilon_pgd_budget_scale: float = 1.0
+    broad_epsilon_pgd_steps: int = 3
+    broad_epsilon_pgd_step_size_fraction: float = 0.25
+    broad_epsilon_pgd_seed: int | None = None
     initial_hidden_encoder: bool = False
     training_diagnostics: bool = True
     schedule_total_batches: int = 1000
@@ -184,6 +190,47 @@ def build_training_script_args(
     return command[script_index + 1 :]
 
 
+def cs_nominal_gru_scenario_config(config: NominalGruRunConfig) -> dict[str, Any]:
+    """Return the C&S nominal GRU scenario payload for the packing benchmark."""
+
+    payload: dict[str, Any] = {
+        "batch_size": config.batch_size,
+        "n_replicates": config.n_replicates,
+        "hidden_size": config.hidden_size,
+        "controller_lr": config.controller_lr,
+        "lr_warmup_batches": config.lr_warmup_batches,
+        "lr_warmup_init_fraction": config.lr_warmup_init_fraction,
+        "lr_cosine_alpha": config.lr_cosine_alpha,
+        "gradient_clip_norm": config.gradient_clip_norm,
+        "plant_backend": "cs_lss",
+        "stochastic_preset": config.stochastic_preset,
+        "loss_objective": config.loss_objective,
+        "regularized_fidelity": config.regularized_fidelity,
+        "target_relative_multitarget": config.target_relative_multitarget,
+        "force_filter_feedback": config.force_filter_feedback,
+        "perturbation_training": config.perturbation_training,
+        "perturbation_calibrated_timing": config.perturbation_calibrated_timing,
+        "perturbation_physical_level": config.perturbation_physical_level,
+        "broad_epsilon_training": config.broad_epsilon_training,
+        "broad_epsilon_level": config.broad_epsilon_level,
+        "broad_epsilon_budget_scale": config.broad_epsilon_budget_scale,
+        "broad_epsilon_reach_scaling": config.broad_epsilon_reach_scaling,
+        "broad_epsilon_pgd_training": config.broad_epsilon_pgd_training,
+        "broad_epsilon_pgd_level": config.broad_epsilon_pgd_level,
+        "broad_epsilon_pgd_budget_scale": config.broad_epsilon_pgd_budget_scale,
+        "broad_epsilon_pgd_steps": config.broad_epsilon_pgd_steps,
+        "broad_epsilon_pgd_step_size_fraction": config.broad_epsilon_pgd_step_size_fraction,
+        "initial_hidden_encoder": config.initial_hidden_encoder,
+        "training_diagnostics": config.training_diagnostics,
+        "schedule_total_batches": config.schedule_total_batches,
+    }
+    if config.broad_epsilon_pgd_seed is not None:
+        payload["broad_epsilon_pgd_seed"] = config.broad_epsilon_pgd_seed
+    if config.extra_args:
+        payload["argv"] = list(config.extra_args)
+    return payload
+
+
 def build_remote_smoke_command() -> list[str]:
     """Return a tiny command that exits immediately inside a Modal container."""
 
@@ -215,13 +262,14 @@ def build_packing_benchmark_command(
     """Build the multi-process packing benchmark command."""
 
     artifact_dir = config.remote_artifact_dir() if remote else config.local_artifact_dir()
+    scenario_config = cs_nominal_gru_scenario_config(config)
     command = [
         "uv",
         "run",
         "--no-sync" if remote else "",
         "python",
         "-m",
-        "rlrmp.modal_packing_benchmark",
+        "rlrmp.packing_benchmark",
         "parent",
     ]
     command = [part for part in command if part]
@@ -234,48 +282,12 @@ def build_packing_benchmark_command(
         ("--measure-seconds", config.measure_seconds),
         ("--warmup-batches", config.warmup_batches),
         ("--chunk-batches", config.chunk_batches),
-        ("--batch-size", config.batch_size),
-        ("--n-replicates", config.n_replicates),
-        ("--hidden-size", config.hidden_size),
-        ("--controller-lr", config.controller_lr),
-        ("--lr-warmup-batches", config.lr_warmup_batches),
-        ("--lr-warmup-init-fraction", config.lr_warmup_init_fraction),
-        ("--lr-cosine-alpha", config.lr_cosine_alpha),
-        ("--plant-backend", "cs_lss"),
-        ("--stochastic-preset", config.stochastic_preset),
-        ("--loss-objective", config.loss_objective),
+        ("--scenario", "cs-nominal-gru"),
+        ("--scenario-config-json", json.dumps(scenario_config, sort_keys=True)),
         ("--seed", config.seed),
         ("--sample-seconds", config.sample_seconds),
-        ("--schedule-total-batches", config.schedule_total_batches),
     ]:
         _append_arg(command, flag, value)
-    if config.gradient_clip_norm is not None:
-        _append_arg(command, "--gradient-clip-norm", config.gradient_clip_norm)
-    if config.regularized_fidelity:
-        command.append("--regularized-fidelity")
-    if config.target_relative_multitarget:
-        command.append("--target-relative-multitarget")
-    if config.force_filter_feedback:
-        command.append("--force-filter-feedback")
-    if config.perturbation_training:
-        command.append("--perturbation-training")
-    if config.perturbation_calibrated_timing:
-        command.append("--perturbation-calibrated-timing")
-    _append_arg(command, "--perturbation-physical-level", config.perturbation_physical_level)
-    if config.broad_epsilon_training:
-        command.append("--broad-epsilon-training")
-    _append_arg(command, "--broad-epsilon-level", config.broad_epsilon_level)
-    _append_arg(command, "--broad-epsilon-budget-scale", config.broad_epsilon_budget_scale)
-    command.append(
-        "--broad-epsilon-reach-scaling"
-        if config.broad_epsilon_reach_scaling
-        else "--no-broad-epsilon-reach-scaling"
-    )
-    if config.initial_hidden_encoder:
-        command.append("--initial-hidden-encoder")
-    command.append(
-        "--training-diagnostics" if config.training_diagnostics else "--no-training-diagnostics"
-    )
     return command
 
 
@@ -654,6 +666,24 @@ def make_config(args: argparse.Namespace) -> NominalGruRunConfig:
         chunk_batches=args.chunk_batches,
         ready_timeout_seconds=args.ready_timeout_seconds,
         sample_seconds=args.sample_seconds,
+        target_relative_multitarget=args.target_relative_multitarget,
+        force_filter_feedback=args.force_filter_feedback,
+        perturbation_training=args.perturbation_training,
+        perturbation_calibrated_timing=args.perturbation_calibrated_timing,
+        perturbation_physical_level=args.perturbation_physical_level,
+        broad_epsilon_training=args.broad_epsilon_training,
+        broad_epsilon_level=args.broad_epsilon_level,
+        broad_epsilon_budget_scale=args.broad_epsilon_budget_scale,
+        broad_epsilon_reach_scaling=args.broad_epsilon_reach_scaling,
+        broad_epsilon_pgd_training=args.broad_epsilon_pgd_training,
+        broad_epsilon_pgd_level=args.broad_epsilon_pgd_level,
+        broad_epsilon_pgd_budget_scale=args.broad_epsilon_pgd_budget_scale,
+        broad_epsilon_pgd_steps=args.broad_epsilon_pgd_steps,
+        broad_epsilon_pgd_step_size_fraction=args.broad_epsilon_pgd_step_size_fraction,
+        broad_epsilon_pgd_seed=args.broad_epsilon_pgd_seed,
+        initial_hidden_encoder=args.initial_hidden_encoder,
+        training_diagnostics=args.training_diagnostics,
+        schedule_total_batches=args.schedule_total_batches,
     )
 
 
@@ -709,6 +739,32 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--chunk-batches", type=int, default=4)
     parser.add_argument("--ready-timeout-seconds", type=float, default=900.0)
     parser.add_argument("--sample-seconds", type=float, default=5.0)
+    parser.add_argument("--target-relative-multitarget", action="store_true")
+    parser.add_argument("--force-filter-feedback", "--proprioceptive-feedback", action="store_true")
+    parser.add_argument("--perturbation-training", action="store_true")
+    parser.add_argument("--perturbation-calibrated-timing", action="store_true")
+    parser.add_argument("--perturbation-physical-level", default="moderate")
+    parser.add_argument("--broad-epsilon-training", action="store_true")
+    parser.add_argument("--broad-epsilon-level", default="moderate")
+    parser.add_argument("--broad-epsilon-budget-scale", type=float, default=1.0)
+    parser.add_argument(
+        "--broad-epsilon-reach-scaling",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument("--broad-epsilon-pgd-training", action="store_true")
+    parser.add_argument("--broad-epsilon-pgd-level", default="moderate")
+    parser.add_argument("--broad-epsilon-pgd-budget-scale", type=float, default=1.0)
+    parser.add_argument("--broad-epsilon-pgd-steps", type=int, default=3)
+    parser.add_argument("--broad-epsilon-pgd-step-size-fraction", type=float, default=0.25)
+    parser.add_argument("--broad-epsilon-pgd-seed", type=int, default=None)
+    parser.add_argument("--initial-hidden-encoder", "--h0-encoder", action="store_true")
+    parser.add_argument(
+        "--training-diagnostics",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument("--schedule-total-batches", type=int, default=1000)
     parser.add_argument("--pinned-repo-dir", default=str(REMOTE_REPO_DIR))
     parser.add_argument(
         "--extra-arg",
