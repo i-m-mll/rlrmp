@@ -34,6 +34,7 @@ NOMINAL_GRU_TRAINING_MODES = frozenset(
         "broad_full_state_epsilon_pgd_l2",
         "target_relative_multitarget_static",
         "target_relative_multitarget_static_h0",
+        "delayed_reach_target_visible_go_cue",
     }
 )
 NOMINAL_GRU_REQUIRED_PROVENANCE_KEYS = frozenset(
