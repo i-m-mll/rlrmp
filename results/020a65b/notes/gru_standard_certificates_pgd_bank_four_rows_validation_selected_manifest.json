@@ -1,0 +1,2789 @@
+{
+  "checkpoint_policy": "validation_selected_per_replicate",
+  "checkpoint_selection": {
+    "checkpoint_policy": "validation_selected_per_replicate",
+    "history_validation_log_note": "Validation history contains sparse positive records and zero padding. Durable models are only available at numbered checkpoints, so each checkpoint is scored by the most recent positive validation record at or before that checkpoint.",
+    "issue": "020a65b",
+    "runs": {
+      "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr1e-3_clip5_b64": [
+        {
+          "best_logged_validation_batch": 11000,
+          "best_logged_validation_objective": 5239.6067204697765,
+          "checkpoint_batches": 11000,
+          "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+          "final_validation_objective": 5239.6067204697765,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 0,
+          "scoring_validation_log_batch": 11000,
+          "scoring_validation_objective": 5239.6067204697765,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 9500,
+          "best_logged_validation_objective": 6299.7356870386375,
+          "checkpoint_batches": 9500,
+          "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr1e-3_clip5_b64/checkpoints/checkpoint_0009500",
+          "final_validation_objective": 6406.280474852327,
+          "final_vs_selected_validation_degradation": 106.54478781368925,
+          "replicate": 1,
+          "scoring_validation_log_batch": 9500,
+          "scoring_validation_objective": 6299.7356870386375,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 9000,
+          "best_logged_validation_objective": 4793.340654313101,
+          "checkpoint_batches": 9000,
+          "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr1e-3_clip5_b64/checkpoints/checkpoint_0009000",
+          "final_validation_objective": 4927.756150653115,
+          "final_vs_selected_validation_degradation": 134.4154963400133,
+          "replicate": 2,
+          "scoring_validation_log_batch": 9000,
+          "scoring_validation_objective": 4793.340654313101,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10501,
+          "best_logged_validation_objective": 5064.776110312596,
+          "checkpoint_batches": 9500,
+          "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr1e-3_clip5_b64/checkpoints/checkpoint_0009500",
+          "final_validation_objective": 5153.880024345286,
+          "final_vs_selected_validation_degradation": 77.38939635612041,
+          "replicate": 3,
+          "scoring_validation_log_batch": 9500,
+          "scoring_validation_objective": 5076.490627989166,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11000,
+          "best_logged_validation_objective": 4786.922125537635,
+          "checkpoint_batches": 11000,
+          "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+          "final_validation_objective": 4786.922125537635,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 4,
+          "scoring_validation_log_batch": 11000,
+          "scoring_validation_objective": 4786.922125537635,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64": [
+        {
+          "best_logged_validation_batch": 5501,
+          "best_logged_validation_objective": 4952.044431296102,
+          "checkpoint_batches": 6000,
+          "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/checkpoints/checkpoint_0006000",
+          "final_validation_objective": 5967.560007842271,
+          "final_vs_selected_validation_degradation": 917.5912928742664,
+          "replicate": 0,
+          "scoring_validation_log_batch": 6000,
+          "scoring_validation_objective": 5049.968714968005,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 5500,
+          "best_logged_validation_objective": 5415.005591062338,
+          "checkpoint_batches": 5500,
+          "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/checkpoints/checkpoint_0005500",
+          "final_validation_objective": 6179.32416248158,
+          "final_vs_selected_validation_degradation": 764.3185714192423,
+          "replicate": 1,
+          "scoring_validation_log_batch": 5500,
+          "scoring_validation_objective": 5415.005591062338,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 6000,
+          "best_logged_validation_objective": 4476.290352544521,
+          "checkpoint_batches": 6000,
+          "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/checkpoints/checkpoint_0006000",
+          "final_validation_objective": 5215.780541005552,
+          "final_vs_selected_validation_degradation": 739.4901884610308,
+          "replicate": 2,
+          "scoring_validation_log_batch": 6000,
+          "scoring_validation_objective": 4476.290352544521,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 6000,
+          "best_logged_validation_objective": 4475.5499864237245,
+          "checkpoint_batches": 6000,
+          "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/checkpoints/checkpoint_0006000",
+          "final_validation_objective": 5686.532019731105,
+          "final_vs_selected_validation_degradation": 1210.9820333073803,
+          "replicate": 3,
+          "scoring_validation_log_batch": 6000,
+          "scoring_validation_objective": 4475.5499864237245,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 6500,
+          "best_logged_validation_objective": 4320.156910078884,
+          "checkpoint_batches": 6500,
+          "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/checkpoints/checkpoint_0006500",
+          "final_validation_objective": 4853.083086039244,
+          "final_vs_selected_validation_degradation": 532.9261759603605,
+          "replicate": 4,
+          "scoring_validation_log_batch": 6500,
+          "scoring_validation_objective": 4320.156910078884,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr1e-3_clip5_b64": [
+        {
+          "best_logged_validation_batch": 11000,
+          "best_logged_validation_objective": 4767.375665204781,
+          "checkpoint_batches": 11000,
+          "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+          "final_validation_objective": 4767.375665204781,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 0,
+          "scoring_validation_log_batch": 11000,
+          "scoring_validation_objective": 4767.375665204781,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 5001,
+          "best_logged_validation_objective": 5273.184462818112,
+          "checkpoint_batches": 5000,
+          "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr1e-3_clip5_b64/checkpoints/checkpoint_0005000",
+          "final_validation_objective": 6933.685711998441,
+          "final_vs_selected_validation_degradation": 1599.5345522993748,
+          "replicate": 1,
+          "scoring_validation_log_batch": 5000,
+          "scoring_validation_objective": 5334.151159699066,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 6000,
+          "best_logged_validation_objective": 5097.067791560216,
+          "checkpoint_batches": 6000,
+          "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr1e-3_clip5_b64/checkpoints/checkpoint_0006000",
+          "final_validation_objective": 5173.053189669513,
+          "final_vs_selected_validation_degradation": 75.98539810929651,
+          "replicate": 2,
+          "scoring_validation_log_batch": 6000,
+          "scoring_validation_objective": 5097.067791560216,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 6001,
+          "best_logged_validation_objective": 5158.571309532552,
+          "checkpoint_batches": 5500,
+          "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr1e-3_clip5_b64/checkpoints/checkpoint_0005500",
+          "final_validation_objective": 5949.609291250713,
+          "final_vs_selected_validation_degradation": 614.2480240578125,
+          "replicate": 3,
+          "scoring_validation_log_batch": 5500,
+          "scoring_validation_objective": 5335.3612671929,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10001,
+          "best_logged_validation_objective": 4806.608168491985,
+          "checkpoint_batches": 10000,
+          "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr1e-3_clip5_b64/checkpoints/checkpoint_0010000",
+          "final_validation_objective": 4844.866637622919,
+          "final_vs_selected_validation_degradation": 28.49770289745811,
+          "replicate": 4,
+          "scoring_validation_log_batch": 10000,
+          "scoring_validation_objective": 4816.368934725461,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64": [
+        {
+          "best_logged_validation_batch": 11501,
+          "best_logged_validation_objective": 4018.895258630215,
+          "checkpoint_batches": 12000,
+          "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/checkpoints/checkpoint_0012000",
+          "final_validation_objective": 4035.433648215866,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 0,
+          "scoring_validation_log_batch": 12000,
+          "scoring_validation_objective": 4035.433648215866,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10001,
+          "best_logged_validation_objective": 4025.23827904768,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 4098.071172338953,
+          "final_vs_selected_validation_degradation": 47.71601784980476,
+          "replicate": 1,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 4050.3551544891484,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11001,
+          "best_logged_validation_objective": 4080.1918862050693,
+          "checkpoint_batches": 11000,
+          "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/checkpoints/checkpoint_0011000",
+          "final_validation_objective": 4109.3737201722715,
+          "final_vs_selected_validation_degradation": 21.24739800512498,
+          "replicate": 2,
+          "scoring_validation_log_batch": 11000,
+          "scoring_validation_objective": 4088.1263221671466,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10500,
+          "best_logged_validation_objective": 4052.1317422371685,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 4096.390747559992,
+          "final_vs_selected_validation_degradation": 44.259005322823214,
+          "replicate": 3,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 4052.1317422371685,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11001,
+          "best_logged_validation_objective": 4003.5411495971357,
+          "checkpoint_batches": 12000,
+          "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/checkpoints/checkpoint_0012000",
+          "final_validation_objective": 4017.492006885477,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 4,
+          "scoring_validation_log_batch": 12000,
+          "scoring_validation_objective": 4017.492006885477,
+          "selection_source": "sparse_history_fallback"
+        }
+      ]
+    },
+    "schema_version": "rlrmp.validation_selected_gru_checkpoints.v1",
+    "selection_policy": "per-replicate checkpoint selected by minimum positive rollout validation objective among available durable checkpoints; analytical action and I/O metrics are audit-only",
+    "selection_source": "sparse_history_fallback"
+  },
+  "failure_decomposition": {
+    "rows": [
+      {
+        "certificate": {
+          "external_mismatch_ratio": 1.7522852596907934,
+          "external_response_map_mismatches": {
+            "disturbance_history_to_action_map_mismatch": null,
+            "disturbance_history_to_output_map_mismatch": null,
+            "disturbance_history_to_state_map_mismatch": null,
+            "measurement_history_to_action_map_mismatch": 1.0708022008630989,
+            "measurement_history_to_output_map_mismatch": null,
+            "observation_history_to_action_map_mismatch": 1.0708022008630989
+          },
+          "response_map_mismatch": 1.0708022008630989,
+          "state_weighted_action_mismatch": 1.7522852596907934
+        },
+        "classification": {
+          "classification": "mixed",
+          "reasons": [
+            "representation_failure",
+            "io_map_mismatch"
+          ],
+          "signals": {
+            "certificate_bad": false,
+            "equivalence_metrics_failed": false,
+            "external_certificate_evidence_available": true,
+            "external_map_representation": {
+              "external_map_mismatch_ratios": {
+                "measurement_history_to_action_map_mismatch": 1.0708022008630989,
+                "observation_history_to_action_map_mismatch": 1.0708022008630989
+              },
+              "failed_external_maps": [
+                "measurement_history_to_action_map_mismatch",
+                "observation_history_to_action_map_mismatch"
+              ],
+              "ignored_internal_coordinate_mismatch": null,
+              "representation_basis": "external_response_maps",
+              "representation_failed": true
+            },
+            "hidden_state_coordinate_mismatch": null,
+            "io_map_bad": true,
+            "learned_gradient_bad": false,
+            "objective_bad": false,
+            "objective_close": false,
+            "reference_gradient_bad": false,
+            "representation_failed": true,
+            "response_map_evidence_available": true,
+            "rollout_action_mismatch_bad": true,
+            "sidecar_improved": false,
+            "weak_subspace_dominates": false
+          }
+        },
+        "controller_label": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr1e-3_clip5_b64",
+        "evaluation_lens": "nominal_clean",
+        "gain_error_decomposition": {
+          "reason": "Visited gain-error decomposition requires same-coordinate static gains.",
+          "status": "not_applicable"
+        },
+        "gradient_diagnostics": {
+          "reason": "No static gain or optimizer-coordinate gradient is defined for this empirical/nonlinear standard row.",
+          "status": "not_applicable"
+        },
+        "interpolation": {
+          "reason": "Learned-to-reference interpolation is undefined without a shared static gain parameterization.",
+          "status": "not_applicable"
+        },
+        "objective": {
+          "reason": "GRU empirical/nonlinear rows do not expose a static training objective parameterization in the standard row.",
+          "status": "not_applicable"
+        },
+        "row_parameters": {
+          "certificate_mode": "empirical_nonlinear",
+          "evaluation_lens": "nominal_clean",
+          "io_response_map_blocker": null,
+          "io_response_map_status": "available_4d_observation_contract",
+          "nn_hidden": 0.0,
+          "source_issue": "020a65b",
+          "source_run_id": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr1e-3_clip5_b64",
+          "stochastic_preset": {
+            "additive_motor_noise_std": 1e-05,
+            "name": "cs2019-rollout",
+            "plant_process_force_noise_std": 0.03162277660168379,
+            "projection_notes": {
+              "additive_motor": "Project C&S input-image motor covariance to command-channel additive noise with std sqrt(motor_covariance_scale).",
+              "plant_process": "Project C&S process/load covariance to independent force noise immediately upstream of mechanics, after the force filter.",
+              "sensory": "Use the C&S sensory covariance diagonal standard deviation on the Feedbax delayed pos/vel feedback channel.",
+              "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
+              "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
+            },
+            "sensory_noise_std": 0.004791329788133908,
+            "signal_dependent_motor_noise_std": 0.02,
+            "source_contract": {
+              "additive_motor_covariance": "input_image_state_covariance_B_B_T",
+              "contract": "cs_released_stochastic_v1",
+              "motor_covariance_scale": 1e-10,
+              "motor_covariance_shape": [
+                48,
+                48
+              ],
+              "output_feedback_process_covariance_scale": 0.001,
+              "process_covariance_scale": 1.0,
+              "process_covariance_shape": [
+                48,
+                48
+              ],
+              "process_noise": "separate_output_feedback_process_covariance",
+              "sensory_covariance_diag": [
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05
+              ],
+              "sensory_noise_scale": 1.0,
+              "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
+              "signal_dependent_scale": 0.02,
+              "signal_dependent_state_shape": [
+                48,
+                2,
+                2
+              ]
+            }
+          }
+        },
+        "run_id": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr1e-3_clip5_b64__nominal_clean",
+        "source_group": "cs_stochastic_gru",
+        "source_standard_status": "partial_standard_certificate_blocked"
+      },
+      {
+        "certificate": {
+          "external_mismatch_ratio": 2.0000253092296774,
+          "external_response_map_mismatches": {
+            "disturbance_history_to_action_map_mismatch": null,
+            "disturbance_history_to_output_map_mismatch": null,
+            "disturbance_history_to_state_map_mismatch": null,
+            "measurement_history_to_action_map_mismatch": 1.0670193226130718,
+            "measurement_history_to_output_map_mismatch": null,
+            "observation_history_to_action_map_mismatch": 1.0670193226130718
+          },
+          "response_map_mismatch": 1.0670193226130718,
+          "state_weighted_action_mismatch": 2.0000253092296774
+        },
+        "classification": {
+          "classification": "mixed",
+          "reasons": [
+            "representation_failure",
+            "io_map_mismatch"
+          ],
+          "signals": {
+            "certificate_bad": false,
+            "equivalence_metrics_failed": false,
+            "external_certificate_evidence_available": true,
+            "external_map_representation": {
+              "external_map_mismatch_ratios": {
+                "measurement_history_to_action_map_mismatch": 1.0670193226130718,
+                "observation_history_to_action_map_mismatch": 1.0670193226130718
+              },
+              "failed_external_maps": [
+                "measurement_history_to_action_map_mismatch",
+                "observation_history_to_action_map_mismatch"
+              ],
+              "ignored_internal_coordinate_mismatch": null,
+              "representation_basis": "external_response_maps",
+              "representation_failed": true
+            },
+            "hidden_state_coordinate_mismatch": null,
+            "io_map_bad": true,
+            "learned_gradient_bad": false,
+            "objective_bad": false,
+            "objective_close": false,
+            "reference_gradient_bad": false,
+            "representation_failed": true,
+            "response_map_evidence_available": true,
+            "rollout_action_mismatch_bad": true,
+            "sidecar_improved": false,
+            "weak_subspace_dominates": false
+          }
+        },
+        "controller_label": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr1e-3_clip5_b64",
+        "evaluation_lens": "nominal_clean",
+        "gain_error_decomposition": {
+          "reason": "Visited gain-error decomposition requires same-coordinate static gains.",
+          "status": "not_applicable"
+        },
+        "gradient_diagnostics": {
+          "reason": "No static gain or optimizer-coordinate gradient is defined for this empirical/nonlinear standard row.",
+          "status": "not_applicable"
+        },
+        "interpolation": {
+          "reason": "Learned-to-reference interpolation is undefined without a shared static gain parameterization.",
+          "status": "not_applicable"
+        },
+        "objective": {
+          "reason": "GRU empirical/nonlinear rows do not expose a static training objective parameterization in the standard row.",
+          "status": "not_applicable"
+        },
+        "row_parameters": {
+          "certificate_mode": "empirical_nonlinear",
+          "evaluation_lens": "nominal_clean",
+          "io_response_map_blocker": null,
+          "io_response_map_status": "available_4d_observation_contract",
+          "nn_hidden": 0.0,
+          "source_issue": "020a65b",
+          "source_run_id": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr1e-3_clip5_b64",
+          "stochastic_preset": {
+            "additive_motor_noise_std": 1e-05,
+            "name": "cs2019-rollout",
+            "plant_process_force_noise_std": 0.03162277660168379,
+            "projection_notes": {
+              "additive_motor": "Project C&S input-image motor covariance to command-channel additive noise with std sqrt(motor_covariance_scale).",
+              "plant_process": "Project C&S process/load covariance to independent force noise immediately upstream of mechanics, after the force filter.",
+              "sensory": "Use the C&S sensory covariance diagonal standard deviation on the Feedbax delayed pos/vel feedback channel.",
+              "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
+              "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
+            },
+            "sensory_noise_std": 0.004791329788133908,
+            "signal_dependent_motor_noise_std": 0.02,
+            "source_contract": {
+              "additive_motor_covariance": "input_image_state_covariance_B_B_T",
+              "contract": "cs_released_stochastic_v1",
+              "motor_covariance_scale": 1e-10,
+              "motor_covariance_shape": [
+                48,
+                48
+              ],
+              "output_feedback_process_covariance_scale": 0.001,
+              "process_covariance_scale": 1.0,
+              "process_covariance_shape": [
+                48,
+                48
+              ],
+              "process_noise": "separate_output_feedback_process_covariance",
+              "sensory_covariance_diag": [
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05
+              ],
+              "sensory_noise_scale": 1.0,
+              "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
+              "signal_dependent_scale": 0.02,
+              "signal_dependent_state_shape": [
+                48,
+                2,
+                2
+              ]
+            }
+          }
+        },
+        "run_id": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr1e-3_clip5_b64__nominal_clean",
+        "source_group": "cs_stochastic_gru",
+        "source_standard_status": "partial_standard_certificate_blocked"
+      },
+      {
+        "certificate": {
+          "external_mismatch_ratio": 1.7699104554763045,
+          "external_response_map_mismatches": {
+            "disturbance_history_to_action_map_mismatch": null,
+            "disturbance_history_to_output_map_mismatch": null,
+            "disturbance_history_to_state_map_mismatch": null,
+            "measurement_history_to_action_map_mismatch": 1.087559383868005,
+            "measurement_history_to_output_map_mismatch": null,
+            "observation_history_to_action_map_mismatch": 1.087559383868005
+          },
+          "response_map_mismatch": 1.087559383868005,
+          "state_weighted_action_mismatch": 1.7699104554763045
+        },
+        "classification": {
+          "classification": "mixed",
+          "reasons": [
+            "representation_failure",
+            "io_map_mismatch"
+          ],
+          "signals": {
+            "certificate_bad": false,
+            "equivalence_metrics_failed": false,
+            "external_certificate_evidence_available": true,
+            "external_map_representation": {
+              "external_map_mismatch_ratios": {
+                "measurement_history_to_action_map_mismatch": 1.087559383868005,
+                "observation_history_to_action_map_mismatch": 1.087559383868005
+              },
+              "failed_external_maps": [
+                "measurement_history_to_action_map_mismatch",
+                "observation_history_to_action_map_mismatch"
+              ],
+              "ignored_internal_coordinate_mismatch": null,
+              "representation_basis": "external_response_maps",
+              "representation_failed": true
+            },
+            "hidden_state_coordinate_mismatch": null,
+            "io_map_bad": true,
+            "learned_gradient_bad": false,
+            "objective_bad": false,
+            "objective_close": false,
+            "reference_gradient_bad": false,
+            "representation_failed": true,
+            "response_map_evidence_available": true,
+            "rollout_action_mismatch_bad": true,
+            "sidecar_improved": false,
+            "weak_subspace_dominates": false
+          }
+        },
+        "controller_label": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
+        "evaluation_lens": "nominal_clean",
+        "gain_error_decomposition": {
+          "reason": "Visited gain-error decomposition requires same-coordinate static gains.",
+          "status": "not_applicable"
+        },
+        "gradient_diagnostics": {
+          "reason": "No static gain or optimizer-coordinate gradient is defined for this empirical/nonlinear standard row.",
+          "status": "not_applicable"
+        },
+        "interpolation": {
+          "reason": "Learned-to-reference interpolation is undefined without a shared static gain parameterization.",
+          "status": "not_applicable"
+        },
+        "objective": {
+          "reason": "GRU empirical/nonlinear rows do not expose a static training objective parameterization in the standard row.",
+          "status": "not_applicable"
+        },
+        "row_parameters": {
+          "certificate_mode": "empirical_nonlinear",
+          "evaluation_lens": "nominal_clean",
+          "io_response_map_blocker": null,
+          "io_response_map_status": "available_4d_observation_contract",
+          "nn_hidden": 0.0,
+          "source_issue": "020a65b",
+          "source_run_id": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
+          "stochastic_preset": {
+            "additive_motor_noise_std": 1e-05,
+            "name": "cs2019-rollout",
+            "plant_process_force_noise_std": 0.03162277660168379,
+            "projection_notes": {
+              "additive_motor": "Project C&S input-image motor covariance to command-channel additive noise with std sqrt(motor_covariance_scale).",
+              "plant_process": "Project C&S process/load covariance to independent force noise immediately upstream of mechanics, after the force filter.",
+              "sensory": "Use the C&S sensory covariance diagonal standard deviation on the Feedbax delayed pos/vel feedback channel.",
+              "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
+              "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
+            },
+            "sensory_noise_std": 0.004791329788133908,
+            "signal_dependent_motor_noise_std": 0.02,
+            "source_contract": {
+              "additive_motor_covariance": "input_image_state_covariance_B_B_T",
+              "contract": "cs_released_stochastic_v1",
+              "motor_covariance_scale": 1e-10,
+              "motor_covariance_shape": [
+                48,
+                48
+              ],
+              "output_feedback_process_covariance_scale": 0.001,
+              "process_covariance_scale": 1.0,
+              "process_covariance_shape": [
+                48,
+                48
+              ],
+              "process_noise": "separate_output_feedback_process_covariance",
+              "sensory_covariance_diag": [
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05
+              ],
+              "sensory_noise_scale": 1.0,
+              "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
+              "signal_dependent_scale": 0.02,
+              "signal_dependent_state_shape": [
+                48,
+                2,
+                2
+              ]
+            }
+          }
+        },
+        "run_id": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64__nominal_clean",
+        "source_group": "cs_stochastic_gru",
+        "source_standard_status": "partial_standard_certificate_blocked"
+      },
+      {
+        "certificate": {
+          "external_mismatch_ratio": 1.9813296314104176,
+          "external_response_map_mismatches": {
+            "disturbance_history_to_action_map_mismatch": null,
+            "disturbance_history_to_output_map_mismatch": null,
+            "disturbance_history_to_state_map_mismatch": null,
+            "measurement_history_to_action_map_mismatch": 1.2797662756268209,
+            "measurement_history_to_output_map_mismatch": null,
+            "observation_history_to_action_map_mismatch": 1.2797662756268209
+          },
+          "response_map_mismatch": 1.2797662756268209,
+          "state_weighted_action_mismatch": 1.9813296314104176
+        },
+        "classification": {
+          "classification": "mixed",
+          "reasons": [
+            "representation_failure",
+            "io_map_mismatch"
+          ],
+          "signals": {
+            "certificate_bad": false,
+            "equivalence_metrics_failed": false,
+            "external_certificate_evidence_available": true,
+            "external_map_representation": {
+              "external_map_mismatch_ratios": {
+                "measurement_history_to_action_map_mismatch": 1.2797662756268209,
+                "observation_history_to_action_map_mismatch": 1.2797662756268209
+              },
+              "failed_external_maps": [
+                "measurement_history_to_action_map_mismatch",
+                "observation_history_to_action_map_mismatch"
+              ],
+              "ignored_internal_coordinate_mismatch": null,
+              "representation_basis": "external_response_maps",
+              "representation_failed": true
+            },
+            "hidden_state_coordinate_mismatch": null,
+            "io_map_bad": true,
+            "learned_gradient_bad": false,
+            "objective_bad": false,
+            "objective_close": false,
+            "reference_gradient_bad": false,
+            "representation_failed": true,
+            "response_map_evidence_available": true,
+            "rollout_action_mismatch_bad": true,
+            "sidecar_improved": false,
+            "weak_subspace_dominates": false
+          }
+        },
+        "controller_label": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64",
+        "evaluation_lens": "nominal_clean",
+        "gain_error_decomposition": {
+          "reason": "Visited gain-error decomposition requires same-coordinate static gains.",
+          "status": "not_applicable"
+        },
+        "gradient_diagnostics": {
+          "reason": "No static gain or optimizer-coordinate gradient is defined for this empirical/nonlinear standard row.",
+          "status": "not_applicable"
+        },
+        "interpolation": {
+          "reason": "Learned-to-reference interpolation is undefined without a shared static gain parameterization.",
+          "status": "not_applicable"
+        },
+        "objective": {
+          "reason": "GRU empirical/nonlinear rows do not expose a static training objective parameterization in the standard row.",
+          "status": "not_applicable"
+        },
+        "row_parameters": {
+          "certificate_mode": "empirical_nonlinear",
+          "evaluation_lens": "nominal_clean",
+          "io_response_map_blocker": null,
+          "io_response_map_status": "available_4d_observation_contract",
+          "nn_hidden": 0.0,
+          "source_issue": "020a65b",
+          "source_run_id": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64",
+          "stochastic_preset": {
+            "additive_motor_noise_std": 1e-05,
+            "name": "cs2019-rollout",
+            "plant_process_force_noise_std": 0.03162277660168379,
+            "projection_notes": {
+              "additive_motor": "Project C&S input-image motor covariance to command-channel additive noise with std sqrt(motor_covariance_scale).",
+              "plant_process": "Project C&S process/load covariance to independent force noise immediately upstream of mechanics, after the force filter.",
+              "sensory": "Use the C&S sensory covariance diagonal standard deviation on the Feedbax delayed pos/vel feedback channel.",
+              "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
+              "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
+            },
+            "sensory_noise_std": 0.004791329788133908,
+            "signal_dependent_motor_noise_std": 0.02,
+            "source_contract": {
+              "additive_motor_covariance": "input_image_state_covariance_B_B_T",
+              "contract": "cs_released_stochastic_v1",
+              "motor_covariance_scale": 1e-10,
+              "motor_covariance_shape": [
+                48,
+                48
+              ],
+              "output_feedback_process_covariance_scale": 0.001,
+              "process_covariance_scale": 1.0,
+              "process_covariance_shape": [
+                48,
+                48
+              ],
+              "process_noise": "separate_output_feedback_process_covariance",
+              "sensory_covariance_diag": [
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05
+              ],
+              "sensory_noise_scale": 1.0,
+              "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
+              "signal_dependent_scale": 0.02,
+              "signal_dependent_state_shape": [
+                48,
+                2,
+                2
+              ]
+            }
+          }
+        },
+        "run_id": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64__nominal_clean",
+        "source_group": "cs_stochastic_gru",
+        "source_standard_status": "partial_standard_certificate_blocked"
+      }
+    ]
+  },
+  "format": "rlrmp.cs_gru_standard_certificates.v1",
+  "issue": "e6a32b8",
+  "rows": [
+    {
+      "arrays": [],
+      "artifacts": {
+        "run_spec": "results/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr1e-3_clip5_b64/run.json",
+        "trained_model": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr1e-3_clip5_b64/trained_model.eqx",
+        "training_summary": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr1e-3_clip5_b64/training_summary.json"
+      },
+      "certificate_components": [
+        {
+          "name": "state_weighted_action_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "action_label": "command",
+            "aggregate_delta_energy": 2946.1566409541547,
+            "aggregate_mismatch_ratio": 1.7522852596907934,
+            "aggregate_reference_energy": 1681.3225042331467,
+            "delta_rms": 7.007325501399891,
+            "mismatch_ratio_max": 98561.5539904889,
+            "mismatch_ratio_mean": 2769.8905755172423,
+            "n_samples": 6000,
+            "reference_rms": 5.293584960801056,
+            "state_label": "state"
+          }
+        },
+        {
+          "name": "visited_subspace_diagnostics",
+          "reason": "requires states or state covariances",
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "optimizer_metadata",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "completed_batches": 12000,
+            "full_training_launch": "requested",
+            "learning_rate": 0.001,
+            "n_train_batches": 12000,
+            "optimizer": "adamw",
+            "training_batches_per_second": 7.787280328003797,
+            "training_duration_seconds": 1540.974447375018
+          }
+        },
+        {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 1.0708022008630989,
+            "covariance_weighted_aggregate_mismatch_ratio": 0.9907789993414957,
+            "covariance_weighted_delta_energy": 483547.14212538546,
+            "covariance_weighted_delta_rms": 10.036881385310311,
+            "covariance_weighted_mismatch_ratio_max": 70446301501.33731,
+            "covariance_weighted_mismatch_ratio_mean": 2256472936.8726196,
+            "covariance_weighted_reference_energy": 488047.4277783106,
+            "covariance_weighted_reference_rms": 10.083478936052511,
+            "covariance_weighted_status": "available",
+            "covariance_weighting": {
+              "audit_only": true,
+              "basis": "flattened_delayed_position_velocity_observation_history",
+              "centering": "sample_mean_subtracted",
+              "estimator": "unbiased_sample_covariance",
+              "future_lenses": {
+                "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                "sensory_noise_covariance": "missing_same_basis_contract"
+              },
+              "history_dim": 240,
+              "horizon": 60,
+              "normalization": "expected_squared_output_energy_ratio",
+              "observation_dim": 4,
+              "regularization": {
+                "diagonal_jitter": 0.0,
+                "eigenvalue_floor": 0.0,
+                "ratio_denominator_floor": 1e-12,
+                "type": "none"
+              },
+              "sample_count": 80,
+              "source": "empirical_validation_observation_history",
+              "source_priority": 1,
+              "status": "available"
+            },
+            "delta_frobenius": 8974.214851060366,
+            "input_label": "observation_history",
+            "map_shape": [
+              80,
+              60,
+              2,
+              240
+            ],
+            "map_slices": 4800,
+            "mismatch_ratio_max": 2397363242497128.5,
+            "mismatch_ratio_mean": 79789110016233.14,
+            "output_label": "action",
+            "reference_frobenius": 8672.450609442227,
+            "response_map_schema": "finite_horizon_linear_v1"
+          }
+        },
+        {
+          "name": "measurement_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 1.0708022008630989,
+            "covariance_weighted_aggregate_mismatch_ratio": 0.9907789993414957,
+            "covariance_weighted_delta_energy": 483547.14212538546,
+            "covariance_weighted_delta_rms": 10.036881385310311,
+            "covariance_weighted_mismatch_ratio_max": 70446301501.33731,
+            "covariance_weighted_mismatch_ratio_mean": 2256472936.8726196,
+            "covariance_weighted_reference_energy": 488047.4277783106,
+            "covariance_weighted_reference_rms": 10.083478936052511,
+            "covariance_weighted_status": "available",
+            "covariance_weighting": {
+              "audit_only": true,
+              "basis": "flattened_delayed_position_velocity_observation_history",
+              "centering": "sample_mean_subtracted",
+              "estimator": "unbiased_sample_covariance",
+              "future_lenses": {
+                "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                "sensory_noise_covariance": "missing_same_basis_contract"
+              },
+              "history_dim": 240,
+              "horizon": 60,
+              "normalization": "expected_squared_output_energy_ratio",
+              "observation_dim": 4,
+              "regularization": {
+                "diagonal_jitter": 0.0,
+                "eigenvalue_floor": 0.0,
+                "ratio_denominator_floor": 1e-12,
+                "type": "none"
+              },
+              "sample_count": 80,
+              "source": "empirical_validation_observation_history",
+              "source_priority": 1,
+              "status": "available"
+            },
+            "delta_frobenius": 8974.214851060366,
+            "input_label": "measurement_history",
+            "map_shape": [
+              80,
+              60,
+              2,
+              240
+            ],
+            "map_slices": 4800,
+            "mismatch_ratio_max": 2397363242497128.5,
+            "mismatch_ratio_mean": 79789110016233.14,
+            "output_label": "action",
+            "reference_frobenius": 8672.450609442227,
+            "response_map_schema": "finite_horizon_linear_v1"
+          }
+        },
+        {
+          "name": "measurement_history_to_output_map_mismatch",
+          "reason": null,
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": null,
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": null,
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "disturbance_history_to_output_map_mismatch",
+          "reason": null,
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "disturbance_history_to_cost_quadratic",
+          "reason": null,
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "closed_loop_transition_mismatch",
+          "reason": "gru controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "value_policy_gap",
+          "reason": "gru controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "bellman_hessian_residual",
+          "reason": "gru controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "recurrence_gru_diagnostics",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "architecture": "gru",
+            "certificate_mode": "empirical_nonlinear",
+            "controller_kind": "gru",
+            "hidden_size": 180,
+            "io_response_map_blocker": null,
+            "io_response_map_observation_dim": 4,
+            "io_response_map_status": "available_4d_observation_contract",
+            "n_replicates": 5,
+            "observation_history_covariance": {
+              "audit_only": true,
+              "basis": "flattened_delayed_position_velocity_observation_history",
+              "centering": "sample_mean_subtracted",
+              "estimator": "unbiased_sample_covariance",
+              "future_lenses": {
+                "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                "sensory_noise_covariance": "missing_same_basis_contract"
+              },
+              "history_dim": 240,
+              "horizon": 60,
+              "normalization": "expected_squared_output_energy_ratio",
+              "observation_dim": 4,
+              "regularization": {
+                "diagonal_jitter": 0.0,
+                "eigenvalue_floor": 0.0,
+                "ratio_denominator_floor": 1e-12,
+                "type": "none"
+              },
+              "sample_count": 80,
+              "source": "empirical_validation_observation_history",
+              "source_priority": 1,
+              "status": "available"
+            },
+            "population_structure": {
+              "n_input_only": 0,
+              "n_input_readout": 180,
+              "n_readout_only": 0,
+              "n_recurrent_only": 0
+            }
+          }
+        }
+      ],
+      "metrics": {
+        "candidate_action_shape": [
+          100,
+          60,
+          2
+        ],
+        "evaluation": {
+          "checkpoint_selection": "validation_selected_per_replicate",
+          "io_response_map": {
+            "input_channel": "4D delayed position/velocity feedback",
+            "map_shape": [
+              80,
+              60,
+              2,
+              240
+            ],
+            "n_rollout_trials_per_replicate": 16,
+            "status": "evaluated_controller_local_jacobian_on_stochastic_histories"
+          },
+          "n_replicates": 5,
+          "n_trials": 20,
+          "noise": "feedbax Channel noise disabled; plant-process force noise disabled if present",
+          "observation_history_covariance": {
+            "audit_only": true,
+            "basis": "flattened_delayed_position_velocity_observation_history",
+            "centering": "sample_mean_subtracted",
+            "estimator": "unbiased_sample_covariance",
+            "future_lenses": {
+              "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+              "sensory_noise_covariance": "missing_same_basis_contract"
+            },
+            "history_dim": 240,
+            "horizon": 60,
+            "normalization": "expected_squared_output_energy_ratio",
+            "observation_dim": 4,
+            "regularization": {
+              "diagonal_jitter": 0.0,
+              "eigenvalue_floor": 0.0,
+              "ratio_denominator_floor": 1e-12,
+              "type": "none"
+            },
+            "sample_count": 80,
+            "source": "empirical_validation_observation_history",
+            "source_priority": 1,
+            "status": "available"
+          },
+          "selected_checkpoints": [
+            {
+              "best_logged_validation_batch": 11000,
+              "best_logged_validation_objective": 5239.6067204697765,
+              "checkpoint_batches": 11000,
+              "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+              "final_validation_objective": 5239.6067204697765,
+              "final_vs_selected_validation_degradation": 0.0,
+              "replicate": 0,
+              "scoring_validation_log_batch": 11000,
+              "scoring_validation_objective": 5239.6067204697765,
+              "selection_source": "sparse_history_fallback"
+            },
+            {
+              "best_logged_validation_batch": 9500,
+              "best_logged_validation_objective": 6299.7356870386375,
+              "checkpoint_batches": 9500,
+              "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr1e-3_clip5_b64/checkpoints/checkpoint_0009500",
+              "final_validation_objective": 6406.280474852327,
+              "final_vs_selected_validation_degradation": 106.54478781368925,
+              "replicate": 1,
+              "scoring_validation_log_batch": 9500,
+              "scoring_validation_objective": 6299.7356870386375,
+              "selection_source": "sparse_history_fallback"
+            },
+            {
+              "best_logged_validation_batch": 9000,
+              "best_logged_validation_objective": 4793.340654313101,
+              "checkpoint_batches": 9000,
+              "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr1e-3_clip5_b64/checkpoints/checkpoint_0009000",
+              "final_validation_objective": 4927.756150653115,
+              "final_vs_selected_validation_degradation": 134.4154963400133,
+              "replicate": 2,
+              "scoring_validation_log_batch": 9000,
+              "scoring_validation_objective": 4793.340654313101,
+              "selection_source": "sparse_history_fallback"
+            },
+            {
+              "best_logged_validation_batch": 10501,
+              "best_logged_validation_objective": 5064.776110312596,
+              "checkpoint_batches": 9500,
+              "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr1e-3_clip5_b64/checkpoints/checkpoint_0009500",
+              "final_validation_objective": 5153.880024345286,
+              "final_vs_selected_validation_degradation": 77.38939635612041,
+              "replicate": 3,
+              "scoring_validation_log_batch": 9500,
+              "scoring_validation_objective": 5076.490627989166,
+              "selection_source": "sparse_history_fallback"
+            },
+            {
+              "best_logged_validation_batch": 11000,
+              "best_logged_validation_objective": 4786.922125537635,
+              "checkpoint_batches": 11000,
+              "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+              "final_validation_objective": 4786.922125537635,
+              "final_vs_selected_validation_degradation": 0.0,
+              "replicate": 4,
+              "scoring_validation_log_batch": 11000,
+              "scoring_validation_objective": 4786.922125537635,
+              "selection_source": "sparse_history_fallback"
+            }
+          ],
+          "status": "evaluated_clean_feedbax_rollout"
+        },
+        "io_response_map_blocker": null,
+        "io_response_map_status": "available_4d_observation_contract",
+        "observation_history_covariance": {
+          "audit_only": true,
+          "basis": "flattened_delayed_position_velocity_observation_history",
+          "centering": "sample_mean_subtracted",
+          "estimator": "unbiased_sample_covariance",
+          "future_lenses": {
+            "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+            "sensory_noise_covariance": "missing_same_basis_contract"
+          },
+          "history_dim": 240,
+          "horizon": 60,
+          "normalization": "expected_squared_output_energy_ratio",
+          "observation_dim": 4,
+          "regularization": {
+            "diagonal_jitter": 0.0,
+            "eigenvalue_floor": 0.0,
+            "ratio_denominator_floor": 1e-12,
+            "type": "none"
+          },
+          "sample_count": 80,
+          "source": "empirical_validation_observation_history",
+          "source_priority": 1,
+          "status": "available"
+        },
+        "reference": {
+          "action_dim": 2,
+          "controller": "analytical_lqr_kalman_output_feedback",
+          "cs_observation_dim": 8,
+          "gamma_factor": 1.4,
+          "horizon": 60,
+          "io_response_map": {
+            "action_dim": 2,
+            "controller": "analytical_lqr_kalman_output_feedback",
+            "controller_variant": "cs_released_extlqg_stochastic_fixed_point",
+            "extlqg_expected_cost": 12201.42433801687,
+            "extlqg_iterations": 6,
+            "gamma_factor": 1.4,
+            "history_dim": 240,
+            "map_shape": [
+              60,
+              2,
+              240
+            ],
+            "observation_channel": "delayed_position_velocity",
+            "observation_dim": 4,
+            "parity_status": "fixed_point: local port of extLQG/computeOFC/computeExtKalman"
+          },
+          "output_feedback_config": {
+            "delay_steps": 5,
+            "estimator_initial_covariance": 0.01,
+            "n_phys": 8
+          }
+        },
+        "reference_action_shape": [
+          100,
+          60,
+          2
+        ]
+      },
+      "spec": {
+        "architecture": "gru",
+        "controller_label": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr1e-3_clip5_b64",
+        "evaluation_lane": "deterministic",
+        "gamma_factor": 1.4,
+        "issue_id": "e6a32b8",
+        "notes": "GRU empirical/nonlinear standard row. Clean action behavior is evaluated against the C&S output-feedback LQR/Kalman reference; same-coordinate transition/value/Bellman rows are not applicable.",
+        "objective": "optimal",
+        "optimizer_label": "adamw_nominal_gru",
+        "parameters": {
+          "certificate_mode": "empirical_nonlinear",
+          "evaluation_lens": "nominal_clean",
+          "io_response_map_blocker": null,
+          "io_response_map_status": "available_4d_observation_contract",
+          "nn_hidden": 0.0,
+          "source_issue": "020a65b",
+          "source_run_id": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr1e-3_clip5_b64",
+          "stochastic_preset": {
+            "additive_motor_noise_std": 1e-05,
+            "name": "cs2019-rollout",
+            "plant_process_force_noise_std": 0.03162277660168379,
+            "projection_notes": {
+              "additive_motor": "Project C&S input-image motor covariance to command-channel additive noise with std sqrt(motor_covariance_scale).",
+              "plant_process": "Project C&S process/load covariance to independent force noise immediately upstream of mechanics, after the force filter.",
+              "sensory": "Use the C&S sensory covariance diagonal standard deviation on the Feedbax delayed pos/vel feedback channel.",
+              "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
+              "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
+            },
+            "sensory_noise_std": 0.004791329788133908,
+            "signal_dependent_motor_noise_std": 0.02,
+            "source_contract": {
+              "additive_motor_covariance": "input_image_state_covariance_B_B_T",
+              "contract": "cs_released_stochastic_v1",
+              "motor_covariance_scale": 1e-10,
+              "motor_covariance_shape": [
+                48,
+                48
+              ],
+              "output_feedback_process_covariance_scale": 0.001,
+              "process_covariance_scale": 1.0,
+              "process_covariance_shape": [
+                48,
+                48
+              ],
+              "process_noise": "separate_output_feedback_process_covariance",
+              "sensory_covariance_diag": [
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05
+              ],
+              "sensory_noise_scale": 1.0,
+              "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
+              "signal_dependent_scale": 0.02,
+              "signal_dependent_state_shape": [
+                48,
+                2,
+                2
+              ]
+            }
+          }
+        },
+        "reference_controller": "analytical_lqr_kalman_output_feedback",
+        "run_id": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr1e-3_clip5_b64__nominal_clean",
+        "seed": 42,
+        "training_distribution": "nominal"
+      },
+      "status": "partial_standard_certificate_blocked"
+    },
+    {
+      "arrays": [],
+      "artifacts": {
+        "run_spec": "results/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr1e-3_clip5_b64/run.json",
+        "trained_model": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr1e-3_clip5_b64/trained_model.eqx",
+        "training_summary": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr1e-3_clip5_b64/training_summary.json"
+      },
+      "certificate_components": [
+        {
+          "name": "state_weighted_action_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "action_label": "command",
+            "aggregate_delta_energy": 3362.6875614437145,
+            "aggregate_mismatch_ratio": 2.0000253092296774,
+            "aggregate_reference_energy": 1681.3225042331467,
+            "delta_rms": 7.486307012855442,
+            "mismatch_ratio_max": 4321150.95218357,
+            "mismatch_ratio_mean": 87202.70130101847,
+            "n_samples": 6000,
+            "reference_rms": 5.293584960801056,
+            "state_label": "state"
+          }
+        },
+        {
+          "name": "visited_subspace_diagnostics",
+          "reason": "requires states or state covariances",
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "optimizer_metadata",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "completed_batches": 12000,
+            "full_training_launch": "requested",
+            "learning_rate": 0.001,
+            "n_train_batches": 12000,
+            "optimizer": "adamw",
+            "training_batches_per_second": 0.9923485389137079,
+            "training_duration_seconds": 12092.525488208019
+          }
+        },
+        {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 1.0670193226130718,
+            "covariance_weighted_aggregate_mismatch_ratio": 0.9953418477587738,
+            "covariance_weighted_delta_energy": 7236443.2765119765,
+            "covariance_weighted_delta_rms": 38.82772655298438,
+            "covariance_weighted_mismatch_ratio_max": 30640905547.20464,
+            "covariance_weighted_mismatch_ratio_mean": 1025136266.2215691,
+            "covariance_weighted_reference_energy": 7270309.484933629,
+            "covariance_weighted_reference_rms": 38.91847645220934,
+            "covariance_weighted_status": "available",
+            "covariance_weighting": {
+              "audit_only": true,
+              "basis": "flattened_delayed_position_velocity_observation_history",
+              "centering": "sample_mean_subtracted",
+              "estimator": "unbiased_sample_covariance",
+              "future_lenses": {
+                "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                "sensory_noise_covariance": "missing_same_basis_contract"
+              },
+              "history_dim": 240,
+              "horizon": 60,
+              "normalization": "expected_squared_output_energy_ratio",
+              "observation_dim": 4,
+              "regularization": {
+                "diagonal_jitter": 0.0,
+                "eigenvalue_floor": 0.0,
+                "ratio_denominator_floor": 1e-12,
+                "type": "none"
+              },
+              "sample_count": 80,
+              "source": "empirical_validation_observation_history",
+              "source_priority": 1,
+              "status": "available"
+            },
+            "delta_frobenius": 8958.348989930722,
+            "input_label": "observation_history",
+            "map_shape": [
+              80,
+              60,
+              2,
+              240
+            ],
+            "map_slices": 4800,
+            "mismatch_ratio_max": 1010814706430774.6,
+            "mismatch_ratio_mean": 35269713994039.49,
+            "output_label": "action",
+            "reference_frobenius": 8672.450609442227,
+            "response_map_schema": "finite_horizon_linear_v1"
+          }
+        },
+        {
+          "name": "measurement_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 1.0670193226130718,
+            "covariance_weighted_aggregate_mismatch_ratio": 0.9953418477587738,
+            "covariance_weighted_delta_energy": 7236443.2765119765,
+            "covariance_weighted_delta_rms": 38.82772655298438,
+            "covariance_weighted_mismatch_ratio_max": 30640905547.20464,
+            "covariance_weighted_mismatch_ratio_mean": 1025136266.2215691,
+            "covariance_weighted_reference_energy": 7270309.484933629,
+            "covariance_weighted_reference_rms": 38.91847645220934,
+            "covariance_weighted_status": "available",
+            "covariance_weighting": {
+              "audit_only": true,
+              "basis": "flattened_delayed_position_velocity_observation_history",
+              "centering": "sample_mean_subtracted",
+              "estimator": "unbiased_sample_covariance",
+              "future_lenses": {
+                "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                "sensory_noise_covariance": "missing_same_basis_contract"
+              },
+              "history_dim": 240,
+              "horizon": 60,
+              "normalization": "expected_squared_output_energy_ratio",
+              "observation_dim": 4,
+              "regularization": {
+                "diagonal_jitter": 0.0,
+                "eigenvalue_floor": 0.0,
+                "ratio_denominator_floor": 1e-12,
+                "type": "none"
+              },
+              "sample_count": 80,
+              "source": "empirical_validation_observation_history",
+              "source_priority": 1,
+              "status": "available"
+            },
+            "delta_frobenius": 8958.348989930722,
+            "input_label": "measurement_history",
+            "map_shape": [
+              80,
+              60,
+              2,
+              240
+            ],
+            "map_slices": 4800,
+            "mismatch_ratio_max": 1010814706430774.6,
+            "mismatch_ratio_mean": 35269713994039.49,
+            "output_label": "action",
+            "reference_frobenius": 8672.450609442227,
+            "response_map_schema": "finite_horizon_linear_v1"
+          }
+        },
+        {
+          "name": "measurement_history_to_output_map_mismatch",
+          "reason": null,
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": null,
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": null,
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "disturbance_history_to_output_map_mismatch",
+          "reason": null,
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "disturbance_history_to_cost_quadratic",
+          "reason": null,
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "closed_loop_transition_mismatch",
+          "reason": "gru controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "value_policy_gap",
+          "reason": "gru controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "bellman_hessian_residual",
+          "reason": "gru controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "recurrence_gru_diagnostics",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "architecture": "gru",
+            "certificate_mode": "empirical_nonlinear",
+            "controller_kind": "gru",
+            "hidden_size": 180,
+            "io_response_map_blocker": null,
+            "io_response_map_observation_dim": 4,
+            "io_response_map_status": "available_4d_observation_contract",
+            "n_replicates": 5,
+            "observation_history_covariance": {
+              "audit_only": true,
+              "basis": "flattened_delayed_position_velocity_observation_history",
+              "centering": "sample_mean_subtracted",
+              "estimator": "unbiased_sample_covariance",
+              "future_lenses": {
+                "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                "sensory_noise_covariance": "missing_same_basis_contract"
+              },
+              "history_dim": 240,
+              "horizon": 60,
+              "normalization": "expected_squared_output_energy_ratio",
+              "observation_dim": 4,
+              "regularization": {
+                "diagonal_jitter": 0.0,
+                "eigenvalue_floor": 0.0,
+                "ratio_denominator_floor": 1e-12,
+                "type": "none"
+              },
+              "sample_count": 80,
+              "source": "empirical_validation_observation_history",
+              "source_priority": 1,
+              "status": "available"
+            },
+            "population_structure": {
+              "n_input_only": 0,
+              "n_input_readout": 180,
+              "n_readout_only": 0,
+              "n_recurrent_only": 0
+            }
+          }
+        }
+      ],
+      "metrics": {
+        "candidate_action_shape": [
+          100,
+          60,
+          2
+        ],
+        "evaluation": {
+          "checkpoint_selection": "validation_selected_per_replicate",
+          "io_response_map": {
+            "input_channel": "4D delayed position/velocity feedback",
+            "map_shape": [
+              80,
+              60,
+              2,
+              240
+            ],
+            "n_rollout_trials_per_replicate": 16,
+            "status": "evaluated_controller_local_jacobian_on_stochastic_histories"
+          },
+          "n_replicates": 5,
+          "n_trials": 20,
+          "noise": "feedbax Channel noise disabled; plant-process force noise disabled if present",
+          "observation_history_covariance": {
+            "audit_only": true,
+            "basis": "flattened_delayed_position_velocity_observation_history",
+            "centering": "sample_mean_subtracted",
+            "estimator": "unbiased_sample_covariance",
+            "future_lenses": {
+              "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+              "sensory_noise_covariance": "missing_same_basis_contract"
+            },
+            "history_dim": 240,
+            "horizon": 60,
+            "normalization": "expected_squared_output_energy_ratio",
+            "observation_dim": 4,
+            "regularization": {
+              "diagonal_jitter": 0.0,
+              "eigenvalue_floor": 0.0,
+              "ratio_denominator_floor": 1e-12,
+              "type": "none"
+            },
+            "sample_count": 80,
+            "source": "empirical_validation_observation_history",
+            "source_priority": 1,
+            "status": "available"
+          },
+          "selected_checkpoints": [
+            {
+              "best_logged_validation_batch": 11000,
+              "best_logged_validation_objective": 4767.375665204781,
+              "checkpoint_batches": 11000,
+              "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+              "final_validation_objective": 4767.375665204781,
+              "final_vs_selected_validation_degradation": 0.0,
+              "replicate": 0,
+              "scoring_validation_log_batch": 11000,
+              "scoring_validation_objective": 4767.375665204781,
+              "selection_source": "sparse_history_fallback"
+            },
+            {
+              "best_logged_validation_batch": 5001,
+              "best_logged_validation_objective": 5273.184462818112,
+              "checkpoint_batches": 5000,
+              "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr1e-3_clip5_b64/checkpoints/checkpoint_0005000",
+              "final_validation_objective": 6933.685711998441,
+              "final_vs_selected_validation_degradation": 1599.5345522993748,
+              "replicate": 1,
+              "scoring_validation_log_batch": 5000,
+              "scoring_validation_objective": 5334.151159699066,
+              "selection_source": "sparse_history_fallback"
+            },
+            {
+              "best_logged_validation_batch": 6000,
+              "best_logged_validation_objective": 5097.067791560216,
+              "checkpoint_batches": 6000,
+              "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr1e-3_clip5_b64/checkpoints/checkpoint_0006000",
+              "final_validation_objective": 5173.053189669513,
+              "final_vs_selected_validation_degradation": 75.98539810929651,
+              "replicate": 2,
+              "scoring_validation_log_batch": 6000,
+              "scoring_validation_objective": 5097.067791560216,
+              "selection_source": "sparse_history_fallback"
+            },
+            {
+              "best_logged_validation_batch": 6001,
+              "best_logged_validation_objective": 5158.571309532552,
+              "checkpoint_batches": 5500,
+              "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr1e-3_clip5_b64/checkpoints/checkpoint_0005500",
+              "final_validation_objective": 5949.609291250713,
+              "final_vs_selected_validation_degradation": 614.2480240578125,
+              "replicate": 3,
+              "scoring_validation_log_batch": 5500,
+              "scoring_validation_objective": 5335.3612671929,
+              "selection_source": "sparse_history_fallback"
+            },
+            {
+              "best_logged_validation_batch": 10001,
+              "best_logged_validation_objective": 4806.608168491985,
+              "checkpoint_batches": 10000,
+              "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr1e-3_clip5_b64/checkpoints/checkpoint_0010000",
+              "final_validation_objective": 4844.866637622919,
+              "final_vs_selected_validation_degradation": 28.49770289745811,
+              "replicate": 4,
+              "scoring_validation_log_batch": 10000,
+              "scoring_validation_objective": 4816.368934725461,
+              "selection_source": "sparse_history_fallback"
+            }
+          ],
+          "status": "evaluated_clean_feedbax_rollout"
+        },
+        "io_response_map_blocker": null,
+        "io_response_map_status": "available_4d_observation_contract",
+        "observation_history_covariance": {
+          "audit_only": true,
+          "basis": "flattened_delayed_position_velocity_observation_history",
+          "centering": "sample_mean_subtracted",
+          "estimator": "unbiased_sample_covariance",
+          "future_lenses": {
+            "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+            "sensory_noise_covariance": "missing_same_basis_contract"
+          },
+          "history_dim": 240,
+          "horizon": 60,
+          "normalization": "expected_squared_output_energy_ratio",
+          "observation_dim": 4,
+          "regularization": {
+            "diagonal_jitter": 0.0,
+            "eigenvalue_floor": 0.0,
+            "ratio_denominator_floor": 1e-12,
+            "type": "none"
+          },
+          "sample_count": 80,
+          "source": "empirical_validation_observation_history",
+          "source_priority": 1,
+          "status": "available"
+        },
+        "reference": {
+          "action_dim": 2,
+          "controller": "analytical_lqr_kalman_output_feedback",
+          "cs_observation_dim": 8,
+          "gamma_factor": 1.4,
+          "horizon": 60,
+          "io_response_map": {
+            "action_dim": 2,
+            "controller": "analytical_lqr_kalman_output_feedback",
+            "controller_variant": "cs_released_extlqg_stochastic_fixed_point",
+            "extlqg_expected_cost": 12201.42433801687,
+            "extlqg_iterations": 6,
+            "gamma_factor": 1.4,
+            "history_dim": 240,
+            "map_shape": [
+              60,
+              2,
+              240
+            ],
+            "observation_channel": "delayed_position_velocity",
+            "observation_dim": 4,
+            "parity_status": "fixed_point: local port of extLQG/computeOFC/computeExtKalman"
+          },
+          "output_feedback_config": {
+            "delay_steps": 5,
+            "estimator_initial_covariance": 0.01,
+            "n_phys": 8
+          }
+        },
+        "reference_action_shape": [
+          100,
+          60,
+          2
+        ]
+      },
+      "spec": {
+        "architecture": "gru",
+        "controller_label": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr1e-3_clip5_b64",
+        "evaluation_lane": "deterministic",
+        "gamma_factor": 1.4,
+        "issue_id": "e6a32b8",
+        "notes": "GRU empirical/nonlinear standard row. Clean action behavior is evaluated against the C&S output-feedback LQR/Kalman reference; same-coordinate transition/value/Bellman rows are not applicable.",
+        "objective": "optimal",
+        "optimizer_label": "adamw_nominal_gru",
+        "parameters": {
+          "certificate_mode": "empirical_nonlinear",
+          "evaluation_lens": "nominal_clean",
+          "io_response_map_blocker": null,
+          "io_response_map_status": "available_4d_observation_contract",
+          "nn_hidden": 0.0,
+          "source_issue": "020a65b",
+          "source_run_id": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr1e-3_clip5_b64",
+          "stochastic_preset": {
+            "additive_motor_noise_std": 1e-05,
+            "name": "cs2019-rollout",
+            "plant_process_force_noise_std": 0.03162277660168379,
+            "projection_notes": {
+              "additive_motor": "Project C&S input-image motor covariance to command-channel additive noise with std sqrt(motor_covariance_scale).",
+              "plant_process": "Project C&S process/load covariance to independent force noise immediately upstream of mechanics, after the force filter.",
+              "sensory": "Use the C&S sensory covariance diagonal standard deviation on the Feedbax delayed pos/vel feedback channel.",
+              "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
+              "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
+            },
+            "sensory_noise_std": 0.004791329788133908,
+            "signal_dependent_motor_noise_std": 0.02,
+            "source_contract": {
+              "additive_motor_covariance": "input_image_state_covariance_B_B_T",
+              "contract": "cs_released_stochastic_v1",
+              "motor_covariance_scale": 1e-10,
+              "motor_covariance_shape": [
+                48,
+                48
+              ],
+              "output_feedback_process_covariance_scale": 0.001,
+              "process_covariance_scale": 1.0,
+              "process_covariance_shape": [
+                48,
+                48
+              ],
+              "process_noise": "separate_output_feedback_process_covariance",
+              "sensory_covariance_diag": [
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05
+              ],
+              "sensory_noise_scale": 1.0,
+              "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
+              "signal_dependent_scale": 0.02,
+              "signal_dependent_state_shape": [
+                48,
+                2,
+                2
+              ]
+            }
+          }
+        },
+        "reference_controller": "analytical_lqr_kalman_output_feedback",
+        "run_id": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr1e-3_clip5_b64__nominal_clean",
+        "seed": 42,
+        "training_distribution": "nominal"
+      },
+      "status": "partial_standard_certificate_blocked"
+    },
+    {
+      "arrays": [],
+      "artifacts": {
+        "run_spec": "results/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/run.json",
+        "trained_model": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/trained_model.eqx",
+        "training_summary": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/training_summary.json"
+      },
+      "certificate_components": [
+        {
+          "name": "state_weighted_action_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "action_label": "command",
+            "aggregate_delta_energy": 2975.7902792698496,
+            "aggregate_mismatch_ratio": 1.7699104554763045,
+            "aggregate_reference_energy": 1681.3225042331467,
+            "delta_rms": 7.042478587436208,
+            "mismatch_ratio_max": 109188.59862576594,
+            "mismatch_ratio_mean": 3058.960923217792,
+            "n_samples": 6000,
+            "reference_rms": 5.293584960801056,
+            "state_label": "state"
+          }
+        },
+        {
+          "name": "visited_subspace_diagnostics",
+          "reason": "requires states or state covariances",
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "optimizer_metadata",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "completed_batches": 12000,
+            "full_training_launch": "requested",
+            "learning_rate": 0.003,
+            "n_train_batches": 12000,
+            "optimizer": "adamw",
+            "training_batches_per_second": 6.830001165273656,
+            "training_duration_seconds": 1756.954312249989
+          }
+        },
+        {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 1.087559383868005,
+            "covariance_weighted_aggregate_mismatch_ratio": 0.9895867634333935,
+            "covariance_weighted_delta_energy": 705667.2096833531,
+            "covariance_weighted_delta_rms": 12.124933072696328,
+            "covariance_weighted_mismatch_ratio_max": 66487016721.87904,
+            "covariance_weighted_mismatch_ratio_mean": 2932059897.4754014,
+            "covariance_weighted_reference_energy": 713092.8138478984,
+            "covariance_weighted_reference_rms": 12.188560328643364,
+            "covariance_weighted_status": "available",
+            "covariance_weighting": {
+              "audit_only": true,
+              "basis": "flattened_delayed_position_velocity_observation_history",
+              "centering": "sample_mean_subtracted",
+              "estimator": "unbiased_sample_covariance",
+              "future_lenses": {
+                "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                "sensory_noise_covariance": "missing_same_basis_contract"
+              },
+              "history_dim": 240,
+              "horizon": 60,
+              "normalization": "expected_squared_output_energy_ratio",
+              "observation_dim": 4,
+              "regularization": {
+                "diagonal_jitter": 0.0,
+                "eigenvalue_floor": 0.0,
+                "ratio_denominator_floor": 1e-12,
+                "type": "none"
+              },
+              "sample_count": 80,
+              "source": "empirical_validation_observation_history",
+              "source_priority": 1,
+              "status": "available"
+            },
+            "delta_frobenius": 9044.16183953471,
+            "input_label": "observation_history",
+            "map_shape": [
+              80,
+              60,
+              2,
+              240
+            ],
+            "map_slices": 4800,
+            "mismatch_ratio_max": 2362162912446395.0,
+            "mismatch_ratio_mean": 110641316290829.36,
+            "output_label": "action",
+            "reference_frobenius": 8672.450609442227,
+            "response_map_schema": "finite_horizon_linear_v1"
+          }
+        },
+        {
+          "name": "measurement_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 1.087559383868005,
+            "covariance_weighted_aggregate_mismatch_ratio": 0.9895867634333935,
+            "covariance_weighted_delta_energy": 705667.2096833531,
+            "covariance_weighted_delta_rms": 12.124933072696328,
+            "covariance_weighted_mismatch_ratio_max": 66487016721.87904,
+            "covariance_weighted_mismatch_ratio_mean": 2932059897.4754014,
+            "covariance_weighted_reference_energy": 713092.8138478984,
+            "covariance_weighted_reference_rms": 12.188560328643364,
+            "covariance_weighted_status": "available",
+            "covariance_weighting": {
+              "audit_only": true,
+              "basis": "flattened_delayed_position_velocity_observation_history",
+              "centering": "sample_mean_subtracted",
+              "estimator": "unbiased_sample_covariance",
+              "future_lenses": {
+                "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                "sensory_noise_covariance": "missing_same_basis_contract"
+              },
+              "history_dim": 240,
+              "horizon": 60,
+              "normalization": "expected_squared_output_energy_ratio",
+              "observation_dim": 4,
+              "regularization": {
+                "diagonal_jitter": 0.0,
+                "eigenvalue_floor": 0.0,
+                "ratio_denominator_floor": 1e-12,
+                "type": "none"
+              },
+              "sample_count": 80,
+              "source": "empirical_validation_observation_history",
+              "source_priority": 1,
+              "status": "available"
+            },
+            "delta_frobenius": 9044.16183953471,
+            "input_label": "measurement_history",
+            "map_shape": [
+              80,
+              60,
+              2,
+              240
+            ],
+            "map_slices": 4800,
+            "mismatch_ratio_max": 2362162912446395.0,
+            "mismatch_ratio_mean": 110641316290829.36,
+            "output_label": "action",
+            "reference_frobenius": 8672.450609442227,
+            "response_map_schema": "finite_horizon_linear_v1"
+          }
+        },
+        {
+          "name": "measurement_history_to_output_map_mismatch",
+          "reason": null,
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": null,
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": null,
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "disturbance_history_to_output_map_mismatch",
+          "reason": null,
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "disturbance_history_to_cost_quadratic",
+          "reason": null,
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "closed_loop_transition_mismatch",
+          "reason": "gru controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "value_policy_gap",
+          "reason": "gru controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "bellman_hessian_residual",
+          "reason": "gru controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "recurrence_gru_diagnostics",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "architecture": "gru",
+            "certificate_mode": "empirical_nonlinear",
+            "controller_kind": "gru",
+            "hidden_size": 180,
+            "io_response_map_blocker": null,
+            "io_response_map_observation_dim": 4,
+            "io_response_map_status": "available_4d_observation_contract",
+            "n_replicates": 5,
+            "observation_history_covariance": {
+              "audit_only": true,
+              "basis": "flattened_delayed_position_velocity_observation_history",
+              "centering": "sample_mean_subtracted",
+              "estimator": "unbiased_sample_covariance",
+              "future_lenses": {
+                "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                "sensory_noise_covariance": "missing_same_basis_contract"
+              },
+              "history_dim": 240,
+              "horizon": 60,
+              "normalization": "expected_squared_output_energy_ratio",
+              "observation_dim": 4,
+              "regularization": {
+                "diagonal_jitter": 0.0,
+                "eigenvalue_floor": 0.0,
+                "ratio_denominator_floor": 1e-12,
+                "type": "none"
+              },
+              "sample_count": 80,
+              "source": "empirical_validation_observation_history",
+              "source_priority": 1,
+              "status": "available"
+            },
+            "population_structure": {
+              "n_input_only": 0,
+              "n_input_readout": 180,
+              "n_readout_only": 0,
+              "n_recurrent_only": 0
+            }
+          }
+        }
+      ],
+      "metrics": {
+        "candidate_action_shape": [
+          100,
+          60,
+          2
+        ],
+        "evaluation": {
+          "checkpoint_selection": "validation_selected_per_replicate",
+          "io_response_map": {
+            "input_channel": "4D delayed position/velocity feedback",
+            "map_shape": [
+              80,
+              60,
+              2,
+              240
+            ],
+            "n_rollout_trials_per_replicate": 16,
+            "status": "evaluated_controller_local_jacobian_on_stochastic_histories"
+          },
+          "n_replicates": 5,
+          "n_trials": 20,
+          "noise": "feedbax Channel noise disabled; plant-process force noise disabled if present",
+          "observation_history_covariance": {
+            "audit_only": true,
+            "basis": "flattened_delayed_position_velocity_observation_history",
+            "centering": "sample_mean_subtracted",
+            "estimator": "unbiased_sample_covariance",
+            "future_lenses": {
+              "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+              "sensory_noise_covariance": "missing_same_basis_contract"
+            },
+            "history_dim": 240,
+            "horizon": 60,
+            "normalization": "expected_squared_output_energy_ratio",
+            "observation_dim": 4,
+            "regularization": {
+              "diagonal_jitter": 0.0,
+              "eigenvalue_floor": 0.0,
+              "ratio_denominator_floor": 1e-12,
+              "type": "none"
+            },
+            "sample_count": 80,
+            "source": "empirical_validation_observation_history",
+            "source_priority": 1,
+            "status": "available"
+          },
+          "selected_checkpoints": [
+            {
+              "best_logged_validation_batch": 5501,
+              "best_logged_validation_objective": 4952.044431296102,
+              "checkpoint_batches": 6000,
+              "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/checkpoints/checkpoint_0006000",
+              "final_validation_objective": 5967.560007842271,
+              "final_vs_selected_validation_degradation": 917.5912928742664,
+              "replicate": 0,
+              "scoring_validation_log_batch": 6000,
+              "scoring_validation_objective": 5049.968714968005,
+              "selection_source": "sparse_history_fallback"
+            },
+            {
+              "best_logged_validation_batch": 5500,
+              "best_logged_validation_objective": 5415.005591062338,
+              "checkpoint_batches": 5500,
+              "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/checkpoints/checkpoint_0005500",
+              "final_validation_objective": 6179.32416248158,
+              "final_vs_selected_validation_degradation": 764.3185714192423,
+              "replicate": 1,
+              "scoring_validation_log_batch": 5500,
+              "scoring_validation_objective": 5415.005591062338,
+              "selection_source": "sparse_history_fallback"
+            },
+            {
+              "best_logged_validation_batch": 6000,
+              "best_logged_validation_objective": 4476.290352544521,
+              "checkpoint_batches": 6000,
+              "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/checkpoints/checkpoint_0006000",
+              "final_validation_objective": 5215.780541005552,
+              "final_vs_selected_validation_degradation": 739.4901884610308,
+              "replicate": 2,
+              "scoring_validation_log_batch": 6000,
+              "scoring_validation_objective": 4476.290352544521,
+              "selection_source": "sparse_history_fallback"
+            },
+            {
+              "best_logged_validation_batch": 6000,
+              "best_logged_validation_objective": 4475.5499864237245,
+              "checkpoint_batches": 6000,
+              "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/checkpoints/checkpoint_0006000",
+              "final_validation_objective": 5686.532019731105,
+              "final_vs_selected_validation_degradation": 1210.9820333073803,
+              "replicate": 3,
+              "scoring_validation_log_batch": 6000,
+              "scoring_validation_objective": 4475.5499864237245,
+              "selection_source": "sparse_history_fallback"
+            },
+            {
+              "best_logged_validation_batch": 6500,
+              "best_logged_validation_objective": 4320.156910078884,
+              "checkpoint_batches": 6500,
+              "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/checkpoints/checkpoint_0006500",
+              "final_validation_objective": 4853.083086039244,
+              "final_vs_selected_validation_degradation": 532.9261759603605,
+              "replicate": 4,
+              "scoring_validation_log_batch": 6500,
+              "scoring_validation_objective": 4320.156910078884,
+              "selection_source": "sparse_history_fallback"
+            }
+          ],
+          "status": "evaluated_clean_feedbax_rollout"
+        },
+        "io_response_map_blocker": null,
+        "io_response_map_status": "available_4d_observation_contract",
+        "observation_history_covariance": {
+          "audit_only": true,
+          "basis": "flattened_delayed_position_velocity_observation_history",
+          "centering": "sample_mean_subtracted",
+          "estimator": "unbiased_sample_covariance",
+          "future_lenses": {
+            "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+            "sensory_noise_covariance": "missing_same_basis_contract"
+          },
+          "history_dim": 240,
+          "horizon": 60,
+          "normalization": "expected_squared_output_energy_ratio",
+          "observation_dim": 4,
+          "regularization": {
+            "diagonal_jitter": 0.0,
+            "eigenvalue_floor": 0.0,
+            "ratio_denominator_floor": 1e-12,
+            "type": "none"
+          },
+          "sample_count": 80,
+          "source": "empirical_validation_observation_history",
+          "source_priority": 1,
+          "status": "available"
+        },
+        "reference": {
+          "action_dim": 2,
+          "controller": "analytical_lqr_kalman_output_feedback",
+          "cs_observation_dim": 8,
+          "gamma_factor": 1.4,
+          "horizon": 60,
+          "io_response_map": {
+            "action_dim": 2,
+            "controller": "analytical_lqr_kalman_output_feedback",
+            "controller_variant": "cs_released_extlqg_stochastic_fixed_point",
+            "extlqg_expected_cost": 12201.42433801687,
+            "extlqg_iterations": 6,
+            "gamma_factor": 1.4,
+            "history_dim": 240,
+            "map_shape": [
+              60,
+              2,
+              240
+            ],
+            "observation_channel": "delayed_position_velocity",
+            "observation_dim": 4,
+            "parity_status": "fixed_point: local port of extLQG/computeOFC/computeExtKalman"
+          },
+          "output_feedback_config": {
+            "delay_steps": 5,
+            "estimator_initial_covariance": 0.01,
+            "n_phys": 8
+          }
+        },
+        "reference_action_shape": [
+          100,
+          60,
+          2
+        ]
+      },
+      "spec": {
+        "architecture": "gru",
+        "controller_label": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
+        "evaluation_lane": "deterministic",
+        "gamma_factor": 1.4,
+        "issue_id": "e6a32b8",
+        "notes": "GRU empirical/nonlinear standard row. Clean action behavior is evaluated against the C&S output-feedback LQR/Kalman reference; same-coordinate transition/value/Bellman rows are not applicable.",
+        "objective": "optimal",
+        "optimizer_label": "adamw_nominal_gru",
+        "parameters": {
+          "certificate_mode": "empirical_nonlinear",
+          "evaluation_lens": "nominal_clean",
+          "io_response_map_blocker": null,
+          "io_response_map_status": "available_4d_observation_contract",
+          "nn_hidden": 0.0,
+          "source_issue": "020a65b",
+          "source_run_id": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
+          "stochastic_preset": {
+            "additive_motor_noise_std": 1e-05,
+            "name": "cs2019-rollout",
+            "plant_process_force_noise_std": 0.03162277660168379,
+            "projection_notes": {
+              "additive_motor": "Project C&S input-image motor covariance to command-channel additive noise with std sqrt(motor_covariance_scale).",
+              "plant_process": "Project C&S process/load covariance to independent force noise immediately upstream of mechanics, after the force filter.",
+              "sensory": "Use the C&S sensory covariance diagonal standard deviation on the Feedbax delayed pos/vel feedback channel.",
+              "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
+              "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
+            },
+            "sensory_noise_std": 0.004791329788133908,
+            "signal_dependent_motor_noise_std": 0.02,
+            "source_contract": {
+              "additive_motor_covariance": "input_image_state_covariance_B_B_T",
+              "contract": "cs_released_stochastic_v1",
+              "motor_covariance_scale": 1e-10,
+              "motor_covariance_shape": [
+                48,
+                48
+              ],
+              "output_feedback_process_covariance_scale": 0.001,
+              "process_covariance_scale": 1.0,
+              "process_covariance_shape": [
+                48,
+                48
+              ],
+              "process_noise": "separate_output_feedback_process_covariance",
+              "sensory_covariance_diag": [
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05
+              ],
+              "sensory_noise_scale": 1.0,
+              "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
+              "signal_dependent_scale": 0.02,
+              "signal_dependent_state_shape": [
+                48,
+                2,
+                2
+              ]
+            }
+          }
+        },
+        "reference_controller": "analytical_lqr_kalman_output_feedback",
+        "run_id": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64__nominal_clean",
+        "seed": 42,
+        "training_distribution": "nominal"
+      },
+      "status": "partial_standard_certificate_blocked"
+    },
+    {
+      "arrays": [],
+      "artifacts": {
+        "run_spec": "results/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/run.json",
+        "trained_model": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/trained_model.eqx",
+        "training_summary": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/training_summary.json"
+      },
+      "certificate_components": [
+        {
+          "name": "state_weighted_action_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "action_label": "command",
+            "aggregate_delta_energy": 3331.2540975943007,
+            "aggregate_mismatch_ratio": 1.9813296314104176,
+            "aggregate_reference_energy": 1681.3225042331467,
+            "delta_rms": 7.451234906146207,
+            "mismatch_ratio_max": 216662.24612189207,
+            "mismatch_ratio_mean": 5751.645574659556,
+            "n_samples": 6000,
+            "reference_rms": 5.293584960801056,
+            "state_label": "state"
+          }
+        },
+        {
+          "name": "visited_subspace_diagnostics",
+          "reason": "requires states or state covariances",
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "optimizer_metadata",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "completed_batches": 12000,
+            "full_training_launch": "requested",
+            "learning_rate": 0.003,
+            "n_train_batches": 12000,
+            "optimizer": "adamw",
+            "training_batches_per_second": 0.9679758633354845,
+            "training_duration_seconds": 12397.003328833001
+          }
+        },
+        {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 1.2797662756268209,
+            "covariance_weighted_aggregate_mismatch_ratio": 0.9818197260434641,
+            "covariance_weighted_delta_energy": 5804873.980578082,
+            "covariance_weighted_delta_rms": 34.7756918831785,
+            "covariance_weighted_mismatch_ratio_max": 38028088429.689316,
+            "covariance_weighted_mismatch_ratio_mean": 1780397839.609527,
+            "covariance_weighted_reference_energy": 5912362.347791234,
+            "covariance_weighted_reference_rms": 35.096184348014816,
+            "covariance_weighted_status": "available",
+            "covariance_weighting": {
+              "audit_only": true,
+              "basis": "flattened_delayed_position_velocity_observation_history",
+              "centering": "sample_mean_subtracted",
+              "estimator": "unbiased_sample_covariance",
+              "future_lenses": {
+                "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                "sensory_noise_covariance": "missing_same_basis_contract"
+              },
+              "history_dim": 240,
+              "horizon": 60,
+              "normalization": "expected_squared_output_energy_ratio",
+              "observation_dim": 4,
+              "regularization": {
+                "diagonal_jitter": 0.0,
+                "eigenvalue_floor": 0.0,
+                "ratio_denominator_floor": 1e-12,
+                "type": "none"
+              },
+              "sample_count": 80,
+              "source": "empirical_validation_observation_history",
+              "source_priority": 1,
+              "status": "available"
+            },
+            "delta_frobenius": 9810.861976222775,
+            "input_label": "observation_history",
+            "map_shape": [
+              80,
+              60,
+              2,
+              240
+            ],
+            "map_slices": 4800,
+            "mismatch_ratio_max": 1335466974999006.2,
+            "mismatch_ratio_mean": 71280902344935.92,
+            "output_label": "action",
+            "reference_frobenius": 8672.450609442227,
+            "response_map_schema": "finite_horizon_linear_v1"
+          }
+        },
+        {
+          "name": "measurement_history_to_action_map_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "aggregate_mismatch_ratio": 1.2797662756268209,
+            "covariance_weighted_aggregate_mismatch_ratio": 0.9818197260434641,
+            "covariance_weighted_delta_energy": 5804873.980578082,
+            "covariance_weighted_delta_rms": 34.7756918831785,
+            "covariance_weighted_mismatch_ratio_max": 38028088429.689316,
+            "covariance_weighted_mismatch_ratio_mean": 1780397839.609527,
+            "covariance_weighted_reference_energy": 5912362.347791234,
+            "covariance_weighted_reference_rms": 35.096184348014816,
+            "covariance_weighted_status": "available",
+            "covariance_weighting": {
+              "audit_only": true,
+              "basis": "flattened_delayed_position_velocity_observation_history",
+              "centering": "sample_mean_subtracted",
+              "estimator": "unbiased_sample_covariance",
+              "future_lenses": {
+                "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                "sensory_noise_covariance": "missing_same_basis_contract"
+              },
+              "history_dim": 240,
+              "horizon": 60,
+              "normalization": "expected_squared_output_energy_ratio",
+              "observation_dim": 4,
+              "regularization": {
+                "diagonal_jitter": 0.0,
+                "eigenvalue_floor": 0.0,
+                "ratio_denominator_floor": 1e-12,
+                "type": "none"
+              },
+              "sample_count": 80,
+              "source": "empirical_validation_observation_history",
+              "source_priority": 1,
+              "status": "available"
+            },
+            "delta_frobenius": 9810.861976222775,
+            "input_label": "measurement_history",
+            "map_shape": [
+              80,
+              60,
+              2,
+              240
+            ],
+            "map_slices": 4800,
+            "mismatch_ratio_max": 1335466974999006.2,
+            "mismatch_ratio_mean": 71280902344935.92,
+            "output_label": "action",
+            "reference_frobenius": 8672.450609442227,
+            "response_map_schema": "finite_horizon_linear_v1"
+          }
+        },
+        {
+          "name": "measurement_history_to_output_map_mismatch",
+          "reason": null,
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": null,
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": null,
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "disturbance_history_to_output_map_mismatch",
+          "reason": null,
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "disturbance_history_to_cost_quadratic",
+          "reason": null,
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "closed_loop_transition_mismatch",
+          "reason": "gru controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "value_policy_gap",
+          "reason": "gru controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "bellman_hessian_residual",
+          "reason": "gru controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "recurrence_gru_diagnostics",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "architecture": "gru",
+            "certificate_mode": "empirical_nonlinear",
+            "controller_kind": "gru",
+            "hidden_size": 180,
+            "io_response_map_blocker": null,
+            "io_response_map_observation_dim": 4,
+            "io_response_map_status": "available_4d_observation_contract",
+            "n_replicates": 5,
+            "observation_history_covariance": {
+              "audit_only": true,
+              "basis": "flattened_delayed_position_velocity_observation_history",
+              "centering": "sample_mean_subtracted",
+              "estimator": "unbiased_sample_covariance",
+              "future_lenses": {
+                "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                "sensory_noise_covariance": "missing_same_basis_contract"
+              },
+              "history_dim": 240,
+              "horizon": 60,
+              "normalization": "expected_squared_output_energy_ratio",
+              "observation_dim": 4,
+              "regularization": {
+                "diagonal_jitter": 0.0,
+                "eigenvalue_floor": 0.0,
+                "ratio_denominator_floor": 1e-12,
+                "type": "none"
+              },
+              "sample_count": 80,
+              "source": "empirical_validation_observation_history",
+              "source_priority": 1,
+              "status": "available"
+            },
+            "population_structure": {
+              "n_input_only": 0,
+              "n_input_readout": 180,
+              "n_readout_only": 0,
+              "n_recurrent_only": 0
+            }
+          }
+        }
+      ],
+      "metrics": {
+        "candidate_action_shape": [
+          100,
+          60,
+          2
+        ],
+        "evaluation": {
+          "checkpoint_selection": "validation_selected_per_replicate",
+          "io_response_map": {
+            "input_channel": "4D delayed position/velocity feedback",
+            "map_shape": [
+              80,
+              60,
+              2,
+              240
+            ],
+            "n_rollout_trials_per_replicate": 16,
+            "status": "evaluated_controller_local_jacobian_on_stochastic_histories"
+          },
+          "n_replicates": 5,
+          "n_trials": 20,
+          "noise": "feedbax Channel noise disabled; plant-process force noise disabled if present",
+          "observation_history_covariance": {
+            "audit_only": true,
+            "basis": "flattened_delayed_position_velocity_observation_history",
+            "centering": "sample_mean_subtracted",
+            "estimator": "unbiased_sample_covariance",
+            "future_lenses": {
+              "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+              "sensory_noise_covariance": "missing_same_basis_contract"
+            },
+            "history_dim": 240,
+            "horizon": 60,
+            "normalization": "expected_squared_output_energy_ratio",
+            "observation_dim": 4,
+            "regularization": {
+              "diagonal_jitter": 0.0,
+              "eigenvalue_floor": 0.0,
+              "ratio_denominator_floor": 1e-12,
+              "type": "none"
+            },
+            "sample_count": 80,
+            "source": "empirical_validation_observation_history",
+            "source_priority": 1,
+            "status": "available"
+          },
+          "selected_checkpoints": [
+            {
+              "best_logged_validation_batch": 11501,
+              "best_logged_validation_objective": 4018.895258630215,
+              "checkpoint_batches": 12000,
+              "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/checkpoints/checkpoint_0012000",
+              "final_validation_objective": 4035.433648215866,
+              "final_vs_selected_validation_degradation": 0.0,
+              "replicate": 0,
+              "scoring_validation_log_batch": 12000,
+              "scoring_validation_objective": 4035.433648215866,
+              "selection_source": "sparse_history_fallback"
+            },
+            {
+              "best_logged_validation_batch": 10001,
+              "best_logged_validation_objective": 4025.23827904768,
+              "checkpoint_batches": 10500,
+              "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/checkpoints/checkpoint_0010500",
+              "final_validation_objective": 4098.071172338953,
+              "final_vs_selected_validation_degradation": 47.71601784980476,
+              "replicate": 1,
+              "scoring_validation_log_batch": 10500,
+              "scoring_validation_objective": 4050.3551544891484,
+              "selection_source": "sparse_history_fallback"
+            },
+            {
+              "best_logged_validation_batch": 11001,
+              "best_logged_validation_objective": 4080.1918862050693,
+              "checkpoint_batches": 11000,
+              "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/checkpoints/checkpoint_0011000",
+              "final_validation_objective": 4109.3737201722715,
+              "final_vs_selected_validation_degradation": 21.24739800512498,
+              "replicate": 2,
+              "scoring_validation_log_batch": 11000,
+              "scoring_validation_objective": 4088.1263221671466,
+              "selection_source": "sparse_history_fallback"
+            },
+            {
+              "best_logged_validation_batch": 10500,
+              "best_logged_validation_objective": 4052.1317422371685,
+              "checkpoint_batches": 10500,
+              "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/checkpoints/checkpoint_0010500",
+              "final_validation_objective": 4096.390747559992,
+              "final_vs_selected_validation_degradation": 44.259005322823214,
+              "replicate": 3,
+              "scoring_validation_log_batch": 10500,
+              "scoring_validation_objective": 4052.1317422371685,
+              "selection_source": "sparse_history_fallback"
+            },
+            {
+              "best_logged_validation_batch": 11001,
+              "best_logged_validation_objective": 4003.5411495971357,
+              "checkpoint_batches": 12000,
+              "checkpoint_path": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/checkpoints/checkpoint_0012000",
+              "final_validation_objective": 4017.492006885477,
+              "final_vs_selected_validation_degradation": 0.0,
+              "replicate": 4,
+              "scoring_validation_log_batch": 12000,
+              "scoring_validation_objective": 4017.492006885477,
+              "selection_source": "sparse_history_fallback"
+            }
+          ],
+          "status": "evaluated_clean_feedbax_rollout"
+        },
+        "io_response_map_blocker": null,
+        "io_response_map_status": "available_4d_observation_contract",
+        "observation_history_covariance": {
+          "audit_only": true,
+          "basis": "flattened_delayed_position_velocity_observation_history",
+          "centering": "sample_mean_subtracted",
+          "estimator": "unbiased_sample_covariance",
+          "future_lenses": {
+            "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+            "sensory_noise_covariance": "missing_same_basis_contract"
+          },
+          "history_dim": 240,
+          "horizon": 60,
+          "normalization": "expected_squared_output_energy_ratio",
+          "observation_dim": 4,
+          "regularization": {
+            "diagonal_jitter": 0.0,
+            "eigenvalue_floor": 0.0,
+            "ratio_denominator_floor": 1e-12,
+            "type": "none"
+          },
+          "sample_count": 80,
+          "source": "empirical_validation_observation_history",
+          "source_priority": 1,
+          "status": "available"
+        },
+        "reference": {
+          "action_dim": 2,
+          "controller": "analytical_lqr_kalman_output_feedback",
+          "cs_observation_dim": 8,
+          "gamma_factor": 1.4,
+          "horizon": 60,
+          "io_response_map": {
+            "action_dim": 2,
+            "controller": "analytical_lqr_kalman_output_feedback",
+            "controller_variant": "cs_released_extlqg_stochastic_fixed_point",
+            "extlqg_expected_cost": 12201.42433801687,
+            "extlqg_iterations": 6,
+            "gamma_factor": 1.4,
+            "history_dim": 240,
+            "map_shape": [
+              60,
+              2,
+              240
+            ],
+            "observation_channel": "delayed_position_velocity",
+            "observation_dim": 4,
+            "parity_status": "fixed_point: local port of extLQG/computeOFC/computeExtKalman"
+          },
+          "output_feedback_config": {
+            "delay_steps": 5,
+            "estimator_initial_covariance": 0.01,
+            "n_phys": 8
+          }
+        },
+        "reference_action_shape": [
+          100,
+          60,
+          2
+        ]
+      },
+      "spec": {
+        "architecture": "gru",
+        "controller_label": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64",
+        "evaluation_lane": "deterministic",
+        "gamma_factor": 1.4,
+        "issue_id": "e6a32b8",
+        "notes": "GRU empirical/nonlinear standard row. Clean action behavior is evaluated against the C&S output-feedback LQR/Kalman reference; same-coordinate transition/value/Bellman rows are not applicable.",
+        "objective": "optimal",
+        "optimizer_label": "adamw_nominal_gru",
+        "parameters": {
+          "certificate_mode": "empirical_nonlinear",
+          "evaluation_lens": "nominal_clean",
+          "io_response_map_blocker": null,
+          "io_response_map_status": "available_4d_observation_contract",
+          "nn_hidden": 0.0,
+          "source_issue": "020a65b",
+          "source_run_id": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64",
+          "stochastic_preset": {
+            "additive_motor_noise_std": 1e-05,
+            "name": "cs2019-rollout",
+            "plant_process_force_noise_std": 0.03162277660168379,
+            "projection_notes": {
+              "additive_motor": "Project C&S input-image motor covariance to command-channel additive noise with std sqrt(motor_covariance_scale).",
+              "plant_process": "Project C&S process/load covariance to independent force noise immediately upstream of mechanics, after the force filter.",
+              "sensory": "Use the C&S sensory covariance diagonal standard deviation on the Feedbax delayed pos/vel feedback channel.",
+              "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
+              "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
+            },
+            "sensory_noise_std": 0.004791329788133908,
+            "signal_dependent_motor_noise_std": 0.02,
+            "source_contract": {
+              "additive_motor_covariance": "input_image_state_covariance_B_B_T",
+              "contract": "cs_released_stochastic_v1",
+              "motor_covariance_scale": 1e-10,
+              "motor_covariance_shape": [
+                48,
+                48
+              ],
+              "output_feedback_process_covariance_scale": 0.001,
+              "process_covariance_scale": 1.0,
+              "process_covariance_shape": [
+                48,
+                48
+              ],
+              "process_noise": "separate_output_feedback_process_covariance",
+              "sensory_covariance_diag": [
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05
+              ],
+              "sensory_noise_scale": 1.0,
+              "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
+              "signal_dependent_scale": 0.02,
+              "signal_dependent_state_shape": [
+                48,
+                2,
+                2
+              ]
+            }
+          }
+        },
+        "reference_controller": "analytical_lqr_kalman_output_feedback",
+        "run_id": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64__nominal_clean",
+        "seed": 42,
+        "training_distribution": "nominal"
+      },
+      "status": "partial_standard_certificate_blocked"
+    }
+  ],
+  "scope": "C&S stochastic GRU pilot rows from `020a65b`. The standard certificate is materialized in empirical_nonlinear mode: clean rollout action behavior is available, same-coordinate transition/value/Bellman components are not applicable, and response map rows remain missing until the observation projection contract is defined.",
+  "source_artifacts": {
+    "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr1e-3_clip5_b64": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr1e-3_clip5_b64/trained_model.eqx",
+    "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/trained_model.eqx",
+    "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr1e-3_clip5_b64": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr1e-3_clip5_b64/trained_model.eqx",
+    "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/trained_model.eqx"
+  },
+  "source_issue": "020a65b",
+  "source_manifests": {
+    "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr1e-3_clip5_b64": "results/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr1e-3_clip5_b64/run.json",
+    "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64": "results/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/run.json",
+    "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr1e-3_clip5_b64": "results/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr1e-3_clip5_b64/run.json",
+    "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64": "results/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/run.json"
+  },
+  "summary": {
+    "blockers": [],
+    "component_status_counts": {
+      "bellman_hessian_residual:not_applicable": 4,
+      "closed_loop_transition_mismatch:not_applicable": 4,
+      "disturbance_history_to_action_map_mismatch:missing": 4,
+      "disturbance_history_to_cost_quadratic:missing": 4,
+      "disturbance_history_to_output_map_mismatch:missing": 4,
+      "disturbance_history_to_state_map_mismatch:missing": 4,
+      "measurement_history_to_action_map_mismatch:available": 4,
+      "measurement_history_to_output_map_mismatch:missing": 4,
+      "observation_history_to_action_map_mismatch:available": 4,
+      "optimizer_metadata:available": 4,
+      "recurrence_gru_diagnostics:available": 4,
+      "state_weighted_action_mismatch:available": 4,
+      "value_policy_gap:not_applicable": 4,
+      "visited_subspace_diagnostics:missing": 4
+    },
+    "failure_classification_counts": {
+      "mixed": 4
+    },
+    "n_rows": 4,
+    "status_counts": {
+      "partial_standard_certificate_blocked": 4
+    }
+  }
+}

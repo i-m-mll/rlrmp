@@ -604,6 +604,15 @@ def cs_output_feedback_reference_profile(
     )
 
 
+def _subplot_vertical_spacing(n_rows: int, preferred: float = 0.02) -> float:
+    """Return a Plotly-valid vertical spacing for a one-column subplot stack."""
+
+    if n_rows <= 1:
+        return preferred
+    max_spacing = 1.0 / float(n_rows - 1)
+    return min(preferred, max_spacing * 0.8)
+
+
 def write_velocity_figure(
     profiles: Sequence[VelocityProfile],
     *,
@@ -619,7 +628,7 @@ def write_velocity_figure(
         cols=1,
         shared_xaxes=True,
         subplot_titles=[profile.label for profile in profiles],
-        vertical_spacing=0.10,
+        vertical_spacing=_subplot_vertical_spacing(len(profiles)),
     )
     colors = ("#2563eb", "#dc2626", "#059669", "#7c3aed", "#ea580c")
     for idx, profile in enumerate(profiles, start=1):
@@ -688,7 +697,7 @@ def write_velocity_figure(
     fig.update_layout(
         title="GRU pilot stochastic forward velocity",
         width=780,
-        height=max(420, 300 * len(profiles)),
+        height=max(420, 420 * len(profiles)),
         margin={"l": 70, "r": 20, "t": 60, "b": 60},
         hovermode="x unified",
     )
@@ -714,7 +723,7 @@ def write_velocity_by_replicate_figure(
         cols=1,
         shared_xaxes=True,
         subplot_titles=[profile.label for profile in profiles],
-        vertical_spacing=0.10,
+        vertical_spacing=_subplot_vertical_spacing(len(profiles)),
     )
     colors = ("#2563eb", "#dc2626", "#059669", "#7c3aed", "#ea580c", "#0891b2", "#be123c")
     for row_idx, profile in enumerate(profiles, start=1):
@@ -795,7 +804,7 @@ def write_velocity_by_replicate_figure(
     fig.update_layout(
         title="GRU pilot stochastic forward velocity by replicate",
         width=820,
-        height=max(420, 320 * len(profiles)),
+        height=max(420, 440 * len(profiles)),
         margin={"l": 70, "r": 20, "t": 60, "b": 60},
         hovermode="x unified",
         legend={"groupclick": "togglegroup"},

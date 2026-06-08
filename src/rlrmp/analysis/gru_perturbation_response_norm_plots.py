@@ -22,29 +22,31 @@ from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
 SCHEMA_VERSION = "rlrmp.gru_perturbation_response_norm_plots.v1"
-DEFAULT_ISSUE = "b35595c"
-DEFAULT_SELECTOR = "validation_selected_corrected"
+DEFAULT_ISSUE = "b8aa38e"
+DEFAULT_SELECTOR = "overnight_robust_proprio_validation_selected_corrected"
 DEFAULT_SOURCE_MANIFEST = (
-    "results/b35595c/notes/"
-    "gru_perturbation_response_calibrated_perturb_level_screen_"
-    "validation_selected_corrected_manifest.json"
+    "results/b8aa38e/notes/"
+    "gru_perturbation_response_overnight_robust_proprio_validation_selected_"
+    "corrected_manifest.json"
 )
 DEFAULT_CORRECTED_BULK_ROOT = (
-    "_artifacts/b35595c/perturbation_response/"
-    "gru_calibrated_perturb_level_screen_validation_selected_corrected"
+    "_artifacts/b8aa38e/perturbation_response/"
+    "gru_overnight_robust_proprio_validation_selected_corrected"
 )
-DEFAULT_RESULTS_DIR = "results/b35595c/figures/perturbation_response_norms"
-DEFAULT_ASSET_DIR = "_artifacts/b35595c/figures/perturbation_response_norms/_assets"
-DEFAULT_NOTE_PATH = "results/b35595c/notes/gru_perturbation_response_norm_plots.md"
-DEFAULT_MANIFEST_PATH = "results/b35595c/notes/gru_perturbation_response_norm_plots_manifest.json"
+DEFAULT_RESULTS_DIR = "results/b8aa38e/figures/perturbation_response_norms_proprio"
+DEFAULT_ASSET_DIR = "_artifacts/b8aa38e/figures/perturbation_response_norms_proprio/_assets"
+DEFAULT_NOTE_PATH = "results/b8aa38e/notes/gru_perturbation_response_norm_plots_proprio.md"
+DEFAULT_MANIFEST_PATH = (
+    "results/b8aa38e/notes/gru_perturbation_response_norm_plots_proprio_manifest.json"
+)
 DEFAULT_REGENERATION_SPEC_PATH = (
-    "results/b35595c/figures/perturbation_response_norms/regeneration_spec.json"
+    "results/b8aa38e/figures/perturbation_response_norms_proprio/regeneration_spec.json"
 )
 
 METRICS = ("delta_position", "delta_action")
 STAT_COLUMNS = ("mean_norm", "max_norm")
 LR_ORDER = ("lr1e-3", "lr3e-3")
-TRAINING_LEVEL_ORDER = ("none", "small", "moderate")
+TRAINING_LEVEL_ORDER = ("none", "small", "moderate", "stress")
 SEVERITY_ORDER = ("small", "moderate", "stress")
 TIMING_ORDER = ("initial_condition", "early", "mid", "late")
 SUPPORTED_EXTLQG_CHANNELS = {
@@ -70,6 +72,7 @@ TRAINING_WIDTHS = {
     "none": 1.4,
     "small": 2.2,
     "moderate": 3.0,
+    "stress": 3.8,
 }
 EXTLQG_WIDTH = 2.0
 
@@ -130,6 +133,7 @@ def materialize_response_norm_plots(
     regeneration_spec_path: Path | str | None = DEFAULT_REGENERATION_SPEC_PATH,
     repo_root: Path = REPO_ROOT,
     reconstruct_extlqg: bool = True,
+    run_id_contains: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Write response-norm HTML figures plus tracked reproducibility metadata."""
 
@@ -144,8 +148,14 @@ def materialize_response_norm_plots(
         if regeneration_spec_path is None
         else _resolve_repo_path(regeneration_spec_path, repo_root=repo_root)
     )
-    inputs = load_plot_inputs(source_manifest, repo_root=repo_root)
+    inputs = load_plot_inputs(
+        source_manifest,
+        repo_root=repo_root,
+        run_id_contains=tuple(run_id_contains),
+    )
     ext_cache = ExtlqgCurveCache(enabled=reconstruct_extlqg)
+    learning_rates = _available_learning_rates(inputs)
+    training_levels = _available_training_levels(inputs)
 
     figure_records: list[dict[str, Any]] = []
     ext_status_counter: Counter[str] = Counter()
@@ -158,6 +168,8 @@ def materialize_response_norm_plots(
                 repo_root=repo_root,
                 ext_cache=ext_cache,
                 ext_status_counter=ext_status_counter,
+                learning_rates=learning_rates,
+                training_levels=training_levels,
             )
         )
         figure_records.extend(
@@ -168,6 +180,8 @@ def materialize_response_norm_plots(
                 repo_root=repo_root,
                 ext_cache=ext_cache,
                 ext_status_counter=ext_status_counter,
+                learning_rates=learning_rates,
+                training_levels=training_levels,
             )
         )
 
@@ -204,13 +218,13 @@ def materialize_response_norm_plots(
         "plot_classes": {
             "class_a": (
                 "One figure per metric x perturbation family x timing bin; rows are "
-                "mean norm and max norm, columns are learning rate; traces are eval "
-                "severity x perturbation-training level."
+                "mean norm and max norm, columns are available learning rates; traces "
+                "are eval severity x perturbation-training level."
             ),
             "class_b": (
                 "One figure per metric x perturbation family x eval severity; rows are "
-                "mean norm and max norm, columns are learning rate; traces are timing "
-                "bin x perturbation-training level."
+                "mean norm and max norm, columns are available learning rates; traces "
+                "are timing bin x perturbation-training level."
             ),
         },
         "extlqg_trace_policy": {
@@ -239,14 +253,17 @@ def materialize_response_norm_plots(
         "figures": figure_records,
         "extlqg_trace_status": dict(sorted(ext_status_counter.items())),
         "runs": {run_id: run.__dict__ for run_id, run in inputs.runs.items()},
+        "asset_dir": _repo_relative(assets_path, repo_root=repo_root),
+        "filters": {
+            "run_id_contains": list(run_id_contains),
+        },
     }
-    spec_path = results_path / "spec.json"
     if regeneration_spec_output is not None:
-        manifest["regeneration_spec_path"] = repo_relative(
+        manifest["regeneration_spec_path"] = _repo_relative(
             regeneration_spec_output,
             repo_root=repo_root,
         )
-        spec["regeneration_spec_path"] = manifest["regeneration_spec_path"]
+    spec_path = results_path / "spec.json"
     spec_path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n")
     manifest_output.parent.mkdir(parents=True, exist_ok=True)
     manifest_output.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
@@ -269,37 +286,40 @@ def materialize_response_norm_plots(
             manifest_path=manifest_output,
             figure_spec_path=spec_path,
             reconstruct_extlqg=reconstruct_extlqg,
+            run_id_contains=tuple(run_id_contains),
             repo_root=repo_root,
         )
     return manifest
 
 
-def load_plot_inputs(manifest_path: Path, *, repo_root: Path = REPO_ROOT) -> PlotInputs:
+def load_plot_inputs(
+    manifest_path: Path,
+    *,
+    repo_root: Path = REPO_ROOT,
+    run_id_contains: Sequence[str] = (),
+) -> PlotInputs:
     """Load and normalize a perturbation-response manifest for plotting."""
 
     manifest = json.loads(Path(manifest_path).read_text())
-    detail_manifest = _load_detail_manifest_if_needed(manifest, repo_root=repo_root)
+    detail_manifest = _load_bulk_detail_manifest(manifest, repo_root=repo_root)
+    source_payload = detail_manifest if detail_manifest is not None else manifest
     runs: dict[str, RunDescriptor] = {}
     rows: dict[str, list[dict[str, Any]]] = {}
-    for run_id, run_payload in manifest["runs"].items():
-        detail_run_payload = dict(detail_manifest.get("runs", {})).get(run_id, {})
+    for run_id, run_payload in source_payload["runs"].items():
+        if run_id_contains and not any(token in run_id for token in run_id_contains):
+            continue
         label = str(run_payload["label"])
         runs[run_id] = RunDescriptor(
             run_id=run_id,
             label=label,
-            learning_rate=_parse_learning_rate(label),
-            training_level=_parse_training_level(label),
+            learning_rate=_parse_learning_rate(label, run_id=run_id),
+            training_level=_parse_training_level(label, run_id=run_id),
             dt_s=float(run_payload["dt_s"]),
             n_time_steps=int(run_payload["n_time_steps"]),
         )
         normalized_rows = []
         bulk_files = dict(run_payload.get("bulk_files", {}))
-        if not bulk_files:
-            bulk_files = dict(detail_run_payload.get("bulk_files", {}))
-        response_rows = run_payload.get("perturbations")
-        if response_rows is None:
-            response_rows = detail_run_payload.get("perturbations", ())
-        for row in response_rows:
+        for row in run_payload.get("perturbations", ()):
             if row.get("status") != "evaluated":
                 continue
             severity = _severity(row)
@@ -314,26 +334,9 @@ def load_plot_inputs(manifest_path: Path, *, repo_root: Path = REPO_ROOT) -> Plo
                 continue
             normalized_rows.append(row_copy)
         rows[run_id] = normalized_rows
+    if not runs:
+        raise ValueError("no runs matched the requested response-norm plot filters")
     return PlotInputs(manifest=manifest, runs=runs, rows=rows)
-
-
-def _load_detail_manifest_if_needed(
-    manifest: Mapping[str, Any],
-    *,
-    repo_root: Path,
-) -> dict[str, Any]:
-    """Load the ignored detail manifest when the tracked manifest is slim."""
-
-    if any("perturbations" in run for run in dict(manifest.get("runs", {})).values()):
-        return dict(manifest)
-    detail = manifest.get("bulk_detail_manifest")
-    if isinstance(detail, Mapping):
-        path = detail.get("path")
-        if isinstance(path, str):
-            detail_path = _resolve_repo_path(path, repo_root=repo_root)
-            if detail_path.exists():
-                return json.loads(detail_path.read_text())
-    return {"runs": {}}
 
 
 def aggregate_response_curves(
@@ -536,9 +539,8 @@ def render_response_norm_note(
         f"- Selector: `{manifest['selector']}`",
         f"- Spec: `{_repo_relative(spec_path, repo_root=repo_root)}`",
         f"- Manifest: `{_repo_relative(manifest_path, repo_root=repo_root)}`",
-        f"- Regeneration spec: `{manifest.get('regeneration_spec_path', 'not_materialized')}`",
         f"- HTML inventory: {manifest['figure_count']} files under "
-        "`_artifacts/b35595c/figures/perturbation_response_norms/_assets/`",
+        f"`{manifest.get('asset_dir', DEFAULT_ASSET_DIR)}`",
         "- Aggregation: target-relative/sign-equalized xy responses are converted to "
         "Euclidean norms before pooling. Mean-norm panels show mean +/- SEM over "
         "pooled replicate x eval-seed samples; max-norm panels are unbanded pooled "
@@ -581,18 +583,23 @@ def _write_class_a_figures(
     repo_root: Path,
     ext_cache: ExtlqgCurveCache,
     ext_status_counter: Counter[str],
+    learning_rates: Sequence[str],
+    training_levels: Sequence[str],
 ) -> list[dict[str, Any]]:
     records = []
     for family, timing_bin in _class_a_facets(inputs):
         html_name = f"class_a__{metric}__{family}__{timing_bin}.html"
         html_path = asset_dir / html_name
-        fig = _make_base_figure(title=f"{metric}: {family} / {timing_bin}")
+        fig = _make_base_figure(
+            title=f"{metric}: {family} / {timing_bin}",
+            learning_rates=learning_rates,
+        )
         trace_count = 0
         ext_count = 0
         for row_idx, stat in enumerate(STAT_COLUMNS, start=1):
-            for col_idx, lr in enumerate(LR_ORDER, start=1):
+            for col_idx, lr in enumerate(learning_rates, start=1):
                 for severity in SEVERITY_ORDER:
-                    for training_level in TRAINING_LEVEL_ORDER:
+                    for training_level in training_levels:
                         rows = _matching_rows(
                             inputs,
                             learning_rate=lr,
@@ -673,19 +680,24 @@ def _write_class_b_figures(
     repo_root: Path,
     ext_cache: ExtlqgCurveCache,
     ext_status_counter: Counter[str],
+    learning_rates: Sequence[str],
+    training_levels: Sequence[str],
 ) -> list[dict[str, Any]]:
     records = []
     for family, severity in _class_b_facets(inputs):
         html_name = f"class_b__{metric}__{family}__{severity}.html"
         html_path = asset_dir / html_name
-        fig = _make_base_figure(title=f"{metric}: {family} / {severity}")
+        fig = _make_base_figure(
+            title=f"{metric}: {family} / {severity}",
+            learning_rates=learning_rates,
+        )
         trace_count = 0
         ext_count = 0
         timings = _timings_for(inputs, family=family, severity=severity)
         for row_idx, stat in enumerate(STAT_COLUMNS, start=1):
-            for col_idx, lr in enumerate(LR_ORDER, start=1):
+            for col_idx, lr in enumerate(learning_rates, start=1):
                 for timing_bin in timings:
-                    for training_level in TRAINING_LEVEL_ORDER:
+                    for training_level in training_levels:
                         rows = _matching_rows(
                             inputs,
                             learning_rate=lr,
@@ -758,10 +770,13 @@ def _write_class_b_figures(
     return records
 
 
-def _make_base_figure(*, title: str) -> go.Figure:
+def _make_base_figure(*, title: str, learning_rates: Sequence[str]) -> go.Figure:
+    n_cols = len(learning_rates)
+    if n_cols <= 0:
+        raise ValueError("at least one learning-rate column is required")
     fig = make_subplots(
         rows=2,
-        cols=2,
+        cols=n_cols,
         shared_xaxes=True,
         shared_yaxes=True,
         vertical_spacing=0.10,
@@ -774,15 +789,15 @@ def _make_base_figure(*, title: str) -> go.Figure:
             "y": 0.985,
             "yanchor": "top",
         },
-        width=1180,
+        width=720 if n_cols == 1 else 1180,
         height=760,
         margin={"l": 130, "r": 30, "t": 120, "b": 60},
         hovermode="x unified",
         legend={"groupclick": "togglegroup"},
     )
-    column_headers = (
-        ("1e-3", 0.255),
-        ("3e-3", 0.745),
+    column_headers = tuple(
+        (_learning_rate_header(lr), (col + 0.5) / n_cols)
+        for col, lr in enumerate(learning_rates)
     )
     row_headers = (
         ("mean", 0.755),
@@ -890,10 +905,11 @@ def _add_deterministic_curve(
 def _finish_figure(fig: go.Figure, *, metric: str) -> None:
     label = "||delta x||" if metric == "delta_position" else "||delta u||"
     for row in (1, 2):
-        for col in (1, 2):
+        for col in _figure_columns(fig):
             fig.update_yaxes(title_text=label, zeroline=True, row=row, col=col)
     fig.update_xaxes(title_text="Time (s)", row=2, col=1)
-    fig.update_xaxes(title_text="Time (s)", row=2, col=2)
+    for col in _figure_columns(fig)[1:]:
+        fig.update_xaxes(title_text="Time (s)", row=2, col=col)
     fig.update_xaxes(matches="x")
     fig.update_yaxes(matches="y")
     _apply_common_y_range(fig)
@@ -947,6 +963,33 @@ def _matching_rows(
                 continue
             rows.append(row)
     return rows
+
+
+def _available_learning_rates(inputs: PlotInputs) -> tuple[str, ...]:
+    """Return manifest learning rates in canonical display order."""
+
+    observed = {run.learning_rate for run in inputs.runs.values()}
+    ordered = [value for value in LR_ORDER if value in observed]
+    ordered.extend(sorted(observed.difference(ordered)))
+    return tuple(ordered)
+
+
+def _available_training_levels(inputs: PlotInputs) -> tuple[str, ...]:
+    """Return perturbation-training levels in canonical display order."""
+
+    observed = {run.training_level for run in inputs.runs.values()}
+    ordered = [value for value in TRAINING_LEVEL_ORDER if value in observed]
+    ordered.extend(sorted(observed.difference(ordered)))
+    return tuple(ordered)
+
+
+def _figure_columns(fig: go.Figure) -> tuple[int, ...]:
+    """Return one-based subplot columns from a Plotly figure grid."""
+
+    grid = getattr(fig, "_grid_ref", None)
+    if grid is None or not grid:
+        return (1,)
+    return tuple(range(1, len(grid[0]) + 1))
 
 
 def _class_a_facets(inputs: PlotInputs) -> list[tuple[str, str]]:
@@ -1041,6 +1084,23 @@ def _bulk_path_for_row(
     return str(path) if path else None
 
 
+def _load_bulk_detail_manifest(
+    manifest: Mapping[str, Any],
+    *,
+    repo_root: Path,
+) -> dict[str, Any] | None:
+    """Load the ignored full-detail manifest referenced by a slim tracked manifest."""
+
+    detail = manifest.get("bulk_detail_manifest")
+    if not isinstance(detail, Mapping):
+        return None
+    path = detail.get("path")
+    if path is None:
+        return None
+    detail_path = _resolve_repo_path(str(path), repo_root=repo_root)
+    return json.loads(detail_path.read_text())
+
+
 def _write_response_norm_regeneration_spec(
     *,
     spec_path: Path,
@@ -1051,8 +1111,31 @@ def _write_response_norm_regeneration_spec(
     manifest_path: Path,
     figure_spec_path: Path,
     reconstruct_extlqg: bool,
+    run_id_contains: Sequence[str],
     repo_root: Path,
 ) -> dict[str, Any]:
+    command = [
+        "uv",
+        "run",
+        "python",
+        "scripts/materialize_gru_perturbation_response_norm_plots.py",
+        "--source-manifest",
+        repo_relative(source_manifest, repo_root=repo_root),
+        "--results-dir",
+        repo_relative(results_dir, repo_root=repo_root),
+        "--asset-dir",
+        repo_relative(asset_dir, repo_root=repo_root),
+        "--note-path",
+        repo_relative(note_path, repo_root=repo_root),
+        "--manifest-path",
+        repo_relative(manifest_path, repo_root=repo_root),
+        "--regeneration-spec-path",
+        repo_relative(spec_path, repo_root=repo_root),
+    ]
+    for token in run_id_contains:
+        command.extend(["--run-id-contains", token])
+    if not reconstruct_extlqg:
+        command.append("--no-extlqg")
     return write_regeneration_spec(
         spec_path=spec_path,
         diagnostic_name="gru_perturbation_response_norm_plots",
@@ -1060,27 +1143,10 @@ def _write_response_norm_regeneration_spec(
             "rlrmp.analysis.gru_perturbation_response_norm_plots."
             "materialize_response_norm_plots"
         ),
-        command=[
-            "uv",
-            "run",
-            "python",
-            "scripts/materialize_gru_perturbation_response_norm_plots.py",
-            "--source-manifest",
-            repo_relative(source_manifest, repo_root=repo_root),
-            "--results-dir",
-            repo_relative(results_dir, repo_root=repo_root),
-            "--asset-dir",
-            repo_relative(asset_dir, repo_root=repo_root),
-            "--note-path",
-            repo_relative(note_path, repo_root=repo_root),
-            "--manifest-path",
-            repo_relative(manifest_path, repo_root=repo_root),
-            "--regeneration-spec-path",
-            repo_relative(spec_path, repo_root=repo_root),
-            *([] if reconstruct_extlqg else ["--no-extlqg"]),
-        ],
+        command=command,
         parameters={
             "reconstruct_extlqg": reconstruct_extlqg,
+            "run_id_contains": list(run_id_contains),
             "metrics": list(METRICS),
             "stat_columns": list(STAT_COLUMNS),
             "selector": DEFAULT_SELECTOR,
@@ -1105,31 +1171,37 @@ def _write_response_norm_regeneration_spec(
             "src/rlrmp/analysis/diagnostic_provenance.py",
         ],
         notes=[
-            "Lightweight rlrmp-local regeneration spec; does not replace Feedbax GraphSpec.",
-            (
-                "Materialization reads existing perturbation-response bulk arrays "
-                "and does not rerun GRU diagnostics."
-            ),
-            "Directory refs summarize bounded file samples rather than taking artifact custody.",
+            "Materialization reads existing perturbation-response bulk arrays.",
+            "Large response arrays and full row manifests remain under _artifacts.",
         ],
         repo_root=repo_root,
     )
 
 
-def _parse_learning_rate(label: str) -> str:
-    for token in label.split("_"):
-        if token.startswith("lr"):
-            return token
+def _parse_learning_rate(label: str, *, run_id: str | None = None) -> str:
+    for source in (label, run_id or ""):
+        for token in source.split("_"):
+            if token.startswith("lr"):
+                return token
     raise ValueError(f"could not parse learning rate from {label!r}")
 
 
-def _parse_training_level(label: str) -> str:
-    if label.startswith("none_"):
-        return "none"
-    if label.startswith("cal_small_"):
-        return "small"
-    if label.startswith("cal_moderate_"):
-        return "moderate"
+def _parse_training_level(label: str, *, run_id: str | None = None) -> str:
+    for source in (label, run_id or ""):
+        if source.startswith("proprio_"):
+            return source.split("_", maxsplit=1)[1]
+        if source.startswith("none_") or "__none_" in source:
+            return "none"
+        if source.startswith("cal_small_") or "__cal_small_" in source or "_cal_small_" in source:
+            return "small"
+        if (
+            source.startswith("cal_moderate_")
+            or "__cal_moderate_" in source
+            or "_cal_moderate_" in source
+        ):
+            return "moderate"
+        if source.startswith("cal_stress_") or "__cal_stress_" in source or "_cal_stress_" in source:
+            return "stress"
     raise ValueError(f"could not parse perturbation training level from {label!r}")
 
 
@@ -1152,6 +1224,10 @@ def _rgba(hex_color: str, alpha: float) -> str:
     green = int(hex_color[3:5], 16)
     blue = int(hex_color[5:7], 16)
     return f"rgba({red},{green},{blue},{alpha})"
+
+
+def _learning_rate_header(value: str) -> str:
+    return value.removeprefix("lr")
 
 
 def _resolve_repo_path(path: Path | str, *, repo_root: Path) -> Path:

@@ -28,7 +28,11 @@ from rlrmp.analysis.gru_perturbation_calibration import (
     DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT,
 )
 from rlrmp.analysis.output_feedback import OutputFeedbackConfig
-from rlrmp.cs_lss_gru import CS_EPSILON_DIM, TargetRelativeDelayedFeedback
+from rlrmp.cs_lss_gru import (
+    CS_EPSILON_DIM,
+    TargetRelativeDelayedFeedback,
+    TargetRelativeDelayedProprioceptiveFeedback,
+)
 from rlrmp.loss import (
     CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
     CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
@@ -53,6 +57,9 @@ from rlrmp.train.cs_nominal_gru import (
     write_run_spec,
 )
 from rlrmp.train.cs_perturbation_training import (
+    BROAD_EPSILON_PGD_TRAINING_MODE,
+    BROAD_EPSILON_TRAINING_MODE,
+    BroadFullStateEpsilonTrainingConfig,
     CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE,
     GRAPH_ADAPTER_SPECS,
     MILD_COMBINED_FAMILIES,
@@ -61,8 +68,11 @@ from rlrmp.train.cs_perturbation_training import (
     TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
     TargetRelativeMultiTargetTrainingConfig,
     VALIDATION_BINS,
+    apply_broad_epsilon_training,
+    config_from_broad_epsilon_pgd_hps,
     apply_training_perturbation_mixture,
     apply_training_target_distribution,
+    apply_validation_target_distribution,
     apply_validation_bin,
     planned_target_relative_multitarget_h0_rows,
     planned_target_relative_multitarget_rows,
@@ -140,6 +150,85 @@ def test_full_analytical_qrf_loss_requires_cs_lss_and_no_hidden_regularizer() ->
             _args(
                 loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
                 regularized_fidelity=True,
+            )
+        )
+
+
+def test_pgd_broad_epsilon_hps_declares_inner_maximizer() -> None:
+    hps = build_hps(
+        _args(
+            target_relative_multitarget=True,
+            force_filter_feedback=True,
+            broad_epsilon_pgd_training=True,
+            broad_epsilon_level="moderate",
+            broad_epsilon_pgd_steps=4,
+            broad_epsilon_pgd_step_size_fraction=0.5,
+        )
+    )
+
+    cfg = config_from_broad_epsilon_pgd_hps(hps.broad_epsilon_pgd_training)
+
+    assert cfg.enabled is True
+    assert hps.broad_epsilon_pgd_training.mode == BROAD_EPSILON_PGD_TRAINING_MODE
+    assert hps.broad_epsilon_pgd_training.inner_maximizer.n_steps == 4
+    assert hps.broad_epsilon_pgd_training.inner_maximizer.differentiated_through_outer_update is False
+    assert hps.broad_epsilon_training.enabled is False
+
+
+def test_pgd_broad_epsilon_hps_parser_consumes_nested_and_legacy_fields() -> None:
+    nested = TreeNamespace(
+        enabled=True,
+        level="strong",
+        budget_scale=1.5,
+        reach_length_scaling=False,
+        inner_maximizer=TreeNamespace(
+            n_steps=9,
+            step_size_fraction_of_l2_radius=0.125,
+            initialization="zero",
+        ),
+    )
+    legacy = TreeNamespace(
+        enabled=True,
+        level="moderate",
+        n_steps=7,
+        step_size_fraction=0.375,
+        init="zero",
+    )
+    nested_dict = {
+        "enabled": True,
+        "level": "strong",
+        "inner_maximizer": {
+            "n_steps": 11,
+            "step_size_fraction_of_l2_radius": 0.2,
+            "init": "zero",
+        },
+    }
+
+    parsed_nested = config_from_broad_epsilon_pgd_hps(nested)
+    parsed_legacy = config_from_broad_epsilon_pgd_hps(legacy)
+    parsed_dict = config_from_broad_epsilon_pgd_hps(nested_dict)
+
+    assert parsed_nested.level == "strong"
+    assert parsed_nested.n_steps == 9
+    assert parsed_nested.step_size_fraction == pytest.approx(0.125)
+    assert parsed_nested.budget_scale == pytest.approx(1.5)
+    assert parsed_nested.reach_length_scaling is False
+    assert parsed_legacy.n_steps == 7
+    assert parsed_legacy.step_size_fraction == pytest.approx(0.375)
+    assert parsed_dict.n_steps == 11
+    assert parsed_dict.step_size_fraction == pytest.approx(0.2)
+
+
+def test_pgd_broad_epsilon_lane_requires_target_relative_and_excludes_random_lane() -> None:
+    with pytest.raises(ValueError, match="requires --target-relative-multitarget"):
+        build_hps(_args(broad_epsilon_pgd_training=True))
+
+    with pytest.raises(ValueError, match="cannot be combined"):
+        build_hps(
+            _args(
+                target_relative_multitarget=True,
+                broad_epsilon_training=True,
+                broad_epsilon_pgd_training=True,
             )
         )
 
@@ -1065,6 +1154,105 @@ def test_target_relative_multitarget_setup_uses_target_input_and_anchor() -> Non
     assert jnp.any(trial.inputs["target"][..., -1, :] != jnp.array([0.15, 0.0]))
 
 
+def test_target_relative_proprioceptive_feedback_extends_sign_contract() -> None:
+    component = TargetRelativeDelayedProprioceptiveFeedback()
+    state = jnp.zeros((48,), dtype=jnp.float32)
+    state = state.at[40:46].set(
+        jnp.array([0.02, -0.03, 0.40, -0.20, 0.70, -0.80], dtype=jnp.float32)
+    )
+    outputs, _ = component(
+        {"state": state, "target": jnp.array([0.15, 0.01], dtype=jnp.float32)},
+        None,
+        key=jr.PRNGKey(0),
+    )
+
+    assert outputs["feedback"].shape == (6,)
+    assert jnp.allclose(
+        outputs["feedback"],
+        jnp.array([0.13, 0.04, -0.40, 0.20, 0.70, -0.80], dtype=jnp.float32),
+    )
+
+
+def test_force_filter_feedback_setup_uses_six_dimensional_feedback() -> None:
+    hps = build_hps(
+        _args(
+            smoke=True,
+            target_relative_multitarget=True,
+            force_filter_feedback=True,
+            hidden_size=8,
+            n_replicates=1,
+        )
+    )
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+
+    assert hps.target_relative_multitarget.force_filter_feedback is True
+    assert hps.target_relative_multitarget.input_contract.shape == [6]
+    assert hps.model.force_filter_feedback is True
+    assert pair.model.nodes["net"].input_size == 6
+    assert pair.model.nodes["sensory"].input_proto.shape[-1] == 6
+
+
+def test_broad_epsilon_sampler_randomized_per_trial_and_l2_budgeted() -> None:
+    base_hps = build_hps(
+        _args(
+            smoke=True,
+            target_relative_multitarget=True,
+            batch_size=16,
+            hidden_size=8,
+            n_replicates=1,
+        )
+    )
+    pair = setup_task_model_pair(base_hps, key=jr.PRNGKey(0))
+    base = pair.task.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
+    base = apply_validation_target_distribution(base, base_hps.target_relative_multitarget)
+    cfg = BroadFullStateEpsilonTrainingConfig(enabled=True, level="strong")
+    first = apply_broad_epsilon_training(base, cfg, jr.PRNGKey(2))
+    second = apply_broad_epsilon_training(base, cfg, jr.PRNGKey(3))
+    delta = first.inputs["epsilon"] - base.inputs["epsilon"]
+    delta_second = second.inputs["epsilon"] - base.inputs["epsilon"]
+    norms = jnp.sqrt(jnp.sum(jnp.square(delta), axis=(-2, -1)))
+    reach = jnp.linalg.norm(
+        first.targets["mechanics.effector.pos"].value[..., -1, :]
+        - first.inits["mechanics.vector"][..., :2],
+        axis=-1,
+    )
+    expected = cfg.reference_l2_radius * reach / cfg.nominal_reach_length_m
+
+    assert first.inputs["epsilon"].shape[-2:] == (60, CS_EPSILON_DIM)
+    assert jnp.allclose(norms, expected, rtol=1e-5, atol=1e-8)
+    assert not jnp.allclose(delta[0], delta[1])
+    assert not jnp.allclose(delta, delta_second)
+    assert first.extra == base.extra
+
+
+def test_broad_epsilon_run_spec_exposes_budget_contract(tmp_path: Path) -> None:
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        smoke=True,
+        target_relative_multitarget=True,
+        broad_epsilon_training=True,
+        broad_epsilon_level="moderate",
+        loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+    )
+
+    result = write_run_spec(args)
+    payload = json.loads(Path(result["run_spec_path"]).read_text())
+    broad = payload["hps"]["broad_epsilon_training"]
+
+    assert BROAD_EPSILON_TRAINING_MODE in payload["training_summary"]["training_mode"]
+    assert broad["enabled"] is True
+    assert broad["budget_contract"]["gamma_factor"] == pytest.approx(1.4)
+    assert broad["budget_contract"]["effective_l2_radius_15cm"] == pytest.approx(
+        0.0012324305441740995
+    )
+    assert payload["model_summary"]["training_distribution"]["training_axes"][
+        "broad_full_state_epsilon_training"
+    ] is True
+
+
 def test_target_relative_multitarget_run_spec_and_planned_rows(tmp_path: Path) -> None:
     output_dir = tmp_path / "bulk"
     spec_dir = tmp_path / "spec"
@@ -1089,7 +1277,7 @@ def test_target_relative_multitarget_run_spec_and_planned_rows(tmp_path: Path) -
 
     assert payload["issue"] == "ba82f3d"
     assert payload["training_summary"]["training_mode"] == (
-        TARGET_RELATIVE_MULTITARGET_TRAINING_MODE
+        f"{TARGET_RELATIVE_MULTITARGET_TRAINING_MODE}+{PERTURBATION_TRAINING_MODE}"
     )
     assert payload["model_summary"]["feedback"]["basis"] == "target_relative_delayed_feedback"
     distribution = payload["model_summary"]["training_distribution"]
@@ -1155,7 +1343,7 @@ def test_target_relative_h0_run_spec_and_planned_rows(tmp_path: Path) -> None:
 
     assert payload["issue"] == "643f101"
     assert payload["training_summary"]["training_mode"] == (
-        TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE
+        f"{TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE}+{PERTURBATION_TRAINING_MODE}"
     )
     h0 = payload["model_summary"]["initial_hidden_encoder"]
     assert h0["enabled"] is True
@@ -1366,7 +1554,7 @@ def test_target_relative_h0_full_training_smoke_emits_diagnostics(tmp_path: Path
         issue="643f101",
         n_train_batches=2,
         batch_size=2,
-        n_replicates=1,
+        n_replicates=2,
         hidden_size=4,
         target_relative_multitarget=True,
         initial_hidden_encoder=True,
@@ -1391,7 +1579,7 @@ def test_target_relative_h0_full_training_smoke_emits_diagnostics(tmp_path: Path
 
     assert result["completed_batches"] == 2
     assert run_spec["training_summary"]["training_mode"] == (
-        TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE
+        f"{TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE}+{PERTURBATION_TRAINING_MODE}"
     )
     assert run_spec["model_summary"]["initial_hidden_encoder"]["enabled"] is True
     assert summary["training_diagnostics"]["enabled"] is True
@@ -1400,9 +1588,68 @@ def test_target_relative_h0_full_training_smoke_emits_diagnostics(tmp_path: Path
     assert "optimizer_gradient_norm_pre_clip" in diagnostics_manifest["arrays"]
     with np.load(output_dir / "training_diagnostics.npz") as diagnostics:
         assert diagnostics["batch_index"].tolist() == [0, 1]
-        assert diagnostics["optimizer_gradient_norm_pre_clip"].shape == (2, 1)
-        assert diagnostics["train_loss__total"].shape == (2, 1)
-        assert diagnostics["validation_loss__total"].shape == (2, 1)
+        assert diagnostics["optimizer_gradient_norm_pre_clip"].shape == (2, 2)
+        assert diagnostics["train_loss__total"].shape == (2, 2)
+        assert diagnostics["validation_loss__total"].shape == (2, 2)
+
+
+def test_pgd_broad_epsilon_full_training_emits_inner_diagnostics(tmp_path: Path) -> None:
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        issue="020a65b",
+        n_train_batches=2,
+        batch_size=2,
+        n_replicates=5,
+        hidden_size=4,
+        target_relative_multitarget=True,
+        force_filter_feedback=True,
+        broad_epsilon_pgd_training=True,
+        broad_epsilon_pgd_steps=1,
+        broad_epsilon_pgd_step_size_fraction=0.5,
+        loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+        full_train=True,
+        checkpoint_interval_batches=1,
+        controller_lr=1e-3,
+        gradient_clip_norm=5.0,
+        lr_warmup_batches=1,
+        lr_warmup_init_fraction=0.1,
+        lr_cosine_alpha=0.01,
+        log_step=1,
+        disable_progress=True,
+        quiet_progress=True,
+    )
+
+    result = run_full_training(args)
+    run_spec = json.loads((spec_dir / "run.json").read_text())
+    diagnostics_manifest = json.loads((output_dir / "training_diagnostics.json").read_text())
+
+    assert result["completed_batches"] == 2
+    assert BROAD_EPSILON_PGD_TRAINING_MODE in run_spec["training_summary"]["training_mode"]
+    assert run_spec["hps"]["broad_epsilon_pgd_training"]["inner_maximizer"][
+        "n_steps"
+    ] == 1
+    assert "pgd_broad_epsilon_inner_objective_before" in diagnostics_manifest["arrays"]
+    assert "pgd_broad_epsilon_inner_objective_after" in diagnostics_manifest["arrays"]
+    assert "pgd_broad_epsilon_inner_objective_improvement" in diagnostics_manifest["arrays"]
+    assert "pgd_broad_epsilon_epsilon_norm_radius_ratio_mean" in diagnostics_manifest["arrays"]
+    assert "pgd_broad_epsilon_boundary_fraction" in diagnostics_manifest["arrays"]
+    with np.load(output_dir / "training_diagnostics.npz") as diagnostics:
+        assert diagnostics["pgd_broad_epsilon_diagnostic_sampled"].tolist() == [True, True]
+        assert diagnostics["pgd_broad_epsilon_radius_mean"].shape == (2, 5)
+        assert np.isfinite(diagnostics["pgd_broad_epsilon_radius_mean"]).all()
+        assert np.isfinite(
+            diagnostics["pgd_broad_epsilon_epsilon_norm_radius_ratio_mean"]
+        ).all()
+        assert np.all(
+            diagnostics["pgd_broad_epsilon_epsilon_norm_radius_ratio_mean"] <= 1.0001
+        )
+        assert np.isfinite(diagnostics["pgd_broad_epsilon_inner_objective_before"]).all()
+        assert np.isfinite(diagnostics["pgd_broad_epsilon_inner_objective_after"]).all()
+        assert np.isfinite(diagnostics["pgd_broad_epsilon_inner_objective_improvement"]).all()
+        assert np.any(diagnostics["pgd_broad_epsilon_epsilon_norm_mean"] > 0.0)
 
 
 def test_full_training_smoke_can_disable_diagnostics(tmp_path: Path) -> None:

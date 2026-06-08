@@ -176,8 +176,14 @@ class ObservationMask(Component):
         key: PRNGKeyArray,
     ) -> tuple[dict[str, PyTree], eqx.nn.State]:
         del key
+        signal = jnp.asarray(inputs["signal"])
+        mask = jnp.asarray(self.mask, dtype=signal.dtype)
+        if mask.shape[-1] < signal.shape[-1]:
+            mask = jnp.pad(mask, [(0, signal.shape[-1] - mask.shape[-1])])
+        elif mask.shape[-1] > signal.shape[-1]:
+            mask = mask[: signal.shape[-1]]
         return {
-            "feedback": jnp.asarray(inputs["signal"]) * jnp.asarray(self.mask),
+            "feedback": signal * mask,
         }, state
 
 
@@ -202,8 +208,8 @@ def selected_feedback_ablation_bins() -> dict[EvaluationBin, str | None]:
         "nominal": None,
         "initial_state": "initial_position_offset__x_pos",
         "process_epsilon": "process_epsilon_pulse__force_state_x__mid_t15_pos",
-        "sensory_feedback": "sensory_feedback_offset__mid_visible_t20_x_pos",
-        "delayed_observation": "delayed_observation_offset__mid_visible_t20_x_pos",
+        "sensory_feedback": "sensory_feedback_offset__position__mid_visible_t20_x_pos",
+        "delayed_observation": "delayed_observation_offset__position__mid_visible_t20_x_pos",
     }
 
 
@@ -219,9 +225,8 @@ def selected_feedback_ablation_bins_for_bank(
         for row in bank.get("perturbations", ())
         if isinstance(row, Mapping)
     }
-    defaults = selected_feedback_ablation_bins()
     if str(bank.get("bank_id", "")).startswith("cs_standard_perturbation_response"):
-        return defaults
+        return selected_feedback_ablation_bins()
     return {
         "nominal": None,
         "initial_state": _select_representative_perturbation_id(
@@ -267,9 +272,13 @@ def _select_representative_perturbation_id(
         row
         for row in rows.values()
         if str(row.get("family")) == family
-        and str(row.get("level_name")) == level_name
         and str(row.get("timing_bin")) == timing_bin
         and (units is None or str(row.get("units")) == units)
+        and (
+            "level_name" not in row
+            or row.get("level_name") is None
+            or str(row.get("level_name")) == level_name
+        )
     ]
     if not candidates:
         return None
@@ -818,7 +827,7 @@ def materialize_gru_feedback_ablation(
         ],
         notes=[
             "Feedback ablation and feedback-selected checkpoints are audit-only.",
-            "The spec records inputs for recomputing the ablation table, not a primary selector.",
+            "The spec records inputs for recomputing the ablation table.",
         ],
         repo_root=repo_root,
     )

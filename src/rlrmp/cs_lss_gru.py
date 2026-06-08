@@ -36,9 +36,11 @@ from rlrmp.analysis.feedbax_parity import build_cs2019_feedbax_mechanics
 
 
 CS_DELAYED_POS_VEL_INDICES = (40, 41, 42, 43)
+CS_DELAYED_POS_VEL_FORCE_INDICES = (40, 41, 42, 43, 44, 45)
 CS_EPSILON_DIM = 8
 CS_FORCE_DIM = 2
 CS_FEEDBACK_DIM = 4
+CS_PROPRIOCEPTIVE_FEEDBACK_DIM = 6
 CS_TARGET_DIM = 2
 CS_H0_CONTEXT_DIM = CS_FEEDBACK_DIM
 CS_H0_ENCODER_INIT = "zero_affine"
@@ -120,6 +122,53 @@ class TargetRelativeDelayedFeedback(Component):
         delayed = jnp.take(vector, jnp.asarray(self.indices, dtype=jnp.int32), axis=-1)
         target = jnp.broadcast_to(target, delayed[..., :2].shape)
         feedback = jnp.concatenate([target - delayed[..., :2], -delayed[..., 2:4]], axis=-1)
+        return {"feedback": feedback}, state
+
+
+class TargetRelativeDelayedProprioceptiveFeedback(Component):
+    """Return target-relative delayed pos/vel plus delayed force/filter state.
+
+    The sign convention extends the 4D target-relative contract:
+    ``[target_x - delayed_x, target_y - delayed_y, -delayed_vx, -delayed_vy,
+    delayed_fx, delayed_fy]``. The final two coordinates expose the C&S
+    force/filter state as a proprioceptive analogue without exposing the
+    disturbance-integrator coordinates.
+    """
+
+    input_ports = ("state", "target")
+    output_ports = ("feedback",)
+
+    indices: tuple[int, ...] = field(static=True)
+
+    def __init__(self, indices: tuple[int, ...] = CS_DELAYED_POS_VEL_FORCE_INDICES):
+        self.indices = tuple(int(index) for index in indices)
+        if self.indices != CS_DELAYED_POS_VEL_FORCE_INDICES:
+            raise ValueError(
+                "The proprioceptive C&S GRU path is fixed to oldest delayed "
+                f"pos/vel/force indices {CS_DELAYED_POS_VEL_FORCE_INDICES}; "
+                f"got {self.indices}."
+            )
+
+    def __call__(
+        self,
+        inputs: dict[str, PyTree],
+        state: eqx.nn.State,
+        *,
+        key: PRNGKeyArray,
+    ) -> tuple[dict[str, PyTree], eqx.nn.State]:
+        del key
+        vector = jnp.asarray(inputs["state"])
+        target = jnp.asarray(inputs["target"])
+        if vector.shape[-1] != 48:
+            raise ValueError(f"Expected a 48D C&S state vector; got shape {vector.shape}.")
+        if target.shape[-1] != CS_TARGET_DIM:
+            raise ValueError(f"Expected a 2D target vector; got shape {target.shape}.")
+        delayed = jnp.take(vector, jnp.asarray(self.indices, dtype=jnp.int32), axis=-1)
+        target = jnp.broadcast_to(target, delayed[..., :2].shape)
+        feedback = jnp.concatenate(
+            [target - delayed[..., :2], -delayed[..., 2:4], delayed[..., 4:6]],
+            axis=-1,
+        )
         return {"feedback": feedback}, state
 
 
@@ -252,6 +301,7 @@ def build_cs_lss_gru_graph(
     signal_dependent_motor_noise_std: float = 0.0,
     bind_epsilon_input: bool = False,
     target_relative_feedback: bool = False,
+    force_filter_feedback: bool = False,
     initial_hidden_encoder: bool = False,
     key: PRNGKeyArray,
 ) -> Graph:
@@ -279,6 +329,9 @@ def build_cs_lss_gru_graph(
         target_relative_feedback: If true, replace raw delayed feedback with
             ``[target_x - delayed_x, target_y - delayed_y, -delayed_vx, -delayed_vy]``
             and expose external graph port ``"target"``.
+        force_filter_feedback: If true with target-relative feedback, append
+            delayed force/filter state ``[delayed_fx, delayed_fy]`` to the
+            controller-visible feedback vector.
         initial_hidden_encoder: If true, initialize the GRU hidden state on the
             first graph step from the first controller-visible feedback vector.
         key: PRNG key for network construction.
@@ -301,11 +354,22 @@ def build_cs_lss_gru_graph(
             "initial_hidden_encoder currently requires target_relative_feedback so "
             "the trial-start context is the controller-visible target-relative vector."
         )
+    if force_filter_feedback and not target_relative_feedback:
+        raise ValueError(
+            "force_filter_feedback currently requires target_relative_feedback so "
+            "the added force/filter coordinates are appended to a documented "
+            "controller-visible basis."
+        )
 
     mechanics = build_cs2019_feedbax_mechanics(initial_state=initial_state)
+    feedback_dim = (
+        CS_PROPRIOCEPTIVE_FEEDBACK_DIM
+        if bool(force_filter_feedback)
+        else CS_FEEDBACK_DIM
+    )
     key_net = jr.fold_in(key, 0)
     net = SimpleStagedNetwork(
-        input_size=input_size + CS_FEEDBACK_DIM,
+        input_size=input_size + feedback_dim,
         hidden_size=hidden_size,
         out_size=CS_FORCE_DIM,
         encoding_size=encoding_size,
@@ -318,7 +382,7 @@ def build_cs_lss_gru_graph(
         net = InitialHiddenStagedNetwork(
             net=net,
             h0_encoder=InitialHiddenEncoder(
-                input_size=CS_H0_CONTEXT_DIM,
+                input_size=feedback_dim,
                 hidden_size=hidden_size,
                 dtype=mechanics.A.dtype,
             ),
@@ -327,7 +391,7 @@ def build_cs_lss_gru_graph(
         delay=0,
         noise_func=Normal(std=float(sensory_noise_std)),
         add_noise=float(sensory_noise_std) != 0.0,
-        input_proto=jnp.zeros((CS_FEEDBACK_DIM,), dtype=mechanics.A.dtype),
+        input_proto=jnp.zeros((feedback_dim,), dtype=mechanics.A.dtype),
         init_value=0.0,
     )
     motor_noise_func = (
@@ -344,11 +408,12 @@ def build_cs_lss_gru_graph(
         input_proto=jnp.zeros((CS_FORCE_DIM,), dtype=mechanics.A.dtype),
         init_value=0.0,
     )
-    feedback = (
-        TargetRelativeDelayedFeedback()
-        if bool(target_relative_feedback)
-        else DelayedPositionVelocityFeedback()
-    )
+    if bool(force_filter_feedback):
+        feedback = TargetRelativeDelayedProprioceptiveFeedback()
+    elif bool(target_relative_feedback):
+        feedback = TargetRelativeDelayedFeedback()
+    else:
+        feedback = DelayedPositionVelocityFeedback()
 
     nodes = {
         "feedback": feedback,

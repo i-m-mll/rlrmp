@@ -26,6 +26,7 @@ import jax.tree as jt
 import numpy as np
 import optax
 from feedbax._io import save as fbx_save
+from feedbax.misc import BatchInfo
 from feedbax.train import filter_spec_leaves, get_model_parameters
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule
 from feedbax.types import TreeNamespace, dict_to_namespace
@@ -64,15 +65,21 @@ from rlrmp.modules.training.part2 import (
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.run_specs import validate_nominal_gru_run_spec
 from rlrmp.train.cs_perturbation_training import (
+    BroadFullStateEpsilonTrainingConfig,
+    PgdFullStateEpsilonTrainingConfig,
     FixedTargetPerturbationTrainingConfig,
     LEGACY_PERTURBATION_TRAINING_MODE,
     PERTURBATION_TRAINING_MODE,
+    BROAD_EPSILON_TRAINING_MODE,
+    BROAD_EPSILON_PGD_TRAINING_MODE,
     TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
     TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
     TargetRelativeMultiTargetTrainingConfig,
+    make_broad_epsilon_pgd_pre_step,
     planned_fixed_target_perturbation_rows,
     planned_target_relative_multitarget_h0_rows,
     planned_target_relative_multitarget_rows,
+    run_broad_epsilon_pgd_inner_maximizer,
     target_relative_validation_manifest,
     validation_bin_manifest,
 )
@@ -286,9 +293,41 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         calibrated_timing=bool(args.perturbation_calibrated_timing),
         physical_level=str(args.perturbation_physical_level),
     )
+    broad_epsilon_training = BroadFullStateEpsilonTrainingConfig(
+        enabled=bool(args.broad_epsilon_training),
+        level=str(args.broad_epsilon_level),
+        budget_scale=float(args.broad_epsilon_budget_scale),
+        reach_length_scaling=bool(args.broad_epsilon_reach_scaling),
+    )
+    broad_epsilon_pgd_training = PgdFullStateEpsilonTrainingConfig(
+        enabled=bool(args.broad_epsilon_pgd_training),
+        level=str(args.broad_epsilon_level),
+        budget_scale=float(args.broad_epsilon_budget_scale),
+        reach_length_scaling=bool(args.broad_epsilon_reach_scaling),
+        n_steps=int(args.broad_epsilon_pgd_steps),
+        step_size_fraction=float(args.broad_epsilon_pgd_step_size_fraction),
+    )
     target_relative_multitarget = TargetRelativeMultiTargetTrainingConfig(
         enabled=bool(args.target_relative_multitarget),
+        force_filter_feedback=bool(args.force_filter_feedback),
     )
+    if broad_epsilon_training.enabled and broad_epsilon_pgd_training.enabled:
+        raise ValueError(
+            "--broad-epsilon-training and --broad-epsilon-pgd-training are separate "
+            "broad-epsilon lanes and cannot be combined in the same row."
+        )
+    if (
+        broad_epsilon_training.enabled or broad_epsilon_pgd_training.enabled
+    ) and not target_relative_multitarget.enabled:
+        raise ValueError(
+            "Broad-epsilon training currently requires --target-relative-multitarget "
+            "so reach-scaled budgets are computed after explicit target sampling."
+        )
+    if bool(args.force_filter_feedback) and not target_relative_multitarget.enabled:
+        raise ValueError(
+            "--force-filter-feedback requires --target-relative-multitarget because it "
+            "extends the target-relative delayed feedback vector."
+        )
     initial_hidden_encoder = bool(args.initial_hidden_encoder)
     if initial_hidden_encoder and not target_relative_multitarget.enabled:
         raise ValueError(
@@ -324,10 +363,17 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             **preset.hps_fields(),
             "stochastic_preset": preset.name,
             "plant_backend": str(args.plant_backend),
+            "force_filter_feedback": bool(args.force_filter_feedback),
             "initial_hidden_encoder": initial_hidden_encoder,
             "initial_hidden_encoder_config": _initial_hidden_encoder_config(
                 enabled=initial_hidden_encoder,
                 hidden_size=int(args.hidden_size),
+                context_dim=6 if bool(args.force_filter_feedback) else CS_H0_CONTEXT_DIM,
+                context_basis=(
+                    "target_relative_delayed_feedback_plus_force_filter"
+                    if bool(args.force_filter_feedback)
+                    else "target_relative_delayed_feedback"
+                ),
             ),
             "damping": 0.1,
             "tau_rise": 0.066,
@@ -360,6 +406,8 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "n_expected": 0,
         },
         "perturbation_training": perturbation_training.to_hps_dict(),
+        "broad_epsilon_training": broad_epsilon_training.to_hps_dict(),
+        "broad_epsilon_pgd_training": broad_epsilon_pgd_training.to_hps_dict(),
         "target_relative_multitarget": target_relative_multitarget.to_hps_dict(),
         "loss": {
             "objective": str(args.loss_objective),
@@ -549,10 +597,11 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
         "feedback": {
             "delay_steps": int(hps.model.feedback_delay_steps),
             "basis": _controller_feedback_basis(hps),
+            "dimension": _controller_feedback_dim(hps),
             "noise_std": stochastic_runtime["sensory_noise_std"],
             "noise_role": "sensory_feedback",
             "noise_timing": (
-                "Feedbax sensory Channel after 4D delayed LSS feedback selector"
+                "Feedbax sensory Channel after delayed LSS feedback selector"
                 if exact_lss
                 else "Feedbax feedback Channel before controller"
             ),
@@ -870,6 +919,7 @@ def run_full_training(
     key_init, key_train = jr.split(jr.PRNGKey(int(args.seed)), 2)
     pair = setup_task_model_pair(hps, key=key_init)
     trainer = _build_trainer(hps)
+    pre_step_fn = make_broad_epsilon_pgd_pre_step(hps.broad_epsilon_pgd_training)
     where_train = _where_train()
     template_state = _initial_training_state(
         model=pair.model,
@@ -892,6 +942,7 @@ def run_full_training(
     chunks: list[dict[str, float | int | str]] = []
     history_diagnostic_chunks: list[dict[str, np.ndarray]] = []
     optimizer_diagnostic_chunks: list[dict[str, np.ndarray]] = []
+    pgd_diagnostic_chunks: list[dict[str, np.ndarray]] = []
     training_started = time.perf_counter()
     while state.completed_batches < int(args.n_train_batches):
         remaining = int(args.n_train_batches) - state.completed_batches
@@ -915,6 +966,7 @@ def run_full_training(
             log_step=max(1, int(args.log_step)),
             disable_progress=bool(args.disable_progress),
             verbose_progress=not bool(args.quiet_progress),
+            pre_step_fn=pre_step_fn,
         )
         chunk_duration_seconds = time.perf_counter() - chunk_started
         completed = state.completed_batches + chunk_batches
@@ -930,6 +982,16 @@ def run_full_training(
             history_diagnostic_chunks.append(
                 _history_diagnostics_arrays(history_chunk, chunk_batches)
             )
+            pgd_diagnostics = _broad_epsilon_pgd_diagnostics_arrays(
+                pair.task,
+                model,
+                hps,
+                key=key_chunk,
+                batch_index=completed - 1,
+                chunk_batches=chunk_batches,
+            )
+            if pgd_diagnostics:
+                pgd_diagnostic_chunks.append(pgd_diagnostics)
         history_chunk_path = output_dir / "history_chunks" / f"history_{completed:07d}.eqx"
         history_chunk_path.parent.mkdir(parents=True, exist_ok=True)
         fbx_save(history_chunk_path, history_chunk)
@@ -975,6 +1037,7 @@ def run_full_training(
         training_history_path=final_history_path,
         optimizer_diagnostic_chunks=optimizer_diagnostic_chunks,
         history_diagnostic_chunks=history_diagnostic_chunks,
+        pgd_diagnostic_chunks=pgd_diagnostic_chunks,
     )
     final_summary = {
         "schema_version": f"{SCHEMA_VERSION}.training.v1",
@@ -1236,6 +1299,57 @@ def build_parser() -> argparse.ArgumentParser:
             "receives [target_x - delayed_x, target_y - delayed_y, -delayed_vx, "
             "-delayed_vy] feedback and uses structured seen/held-out target bins."
         ),
+    )
+    parser.add_argument(
+        "--force-filter-feedback",
+        "--proprioceptive-feedback",
+        action="store_true",
+        help=(
+            "Extend target-relative delayed feedback with delayed force/filter x/y "
+            "coordinates. Requires --target-relative-multitarget."
+        ),
+    )
+    parser.add_argument(
+        "--broad-epsilon-training",
+        action="store_true",
+        help=(
+            "Enable randomized full-state C&S epsilon training: iid 8D epsilon over "
+            "time/components, projected per trial to the declared L2 budget."
+        ),
+    )
+    parser.add_argument(
+        "--broad-epsilon-pgd-training",
+        action="store_true",
+        help=(
+            "Enable training-time projected-gradient ascent over the full T x 8 "
+            "C&S epsilon channel before each controller update."
+        ),
+    )
+    parser.add_argument(
+        "--broad-epsilon-level",
+        choices=("moderate", "strong"),
+        default="moderate",
+        help=(
+            "Analytical broad-epsilon budget anchor. moderate uses gamma factor 1.4; "
+            "strong uses gamma factor 1.05."
+        ),
+    )
+    parser.add_argument("--broad-epsilon-budget-scale", type=float, default=1.0)
+    parser.add_argument(
+        "--broad-epsilon-reach-scaling",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Scale the 15 cm analytical epsilon L2 radius by sampled reach length. "
+            "This is an explicit multi-target normalization choice."
+        ),
+    )
+    parser.add_argument("--broad-epsilon-pgd-steps", type=int, default=3)
+    parser.add_argument(
+        "--broad-epsilon-pgd-step-size-fraction",
+        type=float,
+        default=0.25,
+        help="PGD ascent step size as a fraction of each trial's L2 radius.",
     )
     parser.add_argument(
         "--initial-hidden-encoder",
@@ -1609,13 +1723,19 @@ def _initial_hidden_encoder_enabled(hps: TreeNamespace) -> bool:
     return bool(getattr(hps.model, "initial_hidden_encoder", False))
 
 
-def _initial_hidden_encoder_config(*, enabled: bool, hidden_size: int) -> dict[str, Any]:
+def _initial_hidden_encoder_config(
+    *,
+    enabled: bool,
+    hidden_size: int,
+    context_dim: int = CS_H0_CONTEXT_DIM,
+    context_basis: str = "target_relative_delayed_feedback",
+) -> dict[str, Any]:
     return {
         "enabled": bool(enabled),
         "architecture": "affine",
         "context_source": "first_controller_visible_target_relative_delayed_feedback",
-        "context_basis": "target_relative_delayed_feedback",
-        "context_shape": [CS_H0_CONTEXT_DIM],
+        "context_basis": context_basis,
+        "context_shape": [int(context_dim)],
         "output_shape": [int(hidden_size)],
         "initialization": CS_H0_ENCODER_INIT,
         "initialization_note": (
@@ -1635,13 +1755,27 @@ def _initial_hidden_encoder_metadata(hps: TreeNamespace) -> dict[str, Any]:
         return _initial_hidden_encoder_config(
             enabled=_initial_hidden_encoder_enabled(hps),
             hidden_size=int(hps.model.hidden_size),
+            context_dim=_controller_feedback_dim(hps),
+            context_basis=_controller_feedback_basis(hps),
         )
     return _plain(config)
+
+
+def _broad_epsilon_training_enabled(hps: TreeNamespace) -> bool:
+    return bool(getattr(getattr(hps, "broad_epsilon_training", None), "enabled", False))
+
+
+def _broad_epsilon_pgd_training_enabled(hps: TreeNamespace) -> bool:
+    return bool(
+        getattr(getattr(hps, "broad_epsilon_pgd_training", None), "enabled", False)
+    )
 
 
 def _nominal_only(hps: TreeNamespace) -> bool:
     return (
         not _perturbation_training_enabled(hps)
+        and not _broad_epsilon_training_enabled(hps)
+        and not _broad_epsilon_pgd_training_enabled(hps)
         and not _target_relative_multitarget_enabled(hps)
         and not _initial_hidden_encoder_enabled(hps)
     )
@@ -1649,11 +1783,20 @@ def _nominal_only(hps: TreeNamespace) -> bool:
 
 def _training_mode(hps: TreeNamespace) -> str:
     if _target_relative_multitarget_enabled(hps):
-        return (
-            TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE
-            if _initial_hidden_encoder_enabled(hps)
-            else TARGET_RELATIVE_MULTITARGET_TRAINING_MODE
-        )
+        parts = [
+            (
+                TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE
+                if _initial_hidden_encoder_enabled(hps)
+                else TARGET_RELATIVE_MULTITARGET_TRAINING_MODE
+            )
+        ]
+        if _broad_epsilon_training_enabled(hps):
+            parts.append(BROAD_EPSILON_TRAINING_MODE)
+        if _broad_epsilon_pgd_training_enabled(hps):
+            parts.append(BROAD_EPSILON_PGD_TRAINING_MODE)
+        if _perturbation_training_enabled(hps):
+            parts.append(PERTURBATION_TRAINING_MODE)
+        return "+".join(parts)
     if _perturbation_training_enabled(hps):
         return PERTURBATION_TRAINING_MODE
     return "nominal"
@@ -1661,8 +1804,16 @@ def _training_mode(hps: TreeNamespace) -> str:
 
 def _controller_feedback_basis(hps: TreeNamespace) -> str:
     if _target_relative_multitarget_enabled(hps):
+        if bool(getattr(hps.target_relative_multitarget, "force_filter_feedback", False)):
+            return "target_relative_delayed_feedback_plus_force_filter"
         return "target_relative_delayed_feedback"
     return "raw_delayed_position_velocity"
+
+
+def _controller_feedback_dim(hps: TreeNamespace) -> int:
+    if _target_relative_multitarget_enabled(hps):
+        return 6 if bool(getattr(hps.target_relative_multitarget, "force_filter_feedback", False)) else 4
+    return 4
 
 
 def _validation_bins_metadata(hps: TreeNamespace) -> dict[str, Any]:
@@ -1678,11 +1829,19 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
         target_payload = target_config.target_distribution
         h0 = _initial_hidden_encoder_metadata(hps)
         return {
-            "mode": (
-                TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE
-                if h0["enabled"]
-                else TARGET_RELATIVE_MULTITARGET_TRAINING_MODE
-            ),
+            "mode": _training_mode(hps),
+            "training_axes": {
+                "target_relative_multitarget": True,
+                "initial_hidden_encoder": bool(h0["enabled"]),
+                "calibrated_perturbation_training": _perturbation_training_enabled(hps),
+                "broad_full_state_epsilon_training": _broad_epsilon_training_enabled(hps),
+                "broad_full_state_epsilon_pgd_training": (
+                    _broad_epsilon_pgd_training_enabled(hps)
+                ),
+                "force_filter_feedback": bool(
+                    getattr(target_config, "force_filter_feedback", False)
+                ),
+            },
             "fixed_target_only": False,
             "target_stream": {
                 "status": "consumed_as_static_target_relative_feedback",
@@ -1690,6 +1849,22 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
                 "contract": _plain(target_config.input_contract),
             },
             "initial_hidden_encoder": h0,
+            "force_filter_feedback": _plain(target_config.force_filter_feedback),
+            "broad_epsilon_training": (
+                _plain(hps.broad_epsilon_training)
+                if _broad_epsilon_training_enabled(hps)
+                else {"enabled": False}
+            ),
+            "broad_epsilon_pgd_training": (
+                _plain(hps.broad_epsilon_pgd_training)
+                if _broad_epsilon_pgd_training_enabled(hps)
+                else {"enabled": False}
+            ),
+            "perturbation_training": (
+                _plain(hps.perturbation_training)
+                if _perturbation_training_enabled(hps)
+                else {"enabled": False}
+            ),
             "target_distribution": _plain(target_payload),
             "original_target_anchor_m": _plain(target_payload.original_target_anchor_m),
             "seen_targets_m": _plain(target_payload.seen_targets_m),
@@ -1777,6 +1952,7 @@ def _training_diagnostics_metadata(
             "optimizer_learning_rate",
             "train_loss_terms",
             "validation_loss_terms",
+            "pgd_broad_epsilon_inner_maximizer",
         ],
     }
 
@@ -1810,6 +1986,7 @@ def write_training_diagnostics_sidecar(
     training_history_path: Path,
     optimizer_diagnostic_chunks: list[dict[str, np.ndarray]] | None = None,
     history_diagnostic_chunks: list[dict[str, np.ndarray]] | None = None,
+    pgd_diagnostic_chunks: list[dict[str, np.ndarray]] | None = None,
 ) -> dict[str, Any]:
     """Write compact training-process scalar sidecars for future optimizer audits."""
 
@@ -1838,6 +2015,8 @@ def write_training_diagnostics_sidecar(
         arrays.update(_combine_history_diagnostic_chunks(history_diagnostic_chunks))
     elif state.history is not None:
         arrays.update(_history_diagnostics_arrays(state.history, state.completed_batches))
+    if pgd_diagnostic_chunks:
+        arrays.update(_combine_history_diagnostic_chunks(pgd_diagnostic_chunks))
 
     npz_path = Path(metadata["sidecar_path"])
     manifest_path = Path(metadata["manifest_path"])
@@ -2023,6 +2202,132 @@ def _update_diagnostics_arrays(
     }
 
 
+def _broad_epsilon_pgd_diagnostics_arrays(
+    task: Any,
+    model: Any,
+    hps: TreeNamespace,
+    *,
+    key: Any,
+    batch_index: int,
+    chunk_batches: int,
+) -> dict[str, np.ndarray]:
+    if not _broad_epsilon_pgd_training_enabled(hps):
+        return {}
+
+    n_replicates = int(getattr(getattr(hps, "model", hps), "n_replicates", 1))
+    batch_size = int(hps.batch_size)
+    batch_info = BatchInfo(
+        size=batch_size,
+        start=0,
+        current=int(batch_index),
+        total=int(hps.n_batches_condition),
+    )
+
+    def diagnostic_for_replicate(model_replicate: Any, key_replicate: Any):
+        key_trials, _, key_model = jr.split(key_replicate, 3)
+        keys_trials = jr.split(key_trials, batch_size)
+        keys_model = jr.split(key_model, batch_size)
+        trial_specs = eqx.filter_vmap(
+            partial(
+                task.get_train_trial_with_intervenor_params,
+                batch_info=batch_info,
+            )
+        )(keys_trials)
+        _, diagnostics = run_broad_epsilon_pgd_inner_maximizer(
+            task,
+            model_replicate,
+            trial_specs,
+            task.loss_func,
+            keys_model,
+            hps.broad_epsilon_pgd_training,
+            return_diagnostics=True,
+        )
+        return diagnostics
+
+    keys = jr.split(key, n_replicates)
+    model_arrays, model_other = eqx.partition(
+        model,
+        lambda leaf: _is_replicate_axis_array(leaf, n_replicates),
+    )
+    per_replicate_diagnostics = []
+    for replicate_index, key_replicate in enumerate(keys):
+        replicate_arrays = jt.map(
+            lambda leaf: None if leaf is None else leaf[replicate_index],
+            model_arrays,
+            is_leaf=lambda leaf: leaf is None,
+        )
+        model_replicate = eqx.combine(replicate_arrays, model_other)
+        model_replicate = _with_single_replicate_state_initializers(
+            model_replicate,
+            n_replicates=n_replicates,
+            replicate_index=replicate_index,
+        )
+        per_replicate_diagnostics.append(
+            diagnostic_for_replicate(model_replicate, key_replicate)
+        )
+    diagnostics = jt.map(lambda *values: jnp.stack(values), *per_replicate_diagnostics)
+    arrays: dict[str, np.ndarray] = {
+        "pgd_broad_epsilon_diagnostic_sampled": np.zeros(chunk_batches, dtype=bool),
+        "pgd_broad_epsilon_diagnostic_global_batch": np.full(
+            chunk_batches,
+            np.nan,
+            dtype=np.float32,
+        ),
+    }
+    arrays["pgd_broad_epsilon_diagnostic_sampled"][-1] = True
+    arrays["pgd_broad_epsilon_diagnostic_global_batch"][-1] = float(batch_index)
+    for name, value in diagnostics.items():
+        sampled = np.asarray(jax.device_get(value))
+        if sampled.ndim == 0:
+            sampled = sampled.reshape((1,))
+        chunk = np.full(
+            (chunk_batches, *sampled.shape),
+            np.nan,
+            dtype=sampled.dtype,
+        )
+        chunk[-1] = sampled
+        arrays[f"pgd_broad_epsilon_{name}"] = chunk
+    return arrays
+
+
+def _is_replicate_axis_array(leaf: Any, n_replicates: int) -> bool:
+    return (
+        eqx.is_array(leaf)
+        and leaf.ndim > 0
+        and int(getattr(leaf, "shape", (0,))[0]) == int(n_replicates)
+    )
+
+
+def _with_single_replicate_state_initializers(
+    model: Any,
+    *,
+    n_replicates: int,
+    replicate_index: int,
+) -> Any:
+    nodes = getattr(model, "nodes", {})
+    for node_name, node in nodes.items():
+        state_index = getattr(node, "state_index", None)
+        if not isinstance(state_index, eqx.nn.StateIndex):
+            continue
+        changed = False
+
+        def unbatch_init_leaf(leaf: Any) -> Any:
+            nonlocal changed
+            if _is_replicate_axis_array(leaf, n_replicates):
+                changed = True
+                return leaf[replicate_index]
+            return leaf
+
+        init = jt.map(unbatch_init_leaf, state_index.init)
+        if changed:
+            model = eqx.tree_at(
+                lambda graph, name=node_name: graph.nodes[name].state_index.init,
+                model,
+                init,
+            )
+    return model
+
+
 def _history_diagnostics_arrays(history: Any, completed_batches: int) -> dict[str, np.ndarray]:
     arrays: dict[str, np.ndarray] = {}
     learning_rate = getattr(history, "learning_rate", None)
@@ -2206,6 +2511,16 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
         "target_relative_multitarget": (
             _plain(hps.target_relative_multitarget)
             if target_relative
+            else {"enabled": False}
+        ),
+        "broad_epsilon_training": (
+            _plain(hps.broad_epsilon_training)
+            if _broad_epsilon_training_enabled(hps)
+            else {"enabled": False}
+        ),
+        "broad_epsilon_pgd_training": (
+            _plain(hps.broad_epsilon_pgd_training)
+            if _broad_epsilon_pgd_training_enabled(hps)
             else {"enabled": False}
         ),
         "initial_hidden_encoder": _initial_hidden_encoder_metadata(hps),
@@ -2669,3 +2984,7 @@ def _plain(value: Any) -> Any:
 
 def _json_dumps(payload: dict[str, Any]) -> str:
     return json.dumps(payload, indent=2, sort_keys=True) + "\n"
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

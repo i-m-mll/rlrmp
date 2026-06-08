@@ -352,21 +352,32 @@ def select_validation_checkpoints_for_run(
     never falls back silently.
     """
 
-    if checkpoint_selection_mode == "sparse_history":
+    effective_selection_mode = checkpoint_selection_mode
+    effective_manifest = preferred_manifest
+    if effective_manifest is None:
+        effective_manifest = load_materialized_fixed_bank_manifest(
+            experiment=experiment,
+            repo_root=repo_root,
+            manifest_path=preferred_manifest_path,
+        )
+    if effective_selection_mode == "sparse_history" and effective_manifest is not None:
+        effective_selection_mode = "fixed_bank_manifest"
+
+    if effective_selection_mode == "sparse_history":
         return select_sparse_history_validation_checkpoints_for_run(
             experiment=experiment,
             run_id=run_id,
             repo_root=repo_root,
         )
-    if checkpoint_selection_mode != "fixed_bank_manifest":
+    if effective_selection_mode != "fixed_bank_manifest":
         raise ValueError(f"unsupported checkpoint selection mode {checkpoint_selection_mode!r}")
 
     manifest = _resolve_checkpoint_selection_manifest(
-        checkpoint_selection_mode=checkpoint_selection_mode,
+        checkpoint_selection_mode=effective_selection_mode,
         experiment=experiment,
         run_ids=(run_id,),
         repo_root=repo_root,
-        preferred_manifest=preferred_manifest,
+        preferred_manifest=effective_manifest,
         preferred_manifest_path=preferred_manifest_path,
     )
     if manifest is not None and run_id in manifest.get("runs", {}):

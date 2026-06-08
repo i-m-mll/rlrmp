@@ -47,8 +47,10 @@ from rlrmp.stochastic_runtime import (
     stochastic_runtime_config_from_model,
 )
 from rlrmp.train.cs_perturbation_training import (
+    BroadFullStateEpsilonTrainingTaskAdapter,
     FixedTargetPerturbationTrainingTaskAdapter,
     TargetRelativeMultiTargetTrainingTaskAdapter,
+    config_from_broad_epsilon_hps,
     config_from_hps,
     config_from_target_hps,
     install_perturbation_training_graph_adapters,
@@ -258,6 +260,11 @@ def setup_task_model_pair(
         )
         if target_training.enabled:
             task = TargetRelativeMultiTargetTrainingTaskAdapter(task, target_training)
+        broad_epsilon_training = config_from_broad_epsilon_hps(
+            getattr(hps, "broad_epsilon_training", TreeNamespace(enabled=False))
+        )
+        if broad_epsilon_training.enabled:
+            task = BroadFullStateEpsilonTrainingTaskAdapter(task, broad_epsilon_training)
         perturbation_training = config_from_hps(
             getattr(hps, "perturbation_training", TreeNamespace(enabled=False))
         )
@@ -524,6 +531,7 @@ def _create_cs_lss_gru_ensemble(
             signal_dependent_motor_noise_std=float(hps.model.signal_dependent_motor_noise_std),
             bind_epsilon_input=True,
             target_relative_feedback=target_training.enabled,
+            force_filter_feedback=target_training.force_filter_feedback,
             initial_hidden_encoder=bool(getattr(hps.model, "initial_hidden_encoder", False)),
             key=key_one,
         )

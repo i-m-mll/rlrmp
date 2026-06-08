@@ -31,6 +31,12 @@ def main() -> None:
         default=Path(DEFAULT_REGENERATION_SPEC_PATH),
     )
     parser.add_argument(
+        "--run-id-contains",
+        action="append",
+        default=[],
+        help="Only include runs whose run id contains this substring. May be repeated.",
+    )
+    parser.add_argument(
         "--no-extlqg",
         action="store_true",
         help="Skip deterministic extLQG curve reconstruction.",
@@ -46,11 +52,12 @@ def main() -> None:
         regeneration_spec_path=args.regeneration_spec_path,
         repo_root=REPO_ROOT,
         reconstruct_extlqg=not args.no_extlqg,
+        run_id_contains=tuple(args.run_id_contains),
     )
     print(
         "Wrote "
         f"{manifest['figure_count']} perturbation-response norm figure(s) to "
-        f"{DEFAULT_ASSET_DIR}."
+        f"{manifest.get('asset_dir', DEFAULT_ASSET_DIR)}."
     )
 
 
