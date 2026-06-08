@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 import equinox as eqx
 import jax
@@ -31,6 +31,8 @@ CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE = (
 LEGACY_PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_generalized"
 TARGET_RELATIVE_MULTITARGET_TRAINING_MODE = "target_relative_multitarget_static"
 TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE = "target_relative_multitarget_static_h0"
+BROAD_EPSILON_TRAINING_MODE = "broad_full_state_epsilon_l2"
+BROAD_EPSILON_PGD_TRAINING_MODE = "broad_full_state_epsilon_pgd_l2"
 MILD_COMBINED_FAMILIES: tuple["PerturbationBin", ...] = (
     "initial_position",
     "command_input",
@@ -100,6 +102,191 @@ PROCESS_EPSILON_COMPONENT_FAMILIES: tuple[str, ...] = (
     "process_epsilon_integrator_xy",
 )
 TIMING_LABELS_PLANT = tuple(bin_.label for bin_ in DEFAULT_PLANT_TIMING_BINS)
+BROAD_EPSILON_DIM = 8
+BROAD_EPSILON_REFERENCE_REACH_M = 0.15
+BROAD_EPSILON_LEVELS: dict[str, dict[str, Any]] = {
+    "moderate": {
+        "gamma_factor": 1.4,
+        "closed_loop_epsilon_energy_15cm": 1.518885046213267e-06,
+        "closed_loop_epsilon_l2_15cm": 0.0012324305441740995,
+        "delta_v_percent": 4.041729916548296,
+        "source_issue": "cb98e58",
+        "source_note": "results/cb98e58/notes/analytical_game_card_manifest.json",
+    },
+    "strong": {
+        "gamma_factor": 1.05,
+        "closed_loop_epsilon_energy_15cm": 5.421868381615368e-06,
+        "closed_loop_epsilon_l2_15cm": 0.0023284905801002004,
+        "delta_v_percent": 7.460371202249536,
+        "source_issue": "a7dad8a",
+        "source_note": "results/a7dad8a/notes/adversary_equivalence_manifest.json",
+    },
+}
+
+
+@dataclass(frozen=True)
+class BroadFullStateEpsilonTrainingConfig:
+    """Random full-state epsilon training lane for the C&S analytical game."""
+
+    enabled: bool = False
+    level: str = "moderate"
+    budget_scale: float = 1.0
+    reach_length_scaling: bool = True
+    nominal_reach_length_m: float = BROAD_EPSILON_REFERENCE_REACH_M
+
+    def __post_init__(self) -> None:
+        if self.level not in BROAD_EPSILON_LEVELS:
+            levels = ", ".join(BROAD_EPSILON_LEVELS)
+            raise ValueError(
+                f"Unknown broad-epsilon level {self.level!r}; expected one of {levels}."
+            )
+        if float(self.budget_scale) <= 0.0:
+            raise ValueError("broad epsilon budget_scale must be positive.")
+        if float(self.nominal_reach_length_m) <= 0.0:
+            raise ValueError("broad epsilon nominal_reach_length_m must be positive.")
+
+    @property
+    def level_contract(self) -> dict[str, Any]:
+        """Return the immutable analytical budget anchor for this level."""
+
+        return dict(BROAD_EPSILON_LEVELS[self.level])
+
+    @property
+    def reference_l2_radius(self) -> float:
+        """Return the 15 cm reference L2 radius after the explicit budget scale."""
+
+        return (
+            float(self.level_contract["closed_loop_epsilon_l2_15cm"])
+            * float(self.budget_scale)
+        )
+
+    def to_hps_dict(self) -> dict[str, Any]:
+        """Return TreeNamespace-compatible broad-epsilon training metadata."""
+
+        contract = self.level_contract
+        return {
+            "enabled": self.enabled,
+            "mode": BROAD_EPSILON_TRAINING_MODE if self.enabled else "disabled",
+            "level": self.level,
+            "budget_scale": float(self.budget_scale),
+            "reach_length_scaling": bool(self.reach_length_scaling),
+            "nominal_reach_length_m": float(self.nominal_reach_length_m),
+            "epsilon_channel": {
+                "state_basis": "C&S 48D delay-augmented LinearStateSpace state",
+                "shape": ["batch", "time", BROAD_EPSILON_DIM],
+                "injection": "B_w[:8, :] = I_8; B_w[8:, :] = 0",
+                "lag_history_direct_write": False,
+                "dt_scaling": "none",
+            },
+            "sampling": {
+                "distribution": "iid_standard_normal",
+                "randomized_axes": ["trial", "time", "component"],
+                "projection": "per_trial_flattened_time_component_l2_sphere",
+                "shared_across_batch": False,
+            },
+            "budget_contract": {
+                **contract,
+                "reference_reach_m": BROAD_EPSILON_REFERENCE_REACH_M,
+                "effective_l2_radius_15cm": self.reference_l2_radius,
+                "reach_length_scaling_note": (
+                    "Reach scaling is an explicit multi-target normalization choice; "
+                    "the original analytical game card reports the 15 cm budget."
+                ),
+            },
+        }
+
+    def to_json(self) -> dict[str, Any]:
+        """Return JSON-serializable broad-epsilon metadata."""
+
+        return self.to_hps_dict()
+
+
+@dataclass(frozen=True)
+class PgdFullStateEpsilonTrainingConfig:
+    """Training-time PGD lane on the C&S full-state epsilon channel."""
+
+    enabled: bool = False
+    level: str = "moderate"
+    budget_scale: float = 1.0
+    reach_length_scaling: bool = True
+    nominal_reach_length_m: float = BROAD_EPSILON_REFERENCE_REACH_M
+    n_steps: int = 3
+    step_size_fraction: float = 0.25
+    init: str = "zero"
+
+    def __post_init__(self) -> None:
+        if self.level not in BROAD_EPSILON_LEVELS:
+            levels = ", ".join(BROAD_EPSILON_LEVELS)
+            raise ValueError(
+                f"Unknown PGD broad-epsilon level {self.level!r}; expected one of {levels}."
+            )
+        if float(self.budget_scale) <= 0.0:
+            raise ValueError("PGD broad epsilon budget_scale must be positive.")
+        if float(self.nominal_reach_length_m) <= 0.0:
+            raise ValueError("PGD broad epsilon nominal_reach_length_m must be positive.")
+        if int(self.n_steps) < 1:
+            raise ValueError("PGD broad epsilon n_steps must be positive.")
+        if float(self.step_size_fraction) <= 0.0:
+            raise ValueError("PGD broad epsilon step_size_fraction must be positive.")
+        if self.init != "zero":
+            raise ValueError("Only zero-initialized PGD broad epsilon is currently supported.")
+
+    @property
+    def level_contract(self) -> dict[str, Any]:
+        """Return the immutable analytical budget anchor for this level."""
+
+        return dict(BROAD_EPSILON_LEVELS[self.level])
+
+    @property
+    def reference_l2_radius(self) -> float:
+        """Return the 15 cm reference L2 radius after the explicit budget scale."""
+
+        return (
+            float(self.level_contract["closed_loop_epsilon_l2_15cm"])
+            * float(self.budget_scale)
+        )
+
+    def to_hps_dict(self) -> dict[str, Any]:
+        """Return TreeNamespace-compatible PGD broad-epsilon training metadata."""
+
+        contract = self.level_contract
+        return {
+            "enabled": self.enabled,
+            "mode": BROAD_EPSILON_PGD_TRAINING_MODE if self.enabled else "disabled",
+            "level": self.level,
+            "budget_scale": float(self.budget_scale),
+            "reach_length_scaling": bool(self.reach_length_scaling),
+            "nominal_reach_length_m": float(self.nominal_reach_length_m),
+            "epsilon_channel": {
+                "state_basis": "C&S 48D delay-augmented LinearStateSpace state",
+                "shape": ["batch", "time", BROAD_EPSILON_DIM],
+                "injection": "B_w[:8, :] = I_8; B_w[8:, :] = 0",
+                "lag_history_direct_write": False,
+                "dt_scaling": "none",
+            },
+            "inner_maximizer": {
+                "method": "projected_gradient_ascent",
+                "n_steps": int(self.n_steps),
+                "step_size_fraction_of_l2_radius": float(self.step_size_fraction),
+                "initialization": self.init,
+                "projection": "per_trial_flattened_time_component_l2_ball",
+                "differentiated_through_outer_update": False,
+            },
+            "budget_contract": {
+                **contract,
+                "reference_reach_m": BROAD_EPSILON_REFERENCE_REACH_M,
+                "effective_l2_radius_15cm": self.reference_l2_radius,
+                "reach_length_scaling_note": (
+                    "Reach scaling is an explicit multi-target normalization choice; "
+                    "the original analytical game card reports the 15 cm budget."
+                ),
+            },
+        }
+
+    def to_json(self) -> dict[str, Any]:
+        """Return JSON-serializable PGD broad-epsilon metadata."""
+
+        return self.to_hps_dict()
 
 
 @dataclass(frozen=True)
@@ -163,7 +350,15 @@ class AdditiveTrainingGraphChannelAdapter(Component):
         key: PRNGKeyArray,
     ) -> tuple[dict[str, PyTree], eqx.nn.State]:
         del key
-        return {"signal": inputs["signal"] + inputs["offset"]}, state
+        signal = jnp.asarray(inputs["signal"])
+        offset = jnp.asarray(inputs["offset"], dtype=signal.dtype)
+        if offset.shape[-1] < signal.shape[-1]:
+            pad_width = [(0, 0)] * (offset.ndim - 1)
+            pad_width.append((0, signal.shape[-1] - offset.shape[-1]))
+            offset = jnp.pad(offset, pad_width)
+        elif offset.shape[-1] > signal.shape[-1]:
+            offset = offset[..., : signal.shape[-1]]
+        return {"signal": signal + offset}, state
 
 
 GRAPH_ADAPTER_SPECS: dict[PerturbationBin, GraphAdapterSpec] = {
@@ -371,6 +566,7 @@ class TargetRelativeMultiTargetTrainingConfig:
     """Structured static-target distribution for target-relative GRU training."""
 
     enabled: bool = False
+    force_filter_feedback: bool = False
     seen_directions_deg: tuple[float, ...] = DEFAULT_SEEN_TARGET_DIRECTIONS_DEG
     held_out_directions_deg: tuple[float, ...] = DEFAULT_HELD_OUT_TARGET_DIRECTIONS_DEG
     seen_amplitudes_m: tuple[float, ...] = DEFAULT_SEEN_TARGET_AMPLITUDES_M
@@ -431,7 +627,13 @@ class TargetRelativeMultiTargetTrainingConfig:
             "mode": (
                 TARGET_RELATIVE_MULTITARGET_TRAINING_MODE if self.enabled else "disabled"
             ),
-            "input_contract": target_relative_input_contract(),
+            "force_filter_feedback": self.force_filter_feedback,
+            "force_filter_feedback_contract": force_filter_feedback_manifest(
+                self.force_filter_feedback
+            ),
+            "input_contract": target_relative_input_contract(
+                force_filter_feedback=self.force_filter_feedback
+            ),
             "target_distribution": {
                 "kind": "structured_static_targets",
                 "original_target_anchor_m": list(self.original_target_anchor_m),
@@ -517,6 +719,69 @@ class TargetRelativeMultiTargetTrainingTaskAdapter(AbstractTask):
     @property
     def validation_trials(self) -> TaskTrialSpec:
         return apply_validation_target_distribution(self.task.validation_trials, self.config)
+
+
+class BroadFullStateEpsilonTrainingTaskAdapter(AbstractTask):
+    """Inject randomized full-state C&S epsilon after target sampling."""
+
+    task: object
+    config: Any
+
+    def __getattr__(self, name: str):
+        return getattr(self.task, name)
+
+    @property
+    def loss_func(self):
+        return self.task.loss_func
+
+    @property
+    def n_steps(self) -> int:
+        return int(self.task.n_steps)
+
+    @property
+    def seed_validation(self) -> int:
+        return int(self.task.seed_validation)
+
+    @property
+    def intervention_specs(self):
+        return self.task.intervention_specs
+
+    @property
+    def input_dependencies(self):
+        return self.task.input_dependencies
+
+    def add_input(self, name: str, input_fn, exist_ok: bool = True):
+        return eqx.tree_at(
+            lambda adapter: adapter.task,
+            self,
+            self.task.add_input(name, input_fn, exist_ok=exist_ok),
+        )
+
+    def get_train_trial(self, key: PRNGKeyArray, batch_info=None) -> TaskTrialSpec:
+        return self.get_train_trial_with_intervenor_params(key, batch_info)
+
+    def get_train_trial_with_intervenor_params(
+        self,
+        key: PRNGKeyArray,
+        batch_info=None,
+    ) -> TaskTrialSpec:
+        key_base, key_epsilon = jr.split(key)
+        base = self.task.get_train_trial_with_intervenor_params(key_base, batch_info)
+        return apply_broad_epsilon_training(base, self.config, key_epsilon)
+
+    def get_validation_trials(self, key: PRNGKeyArray) -> TaskTrialSpec:
+        return self.task.get_validation_trials(key)
+
+    @property
+    def n_validation_trials(self) -> int:
+        return int(self.task.n_validation_trials)
+
+    def validation_plots(self, states, trial_specs=None):
+        return self.task.validation_plots(states, trial_specs=trial_specs)
+
+    @property
+    def validation_trials(self) -> TaskTrialSpec:
+        return self.task.validation_trials
 
 
 class FixedTargetPerturbationTrainingTaskAdapter(AbstractTask):
@@ -924,8 +1189,12 @@ def perturbation_training_mixture_semantics(
 def config_from_target_hps(config: Any) -> TargetRelativeMultiTargetTrainingConfig:
     """Normalize an hps target-distribution payload to a dataclass."""
 
+    force_filter_feedback = getattr(config, "force_filter_feedback", False)
+    if not isinstance(force_filter_feedback, bool):
+        force_filter_feedback = bool(getattr(force_filter_feedback, "enabled", False))
     return TargetRelativeMultiTargetTrainingConfig(
         enabled=bool(getattr(config, "enabled", False)),
+        force_filter_feedback=bool(force_filter_feedback),
         seen_directions_deg=tuple(
             float(x)
             for x in getattr(
@@ -969,6 +1238,213 @@ def config_from_target_hps(config: Any) -> TargetRelativeMultiTargetTrainingConf
     )
 
 
+def config_from_broad_epsilon_hps(config: Any) -> BroadFullStateEpsilonTrainingConfig:
+    """Normalize an hps broad-epsilon payload to a dataclass."""
+
+    return BroadFullStateEpsilonTrainingConfig(
+        enabled=bool(getattr(config, "enabled", False)),
+        level=str(getattr(config, "level", "moderate")),
+        budget_scale=float(getattr(config, "budget_scale", 1.0)),
+        reach_length_scaling=bool(getattr(config, "reach_length_scaling", True)),
+        nominal_reach_length_m=float(
+            getattr(config, "nominal_reach_length_m", BROAD_EPSILON_REFERENCE_REACH_M)
+        ),
+    )
+
+
+def config_from_broad_epsilon_pgd_hps(config: Any) -> PgdFullStateEpsilonTrainingConfig:
+    """Normalize an hps PGD broad-epsilon payload to a dataclass."""
+
+    inner = _payload_get(config, "inner_maximizer", None)
+    return PgdFullStateEpsilonTrainingConfig(
+        enabled=bool(_payload_get(config, "enabled", False)),
+        level=str(_payload_get(config, "level", "moderate")),
+        budget_scale=float(_payload_get(config, "budget_scale", 1.0)),
+        reach_length_scaling=bool(_payload_get(config, "reach_length_scaling", True)),
+        nominal_reach_length_m=float(
+            _payload_get(config, "nominal_reach_length_m", BROAD_EPSILON_REFERENCE_REACH_M)
+        ),
+        n_steps=int(_first_payload_value((inner, "n_steps"), (config, "n_steps"), default=3)),
+        step_size_fraction=float(
+            _first_payload_value(
+                (inner, "step_size_fraction_of_l2_radius"),
+                (inner, "step_size_fraction"),
+                (config, "step_size_fraction_of_l2_radius"),
+                (config, "step_size_fraction"),
+                default=0.25,
+            )
+        ),
+        init=str(
+            _first_payload_value(
+                (inner, "initialization"),
+                (inner, "init"),
+                (config, "initialization"),
+                (config, "init"),
+                default="zero",
+            )
+        ),
+    )
+
+
+_MISSING = object()
+
+
+def _payload_get(payload: Any, name: str, default: Any = _MISSING) -> Any:
+    if payload is None:
+        return default
+    if isinstance(payload, dict):
+        if name in payload:
+            return payload[name]
+        return default
+    return getattr(payload, name, default)
+
+
+def _first_payload_value(*candidates: tuple[Any, str], default: Any) -> Any:
+    for payload, name in candidates:
+        value = _payload_get(payload, name, _MISSING)
+        if value is not _MISSING:
+            return value
+    return default
+
+
+def make_broad_epsilon_pgd_pre_step(config: Any) -> Callable | None:
+    """Return a Feedbax pre-step hook for training-time broad-epsilon PGD."""
+
+    cfg = config_from_broad_epsilon_pgd_hps(config)
+    if not cfg.enabled:
+        return None
+
+    def pre_step_fn(task, model, trial_specs, loss_func, keys_model):
+        specs, _ = run_broad_epsilon_pgd_inner_maximizer(
+            task,
+            model,
+            trial_specs,
+            loss_func,
+            keys_model,
+            cfg,
+            return_diagnostics=False,
+        )
+        return specs
+
+    return pre_step_fn
+
+
+def run_broad_epsilon_pgd_inner_maximizer(
+    task: Any,
+    model: Any,
+    trial_specs: TaskTrialSpec,
+    loss_func: Any,
+    keys_model: Any,
+    config: Any,
+    *,
+    return_diagnostics: bool = False,
+) -> tuple[TaskTrialSpec, dict[str, jnp.ndarray]]:
+    """Run the PGD inner maximizer and optionally return compact scalar diagnostics."""
+
+    cfg = config_from_broad_epsilon_pgd_hps(config)
+    specs = _ensure_broad_epsilon_input(trial_specs)
+    base_epsilon = jnp.asarray(specs.inputs["epsilon"])
+    radius = _broad_epsilon_l2_radius(specs, cfg).astype(base_epsilon.dtype)
+    delta = jnp.zeros_like(base_epsilon)
+
+    def objective(delta_candidate):
+        candidate = _set_input(specs, "epsilon", base_epsilon + delta_candidate)
+        candidate_states = task.eval_trials(model, candidate, keys_model)
+        return loss_func(candidate_states, candidate, model).total
+
+    def body(_, delta_current):
+        grad = jax.grad(objective)(delta_current)
+        step = _normalize_flattened_per_trial(grad) * _expand_radius(
+            radius * jnp.asarray(cfg.step_size_fraction, dtype=base_epsilon.dtype),
+            base_epsilon.ndim,
+        )
+        return _project_flattened_per_trial_l2_ball(
+            delta_current + step,
+            radius,
+        )
+
+    delta = jax.lax.fori_loop(0, int(cfg.n_steps), body, delta)
+    delta = jax.lax.stop_gradient(delta)
+    updated = _set_input(specs, "epsilon", base_epsilon + delta)
+    if not return_diagnostics:
+        return updated, {}
+
+    objective_initial = objective(jnp.zeros_like(delta))
+    objective_final = objective(delta)
+    delta_norm = _flattened_per_trial_norm(delta).astype(radius.dtype)
+    ratio = delta_norm / jnp.maximum(radius, jnp.asarray(1e-12, dtype=radius.dtype))
+    boundary = ratio >= jnp.asarray(1.0 - 1e-4, dtype=ratio.dtype)
+    diagnostics = {
+        "radius_mean": jnp.mean(radius),
+        "radius_max": jnp.max(radius),
+        "epsilon_norm_mean": jnp.mean(delta_norm),
+        "epsilon_norm_max": jnp.max(delta_norm),
+        "epsilon_norm_radius_ratio_mean": jnp.mean(ratio),
+        "epsilon_norm_radius_ratio_max": jnp.max(ratio),
+        "inner_objective_before": jnp.asarray(objective_initial),
+        "inner_objective_after": jnp.asarray(objective_final),
+        "inner_objective_improvement": jnp.asarray(objective_final - objective_initial),
+        "boundary_fraction": jnp.mean(boundary.astype(radius.dtype)),
+        "n_steps": jnp.asarray(cfg.n_steps, dtype=jnp.float32),
+        "step_size_fraction_of_l2_radius": jnp.asarray(
+            cfg.step_size_fraction,
+            dtype=jnp.float32,
+        ),
+    }
+    return updated, diagnostics
+
+
+def _ensure_broad_epsilon_input(trial_specs: TaskTrialSpec) -> TaskTrialSpec:
+    """Ensure an 8D epsilon input exists and is broadcast to the trial batch."""
+
+    if "epsilon" not in trial_specs.inputs:
+        zeros = jnp.zeros(
+            (*_batch_shape(trial_specs), int(trial_specs.timeline.n_steps), BROAD_EPSILON_DIM),
+            dtype=jnp.float32,
+        )
+        trial_specs = _set_input(trial_specs, "epsilon", zeros)
+    epsilon = jnp.asarray(trial_specs.inputs["epsilon"])
+    if epsilon.shape[-1] != BROAD_EPSILON_DIM:
+        raise ValueError(
+            "PGD broad full-state epsilon expects an 8D process epsilon input; "
+            f"got trailing dimension {epsilon.shape[-1]}."
+        )
+    batch_shape = _batch_shape(trial_specs)
+    if batch_shape and epsilon.shape[: len(batch_shape)] != batch_shape:
+        epsilon = jnp.broadcast_to(epsilon, (*batch_shape, *epsilon.shape[-2:]))
+        trial_specs = _set_input(trial_specs, "epsilon", epsilon)
+    return trial_specs
+
+
+def _flattened_per_trial_norm(x: jnp.ndarray) -> jnp.ndarray:
+    axes = tuple(range(max(x.ndim - 2, 0), x.ndim))
+    return jnp.sqrt(jnp.sum(jnp.square(x), axis=axes))
+
+
+def _expand_radius(radius: jnp.ndarray, ndim: int) -> jnp.ndarray:
+    while radius.ndim < ndim:
+        radius = jnp.expand_dims(radius, axis=-1)
+    return radius
+
+
+def _normalize_flattened_per_trial(x: jnp.ndarray) -> jnp.ndarray:
+    norms = _expand_radius(_flattened_per_trial_norm(x), x.ndim)
+    return x / jnp.maximum(norms, jnp.asarray(1e-12, dtype=x.dtype))
+
+
+def _project_flattened_per_trial_l2_ball(
+    x: jnp.ndarray,
+    radius: jnp.ndarray,
+) -> jnp.ndarray:
+    radius_expanded = _expand_radius(radius.astype(x.dtype), x.ndim)
+    norms = _expand_radius(_flattened_per_trial_norm(x).astype(x.dtype), x.ndim)
+    scale = jnp.minimum(
+        1.0,
+        radius_expanded / jnp.maximum(norms, jnp.asarray(1e-12, dtype=x.dtype)),
+    )
+    return x * scale
+
+
 def install_perturbation_training_graph_adapters(model: Any) -> Any:
     """Install the fixed external additive channel adapters on a C&S GRU graph."""
 
@@ -1003,7 +1479,9 @@ def apply_validation_target_distribution(
     trial_specs = _with_static_target(trial_specs, targets, metadata=None)
     extra = dict(trial_specs.extra or {})
     extra["target_relative_multitarget_bins"] = target_relative_validation_bins(cfg)
-    extra["target_relative_input_contract"] = target_relative_input_contract()
+    extra["target_relative_input_contract"] = target_relative_input_contract(
+        force_filter_feedback=cfg.force_filter_feedback
+    )
     return TaskTrialSpec(
         inits=WhereDict(trial_specs.inits),
         inputs=trial_specs.inputs,
@@ -1012,6 +1490,43 @@ def apply_validation_target_distribution(
         timeline=trial_specs.timeline,
         extra=extra,
     )
+
+
+def apply_broad_epsilon_training(
+    trial_specs: TaskTrialSpec,
+    config: Any,
+    key: PRNGKeyArray,
+) -> TaskTrialSpec:
+    """Add a per-trial L2-projected 8D C&S epsilon sequence to training inputs."""
+
+    cfg = config_from_broad_epsilon_hps(config)
+    if not cfg.enabled:
+        return trial_specs
+    if "epsilon" not in trial_specs.inputs:
+        zeros = jnp.zeros(
+            (*_batch_shape(trial_specs), int(trial_specs.timeline.n_steps), BROAD_EPSILON_DIM),
+            dtype=jnp.float32,
+        )
+        trial_specs = _set_input(trial_specs, "epsilon", zeros)
+    epsilon = jnp.asarray(trial_specs.inputs["epsilon"])
+    if epsilon.shape[-1] != BROAD_EPSILON_DIM:
+        raise ValueError(
+            "Broad full-state epsilon expects an 8D process epsilon input; "
+            f"got trailing dimension {epsilon.shape[-1]}."
+        )
+    batch_shape = _batch_shape(trial_specs)
+    if batch_shape and epsilon.shape[: len(batch_shape)] != batch_shape:
+        epsilon = jnp.broadcast_to(epsilon, (*batch_shape, *epsilon.shape[-2:]))
+    draws = jr.normal(key, epsilon.shape, dtype=epsilon.dtype)
+    flat_axes = tuple(range(max(epsilon.ndim - 2, 0), epsilon.ndim))
+    norms = jnp.sqrt(jnp.sum(jnp.square(draws), axis=flat_axes))
+    radius = _broad_epsilon_l2_radius(trial_specs, cfg).astype(epsilon.dtype)
+    while radius.ndim < epsilon.ndim:
+        radius = jnp.expand_dims(radius, axis=-1)
+    while norms.ndim < epsilon.ndim:
+        norms = jnp.expand_dims(norms, axis=-1)
+    broad = draws * (radius / jnp.maximum(norms, jnp.asarray(1e-12, dtype=epsilon.dtype)))
+    return _set_input(trial_specs, "epsilon", epsilon + broad)
 
 
 def apply_training_perturbation_mixture(
@@ -1255,7 +1770,9 @@ def target_relative_validation_manifest(config: Any) -> dict[str, Any]:
         ),
         "target_centered_scoring": "trial_static_target",
         "bins": target_relative_validation_bins(cfg),
-        "input_contract": target_relative_input_contract(),
+        "input_contract": target_relative_input_contract(
+            force_filter_feedback=cfg.force_filter_feedback
+        ),
         "config": cfg.to_json(),
     }
 
@@ -1330,20 +1847,47 @@ def target_relative_validation_bins(config: TargetRelativeMultiTargetTrainingCon
     ]
 
 
-def target_relative_input_contract() -> dict[str, Any]:
+def target_relative_input_contract(*, force_filter_feedback: bool = False) -> dict[str, Any]:
     """Return the documented controller-visible target-relative sign contract."""
 
+    sign_convention = [
+        "target_x - delayed_x",
+        "target_y - delayed_y",
+        "-delayed_vx",
+        "-delayed_vy",
+    ]
+    if force_filter_feedback:
+        sign_convention.extend(["delayed_force_filter_x", "delayed_force_filter_y"])
     return {
-        "controller_feedback_basis": "target_relative_delayed_feedback",
+        "controller_feedback_basis": (
+            "target_relative_delayed_feedback_plus_force_filter"
+            if force_filter_feedback
+            else "target_relative_delayed_feedback"
+        ),
         "static_target_input": "known_immediately_not_visually_delayed",
-        "sign_convention": [
-            "target_x - delayed_x",
-            "target_y - delayed_y",
-            "-delayed_vx",
-            "-delayed_vy",
-        ],
-        "shape": [4],
+        "sign_convention": sign_convention,
+        "shape": [6 if force_filter_feedback else 4],
+        "force_filter_feedback": force_filter_feedback_manifest(force_filter_feedback),
         "moving_targets": "out_of_scope",
+    }
+
+
+def force_filter_feedback_manifest(enabled: bool) -> dict[str, Any]:
+    """Return metadata for the optional force/filter proprioceptive channel."""
+
+    return {
+        "enabled": bool(enabled),
+        "added_coordinates": (
+            ["delayed_force_filter_x", "delayed_force_filter_y"] if enabled else []
+        ),
+        "source": "states.mechanics.vector delayed physical block indices 44:46",
+        "disturbance_integrators_exposed": False,
+        "rationale": (
+            "Expose a proprioception-like delayed force/filter state without exposing "
+            "the C&S disturbance integrators."
+            if enabled
+            else "Baseline target-relative feedback exposes delayed position error and velocity."
+        ),
     }
 
 
@@ -1546,6 +2090,21 @@ def _target_peak_delta_x_m(
     return reach_length * jnp.asarray(
         REACH_RELATIVE_LEVELS[config.physical_level],
         dtype=jnp.float32,
+    )
+
+
+def _broad_epsilon_l2_radius(
+    trial_specs: TaskTrialSpec,
+    config: BroadFullStateEpsilonTrainingConfig,
+) -> jnp.ndarray:
+    """Return per-trial L2 radius for broad full-state epsilon sampling."""
+
+    radius = jnp.asarray(config.reference_l2_radius, dtype=jnp.float32)
+    if not config.reach_length_scaling:
+        return jnp.broadcast_to(radius, _batch_shape(trial_specs))
+    reach_length = _trial_reach_length_m(trial_specs)
+    return radius * (
+        reach_length / jnp.asarray(config.nominal_reach_length_m, dtype=reach_length.dtype)
     )
 
 

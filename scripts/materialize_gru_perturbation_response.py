@@ -22,6 +22,9 @@ def main() -> None:
     parser.add_argument("--run-id", action="append", dest="run_ids")
     parser.add_argument("--label", action="append", dest="labels")
     parser.add_argument("--n-rollout-trials", type=int, default=8)
+    parser.add_argument("--bank-mode", choices=("raw", "calibrated"), default="raw")
+    parser.add_argument("--calibration-level", action="append", dest="calibration_levels")
+    parser.add_argument("--calibration-reach")
     parser.add_argument("--no-evaluate", action="store_true")
     parser.add_argument("--no-bulk-arrays", action="store_true")
     parser.add_argument("--bank-mode", choices=("raw", "calibrated"), default="raw")
@@ -46,6 +49,9 @@ def main() -> None:
         run_ids=tuple(args.run_ids or DEFAULT_RUN_IDS),
         labels=args.labels,
         n_rollout_trials=args.n_rollout_trials,
+        bank_mode=args.bank_mode,
+        calibration_level=args.calibration_levels,
+        calibration_reach=args.calibration_reach,
         evaluate=not args.no_evaluate,
         write_bulk_arrays=not args.no_bulk_arrays,
         output_path=args.output_path,

@@ -30,6 +30,8 @@ NOMINAL_GRU_TRAINING_MODES = frozenset(
         "nominal",
         "fixed_target_perturbation_randomized",
         "fixed_target_perturbation_generalized",
+        "broad_full_state_epsilon_l2",
+        "broad_full_state_epsilon_pgd_l2",
         "target_relative_multitarget_static",
         "target_relative_multitarget_static_h0",
     }
@@ -83,10 +85,11 @@ def validate_nominal_gru_run_spec(run_spec: dict[str, Any], *, spec_dir: Path) -
 
     training_summary = _mapping(run_spec, "training_summary")
     training_mode = training_summary.get("training_mode")
-    if training_mode not in NOMINAL_GRU_TRAINING_MODES:
+    training_modes = str(training_mode).split("+") if training_mode is not None else []
+    if not training_modes or any(mode not in NOMINAL_GRU_TRAINING_MODES for mode in training_modes):
         raise RunSpecValidationError(
             "nominal GRU run spec must declare training_summary.training_mode as one of "
-            f"{sorted(NOMINAL_GRU_TRAINING_MODES)}; "
+            f"{sorted(NOMINAL_GRU_TRAINING_MODES)} or a '+'-joined composite; "
             f"found {training_mode!r}"
         )
 

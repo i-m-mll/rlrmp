@@ -16,13 +16,19 @@ from feedbax.graph import Component, Wire
 from feedbax.types import TreeNamespace, dict_to_namespace
 from jaxtyping import PRNGKeyArray, PyTree
 
-from rlrmp.analysis.cs_game_card import TARGET_POS, build_canonical_game
+from rlrmp.analysis.cs_game_card import (
+    OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+    TARGET_POS,
+    build_canonical_game,
+    materialize_reference,
+)
 from rlrmp.analysis.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.analysis.cs_released_simulation import (
     FixedStepPerturbation,
     build_extlqg_comparator_path,
     default_cs_noise_covariances,
     simulate_lqg_released_forward,
+    simulate_robust_released_forward,
     zero_forward_noise_draws,
     zero_noise_covariances,
 )
@@ -42,6 +48,8 @@ from rlrmp.analysis.gru_pilot_figures import (
 from rlrmp.analysis.output_feedback import (
     OutputFeedbackConfig,
     make_cs_output_feedback_initial_state,
+    robust_estimator_covariances,
+    robust_output_feedback_gains,
 )
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.modules.training.part2 import setup_task_model_pair
@@ -135,7 +143,15 @@ class AdditiveGraphChannelAdapter(Component):
         key: PRNGKeyArray,
     ) -> tuple[dict[str, PyTree], eqx.nn.State]:
         del key
-        return {"signal": inputs["signal"] + inputs["offset"]}, state
+        signal = jnp.asarray(inputs["signal"])
+        offset = jnp.asarray(inputs["offset"], dtype=signal.dtype)
+        if offset.shape[-1] < signal.shape[-1]:
+            pad_width = [(0, 0)] * (offset.ndim - 1)
+            pad_width.append((0, signal.shape[-1] - offset.shape[-1]))
+            offset = jnp.pad(offset, pad_width)
+        elif offset.shape[-1] > signal.shape[-1]:
+            offset = offset[..., : signal.shape[-1]]
+        return {"signal": signal + offset}, state
 
 
 @dataclass(frozen=True)
@@ -314,6 +330,47 @@ def default_cs_perturbation_bank(
                         timing_bin=timing_bin.label,
                     )
                 )
+        for sign in (-1, 1):
+            perturbations.append(
+                PerturbationSpec(
+                    perturbation_id=(
+                        "target_aligned_lateral_command_load_pulse__"
+                        f"{timing_bin.label}_t{start}_{_sign_label(sign)}"
+                    ),
+                    channel="command_input",
+                    family="target_aligned_lateral_command_load_pulse",
+                    amplitude=1.0,
+                    units="N",
+                    axis="y",
+                    basis="target_aligned_radial_tangential_force",
+                    sign=sign,
+                    timing={
+                        "epoch": "movement_indexed",
+                        "start_time_index": start,
+                        "duration_steps": duration,
+                        "timing_bin": timing_bin.label,
+                        "timing_bin_role": timing_bin.role,
+                    },
+                    adapter="temporary_external_graph_adapter.command_input",
+                    description=(
+                        "Human-protocol-like lateral mechanical load pulse. In the "
+                        "canonical +x reach this is the plant-input y axis; response "
+                        "summaries report target-relative radial/tangential components."
+                    ),
+                    calibration_role="raw_default_requires_same_bank_calibration",
+                    timing_bin=timing_bin.label,
+                    semantic_family="human_protocol_like_lateral_mechanical_load",
+                    channel_provenance={
+                        "information_structure": "external_load_after_controller_command",
+                        "target_relative_axis_role": "tangential",
+                        "target_relative_basis": "canonical_plus_x_reach",
+                        "closest_graph_compatible_equivalent": (
+                            "post-controller command-input offset on "
+                            "efferent.output -> mechanics.force"
+                        ),
+                    },
+                )
+            )
         for component_family, axis, epsilon_index, epsilon_component in process_epsilon_components:
             for sign in (-1, 1):
                 perturbations.append(
@@ -348,6 +405,23 @@ def default_cs_perturbation_bank(
                         epsilon_index=epsilon_index,
                         calibration_role="raw_coordinate_not_scale_normalized",
                         timing_bin=timing_bin.label,
+                        semantic_family=(
+                            "human_protocol_like_lateral_process_load"
+                            if epsilon_component == "force_state_y"
+                            else None
+                        ),
+                        channel_provenance=(
+                            {
+                                "target_relative_axis_role": "tangential",
+                                "target_relative_basis": "canonical_plus_x_reach",
+                                "closest_graph_compatible_equivalent": (
+                                    "process epsilon pulse on the force-state y "
+                                    "component of the current physical block"
+                                ),
+                            }
+                            if epsilon_component == "force_state_y"
+                            else None
+                        ),
                     )
                 )
     for timing_bin in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS:
@@ -382,33 +456,51 @@ def default_cs_perturbation_bank(
                 },
             ),
         ):
-            perturbations.append(
-                PerturbationSpec(
-                    perturbation_id=(
-                        f"{family}__{timing_bin.label}_t{start}_x_pos"
-                    ),
-                    channel=channel,
-                    family=family,
-                    amplitude=0.01,
-                    units="m",
-                    axis="x",
-                    basis=basis,
-                    sign=1,
-                    timing={
-                        "epoch": "controller_visible",
-                        "start_time_index": start,
-                        "duration_steps": duration,
-                        "timing_bin": timing_bin.label,
-                        "timing_bin_role": timing_bin.role,
-                    },
-                    adapter=f"temporary_external_graph_adapter.{channel}",
-                    description=description,
-                    calibration_role="raw_default_requires_same_bank_calibration",
-                    timing_bin=timing_bin.label,
-                    semantic_family=semantic_family,
-                    channel_provenance=provenance,
-                )
-            )
+            for feedback_quantity, units, amplitude, axes in (
+                ("position", "m", 0.01, ("x", "y")),
+                ("velocity", "m/s", 0.05, ("vx", "vy")),
+            ):
+                for axis in axes:
+                    for sign in (-1, 1):
+                        axis_role = _target_relative_axis_role(axis)
+                        perturbations.append(
+                            PerturbationSpec(
+                                perturbation_id=(
+                                    f"{family}__{feedback_quantity}__"
+                                    f"{timing_bin.label}_t{start}_{axis}_{_sign_label(sign)}"
+                                ),
+                                channel=channel,
+                                family=family,
+                                amplitude=amplitude,
+                                units=units,
+                                axis=axis,
+                                basis=basis,
+                                sign=sign,
+                                timing={
+                                    "epoch": "controller_visible",
+                                    "start_time_index": start,
+                                    "duration_steps": duration,
+                                    "timing_bin": timing_bin.label,
+                                    "timing_bin_role": timing_bin.role,
+                                },
+                                adapter=f"temporary_external_graph_adapter.{channel}",
+                                description=(
+                                    f"{description} This row is a signed "
+                                    f"target-relative {axis_role} {feedback_quantity} "
+                                    "false-feedback probe in the canonical +x reach."
+                                ),
+                                calibration_role="raw_default_requires_same_bank_calibration",
+                                timing_bin=timing_bin.label,
+                                semantic_family=semantic_family or "false_feedback_offset",
+                                channel_provenance={
+                                    **provenance,
+                                    "feedback_quantity": feedback_quantity,
+                                    "target_relative_axis_role": axis_role,
+                                    "target_relative_basis": "canonical_plus_x_reach",
+                                    "false_feedback_probe": True,
+                                },
+                            )
+                        )
     perturbations.append(
         PerturbationSpec(
             perturbation_id="target_stream_jump__x_pos",
@@ -659,6 +751,14 @@ def default_cs_calibrated_perturbation_bank(
                     {},
                 ),
                 (
+                    "target_aligned_lateral_command_load_pulse",
+                    "command_input",
+                    "N",
+                    "target_aligned_radial_tangential_force",
+                    "temporary_external_graph_adapter.command_input",
+                    {"target_relative_axis_role": "tangential", "axis_filter": ("y",)},
+                ),
+                (
                     "process_epsilon_position_xy",
                     "process_epsilon",
                     "epsilon",
@@ -691,14 +791,23 @@ def default_cs_calibrated_perturbation_bank(
                     {"epsilon_index_offset": 6, "epsilon_component_prefix": "integrator"},
                 ),
             ):
+                sensitivity_family = (
+                    "command_input_pulse"
+                    if family == "target_aligned_lateral_command_load_pulse"
+                    else family
+                )
                 sensitivity = float(
-                    DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[family][timing_bin.label]
+                    DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[sensitivity_family][
+                        timing_bin.label
+                    ]
                 )
                 amplitude = calibrated_amplitude_from_unit_sensitivity(
                     target_peak_delta_x_m=target_peak,
                     peak_delta_x_per_unit_m=sensitivity,
                 )
                 for axis in ("x", "y"):
+                    if axis not in extra.get("axis_filter", ("x", "y")):
+                        continue
                     axis_index = _axis_index(axis)
                     for sign in (-1, 1):
                         epsilon_index = None
@@ -734,6 +843,37 @@ def default_cs_calibrated_perturbation_bank(
                                 epsilon_component=epsilon_component,
                                 epsilon_index=epsilon_index,
                                 timing_bin=timing_bin.label,
+                                semantic_family=(
+                                    "human_protocol_like_lateral_mechanical_load"
+                                    if family == "target_aligned_lateral_command_load_pulse"
+                                    else (
+                                        "human_protocol_like_lateral_process_load"
+                                        if epsilon_component == "force_state_y"
+                                        else None
+                                    )
+                                ),
+                                channel_provenance=(
+                                    {
+                                        "information_structure": (
+                                            "external_load_after_controller_command"
+                                            if channel == "command_input"
+                                            else "process_epsilon_current_physical_block"
+                                        ),
+                                        "target_relative_axis_role": "tangential",
+                                        "target_relative_basis": "canonical_plus_x_reach",
+                                        "closest_graph_compatible_equivalent": (
+                                            "post-controller command-input offset on "
+                                            "efferent.output -> mechanics.force"
+                                            if channel == "command_input"
+                                            else "process epsilon pulse on force-state y"
+                                        ),
+                                    }
+                                    if (
+                                        family == "target_aligned_lateral_command_load_pulse"
+                                        or epsilon_component == "force_state_y"
+                                    )
+                                    else None
+                                ),
                                 calibration_provenance=provenance(
                                     level=level,
                                     calibration_role="reach_relative_calibrated_open_loop",
@@ -772,6 +912,7 @@ def default_cs_calibrated_perturbation_bank(
             ):
                 for axis in ("x", "y"):
                     for sign in (-1, 1):
+                        axis_role = _target_relative_axis_role(axis)
                         perturbations.append(
                             PerturbationSpec(
                                 perturbation_id=(
@@ -798,8 +939,8 @@ def default_cs_calibrated_perturbation_bank(
                                     "as a fraction of reach length."
                                 ),
                                 timing_bin=timing_bin.label,
-                                semantic_family=semantic_family,
                                 channel_provenance=channel_provenance,
+                                semantic_family=semantic_family or "false_feedback_offset",
                                 calibration_provenance=provenance(
                                     level=level,
                                     calibration_role="reach_relative_calibrated_native_units",
@@ -808,7 +949,13 @@ def default_cs_calibrated_perturbation_bank(
                                         "position_offset_m = reach_length_m "
                                         "* level_fraction_of_reach"
                                     ),
-                                ),
+                                )
+                                | {
+                                    "feedback_quantity": "position",
+                                    "target_relative_axis_role": axis_role,
+                                    "target_relative_basis": "canonical_plus_x_reach",
+                                    "false_feedback_probe": True,
+                                },
                             )
                         )
                 velocity_amplitude = (
@@ -817,6 +964,7 @@ def default_cs_calibrated_perturbation_bank(
                 )
                 for axis in ("vx", "vy"):
                     for sign in (-1, 1):
+                        axis_role = _target_relative_axis_role(axis)
                         perturbations.append(
                             PerturbationSpec(
                                 perturbation_id=(
@@ -843,7 +991,7 @@ def default_cs_calibrated_perturbation_bank(
                                     "as a fraction of nominal peak speed."
                                 ),
                                 timing_bin=timing_bin.label,
-                                semantic_family=semantic_family,
+                                semantic_family=semantic_family or "false_feedback_offset",
                                 channel_provenance=channel_provenance,
                                 calibration_provenance=provenance(
                                     level=level,
@@ -856,7 +1004,11 @@ def default_cs_calibrated_perturbation_bank(
                                 | {
                                     "nominal_peak_speed_m_s": float(
                                         DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S
-                                    )
+                                    ),
+                                    "feedback_quantity": "velocity",
+                                    "target_relative_axis_role": axis_role,
+                                    "target_relative_basis": "canonical_plus_x_reach",
+                                    "false_feedback_probe": True,
                                 },
                             )
                         )
@@ -1064,13 +1216,13 @@ def materialize_gru_perturbation_response(
     output_path: Path | None = None,
     note_path: Path | None = None,
     bulk_dir: Path | None = None,
+    regeneration_spec_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
     bank_mode: Literal["raw", "calibrated"] = "raw",
     calibration_level: str | Sequence[str] | None = None,
     calibration_reach: str | float | None = None,
     preferred_checkpoint_manifest_path: Path | None = None,
     checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
-    regeneration_spec_path: Path | None = None,
 ) -> dict[str, Any]:
     """Materialize the standard C&S perturbation-response bank and GRU responses."""
 
@@ -1154,6 +1306,19 @@ def materialize_gru_perturbation_response(
             ),
             "checkpoint_selection_role": "audit_only_not_used_for_selection",
         },
+        "robust_output_feedback_comparator": {
+            "status": "available_for_initial_state_command_input_and_process_epsilon",
+            "reason": (
+                "The output-feedback robust analytical controller is replayed through "
+                "the same deterministic released-code plant/estimator lane for "
+                "initial-state, command-input, and process-epsilon rows. Sensory "
+                "false-feedback and delayed-observation offsets are marked "
+                "not_applicable until the robust released-forward helper exposes "
+                "the same measurement-offset ports as the extLQG lane."
+            ),
+            "gamma_factor": OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+            "checkpoint_selection_role": "audit_only_not_used_for_selection",
+        },
         "full_qrf_cost": {
             "status": "available",
             "lens": "realized_deterministic_rollout_full_qrf",
@@ -1183,7 +1348,7 @@ def materialize_gru_perturbation_response(
         encoding="utf-8",
     )
     note_path.write_text(render_perturbation_response_markdown(manifest), encoding="utf-8")
-    runs = resolve_run_inputs(
+    runs_for_spec = resolve_run_inputs(
         experiment=source_experiment,
         run_ids=run_ids,
         labels=labels,
@@ -1214,11 +1379,11 @@ def materialize_gru_perturbation_response(
         },
         inputs=[
             {"role": "run_spec", "path": run.run_spec_path}
-            for run in runs
+            for run in runs_for_spec
         ]
         + [
             {"role": "run_artifact_dir", "path": run.artifact_dir}
-            for run in runs
+            for run in runs_for_spec
         ]
         + (
             []
@@ -1241,12 +1406,16 @@ def materialize_gru_perturbation_response(
             "src/rlrmp/analysis/gru_checkpoint_selection.py",
         ],
         notes=[
-            "Perturbation-response arrays are large; this spec is the regeneration handle.",
-            "Graph adapter provenance remains row-level in the manifest.",
+            "Perturbation-response arrays and full row manifests are bulk analysis payloads.",
+            "The tracked manifest is intentionally slim and points to _artifacts detail bytes.",
         ],
         repo_root=repo_root,
     )
     return tracked_manifest
+
+
+def _regeneration_spec_path(path: Path) -> Path:
+    return path.with_name(f"{path.stem}_regeneration_spec.json")
 
 
 def _slim_perturbation_response_manifest(
@@ -1255,13 +1424,7 @@ def _slim_perturbation_response_manifest(
     detail_manifest_path: Path | None,
     repo_root: Path,
 ) -> dict[str, Any]:
-    """Remove per-row response payloads from the tracked response manifest.
-
-    Full row-level response summaries are useful for plotting and audits, but they
-    are bulk analysis payloads. The tracked manifest keeps bank metadata,
-    per-run summary tables, bulk-array indexes, and a pointer to the ignored
-    detail manifest.
-    """
+    """Remove per-row response payloads from the tracked response manifest."""
 
     slim = dict(manifest)
     if detail_manifest_path is not None:
@@ -1275,7 +1438,9 @@ def _slim_perturbation_response_manifest(
         run = dict(run_payload)
         perturbations = run.pop("perturbations", [])
         robust_summary = run.pop("robust_response_summary", None)
-        run["n_perturbation_rows"] = len(perturbations) if isinstance(perturbations, Sequence) else 0
+        run["n_perturbation_rows"] = (
+            len(perturbations) if isinstance(perturbations, Sequence) else 0
+        )
         if detail_manifest_path is not None:
             run["perturbation_rows_detail_manifest"] = _repo_relative(
                 detail_manifest_path,
@@ -1291,10 +1456,6 @@ def _slim_perturbation_response_manifest(
         slim_runs[str(run_id)] = run
     slim["runs"] = slim_runs
     return slim
-
-
-def _regeneration_spec_path(path: Path) -> Path:
-    return path.with_name(f"{path.stem}_regeneration_spec.json")
 
 
 def _effective_checkpoint_policy_from_manifest(
@@ -1362,6 +1523,7 @@ def evaluate_run_perturbation_bank(
     )
     nominal_base_cost = full_qrf_cost_summary(nominal_base_evaluation, base_trial_specs)
     extlqg_context = _build_extlqg_comparator_context()
+    robust_context = _build_robust_output_feedback_comparator_context()
     rows = []
     bulk_files: dict[str, str] = {}
     for perturbation in bank["perturbations"]:
@@ -1389,6 +1551,12 @@ def evaluate_run_perturbation_bank(
                     "extlqg_comparator": extlqg_comparator_status(
                         perturbation,
                         status="not_applicable",
+                    ),
+                    "robust_output_feedback_comparator": (
+                        robust_output_feedback_comparator_status(
+                            perturbation,
+                            status="not_applicable",
+                        )
                     ),
                 }
             )
@@ -1452,12 +1620,23 @@ def evaluate_run_perturbation_bank(
                         perturbation,
                         status="not_applicable",
                     ),
+                    "robust_output_feedback_comparator": (
+                        robust_output_feedback_comparator_status(
+                            perturbation,
+                            status="not_applicable",
+                        )
+                    ),
                 }
             )
             continue
         extlqg_comparator = evaluate_extlqg_perturbation_comparator(
             perturbation,
             context=extlqg_context,
+            gru_metrics=metrics,
+        )
+        robust_comparator = evaluate_robust_output_feedback_perturbation_comparator(
+            perturbation,
+            context=robust_context,
             gru_metrics=metrics,
         )
         bulk_file = None
@@ -1490,6 +1669,7 @@ def evaluate_run_perturbation_bank(
                 "evaluation_guard": no_op_guard
                 or {"status": "passed", "guard": "command_input_nonzero_payload_nonzero_effect"},
                 "extlqg_comparator": extlqg_comparator,
+                "robust_output_feedback_comparator": robust_comparator,
                 "bulk_arrays": None
                 if bulk_file is None
                 else {
@@ -1902,6 +2082,23 @@ def evaluate_extlqg_perturbation_comparator(
     }
     if channel not in supported_channels:
         return extlqg_comparator_status(perturbation, status="not_applicable")
+    required_context_keys = (
+        "base_evaluation",
+        "base_initial_state",
+        "parity_status",
+        "n_iterations",
+    )
+    missing_context = [key for key in required_context_keys if key not in context]
+    if missing_context:
+        return {
+            "status": "blocked",
+            "lens": "deterministic_extlqg_same_declared_perturbation",
+            "reason": (
+                "requires extLQG comparator context keys: "
+                + ", ".join(missing_context)
+            ),
+            "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        }
     try:
         base = context["base_evaluation"]
         base_initial_state = np.asarray(context["base_initial_state"], dtype=np.float64)
@@ -1969,6 +2166,116 @@ def extlqg_comparator_status(
             channel,
             "analytical comparator is only defined for evaluated rows with "
             "supported external analytical adapters",
+        ),
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+    }
+
+
+def evaluate_robust_output_feedback_perturbation_comparator(
+    perturbation: Mapping[str, Any],
+    *,
+    context: Mapping[str, Any],
+    gru_metrics: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Evaluate the robust output-feedback analytical response for one bank row."""
+
+    channel = str(perturbation["channel"])
+    supported_channels = {"initial_state", "command_input", "process_epsilon"}
+    if channel not in supported_channels:
+        return robust_output_feedback_comparator_status(
+            perturbation,
+            status="not_applicable",
+        )
+    required_context_keys = (
+        "base_evaluation",
+        "base_initial_state",
+        "plant",
+        "schedule",
+        "config",
+        "solution",
+        "gains",
+    )
+    missing_context = [key for key in required_context_keys if key not in context]
+    if missing_context:
+        return {
+            "status": "blocked",
+            "lens": "deterministic_output_feedback_robust_same_declared_perturbation",
+            "reason": (
+                "requires robust output-feedback comparator context keys: "
+                + ", ".join(missing_context)
+            ),
+            "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        }
+    try:
+        base = context["base_evaluation"]
+        base_initial_state = np.asarray(context["base_initial_state"], dtype=np.float64)
+        (
+            perturbed_evaluation,
+            perturbed_initial_state,
+            adapter_provenance,
+        ) = _simulate_robust_output_feedback_perturbed(
+            perturbation,
+            context=context,
+        )
+        base_cost = _extlqg_cost_summary(base, base_initial_state)
+        perturbed_cost = _extlqg_cost_summary(perturbed_evaluation, perturbed_initial_state)
+        response_metrics = summarize_perturbation_response(
+            base,
+            perturbed_evaluation,
+            base_full_qrf_cost=base_cost,
+            perturbed_full_qrf_cost=perturbed_cost,
+        )
+        response_metrics = _with_attenuation_metrics(response_metrics, perturbation)
+        return {
+            "status": "available",
+            "lens": "deterministic_output_feedback_robust_same_declared_perturbation",
+            "selection_role": "audit_only_not_used_for_checkpoint_selection",
+            "gamma_factor": float(context["gamma_factor"]),
+            "gamma": float(context["gamma"]),
+            "analytical_adapter": adapter_provenance,
+            "reference_response_metrics": response_metrics,
+            "gru_vs_robust_analytical": compare_response_metric_summaries(
+                gru_metrics,
+                response_metrics,
+            ),
+        }
+    except (KeyError, ValueError, RuntimeError) as exc:
+        return {
+            "status": "blocked",
+            "lens": "deterministic_output_feedback_robust_same_declared_perturbation",
+            "reason": str(exc),
+            "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        }
+
+
+def robust_output_feedback_comparator_status(
+    perturbation: Mapping[str, Any],
+    *,
+    status: str,
+) -> dict[str, Any]:
+    """Return robust analytical comparator status metadata for unsupported rows."""
+
+    channel = str(perturbation["channel"])
+    reasons = {
+        "sensory_feedback": (
+            "robust output-feedback released-forward replay does not yet expose "
+            "post-noise measurement-offset ports; extLQG carries this row today"
+        ),
+        "delayed_observation": (
+            "robust output-feedback released-forward replay does not yet expose "
+            "clean delayed-measurement offset ports; extLQG carries this row today"
+        ),
+        "target_stream": (
+            "fixed-target checkpoints do not expose a target stream, and the robust "
+            "analytical comparator has no target-stream intervention"
+        ),
+    }
+    return {
+        "status": status,
+        "lens": "deterministic_output_feedback_robust_same_declared_perturbation",
+        "reason": reasons.get(
+            channel,
+            f"channel {channel!r} is not part of the robust output-feedback comparator",
         ),
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
     }
@@ -2096,13 +2403,15 @@ def render_perturbation_response_markdown(manifest: Mapping[str, Any]) -> str:
                     "Max delta u | AUC delta u | Peak time | Recovery time | "
                     "Mean endpoint delta | Mean terminal-speed delta | "
                     "Mean full-Q/R/Q_f delta cost | "
-                    "GRU/extLQG delta-cost ratio | Warnings / not applicable |",
-                    "|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+                    "GRU/extLQG delta-cost ratio | GRU/robust delta-cost ratio | "
+                    "Warnings / not applicable |",
+                    "|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
                 ]
             )
             for class_key, class_row in class_summary.get("groups", {}).items():
                 metrics = class_row.get("metrics", {})
                 ratio = class_row.get("gru_extlqg_delta_cost_ratio", {})
+                robust_ratio = class_row.get("gru_robust_analytical_delta_cost_ratio", {})
                 lines.append(
                     "| "
                     f"`{class_key}` | "
@@ -2122,6 +2431,7 @@ def render_perturbation_response_markdown(manifest: Mapping[str, Any]) -> str:
                     f"{_format_optional_float(_class_metric_mean(metrics, 'delta_terminal_speed_m_s'))} | "
                     f"{_format_optional_float(_class_metric_mean(metrics, 'extra_full_qrf_delta_cost_total'))} | "
                     f"{_format_optional_float(ratio.get('ratio_of_means'))} | "
+                    f"{_format_optional_float(robust_ratio.get('ratio_of_means'))} | "
                     f"{_format_class_notes(class_row)} |"
                 )
             lines.append("")
@@ -2133,13 +2443,15 @@ def render_perturbation_response_markdown(manifest: Mapping[str, Any]) -> str:
                     "",
                     "| Cell | Rows | Status | Amplitudes | Mean delta action | "
                     "Max delta x | AUC delta x | Mean full-Q/R/Q_f delta cost | "
-                    "GRU/extLQG delta-cost ratio | Warnings / not applicable |",
-                    "|---|---:|---|---|---:|---:|---:|---:|---|---|",
+                    "GRU/extLQG delta-cost ratio | GRU/robust delta-cost ratio | "
+                    "Warnings / not applicable |",
+                    "|---|---:|---|---|---:|---:|---:|---:|---:|---|",
                 ]
             )
             for cell_key, cell_row in timing_cell_summary.get("groups", {}).items():
                 metrics = cell_row.get("metrics", {})
                 ratio = cell_row.get("gru_extlqg_delta_cost_ratio", {})
+                robust_ratio = cell_row.get("gru_robust_analytical_delta_cost_ratio", {})
                 lines.append(
                     "| "
                     f"`{cell_key}` | "
@@ -2151,6 +2463,7 @@ def render_perturbation_response_markdown(manifest: Mapping[str, Any]) -> str:
                     f"{_format_optional_float(_class_metric_mean(metrics, 'delta_position_response_m.auc'))} | "
                     f"{_format_optional_float(_class_metric_mean(metrics, 'extra_full_qrf_delta_cost_total'))} | "
                     f"{_format_optional_float(ratio.get('ratio_of_means'))} | "
+                    f"{_format_optional_float(robust_ratio.get('ratio_of_means'))} | "
                     f"{_format_class_notes(cell_row)} |"
                 )
             lines.append("")
@@ -2625,6 +2938,53 @@ def _build_extlqg_comparator_context() -> dict[str, Any]:
     }
 
 
+def _build_robust_output_feedback_comparator_context() -> dict[str, Any]:
+    """Build deterministic robust output-feedback comparator context."""
+
+    reference = materialize_reference(
+        gamma_factors=(OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,)
+    )
+    gamma_ref = reference.gamma_references[0]
+    plant = reference.plant
+    schedule = reference.schedule
+    config = OutputFeedbackConfig()
+    covariances = robust_estimator_covariances(
+        plant,
+        schedule,
+        gamma_ref.solution.gamma,
+        config,
+    )
+    gains = robust_output_feedback_gains(
+        plant,
+        schedule,
+        gamma_ref.solution,
+        covariances,
+        config,
+    )
+    x0 = make_cs_output_feedback_initial_state(plant, config)
+    base_rollout = simulate_robust_released_forward(
+        plant,
+        schedule,
+        gamma_ref.solution,
+        x0,
+        draws=zero_forward_noise_draws(T=schedule.T, plant=plant, config=config),
+        covariances=zero_noise_covariances(plant, config),
+        gains=gains,
+        config=config,
+    )
+    return {
+        "plant": plant,
+        "schedule": schedule,
+        "config": config,
+        "solution": gamma_ref.solution,
+        "gains": gains,
+        "gamma_factor": gamma_ref.factor,
+        "gamma": gamma_ref.gamma,
+        "base_initial_state": np.asarray(x0, dtype=np.float64),
+        "base_evaluation": _evaluation_from_extlqg_rollout(base_rollout, initial_state=x0),
+    }
+
+
 def _simulate_extlqg_perturbed(
     perturbation: Mapping[str, Any],
     *,
@@ -2714,6 +3074,80 @@ def _simulate_extlqg_perturbed(
         adversary_epsilon=adversary_epsilon,
         clean_observation_offset=clean_observation_offset,
         sensory_feedback_offset=sensory_feedback_offset,
+        command_input_offset=command_input_offset,
+        initial_estimator_state=initial_estimator_state,
+        config=config,
+    )
+    return (
+        _evaluation_from_extlqg_rollout(rollout, initial_state=x0),
+        np.asarray(x0),
+        adapter_provenance,
+    )
+
+
+def _simulate_robust_output_feedback_perturbed(
+    perturbation: Mapping[str, Any],
+    *,
+    context: Mapping[str, Any],
+) -> tuple[RolloutEvaluation, np.ndarray, dict[str, Any]]:
+    """Simulate one deterministic robust output-feedback perturbation row."""
+
+    plant = context["plant"]
+    schedule = context["schedule"]
+    config = context["config"]
+    solution = context["solution"]
+    gains = context["gains"]
+    x0 = jnp.asarray(context["base_initial_state"], dtype=jnp.float64)
+    adversary_epsilon = None
+    command_input_offset = None
+    initial_estimator_state = None
+    if perturbation["channel"] == "initial_state":
+        x0 = _perturbed_extlqg_initial_state(x0, perturbation)
+        initial_estimator_state = jnp.asarray(context["base_initial_state"], dtype=jnp.float64)
+        adapter_provenance = {
+            "adapter": "robust_analytical_initial_state_offset_with_nominal_estimator",
+            "controller_input_mutated": False,
+            "controller_internal_state_mutated": False,
+            "information_structure": (
+                "plant initial state is perturbed while estimator/controller "
+                "initial state remains nominal, matching delayed GRU visibility"
+            ),
+        }
+    elif perturbation["channel"] == "command_input":
+        command_input_offset = _extlqg_command_input_offset(
+            perturbation,
+            schedule.T,
+            plant.m_u,
+        )
+        adapter_provenance = {
+            "adapter": "robust_analytical_command_input_offset",
+            "insertion_point": "plant.B @ (u_command + command_input_offset)",
+            "controller_input_mutated": False,
+            "controller_internal_state_mutated": False,
+            "information_structure": "external actuator/plant-input pulse after controller command",
+        }
+    elif perturbation["channel"] == "process_epsilon":
+        adversary_epsilon = _extlqg_process_epsilon(perturbation, schedule.T, plant.m_w)
+        adapter_provenance = {
+            "adapter": "robust_analytical_process_epsilon_sequence",
+            "process_channel": "PlantLinearization.Bw",
+            "controller_input_mutated": False,
+            "controller_internal_state_mutated": False,
+        }
+    else:
+        raise ValueError(
+            "robust output-feedback comparator does not support channel "
+            f"{perturbation['channel']!r}"
+        )
+    rollout = simulate_robust_released_forward(
+        plant,
+        schedule,
+        solution,
+        x0,
+        draws=zero_forward_noise_draws(T=schedule.T, plant=plant, config=config),
+        covariances=zero_noise_covariances(plant, config),
+        gains=gains,
+        adversary_epsilon=adversary_epsilon,
         command_input_offset=command_input_offset,
         initial_estimator_state=initial_estimator_state,
         config=config,
@@ -3233,6 +3667,22 @@ def _class_group_summary(
         cost_ratio["reason"] = (
             "no meaningful extLQG full-Q/R/Q_f denominator for this channel/family"
         )
+    robust_comparator_rows = [
+        row
+        for row in evaluated
+        if row.get("robust_output_feedback_comparator", {}).get("status") == "available"
+    ]
+    robust_cost_ratio = _ratio_of_means(
+        _available_metric_means(evaluated, "extra_full_qrf_cost.delta_cost.total"),
+        _available_robust_output_feedback_metric_means(
+            robust_comparator_rows,
+            "extra_full_qrf_cost.delta_cost.total",
+        ),
+    )
+    if robust_cost_ratio["status"] == "not_available":
+        robust_cost_ratio["reason"] = (
+            "no meaningful robust analytical full-Q/R/Q_f denominator for this channel/family"
+        )
     return {
         "channel": channel,
         "family": family,
@@ -3242,6 +3692,7 @@ def _class_group_summary(
         "amplitudes": sorted({float(_row_amplitude(row)) for row in rows}),
         "metrics": metrics,
         "gru_extlqg_delta_cost_ratio": cost_ratio,
+        "gru_robust_analytical_delta_cost_ratio": robust_cost_ratio,
         "not_applicable_reasons": _reason_counts(
             row for row in rows if row.get("status") == "not_applicable"
         ),
@@ -3250,7 +3701,14 @@ def _class_group_summary(
             for row in rows
             if row.get("extlqg_comparator", {}).get("status") == "not_applicable"
         ),
-        "denominator_warnings": _ratio_warnings(cost_ratio),
+        "robust_analytical_not_applicable_reasons": _reason_counts(
+            row.get("robust_output_feedback_comparator", {})
+            for row in rows
+            if row.get("robust_output_feedback_comparator", {}).get("status")
+            == "not_applicable"
+        ),
+        "denominator_warnings": _ratio_warnings(cost_ratio)
+        + _ratio_warnings(robust_cost_ratio),
     }
 
 
@@ -3264,6 +3722,26 @@ def _available_extlqg_metric_means(
         if (
             value := _metric_mean(
                 row.get("extlqg_comparator", {}).get("reference_response_metrics", {}),
+                metric,
+            )
+        )
+        is not None
+    ]
+
+
+def _available_robust_output_feedback_metric_means(
+    rows: Sequence[Mapping[str, Any]],
+    metric: str,
+) -> list[float]:
+    return [
+        value
+        for row in rows
+        if (
+            value := _metric_mean(
+                row.get("robust_output_feedback_comparator", {}).get(
+                    "reference_response_metrics",
+                    {},
+                ),
                 metric,
             )
         )
@@ -3744,7 +4222,16 @@ def _format_class_notes(class_row: Mapping[str, Any]) -> str:
         reason = ratio.get("reason")
         if reason is not None:
             notes.append(str(reason))
-    for key in ("not_applicable_reasons", "extlqg_not_applicable_reasons"):
+    robust_ratio = class_row.get("gru_robust_analytical_delta_cost_ratio", {})
+    if isinstance(robust_ratio, Mapping) and robust_ratio.get("status") == "not_available":
+        reason = robust_ratio.get("reason")
+        if reason is not None:
+            notes.append(str(reason))
+    for key in (
+        "not_applicable_reasons",
+        "extlqg_not_applicable_reasons",
+        "robust_analytical_not_applicable_reasons",
+    ):
         reasons = class_row.get(key, {})
         if isinstance(reasons, Mapping):
             notes.extend(f"{reason} ({count})" for reason, count in sorted(reasons.items()))
@@ -3785,6 +4272,16 @@ def _axis_index(axis: str) -> int:
         return 2
     if axis == "vy":
         return 3
+    raise ValueError(f"Unsupported axis {axis!r}; expected 'x', 'y', 'vx', or 'vy'")
+
+
+def _target_relative_axis_role(axis: str) -> str:
+    """Return canonical +x reach radial/tangential role for position/velocity axes."""
+
+    if axis in {"x", "vx"}:
+        return "radial"
+    if axis in {"y", "vy"}:
+        return "tangential"
     raise ValueError(f"Unsupported axis {axis!r}; expected 'x', 'y', 'vx', or 'vy'")
 
 
@@ -3903,12 +4400,14 @@ __all__ = [
     "default_cs_perturbation_bank",
     "delta_full_qrf_cost_summary",
     "evaluate_extlqg_perturbation_comparator",
+    "evaluate_robust_output_feedback_perturbation_comparator",
     "evaluate_run_perturbation_bank",
     "extlqg_comparator_status",
     "full_qrf_cost_summary",
     "insert_additive_graph_channel_adapter",
     "materialize_gru_perturbation_response",
     "render_perturbation_response_markdown",
+    "robust_output_feedback_comparator_status",
     "score_full_qrf_rollout_cost",
     "summarize_perturbation_bank",
     "summarize_perturbation_response",

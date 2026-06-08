@@ -63,8 +63,44 @@ def materialize_gru_map_error_decomposition(
         )
         covariance = evaluation_metadata.pop("_observation_history_covariance_array", None)
         covariance_metadata = evaluation_metadata.get("observation_history_covariance")
-        reference_batch = np.broadcast_to(reference_map[None, :, :, :], candidate_map.shape)
         candidate_feedback_basis = _candidate_feedback_basis(run_spec)
+        (
+            candidate_map,
+            covariance,
+            covariance_metadata,
+            candidate_feedback_basis,
+            projection_metadata,
+        ) = _project_candidate_map_to_decomposition_basis(
+            candidate_map=candidate_map,
+            covariance=covariance,
+            covariance_metadata=covariance_metadata,
+            candidate_feedback_basis=candidate_feedback_basis,
+            run_spec=run_spec,
+            reference_observation_dim=int(reference_metadata["observation_dim"]),
+        )
+        if projection_metadata is not None:
+            evaluation_metadata["candidate_map_projection"] = projection_metadata
+            evaluation_metadata["observation_history_covariance"] = covariance_metadata
+        (
+            candidate_map,
+            reference_map_for_run,
+            covariance,
+            covariance_metadata,
+            history_alignment_metadata,
+        ) = _align_maps_to_common_observation_history(
+            candidate_map=candidate_map,
+            reference_map=reference_map,
+            covariance=covariance,
+            covariance_metadata=covariance_metadata,
+            observation_dim=int(reference_metadata["observation_dim"]),
+        )
+        if history_alignment_metadata is not None:
+            evaluation_metadata["map_history_alignment"] = history_alignment_metadata
+            evaluation_metadata["observation_history_covariance"] = covariance_metadata
+        reference_batch = np.broadcast_to(
+            reference_map_for_run[None, :, :, :],
+            candidate_map.shape,
+        )
         reference_input_transform = _reference_observation_from_candidate_feedback_transform(
             candidate_feedback_basis=candidate_feedback_basis,
             reference_feedback_basis=reference_feedback_basis,
@@ -642,6 +678,87 @@ def _candidate_feedback_basis(run_spec: dict[str, Any]) -> str:
     return str(model_basis or input_basis or "raw_delayed_position_velocity")
 
 
+def _candidate_feedback_dim(run_spec: dict[str, Any]) -> int:
+    feedback = run_spec.get("model_summary", {}).get("feedback", {})
+    if "dimension" in feedback:
+        return int(feedback["dimension"])
+    contract_shape = (
+        run_spec.get("task_timing", {})
+        .get("target_relative_multitarget", {})
+        .get("input_contract", {})
+        .get("shape", [4])
+    )
+    return int(contract_shape[0])
+
+
+def _project_candidate_map_to_decomposition_basis(
+    *,
+    candidate_map: np.ndarray,
+    covariance: np.ndarray | None,
+    covariance_metadata: dict[str, Any] | None,
+    candidate_feedback_basis: str,
+    run_spec: dict[str, Any],
+    reference_observation_dim: int,
+) -> tuple[np.ndarray, np.ndarray | None, dict[str, Any] | None, str, dict[str, Any] | None]:
+    if candidate_feedback_basis != "target_relative_delayed_feedback_plus_force_filter":
+        return candidate_map, covariance, covariance_metadata, candidate_feedback_basis, None
+    feedback_dim = _candidate_feedback_dim(run_spec)
+    if feedback_dim <= reference_observation_dim:
+        return candidate_map, covariance, covariance_metadata, "target_relative_delayed_feedback", None
+    if candidate_map.shape[-1] % feedback_dim:
+        raise ValueError(
+            "proprioceptive candidate map history dimension is not divisible by "
+            f"feedback_dim={feedback_dim}"
+        )
+    observation_time_count = candidate_map.shape[-1] // feedback_dim
+    maps = candidate_map.reshape(
+        candidate_map.shape[:-1] + (observation_time_count, feedback_dim)
+    )
+    projected = maps[..., :reference_observation_dim].reshape(
+        candidate_map.shape[:-1] + (observation_time_count * reference_observation_dim,)
+    )
+    projected_covariance = covariance
+    projected_covariance_metadata = covariance_metadata
+    if covariance is not None:
+        keep_indices = np.concatenate(
+            [
+                np.arange(
+                    time * feedback_dim,
+                    time * feedback_dim + reference_observation_dim,
+                )
+                for time in range(observation_time_count)
+            ]
+        )
+        projected_covariance = covariance[np.ix_(keep_indices, keep_indices)]
+        projected_covariance_metadata = {
+            **(covariance_metadata or {}),
+            "projection": "first_four_pos_vel_channels_from_6d_proprioceptive_feedback",
+            "original_covariance_shape": [int(dim) for dim in covariance.shape],
+            "projected_covariance_shape": [
+                int(dim) for dim in projected_covariance.shape
+            ],
+        }
+    projection_metadata = {
+        "status": "projected",
+        "reason": (
+            "The standard map-error decomposition compares to the extLQG 4D "
+            "position/velocity observation-history map."
+        ),
+        "original_candidate_feedback_basis": candidate_feedback_basis,
+        "projected_candidate_feedback_basis": "target_relative_delayed_feedback",
+        "original_feedback_dim": int(feedback_dim),
+        "projected_feedback_dim": int(reference_observation_dim),
+        "excluded_channels": ["delayed_force_filter_x", "delayed_force_filter_y"],
+    }
+    return (
+        projected,
+        projected_covariance,
+        projected_covariance_metadata,
+        "target_relative_delayed_feedback",
+        projection_metadata,
+    )
+
+
 def _reference_observation_from_candidate_feedback_transform(
     *,
     candidate_feedback_basis: str,
@@ -659,6 +776,83 @@ def _reference_observation_from_candidate_feedback_transform(
     }:
         return None
     raise ValueError(f"unsupported candidate feedback basis: {candidate_feedback_basis}")
+
+
+def _align_maps_to_common_observation_history(
+    *,
+    candidate_map: np.ndarray,
+    reference_map: np.ndarray,
+    covariance: np.ndarray | None,
+    covariance_metadata: dict[str, Any] | None,
+    observation_dim: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, dict[str, Any] | None, dict[str, Any] | None]:
+    candidate_obs = candidate_map.shape[-1] // observation_dim
+    reference_obs = reference_map.shape[-1] // observation_dim
+    if candidate_obs == reference_obs:
+        return candidate_map, reference_map, covariance, covariance_metadata, None
+    keep_obs = min(candidate_obs, reference_obs)
+    candidate_start = candidate_obs - keep_obs
+    reference_start = reference_obs - keep_obs
+    aligned_candidate = _crop_map_observation_history(
+        candidate_map,
+        observation_dim=observation_dim,
+        start=candidate_start,
+        keep=keep_obs,
+    )
+    aligned_reference = _crop_map_observation_history(
+        reference_map,
+        observation_dim=observation_dim,
+        start=reference_start,
+        keep=keep_obs,
+    )
+    aligned_covariance = covariance
+    aligned_covariance_metadata = covariance_metadata
+    if covariance is not None:
+        keep_indices = np.concatenate(
+            [
+                np.arange(
+                    (candidate_start + time) * observation_dim,
+                    (candidate_start + time + 1) * observation_dim,
+                )
+                for time in range(keep_obs)
+            ]
+        )
+        aligned_covariance = covariance[np.ix_(keep_indices, keep_indices)]
+        aligned_covariance_metadata = {
+            **(covariance_metadata or {}),
+            "history_alignment": "most_recent_common_observation_history",
+            "original_covariance_shape": [int(dim) for dim in covariance.shape],
+            "aligned_covariance_shape": [int(dim) for dim in aligned_covariance.shape],
+        }
+    metadata = {
+        "status": "aligned",
+        "method": "most_recent_common_observation_history",
+        "candidate_observation_time_count": int(candidate_obs),
+        "reference_observation_time_count": int(reference_obs),
+        "retained_observation_time_count": int(keep_obs),
+        "candidate_dropped_oldest_observation_steps": int(candidate_start),
+        "reference_dropped_oldest_observation_steps": int(reference_start),
+    }
+    return (
+        aligned_candidate,
+        aligned_reference,
+        aligned_covariance,
+        aligned_covariance_metadata,
+        metadata,
+    )
+
+
+def _crop_map_observation_history(
+    values: np.ndarray,
+    *,
+    observation_dim: int,
+    start: int,
+    keep: int,
+) -> np.ndarray:
+    observation_time_count = values.shape[-1] // observation_dim
+    maps = values.reshape(values.shape[:-1] + (observation_time_count, observation_dim))
+    cropped = maps[..., start : start + keep, :]
+    return cropped.reshape(values.shape[:-1] + (keep * observation_dim,))
 
 
 def _alignment_directions_from_run_spec(

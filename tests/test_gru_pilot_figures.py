@@ -19,6 +19,7 @@ from rlrmp.analysis.gru_pilot_figures import (
     initial_effector_velocity,
     load_gru_training_history,
     repeat_single_validation_trial,
+    write_velocity_figure,
     write_velocity_by_replicate_figure,
 )
 
@@ -235,6 +236,37 @@ def test_build_figure_summary_records_8d_and_4d_reference_metadata(tmp_path) -> 
     assert metadata[REFERENCE_4D_LABEL]["n_stochastic_samples"] == 10
 
 
+def test_velocity_figure_accepts_twelve_profile_rows(tmp_path, monkeypatch) -> None:
+    profiles = tuple(
+        VelocityProfile(
+            run_id=f"run_{idx}",
+            label=f"row {idx}",
+            time_s=np.asarray([0.0, 0.01]),
+            mean=np.asarray([0.0, 1.0 + 0.01 * idx]),
+            std=np.asarray([0.0, 0.1]),
+            n_replicates=2,
+            n_rollout_trials_per_replicate=3,
+        )
+        for idx in range(12)
+    )
+    captured: dict[str, go.Figure] = {}
+
+    def capture_write_html(self, file, *_args, **_kwargs) -> None:
+        captured["fig"] = self
+        file.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(go.Figure, "write_html", capture_write_html)
+
+    path = write_velocity_figure(profiles, output_dir=tmp_path)
+
+    assert path == tmp_path / "forward_velocity_profiles_stochastic.html"
+    fig = captured["fig"]
+    assert "yaxis12" in fig.layout
+    assert fig.layout.height == 420 * len(profiles)
+    assert np.isclose(fig.layout.yaxis.domain[0] - fig.layout.yaxis2.domain[1], 0.02)
+    assert fig.layout.yaxis.domain[1] - fig.layout.yaxis.domain[0] > 0.06
+
+
 def test_velocity_by_replicate_legend_groups_cross_subplot_toggles(
     tmp_path, monkeypatch
 ) -> None:
@@ -292,6 +324,8 @@ def test_velocity_by_replicate_legend_groups_cross_subplot_toggles(
     )
 
     fig = captured["fig"]
+    assert fig.layout.height == 440 * 2
+    assert np.isclose(fig.layout.yaxis.domain[0] - fig.layout.yaxis2.domain[1], 0.02)
     assert fig.layout.legend.groupclick == "togglegroup"
 
     legend_items = [trace for trace in fig.data if trace.showlegend]
