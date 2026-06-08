@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import argparse
 import importlib
 import json
 import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -417,6 +419,48 @@ def test_provider_neutral_packing_parser_is_scenario_driven() -> None:
     assert args.scenario == "custom.module:factory"
     assert args.scenario_config_json == '{"name": "row-a"}'
     assert not hasattr(args, "batch_size")
+
+
+def test_packing_cs_nominal_gru_scenario_wires_pgd_pre_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import rlrmp.modules.training.part2 as part2
+    import rlrmp.train.cs_nominal_gru as nominal
+    import rlrmp.train.cs_perturbation_training as perturbation
+
+    pgd_hps = SimpleNamespace(enabled=True)
+    pre_step_fn = object()
+
+    class Parser:
+        def parse_args(self, args: list[str]) -> argparse.Namespace:
+            assert args == []
+            return argparse.Namespace()
+
+    monkeypatch.setattr(nominal, "build_parser", lambda: Parser())
+    monkeypatch.setattr(
+        nominal,
+        "build_hps",
+        lambda args: SimpleNamespace(batch_size=2, broad_epsilon_pgd_training=pgd_hps),
+    )
+    monkeypatch.setattr(nominal, "_build_trainer", lambda hps: object())
+    monkeypatch.setattr(
+        perturbation,
+        "make_broad_epsilon_pgd_pre_step",
+        lambda config: pre_step_fn if config is pgd_hps else None,
+    )
+    monkeypatch.setattr(
+        part2,
+        "setup_task_model_pair",
+        lambda hps, key: SimpleNamespace(task=object(), model=object()),
+    )
+    monkeypatch.setattr(packing_benchmark, "_cs_nominal_gru_metadata", lambda hps: {})
+
+    runtime = packing_benchmark.build_cs_nominal_gru_scenario(
+        {"broad_epsilon_pgd_training": True},
+        seed=1,
+    )
+
+    assert runtime.pre_step_fn is pre_step_fn
 
 
 def test_packing_timed_train_uses_scenario_runtime_interface() -> None:

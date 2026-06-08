@@ -215,7 +215,7 @@ def run_worker(config: WorkerConfig) -> int:
 
     _write_json(status_path, {"status": "compiling", "captured_at": _utc_now()})
     compile_start = time.monotonic()
-    model = runtime.warmup(max(1, config.warmup_batches))
+    model = runtime.warmup(max(1, config.warmup_batches, config.chunk_batches))
     compile_seconds = time.monotonic() - compile_start
     _write_json(
         status_path,
@@ -274,6 +274,7 @@ def build_cs_nominal_gru_scenario(
         build_hps,
         build_parser as build_nominal_parser,
     )
+    from rlrmp.train.cs_perturbation_training import make_broad_epsilon_pgd_pre_step
 
     nominal_args = build_nominal_parser().parse_args([])
     overrides = _cs_nominal_gru_overrides(config, seed)
@@ -283,7 +284,8 @@ def build_cs_nominal_gru_scenario(
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
     return CsNominalGruRuntime(
         pair=pair,
-        trainer_factory=lambda: _build_trainer(hps),
+        trainer=_build_trainer(hps),
+        pre_step_fn=make_broad_epsilon_pgd_pre_step(hps.broad_epsilon_pgd_training),
         where_train=_make_cs_nominal_gru_where_train(),
         batch_size=int(hps.batch_size),
         key=jr.PRNGKey(seed + 1),
@@ -294,7 +296,8 @@ def build_cs_nominal_gru_scenario(
 @dataclass
 class CsNominalGruRuntime:
     pair: Any
-    trainer_factory: Callable[[], Any]
+    trainer: Any
+    pre_step_fn: Any
     where_train: Any
     batch_size: int
     key: Any
@@ -320,12 +323,13 @@ class CsNominalGruRuntime:
 
         self.key, key_chunk = jr.split(self.key)
         model, _history = train_pair(
-            self.trainer_factory(),
+            self.trainer,
             pair,
             n_batches=max(1, n_batches),
             key=key_chunk,
             ensembled=True,
             loss_func=pair.task.loss_func,
+            pre_step_fn=self.pre_step_fn,
             where_train=self.where_train,
             batch_size=self.batch_size,
             log_step=max(1, n_batches),
