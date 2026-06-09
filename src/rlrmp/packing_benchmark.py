@@ -525,11 +525,21 @@ def _sample_until_done(
 ) -> list[dict[str, Any]]:
     samples: list[dict[str, Any]] = []
     while any(proc.poll() is None for proc in procs):
-        samples.append(_nvidia_smi_sample())
+        samples.append(_resource_sample(procs))
         time.sleep(max(1.0, sample_seconds))
-    samples.append(_nvidia_smi_sample())
+    samples.append(_resource_sample(procs))
     (output_dir / "gpu_samples.json").write_text(_json(samples), encoding="utf-8")
     return samples
+
+
+def _resource_sample(procs: Sequence[subprocess.Popen[str]]) -> dict[str, Any]:
+    sample = _nvidia_smi_sample()
+    if "error" not in sample and sample.get("returncode") == 0:
+        sample["kind"] = "nvidia_smi"
+        return sample
+    rss = _rss_sample(procs)
+    rss["nvidia_smi"] = sample
+    return rss
 
 
 def _nvidia_smi_sample() -> dict[str, Any]:
@@ -550,6 +560,44 @@ def _nvidia_smi_sample() -> dict[str, Any]:
     }
 
 
+def _rss_sample(procs: Sequence[subprocess.Popen[str]]) -> dict[str, Any]:
+    pids = [proc.pid for proc in procs if proc.poll() is None]
+    per_process = []
+    for pid in pids:
+        rss_mib = _rss_mib(pid)
+        per_process.append({"pid": pid, "rss_mib": rss_mib})
+    rss_values = [item["rss_mib"] for item in per_process if item["rss_mib"] is not None]
+    return {
+        "captured_at": _utc_now(),
+        "kind": "rss",
+        "processes": per_process,
+        "total_rss_mib": sum(rss_values) if rss_values else None,
+        "max_worker_rss_mib": max(rss_values) if rss_values else None,
+    }
+
+
+def _rss_mib(pid: int) -> float | None:
+    try:
+        result = subprocess.run(
+            ["ps", "-o", "rss=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except Exception:
+        return None
+    if result.returncode != 0:
+        return None
+    text = result.stdout.strip()
+    if not text:
+        return None
+    try:
+        return float(text.splitlines()[0].strip()) / 1024.0
+    except ValueError:
+        return None
+
+
 def _collect_worker_summaries(output_dir: Path, n_workers: int) -> list[dict[str, Any]]:
     summaries = []
     for worker_index in range(n_workers):
@@ -568,7 +616,13 @@ def _aggregate(
     measured = [w.get("measured", {}) for w in worker_summaries if w.get("status") == "done"]
     rates = [m["batches_per_second"] for m in measured if m.get("batches_per_second") is not None]
     memory_used = []
+    total_rss = []
+    max_worker_rss = []
     for sample in gpu_samples:
+        if sample.get("total_rss_mib") is not None:
+            total_rss.append(float(sample["total_rss_mib"]))
+        if sample.get("max_worker_rss_mib") is not None:
+            max_worker_rss.append(float(sample["max_worker_rss_mib"]))
         stdout = sample.get("stdout", "")
         if not stdout:
             continue
@@ -584,6 +638,8 @@ def _aggregate(
         "aggregate_batches_per_second": sum(rates),
         "mean_worker_batches_per_second": sum(rates) / len(rates) if rates else None,
         "max_memory_used_mib": max(memory_used) if memory_used else None,
+        "max_total_rss_mib": max(total_rss) if total_rss else None,
+        "max_worker_rss_mib": max(max_worker_rss) if max_worker_rss else None,
     }
 
 

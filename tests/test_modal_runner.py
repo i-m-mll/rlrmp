@@ -489,3 +489,20 @@ def test_packing_timed_train_uses_scenario_runtime_interface() -> None:
     assert runtime.calls == [(0, 3)]
     assert summary["model"] == 3
     assert summary["batches"] == 3
+
+
+def test_packing_aggregate_reports_cpu_rss_fallback() -> None:
+    workers = [
+        {"status": "done", "measured": {"batches_per_second": 1.5}},
+        {"status": "done", "measured": {"batches_per_second": 2.5}},
+    ]
+    samples = [
+        {"kind": "rss", "total_rss_mib": 100.0, "max_worker_rss_mib": 60.0},
+        {"kind": "rss", "total_rss_mib": 150.0, "max_worker_rss_mib": 80.0},
+    ]
+
+    summary = packing_benchmark._aggregate(workers, samples)
+
+    assert summary["aggregate_batches_per_second"] == 4.0
+    assert summary["max_total_rss_mib"] == 150.0
+    assert summary["max_worker_rss_mib"] == 80.0
