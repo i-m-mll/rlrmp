@@ -9,10 +9,11 @@ import pytest
 from feedbax.graph import init_state_from_component
 from feedbax.train import filter_spec_leaves, get_model_parameters
 
-from rlrmp.analysis.cs_game_card import build_canonical_game
+from rlrmp.analysis.cs_game_card import build_canonical_game, build_no_integrator_game
 from rlrmp.cs_lss_gru import (
     CS_DELAYED_POS_VEL_INDICES,
     CS_EPSILON_DIM,
+    CS_REDUCED_EPSILON_DIM,
     DelayedPositionVelocityFeedback,
     InitialHiddenStagedNetwork,
     build_cs_lss_gru_graph,
@@ -77,6 +78,38 @@ def test_lss_command_updates_force_filter_without_same_step_velocity_jump() -> N
     assert is_canonical_cs_lss_mechanics(mechanics)
     assert jnp.allclose(outputs["state"][2:4], 0.0, atol=0.0)
     assert jnp.allclose(outputs["state"][4:6], plant.B[4:6] @ command, atol=1e-14)
+
+
+def test_no_integrator_graph_uses_reduced_lss_state_and_epsilon() -> None:
+    plant, _schedule = build_no_integrator_game()
+    initial_state = jnp.arange(36, dtype=jnp.float64)
+    graph = build_cs_lss_gru_graph(
+        hidden_size=4,
+        initial_state=initial_state,
+        bind_epsilon_input=True,
+        target_relative_feedback=True,
+        force_filter_feedback=True,
+        no_integrator_state=True,
+        key=jax.random.PRNGKey(10),
+    )
+    state = init_state_from_component(graph)
+    mechanics = graph.nodes["mechanics"]
+
+    outputs, _state, _cycle = graph.step(
+        {
+            "target": jnp.array([0.15, 0.0], dtype=jnp.float64),
+            "epsilon": jnp.zeros((CS_REDUCED_EPSILON_DIM,), dtype=jnp.float64),
+        },
+        state,
+        cycle_port_values=None,
+        key=jax.random.PRNGKey(11),
+    )
+
+    assert mechanics.A.shape == (36, 36)
+    assert mechanics.B_w.shape == (36, 6)
+    assert jnp.allclose(mechanics.A, plant.A)
+    assert jnp.allclose(outputs["clean_feedback"][-2:], initial_state[34:36])
+    assert not is_canonical_cs_lss_mechanics(mechanics)
 
 
 def test_graph_runs_multiple_steps_with_zero_epsilon() -> None:

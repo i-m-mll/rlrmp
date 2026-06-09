@@ -143,6 +143,31 @@ def build_canonical_game(
     return plant, schedule
 
 
+def build_no_integrator_game(
+    discretization: Discretization = "euler",
+) -> tuple[PlantLinearization, CostSchedule]:
+    """Build the 6D physical-state C&S comparator without disturbance integrators.
+
+    This is not the canonical C&S 2019 game. It preserves the point-mass,
+    force-filter, five-step delay augmentation, and Eq. 15 position/velocity/
+    force costs while omitting the two disturbance-integrator coordinates from
+    every physical delay block.
+    """
+
+    plant = cs_faithful_pointmass(
+        disturbance_integrator=False,
+        delay_steps=5,
+        discretization=discretization,
+    )
+    schedule_phys = cs_eq15_cost_schedule(n_steps=60, alpha_1=1.0, state_dim=6)
+    schedule = apply_delay_distribution_to_schedule(
+        schedule_phys,
+        delay_steps=5,
+        n_phys=6,
+    )
+    return plant, schedule
+
+
 def build_zoh_sensitivity_game() -> tuple[PlantLinearization, CostSchedule]:
     """Build the named ZOH sensitivity variant of the C&S card."""
 
@@ -671,6 +696,7 @@ __all__ = [
     "WorstCaseRollout",
     "assert_physical_selector_bw",
     "build_canonical_game",
+    "build_no_integrator_game",
     "build_zoh_sensitivity_game",
     "materialize_reference",
     "reference_summary",

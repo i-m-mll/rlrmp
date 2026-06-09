@@ -37,6 +37,7 @@ from rlrmp.analysis.cs_game_card import (
     OUTPUT_FEEDBACK_GAMMA_SELECTION_ISSUE_ID,
     TARGET_POS,
     build_canonical_game,
+    build_no_integrator_game,
 )
 from rlrmp.analysis.cs_released_simulation import (
     DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
@@ -101,6 +102,10 @@ CS_POSITION_SCALE = 1e6
 CS_VELOCITY_SCALE = 1e5
 CS_CONTROL_SCALE = 1.0
 CS_REGULARIZED_NN_HIDDEN = 1e-5
+CS_DELAYED_REACH_TASK_TYPE = "cs_delayed_center_out_reach"
+DELAYED_REACH_TRAINING_MODE = "delayed_reach_target_visible_go_cue"
+DEFAULT_DELAYED_GO_CUE_MIN_STEP = 10
+DEFAULT_DELAYED_GO_CUE_MAX_STEP = 30
 TRAINING_DIAGNOSTICS_NPZ = "training_diagnostics.npz"
 TRAINING_DIAGNOSTICS_MANIFEST = "training_diagnostics.json"
 VolumeCommit = Callable[[], None]
@@ -240,6 +245,57 @@ def derive_spec_dir(output_dir: Path) -> Path:
         return out.parent / f"{out.name}_spec"
 
 
+def _delayed_reach_contract_from_args(
+    *,
+    enabled: bool,
+    go_cue_min_step: int,
+    go_cue_max_step: int,
+) -> dict[str, Any]:
+    """Return the delayed-reach task contract embedded in hps/run specs."""
+
+    if not enabled:
+        return {"enabled": False}
+    return {
+        "enabled": True,
+        "mode": DELAYED_REACH_TRAINING_MODE,
+        "task_type": CS_DELAYED_REACH_TASK_TYPE,
+        "target_visibility": "visible_from_trial_start",
+        "target_on_input": "not_used_target_always_visible",
+        "go_cue_input": {
+            "input_port": "input",
+            "shape": [1],
+            "sign": "0_during_prep_1_during_movement",
+            "source": "1 - DelayedReachTaskInputs.hold",
+        },
+        "go_cue_sampling": {
+            "min_step_inclusive": int(go_cue_min_step),
+            "max_step_inclusive": int(go_cue_max_step),
+            "distribution": "uniform_integer",
+        },
+        "movement_epoch": {
+            "epoch_name": "movement",
+            "epoch_index": 1,
+            "source": "trial_specs.timeline.epoch_bounds[-2:]",
+            "cs_schedule_horizon_steps": CS_STAGE_COUNT,
+            "cost_indexing": "movement_age_not_trial_age",
+        },
+        "prep_epoch": {
+            "epoch_name": "prep",
+            "target_directed_movement_loss": "zero",
+            "anti_anticipation": "nn_output_pre_go",
+        },
+        "pgd_mask": {
+            "mode": "movement_epoch_only",
+            "prep_support": "zero",
+        },
+        "multi_target_contract": "same structured target-relative target bank as non-delayed rows",
+    }
+
+
+def _delayed_reach_enabled(hps: TreeNamespace) -> bool:
+    return bool(getattr(getattr(hps, "delayed_reach", None), "enabled", False))
+
+
 def build_hps(args: argparse.Namespace) -> TreeNamespace:
     """Build nominal C&S-aligned GRU hyperparameters from CLI arguments."""
 
@@ -260,11 +316,28 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "--loss-objective full_analytical_qrf because nn_hidden is not an analytical "
             "Q/R/Q_f objective term."
         )
-    plant, schedule = build_canonical_game()
+    no_integrator_state = bool(getattr(args, "no_integrator_state", False))
+    if no_integrator_state and str(args.plant_backend) != CS_LSS_PLANT_BACKEND:
+        raise ValueError("--no-integrator-state requires --plant-backend cs_lss.")
+    plant, schedule = (
+        build_no_integrator_game() if no_integrator_state else build_canonical_game()
+    )
     preset = stochastic_preset(args.stochastic_preset)
+    delayed_reach = bool(getattr(args, "delayed_reach", False))
+    delayed_go_min = int(getattr(args, "delayed_reach_go_cue_min_step", 10))
+    delayed_go_max = int(getattr(args, "delayed_reach_go_cue_max_step", 30))
     if int(schedule.T) != CS_STAGE_COUNT:
         raise ValueError(f"Expected C&S stage count {CS_STAGE_COUNT}, got {schedule.T}")
+    if delayed_go_min < 0 or delayed_go_max < delayed_go_min:
+        raise ValueError(
+            "--delayed-reach-go-cue-max-step must be >= --delayed-reach-go-cue-min-step >= 0"
+        )
     nn_hidden = CS_REGULARIZED_NN_HIDDEN if args.regularized_fidelity else 0.0
+    nn_output_pre_go = (
+        1.0
+        if delayed_reach and getattr(args, "nn_output_pre_go", None) is None
+        else float(getattr(args, "nn_output_pre_go", 0.0) or 0.0)
+    )
     n_input_readout = int(args.hidden_size) - (
         int(args.n_input_only) + int(args.n_readout_only) + int(args.n_recurrent_only)
     )
@@ -298,6 +371,8 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         level=str(args.broad_epsilon_level),
         budget_scale=float(args.broad_epsilon_budget_scale),
         reach_length_scaling=bool(args.broad_epsilon_reach_scaling),
+        movement_epoch_only=delayed_reach,
+        epsilon_dim=int(plant.m_w),
     )
     broad_epsilon_pgd_training = PgdFullStateEpsilonTrainingConfig(
         enabled=bool(args.broad_epsilon_pgd_training),
@@ -306,6 +381,8 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         reach_length_scaling=bool(args.broad_epsilon_reach_scaling),
         n_steps=int(args.broad_epsilon_pgd_steps),
         step_size_fraction=float(args.broad_epsilon_pgd_step_size_fraction),
+        movement_epoch_only=delayed_reach,
+        epsilon_dim=int(plant.m_w),
     )
     target_relative_multitarget = TargetRelativeMultiTargetTrainingConfig(
         enabled=bool(args.target_relative_multitarget),
@@ -328,12 +405,34 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "--force-filter-feedback requires --target-relative-multitarget because it "
             "extends the target-relative delayed feedback vector."
         )
+    if delayed_reach and not target_relative_multitarget.enabled:
+        raise ValueError(
+            "--delayed-reach requires --target-relative-multitarget so the target remains "
+            "visible from trial start through the documented controller input surface."
+        )
+    if delayed_reach and str(args.plant_backend) != CS_LSS_PLANT_BACKEND:
+        raise ValueError("--delayed-reach currently requires --plant-backend cs_lss.")
     initial_hidden_encoder = bool(args.initial_hidden_encoder)
     if initial_hidden_encoder and not target_relative_multitarget.enabled:
         raise ValueError(
             "--initial-hidden-encoder currently requires --target-relative-multitarget so "
             "H0 is conditioned only on controller-visible target-relative feedback."
         )
+    if delayed_reach and initial_hidden_encoder:
+        raise ValueError(
+            "--delayed-reach and --initial-hidden-encoder are separate task-contract lanes."
+        )
+    task_n_steps = (
+        CS_STAGE_COUNT + delayed_go_max
+        if delayed_reach
+        else CS_FEEDBAX_N_STEPS
+    )
+    task_type = CS_DELAYED_REACH_TASK_TYPE if delayed_reach else "fixed_simple_reach"
+    task_workspace = (
+        [[-0.20, -0.20], [0.20, 0.20]]
+        if delayed_reach
+        else [[-0.02, -0.02], [float(TARGET_POS[0]) + 0.02, 0.02]]
+    )
     hps_dict = {
         "method": "nominal-cs-gru",
         "dt": float(plant.dt),
@@ -363,6 +462,10 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             **preset.hps_fields(),
             "stochastic_preset": preset.name,
             "plant_backend": str(args.plant_backend),
+            "no_integrator_state": no_integrator_state,
+            "state_dim": int(plant.n),
+            "physical_state_dim": int(plant.m_w),
+            "delay_blocks": int(plant.n // plant.m_w),
             "force_filter_feedback": bool(args.force_filter_feedback),
             "initial_hidden_encoder": initial_hidden_encoder,
             "initial_hidden_encoder_config": _initial_hidden_encoder_config(
@@ -385,20 +488,33 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             },
         },
         "task": {
-            "type": "fixed_simple_reach",
-            "n_steps": CS_FEEDBAX_N_STEPS,
-            "workspace": [[-0.02, -0.02], [float(TARGET_POS[0]) + 0.02, 0.02]],
-            "fixed_init_pos": [float(x) for x in INIT_POS.tolist()],
-            "fixed_target_pos": [float(x) for x in TARGET_POS.tolist()],
+            "type": task_type,
+            "n_steps": task_n_steps,
+            "workspace": task_workspace,
+            "fixed_init_pos": (
+                None if delayed_reach else [float(x) for x in INIT_POS.tolist()]
+            ),
+            "fixed_target_pos": (
+                None if delayed_reach else [float(x) for x in TARGET_POS.tolist()]
+            ),
             "eval_grid_n": 1,
             "eval_n_directions": 1,
             "eval_reach_length": float(TARGET_POS[0]),
-            "epoch_len_ranges": [[0, 1], [CS_STAGE_COUNT, CS_STAGE_COUNT + 1]],
-            "target_on_epochs": [0],
-            "hold_epochs": [],
-            "move_epochs": [0],
+            "epoch_len_ranges": (
+                [[delayed_go_min, delayed_go_max + 1]]
+                if delayed_reach
+                else [[0, 1], [CS_STAGE_COUNT, CS_STAGE_COUNT + 1]]
+            ),
+            "target_on_epochs": [0, 1] if delayed_reach else [0],
+            "hold_epochs": [0] if delayed_reach else [],
+            "move_epochs": [1] if delayed_reach else [0],
             "p_catch_trial": 0.0,
         },
+        "delayed_reach": _delayed_reach_contract_from_args(
+            enabled=delayed_reach,
+            go_cue_min_step=delayed_go_min,
+            go_cue_max_step=delayed_go_max,
+        ),
         "pert": {
             "type": "gusts",
             "std": 0.0,
@@ -429,7 +545,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
                 "nn_hidden": nn_hidden,
                 "nn_hidden_derivative": 0.0,
                 "nn_output_jerk": float(args.nn_output_jerk),
-                "nn_output_pre_go": 0.0,
+                "nn_output_pre_go": nn_output_pre_go,
                 "nn_hidden_derivative_pre_go": 0.0,
                 "mechanics_force_filter": (
                     1.0 / float(schedule.Q.shape[-1] // 8)
@@ -533,6 +649,40 @@ def build_loss_game_card_provenance(hps: TreeNamespace) -> dict[str, Any]:
     """Return game-card provenance with objective-specific loss notes."""
 
     card = build_game_card_provenance()
+    no_integrator_state = bool(getattr(hps.model, "no_integrator_state", False))
+    if no_integrator_state:
+        card["canonical_builder"] = "build_no_integrator_game"
+        card["comparator_variant"] = {
+            "enabled": True,
+            "name": "no_integrator_state",
+            "canonical_cs2019_fidelity": False,
+            "omitted_coordinates": ["eps_x_int", "eps_y_int"],
+        }
+        card["plant"] = {
+            **card["plant"],
+            "state_dim": int(getattr(hps.model, "state_dim", 36)),
+            "disturbance_dim": int(getattr(hps.model, "physical_state_dim", 6)),
+            "physical_state_dim": int(getattr(hps.model, "physical_state_dim", 6)),
+            "bw_shape": [
+                int(getattr(hps.model, "state_dim", 36)),
+                int(getattr(hps.model, "physical_state_dim", 6)),
+            ],
+            "bw_contract": "top physical 6x6 block is identity; lag rows are zero",
+        }
+        card["cost"] = {
+            **card["cost"],
+            "schedule": "C&S Eq. 15 physical 6-state schedule with 5-step delay distribution",
+            "force_and_integrator_weight": "force/filter entries only; integrator entries omitted",
+            "terminal_Q_f": "diag([1e6, 1e6, 1e5, 1e5, 1, 1]) on physical state",
+        }
+    if _delayed_reach_enabled(hps):
+        card["delayed_reach_projection"] = {
+            "enabled": True,
+            "rollout_control_stages": int(hps.task.n_steps),
+            "canonical_cs_movement_horizon_steps": CS_STAGE_COUNT,
+            "cost_indexing": "canonical Q/R/Q_f schedule starts at sampled go cue",
+            "prep_epoch": "not part of canonical movement-stage C&S cost",
+        }
     objective = str(getattr(hps.loss, "objective", CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE))
     if objective == CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE:
         card["cost"] = {
@@ -550,8 +700,14 @@ def build_loss_game_card_provenance(hps: TreeNamespace) -> dict[str, Any]:
             **card["cost"],
             "feedbax_force_filter_state_cost": "included_via_full_qrf",
             "feedbax_force_filter_state_cost_note": (
-                "Full analytical Q/R/Q_f loss scores force/filter and disturbance-integrator "
-                "state through the canonical delay-augmented C&S Q_t and Q_f matrices."
+                "Full analytical Q/R/Q_f loss scores force/filter state through the "
+                "delay-augmented Q_t and Q_f matrices."
+                if no_integrator_state
+                else (
+                    "Full analytical Q/R/Q_f loss scores force/filter and "
+                    "disturbance-integrator state through the canonical delay-augmented "
+                    "C&S Q_t and Q_f matrices."
+                )
             ),
         }
     return card
@@ -565,6 +721,11 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
     plant_backend = str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND))
     exact_lss = plant_backend == CS_LSS_PLANT_BACKEND
     h0 = _initial_hidden_encoder_metadata(hps)
+    delayed_reach = _delayed_reach_enabled(hps)
+    physical_state_dim = int(getattr(hps.model, "physical_state_dim", 8))
+    state_dim = int(getattr(hps.model, "state_dim", 48))
+    no_integrator_state = bool(getattr(hps.model, "no_integrator_state", False))
+    go_cue_dim = 1 if delayed_reach else 0
     return {
         "controller_kind": "gru",
         "plant_backend": plant_backend,
@@ -575,6 +736,9 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
             else None
         ),
         "exact_cs_linear_state_space": exact_lss,
+        "no_integrator_state": no_integrator_state,
+        "state_dim": state_dim,
+        "physical_state_dim": physical_state_dim,
         "fixed_plant_parameters": (
             ["nodes.mechanics.A", "nodes.mechanics.B", "nodes.mechanics.B_w"]
             if exact_lss
@@ -606,11 +770,18 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
                 else "Feedbax feedback Channel before controller"
             ),
             "delay_source": (
-                "C&S 48D LinearStateSpace delay-augmented state"
+                f"C&S {state_dim}D LinearStateSpace delay-augmented state"
                 if exact_lss
                 else "Feedbax feedback Channel queue"
             ),
         },
+        "go_cue": {
+            "enabled": delayed_reach,
+            "input_port": "input" if delayed_reach else None,
+            "dimension": go_cue_dim,
+            "sign": "0_during_prep_1_during_movement" if delayed_reach else None,
+        },
+        "controller_input_dimension": _controller_feedback_dim(hps) + go_cue_dim,
         "efferent": {
             "additive_motor_noise_std": stochastic_runtime["additive_motor_noise_std"],
             "signal_dependent_motor_noise_std": (
@@ -648,6 +819,7 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
         "nominal_only": _nominal_only(hps),
         "training_distribution": _training_distribution_metadata(hps),
+        "delayed_reach": _plain(hps.delayed_reach),
         "adversarial_phase": "none",
         "certificate_lens": "input_output_map_certificate",
         "certificate_coordinate_claim": "not_same_coordinate_gain",
@@ -715,6 +887,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "training_spec": training_spec,
         "game_card_provenance": build_loss_game_card_provenance(hps),
         "model_structure": build_model_structure_summary(hps),
+        "delayed_reach": _plain(hps.delayed_reach),
         "stochastic_preset": stochastic_preset(str(hps.model.stochastic_preset)).summary(),
         "stochastic_runtime": _stochastic_runtime_contract(hps),
         "loss_objective": str(hps.loss.objective),
@@ -800,6 +973,7 @@ def build_run_spec(
         "spec_dir": str(spec_dir),
         "nominal_only": _nominal_only(hps),
         "training_distribution": _training_distribution_metadata(hps),
+        "delayed_reach": _plain(hps.delayed_reach),
         "validation_bins": _validation_bins_metadata(hps),
         "adversarial_phase": "none",
         "modal_launch": "not_requested",
@@ -940,8 +1114,6 @@ def run_full_training(
     )
 
     chunks: list[dict[str, float | int | str]] = []
-    history_diagnostic_chunks: list[dict[str, np.ndarray]] = []
-    optimizer_diagnostic_chunks: list[dict[str, np.ndarray]] = []
     pgd_diagnostic_chunks: list[dict[str, np.ndarray]] = []
     training_started = time.perf_counter()
     while state.completed_batches < int(args.n_train_batches):
@@ -972,16 +1144,6 @@ def run_full_training(
         completed = state.completed_batches + chunk_batches
         history = _append_history(state.history, history_chunk)
         if _training_diagnostics_enabled(args):
-            optimizer_diagnostic_chunks.append(
-                _optimizer_diagnostics_arrays(
-                    optimizer_state,
-                    start_batches=state.completed_batches,
-                    completed_batches=completed,
-                )
-            )
-            history_diagnostic_chunks.append(
-                _history_diagnostics_arrays(history_chunk, chunk_batches)
-            )
             pgd_diagnostics = _broad_epsilon_pgd_diagnostics_arrays(
                 pair.task,
                 model,
@@ -1035,8 +1197,6 @@ def run_full_training(
         run_spec=run_spec,
         state=state,
         training_history_path=final_history_path,
-        optimizer_diagnostic_chunks=optimizer_diagnostic_chunks,
-        history_diagnostic_chunks=history_diagnostic_chunks,
         pgd_diagnostic_chunks=pgd_diagnostic_chunks,
     )
     final_summary = {
@@ -1212,6 +1372,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--no-integrator-state",
+        action="store_true",
+        help=(
+            "Use the reduced C&S LSS comparator with 6D physical state "
+            "[pos, vel, force/filter] and no disturbance-integrator coordinates."
+        ),
+    )
+    parser.add_argument(
         "--stochastic-preset",
         choices=[DEFAULT_STOCHASTIC_PRESET],
         default=DEFAULT_STOCHASTIC_PRESET,
@@ -1237,6 +1405,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--effector-final-vel", type=float, default=0.0)
     parser.add_argument("--nn-output", type=float, default=CS_CONTROL_SCALE)
     parser.add_argument("--nn-output-jerk", type=float, default=0.0)
+    parser.add_argument(
+        "--nn-output-pre-go",
+        type=float,
+        default=None,
+        help=(
+            "Anti-anticipation controller-output penalty during delayed-reach prep. "
+            "Defaults to 1.0 only when --delayed-reach is active; otherwise 0.0."
+        ),
+    )
     parser.add_argument(
         "--loss-objective",
         choices=CS_LOSS_OBJECTIVES,
@@ -1299,6 +1476,27 @@ def build_parser() -> argparse.ArgumentParser:
             "receives [target_x - delayed_x, target_y - delayed_y, -delayed_vx, "
             "-delayed_vy] feedback and uses structured seen/held-out target bins."
         ),
+    )
+    parser.add_argument(
+        "--delayed-reach",
+        action="store_true",
+        help=(
+            "Use the explicit delayed-reach C&S task contract: target-relative "
+            "multi-target feedback plus one scalar go-cue input, target visible "
+            "from trial start, and movement-epoch scoring."
+        ),
+    )
+    parser.add_argument(
+        "--delayed-reach-go-cue-min-step",
+        type=int,
+        default=DEFAULT_DELAYED_GO_CUE_MIN_STEP,
+        help="Inclusive minimum sampled go-cue/prep length for --delayed-reach.",
+    )
+    parser.add_argument(
+        "--delayed-reach-go-cue-max-step",
+        type=int,
+        default=DEFAULT_DELAYED_GO_CUE_MAX_STEP,
+        help="Inclusive maximum sampled go-cue/prep length for --delayed-reach.",
     )
     parser.add_argument(
         "--force-filter-feedback",
@@ -1778,6 +1976,7 @@ def _nominal_only(hps: TreeNamespace) -> bool:
         and not _broad_epsilon_pgd_training_enabled(hps)
         and not _target_relative_multitarget_enabled(hps)
         and not _initial_hidden_encoder_enabled(hps)
+        and not _delayed_reach_enabled(hps)
     )
 
 
@@ -1796,6 +1995,8 @@ def _training_mode(hps: TreeNamespace) -> str:
             parts.append(BROAD_EPSILON_PGD_TRAINING_MODE)
         if _perturbation_training_enabled(hps):
             parts.append(PERTURBATION_TRAINING_MODE)
+        if _delayed_reach_enabled(hps):
+            parts.insert(0, DELAYED_REACH_TRAINING_MODE)
         return "+".join(parts)
     if _perturbation_training_enabled(hps):
         return PERTURBATION_TRAINING_MODE
@@ -1832,6 +2033,7 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
             "mode": _training_mode(hps),
             "training_axes": {
                 "target_relative_multitarget": True,
+                "delayed_reach": _delayed_reach_enabled(hps),
                 "initial_hidden_encoder": bool(h0["enabled"]),
                 "calibrated_perturbation_training": _perturbation_training_enabled(hps),
                 "broad_full_state_epsilon_training": _broad_epsilon_training_enabled(hps),
@@ -1848,6 +2050,12 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
                 "input_port": "target",
                 "contract": _plain(target_config.input_contract),
             },
+            "go_cue_stream": (
+                _plain(hps.delayed_reach.go_cue_input)
+                if _delayed_reach_enabled(hps)
+                else {"enabled": False}
+            ),
+            "delayed_reach": _plain(hps.delayed_reach),
             "initial_hidden_encoder": h0,
             "force_filter_feedback": _plain(target_config.force_filter_feedback),
             "broad_epsilon_training": (
@@ -2472,10 +2680,41 @@ def _remove_tree(path: Path) -> None:
 def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
     plant_backend = str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND))
     target_relative = _target_relative_multitarget_enabled(hps)
+    delayed_reach = _delayed_reach_enabled(hps)
+    rollout_steps = (
+        int(hps.task.n_steps)
+        if delayed_reach
+        else int(hps.task.n_steps) - 1
+    )
+    if delayed_reach:
+        movement_window = {
+            "kind": "delayed_reach_movement_epoch",
+            "start_transition": "sampled_go_cue_step",
+            "go_cue_min_step": int(hps.delayed_reach.go_cue_sampling.min_step_inclusive),
+            "go_cue_max_step": int(hps.delayed_reach.go_cue_sampling.max_step_inclusive),
+            "cs_horizon_steps": CS_STAGE_COUNT,
+            "cost_indexing": "movement_age_not_trial_age",
+        }
+        time_axis_contract = (
+            "Delayed C&S task: target is visible from trial start, prep has no "
+            "target-directed movement loss, and C&S stage costs are indexed by "
+            "movement age from the sampled go cue."
+        )
+    else:
+        movement_window = {
+            "kind": "full_simple_reach_trial",
+            "start_transition": 0,
+            "end_transition": int(hps.task.n_steps) - 2,
+        }
+        time_axis_contract = (
+            "Hold-free fixed nominal task: Feedbax n_steps=61 yields exactly 60 "
+            "transition/control-cost stages and one position target per transition; "
+            "delayed-reach epoch masks are not used."
+        )
     return {
         "type": str(hps.task.type),
         "n_steps": int(hps.task.n_steps),
-        "control_cost_stages": int(hps.task.n_steps) - 1,
+        "control_cost_stages": rollout_steps,
         "workspace": _plain(hps.task.workspace),
         "fixed_init_pos": _plain(hps.task.fixed_init_pos),
         "fixed_target_pos": _plain(hps.task.fixed_target_pos),
@@ -2491,23 +2730,18 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
             "Feedbax SimpleReaches supplies mechanics.effector.pos targets in the same "
             "Cartesian metre coordinates as the point-mass effector state."
         ),
-        "time_axis_contract": (
-            "Hold-free fixed nominal task: Feedbax n_steps=61 yields exactly 60 "
-            "transition/control-cost stages and one position target per transition; "
-            "delayed-reach epoch masks are not used."
-        ),
-        "movement_window": {
-            "kind": "full_simple_reach_trial",
-            "start_transition": 0,
-            "end_transition": int(hps.task.n_steps) - 2,
-        },
+        "time_axis_contract": time_axis_contract,
+        "movement_window": movement_window,
         "extra_inputs": (
-            ["target", "epsilon"]
+            ["input", "target", "epsilon"]
+            if plant_backend == CS_LSS_PLANT_BACKEND and target_relative and delayed_reach
+            else ["target", "epsilon"]
             if plant_backend == CS_LSS_PLANT_BACKEND and target_relative
             else ["input", "epsilon"]
             if plant_backend == CS_LSS_PLANT_BACKEND
             else ["sisu", f"intervene:{PLANT_INTERVENOR_LABEL}"]
         ),
+        "delayed_reach": _plain(hps.delayed_reach),
         "target_relative_multitarget": (
             _plain(hps.target_relative_multitarget)
             if target_relative
@@ -2529,29 +2763,67 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
 
 def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
     objective = str(getattr(hps.loss, "objective", CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE))
+    delayed_reach = _delayed_reach_enabled(hps)
+    cs_time_indexing = (
+        {
+            "stage_schedule": "movement_age_from_go_cue",
+            "movement_epoch_source": "trial_specs.timeline.epoch_bounds[-2:]",
+            "prep_target_directed_movement_loss": "zero",
+            "canonical_movement_horizon_steps": CS_STAGE_COUNT,
+        }
+        if delayed_reach
+        else {
+            "stage_schedule": "trial_age_full_simple_reach",
+            "canonical_movement_horizon_steps": CS_STAGE_COUNT,
+        }
+    )
+    cs_fact_t = (
+        "((movement_age + 1) / 60)^6, capped at 1"
+        if delayed_reach
+        else "((t + 1) / T)^6"
+    )
     if objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE:
-        _plant, schedule = build_canonical_game()
+        no_integrator_state = bool(getattr(hps.model, "no_integrator_state", False))
+        _plant, schedule = (
+            build_no_integrator_game() if no_integrator_state else build_canonical_game()
+        )
+        physical_state_dim = 6 if no_integrator_state else 8
         q_diag = jnp.diag(schedule.Q[0])
         qf_diag = jnp.diag(schedule.Q_f)
         return {
             "weights": _plain(hps.loss.weights),
+            "delayed_reach": _plain(hps.delayed_reach),
             "objective_profile": CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
             "objective_kind": "finite_horizon_quadratic",
-            "source_module": "rlrmp.analysis.cs_game_card.build_canonical_game",
+            "source_module": (
+                "rlrmp.analysis.cs_game_card.build_no_integrator_game"
+                if no_integrator_state
+                else "rlrmp.analysis.cs_game_card.build_canonical_game"
+            ),
+            "comparator_variant": "no_integrator_state" if no_integrator_state else None,
             "state_basis": {
                 "state_key": "states.mechanics.vector",
                 "dimension": int(schedule.Q.shape[-1]),
-                "physical_block_size": 8,
-                "delay_blocks": int(schedule.Q.shape[-1] // 8),
+                "physical_block_size": physical_state_dim,
+                "delay_blocks": int(schedule.Q.shape[-1] // physical_state_dim),
                 "coordinate_transform": (
                     "absolute Feedbax position entries are converted to target-centred "
                     "analytical coordinates before applying Q_t and Q_f"
                 ),
             },
             "time_indexing": {
-                "running_state": "trial init plus rollout states[:-1], paired with commands",
-                "terminal_state": "rollout states[-1]",
+                "running_state": (
+                    "state before each movement command from sampled go cue"
+                    if delayed_reach
+                    else "trial init plus rollout states[:-1], paired with commands"
+                ),
+                "terminal_state": (
+                    "state after 60 movement commands from sampled go cue"
+                    if delayed_reach
+                    else "rollout states[-1]"
+                ),
                 "horizon_steps": int(schedule.T),
+                **cs_time_indexing,
             },
             "matrix_shapes": {
                 "Q": list(schedule.Q.shape),
@@ -2588,6 +2860,7 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
     if objective == CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE:
         return {
             "weights": _plain(hps.loss.weights),
+            "delayed_reach": _plain(hps.delayed_reach),
             "effector_pos_late": _plain(hps.loss.effector_pos_late),
             "effector_vel_late": _plain(hps.loss.effector_vel_late),
             "effector_pos_running_schedule": str(hps.loss.effector_pos_running_schedule),
@@ -2601,12 +2874,12 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
                 "stage_position": {
                     "term": "effector_pos_running",
                     "scale": float(hps.loss.weights.effector_pos_running),
-                    "fact_t": "((t + 1) / T)^6",
+                    "fact_t": cs_fact_t,
                 },
                 "stage_velocity": {
                     "term": "effector_vel_running",
                     "scale": float(hps.loss.weights.effector_vel_running),
-                    "fact_t": "((t + 1) / T)^6",
+                    "fact_t": cs_fact_t,
                 },
                 "control": {
                     "term": "nn_output",
@@ -2647,10 +2920,12 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
             "movement_ramp_shape": str(hps.loss.movement_ramp_shape),
             "movement_ramp_duration_steps": int(hps.loss.movement_ramp_duration_steps),
             "movement_ramp_power": float(hps.loss.movement_ramp_power),
+            "time_indexing": cs_time_indexing,
         }
 
     return {
         "weights": _plain(hps.loss.weights),
+        "delayed_reach": _plain(hps.delayed_reach),
         "effector_pos_late": _plain(hps.loss.effector_pos_late),
         "effector_vel_late": _plain(hps.loss.effector_vel_late),
         "effector_pos_running_schedule": str(hps.loss.effector_pos_running_schedule),
@@ -2659,12 +2934,12 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
             "stage_position": {
                 "term": "effector_pos_running",
                 "scale": float(hps.loss.weights.effector_pos_running),
-                "fact_t": "((t + 1) / T)^6",
+                "fact_t": cs_fact_t,
             },
             "stage_velocity": {
                 "term": "effector_vel_running",
                 "scale": float(hps.loss.weights.effector_vel_running),
-                "fact_t": "((t + 1) / T)^6",
+                "fact_t": cs_fact_t,
             },
             "control": {
                 "term": "nn_output",
@@ -2702,6 +2977,7 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
         "movement_ramp_shape": str(hps.loss.movement_ramp_shape),
         "movement_ramp_duration_steps": int(hps.loss.movement_ramp_duration_steps),
         "movement_ramp_power": float(hps.loss.movement_ramp_power),
+        "time_indexing": cs_time_indexing,
     }
 
 

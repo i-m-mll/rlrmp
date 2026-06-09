@@ -16,7 +16,11 @@ from feedbax.mechanics import LinearStateSpace
 from feedbax.web.models.graph import ComponentSpec, GraphSpec
 from jaxtyping import Array, Float
 
-from rlrmp.analysis.cs_game_card import assert_physical_selector_bw, build_canonical_game
+from rlrmp.analysis.cs_game_card import (
+    assert_physical_selector_bw,
+    build_canonical_game,
+    build_no_integrator_game,
+)
 from rlrmp.analysis.hinf_riccati import PlantLinearization
 
 
@@ -68,6 +72,7 @@ def canonical_state_map() -> tuple[StateMapEntry, ...]:
 def build_cs2019_feedbax_mechanics(
     *,
     initial_state: Float[Array, "48"] | None = None,
+    no_integrator_state: bool = False,
 ) -> LinearStateSpace:
     """Build the canonical C&S plant as a Feedbax linear state-space mechanics.
 
@@ -76,8 +81,11 @@ def build_cs2019_feedbax_mechanics(
     channel from the game card, not a physical force perturbation adapter.
     """
 
-    plant, _ = build_canonical_game()
-    assert_physical_selector_bw(plant)
+    if no_integrator_state:
+        plant, _ = build_no_integrator_game()
+    else:
+        plant, _ = build_canonical_game()
+        assert_physical_selector_bw(plant)
 
     if initial_state is None:
         initial_state = jnp.zeros(plant.n, dtype=plant.A.dtype)
