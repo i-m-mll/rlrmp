@@ -495,7 +495,7 @@ wheels = [
 [[package]]
 name = "feedbax"
 version = "0.1.2"
-source = { editable = "../../../20 Feedbax/feedbax" }
+source = { editable = "../20 Feedbax/feedbax" }
 dependencies = [
     { name = "alembic" },
     { name = "crc32c" },
@@ -542,7 +542,7 @@ requires-dist = [
     { name = "ipyfilechooser", marker = "extra == 'notebook'", specifier = ">=0.6.0" },
     { name = "ipywidgets", marker = "extra == 'notebook'", specifier = ">=8.1.5" },
     { name = "jax", specifier = ">=0.5.2" },
-    { name = "jax-cookbook", editable = "../../../../05 Utils/jax-cookbook" },
+    { name = "jax-cookbook", editable = "../../05 Utils/jax-cookbook" },
     { name = "jaxtyping", specifier = ">=0.2.38" },
     { name = "kaleido", specifier = "==0.2.1" },
     { name = "matplotlib", specifier = ">=3.10.1" },
@@ -925,7 +925,7 @@ wheels = [
 [[package]]
 name = "jax-cookbook"
 version = "0.1.0"
-source = { editable = "../../../../05 Utils/jax-cookbook" }
+source = { editable = "../../05 Utils/jax-cookbook" }
 dependencies = [
     { name = "equinox" },
     { name = "jax" },
@@ -2104,7 +2104,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "feedbax", editable = "../../../20 Feedbax/feedbax" },
+    { name = "feedbax", editable = "../20 Feedbax/feedbax" },
     { name = "ipyfilechooser", specifier = ">=0.6.0" },
     { name = "ipywidgets", specifier = ">=8.1.8" },
     { name = "modal", specifier = ">=1.1.4" },
