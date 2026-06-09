@@ -370,6 +370,38 @@ def test_packing_benchmark_command_passes_pgd_as_scenario_payload() -> None:
     assert "--broad-epsilon-pgd-training" not in command
 
 
+def test_packing_benchmark_command_passes_opt_in_cpu_runtime_controls() -> None:
+    command = build_packing_benchmark_command(
+        NominalGruRunConfig(
+            n_workers=4,
+            packing_jax_platform="cpu",
+            packing_cpu_threads_per_worker=1,
+            packing_jax_compilation_cache_dir="/tmp/rlrmp-jax-cache",
+            packing_jax_persistent_cache_min_compile_time_secs=0.0,
+            packing_jax_persistent_cache_min_entry_size_bytes=-1,
+        ),
+        remote=False,
+    )
+
+    assert command[command.index("--jax-platform") + 1] == "cpu"
+    assert command[command.index("--cpu-threads-per-worker") + 1] == "1"
+    assert (
+        command[command.index("--jax-compilation-cache-dir") + 1]
+        == "/tmp/rlrmp-jax-cache"
+    )
+    assert command[command.index("--jax-persistent-cache-min-compile-time-secs") + 1] == "0.0"
+    assert command[command.index("--jax-persistent-cache-min-entry-size-bytes") + 1] == "-1"
+    assert command[command.index("--n-workers") + 1] == "4"
+
+
+def test_packing_benchmark_command_leaves_gpu_defaults_unconstrained() -> None:
+    command = build_packing_benchmark_command(NominalGruRunConfig(), remote=True)
+
+    assert "--jax-platform" not in command
+    assert "--cpu-threads-per-worker" not in command
+    assert "--jax-compilation-cache-dir" not in command
+
+
 def test_modal_runner_parser_builds_pgd_scenario_config() -> None:
     args = build_parser().parse_args(
         [
@@ -401,6 +433,31 @@ def test_modal_runner_parser_builds_pgd_scenario_config() -> None:
     assert scenario_config["broad_epsilon_pgd_seed"] == 123
 
 
+def test_modal_runner_parser_builds_packing_runtime_config() -> None:
+    args = build_parser().parse_args(
+        [
+            "modal-packing-smoke",
+            "--packing-jax-platform",
+            "cpu",
+            "--packing-cpu-threads-per-worker",
+            "2",
+            "--packing-jax-compilation-cache-dir",
+            "/cache/jax",
+            "--packing-jax-persistent-cache-min-compile-time-secs",
+            "0",
+            "--packing-jax-persistent-cache-min-entry-size-bytes",
+            "-1",
+        ]
+    )
+    config = make_config(args)
+
+    assert config.packing_jax_platform == "cpu"
+    assert config.packing_cpu_threads_per_worker == 2
+    assert config.packing_jax_compilation_cache_dir == "/cache/jax"
+    assert config.packing_jax_persistent_cache_min_compile_time_secs == 0.0
+    assert config.packing_jax_persistent_cache_min_entry_size_bytes == -1
+
+
 def test_provider_neutral_packing_parser_is_scenario_driven() -> None:
     args = packing_benchmark.build_parser().parse_args(
         [
@@ -419,6 +476,59 @@ def test_provider_neutral_packing_parser_is_scenario_driven() -> None:
     assert args.scenario == "custom.module:factory"
     assert args.scenario_config_json == '{"name": "row-a"}'
     assert not hasattr(args, "batch_size")
+
+
+def test_packing_worker_env_forced_cpu_caps_threads_and_cache(tmp_path: Path) -> None:
+    cache_dir = tmp_path / "jax-cache"
+    args = packing_benchmark.build_parser().parse_args(
+        [
+            "parent",
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--n-workers",
+            "2",
+            "--jax-platform",
+            "cpu",
+            "--cpu-threads-per-worker",
+            "1",
+            "--jax-compilation-cache-dir",
+            str(cache_dir),
+            "--jax-persistent-cache-min-compile-time-secs",
+            "0",
+            "--jax-persistent-cache-min-entry-size-bytes",
+            "-1",
+        ]
+    )
+    env = {}
+
+    metadata = packing_benchmark._configure_worker_env(env, args)
+
+    assert env["JAX_PLATFORM_NAME"] == "cpu"
+    assert env["JAX_PLATFORMS"] == "cpu"
+    assert env["OMP_NUM_THREADS"] == "1"
+    assert env["TF_NUM_INTRAOP_THREADS"] == "1"
+    assert "intra_op_parallelism_threads=1" in env["XLA_FLAGS"]
+    assert env["JAX_COMPILATION_CACHE_DIR"] == str(cache_dir)
+    assert env["JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS"] == "0.0"
+    assert env["JAX_PERSISTENT_CACHE_MIN_ENTRY_SIZE_BYTES"] == "-1"
+    assert cache_dir.is_dir()
+    assert metadata["compilation_cache"]["expected_effect"] == "startup_compile_and_warmup_only"
+
+
+def test_packing_worker_env_defaults_do_not_force_gpu_or_cpu_caps(tmp_path: Path) -> None:
+    args = packing_benchmark.build_parser().parse_args(
+        ["parent", "--output-dir", str(tmp_path / "out"), "--n-workers", "1"]
+    )
+    env = {}
+
+    metadata = packing_benchmark._configure_worker_env(env, args)
+
+    assert env["XLA_PYTHON_CLIENT_PREALLOCATE"] == "false"
+    assert "JAX_PLATFORM_NAME" not in env
+    assert "JAX_PLATFORMS" not in env
+    assert "OMP_NUM_THREADS" not in env
+    assert "XLA_FLAGS" not in env
+    assert metadata["compilation_cache"]["enabled"] is False
 
 
 def test_packing_cs_nominal_gru_scenario_wires_pgd_pre_step(
@@ -461,6 +571,44 @@ def test_packing_cs_nominal_gru_scenario_wires_pgd_pre_step(
     )
 
     assert runtime.pre_step_fn is pre_step_fn
+
+
+def test_packing_cs_nominal_gru_argv_does_not_clobber_payload_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import rlrmp.modules.training.part2 as part2
+    import rlrmp.train.cs_nominal_gru as nominal
+
+    captured = {}
+
+    monkeypatch.setattr(nominal, "_build_trainer", lambda hps: object())
+
+    def fake_build_hps(args: argparse.Namespace) -> SimpleNamespace:
+        captured.update(vars(args))
+        return SimpleNamespace(batch_size=2, broad_epsilon_pgd_training=SimpleNamespace())
+
+    monkeypatch.setattr(nominal, "build_hps", fake_build_hps)
+    monkeypatch.setattr(
+        part2,
+        "setup_task_model_pair",
+        lambda hps, key: SimpleNamespace(task=object(), model=object()),
+    )
+    monkeypatch.setattr(packing_benchmark, "_cs_nominal_gru_metadata", lambda hps: {})
+
+    packing_benchmark.build_cs_nominal_gru_scenario(
+        {
+            "target_relative_multitarget": True,
+            "force_filter_feedback": True,
+            "loss_objective": "full_analytical_qrf",
+            "argv": ["--delayed-reach"],
+        },
+        seed=1,
+    )
+
+    assert captured["delayed_reach"] is True
+    assert captured["target_relative_multitarget"] is True
+    assert captured["force_filter_feedback"] is True
+    assert captured["loss_objective"] == "full_analytical_qrf"
 
 
 def test_packing_timed_train_uses_scenario_runtime_interface() -> None:

@@ -86,6 +86,14 @@ from rlrmp.train.cs_perturbation_training import (
     target_relative_validation_manifest,
     planned_fixed_target_perturbation_rows,
     validation_bin_manifest,
+    _broad_epsilon_l2_radius,
+    _ensure_broad_epsilon_input,
+    _epsilon_time_mask,
+    _expand_bool_like,
+    _expand_radius,
+    _normalize_flattened_per_trial,
+    _project_flattened_per_trial_l2_ball,
+    _set_input,
 )
 
 
@@ -1868,6 +1876,112 @@ def test_pgd_broad_epsilon_keeps_best_seen_endpoint_for_nonmonotone_ascent() -> 
     )
     assert diagnostics["inner_objective_final_endpoint"] < diagnostics["inner_objective_best"]
     assert diagnostics["inner_objective_final_endpoint_gap"] > 0.0
+
+
+def test_pgd_broad_epsilon_value_and_grad_matches_reference_ascent() -> None:
+    class EchoTask:
+        def eval_trials(self, model, trial_specs, keys_model):
+            del model, keys_model
+            return trial_specs.inputs["epsilon"]
+
+    target = jnp.asarray(
+        [[[0.006, -0.003], [0.001, 0.004]]],
+        dtype=jnp.float32,
+    )
+
+    class ShiftedQuadraticLoss:
+        def __call__(self, states, trial_specs, model):
+            del states, model
+            epsilon = trial_specs.inputs["epsilon"]
+            return TreeNamespace(total=-jnp.sum((epsilon - target) ** 2))
+
+    trial_specs = TaskTrialSpec(
+        inits=WhereDict({}),
+        targets=WhereDict(
+            {
+                "mechanics.effector.pos": TargetSpec(
+                    value=jnp.zeros((1, 2, 2), dtype=jnp.float32),
+                )
+            }
+        ),
+        inputs={"epsilon": jnp.zeros((1, 2, 2), dtype=jnp.float32)},
+        timeline=TrialTimeline(n_steps=2),
+    )
+    config = {
+        "enabled": True,
+        "level": "moderate",
+        "budget_scale": 2.0,
+        "reach_length_scaling": False,
+        "n_steps": 4,
+        "step_size_fraction": 0.4,
+        "epsilon_dim": 2,
+    }
+
+    def reference_inner_maximizer():
+        cfg = config_from_broad_epsilon_pgd_hps(config)
+        specs = _ensure_broad_epsilon_input(trial_specs, epsilon_dim=cfg.epsilon_dim)
+        base_epsilon = jnp.asarray(specs.inputs["epsilon"])
+        radius = _broad_epsilon_l2_radius(specs, cfg).astype(base_epsilon.dtype)
+        time_mask = _epsilon_time_mask(specs, base_epsilon, cfg.movement_epoch_only)
+        zero_delta = jnp.zeros_like(base_epsilon)
+
+        def objective(delta_candidate):
+            candidate = _set_input(specs, "epsilon", base_epsilon + delta_candidate * time_mask)
+            candidate_states = EchoTask().eval_trials(None, candidate, None)
+            return ShiftedQuadraticLoss()(candidate_states, candidate, None).total
+
+        objective_initial = objective(zero_delta)
+
+        def body(_, state):
+            delta_current, best_delta, best_objective, _last_objective = state
+            grad = jax.grad(objective)(delta_current) * time_mask
+            step = _normalize_flattened_per_trial(grad) * _expand_radius(
+                radius * jnp.asarray(cfg.step_size_fraction, dtype=base_epsilon.dtype),
+                base_epsilon.ndim,
+            )
+            proposal = _project_flattened_per_trial_l2_ball(
+                (delta_current + step) * time_mask,
+                radius,
+            )
+            proposal_objective = objective(proposal)
+            improved = proposal_objective > best_objective
+            best_delta = jnp.where(_expand_bool_like(improved, proposal), proposal, best_delta)
+            best_objective = jnp.where(improved, proposal_objective, best_objective)
+            return proposal, best_delta, best_objective, proposal_objective
+
+        final_delta, best_delta, objective_best, objective_final_endpoint = jax.lax.fori_loop(
+            0,
+            int(cfg.n_steps),
+            body,
+            (zero_delta, zero_delta, objective_initial, objective_initial),
+        )
+        del final_delta
+        delta = jax.lax.stop_gradient(best_delta * time_mask)
+        updated = _set_input(specs, "epsilon", base_epsilon + delta)
+        objective_selected = objective(delta)
+        return updated, {
+            "inner_objective_before": objective_initial,
+            "inner_objective_after": objective_selected,
+            "inner_objective_improvement": objective_selected - objective_initial,
+            "inner_objective_best": objective_best,
+            "inner_objective_final_endpoint": objective_final_endpoint,
+            "inner_objective_final_endpoint_gap": objective_best - objective_final_endpoint,
+        }
+
+    updated, diagnostics = run_broad_epsilon_pgd_inner_maximizer(
+        EchoTask(),
+        model=None,
+        trial_specs=trial_specs,
+        loss_func=ShiftedQuadraticLoss(),
+        keys_model=None,
+        config=config,
+        return_diagnostics=True,
+    )
+    reference_updated, reference_diagnostics = reference_inner_maximizer()
+
+    np.testing.assert_allclose(updated.inputs["epsilon"], reference_updated.inputs["epsilon"])
+    for key, expected in reference_diagnostics.items():
+        np.testing.assert_allclose(diagnostics[key], expected, rtol=1e-6, atol=1e-8)
 
 
 def test_pgd_broad_epsilon_full_training_emits_inner_diagnostics(tmp_path: Path) -> None:

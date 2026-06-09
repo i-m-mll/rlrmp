@@ -1114,8 +1114,6 @@ def run_full_training(
     )
 
     chunks: list[dict[str, float | int | str]] = []
-    history_diagnostic_chunks: list[dict[str, np.ndarray]] = []
-    optimizer_diagnostic_chunks: list[dict[str, np.ndarray]] = []
     pgd_diagnostic_chunks: list[dict[str, np.ndarray]] = []
     training_started = time.perf_counter()
     while state.completed_batches < int(args.n_train_batches):
@@ -1146,16 +1144,6 @@ def run_full_training(
         completed = state.completed_batches + chunk_batches
         history = _append_history(state.history, history_chunk)
         if _training_diagnostics_enabled(args):
-            optimizer_diagnostic_chunks.append(
-                _optimizer_diagnostics_arrays(
-                    optimizer_state,
-                    start_batches=state.completed_batches,
-                    completed_batches=completed,
-                )
-            )
-            history_diagnostic_chunks.append(
-                _history_diagnostics_arrays(history_chunk, chunk_batches)
-            )
             pgd_diagnostics = _broad_epsilon_pgd_diagnostics_arrays(
                 pair.task,
                 model,
@@ -1209,8 +1197,6 @@ def run_full_training(
         run_spec=run_spec,
         state=state,
         training_history_path=final_history_path,
-        optimizer_diagnostic_chunks=optimizer_diagnostic_chunks,
-        history_diagnostic_chunks=history_diagnostic_chunks,
         pgd_diagnostic_chunks=pgd_diagnostic_chunks,
     )
     final_summary = {

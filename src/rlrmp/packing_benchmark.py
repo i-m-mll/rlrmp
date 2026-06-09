@@ -22,6 +22,21 @@ from typing import Any, Protocol
 
 
 PREALLOC_ENV = "XLA_PYTHON_CLIENT_PREALLOCATE"
+JAX_COMPILATION_CACHE_DIR_ENV = "JAX_COMPILATION_CACHE_DIR"
+JAX_CACHE_MIN_COMPILE_TIME_ENV = "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS"
+JAX_CACHE_MIN_ENTRY_SIZE_ENV = "JAX_PERSISTENT_CACHE_MIN_ENTRY_SIZE_BYTES"
+JAX_PLATFORM_ENV = "JAX_PLATFORM_NAME"
+JAX_PLATFORMS_ENV = "JAX_PLATFORMS"
+XLA_FLAGS_ENV = "XLA_FLAGS"
+CPU_THREAD_ENV_VARS = (
+    "OMP_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+    "TF_NUM_INTRAOP_THREADS",
+    "TF_NUM_INTEROP_THREADS",
+)
 DEFAULT_SCENARIO = "cs-nominal-gru"
 
 
@@ -78,6 +93,54 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parent.add_argument("--seed", type=int, default=42)
     parent.add_argument("--sample-seconds", type=float, default=5.0)
+    parent.add_argument(
+        "--jax-platform",
+        choices=["cpu", "gpu", "tpu"],
+        default=None,
+        help=(
+            "Optional JAX backend override for benchmark workers. Use 'cpu' for local "
+            "CPU packing; omit for provider defaults such as RunPod/Modal GPU."
+        ),
+    )
+    parent.add_argument(
+        "--cpu-threads-per-worker",
+        type=int,
+        default=1,
+        help=(
+            "Common BLAS/OpenMP/TF thread cap per worker when --jax-platform=cpu. "
+            "Use 0 to leave thread env vars unchanged."
+        ),
+    )
+    parent.add_argument(
+        "--xla-cpu-thread-flags",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "When --jax-platform=cpu, add conservative XLA CPU threading flags unless "
+            "the corresponding XLA_FLAGS entries are already present."
+        ),
+    )
+    parent.add_argument(
+        "--jax-compilation-cache-dir",
+        default=None,
+        help=(
+            "Optional persistent JAX compilation cache directory. This mainly affects "
+            "startup compile/warmup time; steady-state measured windows are reported "
+            "separately."
+        ),
+    )
+    parent.add_argument(
+        "--jax-persistent-cache-min-compile-time-secs",
+        type=float,
+        default=None,
+        help="Optional JAX persistent-cache minimum compile-time threshold.",
+    )
+    parent.add_argument(
+        "--jax-persistent-cache-min-entry-size-bytes",
+        type=int,
+        default=None,
+        help="Optional JAX persistent-cache minimum entry-size threshold.",
+    )
 
     worker = subparsers.add_parser("worker")
     worker.add_argument("--config-json", required=True)
@@ -107,11 +170,11 @@ def run_parent(args: argparse.Namespace) -> int:
     parent_config["captured_at"] = _utc_now()
     parent_config["preallocation"] = "disabled"
     parent_config["python"] = sys.version
-    (output_dir / "parent_config.json").write_text(_json(parent_config), encoding="utf-8")
 
     env = os.environ.copy()
-    env[PREALLOC_ENV] = "false"
-    env.setdefault("PYTHONUNBUFFERED", "1")
+    runtime_env = _configure_worker_env(env, args)
+    parent_config["runtime_env"] = runtime_env
+    (output_dir / "parent_config.json").write_text(_json(parent_config), encoding="utf-8")
 
     procs: list[subprocess.Popen[str]] = []
     handles = []
@@ -175,6 +238,7 @@ def run_parent(args: argparse.Namespace) -> int:
             "scenario": str(args.scenario),
             "scenario_config": scenario_config,
             "preallocation_env": env.get(PREALLOC_ENV),
+            "runtime_env": runtime_env,
             "ready": ready,
             "workers": worker_summaries,
             "gpu_samples": gpu_samples,
@@ -223,6 +287,8 @@ def run_worker(config: WorkerConfig) -> int:
             "status": "ready",
             "captured_at": _utc_now(),
             "compile_and_warmup_seconds": compile_seconds,
+            "runtime_env": _runtime_env_metadata(os.environ),
+            "timing_phases": _timing_phase_metadata(compile_seconds),
             "config": asdict(config),
             "scenario_metadata": runtime.metadata,
         },
@@ -250,6 +316,8 @@ def run_worker(config: WorkerConfig) -> int:
         "worker_index": config.worker_index,
         "preallocation_env": os.environ.get(PREALLOC_ENV),
         "compile_and_warmup_seconds": compile_seconds,
+        "runtime_env": _runtime_env_metadata(os.environ),
+        "timing_phases": _timing_phase_metadata(compile_seconds),
         "burn_in": _strip_model(burn),
         "measured": _strip_model(measured),
         "config": asdict(config),
@@ -258,6 +326,97 @@ def run_worker(config: WorkerConfig) -> int:
     _write_json(summary_path, payload)
     _write_json(status_path, payload)
     return 0
+
+
+def _configure_worker_env(
+    env: dict[str, str],
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    """Configure subprocess env before workers import JAX."""
+
+    env[PREALLOC_ENV] = "false"
+    env.setdefault("PYTHONUNBUFFERED", "1")
+
+    jax_platform = getattr(args, "jax_platform", None)
+    if jax_platform:
+        env[JAX_PLATFORM_ENV] = str(jax_platform)
+        if str(jax_platform) == "cpu":
+            env[JAX_PLATFORMS_ENV] = "cpu"
+
+    cpu_threads = int(getattr(args, "cpu_threads_per_worker", 1))
+    if jax_platform == "cpu" and cpu_threads > 0:
+        thread_value = str(cpu_threads)
+        for name in CPU_THREAD_ENV_VARS:
+            env[name] = thread_value
+        if bool(getattr(args, "xla_cpu_thread_flags", True)):
+            env[XLA_FLAGS_ENV] = _with_xla_cpu_thread_flags(
+                env.get(XLA_FLAGS_ENV, ""),
+                cpu_threads=cpu_threads,
+            )
+
+    cache_dir = getattr(args, "jax_compilation_cache_dir", None)
+    if cache_dir:
+        cache_path = str(Path(str(cache_dir)).expanduser())
+        if "://" not in cache_path:
+            Path(cache_path).mkdir(parents=True, exist_ok=True)
+        env[JAX_COMPILATION_CACHE_DIR_ENV] = cache_path
+
+    min_compile_time = getattr(args, "jax_persistent_cache_min_compile_time_secs", None)
+    if min_compile_time is not None:
+        env[JAX_CACHE_MIN_COMPILE_TIME_ENV] = str(float(min_compile_time))
+
+    min_entry_size = getattr(args, "jax_persistent_cache_min_entry_size_bytes", None)
+    if min_entry_size is not None:
+        env[JAX_CACHE_MIN_ENTRY_SIZE_ENV] = str(int(min_entry_size))
+
+    return _runtime_env_metadata(env)
+
+
+def _with_xla_cpu_thread_flags(existing: str, *, cpu_threads: int) -> str:
+    parts = existing.split()
+    if not any(part.startswith("--xla_cpu_multi_thread_eigen") for part in parts):
+        enabled = "false" if cpu_threads == 1 else "true"
+        parts.append(f"--xla_cpu_multi_thread_eigen={enabled}")
+    if not any(part.startswith("intra_op_parallelism_threads=") for part in parts):
+        parts.append(f"intra_op_parallelism_threads={cpu_threads}")
+    return " ".join(parts)
+
+
+def _runtime_env_metadata(env: Mapping[str, str]) -> dict[str, Any]:
+    thread_env = {
+        name: env[name]
+        for name in CPU_THREAD_ENV_VARS
+        if name in env
+    }
+    cache_dir = env.get(JAX_COMPILATION_CACHE_DIR_ENV)
+    return {
+        "preallocation_env": env.get(PREALLOC_ENV),
+        "jax_platform": env.get(JAX_PLATFORM_ENV),
+        "jax_platforms": env.get(JAX_PLATFORMS_ENV),
+        "cpu_thread_env": thread_env,
+        "xla_flags": env.get(XLA_FLAGS_ENV),
+        "compilation_cache": {
+            "enabled": cache_dir is not None,
+            "dir": cache_dir,
+            "min_compile_time_secs": env.get(JAX_CACHE_MIN_COMPILE_TIME_ENV),
+            "min_entry_size_bytes": env.get(JAX_CACHE_MIN_ENTRY_SIZE_ENV),
+            "expected_effect": "startup_compile_and_warmup_only",
+        },
+    }
+
+
+def _timing_phase_metadata(compile_seconds: float) -> dict[str, Any]:
+    return {
+        "startup": {
+            "compile_and_warmup_seconds": compile_seconds,
+            "includes_persistent_cache_effects": True,
+        },
+        "steady_state": {
+            "burn_in": "reported separately",
+            "measured": "reported separately",
+            "includes_startup_compile": False,
+        },
+    }
 
 
 def build_cs_nominal_gru_scenario(
@@ -353,8 +512,16 @@ def _cs_nominal_gru_overrides(config: Mapping[str, Any], seed: int) -> dict[str,
     if argv is not None:
         from rlrmp.train.cs_nominal_gru import build_parser as build_nominal_parser
 
-        parsed = build_nominal_parser().parse_args([str(part) for part in argv])
-        overrides.update(vars(parsed))
+        parser = build_nominal_parser()
+        defaults = parser.parse_args([])
+        parsed = parser.parse_args([str(part) for part in argv])
+        overrides.update(
+            {
+                name: value
+                for name, value in vars(parsed).items()
+                if value != getattr(defaults, name)
+            }
+        )
 
     if "schedule_total_batches" in overrides:
         overrides["n_train_batches"] = max(1, int(overrides.pop("schedule_total_batches")))

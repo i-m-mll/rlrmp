@@ -1386,39 +1386,76 @@ def run_broad_epsilon_pgd_inner_maximizer(
         candidate_states = task.eval_trials(model, candidate, keys_model)
         return loss_func(candidate_states, candidate, model).total
 
-    zero_delta = jnp.zeros_like(base_epsilon)
-    objective_initial = objective(zero_delta)
+    def objective_and_grad(delta_candidate):
+        return jax.value_and_grad(objective)(delta_candidate)
 
-    def body(_, state):
-        delta_current, best_delta, best_objective, _last_objective = state
-        grad = jax.grad(objective)(delta_current) * time_mask
-        step = _normalize_flattened_per_trial(grad) * _expand_radius(
-            radius * jnp.asarray(cfg.step_size_fraction, dtype=base_epsilon.dtype),
-            base_epsilon.ndim,
-        )
-        proposal = _project_flattened_per_trial_l2_ball(
+    zero_delta = jnp.zeros_like(base_epsilon)
+    objective_initial, grad_initial = objective_and_grad(zero_delta)
+    grad_initial = grad_initial * time_mask
+    step_radius = _expand_radius(
+        radius * jnp.asarray(cfg.step_size_fraction, dtype=base_epsilon.dtype),
+        base_epsilon.ndim,
+    )
+
+    def proposal_from_gradient(delta_current, grad_current):
+        step = _normalize_flattened_per_trial(grad_current) * step_radius
+        return _project_flattened_per_trial_l2_ball(
             (delta_current + step) * time_mask,
             radius,
         )
-        proposal_objective = objective(proposal)
-        improved = proposal_objective > best_objective
-        best_delta = jnp.where(_expand_bool_like(improved, proposal), proposal, best_delta)
-        best_objective = jnp.where(improved, proposal_objective, best_objective)
-        return proposal, best_delta, best_objective, proposal_objective
 
-    final_delta, best_delta, objective_best, objective_final_endpoint = jax.lax.fori_loop(
-        0,
-        int(cfg.n_steps),
-        body,
-        (zero_delta, zero_delta, objective_initial, objective_initial),
+    def select_best(best_delta, best_objective, candidate_delta, candidate_objective):
+        improved = candidate_objective > best_objective
+        best_delta = jnp.where(
+            _expand_bool_like(improved, candidate_delta),
+            candidate_delta,
+            best_delta,
+        )
+        best_objective = jnp.where(improved, candidate_objective, best_objective)
+        return best_delta, best_objective
+
+    def body(_, state):
+        delta_current, _current_objective, grad_current, best_delta, best_objective = state
+        proposal = proposal_from_gradient(delta_current, grad_current)
+        proposal_objective, proposal_grad = objective_and_grad(proposal)
+        proposal_grad = proposal_grad * time_mask
+        best_delta, best_objective = select_best(
+            best_delta,
+            best_objective,
+            proposal,
+            proposal_objective,
+        )
+        return proposal, proposal_objective, proposal_grad, best_delta, best_objective
+
+    delta_current = zero_delta
+    current_objective = objective_initial
+    grad_current = grad_initial
+    best_delta = zero_delta
+    objective_best = objective_initial
+    if int(cfg.n_steps) > 1:
+        delta_current, current_objective, grad_current, best_delta, objective_best = (
+            jax.lax.fori_loop(
+                0,
+                int(cfg.n_steps) - 1,
+                body,
+                (delta_current, current_objective, grad_current, best_delta, objective_best),
+            )
+        )
+
+    final_delta = proposal_from_gradient(delta_current, grad_current)
+    objective_final_endpoint = objective(final_delta)
+    best_delta, objective_best = select_best(
+        best_delta,
+        objective_best,
+        final_delta,
+        objective_final_endpoint,
     )
-    del final_delta
     delta = jax.lax.stop_gradient(best_delta * time_mask)
     updated = _set_input(specs, "epsilon", base_epsilon + delta)
     if not return_diagnostics:
         return updated, {}
 
-    objective_selected = objective(delta)
+    objective_selected = objective_best
     delta_norm = _flattened_per_trial_norm(delta).astype(radius.dtype)
     ratio = delta_norm / jnp.maximum(radius, jnp.asarray(1e-12, dtype=radius.dtype))
     boundary = ratio >= jnp.asarray(1.0 - 1e-4, dtype=ratio.dtype)

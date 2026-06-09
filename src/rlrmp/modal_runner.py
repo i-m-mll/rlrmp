@@ -90,6 +90,11 @@ class NominalGruRunConfig:
     chunk_batches: int = 4
     ready_timeout_seconds: float = 900.0
     sample_seconds: float = 5.0
+    packing_jax_platform: str | None = None
+    packing_cpu_threads_per_worker: int = 1
+    packing_jax_compilation_cache_dir: str | None = None
+    packing_jax_persistent_cache_min_compile_time_secs: float | None = None
+    packing_jax_persistent_cache_min_entry_size_bytes: int | None = None
     target_relative_multitarget: bool = False
     force_filter_feedback: bool = False
     perturbation_training: bool = False
@@ -288,6 +293,27 @@ def build_packing_benchmark_command(
         ("--sample-seconds", config.sample_seconds),
     ]:
         _append_arg(command, flag, value)
+    if config.packing_jax_platform is not None:
+        _append_arg(command, "--jax-platform", config.packing_jax_platform)
+        _append_arg(command, "--cpu-threads-per-worker", config.packing_cpu_threads_per_worker)
+    if config.packing_jax_compilation_cache_dir is not None:
+        _append_arg(
+            command,
+            "--jax-compilation-cache-dir",
+            config.packing_jax_compilation_cache_dir,
+        )
+    if config.packing_jax_persistent_cache_min_compile_time_secs is not None:
+        _append_arg(
+            command,
+            "--jax-persistent-cache-min-compile-time-secs",
+            config.packing_jax_persistent_cache_min_compile_time_secs,
+        )
+    if config.packing_jax_persistent_cache_min_entry_size_bytes is not None:
+        _append_arg(
+            command,
+            "--jax-persistent-cache-min-entry-size-bytes",
+            config.packing_jax_persistent_cache_min_entry_size_bytes,
+        )
     return command
 
 
@@ -666,6 +692,15 @@ def make_config(args: argparse.Namespace) -> NominalGruRunConfig:
         chunk_batches=args.chunk_batches,
         ready_timeout_seconds=args.ready_timeout_seconds,
         sample_seconds=args.sample_seconds,
+        packing_jax_platform=args.packing_jax_platform,
+        packing_cpu_threads_per_worker=args.packing_cpu_threads_per_worker,
+        packing_jax_compilation_cache_dir=args.packing_jax_compilation_cache_dir,
+        packing_jax_persistent_cache_min_compile_time_secs=(
+            args.packing_jax_persistent_cache_min_compile_time_secs
+        ),
+        packing_jax_persistent_cache_min_entry_size_bytes=(
+            args.packing_jax_persistent_cache_min_entry_size_bytes
+        ),
         target_relative_multitarget=args.target_relative_multitarget,
         force_filter_feedback=args.force_filter_feedback,
         perturbation_training=args.perturbation_training,
@@ -739,6 +774,42 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--chunk-batches", type=int, default=4)
     parser.add_argument("--ready-timeout-seconds", type=float, default=900.0)
     parser.add_argument("--sample-seconds", type=float, default=5.0)
+    parser.add_argument(
+        "--packing-jax-platform",
+        choices=["cpu", "gpu", "tpu"],
+        default=None,
+        help=(
+            "Optional JAX backend override passed to the packing benchmark. Omit for "
+            "provider defaults such as RunPod/Modal GPU; use cpu for local CPU packing."
+        ),
+    )
+    parser.add_argument(
+        "--packing-cpu-threads-per-worker",
+        type=int,
+        default=1,
+        help=(
+            "Common per-worker CPU thread cap passed to the packing benchmark when "
+            "--packing-jax-platform=cpu."
+        ),
+    )
+    parser.add_argument(
+        "--packing-jax-compilation-cache-dir",
+        default=None,
+        help=(
+            "Optional persistent JAX compilation-cache directory for packing workers. "
+            "This affects startup compile/warmup metadata, not steady-state metrics."
+        ),
+    )
+    parser.add_argument(
+        "--packing-jax-persistent-cache-min-compile-time-secs",
+        type=float,
+        default=None,
+    )
+    parser.add_argument(
+        "--packing-jax-persistent-cache-min-entry-size-bytes",
+        type=int,
+        default=None,
+    )
     parser.add_argument("--target-relative-multitarget", action="store_true")
     parser.add_argument("--force-filter-feedback", "--proprioceptive-feedback", action="store_true")
     parser.add_argument("--perturbation-training", action="store_true")
