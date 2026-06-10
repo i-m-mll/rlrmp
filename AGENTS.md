@@ -1,5 +1,7 @@
 # rlrmp
 
+<!-- CLAUDE.md is a symlink to this file; edit here. -->
+
 ## Python/JAX Coding Conventions
 
 ### Coding Style & Naming
@@ -10,6 +12,7 @@
 
 ### Environment Management
 - Use `uv` for all package management. Do not run `pip install` directly.
+- **Never invoke `python`, `python3`, `pytest`, or `pip` bare.** Always go through `uv run` (or `uv run --no-sync` after a CUDA-JAX install on a pod — see runbook §4e). Lint/format with `uv run ruff check` / `uv run ruff format` (`ruff` is a dev dependency).
 
 ### Equinox Modules
 - Subclass `equinox.Module` for dataclasses-that-are-PyTrees; do not add `@dataclass` again. `Module` subclasses are already dataclasses and PyTree nodes.
@@ -26,8 +29,8 @@
 
 ### Feedbax Integration
 - rlrmp depends on feedbax. When fixing bugs or adding features that require changes to feedbax, make those changes directly in the feedbax repo (on the appropriate feature branch) rather than working around them in rlrmp. Maintain near-integration with feedbax at all times — do not deviate from feedbax's APIs or bypass its abstractions.
-- The feedbax repo is at `~/Main/10 Projects/10 PhD/20 Feedbax/feedbax/`. Use worktrees for feature work, following the same conventions as this repo.
-- Feedbax's protected branch is `develop`, not `main`. All canonical feedbax behaviour, APIs, and architectural patterns reside on `develop`. Feedbax-side feature branches must derive from `develop` (`wt feature/<name> develop`), not from `main`. When reading feedbax source code to understand current behaviour, check out develop or read files at the develop branch reference (`git show develop:path/to/file.py`). The feedbax `main` branch may lag develop substantially and should not be treated as authoritative.
+- The feedbax repo is at `~/Main/10 Projects/10 PhD/20 Feedbax/feedbax/` (rlrmp's `pyproject.toml` points its editable source at this repo root). The Python package lives at `feedbax/feedbax/` inside the repo — there is **no `src/` layout**. Import via `uv run --no-sync python`, never bare `python`.
+- Feedbax's protected branch is `develop`, not `main`. All canonical feedbax behaviour, APIs, and architectural patterns reside on `develop`, which the repo root now carries; the `main` branch may lag substantially and is not authoritative. Use worktrees for feature work (`wt feature/<name> develop`), following this repo's conventions. To read current behaviour, read files at the repo root or use `git show develop:path/to/file.py`.
 
 ## Standard Certificate Presentation
 
@@ -85,6 +88,52 @@ it is not a bridge pass and must be presented alongside the standard certificate
 components. Report aggregate action-energy mismatch (`R_u`) alongside the mean
 timewise action mismatch ratio for recurrent and augmented-state rows.
 
+## Plotting Conventions
+
+### Profile-comparison subplots share y-axes (Bug: 06f7faf)
+
+Multi-panel profile-comparison figures — one subplot per condition (cell, regime, perturbation, etc.) where each panel plots the same kind of quantity on the same x-axis semantics — MUST share y-axes across panels. Without shared y-axes each panel auto-scales independently, hiding the cross-condition magnitude differences the panel layout is meant to expose.
+
+Affected figure families include `forward_velocity_profiles`, `hold_drift_profiles`, and any per-replicate variants of these.
+
+**This is enforced at the plot-helper level, not per-script.** Analysis scripts must build profile-comparison grids via `rlrmp.viz.profile_comparison_grid` (the default is `shared_yaxes='all'`). Do not call `plotly.subplots.make_subplots` directly for profile-comparison figures, and do not pass `shared_yaxes` as a per-call override unless there is a documented reason to deviate (in which case file a follow-up issue capturing why).
+
+```python
+from rlrmp.viz import profile_comparison_grid
+
+fig = profile_comparison_grid(
+    n_panels=n_cells,
+    subplot_titles=[CELL_DISPLAY_NAMES[l] for l in labels_present],
+    vertical_spacing=0.025,
+)
+```
+
+### Aligned-profile aggregators trim by default
+
+The `pooled_trial_mean_with_band` and `replicate_mean_curves` helpers in `rlrmp.analysis.trial_alignment` trim aligned profiles to the strict full-support column window (`min_coverage=1.0`) before reducing. Callers receive the trim slice alongside the curves so companion time axes can be sliced consistently (`t = ((np.arange(n) - center) * dt)[sl]`). Pass `trim=False` only when downstream code needs identical step axes across multiple invocations (e.g. cross-cell pairwise RMSE) and the reducer is already NaN-tolerant.
+
+### Auto-generated note sections (Bug: 06f7faf)
+
+Analysis scripts that write Markdown narrative files under `results/<exp>/notes/` MUST use `rlrmp.io.update_marked_section` instead of overwriting the whole file. This preserves hand-edited preambles (e.g. a "Corrected after go-cue alignment fix" note) across re-runs.
+
+Auto-generated content is wrapped in named HTML comment markers:
+
+```markdown
+<!-- AUTO-GENERATED: <marker_name> -->
+... script-written content ...
+<!-- /AUTO-GENERATED -->
+```
+
+On re-run, `update_marked_section` replaces only the content between the markers; everything outside is untouched. If the file does not exist, it is created. If the markers are absent in an existing file, the block is appended.
+
+```python
+from rlrmp.io import update_marked_section
+
+update_marked_section(notes_path, "variance_analysis", "\n".join(lines) + "\n")
+```
+
+**`marker_name`** should be a short, stable, underscore-delimited identifier matching the logical content of the block (e.g. `"variance_analysis"`, `"results_table"`, `"delta_v_summary"`). New analysis scripts must follow this convention; do not open notes files with `open(..., "w")`.
+
 ## RunPod Deploy Runbook for rlrmp Experiments
 
 ### Current training-method orientation (May 2026)
@@ -114,6 +163,10 @@ timewise action mismatch ratio for recurrent and augmented-state rows.
   start at the actual movement epoch, have fixed duration across go-cue timing
   conditions, and remain at max weight after the ramp completes.
 
+### Spec lock before launch
+
+Before any **billable** training launch (`runpodctl pod create` for a run, or a non-smoke `modal run`), present a one-table run spec — task structure, loss terms, dims, `n_batches`, `lr`, seeds, GPU/cloud — and obtain **explicit user confirmation**. Mid-session plan discussion is NOT launch authorization.
+
 ### 1. Prerequisites
 - `runpodctl` binary from GitHub releases (the `install.sh` requires sudo; download the binary manually if sudo is unavailable).
 - SSH key at `~/.runpod/ssh/RunPod-Key-Go`.
@@ -127,18 +180,11 @@ timewise action mismatch ratio for recurrent and augmented-state rows.
 ### 3. GPU choice
 (Cross-ref subagent GPU analysis, Part 2.5 session.)
 - **RTX 4090** (community cloud): cheapest validated option.
-- **RTX 4090 secure cloud**: acceptable when the user asks for secure cloud;
-  availability can be stale/low, but do not infer failure from
-  `uptimeSeconds: 0`.
+- **RTX 4090 secure cloud**: acceptable when the user requests secure cloud; availability can be low, but do not infer failure from `uptimeSeconds: 0` (see §4b).
 - **RTX 5090** (Blackwell, EUR-IS-2 or similar): faster, but some templates carry stale image references.
-  - The RunPod template `runpod-torch-v280` / image
-    `runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404` has been observed to boot
-    and expose SSH on an RTX 5090 (driver 570.124.06). After `uv sync`, install
-    `jax[cuda12]`; this upgraded to CUDA 12.9 wheels (`jax==0.10.0`) and exposed
-    `CudaDevice(id=0)`.
-  - Image `runpod/pytorch:1.0.3-cu1281-torch290-ubuntu2204` or newer
-    (`cu1290`/`cu1300`) should also support Blackwell, but verify the Docker tag
-    exists before pod creation.
+  - Template `runpod-torch-v280` / image `runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404` has been observed to boot and expose SSH on a 5090 (driver 570.124.06). After `uv sync`, install `jax[cuda12]`; this upgrades to CUDA 12.9 wheels (`jax==0.10.0`) and exposes `CudaDevice(id=0)`.
+  - Image `runpod/pytorch:1.0.3-cu1281-torch290-ubuntu2204` or newer (`cu1290`/`cu1300`) should also support Blackwell — verify the Docker tag exists before creating the pod.
+  - Skip the deprecated `runpod/pytorch:2.8.0-...` template.
 
 ### 4. Deploy steps
 ```bash
@@ -153,54 +199,68 @@ runpodctl pod create \
   --ports "22/tcp,8080/http"   # REQUIRED: default exposes no ports → direct TCP SSH unreachable
 # (For 4090: use --gpu-id "NVIDIA GeForce RTX 4090" --cloud-type COMMUNITY, omit --data-center-ids)
 
-# 4b. Poll until SSH ready (~1–3 min)
+# 4b. Poll until SSH ready (~1–3 min). Bug: b399efc.
 runpodctl pod get <POD_ID>
 # Correct readiness criterion:
-#   1. `runpodctl pod get <POD_ID>` includes an `.ssh` object with `ip`, `port`,
-#      and preferably `ssh_command`.
-#   2. That exact SSH command succeeds with a functional probe, e.g.
-#      `ssh ... 'true'` or `ssh ... 'nvidia-smi --query-gpu=name --format=csv,noheader'`.
-# Do NOT use `.runtime` or `uptimeSeconds` as the primary readiness signal.
-# Observed counterexample: a healthy RTX 5090 pod had `uptimeSeconds: 0` and
-# no `.runtime` object, but `.ssh.ssh_command` was valid and direct SSH worked.
-# If `.ssh` says "pod not ready", keep polling within the normal boot window;
-# do not stop a pod just because `uptimeSeconds` is 0.
-# Stop/recreate only if `.ssh` never becomes populated or functional SSH fails
-# beyond the agreed cost window.
+#   1. `runpodctl pod get <POD_ID>` output contains an `.ssh` object with `ip`,
+#      `port`, and `ssh_command`.
+#   2. That SSH command succeeds with a functional probe:
+#        ssh -i ~/.runpod/ssh/RunPod-Key-Go -p <port> root@<ip> \
+#            'nvidia-smi --query-gpu=name --format=csv,noheader'
+# Do NOT use `.runtime`, `.runtime.ports`, or `uptimeSeconds` as the primary
+# readiness signal. Observed counterexample: a healthy RTX 5090 pod had
+# `uptimeSeconds: 0` and no `.runtime` object, but `.ssh.ssh_command` was valid
+# and SSH worked. Following the old `runtime.ports`-populated heuristic
+# terminated ~5 healthy pods. Keep polling within the normal boot window;
+# stop/recreate only if `.ssh` never populates or the functional probe fails.
 
-# 4c. rsync 3 path-deps to /workspace (run from local machine)
-# Use inline excludes. Do not put exclude flags in a zsh variable; word splitting
-# mistakes previously caused useless large transfers. On RunPod volumes, preserve
-# neither owner nor group, otherwise rsync may copy data but exit 23 from chown
-# failures. macOS rsync is old and does not support `--info=stats2,progress2`;
-# use `--stats` for portable summaries.
+# 4c. rsync 3 path-deps to /workspace (run from local machine). Bug: b399efc.
+# Notes:
+# - Use inline excludes; do not stash flags in a shell variable (word-splitting
+#   in zsh has caused oversized transfers).
+# - --no-owner --no-group: RunPod volumes reject chown, so without these flags
+#   rsync exits 23 even when data transferred successfully.
+# - macOS ships old Apple-patched rsync that rejects --info=stats2,progress2.
+#   Use --stats for a portable transfer summary.
+# - Exclude tracked legacy *.assets image dumps (~100 MB) — not needed for
+#   training.
+# - The feedbax --exclude='web' is only safe if feedbax/__init__ does not import
+#   feedbax.web. Before rsync, on a web-excluded tree run
+#   `uv run --no-sync python -c "import feedbax"`; if it fails, drop the exclude.
 rsync -az --stats --no-owner --no-group \
   --exclude='_artifacts' --exclude='worktrees' --exclude='.venv' --exclude='.git' \
   --exclude='__pycache__' --exclude='.pytest_cache' --exclude='*.assets' \
   --exclude='results/*.assets' --exclude='manuscript/results.assets' \
   --exclude='TODO.assets' \
   "/Users/mll/Main/10 Projects/10 PhD/rlrmp/" root@<pod-ip>:/workspace/rlrmp/
+
 rsync -az --stats --no-owner --no-group \
   --exclude='_artifacts' --exclude='worktrees' --exclude='.venv' --exclude='.git' \
   --exclude='__pycache__' --exclude='.pytest_cache' --exclude='web' \
-  "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax/worktrees/develop/" root@<pod-ip>:/workspace/feedbax/
-rsync -az --stats --no-owner --no-group \
-  --exclude='worktrees' --exclude='.venv' --exclude='.git' --exclude='__pycache__' \
-  --exclude='.pytest_cache' \
-  "/Users/mll/Main/10 Projects/05 Utils/jax-cookbook/" root@<pod-ip>:/workspace/jax-cookbook/
-# Note: jax-cookbook including `worktrees/` is ~480 MB; with the exclude it transfers <1 MB.
-# Always exclude `worktrees/`. Also exclude tracked legacy `*.assets` image
-# dumps from rlrmp deploys; they are not needed for training and can add ~100 MB.
+  "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax/" root@<pod-ip>:/workspace/feedbax/
 
-# 4d. Patch embedded local paths on the pod (SSH in, then run):
-# Patch only exact editable path strings. Do not use broad sed expressions like
-# `s|.*/feedbax[^"]*|...|g`; they can corrupt unrelated quoted TOML fields and
-# lockfile metadata.
-perl -0pi -e 's|\Q/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax/worktrees/develop\E|/workspace/feedbax|g; s|\Q../../../20 Feedbax/feedbax/worktrees/develop\E|/workspace/feedbax|g' \
+rsync -az --stats --no-owner --no-group \
+  --exclude='worktrees' --exclude='.venv' --exclude='.git' \
+  --exclude='__pycache__' --exclude='.pytest_cache' \
+  "/Users/mll/Main/10 Projects/05 Utils/jax-cookbook/" root@<pod-ip>:/workspace/jax-cookbook/
+# jax-cookbook including worktrees/ is ~480 MB; the exclude keeps it <1 MB.
+
+# 4d. Patch embedded local paths on the pod (SSH in, then run). Bug: b399efc.
+# Use perl with \Q...\E (literal-string quoting) rather than broad sed globs.
+# The old `sed -i 's|.*/feedbax[^"]*|...|g'` form matched too broadly and
+# corrupted unrelated TOML fields and lockfile metadata.
+perl -0pi -e \
+  's|\Q/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax\E|/workspace/feedbax|g;
+   s|\Q../../../20 Feedbax/feedbax\E|/workspace/feedbax|g' \
   /workspace/rlrmp/pyproject.toml /workspace/rlrmp/uv.lock
-perl -0pi -e 's|\Q/Users/mll/Main/10 Projects/05 Utils/jax-cookbook\E|/workspace/jax-cookbook|g; s|\Q../../../../05 Utils/jax-cookbook\E|/workspace/jax-cookbook|g; s|\Q../../../../../05 Utils/jax-cookbook\E|/workspace/jax-cookbook|g' \
+
+perl -0pi -e \
+  's|\Q/Users/mll/Main/10 Projects/05 Utils/jax-cookbook\E|/workspace/jax-cookbook|g;
+   s|\Q../../../../05 Utils/jax-cookbook\E|/workspace/jax-cookbook|g;
+   s|\Q../../../../../05 Utils/jax-cookbook\E|/workspace/jax-cookbook|g' \
   /workspace/rlrmp/uv.lock /workspace/feedbax/pyproject.toml /workspace/feedbax/uv.lock
-# Verify no local editable paths remain:
+
+# Verify no local editable paths remain before proceeding:
 grep -RIn '/Users\|10 Projects\|\.\./\.\./.*jax-cookbook\|\.\./\.\./.*feedbax' \
   /workspace/rlrmp/pyproject.toml /workspace/rlrmp/uv.lock \
   /workspace/feedbax/pyproject.toml /workspace/feedbax/uv.lock || true
@@ -208,10 +268,11 @@ grep -RIn '/Users\|10 Projects\|\.\./\.\./.*jax-cookbook\|\.\./\.\./.*feedbax' \
 # 4e. Install (must survive SSH disconnect — use nohup; see §5)
 cd /workspace/rlrmp && nohup uv sync > /workspace/uv_sync.log 2>&1 &
 # After uv sync completes:
-nohup uv pip install -U "jax[cuda12]" > /workspace/jax_install.log 2>&1 && touch /workspace/install_done &
+nohup uv pip install -U "jax[cuda12]" > /workspace/jax_install.log 2>&1 \
+  && touch /workspace/install_done &
 # Poll: tail /workspace/jax_install.log; wait for /workspace/install_done (~3–5 min)
-# Do not run `uv sync` again after CUDA JAX installation; it can revert to the
-# lockfile's CPU JAX wheels. Use `uv run --no-sync` for tests/training after this.
+# Do NOT run `uv sync` again after the CUDA JAX install — it can revert to the
+# lockfile's CPU JAX wheels. Use `uv run --no-sync` for all subsequent commands.
 # Verify before training:
 #   XLA_PYTHON_CLIENT_PREALLOCATE=false uv run --no-sync python -c \
 #     'import jax; print(jax.__version__); print(jax.devices())'
@@ -224,7 +285,7 @@ Always run long setup commands as `nohup <cmd> > <logfile> 2>&1 &` and touch a s
 ### 6. Smoke test
 ```bash
 cd /workspace/rlrmp
-uv run python scripts/train_minimax.py \
+uv run --no-sync python scripts/train_minimax.py \
   --adversary-type linear_dynamics \
   --n-warmup-batches 3 --n-adversary-batches 20 --adv-batch-size 250 \
   --n-replicates 5 --hidden-type gru \
@@ -236,25 +297,20 @@ Adjust flags to match the current script's CLI if it has changed.
 - **Smoke test**: check 1 min after start, then every 5 min.
 - **Full run**: check at 1 min (confirm JIT compilation visible), every 5 min during early loss decline, drop to every 30 min once loss is steadily descending.
 - Watch for `ptxas` warnings, `OOM`, and `Traceback` patterns alongside loss-progress signal.
-- For 1k warmup-only smoke tests on a 5090, first compilation can take ~30 s and
-  the whole run can complete in a few minutes. If usage limits or user timing are
-  a concern, pause after smoke and do not launch the main matrix.
+- For 1k warmup-only smoke tests on a 5090, first compilation takes ~30 s and the whole run completes in a few minutes. Pause after the smoke test and do not launch the main matrix until the user confirms.
 
 ### 8. Cost discipline
 (Cross-ref dotfiles `3602840`.)
 - Pod billing starts on **creation**, not on container start.
-- Verify the pod is reachable via the `.ssh.ssh_command` from `runpodctl pod get`
-  plus a functional SSH probe (e.g. `ssh ... true` or `ssh ... nvidia-smi`).
-  Do NOT rely on `uptimeSeconds > 0`, `.runtime`, or `.runtime.ports` as the
-  primary liveness signal. A working pod can show `uptimeSeconds: 0` and no
-  `.runtime` while `.ssh` is valid.
+- Verify the pod is reachable via the `.ssh.ssh_command` from `runpodctl pod get`, confirmed by a functional SSH probe (`ssh ... 'true'` or `ssh ... 'nvidia-smi'`). Do NOT rely on `uptimeSeconds > 0`, `.runtime`, or `.runtime.ports` as the primary liveness signal — a working pod can show `uptimeSeconds: 0` and no `.runtime` object while `.ssh` is valid (Bug: b399efc).
 - Do not unilaterally upgrade cloud tier or GPU class — ask the user first.
+- **Modal:** destructive CLI ops (`modal app stop`, `modal volume rm`) require `--yes`/`-y`; non-interactive shells abort without it.
 
 ### 9. Post-training-run protocol
 
 After every remote training run completes, do all five steps before closing out the session:
 
-1. **Commit run-specs on a feature branch**: Move `run.json` spec files from `_artifacts/<exp>/<label>/` to `results/<exp>/runs/<group>__<variant>/run.json` and commit via `agent-commit --issue <tracking-issue>`.
+1. **Commit run-specs on a feature branch**: Move `run.json` spec files from `_artifacts/<exp>/<label>/` to `results/<exp>/runs/<group>__<variant>/run.json`, `git add` them (`agent-commit` does not auto-stage), and commit via `agent-commit --issue <tracking-issue>`.
 2. **Submit auth request**: `mandible auth request feature/<name> --issue <tracking-issue> --no-watch`.
 3. **Comment on tracking issue**: Key metrics table + winning condition + key findings.
 4. **Comment on `c99ad9d`** (training-methods coord) if the run reflects a training-method decision (new method, new loss term, new adversary class).
@@ -263,7 +319,12 @@ After every remote training run completes, do all five steps before closing out 
 (Relates to `efc4d68`. Codified after the 2026-05-08 baseline matrix session, where step 1 was deferred until a separate follow-up task.)
 
 ## Feedbax Studio
-Feedbax Studio (web app) runs from the Feedbax repo. See Feedbax AGENTS.md for server startup instructions.
+Feedbax Studio (web app) runs from the Feedbax repo. See feedbax repo instructions for server startup.
+
+## Review packets & session handoffs
+
+- **Review packets**: external review packets are built with the `make-review-packet` skill, live under `/tmp/rlrmp_<hash>_<topic>/`, are standalone, and are **NEVER** committed to the repo.
+- **Session handoffs**: fresh-session handoff notes live at `results/<hash>/notes/` (a stable path). Never reference a handoff by a `worktrees/...` path — worktrees are deleted after merge.
 
 ## Experiment Artifacts: Tracked vs Ignored
 
@@ -295,6 +356,37 @@ The mirror `_artifacts/<hash>/...` follows the same structure (`runs/<variant>/`
 - **`runs/<variant>.json`** flat by default — one JSON file per run, not a directory with a single file in it.
 - For complex sweeps where variant names balloon (~50+ chars), use `runs/<hash>.json` + `runs_index.json` mapping hash → human label + params.
 - Promote a run from file to directory (`runs/<variant>/` with `run.json` inside) only when additional per-run files accrue (notes, debug artifacts). Lazy promotion.
+
+### Script placement: experiment-specific vs reusable (Bug: 8404108)
+
+The top-level `scripts/` directory is for cross-cutting tooling — scripts that operate generically across experiments (e.g. `train_minimax.py`, `train_part2_5.py`, `eval_minimax.py`, `eval_diagnostics.py`, infrastructure shell scripts). It is NOT a dumping ground for experiment-specific analysis code.
+
+**Hard rules:**
+
+1. **Capability-named library modules.** Modules under `src/rlrmp/` MUST be named by capability — `eval`, `train`, `plot`/`viz`, `analysis`, `lme`, etc. — never by experiment, phase, or paper (no `part2_5`, `methodology_fix`, `shahbazi`, `tier1`). If you want to call a module `<phase>_helpers.py`, identify the underlying capability and use that name instead. Within a capability module, training-method-specific sub-modules ARE allowed (`rlrmp.train.minimax`, `rlrmp.eval.minimax_io`) because training methods are stable concepts spanning experiments. Experiment-named sub-modules are still forbidden.
+2. **Experiment-specific scripts** (analysis pipelines, plotting, one-off diagnostics tied to a single tracking issue) live with the experiment: `results/<hash>/scripts/<name>.py`. Commit them alongside the experiment's `runs/`, `notes/`, `figures/` under the same `Bug: <hash>` trailer.
+3. **Reusable components** (utilities, plotting primitives, analysis routines several experiments call) MUST be refactored into the capability-named library module BEFORE the experiment script lands. Extract now, not "for now" — the helper will outlast the script. Submit the library change via an auth request to `src/rlrmp/` (or `feedbax/` if plant- or task-general).
+4. **Mixed scripts** split: the driver under `results/<hash>/scripts/`, the helpers in `src/rlrmp/`. Both can land in the same auth request — the driver carries the `Bug: <hash>` trailer; a substantial library change carries its own feature issue.
+5. **Cross-cutting CLI entry-points** (training/eval launchers operating generically across experiments) stay in `scripts/` (`scripts/train_minimax.py`, `scripts/eval_minimax.py`, etc.). They MUST import reusable helpers from `src/rlrmp/`, not from each other.
+6. **No `sys.path.insert(...)` anywhere.** Use absolute imports (`from rlrmp.eval import ...`, `from rlrmp.train.minimax import build_hps`). Sibling-script imports between two files under `scripts/` are forbidden — extract the shared piece to `src/rlrmp/`. Within a single `results/<hash>/scripts/` directory, sibling imports DO work natively and are fine for tightly-coupled experiment code that doesn't generalise.
+
+**Concrete examples (from the 8404108 refactor):**
+
+| Right placement | Why |
+|---|---|
+| `src/rlrmp/eval/{ensemble,kinematics,sisu,pert,minimax_io}.py` | Generic eval primitives used across 14+ scripts. Capability-named under `rlrmp.eval`. |
+| `src/rlrmp/train/{minimax,standard}.py` | Hyperparameter constructors for two training methods. Names are methods, not phases. |
+| `results/2bc95fd/scripts/analyse_anti_anticipation_6cell_variance.py` | Experiment-specific analysis tied to `2bc95fd`. Lives with its experiment. |
+| `scripts/train_minimax.py` | Generic minimax-training CLI. Stays in `scripts/`; imports `build_hps` from `rlrmp.train.minimax`. |
+
+| Wrong placement | Why it's wrong |
+|---|---|
+| `src/rlrmp/part2_5_eval.py` | Module name encodes a phase. Use `src/rlrmp/eval/`. |
+| `src/rlrmp/methodology_fix_helpers.py` | Module name encodes a phase. Use the underlying capability name. |
+| `scripts/analyse_pregomatrix.py` | Experiment-specific analysis. Belongs under `results/3702f54/scripts/`. |
+| `scripts/eval_part2_5_figures.py` exporting `eval_ensemble_on_trials` | Sibling-script import of a generic primitive. Extract to `src/rlrmp/eval/`. |
+
+**Promotion.** When a helper starts being reused across experiments, promote it to the relevant capability module in `src/rlrmp/` in a dedicated feature issue and update both call sites in the same auth request. When opening a new analysis script that imports from `src/rlrmp/eval/` or `src/rlrmp/train/`, scan for private helpers that should already be in the library — those are the next promotion candidates.
 
 ### If you produce X, put it at Y
 
@@ -362,7 +454,7 @@ Caveat: parallel worktrees share one `_artifacts/`. Concurrent writes to the sam
 
 ### Reconstructed runs (orphan archaeology)
 
-When a run is committed without going through the post-training-run protocol (AGENTS.md §9) and only the bulk `_artifacts/<orphan>/config.json` survives, reconstruct the `run.json` spec with a `reconstructed: true` marker:
+When a run is committed without going through the post-training-run protocol (§9) and only the bulk `_artifacts/<orphan>/config.json` survives, reconstruct the `run.json` spec with a `reconstructed: true` marker:
 
 ```json
 {
@@ -388,13 +480,13 @@ Out-of-scope for f485c26 (tracked separately on `e75ddd7`): the `1_general.asset
 
 ## Issue Coordination
 
-This project uses a small set of long-lived **coordination issues** (label: `coordination`) as decision-tracking surfaces. They are distinct from `umbrella` issues (which bundle a specific phase of work) and from ordinary `feature` / `error` issues (which carry the substantive work). Future agents working in rlrmp must know which coordination issue to comment on when, what to file as a new issue vs. a comment, and how the project keeps these surfaces from becoming a dumping ground.
+This project uses a small set of long-lived **coordination issues** (label: `coordination`) as decision-tracking surfaces. They are distinct from `umbrella` issues (which bundle a specific phase of work) and from ordinary `feature` / `error` issues (which carry the substantive work). Future agents must know which coordination issue to comment on when, what to file as a new issue vs. a comment, and how to keep these surfaces from becoming a dumping ground.
 
-For Mandible issue command syntax, see the global `~/.Codex/AGENTS.md` issue-tracking convention. This section covers only project-specific coordination protocol.
+For Mandible issue command syntax, see the global `~/.codex/AGENTS.md` issue-tracking convention. This section covers only project-specific coordination protocol.
 
 ### The four coordination issues
 
-Each coordination issue has the `coordination` label and is project-lifetime (no closure-on-merge intent, no phase scope).
+Each has the `coordination` label and is project-lifetime (no closure-on-merge intent, no phase scope).
 
 | ID | Name | Scope |
 |---|---|---|
@@ -406,52 +498,39 @@ Each coordination issue has the `coordination` label and is project-lifetime (no
 #### `4d38c15` — analyses
 
 **Owns:** new analyses worth doing; tier shifts (essential / desirable / auxiliary / deprecated); cross-cutting findings across multiple analyses; deprecation/archival of analyses.
-
 **Does NOT own:** the design/math/implementation/results of any single analysis (those live on the analysis's own issue).
-
-**Triggers:** discovered a new analysis to add; want to re-rank tiers; one analysis subsumes another; an analysis became less informative after a method change.
+**Triggers:** discovered a new analysis; want to re-rank tiers; one analysis subsumes another; an analysis became less informative after a method change.
 
 #### `c99ad9d` — training-methods
 
 **Owns:** training method menu (standard backprop, CVaR, APT, minimax, LEQG, PAI-ASF, BCS, DAI); adversary classes (parametric force fields, GaussianBumpAdversary, structural ΔA); flavor-of-`max` choices (input-instance / model-class / LEQG-via-Whittle); SISU wirings; plant-regime parameters when they couple to training (damping, motor noise, reach geometry, loss schedule); method deprecations and promotions.
-
 **Does NOT own:** specific analyses (→ `4d38c15`); phase markers (→ `b33e8da`); model-structure decisions independent of training method (may eventually move to a separate model-structure coord).
-
 **Triggers:** introducing a new training method or adversary class; redesigning an existing adversary; flavor-of-`max` decisions; cross-method tier shifts; training-relevant plant-regime changes.
 
 #### `b33e8da` — phases
 
 **Owns:** index of phase umbrellas (current and past) with one-line motivating-question + verdict; phase boundaries and pivots; cross-references to phase artifacts (READMEs, synthesis docs).
-
 **Does NOT own:** the work content of any phase (lives on the phase umbrella) or in-phase analyses (→ `4d38c15`).
-
-**Triggers:** starting a new phase / work-bundle (file a `umbrella`-labeled issue for the phase, then comment here); a phase ends, pivots, or is abandoned (follow-up comment with outcome).
+**Triggers:** starting a new phase / work-bundle (file an `umbrella`-labeled issue, then comment here); a phase ends, pivots, or is abandoned (follow-up comment with outcome).
 
 #### `1d9ae6f` — meta cross-project
 
 **Owns:** workflow / tooling concerns surfaced during rlrmp work that need a fix in **another** repo — Mandible, feedbax, dotfiles, or general workflow. The body is an index; the actual fixes live in the destination repos.
-
 **Does NOT own:** rlrmp-internal concerns (those go to one of the three coords above or to a normal issue).
-
-**Triggers:** noticing a Mandible bug while working in rlrmp; needing a feedbax API change to support rlrmp work; spotting a global AGENTS.md gap; identifying a tooling improvement.
+**Triggers:** noticing a Mandible bug while in rlrmp; needing a feedbax API change to support rlrmp work; spotting a global AGENTS.md gap; identifying a tooling improvement.
 
 ### Umbrella vs coordination — which label?
 
-Both labels mark issues that don't carry direct work, but they behave differently:
-
-- **`umbrella`** — phase-tied or work-bundle-tied. **May close deliberately** when the bundle is done, via an auth request `--closes-issue` field, explicit `Closes:` / `Resolves:` trailer, or user action. Example: `b557d4e` (methodology-fix phase umbrella) closed when its synthesis-review work merged. The phase work continues on its children; the umbrella's job was just to mark the bundle.
+- **`umbrella`** — phase-tied or work-bundle-tied. **May close deliberately** when the bundle is done, via an auth request `--closes-issue` field, explicit `Closes:` / `Resolves:` trailer, or user action. Example: `b557d4e` (methodology-fix phase umbrella) closed when its synthesis-review work merged. The phase work continues on its children; the umbrella just marked the bundle.
 - **`coordination`** — project-spanning decision-tracking surface. **Should not close on merge** and should not be referenced as the completed work unit in `Bug:` trailers. These persist for the project's lifetime.
 
 **Decision rule:** "Should this issue close when the work it tracks merges?" — Yes → `umbrella`. No → `coordination`.
 
 ### Body content directive (umbrella-verbosity, `1ba096f`)
 
-> Higher-level coordination/umbrella issue **bodies** must be **minimal** — cross-references to children/related issues, plus only material that does not already live in a finer-grained issue. Long-form discussion belongs in the relevant analysis/feature issue. This avoids duplication and reduces maintenance burden as child issues evolve. Comments on the coordination/umbrella are timestamped + threaded; use them for cross-cutting decisions, tier shifts, and similar.
+> Higher-level coordination/umbrella issue **bodies** must be **minimal** — cross-references to children/related issues, plus only material that does not already live in a finer-grained issue. Long-form discussion belongs in the relevant analysis/feature issue. Comments on the coordination/umbrella are timestamped + threaded; use them for cross-cutting decisions, tier shifts, and similar.
 
-In practice:
-- A coordination-issue body should read like a table of contents: scope, what's owned, what isn't, cross-refs to siblings.
-- Tier ordering, phase inventory, and similar cross-cutting state belong in **comments**, not the body, because they are timestamped and revisable.
-- Substantive findings (results, plots, math) live on the relevant child issue, not on the coordination issue. The coord may carry a one-line cross-ref pointing at the child.
+In practice: a coord body reads like a table of contents (scope, what's owned, what isn't, cross-refs). Tier ordering, phase inventory, and similar cross-cutting state belong in **comments** (timestamped, revisable). Substantive findings (results, plots, math) live on the relevant child issue; the coord may carry a one-line cross-ref.
 
 ### Decision flow — when to file vs. comment
 
@@ -472,48 +551,37 @@ In practice:
 | General-workflow / tooling improvement | yes, in appropriate repo | `1d9ae6f` |
 | Bug or feature *entirely within rlrmp* | yes (`error` / `feature`) | (no coord — direct work) |
 
-When the table doesn't cover your case: ask "is this a project-lifetime decision (→ coord comment) or a unit of work (→ new issue)?". If both, do both — file the issue, then comment on the coord with the issue ID + cross-cutting framing.
+When the table doesn't cover your case: ask "is this a project-lifetime decision (→ coord comment) or a unit of work (→ new issue)?". If both, do both.
 
 ### Cross-referencing protocol
 
-- Use **7-character issue-ID prefixes** in bodies and comments (e.g. `4d38c15`, not the full 40-char hash). Matches the style used throughout existing issues and `Bug:` trailers.
+- Use **7-character issue-ID prefixes** in bodies and comments (e.g. `4d38c15`).
 - When filing in a destination repo (per `1d9ae6f`), include a one-line "surfaced from rlrmp" note in the destination issue's body, plus the rlrmp issue ID or branch that surfaced it.
 - When the destination-repo issue resolves, comment back on `1d9ae6f` with the resolution (merge SHA / closing comment link).
-- Coordination issue bodies index children — they do not duplicate child content. If you find yourself pasting a child's results into a coord body, move them to the child and replace with a cross-ref.
+- Coordination issue bodies index children — they do not duplicate child content.
 
 ### Commit `Bug:` trailers — never reference coordination issues
 
-Even though `Bug:` trailers are reference links rather than closure signals, **the convention remains: do not reference coordination issues in commit `Bug:` trailers.** Trailers are for the relevant child / feature / bug issue — the unit of work the commit completes. Coordination issues are decision-tracking surfaces, not commit destinations.
-
-This means `agent-commit --issue <id>` should always take a child / feature / bug issue ID, never `4d38c15` / `c99ad9d` / `b33e8da` / `1d9ae6f`.
+`Bug:` trailers are for the relevant child / feature / bug issue — the unit of work the commit completes. Coordination issues are decision-tracking surfaces, not commit destinations. So `agent-commit --issue <id>` should always take a child / feature / bug issue ID, never `4d38c15` / `c99ad9d` / `b33e8da` / `1d9ae6f`.
 
 ### Phase umbrella protocol
 
-When starting a new phase or work-bundle:
-
 1. **Create a phase umbrella** — a new issue labeled `umbrella` (and `feature` if appropriate). Body: minimal — motivating question, scope, links to phase artifacts (e.g. a `results/<exp>/README.md`).
-2. **Comment on `b33e8da`** with the phase umbrella ID + one-line motivating question. This is what makes `b33e8da` a discovery surface for "what umbrellas are active right now."
-3. **Children of the phase umbrella** reference the umbrella in **their bodies** (e.g. "Part of phase `b557d4e`."), not in their commit `Bug:` trailers. Their trailers reference themselves or their sub-features. Close the umbrella only deliberately when the phase is done; the comment thread on `b33e8da` carries the live phase state regardless.
-4. **On phase end / pivot / abandonment**, comment on `b33e8da` with the outcome (one line: "merged via X", "pivoted to Y", "abandoned because Z").
+2. **Comment on `b33e8da`** with the umbrella ID + one-line motivating question (this makes `b33e8da` the "what umbrellas are active" discovery surface).
+3. **Children** reference the umbrella in **their bodies** ("Part of phase `b557d4e`."), not in commit `Bug:` trailers. Close the umbrella only deliberately when the phase is done.
+4. **On phase end / pivot / abandonment**, comment on `b33e8da` with the one-line outcome ("merged via X", "pivoted to Y", "abandoned because Z").
 
-Past phases for orientation (see `b33e8da` comment thread for the live inventory): Part 1 (`297260c`), Part 2 (`0af472c`), Part 2.5 (`844ef95`), Methodology-fix (`b557d4e`, currently active).
+Past phases for orientation (see `b33e8da` for the live inventory): Part 1 (`297260c`), Part 2 (`0af472c`), Part 2.5 (`844ef95`), Methodology-fix (`b557d4e`, currently active).
 
 ### Worked example: cross-cutting Riccati flavor-(a) finding
 
-While running `tests/test_hinf_riccati.py::test_cs_faithful_qr_velocity_inflation`, the test xfailed with a substantive diagnosis: faithful C&S Eq. 15 Q,R schedule on the C&S regime gave Δv = −0.04% at 1.5γ\*, identifying that production Riccati's `B_w` is most likely flavor-(a) additive force, not flavor-(b) `ΔA·x` model-class. This is a **cross-cutting** finding because it ties a training-method concern (flavor-of-`max`) to an existing analysis-side issue (`c723082`, LinearDynamicsAdversary).
-
-The protocol followed:
-
-1. **Discovery**: the xfail occurred during a normal test run.
-2. **Substantive finding lives in code**: the test's xfail reason string carries the full diagnosis (table, mechanism, implication). This is the implementation-level documentation.
-3. **Coordination comment on `c99ad9d`** (training-methods): noted the cross-cutting concern, table of measured Δv, implication for production Riccati `B_w`, cross-ref to `c723082` (the analogous adversary-side lift). This made the finding discoverable from the training-methods coord without inflating that coord's body.
-4. **Future follow-up issue** (e.g. "Riccati `B_w` generalization to `ΔA`"): when actually planned, file as a normal `feature` issue, then add a comment on `c99ad9d` cross-referencing it. Do **not** file the follow-up just to have a placeholder.
+`tests/test_hinf_riccati.py::test_cs_faithful_qr_velocity_inflation` xfailed with a substantive diagnosis: faithful C&S Eq. 15 Q,R on the C&S regime gave Δv = −0.04% at 1.5γ\*, implying production Riccati's `B_w` is most likely flavor-(a) additive force, not flavor-(b) `ΔA·x`. This ties a training-method concern (flavor-of-`max`) to an analysis-side issue (`c723082`, LinearDynamicsAdversary). Protocol: the full diagnosis lives in the test's xfail reason string (implementation-level doc); a coordination comment on `c99ad9d` noted the cross-cutting concern + cross-ref to `c723082`; the planned follow-up ("Riccati `B_w` generalization to `ΔA`") gets a normal `feature` issue only when actually scheduled, then a cross-ref comment on `c99ad9d`.
 
 ### What NOT to do
 
-- **Don't comment tier opinions on individual analysis issues.** Tier shifts are cross-cutting; they go on `4d38c15`. Polluting the analysis issue's thread with tier debate makes the analysis issue harder to use as a working ledger.
-- **Don't put long-form discussion in coordination issue bodies.** Bodies are tables of contents. Discussion goes in comments (timestamped, threaded) or on the relevant child issue.
-- **Don't reference `coordination`-labeled issues in commit `Bug:` trailers.** Use the child / feature / bug issue. `Bug:` is a reference link, and the convention keeps coordination issues out of ordinary commit destinations.
-- **Don't create a new coordination issue when an existing one's scope covers the concern.** Comment on the existing one. New coordination issues are project-lifetime commitments — adding one is a structural change that should be discussed first.
-- **Don't paste subagent output or raw analysis into a coord body.** Move it to the child issue (or to a `results/<exp>/` doc) and replace with a one-line cross-ref.
-- **Don't index every commit on the coord.** Only commits that change cross-cutting state (a tier, a method choice, a phase boundary) merit a coord comment. Ordinary work-on-a-child does not.
+- **Don't comment tier opinions on individual analysis issues.** Tier shifts are cross-cutting → `4d38c15`.
+- **Don't put long-form discussion in coordination issue bodies.** Bodies are tables of contents; discussion goes in comments or on the child issue.
+- **Don't reference `coordination`-labeled issues in commit `Bug:` trailers.** Use the child / feature / bug issue.
+- **Don't create a new coordination issue when an existing one's scope covers the concern.** New coords are project-lifetime commitments — discuss first.
+- **Don't paste subagent output or raw analysis into a coord body.** Move it to the child issue (or a `results/<exp>/` doc) and replace with a one-line cross-ref.
+- **Don't index every commit on the coord.** Only commits that change cross-cutting state (a tier, a method choice, a phase boundary) merit a coord comment.
