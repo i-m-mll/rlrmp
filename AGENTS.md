@@ -187,96 +187,33 @@ Before any **billable** training launch (`runpodctl pod create` for a run, or a 
   - Skip the deprecated `runpod/pytorch:2.8.0-...` template.
 
 ### 4. Deploy steps
-```bash
-# 4a. Create pod
-runpodctl pod create \
-  --image "runpod/pytorch:1.0.3-cu1281-torch290-ubuntu2204" \
-  --gpu-id "NVIDIA GeForce RTX 5090" \
-  --data-center-ids EUR-IS-2 \
-  --cloud-type SECURE \
-  --container-disk-in-gb 30 \
-  --volume-in-gb 30 \
-  --ports "22/tcp,8080/http"   # REQUIRED: default exposes no ports → direct TCP SSH unreachable
-# (For 4090: use --gpu-id "NVIDIA GeForce RTX 4090" --cloud-type COMMUNITY, omit --data-center-ids)
 
-# 4b. Poll until SSH ready (~1–3 min). Bug: b399efc.
-runpodctl pod get <POD_ID>
-# Correct readiness criterion:
-#   1. `runpodctl pod get <POD_ID>` output contains an `.ssh` object with `ip`,
-#      `port`, and `ssh_command`.
-#   2. That SSH command succeeds with a functional probe:
-#        ssh -i ~/.runpod/ssh/RunPod-Key-Go -p <port> root@<ip> \
-#            'nvidia-smi --query-gpu=name --format=csv,noheader'
-# Do NOT use `.runtime`, `.runtime.ports`, or `uptimeSeconds` as the primary
-# readiness signal. Observed counterexample: a healthy RTX 5090 pod had
-# `uptimeSeconds: 0` and no `.runtime` object, but `.ssh.ssh_command` was valid
-# and SSH worked. Following the old `runtime.ports`-populated heuristic
-# terminated ~5 healthy pods. Keep polling within the normal boot window;
-# stop/recreate only if `.ssh` never populates or the functional probe fails.
+Prefer the Feedbax deploy automation for RunPod setup instead of reproducing the
+manual sequence here:
 
-# 4c. rsync 3 path-deps to /workspace (run from local machine). Bug: b399efc.
-# Notes:
-# - Use inline excludes; do not stash flags in a shell variable (word-splitting
-#   in zsh has caused oversized transfers).
-# - --no-owner --no-group: RunPod volumes reject chown, so without these flags
-#   rsync exits 23 even when data transferred successfully.
-# - macOS ships old Apple-patched rsync that rejects --info=stats2,progress2.
-#   Use --stats for a portable transfer summary.
-# - Exclude tracked legacy *.assets image dumps (~100 MB) — not needed for
-#   training.
-# - The feedbax --exclude='web' is only safe if feedbax/__init__ does not import
-#   feedbax.web. Before rsync, on a web-excluded tree run
-#   `uv run --no-sync python -c "import feedbax"`; if it fails, drop the exclude.
-rsync -az --stats --no-owner --no-group \
-  --exclude='_artifacts' --exclude='worktrees' --exclude='.venv' --exclude='.git' \
-  --exclude='__pycache__' --exclude='.pytest_cache' --exclude='*.assets' \
-  --exclude='results/*.assets' --exclude='manuscript/results.assets' \
-  --exclude='TODO.assets' \
-  "/Users/mll/Main/10 Projects/10 PhD/rlrmp/" root@<pod-ip>:/workspace/rlrmp/
+- `~/Main/10 Projects/10 PhD/20 Feedbax/feedbax/scripts/deploy/runpod_deploy.sh`
+- `~/Main/10 Projects/10 PhD/20 Feedbax/feedbax/scripts/deploy/poll_run.sh`
 
-rsync -az --stats --no-owner --no-group \
-  --exclude='_artifacts' --exclude='worktrees' --exclude='.venv' --exclude='.git' \
-  --exclude='__pycache__' --exclude='.pytest_cache' --exclude='web' \
-  "/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax/" root@<pod-ip>:/workspace/feedbax/
+Those scripts own the normal pod-create, SSH readiness polling, path-dependency
+sync, local-path patching, and install flow for the rlrmp/feedbax/jax-cookbook
+stack. Use their `--help` / dry-run style surfaces first, and improve the
+Feedbax scripts when the deployment procedure changes rather than copying a new
+manual recipe into this file.
 
-rsync -az --stats --no-owner --no-group \
-  --exclude='worktrees' --exclude='.venv' --exclude='.git' \
-  --exclude='__pycache__' --exclude='.pytest_cache' \
-  "/Users/mll/Main/10 Projects/05 Utils/jax-cookbook/" root@<pod-ip>:/workspace/jax-cookbook/
-# jax-cookbook including worktrees/ is ~480 MB; the exclude keeps it <1 MB.
+Manual fallback/debugging invariants:
 
-# 4d. Patch embedded local paths on the pod (SSH in, then run). Bug: b399efc.
-# Use perl with \Q...\E (literal-string quoting) rather than broad sed globs.
-# The old `sed -i 's|.*/feedbax[^"]*|...|g'` form matched too broadly and
-# corrupted unrelated TOML fields and lockfile metadata.
-perl -0pi -e \
-  's|\Q/Users/mll/Main/10 Projects/10 PhD/20 Feedbax/feedbax\E|/workspace/feedbax|g;
-   s|\Q../../../20 Feedbax/feedbax\E|/workspace/feedbax|g' \
-  /workspace/rlrmp/pyproject.toml /workspace/rlrmp/uv.lock
-
-perl -0pi -e \
-  's|\Q/Users/mll/Main/10 Projects/05 Utils/jax-cookbook\E|/workspace/jax-cookbook|g;
-   s|\Q../../../../05 Utils/jax-cookbook\E|/workspace/jax-cookbook|g;
-   s|\Q../../../../../05 Utils/jax-cookbook\E|/workspace/jax-cookbook|g' \
-  /workspace/rlrmp/uv.lock /workspace/feedbax/pyproject.toml /workspace/feedbax/uv.lock
-
-# Verify no local editable paths remain before proceeding:
-grep -RIn '/Users\|10 Projects\|\.\./\.\./.*jax-cookbook\|\.\./\.\./.*feedbax' \
-  /workspace/rlrmp/pyproject.toml /workspace/rlrmp/uv.lock \
-  /workspace/feedbax/pyproject.toml /workspace/feedbax/uv.lock || true
-
-# 4e. Install (must survive SSH disconnect — use nohup; see §5)
-cd /workspace/rlrmp && nohup uv sync > /workspace/uv_sync.log 2>&1 &
-# After uv sync completes:
-nohup uv pip install -U "jax[cuda12]" > /workspace/jax_install.log 2>&1 \
-  && touch /workspace/install_done &
-# Poll: tail /workspace/jax_install.log; wait for /workspace/install_done (~3–5 min)
-# Do NOT run `uv sync` again after the CUDA JAX install — it can revert to the
-# lockfile's CPU JAX wheels. Use `uv run --no-sync` for all subsequent commands.
-# Verify before training:
-#   XLA_PYTHON_CLIENT_PREALLOCATE=false uv run --no-sync python -c \
-#     'import jax; print(jax.__version__); print(jax.devices())'
-```
+- Expose `22/tcp` at pod creation; the default RunPod port set can make direct
+  TCP SSH unreachable.
+- Poll readiness from the `.ssh` object and a functional SSH probe such as
+  `nvidia-smi`, not from `.runtime`, `.runtime.ports`, or `uptimeSeconds`
+  (Bug: b399efc).
+- Use `rsync -az --stats --no-owner --no-group` with inline excludes for
+  rlrmp, feedbax, and jax-cookbook. Do not stash rsync flags in a shell
+  variable.
+- Patch embedded local editable paths with literal-string replacements; avoid
+  broad `sed` globs that can corrupt TOML or lockfile metadata.
+- After installing CUDA JAX on the pod, do not run `uv sync` again. Use
+  `uv run --no-sync` for subsequent commands.
 
 ### 5. nohup pattern (mandatory for installs)
 SSH session killed mid-install → SIGHUP kills the process → wasted bandwidth and a broken env.
@@ -308,13 +245,41 @@ Adjust flags to match the current script's CLI if it has changed.
 
 ### 9. Post-training-run protocol
 
-After every remote training run completes, do all five steps before closing out the session:
+After every remote training run completes, use `scripts/post_run.sh` wherever
+possible as the deterministic handoff step. It owns the mechanical protocol:
+artifact sync from local, Modal, or pod sources; tracked run-spec creation under
+`results/<issue>/runs/<run>.json`; bulk artifact placement under
+`_artifacts/<issue>/runs/<run>/`; metrics-table rendering from
+`training_summary.json`; `git add`; `agent-commit`; and Mandible auth request
+submission.
 
-1. **Commit run-specs on a feature branch**: Move `run.json` spec files from `_artifacts/<exp>/<label>/` to `results/<exp>/runs/<group>__<variant>/run.json`, `git add` them (`agent-commit` does not auto-stage), and commit via `agent-commit --issue <tracking-issue>`.
-2. **Submit auth request**: `mandible auth request feature/<name> --issue <tracking-issue> --no-watch`.
-3. **Comment on tracking issue**: Key metrics table + winning condition + key findings.
-4. **Comment on `c99ad9d`** (training-methods coord) if the run reflects a training-method decision (new method, new loss term, new adversary class).
-5. **Comment on `4d38c15`** (analyses coord) if new analyses or tier shifts are motivated.
+Run it from the feature worktree that should own the post-run commit:
+
+```bash
+scripts/post_run.sh --issue <tracking-issue> --run <group>__<variant> \
+  --artifacts-src <local:/path|/path|modal[:volume]|pod:user@host:/path> \
+  --dry-run
+
+scripts/post_run.sh --issue <tracking-issue> --run <group>__<variant> \
+  --artifacts-src <local:/path|/path|modal[:volume]|pod:user@host:/path>
+```
+
+Use the dry run first when source paths, volume names, or branch state are not
+obvious. If the script cannot cover the source shape, preserve its layout and
+auth/commit conventions when doing the fallback manually, and report the script
+gap on the tracking issue or a workflow issue.
+
+The residual agent-owned judgment after `scripts/post_run.sh` is:
+
+1. **Interpret the run**: Use the emitted issue-comment template, fill in the
+   outcome, key metric movement, winning condition, and residual blockers, then
+   comment on the tracking issue.
+2. **Decide coordination updates**: Comment on `c99ad9d` (training-methods
+   coord) only when the run reflects a training-method decision, such as a new
+   method, loss term, or adversary class.
+3. **Decide analysis updates**: Comment on `4d38c15` (analyses coord) only
+   when new analyses, analysis-tier shifts, or analysis deprecations are
+   motivated.
 
 (Relates to `efc4d68`. Codified after the 2026-05-08 baseline matrix session, where step 1 was deferred until a separate follow-up task.)
 
