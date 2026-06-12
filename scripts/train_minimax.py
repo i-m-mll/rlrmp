@@ -1015,7 +1015,7 @@ def run_training(args: argparse.Namespace) -> None:
             new_adv = eqx.apply_updates(adv, updates)
             return new_adv, new_opt_st, loss_val
 
-        init_carry = (adversary, adv_opt_st, jnp.float32(0.0))
+        init_carry = (adversary, adv_opt_st, jnp.asarray(0.0))
         adversary_new, adv_opt_st_new, adv_loss = jax.lax.fori_loop(
             0, n_adversary_steps, _adv_body, init_carry
         )
@@ -1102,7 +1102,7 @@ def run_training(args: argparse.Namespace) -> None:
             new_adv = new_adv.project()
             return new_adv, new_opt_st, loss_val
 
-        init_carry = (adversary, adv_opt_st, jnp.float32(0.0))
+        init_carry = (adversary, adv_opt_st, jnp.asarray(0.0))
         adversary_new, adv_opt_st_new, adv_loss = jax.lax.fori_loop(
             0,
             n_adversary_steps,

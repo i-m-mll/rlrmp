@@ -4,8 +4,6 @@ This module provides helper functions for creating and adding interventions
 to models using the new graph-based API.
 """
 
-from typing import Optional
-
 import equinox as eqx
 import jax.numpy as jnp
 import jax.tree as jt
@@ -179,7 +177,7 @@ def swap_plant_intervenor_to_dynamics_matrix(
     # Ensure an effector wire exists into the swapped intervenor. The original
     # FixedField/AddNoise wiring did not include `mechanics:effector`, but
     # DynamicsMatrixPerturb requires it. We add it idempotently.
-    needed_wire = Wire("mechanics", "effector", label, "effector")
+    needed_wire = Wire("mechanics", "effector", label, "effector", temporality="recurrent")
     existing = list(getattr(model, "wires", ()) or ())
     if needed_wire not in existing:
         model = model.add_wire(needed_wire)
@@ -218,6 +216,21 @@ def swap_task_intervention_to_dynamics_matrix(
     """
     from feedbax.intervene import InterventionSpec  # local to avoid cycle
 
+    def _scheduled_dynamics_matrix_params(**values):
+        placeholders = {
+            "scale": 1.0,
+            "active": False,
+        }
+        init_values = {
+            key: placeholders[key] if key in placeholders and callable(value) else value
+            for key, value in values.items()
+        }
+        params = DynamicsMatrixPerturbParams(**init_values)
+        for key, value in values.items():
+            if callable(value):
+                object.__setattr__(params, key, value)
+        return params
+
     def _swap_one(specs):
         if label not in specs:
             return specs
@@ -226,7 +239,7 @@ def swap_task_intervention_to_dynamics_matrix(
         # Reuse scale/active so SISU/bernoulli routing carries over.
         scale = getattr(old_params, "scale", 1.0)
         active = getattr(old_params, "active", True)
-        new_params = DynamicsMatrixPerturbParams(
+        new_params = _scheduled_dynamics_matrix_params(
             scale=scale,
             active=active,
             delta_A=jnp.zeros((n_dim, n_state), dtype=jnp.float32),
