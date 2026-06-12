@@ -1,0 +1,119 @@
+{
+  "kind": "TrainingRunManifest",
+  "schema_version": "feedbax.manifest.v1",
+  "id": "feedbax-training-run:rlrmp-artifact-normalization-fixture",
+  "created_at": "2026-06-11T00:00:00Z",
+  "feedbax_version": "fixture",
+  "provider_version": "feedbax-provider.v1",
+  "status": "completed",
+  "provenance": {
+    "source_repo": "https://github.com/i-m-mll/rlrmp.git",
+    "source_branch": "feature/9455785-artifact-normalization",
+    "source_commit": "c5eee37c53d03dd19f8037b287c308fdffe8bf93",
+    "dirty": false,
+    "entrypoint": {
+      "kind": "fixture",
+      "name": "rlrmp artifact manifest normalization"
+    },
+    "issues": [
+      "9455785",
+      "577806f",
+      "64d3059",
+      "58f07a0"
+    ],
+    "parents": [
+      {
+        "kind": "ProviderManifest",
+        "id": "feedbax-provider.v1",
+        "role": "provider_contract",
+        "uri": "feedbax.provider:provider_manifest",
+        "metadata": {
+          "feedbax_issues": [
+            "feedbax/5c6b294",
+            "feedbax/51832b9"
+          ]
+        }
+      },
+      {
+        "kind": "MandibleArtifactProvider",
+        "id": "mandible-artifact-provider",
+        "role": "ingestion_requirement",
+        "uri": "mandible/issues/e16807c",
+        "metadata": {
+          "mandible_issues": [
+            "mandible/e16807c",
+            "mandible/e967b9a"
+          ],
+          "requirement": "Ingest repo-relative artifact refs without copying RLRMP bulk artifacts."
+        }
+      }
+    ],
+    "metadata": {
+      "rlrmp_layout": {
+        "tracked_specs": "results/<issue>/runs/*.json",
+        "bulk_artifacts": "_artifacts/<issue>/runs/<variant>/",
+        "feedbax_manifest_root": "_artifacts/feedbax_runs/"
+      },
+      "canonicalization": "deferred",
+      "normalization_policy": "Loadable uri fields are repo-relative; stale absolute worktree paths are retained only in normalized_from metadata."
+    }
+  },
+  "artifacts": [
+    {
+      "role": "tracked_run_spec",
+      "logical_name": "artifact_normalization_fixture__sample.json",
+      "artifact_id": "repo://rlrmp/results/9455785/runs/artifact_normalization_fixture__sample.json",
+      "sha256": "c0fd96bd92e21ca6e75f51fb32fffcf763fb88c5f73f7ee495e1fbb68f0676e9",
+      "media_type": "application/json",
+      "size_bytes": 578,
+      "storage_backend": "rlrmp-results",
+      "uri": "results/9455785/runs/artifact_normalization_fixture__sample.json",
+      "metadata": {
+        "availability": "checked_in",
+        "source_issue": "9455785",
+        "source_commit": "c5eee37c53d03dd19f8037b287c308fdffe8bf93",
+        "normalized_from": "/Users/example/Main/10 Projects/10 PhD/rlrmp/worktrees/stale/results/9455785/runs/artifact_normalization_fixture__sample.json"
+      }
+    },
+    {
+      "role": "training_checkpoint",
+      "logical_name": "trained_model.eqx",
+      "artifact_id": "repo://rlrmp/_artifacts/9455785/runs/artifact_normalization_fixture__sample/trained_model.eqx",
+      "media_type": "application/x-equinox",
+      "storage_backend": "rlrmp-_artifacts",
+      "uri": "_artifacts/9455785/runs/artifact_normalization_fixture__sample/trained_model.eqx",
+      "metadata": {
+        "availability": "reference_only",
+        "hash_status": "unavailable_reference_only",
+        "source_issue": "9455785",
+        "source_commit": "c5eee37c53d03dd19f8037b287c308fdffe8bf93",
+        "manifest_root": "_artifacts/feedbax_runs/",
+        "normalized_from": "/Users/example/Main/10 Projects/10 PhD/rlrmp/worktrees/stale/_artifacts/9455785/runs/artifact_normalization_fixture__sample/trained_model.eqx"
+      }
+    }
+  ],
+  "training_spec": {
+    "kind": "RLRMPRunSpec",
+    "inline": {
+      "run": "artifact_normalization_fixture__sample",
+      "issue": "9455785",
+      "training_mode": "fixture",
+      "n_train_batches": 0
+    },
+    "ref": "results/9455785/runs/artifact_normalization_fixture__sample.json",
+    "sha256": "c0fd96bd92e21ca6e75f51fb32fffcf763fb88c5f73f7ee495e1fbb68f0676e9",
+    "metadata": {
+      "source_record_role": "tracked_run_spec"
+    }
+  },
+  "summary_metrics": {
+    "total_batches": 0
+  },
+  "metadata": {
+    "fixture": true,
+    "consumer_notes": {
+      "feedbax": "Current Feedbax can load and index this TrainingRunManifest shape.",
+      "mandible": "Mandible should ingest the repo-relative refs and preserve reference_only status for ignored bulk artifacts."
+    }
+  }
+}
