@@ -19,6 +19,7 @@ from feedbax.manifest import EvaluationRunSpec
 from feedbax.types import AnalysisInputData, TreeNamespace
 
 from rlrmp.io import update_marked_section
+from rlrmp.paths import REPO_ROOT
 from rlrmp.viz import profile_comparison_grid
 
 STANDARD_MATRIX_ANALYSIS_TYPE = "rlrmp.standard_matrix"
@@ -442,7 +443,7 @@ def _notes_path(context: AnalysisRunContext, params: Mapping[str, Any]) -> Path:
     if raw is not None:
         return Path(raw)
     experiment = _figure_routing(params).get("experiment", "standard_matrix")
-    return Path.cwd() / "results" / str(experiment) / "notes" / "matrix_results.md"
+    return REPO_ROOT / "results" / str(experiment) / "notes" / "matrix_results.md"
 
 
 def _figure_routing(params: Mapping[str, Any]) -> Mapping[str, Any]:

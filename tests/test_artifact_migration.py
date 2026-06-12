@@ -17,7 +17,7 @@ from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.eval.ensemble import eval_ensemble_on_trials
 from rlrmp.eval.kinematics import compute_kinematics
 from rlrmp.eval.minimax_io import load_model
-from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.train.minimax import build_hps
 
 

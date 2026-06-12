@@ -34,6 +34,8 @@ from feedbax.manifest import AnalysisRunSpec, EvaluationRunSpec, ParentRef, load
 from feedbax.plugins.registry import ExperimentRegistry
 from feedbax.types import AnalysisInputData, TreeNamespace
 from rlrmp.analysis.matrix import STANDARD_MATRIX_ANALYSIS_TYPE, STANDARD_MATRIX_EVALUATION_TYPE
+from rlrmp.analysis.matrix.standard_matrix import _notes_path
+from rlrmp.paths import REPO_ROOT
 
 
 TOY_EVALUATION_TYPE = "rlrmp_test_standard_matrix_eval"
@@ -436,3 +438,15 @@ def test_registered_standard_matrix_notes_preserve_handwritten_sections(
     assert manifest.summary_metrics["analysis_count"] == 1
     assert manifest.summary_metrics["artifact_count"] == 1
     assert manifest.artifacts[0].role == "analysis_notes"
+
+
+def test_standard_matrix_default_notes_path_is_repo_root_stable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    assert _notes_path(
+        None,  # type: ignore[arg-type]
+        {"figure_routing": {"experiment": "5c302e2"}},
+    ) == REPO_ROOT / "results" / "5c302e2" / "notes" / "matrix_results.md"

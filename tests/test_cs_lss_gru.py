@@ -8,8 +8,10 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import pytest
+import feedbax.serialization_prototypes as fbx_prototypes
 from feedbax.contracts.graph import GraphSpec
 from feedbax.graph import init_state_from_component
+from feedbax.serialization import spec_to_graph
 from feedbax.train import filter_spec_leaves, get_model_parameters
 
 from rlrmp.analysis.math.cs_game_card import build_canonical_game, build_no_integrator_game
@@ -28,6 +30,7 @@ from rlrmp.cs_lss_gru import (
     cs_lss_gru_where_train,
     is_canonical_cs_lss_mechanics,
     materialize_cs_lss_gru_graph_spec,
+    register_cs_lss_graph_components,
 )
 from rlrmp.feedbax_graph import graph_spec_from_model, graph_spec_payload
 
@@ -128,6 +131,14 @@ def test_cs_lss_graph_specs_round_trip_and_materialize_representative_variants(
     assert spec.nodes["feedback"].type == expected_feedback_type
     assert spec.nodes["net"].type == expected_net_type
     assert graph.nodes["mechanics"].__class__.__name__ == "LinearStateSpace"
+    assert graph.input_ports == tuple(round_tripped.input_ports)
+    assert graph.input_bindings == {
+        name: tuple(binding) for name, binding in round_tripped.input_bindings.items()
+    }
+    assert graph.output_ports == tuple(round_tripped.output_ports)
+    assert graph.output_bindings == {
+        name: tuple(binding) for name, binding in round_tripped.output_bindings.items()
+    }
     if kwargs.get("bind_epsilon_input"):
         assert spec.input_bindings["epsilon"] == ("mechanics", "epsilon")
     else:
@@ -164,6 +175,44 @@ def test_runtime_cs_lss_graph_export_preserves_executable_component_contract() -
     assert exported.nodes["mechanics"].type == "LinearStateSpace"
     assert exported.nodes["efferent"].type == "RLRMPMotorChannel"
     assert rematerialized.nodes["net"].h0_encoder.weight.shape == (7, 6)
+
+
+def test_cs_lss_materialization_uses_registered_prototypes_without_global_patch() -> None:
+    original_output_prototypes_for_node = fbx_prototypes.output_prototypes_for_node
+    spec = build_cs_lss_gru_graph_spec(
+        hidden_size=5,
+        target_relative_feedback=True,
+        bind_epsilon_input=True,
+        key=jax.random.PRNGKey(201),
+    )
+    registry = register_cs_lss_graph_components()
+
+    graph = materialize_cs_lss_gru_graph_spec(spec, registry)
+
+    assert fbx_prototypes.output_prototypes_for_node is original_output_prototypes_for_node
+    assert registry.get(CS_LSS_TARGET_FEEDBACK_COMPONENT).output_prototype_fn is not None
+    assert registry.get("RLRMPSimpleStagedNetwork").output_prototype_fn is not None
+    assert registry.get("RLRMPMotorChannel").output_prototype_fn is not None
+    assert registry.get("LinearStateSpace").output_prototype_fn is not None
+    assert graph.nodes["mechanics"].A.shape == (48, 48)
+
+
+def test_cs_lss_runtime_state_view_is_attached_out_of_place() -> None:
+    spec = build_cs_lss_gru_graph_spec(
+        hidden_size=5,
+        bind_epsilon_input=True,
+        key=jax.random.PRNGKey(202),
+    )
+    registry = register_cs_lss_graph_components()
+    raw_graph = spec_to_graph(spec, registry)
+
+    graph = materialize_cs_lss_gru_graph_spec(spec, registry)
+
+    assert raw_graph.state_view_fn is None
+    assert graph is not raw_graph
+    assert graph.state_view_fn is not None
+    assert graph.input_ports == raw_graph.input_ports
+    assert graph.output_bindings == raw_graph.output_bindings
 
 
 def test_graph_first_step_feedback_is_seeded_from_initial_lss_state() -> None:
@@ -346,6 +395,22 @@ def test_initial_hidden_encoder_uses_target_relative_feedback_context_shape() ->
     assert net.h0_encoder.bias.shape == (7,)
     assert net.h0_encoder(context).shape == (7,)
     assert jnp.allclose(net.h0_encoder(context), jnp.zeros((7,)))
+
+
+def test_initial_hidden_encoder_dtype_matches_mechanics_dtype() -> None:
+    spec = build_cs_lss_gru_graph_spec(
+        hidden_size=7,
+        bind_epsilon_input=True,
+        target_relative_feedback=True,
+        initial_hidden_encoder=True,
+        key=jax.random.PRNGKey(15),
+    )
+    graph = materialize_cs_lss_gru_graph_spec(spec)
+
+    expected_dtype = jnp.dtype(graph.nodes["mechanics"].A.dtype)
+    assert spec.nodes["net"].params["h0_dtype"] == expected_dtype.name
+    assert jnp.dtype(graph.nodes["net"].h0_encoder.weight.dtype) == expected_dtype
+    assert jnp.dtype(graph.nodes["net"].h0_encoder.bias.dtype) == expected_dtype
 
 
 def test_initial_hidden_encoder_requires_target_relative_context() -> None:

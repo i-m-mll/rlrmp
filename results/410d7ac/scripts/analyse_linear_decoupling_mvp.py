@@ -85,7 +85,7 @@ from rlrmp.intervention_compat import (
     swap_plant_intervenor_to_dynamics_matrix,
     swap_task_intervention_to_dynamics_matrix,
 )
-from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.train.minimax import build_hps
 
 

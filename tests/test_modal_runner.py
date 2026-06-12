@@ -534,7 +534,7 @@ def test_packing_worker_env_defaults_do_not_force_gpu_or_cpu_caps(tmp_path: Path
 def test_packing_cs_nominal_gru_scenario_wires_pgd_pre_step(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import rlrmp.modules.training.part2 as part2
+    import rlrmp.train.task_model as task_model
     import rlrmp.train.cs_nominal_gru as nominal
     import rlrmp.train.cs_perturbation_training as perturbation
 
@@ -559,7 +559,7 @@ def test_packing_cs_nominal_gru_scenario_wires_pgd_pre_step(
         lambda config: pre_step_fn if config is pgd_hps else None,
     )
     monkeypatch.setattr(
-        part2,
+        task_model,
         "setup_task_model_pair",
         lambda hps, key: SimpleNamespace(task=object(), model=object()),
     )
@@ -576,7 +576,7 @@ def test_packing_cs_nominal_gru_scenario_wires_pgd_pre_step(
 def test_packing_cs_nominal_gru_argv_does_not_clobber_payload_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import rlrmp.modules.training.part2 as part2
+    import rlrmp.train.task_model as task_model
     import rlrmp.train.cs_nominal_gru as nominal
 
     captured = {}
@@ -589,7 +589,7 @@ def test_packing_cs_nominal_gru_argv_does_not_clobber_payload_defaults(
 
     monkeypatch.setattr(nominal, "build_hps", fake_build_hps)
     monkeypatch.setattr(
-        part2,
+        task_model,
         "setup_task_model_pair",
         lambda hps, key: SimpleNamespace(task=object(), model=object()),
     )

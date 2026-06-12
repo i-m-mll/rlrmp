@@ -26,7 +26,7 @@ from feedbax._io import load_with_hyperparameters
 from feedbax.plot.io import save_figure_with_spec
 from feedbax.types import TreeNamespace
 
-from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.task_model import setup_task_model_pair
 
 logger = logging.getLogger(__name__)
 

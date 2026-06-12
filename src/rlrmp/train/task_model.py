@@ -1,3 +1,5 @@
+"""Task/model construction for rlrmp training and checkpoint reload paths."""
+
 from collections.abc import Callable
 from collections.abc import Mapping
 from typing import Literal as L

@@ -52,7 +52,7 @@ from rlrmp.intervention_compat import (
     swap_task_intervention_to_dynamics_matrix,
 )
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
-from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import mkdir_p, run_artifact_dir, run_spec_dir
 
 logger = logging.getLogger(__name__)

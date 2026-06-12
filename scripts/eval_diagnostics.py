@@ -30,7 +30,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import argparse
-import json
+import sys
 from pathlib import Path
 
 import equinox as eqx
@@ -50,7 +50,7 @@ from rlrmp.eval import (
     set_sisu,
 )
 from rlrmp.eval.minimax_io import load_adversary, load_config, load_model
-from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.train.minimax import build_hps
 
 

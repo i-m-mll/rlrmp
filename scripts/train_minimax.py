@@ -61,7 +61,7 @@ from rlrmp.feedbax_graph import (
     build_runtime_rlrmp_feedbax_graph_bundle,
     write_graph_spec_bundle,
 )
-from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 # build_hps was extracted to rlrmp.train.minimax in 8404108 (capability-named

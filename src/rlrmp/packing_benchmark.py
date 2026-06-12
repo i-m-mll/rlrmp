@@ -427,7 +427,7 @@ def build_cs_nominal_gru_scenario(
 
     import jax.random as jr
 
-    from rlrmp.modules.training.part2 import setup_task_model_pair
+    from rlrmp.train.task_model import setup_task_model_pair
     from rlrmp.train.cs_nominal_gru import (
         _build_trainer,
         build_hps,
