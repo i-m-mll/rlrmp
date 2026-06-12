@@ -75,7 +75,9 @@ def gru_standard_certificate_spec(
         "load_models": load_models,
         "use_validation_selected_checkpoints": use_validation_selected_checkpoints,
     }
-    _set_optional_path_param(params, "preferred_checkpoint_manifest_path", preferred_checkpoint_manifest_path)
+    _set_optional_path_param(
+        params, "preferred_checkpoint_manifest_path", preferred_checkpoint_manifest_path
+    )
     _set_optional_path_param(params, "note_output", note_output)
     _set_optional_path_param(params, "manifest_output", manifest_output)
     _set_optional_path_param(params, "regeneration_spec_path", regeneration_spec_path)
@@ -115,7 +117,9 @@ def gru_evaluation_diagnostics_spec(
         params["labels"] = list(labels)
     _set_optional_path_param(params, "output_path", output_path)
     _set_optional_path_param(params, "bulk_dir", bulk_dir)
-    _set_optional_path_param(params, "preferred_checkpoint_manifest_path", preferred_checkpoint_manifest_path)
+    _set_optional_path_param(
+        params, "preferred_checkpoint_manifest_path", preferred_checkpoint_manifest_path
+    )
     _set_optional_path_param(params, "regeneration_spec_path", regeneration_spec_path)
     _set_optional_path_param(params, "repo_root", repo_root)
     return AnalysisRunSpec(
@@ -299,8 +303,7 @@ def _materialize_gru_evaluation_diagnostics(
             repo_root=repo_root,
         ),
         jacobian_timepoints=tuple(
-            str(item)
-            for item in params.get("jacobian_timepoints", DEFAULT_JACOBIAN_TIMEPOINTS)
+            str(item) for item in params.get("jacobian_timepoints", DEFAULT_JACOBIAN_TIMEPOINTS)
         ),
         write_bulk_arrays=bool(params.get("write_bulk_arrays", True)),
         regeneration_spec_path=_optional_path(

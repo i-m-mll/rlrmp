@@ -69,10 +69,7 @@ def main() -> None:
     manifest_output = args.manifest_output or (
         MANIFEST_PATH
         if args.experiment == SOURCE_ISSUE_ID
-        else Path("results")
-        / args.experiment
-        / "notes"
-        / "gru_standard_certificates_manifest.json"
+        else Path("results") / args.experiment / "notes" / "gru_standard_certificates_manifest.json"
     )
     register_certificate_analysis_recipes(replace=True)
     spec = gru_standard_certificate_spec(

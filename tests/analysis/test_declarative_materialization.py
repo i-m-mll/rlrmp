@@ -152,9 +152,7 @@ def test_gru_evaluation_recipe_groups_bulk_npz_artifacts(
             if artifact.role == "rlrmp-gru-evaluation-diagnostics-bulk"
         )
         assert bulk_artifact.logical_name == "bulk/unit_run.npz"
-        assert bulk_artifact.metadata["artifact_group"]["id"] == (
-            "gru_evaluation_diagnostics_bulk"
-        )
+        assert bulk_artifact.metadata["artifact_group"]["id"] == ("gru_evaluation_diagnostics_bulk")
         assert bulk_artifact.metadata["artifact_group"]["member_role"] == "rollout_arrays"
         payload_artifact = next(
             artifact
@@ -163,9 +161,7 @@ def test_gru_evaluation_recipe_groups_bulk_npz_artifacts(
         )
         payload = json.loads(Path(payload_artifact.uri).read_text(encoding="utf-8"))
         assert payload["schema_version"] == "rlrmp.gru_evaluation_diagnostics.v1"
-        assert payload["declarative_analysis"]["artifact_owner"] == (
-            "feedbax.AnalysisRunManifest"
-        )
+        assert payload["declarative_analysis"]["artifact_owner"] == ("feedbax.AnalysisRunManifest")
         assert load_manifest(path).id == manifest.id
     finally:
         unregister_analysis_recipe(dm.GRU_STANDARD_ANALYSIS_TYPE)
