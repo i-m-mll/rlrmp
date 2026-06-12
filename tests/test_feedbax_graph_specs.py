@@ -5,11 +5,17 @@ from __future__ import annotations
 import argparse
 import json
 
+import pytest
+from feedbax.manifest import SCHEMA_VERSION as FEEDBAX_MANIFEST_SCHEMA_VERSION
+from feedbax.web.models.graph import GraphSpec
+
 from rlrmp.feedbax_graph import (
     EXECUTION_BACKEND,
     GRAPH_PLANT_INTERVENOR_NODE,
+    SCHEMA_VERSION,
     build_point_mass_sensorimotor_graph_spec,
     build_rlrmp_feedbax_graph_bundle,
+    graph_spec_payload,
     write_graph_spec_bundle,
 )
 from rlrmp.stochastic_runtime import PLANT_PROCESS_FORCE_NOISE_LABEL
@@ -28,6 +34,38 @@ def _args(**overrides):
     }
     base.update(overrides)
     return argparse.Namespace(**base)
+
+
+@pytest.mark.parametrize(
+    "hidden_type",
+    ["gru", "linear", "linear_tracker"],
+)
+def test_available_rlrmp_graph_specs_round_trip_through_feedbax_contract(
+    hidden_type: str,
+) -> None:
+    hps = build_hps(_args(hidden_type=hidden_type))
+    bundle = build_rlrmp_feedbax_graph_bundle(hps)
+    payload = graph_spec_payload(bundle.graph_spec)
+
+    round_tripped = GraphSpec.model_validate_json(json.dumps(payload))
+
+    assert graph_spec_payload(round_tripped) == payload
+    assert round_tripped.metadata is not None
+    assert round_tripped.metadata.version == SCHEMA_VERSION
+    assert bundle.to_run_metadata()["schema_version"] == SCHEMA_VERSION
+    assert bundle.manifest["schema_version"] == SCHEMA_VERSION
+
+
+def test_rlrmp_graph_contract_versions_pin_feedbax_manifest_schema() -> None:
+    hps = build_hps(_args())
+    bundle = build_rlrmp_feedbax_graph_bundle(hps)
+
+    assert SCHEMA_VERSION == "rlrmp.feedbax_graph.v1"
+    assert FEEDBAX_MANIFEST_SCHEMA_VERSION == "feedbax.manifest.v1"
+    assert bundle.graph_spec.metadata is not None
+    assert bundle.graph_spec.metadata.version == SCHEMA_VERSION
+    assert bundle.manifest["schema_version"] == SCHEMA_VERSION
+    assert bundle.to_run_metadata()["schema_version"] == SCHEMA_VERSION
 
 
 def test_minimax_graph_bundle_serializes_legacy_feedback_contract() -> None:
