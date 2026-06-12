@@ -36,16 +36,11 @@ from rlrmp.disturbance import (
     PLANT_INTERVENOR_LABEL,
     get_gusts_fn,
 )
-from rlrmp.intervention_compat import add_plant_intervention_to_ensemble
 from rlrmp.loss import get_reach_loss
 from rlrmp.models import (
     LINEAR_HIDDEN_TYPES,
     create_point_mass_linear_ensemble,
     create_point_mass_nn_ensemble,
-)
-from rlrmp.stochastic_runtime import (
-    apply_stochastic_runtime_to_ensemble,
-    stochastic_runtime_config_from_model,
 )
 from rlrmp.train.cs_perturbation_training import (
     BroadFullStateEpsilonTrainingTaskAdapter,
@@ -189,13 +184,67 @@ def get_disturbance_params(hps: TreeNamespace):
     active = disturbance_active[method](P_PERTURBED[method])
 
     if pert_type == "curl":
-        return CurlFieldParams(scale=scale, active=active, **extra_params)
+        return _scheduled_intervention_params(
+            CurlFieldParams,
+            scale=scale,
+            active=active,
+            **extra_params,
+        )
     elif pert_type == "constant":
-        return FixedFieldParams(scale=scale, active=active, **extra_params)
+        return _scheduled_intervention_params(
+            FixedFieldParams,
+            scale=scale,
+            active=active,
+            **extra_params,
+        )
     elif pert_type == "gusts":
-        return FixedFieldParams(scale=scale, active=active, **extra_params)
+        return _scheduled_intervention_params(
+            FixedFieldParams,
+            scale=scale,
+            active=active,
+            **extra_params,
+        )
     else:
         raise ValueError(f"Unknown perturbation type: {pert_type}")
+
+
+def _scheduled_intervention_params(params_type, **values):
+    """Construct intervention params while preserving callable schedules."""
+
+    placeholders = {
+        "scale": 1.0,
+        "active": False,
+        "amplitude": 1.0,
+    }
+    init_values = {
+        key: placeholders[key]
+        if key in placeholders and callable(value)
+        else value
+        for key, value in values.items()
+    }
+    params = params_type(**init_values)
+    for key, value in values.items():
+        if callable(value):
+            object.__setattr__(params, key, value)
+    return params
+
+
+def build_task_base(hps: TreeNamespace):
+    """Build the unscheduled base task used for main point-mass model sizing."""
+
+    task_type = hps.task.type
+    hps_task = {k: v for k, v in hps.task.omitting_attrs("eval_n", "type").items() if v is not None}
+    if task_type in {"simple_reach", "fixed_simple_reach"}:
+        delayed_only_keys = {
+            "epoch_len_ranges",
+            "target_on_epochs",
+            "hold_epochs",
+            "move_epochs",
+            "p_catch_trial",
+            "train_endpoint_mode",
+        }
+        hps_task = {k: v for k, v in hps_task.items() if k not in delayed_only_keys}
+    return TASK_TYPES[task_type](loss_func=get_reach_loss(hps), **hps_task)
 
 
 def setup_task_model_pair(
@@ -222,20 +271,7 @@ def setup_task_model_pair(
         def batch_scale_up(batch_start, n_batches, batch_info, x):
             return x
 
-    task_type = hps.task.type
-    hps_task = {k: v for k, v in hps.task.omitting_attrs("eval_n", "type").items() if v is not None}
-    if task_type in {"simple_reach", "fixed_simple_reach"}:
-        delayed_only_keys = {
-            "epoch_len_ranges",
-            "target_on_epochs",
-            "hold_epochs",
-            "move_epochs",
-            "p_catch_trial",
-            "train_endpoint_mode",
-        }
-        hps_task = {k: v for k, v in hps_task.items() if k not in delayed_only_keys}
-
-    task_base = TASK_TYPES[task_type](loss_func=get_reach_loss(hps), **hps_task)
+    task_base = build_task_base(hps)
 
     # Resolve hidden_type from hps if present; default (None) falls back to GRUCell
     hidden_type = getattr(hps, "hidden_type", None)
@@ -310,7 +346,6 @@ def setup_task_model_pair(
             key=key,
         )
     else:
-        # Create base models with extra input for SISU
         models_base = create_point_mass_nn_ensemble(
             hps,
             task_base,
@@ -320,17 +355,7 @@ def setup_task_model_pair(
             key=key,
         )
 
-    # Insert intervention components into models via graph surgery
-    models = add_plant_intervention_to_ensemble(
-        models_base,
-        hps.pert.type,
-        PLANT_INTERVENOR_LABEL,
-        active=False,  # Default to inactive; schedule_intervenor will control activation
-    )
-    models = apply_stochastic_runtime_to_ensemble(
-        models,
-        stochastic_runtime_config_from_model(hps.model),
-    )
+    models = models_base
 
     # Add SISU input to task
     try:
