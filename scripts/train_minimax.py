@@ -63,6 +63,7 @@ from rlrmp.feedbax_graph import (
 )
 from rlrmp.modules.training.part2 import build_task_base, setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
+
 # build_hps was extracted to rlrmp.train.minimax in 8404108 (capability-named
 # library module; previously defined inline here and pulled by analysis scripts
 # via sys.path injection). Re-imported for internal use; analysis / eval scripts
@@ -87,6 +88,7 @@ def _adversary_update(adversary_optimizer, adversary, dL_dforces, adv_opt_st):
     Returns:
         Tuple of (updated_adversary, updated_opt_state).
     """
+
     # forces = adversary() broadcast to (batch_size, T, d)
     # We need dL/d(adversary_params) = dL/dforces * dforces/d(adversary_params)
     # Use jax.linear_util / vjp directly through the broadcast.
@@ -112,6 +114,7 @@ def _adversary_update(adversary_optimizer, adversary, dL_dforces, adv_opt_st):
 # ---------------------------------------------------------------------------
 # Spec-dir / artifact-dir helpers
 # ---------------------------------------------------------------------------
+
 
 def derive_spec_dir(output_dir: Path) -> Path:
     """Derive the run spec directory from the run artifact directory.
@@ -142,11 +145,13 @@ def derive_spec_dir(output_dir: Path) -> Path:
 # Reproducibility helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_git_metadata() -> dict:
     """Capture git info for reproducibility."""
     meta = {}
     try:
         import rlrmp
+
         meta["rlrmp_version"] = getattr(rlrmp, "__version__", "unknown")
     except ImportError:
         pass
@@ -162,11 +167,13 @@ def _get_git_metadata() -> dict:
             pass
     try:
         import jax
+
         meta["jax_version"] = jax.__version__
     except ImportError:
         pass
     try:
         import feedbax
+
         meta["feedbax_version"] = getattr(feedbax, "__version__", "unknown")
     except ImportError:
         pass
@@ -199,7 +206,10 @@ def _collect_gpu_info() -> dict:
     try:
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=5, check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=True,
         )
         mem_csv = result.stdout.strip().split("\n")
         info["device_memory_gb_total"] = [float(m) / 1024.0 for m in mem_csv if m]
@@ -378,6 +388,7 @@ def _load_adversarial_checkpoint(
 # Training
 # ---------------------------------------------------------------------------
 
+
 def _get_trainable(model):
     """Return the trainable leaves of the model.
 
@@ -433,6 +444,7 @@ def _eval_trials_streaming(task, model, trial_specs, keys, loss_func):
     Returns:
         Scalar loss averaged over the batch.
     """
+
     # Bug: 3ef9c25 — streaming loss integration for memory-efficient training
     def eval_single(trial_spec, key):
         key_run = jr.split(key, 2)[1]
@@ -457,6 +469,7 @@ def _eval_trials_streaming(task, model, trial_specs, keys, loss_func):
 
 def _make_where_train(sisu_gating: str = "additive"):
     """Return the where_train dict for the controller optimizer."""
+
     def where_train_fn(model):
         net = model.get_node("net")
         cls_name = type(net).__name__
@@ -471,6 +484,7 @@ def _make_where_train(sisu_gating: str = "additive"):
         if sisu_gating == "multiplicative" and net.sisu_alpha is not None:
             params.append(net.sisu_alpha)
         return tuple(params)
+
     return {0: where_train_fn}
 
 
@@ -485,10 +499,7 @@ def run_training(args: argparse.Namespace) -> None:
     # When --spec-dir is unset, derive it from --output-dir via the mirror
     # invariant (paths.run_artifact_dir(exp, run) ↔ paths.run_spec_dir(exp, run)).
     # Bug: 0077b42
-    spec_dir = (
-        Path(args.spec_dir) if args.spec_dir is not None
-        else derive_spec_dir(output_dir)
-    )
+    spec_dir = Path(args.spec_dir) if args.spec_dir is not None else derive_spec_dir(output_dir)
     mkdir_p(spec_dir)
 
     hps = build_hps(args)
@@ -500,7 +511,8 @@ def run_training(args: argparse.Namespace) -> None:
     # -----------------------------------------------------------------------
     logger.info(
         "Setting up task-model pair (hidden_type=%s, sisu_gating=%s)",
-        args.hidden_type, args.sisu_gating,
+        args.hidden_type,
+        args.sisu_gating,
     )
     pair = setup_task_model_pair(hps, key=key_init)
     task = pair.task
@@ -542,6 +554,7 @@ def run_training(args: argparse.Namespace) -> None:
         def _compute_loss(model, trial_specs, keys):
             return _eval_trials_streaming(task, model, trial_specs, keys, loss_func)
     else:
+
         def _compute_loss(model, trial_specs, keys):
             states = task.eval_trials(model, trial_specs, keys)
             return loss_func(states, trial_specs, model).total.mean()
@@ -583,6 +596,7 @@ def run_training(args: argparse.Namespace) -> None:
 
     if warmup_model is None and args.warmup_model is not None:
         from feedbax._io import load as fbx_load
+
         logger.info("Loading pre-trained warm-start model from %s", args.warmup_model)
 
         def _model_setup_func(key=jr.PRNGKey(0), **stored_hps):
@@ -590,6 +604,7 @@ def run_training(args: argparse.Namespace) -> None:
             # The stored hps come from the standard (non-adversarial) trainer,
             # so use its build_hps function from the rlrmp.train library.
             from rlrmp.train.standard import build_hps as build_hps_standard
+
             stored_hps.pop("git", None)
             stored_hps.pop("output_dir", None)
             stored_args = argparse.Namespace(**stored_hps)
@@ -600,17 +615,20 @@ def run_training(args: argparse.Namespace) -> None:
         logger.info("Loaded warm-start model (skipping phase 1).")
 
     if warmup_model is None:
-        logger.info("Phase 1: warm-start for %d batches (controller_lr=%g)",
-                    args.n_warmup_batches, args.controller_lr)
+        logger.info(
+            "Phase 1: warm-start for %d batches (controller_lr=%g)",
+            args.n_warmup_batches,
+            args.controller_lr,
+        )
 
         warmup_schedule = make_delayed_cosine_schedule(
             args.controller_lr,
             constant_steps=0,
             total_steps=args.n_warmup_batches,
         )
-        warmup_optimizer = optax.inject_hyperparams(
-            partial(optax.adamw, weight_decay=0.0)
-        )(learning_rate=warmup_schedule)
+        warmup_optimizer = optax.inject_hyperparams(partial(optax.adamw, weight_decay=0.0))(
+            learning_rate=warmup_schedule
+        )
 
         chkpt_dir = output_dir / "checkpoints_warmup"
         chkpt_dir.mkdir(parents=True, exist_ok=True)
@@ -654,23 +672,27 @@ def run_training(args: argparse.Namespace) -> None:
     # adversary can drive ΔA·x perturbations through the same disturbance
     # channel. Bug: c723082.
     # -----------------------------------------------------------------------
-    use_linear_dynamics = (args.adversary_type == "linear_dynamics")
+    use_linear_dynamics = args.adversary_type == "linear_dynamics"
     if use_linear_dynamics:
         from rlrmp.disturbance import PLANT_INTERVENOR_LABEL as _PLABEL
+
         logger.info(
             "Swapping plant intervenor at label %r to DynamicsMatrixPerturb "
             "(eta_max=%g, pgd_steps=%d, pgd_lr=%g) for adversarial phase",
-            _PLABEL, args.linear_dynamics_eta_max,
-            args.linear_dynamics_pgd_steps, args.linear_dynamics_lr,
+            _PLABEL,
+            args.linear_dynamics_eta_max,
+            args.linear_dynamics_pgd_steps,
+            args.linear_dynamics_lr,
         )
         # Swap on the ensembled model (jt.map over the ensemble pytree).
         warmup_model = jt.map(
             lambda m: swap_plant_intervenor_to_dynamics_matrix(
-                m, _PLABEL, mass=hps.model.effector_mass,
+                m,
+                _PLABEL,
+                mass=hps.model.effector_mass,
             ),
             warmup_model,
-            is_leaf=lambda x: x is not None and hasattr(x, "nodes")
-                              and hasattr(x, "input_ports"),
+            is_leaf=lambda x: x is not None and hasattr(x, "nodes") and hasattr(x, "input_ports"),
         )
         # Swap on the task so trial_specs.intervene[label] has the right type.
         task = swap_task_intervention_to_dynamics_matrix(task, _PLABEL)
@@ -685,9 +707,15 @@ def run_training(args: argparse.Namespace) -> None:
         "(adversary_type=%s, n_replicates=%d vmapped, n_adversaries=%d, "
         "n_adversary_steps=%d, adversary_lr=%g, controller_lr=%g, "
         "loss_update_enabled=%s, loss_update_ratio=%g)",
-        args.n_adversary_batches, args.adversary_type, n_reps, n_adversaries,
-        args.n_adversary_steps, args.adversary_lr, args.controller_lr,
-        args.loss_update_enabled, args.loss_update_ratio,
+        args.n_adversary_batches,
+        args.adversary_type,
+        n_reps,
+        n_adversaries,
+        args.n_adversary_steps,
+        args.adversary_lr,
+        args.controller_lr,
+        args.loss_update_enabled,
+        args.loss_update_ratio,
     )
 
     # Create adversary population (K independent adversaries with different seeds).
@@ -741,8 +769,7 @@ def run_training(args: argparse.Namespace) -> None:
     # The linear_dynamics adversary uses its own learning_rate (passed via
     # CLI), distinct from the GaussianBump adversary's --adversary-lr.
     adv_lr = (
-        args.linear_dynamics_lr if args.adversary_type == "linear_dynamics"
-        else args.adversary_lr
+        args.linear_dynamics_lr if args.adversary_type == "linear_dynamics" else args.adversary_lr
     )
     adversary_optimizer = optax.adam(adv_lr)
 
@@ -750,12 +777,14 @@ def run_training(args: argparse.Namespace) -> None:
         """Init optimizer on one replicate's adversary, stack for all reps."""
         single_adv = jt.map(
             lambda x: x[0] if (eqx.is_array(x) and x.ndim > 0) else x,
-            vmapped_adv, is_leaf=eqx.is_array,
+            vmapped_adv,
+            is_leaf=eqx.is_array,
         )
         single_st = adversary_optimizer.init(eqx.filter(single_adv, eqx.is_array))
         return jt.map(
             lambda x: jnp.stack([x] * n_reps) if eqx.is_array(x) else x,
-            single_st, is_leaf=eqx.is_array,
+            single_st,
+            is_leaf=eqx.is_array,
         )
 
     adv_opt_states = [_init_vmapped_opt_state(adv) for adv in adversaries]
@@ -884,7 +913,8 @@ def run_training(args: argparse.Namespace) -> None:
         model = _unflatten_model(per_rep_flat)
         model_sg = jt.map(
             lambda x: jax.lax.stop_gradient(x) if eqx.is_array(x) else x,
-            model, is_leaf=eqx.is_array,
+            model,
+            is_leaf=eqx.is_array,
         )
 
         force_profile = adversary()  # (T, d)
@@ -896,8 +926,7 @@ def run_training(args: argparse.Namespace) -> None:
 
         return jax.value_and_grad(_loss_fn)(forces)
 
-    def _single_rep_controller_step(per_rep_flat, ctrl_opt_st, adversary,
-                                    trial_specs, keys):
+    def _single_rep_controller_step(per_rep_flat, ctrl_opt_st, adversary, trial_specs, keys):
         """Single gradient-descent step on the controller for one replicate.
 
         Args:
@@ -942,8 +971,9 @@ def run_training(args: argparse.Namespace) -> None:
     # decomposed functions above. Bug: d6cc111
     # ---------------------------------------------------------------------------
 
-    def _single_rep_fused_batch(per_rep_flat, adversary, adv_opt_st, ctrl_opt_st,
-                                trial_specs, keys):
+    def _single_rep_fused_batch(
+        per_rep_flat, adversary, adv_opt_st, ctrl_opt_st, trial_specs, keys
+    ):
         """Fused adversary inner loop + controller step for a single replicate.
 
         Args:
@@ -961,7 +991,8 @@ def run_training(args: argparse.Namespace) -> None:
         model = _unflatten_model(per_rep_flat)
         model_sg = jt.map(
             lambda x: jax.lax.stop_gradient(x) if eqx.is_array(x) else x,
-            model, is_leaf=eqx.is_array,
+            model,
+            is_leaf=eqx.is_array,
         )
 
         # --- Inner adversary loop (K ascent steps) via lax.fori_loop ---
@@ -969,9 +1000,7 @@ def run_training(args: argparse.Namespace) -> None:
             adv, opt_st, _last_loss = carry
 
             force_profile = adv()  # (T, d)
-            forces = jnp.broadcast_to(
-                force_profile, (adv_batch_size, *force_profile.shape)
-            )
+            forces = jnp.broadcast_to(force_profile, (adv_batch_size, *force_profile.shape))
 
             def _loss_fn(f):
                 ts = _inject_adversary_forces(trial_specs, f)
@@ -983,9 +1012,7 @@ def run_training(args: argparse.Namespace) -> None:
                 fp = a()
                 return jnp.broadcast_to(fp, dL_dforces.shape)
 
-            _, vjp_fn = jax.vjp(
-                lambda a: eqx.filter(_forces_fn(a), eqx.is_array), adv
-            )
+            _, vjp_fn = jax.vjp(lambda a: eqx.filter(_forces_fn(a), eqx.is_array), adv)
             neg_dL = jt.map(lambda g: -g, dL_dforces)
             (param_grads,) = vjp_fn(neg_dL)
 
@@ -1004,9 +1031,7 @@ def run_training(args: argparse.Namespace) -> None:
 
         # --- Controller descent step (1 step) ---
         force_profile = adversary_new()
-        forces = jnp.broadcast_to(
-            force_profile, (adv_batch_size, *force_profile.shape)
-        )
+        forces = jnp.broadcast_to(force_profile, (adv_batch_size, *force_profile.shape))
         adv_trial_specs = _inject_adversary_forces(trial_specs, forces)
 
         def _ctrl_loss(m):
@@ -1027,12 +1052,22 @@ def run_training(args: argparse.Namespace) -> None:
             updated_trainable,
         )
 
-        return (_reflatten_model(new_model), adversary_new, adv_opt_st_new,
-                ctrl_opt_st_new, adv_loss, ctrl_loss_val)
+        return (
+            _reflatten_model(new_model),
+            adversary_new,
+            adv_opt_st_new,
+            ctrl_opt_st_new,
+            adv_loss,
+            ctrl_loss_val,
+        )
 
     def _single_rep_fused_batch_linear_dynamics(
-        per_rep_flat, adversary, adv_opt_st, ctrl_opt_st,
-        trial_specs, keys,
+        per_rep_flat,
+        adversary,
+        adv_opt_st,
+        ctrl_opt_st,
+        trial_specs,
+        keys,
     ):
         """Fused inner-loop + controller step for ``LinearDynamicsAdversary``.
 
@@ -1044,7 +1079,8 @@ def run_training(args: argparse.Namespace) -> None:
         model = _unflatten_model(per_rep_flat)
         model_sg = jt.map(
             lambda x: jax.lax.stop_gradient(x) if eqx.is_array(x) else x,
-            model, is_leaf=eqx.is_array,
+            model,
+            is_leaf=eqx.is_array,
         )
 
         def _adv_body(i, carry):
@@ -1053,14 +1089,17 @@ def run_training(args: argparse.Namespace) -> None:
             # Loss as a function of ``adv.delta_A`` directly.
             def _loss_fn(a):
                 ts = _inject_adversary_delta_A(
-                    trial_specs, a.delta_A, adv_batch_size,
+                    trial_specs,
+                    a.delta_A,
+                    adv_batch_size,
                 )
                 return _compute_loss(model_sg, ts, keys)
 
             loss_val, grads = eqx.filter_value_and_grad(_loss_fn)(adv)
             # Negate for gradient ascent
             neg_grads = jt.map(
-                lambda g: -g if eqx.is_array(g) else g, grads,
+                lambda g: -g if eqx.is_array(g) else g,
+                grads,
             )
             updates, new_opt_st = adversary_optimizer.update(
                 eqx.filter(neg_grads, eqx.is_array),
@@ -1074,12 +1113,17 @@ def run_training(args: argparse.Namespace) -> None:
 
         init_carry = (adversary, adv_opt_st, jnp.float32(0.0))
         adversary_new, adv_opt_st_new, adv_loss = jax.lax.fori_loop(
-            0, n_adversary_steps, _adv_body, init_carry,
+            0,
+            n_adversary_steps,
+            _adv_body,
+            init_carry,
         )
 
         # --- Controller descent step (1 step) ---
         adv_trial_specs = _inject_adversary_delta_A(
-            trial_specs, adversary_new.delta_A, adv_batch_size,
+            trial_specs,
+            adversary_new.delta_A,
+            adv_batch_size,
         )
 
         def _ctrl_loss(m):
@@ -1099,8 +1143,14 @@ def run_training(args: argparse.Namespace) -> None:
             updated_trainable,
         )
 
-        return (_reflatten_model(new_model), adversary_new, adv_opt_st_new,
-                ctrl_opt_st_new, adv_loss, ctrl_loss_val)
+        return (
+            _reflatten_model(new_model),
+            adversary_new,
+            adv_opt_st_new,
+            ctrl_opt_st_new,
+            adv_loss,
+            ctrl_loss_val,
+        )
 
     # ---------------------------------------------------------------------------
     # Vmapped + JIT wrappers: vmap over replicate axis (0) for model, adversary,
@@ -1108,8 +1158,7 @@ def run_training(args: argparse.Namespace) -> None:
     # ---------------------------------------------------------------------------
 
     @eqx.filter_jit
-    def _vmapped_fused_batch(flat_model, adversary, adv_opt_st, ctrl_opt_st,
-                             trial_specs, keys):
+    def _vmapped_fused_batch(flat_model, adversary, adv_opt_st, ctrl_opt_st, trial_specs, keys):
         """Fused adversary batch vmapped over replicates.
 
         flat_model, adversary, adv_opt_st, ctrl_opt_st have leading (n_reps,)
@@ -1130,14 +1179,17 @@ def run_training(args: argparse.Namespace) -> None:
         # Close over trial_specs/keys so they are NOT vmapped; only the
         # per-replicate state (model, adversary, opt states) is vmapped.
         return eqx.filter_vmap(
-            lambda fm, adv, aos, cos: _single_rep_fused_batch(
-                fm, adv, aos, cos, trial_specs, keys
-            )
+            lambda fm, adv, aos, cos: _single_rep_fused_batch(fm, adv, aos, cos, trial_specs, keys)
         )(flat_model, adversary, adv_opt_st, ctrl_opt_st)
 
     @eqx.filter_jit
     def _vmapped_fused_batch_linear_dynamics(
-        flat_model, adversary, adv_opt_st, ctrl_opt_st, trial_specs, keys,
+        flat_model,
+        adversary,
+        adv_opt_st,
+        ctrl_opt_st,
+        trial_specs,
+        keys,
     ):
         """Linear-dynamics fused adversary batch vmapped over replicates."""
         return eqx.filter_vmap(
@@ -1150,27 +1202,22 @@ def run_training(args: argparse.Namespace) -> None:
     def _vmapped_loss_and_force_grad(flat_model, adversary, trial_specs, keys):
         """Loss and force grad vmapped over replicates."""
         return eqx.filter_vmap(
-            lambda fm, adv: _single_rep_loss_and_force_grad(
-                fm, adv, trial_specs, keys
-            )
+            lambda fm, adv: _single_rep_loss_and_force_grad(fm, adv, trial_specs, keys)
         )(flat_model, adversary)
 
     @eqx.filter_jit
-    def _vmapped_controller_step(flat_model, ctrl_opt_st, adversary, trial_specs,
-                                 keys):
+    def _vmapped_controller_step(flat_model, ctrl_opt_st, adversary, trial_specs, keys):
         """Controller step vmapped over replicates."""
         return eqx.filter_vmap(
-            lambda fm, cos, adv: _single_rep_controller_step(
-                fm, cos, adv, trial_specs, keys
-            )
+            lambda fm, cos, adv: _single_rep_controller_step(fm, cos, adv, trial_specs, keys)
         )(flat_model, ctrl_opt_st, adversary)
 
     @eqx.filter_jit
     def _vmapped_adversary_update(adversary, dL_dforces, adv_opt_st):
         """Adversary update vmapped over replicates (decomposed mode only)."""
-        return eqx.filter_vmap(
-            partial(_adversary_update, adversary_optimizer)
-        )(adversary, dL_dforces, adv_opt_st)
+        return eqx.filter_vmap(partial(_adversary_update, adversary_optimizer))(
+            adversary, dL_dforces, adv_opt_st
+        )
 
     # -----------------------------------------------------------------------
     # Resume from checkpoint (if requested)
@@ -1207,7 +1254,8 @@ def run_training(args: argparse.Namespace) -> None:
             start_batch_idx = last_completed_batch + 1
             logger.info(
                 "Resuming adversarial training from batch %d/%d",
-                start_batch_idx, args.n_adversary_batches,
+                start_batch_idx,
+                args.n_adversary_batches,
             )
         else:
             logger.warning(
@@ -1227,9 +1275,9 @@ def run_training(args: argparse.Namespace) -> None:
         )
     else:
         logger.info(
-            "Using DECOMPOSED adversary batch (%d×2 + 1 = %d separate JIT "
-            "calls per batch)",
-            n_adversary_steps, 2 * n_adversary_steps + 1,
+            "Using DECOMPOSED adversary batch (%d×2 + 1 = %d separate JIT calls per batch)",
+            n_adversary_steps,
+            2 * n_adversary_steps + 1,
         )
 
     for batch_idx in range(start_batch_idx, args.n_adversary_batches):
@@ -1275,10 +1323,20 @@ def run_training(args: argparse.Namespace) -> None:
                 fused_call = _vmapped_fused_batch_linear_dynamics
             else:
                 fused_call = _vmapped_fused_batch
-            (flat_model, adversary, adv_opt_state, ctrl_opt_state,
-             adv_loss_vals, ctrl_loss_vals) = fused_call(
-                flat_model, adversary, adv_opt_state, ctrl_opt_state,
-                trial_specs, trial_keys,
+            (
+                flat_model,
+                adversary,
+                adv_opt_state,
+                ctrl_opt_state,
+                adv_loss_vals,
+                ctrl_loss_vals,
+            ) = fused_call(
+                flat_model,
+                adversary,
+                adv_opt_state,
+                ctrl_opt_state,
+                trial_specs,
+                trial_keys,
             )
         else:
             # --- Decomposed: K×2 + 1 separate JIT calls per batch ---
@@ -1294,15 +1352,24 @@ def run_training(args: argparse.Namespace) -> None:
             adv_loss_vals = jnp.zeros(n_reps)
             for _ in range(args.n_adversary_steps):
                 adv_loss_vals, dL_dforces = _vmapped_loss_and_force_grad(
-                    flat_model, adversary, trial_specs, trial_keys,
+                    flat_model,
+                    adversary,
+                    trial_specs,
+                    trial_keys,
                 )
                 adversary, adv_opt_state = _vmapped_adversary_update(
-                    adversary, dL_dforces, adv_opt_state,
+                    adversary,
+                    dL_dforces,
+                    adv_opt_state,
                 )
 
             # Controller update (1 descent step)
             flat_model, ctrl_opt_state, ctrl_loss_vals = _vmapped_controller_step(
-                flat_model, ctrl_opt_state, adversary, trial_specs, trial_keys,
+                flat_model,
+                ctrl_opt_state,
+                adversary,
+                trial_specs,
+                trial_keys,
             )
 
         # Write back updated adversary and optimizer state
@@ -1322,8 +1389,14 @@ def run_training(args: argparse.Namespace) -> None:
             logger.info(
                 "Adversarial batch %d/%d%s — ctrl_loss=%.4g +/- %.4g, "
                 "adv_loss=%.4g +/- %.4g  (n_reps=%d)",
-                batch_idx, args.n_adversary_batches, adv_label,
-                ctrl_loss_mean, ctrl_std, adv_loss_mean, adv_std, n_reps,
+                batch_idx,
+                args.n_adversary_batches,
+                adv_label,
+                ctrl_loss_mean,
+                ctrl_std,
+                adv_loss_mean,
+                adv_std,
+                n_reps,
             )
 
         # Periodic checkpoint (save after batch_idx is complete, not before)
@@ -1331,7 +1404,8 @@ def run_training(args: argparse.Namespace) -> None:
         if checkpoint_every > 0 and (batch_idx + 1) % checkpoint_every == 0:
             logger.info(
                 "Saving adversarial checkpoint at batch %d → %s",
-                batch_idx, adv_checkpoint_dir / _CHECKPOINT_SUBDIR,
+                batch_idx,
+                adv_checkpoint_dir / _CHECKPOINT_SUBDIR,
             )
             _save_adversarial_checkpoint(
                 adv_checkpoint_dir,
@@ -1365,9 +1439,7 @@ def run_training(args: argparse.Namespace) -> None:
     if args.n_adversary_batches > 0:
         final_model_path = output_dir / "adversarial_model.eqx"
         fbx_save(final_model_path, adv_model, hyperparameters=config_dict)
-        logger.info(
-            "Saved adversarial model (n_reps=%d ensembled) to %s", n_reps, final_model_path
-        )
+        logger.info("Saved adversarial model (n_reps=%d ensembled) to %s", n_reps, final_model_path)
     else:
         logger.info(
             "Skipping adversarial_model.eqx save (n_adversary_batches=0); "
@@ -1387,15 +1459,15 @@ def run_training(args: argparse.Namespace) -> None:
 
     # Final adversary/adversaries (each is vmapped across n_reps replicates)
     log_fn = (
-        _log_linear_dynamics_adversary if use_linear_dynamics
-        else _log_adversary_force_profiles
+        _log_linear_dynamics_adversary if use_linear_dynamics else _log_adversary_force_profiles
     )
     if n_adversaries == 1:
         # Single adversary population: save with original filename for backward compat
         fbx_save(output_dir / "trained_adversary.eqx", adversaries[0])
         logger.info(
             "Saved trained adversary (n_reps=%d) to %s",
-            n_reps, output_dir / "trained_adversary.eqx",
+            n_reps,
+            output_dir / "trained_adversary.eqx",
         )
         log_fn(adversaries[0], output_dir, n_reps=n_reps)
     else:
@@ -1406,8 +1478,7 @@ def run_training(args: argparse.Namespace) -> None:
             fbx_save(adv_path, adv)
             logger.info("Saved adversary %d to %s", i, adv_path)
             log_fn(adv, output_dir, suffix=f"_adv{i}", n_reps=n_reps)
-        logger.info("Saved %d adversaries (each n_reps=%d) to %s",
-                     n_adversaries, n_reps, adv_dir)
+        logger.info("Saved %d adversaries (each n_reps=%d) to %s", n_adversaries, n_reps, adv_dir)
 
     logger.info("All results saved to %s", output_dir)
 
@@ -1436,7 +1507,10 @@ def _log_adversary_force_profiles(
     per_rep_norms = np.linalg.norm(forces_np.reshape(n_reps, -1), axis=-1)
     logger.info(
         "Adversary%s force profile norms: mean=%.4g +/- %.4g (n_reps=%d)",
-        suffix, per_rep_norms.mean(), per_rep_norms.std(), n_reps,
+        suffix,
+        per_rep_norms.mean(),
+        per_rep_norms.std(),
+        n_reps,
     )
 
     filename = f"adversary_force_profiles{suffix}.npz"
@@ -1467,7 +1541,10 @@ def _log_linear_dynamics_adversary(
     norms = np.linalg.norm(deltas_np.reshape(n_reps, -1), axis=-1)
     logger.info(
         "Adversary%s ΔA Frobenius norms: mean=%.4g +/- %.4g (n_reps=%d)",
-        suffix, norms.mean(), norms.std(), n_reps,
+        suffix,
+        norms.mean(),
+        norms.std(),
+        n_reps,
     )
     filename = f"adversary_delta_A{suffix}.npz"
     np.savez(output_dir / filename, delta_A=deltas_np)
@@ -1478,40 +1555,57 @@ def _log_linear_dynamics_adversary(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Minimax adversarial training for RLRMP reaching controllers."
     )
     parser.add_argument(
-        "--n-warmup-batches", type=int, default=2000,
+        "--n-warmup-batches",
+        type=int,
+        default=2000,
         help="Number of warm-start batches before adversarial phase (default: 2000).",
     )
     parser.add_argument(
-        "--batch-size", type=int, default=250,
+        "--batch-size",
+        type=int,
+        default=250,
         help="Per-batch trial count for warmup phase (default: 250).",
     )
     parser.add_argument(
-        "--n-replicates", type=int, default=5,
+        "--n-replicates",
+        type=int,
+        default=5,
         help="Number of vmapped controller replicates in the ensemble (default: 5).",
     )
     parser.add_argument(
-        "--n-adversary-batches", type=int, default=8000,
+        "--n-adversary-batches",
+        type=int,
+        default=8000,
         help="Number of adversarial training batches (default: 8000).",
     )
     parser.add_argument(
-        "--n-adversary-steps", type=int, default=5,
+        "--n-adversary-steps",
+        type=int,
+        default=5,
         help="Inner adversary gradient-ascent steps per controller step (default: 5).",
     )
     parser.add_argument(
-        "--adversary-lr", type=float, default=3e-4,
+        "--adversary-lr",
+        type=float,
+        default=3e-4,
         help="Adversary learning rate (TTUR: should be 3-10x controller LR; default: 3e-4).",
     )
     parser.add_argument(
-        "--controller-lr", type=float, default=1e-4,
+        "--controller-lr",
+        type=float,
+        default=1e-4,
         help="Controller learning rate during adversarial phase (default: 1e-4).",
     )
     parser.add_argument(
-        "--adversary-type", type=str, default="gaussian_bump",
+        "--adversary-type",
+        type=str,
+        default="gaussian_bump",
         choices=["gaussian_bump", "linear_dynamics"],
         help=(
             "Adversary class for the inner-loop maximisation. "
@@ -1525,7 +1619,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--linear-dynamics-eta-max", type=float, default=0.1,
+        "--linear-dynamics-eta-max",
+        type=float,
+        default=0.1,
         help=(
             "Frobenius-norm budget for LinearDynamicsAdversary at SISU=1 "
             "(default: 0.1). SISU gating multiplies the resulting "
@@ -1534,7 +1630,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--linear-dynamics-pgd-steps", type=int, default=5,
+        "--linear-dynamics-pgd-steps",
+        type=int,
+        default=5,
         help=(
             "Number of inner PGD ascent steps for LinearDynamicsAdversary "
             "(default: 5). Currently mirrors --n-adversary-steps; reserved "
@@ -1542,7 +1640,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--linear-dynamics-lr", type=float, default=1e-2,
+        "--linear-dynamics-lr",
+        type=float,
+        default=1e-2,
         help=(
             "Learning rate for the LinearDynamicsAdversary's PGD step "
             "(default: 1e-2). Larger than the GaussianBump default since "
@@ -1550,15 +1650,21 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--n-bumps", type=int, default=3,
+        "--n-bumps",
+        type=int,
+        default=3,
         help="Number of Gaussian bumps in the adversary (default: 3).",
     )
     parser.add_argument(
-        "--force-max", type=float, default=1.0,
+        "--force-max",
+        type=float,
+        default=1.0,
         help="Maximum adversary force magnitude per timestep (default: 1.0).",
     )
     parser.add_argument(
-        "--n-adversaries", type=int, default=1,
+        "--n-adversaries",
+        type=int,
+        default=1,
         help=(
             "Number of adversaries in the population (default: 1 = single adversary). "
             "When K > 1, adversaries rotate each batch (index = batch_idx %% K), "
@@ -1566,18 +1672,24 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--adv-batch-size", type=int, default=None,
+        "--adv-batch-size",
+        type=int,
+        default=None,
         help=(
             "Batch size for adversarial phase (default: same as warmup batch size). "
             "Smaller values (e.g. 64) dramatically reduce XLA compilation time."
         ),
     )
     parser.add_argument(
-        "--warmup-model", type=str, default=None,
+        "--warmup-model",
+        type=str,
+        default=None,
         help="Path to a pre-trained model to use as warm-start (skips phase 1).",
     )
     parser.add_argument(
-        "--output-dir", type=str, default="_artifacts/minimax/minimax_test",
+        "--output-dir",
+        type=str,
+        default="_artifacts/minimax/minimax_test",
         help=(
             "Output directory for bulk artifacts (checkpoints, .eqx, .npz, logs). "
             "Default mirrors the role-based layout: _artifacts/<exp>/runs/<run>/. "
@@ -1587,7 +1699,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--spec-dir", type=str, default=None,
+        "--spec-dir",
+        type=str,
+        default=None,
         help=(
             "Spec directory for the tracked run.json recipe (default: derived "
             "from --output-dir via the mirror invariant, mapping "
@@ -1597,22 +1711,28 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--jax-cache-dir", type=str, default=None,
+        "--jax-cache-dir",
+        type=str,
+        default=None,
         help=(
             "Persistent JAX compilation cache directory. If omitted, uses "
             "JAX_COMPILATION_CACHE_DIR from the environment when set."
         ),
     )
     parser.add_argument(
-        "--jax-explain-cache-misses", action="store_true",
+        "--jax-explain-cache-misses",
+        action="store_true",
         help="Enable JAX cache-miss diagnostics for debugging recompilation.",
     )
     parser.add_argument(
-        "--seed", type=int, default=42,
+        "--seed",
+        type=int,
+        default=42,
         help="Random seed for JAX PRNG (default: 42). Use different seeds for independent replicates.",
     )
     parser.add_argument(
-        "--checkpoint", action="store_true",
+        "--checkpoint",
+        action="store_true",
         help=(
             "Enable jax.checkpoint on the model's scan body to reduce peak VRAM at ~22%% "
             "extra compute cost. Requires feedbax Graph to have a checkpoint field "
@@ -1620,7 +1740,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--checkpoint-every", type=int, default=500,
+        "--checkpoint-every",
+        type=int,
+        default=500,
         help=(
             "Save adversarial training checkpoint every N batches (default: 500). "
             "Set 0 to disable. Checkpoints are written to "
@@ -1629,7 +1751,8 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--resume", action="store_true",
+        "--resume",
+        action="store_true",
         help=(
             "Resume adversarial training from the latest checkpoint in "
             "<output-dir>/checkpoints_adversarial/checkpoint_latest/. "
@@ -1638,21 +1761,27 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--loss-update-enabled", action=argparse.BooleanOptionalAction, default=False,
+        "--loss-update-enabled",
+        action=argparse.BooleanOptionalAction,
+        default=False,
         help=(
             "Enable adaptive loss update to drive control cost toward a target ratio "
             "of goal-state cost (default: False)."
         ),
     )
     parser.add_argument(
-        "--loss-update-ratio", type=float, default=0.5,
+        "--loss-update-ratio",
+        type=float,
+        default=0.5,
         help=(
             "Target ratio of control cost to goal-state cost for adaptive loss update "
             "(default: 0.5). Only used when --loss-update-enabled is set."
         ),
     )
     parser.add_argument(
-        "--fused", action=argparse.BooleanOptionalAction, default=True,
+        "--fused",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help=(
             "Fuse the K adversary steps + controller step into a single JIT "
             "call using lax.fori_loop (default: True). Use --no-fused to fall "
@@ -1661,7 +1790,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--streaming-loss", action=argparse.BooleanOptionalAction, default=False,
+        "--streaming-loss",
+        action=argparse.BooleanOptionalAction,
+        default=False,
         help=(
             "Accumulate loss inside the simulation scan body instead of storing "
             "the full state trajectory (default: False). Eliminates trajectory "
@@ -1671,7 +1802,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--hidden-type", type=str, default="gru",
+        "--hidden-type",
+        type=str,
+        default="gru",
         choices=["gru", "vanilla_rnn", "linear", "linear_tracker"],
         help=(
             "Controller architecture. RNNs: 'gru' (default, GRUCell with gating) "
@@ -1685,7 +1818,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--nn-hidden-derivative", type=float, default=0.0,
+        "--nn-hidden-derivative",
+        type=float,
+        default=0.0,
         help=(
             "Weight on the compositional hidden-state smoothness term "
             "mean(||h_t - h_{t-1}||²) (default: 0.0 = disabled, baseline "
@@ -1694,7 +1829,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--nn-output-jerk", type=float, default=0.0,
+        "--nn-output-jerk",
+        type=float,
+        default=0.0,
         help=(
             "Weight on the compositional output-jerk term "
             "mean(||v_{t+1} - 2 v_t + v_{t-1}||²) on effector velocity "
@@ -1703,7 +1840,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--nn-output-pre-go", type=float, default=0.0,
+        "--nn-output-pre-go",
+        type=float,
+        default=0.0,
         help=(
             "Weight on the pre-go controller-output penalty: "
             "EpochMaskedLoss wrapping the squared-L2 controller force, "
@@ -1715,7 +1854,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--nn-hidden-derivative-pre-go", type=float, default=0.0,
+        "--nn-hidden-derivative-pre-go",
+        type=float,
+        default=0.0,
         help=(
             "Weight on the pre-go hidden-state-derivative penalty: "
             "EpochMaskedLoss wrapping mean(||h_t - h_{t-1}||²), active "
@@ -1726,7 +1867,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--sisu-gating", type=str, default="additive",
+        "--sisu-gating",
+        type=str,
+        default="additive",
         choices=["additive", "multiplicative"],
         help=(
             "How SISU enters the network: additive (default, concatenated with input) "
@@ -1742,7 +1885,9 @@ def parse_args() -> argparse.Namespace:
     # without changing loss.py defaults. Bug: 2bc95fd
     # ---------------------------------------------------------------------------
     parser.add_argument(
-        "--effector-hold-pos", type=float, default=10.0,
+        "--effector-hold-pos",
+        type=float,
+        default=10.0,
         help=(
             "Outer weight on the hold-period position penalty ||p(t) - p_0||² "
             "(active during hold epoch). Default 10.0. Lowering to 0.0 disables "
@@ -1750,7 +1895,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--effector-hold-vel", type=float, default=10.0,
+        "--effector-hold-vel",
+        type=float,
+        default=10.0,
         help=(
             "Outer weight on the hold-period velocity penalty ||v(t)||² "
             "(active during hold epoch). Default 10.0. Set to 0.0 to drop "
@@ -1759,7 +1906,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--effector-final-vel", type=float, default=0.0,
+        "--effector-final-vel",
+        type=float,
+        default=0.0,
         help=(
             "Weight on the terminal-step velocity penalty ||v(T)||² (fires only at "
             "t=T, the last simulation step). Mirrors the historical "
@@ -1770,7 +1919,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--effector-vel-late", type=float, default=0.1,
+        "--effector-vel-late",
+        type=float,
+        default=0.1,
         help=(
             "Weight on the late-window velocity penalty (entire [go+80, T] window). "
             "Default 0.1 (current production value). Set to 0.0 combined with "
@@ -1779,7 +1930,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--effector-pos-running", type=float, default=1.0,
+        "--effector-pos-running",
+        type=float,
+        default=1.0,
         help=(
             "Weight on the running position penalty (uniform over the entire "
             "post-go movement window [go, T]). Default 1.0 (current production "
@@ -1788,7 +1941,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--effector-pos-late-weight", type=float, default=0.5,
+        "--effector-pos-late-weight",
+        type=float,
+        default=0.5,
         help=(
             "Outer weight on the late-window position penalty (cosine-ramped from "
             "go+start_step to T). Default 0.5 (current production value). "
@@ -1797,7 +1952,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--effector-pos-late-final-scale", type=float, default=2.0,
+        "--effector-pos-late-final-scale",
+        type=float,
+        default=2.0,
         help=(
             "Final scale factor for the cosine ramp on the late position term "
             "(ramps from 1.0 to this value over [go+start_step, T]). Default 2.0 "
@@ -1807,7 +1964,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--effector-pos-late-start-step", type=int, default=80,
+        "--effector-pos-late-start-step",
+        type=int,
+        default=80,
         help=(
             "Start of the late position-error window, in steps after the go cue. "
             "Default 80 (current production value, ~800 ms post-go at dt=0.01 s). "
@@ -1823,7 +1982,9 @@ def parse_args() -> argparse.Namespace:
     # behaviour unchanged; "powerlaw" enables the ramp.
     # ---------------------------------------------------------------------------
     parser.add_argument(
-        "--effector-pos-running-schedule", type=str, default="flat",
+        "--effector-pos-running-schedule",
+        type=str,
+        default="flat",
         choices=["flat", "powerlaw", "movement_ramp"],
         help=(
             "Time-weighting schedule for the running position-error term "
@@ -1837,7 +1998,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--effector-hold-pos-schedule", type=str, default="flat",
+        "--effector-hold-pos-schedule",
+        type=str,
+        default="flat",
         choices=["flat", "powerlaw"],
         help=(
             "Time-weighting schedule for the hold-period position-error term "
@@ -1850,7 +2013,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--position-powerlaw-power", type=float, default=6.0,
+        "--position-powerlaw-power",
+        type=float,
+        default=6.0,
         help=(
             "Exponent for the (t/(T-1))^power position-error schedule. "
             "Default 6.0 matches C&S 2019 Eq. 15 (puts ~98%% of weight in "
@@ -1860,7 +2025,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--movement-ramp-shape", type=str, default="linear",
+        "--movement-ramp-shape",
+        type=str,
+        default="linear",
         choices=["linear", "cosine", "power"],
         help=(
             "Shape for --effector-pos-running-schedule movement_ramp. The ramp "
@@ -1869,14 +2036,18 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--movement-ramp-duration-steps", type=int, default=60,
+        "--movement-ramp-duration-steps",
+        type=int,
+        default=60,
         help=(
             "Fixed number of timesteps over which the movement-locked position "
             "ramp rises from zero to one. Default 60. Bug: b399efc."
         ),
     )
     parser.add_argument(
-        "--movement-ramp-power", type=float, default=2.0,
+        "--movement-ramp-power",
+        type=float,
+        default=2.0,
         help=(
             "Exponent used when --movement-ramp-shape power is selected. "
             "Ignored for linear and cosine ramps. Bug: b399efc."
@@ -1887,14 +2058,18 @@ def parse_args() -> argparse.Namespace:
     # Bug: 2e1a6ad
     # ---------------------------------------------------------------------------
     parser.add_argument(
-        "--p-catch-trial", type=float, default=0.5,
+        "--p-catch-trial",
+        type=float,
+        default=0.5,
         help=(
             "Probability of a catch trial (no go cue) in center_out_delayed_reach. "
             "Default 0.5 (Shahbazi 2025 §4.2). Bug: 2e1a6ad."
         ),
     )
     parser.add_argument(
-        "--nn-output", type=float, default=1e-5,
+        "--nn-output",
+        type=float,
+        default=1e-5,
         help=(
             "Weight on the squared L2 controller-output regularisation term "
             "mean(||u_t||²) (active for all post-go timesteps). Default 1e-5. "
@@ -1902,7 +2077,9 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--nn-hidden", type=float, default=1e-5,
+        "--nn-hidden",
+        type=float,
+        default=1e-5,
         help=(
             "Weight on the squared L2 hidden-state regularisation term "
             "mean(||h_t||²). Default 1e-5. Bug: 2e1a6ad."

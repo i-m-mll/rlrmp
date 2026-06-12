@@ -117,15 +117,15 @@ def create_point_mass_nn_ensemble(
     if hidden_type is None:
         hidden_type = eqx.nn.GRUCell
     # Parse population structure from config if not explicitly provided
-    if population_structure is None and hasattr(hps.model, 'population_structure'):
+    if population_structure is None and hasattr(hps.model, "population_structure"):
         pop_config = hps.model.population_structure
         key_pop, key = jr.split(key)
         population_structure = PopulationStructure.create(
             hidden_size=hps.model.hidden_size,
-            n_input_only=_get_or_default(pop_config, 'n_input_only', 0),
-            n_readout_only=_get_or_default(pop_config, 'n_readout_only', 0),
-            n_recurrent_only=_get_or_default(pop_config, 'n_recurrent_only', 0),
-            n_input_readout=_get_or_default(pop_config, 'n_input_readout', 0),
+            n_input_only=_get_or_default(pop_config, "n_input_only", 0),
+            n_readout_only=_get_or_default(pop_config, "n_readout_only", 0),
+            n_recurrent_only=_get_or_default(pop_config, "n_recurrent_only", 0),
+            n_input_readout=_get_or_default(pop_config, "n_input_readout", 0),
             assignment_fn=None,  # TODO: support custom assignment functions from config
             key=key_pop,
         )

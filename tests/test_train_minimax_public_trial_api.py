@@ -37,9 +37,7 @@ class _Passthrough(Component):
     state_index: StateIndex
 
     def __init__(self):
-        self.state_index = StateIndex(
-            _NodeState(hidden=jnp.zeros((2,), dtype=jnp.float32))
-        )
+        self.state_index = StateIndex(_NodeState(hidden=jnp.zeros((2,), dtype=jnp.float32)))
 
     def __call__(self, inputs, state, *, key):
         return {"output": inputs["input"]}, state

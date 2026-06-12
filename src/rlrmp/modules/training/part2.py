@@ -217,9 +217,7 @@ def _scheduled_intervention_params(params_type, **values):
         "amplitude": 1.0,
     }
     init_values = {
-        key: placeholders[key]
-        if key in placeholders and callable(value)
-        else value
+        key: placeholders[key] if key in placeholders and callable(value) else value
         for key, value in values.items()
     }
     params = params_type(**init_values)

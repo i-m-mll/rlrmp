@@ -261,9 +261,7 @@ def install_simple_feedback_runtime_hooks(graph: Graph) -> Graph:
         return graph
 
     def _state_view(node_states):
-        force_filter_state = node_states.get(
-            "force_filter", FilterState(output=None, solver=None)
-        )
+        force_filter_state = node_states.get("force_filter", FilterState(output=None, solver=None))
         return SimpleFeedbackState(
             mechanics=node_states["mechanics"],
             net=node_states["net"],
@@ -348,9 +346,7 @@ def _build_simple_staged_network(params: dict[str, Any]) -> SimpleStagedNetwork:
         hidden_type = eqx.nn.GRUCell
     else:
         raise ValueError(f"Unsupported RLRMP hidden_type {hidden_type_name!r}")
-    population_structure = _population_structure_from_params(
-        params.get("population_structure")
-    )
+    population_structure = _population_structure_from_params(params.get("population_structure"))
     key = _key_from_params(params)
     return SimpleStagedNetwork(
         input_size=int(params["input_size"]),
@@ -748,9 +744,7 @@ def build_point_mass_sensorimotor_graph_spec(
         ),
         metadata=GraphMetadata(
             name="RLRMP point-mass sensorimotor loop",
-            description=(
-                "Executable GraphSpec contract for RLRMP minimax training."
-            ),
+            description=("Executable GraphSpec contract for RLRMP minimax training."),
             created_at="1970-01-01T00:00:00",
             updated_at="1970-01-01T00:00:00",
             version="1.0.0",
@@ -954,13 +948,10 @@ def _point_mass_network_input_size(
     feedback_spec = {
         "where": _point_mass_feedback,
         "delay": int(hps.model.feedback_delay_steps),
-        "noise_func": Normal(
-            std=stochastic_runtime_config_from_model(hps.model).sensory_noise_std
-        ),
+        "noise_func": Normal(std=stochastic_runtime_config_from_model(hps.model).sensory_noise_std),
     }
-    return (
-        SimpleFeedback.get_nn_input_size(task, mechanics, feedback_spec=feedback_spec)
-        + int(n_extra_inputs)
+    return SimpleFeedback.get_nn_input_size(task, mechanics, feedback_spec=feedback_spec) + int(
+        n_extra_inputs
     )
 
 
