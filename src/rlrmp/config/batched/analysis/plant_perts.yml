@@ -55,19 +55,10 @@ defs:
             amp: !Literal [0, 2.0, 4.0]
 
 
-SPEC: 
-  - part1.plant_perts:
-      type: product
-      of: 
-        - *damping
-        - *tau_rise
-        - *noise_levels
-        - *delays
-        - *disturbance_types
-
+SPEC:
   - part2.plant_perts:
       type: product
-      of: 
+      of:
         - *damping
         - *tau_rise
         - *noise_levels

@@ -20,6 +20,15 @@ REQUIRED_ANALYSIS_MODULE_ATTRIBUTES = (
 )
 
 
+def test_registered_parts_exclude_removed_part1_and_keep_live_parts() -> None:
+    registry = ExperimentRegistry()
+    rlrmp.register_experiment_package(registry)
+    metadata = registry.get_package_metadata("rlrmp")
+
+    assert "part1" not in metadata.parts
+    assert set(metadata.parts) == {"part2", "part3"}
+
+
 def _registered_analysis_module_specs() -> list[tuple[str, Path]]:
     registry = ExperimentRegistry()
     rlrmp.register_experiment_package(registry)

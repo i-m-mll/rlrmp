@@ -1,10 +1,10 @@
 """Skeleton for analysis modules imported in __init__.py.
 
-For example, `analysis.part1.plant_perts` is such a module.
+For example, `analysis.part2.plant_perts` is such a module.
 """
 
-from collections.abc import Callable, Mapping, Sequence
-from types import MappingProxyType, SimpleNamespace
+from collections.abc import Callable, Sequence
+from types import SimpleNamespace
 from typing import Optional
 
 from equinox import Module

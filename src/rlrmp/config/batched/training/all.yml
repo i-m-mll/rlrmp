@@ -48,15 +48,6 @@ defs:
 
 # actual per-module specs
 SPEC:
-  - part1:
-      type: product
-      of:
-        - *noise_levels
-        - *feedback_delays
-        - *damping
-        - *tau_rise
-        - *disturbance_types
-
   - part2:
       type: product
       of:

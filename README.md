@@ -3,9 +3,8 @@
 ## Quickstart
 - Create a virtual environment and sync deps: `uv sync`.
 - Set a persistent config dir (optional but recommended): `export RLRMP_CONFIG_DIR=~/rlrmp-config` and create minimal overrides (see Configuration Tips below).
-- Train a small experiment: `uv run python scripts/train.py part1`.
-- Run an analysis and dump figures: `uv run python scripts/run_analysis.py part1.plant_perts
-  --fig-dump-path results/figs --fig-dump-formats html,svg`.
+- Run training and analysis entrypoints with `uv run`, using the current
+  experiment-specific scripts under `scripts/`.
 
 - Set `RLRMP_CONFIG_DIR` to point to your local overrides directory for experiment/analysis defaults.
 - Default paths base is `paths.yml: base: /tmp/rlrmp`, which is ephemeral. To persist DB/models/figures, create `~/rlrmp-config/paths.yml` like:
@@ -71,4 +70,3 @@ parameters that uniquely identify the model(s) we want to load, so we may omit s
 that must appear in the default *training* configs.
 
 If you have a space or other special character in your venv path, it may be necessary to modify your kaleido executable script slightly, for Plotly image export to work: https://github.com/plotly/Kaleido/issues/57#issuecomment-1024462647
-
