@@ -39,26 +39,15 @@ import jax.tree_util as jtu
 import numpy as np
 import optax
 from feedbax._io import load_with_hyperparameters, save as fbx_save
-from feedbax.graph import init_state_from_component
 from feedbax.iterate import run_component
 from feedbax.misc import BatchInfo
 from feedbax.streaming_loss import make_streaming_loss_fn
-from feedbax.task import (
-    _extract_timeseries_params,
-    _infer_n_steps,
-    _merge_intervene_inputs,
-    _prepare_inputs,
-    _safe_state_set,
-    _set_state_by_path,
-    _where_key_to_path,
-)
+from feedbax.task import prepare_trial
 from feedbax.training.train import (
     TaskTrainer,
     make_delayed_cosine_schedule,
     train_pair,
 )
-from feedbax.intervene import TimeSeriesParam
-
 from rlrmp.adversarial_training import (
     _inject_adversary_delta_A,
     _inject_adversary_forces,
@@ -397,13 +386,13 @@ def _get_trainable(model):
     for the tracker) directly on the net Component — branch on Module class
     name to keep this single function compatible with both code paths.
     """
-    net = model.nodes["net"]
+    net = model.get_node("net")
     cls_name = type(net).__name__
     if cls_name == "LinearController":
-        return (net.K,)
+        return model.get_node_attrs("net", "K")
     if cls_name == "LinearTrackerController":
-        return (net.K, net.u_ff)
-    return (net.hidden, net.readout)
+        return model.get_node_attrs("net", "K", "u_ff")
+    return model.get_node_attrs("net", "hidden", "readout")
 
 
 def _trainable_where(model):
@@ -417,13 +406,13 @@ def _trainable_where(model):
     triggers an AttributeError during the adversarial controller step. This
     helper centralises the architecture branch.
     """
-    net = model.nodes["net"]
+    net = model.get_node("net")
     cls_name = type(net).__name__
     if cls_name == "LinearController":
-        return lambda m: (m.nodes["net"].K,)
+        return lambda m: m.get_node_attrs("net", "K")
     if cls_name == "LinearTrackerController":
-        return lambda m: (m.nodes["net"].K, m.nodes["net"].u_ff)
-    return lambda m: (m.nodes["net"].hidden, m.nodes["net"].readout)
+        return lambda m: m.get_node_attrs("net", "K", "u_ff")
+    return lambda m: m.get_node_attrs("net", "hidden", "readout")
 
 
 def _eval_trials_streaming(task, model, trial_specs, keys, loss_func):
@@ -446,56 +435,18 @@ def _eval_trials_streaming(task, model, trial_specs, keys, loss_func):
     """
     # Bug: 3ef9c25 — streaming loss integration for memory-efficient training
     def eval_single(trial_spec, key):
-        key_init, key_run = jr.split(key)
-        init_state = init_state_from_component(model)
-
-        for where_substate, init_substate in trial_spec.inits.items():
-            path = _where_key_to_path(where_substate)
-            init_state = _set_state_by_path(model, init_state, path, init_substate)
-
-        # Apply intervention params (same logic as task.eval_trials)
-        intervene_inputs = {}
-        if trial_spec.intervene:
-            indices = model.intervention_state_indices()
-            for label, params in trial_spec.intervene.items():
-                if label not in indices:
-                    raise ValueError(f"Unknown intervention label '{label}'")
-                idx = indices[label]
-                current = init_state.get(idx)
-
-                def _merge_leaf(p, c):
-                    if isinstance(p, TimeSeriesParam):
-                        return c
-                    if p is None:
-                        return c
-                    return p
-
-                merged = jt.map(
-                    _merge_leaf,
-                    params, current,
-                    is_leaf=lambda x: x is None or isinstance(x, TimeSeriesParam),
-                )
-                init_state = _safe_state_set(init_state, idx, merged)
-                tv_params = _extract_timeseries_params(params, current)
-                if tv_params is not None:
-                    intervene_inputs[label] = tv_params
-
-        init_state = model.state_consistency_update(init_state)
-
-        inputs = _prepare_inputs(model, trial_spec.inputs)
-        if intervene_inputs:
-            inputs = _merge_intervene_inputs(inputs, intervene_inputs)
-        n_steps = _infer_n_steps(inputs, trial_spec.timeline)
+        key_run = jr.split(key, 2)[1]
+        prepared = prepare_trial(model, trial_spec)
 
         # Build per-step streaming loss closure (single trial, no batch dim)
-        streaming_fn = make_streaming_loss_fn(loss_func, trial_spec, model, n_steps)
+        streaming_fn = make_streaming_loss_fn(loss_func, trial_spec, model, prepared.n_steps)
 
         _outputs, _final_state, total_loss = run_component(
             model,
-            inputs,
-            init_state,
+            prepared.inputs,
+            prepared.init_state,
             key=key_run,
-            n_steps=n_steps,
+            n_steps=prepared.n_steps,
             streaming_loss_fn=streaming_fn,
         )
         return total_loss
@@ -507,15 +458,15 @@ def _eval_trials_streaming(task, model, trial_specs, keys, loss_func):
 def _make_where_train(sisu_gating: str = "additive"):
     """Return the where_train dict for the controller optimizer."""
     def where_train_fn(model):
-        net = model.nodes["net"]
+        net = model.get_node("net")
         cls_name = type(net).__name__
         # Linear-controller MVP variants (Bug: 410d7ac) carry their parameters
         # directly on the net Component as K (+ u_ff for the tracker).
         if cls_name == "LinearController":
-            return (net.K,)
+            return model.get_node_attrs("net", "K")
         if cls_name == "LinearTrackerController":
-            return (net.K, net.u_ff)
-        params = [net.hidden, net.readout]
+            return model.get_node_attrs("net", "K", "u_ff")
+        params = list(model.get_node_attrs("net", "hidden", "readout"))
         # Include sisu_alpha in trainable params when using multiplicative gating
         if sisu_gating == "multiplicative" and net.sisu_alpha is not None:
             params.append(net.sisu_alpha)
