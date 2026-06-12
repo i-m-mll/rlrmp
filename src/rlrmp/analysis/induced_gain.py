@@ -1,3 +1,4 @@
+# ruff: noqa: F821
 """Induced gain ``||T_{w -> z}||_inf`` analyser for trained checkpoints.
 
 This module computes the closed-loop disturbance-to-error H-infinity norm for
@@ -54,7 +55,7 @@ from typing import Callable, Optional, Protocol, Tuple
 
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array, Float, PyTree
+from jaxtyping import Array, Float
 
 from rlrmp.analysis.hinf_riccati import (
     CostSchedule,
@@ -82,11 +83,6 @@ W_ADDITIVE_FORCE = "additive_force"
 W_SENSORY_PERTURBATION = "sensory_perturbation"
 W_STRUCTURAL_DA = "structural_da"
 
-# Deprecated alias for one cycle. Bug: ec7710f — H-inf doesn't distinguish
-# stochastic noise from L2-bounded perturbation. New code should use
-# ``W_SENSORY_PERTURBATION`` / the literal ``"sensory_perturbation"``.
-W_SENSORY_NOISE = W_SENSORY_PERTURBATION  # deprecated alias
-
 Z_QR_COST = "qr_cost"
 Z_CONTROL = "control"
 Z_STATE_ERROR = "state_error"
@@ -101,17 +97,13 @@ def _validate_w_channel(name: str) -> str:
     if name == "sensory_noise":
         name = W_SENSORY_PERTURBATION
     if name not in _W_CHANNELS:
-        raise ValueError(
-            f"Unknown w channel {name!r}. Valid: {sorted(_W_CHANNELS)}."
-        )
+        raise ValueError(f"Unknown w channel {name!r}. Valid: {sorted(_W_CHANNELS)}.")
     return name
 
 
 def _validate_z_channel(name: str) -> str:
     if name not in _Z_CHANNELS:
-        raise ValueError(
-            f"Unknown z channel {name!r}. Valid: {sorted(_Z_CHANNELS)}."
-        )
+        raise ValueError(f"Unknown z channel {name!r}. Valid: {sorted(_Z_CHANNELS)}.")
     return name
 
 
@@ -241,7 +233,7 @@ def _unflatten_array_to_pytree(flat, treedef, leaf_shapes, leaf_sizes):
     leaves = []
     offset = 0
     for shape, size in zip(leaf_shapes, leaf_sizes):
-        leaves.append(flat[offset:offset + size].reshape(shape))
+        leaves.append(flat[offset : offset + size].reshape(shape))
         offset += size
     return jax.tree.unflatten(treedef, leaves)
 
@@ -310,7 +302,7 @@ class _FeedbaxGraphController:
     def _split(self, h: Float[Array, "n_ctrl"]):
         """Unflatten ``h`` into ``(state, cycle_port_values)``."""
         state_flat = h[: self.n_state_flat]
-        cycle_flat = h[self.n_state_flat:]
+        cycle_flat = h[self.n_state_flat :]
         state = _unflatten_array_to_pytree(
             state_flat, self.state_treedef, self.state_shapes, self.state_sizes
         )
@@ -325,14 +317,14 @@ class _FeedbaxGraphController:
         leaves_c = jax.tree.leaves(cycle_port_values)
         if leaves_s:
             state_flat = jnp.concatenate(
-                [jnp.asarray(l, dtype=jnp.float64).reshape(-1) for l in leaves_s],
+                [jnp.asarray(leaf, dtype=jnp.float64).reshape(-1) for leaf in leaves_s],
                 axis=0,
             )
         else:
             state_flat = jnp.zeros((0,), dtype=jnp.float64)
         if leaves_c:
             cycle_flat = jnp.concatenate(
-                [jnp.asarray(l, dtype=jnp.float64).reshape(-1) for l in leaves_c],
+                [jnp.asarray(leaf, dtype=jnp.float64).reshape(-1) for leaf in leaves_c],
                 axis=0,
             )
         else:
@@ -399,9 +391,7 @@ def feedbax_graph_controller(
     init_state = graph.init_state(key=key)
     cycle_port_values = graph.initial_cycle_port_values(init_state)
 
-    state_flat, state_treedef, state_shapes, state_sizes = _flatten_pytree_to_array(
-        init_state
-    )
+    state_flat, state_treedef, state_shapes, state_sizes = _flatten_pytree_to_array(init_state)
     cycle_flat, cycle_treedef, cycle_shapes, cycle_sizes = _flatten_pytree_to_array(
         cycle_port_values
     )
@@ -420,23 +410,6 @@ def feedbax_graph_controller(
         key=key,
         input_port=input_port,
         output_port=output_port,
-    )
-
-
-# Deprecated alias kept for one cycle. Bug: b131510. The old signature
-# (step_fn, h0) doesn't match the graph API; new code must use
-# ``feedbax_graph_controller(graph, key=...)``.
-def feedbax_rnn_controller(*args, **kwargs):
-    """Deprecated. Use ``feedbax_graph_controller(graph, key=...)`` instead.
-
-    Bug: b131510 -- the old ``feedbax_rnn_controller(step_fn, h0)`` adapter
-    implicitly assumed feedbax's pre-eager-graph staged-model API. The new
-    graph API exposes per-step evaluation directly on ``Graph``; pass the
-    graph object instead of a hand-extracted step closure.
-    """
-    raise NotImplementedError(
-        "feedbax_rnn_controller is deprecated (Bug: b131510). "
-        "Use feedbax_graph_controller(graph, key=...) — see its docstring."
     )
 
 
@@ -663,9 +636,7 @@ def linearise_trajectory(
     if z_channel == Z_QR_COST and schedule is None:
         raise ValueError("z_channel='qr_cost' requires a CostSchedule.")
     if schedule is not None and schedule.T < horizon:
-        raise ValueError(
-            f"schedule.T={schedule.T} must be >= horizon={horizon}."
-        )
+        raise ValueError(f"schedule.T={schedule.T} must be >= horizon={horizon}.")
     if sensory_map is None:
         sensory_map = _full_state_observer
 
@@ -1069,9 +1040,7 @@ def linearise_fixed_point(
         return x_next - x_aug
 
     # Newton iterations.
-    x_aug = jnp.concatenate(
-        [jnp.zeros((n_plant,), dtype=jnp.float64), h_0], axis=0
-    )
+    x_aug = jnp.concatenate([jnp.zeros((n_plant,), dtype=jnp.float64), h_0], axis=0)
     for _ in range(newton_max_iter):
         r = residual(x_aug)
         if float(jnp.linalg.norm(r)) < newton_tol:
@@ -1134,9 +1103,7 @@ def linearise_fixed_point(
         D = Du_in_w_basis
     elif z_channel == Z_STATE_ERROR:
         I_plant = jnp.eye(n_plant, dtype=jnp.float64)
-        Cz = jnp.concatenate(
-            [I_plant, jnp.zeros((n_plant, n_ctrl), dtype=jnp.float64)], axis=1
-        )
+        Cz = jnp.concatenate([I_plant, jnp.zeros((n_plant, n_ctrl), dtype=jnp.float64)], axis=1)
         D = jnp.zeros((n_plant, n_w), dtype=jnp.float64)
     elif z_channel == Z_PEAK_VELOCITY:
         vel_lo, vel_hi = plant.vel_slice
@@ -1552,9 +1519,7 @@ def _bounded_real_admissible(
         # Update P:
         ATPBw_plus_CzTD = A.T @ P @ Bw + Cz.T @ D
         P_next = (
-            Cz.T @ Cz
-            + A.T @ P @ A
-            + ATPBw_plus_CzTD @ jnp.linalg.solve(bracket, ATPBw_plus_CzTD.T)
+            Cz.T @ Cz + A.T @ P @ A + ATPBw_plus_CzTD @ jnp.linalg.solve(bracket, ATPBw_plus_CzTD.T)
         )
         P = 0.5 * (P_next + P_next.T)
         if not jnp.all(jnp.isfinite(P)):
@@ -1833,7 +1798,6 @@ __all__ = [
     # Channel sentinels
     "W_ADDITIVE_FORCE",
     "W_SENSORY_PERTURBATION",
-    "W_SENSORY_NOISE",  # deprecated alias for W_SENSORY_PERTURBATION
     "W_STRUCTURAL_DA",
     "Z_QR_COST",
     "Z_CONTROL",
@@ -1847,7 +1811,6 @@ __all__ = [
     # Controller adapters
     "lti_controller",
     "feedbax_graph_controller",
-    "feedbax_rnn_controller",  # deprecated; raises NotImplementedError
     # Linearisation
     "linearise_trajectory",
     "linearise_fixed_point",
