@@ -893,11 +893,18 @@ def graph_spec_from_model(
         )
     graph_spec = graph_to_spec(model)
     nodes = dict(graph_spec.nodes)
+    subgraphs = dict(graph_spec.subgraphs or {})
+    drop_subgraphs: set[str] = set()
+    cs_lss_graph = _is_cs_lss_graph(model)
     for name, component in model.nodes.items():
         node_spec = nodes.get(name)
         if node_spec is None:
             continue
-        if isinstance(component, Mechanics) and isinstance(component.plant, DirectForceInput):
+        cs_lss_spec = _cs_lss_runtime_component_spec(component) if cs_lss_graph else None
+        if cs_lss_spec is not None:
+            nodes[name] = cs_lss_spec
+            drop_subgraphs.add(name)
+        elif isinstance(component, Mechanics) and isinstance(component.plant, DirectForceInput):
             skeleton = component.plant.skeleton
             if isinstance(skeleton, PointMass):
                 nodes[name] = ComponentSpec(
@@ -965,7 +972,131 @@ def graph_spec_from_model(
                     input_ports=list(component.input_ports),
                     output_ports=list(component.output_ports),
                 )
-    return graph_spec.model_copy(update={"nodes": nodes})
+    for name in drop_subgraphs:
+        subgraphs.pop(name, None)
+    return graph_spec.model_copy(update={"nodes": nodes, "subgraphs": subgraphs or None})
+
+
+def _is_cs_lss_graph(model: Graph) -> bool:
+    from feedbax.mechanics import LinearStateSpace
+
+    return isinstance(model.nodes.get("mechanics"), LinearStateSpace)
+
+
+def _cs_lss_runtime_component_spec(component: Any) -> ComponentSpec | None:
+    from feedbax.mechanics import LinearStateSpace
+    from rlrmp.cs_lss_gru import (
+        CS_FORCE_DIM,
+        CS_LSS_DELAYED_FEEDBACK_COMPONENT,
+        CS_LSS_INITIAL_HIDDEN_NET_COMPONENT,
+        CS_LSS_TARGET_FEEDBACK_COMPONENT,
+        CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT,
+        DelayedPositionVelocityFeedback,
+        InitialHiddenStagedNetwork,
+        TargetRelativeDelayedFeedback,
+        TargetRelativeDelayedProprioceptiveFeedback,
+    )
+
+    if isinstance(component, LinearStateSpace):
+        return ComponentSpec(
+            type="LinearStateSpace",
+            params={
+                "A": component.A.tolist(),
+                "B": component.B.tolist(),
+                "B_w": component.B_w.tolist(),
+                "dt": component.dt,
+                "initial_state": list(component.initial_state),
+                "pos_slice": list(component.pos_slice),
+                "vel_slice": list(component.vel_slice),
+            },
+            input_ports=list(component.input_ports),
+            output_ports=list(component.output_ports),
+        )
+    if isinstance(component, TargetRelativeDelayedProprioceptiveFeedback):
+        return _cs_lss_feedback_component_spec(
+            component,
+            component_type=CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT,
+        )
+    if isinstance(component, TargetRelativeDelayedFeedback):
+        return _cs_lss_feedback_component_spec(
+            component,
+            component_type=CS_LSS_TARGET_FEEDBACK_COMPONENT,
+        )
+    if isinstance(component, DelayedPositionVelocityFeedback):
+        return _cs_lss_feedback_component_spec(
+            component,
+            component_type=CS_LSS_DELAYED_FEEDBACK_COMPONENT,
+        )
+    if isinstance(component, InitialHiddenStagedNetwork):
+        params = _cs_lss_simple_staged_network_params(component.net)
+        params.update(
+            {
+                "h0_input_size": int(component.h0_encoder.weight.shape[1]),
+                "h0_context_source": component.h0_context_source,
+                "h0_initialization": component.h0_initialization,
+            }
+        )
+        return ComponentSpec(
+            type=CS_LSS_INITIAL_HIDDEN_NET_COMPONENT,
+            params=params,
+            input_ports=list(component.input_ports),
+            output_ports=list(component.output_ports),
+        )
+    if isinstance(component, SimpleStagedNetwork):
+        params = _cs_lss_simple_staged_network_params(component)
+        params["out_size"] = int(params.get("out_size", CS_FORCE_DIM))
+        return ComponentSpec(
+            type="RLRMPSimpleStagedNetwork",
+            params=params,
+            input_ports=list(component.input_ports),
+            output_ports=list(component.output_ports),
+        )
+    return None
+
+
+def _cs_lss_feedback_component_spec(component: Any, *, component_type: str) -> ComponentSpec:
+    return ComponentSpec(
+        type=component_type,
+        params={
+            "indices": [int(index) for index in component.indices],
+            "expected_state_dim": int(component.expected_state_dim),
+            "feedback_dim": len(component.indices),
+        },
+        input_ports=list(component.input_ports),
+        output_ports=list(component.output_ports),
+    )
+
+
+def _cs_lss_simple_staged_network_params(component: SimpleStagedNetwork) -> dict[str, Any]:
+    return {
+        "controller_kind": "gru",
+        "input_size": int(component.input_size),
+        "hidden_size": int(component.hidden_size),
+        "out_size": int(component.out_size),
+        "encoding_size": component.encoding_size,
+        "hidden_type": type(component.hidden).__name__,
+        "sisu_gating": component.sisu_gating,
+        "population_structure": _runtime_population_structure_params(
+            component.population_structure,
+            hidden_size=int(component.hidden_size),
+        ),
+    }
+
+
+def _runtime_population_structure_params(
+    population_structure: PopulationStructure | None,
+    *,
+    hidden_size: int,
+) -> dict[str, int]:
+    if population_structure is None:
+        return {}
+    return {
+        "hidden_size": int(hidden_size),
+        "n_input_only": int(getattr(population_structure, "n_input_only", 0) or 0),
+        "n_readout_only": int(getattr(population_structure, "n_readout_only", 0) or 0),
+        "n_recurrent_only": int(getattr(population_structure, "n_recurrent_only", 0) or 0),
+        "n_input_readout": int(getattr(population_structure, "n_input_readout", 0) or 0),
+    }
 
 
 def _representative_runtime_graph(
