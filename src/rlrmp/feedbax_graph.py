@@ -619,12 +619,14 @@ def build_point_mass_sensorimotor_graph_spec(
     ]
 
     force_source = ("efferent", "output")
-    if float(hps.model.tau_rise) != 0.0 or float(hps.model.tau_rise) != 0.0:
+    tau_rise = float(getattr(hps.model, "tau_rise", 0.0) or 0.0)
+    tau_decay = float(getattr(hps.model, "tau_decay", tau_rise) or 0.0)
+    if tau_rise != 0.0 or tau_decay != 0.0:
         nodes["force_filter"] = ComponentSpec(
             type="FirstOrderFilter",
             params={
-                "tau_rise": float(hps.model.tau_rise),
-                "tau_decay": float(hps.model.tau_rise),
+                "tau_rise": tau_rise,
+                "tau_decay": tau_decay,
                 "dt": float(hps.dt),
                 "init_value": 0.0,
                 "input_shape": [2],
