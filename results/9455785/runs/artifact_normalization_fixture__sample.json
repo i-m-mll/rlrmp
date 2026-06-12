@@ -1,0 +1,19 @@
+{
+  "run": "artifact_normalization_fixture__sample",
+  "issue": "9455785",
+  "description": "Small checked-in run-spec fixture for artifact manifest normalization.",
+  "provider": {
+    "name": "rlrmp",
+    "tracked_spec_role": "results-run-spec",
+    "bulk_artifact_role": "_artifacts-run-output"
+  },
+  "training_summary": {
+    "training_mode": "fixture",
+    "n_train_batches": 0,
+    "completed_batches": 0
+  },
+  "artifacts": {
+    "bulk_root": "_artifacts/9455785/runs/artifact_normalization_fixture__sample",
+    "feedbax_manifest_root": "_artifacts/feedbax_runs"
+  }
+}
