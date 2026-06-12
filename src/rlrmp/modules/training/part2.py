@@ -22,11 +22,11 @@ from feedbax.training.train import always_active, bernoulli_active
 from feedbax.types import LDict, TaskModelPair, TreeNamespace
 from jaxtyping import PRNGKeyArray
 
-from rlrmp.analysis.cs_game_card import build_canonical_game, build_no_integrator_game
-from rlrmp.analysis.cs_released_simulation import (
+from rlrmp.analysis.math.cs_game_card import build_canonical_game, build_no_integrator_game
+from rlrmp.analysis.math.cs_released_simulation import (
     DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
 )
-from rlrmp.analysis.output_feedback import OutputFeedbackConfig, process_covariance
+from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig, process_covariance
 from rlrmp.cs_lss_gru import (
     CS_PHYSICAL_STATE_DIM,
     CS_REDUCED_PHYSICAL_STATE_DIM,

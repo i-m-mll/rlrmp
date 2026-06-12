@@ -10,7 +10,7 @@ from feedbax.graph import Wire
 from feedbax.state import CartesianState
 from feedbax.task import TaskTrialSpec
 
-from rlrmp.analysis.gru_perturbation_bank import (
+from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     GRAPH_ADAPTER_INPUT_PREFIX,
     SCHEMA_VERSION,
     apply_perturbation_to_trial_specs,
@@ -25,9 +25,9 @@ from rlrmp.analysis.gru_perturbation_bank import (
     summarize_perturbation_bank,
     summarize_perturbation_response,
 )
-import rlrmp.analysis.gru_perturbation_bank as perturbation_bank
-from rlrmp.analysis.gru_evaluation_diagnostics import RolloutEvaluation
-from rlrmp.analysis.cs_game_card import build_canonical_game
+import rlrmp.analysis.pipelines.gru_perturbation_bank as perturbation_bank
+from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluation
+from rlrmp.analysis.math.cs_game_card import build_canonical_game
 from rlrmp.cs_lss_gru import build_cs_lss_gru_graph
 
 

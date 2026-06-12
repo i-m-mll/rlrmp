@@ -30,7 +30,7 @@ from feedbax.types import TreeNamespace
 from jax_cookbook.misc import window_take
 from jaxtyping import Array, PyTree
 
-from rlrmp.analysis.cs_game_card import TARGET_POS, build_canonical_game, build_no_integrator_game
+from rlrmp.analysis.math.cs_game_card import TARGET_POS, build_canonical_game, build_no_integrator_game
 
 logger = logging.getLogger(__name__)
 

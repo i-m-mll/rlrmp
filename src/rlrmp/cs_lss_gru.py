@@ -31,8 +31,8 @@ from feedbax.noise import Multiplicative, Normal
 from feedbax.nn import NetworkState, PopulationStructure, SimpleStagedNetwork
 from feedbax.state import CartesianState
 
-from rlrmp.analysis.cs_game_card import build_canonical_game
-from rlrmp.analysis.feedbax_parity import build_cs2019_feedbax_mechanics
+from rlrmp.analysis.math.cs_game_card import build_canonical_game
+from rlrmp.analysis.pipelines.feedbax_parity import build_cs2019_feedbax_mechanics
 
 
 CS_PHYSICAL_STATE_DIM = 8
