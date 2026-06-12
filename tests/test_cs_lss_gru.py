@@ -9,7 +9,7 @@ import pytest
 from feedbax.graph import init_state_from_component
 from feedbax.train import filter_spec_leaves, get_model_parameters
 
-from rlrmp.analysis.cs_game_card import build_canonical_game, build_no_integrator_game
+from rlrmp.analysis.math.cs_game_card import build_canonical_game, build_no_integrator_game
 from rlrmp.cs_lss_gru import (
     CS_DELAYED_POS_VEL_INDICES,
     CS_EPSILON_DIM,

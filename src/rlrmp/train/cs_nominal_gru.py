@@ -31,7 +31,7 @@ from feedbax.train import filter_spec_leaves, get_model_parameters
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule
 from feedbax.types import TreeNamespace, dict_to_namespace
 
-from rlrmp.analysis.cs_game_card import (
+from rlrmp.analysis.math.cs_game_card import (
     INIT_POS,
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     OUTPUT_FEEDBACK_GAMMA_SELECTION_ISSUE_ID,
@@ -39,11 +39,11 @@ from rlrmp.analysis.cs_game_card import (
     build_canonical_game,
     build_no_integrator_game,
 )
-from rlrmp.analysis.cs_released_simulation import (
+from rlrmp.analysis.math.cs_released_simulation import (
     DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
     default_cs_noise_covariances,
 )
-from rlrmp.analysis.output_feedback import OutputFeedbackConfig
+from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig
 from rlrmp.cs_lss_gru import CS_H0_CONTEXT_DIM, CS_H0_ENCODER_INIT
 from rlrmp.feedbax_graph import (
     EXECUTION_BACKEND,

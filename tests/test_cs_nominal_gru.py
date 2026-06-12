@@ -22,15 +22,15 @@ from feedbax.task import TaskTrialSpec, TrialTimeline
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
 from feedbax.types import TreeNamespace
 
-from rlrmp.analysis.cs_game_card import (
+from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     build_canonical_game,
 )
-from rlrmp.analysis.cs_released_simulation import default_cs_noise_covariances
-from rlrmp.analysis.gru_perturbation_calibration import (
+from rlrmp.analysis.math.cs_released_simulation import default_cs_noise_covariances
+from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
     DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT,
 )
-from rlrmp.analysis.output_feedback import OutputFeedbackConfig
+from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig
 from rlrmp.cs_lss_gru import (
     CS_EPSILON_DIM,
     CS_REDUCED_EPSILON_DIM,
