@@ -134,6 +134,46 @@ def test_minimax_graph_bundle_materializes_runtime_graph() -> None:
     assert ("mechanics", "feedback") in recurrent_edges
 
 
+@pytest.mark.parametrize(
+    ("tau_rise", "tau_decay", "expected_present"),
+    [
+        (0.0, 0.0, False),
+        (0.0, 0.07, True),
+        (0.05, 0.0, True),
+        (0.05, 0.07, True),
+    ],
+)
+def test_force_filter_spec_uses_independent_tau_decay(
+    tau_rise: float,
+    tau_decay: float,
+    expected_present: bool,
+) -> None:
+    hps = _hps()
+    hps = hps | {
+        "model": hps.model | {
+            "tau_rise": tau_rise,
+            "tau_decay": tau_decay,
+        }
+    }
+
+    spec = build_point_mass_sensorimotor_graph_spec(hps)
+
+    assert ("force_filter" in spec.nodes) is expected_present
+    if not expected_present:
+        force_edges = [
+            (wire.source_node, wire.source_port, wire.target_node, wire.target_port)
+            for wire in spec.wires
+            if wire.target_port == "force"
+        ]
+        assert all(edge[0] != "force_filter" and edge[2] != "force_filter" for edge in force_edges)
+        return
+
+    force_filter = spec.nodes["force_filter"]
+    assert force_filter.type == "FirstOrderFilter"
+    assert force_filter.params["tau_rise"] == pytest.approx(tau_rise)
+    assert force_filter.params["tau_decay"] == pytest.approx(tau_decay)
+
+
 def test_graph_spec_serializes_explicit_stochastic_runtime_contract() -> None:
     hps = _hps(
         sensory_noise_std=0.02,
