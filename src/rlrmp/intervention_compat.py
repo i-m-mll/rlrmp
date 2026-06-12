@@ -1,4 +1,5 @@
 """Compatibility helpers for minimax adversary intervention swaps."""
+
 import equinox as eqx
 import jax.numpy as jnp
 from feedbax.graph import Wire
@@ -60,7 +61,13 @@ def swap_plant_intervenor_to_dynamics_matrix(
     # Ensure an effector wire exists into the swapped intervenor. The original
     # FixedField/AddNoise wiring did not include `mechanics:effector`, but
     # DynamicsMatrixPerturb requires it. We add it idempotently.
-    needed_wire = Wire("mechanics", "effector", label, "effector", temporality="recurrent")
+    needed_wire = Wire(
+        "mechanics",
+        "effector",
+        label,
+        "effector",
+        temporality="recurrent",
+    )
     existing = list(getattr(model, "wires", ()) or ())
     if needed_wire not in existing:
         model = model.add_wire(needed_wire)
