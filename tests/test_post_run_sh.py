@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from hashlib import sha256
 from pathlib import Path
 
 
@@ -23,6 +24,20 @@ def run_command(command: list[str], *, cwd: Path, env: dict[str, str] | None = N
     return result.stdout
 
 
+def run_command_result(
+    command: list[str], *, cwd: Path, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        command,
+        cwd=cwd,
+        env=env,
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+
+
 def init_git_repo(path: Path) -> None:
     path.mkdir()
     run_command(["git", "init"], cwd=path)
@@ -31,31 +46,111 @@ def init_git_repo(path: Path) -> None:
     run_command(["git", "commit", "--allow-empty", "-m", "init"], cwd=path)
 
 
-def write_run_source(path: Path) -> None:
+def write_json(path: Path, payload: dict[str, object]) -> str:
+    encoded = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(encoded, encoding="utf-8")
+    return sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def write_run_source(path: Path, *, manifest_run: str = "fixture__ok") -> None:
     path.mkdir()
-    (path / "run.json").write_text(
-        json.dumps(
-            {
-                "run": "fixture__ok",
-                "training_summary": {"training_mode": "nominal"},
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
+    manifest_relpath = "training_run_manifest.json"
+    write_json(
+        path / "graph_spec.json",
+        {
+            "schema_version": "feedbax.graph_spec.v1",
+            "nodes": {},
+            "output_ports": [],
+        },
     )
-    (path / "training_summary.json").write_text(
-        json.dumps(
-            {
-                "training_mode": "nominal",
-                "completed_batches": 3,
-                "n_train_batches": 3,
-                "final_validation_loss": 0.125,
+    run_spec = {
+        "run": "fixture__ok",
+        "issue": "731fdf7",
+        "schema_version": "rlrmp.run_spec.v1",
+        "training_summary": {
+            "training_mode": "nominal",
+            "completed_batches": 3,
+            "n_train_batches": 3,
+            "final_validation_loss": 0.125,
+        },
+        "feedbax_graph": {
+            "graph_spec_path": "graph_spec.json",
+        },
+        "provenance": {
+            "rlrmp_commit": "rlrmp-fixture-sha",
+            "feedbax_commit": "feedbax-fixture-sha",
+            "feedbax_manifest": manifest_relpath,
+            "feedbax_manifest_root": "_artifacts/feedbax_runs",
+            "schema_versions": {
+                "feedbax_manifest": "feedbax.manifest.v1",
+                "feedbax_provider": "feedbax-provider.v1",
+                "rlrmp_run_spec": "rlrmp.run_spec.v1",
             },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
+        },
+    }
+    run_spec_sha = write_json(path / "run.json", run_spec)
+    write_json(path / "training_summary.json", run_spec["training_summary"])
+    manifest = {
+        "kind": "TrainingRunManifest",
+        "schema_version": "feedbax.manifest.v1",
+        "id": "feedbax-training-run:fixture-ok",
+        "created_at": "2026-06-11T00:00:00Z",
+        "feedbax_version": "fixture",
+        "provider_version": "feedbax-provider.v1",
+        "status": "completed",
+        "job_id": "fixture__ok",
+        "provenance": {
+            "source_repo": "https://github.com/i-m-mll/rlrmp.git",
+            "source_branch": "feature/64d3059-post-run-provenance",
+            "source_commit": "rlrmp-fixture-sha",
+            "dirty": False,
+            "issues": ["731fdf7", "64d3059"],
+        },
+        "artifacts": [
+            {
+                "role": "tracked_run_spec",
+                "logical_name": "fixture__ok.json",
+                "sha256": run_spec_sha,
+                "media_type": "application/json",
+                "storage_backend": "rlrmp-results",
+                "uri": "results/731fdf7/runs/fixture__ok.json",
+                "metadata": {"availability": "checked_in"},
+            },
+            {
+                "role": "training_checkpoint",
+                "logical_name": "trained_model.eqx",
+                "media_type": "application/x-equinox",
+                "storage_backend": "rlrmp-_artifacts",
+                "uri": "_artifacts/731fdf7/runs/fixture__ok/trained_model.eqx",
+                "metadata": {
+                    "availability": "reference_only",
+                    "manifest_root": "_artifacts/feedbax_runs/",
+                },
+            },
+        ],
+        "graph_spec": {
+            "kind": "GraphSpec",
+            "inline": {"schema_version": "feedbax.graph_spec.v1", "nodes": {}},
+            "sha256": "fixture-graphspec",
+            "metadata": {"graph_spec_version": "feedbax.graphspec.fixture.v1"},
+        },
+        "training_spec": {
+            "kind": "RLRMPRunSpec",
+            "inline": {"run": manifest_run, "issue": "731fdf7"},
+            "ref": "results/731fdf7/runs/fixture__ok.json",
+            "sha256": run_spec_sha,
+        },
+        "summary_metrics": {"completed_batches": 3, "final_validation_loss": 0.125},
+    }
+    write_json(path / manifest_relpath, manifest)
+    write_json(
+        path
+        / "feedbax_runs"
+        / "manifests"
+        / "training_runs"
+        / "feedbax_training_run_fixture__ok.json",
+        manifest,
     )
     (path / "trained_model.eqx").write_text("fixture model\n", encoding="utf-8")
 
@@ -125,6 +220,13 @@ def test_dry_run_prints_actions_without_writing(tmp_path: Path) -> None:
     assert "DRY-RUN: mkdir -p" in output
     assert "DRY-RUN: rsync -a" in output
     assert "DRY-RUN: would write/verify tracked run spec" in output
+    assert "rlrmp" in output.lower()
+    assert "feedbax" in output.lower()
+    assert "sha" in output.lower()
+    assert "graphspec" in output.lower() or "graph spec" in output.lower()
+    assert "feedbax.manifest.v1" in output
+    assert "feedbax-provider.v1" in output
+    assert "_artifacts/feedbax_runs" in output
     assert "agent-commit --issue 731fdf7" in output
     assert "mandible auth request" in output
     assert "Checklist: decide whether this run requires coordination comments" in output
@@ -164,9 +266,20 @@ def test_local_fixture_syncs_spec_commits_and_records_auth(tmp_path: Path) -> No
 
     spec_path = repo / "results" / "731fdf7" / "runs" / "fixture__ok.json"
     artifact_dir = repo / "_artifacts" / "731fdf7" / "runs" / "fixture__ok"
-    assert json.loads(spec_path.read_text(encoding="utf-8"))["run"] == "fixture__ok"
+    feedbax_runs_dir = repo / "_artifacts" / "feedbax_runs"
+    stamped_spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    assert stamped_spec["run"] == "fixture__ok"
+    post_run_provenance = stamped_spec["post_run_provenance"]
+    assert post_run_provenance["schema_version"] == "rlrmp.post_run_provenance.v1"
+    assert post_run_provenance["feedbax_manifest_root"]["path"] == "_artifacts/feedbax_runs"
+    assert post_run_provenance["schemas"]["feedbax_manifest"] == "feedbax.manifest.v1"
+    assert post_run_provenance["schemas"]["feedbax_provider"] == "feedbax-provider.v1"
     assert (artifact_dir / "training_summary.json").is_file()
     assert (artifact_dir / "trained_model.eqx").is_file()
+    assert feedbax_runs_dir.is_dir()
+    assert (
+        feedbax_runs_dir / "manifests" / "training_runs" / "feedbax_training_run_fixture__ok.json"
+    ).is_file()
     assert "| `completed_batches` | 3 |" in output
     assert "| `final_validation_loss` | 0.125 |" in output
 
@@ -180,3 +293,74 @@ def test_local_fixture_syncs_spec_commits_and_records_auth(tmp_path: Path) -> No
     assert "auth request" in auth_args
     assert "--issue 731fdf7" in auth_args
     assert "--no-watch" in auth_args
+
+
+def test_rejects_unpinned_feedbax_runs_dir_before_writing(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    source = tmp_path / "source"
+    init_git_repo(repo)
+    write_run_source(source)
+
+    env = os.environ.copy()
+    env["FEEDBAX_RUNS_DIR"] = str(tmp_path / "wrong_feedbax_runs")
+
+    result = run_command_result(
+        [
+            "bash",
+            str(SCRIPT),
+            "--repo-root",
+            str(repo),
+            "--issue",
+            "731fdf7",
+            "--run",
+            "fixture__ok",
+            "--artifacts-src",
+            f"local:{source}",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    assert result.returncode != 0
+    assert "FEEDBAX_RUNS_DIR must be pinned" in result.stdout
+    assert "_artifacts/feedbax_runs" in result.stdout
+    assert not (repo / "results").exists()
+    assert not (repo / "_artifacts").exists()
+
+
+def test_manifest_run_spec_mismatch_fails_before_commit(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    source = tmp_path / "source"
+    bin_dir = tmp_path / "bin"
+    auth_record = tmp_path / "auth_args.txt"
+    init_git_repo(repo)
+    write_run_source(source, manifest_run="fixture__different")
+    fake_agent_commit, fake_mandible = write_fake_commands(bin_dir, auth_record)
+
+    env = os.environ.copy()
+    env["POST_RUN_AGENT_COMMIT"] = str(fake_agent_commit)
+    env["POST_RUN_MANDIBLE_AUTH"] = str(fake_mandible)
+
+    result = run_command_result(
+        [
+            "bash",
+            str(SCRIPT),
+            "--repo-root",
+            str(repo),
+            "--issue",
+            "731fdf7",
+            "--run",
+            "fixture__ok",
+            "--artifacts-src",
+            f"local:{source}",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    assert result.returncode != 0
+    assert "parity" in result.stdout.lower()
+    assert "fixture__different" in result.stdout
+    assert not auth_record.exists()
+    log = run_command(["git", "log", "--oneline", "--all"], cwd=repo)
+    assert "record post-run spec fixture__ok" not in log
