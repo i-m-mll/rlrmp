@@ -283,6 +283,22 @@ The residual agent-owned judgment after `scripts/post_run.sh` is:
 
 (Relates to `efc4d68`. Codified after the 2026-05-08 baseline matrix session, where step 1 was deferred until a separate follow-up task.)
 
+Stable post-run provenance contract:
+
+- `scripts/post_run.sh` pins Feedbax's manifest root for this repo to
+  `_artifacts/feedbax_runs/` by exporting/checking `FEEDBAX_RUNS_DIR`. If the
+  environment points anywhere else, the wrapper must fail before committing.
+- Dry runs must print the post-run provenance stamp preview: rlrmp SHA, Feedbax
+  SHA, Feedbax manifest/provider schema versions, the post-run provenance
+  schema version, the pinned manifest root, and GraphSpec hash/version when the
+  graph sidecar is present.
+- Non-dry runs stamp the tracked run spec with `post_run_provenance`, then run
+  Feedbax `TrainingRunManifest` parity before `git add` / `agent-commit`. A
+  mismatched tracked run spec and matching manifest blocks the commit.
+- Existing legacy runs without a matching Feedbax `TrainingRunManifest` may
+  continue through the wrapper, but the output must report that parity was
+  `not_found` rather than silently implying a checked manifest.
+
 ## Feedbax Studio
 Feedbax Studio (web app) runs from the Feedbax repo. See feedbax repo instructions for server startup.
 

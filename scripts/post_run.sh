@@ -137,6 +137,417 @@ PY
     )
 }
 
+run_post_run_contract() {
+    local mode="$1"
+    local input_spec_path="$2"
+    (
+        cd "$SCRIPT_REPO_ROOT"
+        uv run --no-sync python - "$mode" "$REPO_ROOT" "$SPEC_PATH" "$input_spec_path" \
+            "$ARTIFACT_DIR" "$ISSUE" "$RUN_LABEL" "$FEEDBAX_MANIFEST_ROOT" <<'PY'
+from __future__ import annotations
+
+import hashlib
+import json
+import subprocess
+import sys
+import tomllib
+from pathlib import Path
+from typing import Any
+
+from feedbax.manifest import PROVIDER_VERSION, SCHEMA_VERSION, TrainingRunManifest, load_manifest
+
+
+POST_RUN_SCHEMA_VERSION = "rlrmp.post_run_provenance.v1"
+PINNED_MANIFEST_ROOT = "_artifacts/feedbax_runs"
+
+
+def die(message: str) -> None:
+    print(f"error: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def load_json(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def rel(path: Path, root: Path) -> str:
+    return str(path.resolve().relative_to(root.resolve()))
+
+
+def git_value(repo: Path, *args: str) -> str | None:
+    try:
+        return subprocess.check_output(
+            ["git", "-C", str(repo), *args],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except subprocess.CalledProcessError:
+        return None
+
+
+def git_record(repo: Path) -> dict[str, Any]:
+    status = git_value(repo, "status", "--short")
+    return {
+        "commit": git_value(repo, "rev-parse", "HEAD"),
+        "branch": git_value(repo, "rev-parse", "--abbrev-ref", "HEAD"),
+        "dirty": bool(status) if status is not None else None,
+        "remote": git_value(repo, "config", "--get", "remote.origin.url"),
+    }
+
+
+def feedbax_repo(script_repo_root: Path) -> Path | None:
+    pyproject = load_json_compatible_toml(script_repo_root / "pyproject.toml")
+    source = (
+        pyproject.get("tool", {})
+        .get("uv", {})
+        .get("sources", {})
+        .get("feedbax", {})
+        .get("path")
+    )
+    if not source:
+        return None
+    path = Path(source).expanduser()
+    if not path.is_absolute():
+        path = script_repo_root / path
+    return path if path.exists() else None
+
+
+def load_json_compatible_toml(path: Path) -> dict[str, Any]:
+    return tomllib.loads(path.read_text(encoding="utf-8"))
+
+
+def graph_metadata(run_spec: dict[str, Any], spec_path: Path, artifact_dir: Path) -> dict[str, Any]:
+    graph = run_spec.get("feedbax_graph")
+    if not isinstance(graph, dict):
+        return {
+            "graph_spec_path": None,
+            "graph_spec_sha256": None,
+            "graph_spec_version": None,
+            "graph_manifest_path": None,
+            "graph_manifest_sha256": None,
+        }
+
+    def find_sidecar(value: Any) -> Path | None:
+        if value in (None, ""):
+            return None
+        raw = Path(str(value))
+        candidates = [raw] if raw.is_absolute() else [
+            spec_path.parent / raw,
+            artifact_dir / raw,
+            artifact_dir / raw.name,
+        ]
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+        return None
+
+    graph_path = find_sidecar(graph.get("graph_spec_path"))
+    manifest_path = find_sidecar(graph.get("manifest_path"))
+    graph_version = None
+    if graph_path is not None:
+        try:
+            graph_payload = load_json(graph_path)
+            graph_version = (
+                graph_payload.get("schema_version")
+                or graph_payload.get("version")
+                or graph_payload.get("$schema")
+            )
+        except Exception:
+            graph_version = None
+
+    return {
+        "graph_spec_path": graph.get("graph_spec_path"),
+        "graph_spec_sha256": sha256_file(graph_path) if graph_path is not None else None,
+        "graph_spec_version": graph_version,
+        "graph_manifest_path": graph.get("manifest_path"),
+        "graph_manifest_sha256": sha256_file(manifest_path) if manifest_path is not None else None,
+    }
+
+
+def provenance_stamp(
+    *,
+    repo_root: Path,
+    script_repo_root: Path,
+    spec_path: Path,
+    artifact_dir: Path,
+    manifest_root: Path,
+    run_spec: dict[str, Any],
+) -> dict[str, Any]:
+    feedbax_path = feedbax_repo(script_repo_root)
+    feedbax_git = git_record(feedbax_path) if feedbax_path is not None else {
+        "commit": None,
+        "branch": None,
+        "dirty": None,
+        "remote": None,
+    }
+    return {
+        "schema_version": POST_RUN_SCHEMA_VERSION,
+        "tool": "scripts/post_run.sh",
+        "rlrmp": git_record(repo_root),
+        "feedbax": feedbax_git,
+        "schemas": {
+            "post_run_provenance": POST_RUN_SCHEMA_VERSION,
+            "feedbax_manifest": SCHEMA_VERSION,
+            "feedbax_provider": PROVIDER_VERSION,
+        },
+        "feedbax_manifest_root": {
+            "path": PINNED_MANIFEST_ROOT,
+            "absolute_path_sha256": hashlib.sha256(str(manifest_root.resolve()).encode()).hexdigest(),
+            "env": "FEEDBAX_RUNS_DIR",
+        },
+        "feedbax_graph": graph_metadata(run_spec, spec_path, artifact_dir),
+    }
+
+
+def iter_training_manifests(manifest_root: Path, artifact_dir: Path) -> list[Path]:
+    paths: list[Path] = []
+    root_dir = manifest_root / "manifests" / "training_runs"
+    if root_dir.exists():
+        paths.extend(sorted(root_dir.glob("*.json")))
+    for name in (
+        "training_run_manifest.json",
+        "feedbax_training_run_manifest.json",
+        "model.training_run.manifest.json",
+    ):
+        candidate = artifact_dir / name
+        if candidate.is_file():
+            paths.append(candidate)
+    return sorted(dict.fromkeys(paths))
+
+
+def manifest_refs(manifest: TrainingRunManifest) -> set[str]:
+    refs: set[str] = set()
+    if manifest.training_spec is not None and manifest.training_spec.ref:
+        refs.add(manifest.training_spec.ref)
+    for artifact in manifest.artifacts:
+        if artifact.uri:
+            refs.add(artifact.uri)
+        original_uri = artifact.metadata.get("original_uri")
+        if isinstance(original_uri, str):
+            refs.add(original_uri)
+    return refs
+
+
+def manifest_matches(
+    manifest: TrainingRunManifest,
+    *,
+    rel_spec_path: str,
+    run_label: str,
+) -> bool:
+    if rel_spec_path in manifest_refs(manifest):
+        return True
+    if manifest.job_id == run_label:
+        return True
+    return manifest.id.endswith(run_label)
+
+
+def comparable_training_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
+    comparable = {
+        key: run_spec.get(key)
+        for key in ("run", "issue", "training_summary", "loss_objective")
+        if key in run_spec
+    }
+    if not comparable and "training_summary" in run_spec:
+        comparable["training_summary"] = run_spec["training_summary"]
+    return comparable
+
+
+def check_inline_manifest_parity(manifest: TrainingRunManifest, run_spec: dict[str, Any]) -> None:
+    inline = manifest.training_spec.inline if manifest.training_spec is not None else None
+    if not inline:
+        return
+    comparable = comparable_training_spec(run_spec)
+    for key, value in comparable.items():
+        if key in inline and inline[key] != value:
+            die(
+                "Feedbax TrainingRunManifest parity failed: "
+                f"training_spec.inline.{key}={inline[key]!r} does not match run spec {value!r}"
+            )
+
+
+def update_manifest_hashes(
+    manifest_path: Path,
+    *,
+    actual_sha: str,
+    actual_size: int,
+    rel_spec_path: str,
+) -> None:
+    payload = load_json(manifest_path)
+    training_spec = payload.get("training_spec")
+    if isinstance(training_spec, dict) and training_spec.get("ref") == rel_spec_path:
+        training_spec["sha256"] = actual_sha
+    for artifact in payload.get("artifacts", []):
+        if not isinstance(artifact, dict):
+            continue
+        if artifact.get("role") == "tracked_run_spec" and artifact.get("uri") == rel_spec_path:
+            artifact["sha256"] = actual_sha
+            artifact["size_bytes"] = actual_size
+    write_json(manifest_path, payload)
+
+
+def parity_check(
+    *,
+    repo_root: Path,
+    spec_path: Path,
+    artifact_dir: Path,
+    manifest_root: Path,
+    issue: str,
+    run_label: str,
+    update_hashes: bool,
+) -> str:
+    rel_spec_path = rel(spec_path, repo_root)
+    manifest_paths = iter_training_manifests(manifest_root, artifact_dir)
+    matches_by_id: dict[str, tuple[Path, TrainingRunManifest]] = {}
+    for path in manifest_paths:
+        manifest = load_manifest(path)
+        if not isinstance(manifest, TrainingRunManifest):
+            continue
+        if manifest_matches(manifest, rel_spec_path=rel_spec_path, run_label=run_label):
+            previous = matches_by_id.get(manifest.id)
+            if previous is None or str(path).startswith(str(manifest_root)):
+                matches_by_id[manifest.id] = (path, manifest)
+
+    matches = list(matches_by_id.values())
+    if not matches:
+        return "not_found"
+    if len(matches) > 1:
+        die(
+            "Feedbax TrainingRunManifest parity failed: multiple manifests match "
+            f"{rel_spec_path}: {', '.join(str(path) for path, _ in matches)}"
+        )
+
+    manifest_path, manifest = matches[0]
+    if issue not in manifest.provenance.issues:
+        print(
+            "warning: matching Feedbax TrainingRunManifest does not list "
+            f"issue {issue} in provenance.issues",
+            file=sys.stderr,
+        )
+    check_inline_manifest_parity(manifest, load_json(spec_path))
+
+    actual_sha = sha256_file(spec_path)
+    expected_hashes: list[tuple[str, str | None]] = []
+    if manifest.training_spec is not None and manifest.training_spec.ref == rel_spec_path:
+        expected_hashes.append(("training_spec.sha256", manifest.training_spec.sha256))
+    for artifact in manifest.artifacts:
+        if artifact.role == "tracked_run_spec" and artifact.uri == rel_spec_path:
+            expected_hashes.append(("tracked_run_spec.sha256", artifact.sha256))
+
+    for label, expected in expected_hashes:
+        if expected is not None and expected != actual_sha and not update_hashes:
+            die(
+                "Feedbax TrainingRunManifest parity failed: "
+                f"{label}={expected} does not match {rel_spec_path} sha256={actual_sha}"
+            )
+
+    if update_hashes:
+        update_manifest_hashes(
+            manifest_path,
+            actual_sha=actual_sha,
+            actual_size=spec_path.stat().st_size,
+            rel_spec_path=rel_spec_path,
+        )
+    return str(manifest_path)
+
+
+def print_stamp_summary(stamp: dict[str, Any], parity: str | None) -> None:
+    graph = stamp["feedbax_graph"]
+    print("Provenance stamps")
+    print(f"  rlrmp SHA: {stamp['rlrmp']['commit'] or 'unavailable'}")
+    print(f"  feedbax SHA: {stamp['feedbax']['commit'] or 'unavailable'}")
+    print(f"  GraphSpec hash: {graph['graph_spec_sha256'] or 'unavailable'}")
+    print(f"  GraphSpec version: {graph['graph_spec_version'] or 'unavailable'}")
+    print(f"  Feedbax manifest schema: {stamp['schemas']['feedbax_manifest']}")
+    print(f"  Feedbax provider schema: {stamp['schemas']['feedbax_provider']}")
+    print(f"  post_run schema: {stamp['schemas']['post_run_provenance']}")
+    print(f"  pinned Feedbax manifest root: {stamp['feedbax_manifest_root']['path']}")
+    if parity is not None:
+        print(f"  TrainingRunManifest parity: {parity}")
+
+
+def main() -> None:
+    mode = sys.argv[1]
+    repo_root = Path(sys.argv[2]).resolve()
+    spec_path = Path(sys.argv[3]).resolve()
+    input_spec = Path(sys.argv[4]).resolve() if sys.argv[4] else spec_path
+    artifact_dir = Path(sys.argv[5]).resolve()
+    issue = sys.argv[6]
+    run_label = sys.argv[7]
+    manifest_root = Path(sys.argv[8]).resolve()
+    script_repo_root = Path.cwd().resolve()
+
+    if rel(manifest_root, repo_root) != PINNED_MANIFEST_ROOT:
+        die(f"FEEDBAX_RUNS_DIR must resolve to {PINNED_MANIFEST_ROOT}; found {manifest_root}")
+
+    source_spec = spec_path if spec_path.is_file() else input_spec
+    if not source_spec.is_file():
+        if mode == "dry-run":
+            run_spec: dict[str, Any] = {}
+        else:
+            die(f"missing run spec for post-run provenance: {source_spec}")
+    else:
+        run_spec = load_json(source_spec)
+
+    graph_artifact_dir = source_spec.parent if mode == "dry-run" and source_spec.is_file() else artifact_dir
+    stamp = provenance_stamp(
+        repo_root=repo_root,
+        script_repo_root=script_repo_root,
+        spec_path=spec_path,
+        artifact_dir=graph_artifact_dir,
+        manifest_root=manifest_root,
+        run_spec=run_spec,
+    )
+
+    parity = None
+    if mode == "dry-run":
+        parity = "would check pinned root before commit"
+        print_stamp_summary(stamp, parity)
+        return
+
+    parity_before_stamp = parity_check(
+        repo_root=repo_root,
+        spec_path=spec_path,
+        artifact_dir=artifact_dir,
+        manifest_root=manifest_root,
+        issue=issue,
+        run_label=run_label,
+        update_hashes=False,
+    )
+    run_spec["post_run_provenance"] = stamp
+    write_json(spec_path, run_spec)
+    parity_after_stamp = parity_check(
+        repo_root=repo_root,
+        spec_path=spec_path,
+        artifact_dir=artifact_dir,
+        manifest_root=manifest_root,
+        issue=issue,
+        run_label=run_label,
+        update_hashes=True,
+    )
+    parity = parity_after_stamp if parity_before_stamp == parity_after_stamp else (
+        f"pre-stamp {parity_before_stamp}; stamped {parity_after_stamp}"
+    )
+    print_stamp_summary(stamp, parity)
+
+
+if __name__ == "__main__":
+    main()
+PY
+    )
+}
+
 ISSUE=""
 RUN_LABEL=""
 ARTIFACTS_SRC=""
@@ -202,12 +613,22 @@ SUMMARY_PATH="$ARTIFACT_DIR/training_summary.json"
 AGENT_COMMIT="${POST_RUN_AGENT_COMMIT:-agent-commit}"
 MANDIBLE="${POST_RUN_MANDIBLE_AUTH:-mandible}"
 MODAL_VOLUME_DEFAULT="${POST_RUN_MODAL_VOLUME:-rlrmp-cs-stochastic-gru}"
+PINNED_FEEDBAX_MANIFEST_ROOT="$REPO_ROOT/_artifacts/feedbax_runs"
+if [[ -n "${FEEDBAX_RUNS_DIR:-}" ]]; then
+    CONFIGURED_FEEDBAX_MANIFEST_ROOT="$(cd "$(dirname "$FEEDBAX_RUNS_DIR")" && pwd)/$(basename "$FEEDBAX_RUNS_DIR")"
+    [[ "$CONFIGURED_FEEDBAX_MANIFEST_ROOT" == "$PINNED_FEEDBAX_MANIFEST_ROOT" ]] || {
+        die "FEEDBAX_RUNS_DIR must be pinned to $PINNED_FEEDBAX_MANIFEST_ROOT; found $FEEDBAX_RUNS_DIR"
+    }
+fi
+export FEEDBAX_RUNS_DIR="$PINNED_FEEDBAX_MANIFEST_ROOT"
+FEEDBAX_MANIFEST_ROOT="$FEEDBAX_RUNS_DIR"
 
 echo "Post-run protocol"
 echo "  issue: $ISSUE"
 echo "  run: $RUN_LABEL"
 echo "  run spec: $SPEC_PATH"
 echo "  artifacts: $ARTIFACT_DIR"
+echo "  feedbax manifests: $FEEDBAX_MANIFEST_ROOT"
 
 if [[ "$DRY_RUN" -eq 0 ]]; then
     require_clean_index
@@ -216,18 +637,24 @@ fi
 case "$ARTIFACTS_SRC" in
     "")
         echo "Sync: using existing local artifact/spec paths."
+        INPUT_SPEC_PATH=""
+        SOURCE_FEEDBAX_RUNS_DIR=""
         ;;
     local:*)
         SOURCE_DIR="${ARTIFACTS_SRC#local:}"
         [[ -d "$SOURCE_DIR" ]] || die "local artifact source does not exist: $SOURCE_DIR"
+        INPUT_SPEC_PATH="$SOURCE_DIR/run.json"
+        SOURCE_FEEDBAX_RUNS_DIR="$SOURCE_DIR/feedbax_runs"
         run_or_print mkdir -p "$ARTIFACT_DIR"
-        run_or_print rsync -a "$SOURCE_DIR"/ "$ARTIFACT_DIR"/
+        run_or_print rsync -a --exclude feedbax_runs/ "$SOURCE_DIR"/ "$ARTIFACT_DIR"/
         ;;
     modal|modal:*)
         VOLUME_NAME="$MODAL_VOLUME_DEFAULT"
         if [[ "$ARTIFACTS_SRC" == modal:* && "$ARTIFACTS_SRC" != "modal:" ]]; then
             VOLUME_NAME="${ARTIFACTS_SRC#modal:}"
         fi
+        INPUT_SPEC_PATH=""
+        SOURCE_FEEDBAX_RUNS_DIR=""
         run_or_print mkdir -p "$RUNS_DIR" "$ARTIFACT_DIR"
         run_or_print modal volume get --force "$VOLUME_NAME" \
             "results/$HASH/runs/$RUN_LABEL" "$RUNS_DIR"
@@ -237,25 +664,36 @@ case "$ARTIFACTS_SRC" in
     pod:*)
         RSYNC_SOURCE="${ARTIFACTS_SRC#pod:}"
         [[ -n "$RSYNC_SOURCE" ]] || die "pod source must include an rsync source"
+        INPUT_SPEC_PATH=""
+        SOURCE_FEEDBAX_RUNS_DIR=""
         run_or_print mkdir -p "$ARTIFACT_DIR"
         run_or_print rsync -az --stats --no-owner --no-group \
             "$RSYNC_SOURCE"/ "$ARTIFACT_DIR"/
         ;;
     *)
         if [[ -d "$ARTIFACTS_SRC" ]]; then
+            INPUT_SPEC_PATH="$ARTIFACTS_SRC/run.json"
+            SOURCE_FEEDBAX_RUNS_DIR="$ARTIFACTS_SRC/feedbax_runs"
             run_or_print mkdir -p "$ARTIFACT_DIR"
-            run_or_print rsync -a "$ARTIFACTS_SRC"/ "$ARTIFACT_DIR"/
+            run_or_print rsync -a --exclude feedbax_runs/ "$ARTIFACTS_SRC"/ "$ARTIFACT_DIR"/
         else
             die "unknown --artifacts-src form or missing directory: $ARTIFACTS_SRC"
         fi
         ;;
 esac
 
+if [[ -n "$SOURCE_FEEDBAX_RUNS_DIR" && -d "$SOURCE_FEEDBAX_RUNS_DIR" ]]; then
+    run_or_print mkdir -p "$FEEDBAX_MANIFEST_ROOT"
+    run_or_print rsync -a "$SOURCE_FEEDBAX_RUNS_DIR"/ "$FEEDBAX_MANIFEST_ROOT"/
+fi
+
 if [[ "$DRY_RUN" -eq 1 ]]; then
     echo "DRY-RUN: would write/verify tracked run spec at $SPEC_PATH"
+    run_post_run_contract "dry-run" "$INPUT_SPEC_PATH"
     echo "DRY-RUN: would render metrics table from $SUMMARY_PATH"
     echo "DRY-RUN: would git add $SPEC_PATH before agent-commit"
 else
+    mkdir -p "$FEEDBAX_MANIFEST_ROOT"
     mkdir -p "$RUNS_DIR"
     if [[ -f "$ARTIFACT_DIR/run.json" ]]; then
         cp "$ARTIFACT_DIR/run.json" "$SPEC_PATH"
@@ -267,6 +705,7 @@ else
         die "could not find run spec; expected $ARTIFACT_DIR/run.json or $LEGACY_SPEC_DIR/run.json"
     fi
     (cd "$SCRIPT_REPO_ROOT" && uv run --no-sync python -m json.tool "$SPEC_PATH" >/dev/null)
+    run_post_run_contract "write" "$INPUT_SPEC_PATH"
 fi
 
 echo
@@ -309,6 +748,8 @@ Intent:
 
 Verification:
 - Run spec JSON syntax verified before commit.
+- Post-run provenance stamp recorded rlrmp/feedbax SHAs, schema versions, GraphSpec hashes where present, and pinned Feedbax manifest root.
+- Feedbax TrainingRunManifest parity checked before commit when a matching manifest is present.
 - Metrics-comment template rendered by \`scripts/post_run.sh\`.
 EOF
 )
