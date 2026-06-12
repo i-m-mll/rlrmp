@@ -542,7 +542,7 @@ requires-dist = [
     { name = "ipyfilechooser", marker = "extra == 'notebook'", specifier = ">=0.6.0" },
     { name = "ipywidgets", marker = "extra == 'notebook'", specifier = ">=8.1.5" },
     { name = "jax", specifier = ">=0.5.2" },
-    { name = "jax-cookbook", editable = "../../../../05 Utils/jax-cookbook" },
+    { name = "jax-cookbook", git = "https://github.com/i-m-mll/jax-cookbook.git?rev=e1cb0e69849ec3aa83b50da4de3f11c2fda61ac9" },
     { name = "jaxtyping", specifier = ">=0.2.38" },
     { name = "kaleido", specifier = "==0.2.1" },
     { name = "matplotlib", specifier = ">=3.10.1" },
@@ -573,6 +573,9 @@ provides-extras = ["dashboard", "notebook", "plotlyviewer", "mjx"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "mujoco", specifier = ">=3.0.0" },
+    { name = "mujoco-mjx", specifier = ">=0.1.0" },
+    { name = "pyright", specifier = ">=1.1.407" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "ruff", specifier = ">=0.12.11" },
 ]
@@ -925,7 +928,7 @@ wheels = [
 [[package]]
 name = "jax-cookbook"
 version = "0.1.0"
-source = { editable = "../../../../05 Utils/jax-cookbook" }
+source = { git = "https://github.com/i-m-mll/jax-cookbook.git?rev=e1cb0e69849ec3aa83b50da4de3f11c2fda61ac9#e1cb0e69849ec3aa83b50da4de3f11c2fda61ac9" }
 dependencies = [
     { name = "equinox" },
     { name = "jax" },
@@ -934,24 +937,6 @@ dependencies = [
     { name = "rich" },
     { name = "tqdm" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "coverage", marker = "extra == 'tests'" },
-    { name = "equinox", specifier = ">=0.11.10" },
-    { name = "jax", specifier = ">=0.4.30" },
-    { name = "jaxtyping", specifier = ">=0.2.36" },
-    { name = "numpy", specifier = ">=2.0.2" },
-    { name = "pyright", marker = "extra == 'typing'" },
-    { name = "pytest", marker = "extra == 'tests'" },
-    { name = "rich", specifier = ">=14.1.0" },
-    { name = "tqdm", specifier = ">=4.67.1" },
-    { name = "typeguard", marker = "extra == 'typing'" },
-]
-provides-extras = ["typing", "tests"]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.3.5" }]
 
 [[package]]
 name = "jaxlib"
