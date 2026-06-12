@@ -5,13 +5,17 @@ from __future__ import annotations
 import argparse
 import json
 
+import pytest
 from feedbax.contracts.graph import GraphSpec
 from feedbax.graph import Graph
 from feedbax.intervene import DynamicsMatrixPerturb, FixedField
+from feedbax.manifest import SCHEMA_VERSION as FEEDBAX_MANIFEST_SCHEMA_VERSION
+
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.feedbax_graph import (
     EXECUTION_BACKEND,
     GRAPH_PLANT_INTERVENOR_NODE,
+    SCHEMA_VERSION,
     build_point_mass_sensorimotor_graph_spec,
     build_rlrmp_feedbax_graph_bundle,
     graph_spec_payload,
@@ -42,6 +46,52 @@ def _hps(**overrides):
     if hps.pert.type == "gusts":
         hps = hps | {"pert": hps.pert | {"type": "constant"}}
     return hps
+
+
+@pytest.mark.parametrize(
+    "hidden_type",
+    ["gru", "linear", "linear_tracker"],
+)
+def test_available_rlrmp_graph_specs_round_trip_through_feedbax_contract(
+    hidden_type: str,
+) -> None:
+    hps = _hps(hidden_type=hidden_type)
+    task = build_task_base(hps)
+    bundle = build_rlrmp_feedbax_graph_bundle(
+        hps,
+        task=task,
+        n_extra_inputs=0,
+        hidden_type=hps.hidden_type,
+        sisu_gating=hps.sisu_gating,
+    )
+    payload = graph_spec_payload(bundle.graph_spec)
+
+    round_tripped = GraphSpec.model_validate_json(json.dumps(payload))
+
+    assert graph_spec_payload(round_tripped) == payload
+    assert isinstance(materialize_rlrmp_graph_spec(round_tripped), Graph)
+    assert round_tripped.metadata is not None
+    assert round_tripped.metadata.version == "1.0.0"
+    assert bundle.to_run_metadata()["schema_version"] == SCHEMA_VERSION
+    assert bundle.manifest["schema_version"] == SCHEMA_VERSION
+
+
+def test_rlrmp_graph_contract_versions_pin_feedbax_manifest_schema() -> None:
+    hps = _hps()
+    bundle = build_rlrmp_feedbax_graph_bundle(
+        hps,
+        task=build_task_base(hps),
+        n_extra_inputs=1,
+        hidden_type=hps.hidden_type,
+        sisu_gating=hps.sisu_gating,
+    )
+
+    assert SCHEMA_VERSION == "rlrmp.feedbax_graph.v1"
+    assert FEEDBAX_MANIFEST_SCHEMA_VERSION == "feedbax.manifest.v1"
+    assert bundle.graph_spec.metadata is not None
+    assert bundle.graph_spec.metadata.version == "1.0.0"
+    assert bundle.manifest["schema_version"] == SCHEMA_VERSION
+    assert bundle.to_run_metadata()["schema_version"] == SCHEMA_VERSION
 
 
 def test_minimax_graph_bundle_materializes_runtime_graph() -> None:
