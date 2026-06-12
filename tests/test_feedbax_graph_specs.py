@@ -7,7 +7,7 @@ import json
 
 from rlrmp.feedbax_graph import (
     EXECUTION_BACKEND,
-    PLANT_INTERVENOR_LABEL,
+    GRAPH_PLANT_INTERVENOR_NODE,
     build_point_mass_sensorimotor_graph_spec,
     build_rlrmp_feedbax_graph_bundle,
     write_graph_spec_bundle,
@@ -42,10 +42,10 @@ def test_minimax_graph_bundle_serializes_legacy_feedback_contract() -> None:
     assert spec.nodes["mechanics"].type == "PointMass"
     assert spec.nodes["mechanics"].params["damping"] == 10.0
     assert spec.nodes["force_filter"].type == "FirstOrderFilter"
-    assert spec.nodes[PLANT_INTERVENOR_LABEL].type == "FixedField"
+    assert spec.nodes[GRAPH_PLANT_INTERVENOR_NODE].type == "FixedField"
     assert spec.input_bindings["input"] == ("net", "input")
-    assert spec.input_bindings[f"intervene:{PLANT_INTERVENOR_LABEL}"] == (
-        PLANT_INTERVENOR_LABEL,
+    assert spec.input_bindings[f"intervene:{GRAPH_PLANT_INTERVENOR_NODE}"] == (
+        GRAPH_PLANT_INTERVENOR_NODE,
         "params_override",
     )
 
@@ -81,12 +81,10 @@ def test_graph_spec_serializes_explicit_stochastic_runtime_contract() -> None:
     assert bundle.manifest["stochastic_runtime"]["state_diffusion"] == "not_used"
 
     force_edges = [
-        (wire.source_node, wire.target_node)
-        for wire in spec.wires
-        if wire.target_port == "force"
+        (wire.source_node, wire.target_node) for wire in spec.wires if wire.target_port == "force"
     ]
-    assert ("force_filter", PLANT_INTERVENOR_LABEL) in force_edges
-    assert (PLANT_INTERVENOR_LABEL, PLANT_PROCESS_FORCE_NOISE_LABEL) in force_edges
+    assert ("force_filter", GRAPH_PLANT_INTERVENOR_NODE) in force_edges
+    assert (GRAPH_PLANT_INTERVENOR_NODE, PLANT_PROCESS_FORCE_NOISE_LABEL) in force_edges
     assert (PLANT_PROCESS_FORCE_NOISE_LABEL, "mechanics") in force_edges
 
 
@@ -108,12 +106,12 @@ def test_dynamics_matrix_perturb_spec_preserves_delta_a_contract() -> None:
         intervention_type="DynamicsMatrixPerturb",
     )
 
-    intervenor = spec.nodes[PLANT_INTERVENOR_LABEL]
+    intervenor = spec.nodes[GRAPH_PLANT_INTERVENOR_NODE]
     assert intervenor.type == "DynamicsMatrixPerturb"
     assert intervenor.params["delta_A_shape"] == [2, 4]
     assert "effector" in intervenor.input_ports
-    assert spec.input_bindings[f"intervene:{PLANT_INTERVENOR_LABEL}"] == (
-        PLANT_INTERVENOR_LABEL,
+    assert spec.input_bindings[f"intervene:{GRAPH_PLANT_INTERVENOR_NODE}"] == (
+        GRAPH_PLANT_INTERVENOR_NODE,
         "params_override",
     )
 
@@ -122,7 +120,12 @@ def test_dynamics_matrix_perturb_spec_preserves_delta_a_contract() -> None:
         for wire in spec.wires
         if wire.temporality == "recurrent"
     }
-    assert ("mechanics", "effector", PLANT_INTERVENOR_LABEL, "effector") in recurrent_edges
+    assert (
+        "mechanics",
+        "effector",
+        GRAPH_PLANT_INTERVENOR_NODE,
+        "effector",
+    ) in recurrent_edges
 
 
 def test_write_graph_spec_bundle_creates_companion_manifest(tmp_path) -> None:

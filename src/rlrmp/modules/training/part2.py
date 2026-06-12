@@ -22,11 +22,11 @@ from feedbax.training.train import always_active, bernoulli_active
 from feedbax.types import LDict, TaskModelPair, TreeNamespace
 from jaxtyping import PRNGKeyArray
 
-from rlrmp.analysis.cs_game_card import build_canonical_game, build_no_integrator_game
-from rlrmp.analysis.cs_released_simulation import (
+from rlrmp.analysis.math.cs_game_card import build_canonical_game, build_no_integrator_game
+from rlrmp.analysis.math.cs_released_simulation import (
     DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
 )
-from rlrmp.analysis.output_feedback import OutputFeedbackConfig, process_covariance
+from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig, process_covariance
 from rlrmp.cs_lss_gru import (
     CS_PHYSICAL_STATE_DIM,
     CS_REDUCED_PHYSICAL_STATE_DIM,
@@ -34,8 +34,8 @@ from rlrmp.cs_lss_gru import (
 )
 from rlrmp.disturbance import (
     PLANT_INTERVENOR_LABEL,
+    get_gusts_fn,
 )
-from rlrmp.disturbances import get_gusts_fn
 from rlrmp.intervention_compat import add_plant_intervention_to_ensemble
 from rlrmp.loss import get_reach_loss
 from rlrmp.models import (
@@ -238,9 +238,9 @@ def setup_task_model_pair(
     task_base = TASK_TYPES[task_type](loss_func=get_reach_loss(hps), **hps_task)
 
     # Resolve hidden_type from hps if present; default (None) falls back to GRUCell
-    hidden_type = getattr(hps, 'hidden_type', None)
+    hidden_type = getattr(hps, "hidden_type", None)
     # Resolve SISU gating mode; default "additive" preserves existing behavior
-    sisu_gating = getattr(hps, 'sisu_gating', 'additive')
+    sisu_gating = getattr(hps, "sisu_gating", "additive")
     plant_backend = getattr(hps.model, "plant_backend", LEGACY_CAUSAL_PLANT_BACKEND)
 
     if hps.method == "nominal-cs-gru" and plant_backend == CS_LSS_PLANT_BACKEND:
@@ -461,10 +461,13 @@ def _effector_init_to_lss_vector(
         (*batch_shape, 6 * int(physical_state_dim)),
         dtype=jnp.result_type(pos, vel, force, float),
     )
-    return vector.at[..., 0:2].set(jnp.broadcast_to(pos, (*batch_shape, 2))).at[
-        ..., 2:4
-    ].set(jnp.broadcast_to(vel, (*batch_shape, 2))).at[..., 4:6].set(
-        jnp.broadcast_to(force, (*batch_shape, 2))
+    return (
+        vector.at[..., 0:2]
+        .set(jnp.broadcast_to(pos, (*batch_shape, 2)))
+        .at[..., 2:4]
+        .set(jnp.broadcast_to(vel, (*batch_shape, 2)))
+        .at[..., 4:6]
+        .set(jnp.broadcast_to(force, (*batch_shape, 2)))
     )
 
 

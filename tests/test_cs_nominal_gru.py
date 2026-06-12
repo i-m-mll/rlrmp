@@ -22,15 +22,15 @@ from feedbax.task import TaskTrialSpec, TrialTimeline
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
 from feedbax.types import TreeNamespace
 
-from rlrmp.analysis.cs_game_card import (
+from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     build_canonical_game,
 )
-from rlrmp.analysis.cs_released_simulation import default_cs_noise_covariances
-from rlrmp.analysis.gru_perturbation_calibration import (
+from rlrmp.analysis.math.cs_released_simulation import default_cs_noise_covariances
+from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
     DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT,
 )
-from rlrmp.analysis.output_feedback import OutputFeedbackConfig
+from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig
 from rlrmp.cs_lss_gru import (
     CS_EPSILON_DIM,
     CS_REDUCED_EPSILON_DIM,
@@ -186,7 +186,9 @@ def test_pgd_broad_epsilon_hps_declares_inner_maximizer() -> None:
     assert cfg.enabled is True
     assert hps.broad_epsilon_pgd_training.mode == BROAD_EPSILON_PGD_TRAINING_MODE
     assert hps.broad_epsilon_pgd_training.inner_maximizer.n_steps == 4
-    assert hps.broad_epsilon_pgd_training.inner_maximizer.differentiated_through_outer_update is False
+    assert (
+        hps.broad_epsilon_pgd_training.inner_maximizer.differentiated_through_outer_update is False
+    )
     assert hps.broad_epsilon_training.enabled is False
 
 
@@ -321,9 +323,7 @@ def test_full_analytical_qrf_loss_uses_trial_static_target_for_goal_centering() 
 
 
 def test_partial_net_force_filter_ablation_scores_net_output_and_force_filter() -> None:
-    hps = build_hps(
-        _args(smoke=True, loss_objective=CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE)
-    )
+    hps = build_hps(_args(smoke=True, loss_objective=CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE))
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
     trial = pair.task.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
 
@@ -448,8 +448,9 @@ def test_graph_bundle_records_nominal_provenance() -> None:
     assert bundle.manifest["model_structure"]["plant_process"]["state_diffusion"] == (
         "mechanics.epsilon"
     )
-    assert "physical-process/load epsilon" in (
-        bundle.manifest["model_structure"]["plant_process"]["epsilon_bridge"]
+    assert (
+        "physical-process/load epsilon"
+        in (bundle.manifest["model_structure"]["plant_process"]["epsilon_bridge"])
     )
     assert bundle.manifest["model_structure"]["population_structure"] == {
         "n_input_only": 0,
@@ -487,11 +488,12 @@ def test_dry_run_does_not_write_files(tmp_path: Path) -> None:
     assert result["run_spec"]["fidelity_status"]["exact_stochastic_noise_sources"] is True
     assert result["run_spec"]["fidelity_status"]["exact_plant_matrices"] is True
     assert result["run_spec"]["fidelity_status"]["plant_backend"] == CS_LSS_PLANT_BACKEND
-    assert "sensory Channel" in (
-        result["run_spec"]["fidelity_status"]["temporary_stochastic_bridge"]
+    assert (
+        "sensory Channel" in (result["run_spec"]["fidelity_status"]["temporary_stochastic_bridge"])
     )
-    assert "signal-dependent motor Channel" in (
-        result["run_spec"]["fidelity_status"]["temporary_stochastic_bridge"]
+    assert (
+        "signal-dependent motor Channel"
+        in (result["run_spec"]["fidelity_status"]["temporary_stochastic_bridge"])
     )
     assert result["run_spec"]["fidelity_status"]["nn_hidden"] == 0.0
     assert result["run_spec"]["optimizer"]["schedule"] == "delayed_cosine"
@@ -554,13 +556,13 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
     assert payload["model_summary"]["stochastic_runtime"]["sensory_noise_std"] > 0.0
     assert payload["model_summary"]["stochastic_runtime"]["additive_motor_noise_std"] == 1e-5
     assert (
-        payload["model_summary"]["stochastic_runtime"]["signal_dependent_motor_noise_std"]
-        == 0.02
+        payload["model_summary"]["stochastic_runtime"]["signal_dependent_motor_noise_std"] == 0.02
     )
     assert payload["model_summary"]["stochastic_runtime"]["plant_process_force_noise_std"] > 0.0
     assert payload["model_summary"]["plant_process"]["state_diffusion"] == "mechanics.epsilon"
-    assert "physical-process/load epsilon" in (
-        payload["model_summary"]["plant_process"]["epsilon_bridge"]
+    assert (
+        "physical-process/load epsilon"
+        in (payload["model_summary"]["plant_process"]["epsilon_bridge"])
     )
     assert payload["model_summary"]["certificate_lens"] == "input_output_map_certificate"
     assert payload["model_summary"]["analytical_delay_augmented_state_input"] is False
@@ -645,10 +647,16 @@ def test_partial_net_force_filter_run_spec_records_ablation_metadata(tmp_path: P
     payload = json.loads(Path(result["run_spec_path"]).read_text())
 
     assert payload["loss_objective"] == CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE
-    assert payload["loss_summary"]["objective_profile"] == CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE
+    assert (
+        payload["loss_summary"]["objective_profile"] == CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE
+    )
     assert payload["loss_summary"]["active_cs_terms"]["control"]["state_key"] == "states.net.output"
-    assert payload["loss_summary"]["active_cs_terms"]["force_filter"]["scale"] == pytest.approx(1 / 6)
-    assert payload["loss_summary"]["disturbance_integrator_state_cost"] == "omitted_in_this_ablation"
+    assert payload["loss_summary"]["active_cs_terms"]["force_filter"]["scale"] == pytest.approx(
+        1 / 6
+    )
+    assert (
+        payload["loss_summary"]["disturbance_integrator_state_cost"] == "omitted_in_this_ablation"
+    )
     fidelity = payload["fidelity_status"]["objective_fidelity"]
     assert "intended_command_quadratic_net_output" in fidelity["implemented_terms"]
     assert "running_force_filter_state_cost" in fidelity["implemented_terms"]
@@ -694,9 +702,7 @@ def test_perturbation_training_hps_preserves_fixed_target_semantics() -> None:
     assert hps.perturbation_training.combined_fraction == pytest.approx(0.10)
     semantics = hps.perturbation_training.mixture_semantics
     assert semantics.experimental_factor_note.startswith("Perturbation uncertainty level")
-    assert "Calibrated timing mode samples timing bins uniformly" in (
-        semantics.calibration_note
-    )
+    assert "Calibrated timing mode samples timing bins uniformly" in (semantics.calibration_note)
     assert semantics.membership.nominal_fraction == pytest.approx(0.45)
     assert semantics.membership.single_family_fraction == pytest.approx(0.45)
     assert semantics.membership.mild_combined_fraction == pytest.approx(0.10)
@@ -788,9 +794,7 @@ def test_randomized_perturbation_training_uses_prng_key_and_preserves_target() -
 
 
 def test_randomized_perturbation_training_has_signed_component_variation() -> None:
-    hps = build_hps(
-        _args(perturbation_training=True, batch_size=96, hidden_size=4, n_replicates=1)
-    )
+    hps = build_hps(_args(perturbation_training=True, batch_size=96, hidden_size=4, n_replicates=1))
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
     base = pair.task.task.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
 
@@ -822,11 +826,7 @@ def test_randomized_perturbation_training_has_signed_component_variation() -> No
 def _nonzero_pulse_starts(delta: jnp.ndarray) -> set[int]:
     active = jnp.any(delta != 0.0, axis=-1)
     rows = np.asarray(active.reshape((-1, active.shape[-1])))
-    return {
-        int(np.flatnonzero(row)[0])
-        for row in rows
-        if np.any(row)
-    }
+    return {int(np.flatnonzero(row)[0]) for row in rows if np.any(row)}
 
 
 def _max_nonzero_pulse_width(delta: jnp.ndarray) -> int:
@@ -902,10 +902,7 @@ def test_calibrated_timing_sampler_consumes_calibrated_amplitudes() -> None:
         hps.perturbation_training,
         "initial_position",
     )
-    init_delta = (
-        initial_position_bin.inits["mechanics.vector"]
-        - base.inits["mechanics.vector"]
-    )
+    init_delta = initial_position_bin.inits["mechanics.vector"] - base.inits["mechanics.vector"]
     _assert_values_close_to_expected(
         _unique_abs_nonzero(init_delta[..., :2]),
         {target_peak_delta_x},
@@ -915,17 +912,14 @@ def test_calibrated_timing_sampler_consumes_calibrated_amplitudes() -> None:
         hps.perturbation_training,
         "initial_velocity",
     )
-    init_delta = (
-        initial_velocity_bin.inits["mechanics.vector"]
-        - base.inits["mechanics.vector"]
-    )
+    init_delta = initial_velocity_bin.inits["mechanics.vector"] - base.inits["mechanics.vector"]
     _assert_values_close_to_expected(
         _unique_abs_nonzero(init_delta[..., 2:4]),
         {
             target_peak_delta_x
-            / DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[
-                "initial_velocity_offset"
-            ]["initial_condition"]
+            / DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT["initial_velocity_offset"][
+                "initial_condition"
+            ]
         },
     )
 
@@ -933,9 +927,7 @@ def test_calibrated_timing_sampler_consumes_calibrated_amplitudes() -> None:
     process_delta = process_bin.inputs["epsilon"] - base.inputs["epsilon"]
     process_expected = {
         target_peak_delta_x
-        / DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[
-            "process_epsilon_force_state_xy"
-        ]["early"]
+        / DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT["process_epsilon_force_state_xy"]["early"]
     }
     _assert_values_close_to_expected(
         _unique_abs_nonzero(process_delta),
@@ -958,9 +950,7 @@ def test_calibrated_timing_sampler_consumes_calibrated_amplitudes() -> None:
     }
     sensory_bin = apply_validation_bin(base, hps.perturbation_training, "sensory_feedback")
     _assert_values_close_to_expected(
-        _unique_abs_nonzero(
-            sensory_bin.inputs[GRAPH_ADAPTER_SPECS["sensory_feedback"].input_key]
-        ),
+        _unique_abs_nonzero(sensory_bin.inputs[GRAPH_ADAPTER_SPECS["sensory_feedback"].input_key]),
         sensory_expected,
     )
     delayed_bin = apply_validation_bin(base, hps.perturbation_training, "delayed_observation")
@@ -1005,12 +995,8 @@ def test_perturbation_training_run_spec_and_planned_rows(tmp_path: Path) -> None
         "generalized_held_out_perturbation_validation"
     )
     semantics = payload["hps"]["perturbation_training"]["mixture_semantics"]
-    assert semantics["experimental_factor_note"].startswith(
-        "Perturbation uncertainty level"
-    )
-    assert "Calibrated timing mode samples timing bins uniformly" in (
-        semantics["calibration_note"]
-    )
+    assert semantics["experimental_factor_note"].startswith("Perturbation uncertainty level")
+    assert "Calibrated timing mode samples timing bins uniformly" in (semantics["calibration_note"])
     assert semantics["families"]["process_epsilon"]["duration_steps"] == 5
     assert semantics["validation_difference"].startswith("Validation bins are")
     assert payload["hps"]["perturbation_training"]["controller_internal_mutation"] is False
@@ -1057,22 +1043,23 @@ def test_calibrated_timing_run_spec_exposes_family_timing_bins(tmp_path: Path) -
     assert timing["sensory_feedback"]["start_time_indices"] == [10, 20, 40]
     assert timing["delayed_observation"]["start_time_indices"] == [10, 20, 40]
     assert timing["initial_position"]["start_time_indices"] == [0]
-    assert "not literal extra temporal delay" in (
-        hps_config["timing_bins"]["controller_visible"]["delayed_observation_semantics"]
+    assert (
+        "not literal extra temporal delay"
+        in (hps_config["timing_bins"]["controller_visible"]["delayed_observation_semantics"])
     )
     assert (
         hps_config["mixture_semantics"]["calibrated_levels"]["amplitude_wiring_status"]
         == "wired_in_sampler_when_calibrated_timing_true"
     )
-    assert hps_config["calibrated_amplitude_policy"]["artifact_dependency"] == (
-        "none_at_runtime"
-    )
+    assert hps_config["calibrated_amplitude_policy"]["artifact_dependency"] == ("none_at_runtime")
 
 
 def test_target_relative_feedback_sign_contract() -> None:
     component = TargetRelativeDelayedFeedback()
-    state = jnp.zeros((48,), dtype=jnp.float32).at[40:44].set(
-        jnp.array([0.02, -0.03, 0.40, -0.20], dtype=jnp.float32)
+    state = (
+        jnp.zeros((48,), dtype=jnp.float32)
+        .at[40:44]
+        .set(jnp.array([0.02, -0.03, 0.40, -0.20], dtype=jnp.float32))
     )
     outputs, _ = component(
         {"state": state, "target": jnp.array([0.15, 0.01], dtype=jnp.float32)},
@@ -1157,9 +1144,7 @@ def test_target_relative_multitarget_setup_uses_target_input_and_anchor() -> Non
         for row in manifest["bins"]
     )
     perturbation_bins = [
-        row
-        for row in manifest["bins"]
-        if row["target_role"] == "seen_and_held_out_static_targets"
+        row for row in manifest["bins"] if row["target_role"] == "seen_and_held_out_static_targets"
     ]
     assert perturbation_bins
     for row in perturbation_bins:
@@ -1303,8 +1288,12 @@ def test_delayed_reach_full_qrf_ignores_pre_go_commands() -> None:
     )
 
     assert isinstance(loss, CsAnalyticalQrfLoss)
-    assert jnp.allclose(loss.term(pre_go_states, trial, pair.model), loss.term(base_states, trial, pair.model))
-    assert jnp.all(loss.term(movement_states, trial, pair.model) > loss.term(base_states, trial, pair.model))
+    assert jnp.allclose(
+        loss.term(pre_go_states, trial, pair.model), loss.term(base_states, trial, pair.model)
+    )
+    assert jnp.all(
+        loss.term(movement_states, trial, pair.model) > loss.term(base_states, trial, pair.model)
+    )
 
 
 def test_delayed_reach_run_spec_declares_task_and_movement_pgd_mask(tmp_path: Path) -> None:
@@ -1478,9 +1467,12 @@ def test_broad_epsilon_run_spec_exposes_budget_contract(tmp_path: Path) -> None:
     assert broad["budget_contract"]["effective_l2_radius_15cm"] == pytest.approx(
         0.0012324305441740995
     )
-    assert payload["model_summary"]["training_distribution"]["training_axes"][
-        "broad_full_state_epsilon_training"
-    ] is True
+    assert (
+        payload["model_summary"]["training_distribution"]["training_axes"][
+            "broad_full_state_epsilon_training"
+        ]
+        is True
+    )
 
 
 def test_target_relative_multitarget_run_spec_and_planned_rows(tmp_path: Path) -> None:
@@ -1532,10 +1524,7 @@ def test_target_relative_multitarget_run_spec_and_planned_rows(tmp_path: Path) -
         1e-3,
         3e-3,
     }
-    assert all(
-        "--target-relative-multitarget" in row["command"]
-        for row in rows
-    )
+    assert all("--target-relative-multitarget" in row["command"] for row in rows)
     assert all(
         row["checkpoint_selection"] == "target_relative_multitarget_rollout_validation"
         for row in rows
@@ -1591,9 +1580,10 @@ def test_target_relative_h0_run_spec_and_planned_rows(tmp_path: Path) -> None:
         "nodes.net.h0_encoder",
     ]
     assert payload["training_summary"]["initial_hidden_encoder"]["enabled"] is True
-    assert payload["training_summary"]["training_distribution"]["initial_hidden_encoder"][
-        "enabled"
-    ] is True
+    assert (
+        payload["training_summary"]["training_distribution"]["initial_hidden_encoder"]["enabled"]
+        is True
+    )
     assert payload["hps"]["where"]["0"] == [
         "nodes.net.hidden",
         "nodes.net.readout",
@@ -2019,9 +2009,7 @@ def test_pgd_broad_epsilon_full_training_emits_inner_diagnostics(tmp_path: Path)
 
     assert result["completed_batches"] == 2
     assert BROAD_EPSILON_PGD_TRAINING_MODE in run_spec["training_summary"]["training_mode"]
-    assert run_spec["hps"]["broad_epsilon_pgd_training"]["inner_maximizer"][
-        "n_steps"
-    ] == 1
+    assert run_spec["hps"]["broad_epsilon_pgd_training"]["inner_maximizer"]["n_steps"] == 1
     assert "pgd_broad_epsilon_inner_objective_before" in diagnostics_manifest["arrays"]
     assert "pgd_broad_epsilon_inner_objective_after" in diagnostics_manifest["arrays"]
     assert "pgd_broad_epsilon_inner_objective_improvement" in diagnostics_manifest["arrays"]
@@ -2034,25 +2022,17 @@ def test_pgd_broad_epsilon_full_training_emits_inner_diagnostics(tmp_path: Path)
         assert diagnostics["pgd_broad_epsilon_diagnostic_sampled"].tolist() == [True, True]
         assert diagnostics["pgd_broad_epsilon_radius_mean"].shape == (2, 5)
         assert np.isfinite(diagnostics["pgd_broad_epsilon_radius_mean"]).all()
-        assert np.isfinite(
-            diagnostics["pgd_broad_epsilon_epsilon_norm_radius_ratio_mean"]
-        ).all()
-        assert np.all(
-            diagnostics["pgd_broad_epsilon_epsilon_norm_radius_ratio_mean"] <= 1.0001
-        )
+        assert np.isfinite(diagnostics["pgd_broad_epsilon_epsilon_norm_radius_ratio_mean"]).all()
+        assert np.all(diagnostics["pgd_broad_epsilon_epsilon_norm_radius_ratio_mean"] <= 1.0001)
         assert np.isfinite(diagnostics["pgd_broad_epsilon_inner_objective_before"]).all()
         assert np.isfinite(diagnostics["pgd_broad_epsilon_inner_objective_after"]).all()
         assert np.isfinite(diagnostics["pgd_broad_epsilon_inner_objective_improvement"]).all()
         assert np.isfinite(diagnostics["pgd_broad_epsilon_inner_objective_best"]).all()
-        assert np.isfinite(
-            diagnostics["pgd_broad_epsilon_inner_objective_final_endpoint"]
-        ).all()
+        assert np.isfinite(diagnostics["pgd_broad_epsilon_inner_objective_final_endpoint"]).all()
         assert np.isfinite(
             diagnostics["pgd_broad_epsilon_inner_objective_final_endpoint_gap"]
         ).all()
-        assert np.all(
-            diagnostics["pgd_broad_epsilon_inner_objective_final_endpoint_gap"] >= -1e-6
-        )
+        assert np.all(diagnostics["pgd_broad_epsilon_inner_objective_final_endpoint_gap"] >= -1e-6)
         assert np.any(diagnostics["pgd_broad_epsilon_epsilon_norm_mean"] > 0.0)
 
 
@@ -2086,18 +2066,19 @@ def test_full_training_smoke_can_disable_diagnostics(tmp_path: Path) -> None:
     assert not (output_dir / "training_diagnostics.json").exists()
 
 
-def test_setup_task_model_pair_trains_tiny_nominal_simple_reach_batch() -> None:
+def test_setup_task_model_pair_trains_tiny_nominal_simple_reach_smoke() -> None:
+    n_batches = 3
     args = _args(
         smoke=True,
         batch_size=2,
-        n_train_batches=1,
+        n_train_batches=n_batches,
     )
     hps = build_hps(args)
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
     schedule = make_delayed_cosine_schedule(
         float(hps.learning_rate_0),
         constant_steps=0,
-        total_steps=1,
+        total_steps=n_batches,
     )
     optimizer = optax.inject_hyperparams(partial(optax.adamw, weight_decay=0.0))(
         learning_rate=schedule
@@ -2107,7 +2088,7 @@ def test_setup_task_model_pair_trains_tiny_nominal_simple_reach_batch() -> None:
     trained, _history = train_pair(
         trainer,
         pair,
-        n_batches=1,
+        n_batches=n_batches,
         key=jr.PRNGKey(1),
         ensembled=True,
         loss_func=pair.task.loss_func,

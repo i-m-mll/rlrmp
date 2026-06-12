@@ -15,7 +15,7 @@ from feedbax.graph import Component, Wire
 from feedbax.task import AbstractTask, TaskTrialSpec
 from jaxtyping import PRNGKeyArray, PyTree
 
-from rlrmp.analysis.gru_perturbation_calibration import (
+from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
     DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S,
     DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS,
     DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT,

@@ -33,7 +33,7 @@ from rlrmp.stochastic_runtime import (
 
 SCHEMA_VERSION = "rlrmp.feedbax_graph.v1"
 EXECUTION_BACKEND = "rlrmp.legacy_simple_feedback_compat"
-PLANT_INTERVENOR_LABEL = "plant_intervenor"
+GRAPH_PLANT_INTERVENOR_NODE = "plant_intervenor"
 
 
 @dataclass(frozen=True)
@@ -154,9 +154,7 @@ def build_point_mass_sensorimotor_graph_spec(
             params={
                 "delay": 0,
                 "additive_noise_std": noise_config.additive_motor_noise_std,
-                "signal_dependent_noise_std": (
-                    noise_config.signal_dependent_motor_noise_std
-                ),
+                "signal_dependent_noise_std": (noise_config.signal_dependent_motor_noise_std),
                 "add_noise": noise_config.has_command_noise,
                 "noise_model": "signal_dependent_plus_additive",
                 "noise_role": "motor_command",
@@ -236,12 +234,12 @@ def build_point_mass_sensorimotor_graph_spec(
             )
         )
     else:
-        nodes[PLANT_INTERVENOR_LABEL] = _intervention_component_spec(intervention_type, hps)
+        nodes[GRAPH_PLANT_INTERVENOR_NODE] = _intervention_component_spec(intervention_type, hps)
         wires.append(
             WireSpec(
                 source_node=force_source[0],
                 source_port=force_source[1],
-                target_node=PLANT_INTERVENOR_LABEL,
+                target_node=GRAPH_PLANT_INTERVENOR_NODE,
                 target_port="force",
             )
         )
@@ -250,7 +248,7 @@ def build_point_mass_sensorimotor_graph_spec(
                 WireSpec(
                     source_node="mechanics",
                     source_port="effector",
-                    target_node=PLANT_INTERVENOR_LABEL,
+                    target_node=GRAPH_PLANT_INTERVENOR_NODE,
                     target_port="effector",
                     temporality="recurrent",
                     recurrent_initializer={
@@ -263,14 +261,14 @@ def build_point_mass_sensorimotor_graph_spec(
             )
         wires.append(
             WireSpec(
-                source_node=PLANT_INTERVENOR_LABEL,
+                source_node=GRAPH_PLANT_INTERVENOR_NODE,
                 source_port="force",
                 target_node="mechanics",
                 target_port="force",
             )
         )
-        input_bindings[f"intervene:{PLANT_INTERVENOR_LABEL}"] = (
-            PLANT_INTERVENOR_LABEL,
+        input_bindings[f"intervene:{GRAPH_PLANT_INTERVENOR_NODE}"] = (
+            GRAPH_PLANT_INTERVENOR_NODE,
             "params_override",
         )
 
@@ -446,7 +444,11 @@ def _retained_observables(
         _port_observable("net.output", "net", "output"),
         _port_observable("net.hidden", "net", "hidden"),
         _port_observable("efferent.output", "efferent", "output"),
-        _port_observable(f"{PLANT_INTERVENOR_LABEL}.force", PLANT_INTERVENOR_LABEL, "force"),
+        _port_observable(
+            f"{GRAPH_PLANT_INTERVENOR_NODE}.force",
+            GRAPH_PLANT_INTERVENOR_NODE,
+            "force",
+        ),
     ]
     if include_plant_process_force_noise:
         observables.append(
@@ -488,7 +490,7 @@ def _task_spec(hps: Any) -> dict[str, Any]:
         "hold_epochs": _plain(hps.task.hold_epochs),
         "move_epochs": _plain(hps.task.move_epochs),
         "p_catch_trial": float(hps.task.p_catch_trial),
-        "extra_inputs": ["sisu", f"intervene:{PLANT_INTERVENOR_LABEL}"],
+        "extra_inputs": ["sisu", f"intervene:{GRAPH_PLANT_INTERVENOR_NODE}"],
     }
 
 

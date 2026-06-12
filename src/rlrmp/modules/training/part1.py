@@ -11,8 +11,8 @@ from feedbax.types import LDict, TaskModelPair, TreeNamespace
 
 from rlrmp.disturbance import (
     PLANT_INTERVENOR_LABEL,
+    get_gusts_fn,
 )
-from rlrmp.disturbances import get_gusts_fn
 from rlrmp.intervention_compat import add_plant_intervention_to_ensemble
 from rlrmp.loss import get_reach_loss
 from rlrmp.models import create_point_mass_nn_ensemble

@@ -31,7 +31,7 @@ from feedbax.train import filter_spec_leaves, get_model_parameters
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule
 from feedbax.types import TreeNamespace, dict_to_namespace
 
-from rlrmp.analysis.cs_game_card import (
+from rlrmp.analysis.math.cs_game_card import (
     INIT_POS,
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     OUTPUT_FEEDBACK_GAMMA_SELECTION_ISSUE_ID,
@@ -39,15 +39,15 @@ from rlrmp.analysis.cs_game_card import (
     build_canonical_game,
     build_no_integrator_game,
 )
-from rlrmp.analysis.cs_released_simulation import (
+from rlrmp.analysis.math.cs_released_simulation import (
     DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
     default_cs_noise_covariances,
 )
-from rlrmp.analysis.output_feedback import OutputFeedbackConfig
+from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig
 from rlrmp.cs_lss_gru import CS_H0_CONTEXT_DIM, CS_H0_ENCODER_INIT
 from rlrmp.feedbax_graph import (
     EXECUTION_BACKEND,
-    PLANT_INTERVENOR_LABEL,
+    GRAPH_PLANT_INTERVENOR_NODE,
     RLRMPFeedbaxGraphBundle,
     build_point_mass_sensorimotor_graph_spec,
     write_graph_spec_bundle,
@@ -220,8 +220,7 @@ def stochastic_preset(name: str) -> StochasticPreset:
                 "additive noise with std sqrt(motor_covariance_scale)."
             ),
             "signal_dependent_motor": (
-                "Use the C&S Csdn scale as Feedbax pre-force-filter "
-                "multiplicative command noise."
+                "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise."
             ),
             "plant_process": (
                 "Project C&S process/load covariance to independent force noise "
@@ -300,10 +299,14 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
     """Build nominal C&S-aligned GRU hyperparameters from CLI arguments."""
 
     args = _apply_smoke_overrides(args)
-    if str(args.loss_objective) in {
-        CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
-        CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
-    } and str(args.plant_backend) != CS_LSS_PLANT_BACKEND:
+    if (
+        str(args.loss_objective)
+        in {
+            CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
+        }
+        and str(args.plant_backend) != CS_LSS_PLANT_BACKEND
+    ):
         raise ValueError(
             f"--loss-objective {args.loss_objective} requires --plant-backend cs_lss "
             "because the full 48D C&S state is unavailable on the legacy backend."
@@ -319,9 +322,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
     no_integrator_state = bool(getattr(args, "no_integrator_state", False))
     if no_integrator_state and str(args.plant_backend) != CS_LSS_PLANT_BACKEND:
         raise ValueError("--no-integrator-state requires --plant-backend cs_lss.")
-    plant, schedule = (
-        build_no_integrator_game() if no_integrator_state else build_canonical_game()
-    )
+    plant, schedule = build_no_integrator_game() if no_integrator_state else build_canonical_game()
     preset = stochastic_preset(args.stochastic_preset)
     delayed_reach = bool(getattr(args, "delayed_reach", False))
     delayed_go_min = int(getattr(args, "delayed_reach_go_cue_min_step", 10))
@@ -422,11 +423,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         raise ValueError(
             "--delayed-reach and --initial-hidden-encoder are separate task-contract lanes."
         )
-    task_n_steps = (
-        CS_STAGE_COUNT + delayed_go_max
-        if delayed_reach
-        else CS_FEEDBAX_N_STEPS
-    )
+    task_n_steps = CS_STAGE_COUNT + delayed_go_max if delayed_reach else CS_FEEDBAX_N_STEPS
     task_type = CS_DELAYED_REACH_TASK_TYPE if delayed_reach else "fixed_simple_reach"
     task_workspace = (
         [[-0.20, -0.20], [0.20, 0.20]]
@@ -491,9 +488,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "type": task_type,
             "n_steps": task_n_steps,
             "workspace": task_workspace,
-            "fixed_init_pos": (
-                None if delayed_reach else [float(x) for x in INIT_POS.tolist()]
-            ),
+            "fixed_init_pos": (None if delayed_reach else [float(x) for x in INIT_POS.tolist()]),
             "fixed_target_pos": (
                 None if delayed_reach else [float(x) for x in TARGET_POS.tolist()]
             ),
@@ -730,8 +725,7 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
         "controller_kind": "gru",
         "plant_backend": plant_backend,
         "plant_backend_warning": (
-            "legacy causal SimpleFeedback has a same-step force-filter-to-mechanics "
-            "timing problem"
+            "legacy causal SimpleFeedback has a same-step force-filter-to-mechanics timing problem"
             if plant_backend == LEGACY_CAUSAL_PLANT_BACKEND
             else None
         ),
@@ -740,9 +734,7 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
         "state_dim": state_dim,
         "physical_state_dim": physical_state_dim,
         "fixed_plant_parameters": (
-            ["nodes.mechanics.A", "nodes.mechanics.B", "nodes.mechanics.B_w"]
-            if exact_lss
-            else []
+            ["nodes.mechanics.A", "nodes.mechanics.B", "nodes.mechanics.B_w"] if exact_lss else []
         ),
         "hidden_size": int(hps.model.hidden_size),
         "n_replicates": int(hps.model.n_replicates),
@@ -874,7 +866,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
                 "FixedField",
             ],
             "nominal_intervention_policy": (
-                f"{PLANT_INTERVENOR_LABEL} is present only as an inactive legacy "
+                f"{GRAPH_PLANT_INTERVENOR_NODE} is present only as an inactive legacy "
                 "GraphSpec compatibility component; no robust/minimax adversary is scheduled."
             ),
         },
@@ -1073,11 +1065,7 @@ def run_full_training(
         raise ValueError("--n-train-batches must be positive for --full-train")
     if int(args.checkpoint_interval_batches) < 1:
         raise ValueError("--checkpoint-interval-batches must be positive")
-    stop_after_batches = (
-        None
-        if args.stop_after_batches is None
-        else int(args.stop_after_batches)
-    )
+    stop_after_batches = None if args.stop_after_batches is None else int(args.stop_after_batches)
     if stop_after_batches is not None:
         if stop_after_batches < 1:
             raise ValueError("--stop-after-batches must be positive when provided")
@@ -1205,8 +1193,7 @@ def run_full_training(
         "completed_batches": state.completed_batches,
         "n_train_batches": int(args.n_train_batches),
         "stopped_early_for_checkpoint_gate": (
-            stop_after_batches is not None
-            and state.completed_batches < int(args.n_train_batches)
+            stop_after_batches is not None and state.completed_batches < int(args.n_train_batches)
         ),
         "stop_after_batches": stop_after_batches,
         "training_duration_seconds": training_duration_seconds,
@@ -1777,9 +1764,9 @@ def _build_trainer(hps: TreeNamespace) -> TaskTrainer:
     if hps.gradient_clip_norm is not None:
         transforms.append(optax.clip_by_global_norm(float(hps.gradient_clip_norm)))
     transforms.append(
-        optax.inject_hyperparams(
-            partial(optax.adamw, weight_decay=float(hps.weight_decay))
-        )(learning_rate=schedule)
+        optax.inject_hyperparams(partial(optax.adamw, weight_decay=float(hps.weight_decay)))(
+            learning_rate=schedule
+        )
     )
     if bool(getattr(hps, "training_diagnostics", True)):
         transforms.append(_update_diagnostics_transform(n_batches=int(hps.n_batches_condition)))
@@ -1899,9 +1886,7 @@ def _optimizer_metadata(args: argparse.Namespace) -> dict[str, Any]:
         "gradient_clip_norm": (
             None if args.gradient_clip_norm is None else float(args.gradient_clip_norm)
         ),
-        "gradient_clip_kind": (
-            None if args.gradient_clip_norm is None else "global_norm"
-        ),
+        "gradient_clip_kind": (None if args.gradient_clip_norm is None else "global_norm"),
         "training_diagnostics": _training_diagnostics_metadata(
             args,
             Path(args.output_dir),
@@ -1964,9 +1949,7 @@ def _broad_epsilon_training_enabled(hps: TreeNamespace) -> bool:
 
 
 def _broad_epsilon_pgd_training_enabled(hps: TreeNamespace) -> bool:
-    return bool(
-        getattr(getattr(hps, "broad_epsilon_pgd_training", None), "enabled", False)
-    )
+    return bool(getattr(getattr(hps, "broad_epsilon_pgd_training", None), "enabled", False))
 
 
 def _nominal_only(hps: TreeNamespace) -> bool:
@@ -2013,7 +1996,11 @@ def _controller_feedback_basis(hps: TreeNamespace) -> str:
 
 def _controller_feedback_dim(hps: TreeNamespace) -> int:
     if _target_relative_multitarget_enabled(hps):
-        return 6 if bool(getattr(hps.target_relative_multitarget, "force_filter_feedback", False)) else 4
+        return (
+            6
+            if bool(getattr(hps.target_relative_multitarget, "force_filter_feedback", False))
+            else 4
+        )
     return 4
 
 
@@ -2037,9 +2024,7 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
                 "initial_hidden_encoder": bool(h0["enabled"]),
                 "calibrated_perturbation_training": _perturbation_training_enabled(hps),
                 "broad_full_state_epsilon_training": _broad_epsilon_training_enabled(hps),
-                "broad_full_state_epsilon_pgd_training": (
-                    _broad_epsilon_pgd_training_enabled(hps)
-                ),
+                "broad_full_state_epsilon_pgd_training": (_broad_epsilon_pgd_training_enabled(hps)),
                 "force_filter_feedback": bool(
                     getattr(target_config, "force_filter_feedback", False)
                 ),
@@ -2078,12 +2063,8 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
             "seen_targets_m": _plain(target_payload.seen_targets_m),
             "held_out_targets_m": _plain(target_payload.held_out_targets_m),
             "validation_bins": _plain(target_config.validation_bins),
-            "perturbation_mixture_emphasis": _plain(
-                target_config.perturbation_mixture_emphasis
-            ),
-            "checkpoint_selection_role": (
-                "target_relative_multitarget_rollout_validation"
-            ),
+            "perturbation_mixture_emphasis": _plain(target_config.perturbation_mixture_emphasis),
+            "checkpoint_selection_role": ("target_relative_multitarget_rollout_validation"),
             "nominal_quality_role": "original_anchor_and_seen_held_out_targets_reported",
             "controller_internal_mutation": False,
             "adversarial_phase": "none",
@@ -2470,9 +2451,7 @@ def _broad_epsilon_pgd_diagnostics_arrays(
             n_replicates=n_replicates,
             replicate_index=replicate_index,
         )
-        per_replicate_diagnostics.append(
-            diagnostic_for_replicate(model_replicate, key_replicate)
-        )
+        per_replicate_diagnostics.append(diagnostic_for_replicate(model_replicate, key_replicate))
     diagnostics = jt.map(lambda *values: jnp.stack(values), *per_replicate_diagnostics)
     arrays: dict[str, np.ndarray] = {
         "pgd_broad_epsilon_diagnostic_sampled": np.zeros(chunk_batches, dtype=bool),
@@ -2681,11 +2660,7 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
     plant_backend = str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND))
     target_relative = _target_relative_multitarget_enabled(hps)
     delayed_reach = _delayed_reach_enabled(hps)
-    rollout_steps = (
-        int(hps.task.n_steps)
-        if delayed_reach
-        else int(hps.task.n_steps) - 1
-    )
+    rollout_steps = int(hps.task.n_steps) if delayed_reach else int(hps.task.n_steps) - 1
     if delayed_reach:
         movement_window = {
             "kind": "delayed_reach_movement_epoch",
@@ -2739,13 +2714,11 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
             if plant_backend == CS_LSS_PLANT_BACKEND and target_relative
             else ["input", "epsilon"]
             if plant_backend == CS_LSS_PLANT_BACKEND
-            else ["sisu", f"intervene:{PLANT_INTERVENOR_LABEL}"]
+            else ["sisu", f"intervene:{GRAPH_PLANT_INTERVENOR_NODE}"]
         ),
         "delayed_reach": _plain(hps.delayed_reach),
         "target_relative_multitarget": (
-            _plain(hps.target_relative_multitarget)
-            if target_relative
-            else {"enabled": False}
+            _plain(hps.target_relative_multitarget) if target_relative else {"enabled": False}
         ),
         "broad_epsilon_training": (
             _plain(hps.broad_epsilon_training)
@@ -2777,11 +2750,7 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
             "canonical_movement_horizon_steps": CS_STAGE_COUNT,
         }
     )
-    cs_fact_t = (
-        "((movement_age + 1) / 60)^6, capped at 1"
-        if delayed_reach
-        else "((t + 1) / T)^6"
-    )
+    cs_fact_t = "((movement_age + 1) / 60)^6, capped at 1" if delayed_reach else "((t + 1) / T)^6"
     if objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE:
         no_integrator_state = bool(getattr(hps.model, "no_integrator_state", False))
         _plant, schedule = (
