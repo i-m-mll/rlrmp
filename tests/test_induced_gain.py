@@ -49,7 +49,6 @@ from rlrmp.analysis.hinf_riccati import (
 from rlrmp.analysis.induced_gain import (
     TrajectoryLinearisation,
     W_ADDITIVE_FORCE,
-    W_SENSORY_NOISE,
     W_SENSORY_PERTURBATION,
     W_STRUCTURAL_DA,
     Z_CONTROL,
@@ -129,9 +128,7 @@ def test_toy_ltv_matches_svd():
     lin = _toy_ltv(T=8, n=2, n_w=1, n_z=1, seed=0)
     sv_top = _brute_force_toeplitz_svd(lin)
 
-    result = induced_gain_power_iteration(
-        lin, n_restarts=5, max_iter=400, rtol=1e-9
-    )
+    result = induced_gain_power_iteration(lin, n_restarts=5, max_iter=400, rtol=1e-9)
     assert result.converged
     assert result.gamma == pytest.approx(sv_top, rel=1e-6)
 
@@ -141,9 +138,7 @@ def test_toy_ltv_matches_svd_multidim():
     lin = _toy_ltv(T=10, n=3, n_w=2, n_z=2, seed=42)
     sv_top = _brute_force_toeplitz_svd(lin)
 
-    result = induced_gain_power_iteration(
-        lin, n_restarts=5, max_iter=500, rtol=1e-9
-    )
+    result = induced_gain_power_iteration(lin, n_restarts=5, max_iter=500, rtol=1e-9)
     assert result.converged
     assert result.gamma == pytest.approx(sv_top, rel=1e-5)
 
@@ -510,15 +505,8 @@ def test_qr_cost_requires_schedule():
 # -----------------------------------------------------------------------------
 
 
-def test_sensory_noise_alias_resolves_to_perturbation():
-    """The deprecated ``sensory_noise`` alias resolves to sensory_perturbation.
-
-    Bug: ec7710f. Verifies (a) the constant ``W_SENSORY_NOISE`` is an alias of
-    ``W_SENSORY_PERTURBATION``, and (b) the literal string ``"sensory_noise"``
-    still validates and produces the same operator.
-    """
-    assert W_SENSORY_NOISE == W_SENSORY_PERTURBATION == "sensory_perturbation"
-
+def test_sensory_noise_spelling_resolves_to_perturbation():
+    """Historical ``sensory_noise`` configs still route to sensory_perturbation."""
     plant, schedule = _rlrmp_setup()
     lqr = solve_lqr(plant, schedule)
     ctrl = lti_controller(lqr.K)
@@ -527,14 +515,22 @@ def test_sensory_noise_alias_resolves_to_perturbation():
 
     # Old string still works.
     lin_old = linearise_trajectory(
-        plant, ctrl,
-        init_pos=init_pos, target_pos=target_pos, horizon=40,
-        w_channel="sensory_noise", z_channel=Z_STATE_ERROR,
+        plant,
+        ctrl,
+        init_pos=init_pos,
+        target_pos=target_pos,
+        horizon=40,
+        w_channel="sensory_noise",
+        z_channel=Z_STATE_ERROR,
     )
     lin_new = linearise_trajectory(
-        plant, ctrl,
-        init_pos=init_pos, target_pos=target_pos, horizon=40,
-        w_channel="sensory_perturbation", z_channel=Z_STATE_ERROR,
+        plant,
+        ctrl,
+        init_pos=init_pos,
+        target_pos=target_pos,
+        horizon=40,
+        w_channel="sensory_perturbation",
+        z_channel=Z_STATE_ERROR,
     )
     # Operator matrices should match exactly.
     assert jnp.allclose(lin_old.A_t, lin_new.A_t)
@@ -563,8 +559,11 @@ def test_dz_feedthrough_sensory_perturbation_qr_cost():
     target_pos = jnp.array([0.1, 0.0])
 
     lin_corrected = linearise_trajectory(
-        plant, ctrl,
-        init_pos=init_pos, target_pos=target_pos, horizon=40,
+        plant,
+        ctrl,
+        init_pos=init_pos,
+        target_pos=target_pos,
+        horizon=40,
         w_channel=W_SENSORY_PERTURBATION,
         z_channel=Z_QR_COST,
         schedule=schedule,
@@ -590,9 +589,7 @@ def test_dz_feedthrough_sensory_perturbation_qr_cost():
     g_corrected = induced_gain_power_iteration(
         lin_corrected, n_restarts=4, max_iter=400, rtol=1e-7
     ).gamma
-    g_old = induced_gain_power_iteration(
-        lin_old, n_restarts=4, max_iter=400, rtol=1e-7
-    ).gamma
+    g_old = induced_gain_power_iteration(lin_old, n_restarts=4, max_iter=400, rtol=1e-7).gamma
     # Strict inequality: D_z fix raised the operator's leading singular value.
     assert g_corrected > g_old, (
         f"D_z fix should raise the gain: corrected={g_corrected}, old={g_old}"
@@ -617,6 +614,7 @@ def test_feedbax_graph_controller_smoke():
 
     class GainComponent(Component):
         """y = -K @ x; carries a 1-element counter to exercise stateful flatten."""
+
         input_ports = ("input",)
         output_ports = ("output",)
 
@@ -692,6 +690,7 @@ def test_feedbax_graph_controller_cyclic_smoke():
 
     class GainWithRecurrent(Component):
         """y = -K @ x + h_in. Stateless component with two input ports."""
+
         input_ports = ("x", "h_in")
         output_ports = ("y",)
 
@@ -708,6 +707,7 @@ def test_feedbax_graph_controller_cyclic_smoke():
 
     class OneStepDelay(Component):
         """y[t] = x[t-1] (one-step delay). Carries one previous-x in StateIndex."""
+
         input_ports = ("x",)
         output_ports = ("y",)
 
@@ -772,18 +772,6 @@ def test_feedbax_graph_controller_cyclic_smoke():
     assert float(u3[0]) == pytest.approx(-8.0, abs=1e-12)
 
 
-def test_feedbax_rnn_controller_deprecated_raises():
-    """The old ``feedbax_rnn_controller`` adapter raises with a migration message.
-
-    Bug: b131510. The old API assumed staged-model plumbing; new code must
-    use ``feedbax_graph_controller``.
-    """
-    from rlrmp.analysis.induced_gain import feedbax_rnn_controller
-
-    with pytest.raises(NotImplementedError, match="feedbax_graph_controller"):
-        feedbax_rnn_controller(lambda h, o, t: (h, o), jnp.zeros(3))
-
-
 def test_dz_feedthrough_lti_analytic():
     """D_z feedthrough analytic check on a hand-rolled toy LTI controller.
 
@@ -820,11 +808,18 @@ def test_dz_feedthrough_lti_analytic():
     # Plant — needs a small mock for plant.m_u
     class _Mock:
         m_u = 1
+
     plant_mock = _Mock()
 
     Cz, Dz = _qr_cost_Cz_Dz(
-        plant_mock, schedule, Cu_arr, Du_arr,
-        n_aug=n_aug, n_w=n_w, n_plant=n_plant, horizon=horizon,
+        plant_mock,
+        schedule,
+        Cu_arr,
+        Du_arr,
+        n_aug=n_aug,
+        n_w=n_w,
+        n_plant=n_plant,
+        horizon=horizon,
     )
     # State half of D_z is zero.
     assert jnp.allclose(Dz[:, :n_plant, :], 0.0)
