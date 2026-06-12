@@ -12,6 +12,7 @@ def register_experiment_package(registry):
         registry: ExperimentRegistry instance to register with
     """
     from feedbax.plugins.discovery import register_package_from_module_info
+    from rlrmp.analysis.matrix import register_standard_matrix_recipes
 
     register_package_from_module_info(
         registry=registry,
@@ -29,3 +30,4 @@ def register_experiment_package(registry):
             "create_symlink_in_spec_dir": True,
         },
     )
+    register_standard_matrix_recipes()
