@@ -8,6 +8,7 @@ from feedbax.manifest import (
     Provenance,
     SpecPayload,
     TrainingRunManifest,
+    load_manifest,
     write_manifest,
 )
 
@@ -125,6 +126,10 @@ def test_materialize_studio_records_writes_workspace_and_pipeline_manifests(
         "rlrmp.standard_matrix"
     )
     assert analysis_manifest["artifacts"][0]["role"] == "figure"
+    assert all(
+        load_manifest(Path(path)).provenance.issues == []
+        for path in result.manifest_paths.values()
+    )
 
 
 def test_studio_records_cli_supports_dry_run_json(tmp_path: Path, capsys) -> None:

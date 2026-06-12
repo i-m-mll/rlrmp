@@ -447,6 +447,7 @@ def build_cs_lss_gru_graph_spec(
                 "h0_input_size": feedback_dim,
                 "h0_context_source": "target_relative_delayed_feedback",
                 "h0_initialization": CS_H0_ENCODER_INIT,
+                "h0_dtype": jnp.dtype(mechanics.A.dtype).name,
             }
         )
 
@@ -820,6 +821,7 @@ def _build_initial_hidden_staged_network(
         h0_encoder=InitialHiddenEncoder(
             input_size=int(params["h0_input_size"]),
             hidden_size=int(params["hidden_size"]),
+            dtype=jnp.dtype(params.get("h0_dtype", jnp.float32)),
         ),
         h0_context_source=str(params.get("h0_context_source", "target_relative_delayed_feedback")),
         h0_initialization=str(params.get("h0_initialization", CS_H0_ENCODER_INIT)),

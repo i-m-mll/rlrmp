@@ -215,7 +215,7 @@ def materialize_studio_records(
     analysis_type: str = STANDARD_MATRIX_ANALYSIS_TYPE,
     requested_outputs: Sequence[str] = DEFAULT_REQUESTED_OUTPUTS,
     stages: Sequence[str] = ("eval", "analysis", "report"),
-    issues: Sequence[str] = ("10b38d7",),
+    issues: Sequence[str] = (),
     register_recipes: bool = True,
     dry_run: bool = False,
 ) -> StudioRecordsMaterializationResult:

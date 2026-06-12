@@ -348,6 +348,22 @@ def test_initial_hidden_encoder_uses_target_relative_feedback_context_shape() ->
     assert jnp.allclose(net.h0_encoder(context), jnp.zeros((7,)))
 
 
+def test_initial_hidden_encoder_dtype_matches_mechanics_dtype() -> None:
+    spec = build_cs_lss_gru_graph_spec(
+        hidden_size=7,
+        bind_epsilon_input=True,
+        target_relative_feedback=True,
+        initial_hidden_encoder=True,
+        key=jax.random.PRNGKey(15),
+    )
+    graph = materialize_cs_lss_gru_graph_spec(spec)
+
+    expected_dtype = jnp.dtype(graph.nodes["mechanics"].A.dtype)
+    assert spec.nodes["net"].params["h0_dtype"] == expected_dtype.name
+    assert jnp.dtype(graph.nodes["net"].h0_encoder.weight.dtype) == expected_dtype
+    assert jnp.dtype(graph.nodes["net"].h0_encoder.bias.dtype) == expected_dtype
+
+
 def test_initial_hidden_encoder_requires_target_relative_context() -> None:
     with pytest.raises(ValueError, match="requires target_relative_feedback"):
         build_cs_lss_gru_graph(
