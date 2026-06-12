@@ -16,6 +16,7 @@ training covariance contract into this runtime remains future work.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 import equinox as eqx
 from equinox import Module, field
@@ -23,16 +24,19 @@ import jax.numpy as jnp
 import jax.random as jr
 from jaxtyping import Array, PRNGKeyArray, PyTree
 
-from feedbax.channel import Channel, ChannelState
-from feedbax.graph import Component, Graph, Wire
+import feedbax.serialization_prototypes as _fbx_prototypes
+from feedbax.channel import ChannelState
+from feedbax.component_registry import get_component_registry
+from feedbax.contracts.graph import ComponentSpec, GraphMetadata, GraphSpec, WireSpec
+from feedbax.graph import Component, Graph
 from feedbax.mechanics import LinearStateSpace
-from feedbax.mechanics.linear_state_space import LinearStateSpaceState
-from feedbax.noise import Multiplicative, Normal
 from feedbax.nn import NetworkState, PopulationStructure, SimpleStagedNetwork
+from feedbax.serialization import spec_to_graph
 from feedbax.state import CartesianState
 
 from rlrmp.analysis.math.cs_game_card import build_canonical_game
 from rlrmp.analysis.pipelines.feedbax_parity import build_cs2019_feedbax_mechanics
+from rlrmp.feedbax_graph import register_rlrmp_graph_components
 
 
 CS_PHYSICAL_STATE_DIM = 8
@@ -48,6 +52,13 @@ CS_PROPRIOCEPTIVE_FEEDBACK_DIM = 6
 CS_TARGET_DIM = 2
 CS_H0_CONTEXT_DIM = CS_FEEDBACK_DIM
 CS_H0_ENCODER_INIT = "zero_affine"
+CS_LSS_GRAPH_SPEC_VERSION = "1.0.0"
+CS_LSS_DELAYED_FEEDBACK_COMPONENT = "RLRMPCsLssDelayedPositionVelocityFeedback"
+CS_LSS_TARGET_FEEDBACK_COMPONENT = "RLRMPCsLssTargetRelativeDelayedFeedback"
+CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT = (
+    "RLRMPCsLssTargetRelativeDelayedProprioceptiveFeedback"
+)
+CS_LSS_INITIAL_HIDDEN_NET_COMPONENT = "RLRMPCsLssInitialHiddenStagedNetwork"
 
 
 class DelayedPositionVelocityFeedback(Component):
@@ -88,8 +99,7 @@ class DelayedPositionVelocityFeedback(Component):
         vector = jnp.asarray(inputs["state"])
         if vector.shape[-1] != self.expected_state_dim:
             raise ValueError(
-                f"Expected a {self.expected_state_dim}D C&S state vector; got shape "
-                f"{vector.shape}."
+                f"Expected a {self.expected_state_dim}D C&S state vector; got shape {vector.shape}."
             )
         feedback = vector[jnp.asarray(self.indices, dtype=jnp.int32)]
         return {"feedback": feedback}, state
@@ -118,7 +128,9 @@ class TargetRelativeDelayedFeedback(Component):
         self.indices = tuple(int(index) for index in indices)
         self.expected_state_dim = int(expected_state_dim)
         if len(self.indices) != CS_FEEDBACK_DIM:
-            raise ValueError(f"Target-relative delayed feedback needs 4 indices; got {self.indices}.")
+            raise ValueError(
+                f"Target-relative delayed feedback needs 4 indices; got {self.indices}."
+            )
 
     def __call__(
         self,
@@ -132,8 +144,7 @@ class TargetRelativeDelayedFeedback(Component):
         target = jnp.asarray(inputs["target"])
         if vector.shape[-1] != self.expected_state_dim:
             raise ValueError(
-                f"Expected a {self.expected_state_dim}D C&S state vector; got shape "
-                f"{vector.shape}."
+                f"Expected a {self.expected_state_dim}D C&S state vector; got shape {vector.shape}."
             )
         if target.shape[-1] != CS_TARGET_DIM:
             raise ValueError(f"Expected a 2D target vector; got shape {target.shape}.")
@@ -185,8 +196,7 @@ class TargetRelativeDelayedProprioceptiveFeedback(Component):
         target = jnp.asarray(inputs["target"])
         if vector.shape[-1] != self.expected_state_dim:
             raise ValueError(
-                f"Expected a {self.expected_state_dim}D C&S state vector; got shape "
-                f"{vector.shape}."
+                f"Expected a {self.expected_state_dim}D C&S state vector; got shape {vector.shape}."
             )
         if target.shape[-1] != CS_TARGET_DIM:
             raise ValueError(f"Expected a 2D target vector; got shape {target.shape}.")
@@ -218,9 +228,7 @@ class InitialHiddenEncoder(Module):
         if hidden_size <= 0:
             raise ValueError("H0 encoder hidden_size must be positive.")
         if init != CS_H0_ENCODER_INIT:
-            raise ValueError(
-                f"Unknown H0 encoder init {init!r}; expected {CS_H0_ENCODER_INIT!r}."
-            )
+            raise ValueError(f"Unknown H0 encoder init {init!r}; expected {CS_H0_ENCODER_INIT!r}.")
         self.weight = jnp.zeros((int(hidden_size), int(input_size)), dtype=dtype)
         self.bias = jnp.zeros((int(hidden_size),), dtype=dtype)
 
@@ -314,6 +322,314 @@ class CsLssGruState(Module):
     efferent: ChannelState
 
 
+def register_cs_lss_graph_components(component_registry: Any | None = None) -> Any:
+    """Register executable CS-LSS component builders for GraphSpec materialization."""
+
+    registry = register_rlrmp_graph_components(component_registry or get_component_registry())
+    registry.register_component_type(
+        CS_LSS_DELAYED_FEEDBACK_COMPONENT,
+        _build_delayed_feedback,
+        category="RLRMP",
+        description="C&S delayed position/velocity feedback selector.",
+        input_ports=["state"],
+        output_ports=["feedback"],
+        provenance="rlrmp",
+    )
+    registry.register_component_type(
+        CS_LSS_TARGET_FEEDBACK_COMPONENT,
+        _build_target_relative_feedback,
+        category="RLRMP",
+        description="C&S target-relative delayed position/velocity feedback selector.",
+        input_ports=["state", "target"],
+        output_ports=["feedback"],
+        provenance="rlrmp",
+    )
+    registry.register_component_type(
+        CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT,
+        _build_target_relative_proprioceptive_feedback,
+        category="RLRMP",
+        description="C&S target-relative delayed pos/vel plus force/filter feedback selector.",
+        input_ports=["state", "target"],
+        output_ports=["feedback"],
+        provenance="rlrmp",
+    )
+    registry.register_component_type(
+        CS_LSS_INITIAL_HIDDEN_NET_COMPONENT,
+        _build_initial_hidden_staged_network,
+        category="RLRMP",
+        description="C&S GRU controller with first-step target-relative H0 conditioning.",
+        input_ports=["input", "feedback"],
+        output_ports=["output", "hidden"],
+        provenance="rlrmp",
+    )
+    return registry
+
+
+def build_cs_lss_gru_graph_spec(
+    *,
+    hidden_size: int,
+    input_size: int = 0,
+    encoding_size: int | None = None,
+    hidden_type: Callable[..., Module] = eqx.nn.GRUCell,
+    population_structure: PopulationStructure | None = None,
+    sisu_gating: str = "additive",
+    initial_state: Array | None = None,
+    sensory_noise_std: float = 0.0,
+    additive_motor_noise_std: float = 0.0,
+    signal_dependent_motor_noise_std: float = 0.0,
+    bind_epsilon_input: bool = False,
+    target_relative_feedback: bool = False,
+    force_filter_feedback: bool = False,
+    initial_hidden_encoder: bool = False,
+    no_integrator_state: bool = False,
+    key: PRNGKeyArray,
+) -> GraphSpec:
+    """Build the durable GraphSpec for the C&S LinearStateSpace GRU graph."""
+
+    _validate_cs_lss_graph_args(
+        input_size=input_size,
+        sensory_noise_std=sensory_noise_std,
+        additive_motor_noise_std=additive_motor_noise_std,
+        signal_dependent_motor_noise_std=signal_dependent_motor_noise_std,
+        target_relative_feedback=target_relative_feedback,
+        force_filter_feedback=force_filter_feedback,
+        initial_hidden_encoder=initial_hidden_encoder,
+    )
+    physical_state_dim = (
+        CS_REDUCED_PHYSICAL_STATE_DIM if bool(no_integrator_state) else CS_PHYSICAL_STATE_DIM
+    )
+    mechanics = build_cs2019_feedbax_mechanics(
+        initial_state=initial_state,
+        no_integrator_state=bool(no_integrator_state),
+    )
+    state_dim = int(mechanics.A.shape[0])
+    delayed_pos_vel_indices = _delayed_feedback_indices(
+        state_dim=state_dim,
+        physical_state_dim=physical_state_dim,
+        include_force=False,
+    )
+    delayed_pos_vel_force_indices = _delayed_feedback_indices(
+        state_dim=state_dim,
+        physical_state_dim=physical_state_dim,
+        include_force=True,
+    )
+    feedback_dim = (
+        CS_PROPRIOCEPTIVE_FEEDBACK_DIM if bool(force_filter_feedback) else CS_FEEDBACK_DIM
+    )
+    feedback_type, feedback_params, feedback_ports = _feedback_component_contract(
+        target_relative_feedback=target_relative_feedback,
+        force_filter_feedback=force_filter_feedback,
+        delayed_pos_vel_indices=delayed_pos_vel_indices,
+        delayed_pos_vel_force_indices=delayed_pos_vel_force_indices,
+        state_dim=state_dim,
+        feedback_dim=feedback_dim,
+    )
+    key_param = [int(value) for value in jnp.asarray(jr.fold_in(key, 0)).tolist()]
+    net_type = (
+        CS_LSS_INITIAL_HIDDEN_NET_COMPONENT
+        if bool(initial_hidden_encoder)
+        else "RLRMPSimpleStagedNetwork"
+    )
+    net_params = {
+        "controller_kind": "gru",
+        "input_size": int(input_size) + feedback_dim,
+        "hidden_size": int(hidden_size),
+        "out_size": CS_FORCE_DIM,
+        "encoding_size": encoding_size,
+        "hidden_type": _hidden_type_name(hidden_type),
+        "sisu_gating": str(sisu_gating),
+        "population_structure": _population_structure_params(population_structure, hidden_size),
+        "key": key_param,
+    }
+    if initial_hidden_encoder:
+        net_params.update(
+            {
+                "h0_input_size": feedback_dim,
+                "h0_context_source": "target_relative_delayed_feedback",
+                "h0_initialization": CS_H0_ENCODER_INIT,
+            }
+        )
+
+    nodes = {
+        "feedback": ComponentSpec(
+            type=feedback_type,
+            params=feedback_params,
+            input_ports=feedback_ports,
+            output_ports=["feedback"],
+        ),
+        "sensory": ComponentSpec(
+            type="Channel",
+            params={
+                "delay": 0,
+                "noise_std": float(sensory_noise_std),
+                "add_noise": float(sensory_noise_std) != 0.0,
+                "input_shape": [feedback_dim],
+            },
+            input_ports=["input"],
+            output_ports=["output"],
+        ),
+        "net": ComponentSpec(
+            type=net_type,
+            params=net_params,
+            input_ports=["input", "feedback"],
+            output_ports=["output", "hidden"],
+        ),
+        "efferent": ComponentSpec(
+            type="RLRMPMotorChannel",
+            params={
+                "delay": 0,
+                "additive_noise_std": float(additive_motor_noise_std),
+                "signal_dependent_noise_std": float(signal_dependent_motor_noise_std),
+                "add_noise": (
+                    float(additive_motor_noise_std) != 0.0
+                    or float(signal_dependent_motor_noise_std) != 0.0
+                ),
+                "noise_model": "signal_dependent_plus_additive",
+                "noise_role": "motor_command",
+                "noise_timing": "pre_lss_mechanics",
+                "input_shape": [CS_FORCE_DIM],
+            },
+            input_ports=["input"],
+            output_ports=["output"],
+        ),
+        "mechanics": ComponentSpec(
+            type="LinearStateSpace",
+            params={
+                "A": mechanics.A.tolist(),
+                "B": mechanics.B.tolist(),
+                "B_w": mechanics.B_w.tolist(),
+                "dt": mechanics.dt,
+                "initial_state": list(mechanics.initial_state),
+                "pos_slice": list(mechanics.pos_slice),
+                "vel_slice": list(mechanics.vel_slice),
+            },
+            input_ports=["force", "epsilon"],
+            output_ports=["effector", "state"],
+        ),
+    }
+    wires = [
+        WireSpec(
+            source_node="feedback",
+            source_port="feedback",
+            target_node="sensory",
+            target_port="input",
+        ),
+        WireSpec(
+            source_node="sensory",
+            source_port="output",
+            target_node="net",
+            target_port="feedback",
+        ),
+        WireSpec(
+            source_node="net",
+            source_port="output",
+            target_node="efferent",
+            target_port="input",
+        ),
+        WireSpec(
+            source_node="efferent",
+            source_port="output",
+            target_node="mechanics",
+            target_port="force",
+        ),
+        WireSpec(
+            source_node="mechanics",
+            source_port="state",
+            target_node="feedback",
+            target_port="state",
+            temporality="recurrent",
+        ),
+    ]
+    input_ports = ["input"] if input_size > 0 else []
+    input_bindings = {"input": ("net", "input")} if input_size > 0 else {}
+    if target_relative_feedback:
+        input_ports.append("target")
+        input_bindings["target"] = ("feedback", "target")
+    if bind_epsilon_input:
+        input_ports.append("epsilon")
+        input_bindings["epsilon"] = ("mechanics", "epsilon")
+
+    return GraphSpec(
+        nodes=nodes,
+        wires=wires,
+        input_ports=input_ports,
+        output_ports=["effector", "state", "feedback", "clean_feedback", "force"],
+        input_bindings=input_bindings,
+        output_bindings={
+            "effector": ("mechanics", "effector"),
+            "state": ("mechanics", "state"),
+            "feedback": ("sensory", "output"),
+            "clean_feedback": ("feedback", "feedback"),
+            "force": ("efferent", "output"),
+        },
+        metadata=GraphMetadata(
+            name="RLRMP CS-LSS GRU loop",
+            description="Executable GraphSpec contract for the C&S LinearStateSpace GRU path.",
+            created_at="1970-01-01T00:00:00",
+            updated_at="1970-01-01T00:00:00",
+            version=CS_LSS_GRAPH_SPEC_VERSION,
+            tags=["rlrmp", "feedbax", "graphspec", "cs_lss", "gru"],
+        ),
+    )
+
+
+def materialize_cs_lss_gru_graph_spec(
+    graph_spec: GraphSpec,
+    component_registry: Any | None = None,
+) -> Graph:
+    """Materialize a CS-LSS GraphSpec and install the CS-LSS runtime hooks."""
+
+    registry = register_cs_lss_graph_components(component_registry)
+    graph = _spec_to_graph_with_cs_lss_prototypes(graph_spec, registry)
+    graph = _restore_cs_lss_graph_boundary(graph, graph_spec)
+    return install_cs_lss_gru_runtime_hooks(graph)
+
+
+def install_cs_lss_gru_runtime_hooks(graph: Graph) -> Graph:
+    """Install CS-LSS state-view hooks on a materialized graph."""
+
+    mechanics = graph.nodes.get("mechanics")
+    if not isinstance(mechanics, LinearStateSpace):
+        return graph
+
+    def _state_view(node_states: dict[str, PyTree]) -> CsLssGruState:
+        mechanics_state = node_states["mechanics"]
+        mechanics_view = CsLssMechanicsView(
+            vector=mechanics_state.vector,
+            effector=mechanics._effector(
+                mechanics_state.vector,
+                jnp.zeros((CS_FORCE_DIM,), dtype=mechanics.A.dtype),
+            ),
+        )
+        return CsLssGruState(
+            mechanics=mechanics_view,
+            sensory=node_states["sensory"],
+            net=node_states["net"],
+            efferent=node_states["efferent"],
+        )
+
+    object.__setattr__(graph, "state_view_fn", _state_view)
+    return graph
+
+
+def _restore_cs_lss_graph_boundary(graph: Graph, graph_spec: GraphSpec) -> Graph:
+    """Restore CS-LSS external port names after Feedbax legacy migration."""
+
+    object.__setattr__(graph, "input_ports", tuple(graph_spec.input_ports))
+    object.__setattr__(
+        graph,
+        "input_bindings",
+        {name: tuple(binding) for name, binding in graph_spec.input_bindings.items()},
+    )
+    object.__setattr__(graph, "output_ports", tuple(graph_spec.output_ports))
+    object.__setattr__(
+        graph,
+        "output_bindings",
+        {name: tuple(binding) for name, binding in graph_spec.output_bindings.items()},
+    )
+    return graph
+
+
 def build_cs_lss_gru_graph(
     *,
     hidden_size: int,
@@ -369,6 +685,54 @@ def build_cs_lss_gru_graph(
         ``mechanics``.
     """
 
+    graph_spec = build_cs_lss_gru_graph_spec(
+        hidden_size=hidden_size,
+        input_size=input_size,
+        encoding_size=encoding_size,
+        hidden_type=hidden_type,
+        population_structure=population_structure,
+        sisu_gating=sisu_gating,
+        initial_state=initial_state,
+        sensory_noise_std=sensory_noise_std,
+        additive_motor_noise_std=additive_motor_noise_std,
+        signal_dependent_motor_noise_std=signal_dependent_motor_noise_std,
+        bind_epsilon_input=bind_epsilon_input,
+        target_relative_feedback=target_relative_feedback,
+        force_filter_feedback=force_filter_feedback,
+        initial_hidden_encoder=initial_hidden_encoder,
+        no_integrator_state=no_integrator_state,
+        key=key,
+    )
+    return materialize_cs_lss_gru_graph_spec(graph_spec)
+
+
+def _delayed_feedback_indices(
+    *,
+    state_dim: int,
+    physical_state_dim: int,
+    include_force: bool,
+) -> tuple[int, ...]:
+    if physical_state_dim < CS_REDUCED_PHYSICAL_STATE_DIM:
+        raise ValueError(f"physical_state_dim must be >= 6; got {physical_state_dim}.")
+    if state_dim % physical_state_dim != 0:
+        raise ValueError(
+            f"state_dim={state_dim} is not divisible by physical_state_dim={physical_state_dim}."
+        )
+    delayed_start = state_dim - physical_state_dim
+    width = CS_PROPRIOCEPTIVE_FEEDBACK_DIM if include_force else CS_FEEDBACK_DIM
+    return tuple(range(delayed_start, delayed_start + width))
+
+
+def _validate_cs_lss_graph_args(
+    *,
+    input_size: int,
+    sensory_noise_std: float,
+    additive_motor_noise_std: float,
+    signal_dependent_motor_noise_std: float,
+    target_relative_feedback: bool,
+    force_filter_feedback: bool,
+    initial_hidden_encoder: bool,
+) -> None:
     if input_size < 0:
         raise ValueError("input_size must be non-negative.")
     if sensory_noise_std < 0:
@@ -389,160 +753,200 @@ def build_cs_lss_gru_graph(
             "controller-visible basis."
         )
 
-    physical_state_dim = (
-        CS_REDUCED_PHYSICAL_STATE_DIM
-        if bool(no_integrator_state)
-        else CS_PHYSICAL_STATE_DIM
-    )
-    mechanics = build_cs2019_feedbax_mechanics(
-        initial_state=initial_state,
-        no_integrator_state=bool(no_integrator_state),
-    )
-    state_dim = int(mechanics.A.shape[0])
-    delayed_pos_vel_indices = _delayed_feedback_indices(
-        state_dim=state_dim,
-        physical_state_dim=physical_state_dim,
-        include_force=False,
-    )
-    delayed_pos_vel_force_indices = _delayed_feedback_indices(
-        state_dim=state_dim,
-        physical_state_dim=physical_state_dim,
-        include_force=True,
-    )
-    feedback_dim = (
-        CS_PROPRIOCEPTIVE_FEEDBACK_DIM
-        if bool(force_filter_feedback)
-        else CS_FEEDBACK_DIM
-    )
-    key_net = jr.fold_in(key, 0)
-    net = SimpleStagedNetwork(
-        input_size=input_size + feedback_dim,
-        hidden_size=hidden_size,
-        out_size=CS_FORCE_DIM,
-        encoding_size=encoding_size,
-        hidden_type=hidden_type,
-        population_structure=population_structure,
-        sisu_gating=sisu_gating,
-        key=key_net,
-    )
-    if initial_hidden_encoder:
-        net = InitialHiddenStagedNetwork(
-            net=net,
-            h0_encoder=InitialHiddenEncoder(
-                input_size=feedback_dim,
-                hidden_size=hidden_size,
-                dtype=mechanics.A.dtype,
-            ),
-        )
-    sensory = Channel(
-        delay=0,
-        noise_func=Normal(std=float(sensory_noise_std)),
-        add_noise=float(sensory_noise_std) != 0.0,
-        input_proto=jnp.zeros((feedback_dim,), dtype=mechanics.A.dtype),
-        init_value=0.0,
-    )
-    motor_noise_func = (
-        Multiplicative(Normal(std=float(signal_dependent_motor_noise_std)))
-        + Normal(std=float(additive_motor_noise_std))
-    )
-    efferent = Channel(
-        delay=0,
-        noise_func=motor_noise_func,
-        add_noise=(
-            float(additive_motor_noise_std) != 0.0
-            or float(signal_dependent_motor_noise_std) != 0.0
-        ),
-        input_proto=jnp.zeros((CS_FORCE_DIM,), dtype=mechanics.A.dtype),
-        init_value=0.0,
-    )
-    if bool(force_filter_feedback):
-        feedback = TargetRelativeDelayedProprioceptiveFeedback(
-            delayed_pos_vel_force_indices,
-            expected_state_dim=state_dim,
-        )
-    elif bool(target_relative_feedback):
-        feedback = TargetRelativeDelayedFeedback(
-            delayed_pos_vel_indices,
-            expected_state_dim=state_dim,
-        )
-    else:
-        feedback = DelayedPositionVelocityFeedback(
-            delayed_pos_vel_indices,
-            expected_state_dim=state_dim,
-        )
 
-    nodes = {
-        "feedback": feedback,
-        "sensory": sensory,
-        "net": net,
-        "efferent": efferent,
-        "mechanics": mechanics,
-    }
-    wires = [
-        Wire("feedback", "feedback", "sensory", "input"),
-        Wire("sensory", "output", "net", "feedback"),
-        Wire("net", "output", "efferent", "input"),
-        Wire("efferent", "output", "mechanics", "force"),
-        Wire("mechanics", "state", "feedback", "state", temporality="recurrent"),
-    ]
-
-    input_ports = ("input",) if input_size > 0 else ()
-    input_bindings = {"input": ("net", "input")} if input_size > 0 else {}
-    if target_relative_feedback:
-        input_ports = (*input_ports, "target")
-        input_bindings["target"] = ("feedback", "target")
-    if bind_epsilon_input:
-        input_ports = (*input_ports, "epsilon")
-        input_bindings["epsilon"] = ("mechanics", "epsilon")
-
-    def _state_view(node_states: dict[str, PyTree]) -> CsLssGruState:
-        mechanics_state = node_states["mechanics"]
-        mechanics_view = CsLssMechanicsView(
-            vector=mechanics_state.vector,
-            effector=mechanics._effector(
-                mechanics_state.vector,
-                jnp.zeros((CS_FORCE_DIM,), dtype=mechanics.A.dtype),
-            ),
-        )
-        return CsLssGruState(
-            mechanics=mechanics_view,
-            sensory=node_states["sensory"],
-            net=node_states["net"],
-            efferent=node_states["efferent"],
-        )
-
-    return Graph(
-        nodes=nodes,
-        wires=tuple(wires),
-        input_ports=input_ports,
-        output_ports=("effector", "state", "feedback", "clean_feedback", "force"),
-        input_bindings=input_bindings,
-        output_bindings={
-            "effector": ("mechanics", "effector"),
-            "state": ("mechanics", "state"),
-            "feedback": ("sensory", "output"),
-            "clean_feedback": ("feedback", "feedback"),
-            "force": ("efferent", "output"),
-        },
-        state_view_fn=_state_view,
-    )
-
-
-def _delayed_feedback_indices(
+def _feedback_component_contract(
     *,
+    target_relative_feedback: bool,
+    force_filter_feedback: bool,
+    delayed_pos_vel_indices: tuple[int, ...],
+    delayed_pos_vel_force_indices: tuple[int, ...],
     state_dim: int,
-    physical_state_dim: int,
-    include_force: bool,
-) -> tuple[int, ...]:
-    if physical_state_dim < CS_REDUCED_PHYSICAL_STATE_DIM:
-        raise ValueError(f"physical_state_dim must be >= 6; got {physical_state_dim}.")
-    if state_dim % physical_state_dim != 0:
-        raise ValueError(
-            f"state_dim={state_dim} is not divisible by physical_state_dim={physical_state_dim}."
+    feedback_dim: int,
+) -> tuple[str, dict[str, Any], list[str]]:
+    params = {
+        "expected_state_dim": int(state_dim),
+        "feedback_dim": int(feedback_dim),
+    }
+    if force_filter_feedback:
+        return (
+            CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT,
+            {**params, "indices": list(delayed_pos_vel_force_indices)},
+            ["state", "target"],
         )
-    delayed_start = state_dim - physical_state_dim
-    width = CS_PROPRIOCEPTIVE_FEEDBACK_DIM if include_force else CS_FEEDBACK_DIM
-    return tuple(range(delayed_start, delayed_start + width))
+    if target_relative_feedback:
+        return (
+            CS_LSS_TARGET_FEEDBACK_COMPONENT,
+            {**params, "indices": list(delayed_pos_vel_indices)},
+            ["state", "target"],
+        )
+    return (
+        CS_LSS_DELAYED_FEEDBACK_COMPONENT,
+        {**params, "indices": list(delayed_pos_vel_indices)},
+        ["state"],
+    )
+
+
+def _build_delayed_feedback(params: dict[str, Any]) -> DelayedPositionVelocityFeedback:
+    return DelayedPositionVelocityFeedback(
+        indices=tuple(int(index) for index in params["indices"]),
+        expected_state_dim=int(params["expected_state_dim"]),
+    )
+
+
+def _build_target_relative_feedback(
+    params: dict[str, Any],
+) -> TargetRelativeDelayedFeedback:
+    return TargetRelativeDelayedFeedback(
+        indices=tuple(int(index) for index in params["indices"]),
+        expected_state_dim=int(params["expected_state_dim"]),
+    )
+
+
+def _build_target_relative_proprioceptive_feedback(
+    params: dict[str, Any],
+) -> TargetRelativeDelayedProprioceptiveFeedback:
+    return TargetRelativeDelayedProprioceptiveFeedback(
+        indices=tuple(int(index) for index in params["indices"]),
+        expected_state_dim=int(params["expected_state_dim"]),
+    )
+
+
+def _build_initial_hidden_staged_network(
+    params: dict[str, Any],
+) -> InitialHiddenStagedNetwork:
+    net = _build_simple_staged_network(params)
+    return InitialHiddenStagedNetwork(
+        net=net,
+        h0_encoder=InitialHiddenEncoder(
+            input_size=int(params["h0_input_size"]),
+            hidden_size=int(params["hidden_size"]),
+        ),
+        h0_context_source=str(params.get("h0_context_source", "target_relative_delayed_feedback")),
+        h0_initialization=str(params.get("h0_initialization", CS_H0_ENCODER_INIT)),
+    )
+
+
+def _build_simple_staged_network(params: dict[str, Any]) -> SimpleStagedNetwork:
+    return SimpleStagedNetwork(
+        input_size=int(params["input_size"]),
+        hidden_size=int(params["hidden_size"]),
+        out_size=int(params.get("out_size", CS_FORCE_DIM)),
+        encoding_size=params.get("encoding_size"),
+        hidden_type=_hidden_type_from_name(str(params.get("hidden_type", "GRUCell"))),
+        population_structure=_population_structure_from_params(params.get("population_structure")),
+        sisu_gating=str(params.get("sisu_gating", "additive")),
+        key=_key_from_params(params),
+    )
+
+
+def _hidden_type_from_name(name: str) -> Callable[..., Module]:
+    if name == "VanillaRNNCell":
+        from rlrmp.models import VanillaRNNCell
+
+        return VanillaRNNCell
+    if name in {"GRU", "GRUCell", "gru"}:
+        return eqx.nn.GRUCell
+    raise ValueError(f"Unsupported CS-LSS hidden_type {name!r}")
+
+
+def _hidden_type_name(hidden_type: Any | None) -> str:
+    if hidden_type is None:
+        return "GRUCell"
+    if isinstance(hidden_type, str):
+        return hidden_type
+    name = getattr(hidden_type, "__name__", None)
+    if name is None and hasattr(hidden_type, "func"):
+        name = getattr(hidden_type.func, "__name__", None)
+    return str(name or "GRUCell")
+
+
+def _key_from_params(params: dict[str, Any]) -> Array:
+    key_data = params.get("key")
+    if key_data is not None:
+        return jnp.asarray(key_data, dtype=jnp.uint32)
+    return jr.PRNGKey(int(params.get("seed", 0)))
+
+
+def _population_structure_params(
+    population_structure: PopulationStructure | None,
+    hidden_size: int,
+) -> dict[str, int]:
+    if population_structure is None:
+        return {}
+    return {
+        "hidden_size": int(hidden_size),
+        "n_input_only": int(getattr(population_structure, "n_input_only", 0) or 0),
+        "n_readout_only": int(getattr(population_structure, "n_readout_only", 0) or 0),
+        "n_recurrent_only": int(getattr(population_structure, "n_recurrent_only", 0) or 0),
+        "n_input_readout": int(getattr(population_structure, "n_input_readout", 0) or 0),
+    }
+
+
+def _population_structure_from_params(params: Any) -> PopulationStructure | None:
+    if not params:
+        return None
+    return PopulationStructure.create(
+        hidden_size=int(params["hidden_size"]),
+        n_input_only=int(params.get("n_input_only", 0) or 0),
+        n_readout_only=int(params.get("n_readout_only", 0) or 0),
+        n_recurrent_only=int(params.get("n_recurrent_only", 0) or 0),
+        n_input_readout=int(params.get("n_input_readout", 0) or 0),
+        assignment_fn=None,
+        key=jr.PRNGKey(int(params.get("seed", 0))),
+    )
+
+
+def _spec_to_graph_with_cs_lss_prototypes(graph_spec: GraphSpec, registry: Any) -> Graph:
+    original = _fbx_prototypes.output_prototypes_for_node
+
+    def _output_prototypes_for_node(
+        node_name: str,
+        node_spec: ComponentSpec,
+        input_prototypes: dict[tuple[str, str], Any],
+        subgraphs: dict[str, GraphSpec],
+        *,
+        strict: bool = True,
+    ) -> dict[str, Any]:
+        node_type = node_spec.type
+        params = node_spec.params
+        if node_type in {
+            CS_LSS_DELAYED_FEEDBACK_COMPONENT,
+            CS_LSS_TARGET_FEEDBACK_COMPONENT,
+            CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT,
+        }:
+            return {"feedback": jnp.zeros((int(params["feedback_dim"]),))}
+        if node_type in {"RLRMPSimpleStagedNetwork", CS_LSS_INITIAL_HIDDEN_NET_COMPONENT}:
+            hidden = jnp.zeros((int(params["hidden_size"]),))
+            return {
+                "output": jnp.zeros((int(params.get("out_size", CS_FORCE_DIM)),)),
+                "hidden": hidden,
+            }
+        if node_type == "RLRMPMotorChannel":
+            return {"output": jnp.zeros(tuple(int(dim) for dim in params.get("input_shape", [2])))}
+        if node_type == "LinearStateSpace":
+            state_dim = len(params["A"])
+            dtype = jnp.asarray(params["A"]).dtype
+            return {
+                "effector": CartesianState(
+                    pos=jnp.zeros((CS_TARGET_DIM,), dtype=dtype),
+                    vel=jnp.zeros((CS_TARGET_DIM,), dtype=dtype),
+                    force=jnp.zeros((CS_FORCE_DIM,), dtype=dtype),
+                ),
+                "state": jnp.zeros((state_dim,), dtype=dtype),
+            }
+        return original(
+            node_name,
+            node_spec,
+            input_prototypes,
+            subgraphs,
+            strict=strict,
+        )
+
+    _fbx_prototypes.output_prototypes_for_node = _output_prototypes_for_node
+    try:
+        return spec_to_graph(graph_spec, registry)
+    finally:
+        _fbx_prototypes.output_prototypes_for_node = original
 
 
 def cs_lss_gru_where_train() -> dict[int, Callable[[Graph], tuple[Module, Module | None]]]:

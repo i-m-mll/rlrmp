@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import pytest
+from feedbax.contracts.graph import GraphSpec
 from feedbax.graph import init_state_from_component
 from feedbax.train import filter_spec_leaves, get_model_parameters
 
@@ -13,13 +16,20 @@ from rlrmp.analysis.math.cs_game_card import build_canonical_game, build_no_inte
 from rlrmp.cs_lss_gru import (
     CS_DELAYED_POS_VEL_INDICES,
     CS_EPSILON_DIM,
+    CS_LSS_INITIAL_HIDDEN_NET_COMPONENT,
+    CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT,
+    CS_LSS_TARGET_FEEDBACK_COMPONENT,
     CS_REDUCED_EPSILON_DIM,
+    CS_LSS_DELAYED_FEEDBACK_COMPONENT,
     DelayedPositionVelocityFeedback,
     InitialHiddenStagedNetwork,
     build_cs_lss_gru_graph,
+    build_cs_lss_gru_graph_spec,
     cs_lss_gru_where_train,
     is_canonical_cs_lss_mechanics,
+    materialize_cs_lss_gru_graph_spec,
 )
+from rlrmp.feedbax_graph import graph_spec_from_model, graph_spec_payload
 
 
 def test_feedback_selector_uses_oldest_delayed_position_velocity_block() -> None:
@@ -31,6 +41,129 @@ def test_feedback_selector_uses_oldest_delayed_position_velocity_block() -> None
 
     assert outputs["feedback"].shape == (4,)
     assert tuple(outputs["feedback"].tolist()) == CS_DELAYED_POS_VEL_INDICES
+
+
+@pytest.mark.parametrize(
+    ("variant", "kwargs", "expected_feedback_type", "expected_net_type"),
+    [
+        (
+            "default",
+            {"bind_epsilon_input": True},
+            CS_LSS_DELAYED_FEEDBACK_COMPONENT,
+            "RLRMPSimpleStagedNetwork",
+        ),
+        (
+            "target_relative",
+            {"target_relative_feedback": True, "bind_epsilon_input": True},
+            CS_LSS_TARGET_FEEDBACK_COMPONENT,
+            "RLRMPSimpleStagedNetwork",
+        ),
+        (
+            "force_filter_feedback",
+            {
+                "target_relative_feedback": True,
+                "force_filter_feedback": True,
+                "bind_epsilon_input": True,
+            },
+            CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT,
+            "RLRMPSimpleStagedNetwork",
+        ),
+        (
+            "noise_channels",
+            {
+                "sensory_noise_std": 0.25,
+                "additive_motor_noise_std": 1e-5,
+                "signal_dependent_motor_noise_std": 0.02,
+                "bind_epsilon_input": True,
+            },
+            CS_LSS_DELAYED_FEEDBACK_COMPONENT,
+            "RLRMPSimpleStagedNetwork",
+        ),
+        (
+            "deterministic_no_epsilon_binding",
+            {"bind_epsilon_input": False},
+            CS_LSS_DELAYED_FEEDBACK_COMPONENT,
+            "RLRMPSimpleStagedNetwork",
+        ),
+        (
+            "no_integrator",
+            {
+                "target_relative_feedback": True,
+                "force_filter_feedback": True,
+                "bind_epsilon_input": True,
+                "no_integrator_state": True,
+            },
+            CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT,
+            "RLRMPSimpleStagedNetwork",
+        ),
+        (
+            "initial_hidden_encoder",
+            {
+                "target_relative_feedback": True,
+                "bind_epsilon_input": True,
+                "initial_hidden_encoder": True,
+            },
+            CS_LSS_TARGET_FEEDBACK_COMPONENT,
+            CS_LSS_INITIAL_HIDDEN_NET_COMPONENT,
+        ),
+    ],
+)
+def test_cs_lss_graph_specs_round_trip_and_materialize_representative_variants(
+    variant: str,
+    kwargs: dict[str, object],
+    expected_feedback_type: str,
+    expected_net_type: str,
+) -> None:
+    spec = build_cs_lss_gru_graph_spec(
+        hidden_size=5,
+        key=jax.random.PRNGKey(len(variant)),
+        **kwargs,
+    )
+    payload = graph_spec_payload(spec)
+
+    round_tripped = GraphSpec.model_validate_json(json.dumps(payload))
+    graph = materialize_cs_lss_gru_graph_spec(round_tripped)
+
+    assert graph_spec_payload(round_tripped) == payload
+    assert spec.nodes["feedback"].type == expected_feedback_type
+    assert spec.nodes["net"].type == expected_net_type
+    assert graph.nodes["mechanics"].__class__.__name__ == "LinearStateSpace"
+    if kwargs.get("bind_epsilon_input"):
+        assert spec.input_bindings["epsilon"] == ("mechanics", "epsilon")
+    else:
+        assert "epsilon" not in spec.input_bindings
+    if kwargs.get("no_integrator_state"):
+        assert len(spec.nodes["mechanics"].params["B_w"]) == 36
+        assert len(spec.nodes["mechanics"].params["B_w"][0]) == 6
+        assert graph.nodes["mechanics"].B_w.shape == (36, 6)
+
+
+def test_runtime_cs_lss_graph_export_preserves_executable_component_contract() -> None:
+    original_spec = build_cs_lss_gru_graph_spec(
+        hidden_size=7,
+        target_relative_feedback=True,
+        force_filter_feedback=True,
+        initial_hidden_encoder=True,
+        sensory_noise_std=0.25,
+        additive_motor_noise_std=1e-5,
+        signal_dependent_motor_noise_std=0.02,
+        bind_epsilon_input=True,
+        key=jax.random.PRNGKey(101),
+    )
+    graph = materialize_cs_lss_gru_graph_spec(original_spec)
+
+    exported = graph_spec_from_model(graph)
+    exported_payload = graph_spec_payload(exported)
+    reparsed = GraphSpec.model_validate_json(json.dumps(exported_payload))
+    rematerialized = materialize_cs_lss_gru_graph_spec(reparsed)
+
+    assert exported.nodes["feedback"].type == CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT
+    assert exported.nodes["feedback"].params == original_spec.nodes["feedback"].params
+    assert exported.nodes["net"].type == CS_LSS_INITIAL_HIDDEN_NET_COMPONENT
+    assert "net" not in (exported.subgraphs or {})
+    assert exported.nodes["mechanics"].type == "LinearStateSpace"
+    assert exported.nodes["efferent"].type == "RLRMPMotorChannel"
+    assert rematerialized.nodes["net"].h0_encoder.weight.shape == (7, 6)
 
 
 def test_graph_first_step_feedback_is_seeded_from_initial_lss_state() -> None:
@@ -135,7 +268,9 @@ def test_graph_runs_multiple_steps_with_zero_epsilon() -> None:
     assert state_history.mechanics.effector.pos.shape == (4, 2)
     assert state_history.mechanics.effector.vel.shape == (4, 2)
     assert jnp.allclose(state_history.mechanics.effector.pos, state_history.mechanics.vector[:, :2])
-    assert jnp.allclose(state_history.mechanics.effector.vel, state_history.mechanics.vector[:, 2:4])
+    assert jnp.allclose(
+        state_history.mechanics.effector.vel, state_history.mechanics.vector[:, 2:4]
+    )
     assert state_history.sensory.output.shape == (4, 4)
     assert state_history.net.hidden.shape == (4, 6)
     assert final_state is not None

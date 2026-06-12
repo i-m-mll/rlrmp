@@ -1,0 +1,129 @@
+name: standard_matrix
+description: Standard matrix analysis outputs for rlrmp experiments.
+predicate:
+  manifest_kind: EvaluationRunManifest
+  metadata_equals:
+    standard_matrix: true
+metadata:
+  figure_routing:
+    package: rlrmp
+    experiment: standard_matrix
+    topic: standard_matrix
+    extra_packages: [rlrmp]
+  standard_outputs:
+    - forward_velocity_profiles
+    - hold_drift_profiles
+    - peak_velocity_distributions
+    - summary_metrics
+    - training_loss
+    - training_loss_per_term
+  optional_outputs:
+    - rmse_ratio_comparison
+    - notes
+  cell_metadata: {}
+  label_fields: []
+templates:
+  - name: forward_velocity_profiles
+    mode: grouped
+    analysis_type: rlrmp.standard_matrix
+    requested_outputs: [forward_velocity_profiles]
+    params:
+      profile_key: forward_velocity
+      figure_routing:
+        package: rlrmp
+        experiment: standard_matrix
+        topic: forward_velocity_profiles
+        extra_packages: [rlrmp]
+        spec:
+          standard_matrix_output: forward_velocity_profiles
+  - name: hold_drift_profiles
+    mode: grouped
+    analysis_type: rlrmp.standard_matrix
+    requested_outputs: [hold_drift_profiles]
+    params:
+      profile_key: hold_drift
+      figure_routing:
+        package: rlrmp
+        experiment: standard_matrix
+        topic: hold_drift_profiles
+        extra_packages: [rlrmp]
+        spec:
+          standard_matrix_output: hold_drift_profiles
+  - name: peak_velocity_distributions
+    mode: grouped
+    analysis_type: rlrmp.standard_matrix
+    requested_outputs: [peak_velocity_distributions]
+    params:
+      figure_routing:
+        package: rlrmp
+        experiment: standard_matrix
+        topic: peak_velocity_distributions
+        extra_packages: [rlrmp]
+        spec:
+          standard_matrix_output: peak_velocity_distributions
+  - name: summary_metrics
+    mode: grouped
+    analysis_type: rlrmp.standard_matrix
+    requested_outputs: [summary_metrics]
+    params:
+      metric_order:
+        - velocity_rmse
+        - peak_velocity
+        - time_to_peak_after_go
+        - hold_drift
+      figure_routing:
+        package: rlrmp
+        experiment: standard_matrix
+        topic: summary_metrics
+        extra_packages: [rlrmp]
+        spec:
+          standard_matrix_output: summary_metrics
+  - name: rmse_ratio_comparison
+    mode: grouped
+    analysis_type: rlrmp.standard_matrix
+    requested_outputs: [rmse_ratio_comparison]
+    params:
+      optional: true
+      figure_routing:
+        package: rlrmp
+        experiment: standard_matrix
+        topic: rmse_ratio_comparison
+        extra_packages: [rlrmp]
+        spec:
+          standard_matrix_output: rmse_ratio_comparison
+  - name: training_loss
+    mode: per-run
+    analysis_type: rlrmp.standard_matrix
+    requested_outputs: [training_loss]
+    params:
+      figure_routing:
+        package: rlrmp
+        experiment: standard_matrix
+        topic: training_loss
+        extra_packages: [rlrmp]
+        spec:
+          standard_matrix_output: training_loss
+  - name: training_loss_per_term
+    mode: per-run
+    analysis_type: rlrmp.standard_matrix
+    requested_outputs: [training_loss_per_term]
+    params:
+      figure_routing:
+        package: rlrmp
+        experiment: standard_matrix
+        topic: training_loss_per_term
+        extra_packages: [rlrmp]
+        spec:
+          standard_matrix_output: training_loss_per_term
+  - name: notes
+    mode: grouped
+    analysis_type: rlrmp.standard_matrix
+    requested_outputs: [notes]
+    params:
+      optional: true
+      note_marker: standard_matrix
+      figure_routing:
+        package: rlrmp
+        experiment: standard_matrix
+        topic: notes
+        extra_packages: [rlrmp]
