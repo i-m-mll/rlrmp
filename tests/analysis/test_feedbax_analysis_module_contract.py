@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import importlib
+import importlib.util
 import pkgutil
 from pathlib import Path
 
@@ -20,13 +21,19 @@ REQUIRED_ANALYSIS_MODULE_ATTRIBUTES = (
 )
 
 
-def test_registered_parts_exclude_removed_part1_and_keep_live_parts() -> None:
+def test_registered_parts_exclude_removed_frozen_parts_and_keep_live_part2() -> None:
     registry = ExperimentRegistry()
     rlrmp.register_experiment_package(registry)
     metadata = registry.get_package_metadata("rlrmp")
 
     assert "part1" not in metadata.parts
-    assert set(metadata.parts) == {"part2", "part3"}
+    assert "part3" not in metadata.parts
+    assert set(metadata.parts) == {"part2"}
+
+
+def test_removed_frozen_analysis_parts_are_not_importable() -> None:
+    assert importlib.util.find_spec("rlrmp.modules.analysis.part1") is None
+    assert importlib.util.find_spec("rlrmp.modules.analysis.part3") is None
 
 
 def _registered_analysis_module_specs() -> list[tuple[str, Path]]:

@@ -18,7 +18,7 @@ def register_experiment_package(registry):
         registry=registry,
         package_name="rlrmp",
         package_module_name="rlrmp",
-        parts=["part2", "part3"],
+        parts=["part2"],
         analysis_module_root="modules.analysis",
         training_module_root="modules.training",
         config_resource_root="config",
