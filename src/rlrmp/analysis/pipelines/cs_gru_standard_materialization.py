@@ -59,7 +59,7 @@ from rlrmp.analysis.pipelines.standard_certificate_materialization import (
     materialization_summary,
     repo_relative,
 )
-from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.stochastic_runtime import (
     PLANT_PROCESS_FORCE_NOISE_LABEL,

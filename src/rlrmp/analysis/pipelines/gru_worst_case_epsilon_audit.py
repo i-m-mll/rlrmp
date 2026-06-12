@@ -28,7 +28,7 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     repeat_single_validation_trial,
     resolve_run_inputs,
 )
-from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_LEVELS,

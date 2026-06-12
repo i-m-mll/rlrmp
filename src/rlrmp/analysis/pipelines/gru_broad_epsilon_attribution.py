@@ -27,7 +27,7 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     load_validation_selected_checkpoint_model,
     materialize_validation_selected_checkpoint_manifest,
 )
-from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.train.cs_nominal_gru import _where_train
 from rlrmp.train.cs_perturbation_training import (

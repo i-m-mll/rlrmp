@@ -58,7 +58,7 @@ from rlrmp.loss import (
     CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
     CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
 )
-from rlrmp.modules.training.part2 import (
+from rlrmp.train.task_model import (
     CS_LSS_PLANT_BACKEND,
     LEGACY_CAUSAL_PLANT_BACKEND,
     setup_task_model_pair,
@@ -871,7 +871,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
             ),
         },
         "legacy_loader": {
-            "setup_function": "rlrmp.modules.training.part2.setup_task_model_pair",
+            "setup_function": "rlrmp.train.task_model.setup_task_model_pair",
             "checkpoint_format": "feedbax._io.save/load_with_hyperparameters",
         },
         "task_spec": task_spec,

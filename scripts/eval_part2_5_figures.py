@@ -27,7 +27,7 @@ from rlrmp.eval import (
     eval_ensemble_on_trials,
     set_sisu,
 )
-from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import figure_artifact_dir, figure_spec_dir, run_artifact_dir
 from rlrmp.train.standard import build_hps
 
@@ -113,8 +113,6 @@ def _collect_leaf_totals(term_tree, weight_multiplier=1.0):
     Handles branch nodes (value=None) by recursing into children.
     Returns a numpy array of shape (n_batches, n_rep) or zeros if all terms have None values.
     """
-    from feedbax.loss import TermTree
-
     if term_tree.value is not None:
         # Leaf node
         val = np.array(term_tree.value)
@@ -131,7 +129,7 @@ def _collect_leaf_totals(term_tree, weight_multiplier=1.0):
     return total
 
 
-def make_fig_loss_curves(all_histories: dict) -> "plotly.graph_objs.Figure":
+def make_fig_loss_curves(all_histories: dict) -> object:
     """Training loss curves for each condition."""
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
@@ -197,7 +195,7 @@ def make_fig_metric_by_sisu(
     metric_key: str,
     title: str,
     ylabel: str,
-) -> "plotly.graph_objs.Figure":
+) -> object:
     """Line plot of a kinematic metric vs SISU level, per condition."""
     import plotly.graph_objects as go
 

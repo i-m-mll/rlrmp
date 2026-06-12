@@ -43,13 +43,13 @@ from rlrmp.loss import (
     CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
     CsAnalyticalQrfLoss,
 )
-from rlrmp.modules.training.part2 import (
+from rlrmp.train.task_model import (
     CS_LSS_PLANT_BACKEND,
     LEGACY_CAUSAL_BACKEND_WARNING,
     LEGACY_CAUSAL_PLANT_BACKEND,
     _cs_lss_process_epsilon_factor,
 )
-from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, run_artifact_dir, run_spec_dir
 from rlrmp.train.cs_nominal_gru import (
     CS_DELAYED_REACH_TASK_TYPE,

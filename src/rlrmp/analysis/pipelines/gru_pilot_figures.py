@@ -46,7 +46,7 @@ from rlrmp.analysis.math.output_feedback import (
     position_velocity_observation_config,
     rollout_with_kalman_estimator,
 )
-from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 

@@ -127,7 +127,7 @@ class SharedRolloutBank:
             },
             "process_load_epsilon": {
                 "status": "shared",
-                "source": "rlrmp.modules.training.part2._sample_cs_lss_process_epsilon",
+                "source": "rlrmp.train.task_model._sample_cs_lss_process_epsilon",
                 "channel": "TaskTrialSpec.inputs['epsilon'] -> mechanics.epsilon",
                 "shape": list(self.process_epsilon.shape),
             },
@@ -162,7 +162,7 @@ def build_shared_rollout_bank(
     from rlrmp.analysis.math.cs_game_card import build_canonical_game
     from rlrmp.analysis.math.cs_released_simulation import _default_output_feedback_initial_state
     from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig
-    from rlrmp.modules.training.part2 import _cs_lss_process_epsilon_factor
+    from rlrmp.train.task_model import _cs_lss_process_epsilon_factor
 
     if n_trials < 1:
         raise ValueError("n_trials must be at least 1")
@@ -530,7 +530,7 @@ def materialize_shared_rollout_comparator(
     from rlrmp.analysis.pipelines.gru_checkpoint_selection import load_validation_selected_checkpoint_model
     from rlrmp.analysis.pipelines.gru_pilot_figures import repeat_single_validation_trial, resolve_run_inputs
     from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig
-    from rlrmp.modules.training.part2 import setup_task_model_pair
+    from rlrmp.train.task_model import setup_task_model_pair
 
     bank = bank or build_shared_rollout_bank(seed=seed, n_trials=n_trials)
     plant, schedule = build_canonical_game()

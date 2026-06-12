@@ -48,7 +48,7 @@ from rlrmp.eval import (
 )
 from feedbax._io import load_with_hyperparameters
 from feedbax.train import init_task_trainer_history
-from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 
 WORKTREE = Path(__file__).parent.parent

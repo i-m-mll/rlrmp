@@ -64,7 +64,7 @@ from rlrmp.analysis.induced_gain import (
     Z_QR_COST,
     induced_gain,
 )
-from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p, run_artifact_dir, run_spec_dir
 from rlrmp.intervention_compat import swap_plant_intervenor_to_dynamics_matrix
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL

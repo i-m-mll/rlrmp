@@ -80,7 +80,7 @@ from rlrmp.analysis.trial_alignment import (
     replicate_mean_curves,
 )
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
-from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.task_model import setup_task_model_pair
 
 
 # ---------------------------------------------------------------------------

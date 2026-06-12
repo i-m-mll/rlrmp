@@ -9,7 +9,7 @@ import pytest
 from feedbax.noise import CompositeNoise, Multiplicative, Normal
 
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
-from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.stochastic_runtime import (
     PLANT_PROCESS_FORCE_NOISE_LABEL,
     PlantProcessForceNoise,

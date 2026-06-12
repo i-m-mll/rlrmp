@@ -1,18 +1,19 @@
 # Legacy Parts Index
 
 Issue `9134735` tracks the end-of-program removal of the old "parts" mechanism
-from the live working tree. The current cleanup is partial by design:
+from the live working tree. The cleanup is now complete:
 
 - Part1 was removed earlier under issue `e6fee00`.
-- Part3 is removed by this lane because no current code imports it and its only
-  live discoverability path was plugin registration.
-- Part2 remains live because current training, eval, artifact migration,
-  minimax, and analysis pipeline code still use
-  `rlrmp.modules.training.part2.setup_task_model_pair`.
+- Part3 was removed by the first `9134735` lane because no current code imported
+  it and its only live discoverability path was plugin registration.
+- Part2 was retired under issue `aaa4703`. Current training, eval, artifact
+  migration, minimax, and analysis pipeline code use
+  `rlrmp.train.task_model.setup_task_model_pair`.
 
 ## Current Live State
 
-`rlrmp.register_experiment_package(...)` now registers only `part2`. New
+`rlrmp.register_experiment_package(...)` now registers no legacy parts. It still
+registers package-level figure routing used by `feedbax.plot.save_figure`. New
 analysis work should use the declarative analysis bundle and capability-named
 library surfaces introduced under umbrella `577806f`, not a new `part4`.
 
@@ -28,7 +29,21 @@ Part1, removed by issue `e6fee00`:
 - Part1 config entries under `src/rlrmp/config/modules/` and
   `src/rlrmp/config/batched/`
 
-Part3, removed by this lane:
+Part2, removed by issue `aaa4703`:
+
+- `src/rlrmp/modules/training/part2.py` (promoted to
+  `src/rlrmp/train/task_model.py`)
+- `src/rlrmp/modules/analysis/part2/feedback_perts.py`
+- `src/rlrmp/modules/analysis/part2/fps_reach.py`
+- `src/rlrmp/modules/analysis/part2/fps_steady.py`
+- `src/rlrmp/modules/analysis/part2/plant_perts.py`
+- `src/rlrmp/modules/analysis/part2/sisu_pert.py`
+- `src/rlrmp/modules/analysis/part2/tangling.py`
+- `src/rlrmp/modules/analysis/part2/unit_perts.py`
+- Part2 config entries under `src/rlrmp/config/modules/` and
+  `src/rlrmp/config/batched/`
+
+Part3, removed by issue `9134735`:
 
 - `src/rlrmp/modules/analysis/part3/feedback_perts.py`
 - `src/rlrmp/modules/analysis/part3/plant_perts.py`
@@ -76,9 +91,10 @@ Known ignored bulk locations referenced by tracked notes:
 
 ## Tag Guidance
 
-No tag or branch was created in this lane. A single `legacy/parts-1-3` tag would
-be ambiguous from the current branch because part1 was already removed before
-this lane started and part2 still remains live.
+Local tag `legacy/part2-before-retirement` points at the pre-retirement base
+commit (`e89a35c`) that still contains
+`src/rlrmp/modules/training/part2.py` and `src/rlrmp/modules/analysis/part2/`.
+It is local-only; pushing tags requires explicit user authorization.
 
 Known safe reference points:
 
@@ -86,8 +102,9 @@ Known safe reference points:
   `src/rlrmp/modules/training/part1.py`.
 - Last known commit before part3 removal on this branch: `a952bcf` contains
   `src/rlrmp/modules/analysis/part3/`.
-- Part2 has no final legacy-retirement target yet because it is still required
-  by current code.
+- Last known commit before part2 removal on this branch: `e89a35c` contains
+  `src/rlrmp/modules/training/part2.py` and
+  `src/rlrmp/modules/analysis/part2/`.
 
 If a durable legacy reference is needed later, create narrowly named local tags
 for these epochs and push only after explicit user authorization.
