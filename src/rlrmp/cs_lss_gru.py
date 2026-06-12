@@ -24,7 +24,6 @@ import jax.numpy as jnp
 import jax.random as jr
 from jaxtyping import Array, PRNGKeyArray, PyTree
 
-import feedbax.serialization_prototypes as _fbx_prototypes
 from feedbax.channel import ChannelState
 from feedbax.component_registry import get_component_registry
 from feedbax.contracts.graph import ComponentSpec, GraphMetadata, GraphSpec, WireSpec
@@ -333,6 +332,7 @@ def register_cs_lss_graph_components(component_registry: Any | None = None) -> A
         description="C&S delayed position/velocity feedback selector.",
         input_ports=["state"],
         output_ports=["feedback"],
+        output_prototype_fn=_feedback_output_prototype,
         provenance="rlrmp",
     )
     registry.register_component_type(
@@ -342,6 +342,7 @@ def register_cs_lss_graph_components(component_registry: Any | None = None) -> A
         description="C&S target-relative delayed position/velocity feedback selector.",
         input_ports=["state", "target"],
         output_ports=["feedback"],
+        output_prototype_fn=_feedback_output_prototype,
         provenance="rlrmp",
     )
     registry.register_component_type(
@@ -351,6 +352,7 @@ def register_cs_lss_graph_components(component_registry: Any | None = None) -> A
         description="C&S target-relative delayed pos/vel plus force/filter feedback selector.",
         input_ports=["state", "target"],
         output_ports=["feedback"],
+        output_prototype_fn=_feedback_output_prototype,
         provenance="rlrmp",
     )
     registry.register_component_type(
@@ -360,8 +362,10 @@ def register_cs_lss_graph_components(component_registry: Any | None = None) -> A
         description="C&S GRU controller with first-step target-relative H0 conditioning.",
         input_ports=["input", "feedback"],
         output_ports=["output", "hidden"],
+        output_prototype_fn=_staged_network_output_prototype,
         provenance="rlrmp",
     )
+    _install_cs_lss_registry_output_prototypes(registry)
     return registry
 
 
@@ -581,8 +585,7 @@ def materialize_cs_lss_gru_graph_spec(
     """Materialize a CS-LSS GraphSpec and install the CS-LSS runtime hooks."""
 
     registry = register_cs_lss_graph_components(component_registry)
-    graph = _spec_to_graph_with_cs_lss_prototypes(graph_spec, registry)
-    graph = _restore_cs_lss_graph_boundary(graph, graph_spec)
+    graph = spec_to_graph(graph_spec, registry)
     return install_cs_lss_gru_runtime_hooks(graph)
 
 
@@ -609,26 +612,7 @@ def install_cs_lss_gru_runtime_hooks(graph: Graph) -> Graph:
             efferent=node_states["efferent"],
         )
 
-    object.__setattr__(graph, "state_view_fn", _state_view)
-    return graph
-
-
-def _restore_cs_lss_graph_boundary(graph: Graph, graph_spec: GraphSpec) -> Graph:
-    """Restore CS-LSS external port names after Feedbax legacy migration."""
-
-    object.__setattr__(graph, "input_ports", tuple(graph_spec.input_ports))
-    object.__setattr__(
-        graph,
-        "input_bindings",
-        {name: tuple(binding) for name, binding in graph_spec.input_bindings.items()},
-    )
-    object.__setattr__(graph, "output_ports", tuple(graph_spec.output_ports))
-    object.__setattr__(
-        graph,
-        "output_bindings",
-        {name: tuple(binding) for name, binding in graph_spec.output_bindings.items()},
-    )
-    return graph
+    return graph.with_state_view(_state_view)
 
 
 def build_cs_lss_gru_graph(
@@ -898,57 +882,61 @@ def _population_structure_from_params(params: Any) -> PopulationStructure | None
     )
 
 
-def _spec_to_graph_with_cs_lss_prototypes(graph_spec: GraphSpec, registry: Any) -> Graph:
-    original = _fbx_prototypes.output_prototypes_for_node
+def _install_cs_lss_registry_output_prototypes(registry: Any) -> None:
+    for name, output_prototype_fn in {
+        "RLRMPMotorChannel": _motor_channel_output_prototype,
+        "RLRMPSimpleStagedNetwork": _staged_network_output_prototype,
+        "LinearStateSpace": _linear_state_space_output_prototype,
+    }.items():
+        meta = registry.get(name)
+        if meta is None:
+            raise ValueError(f"CS-LSS GraphSpec materialization requires registered {name!r}.")
+        meta.output_prototype_fn = output_prototype_fn
 
-    def _output_prototypes_for_node(
-        node_name: str,
-        node_spec: ComponentSpec,
-        input_prototypes: dict[tuple[str, str], Any],
-        subgraphs: dict[str, GraphSpec],
-        *,
-        strict: bool = True,
-    ) -> dict[str, Any]:
-        node_type = node_spec.type
-        params = node_spec.params
-        if node_type in {
-            CS_LSS_DELAYED_FEEDBACK_COMPONENT,
-            CS_LSS_TARGET_FEEDBACK_COMPONENT,
-            CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT,
-        }:
-            return {"feedback": jnp.zeros((int(params["feedback_dim"]),))}
-        if node_type in {"RLRMPSimpleStagedNetwork", CS_LSS_INITIAL_HIDDEN_NET_COMPONENT}:
-            hidden = jnp.zeros((int(params["hidden_size"]),))
-            return {
-                "output": jnp.zeros((int(params.get("out_size", CS_FORCE_DIM)),)),
-                "hidden": hidden,
-            }
-        if node_type == "RLRMPMotorChannel":
-            return {"output": jnp.zeros(tuple(int(dim) for dim in params.get("input_shape", [2])))}
-        if node_type == "LinearStateSpace":
-            state_dim = len(params["A"])
-            dtype = jnp.asarray(params["A"]).dtype
-            return {
-                "effector": CartesianState(
-                    pos=jnp.zeros((CS_TARGET_DIM,), dtype=dtype),
-                    vel=jnp.zeros((CS_TARGET_DIM,), dtype=dtype),
-                    force=jnp.zeros((CS_FORCE_DIM,), dtype=dtype),
-                ),
-                "state": jnp.zeros((state_dim,), dtype=dtype),
-            }
-        return original(
-            node_name,
-            node_spec,
-            input_prototypes,
-            subgraphs,
-            strict=strict,
-        )
 
-    _fbx_prototypes.output_prototypes_for_node = _output_prototypes_for_node
-    try:
-        return spec_to_graph(graph_spec, registry)
-    finally:
-        _fbx_prototypes.output_prototypes_for_node = original
+def _feedback_output_prototype(
+    params: dict[str, Any],
+    inputs: dict[str, Any],
+) -> dict[str, Any]:
+    del inputs
+    return {"feedback": jnp.zeros((int(params["feedback_dim"]),))}
+
+
+def _staged_network_output_prototype(
+    params: dict[str, Any],
+    inputs: dict[str, Any],
+) -> dict[str, Any]:
+    del inputs
+    hidden = jnp.zeros((int(params["hidden_size"]),))
+    return {
+        "output": jnp.zeros((int(params.get("out_size", CS_FORCE_DIM)),)),
+        "hidden": hidden,
+    }
+
+
+def _motor_channel_output_prototype(
+    params: dict[str, Any],
+    inputs: dict[str, Any],
+) -> dict[str, Any]:
+    del inputs
+    return {"output": jnp.zeros(tuple(int(dim) for dim in params.get("input_shape", [2])))}
+
+
+def _linear_state_space_output_prototype(
+    params: dict[str, Any],
+    inputs: dict[str, Any],
+) -> dict[str, Any]:
+    del inputs
+    state_dim = len(params["A"])
+    dtype = jnp.asarray(params["A"]).dtype
+    return {
+        "effector": CartesianState(
+            pos=jnp.zeros((CS_TARGET_DIM,), dtype=dtype),
+            vel=jnp.zeros((CS_TARGET_DIM,), dtype=dtype),
+            force=jnp.zeros((CS_FORCE_DIM,), dtype=dtype),
+        ),
+        "state": jnp.zeros((state_dim,), dtype=dtype),
+    }
 
 
 def cs_lss_gru_where_train() -> dict[int, Callable[[Graph], tuple[Module, Module | None]]]:

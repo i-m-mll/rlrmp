@@ -10,7 +10,6 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
-import feedbax.serialization_prototypes as _fbx_prototypes
 from feedbax.bodies import FeedbackChannels, SimpleFeedback, SimpleFeedbackState
 from feedbax.channel import Channel, ChannelSpec
 from feedbax.component_registry import get_component_registry
@@ -103,6 +102,7 @@ def register_rlrmp_graph_components(component_registry: Any | None = None) -> An
         description="Point-mass mechanics preserving RLRMP mass and damping.",
         input_ports=["force"],
         output_ports=["effector", "state"],
+        output_prototype_fn=_point_mass_output_prototype,
         provenance="rlrmp",
     )
     registry.register_component_type(
@@ -112,6 +112,7 @@ def register_rlrmp_graph_components(component_registry: Any | None = None) -> An
         description="Point-mass position/velocity feedback channels.",
         input_ports=["mechanics"],
         output_ports=["feedback"],
+        output_prototype_fn=_feedback_channels_output_prototype,
         provenance="rlrmp",
     )
     registry.register_component_type(
@@ -121,6 +122,7 @@ def register_rlrmp_graph_components(component_registry: Any | None = None) -> An
         description="RLRMP command channel with signal-dependent and additive motor noise.",
         input_ports=["input"],
         output_ports=["output"],
+        output_prototype_fn=_motor_channel_output_prototype,
         provenance="rlrmp",
     )
     registry.register_component_type(
@@ -130,6 +132,7 @@ def register_rlrmp_graph_components(component_registry: Any | None = None) -> An
         description="RLRMP SimpleStagedNetwork controller.",
         input_ports=["input", "feedback"],
         output_ports=["output", "hidden"],
+        output_prototype_fn=_simple_staged_network_output_prototype,
         provenance="rlrmp",
     )
     registry.register_component_type(
@@ -139,6 +142,7 @@ def register_rlrmp_graph_components(component_registry: Any | None = None) -> An
         description="RLRMP linear regulator controller.",
         input_ports=["input", "feedback"],
         output_ports=["output", "hidden"],
+        output_prototype_fn=_linear_controller_output_prototype,
         provenance="rlrmp",
     )
     registry.register_component_type(
@@ -148,6 +152,7 @@ def register_rlrmp_graph_components(component_registry: Any | None = None) -> An
         description="RLRMP linear tracker controller.",
         input_ports=["input", "feedback"],
         output_ports=["output", "hidden"],
+        output_prototype_fn=_linear_controller_output_prototype,
         provenance="rlrmp",
     )
     registry.register_component_type(
@@ -157,6 +162,7 @@ def register_rlrmp_graph_components(component_registry: Any | None = None) -> An
         description="Fixed force-field intervention preserving GraphSpec label.",
         input_ports=["force", "params_override"],
         output_ports=["force"],
+        output_prototype_fn=_force_passthrough_output_prototype,
         provenance="rlrmp",
     )
     registry.register_component_type(
@@ -166,6 +172,7 @@ def register_rlrmp_graph_components(component_registry: Any | None = None) -> An
         description="Curl force-field intervention preserving GraphSpec label.",
         input_ports=["effector", "force", "params_override"],
         output_ports=["force"],
+        output_prototype_fn=_force_passthrough_output_prototype,
         provenance="rlrmp",
     )
     registry.register_component_type(
@@ -175,6 +182,7 @@ def register_rlrmp_graph_components(component_registry: Any | None = None) -> An
         description="State-feedback dynamics matrix perturbation.",
         input_ports=["effector", "force", "params_override"],
         output_ports=["force"],
+        output_prototype_fn=_force_passthrough_output_prototype,
         provenance="rlrmp",
     )
     registry.register_component_type(
@@ -184,6 +192,7 @@ def register_rlrmp_graph_components(component_registry: Any | None = None) -> An
         description="Additive plant/load force noise before mechanics.",
         input_ports=["force"],
         output_ports=["force"],
+        output_prototype_fn=_plant_process_force_noise_output_prototype,
         provenance="rlrmp",
     )
     return registry
@@ -198,58 +207,69 @@ def materialize_rlrmp_graph_spec(
     """Materialize an RLRMP GraphSpec through Feedbax and install runtime hooks."""
 
     registry = register_rlrmp_graph_components(component_registry)
-    graph = _spec_to_graph_with_rlrmp_prototypes(graph_spec, registry)
+    graph = spec_to_graph(graph_spec, registry)
     if install_runtime_hooks:
         graph = install_simple_feedback_runtime_hooks(graph)
     return graph
 
 
-def _spec_to_graph_with_rlrmp_prototypes(graph_spec: GraphSpec, registry: Any) -> Graph:
-    original = _fbx_prototypes.output_prototypes_for_node
+def _point_mass_output_prototype(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
+    del inputs
+    mechanics = _build_point_mass_mechanics(params)
+    plant_state = mechanics.plant.init(key=jr.PRNGKey(0))
+    effector = mechanics.plant.skeleton.effector(plant_state.skeleton)
+    state = MechanicsState(plant=plant_state, effector=effector, solver=None)
+    return {"effector": effector, "state": state}
 
-    def _output_prototypes_for_node(
-        node_name,
-        node_spec,
-        input_prototypes,
-        subgraphs,
-        *,
-        strict=True,
-    ):
-        node_type = node_spec.type
-        params = node_spec.params
-        if node_type == "RLRMPPointMass":
-            mechanics = _build_point_mass_mechanics(params)
-            plant_state = mechanics.plant.init(key=jr.PRNGKey(0))
-            effector = mechanics.plant.skeleton.effector(plant_state.skeleton)
-            state = MechanicsState(plant=plant_state, effector=effector, solver=None)
-            return {"effector": effector, "state": state}
-        if node_type == "RLRMPFeedbackChannels":
-            return {"feedback": (jnp.zeros(2), jnp.zeros(2))}
-        if node_type in {"RLRMPMotorChannel", "RLRMPPlantProcessForceNoise"}:
-            return {"output" if node_type == "RLRMPMotorChannel" else "force": jnp.zeros(2)}
-        if node_type == "RLRMPSimpleStagedNetwork":
-            hidden = jnp.zeros(int(params.get("hidden_size", 1)))
-            output = jnp.zeros(int(params.get("out_size", 2)))
-            return {"output": output, "hidden": hidden}
-        if node_type in {"RLRMPLinearController", "RLRMPLinearTrackerController"}:
-            controls = int(params.get("n_controls", 2))
-            return {"output": jnp.zeros(controls), "hidden": jnp.zeros(1)}
-        if node_type in {"FixedField", "CurlField", "DynamicsMatrixPerturb"}:
-            proto = input_prototypes.get((node_name, "force"))
-            return {"force": jnp.zeros(2) if proto is None else proto}
-        return original(
-            node_name,
-            node_spec,
-            input_prototypes,
-            subgraphs,
-            strict=strict,
-        )
 
-    _fbx_prototypes.output_prototypes_for_node = _output_prototypes_for_node
-    try:
-        return spec_to_graph(graph_spec, registry)
-    finally:
-        _fbx_prototypes.output_prototypes_for_node = original
+def _feedback_channels_output_prototype(
+    params: dict[str, Any],
+    inputs: dict[str, Any],
+) -> dict[str, Any]:
+    del params, inputs
+    return {"feedback": (jnp.zeros(2), jnp.zeros(2))}
+
+
+def _motor_channel_output_prototype(
+    params: dict[str, Any], inputs: dict[str, Any]
+) -> dict[str, Any]:
+    del params, inputs
+    return {"output": jnp.zeros(2)}
+
+
+def _plant_process_force_noise_output_prototype(
+    params: dict[str, Any],
+    inputs: dict[str, Any],
+) -> dict[str, Any]:
+    del params, inputs
+    return {"force": jnp.zeros(2)}
+
+
+def _simple_staged_network_output_prototype(
+    params: dict[str, Any],
+    inputs: dict[str, Any],
+) -> dict[str, Any]:
+    del inputs
+    hidden = jnp.zeros(int(params.get("hidden_size", 1)))
+    output = jnp.zeros(int(params.get("out_size", 2)))
+    return {"output": output, "hidden": hidden}
+
+
+def _linear_controller_output_prototype(
+    params: dict[str, Any],
+    inputs: dict[str, Any],
+) -> dict[str, Any]:
+    del inputs
+    controls = int(params.get("n_controls", 2))
+    return {"output": jnp.zeros(controls), "hidden": jnp.zeros(1)}
+
+
+def _force_passthrough_output_prototype(
+    params: dict[str, Any],
+    inputs: dict[str, Any],
+) -> dict[str, Any]:
+    del params
+    return {"force": inputs.get("force", jnp.zeros(2))}
 
 
 def install_simple_feedback_runtime_hooks(graph: Graph) -> Graph:
