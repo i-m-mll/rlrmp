@@ -5,6 +5,8 @@ problem, and integration with the feedbax ``DynamicsMatrixPerturb``
 intervenor (force-channel embedding of ``ΔA · x``).
 """
 
+import argparse
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -13,6 +15,13 @@ import optax
 import pytest
 
 from rlrmp.adversary import LinearDynamicsAdversary, _frobenius_project
+from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
+from rlrmp.intervention_compat import (
+    swap_plant_intervenor_to_dynamics_matrix,
+    swap_task_intervention_to_dynamics_matrix,
+)
+from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.minimax import build_hps
 
 
 class TestFrobeniusProjection:
@@ -173,3 +182,41 @@ class TestDynamicsMatrixPerturbIntegration:
         # f = mass * Δ(dot v) = 1.0 * [0.3, -0.6]
         expected = jnp.array([0.3, -0.6], dtype=default_dtype)
         assert jnp.allclose(out["force"], expected)
+
+    def test_task_swap_preserves_callable_pai_asf_schedules(self):
+        """Linear-dynamics setup should keep PAI-ASF schedules trial-local."""
+        args = argparse.Namespace(
+            n_warmup_batches=1,
+            n_adversary_batches=1,
+            controller_lr=1e-4,
+            loss_update_enabled=False,
+            loss_update_ratio=0.5,
+            hidden_type="gru",
+            sisu_gating="additive",
+            n_replicates=1,
+        )
+        pair = setup_task_model_pair(build_hps(args), key=jr.PRNGKey(0))
+        task = pair.task
+        model = swap_plant_intervenor_to_dynamics_matrix(pair.model, PLANT_INTERVENOR_LABEL)
+
+        swapped = swap_task_intervention_to_dynamics_matrix(task, PLANT_INTERVENOR_LABEL)
+        params = swapped.intervention_specs.training[PLANT_INTERVENOR_LABEL].params
+
+        recurrent_wires = [
+            wire
+            for wire in model.wires
+            if wire.source_node == "mechanics"
+            and wire.source_port == "effector"
+            and wire.target_node == PLANT_INTERVENOR_LABEL
+            and wire.target_port == "effector"
+        ]
+        assert len(recurrent_wires) == 1
+        assert recurrent_wires[0].temporality == "recurrent"
+        assert model._needs_iteration
+        assert callable(params.scale)
+        assert callable(params.active)
+        trial = swapped.get_train_trial_with_intervenor_params(jr.PRNGKey(0))
+        trial_params = trial.intervene[PLANT_INTERVENOR_LABEL]
+        assert trial_params.delta_A.shape == (2, 4)
+        assert trial_params.scale.shape == ()
+        assert trial_params.active.shape == ()
