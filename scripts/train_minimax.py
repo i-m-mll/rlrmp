@@ -58,10 +58,10 @@ from rlrmp.intervention_compat import (
     swap_task_intervention_to_dynamics_matrix,
 )
 from rlrmp.feedbax_graph import (
-    build_rlrmp_feedbax_graph_bundle,
+    build_runtime_rlrmp_feedbax_graph_bundle,
     write_graph_spec_bundle,
 )
-from rlrmp.modules.training.part2 import build_task_base, setup_task_model_pair
+from rlrmp.modules.training.part2 import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 # build_hps was extracted to rlrmp.train.minimax in 8404108 (capability-named
@@ -518,16 +518,7 @@ def run_training(args: argparse.Namespace) -> None:
     task = pair.task
     loss_func = task.loss_func
 
-    graph_task = build_task_base(hps)
-    graph_n_extra_inputs = 0 if args.hidden_type in {"linear", "linear_tracker"} else 1
-    graph_bundle = build_rlrmp_feedbax_graph_bundle(
-        hps,
-        task=graph_task,
-        n_extra_inputs=graph_n_extra_inputs,
-        hidden_type=getattr(hps, "hidden_type", None),
-        sisu_gating=args.sisu_gating,
-        key=key_init,
-    )
+    graph_bundle = build_runtime_rlrmp_feedbax_graph_bundle(hps, pair.model)
     graph_path = write_graph_spec_bundle(graph_bundle, spec_dir)
 
     config_dict = {
@@ -1024,7 +1015,7 @@ def run_training(args: argparse.Namespace) -> None:
             new_adv = eqx.apply_updates(adv, updates)
             return new_adv, new_opt_st, loss_val
 
-        init_carry = (adversary, adv_opt_st, jnp.float32(0.0))
+        init_carry = (adversary, adv_opt_st, jnp.asarray(0.0))
         adversary_new, adv_opt_st_new, adv_loss = jax.lax.fori_loop(
             0, n_adversary_steps, _adv_body, init_carry
         )
@@ -1111,7 +1102,7 @@ def run_training(args: argparse.Namespace) -> None:
             new_adv = new_adv.project()
             return new_adv, new_opt_st, loss_val
 
-        init_carry = (adversary, adv_opt_st, jnp.float32(0.0))
+        init_carry = (adversary, adv_opt_st, jnp.asarray(0.0))
         adversary_new, adv_opt_st_new, adv_loss = jax.lax.fori_loop(
             0,
             n_adversary_steps,

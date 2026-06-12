@@ -37,7 +37,7 @@ from feedbax.mechanics import Mechanics, MechanicsState
 from feedbax.mechanics.plant import DirectForceInput
 from feedbax.mechanics.skeleton.pointmass import PointMass
 from feedbax.nn import PopulationStructure, SimpleStagedNetwork
-from feedbax.noise import Normal
+from feedbax.noise import CompositeNoise, Multiplicative, Normal
 from feedbax.serialization import spec_to_graph
 from equinox.nn import StateIndex
 
@@ -471,6 +471,47 @@ def build_rlrmp_feedbax_graph_bundle(
         controller_kind=controller_kind,
         intervention_type="FixedField",
     )
+    task_spec, loss_spec, training_spec, manifest = _graph_bundle_metadata(
+        hps,
+        controller_kind=controller_kind,
+    )
+    return RLRMPFeedbaxGraphBundle(
+        graph_spec=graph_spec,
+        task_spec=task_spec,
+        loss_spec=loss_spec,
+        training_spec=training_spec,
+        manifest=manifest,
+    )
+
+
+def build_runtime_rlrmp_feedbax_graph_bundle(
+    hps: Any,
+    model: Graph,
+) -> RLRMPFeedbaxGraphBundle:
+    """Build a GraphSpec/manifest bundle from the constructed runtime model."""
+
+    controller_kind = _controller_kind(hps)
+    task_spec, loss_spec, training_spec, manifest = _graph_bundle_metadata(
+        hps,
+        controller_kind=controller_kind,
+    )
+    return RLRMPFeedbaxGraphBundle(
+        graph_spec=graph_spec_from_model(
+            model,
+            n_replicates=int(getattr(hps.model, "n_replicates", 1)),
+        ),
+        task_spec=task_spec,
+        loss_spec=loss_spec,
+        training_spec=training_spec,
+        manifest=manifest,
+    )
+
+
+def _graph_bundle_metadata(
+    hps: Any,
+    *,
+    controller_kind: str,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
     task_spec = _task_spec(hps)
     loss_spec = _loss_spec(hps)
     training_spec = _training_spec(hps, controller_kind=controller_kind)
@@ -504,13 +545,7 @@ def build_rlrmp_feedbax_graph_bundle(
             stochastic_runtime_config_from_model(hps.model)
         ),
     }
-    return RLRMPFeedbaxGraphBundle(
-        graph_spec=graph_spec,
-        task_spec=task_spec,
-        loss_spec=loss_spec,
-        training_spec=training_spec,
-        manifest=manifest,
-    )
+    return task_spec, loss_spec, training_spec, manifest
 
 
 def build_point_mass_sensorimotor_graph_spec(
@@ -619,12 +654,14 @@ def build_point_mass_sensorimotor_graph_spec(
     ]
 
     force_source = ("efferent", "output")
-    if float(hps.model.tau_rise) != 0.0 or float(hps.model.tau_rise) != 0.0:
+    tau_rise = float(getattr(hps.model, "tau_rise", 0.0) or 0.0)
+    tau_decay = float(getattr(hps.model, "tau_decay", tau_rise) or 0.0)
+    if tau_rise != 0.0 or tau_decay != 0.0:
         nodes["force_filter"] = ComponentSpec(
             type="FirstOrderFilter",
             params={
-                "tau_rise": float(hps.model.tau_rise),
-                "tau_decay": float(hps.model.tau_rise),
+                "tau_rise": tau_rise,
+                "tau_decay": tau_decay,
                 "dt": float(hps.dt),
                 "init_value": 0.0,
                 "input_shape": [2],
@@ -838,12 +875,190 @@ def _align_state_index_markers(template: Graph, model: Graph) -> Graph:
     )
 
 
-def graph_spec_from_model(model: Graph) -> GraphSpec:
+def graph_spec_from_model(
+    model: Graph,
+    *,
+    n_replicates: int | None = None,
+    replicate_index: int = 0,
+) -> GraphSpec:
     """Return a GraphSpec for a materialized RLRMP runtime graph."""
 
     from feedbax.serialization import graph_to_spec
 
-    return graph_to_spec(model)
+    if n_replicates is not None and n_replicates > 1:
+        model = _representative_runtime_graph(
+            model,
+            n_replicates=n_replicates,
+            replicate_index=replicate_index,
+        )
+    graph_spec = graph_to_spec(model)
+    nodes = dict(graph_spec.nodes)
+    for name, component in model.nodes.items():
+        node_spec = nodes.get(name)
+        if node_spec is None:
+            continue
+        if isinstance(component, Mechanics) and isinstance(component.plant, DirectForceInput):
+            skeleton = component.plant.skeleton
+            if isinstance(skeleton, PointMass):
+                nodes[name] = ComponentSpec(
+                    type="RLRMPPointMass",
+                    params={
+                        "dt": float(component.dt),
+                        "mass": float(skeleton.mass),
+                        "damping": float(skeleton.damping),
+                    },
+                    input_ports=list(component.input_ports),
+                    output_ports=list(component.output_ports),
+                )
+        elif isinstance(component, FeedbackChannels):
+            channel = component.channels
+            noise_std = 0.0
+            if isinstance(channel.noise_func, Normal):
+                noise_std = float(channel.noise_func.std)
+            nodes[name] = ComponentSpec(
+                type="RLRMPFeedbackChannels",
+                params={
+                    "delay": int(channel.delay),
+                    "noise_std": noise_std,
+                    "noise_role": "sensory_feedback",
+                    "add_noise": bool(channel.add_noise),
+                },
+                input_ports=list(component.input_ports),
+                output_ports=list(component.output_ports),
+            )
+        elif isinstance(component, Channel) and name == "efferent":
+            motor_noise = _runtime_motor_noise_params(component)
+            nodes[name] = ComponentSpec(
+                type="RLRMPMotorChannel",
+                params={
+                    "delay": int(component.delay),
+                    "additive_noise_std": motor_noise["additive_noise_std"],
+                    "signal_dependent_noise_std": motor_noise["signal_dependent_noise_std"],
+                    "add_noise": bool(component.add_noise),
+                    "noise_model": "signal_dependent_plus_additive",
+                    "noise_role": "motor_command",
+                    "noise_timing": "pre_force_filter",
+                    "input_shape": _runtime_channel_input_shape(component),
+                },
+                input_ports=list(component.input_ports),
+                output_ports=list(component.output_ports),
+            )
+        elif isinstance(component, DynamicsMatrixPerturb):
+            nodes[name] = ComponentSpec(
+                type="DynamicsMatrixPerturb",
+                params={
+                    "active": bool(component._initial_state.active),
+                    "scale": float(component._initial_state.scale),
+                    "delta_A_shape": [int(dim) for dim in component._initial_state.delta_A.shape],
+                    "mass": float(component.mass),
+                    "label": component.label,
+                },
+                input_ports=list(component.input_ports),
+                output_ports=list(component.output_ports),
+            )
+        else:
+            linear_params = _runtime_linear_controller_params(component)
+            if linear_params is not None:
+                nodes[name] = ComponentSpec(
+                    type=linear_params.pop("component_type"),
+                    params=linear_params,
+                    input_ports=list(component.input_ports),
+                    output_ports=list(component.output_ports),
+                )
+    return graph_spec.model_copy(update={"nodes": nodes})
+
+
+def _representative_runtime_graph(
+    model: Graph,
+    *,
+    n_replicates: int,
+    replicate_index: int,
+) -> Graph:
+    dynamic, static = eqx.partition(
+        model,
+        lambda leaf: (
+            eqx.is_array(leaf)
+            and leaf.ndim > 0
+            and int(getattr(leaf, "shape", (0,))[0]) == int(n_replicates)
+        ),
+    )
+    representative_dynamic = jt.map(
+        lambda leaf: None if leaf is None else leaf[replicate_index],
+        dynamic,
+        is_leaf=lambda leaf: leaf is None,
+    )
+    representative = eqx.combine(representative_dynamic, static)
+    for node_name, node in representative.nodes.items():
+        state_index = getattr(node, "state_index", None)
+        if not isinstance(state_index, StateIndex):
+            continue
+        changed = False
+
+        def _unbatch_init_leaf(leaf: Any) -> Any:
+            nonlocal changed
+            if (
+                eqx.is_array(leaf)
+                and leaf.ndim > 0
+                and int(getattr(leaf, "shape", (0,))[0]) == int(n_replicates)
+            ):
+                changed = True
+                return leaf[replicate_index]
+            return leaf
+
+        init = jt.map(_unbatch_init_leaf, state_index.init)
+        if changed:
+            representative = eqx.tree_at(
+                lambda graph, name=node_name: graph.nodes[name].state_index.init,
+                representative,
+                init,
+            )
+    return representative
+
+
+def _runtime_motor_noise_params(channel: Channel) -> dict[str, float]:
+    terms = ()
+    if isinstance(channel.noise_func, CompositeNoise):
+        terms = channel.noise_func.terms
+    elif channel.noise_func is not None:
+        terms = (channel.noise_func,)
+
+    additive_noise_std = 0.0
+    signal_dependent_noise_std = 0.0
+    for term in terms:
+        if isinstance(term, Multiplicative) and isinstance(term.noise_func, Normal):
+            signal_dependent_noise_std = float(term.noise_func.std)
+        elif isinstance(term, Normal):
+            additive_noise_std = float(term.std)
+    return {
+        "additive_noise_std": additive_noise_std,
+        "signal_dependent_noise_std": signal_dependent_noise_std,
+    }
+
+
+def _runtime_channel_input_shape(channel: Channel) -> list[int]:
+    leaves = jt.leaves(channel._initial_state.output)
+    if not leaves or not hasattr(leaves[0], "shape"):
+        return [2]
+    return [int(dim) for dim in leaves[0].shape]
+
+
+def _runtime_linear_controller_params(component: Any) -> dict[str, Any] | None:
+    from rlrmp.networks.linear_controllers import LinearController, LinearTrackerController
+
+    if isinstance(component, LinearTrackerController):
+        component_type = "RLRMPLinearTrackerController"
+    elif isinstance(component, LinearController):
+        component_type = "RLRMPLinearController"
+    else:
+        return None
+    return {
+        "component_type": component_type,
+        "n_steps": int(component.n_steps),
+        "n_controls": int(component.n_controls),
+        "n_states": int(component.n_states),
+        "target_source": "input.task.effector_target.pos",
+        "feedback_order": ["pos_x", "pos_y", "vel_x", "vel_y"],
+    }
 
 
 def graph_spec_payload(graph_spec: GraphSpec) -> dict[str, Any]:
