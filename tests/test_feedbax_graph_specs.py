@@ -5,10 +5,11 @@ from __future__ import annotations
 import argparse
 import json
 
+import jax.random as jr
 import pytest
 from feedbax.contracts.graph import GraphSpec
 from feedbax.graph import Graph
-from feedbax.intervene import DynamicsMatrixPerturb, FixedField
+from feedbax.intervene import CurlField, DynamicsMatrixPerturb, FixedField
 from feedbax.manifest import SCHEMA_VERSION as FEEDBAX_MANIFEST_SCHEMA_VERSION
 
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
@@ -18,10 +19,13 @@ from rlrmp.feedbax_graph import (
     SCHEMA_VERSION,
     build_point_mass_sensorimotor_graph_spec,
     build_rlrmp_feedbax_graph_bundle,
+    build_runtime_rlrmp_feedbax_graph_bundle,
+    graph_spec_from_model,
     graph_spec_payload,
     materialize_rlrmp_graph_spec,
     write_graph_spec_bundle,
 )
+from rlrmp.intervention_compat import swap_plant_intervenor_to_dynamics_matrix
 from rlrmp.modules.training.part2 import build_task_base, setup_task_model_pair
 from rlrmp.stochastic_runtime import PLANT_PROCESS_FORCE_NOISE_LABEL
 from rlrmp.train.minimax import build_hps
@@ -256,3 +260,83 @@ def test_setup_task_model_pair_materializes_gru_and_linear_graph_paths() -> None
         assert pair.model.nodes["net"].__class__.__name__ == expected_net
         assert pair.model.nodes[PLANT_INTERVENOR_LABEL].label == PLANT_INTERVENOR_LABEL
         assert PLANT_INTERVENOR_LABEL in pair.model.intervention_state_indices()
+
+
+@pytest.mark.parametrize(
+    ("hidden_type", "expected_net"),
+    [
+        ("gru", "Network"),
+        ("linear", "RLRMPLinearController"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("pert_type", "expected_intervenor", "expected_class"),
+    [
+        ("constant", "FixedField", FixedField),
+        ("curl", "CurlField", CurlField),
+    ],
+)
+def test_runtime_graph_bundle_exports_constructed_model_intervenor(
+    hidden_type: str,
+    expected_net: str,
+    pert_type: str,
+    expected_intervenor: str,
+    expected_class: type,
+) -> None:
+    hps = _hps(hidden_type=hidden_type, n_replicates=2)
+    hps = hps | {"pert": hps.pert | {"type": pert_type}}
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+
+    bundle = build_runtime_rlrmp_feedbax_graph_bundle(hps, pair.model)
+    graph = materialize_rlrmp_graph_spec(bundle.graph_spec)
+
+    assert bundle.graph_spec.nodes[PLANT_INTERVENOR_LABEL].type == expected_intervenor
+    assert isinstance(pair.model.nodes[PLANT_INTERVENOR_LABEL], expected_class)
+    assert isinstance(graph.nodes[PLANT_INTERVENOR_LABEL], expected_class)
+    assert bundle.graph_spec.nodes["net"].type == expected_net
+    assert bundle.graph_spec.nodes["mechanics"].params["damping"] == hps.model.damping
+    assert bundle.graph_spec.nodes["feedback"].params["delay"] == hps.model.feedback_delay_steps
+    assert bundle.graph_spec.nodes["efferent"].type == "RLRMPMotorChannel"
+    assert bundle.graph_spec.nodes["efferent"].params["input_shape"] == [2]
+
+
+def test_runtime_graph_bundle_catches_old_fixedfield_default_mismatch() -> None:
+    hps = _hps(hidden_type="gru", n_replicates=2)
+    hps = hps | {"pert": hps.pert | {"type": "curl"}}
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+
+    runtime_bundle = build_runtime_rlrmp_feedbax_graph_bundle(hps, pair.model)
+    stale_hps_bundle = build_rlrmp_feedbax_graph_bundle(
+        hps,
+        task=build_task_base(hps),
+        n_extra_inputs=1,
+        hidden_type=hps.hidden_type,
+        sisu_gating=hps.sisu_gating,
+        key=jr.PRNGKey(0),
+    )
+
+    assert runtime_bundle.graph_spec.nodes[PLANT_INTERVENOR_LABEL].type == "CurlField"
+    assert stale_hps_bundle.graph_spec.nodes[PLANT_INTERVENOR_LABEL].type == "FixedField"
+    assert graph_spec_payload(runtime_bundle.graph_spec) != graph_spec_payload(
+        stale_hps_bundle.graph_spec
+    )
+
+
+def test_runtime_graph_spec_preserves_dynamics_matrix_intervenor() -> None:
+    hps = _hps(hidden_type="gru", n_replicates=2)
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    runtime_model = swap_plant_intervenor_to_dynamics_matrix(
+        pair.model,
+        PLANT_INTERVENOR_LABEL,
+        mass=hps.model.effector_mass,
+    )
+
+    graph_spec = graph_spec_from_model(
+        runtime_model,
+        n_replicates=int(hps.model.n_replicates),
+    )
+    graph = materialize_rlrmp_graph_spec(graph_spec)
+
+    assert graph_spec.nodes[PLANT_INTERVENOR_LABEL].type == "DynamicsMatrixPerturb"
+    assert graph_spec.nodes[PLANT_INTERVENOR_LABEL].params["delta_A_shape"] == [2, 4]
+    assert isinstance(graph.nodes[PLANT_INTERVENOR_LABEL], DynamicsMatrixPerturb)
