@@ -5,14 +5,17 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from feedbax.analysis.specs import execute_analysis_run_spec
 from rlrmp.analysis.cs_gru_standard_materialization import (
     MATERIALIZER_ISSUE_ID,
     MANIFEST_PATH,
     NOTE_PATH,
     RUN_IDS,
     SOURCE_ISSUE_ID,
-    materialize_gru_standard_result,
-    write_gru_standard_result,
+)
+from rlrmp.analysis.declarative_materialization import (
+    gru_standard_certificate_spec,
+    register_certificate_analysis_recipes,
 )
 
 
@@ -49,6 +52,12 @@ def main() -> None:
         action="store_true",
         help="Use validation-selected per-replicate checkpoints instead of final checkpoints.",
     )
+    parser.add_argument(
+        "--feedbax-runs-root",
+        type=Path,
+        default=None,
+        help="Feedbax manifest/artifact root. Defaults to Feedbax's manifest root.",
+    )
     args = parser.parse_args()
 
     run_ids = tuple(args.run_id) if args.run_id else RUN_IDS
@@ -65,19 +74,24 @@ def main() -> None:
         / "notes"
         / "gru_standard_certificates_manifest.json"
     )
-    result = materialize_gru_standard_result(
+    register_certificate_analysis_recipes(replace=True)
+    spec = gru_standard_certificate_spec(
         run_ids=run_ids,
         experiment=args.experiment,
         materializer_issue_id=MATERIALIZER_ISSUE_ID,
         use_validation_selected_checkpoints=args.validation_selected_checkpoints,
+        note_output=note_output,
+        manifest_output=manifest_output,
     )
-    write_gru_standard_result(
-        result,
-        note_path=note_output,
-        manifest_path=manifest_output,
+    manifest, feedbax_manifest_path = execute_analysis_run_spec(
+        spec,
+        root=args.feedbax_runs_root,
+        issues=[MATERIALIZER_ISSUE_ID],
     )
     print(f"Wrote {note_output}")
     print(f"Wrote {manifest_output}")
+    print(f"Wrote {feedbax_manifest_path}")
+    print(f"Feedbax analysis manifest: {manifest.id}")
 
 
 if __name__ == "__main__":
