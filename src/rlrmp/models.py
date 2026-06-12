@@ -10,14 +10,9 @@ import equinox as eqx
 import jax.random as jr
 from feedbax.nn import LeakyRNNCell, PopulationStructure
 from feedbax.types import TreeNamespace
-from feedbax.xabdeef.models import point_mass_nn
-from jax_cookbook.tree import get_ensemble
 from jaxtyping import Array, PRNGKeyArray
 
-from rlrmp.stochastic_runtime import (
-    apply_stochastic_runtime_to_ensemble,
-    stochastic_runtime_config_from_model,
-)
+from rlrmp.feedbax_graph import create_point_mass_graph_ensemble
 
 # Sentinel ``hidden_type`` strings that select linear-controller MVP variants
 # instead of an RNN cell class. ``setup_task_model_pair`` dispatches to
@@ -122,44 +117,30 @@ def create_point_mass_nn_ensemble(
     if hidden_type is None:
         hidden_type = eqx.nn.GRUCell
     # Parse population structure from config if not explicitly provided
-    if population_structure is None and hasattr(hps.model, 'population_structure'):
+    if population_structure is None and hasattr(hps.model, "population_structure"):
         pop_config = hps.model.population_structure
         key_pop, key = jr.split(key)
         population_structure = PopulationStructure.create(
             hidden_size=hps.model.hidden_size,
-            n_input_only=_get_or_default(pop_config, 'n_input_only', 0),
-            n_readout_only=_get_or_default(pop_config, 'n_readout_only', 0),
-            n_recurrent_only=_get_or_default(pop_config, 'n_recurrent_only', 0),
-            n_input_readout=_get_or_default(pop_config, 'n_input_readout', 0),
+            n_input_only=_get_or_default(pop_config, "n_input_only", 0),
+            n_readout_only=_get_or_default(pop_config, "n_readout_only", 0),
+            n_recurrent_only=_get_or_default(pop_config, "n_recurrent_only", 0),
+            n_input_readout=_get_or_default(pop_config, "n_input_readout", 0),
             assignment_fn=None,  # TODO: support custom assignment functions from config
             key=key_pop,
         )
 
-    noise_config = stochastic_runtime_config_from_model(hps.model)
-    models = get_ensemble(
-        point_mass_nn,
+    return create_point_mass_graph_ensemble(
+        hps,
         task,
-        n_extra_inputs=n_extra_inputs,
         n=hps.model.n_replicates,
-        dt=hps.dt,
-        mass=hps.model.effector_mass,
-        damping=hps.model.damping,
-        hidden_size=hps.model.hidden_size,
-        n_steps=hps.task.n_steps,
-        feedback_delay_steps=hps.model.feedback_delay_steps,
-        feedback_noise_std=noise_config.sensory_noise_std,
-        motor_noise_std=0.0,
-        tau_rise=hps.model.tau_rise,
-        tau_decay=hps.model.tau_rise,  # Note: using tau_rise for both
+        key=key,
+        n_extra_inputs=n_extra_inputs,
         population_structure=population_structure,
         hidden_type=hidden_type,
         sisu_gating=sisu_gating,
-        key=key,
-    )
-    return apply_stochastic_runtime_to_ensemble(
-        models,
-        noise_config,
-        include_plant_process_force_noise=False,
+        controller_kind=_controller_kind_from_hidden_type(hidden_type),
+        intervention_type=_intervention_component_type(hps.pert.type),
     )
 
 
@@ -187,29 +168,30 @@ def create_point_mass_linear_ensemble(
     Returns:
         An ensemble of ``SimpleFeedback`` models.
     """
-    # Local import to avoid circular module dependency at package init time.
-    from rlrmp.networks.linear_controllers import point_mass_linear_controller
-
-    noise_config = stochastic_runtime_config_from_model(hps.model)
-    models = get_ensemble(
-        point_mass_linear_controller,
+    return create_point_mass_graph_ensemble(
+        hps,
         task,
-        controller_type=controller_type,
-        n_extra_inputs=0,  # task inputs reach the controller via inputs["input"]
         n=hps.model.n_replicates,
-        dt=hps.dt,
-        mass=hps.model.effector_mass,
-        damping=hps.model.damping,
-        n_steps=hps.task.n_steps,
-        feedback_delay_steps=hps.model.feedback_delay_steps,
-        feedback_noise_std=noise_config.sensory_noise_std,
-        motor_noise_std=0.0,
-        tau_rise=hps.model.tau_rise,
-        tau_decay=hps.model.tau_rise,  # match point_mass_nn convention
         key=key,
+        n_extra_inputs=0,
+        hidden_type=controller_type,
+        controller_kind=controller_type,
+        intervention_type=_intervention_component_type(hps.pert.type),
     )
-    return apply_stochastic_runtime_to_ensemble(
-        models,
-        noise_config,
-        include_plant_process_force_noise=False,
-    )
+
+
+def _controller_kind_from_hidden_type(hidden_type: Any) -> str:
+    name = getattr(hidden_type, "__name__", None)
+    if name is None and hasattr(hidden_type, "func"):
+        name = getattr(hidden_type.func, "__name__", None)
+    return "vanilla_rnn" if name == "VanillaRNNCell" else "gru"
+
+
+def _intervention_component_type(pert_type: str) -> str:
+    if pert_type == "curl":
+        return "CurlField"
+    if pert_type in {"constant", "gusts"}:
+        return "FixedField"
+    if pert_type == "dynamics_matrix":
+        return "DynamicsMatrixPerturb"
+    raise ValueError(f"Unknown perturbation type: {pert_type!r}")

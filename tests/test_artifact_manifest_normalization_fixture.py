@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from feedbax.manifest import TrainingRunManifest, load_manifest, sha256_file
@@ -27,6 +28,30 @@ def test_artifact_manifest_fixture_loads_with_feedbax_contract() -> None:
     assert {parent.kind for parent in manifest.provenance.parents} == {
         "MandibleArtifactProvider",
         "ProviderManifest",
+    }
+
+
+def test_artifact_manifest_fixture_preserves_run_spec_parity() -> None:
+    run_spec = json.loads(RUN_SPEC.read_text(encoding="utf-8"))
+    manifest = load_manifest(MANIFEST)
+    training_spec = manifest.training_spec
+
+    assert training_spec is not None
+    assert training_spec.kind == "RLRMPRunSpec"
+    assert training_spec.ref == str(RUN_SPEC.relative_to(REPO_ROOT))
+    assert training_spec.sha256 == sha256_file(RUN_SPEC)
+    assert training_spec.metadata == {"source_record_role": "tracked_run_spec"}
+    assert training_spec.inline == {
+        "run": run_spec["run"],
+        "issue": run_spec["issue"],
+        "training_mode": run_spec["training_summary"]["training_mode"],
+        "n_train_batches": run_spec["training_summary"]["n_train_batches"],
+    }
+
+    assert manifest.provenance.metadata["rlrmp_layout"] == {
+        "tracked_specs": "results/<issue>/runs/*.json",
+        "bulk_artifacts": "_artifacts/<issue>/runs/<variant>/",
+        "feedbax_manifest_root": run_spec["artifacts"]["feedbax_manifest_root"] + "/",
     }
 
 

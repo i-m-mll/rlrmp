@@ -1,12 +1,4 @@
-"""RLRMP Feedbax GraphSpec builders.
-
-This module is the RLRMP-owned migration bridge for issue ``b41c940``. It
-serializes the model/task surface currently built by ``setup_task_model_pair``
-without pretending that Feedbax's generic worker can yet execute every RLRMP
-training contract. The graph is therefore the portable construction contract;
-legacy ``SimpleFeedback`` constructors remain the execution backend until the
-Feedbax worker grows the required batched/minimax semantics.
-"""
+"""RLRMP Feedbax GraphSpec builders and materializers."""
 
 from __future__ import annotations
 
@@ -14,7 +6,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from feedbax.web.models.graph import (
+import equinox as eqx
+import jax.numpy as jnp
+import jax.random as jr
+import jax.tree as jt
+import feedbax.serialization_prototypes as _fbx_prototypes
+from feedbax.bodies import FeedbackChannels, SimpleFeedback, SimpleFeedbackState
+from feedbax.channel import Channel, ChannelSpec
+from feedbax.component_registry import get_component_registry
+from feedbax.contracts.graph import (
     ComponentSpec,
     GraphMetadata,
     GraphSpec,
@@ -23,17 +23,44 @@ from feedbax.web.models.graph import (
     RetentionPolicySpec,
     WireSpec,
 )
+from feedbax.filters import FilterState
+from feedbax.graph import Graph
+from feedbax.intervene import (
+    CurlField,
+    CurlFieldParams,
+    DynamicsMatrixPerturb,
+    DynamicsMatrixPerturbParams,
+    FixedField,
+    FixedFieldParams,
+)
+from feedbax.mechanics import Mechanics, MechanicsState
+from feedbax.mechanics.plant import DirectForceInput
+from feedbax.mechanics.skeleton.pointmass import PointMass
+from feedbax.nn import PopulationStructure, SimpleStagedNetwork
+from feedbax.noise import Normal
+from feedbax.serialization import spec_to_graph
+from equinox.nn import StateIndex
 
+from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.stochastic_runtime import (
     PLANT_PROCESS_FORCE_NOISE_LABEL,
+    PlantProcessForceNoise,
+    command_motor_noise_func,
     graphspec_noise_contract,
     stochastic_runtime_config_from_model,
 )
 
 
 SCHEMA_VERSION = "rlrmp.feedbax_graph.v1"
-EXECUTION_BACKEND = "rlrmp.legacy_simple_feedback_compat"
-GRAPH_PLANT_INTERVENOR_NODE = "plant_intervenor"
+EXECUTION_BACKEND = "feedbax.serialization.spec_to_graph"
+GRAPH_PLANT_INTERVENOR_NODE = PLANT_INTERVENOR_LABEL
+
+
+def _point_mass_feedback(state: MechanicsState):
+    return (
+        state.plant.skeleton.pos,
+        state.plant.skeleton.vel,
+    )
 
 
 @dataclass(frozen=True)
@@ -65,12 +92,382 @@ class RLRMPFeedbaxGraphBundle:
         }
 
 
-def build_rlrmp_feedbax_graph_bundle(hps: Any) -> RLRMPFeedbaxGraphBundle:
+def register_rlrmp_graph_components(component_registry: Any | None = None) -> Any:
+    """Register executable RLRMP component builders for GraphSpec materialization."""
+
+    registry = component_registry or get_component_registry()
+    registry.register_component_type(
+        "RLRMPPointMass",
+        _build_point_mass_mechanics,
+        category="RLRMP",
+        description="Point-mass mechanics preserving RLRMP mass and damping.",
+        input_ports=["force"],
+        output_ports=["effector", "state"],
+        provenance="rlrmp",
+    )
+    registry.register_component_type(
+        "RLRMPFeedbackChannels",
+        _build_feedback_channels,
+        category="RLRMP",
+        description="Point-mass position/velocity feedback channels.",
+        input_ports=["mechanics"],
+        output_ports=["feedback"],
+        provenance="rlrmp",
+    )
+    registry.register_component_type(
+        "RLRMPMotorChannel",
+        _build_motor_channel,
+        category="RLRMP",
+        description="RLRMP command channel with signal-dependent and additive motor noise.",
+        input_ports=["input"],
+        output_ports=["output"],
+        provenance="rlrmp",
+    )
+    registry.register_component_type(
+        "RLRMPSimpleStagedNetwork",
+        _build_simple_staged_network,
+        category="RLRMP",
+        description="RLRMP SimpleStagedNetwork controller.",
+        input_ports=["input", "feedback"],
+        output_ports=["output", "hidden"],
+        provenance="rlrmp",
+    )
+    registry.register_component_type(
+        "RLRMPLinearController",
+        _build_linear_controller,
+        category="RLRMP",
+        description="RLRMP linear regulator controller.",
+        input_ports=["input", "feedback"],
+        output_ports=["output", "hidden"],
+        provenance="rlrmp",
+    )
+    registry.register_component_type(
+        "RLRMPLinearTrackerController",
+        _build_linear_tracker_controller,
+        category="RLRMP",
+        description="RLRMP linear tracker controller.",
+        input_ports=["input", "feedback"],
+        output_ports=["output", "hidden"],
+        provenance="rlrmp",
+    )
+    registry.register_component_type(
+        "FixedField",
+        _build_fixed_field,
+        category="Intervention",
+        description="Fixed force-field intervention preserving GraphSpec label.",
+        input_ports=["force", "params_override"],
+        output_ports=["force"],
+        provenance="rlrmp",
+    )
+    registry.register_component_type(
+        "CurlField",
+        _build_curl_field,
+        category="Intervention",
+        description="Curl force-field intervention preserving GraphSpec label.",
+        input_ports=["effector", "force", "params_override"],
+        output_ports=["force"],
+        provenance="rlrmp",
+    )
+    registry.register_component_type(
+        "DynamicsMatrixPerturb",
+        _build_dynamics_matrix_perturb,
+        category="RLRMP",
+        description="State-feedback dynamics matrix perturbation.",
+        input_ports=["effector", "force", "params_override"],
+        output_ports=["force"],
+        provenance="rlrmp",
+    )
+    registry.register_component_type(
+        "RLRMPPlantProcessForceNoise",
+        _build_plant_process_force_noise,
+        category="RLRMP",
+        description="Additive plant/load force noise before mechanics.",
+        input_ports=["force"],
+        output_ports=["force"],
+        provenance="rlrmp",
+    )
+    return registry
+
+
+def materialize_rlrmp_graph_spec(
+    graph_spec: GraphSpec,
+    component_registry: Any | None = None,
+    *,
+    install_runtime_hooks: bool = True,
+) -> Graph:
+    """Materialize an RLRMP GraphSpec through Feedbax and install runtime hooks."""
+
+    registry = register_rlrmp_graph_components(component_registry)
+    graph = _spec_to_graph_with_rlrmp_prototypes(graph_spec, registry)
+    if install_runtime_hooks:
+        graph = install_simple_feedback_runtime_hooks(graph)
+    return graph
+
+
+def _spec_to_graph_with_rlrmp_prototypes(graph_spec: GraphSpec, registry: Any) -> Graph:
+    original = _fbx_prototypes.output_prototypes_for_node
+
+    def _output_prototypes_for_node(
+        node_name,
+        node_spec,
+        input_prototypes,
+        subgraphs,
+        *,
+        strict=True,
+    ):
+        node_type = node_spec.type
+        params = node_spec.params
+        if node_type == "RLRMPPointMass":
+            mechanics = _build_point_mass_mechanics(params)
+            plant_state = mechanics.plant.init(key=jr.PRNGKey(0))
+            effector = mechanics.plant.skeleton.effector(plant_state.skeleton)
+            state = MechanicsState(plant=plant_state, effector=effector, solver=None)
+            return {"effector": effector, "state": state}
+        if node_type == "RLRMPFeedbackChannels":
+            return {"feedback": (jnp.zeros(2), jnp.zeros(2))}
+        if node_type in {"RLRMPMotorChannel", "RLRMPPlantProcessForceNoise"}:
+            return {"output" if node_type == "RLRMPMotorChannel" else "force": jnp.zeros(2)}
+        if node_type == "RLRMPSimpleStagedNetwork":
+            hidden = jnp.zeros(int(params.get("hidden_size", 1)))
+            output = jnp.zeros(int(params.get("out_size", 2)))
+            return {"output": output, "hidden": hidden}
+        if node_type in {"RLRMPLinearController", "RLRMPLinearTrackerController"}:
+            controls = int(params.get("n_controls", 2))
+            return {"output": jnp.zeros(controls), "hidden": jnp.zeros(1)}
+        if node_type in {"FixedField", "CurlField", "DynamicsMatrixPerturb"}:
+            proto = input_prototypes.get((node_name, "force"))
+            return {"force": jnp.zeros(2) if proto is None else proto}
+        return original(
+            node_name,
+            node_spec,
+            input_prototypes,
+            subgraphs,
+            strict=strict,
+        )
+
+    _fbx_prototypes.output_prototypes_for_node = _output_prototypes_for_node
+    try:
+        return spec_to_graph(graph_spec, registry)
+    finally:
+        _fbx_prototypes.output_prototypes_for_node = original
+
+
+def install_simple_feedback_runtime_hooks(graph: Graph) -> Graph:
+    """Install SimpleFeedback-compatible state view and consistency hooks."""
+
+    mechanics = graph.nodes.get("mechanics")
+    feedback = graph.nodes.get("feedback")
+    if not isinstance(mechanics, Mechanics) or not isinstance(feedback, FeedbackChannels):
+        return graph
+
+    def _state_view(node_states):
+        force_filter_state = node_states.get("force_filter", FilterState(output=None, solver=None))
+        return SimpleFeedbackState(
+            mechanics=node_states["mechanics"],
+            net=node_states["net"],
+            feedback=node_states["feedback"],
+            efferent=node_states["efferent"],
+            force_filter=force_filter_state,
+        )
+
+    def _consistency_update(state):
+        mechanics_state: MechanicsState = state.get(mechanics.state_index)
+        new_skeleton = mechanics.plant.skeleton.inverse_kinematics(mechanics_state.effector)
+        mechanics_state = eqx.tree_at(
+            lambda s: s.plant.skeleton,
+            mechanics_state,
+            new_skeleton,
+        )
+        state = state.set(mechanics.state_index, mechanics_state)
+        return feedback.fill_queues(state, mechanics_state)
+
+    object.__setattr__(graph, "state_view_fn", _state_view)
+    object.__setattr__(graph, "state_consistency_fn", _consistency_update)
+    return graph
+
+
+def _build_feedback_channels(params: dict[str, Any]) -> FeedbackChannels:
+    delay = int(params.get("delay", 0))
+    noise_std = float(params.get("noise_std", 0.0) or 0.0)
+    add_noise = bool(params.get("add_noise", noise_std != 0.0))
+    noise_func = Normal(std=noise_std) if add_noise and noise_std != 0.0 else None
+    specs = ChannelSpec(
+        where=_point_mass_feedback,
+        delay=delay,
+        noise_func=noise_func,
+    )
+    channel = Channel(
+        delay=delay,
+        noise_func=noise_func,
+        add_noise=add_noise,
+        input_proto=(jnp.zeros(2), jnp.zeros(2)),
+        init_value=float(params.get("init_value", 0.0)),
+    )
+    return FeedbackChannels(channel, specs)
+
+
+def _build_point_mass_mechanics(params: dict[str, Any]) -> Mechanics:
+    return Mechanics(
+        plant=DirectForceInput(
+            PointMass(
+                mass=float(params.get("mass", 1.0)),
+                damping=float(params.get("damping", 0.0)),
+            )
+        ),
+        dt=float(params.get("dt", 0.01)),
+    )
+
+
+def _build_motor_channel(params: dict[str, Any]) -> Channel:
+    from rlrmp.stochastic_runtime import StochasticRuntimeConfig
+
+    config = StochasticRuntimeConfig(
+        additive_motor_noise_std=float(params.get("additive_noise_std", 0.0) or 0.0),
+        signal_dependent_motor_noise_std=float(
+            params.get("signal_dependent_noise_std", 0.0) or 0.0
+        ),
+    )
+    return Channel(
+        delay=int(params.get("delay", 0)),
+        noise_func=command_motor_noise_func(config),
+        add_noise=config.has_command_noise,
+        input_proto=jnp.zeros(tuple(int(dim) for dim in params.get("input_shape", [2]))),
+        init_value=float(params.get("init_value", 0.0)),
+    )
+
+
+def _build_simple_staged_network(params: dict[str, Any]) -> SimpleStagedNetwork:
+    hidden_type_name = str(params.get("hidden_type", "GRUCell"))
+    if hidden_type_name == "VanillaRNNCell":
+        from rlrmp.models import VanillaRNNCell
+
+        hidden_type = VanillaRNNCell
+    elif hidden_type_name in {"GRU", "GRUCell", "gru"}:
+        hidden_type = eqx.nn.GRUCell
+    else:
+        raise ValueError(f"Unsupported RLRMP hidden_type {hidden_type_name!r}")
+    population_structure = _population_structure_from_params(params.get("population_structure"))
+    key = _key_from_params(params)
+    return SimpleStagedNetwork(
+        input_size=int(params["input_size"]),
+        hidden_size=int(params["hidden_size"]),
+        out_size=int(params.get("out_size", 2)),
+        encoding_size=params.get("encoding_size"),
+        hidden_type=hidden_type,
+        population_structure=population_structure,
+        sisu_gating=str(params.get("sisu_gating", "additive")),
+        key=key,
+    )
+
+
+def _build_linear_controller(params: dict[str, Any]):
+    from rlrmp.networks.linear_controllers import LinearController
+
+    return LinearController(
+        n_steps=int(params["n_steps"]),
+        n_controls=int(params.get("n_controls", 2)),
+        n_states=int(params.get("n_states", 4)),
+        K_init_scale=float(params.get("K_init_scale", 0.0) or 0.0),
+        key=_key_from_params(params),
+    )
+
+
+def _build_linear_tracker_controller(params: dict[str, Any]):
+    from rlrmp.networks.linear_controllers import LinearTrackerController
+
+    return LinearTrackerController(
+        n_steps=int(params["n_steps"]),
+        n_controls=int(params.get("n_controls", 2)),
+        n_states=int(params.get("n_states", 4)),
+        K_init_scale=float(params.get("K_init_scale", 0.0) or 0.0),
+        u_ff_init_scale=float(params.get("u_ff_init_scale", 0.0) or 0.0),
+        key=_key_from_params(params),
+    )
+
+
+def _build_dynamics_matrix_perturb(params: dict[str, Any]) -> DynamicsMatrixPerturb:
+    shape = params.get("delta_A_shape", [2, 4])
+    return DynamicsMatrixPerturb(
+        params=DynamicsMatrixPerturbParams(
+            scale=float(params.get("scale", 1.0)),
+            active=bool(params.get("active", False)),
+            delta_A=jnp.zeros(tuple(int(dim) for dim in shape), dtype=jnp.float32),
+        ),
+        label=str(params.get("label", GRAPH_PLANT_INTERVENOR_NODE)),
+        mass=float(params.get("mass", 1.0)),
+    )
+
+
+def _build_fixed_field(params: dict[str, Any]) -> FixedField:
+    return FixedField(
+        params=FixedFieldParams(
+            scale=float(params.get("scale", 1.0)),
+            amplitude=float(params.get("amplitude", 1.0)),
+            field=jnp.asarray(params.get("field", [0.0, 0.0])),
+            active=bool(params.get("active", False)),
+        ),
+        label=str(params.get("label", GRAPH_PLANT_INTERVENOR_NODE)),
+    )
+
+
+def _build_curl_field(params: dict[str, Any]) -> CurlField:
+    return CurlField(
+        params=CurlFieldParams(
+            scale=float(params.get("scale", 1.0)),
+            amplitude=float(params.get("amplitude", 1.0)),
+            active=bool(params.get("active", False)),
+        ),
+        label=str(params.get("label", GRAPH_PLANT_INTERVENOR_NODE)),
+    )
+
+
+def _build_plant_process_force_noise(params: dict[str, Any]) -> PlantProcessForceNoise:
+    return PlantProcessForceNoise(
+        std=float(params.get("noise_std", 0.0)),
+        label=str(params.get("label", PLANT_PROCESS_FORCE_NOISE_LABEL)),
+    )
+
+
+def _key_from_params(params: dict[str, Any]):
+    key_data = params.get("key")
+    if key_data is not None:
+        return jnp.asarray(key_data, dtype=jnp.uint32)
+    return jr.PRNGKey(int(params.get("seed", 0)))
+
+
+def _population_structure_from_params(params: Any) -> PopulationStructure | None:
+    if not params:
+        return None
+    return PopulationStructure.create(
+        hidden_size=int(params["hidden_size"]),
+        n_input_only=int(params.get("n_input_only", 0) or 0),
+        n_readout_only=int(params.get("n_readout_only", 0) or 0),
+        n_recurrent_only=int(params.get("n_recurrent_only", 0) or 0),
+        n_input_readout=int(params.get("n_input_readout", 0) or 0),
+        assignment_fn=None,
+        key=jr.PRNGKey(int(params.get("seed", 0))),
+    )
+
+
+def build_rlrmp_feedbax_graph_bundle(
+    hps: Any,
+    *,
+    task: Any | None = None,
+    n_extra_inputs: int = 0,
+    hidden_type: Any | None = None,
+    sisu_gating: str | None = None,
+    key: Any | None = None,
+) -> RLRMPFeedbaxGraphBundle:
     """Build the GraphSpec/manifest bundle for the current RLRMP model setup."""
 
     controller_kind = _controller_kind(hps)
     graph_spec = build_point_mass_sensorimotor_graph_spec(
         hps,
+        task=task,
+        n_extra_inputs=n_extra_inputs,
+        hidden_type=hidden_type,
+        sisu_gating=sisu_gating,
+        key=key,
         controller_kind=controller_kind,
         intervention_type="FixedField",
     )
@@ -82,16 +479,18 @@ def build_rlrmp_feedbax_graph_bundle(hps: Any) -> RLRMPFeedbaxGraphBundle:
         "execution_backend": EXECUTION_BACKEND,
         "component_policy": {
             "rlrmp_component_types": [
+                "RLRMPPointMass",
                 "RLRMPFeedbackChannels",
                 "RLRMPSimpleStagedNetwork",
                 "RLRMPLinearController",
                 "RLRMPLinearTrackerController",
                 "DynamicsMatrixPerturb",
+                "RLRMPMotorChannel",
+                "RLRMPPlantProcessForceNoise",
             ],
             "note": (
-                "RLRMP component types are GraphSpec-addressable contracts. "
-                "They are executed through the legacy RLRMP SimpleFeedback path "
-                "until Feedbax exposes extension builders for these components."
+                "RLRMP component types are registered locally and materialized "
+                "through feedbax.serialization.spec_to_graph."
             ),
         },
         "legacy_loader": {
@@ -117,6 +516,12 @@ def build_rlrmp_feedbax_graph_bundle(hps: Any) -> RLRMPFeedbaxGraphBundle:
 def build_point_mass_sensorimotor_graph_spec(
     hps: Any,
     *,
+    task: Any | None = None,
+    n_extra_inputs: int = 1,
+    population_structure: PopulationStructure | None = None,
+    hidden_type: Any | None = None,
+    sisu_gating: str | None = None,
+    key: Any | None = None,
     controller_kind: str | None = None,
     intervention_type: str | None = "FixedField",
 ) -> GraphSpec:
@@ -130,6 +535,11 @@ def build_point_mass_sensorimotor_graph_spec(
     if controller_kind is None:
         controller_kind = _controller_kind(hps)
     noise_config = stochastic_runtime_config_from_model(hps.model)
+    if hidden_type is None:
+        hidden_type = getattr(hps, "hidden_type", None)
+    if sisu_gating is None:
+        sisu_gating = str(getattr(hps, "sisu_gating", "additive"))
+    key_param = None if key is None else [int(value) for value in jnp.asarray(key).tolist()]
 
     mechanics_params = {
         "dt": float(hps.dt),
@@ -140,17 +550,26 @@ def build_point_mass_sensorimotor_graph_spec(
         "feedback": ComponentSpec(
             type="RLRMPFeedbackChannels",
             params={
-                "where": ["plant.skeleton.pos", "plant.skeleton.vel"],
                 "delay": int(hps.model.feedback_delay_steps),
                 "noise_std": noise_config.sensory_noise_std,
                 "noise_role": "sensory_feedback",
+                "add_noise": noise_config.sensory_noise_std != 0.0,
             },
             input_ports=["mechanics"],
             output_ports=["feedback"],
         ),
-        "net": _controller_component_spec(hps, controller_kind),
+        "net": _controller_component_spec(
+            hps,
+            controller_kind,
+            task=task,
+            n_extra_inputs=n_extra_inputs,
+            population_structure=population_structure,
+            hidden_type=hidden_type,
+            sisu_gating=sisu_gating,
+            key=key_param,
+        ),
         "efferent": ComponentSpec(
-            type="Channel",
+            type="RLRMPMotorChannel",
             params={
                 "delay": 0,
                 "additive_noise_std": noise_config.additive_motor_noise_std,
@@ -165,7 +584,7 @@ def build_point_mass_sensorimotor_graph_spec(
             output_ports=["output"],
         ),
         "mechanics": ComponentSpec(
-            type="PointMass",
+            type="RLRMPPointMass",
             params=mechanics_params,
             input_ports=["force"],
             output_ports=["effector", "state"],
@@ -325,17 +744,106 @@ def build_point_mass_sensorimotor_graph_spec(
         ),
         metadata=GraphMetadata(
             name="RLRMP point-mass sensorimotor loop",
-            description=(
-                "GraphSpec contract for RLRMP minimax training. Executed via "
-                "legacy SimpleFeedback compatibility until Feedbax worker "
-                "supports batched/ensembled minimax training."
-            ),
+            description=("Executable GraphSpec contract for RLRMP minimax training."),
             created_at="1970-01-01T00:00:00",
             updated_at="1970-01-01T00:00:00",
-            version=SCHEMA_VERSION,
+            version="1.0.0",
             tags=["rlrmp", "feedbax", "graphspec", "minimax"],
         ),
     )
+
+
+def create_point_mass_graph_model(
+    hps: Any,
+    task: Any,
+    *,
+    n_extra_inputs: int = 1,
+    population_structure: PopulationStructure | None = None,
+    hidden_type: Any | None = None,
+    sisu_gating: str = "additive",
+    controller_kind: str | None = None,
+    intervention_type: str = "FixedField",
+    key: Any,
+) -> Graph:
+    """Build one executable point-mass model from an RLRMP GraphSpec."""
+
+    spec = build_point_mass_sensorimotor_graph_spec(
+        hps,
+        task=task,
+        n_extra_inputs=n_extra_inputs,
+        population_structure=population_structure,
+        hidden_type=hidden_type,
+        sisu_gating=sisu_gating,
+        controller_kind=controller_kind,
+        intervention_type=intervention_type,
+        key=key,
+    )
+    return materialize_rlrmp_graph_spec(spec)
+
+
+def create_point_mass_graph_ensemble(
+    hps: Any,
+    task: Any,
+    *,
+    n: int,
+    key: Any,
+    n_extra_inputs: int = 1,
+    population_structure: PopulationStructure | None = None,
+    hidden_type: Any | None = None,
+    sisu_gating: str = "additive",
+    controller_kind: str | None = None,
+    intervention_type: str = "FixedField",
+) -> Graph:
+    """Build a batched ensemble of executable GraphSpec-materialized models."""
+
+    keys = jr.split(key, int(n))
+    models = [
+        materialize_rlrmp_graph_spec(
+            build_point_mass_sensorimotor_graph_spec(
+                hps,
+                task=task,
+                n_extra_inputs=n_extra_inputs,
+                population_structure=population_structure,
+                hidden_type=hidden_type,
+                sisu_gating=sisu_gating,
+                controller_kind=controller_kind,
+                intervention_type=intervention_type,
+                key=key_i,
+            ),
+            install_runtime_hooks=False,
+        )
+        for key_i in keys
+    ]
+    template = models[0]
+    models = [template, *[_align_state_index_markers(template, model) for model in models[1:]]]
+    dynamic_models = [eqx.filter(model, eqx.is_array) for model in models]
+    static_model = eqx.filter(template, lambda leaf: not eqx.is_array(leaf))
+    stacked_dynamic = jt.map(lambda *leaves: jnp.stack(leaves), *dynamic_models)
+    return install_simple_feedback_runtime_hooks(eqx.combine(stacked_dynamic, static_model))
+
+
+def _align_state_index_markers(template: Graph, model: Graph) -> Graph:
+    def _align(template_leaf, model_leaf):
+        if isinstance(template_leaf, StateIndex) and isinstance(model_leaf, StateIndex):
+            aligned = StateIndex(model_leaf.init)
+            object.__setattr__(aligned, "marker", template_leaf.marker)
+            return aligned
+        return model_leaf
+
+    return jt.map(
+        _align,
+        template,
+        model,
+        is_leaf=lambda leaf: isinstance(leaf, StateIndex),
+    )
+
+
+def graph_spec_from_model(model: Graph) -> GraphSpec:
+    """Return a GraphSpec for a materialized RLRMP runtime graph."""
+
+    from feedbax.serialization import graph_to_spec
+
+    return graph_to_spec(model)
 
 
 def graph_spec_payload(graph_spec: GraphSpec) -> dict[str, Any]:
@@ -367,39 +875,95 @@ def _controller_kind(hps: Any) -> str:
     return "vanilla_rnn" if name == "VanillaRNNCell" else "gru"
 
 
-def _controller_component_spec(hps: Any, controller_kind: str) -> ComponentSpec:
+def _controller_component_spec(
+    hps: Any,
+    controller_kind: str,
+    *,
+    task: Any | None = None,
+    n_extra_inputs: int = 1,
+    population_structure: PopulationStructure | None = None,
+    hidden_type: Any | None = None,
+    sisu_gating: str = "additive",
+    key: list[int] | None = None,
+) -> ComponentSpec:
     if controller_kind == "linear":
         return ComponentSpec(
             type="RLRMPLinearController",
-            params=_linear_controller_params(hps),
+            params={**_linear_controller_params(hps), "key": key},
             input_ports=["input", "feedback"],
             output_ports=["output", "hidden"],
         )
     if controller_kind == "linear_tracker":
         return ComponentSpec(
             type="RLRMPLinearTrackerController",
-            params=_linear_controller_params(hps),
+            params={**_linear_controller_params(hps), "key": key},
             input_ports=["input", "feedback"],
             output_ports=["output", "hidden"],
+        )
+    input_size = None
+    if task is not None:
+        input_size = _point_mass_network_input_size(
+            hps,
+            task=task,
+            n_extra_inputs=n_extra_inputs,
         )
     return ComponentSpec(
         type="RLRMPSimpleStagedNetwork",
         params={
             "controller_kind": controller_kind,
-            "input_size": None,
-            "input_size_source": (
-                "SimpleFeedback.get_nn_input_size(task, mechanics, feedback_spec) + n_extra_inputs"
-            ),
+            "input_size": input_size,
+            "input_size_source": "task-derived" if input_size is not None else "unresolved",
             "hidden_size": int(hps.model.hidden_size),
             "out_size": 2,
             "encoding_size": None,
-            "sisu_gating": str(getattr(hps, "sisu_gating", "additive")),
-            "n_extra_inputs": 1,
-            "population_structure": _population_structure(hps),
+            "hidden_type": _hidden_type_name(hidden_type),
+            "sisu_gating": sisu_gating,
+            "n_extra_inputs": int(n_extra_inputs),
+            "population_structure": _population_structure_params(
+                hps,
+                population_structure,
+            ),
+            "key": key,
         },
         input_ports=["input", "feedback"],
         output_ports=["output", "hidden"],
     )
+
+
+def _point_mass_network_input_size(
+    hps: Any,
+    *,
+    task: Any,
+    n_extra_inputs: int,
+) -> int:
+    mechanics = Mechanics(
+        DirectForceInput(
+            PointMass(
+                mass=float(hps.model.effector_mass),
+                damping=float(hps.model.damping),
+            )
+        ),
+        float(hps.dt),
+    )
+    feedback_spec = {
+        "where": _point_mass_feedback,
+        "delay": int(hps.model.feedback_delay_steps),
+        "noise_func": Normal(std=stochastic_runtime_config_from_model(hps.model).sensory_noise_std),
+    }
+    return SimpleFeedback.get_nn_input_size(task, mechanics, feedback_spec=feedback_spec) + int(
+        n_extra_inputs
+    )
+
+
+def _hidden_type_name(hidden_type: Any | None) -> str:
+    if hidden_type is None:
+        return "GRUCell"
+    if isinstance(hidden_type, str):
+        return hidden_type
+    name = getattr(hidden_type, "__name__", None)
+    if name is None and hasattr(hidden_type, "func"):
+        name = getattr(hidden_type.func, "__name__", None)
+    return str(name or "GRUCell")
 
 
 def _linear_controller_params(hps: Any) -> dict[str, Any]:
@@ -416,7 +980,11 @@ def _intervention_component_spec(intervention_type: str, hps: Any) -> ComponentS
     input_ports = ["force", "params_override"]
     if intervention_type in {"CurlField", "DynamicsMatrixPerturb"}:
         input_ports = ["effector", *input_ports]
-    params: dict[str, Any] = {"active": False, "scale": 1.0}
+    params: dict[str, Any] = {
+        "active": False,
+        "scale": 1.0,
+        "label": GRAPH_PLANT_INTERVENOR_NODE,
+    }
     if intervention_type == "FixedField":
         params.update({"amplitude": 1.0, "field": [0.0, 0.0]})
     elif intervention_type == "DynamicsMatrixPerturb":
@@ -530,11 +1098,15 @@ def _training_spec(hps: Any, *, controller_kind: str) -> dict[str, Any]:
     }
 
 
-def _population_structure(hps: Any) -> dict[str, int]:
-    pop = getattr(hps.model, "population_structure", None)
+def _population_structure_params(
+    hps: Any,
+    population_structure: PopulationStructure | None,
+) -> dict[str, int]:
+    pop = population_structure or getattr(hps.model, "population_structure", None)
     if pop is None:
         return {}
     return {
+        "hidden_size": int(hps.model.hidden_size),
         "n_input_only": int(getattr(pop, "n_input_only", 0) or 0),
         "n_readout_only": int(getattr(pop, "n_readout_only", 0) or 0),
         "n_recurrent_only": int(getattr(pop, "n_recurrent_only", 0) or 0),
