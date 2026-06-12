@@ -77,7 +77,7 @@ from rlrmp.analysis.induced_gain import (
     Z_QR_COST,
     induced_gain,
 )
-from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p, run_artifact_dir, run_spec_dir
 
 # Note: do NOT enable x64 at top level — saved checkpoints are float32 and

@@ -62,7 +62,7 @@ from feedbax.train import init_task_trainer_history, TaskTrainerHistory
 from rlrmp.paths import REPO_ROOT  # Bug: 8404108 — was __file__-relative
 from rlrmp.io import update_marked_section
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
-from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.train.minimax import build_hps
 from rlrmp.eval.ensemble import N_REPLICATES, eval_ensemble_on_trials
 from rlrmp.eval.minimax_io import load_config, load_model

@@ -26,7 +26,7 @@ from rlrmp.feedbax_graph import (
     write_graph_spec_bundle,
 )
 from rlrmp.intervention_compat import swap_plant_intervenor_to_dynamics_matrix
-from rlrmp.modules.training.part2 import build_task_base, setup_task_model_pair
+from rlrmp.train.task_model import build_task_base, setup_task_model_pair
 from rlrmp.stochastic_runtime import PLANT_PROCESS_FORCE_NOISE_LABEL
 from rlrmp.train.minimax import build_hps
 

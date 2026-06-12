@@ -41,7 +41,7 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     resolve_run_inputs,
 )
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
-from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 

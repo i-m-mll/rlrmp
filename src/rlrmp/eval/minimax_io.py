@@ -26,7 +26,7 @@ import jax.tree as jt
 from feedbax._io import load_with_hyperparameters
 
 from rlrmp.adversary import GaussianBumpAdversary
-from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.task_model import setup_task_model_pair
 
 __all__ = ["load_adversary", "load_config", "load_model"]
 

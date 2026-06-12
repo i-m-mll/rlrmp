@@ -30,7 +30,7 @@ from plotly.subplots import make_subplots
 from rlrmp.train.minimax import build_hps
 from feedbax.train import init_task_trainer_history, TaskTrainerHistory
 from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 — project-config routing
-from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.task_model import setup_task_model_pair
 
 
 # ---------------------------------------------------------------------------

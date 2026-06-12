@@ -208,7 +208,7 @@ def run_worker(config: WorkerConfig) -> int:
     from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
     from feedbax.types import TaskModelPair
 
-    from rlrmp.modules.training.part2 import setup_task_model_pair
+    from rlrmp.train.task_model import setup_task_model_pair
     from rlrmp.train.cs_nominal_gru import build_hps, build_parser as build_nominal_parser
 
     output_dir = Path(config.output_dir)

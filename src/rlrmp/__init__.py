@@ -1,8 +1,4 @@
-"""RNNs Learn Robust Motor Policies - Experiment Package.
-
-This package contains the experiment-specific analysis modules, training modules,
-and configuration files for the RLRMP project.
-"""
+"""RNNs Learn Robust Motor Policies experiment package."""
 
 
 def register_experiment_package(registry):
@@ -18,9 +14,9 @@ def register_experiment_package(registry):
         registry=registry,
         package_name="rlrmp",
         package_module_name="rlrmp",
-        parts=["part2"],
-        analysis_module_root="modules.analysis",
-        training_module_root="modules.training",
+        parts=[],
+        analysis_module_root="analysis",
+        training_module_root="train",
         config_resource_root="config",
         figure_routing={
             "spec_dir_template": "results/{experiment}/figures/{topic}",

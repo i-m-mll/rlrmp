@@ -35,7 +35,7 @@ from feedbax.training.train import (
 from feedbax.types import TaskModelPair, TreeNamespace, dict_to_namespace
 from jaxtyping import PyTree
 
-from rlrmp.modules.training.part2 import setup_task_model_pair
+from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
 # build_hps + loss-mode configs were extracted to rlrmp.train.standard in
 # 8404108 (capability-named library module; previously defined inline and

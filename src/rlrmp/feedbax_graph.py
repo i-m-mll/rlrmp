@@ -535,7 +535,7 @@ def _graph_bundle_metadata(
             ),
         },
         "legacy_loader": {
-            "setup_function": "rlrmp.modules.training.part2.setup_task_model_pair",
+            "setup_function": "rlrmp.train.task_model.setup_task_model_pair",
             "checkpoint_format": "feedbax._io.save/load_with_hyperparameters",
         },
         "task_spec": task_spec,
