@@ -329,9 +329,9 @@ The top-level `scripts/` directory is for cross-cutting tooling — scripts that
 **Hard rules:**
 
 1. **Capability-named library modules.** Modules under `src/rlrmp/` MUST be named by capability — `eval`, `train`, `plot`/`viz`, `analysis`, `lme`, etc. — never by experiment, phase, or paper (no `part2_5`, `methodology_fix`, `shahbazi`, `tier1`). If you want to call a module `<phase>_helpers.py`, identify the underlying capability and use that name instead. Within a capability module, training-method-specific sub-modules ARE allowed (`rlrmp.train.minimax`, `rlrmp.eval.minimax_io`) because training methods are stable concepts spanning experiments. Experiment-named sub-modules are still forbidden.
-2. **Experiment-specific scripts** (analysis pipelines, plotting, one-off diagnostics tied to a single tracking issue) live with the experiment: `results/<hash>/scripts/<name>.py`. Commit them alongside the experiment's `runs/`, `notes/`, `figures/` under the same `Bug: <hash>` trailer.
+2. **Experiment-specific scripts** (analysis pipelines, plotting, one-off diagnostics tied to a single tracking issue) live with the experiment: `results/<hash>/scripts/<name>.py`. Commit them alongside the experiment's `runs/`, `notes/`, `figures/` with `agent-commit --issue <hash>` so the commit carries the matching `Mandible-Issue: <hash>` trailer.
 3. **Reusable components** (utilities, plotting primitives, analysis routines several experiments call) MUST be refactored into the capability-named library module BEFORE the experiment script lands. Extract now, not "for now" — the helper will outlast the script. Submit the library change via an auth request to `src/rlrmp/` (or `feedbax/` if plant- or task-general).
-4. **Mixed scripts** split: the driver under `results/<hash>/scripts/`, the helpers in `src/rlrmp/`. Both can land in the same auth request — the driver carries the `Bug: <hash>` trailer; a substantial library change carries its own feature issue.
+4. **Mixed scripts** split: the driver under `results/<hash>/scripts/`, the helpers in `src/rlrmp/`. Both can land in the same auth request - the driver commit carries the experiment's `Mandible-Issue: <hash>` trailer; a substantial library change carries its own feature issue.
 5. **Cross-cutting CLI entry-points** (training/eval launchers operating generically across experiments) stay in `scripts/` (`scripts/train_minimax.py`, `scripts/eval_minimax.py`, etc.). They MUST import reusable helpers from `src/rlrmp/`, not from each other.
 6. **No `sys.path.insert(...)` anywhere.** Use absolute imports (`from rlrmp.eval import ...`, `from rlrmp.train.minimax import build_hps`). Sibling-script imports between two files under `scripts/` are forbidden — extract the shared piece to `src/rlrmp/`. Within a single `results/<hash>/scripts/` directory, sibling imports DO work natively and are fine for tightly-coupled experiment code that doesn't generalise.
 
@@ -486,8 +486,8 @@ Each has the `coordination` label and is project-lifetime (no closure-on-merge i
 
 ### Umbrella vs coordination — which label?
 
-- **`umbrella`** — phase-tied or work-bundle-tied. **May close deliberately** when the bundle is done, via an auth request `--closes-issue` field, explicit `Closes:` / `Resolves:` trailer, or user action. Example: `b557d4e` (methodology-fix phase umbrella) closed when its synthesis-review work merged. The phase work continues on its children; the umbrella just marked the bundle.
-- **`coordination`** — project-spanning decision-tracking surface. **Should not close on merge** and should not be referenced as the completed work unit in `Bug:` trailers. These persist for the project's lifetime.
+- **`umbrella`** — phase-tied or work-bundle-tied. **May close deliberately** when the bundle is done, via an auth request `--closes-issue` field, explicit `Closes-Mandible-Issue:` trailer, or user action. Example: `b557d4e` (methodology-fix phase umbrella) closed when its synthesis-review work merged. The phase work continues on its children; the umbrella just marked the bundle.
+- **`coordination`** — project-spanning decision-tracking surface. **Should not close on merge** and should not be referenced as the completed work unit in `Mandible-Issue:` trailers. These persist for the project's lifetime.
 
 **Decision rule:** "Should this issue close when the work it tracks merges?" — Yes → `umbrella`. No → `coordination`.
 
@@ -525,15 +525,15 @@ When the table doesn't cover your case: ask "is this a project-lifetime decision
 - When the destination-repo issue resolves, comment back on `1d9ae6f` with the resolution (merge SHA / closing comment link).
 - Coordination issue bodies index children — they do not duplicate child content.
 
-### Commit `Bug:` trailers — never reference coordination issues
+### Commit `Mandible-Issue:` trailers — never reference coordination issues
 
-`Bug:` trailers are for the relevant child / feature / bug issue — the unit of work the commit completes. Coordination issues are decision-tracking surfaces, not commit destinations. So `agent-commit --issue <id>` should always take a child / feature / bug issue ID, never `4d38c15` / `c99ad9d` / `b33e8da` / `1d9ae6f`.
+`Mandible-Issue:` trailers are for the relevant child / feature / bug issue - the unit of work the commit completes. Coordination issues are decision-tracking surfaces, not commit destinations. So `agent-commit --issue <id>` should always take a child / feature / bug issue ID, never `4d38c15` / `c99ad9d` / `b33e8da` / `1d9ae6f`. Use `Closes-Mandible-Issue: <id>` only when the commit should deliberately close that issue through the auth merge.
 
 ### Phase umbrella protocol
 
 1. **Create a phase umbrella** — a new issue labeled `umbrella` (and `feature` if appropriate). Body: minimal — motivating question, scope, links to phase artifacts (e.g. a `results/<exp>/README.md`).
 2. **Comment on `b33e8da`** with the umbrella ID + one-line motivating question (this makes `b33e8da` the "what umbrellas are active" discovery surface).
-3. **Children** reference the umbrella in **their bodies** ("Part of phase `b557d4e`."), not in commit `Bug:` trailers. Close the umbrella only deliberately when the phase is done.
+3. **Children** reference the umbrella in **their bodies** ("Part of phase `b557d4e`."), not in commit `Mandible-Issue:` trailers. Close the umbrella only deliberately when the phase is done.
 4. **On phase end / pivot / abandonment**, comment on `b33e8da` with the one-line outcome ("merged via X", "pivoted to Y", "abandoned because Z").
 
 Past phases for orientation (see `b33e8da` for the live inventory): Part 1 (`297260c`), Part 2 (`0af472c`), Part 2.5 (`844ef95`), Methodology-fix (`b557d4e`, currently active).
@@ -546,7 +546,7 @@ Past phases for orientation (see `b33e8da` for the live inventory): Part 1 (`297
 
 - **Don't comment tier opinions on individual analysis issues.** Tier shifts are cross-cutting → `4d38c15`.
 - **Don't put long-form discussion in coordination issue bodies.** Bodies are tables of contents; discussion goes in comments or on the child issue.
-- **Don't reference `coordination`-labeled issues in commit `Bug:` trailers.** Use the child / feature / bug issue.
+- **Don't reference `coordination`-labeled issues in commit `Mandible-Issue:` trailers.** Use the child / feature / bug issue.
 - **Don't create a new coordination issue when an existing one's scope covers the concern.** New coords are project-lifetime commitments — discuss first.
 - **Don't paste subagent output or raw analysis into a coord body.** Move it to the child issue (or a `results/<exp>/` doc) and replace with a one-line cross-ref.
 - **Don't index every commit on the coord.** Only commits that change cross-cutting state (a tier, a method choice, a phase boundary) merit a coord comment.
