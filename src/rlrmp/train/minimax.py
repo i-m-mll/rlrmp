@@ -102,12 +102,13 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             },
         },
         "task": {
-            "type": "center_out_delayed_reach",
+            "type": "delayed_reach",
             "n_steps": 140,
             "workspace": [[-1.0, -1.0], [1.0, 1.0]],
             "eval_grid_n": 1,
             "eval_n_directions": 8,
             "eval_reach_length": 0.5,
+            "train_endpoint_mode": "center_out",
             # Drop pure-hold to 0 steps; target-on now 100-300 ms (10-30 steps
             # at dt=0.01 s), matching Shahbazi 2025 §4.2. Bug: 2bc95fd
             "epoch_len_ranges": [[0, 1], [10, 30]],
