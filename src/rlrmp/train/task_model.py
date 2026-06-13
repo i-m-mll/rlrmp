@@ -240,6 +240,11 @@ def build_task_base(hps: TreeNamespace):
             "move_epochs",
             "p_catch_trial",
             "train_endpoint_mode",
+            "preset",
+            "n_control_stages",
+            "target_visible_from_start",
+            "go_cue_event_name",
+            "catch_metadata_policy",
         }
         hps_task = {k: v for k, v in hps_task.items() if k not in delayed_only_keys}
     return TASK_TYPES[task_type](loss_func=get_reach_loss(hps), **hps_task)
@@ -522,8 +527,14 @@ def _add_cs_lss_task_inputs(
 
 
 def _cs_delayed_reach_enabled(hps: TreeNamespace) -> bool:
-    return str(getattr(getattr(hps, "task", TreeNamespace()), "type", "")) == (
-        "cs_delayed_center_out_reach"
+    delayed_contract = getattr(hps, "delayed_reach", TreeNamespace())
+    if bool(getattr(delayed_contract, "enabled", False)):
+        return True
+    task = getattr(hps, "task", TreeNamespace())
+    task_type = str(getattr(task, "type", ""))
+    return task_type == "cs_delayed_center_out_reach" or (
+        task_type == "delayed_reach"
+        and str(getattr(task, "preset", "")) == "delayed_center_out"
     )
 
 

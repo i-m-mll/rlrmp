@@ -18,11 +18,10 @@ from rlrmp.analysis.math.cs_game_card import build_canonical_game, build_no_inte
 from rlrmp.cs_lss_gru import (
     CS_DELAYED_POS_VEL_INDICES,
     CS_EPSILON_DIM,
-    CS_LSS_INITIAL_HIDDEN_NET_COMPONENT,
-    CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT,
-    CS_LSS_TARGET_FEEDBACK_COMPONENT,
-    CS_REDUCED_EPSILON_DIM,
+    FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
     CS_LSS_DELAYED_FEEDBACK_COMPONENT,
+    CS_LSS_INITIAL_HIDDEN_NET_COMPONENT,
+    CS_REDUCED_EPSILON_DIM,
     DelayedPositionVelocityFeedback,
     InitialHiddenStagedNetwork,
     build_cs_lss_gru_graph,
@@ -52,13 +51,13 @@ def test_feedback_selector_uses_oldest_delayed_position_velocity_block() -> None
         (
             "default",
             {"bind_epsilon_input": True},
-            CS_LSS_DELAYED_FEEDBACK_COMPONENT,
+            FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
             "RLRMPSimpleStagedNetwork",
         ),
         (
             "target_relative",
             {"target_relative_feedback": True, "bind_epsilon_input": True},
-            CS_LSS_TARGET_FEEDBACK_COMPONENT,
+            FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
             "RLRMPSimpleStagedNetwork",
         ),
         (
@@ -68,7 +67,7 @@ def test_feedback_selector_uses_oldest_delayed_position_velocity_block() -> None
                 "force_filter_feedback": True,
                 "bind_epsilon_input": True,
             },
-            CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT,
+            FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
             "RLRMPSimpleStagedNetwork",
         ),
         (
@@ -79,13 +78,13 @@ def test_feedback_selector_uses_oldest_delayed_position_velocity_block() -> None
                 "signal_dependent_motor_noise_std": 0.02,
                 "bind_epsilon_input": True,
             },
-            CS_LSS_DELAYED_FEEDBACK_COMPONENT,
+            FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
             "RLRMPSimpleStagedNetwork",
         ),
         (
             "deterministic_no_epsilon_binding",
             {"bind_epsilon_input": False},
-            CS_LSS_DELAYED_FEEDBACK_COMPONENT,
+            FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
             "RLRMPSimpleStagedNetwork",
         ),
         (
@@ -96,7 +95,7 @@ def test_feedback_selector_uses_oldest_delayed_position_velocity_block() -> None
                 "bind_epsilon_input": True,
                 "no_integrator_state": True,
             },
-            CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT,
+            FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
             "RLRMPSimpleStagedNetwork",
         ),
         (
@@ -106,7 +105,7 @@ def test_feedback_selector_uses_oldest_delayed_position_velocity_block() -> None
                 "bind_epsilon_input": True,
                 "initial_hidden_encoder": True,
             },
-            CS_LSS_TARGET_FEEDBACK_COMPONENT,
+            FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
             CS_LSS_INITIAL_HIDDEN_NET_COMPONENT,
         ),
     ],
@@ -149,6 +148,30 @@ def test_cs_lss_graph_specs_round_trip_and_materialize_representative_variants(
         assert graph.nodes["mechanics"].B_w.shape == (36, 6)
 
 
+def test_legacy_cs_lss_feedback_selector_id_materializes_through_migration() -> None:
+    spec = build_cs_lss_gru_graph_spec(
+        hidden_size=5,
+        bind_epsilon_input=True,
+        key=jax.random.PRNGKey(12),
+    )
+    nodes = dict(spec.nodes)
+    nodes["feedback"] = nodes["feedback"].model_copy(
+        update={
+            "type": CS_LSS_DELAYED_FEEDBACK_COMPONENT,
+            "params": {
+                "indices": list(CS_DELAYED_POS_VEL_INDICES),
+                "expected_state_dim": 48,
+                "feedback_dim": 4,
+            },
+        }
+    )
+    legacy_spec = spec.model_copy(update={"nodes": nodes})
+
+    graph = materialize_cs_lss_gru_graph_spec(legacy_spec)
+
+    assert graph.nodes["feedback"].__class__.__name__ == "StateFeedbackSelector"
+
+
 def test_runtime_cs_lss_graph_export_preserves_executable_component_contract() -> None:
     original_spec = build_cs_lss_gru_graph_spec(
         hidden_size=7,
@@ -168,12 +191,12 @@ def test_runtime_cs_lss_graph_export_preserves_executable_component_contract() -
     reparsed = GraphSpec.model_validate_json(json.dumps(exported_payload))
     rematerialized = materialize_cs_lss_gru_graph_spec(reparsed)
 
-    assert exported.nodes["feedback"].type == CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT
+    assert exported.nodes["feedback"].type == FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT
     assert exported.nodes["feedback"].params == original_spec.nodes["feedback"].params
     assert exported.nodes["net"].type == CS_LSS_INITIAL_HIDDEN_NET_COMPONENT
     assert "net" not in (exported.subgraphs or {})
     assert exported.nodes["mechanics"].type == "LinearStateSpace"
-    assert exported.nodes["efferent"].type == "RLRMPMotorChannel"
+    assert exported.nodes["efferent"].type == "Channel"
     assert rematerialized.nodes["net"].h0_encoder.weight.shape == (7, 6)
 
 
@@ -190,9 +213,9 @@ def test_cs_lss_materialization_uses_registered_prototypes_without_global_patch(
     graph = materialize_cs_lss_gru_graph_spec(spec, registry)
 
     assert fbx_prototypes.output_prototypes_for_node is original_output_prototypes_for_node
-    assert registry.get(CS_LSS_TARGET_FEEDBACK_COMPONENT).output_prototype_fn is not None
+    assert registry.get(FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT).output_prototype_fn is not None
     assert registry.get("RLRMPSimpleStagedNetwork").output_prototype_fn is not None
-    assert registry.get("RLRMPMotorChannel").output_prototype_fn is not None
+    assert registry.get("Channel").output_prototype_fn is not None
     assert registry.get("LinearStateSpace").output_prototype_fn is not None
     assert graph.nodes["mechanics"].A.shape == (48, 48)
 

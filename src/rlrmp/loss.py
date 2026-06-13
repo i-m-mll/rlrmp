@@ -14,7 +14,6 @@ from feedbax.loss import (
     FuncTermsLoss,
     OutputJerkLoss,
     StateDerivativeLoss,
-    StopAtGoalLoss,
     TargetSpec,
     TargetStateLoss,
     TermTree,
@@ -25,7 +24,6 @@ from feedbax.loss import (
 from feedbax.misc import deep_merge
 from feedbax.training.loss import get_readout_norm_loss
 from feedbax.types import TreeNamespace
-from feedbax.xabdeef.losses import simple_reach_loss
 from jax_cookbook.misc import window_take
 from jaxtyping import Array, PyTree
 
@@ -898,7 +896,15 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
 
     user_outer_weights = _nsget(hps, "loss.weights", {}) or {}
     task_type = str(getattr(hps.task, "type", ""))
-    pre_go_epoch_indices = (0,) if task_type == "cs_delayed_center_out_reach" else (0, 1)
+    is_feedbax_delayed_center_out = (
+        task_type == "cs_delayed_center_out_reach"
+        or bool(_nsget(hps, "delayed_reach.enabled", False))
+        or (
+            task_type == "delayed_reach"
+            and str(_nsget(hps, "task.preset", "")) == "delayed_center_out"
+        )
+    )
+    pre_go_epoch_indices = (0,) if is_feedbax_delayed_center_out else (0, 1)
 
     terms: Mapping[str, AbstractLoss] = dict(
         nn_output=TargetStateLoss(
@@ -977,7 +983,7 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
     _movement_ramp_duration = int(_nsget(hps, "loss.movement_ramp_duration_steps", 60) or 60)
     _movement_ramp_power = float(_nsget(hps, "loss.movement_ramp_power", 2.0) or 2.0)
     is_simple_reach = task_type in {"simple_reach", "fixed_simple_reach"}
-    is_cs_delayed_reach = task_type == "cs_delayed_center_out_reach"
+    is_cs_delayed_reach = is_feedbax_delayed_center_out
     is_transition_aligned_reach = is_simple_reach or is_cs_delayed_reach
 
     # "center_out_delayed_reach" is a subclass of DelayedReaches and shares the

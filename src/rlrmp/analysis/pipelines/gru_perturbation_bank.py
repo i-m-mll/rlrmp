@@ -12,9 +12,11 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
-from feedbax.graph import Component, Wire
+from feedbax.contracts.graph import (
+    AdditiveGraphChannelAdapterSpec,
+    AdditiveGraphChannelTargetSpec,
+)
 from feedbax.types import TreeNamespace, dict_to_namespace
-from jaxtyping import PRNGKeyArray, PyTree
 
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
@@ -24,7 +26,6 @@ from rlrmp.analysis.math.cs_game_card import (
 )
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.analysis.math.cs_released_simulation import (
-    FixedStepPerturbation,
     build_extlqg_comparator_path,
     default_cs_noise_covariances,
     simulate_lqg_released_forward,
@@ -52,6 +53,12 @@ from rlrmp.analysis.math.output_feedback import (
     robust_output_feedback_gains,
 )
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
+from rlrmp.feedbax_channel_adapters import (
+    additive_channel_payload_dim,
+    additive_channel_provenance,
+    find_materialized_additive_channel_adapter,
+    materialize_additive_channel_adapter_on_graph,
+)
 from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
@@ -79,79 +86,7 @@ PerturbationChannel = Literal[
 ]
 PerturbationStatus = Literal["evaluated", "blocked", "not_implemented", "not_applicable"]
 
-GRAPH_ADAPTER_INPUT_PREFIX = "perturbation_adapter"
-
-
-@dataclass(frozen=True)
-class GraphAdapterSpec:
-    """Temporary pre-GraphSpec additive graph insertion contract."""
-
-    label: str
-    input_key: str
-    source_node: str
-    source_port: str
-    target_node: str
-    target_port: str
-    input_port: str
-    output_port: str
-    future_graphspec_mapping: str
-
-    @property
-    def insertion_point(self) -> str:
-        """Return the source-to-target wire represented by this adapter."""
-
-        return (
-            f"{self.source_node}.{self.source_port} -> "
-            f"{self.target_node}.{self.target_port}"
-        )
-
-    def to_json(self) -> dict[str, Any]:
-        """Return JSON-serializable adapter provenance."""
-
-        return {
-            "adapter": "temporary_external_additive_graph_channel",
-            "label": self.label,
-            "input_key": self.input_key,
-            "insertion_point": self.insertion_point,
-            "source_node": self.source_node,
-            "source_port": self.source_port,
-            "target_node": self.target_node,
-            "target_port": self.target_port,
-            "temporary_pre_graphspec": True,
-            "future_graphspec_mapping": self.future_graphspec_mapping,
-            "controller_input_mutated": False,
-            "controller_internal_state_mutated": False,
-        }
-
-
-class AdditiveGraphChannelAdapter(Component):
-    """Add an external time-varying offset to a graph edge payload."""
-
-    input_ports = ("signal", "offset")
-    output_ports = ("signal",)
-
-    label: str = eqx.field(static=True)
-
-    def __init__(self, *, label: str):
-        self.label = str(label)
-
-    def __call__(
-        self,
-        inputs: dict[str, PyTree],
-        state: eqx.nn.State,
-        *,
-        key: PRNGKeyArray,
-    ) -> tuple[dict[str, PyTree], eqx.nn.State]:
-        del key
-        signal = jnp.asarray(inputs["signal"])
-        offset = jnp.asarray(inputs["offset"], dtype=signal.dtype)
-        if offset.shape[-1] < signal.shape[-1]:
-            pad_width = [(0, 0)] * (offset.ndim - 1)
-            pad_width.append((0, signal.shape[-1] - offset.shape[-1]))
-            offset = jnp.pad(offset, pad_width)
-        elif offset.shape[-1] > signal.shape[-1]:
-            offset = offset[..., : signal.shape[-1]]
-        return {"signal": signal + offset}, state
+GRAPH_ADAPTER_INPUT_PREFIX = "perturbation.channel"
 
 
 @dataclass(frozen=True)
@@ -321,7 +256,7 @@ def default_cs_perturbation_bank(
                             "timing_bin": timing_bin.label,
                             "timing_bin_role": timing_bin.role,
                         },
-                        adapter="temporary_external_graph_adapter.command_input",
+                        adapter="feedbax.additive_channel_adapter.command_input",
                         description=(
                             "Add a pulse at the post-controller command port that feeds "
                             "mechanics.force. This is not an external load-force row."
@@ -351,7 +286,7 @@ def default_cs_perturbation_bank(
                         "timing_bin": timing_bin.label,
                         "timing_bin_role": timing_bin.role,
                     },
-                    adapter="temporary_external_graph_adapter.command_input",
+                    adapter="feedbax.additive_channel_adapter.command_input",
                     description=(
                         "Human-protocol-like lateral mechanical load pulse. In the "
                         "canonical +x reach this is the plant-input y axis; response "
@@ -483,7 +418,7 @@ def default_cs_perturbation_bank(
                                     "timing_bin": timing_bin.label,
                                     "timing_bin_role": timing_bin.role,
                                 },
-                                adapter=f"temporary_external_graph_adapter.{channel}",
+                                adapter=f"feedbax.additive_channel_adapter.{channel}",
                                 description=(
                                     f"{description} This row is a signed "
                                     f"target-relative {axis_role} {feedback_quantity} "
@@ -552,38 +487,33 @@ def default_cs_perturbation_bank(
                 "target_stream",
             ],
             "adapter_contract": (
-                "Each row records the current eager adapter and remains portable "
-                "to future GraphSpec named-channel adapters."
+                "Graph-channel and process-epsilon rows record Feedbax additive "
+                "channel adapter specs that can be materialized onto the current "
+                "eager graph or serialized as GraphSpec named-channel adapters."
             ),
-            "temporary_eager_adapters": {
+            "feedbax_additive_channel_adapters": {
                 "command_input_pulse": (
-                    "Temporary eager path inserts an external additive graph component "
-                    "on efferent.output -> mechanics.force and binds the row payload "
-                    "from trial_specs.inputs. Future GraphSpec insertion point: "
-                    "named additive command_input channel on that same edge."
+                    "Feedbax additive edge adapter on efferent.output -> mechanics.force "
+                    "with the row payload supplied from trial_specs.inputs."
                 ),
                 "process_epsilon_pulse": (
-                    "Current eager path edits trial_specs.inputs['epsilon'] only when "
-                    "the model exposes an epsilon input bound to mechanics.epsilon. "
-                    "Future GraphSpec insertion point: named process channel into "
-                    "LinearStateSpace.epsilon / B_w. Rows declare epsilon_component "
+                    "Feedbax additive input adapter targeting mechanics.epsilon / B_w; "
+                    "the base epsilon input is preserved and the perturbation payload is "
+                    "supplied as a separate named input. Rows declare epsilon_component "
                     "and epsilon_index over the canonical current physical block "
                     "[px, py, vx, vy, fx, fy, eps_x_int, eps_y_int]."
                 ),
                 "sensory_feedback_offset": (
-                    "Temporary eager path inserts an external additive graph component "
-                    "on sensory.output -> net.feedback. Future GraphSpec mapping: "
-                    "named additive sensory_feedback channel after sensory noise and "
+                    "Feedbax additive edge adapter on sensory.output -> net.feedback, "
+                    "representing sensory_feedback after sensory noise and "
                     "before the controller feedback port."
                 ),
                 "delayed_observation_offset": (
-                    "Temporary eager path inserts an external additive graph component "
-                    "on feedback.feedback -> sensory.input. This preserves the legacy "
+                    "Feedbax additive edge adapter on feedback.feedback -> sensory.input. "
+                    "This preserves the legacy "
                     "delayed_observation channel name for compatibility, but the "
                     "family semantics are a pre-noise delayed-measurement offset, "
-                    "not literal extra observation delay. Future GraphSpec mapping: "
-                    "named additive pre_noise_delayed_measurement channel before "
-                    "sensory noise."
+                    "not literal extra observation delay."
                 ),
                 "target_stream_jump": (
                     "Deferred: current fixed-target C&S GRU checkpoints do not consume "
@@ -747,7 +677,7 @@ def default_cs_calibrated_perturbation_bank(
                     "command_input",
                     "N",
                     "command_cartesian_force_xy",
-                    "temporary_external_graph_adapter.command_input",
+                    "feedbax.additive_channel_adapter.command_input",
                     {},
                 ),
                 (
@@ -755,7 +685,7 @@ def default_cs_calibrated_perturbation_bank(
                     "command_input",
                     "N",
                     "target_aligned_radial_tangential_force",
-                    "temporary_external_graph_adapter.command_input",
+                    "feedbax.additive_channel_adapter.command_input",
                     {"target_relative_axis_role": "tangential", "axis_filter": ("y",)},
                 ),
                 (
@@ -933,7 +863,7 @@ def default_cs_calibrated_perturbation_bank(
                                     "timing_bin": timing_bin.label,
                                     "timing_bin_role": timing_bin.role,
                                 },
-                                adapter=f"temporary_external_graph_adapter.{channel}",
+                                adapter=f"feedbax.additive_channel_adapter.{channel}",
                                 description=(
                                     "Native controller-visible position offset scaled "
                                     "as a fraction of reach length."
@@ -985,7 +915,7 @@ def default_cs_calibrated_perturbation_bank(
                                     "timing_bin": timing_bin.label,
                                     "timing_bin_role": timing_bin.role,
                                 },
-                                adapter=f"temporary_external_graph_adapter.{channel}",
+                                adapter=f"feedbax.additive_channel_adapter.{channel}",
                                 description=(
                                     "Native controller-visible velocity offset scaled "
                                     "as a fraction of nominal peak speed."
@@ -1084,7 +1014,11 @@ def apply_perturbation_to_trial_specs(
             plant_intervenor_label=plant_intervenor_label,
         )
     if channel == "process_epsilon":
-        return _apply_process_epsilon_pulse(trial_specs, perturbation)
+        return _apply_process_epsilon_pulse(
+            trial_specs,
+            perturbation,
+            model=model,
+        )
     if channel == "sensory_feedback":
         return _apply_named_graph_channel_offset(
             trial_specs,
@@ -1097,7 +1031,7 @@ def apply_perturbation_to_trial_specs(
                 source_port="output",
                 target_node="net",
                 target_port="feedback",
-                future_graphspec_mapping=(
+                graphspec_mapping=(
                     "named additive sensory_feedback channel after sensory noise and "
                     "before net.feedback"
                 ),
@@ -1115,7 +1049,7 @@ def apply_perturbation_to_trial_specs(
                 source_port="feedback",
                 target_node="sensory",
                 target_port="input",
-                future_graphspec_mapping=(
+                graphspec_mapping=(
                     "named additive pre_noise_delayed_measurement channel before "
                     "sensory.input noise; legacy delayed_observation channel remains "
                     "a compatibility alias"
@@ -1133,8 +1067,7 @@ def apply_perturbation_to_trial_specs(
             ),
             adapter_provenance={
                 "adapter": "not_applicable_current_fixed_target_checkpoint",
-                "temporary_pre_graphspec": False,
-                "future_graphspec_mapping": "target_stream named graph input when models consume it",
+                "graphspec_mapping": "target_stream named graph input when models consume it",
                 "controller_input_mutated": False,
             },
         )
@@ -2577,7 +2510,7 @@ def _apply_command_input_pulse(
             source_port="output",
             target_node="mechanics",
             target_port="force",
-            future_graphspec_mapping=(
+            graphspec_mapping=(
                 "named additive command_input channel on efferent.output -> "
                 "mechanics.force"
             ),
@@ -2590,12 +2523,12 @@ def _apply_named_graph_channel_offset(
     perturbation: Mapping[str, Any],
     *,
     model: Any | None,
-    adapter_spec: GraphAdapterSpec,
+    adapter_spec: AdditiveGraphChannelAdapterSpec,
 ) -> AdapterResult:
     """Add a time-varying graph-channel offset payload for one perturbation row."""
 
     effective_spec = (
-        _find_existing_additive_graph_channel_adapter(model, adapter_spec)
+        find_materialized_additive_channel_adapter(model, adapter_spec)
         if model is not None
         else None
     ) or adapter_spec
@@ -2604,7 +2537,10 @@ def _apply_named_graph_channel_offset(
     start = int(timing.get("start_time_index", 0))
     duration = int(timing.get("duration_steps", 1))
     n_time = _infer_trial_n_time(trial_specs, start + duration)
-    payload = np.zeros((batch_size, n_time, _adapter_payload_dim(effective_spec)), dtype=np.float32)
+    payload = np.zeros(
+        (batch_size, n_time, additive_channel_payload_dim(effective_spec)),
+        dtype=np.float32,
+    )
     axis_index = _axis_index(str(perturbation["axis"]))
     payload[:, start : start + duration, axis_index] = (
         float(perturbation["amplitude"]) * int(perturbation["sign"])
@@ -2619,13 +2555,17 @@ def _apply_named_graph_channel_offset(
     )
     updated_model = None
     provenance = {
-        **effective_spec.to_json(),
+        **additive_channel_provenance(
+            effective_spec,
+            adapter="feedbax.additive_channel_adapter",
+        ),
         "start_time_index": start,
         "duration_steps": duration,
         "axis_index": axis_index,
         "requires_zero_payload_base": True,
     }
-    if effective_spec.target_node == "mechanics" and effective_spec.target_port == "force":
+    target = effective_spec.target
+    if target.target_node == "mechanics" and target.target_port == "force":
         provenance["external_load_force"] = False
     if effective_spec is not adapter_spec:
         updated_model = model
@@ -2635,7 +2575,7 @@ def _apply_named_graph_channel_offset(
         provenance["diagnostic_requested_input_key"] = adapter_spec.input_key
     elif model is not None:
         try:
-            updated_model = insert_additive_graph_channel_adapter(model, effective_spec)
+            updated_model = materialize_additive_channel_adapter_on_graph(model, effective_spec)
         except ValueError as exc:
             return AdapterResult(
                 status="blocked",
@@ -2661,6 +2601,8 @@ def _apply_named_graph_channel_offset(
 def _apply_process_epsilon_pulse(
     trial_specs: Any,
     perturbation: Mapping[str, Any],
+    *,
+    model: Any | None,
 ) -> AdapterResult:
     if "epsilon" not in trial_specs.inputs:
         return AdapterResult(
@@ -2671,8 +2613,10 @@ def _apply_process_epsilon_pulse(
                 "model input bound to mechanics.epsilon / B_w"
             ),
             adapter_provenance={
-                "adapter": "trial_specs.inputs['epsilon']",
-                "future_graphspec_insertion_point": "mechanics.epsilon",
+                "adapter": "feedbax.additive_channel_adapter",
+                "target_kind": "input",
+                "target_node": "mechanics",
+                "target_port": "epsilon",
             },
         )
     epsilon = jnp.asarray(trial_specs.inputs["epsilon"])
@@ -2709,111 +2653,51 @@ def _apply_process_epsilon_pulse(
             ),
         )
     amount = float(perturbation["amplitude"]) * int(perturbation["sign"])
-    updated = epsilon.at[..., start : start + duration, epsilon_index].add(amount)
+    adapter_spec = _process_epsilon_adapter_spec(
+        perturbation,
+        payload_dim=int(epsilon.shape[-1]),
+    )
+    payload = jnp.zeros_like(epsilon)
+    payload = payload.at[..., start : start + duration, epsilon_index].add(amount)
+    if adapter_spec.input_key in trial_specs.inputs:
+        payload = jnp.asarray(trial_specs.inputs[adapter_spec.input_key]) + payload
+    updated_trial_specs = _add_trial_input(trial_specs, adapter_spec.input_key, payload)
+    updated_model = None
+    graph_inserted = False
+    if model is not None:
+        try:
+            updated_model = materialize_additive_channel_adapter_on_graph(model, adapter_spec)
+        except ValueError as exc:
+            return AdapterResult(
+                status="blocked",
+                trial_specs=trial_specs,
+                model=model,
+                reason=str(exc),
+                adapter_provenance=additive_channel_provenance(
+                    adapter_spec,
+                    adapter="feedbax.additive_channel_adapter",
+                ),
+            )
+        graph_inserted = True
     return AdapterResult(
         status="evaluated",
-        trial_specs=eqx.tree_at(lambda ts: ts.inputs["epsilon"], trial_specs, updated),
+        trial_specs=updated_trial_specs,
+        model=updated_model,
         adapter_provenance={
-            "adapter": "trial_specs.inputs['epsilon']",
+            **additive_channel_provenance(
+                adapter_spec,
+                adapter="feedbax.additive_channel_adapter",
+            ),
             "epsilon_component": perturbation.get("epsilon_component"),
             "epsilon_index": epsilon_index,
             "start_time_index": start,
             "duration_steps": duration,
-            "future_graphspec_insertion_point": "mechanics.epsilon",
             "process_channel": "LinearStateSpace.B_w",
-            "temporary_eager_adapter": True,
+            "requires_zero_payload_base": True,
+            "graph_inserted": graph_inserted,
+            "graph_insertion_requires_model": model is None,
         },
     )
-
-
-def insert_additive_graph_channel_adapter(model: Any, adapter_spec: GraphAdapterSpec) -> Any:
-    """Insert a temporary external additive adapter and bind its input payload."""
-
-    if adapter_spec.label in getattr(model, "nodes", {}):
-        return model
-    old_wire = Wire(
-        adapter_spec.source_node,
-        adapter_spec.source_port,
-        adapter_spec.target_node,
-        adapter_spec.target_port,
-    )
-    graph = model.remove_wire(old_wire)
-    graph = graph.add_node(
-        adapter_spec.label,
-        AdditiveGraphChannelAdapter(label=adapter_spec.label),
-    )
-    graph = graph.add_wire(
-        Wire(
-            adapter_spec.source_node,
-            adapter_spec.source_port,
-            adapter_spec.label,
-            adapter_spec.input_port,
-        )
-    )
-    graph = graph.add_wire(
-        Wire(
-            adapter_spec.label,
-            adapter_spec.output_port,
-            adapter_spec.target_node,
-            adapter_spec.target_port,
-        )
-    )
-    graph = eqx.tree_at(
-        lambda g: g.input_ports,
-        graph,
-        (*graph.input_ports, adapter_spec.input_key),
-    )
-    graph = eqx.tree_at(
-        lambda g: g.input_bindings,
-        graph,
-        {**graph.input_bindings, adapter_spec.input_key: (adapter_spec.label, "offset")},
-    )
-    return graph
-
-
-def _find_existing_additive_graph_channel_adapter(
-    model: Any,
-    adapter_spec: GraphAdapterSpec,
-) -> GraphAdapterSpec | None:
-    """Find an already installed additive adapter for this source-target edge."""
-
-    wires = set(getattr(model, "wires", ()))
-    input_bindings = getattr(model, "input_bindings", {})
-    for input_key, binding in input_bindings.items():
-        if not isinstance(binding, tuple) or len(binding) != 2:
-            continue
-        label, port = binding
-        label = str(label)
-        if port != "offset":
-            continue
-        if (
-            Wire(
-                adapter_spec.source_node,
-                adapter_spec.source_port,
-                label,
-                adapter_spec.input_port,
-            )
-            in wires
-            and Wire(
-                label,
-                adapter_spec.output_port,
-                adapter_spec.target_node,
-                adapter_spec.target_port,
-            )
-            in wires
-        ):
-            return GraphAdapterSpec(
-                label=label,
-                input_key=str(input_key),
-                source_node=adapter_spec.source_node,
-                source_port=adapter_spec.source_port,
-                target_node=adapter_spec.target_node,
-                target_port=adapter_spec.target_port,
-                input_port=adapter_spec.input_port,
-                output_port=adapter_spec.output_port,
-                future_graphspec_mapping=adapter_spec.future_graphspec_mapping,
-            )
-    return None
 
 
 def _graph_adapter_spec(
@@ -2824,21 +2708,54 @@ def _graph_adapter_spec(
     source_port: str,
     target_node: str,
     target_port: str,
-    future_graphspec_mapping: str,
-) -> GraphAdapterSpec:
+    graphspec_mapping: str,
+) -> AdditiveGraphChannelAdapterSpec:
     perturbation_id = str(perturbation["perturbation_id"])
-    label = f"{GRAPH_ADAPTER_INPUT_PREFIX}_{label_prefix}_{_stable_label(perturbation_id)}"
-    input_key = f"{GRAPH_ADAPTER_INPUT_PREFIX}:{perturbation_id}"
-    return GraphAdapterSpec(
-        label=label,
-        input_key=input_key,
-        source_node=source_node,
-        source_port=source_port,
-        target_node=target_node,
-        target_port=target_port,
-        input_port="signal",
-        output_port="signal",
-        future_graphspec_mapping=future_graphspec_mapping,
+    stable_id = _stable_label(perturbation_id)
+    return AdditiveGraphChannelAdapterSpec(
+        label=label_prefix,
+        input_key=f"{GRAPH_ADAPTER_INPUT_PREFIX}.{label_prefix}.{stable_id}",
+        adapter_node=f"{label_prefix}_{stable_id}_additive",
+        payload_shape=[4 if target_node in {"net", "sensory"} else 2],
+        payload_dtype="float32",
+        provenance_role="perturbation_response_input",
+        metadata={
+            "perturbation_id": perturbation_id,
+            "graphspec_mapping": graphspec_mapping,
+        },
+        target=AdditiveGraphChannelTargetSpec(
+            kind="edge",
+            source_node=source_node,
+            source_port=source_port,
+            target_node=target_node,
+            target_port=target_port,
+        ),
+    )
+
+
+def _process_epsilon_adapter_spec(
+    perturbation: Mapping[str, Any],
+    *,
+    payload_dim: int,
+) -> AdditiveGraphChannelAdapterSpec:
+    perturbation_id = str(perturbation.get("perturbation_id") or "process_epsilon_pulse")
+    stable_id = _stable_label(perturbation_id)
+    return AdditiveGraphChannelAdapterSpec(
+        label="process_epsilon",
+        input_key=f"{GRAPH_ADAPTER_INPUT_PREFIX}.process_epsilon.{stable_id}",
+        adapter_node=f"process_epsilon_{stable_id}_additive",
+        payload_shape=[int(payload_dim)],
+        payload_dtype="float32",
+        provenance_role="process_disturbance",
+        metadata={
+            "perturbation_id": perturbation_id,
+            "graphspec_mapping": "named process_epsilon channel into mechanics.epsilon / B_w",
+        },
+        target=AdditiveGraphChannelTargetSpec(
+            kind="input",
+            target_node="mechanics",
+            target_port="epsilon",
+        ),
     )
 
 
@@ -2846,16 +2763,6 @@ def _add_trial_input(trial_specs: Any, key: str, value: Any) -> Any:
     inputs = dict(trial_specs.inputs)
     inputs[key] = value
     return eqx.tree_at(lambda ts: ts.inputs, trial_specs, inputs)
-
-
-def _adapter_payload_dim(adapter_spec: GraphAdapterSpec) -> int:
-    if adapter_spec.target_node == "net" and adapter_spec.target_port == "feedback":
-        return 4
-    if adapter_spec.target_node == "sensory" and adapter_spec.target_port == "input":
-        return 4
-    if adapter_spec.target_node == "mechanics" and adapter_spec.target_port == "force":
-        return 2
-    raise ValueError(f"Unsupported graph adapter insertion point {adapter_spec.insertion_point!r}")
 
 
 def _evaluate_model_on_trial_specs(
@@ -4390,9 +4297,7 @@ __all__ = [
     "DEFAULT_SOURCE_EXPERIMENT",
     "GRAPH_ADAPTER_INPUT_PREFIX",
     "SCHEMA_VERSION",
-    "AdditiveGraphChannelAdapter",
     "AdapterResult",
-    "GraphAdapterSpec",
     "PerturbationSpec",
     "apply_perturbation_to_trial_specs",
     "compare_response_metric_summaries",
@@ -4404,7 +4309,6 @@ __all__ = [
     "evaluate_run_perturbation_bank",
     "extlqg_comparator_status",
     "full_qrf_cost_summary",
-    "insert_additive_graph_channel_adapter",
     "materialize_gru_perturbation_response",
     "render_perturbation_response_markdown",
     "robust_output_feedback_comparator_status",

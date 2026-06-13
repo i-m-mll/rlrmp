@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Literal, Mapping
 
 import equinox as eqx
 import jax
@@ -11,8 +11,11 @@ import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
 from feedbax import AbstractTask, TaskTrialSpec, WhereDict
-from feedbax.graph import Component, Wire
-from jaxtyping import PRNGKeyArray, PyTree
+from feedbax.contracts.graph import (
+    AdditiveGraphChannelAdapterSpec,
+    AdditiveGraphChannelTargetSpec,
+)
+from jaxtyping import PRNGKeyArray
 
 from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
     DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS,
@@ -20,6 +23,11 @@ from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
     DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT,
     DEFAULT_PLANT_TIMING_BINS,
     DEFAULT_REACH_RELATIVE_LEVELS,
+)
+from rlrmp.feedbax_channel_adapters import (
+    additive_channel_payload_dim,
+    additive_channel_provenance,
+    materialize_additive_channel_adapter_on_graph,
 )
 
 PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_randomized"
@@ -316,117 +324,63 @@ class PgdFullStateEpsilonTrainingConfig:
         return self.to_hps_dict()
 
 
-@dataclass(frozen=True)
-class GraphAdapterSpec:
-    """External additive graph-channel adapter contract for training."""
-
-    label: str
-    input_key: str
-    source_node: str
-    source_port: str
-    target_node: str
-    target_port: str
-    input_port: str
-    output_port: str
-    future_graphspec_mapping: str
-
-    @property
-    def insertion_point(self) -> str:
-        """Return the source-to-target graph edge represented by this adapter."""
-
-        return (
-            f"{self.source_node}.{self.source_port} -> "
-            f"{self.target_node}.{self.target_port}"
-        )
-
-    def to_json(self) -> dict[str, Any]:
-        """Return JSON-serializable adapter provenance."""
-
-        return {
-            "adapter": "fixed_target_perturbation_training_additive_graph_channel",
-            "label": self.label,
-            "input_key": self.input_key,
-            "insertion_point": self.insertion_point,
-            "source_node": self.source_node,
-            "source_port": self.source_port,
-            "target_node": self.target_node,
-            "target_port": self.target_port,
-            "temporary_pre_graphspec": True,
-            "future_graphspec_mapping": self.future_graphspec_mapping,
-            "controller_input_mutated": False,
-            "controller_internal_state_mutated": False,
-        }
-
-
-class AdditiveTrainingGraphChannelAdapter(Component):
-    """Add an external time-varying offset to a graph edge payload."""
-
-    input_ports = ("signal", "offset")
-    output_ports = ("signal",)
-
-    label: str = eqx.field(static=True)
-
-    def __init__(self, *, label: str):
-        self.label = str(label)
-
-    def __call__(
-        self,
-        inputs: dict[str, PyTree],
-        state: eqx.nn.State,
-        *,
-        key: PRNGKeyArray,
-    ) -> tuple[dict[str, PyTree], eqx.nn.State]:
-        del key
-        signal = jnp.asarray(inputs["signal"])
-        offset = jnp.asarray(inputs["offset"], dtype=signal.dtype)
-        if offset.shape[-1] < signal.shape[-1]:
-            pad_width = [(0, 0)] * (offset.ndim - 1)
-            pad_width.append((0, signal.shape[-1] - offset.shape[-1]))
-            offset = jnp.pad(offset, pad_width)
-        elif offset.shape[-1] > signal.shape[-1]:
-            offset = offset[..., : signal.shape[-1]]
-        return {"signal": signal + offset}, state
-
-
-GRAPH_ADAPTER_SPECS: dict[PerturbationBin, GraphAdapterSpec] = {
-    "command_input": GraphAdapterSpec(
-        label="perturbation_training_command_input",
-        input_key="perturbation_training:command_input",
-        source_node="efferent",
-        source_port="output",
-        target_node="mechanics",
-        target_port="force",
-        input_port="signal",
-        output_port="signal",
-        future_graphspec_mapping=(
-            "named additive command_input channel on efferent.output -> mechanics.force"
+GRAPH_ADAPTER_SPECS: dict[PerturbationBin, AdditiveGraphChannelAdapterSpec] = {
+    "command_input": AdditiveGraphChannelAdapterSpec(
+        label="command_input",
+        input_key="perturbation_training.command_input",
+        target=AdditiveGraphChannelTargetSpec(
+            kind="edge",
+            source_node="efferent",
+            source_port="output",
+            target_node="mechanics",
+            target_port="force",
         ),
+        payload_shape=[2],
+        payload_dtype="float32",
+        provenance_role="perturbation_training_input",
+        metadata={
+            "graphspec_mapping": (
+                "named additive command_input channel on efferent.output -> mechanics.force"
+            )
+        },
     ),
-    "sensory_feedback": GraphAdapterSpec(
-        label="perturbation_training_sensory_feedback",
-        input_key="perturbation_training:sensory_feedback",
-        source_node="sensory",
-        source_port="output",
-        target_node="net",
-        target_port="feedback",
-        input_port="signal",
-        output_port="signal",
-        future_graphspec_mapping=(
-            "named additive sensory_feedback channel after sensory noise before net.feedback"
+    "sensory_feedback": AdditiveGraphChannelAdapterSpec(
+        label="sensory_feedback",
+        input_key="perturbation_training.sensory_feedback",
+        target=AdditiveGraphChannelTargetSpec(
+            kind="edge",
+            source_node="sensory",
+            source_port="output",
+            target_node="net",
+            target_port="feedback",
         ),
+        payload_shape=[4],
+        payload_dtype="float32",
+        provenance_role="perturbation_training_input",
+        metadata={
+            "graphspec_mapping": (
+                "named additive sensory_feedback channel after sensory noise before net.feedback"
+            )
+        },
     ),
-    "delayed_observation": GraphAdapterSpec(
-        label="perturbation_training_delayed_observation",
-        input_key="perturbation_training:delayed_observation",
-        source_node="feedback",
-        source_port="feedback",
-        target_node="sensory",
-        target_port="input",
-        input_port="signal",
-        output_port="signal",
-        future_graphspec_mapping=(
-            "named additive delayed_observation channel before sensory.input noise"
+    "delayed_observation": AdditiveGraphChannelAdapterSpec(
+        label="delayed_observation",
+        input_key="perturbation_training.delayed_observation",
+        target=AdditiveGraphChannelTargetSpec(
+            kind="edge",
+            source_node="feedback",
+            source_port="feedback",
+            target_node="sensory",
+            target_port="input",
         ),
+        payload_shape=[4],
+        payload_dtype="float32",
+        provenance_role="perturbation_training_input",
+        metadata={
+            "graphspec_mapping": (
+                "named additive delayed_observation channel before sensory.input noise"
+            )
+        },
     ),
 }
 
@@ -582,7 +536,10 @@ class FixedTargetPerturbationTrainingConfig:
 
         payload = self.to_hps_dict()
         payload["graph_adapter_inputs"] = {
-            bin_name: GRAPH_ADAPTER_SPECS[bin_name].to_json()
+            bin_name: additive_channel_provenance(
+                GRAPH_ADAPTER_SPECS[bin_name],
+                adapter="feedbax.additive_channel_adapter",
+            )
             for bin_name in GRAPH_CHANNEL_BINS
         }
         return payload
@@ -1596,7 +1553,7 @@ def install_perturbation_training_graph_adapters(model: Any) -> Any:
     """Install the fixed external additive channel adapters on a C&S GRU graph."""
 
     for spec in GRAPH_ADAPTER_SPECS.values():
-        model = _insert_additive_graph_channel_adapter(model, spec)
+        model = materialize_additive_channel_adapter_on_graph(model, spec)
     return model
 
 
@@ -2302,25 +2259,6 @@ def _process_epsilon_sensitivity_table(dtype: Any) -> jnp.ndarray:
     return jnp.asarray(rows, dtype=dtype)
 
 
-def _insert_additive_graph_channel_adapter(model: Any, spec: GraphAdapterSpec) -> Any:
-    if spec.label in getattr(model, "nodes", {}):
-        return model
-    old_wire = Wire(spec.source_node, spec.source_port, spec.target_node, spec.target_port)
-    graph = model.remove_wire(old_wire)
-    graph = graph.add_node(
-        spec.label,
-        AdditiveTrainingGraphChannelAdapter(label=spec.label),
-    )
-    graph = graph.add_wire(Wire(spec.source_node, spec.source_port, spec.label, spec.input_port))
-    graph = graph.add_wire(Wire(spec.label, spec.output_port, spec.target_node, spec.target_port))
-    graph = eqx.tree_at(lambda g: g.input_ports, graph, (*graph.input_ports, spec.input_key))
-    return eqx.tree_at(
-        lambda g: g.input_bindings,
-        graph,
-        {**graph.input_bindings, spec.input_key: (spec.label, "offset")},
-    )
-
-
 def _offset_initial_vector(
     trial_specs: TaskTrialSpec,
     *,
@@ -2445,7 +2383,7 @@ def _add_process_epsilon_calibrated_random_pulse(
 
 def _add_graph_channel_pulse(
     trial_specs: TaskTrialSpec,
-    spec: GraphAdapterSpec,
+    spec: AdditiveGraphChannelAdapterSpec,
     *,
     amount: float,
     start: int,
@@ -2459,7 +2397,7 @@ def _add_graph_channel_pulse(
 
 def _add_graph_channel_random_pulse(
     trial_specs: TaskTrialSpec,
-    spec: GraphAdapterSpec,
+    spec: AdditiveGraphChannelAdapterSpec,
     *,
     base_amount: float,
     active_mask: jnp.ndarray,
@@ -2494,7 +2432,7 @@ def _add_graph_channel_random_pulse(
 def _add_graph_channel_calibrated_random_pulse(
     trial_specs: TaskTrialSpec,
     config: FixedTargetPerturbationTrainingConfig,
-    spec: GraphAdapterSpec,
+    spec: AdditiveGraphChannelAdapterSpec,
     *,
     active_mask: jnp.ndarray,
     key: PRNGKeyArray,
@@ -2700,11 +2638,16 @@ def _expand_to_rank(value: jnp.ndarray, rank: int) -> jnp.ndarray:
     return expanded
 
 
-def _zero_graph_payload(trial_specs: TaskTrialSpec, spec: GraphAdapterSpec) -> jnp.ndarray:
+def _zero_graph_payload(
+    trial_specs: TaskTrialSpec,
+    spec: AdditiveGraphChannelAdapterSpec,
+) -> jnp.ndarray:
     batch_shape = _batch_shape(trial_specs)
     n_steps = int(trial_specs.timeline.n_steps)
-    width = 2 if spec.target_node == "mechanics" else 4
-    return jnp.zeros((*batch_shape, n_steps, width), dtype=jnp.float32)
+    return jnp.zeros(
+        (*batch_shape, n_steps, additive_channel_payload_dim(spec)),
+        dtype=jnp.float32,
+    )
 
 
 def add_zero_graph_channel_inputs(trial_specs: TaskTrialSpec) -> TaskTrialSpec:
@@ -2739,8 +2682,18 @@ def _with_static_target(
         jnp.expand_dims(target_array, axis=-2),
         (*batch_shape, n_steps, 2),
     )
+    loss_target_sequence = _catch_preserving_loss_target_sequence(
+        trial_specs,
+        target_sequence=target_sequence,
+        batch_shape=batch_shape,
+        n_steps=n_steps,
+    )
     target_spec = trial_specs.targets["mechanics.effector.pos"]
-    updated_target_spec = eqx.tree_at(lambda spec: spec.value, target_spec, target_sequence)
+    updated_target_spec = eqx.tree_at(
+        lambda spec: spec.value,
+        target_spec,
+        loss_target_sequence,
+    )
     updated_target_spec = jax.tree.map(
         lambda leaf: _broadcast_trial_array(leaf, batch_shape),
         updated_target_spec,
@@ -2756,7 +2709,7 @@ def _with_static_target(
         inputs["effector_target"] = eqx.tree_at(
             lambda state: state.pos,
             inputs["effector_target"],
-            target_sequence,
+            loss_target_sequence,
         )
         inputs["effector_target"] = jax.tree.map(
             lambda leaf: _broadcast_trial_array(leaf, batch_shape),
@@ -2768,7 +2721,7 @@ def _with_static_target(
             task_inputs = eqx.tree_at(
                 lambda task: task.effector_target.pos,
                 task_inputs,
-                target_sequence,
+                loss_target_sequence,
             )
             task_inputs = jax.tree.map(
                 lambda leaf: _broadcast_trial_array(leaf, batch_shape),
@@ -2792,7 +2745,9 @@ def _with_static_target(
         lambda leaf: _broadcast_trial_array(leaf, batch_shape),
         trial_specs.intervene,
     )
-    extra = trial_specs.extra if metadata is None else {**dict(trial_specs.extra or {}), **metadata}
+    extra = _broadcast_trial_extra(trial_specs.extra, batch_shape)
+    if metadata is not None:
+        extra = {**dict(extra or {}), **metadata}
     return TaskTrialSpec(
         inits=WhereDict(inits),
         inputs=inputs,
@@ -2800,6 +2755,83 @@ def _with_static_target(
         intervene=intervene,
         timeline=timeline,
         extra=extra,
+    )
+
+
+def _catch_preserving_loss_target_sequence(
+    trial_specs: TaskTrialSpec,
+    *,
+    target_sequence: jnp.ndarray,
+    batch_shape: tuple[int, ...],
+    n_steps: int,
+) -> jnp.ndarray:
+    """Return scored target sequence, preserving no-go catch trials if present."""
+
+    catch_mask = _catch_mask_from_go_input(trial_specs, batch_shape)
+    if catch_mask is None:
+        return target_sequence
+    init_sequence = _initial_position_sequence(
+        trial_specs,
+        batch_shape=batch_shape,
+        n_steps=n_steps,
+        dtype=target_sequence.dtype,
+    )
+    return jnp.where(
+        _expand_to_rank(catch_mask, target_sequence.ndim),
+        init_sequence,
+        target_sequence,
+    )
+
+
+def _catch_mask_from_go_input(
+    trial_specs: TaskTrialSpec,
+    batch_shape: tuple[int, ...],
+) -> jnp.ndarray | None:
+    """Return per-trial catch mask from a delayed go-cue input, if available."""
+
+    go_input = dict(trial_specs.inputs).get("input")
+    if go_input is None:
+        return None
+    go = jnp.asarray(go_input)
+    if go.ndim == 0:
+        return None
+    if go.ndim >= 2 and go.shape[-1] == 1:
+        any_go = jnp.any(go > 0.5, axis=-2)
+        any_go = jnp.squeeze(any_go, axis=-1)
+    else:
+        any_go = jnp.any(go > 0.5, axis=-1)
+    catch_mask = jnp.logical_not(any_go)
+    if batch_shape:
+        catch_mask = jnp.broadcast_to(catch_mask, batch_shape)
+    return catch_mask
+
+
+def _initial_position_sequence(
+    trial_specs: TaskTrialSpec,
+    *,
+    batch_shape: tuple[int, ...],
+    n_steps: int,
+    dtype: Any,
+) -> jnp.ndarray:
+    """Return the initial effector position broadcast as a time sequence."""
+
+    init_pos = None
+    for value in dict(trial_specs.inits).values():
+        pos = getattr(value, "pos", None)
+        if pos is not None:
+            init_pos = jnp.asarray(pos, dtype=dtype)
+            break
+        if eqx.is_array(value):
+            array = jnp.asarray(value, dtype=dtype)
+            if array.ndim >= 1 and array.shape[-1] >= 2:
+                init_pos = array[..., :2]
+                break
+    if init_pos is None:
+        raise ValueError("Catch-preserving target replacement requires an initial position.")
+    init_pos = _broadcast_trial_array(init_pos, batch_shape)
+    return jnp.broadcast_to(
+        jnp.expand_dims(jnp.asarray(init_pos, dtype=dtype), axis=-2),
+        (*batch_shape, int(n_steps), 2),
     )
 
 
@@ -2818,6 +2850,31 @@ def _broadcast_trial_array(value: Any, batch_shape: tuple[int, ...]) -> Any:
         return jnp.broadcast_to(array, (*batch_shape, *tail))
     except ValueError:
         return value
+
+
+def _broadcast_trial_extra(
+    extra: Mapping[str, Any] | None,
+    batch_shape: tuple[int, ...],
+) -> dict[str, Any] | None:
+    """Broadcast array-valued TaskTrialSpec metadata to a rewritten trial bank."""
+
+    if extra is None:
+        return None
+    if not batch_shape:
+        return dict(extra)
+    result: dict[str, Any] = {}
+    for key, value in dict(extra).items():
+        if not eqx.is_array(value):
+            result[key] = value
+            continue
+        array = jnp.asarray(value)
+        if array.shape[: len(batch_shape)] == batch_shape:
+            result[key] = value
+        elif array.ndim <= 1 and array.size == 1:
+            result[key] = jnp.broadcast_to(jnp.reshape(array, ()), batch_shape)
+        else:
+            result[key] = _broadcast_trial_array(value, batch_shape)
+    return result
 
 
 def _with_perturbation_metadata(

@@ -11,7 +11,6 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 from feedbax.bodies import FeedbackChannels, SimpleFeedback, SimpleFeedbackState
-from feedbax.channel import Channel, ChannelSpec
 from feedbax.component_registry import get_component_registry
 from feedbax.contracts.graph import (
     ComponentSpec,
@@ -36,15 +35,13 @@ from feedbax.mechanics import Mechanics, MechanicsState
 from feedbax.mechanics.plant import DirectForceInput
 from feedbax.mechanics.skeleton.pointmass import PointMass
 from feedbax.nn import PopulationStructure, SimpleStagedNetwork
-from feedbax.noise import CompositeNoise, Multiplicative, Normal
+from feedbax.noise import Normal
 from feedbax.serialization import spec_to_graph
 from equinox.nn import StateIndex
 
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.stochastic_runtime import (
     PLANT_PROCESS_FORCE_NOISE_LABEL,
-    PlantProcessForceNoise,
-    command_motor_noise_func,
     graphspec_noise_contract,
     stochastic_runtime_config_from_model,
 )
@@ -53,6 +50,9 @@ from rlrmp.stochastic_runtime import (
 SCHEMA_VERSION = "rlrmp.feedbax_graph.v1"
 EXECUTION_BACKEND = "feedbax.serialization.spec_to_graph"
 GRAPH_PLANT_INTERVENOR_NODE = PLANT_INTERVENOR_LABEL
+NATIVE_POINT_MASS_COMPONENT = "PointMass"
+NATIVE_FEEDBACK_CHANNELS_COMPONENT = "FeedbackChannels"
+NATIVE_CHANNEL_COMPONENT = "Channel"
 
 
 def _point_mass_feedback(state: MechanicsState):
@@ -95,36 +95,6 @@ def register_rlrmp_graph_components(component_registry: Any | None = None) -> An
     """Register executable RLRMP component builders for GraphSpec materialization."""
 
     registry = component_registry or get_component_registry()
-    registry.register_component_type(
-        "RLRMPPointMass",
-        _build_point_mass_mechanics,
-        category="RLRMP",
-        description="Point-mass mechanics preserving RLRMP mass and damping.",
-        input_ports=["force"],
-        output_ports=["effector", "state"],
-        output_prototype_fn=_point_mass_output_prototype,
-        provenance="rlrmp",
-    )
-    registry.register_component_type(
-        "RLRMPFeedbackChannels",
-        _build_feedback_channels,
-        category="RLRMP",
-        description="Point-mass position/velocity feedback channels.",
-        input_ports=["mechanics"],
-        output_ports=["feedback"],
-        output_prototype_fn=_feedback_channels_output_prototype,
-        provenance="rlrmp",
-    )
-    registry.register_component_type(
-        "RLRMPMotorChannel",
-        _build_motor_channel,
-        category="RLRMP",
-        description="RLRMP command channel with signal-dependent and additive motor noise.",
-        input_ports=["input"],
-        output_ports=["output"],
-        output_prototype_fn=_motor_channel_output_prototype,
-        provenance="rlrmp",
-    )
     registry.register_component_type(
         "RLRMPSimpleStagedNetwork",
         _build_simple_staged_network,
@@ -185,17 +155,83 @@ def register_rlrmp_graph_components(component_registry: Any | None = None) -> An
         output_prototype_fn=_force_passthrough_output_prototype,
         provenance="rlrmp",
     )
-    registry.register_component_type(
-        "RLRMPPlantProcessForceNoise",
-        _build_plant_process_force_noise,
-        category="RLRMP",
-        description="Additive plant/load force noise before mechanics.",
-        input_ports=["force"],
-        output_ports=["force"],
-        output_prototype_fn=_plant_process_force_noise_output_prototype,
-        provenance="rlrmp",
-    )
     return registry
+
+
+def _migrate_legacy_rlrmp_graph_spec(graph_spec: GraphSpec) -> GraphSpec:
+    """Rewrite historical generic RLRMP component IDs to Feedbax-native IDs."""
+
+    nodes: dict[str, ComponentSpec] = {}
+    legacy_plant_process_nodes: set[str] = set()
+    for node_id, node_spec in graph_spec.nodes.items():
+        params = dict(node_spec.params)
+        if node_spec.type == "RLRMPPointMass":
+            nodes[node_id] = node_spec.model_copy(update={"type": NATIVE_POINT_MASS_COMPONENT})
+        elif node_spec.type == "RLRMPFeedbackChannels":
+            nodes[node_id] = node_spec.model_copy(
+                update={
+                    "type": NATIVE_FEEDBACK_CHANNELS_COMPONENT,
+                    "params": {
+                        **params,
+                        "selector": params.get("selector", "point_mass_pos_vel"),
+                        "noise_model": params.get("noise_model", "additive_gaussian"),
+                        "noise_timing": params.get("noise_timing", "pre_controller"),
+                        "input_shape": params.get("input_shape", [[2], [2]]),
+                    },
+                }
+            )
+        elif node_spec.type == "RLRMPMotorChannel":
+            nodes[node_id] = node_spec.model_copy(update={"type": NATIVE_CHANNEL_COMPONENT})
+        elif node_spec.type == "RLRMPPlantProcessForceNoise":
+            legacy_plant_process_nodes.add(node_id)
+            noise_std = float(params.get("noise_std", 0.0) or 0.0)
+            nodes[node_id] = node_spec.model_copy(
+                update={
+                    "type": NATIVE_CHANNEL_COMPONENT,
+                    "params": {
+                        "delay": 0,
+                        "noise_model": "additive_gaussian",
+                        "noise_std": noise_std,
+                        "add_noise": noise_std != 0.0,
+                        "noise_role": params.get("noise_role", "plant_process_load"),
+                        "noise_timing": params.get(
+                            "noise_timing",
+                            "post_force_filter_pre_mechanics",
+                        ),
+                        "input_shape": params.get("input_shape", [2]),
+                    },
+                    "input_ports": ["input"],
+                    "output_ports": ["output"],
+                }
+            )
+        else:
+            nodes[node_id] = node_spec
+
+    if not legacy_plant_process_nodes:
+        return graph_spec.model_copy(update={"nodes": nodes})
+
+    def _rename_source_port(node: str, port: str) -> str:
+        if node in legacy_plant_process_nodes and port == "force":
+            return "output"
+        return port
+
+    def _rename_target_port(node: str, port: str) -> str:
+        if node in legacy_plant_process_nodes and port == "force":
+            return "input"
+        return port
+
+    wires = [
+        WireSpec(
+            source_node=wire.source_node,
+            source_port=_rename_source_port(wire.source_node, wire.source_port),
+            target_node=wire.target_node,
+            target_port=_rename_target_port(wire.target_node, wire.target_port),
+            temporality=wire.temporality,
+            recurrent_initializer=wire.recurrent_initializer,
+        )
+        for wire in graph_spec.wires
+    ]
+    return graph_spec.model_copy(update={"nodes": nodes, "wires": wires})
 
 
 def materialize_rlrmp_graph_spec(
@@ -207,42 +243,10 @@ def materialize_rlrmp_graph_spec(
     """Materialize an RLRMP GraphSpec through Feedbax and install runtime hooks."""
 
     registry = register_rlrmp_graph_components(component_registry)
-    graph = spec_to_graph(graph_spec, registry)
+    graph = spec_to_graph(_migrate_legacy_rlrmp_graph_spec(graph_spec), registry)
     if install_runtime_hooks:
         graph = install_simple_feedback_runtime_hooks(graph)
     return graph
-
-
-def _point_mass_output_prototype(params: dict[str, Any], inputs: dict[str, Any]) -> dict[str, Any]:
-    del inputs
-    mechanics = _build_point_mass_mechanics(params)
-    plant_state = mechanics.plant.init(key=jr.PRNGKey(0))
-    effector = mechanics.plant.skeleton.effector(plant_state.skeleton)
-    state = MechanicsState(plant=plant_state, effector=effector, solver=None)
-    return {"effector": effector, "state": state}
-
-
-def _feedback_channels_output_prototype(
-    params: dict[str, Any],
-    inputs: dict[str, Any],
-) -> dict[str, Any]:
-    del params, inputs
-    return {"feedback": (jnp.zeros(2), jnp.zeros(2))}
-
-
-def _motor_channel_output_prototype(
-    params: dict[str, Any], inputs: dict[str, Any]
-) -> dict[str, Any]:
-    del params, inputs
-    return {"output": jnp.zeros(2)}
-
-
-def _plant_process_force_noise_output_prototype(
-    params: dict[str, Any],
-    inputs: dict[str, Any],
-) -> dict[str, Any]:
-    del params, inputs
-    return {"force": jnp.zeros(2)}
 
 
 def _simple_staged_network_output_prototype(
@@ -304,56 +308,6 @@ def install_simple_feedback_runtime_hooks(graph: Graph) -> Graph:
     object.__setattr__(graph, "state_view_fn", _state_view)
     object.__setattr__(graph, "state_consistency_fn", _consistency_update)
     return graph
-
-
-def _build_feedback_channels(params: dict[str, Any]) -> FeedbackChannels:
-    delay = int(params.get("delay", 0))
-    noise_std = float(params.get("noise_std", 0.0) or 0.0)
-    add_noise = bool(params.get("add_noise", noise_std != 0.0))
-    noise_func = Normal(std=noise_std) if add_noise and noise_std != 0.0 else None
-    specs = ChannelSpec(
-        where=_point_mass_feedback,
-        delay=delay,
-        noise_func=noise_func,
-    )
-    channel = Channel(
-        delay=delay,
-        noise_func=noise_func,
-        add_noise=add_noise,
-        input_proto=(jnp.zeros(2), jnp.zeros(2)),
-        init_value=float(params.get("init_value", 0.0)),
-    )
-    return FeedbackChannels(channel, specs)
-
-
-def _build_point_mass_mechanics(params: dict[str, Any]) -> Mechanics:
-    return Mechanics(
-        plant=DirectForceInput(
-            PointMass(
-                mass=float(params.get("mass", 1.0)),
-                damping=float(params.get("damping", 0.0)),
-            )
-        ),
-        dt=float(params.get("dt", 0.01)),
-    )
-
-
-def _build_motor_channel(params: dict[str, Any]) -> Channel:
-    from rlrmp.stochastic_runtime import StochasticRuntimeConfig
-
-    config = StochasticRuntimeConfig(
-        additive_motor_noise_std=float(params.get("additive_noise_std", 0.0) or 0.0),
-        signal_dependent_motor_noise_std=float(
-            params.get("signal_dependent_noise_std", 0.0) or 0.0
-        ),
-    )
-    return Channel(
-        delay=int(params.get("delay", 0)),
-        noise_func=command_motor_noise_func(config),
-        add_noise=config.has_command_noise,
-        input_proto=jnp.zeros(tuple(int(dim) for dim in params.get("input_shape", [2]))),
-        init_value=float(params.get("init_value", 0.0)),
-    )
 
 
 def _build_simple_staged_network(params: dict[str, Any]) -> SimpleStagedNetwork:
@@ -438,13 +392,6 @@ def _build_curl_field(params: dict[str, Any]) -> CurlField:
             active=bool(params.get("active", False)),
         ),
         label=str(params.get("label", GRAPH_PLANT_INTERVENOR_NODE)),
-    )
-
-
-def _build_plant_process_force_noise(params: dict[str, Any]) -> PlantProcessForceNoise:
-    return PlantProcessForceNoise(
-        std=float(params.get("noise_std", 0.0)),
-        label=str(params.get("label", PLANT_PROCESS_FORCE_NOISE_LABEL)),
     )
 
 
@@ -540,18 +487,21 @@ def _graph_bundle_metadata(
         "execution_backend": EXECUTION_BACKEND,
         "component_policy": {
             "rlrmp_component_types": [
-                "RLRMPPointMass",
-                "RLRMPFeedbackChannels",
                 "RLRMPSimpleStagedNetwork",
                 "RLRMPLinearController",
                 "RLRMPLinearTrackerController",
                 "DynamicsMatrixPerturb",
+            ],
+            "legacy_component_aliases": [
+                "RLRMPPointMass",
+                "RLRMPFeedbackChannels",
                 "RLRMPMotorChannel",
                 "RLRMPPlantProcessForceNoise",
             ],
             "note": (
-                "RLRMP component types are registered locally and materialized "
-                "through feedbax.serialization.spec_to_graph."
+                "Generic point-mass mechanics, feedback, and stochastic channel "
+                "nodes use Feedbax-native component types. Historical RLRMP-branded "
+                "generic component IDs are migrated before materialization."
             ),
         },
         "legacy_loader": {
@@ -603,12 +553,16 @@ def build_point_mass_sensorimotor_graph_spec(
     }
     nodes: dict[str, ComponentSpec] = {
         "feedback": ComponentSpec(
-            type="RLRMPFeedbackChannels",
+            type=NATIVE_FEEDBACK_CHANNELS_COMPONENT,
             params={
                 "delay": int(hps.model.feedback_delay_steps),
+                "selector": "point_mass_pos_vel",
+                "noise_model": "additive_gaussian",
                 "noise_std": noise_config.sensory_noise_std,
                 "noise_role": "sensory_feedback",
+                "noise_timing": "pre_controller",
                 "add_noise": noise_config.sensory_noise_std != 0.0,
+                "input_shape": [[2], [2]],
             },
             input_ports=["mechanics"],
             output_ports=["feedback"],
@@ -624,7 +578,7 @@ def build_point_mass_sensorimotor_graph_spec(
             key=key_param,
         ),
         "efferent": ComponentSpec(
-            type="RLRMPMotorChannel",
+            type=NATIVE_CHANNEL_COMPONENT,
             params={
                 "delay": 0,
                 "additive_noise_std": noise_config.additive_motor_noise_std,
@@ -639,7 +593,7 @@ def build_point_mass_sensorimotor_graph_spec(
             output_ports=["output"],
         ),
         "mechanics": ComponentSpec(
-            type="RLRMPPointMass",
+            type=NATIVE_POINT_MASS_COMPONENT,
             params=mechanics_params,
             input_ports=["force"],
             output_ports=["effector", "state"],
@@ -762,15 +716,19 @@ def build_point_mass_sensorimotor_graph_spec(
         force_wire = force_wires[0]
         wires.remove(force_wire)
         nodes[PLANT_PROCESS_FORCE_NOISE_LABEL] = ComponentSpec(
-            type="RLRMPPlantProcessForceNoise",
+            type=NATIVE_CHANNEL_COMPONENT,
             params={
+                "delay": 0,
                 "noise_std": noise_config.plant_process_force_noise_std,
+                "noise_model": "additive_gaussian",
+                "add_noise": True,
                 "noise_role": "plant_process_load",
                 "noise_timing": "post_force_filter_pre_mechanics",
                 "state_diffusion": False,
+                "input_shape": [2],
             },
-            input_ports=["force"],
-            output_ports=["force"],
+            input_ports=["input"],
+            output_ports=["output"],
         )
         wires.extend(
             [
@@ -778,11 +736,11 @@ def build_point_mass_sensorimotor_graph_spec(
                     source_node=force_wire.source_node,
                     source_port=force_wire.source_port,
                     target_node=PLANT_PROCESS_FORCE_NOISE_LABEL,
-                    target_port="force",
+                    target_port="input",
                 ),
                 WireSpec(
                     source_node=PLANT_PROCESS_FORCE_NOISE_LABEL,
-                    source_port="force",
+                    source_port="output",
                     target_node="mechanics",
                     target_port="force",
                 ),
@@ -924,52 +882,6 @@ def graph_spec_from_model(
         if cs_lss_spec is not None:
             nodes[name] = cs_lss_spec
             drop_subgraphs.add(name)
-        elif isinstance(component, Mechanics) and isinstance(component.plant, DirectForceInput):
-            skeleton = component.plant.skeleton
-            if isinstance(skeleton, PointMass):
-                nodes[name] = ComponentSpec(
-                    type="RLRMPPointMass",
-                    params={
-                        "dt": float(component.dt),
-                        "mass": float(skeleton.mass),
-                        "damping": float(skeleton.damping),
-                    },
-                    input_ports=list(component.input_ports),
-                    output_ports=list(component.output_ports),
-                )
-        elif isinstance(component, FeedbackChannels):
-            channel = component.channels
-            noise_std = 0.0
-            if isinstance(channel.noise_func, Normal):
-                noise_std = float(channel.noise_func.std)
-            nodes[name] = ComponentSpec(
-                type="RLRMPFeedbackChannels",
-                params={
-                    "delay": int(channel.delay),
-                    "noise_std": noise_std,
-                    "noise_role": "sensory_feedback",
-                    "add_noise": bool(channel.add_noise),
-                },
-                input_ports=list(component.input_ports),
-                output_ports=list(component.output_ports),
-            )
-        elif isinstance(component, Channel) and name == "efferent":
-            motor_noise = _runtime_motor_noise_params(component)
-            nodes[name] = ComponentSpec(
-                type="RLRMPMotorChannel",
-                params={
-                    "delay": int(component.delay),
-                    "additive_noise_std": motor_noise["additive_noise_std"],
-                    "signal_dependent_noise_std": motor_noise["signal_dependent_noise_std"],
-                    "add_noise": bool(component.add_noise),
-                    "noise_model": "signal_dependent_plus_additive",
-                    "noise_role": "motor_command",
-                    "noise_timing": "pre_force_filter",
-                    "input_shape": _runtime_channel_input_shape(component),
-                },
-                input_ports=list(component.input_ports),
-                output_ports=list(component.output_ports),
-            )
         elif isinstance(component, DynamicsMatrixPerturb):
             nodes[name] = ComponentSpec(
                 type="DynamicsMatrixPerturb",
@@ -1007,10 +919,7 @@ def _cs_lss_runtime_component_spec(component: Any) -> ComponentSpec | None:
     from feedbax.mechanics import LinearStateSpace
     from rlrmp.cs_lss_gru import (
         CS_FORCE_DIM,
-        CS_LSS_DELAYED_FEEDBACK_COMPONENT,
         CS_LSS_INITIAL_HIDDEN_NET_COMPONENT,
-        CS_LSS_TARGET_FEEDBACK_COMPONENT,
-        CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT,
         DelayedPositionVelocityFeedback,
         InitialHiddenStagedNetwork,
         TargetRelativeDelayedFeedback,
@@ -1035,17 +944,17 @@ def _cs_lss_runtime_component_spec(component: Any) -> ComponentSpec | None:
     if isinstance(component, TargetRelativeDelayedProprioceptiveFeedback):
         return _cs_lss_feedback_component_spec(
             component,
-            component_type=CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT,
+            target_relative=True,
         )
     if isinstance(component, TargetRelativeDelayedFeedback):
         return _cs_lss_feedback_component_spec(
             component,
-            component_type=CS_LSS_TARGET_FEEDBACK_COMPONENT,
+            target_relative=True,
         )
     if isinstance(component, DelayedPositionVelocityFeedback):
         return _cs_lss_feedback_component_spec(
             component,
-            component_type=CS_LSS_DELAYED_FEEDBACK_COMPONENT,
+            target_relative=False,
         )
     if isinstance(component, InitialHiddenStagedNetwork):
         params = _cs_lss_simple_staged_network_params(component.net)
@@ -1074,14 +983,19 @@ def _cs_lss_runtime_component_spec(component: Any) -> ComponentSpec | None:
     return None
 
 
-def _cs_lss_feedback_component_spec(component: Any, *, component_type: str) -> ComponentSpec:
+def _cs_lss_feedback_component_spec(component: Any, *, target_relative: bool) -> ComponentSpec:
+    from rlrmp.cs_lss_gru import (
+        FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
+        _state_feedback_selector_params,
+    )
+
     return ComponentSpec(
-        type=component_type,
-        params={
-            "indices": [int(index) for index in component.indices],
-            "expected_state_dim": int(component.expected_state_dim),
-            "feedback_dim": len(component.indices),
-        },
+        type=FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
+        params=_state_feedback_selector_params(
+            indices=tuple(int(index) for index in component.indices),
+            expected_state_dim=int(component.expected_state_dim),
+            target_relative=target_relative,
+        ),
         input_ports=list(component.input_ports),
         output_ports=list(component.output_ports),
     )
@@ -1164,33 +1078,6 @@ def _representative_runtime_graph(
                 init,
             )
     return representative
-
-
-def _runtime_motor_noise_params(channel: Channel) -> dict[str, float]:
-    terms = ()
-    if isinstance(channel.noise_func, CompositeNoise):
-        terms = channel.noise_func.terms
-    elif channel.noise_func is not None:
-        terms = (channel.noise_func,)
-
-    additive_noise_std = 0.0
-    signal_dependent_noise_std = 0.0
-    for term in terms:
-        if isinstance(term, Multiplicative) and isinstance(term.noise_func, Normal):
-            signal_dependent_noise_std = float(term.noise_func.std)
-        elif isinstance(term, Normal):
-            additive_noise_std = float(term.std)
-    return {
-        "additive_noise_std": additive_noise_std,
-        "signal_dependent_noise_std": signal_dependent_noise_std,
-    }
-
-
-def _runtime_channel_input_shape(channel: Channel) -> list[int]:
-    leaves = jt.leaves(channel._initial_state.output)
-    if not leaves or not hasattr(leaves[0], "shape"):
-        return [2]
-    return [int(dim) for dim in leaves[0].shape]
 
 
 def _runtime_linear_controller_params(component: Any) -> dict[str, Any] | None:
@@ -1389,7 +1276,7 @@ def _retained_observables(
             _port_observable(
                 f"{PLANT_PROCESS_FORCE_NOISE_LABEL}.force",
                 PLANT_PROCESS_FORCE_NOISE_LABEL,
-                "force",
+                "output",
             )
         )
     return observables

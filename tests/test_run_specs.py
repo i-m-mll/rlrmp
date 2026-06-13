@@ -162,6 +162,22 @@ def test_nominal_gru_run_spec_accepts_verified_cs_lss_graph_sidecar(tmp_path) ->
         tmp_path,
         {
             "nodes": {
+                "feedback": {"type": "StateFeedbackSelector"},
+                "mechanics": {"type": "LinearStateSpace"},
+            }
+        },
+    )
+
+    validate_nominal_gru_run_spec(run_spec, spec_dir=tmp_path)
+
+
+def test_nominal_gru_run_spec_accepts_legacy_verified_cs_lss_selector(tmp_path) -> None:
+    run_spec = _valid_nominal_gru_run_spec()
+    run_spec["model_summary"]["plant_backend"] = CS_LSS_PLANT_BACKEND
+    _write_graph_sidecars(
+        tmp_path,
+        {
+            "nodes": {
                 "feedback": {"type": "RLRMPCsLssDelayedPositionVelocityFeedback"},
                 "mechanics": {"type": "LinearStateSpace"},
             }

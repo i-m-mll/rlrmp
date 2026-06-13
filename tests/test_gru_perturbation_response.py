@@ -6,8 +6,9 @@ import json
 
 import jax.random as jr
 import numpy as np
-from feedbax import TaskTrialSpec
+from feedbax import TaskTrialSpec, TrialTimeline
 from feedbax.graph import Wire
+from feedbax.loss import TargetSpec
 from feedbax.state import CartesianState
 
 import rlrmp.analysis.pipelines.gru_perturbation_bank as perturbation_bank
@@ -29,6 +30,11 @@ from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     summarize_perturbation_response,
 )
 from rlrmp.cs_lss_gru import build_cs_lss_gru_graph
+from rlrmp.train.cs_perturbation_training import (
+    GRAPH_ADAPTER_SPECS as TRAINING_GRAPH_ADAPTER_SPECS,
+    add_zero_graph_channel_inputs,
+    install_perturbation_training_graph_adapters,
+)
 
 
 def test_default_bank_is_json_serializable_with_required_channels() -> None:
@@ -246,13 +252,13 @@ def test_command_input_pulse_adapter_sets_external_graph_input_payload() -> None
     result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
 
     assert result.status == "evaluated"
-    input_key = f"{GRAPH_ADAPTER_INPUT_PREFIX}:command_input_pulse__t3_y_neg"
+    input_key = f"{GRAPH_ADAPTER_INPUT_PREFIX}.command_input.command_input_pulse__t3_y_neg"
     payload = result.trial_specs.inputs[input_key]
     np.testing.assert_allclose(payload[:, 3:5, 1], -2.0)
     np.testing.assert_allclose(payload[:, :3, :], 0.0)
     assert result.adapter_provenance["external_load_force"] is False
     assert result.adapter_provenance["insertion_point"] == "efferent.output -> mechanics.force"
-    assert result.adapter_provenance["temporary_pre_graphspec"] is True
+    assert result.adapter_provenance["feedbax_additive_channel_adapter"]["label"] == "command_input"
     assert result.adapter_provenance["controller_input_mutated"] is False
 
 
@@ -277,16 +283,43 @@ def test_command_input_graph_adapter_inserts_external_node_on_force_edge() -> No
 
     assert result.status == "evaluated"
     assert result.model is not None
-    adapter_label = result.adapter_provenance["label"]
+    adapter_label = result.adapter_provenance["adapter_node"]
     assert adapter_label in result.model.nodes
     assert Wire("efferent", "output", "mechanics", "force") not in result.model.wires
-    assert Wire("efferent", "output", adapter_label, "signal") in result.model.wires
-    assert Wire(adapter_label, "signal", "mechanics", "force") in result.model.wires
+    assert Wire("efferent", "output", adapter_label, "a") in result.model.wires
+    assert Wire(adapter_label, "output", "mechanics", "force") in result.model.wires
     assert result.adapter_provenance["input_key"] in result.model.input_ports
     assert result.model.input_bindings[result.adapter_provenance["input_key"]] == (
         adapter_label,
-        "offset",
+        "b",
     )
+
+
+def test_training_graph_channel_adapters_use_feedbax_sum_specs() -> None:
+    graph = build_cs_lss_gru_graph(hidden_size=3, key=jr.PRNGKey(0))
+    graph = install_perturbation_training_graph_adapters(graph)
+    trial_specs = TaskTrialSpec(
+        inits={"mechanics.vector": np.zeros((2, 8), dtype=np.float64)},
+        targets={
+            "mechanics.effector.pos": TargetSpec(
+                value=np.zeros((2, 10, 2), dtype=np.float32),
+            )
+        },
+        inputs={"effector_target": CartesianState(pos=np.zeros((2, 10, 2)))},
+        timeline=TrialTimeline(n_steps=10),
+    )
+    trial_specs = add_zero_graph_channel_inputs(trial_specs)
+
+    for spec in TRAINING_GRAPH_ADAPTER_SPECS.values():
+        adapter_node = f"{spec.label}_additive"
+        target = spec.target
+        assert spec.target.kind == "edge"
+        assert adapter_node in graph.nodes
+        assert Wire(target.source_node, target.source_port, adapter_node, "a") in graph.wires
+        assert Wire(adapter_node, "output", target.target_node, target.target_port) in graph.wires
+        assert graph.input_bindings[spec.input_key] == (adapter_node, "b")
+        assert spec.input_key in trial_specs.inputs
+        assert trial_specs.inputs[spec.input_key].shape[-1] == spec.payload_shape[-1]
 
 
 def test_process_epsilon_pulse_adapter_offsets_epsilon_input() -> None:
@@ -307,13 +340,21 @@ def test_process_epsilon_pulse_adapter_offsets_epsilon_input() -> None:
         "timing": {"start_time_index": 3, "duration_steps": 2},
     }
 
-    result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
+    graph = build_cs_lss_gru_graph(
+        hidden_size=3,
+        bind_epsilon_input=True,
+        key=jr.PRNGKey(0),
+    )
+    result = apply_perturbation_to_trial_specs(trial_specs, perturbation, model=graph)
 
     assert result.status == "evaluated"
-    np.testing.assert_allclose(result.trial_specs.inputs["epsilon"][:, 3:5, 0], 0.25)
-    np.testing.assert_allclose(result.trial_specs.inputs["epsilon"][:, :3, :], 0.0)
+    input_key = result.adapter_provenance["input_key"]
+    np.testing.assert_allclose(result.trial_specs.inputs[input_key][:, 3:5, 0], 0.25)
+    np.testing.assert_allclose(result.trial_specs.inputs[input_key][:, :3, :], 0.0)
     np.testing.assert_allclose(trial_specs.inputs["epsilon"], 0.0)
     assert result.adapter_provenance["process_channel"] == "LinearStateSpace.B_w"
+    assert result.model.input_bindings["epsilon"][1] == "a"
+    assert result.model.input_bindings[input_key][1] == "b"
 
 
 def test_process_epsilon_adapter_uses_explicit_force_state_epsilon_index() -> None:
@@ -339,8 +380,10 @@ def test_process_epsilon_adapter_uses_explicit_force_state_epsilon_index() -> No
     result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
 
     assert result.status == "evaluated"
-    np.testing.assert_allclose(result.trial_specs.inputs["epsilon"][:, 3:5, 5], -0.25)
-    np.testing.assert_allclose(result.trial_specs.inputs["epsilon"][:, 3:5, 3], 0.0)
+    input_key = result.adapter_provenance["input_key"]
+    np.testing.assert_allclose(result.trial_specs.inputs[input_key][:, 3:5, 5], -0.25)
+    np.testing.assert_allclose(result.trial_specs.inputs[input_key][:, 3:5, 3], 0.0)
+    np.testing.assert_allclose(result.trial_specs.inputs["epsilon"], 0.0)
     assert result.adapter_provenance["epsilon_component"] == "force_state_y"
     assert result.adapter_provenance["epsilon_index"] == 5
 
@@ -385,7 +428,7 @@ def test_sensory_adapter_uses_external_graph_channel_payload() -> None:
     result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
 
     assert result.status == "evaluated"
-    input_key = f"{GRAPH_ADAPTER_INPUT_PREFIX}:sensory_feedback_offset__x_pos"
+    input_key = f"{GRAPH_ADAPTER_INPUT_PREFIX}.sensory_feedback.sensory_feedback_offset__x_pos"
     payload = result.trial_specs.inputs[input_key]
     assert payload.shape == (2, 10, 4)
     np.testing.assert_allclose(payload[:, :, 0], 0.01)
@@ -413,16 +456,19 @@ def test_delayed_observation_adapter_uses_clean_pre_noise_graph_channel() -> Non
 
     assert result.status == "evaluated"
     payload = result.trial_specs.inputs[
-        f"{GRAPH_ADAPTER_INPUT_PREFIX}:delayed_observation_offset__x_pos"
+        f"{GRAPH_ADAPTER_INPUT_PREFIX}.delayed_observation.delayed_observation_offset__x_pos"
     ]
     assert payload.shape == (2, 10, 4)
     np.testing.assert_allclose(payload[:, :, 0], 0.01)
     assert result.adapter_provenance["insertion_point"] == "feedback.feedback -> sensory.input"
-    assert "before sensory.input noise" in result.adapter_provenance["future_graphspec_mapping"]
+    metadata = result.adapter_provenance["feedbax_additive_channel_adapter"]["metadata"]
+    assert "before sensory.input noise" in metadata["graphspec_mapping"]
     assert "pre_noise_delayed_measurement" in result.adapter_provenance[
-        "future_graphspec_mapping"
+        "metadata"
+    ][
+        "graphspec_mapping"
     ]
-    assert "compatibility alias" in result.adapter_provenance["future_graphspec_mapping"]
+    assert "compatibility alias" in metadata["graphspec_mapping"]
 
 
 def test_full_qrf_cost_scorer_reports_control_and_delta_breakdown() -> None:
