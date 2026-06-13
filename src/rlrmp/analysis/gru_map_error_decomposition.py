@@ -61,6 +61,19 @@ def materialize_gru_map_error_decomposition(
             preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
             repo_root=repo_root,
         )
+        if candidate_map is None:
+            rows.append(
+                {
+                    "run_id": f"{run_id}__nominal_clean",
+                    "source_run_id": run_id,
+                    "status": "blocked",
+                    "standard_certificate_row": _find_standard_row(manifest, run_id),
+                    "reference_metadata": reference_metadata,
+                    "evaluation_metadata": evaluation_metadata,
+                    "decomposition": _blocked_decomposition_from_metadata(evaluation_metadata),
+                }
+            )
+            continue
         covariance = evaluation_metadata.pop("_observation_history_covariance_array", None)
         covariance_metadata = evaluation_metadata.get("observation_history_covariance")
         candidate_feedback_basis = _candidate_feedback_basis(run_spec)
@@ -417,8 +430,16 @@ def render_map_error_decomposition_markdown(result: dict[str, Any]) -> str:
         "|---|---:|---:|---:|---:|---:|---|---|",
     ]
     for row in rows:
-        summary = row["decomposition"]["summary"]
-        top = row["decomposition"]["top_singular_directions"]
+        decomposition = row["decomposition"]
+        if decomposition.get("status") == "blocked":
+            lines.append(
+                "| "
+                f"{row['run_id']} | blocked | blocked | blocked | blocked | blocked | "
+                f"not_available | {decomposition.get('reason', 'blocked')} |"
+            )
+            continue
+        summary = decomposition["summary"]
+        top = decomposition["top_singular_directions"]
         top_value = top[0]["singular_value"] if top else None
         projection = top[0].get("covariance_projection", {}) if top else {}
         annotations = ", ".join(row["decomposition"]["decision_rule_annotations"]) or "none"
@@ -438,12 +459,17 @@ def render_map_error_decomposition_markdown(result: dict[str, Any]) -> str:
     for row in rows:
         lines.append(f"### `{row['run_id']}`")
         lines.append("")
+        decomposition = row["decomposition"]
+        if decomposition.get("status") == "blocked":
+            lines.append(f"Blocked: {decomposition.get('reason', 'blocked')}")
+            lines.append("")
+            continue
         lines.append(
             "| rank | singular value | energy fraction | obs time | obs channel | action time | "
             "action channel | covariance projection |"
         )
         lines.append("|---:|---:|---:|---|---|---|---|---:|")
-        for direction in row["decomposition"]["top_singular_directions"]:
+        for direction in decomposition["top_singular_directions"]:
             projection = direction.get("covariance_projection", {})
             lines.append(
                 "| "
@@ -510,6 +536,20 @@ def _component_summary(row: dict[str, Any], component_name: str) -> dict[str, An
                 "reason": component.get("reason"),
             }
     return None
+
+
+def _blocked_decomposition_from_metadata(evaluation_metadata: dict[str, Any]) -> dict[str, Any]:
+    io_metadata = evaluation_metadata.get("io_response_map", {})
+    return {
+        "status": "blocked",
+        "reason": io_metadata.get(
+            "reason",
+            "response-map decomposition is unavailable for this candidate feedback basis",
+        ),
+        "io_response_map": io_metadata,
+        "decision_rule_annotations": ["blocked_unsupported_candidate_feedback_basis"],
+        "top_singular_directions": [],
+    }
 
 
 def _read_json(path: Path) -> dict[str, Any]:

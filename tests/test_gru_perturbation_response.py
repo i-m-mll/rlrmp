@@ -8,7 +8,7 @@ import jax.random as jr
 import numpy as np
 from feedbax.graph import Wire
 from feedbax.state import CartesianState
-from feedbax.task import TaskTrialSpec
+from feedbax.task import TaskTrialSpec, TrialTimeline
 
 from rlrmp.analysis.gru_perturbation_bank import (
     GRAPH_ADAPTER_INPUT_PREFIX,
@@ -343,6 +343,49 @@ def test_process_epsilon_adapter_uses_explicit_force_state_epsilon_index() -> No
     np.testing.assert_allclose(result.trial_specs.inputs["epsilon"][:, 3:5, 3], 0.0)
     assert result.adapter_provenance["epsilon_component"] == "force_state_y"
     assert result.adapter_provenance["epsilon_index"] == 5
+
+
+def test_process_epsilon_adapter_shifts_movement_indexed_timing_by_go_cue() -> None:
+    trial_specs = TaskTrialSpec(
+        inits={"mechanics.vector": np.zeros((2, 8), dtype=np.float64)},
+        targets={},
+        inputs={
+            "effector_target": CartesianState(pos=np.zeros((2, 90, 2))),
+            "epsilon": np.zeros((2, 90, 8), dtype=np.float64),
+        },
+        timeline=TrialTimeline(
+            n_steps=90,
+            epoch_bounds=np.asarray([[0, 10, 90], [0, 30, 90]], dtype=np.int32),
+        ),
+    )
+    perturbation = {
+        "channel": "process_epsilon",
+        "family": "process_epsilon_pulse",
+        "amplitude": 0.25,
+        "axis": "x",
+        "sign": 1,
+        "timing": {
+            "epoch": "movement_indexed",
+            "start_time_index": 5,
+            "duration_steps": 2,
+        },
+    }
+
+    result = apply_perturbation_to_trial_specs(
+        trial_specs,
+        perturbation,
+        movement_horizon_steps=60,
+    )
+
+    assert result.status == "evaluated"
+    updated = np.asarray(result.trial_specs.inputs["epsilon"])
+    np.testing.assert_allclose(updated[0, 15:17, 0], 0.25)
+    np.testing.assert_allclose(updated[1, 35:37, 0], 0.25)
+    np.testing.assert_allclose(updated[:, 5:7, 0], 0.0)
+    assert result.adapter_provenance["effective_timing_mode"] == "go_cue_relative"
+    assert result.adapter_provenance["movement_horizon_steps"] == 60
+    assert result.adapter_provenance["effective_start_time_index_min"] == 15
+    assert result.adapter_provenance["effective_start_time_index_max"] == 35
 
 
 def test_process_epsilon_adapter_blocks_without_epsilon_input() -> None:

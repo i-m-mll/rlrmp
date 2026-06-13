@@ -1,0 +1,150 @@
+{
+  "command": {
+    "status": "not_recorded"
+  },
+  "diagnostic_name": "gru_pilot_figures",
+  "future_graphspec": {
+    "expected_successor": "Feedbax-native analysis/regeneration manifests after GraphSpec and provider-manifest migration",
+    "status": "temporary_rlrmp_bridge"
+  },
+  "git": {
+    "branch": "feature/ffff699-no-integrator-delayed",
+    "dirty": true,
+    "head": "53fad0befb1482af94cf34a2b074271f42c8e864",
+    "status_porcelain": [
+      "M scripts/monitor_training_diagnostics.py",
+      " M src/rlrmp/analysis/cs_gru_standard_materialization.py",
+      " M src/rlrmp/analysis/gru_evaluation_diagnostics.py",
+      " M src/rlrmp/analysis/gru_feedback_ablation.py",
+      " M src/rlrmp/analysis/gru_map_error_decomposition.py",
+      " M src/rlrmp/analysis/gru_perturbation_bank.py",
+      " M src/rlrmp/analysis/gru_perturbation_response_norm_plots.py",
+      " M src/rlrmp/analysis/gru_pilot_figures.py",
+      " M src/rlrmp/analysis/gru_postrun_materialization.py",
+      " M src/rlrmp/analysis/trial_alignment.py",
+      " M tests/test_cs_gru_standard_materialization.py",
+      " M tests/test_gru_evaluation_diagnostics.py",
+      " M tests/test_gru_feedback_ablation.py",
+      " M tests/test_gru_map_error_decomposition.py",
+      " M tests/test_gru_perturbation_response.py",
+      " M tests/test_gru_perturbation_response_norm_plots.py",
+      " M tests/test_gru_pilot_figures.py",
+      " M tests/test_monitor_training_diagnostics.py",
+      " M tests/test_trial_alignment.py",
+      "?? results/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/spec.json",
+      "?? results/ffff699/notes/gru_evaluation_diagnostics_delayed8d_nopgd_core_smoke_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_evaluation_diagnostics_delayed8d_nopgd_diagnostics_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_evaluation_diagnostics_delayed8d_nopgd_validation_selected_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_feedback_ablation_delayed8d_nopgd_diagnostics.md",
+      "?? results/ffff699/notes/gru_feedback_ablation_delayed8d_nopgd_diagnostics_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_feedback_ablation_delayed8d_nopgd_validation_selected.md",
+      "?? results/ffff699/notes/gru_feedback_ablation_delayed8d_nopgd_validation_selected_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_map_error_decomposition_delayed8d_nopgd_diagnostics.md",
+      "?? results/ffff699/notes/gru_map_error_decomposition_delayed8d_nopgd_diagnostics_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_map_error_decomposition_delayed8d_nopgd_validation_selected.md",
+      "?? results/ffff699/notes/gru_perturbation_response_delayed8d_nopgd_diagnostics.md",
+      "?? results/ffff699/notes/gru_perturbation_response_delayed8d_nopgd_diagnostics_manifest.json",
+      "?? results/ffff699/notes/gru_perturbation_response_delayed8d_nopgd_diagnostics_manifest_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_perturbation_response_delayed8d_nopgd_validation_selected.md",
+      "?? results/ffff699/notes/gru_perturbation_response_delayed8d_nopgd_validation_selected_manifest.json",
+      "?? results/ffff699/notes/gru_perturbation_response_delayed8d_nopgd_validation_selected_manifest_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_perturbation_response_norm_plots_delayed8d_nopgd_diagnostics.md",
+      "?? results/ffff699/notes/gru_perturbation_response_norm_plots_delayed8d_nopgd_diagnostics_manifest.json",
+      "?? results/ffff699/notes/gru_pilot_figures_delayed8d_nopgd_core_smoke_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_pilot_figures_delayed8d_nopgd_diagnostics_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_postrun_materialization_delayed8d_nopgd_core_smoke_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_postrun_materialization_delayed8d_nopgd_diagnostics_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_core_smoke.md",
+      "?? results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_core_smoke_manifest.json",
+      "?? results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_core_smoke_manifest_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_diagnostics.md",
+      "?? results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_diagnostics_manifest.json",
+      "?? results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_diagnostics_manifest_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_validation_selected.md",
+      "?? results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_validation_selected_manifest.json",
+      "?? results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_validation_selected_manifest_regeneration_spec.json",
+      "?? results/ffff699/notes/objective_comparator_delayed8d_nopgd_diagnostics_regeneration_spec.json",
+      "?? results/ffff699/notes/objective_comparator_delayed8d_nopgd_validation_selected.md",
+      "?? results/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/model.graph.manifest.json",
+      "?? results/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/run.json",
+      "?? results/ffff699/runs/delayed_8d_pgd_moderate_lr3e-3_clip5_b64_seed42/model.graph.manifest.json",
+      "?? results/ffff699/runs/delayed_8d_pgd_moderate_lr3e-3_clip5_b64_seed42/run.json",
+      "?? results/ffff699/runs/delayed_no_integrator_no_pgd_lr3e-3_clip5_b64_seed42/model.graph.manifest.json",
+      "?? results/ffff699/runs/delayed_no_integrator_no_pgd_lr3e-3_clip5_b64_seed42/run.json",
+      "?? results/ffff699/runs/delayed_no_integrator_no_pgd_lr3e-3_clip5_b64_seed43/model.graph.manifest.json",
+      "?? results/ffff699/runs/delayed_no_integrator_no_pgd_lr3e-3_clip5_b64_seed43/run.json",
+      "?? results/ffff699/runs/delayed_no_integrator_pgd_moderate_lr3e-3_clip5_b64_seed42/model.graph.manifest.json",
+      "?? results/ffff699/runs/delayed_no_integrator_pgd_moderate_lr3e-3_clip5_b64_seed42/run.json"
+    ]
+  },
+  "inputs": [
+    {
+      "exists": true,
+      "kind": "file",
+      "path": "results/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/run.json",
+      "role": "run_spec",
+      "sha256": "9d9998867217023555870f964058f12b228cc44d72de7ee1e0226d2d76fee2da",
+      "size_bytes": 243886
+    },
+    {
+      "exists": true,
+      "file_count": 66,
+      "hash_file_count": 66,
+      "hash_truncated": false,
+      "kind": "directory",
+      "path": "_artifacts/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42",
+      "role": "run_artifact_dir",
+      "sample_tree_sha256": "db806ec93b76ab0f9c861f6824d67de94fd618bc7ab04c4377093b0694cb6b8b",
+      "total_bytes": 186222956
+    }
+  ],
+  "materializer": "rlrmp.analysis.gru_pilot_figures.materialize_gru_pilot_figures",
+  "notes": [
+    "Postrun-owned regeneration spec for pilot loss/velocity figures."
+  ],
+  "outputs": [
+    {
+      "exists": true,
+      "file_count": 6,
+      "hash_file_count": 6,
+      "hash_truncated": false,
+      "kind": "directory",
+      "path": "_artifacts/ffff699/figures/gru_postrun_delayed8d_nopgd_validation_selected",
+      "role": "pilot_figure_dir",
+      "sample_tree_sha256": "43b22bcedaceb835fae947a8ec5bf501871a22d9a660f26e4d26ed9feb8fd76b",
+      "total_bytes": 26382134
+    },
+    {
+      "exists": true,
+      "kind": "file",
+      "path": "_artifacts/ffff699/figures/gru_postrun_delayed8d_nopgd_validation_selected/figure_summary.json",
+      "role": "pilot_figure_summary",
+      "sha256": "08e5a51eb8c0b20fa917123dd190ab5fe239be4ecf3ff1f351c6cfac0e56d262",
+      "size_bytes": 12318
+    }
+  ],
+  "parameters": {
+    "experiment": "ffff699",
+    "include_reference": true,
+    "labels": [
+      "delayed_8d_no_pgd_seed42"
+    ],
+    "n_rollout_trials": 64,
+    "preferred_checkpoint_manifest_path": null,
+    "run_ids": [
+      "delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42"
+    ],
+    "use_validation_selected_checkpoints": true
+  },
+  "schema_version": "rlrmp.diagnostic_regeneration_spec.v1",
+  "source_files": [
+    {
+      "exists": true,
+      "kind": "file",
+      "path": "src/rlrmp/analysis/gru_pilot_figures.py",
+      "role": "source_file",
+      "sha256": "652b36ce35fa11be1d9d7053d7a5386276e2fce2c2d81a2ebe1022179edf6a70",
+      "size_bytes": 44067
+    }
+  ]
+}

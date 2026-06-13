@@ -9,6 +9,7 @@ from rlrmp.analysis.gru_evaluation_diagnostics import (
     compute_gru_gate_arrays,
     summarize_rollout_behavior,
 )
+from rlrmp.analysis.trial_alignment import TrialTiming
 
 
 def test_summarize_rollout_behavior_reports_control_and_kinematic_metrics() -> None:
@@ -34,6 +35,40 @@ def test_summarize_rollout_behavior_reports_control_and_kinematic_metrics() -> N
     assert np.isclose(summary["overshoot_m"]["mean"], 0.01)
     assert summary["post_peak_forward_velocity_sign_changes"]["mean"] == 1.0
     assert summary["hidden_state_norm"]["max"] == 5.0
+
+
+def test_summarize_rollout_behavior_uses_delayed_movement_window() -> None:
+    position = np.zeros((1, 1, 8, 2), dtype=np.float64)
+    position[0, 0, :, 0] = np.arange(8, dtype=np.float64)
+    velocity = np.ones_like(position)
+    command = np.ones((1, 1, 8, 2), dtype=np.float64)
+    hidden = np.ones((1, 1, 8, 2), dtype=np.float64)
+    target = np.zeros((1, 8, 2), dtype=np.float64)
+    target[0, :, 0] = 6.0
+    evaluation = RolloutEvaluation(
+        position=position,
+        velocity=velocity,
+        command=command,
+        hidden=hidden,
+        gru_input=np.zeros((1, 1, 8, 2), dtype=np.float64),
+        initial_position=np.array([[0.0, 0.0]]),
+        initial_velocity=np.array([[0.0, 0.0]]),
+        target_position=target,
+        dt=0.01,
+        timing=TrialTiming(
+            is_delayed=True,
+            go_index=np.array([2], dtype=np.int64),
+            movement_horizon_steps=4,
+            n_time_steps=8,
+        ),
+    )
+
+    summary = summarize_rollout_behavior(evaluation)
+
+    assert summary["time_basis"]["time_basis"] == "go_cue_aligned_canonical_movement_window"
+    # Movement window is absolute samples [2, 6), so terminal position is x=5,
+    # not the padded tail's x=7.
+    assert summary["endpoint_error_m"]["mean"] == 1.0
 
 
 def test_compute_gru_gate_arrays_reconstructs_equations() -> None:

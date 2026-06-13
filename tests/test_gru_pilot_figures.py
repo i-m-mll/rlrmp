@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from types import SimpleNamespace
+
+import jax.numpy as jnp
 import numpy as np
 import plotly.graph_objects as go
 from feedbax.loss import TargetSpec
 from feedbax.state import CartesianState
-from feedbax.task import TaskTrialSpec
+from feedbax.task import DelayedReachTaskInputs, TaskTrialSpec, TrialTimeline
 
+import rlrmp.analysis.gru_pilot_figures as gpf
+from rlrmp.analysis.delayed_reach_eval_bank import make_delayed_reach_eval_bank
 from rlrmp.analysis.gru_pilot_figures import (
     REFERENCE_4D_LABEL,
     REFERENCE_LABEL,
@@ -16,11 +22,13 @@ from rlrmp.analysis.gru_pilot_figures import (
     VelocityProfile,
     active_loss_term_labels,
     build_figure_summary,
+    evaluate_stochastic_forward_velocity_profile,
     initial_effector_velocity,
     load_gru_training_history,
     repeat_single_validation_trial,
     write_velocity_figure,
     write_velocity_by_replicate_figure,
+    _go_aligned_forward_velocity_profile,
 )
 
 
@@ -75,6 +83,17 @@ def test_active_loss_term_labels_use_full_qrf_objective() -> None:
     run_spec["loss_objective"] = "full_analytical_qrf"
 
     assert active_loss_term_labels(run_spec) == ("full_analytical_qrf",)
+
+
+def test_active_loss_term_labels_include_full_qrf_pre_go_auxiliary() -> None:
+    run_spec = _run_spec(hidden_weight=1e-5)
+    run_spec["loss_objective"] = "full_analytical_qrf"
+    run_spec["hps"]["loss"]["weights"]["nn_output_pre_go"] = 1.0
+
+    assert active_loss_term_labels(run_spec) == (
+        "full_analytical_qrf",
+        "nn_output_pre_go",
+    )
 
 
 def test_active_loss_term_labels_include_force_filter_ablation_term() -> None:
@@ -161,6 +180,171 @@ def test_initial_effector_velocity_reads_cs_lss_vector_init() -> None:
     np.testing.assert_allclose(
         initial_effector_velocity(trial_specs),
         np.asarray([[0.1, -0.2], [0.3, -0.4]]),
+    )
+
+
+def test_go_aligned_velocity_profile_includes_full_support_pre_go_context_by_default() -> None:
+    forward = np.broadcast_to(
+        np.arange(90, dtype=np.float64)[None, None, :],
+        (2, 3, 90),
+    ).copy()
+    go_index = np.asarray([24, 24, 24], dtype=np.int64)
+
+    time_s, mean, std, replicate_mean, replicate_std, alignment = (
+        _go_aligned_forward_velocity_profile(
+            forward,
+            go_index,
+            dt=0.01,
+            movement_horizon_steps=60,
+        )
+    )
+
+    assert time_s.shape == (84,)
+    assert mean.shape == (84,)
+    assert std.shape == (84,)
+    assert replicate_mean.shape == (2, 84)
+    assert replicate_std.shape == (2, 84)
+    np.testing.assert_allclose(time_s[0], -0.24)
+    np.testing.assert_allclose(time_s[-1], 0.59)
+    assert alignment["pre_go_context_mode"] == "full_support"
+    assert alignment["requested_pre_go_context_steps"] is None
+    assert alignment["full_support_pre_go_steps"] == 24
+    assert alignment["plot_left_context_steps"] == 24
+    assert alignment["plot_post_go_steps"] == 60
+    assert alignment["full_support_slice"] == [0, 90]
+    assert alignment["requested_window_slice"] == [0, 84]
+    assert alignment["trim_slice"] == [0, 84]
+
+
+def test_go_aligned_velocity_profile_respects_explicit_pre_go_context() -> None:
+    forward = np.broadcast_to(
+        np.arange(90, dtype=np.float64)[None, None, :],
+        (2, 3, 90),
+    ).copy()
+    go_index = np.asarray([24, 24, 24], dtype=np.int64)
+
+    time_s, mean, std, replicate_mean, replicate_std, alignment = (
+        _go_aligned_forward_velocity_profile(
+            forward,
+            go_index,
+            dt=0.01,
+            movement_horizon_steps=60,
+            pre_go_context_steps=10,
+        )
+    )
+
+    assert time_s.shape == (70,)
+    assert mean.shape == (70,)
+    assert std.shape == (70,)
+    assert replicate_mean.shape == (2, 70)
+    assert replicate_std.shape == (2, 70)
+    np.testing.assert_allclose(time_s[0], -0.10)
+    np.testing.assert_allclose(time_s[-1], 0.59)
+    assert alignment["pre_go_context_mode"] == "explicit_steps"
+    assert alignment["requested_pre_go_context_steps"] == 10
+    assert alignment["full_support_pre_go_steps"] == 24
+    assert alignment["plot_left_context_steps"] == 10
+    assert alignment["plot_post_go_steps"] == 60
+
+
+def test_velocity_evaluator_reports_fixed_delayed_eval_bank_metadata(monkeypatch) -> None:
+    base = _adapted_delayed_trial_spec_template()
+    bank = make_delayed_reach_eval_bank(
+        base,
+        catch=False,
+        direction_count=2,
+        movement_horizon_steps=60,
+    )
+
+    class FakeTask:
+        validation_trials = base
+
+        def eval_trials(self, model, trial_specs, keys):
+            del model, keys
+            n_trials = trial_specs.targets["mechanics.effector.pos"].value.shape[0]
+            n_steps = trial_specs.timeline.n_steps
+            velocity = jnp.zeros((n_trials, n_steps, 2), dtype=jnp.float32)
+            velocity = velocity.at[..., 0].set(1.0)
+            return SimpleNamespace(
+                mechanics=SimpleNamespace(
+                    effector=SimpleNamespace(vel=velocity),
+                ),
+            )
+
+    monkeypatch.setattr(
+        gpf,
+        "setup_task_model_pair",
+        lambda hps, key: SimpleNamespace(task=FakeTask(), model=object()),
+    )
+    monkeypatch.setattr(
+        gpf,
+        "load_with_hyperparameters",
+        lambda path, setup_func: (object(), {}),
+    )
+    monkeypatch.setattr(gpf.eqx, "partition", lambda model, pred: (jnp.zeros((1,)), None))
+    monkeypatch.setattr(gpf.eqx, "combine", lambda leaves, other: leaves)
+    monkeypatch.setattr(
+        gpf.eqx,
+        "filter_vmap",
+        lambda fn, in_axes=None: (
+            lambda model_arrays, keys: jnp.stack(
+                [fn(model_arrays[index], keys[index]) for index in range(model_arrays.shape[0])]
+            )
+        ),
+    )
+
+    profile = evaluate_stochastic_forward_velocity_profile(
+        RunFigureInputs(
+            run_id="run",
+            label="Run",
+            run_spec_path=Path(__file__),
+            artifact_dir=Path(__file__).parent,
+            run_spec={
+                "hps": {"model": {"n_replicates": 1}, "dt": 0.01},
+                "game_card": {"dt": 0.01},
+                "task_timing": {"movement_window": {"cs_horizon_steps": 60}},
+            },
+        ),
+        n_rollout_trials=1,
+        evaluation_bank=bank,
+        pre_go_context_steps=10,
+    )
+
+    assert profile.alignment["go_index_min"] == 10
+    assert profile.alignment["go_index_max"] == 30
+    assert profile.alignment["evaluation_bank"]["kind"] == "no_catch"
+    assert profile.alignment["evaluation_bank"]["trial_count"] == 42
+    assert profile.alignment["plot_left_context_steps"] == 10
+    assert profile.alignment["plot_post_go_steps"] == 60
+
+
+def _adapted_delayed_trial_spec_template() -> TaskTrialSpec:
+    n_trials = 2
+    n_steps = 90
+    target = np.zeros((n_trials, n_steps, 2), dtype=np.float32)
+    target[0, :, :] = np.asarray([0.15, 0.0], dtype=np.float32)
+    target[1, :, :] = np.asarray([0.0, 0.15], dtype=np.float32)
+    hold = np.ones((n_trials, n_steps), dtype=np.float32)
+    hold[:, 29:] = 0.0
+    return TaskTrialSpec(
+        inits={"mechanics.vector": np.zeros((n_trials, 48), dtype=np.float32)},
+        inputs={
+            "task": DelayedReachTaskInputs(
+                CartesianState(pos=target),
+                hold,
+                np.ones_like(hold),
+            ),
+            "input": 1.0 - hold,
+            "target": target,
+            "effector_target": CartesianState(pos=target),
+            "epsilon": np.zeros((n_trials, n_steps, 8), dtype=np.float32),
+        },
+        targets={"mechanics.effector.pos": TargetSpec(target)},
+        timeline=TrialTimeline.from_epochs_events(
+            n_steps,
+            epoch_bounds=np.asarray([[0, 29, n_steps], [0, 29, n_steps]]),
+            epoch_names=("prep", "movement"),
+        ),
     )
 
 

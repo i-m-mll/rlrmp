@@ -1,0 +1,293 @@
+{
+  "aggregation_method": {
+    "alignment": "Responses are sign-equalized and represented in the current target-relative xy basis before norms are taken. For the current +x reach screen this basis is numerically identical to world xy; sign equalization is still applied before norm reduction so future non-+x rows cannot pool raw opposite directions.",
+    "delayed_time_window": "Delayed runs are plotted in a go-cue-aligned window with 10 pre-go steps plus the canonical movement horizon. Full-trial tails after the canonical movement window are excluded from these response-norm figures.",
+    "max_norm": "Plot the unbanded max over pooled aligned perturbation rows, replicates, and eval rollouts at each time point. This is an extreme-response sidecar, not an uncertainty estimate.",
+    "mean_norm": "Pool aligned perturbation rows, replicates, and eval rollouts at each time point; plot mean +/- SEM over pooled replicate x eval-seed samples.",
+    "metrics": [
+      "delta_position",
+      "delta_action"
+    ],
+    "sem": "mean-norm panels only; sample SD over pooled samples divided by sqrt(n).",
+    "timing_normalization": "early_visible/mid_visible/late_visible -> early/mid/late.",
+    "xy_reduction": "Euclidean norm over aligned/equalized xy axis at each time point."
+  },
+  "asset_dir": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets",
+  "bulk_roots": {
+    "corrected": "_artifacts/b8aa38e/perturbation_response/gru_overnight_robust_proprio_validation_selected_corrected"
+  },
+  "extlqg_trace_policy": {
+    "band": "none; deterministic comparator curve",
+    "status": "disabled",
+    "supported_channels": [
+      "command_input",
+      "delayed_observation",
+      "initial_state",
+      "process_epsilon",
+      "sensory_feedback"
+    ],
+    "unsupported_channels": [
+      "target_stream"
+    ]
+  },
+  "extlqg_trace_status": {
+    "disabled": 64
+  },
+  "figure_count": 24,
+  "figures": [
+    {
+      "class": "class_a",
+      "extlqg_trace_count": 0,
+      "facet": "early",
+      "family": "command_input_pulse",
+      "html_path": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets/class_a__delta_position__command_input_pulse__early.html",
+      "metric": "delta_position",
+      "trace_count": 2
+    },
+    {
+      "class": "class_a",
+      "extlqg_trace_count": 0,
+      "facet": "mid",
+      "family": "command_input_pulse",
+      "html_path": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets/class_a__delta_position__command_input_pulse__mid.html",
+      "metric": "delta_position",
+      "trace_count": 2
+    },
+    {
+      "class": "class_a",
+      "extlqg_trace_count": 0,
+      "facet": "late",
+      "family": "command_input_pulse",
+      "html_path": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets/class_a__delta_position__command_input_pulse__late.html",
+      "metric": "delta_position",
+      "trace_count": 2
+    },
+    {
+      "class": "class_a",
+      "extlqg_trace_count": 0,
+      "facet": "initial_condition",
+      "family": "initial_position_offset",
+      "html_path": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets/class_a__delta_position__initial_position_offset__initial_condition.html",
+      "metric": "delta_position",
+      "trace_count": 2
+    },
+    {
+      "class": "class_a",
+      "extlqg_trace_count": 0,
+      "facet": "initial_condition",
+      "family": "initial_velocity_offset",
+      "html_path": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets/class_a__delta_position__initial_velocity_offset__initial_condition.html",
+      "metric": "delta_position",
+      "trace_count": 2
+    },
+    {
+      "class": "class_a",
+      "extlqg_trace_count": 0,
+      "facet": "early",
+      "family": "target_aligned_lateral_command_load_pulse",
+      "html_path": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets/class_a__delta_position__target_aligned_lateral_command_load_pulse__early.html",
+      "metric": "delta_position",
+      "trace_count": 2
+    },
+    {
+      "class": "class_a",
+      "extlqg_trace_count": 0,
+      "facet": "mid",
+      "family": "target_aligned_lateral_command_load_pulse",
+      "html_path": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets/class_a__delta_position__target_aligned_lateral_command_load_pulse__mid.html",
+      "metric": "delta_position",
+      "trace_count": 2
+    },
+    {
+      "class": "class_a",
+      "extlqg_trace_count": 0,
+      "facet": "late",
+      "family": "target_aligned_lateral_command_load_pulse",
+      "html_path": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets/class_a__delta_position__target_aligned_lateral_command_load_pulse__late.html",
+      "metric": "delta_position",
+      "trace_count": 2
+    },
+    {
+      "class": "class_b",
+      "extlqg_trace_count": 0,
+      "facet": "default",
+      "family": "command_input_pulse",
+      "html_path": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets/class_b__delta_position__command_input_pulse__default.html",
+      "metric": "delta_position",
+      "trace_count": 6
+    },
+    {
+      "class": "class_b",
+      "extlqg_trace_count": 0,
+      "facet": "default",
+      "family": "initial_position_offset",
+      "html_path": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets/class_b__delta_position__initial_position_offset__default.html",
+      "metric": "delta_position",
+      "trace_count": 2
+    },
+    {
+      "class": "class_b",
+      "extlqg_trace_count": 0,
+      "facet": "default",
+      "family": "initial_velocity_offset",
+      "html_path": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets/class_b__delta_position__initial_velocity_offset__default.html",
+      "metric": "delta_position",
+      "trace_count": 2
+    },
+    {
+      "class": "class_b",
+      "extlqg_trace_count": 0,
+      "facet": "default",
+      "family": "target_aligned_lateral_command_load_pulse",
+      "html_path": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets/class_b__delta_position__target_aligned_lateral_command_load_pulse__default.html",
+      "metric": "delta_position",
+      "trace_count": 6
+    },
+    {
+      "class": "class_a",
+      "extlqg_trace_count": 0,
+      "facet": "early",
+      "family": "command_input_pulse",
+      "html_path": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets/class_a__delta_action__command_input_pulse__early.html",
+      "metric": "delta_action",
+      "trace_count": 2
+    },
+    {
+      "class": "class_a",
+      "extlqg_trace_count": 0,
+      "facet": "mid",
+      "family": "command_input_pulse",
+      "html_path": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets/class_a__delta_action__command_input_pulse__mid.html",
+      "metric": "delta_action",
+      "trace_count": 2
+    },
+    {
+      "class": "class_a",
+      "extlqg_trace_count": 0,
+      "facet": "late",
+      "family": "command_input_pulse",
+      "html_path": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets/class_a__delta_action__command_input_pulse__late.html",
+      "metric": "delta_action",
+      "trace_count": 2
+    },
+    {
+      "class": "class_a",
+      "extlqg_trace_count": 0,
+      "facet": "initial_condition",
+      "family": "initial_position_offset",
+      "html_path": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets/class_a__delta_action__initial_position_offset__initial_condition.html",
+      "metric": "delta_action",
+      "trace_count": 2
+    },
+    {
+      "class": "class_a",
+      "extlqg_trace_count": 0,
+      "facet": "initial_condition",
+      "family": "initial_velocity_offset",
+      "html_path": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets/class_a__delta_action__initial_velocity_offset__initial_condition.html",
+      "metric": "delta_action",
+      "trace_count": 2
+    },
+    {
+      "class": "class_a",
+      "extlqg_trace_count": 0,
+      "facet": "early",
+      "family": "target_aligned_lateral_command_load_pulse",
+      "html_path": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets/class_a__delta_action__target_aligned_lateral_command_load_pulse__early.html",
+      "metric": "delta_action",
+      "trace_count": 2
+    },
+    {
+      "class": "class_a",
+      "extlqg_trace_count": 0,
+      "facet": "mid",
+      "family": "target_aligned_lateral_command_load_pulse",
+      "html_path": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets/class_a__delta_action__target_aligned_lateral_command_load_pulse__mid.html",
+      "metric": "delta_action",
+      "trace_count": 2
+    },
+    {
+      "class": "class_a",
+      "extlqg_trace_count": 0,
+      "facet": "late",
+      "family": "target_aligned_lateral_command_load_pulse",
+      "html_path": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets/class_a__delta_action__target_aligned_lateral_command_load_pulse__late.html",
+      "metric": "delta_action",
+      "trace_count": 2
+    },
+    {
+      "class": "class_b",
+      "extlqg_trace_count": 0,
+      "facet": "default",
+      "family": "command_input_pulse",
+      "html_path": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets/class_b__delta_action__command_input_pulse__default.html",
+      "metric": "delta_action",
+      "trace_count": 6
+    },
+    {
+      "class": "class_b",
+      "extlqg_trace_count": 0,
+      "facet": "default",
+      "family": "initial_position_offset",
+      "html_path": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets/class_b__delta_action__initial_position_offset__default.html",
+      "metric": "delta_action",
+      "trace_count": 2
+    },
+    {
+      "class": "class_b",
+      "extlqg_trace_count": 0,
+      "facet": "default",
+      "family": "initial_velocity_offset",
+      "html_path": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets/class_b__delta_action__initial_velocity_offset__default.html",
+      "metric": "delta_action",
+      "trace_count": 2
+    },
+    {
+      "class": "class_b",
+      "extlqg_trace_count": 0,
+      "facet": "default",
+      "family": "target_aligned_lateral_command_load_pulse",
+      "html_path": "_artifacts/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/_assets/class_b__delta_action__target_aligned_lateral_command_load_pulse__default.html",
+      "metric": "delta_action",
+      "trace_count": 6
+    }
+  ],
+  "filters": {
+    "run_id_contains": [
+      "delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42"
+    ]
+  },
+  "issue": "b8aa38e",
+  "known_caveats": {
+    "graph_adapter_pairing": "Graph-adapter perturbation diagnostics must compare perturbed rows against a base row evaluated on the same adapter-augmented graph with a zero payload. This prevents pre-window differences caused by graph topology/key-stream changes rather than by the declared perturbation.",
+    "initial_state_extlqg_information": "The extLQG initial-state comparator perturbs the plant initial state while keeping the estimator/controller initial state nominal, matching the GRU delayed-visibility contract for these initial-state rows."
+  },
+  "plot_classes": {
+    "class_a": "One figure per metric x perturbation family x timing bin; rows are mean norm and max norm, columns are available learning rates; traces are eval severity x perturbation-training level.",
+    "class_b": "One figure per metric x perturbation family x eval severity; rows are mean norm and max norm, columns are available learning rates; traces are timing bin x perturbation-training level."
+  },
+  "regeneration_spec_path": "results/ffff699/figures/perturbation_response_norms_delayed8d_nopgd_diagnostics/regeneration_spec.json",
+  "runs": {
+    "delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42": {
+      "dt_s": 0.01,
+      "label": "delayed_8d_no_pgd_seed42",
+      "learning_rate": "lr3e-3",
+      "n_time_steps": 90,
+      "run_id": "delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42",
+      "time_window": {
+        "go_cue_index": 24,
+        "length": 70,
+        "movement_horizon_steps": 60,
+        "origin_index": 24,
+        "pre_go_steps": 10,
+        "source": "run_spec_canonical_horizon_plus_adapter_fixed_go_cue",
+        "start_index": 14,
+        "time_basis": "go_cue_aligned_canonical_movement_window"
+      },
+      "training_level": "none"
+    }
+  },
+  "schema_version": "rlrmp.gru_perturbation_response_norm_plots.v1",
+  "selector": "overnight_robust_proprio_validation_selected_corrected",
+  "source_manifest_path": "results/ffff699/notes/gru_perturbation_response_delayed8d_nopgd_diagnostics_manifest.json"
+}

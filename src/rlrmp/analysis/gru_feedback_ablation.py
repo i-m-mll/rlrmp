@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,10 +38,16 @@ from rlrmp.analysis.gru_perturbation_bank import (
 from rlrmp.analysis.gru_pilot_figures import (
     RunFigureInputs,
     initial_effector_velocity,
+    repeat_validation_trial_bank,
     repeat_single_validation_trial,
     resolve_run_inputs,
 )
 from rlrmp.analysis.cs_gru_standard_materialization import normalize_gru_hps
+from rlrmp.analysis.trial_alignment import (
+    canonical_movement_horizon_from_metadata,
+    take_per_trial_time_window,
+    trial_timing_from_specs,
+)
 from rlrmp.modules.training.part2 import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
@@ -391,18 +398,22 @@ def summarize_ablation_delta(
 ) -> dict[str, Any]:
     """Return compact per-ablation deltas against a normal-observation baseline."""
 
+    baseline_command = _movement_window_or_full(baseline.rollout.command, baseline.rollout)
+    ablated_command = _movement_window_or_full(ablated.rollout.command, ablated.rollout)
+    baseline_feedback = _movement_window_or_full(baseline.feedback, baseline.rollout)
+    ablated_feedback = _movement_window_or_full(ablated.feedback, ablated.rollout)
     return {
         "baseline_action_norm": _summary_stats(
-            np.linalg.norm(baseline.rollout.command, axis=-1)
+            np.linalg.norm(baseline_command, axis=-1)
         ),
         "ablated_action_norm": _summary_stats(
-            np.linalg.norm(ablated.rollout.command, axis=-1)
+            np.linalg.norm(ablated_command, axis=-1)
         ),
         "delta_action_norm": _summary_stats(
-            np.linalg.norm(ablated.rollout.command - baseline.rollout.command, axis=-1)
+            np.linalg.norm(ablated_command - baseline_command, axis=-1)
         ),
         "delta_observation_norm": _summary_stats(
-            np.linalg.norm(ablated.feedback - baseline.feedback, axis=-1)
+            np.linalg.norm(ablated_feedback - baseline_feedback, axis=-1)
         ),
         "delta_endpoint_error_m": _summary_stats(
             _endpoint_error(ablated.rollout) - _endpoint_error(baseline.rollout)
@@ -705,6 +716,7 @@ def materialize_gru_feedback_ablation(
     preferred_checkpoint_manifest_path: Path | None = None,
     output_path: Path | None = None,
     note_path: Path | None = None,
+    bulk_detail_path: Path | None = None,
     regeneration_spec_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
@@ -714,6 +726,11 @@ def materialize_gru_feedback_ablation(
     mkdir_p(result_notes_dir)
     output_path = output_path or result_notes_dir / DEFAULT_OUTPUT_FILENAME
     note_path = note_path or result_notes_dir / DEFAULT_NOTE_FILENAME
+    bulk_detail_path = bulk_detail_path or _feedback_ablation_detail_path(
+        output_path,
+        result_experiment=result_experiment,
+        repo_root=repo_root,
+    )
     regeneration_spec_path = regeneration_spec_path or _regeneration_spec_path(output_path)
     bank = default_cs_perturbation_bank(
         mode=bank_mode,  # type: ignore[arg-type]
@@ -743,7 +760,7 @@ def materialize_gru_feedback_ablation(
         )
         for run in run_inputs
     }
-    manifest = {
+    full_manifest = {
         "schema_version": SCHEMA_VERSION,
         "issue": result_experiment,
         "source_experiment": source_experiment,
@@ -777,9 +794,18 @@ def materialize_gru_feedback_ablation(
         },
         "runs": runs,
     }
-    manifest["feedback_checkpoint_selection_audit"] = feedback_checkpoint_selection_audit(manifest)
-    output_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
-    note_path.write_text(render_feedback_ablation_markdown(manifest))
+    full_manifest["feedback_checkpoint_selection_audit"] = feedback_checkpoint_selection_audit(
+        full_manifest
+    )
+    slim_manifest = slim_feedback_ablation_manifest(
+        full_manifest,
+        bulk_detail_path=bulk_detail_path,
+        repo_root=repo_root,
+    )
+    mkdir_p(bulk_detail_path.parent)
+    bulk_detail_path.write_text(json.dumps(full_manifest, indent=2, sort_keys=True) + "\n")
+    output_path.write_text(json.dumps(slim_manifest, indent=2, sort_keys=True) + "\n")
+    note_path.write_text(render_feedback_ablation_markdown(full_manifest))
     write_regeneration_spec(
         spec_path=regeneration_spec_path,
         diagnostic_name="gru_feedback_ablation",
@@ -802,6 +828,7 @@ def materialize_gru_feedback_ablation(
                 if preferred_checkpoint_manifest_path is None
                 else _repo_relative(preferred_checkpoint_manifest_path, repo_root=repo_root)
             ),
+            "bulk_detail_path": _repo_relative(bulk_detail_path, repo_root=repo_root),
         },
         inputs=[
             {"role": "run_spec", "path": run.run_spec_path}
@@ -819,6 +846,7 @@ def materialize_gru_feedback_ablation(
         outputs=[
             {"role": "feedback_ablation_manifest", "path": output_path},
             {"role": "feedback_ablation_note", "path": note_path},
+            {"role": "feedback_ablation_detail_manifest", "path": bulk_detail_path},
         ],
         source_files=[
             "src/rlrmp/analysis/gru_feedback_ablation.py",
@@ -831,7 +859,133 @@ def materialize_gru_feedback_ablation(
         ],
         repo_root=repo_root,
     )
-    return manifest
+    return slim_manifest
+
+
+def slim_feedback_ablation_manifest(
+    manifest: Mapping[str, Any],
+    *,
+    bulk_detail_path: Path,
+    repo_root: Path = REPO_ROOT,
+) -> dict[str, Any]:
+    """Return a tracked summary manifest with row-level detail stored separately."""
+
+    slim = {
+        key: deepcopy(value)
+        for key, value in manifest.items()
+        if key not in {"runs", "feedback_checkpoint_selection_audit"}
+    }
+    slim["bulk_detail_manifest"] = _repo_relative(bulk_detail_path, repo_root=repo_root)
+    runs = manifest.get("runs", {})
+    slim["runs"] = {
+        str(run_id): _slim_feedback_run(run)
+        for run_id, run in runs.items()
+        if isinstance(run, Mapping)
+    } if isinstance(runs, Mapping) else {}
+    audit = manifest.get("feedback_checkpoint_selection_audit", {})
+    slim["feedback_checkpoint_selection_audit"] = _slim_feedback_checkpoint_audit(audit)
+    return slim
+
+
+def _slim_feedback_run(run: Mapping[str, Any]) -> dict[str, Any]:
+    result = {
+        key: deepcopy(run.get(key))
+        for key in (
+            "label",
+            "run_spec_path",
+            "artifact_dir",
+            "checkpoint_selection",
+            "n_replicates",
+            "n_rollout_trials_per_replicate",
+            "n_time_steps",
+            "dt_s",
+            "status_counts",
+            "interpretation",
+            "normalized_feedback_use",
+            "feedback_pass_audit",
+        )
+        if key in run
+    }
+    ablations = run.get("ablations", ())
+    result["n_ablations"] = len(ablations) if isinstance(ablations, Sequence) else 0
+    rescore = run.get("feedback_checkpoint_rescore", {})
+    result["feedback_checkpoint_rescore"] = _slim_feedback_checkpoint_rescore(rescore)
+    return result
+
+
+def _slim_feedback_checkpoint_audit(audit: Any) -> dict[str, Any]:
+    if not isinstance(audit, Mapping):
+        return {"status": "not_available", "reason": "audit_not_mapping"}
+    result = {
+        key: deepcopy(audit.get(key))
+        for key in (
+            "schema_version",
+            "status",
+            "selection_use",
+            "primary_checkpoint_policy",
+            "feedback_selection_policy",
+            "candidate_granularity",
+            "note",
+            "reason",
+        )
+        if key in audit
+    }
+    runs = audit.get("runs", {})
+    if isinstance(runs, Mapping):
+        result["runs"] = {
+            str(run_id): _slim_feedback_checkpoint_rescore(run_audit)
+            for run_id, run_audit in runs.items()
+            if isinstance(run_audit, Mapping)
+        }
+    if "selected_candidate" in audit:
+        result["selected_candidate"] = deepcopy(audit["selected_candidate"])
+    if "candidates" in audit:
+        result["n_candidates"] = len(audit["candidates"])
+    return result
+
+
+def _slim_feedback_checkpoint_rescore(rescore: Any) -> dict[str, Any]:
+    if not isinstance(rescore, Mapping):
+        return {"status": "not_available", "reason": "rescore_not_mapping"}
+    result = {
+        key: deepcopy(rescore.get(key))
+        for key in (
+            "status",
+            "selection_role",
+            "selection_policy",
+            "selection_leakage_guard",
+            "feedback_bank_bins",
+            "feedback_scoring_policy",
+            "n_checkpoint_candidates",
+            "source_checkpoint_policy",
+            "reason",
+        )
+        if key in rescore
+    }
+    if "feedback_selected_checkpoints" in rescore:
+        result["feedback_selected_checkpoints"] = deepcopy(
+            rescore["feedback_selected_checkpoints"]
+        )
+    checkpoint_scores = rescore.get("checkpoint_scores", ())
+    result["n_checkpoint_scores"] = (
+        len(checkpoint_scores) if isinstance(checkpoint_scores, Sequence) else 0
+    )
+    return result
+
+
+def _feedback_ablation_detail_path(
+    output_path: Path,
+    *,
+    result_experiment: str,
+    repo_root: Path = REPO_ROOT,
+) -> Path:
+    return (
+        repo_root
+        / "_artifacts"
+        / result_experiment
+        / "feedback_ablation"
+        / f"{output_path.stem}_detail.json"
+    )
 
 
 def _regeneration_spec_path(path: Path) -> Path:
@@ -1028,6 +1182,10 @@ def evaluate_run_feedback_ablation(
     n_replicates = int(hps.model.n_replicates)
     seed = int(run.run_spec.get("seed", 42))
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
+    movement_horizon_steps = canonical_movement_horizon_from_metadata(
+        run.run_spec,
+        default=None,
+    )
     model, checkpoint_selection = load_validation_selected_checkpoint_model(
         experiment=source_experiment,
         run_id=run.run_id,
@@ -1040,7 +1198,15 @@ def evaluate_run_feedback_ablation(
         ),
         repo_root=repo_root,
     )
-    base_trial_specs = repeat_single_validation_trial(pair.task.validation_trials, n_rollout_trials)
+    base_timing = trial_timing_from_specs(
+        pair.task.validation_trials,
+        movement_horizon_steps=movement_horizon_steps,
+    )
+    base_trial_specs = (
+        repeat_validation_trial_bank(pair.task.validation_trials, n_rollout_trials)
+        if base_timing.is_delayed
+        else repeat_single_validation_trial(pair.task.validation_trials, n_rollout_trials)
+    )
     bank = bank or default_cs_perturbation_bank()
     perturbations = {
         str(row["perturbation_id"]): row for row in bank["perturbations"]
@@ -1052,6 +1218,7 @@ def evaluate_run_feedback_ablation(
         trial_specs=base_trial_specs,
         n_replicates=n_replicates,
         seed=0,
+        movement_horizon_steps=movement_horizon_steps,
     )
     rows: list[dict[str, Any]] = []
     for bin_id, perturbation_id in evaluation_bins.items():
@@ -1064,6 +1231,7 @@ def evaluate_run_feedback_ablation(
                 base_trial_specs,
                 perturbation,
                 model=model,
+                movement_horizon_steps=movement_horizon_steps,
             )
             adapter_json = adapter.to_json()
             if adapter.status != "evaluated":
@@ -1084,6 +1252,7 @@ def evaluate_run_feedback_ablation(
             trial_specs=trial_specs,
             n_replicates=n_replicates,
             seed=0,
+            movement_horizon_steps=movement_horizon_steps,
         )
         baseline_cost = full_qrf_cost_summary(baseline.rollout, trial_specs)
         for mode in default_ablation_modes():
@@ -1139,6 +1308,7 @@ def evaluate_run_feedback_ablation(
                 trial_specs=ablated_trial_specs,
                 n_replicates=n_replicates,
                 seed=0,
+                movement_horizon_steps=movement_horizon_steps,
             )
             ablated_cost = full_qrf_cost_summary(ablated.rollout, ablated_trial_specs)
             rows.append(
@@ -1184,6 +1354,7 @@ def evaluate_run_feedback_ablation(
             evaluation_bins=evaluation_bins,
             validation_checkpoint_selection=checkpoint_selection,
             n_replicates=n_replicates,
+            movement_horizon_steps=movement_horizon_steps,
             repo_root=repo_root,
         )
     else:
@@ -1205,6 +1376,7 @@ def feedback_checkpoint_rescore_audit_for_run(
     evaluation_bins: Mapping[str, str | None],
     validation_checkpoint_selection: Sequence[Any],
     n_replicates: int,
+    movement_horizon_steps: int | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
     """Score every durable checkpoint on a declared feedback perturbation bank."""
@@ -1235,6 +1407,7 @@ def feedback_checkpoint_rescore_audit_for_run(
                 checkpoint_batch=checkpoint_batch,
                 checkpoint_path=checkpoint_path,
                 n_replicates=n_replicates,
+                movement_horizon_steps=movement_horizon_steps,
                 repo_root=repo_root,
             )
         )
@@ -1324,6 +1497,7 @@ def _score_feedback_checkpoint_batch(
     checkpoint_path: Path,
     n_replicates: int,
     repo_root: Path,
+    movement_horizon_steps: int | None = None,
 ) -> dict[str, Any]:
     """Score one checkpoint on normal-controller feedback perturbation bins."""
 
@@ -1333,6 +1507,7 @@ def _score_feedback_checkpoint_batch(
         trial_specs=trial_specs,
         n_replicates=n_replicates,
         seed=0,
+        movement_horizon_steps=movement_horizon_steps,
     )
     baseline_cost = full_qrf_cost_summary(baseline.rollout, trial_specs)
     nominal_gate = _nominal_quality_gate_by_replicate(
@@ -1349,6 +1524,7 @@ def _score_feedback_checkpoint_batch(
             trial_specs,
             perturbation,
             model=model,
+            movement_horizon_steps=movement_horizon_steps,
         )
         if adapter.status != "evaluated":
             bin_scores.append(
@@ -1370,6 +1546,7 @@ def _score_feedback_checkpoint_batch(
             trial_specs=adapter.trial_specs,
             n_replicates=n_replicates,
             seed=0,
+            movement_horizon_steps=movement_horizon_steps,
         )
         perturbed_cost = full_qrf_cost_summary(perturbed.rollout, adapter.trial_specs)
         delta_cost = delta_full_qrf_cost_summary(baseline_cost, perturbed_cost)
@@ -2331,6 +2508,7 @@ def _evaluate_model_on_trial_specs(
     trial_specs: Any,
     n_replicates: int,
     seed: int,
+    movement_horizon_steps: int | None = None,
 ) -> DetailedRolloutEvaluation:
     model_arrays, model_other = eqx.partition(
         model,
@@ -2371,17 +2549,24 @@ def _evaluate_model_on_trial_specs(
             model_arrays,
             jr.split(jr.PRNGKey(seed), n_replicates),
         )
-    target_position = np.asarray(trial_specs.inputs["effector_target"].pos, dtype=np.float64)
+    command = np.asarray(states.net.output, dtype=np.float64)
+    target_position = _target_position_sequence(trial_specs)
+    timing = trial_timing_from_specs(
+        trial_specs,
+        n_time_steps=int(command.shape[-2]),
+        movement_horizon_steps=movement_horizon_steps,
+    )
     rollout = RolloutEvaluation(
         position=np.asarray(states.mechanics.effector.pos, dtype=np.float64),
         velocity=np.asarray(states.mechanics.effector.vel, dtype=np.float64),
-        command=np.asarray(states.net.output, dtype=np.float64),
+        command=command,
         hidden=np.asarray(states.net.hidden, dtype=np.float64),
         gru_input=np.asarray(states.net.input, dtype=np.float64),
         initial_position=np.asarray(_initial_effector_position(trial_specs), dtype=np.float64),
         initial_velocity=np.asarray(initial_effector_velocity(trial_specs), dtype=np.float64),
         target_position=target_position,
         dt=0.01,
+        timing=timing,
     )
     mechanics_vector = np.asarray(states.mechanics.vector, dtype=np.float64)
     object.__setattr__(rollout, "mechanics_vector", mechanics_vector)
@@ -2478,18 +2663,58 @@ def _initial_effector_position(trial_specs: Any) -> jnp.ndarray:
     raise ValueError("trial spec does not include an effector position initial state")
 
 
+def _target_position_sequence(trial_specs: Any) -> np.ndarray:
+    inputs = getattr(trial_specs, "inputs", {})
+    if isinstance(inputs, Mapping):
+        target = inputs.get("effector_target")
+        position = getattr(target, "pos", None)
+        if position is not None:
+            return np.asarray(position, dtype=np.float64)
+        target_input = inputs.get("target")
+        if getattr(target_input, "shape", None) is not None and target_input.shape[-1] == 2:
+            return np.asarray(target_input, dtype=np.float64)
+    for target_spec in getattr(trial_specs, "targets", {}).values():
+        value = getattr(target_spec, "value", None)
+        if getattr(value, "shape", None) is not None and value.shape[-1] == 2:
+            return np.asarray(value, dtype=np.float64)
+    raise ValueError("trial spec does not include a 2D effector target sequence")
+
+
 def _is_replicate_array(leaf: Any, n_replicates: int) -> bool:
     return eqx.is_array(leaf) and leaf.ndim >= 1 and leaf.shape[0] == n_replicates
 
 
+def _movement_window_or_full(values: Any, evaluation: RolloutEvaluation) -> np.ndarray:
+    array = np.asarray(values, dtype=np.float64)
+    timing = getattr(evaluation, "timing", None)
+    if timing is None or not timing.is_delayed:
+        return array
+    return take_per_trial_time_window(
+        array,
+        timing.go_index,
+        int(timing.movement_horizon_steps),
+        trial_axis=1,
+        time_axis=2,
+    )
+
+
 def _endpoint_error(evaluation: RolloutEvaluation) -> np.ndarray:
-    endpoint = evaluation.position[:, :, -1, :]
-    target = evaluation.target_position[:, -1, :]
+    position = _movement_window_or_full(evaluation.position, evaluation)
+    target_sequence = take_per_trial_time_window(
+        evaluation.target_position,
+        evaluation.timing.go_index,
+        int(evaluation.timing.movement_horizon_steps),
+        trial_axis=0,
+        time_axis=1,
+    ) if evaluation.timing is not None and evaluation.timing.is_delayed else evaluation.target_position
+    endpoint = position[:, :, -1, :]
+    target = target_sequence[:, -1, :]
     return np.linalg.norm(endpoint - target[None, :, :], axis=-1)
 
 
 def _terminal_speed(evaluation: RolloutEvaluation) -> np.ndarray:
-    return np.linalg.norm(evaluation.velocity[:, :, -1, :], axis=-1)
+    velocity = _movement_window_or_full(evaluation.velocity, evaluation)
+    return np.linalg.norm(velocity[:, :, -1, :], axis=-1)
 
 
 def _summary_stats(values: Any) -> dict[str, float | int]:

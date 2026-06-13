@@ -9,14 +9,19 @@ RMSE in correlated ways.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
 from rlrmp.analysis.trial_alignment import (
     align_trials,
+    canonical_movement_horizon_from_metadata,
     pooled_trial_mean_with_band,
     replicate_mean_curves,
+    take_per_trial_time_window,
     trim_to_full_support,
+    trial_timing_from_specs,
 )
 
 
@@ -117,6 +122,55 @@ def test_align_trials_padding_is_nan_by_default():
     assert np.all(aligned[0, center:center + n_steps] == 1.0)
     # Trial 1 (go=5) has 5 pre-go samples
     assert np.all(aligned[1, center - 5:center + (n_steps - 5)] == 1.0)
+
+
+def test_delayed_trial_timing_extracts_go_cue_and_movement_window():
+    trial_specs = SimpleNamespace(
+        inits={"mechanics.vector": np.zeros((2, 48), dtype=np.float64)},
+        targets={},
+        inputs={
+            "effector_target": SimpleNamespace(
+                pos=np.zeros((2, 90, 2), dtype=np.float64),
+            )
+        },
+        timeline=SimpleNamespace(
+            epoch_bounds=np.asarray([[0, 10, 90], [0, 30, 90]], dtype=np.int32),
+        ),
+    )
+    timing = trial_timing_from_specs(
+        trial_specs,
+        n_time_steps=90,
+        movement_horizon_steps=60,
+    )
+    values = np.arange(2 * 90, dtype=np.float64).reshape(2, 90)
+
+    window = take_per_trial_time_window(
+        values,
+        timing.go_index,
+        timing.movement_horizon_steps,
+        trial_axis=0,
+        time_axis=1,
+    )
+
+    assert timing.is_delayed is True
+    assert timing.go_index.tolist() == [10, 30]
+    assert timing.movement_end_index.tolist() == [70, 90]
+    assert window.shape == (2, 60)
+    np.testing.assert_allclose(window[0, :3], values[0, 10:13])
+    np.testing.assert_allclose(window[1, -3:], values[1, 87:90])
+
+
+def test_canonical_movement_horizon_prefers_run_metadata():
+    assert canonical_movement_horizon_from_metadata(
+        {
+            "task_timing": {
+                "movement_window": {
+                    "cs_horizon_steps": 60,
+                }
+            },
+            "game_card": {"horizon_steps": 99},
+        }
+    ) == 60
 
 
 # ---------------------------------------------------------------------------

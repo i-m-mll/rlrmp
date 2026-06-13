@@ -61,9 +61,16 @@ def summarize_output_dir(output_dir: Path) -> dict[str, Any]:
         result["stopped_early_for_checkpoint_gate"] = training_summary.get(
             "stopped_early_for_checkpoint_gate"
         )
+    _add_checkpoint_progress(output_dir, result)
     if not diagnostics_path.exists():
         result["ok"] = False
-        result["alerts"].append("missing training_diagnostics.npz")
+        if "checkpoint_completed_batches" in result or "latest_history_chunk_batch" in result:
+            result["alerts"].append(
+                "training_diagnostics.npz not written yet; "
+                "checkpoint/history progress exists"
+            )
+        else:
+            result["alerts"].append("missing training_diagnostics.npz")
         return result
 
     with np.load(diagnostics_path) as diagnostics:
@@ -96,6 +103,27 @@ def summarize_output_dir(output_dir: Path) -> dict[str, Any]:
     _add_metric_alerts(result)
     return result
 
+
+def _add_checkpoint_progress(output_dir: Path, result: dict[str, Any]) -> None:
+    checkpoint_index = _read_json(output_dir / "checkpoints" / "checkpoint_index.json")
+    if checkpoint_index is not None:
+        completed = checkpoint_index.get("completed_batches")
+        if completed is not None:
+            result["checkpoint_completed_batches"] = completed
+        latest = checkpoint_index.get("latest")
+        if latest is not None:
+            result["latest_checkpoint"] = latest
+    history_dir = output_dir / "history_chunks"
+    if history_dir.exists():
+        batches: list[int] = []
+        for path in history_dir.glob("history_*.eqx"):
+            try:
+                batches.append(int(path.stem.split("_")[-1]))
+            except ValueError:
+                continue
+        if batches:
+            result["latest_history_chunk_batch"] = max(batches)
+            result["n_history_chunks"] = len(batches)
 
 def _finite_check_view(
     name: str,
@@ -148,6 +176,15 @@ def render_text(summary: dict[str, Any]) -> str:
         f"  ok: {summary['ok']}",
         f"  latest_batch_index: {summary.get('latest_batch_index', 'n/a')}",
     ]
+    if "checkpoint_completed_batches" in summary:
+        lines.append(
+            f"  checkpoint_completed_batches: {summary['checkpoint_completed_batches']}"
+        )
+    if "latest_history_chunk_batch" in summary:
+        lines.append(
+            f"  latest_history_chunk_batch: {summary['latest_history_chunk_batch']} "
+            f"({summary.get('n_history_chunks', 0)} chunks)"
+        )
     for alert in summary.get("alerts", []):
         lines.append(f"  alert: {alert}")
     for name, stats in summary.get("latest", {}).items():

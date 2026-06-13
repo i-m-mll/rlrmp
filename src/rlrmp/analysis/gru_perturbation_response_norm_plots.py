@@ -18,6 +18,7 @@ from rlrmp.analysis.gru_perturbation_bank import (
     _build_extlqg_comparator_context,
     _simulate_extlqg_perturbed,
 )
+from rlrmp.analysis.trial_alignment import canonical_movement_horizon_from_metadata
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
@@ -45,9 +46,11 @@ DEFAULT_REGENERATION_SPEC_PATH = (
 
 METRICS = ("delta_position", "delta_action")
 STAT_COLUMNS = ("mean_norm", "max_norm")
+DEFAULT_DELAYED_PRE_GO_PLOT_STEPS = 10
+DEFAULT_EXTLQG_MOVEMENT_COMPARATOR_STEPS = 60
 LR_ORDER = ("lr1e-3", "lr3e-3")
 TRAINING_LEVEL_ORDER = ("none", "small", "moderate", "stress")
-SEVERITY_ORDER = ("small", "moderate", "stress")
+SEVERITY_ORDER = ("default", "small", "moderate", "stress")
 TIMING_ORDER = ("initial_condition", "early", "mid", "late")
 SUPPORTED_EXTLQG_CHANNELS = {
     "command_input",
@@ -58,6 +61,7 @@ SUPPORTED_EXTLQG_CHANNELS = {
 }
 
 SEVERITY_COLORS = {
+    "default": "#475569",
     "small": "#2563eb",
     "moderate": "#d97706",
     "stress": "#dc2626",
@@ -78,6 +82,44 @@ EXTLQG_WIDTH = 2.0
 
 
 @dataclass(frozen=True)
+class ResponseTimeWindow:
+    """Time window applied to full-trial perturbation-response arrays."""
+
+    start_index: int
+    length: int
+    origin_index: int
+    time_basis: str
+    source: str
+    go_cue_index: int | None = None
+    pre_go_steps: int | None = None
+    movement_horizon_steps: int | None = None
+
+    def time_s(self, *, dt_s: float) -> np.ndarray:
+        """Return the plotted time axis in seconds."""
+
+        sample_index = np.arange(int(self.length), dtype=np.float64) + float(self.start_index)
+        return (sample_index - float(self.origin_index)) * float(dt_s)
+
+    def to_json(self) -> dict[str, Any]:
+        """Return JSON-compatible window provenance."""
+
+        return {
+            "start_index": int(self.start_index),
+            "length": int(self.length),
+            "origin_index": int(self.origin_index),
+            "time_basis": self.time_basis,
+            "source": self.source,
+            "go_cue_index": None if self.go_cue_index is None else int(self.go_cue_index),
+            "pre_go_steps": None if self.pre_go_steps is None else int(self.pre_go_steps),
+            "movement_horizon_steps": (
+                None
+                if self.movement_horizon_steps is None
+                else int(self.movement_horizon_steps)
+            ),
+        }
+
+
+@dataclass(frozen=True)
 class RunDescriptor:
     """Compact run metadata needed for grouping response curves."""
 
@@ -87,6 +129,7 @@ class RunDescriptor:
     training_level: str
     dt_s: float
     n_time_steps: int
+    time_window: ResponseTimeWindow
 
 
 @dataclass(frozen=True)
@@ -153,7 +196,12 @@ def materialize_response_norm_plots(
         repo_root=repo_root,
         run_id_contains=tuple(run_id_contains),
     )
-    ext_cache = ExtlqgCurveCache(enabled=reconstruct_extlqg)
+    has_delayed_runs = _has_delayed_response_windows(inputs)
+    effective_reconstruct_extlqg = bool(reconstruct_extlqg or has_delayed_runs)
+    ext_cache = ExtlqgCurveCache(
+        enabled=effective_reconstruct_extlqg,
+        movement_comparator_steps=DEFAULT_EXTLQG_MOVEMENT_COMPARATOR_STEPS,
+    )
     learning_rates = _available_learning_rates(inputs)
     training_levels = _available_training_levels(inputs)
 
@@ -214,6 +262,12 @@ def materialize_response_norm_plots(
             ),
             "sem": "mean-norm panels only; sample SD over pooled samples divided by sqrt(n).",
             "timing_normalization": "early_visible/mid_visible/late_visible -> early/mid/late.",
+            "delayed_time_window": (
+                "Delayed runs are plotted in a go-cue-aligned window with "
+                f"{DEFAULT_DELAYED_PRE_GO_PLOT_STEPS} pre-go steps plus the canonical "
+                "movement horizon. Full-trial tails after the canonical movement window "
+                "are excluded from these response-norm figures."
+            ),
         },
         "plot_classes": {
             "class_a": (
@@ -228,10 +282,19 @@ def materialize_response_norm_plots(
             ),
         },
         "extlqg_trace_policy": {
-            "status": "reconstructed" if reconstruct_extlqg else "disabled",
+            "status": "reconstructed" if effective_reconstruct_extlqg else "disabled",
+            "requested_status": "reconstructed" if reconstruct_extlqg else "disabled",
+            "delayed_disable_override": bool(has_delayed_runs and not reconstruct_extlqg),
             "supported_channels": sorted(SUPPORTED_EXTLQG_CHANNELS),
             "unsupported_channels": ["target_stream"],
             "band": "none; deterministic comparator curve",
+            "time_basis": "movement_age_seconds",
+            "movement_comparator_steps": DEFAULT_EXTLQG_MOVEMENT_COMPARATOR_STEPS,
+            "delayed_scope": (
+                "For delayed GRU runs, extLQG traces are deterministic movement-window "
+                "comparators that begin at t=0 for the canonical 60-step movement window. "
+                "They are not a full delayed-task analytical reference."
+            ),
         },
         "known_caveats": {
             "graph_adapter_pairing": (
@@ -245,6 +308,12 @@ def materialize_response_norm_plots(
                 "while keeping the estimator/controller initial state nominal, matching "
                 "the GRU delayed-visibility contract for these initial-state rows."
             ),
+            "delayed_extlqg_scope": (
+                "Delayed GRU response curves may include negative pre-go time from the "
+                "ResponseTimeWindow. Dotted extLQG traces remain movement-age curves "
+                "starting at t=0 and should be read only as canonical movement-window "
+                "comparators, not as delayed-task analytical references."
+            ),
         },
     }
     manifest = {
@@ -252,7 +321,18 @@ def materialize_response_norm_plots(
         "figure_count": len(figure_records),
         "figures": figure_records,
         "extlqg_trace_status": dict(sorted(ext_status_counter.items())),
-        "runs": {run_id: run.__dict__ for run_id, run in inputs.runs.items()},
+        "runs": {
+            run_id: {
+                "run_id": run.run_id,
+                "label": run.label,
+                "learning_rate": run.learning_rate,
+                "training_level": run.training_level,
+                "dt_s": run.dt_s,
+                "n_time_steps": run.n_time_steps,
+                "time_window": run.time_window.to_json(),
+            }
+            for run_id, run in inputs.runs.items()
+        },
         "asset_dir": _repo_relative(assets_path, repo_root=repo_root),
         "filters": {
             "run_id_contains": list(run_id_contains),
@@ -285,7 +365,9 @@ def materialize_response_norm_plots(
             note_path=note,
             manifest_path=manifest_output,
             figure_spec_path=spec_path,
-            reconstruct_extlqg=reconstruct_extlqg,
+            reconstruct_extlqg=effective_reconstruct_extlqg,
+            reconstruct_extlqg_requested=reconstruct_extlqg,
+            delayed_disable_override=bool(has_delayed_runs and not reconstruct_extlqg),
             run_id_contains=tuple(run_id_contains),
             repo_root=repo_root,
         )
@@ -309,13 +391,20 @@ def load_plot_inputs(
         if run_id_contains and not any(token in run_id for token in run_id_contains):
             continue
         label = str(run_payload["label"])
+        n_time_steps = int(run_payload["n_time_steps"])
         runs[run_id] = RunDescriptor(
             run_id=run_id,
             label=label,
             learning_rate=_parse_learning_rate(label, run_id=run_id),
             training_level=_parse_training_level(label, run_id=run_id),
             dt_s=float(run_payload["dt_s"]),
-            n_time_steps=int(run_payload["n_time_steps"]),
+            n_time_steps=n_time_steps,
+            time_window=_time_window_for_run(
+                run_payload,
+                run_id=run_id,
+                n_time_steps=n_time_steps,
+                repo_root=repo_root,
+            ),
         )
         normalized_rows = []
         bulk_files = dict(run_payload.get("bulk_files", {}))
@@ -346,6 +435,7 @@ def aggregate_response_curves(
     dt_s: float,
     repo_root: Path = REPO_ROOT,
     stat: Literal["mean_norm", "max_norm"],
+    time_window: ResponseTimeWindow | None = None,
 ) -> CurveStats:
     """Aggregate materialized response arrays into replicate-level norm curves."""
 
@@ -366,6 +456,12 @@ def aggregate_response_curves(
                 f"(replicate, rollout, time, xy); got {values.shape}"
             )
         aligned = align_and_equalize_response(values, row)
+        if time_window is not None:
+            aligned = _apply_response_time_window(
+                aligned,
+                time_window,
+                perturbation_id=str(row.get("perturbation_id")),
+            )
         norms = np.linalg.norm(aligned, axis=-1)
         n_rollouts = norms.shape[1] if n_rollouts is None else n_rollouts
         n_time = norms.shape[2] if n_time is None else n_time
@@ -387,7 +483,11 @@ def aggregate_response_curves(
         mean = np.max(pooled, axis=0)
         sem = None
         n_samples = int(pooled.shape[0])
-    time_s = np.arange(mean.shape[0], dtype=np.float64) * float(dt_s)
+    time_s = (
+        time_window.time_s(dt_s=dt_s)
+        if time_window is not None
+        else np.arange(mean.shape[0], dtype=np.float64) * float(dt_s)
+    )
     return CurveStats(
         time_s=time_s,
         mean=mean,
@@ -418,8 +518,14 @@ def align_and_equalize_response(values: np.ndarray, row: Mapping[str, Any]) -> n
 class ExtlqgCurveCache:
     """Lazy cache for deterministic extLQG response curves."""
 
-    def __init__(self, *, enabled: bool = True):
+    def __init__(
+        self,
+        *,
+        enabled: bool = True,
+        movement_comparator_steps: int = DEFAULT_EXTLQG_MOVEMENT_COMPARATOR_STEPS,
+    ):
         self.enabled = enabled
+        self.movement_comparator_steps = int(movement_comparator_steps)
         self._context: Mapping[str, Any] | None = None
         self._curves: dict[tuple[str, str], DeterministicCurve] = {}
 
@@ -499,7 +605,12 @@ class ExtlqgCurveCache:
                 row,
             )
             norms = np.linalg.norm(aligned, axis=-1)
-            value = np.mean(norms, axis=(0, 1))
+            value = np.mean(norms, axis=(0, 1))[: self.movement_comparator_steps]
+            if value.shape[0] < self.movement_comparator_steps:
+                raise ValueError(
+                    "extLQG comparator shorter than canonical movement window: "
+                    f"{value.shape[0]} < {self.movement_comparator_steps}"
+                )
             curve = DeterministicCurve(
                 time_s=np.arange(value.shape[0], dtype=np.float64) * float(dt_s),
                 value=value,
@@ -547,7 +658,16 @@ def render_response_norm_note(
         "extreme-response curves.",
         "- ExtLQG: deterministic dotted traces are reconstructed for command-input, "
         "initial-state, process-epsilon, sensory-feedback, and delayed-observation rows.",
+        "- ExtLQG delayed-run scope: dotted traces are movement-window comparators only. "
+        f"They start at t=0 for the canonical {DEFAULT_EXTLQG_MOVEMENT_COMPARATOR_STEPS}-step "
+        "movement window and are not a full delayed-task analytical reference.",
     ]
+    ext_policy = manifest.get("extlqg_trace_policy", {})
+    if isinstance(ext_policy, Mapping) and ext_policy.get("delayed_disable_override"):
+        lines.append(
+            "- ExtLQG disable override: reconstruction was requested disabled, but delayed "
+            "inputs re-enable the deterministic movement-window comparator."
+        )
     if ext_status:
         lines.append(f"- ExtLQG trace status counts: {ext_status}.")
     lines.extend(
@@ -617,6 +737,7 @@ def _write_class_a_figures(
                             dt_s=run.dt_s,
                             repo_root=repo_root,
                             stat=stat,
+                            time_window=run.time_window,
                         )
                         _add_sem_curve(
                             fig,
@@ -715,6 +836,7 @@ def _write_class_b_figures(
                             dt_s=run.dt_s,
                             repo_root=repo_root,
                             stat=stat,
+                            time_window=run.time_window,
                         )
                         _add_sem_curve(
                             fig,
@@ -983,6 +1105,15 @@ def _available_training_levels(inputs: PlotInputs) -> tuple[str, ...]:
     return tuple(ordered)
 
 
+def _has_delayed_response_windows(inputs: PlotInputs) -> bool:
+    """Return whether any selected run uses the delayed go-cue-aligned window."""
+
+    return any(
+        run.time_window.time_basis == "go_cue_aligned_canonical_movement_window"
+        for run in inputs.runs.values()
+    )
+
+
 def _figure_columns(fig: go.Figure) -> tuple[int, ...]:
     """Return one-based subplot columns from a Plotly figure grid."""
 
@@ -1061,8 +1192,11 @@ def _severity(row: Mapping[str, Any]) -> str:
     value = row.get("level_name") or perturbation.get("level_name")
     if value is not None:
         return str(value)
+    calibration_role = row.get("calibration_role") or perturbation.get("calibration_role")
+    if calibration_role == "raw_default_unscaled_effect_size":
+        return "default"
     parts = str(row["perturbation_id"]).split("__")
-    return parts[1] if len(parts) > 2 else "unknown"
+    return parts[1] if len(parts) > 2 else "default"
 
 
 def _normalized_timing_bin(value: Any) -> str:
@@ -1101,6 +1235,135 @@ def _load_bulk_detail_manifest(
     return json.loads(detail_path.read_text())
 
 
+def _time_window_for_run(
+    run_payload: Mapping[str, Any],
+    *,
+    run_id: str,
+    n_time_steps: int,
+    repo_root: Path,
+) -> ResponseTimeWindow:
+    """Return the plotted response window for one run."""
+
+    run_spec = _load_run_spec(run_payload, repo_root=repo_root)
+    is_delayed = bool(
+        isinstance(run_spec.get("task_timing"), Mapping)
+        and isinstance(run_spec["task_timing"].get("delayed_reach"), Mapping)
+        and run_spec["task_timing"]["delayed_reach"].get("enabled")
+    )
+    if not is_delayed:
+        return ResponseTimeWindow(
+            start_index=0,
+            length=int(n_time_steps),
+            origin_index=0,
+            time_basis="absolute_trial_time",
+            source="full_trial_non_delayed_or_unspecified",
+        )
+
+    movement_horizon = canonical_movement_horizon_from_metadata(run_spec)
+    if movement_horizon is None:
+        movement_horizon = _fixed_adapter_movement_horizon(run_payload)
+    if movement_horizon is None:
+        raise ValueError(
+            f"delayed run {run_id!r} lacks a canonical movement horizon in run metadata "
+            "or perturbation adapter provenance"
+        )
+    go_cue_index = _fixed_adapter_go_cue_index(run_payload)
+    if go_cue_index is None:
+        raise ValueError(
+            f"delayed run {run_id!r} lacks a fixed go-cue index in perturbation adapter "
+            "provenance; response-norm plots need per-trial go indices in bulk metadata "
+            "before variable-go delayed banks can be plotted safely"
+        )
+    pre_go_steps = min(DEFAULT_DELAYED_PRE_GO_PLOT_STEPS, int(go_cue_index))
+    start_index = int(go_cue_index) - pre_go_steps
+    length = pre_go_steps + int(movement_horizon)
+    if start_index < 0 or start_index + length > n_time_steps:
+        raise ValueError(
+            f"delayed response plot window for run {run_id!r} is outside the full trial: "
+            f"start={start_index}, length={length}, n_time_steps={n_time_steps}"
+        )
+    return ResponseTimeWindow(
+        start_index=start_index,
+        length=length,
+        origin_index=int(go_cue_index),
+        time_basis="go_cue_aligned_canonical_movement_window",
+        source="run_spec_canonical_horizon_plus_adapter_fixed_go_cue",
+        go_cue_index=int(go_cue_index),
+        pre_go_steps=int(pre_go_steps),
+        movement_horizon_steps=int(movement_horizon),
+    )
+
+
+def _apply_response_time_window(
+    values: np.ndarray,
+    time_window: ResponseTimeWindow,
+    *,
+    perturbation_id: str,
+) -> np.ndarray:
+    """Slice a full-trial response array to the run's plotted time window."""
+
+    start = int(time_window.start_index)
+    stop = start + int(time_window.length)
+    if start < 0 or stop > values.shape[-2]:
+        raise ValueError(
+            f"time window {start}:{stop} is outside response array for "
+            f"{perturbation_id!r} with shape {values.shape}"
+        )
+    return values[..., start:stop, :]
+
+
+def _load_run_spec(run_payload: Mapping[str, Any], *, repo_root: Path) -> dict[str, Any]:
+    """Load the run spec referenced by a perturbation-response run payload."""
+
+    run_spec_path = run_payload.get("run_spec_path")
+    if not run_spec_path:
+        return {}
+    path = _resolve_repo_path(str(run_spec_path), repo_root=repo_root)
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text())
+
+
+def _fixed_adapter_go_cue_index(run_payload: Mapping[str, Any]) -> int | None:
+    values = set()
+    for provenance in _iter_adapter_provenance(run_payload):
+        go_min = provenance.get("go_cue_index_min")
+        go_max = provenance.get("go_cue_index_max")
+        if go_min is None or go_max is None:
+            continue
+        if int(go_min) != int(go_max):
+            return None
+        values.add(int(go_min))
+    if len(values) == 1:
+        return next(iter(values))
+    return None
+
+
+def _fixed_adapter_movement_horizon(run_payload: Mapping[str, Any]) -> int | None:
+    values = {
+        int(provenance["movement_horizon_steps"])
+        for provenance in _iter_adapter_provenance(run_payload)
+        if provenance.get("movement_horizon_steps") is not None
+    }
+    if len(values) == 1:
+        return next(iter(values))
+    return None
+
+
+def _iter_adapter_provenance(run_payload: Mapping[str, Any]) -> Iterable[Mapping[str, Any]]:
+    """Yield row adapter provenance dictionaries from full-detail manifests."""
+
+    for row in run_payload.get("perturbations", ()):
+        if not isinstance(row, Mapping):
+            continue
+        direct = row.get("adapter_provenance")
+        if isinstance(direct, Mapping):
+            yield direct
+        adapter = row.get("adapter")
+        if isinstance(adapter, Mapping) and isinstance(adapter.get("adapter_provenance"), Mapping):
+            yield adapter["adapter_provenance"]
+
+
 def _write_response_norm_regeneration_spec(
     *,
     spec_path: Path,
@@ -1111,6 +1374,8 @@ def _write_response_norm_regeneration_spec(
     manifest_path: Path,
     figure_spec_path: Path,
     reconstruct_extlqg: bool,
+    reconstruct_extlqg_requested: bool,
+    delayed_disable_override: bool,
     run_id_contains: Sequence[str],
     repo_root: Path,
 ) -> dict[str, Any]:
@@ -1146,6 +1411,9 @@ def _write_response_norm_regeneration_spec(
         command=command,
         parameters={
             "reconstruct_extlqg": reconstruct_extlqg,
+            "reconstruct_extlqg_requested": reconstruct_extlqg_requested,
+            "delayed_disable_override": delayed_disable_override,
+            "extlqg_movement_comparator_steps": DEFAULT_EXTLQG_MOVEMENT_COMPARATOR_STEPS,
             "run_id_contains": list(run_id_contains),
             "metrics": list(METRICS),
             "stat_columns": list(STAT_COLUMNS),
@@ -1173,6 +1441,10 @@ def _write_response_norm_regeneration_spec(
         notes=[
             "Materialization reads existing perturbation-response bulk arrays.",
             "Large response arrays and full row manifests remain under _artifacts.",
+            (
+                "Delayed-run extLQG traces are canonical movement-window comparators "
+                "starting at t=0, not full delayed-task analytical references."
+            ),
         ],
         repo_root=repo_root,
     )
@@ -1190,7 +1462,7 @@ def _parse_training_level(label: str, *, run_id: str | None = None) -> str:
     for source in (label, run_id or ""):
         if source.startswith("proprio_"):
             return source.split("_", maxsplit=1)[1]
-        if source.startswith("none_") or "__none_" in source:
+        if source.startswith("none_") or "__none_" in source or "_no_pgd_" in source:
             return "none"
         if source.startswith("cal_small_") or "__cal_small_" in source or "_cal_small_" in source:
             return "small"
@@ -1198,6 +1470,7 @@ def _parse_training_level(label: str, *, run_id: str | None = None) -> str:
             source.startswith("cal_moderate_")
             or "__cal_moderate_" in source
             or "_cal_moderate_" in source
+            or "_pgd_moderate_" in source
         ):
             return "moderate"
         if source.startswith("cal_stress_") or "__cal_stress_" in source or "_cal_stress_" in source:
@@ -1258,6 +1531,7 @@ __all__ = [
     "DeterministicCurve",
     "ExtlqgCurveCache",
     "PlotInputs",
+    "ResponseTimeWindow",
     "RunDescriptor",
     "SCHEMA_VERSION",
     "aggregate_response_curves",

@@ -20,6 +20,7 @@ from rlrmp.analysis.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     TARGET_POS,
     build_canonical_game,
+    build_no_integrator_game,
     materialize_reference,
 )
 from rlrmp.analysis.cs_gru_standard_materialization import normalize_gru_hps
@@ -42,6 +43,7 @@ from rlrmp.analysis.gru_evaluation_diagnostics import RolloutEvaluation
 from rlrmp.analysis.gru_pilot_figures import (
     RunFigureInputs,
     initial_effector_velocity,
+    repeat_validation_trial_bank,
     repeat_single_validation_trial,
     resolve_run_inputs,
 )
@@ -50,6 +52,11 @@ from rlrmp.analysis.output_feedback import (
     make_cs_output_feedback_initial_state,
     robust_estimator_covariances,
     robust_output_feedback_gains,
+)
+from rlrmp.analysis.trial_alignment import (
+    canonical_movement_horizon_from_metadata,
+    take_per_trial_time_window,
+    trial_timing_from_specs,
 )
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.modules.training.part2 import setup_task_model_pair
@@ -68,6 +75,7 @@ DEFAULT_RUN_IDS = (
     "lss_stabilization_fullqrf_warmcos__lr1e-3_clip5_b64",
     "lss_stabilization_fullqrf_warmcos__lr3e-3_clip5_b64",
 )
+MOVEMENT_RELATIVE_TIMING_EPOCHS = {"movement_indexed", "controller_visible"}
 
 PerturbationChannel = Literal[
     "initial_state",
@@ -1063,6 +1071,7 @@ def apply_perturbation_to_trial_specs(
     perturbation: Mapping[str, Any],
     *,
     model: Any | None = None,
+    movement_horizon_steps: int | None = None,
     plant_intervenor_label: str = PLANT_INTERVENOR_LABEL,
 ) -> AdapterResult:
     """Apply one perturbation row to external TaskTrialSpec interfaces."""
@@ -1081,15 +1090,21 @@ def apply_perturbation_to_trial_specs(
             trial_specs,
             perturbation,
             model=model,
+            movement_horizon_steps=movement_horizon_steps,
             plant_intervenor_label=plant_intervenor_label,
         )
     if channel == "process_epsilon":
-        return _apply_process_epsilon_pulse(trial_specs, perturbation)
+        return _apply_process_epsilon_pulse(
+            trial_specs,
+            perturbation,
+            movement_horizon_steps=movement_horizon_steps,
+        )
     if channel == "sensory_feedback":
         return _apply_named_graph_channel_offset(
             trial_specs,
             perturbation,
             model=model,
+            movement_horizon_steps=movement_horizon_steps,
             adapter_spec=_graph_adapter_spec(
                 perturbation,
                 label_prefix="sensory_feedback",
@@ -1108,6 +1123,7 @@ def apply_perturbation_to_trial_specs(
             trial_specs,
             perturbation,
             model=model,
+            movement_horizon_steps=movement_horizon_steps,
             adapter_spec=_graph_adapter_spec(
                 perturbation,
                 label_prefix="delayed_observation",
@@ -1513,13 +1529,26 @@ def evaluate_run_perturbation_bank(
         checkpoint_selection_mode=checkpoint_selection_mode,
         repo_root=repo_root,
     )
-    base_trial_specs = repeat_single_validation_trial(pair.task.validation_trials, n_rollout_trials)
+    movement_horizon_steps = canonical_movement_horizon_from_metadata(
+        run.run_spec,
+        default=None,
+    )
+    base_timing = trial_timing_from_specs(
+        pair.task.validation_trials,
+        movement_horizon_steps=movement_horizon_steps,
+    )
+    base_trial_specs = (
+        repeat_validation_trial_bank(pair.task.validation_trials, n_rollout_trials)
+        if base_timing.is_delayed
+        else repeat_single_validation_trial(pair.task.validation_trials, n_rollout_trials)
+    )
     nominal_base_evaluation = _evaluate_model_on_trial_specs(
         model=model,
         task=pair.task,
         trial_specs=base_trial_specs,
         n_replicates=n_replicates,
         seed=0,
+        movement_horizon_steps=movement_horizon_steps,
     )
     nominal_base_cost = full_qrf_cost_summary(nominal_base_evaluation, base_trial_specs)
     extlqg_context = _build_extlqg_comparator_context()
@@ -1531,6 +1560,7 @@ def evaluate_run_perturbation_bank(
             base_trial_specs,
             perturbation,
             model=model,
+            movement_horizon_steps=movement_horizon_steps,
         )
         if adapter.status != "evaluated":
             rows.append(
@@ -1576,6 +1606,7 @@ def evaluate_run_perturbation_bank(
                 trial_specs=row_base_trial_specs,
                 n_replicates=n_replicates,
                 seed=0,
+                movement_horizon_steps=movement_horizon_steps,
             )
             base_cost = full_qrf_cost_summary(base_evaluation, row_base_trial_specs)
         perturbed_evaluation = _evaluate_model_on_trial_specs(
@@ -1584,6 +1615,7 @@ def evaluate_run_perturbation_bank(
             trial_specs=adapter.trial_specs,
             n_replicates=n_replicates,
             seed=0,
+            movement_horizon_steps=movement_horizon_steps,
         )
         perturbed_cost = full_qrf_cost_summary(perturbed_evaluation, adapter.trial_specs)
         metrics = summarize_perturbation_response(
@@ -1743,10 +1775,20 @@ def summarize_perturbation_response(
 ) -> dict[str, Any]:
     """Compute paired perturbation-response metrics."""
 
-    delta_action = perturbed.command - base.command
-    delta_input = perturbed.gru_input - base.gru_input
-    delta_position = perturbed.position - base.position
-    delta_velocity = perturbed.velocity - base.velocity
+    base_command = _movement_window_or_full(base.command, base)
+    perturbed_command = _movement_window_or_full(perturbed.command, perturbed)
+    base_input = _movement_window_or_full(base.gru_input, base)
+    perturbed_input = _movement_window_or_full(perturbed.gru_input, perturbed)
+    base_position = _movement_window_or_full(base.position, base)
+    perturbed_position = _movement_window_or_full(perturbed.position, perturbed)
+    base_velocity = _movement_window_or_full(base.velocity, base)
+    perturbed_velocity = _movement_window_or_full(perturbed.velocity, perturbed)
+    target_position = _target_window_or_full(perturbed.target_position, perturbed)
+
+    delta_action = perturbed_command - base_command
+    delta_input = perturbed_input - base_input
+    delta_position = perturbed_position - base_position
+    delta_velocity = perturbed_velocity - base_velocity
     delta_position_norm = np.linalg.norm(delta_position, axis=-1)
     delta_velocity_norm = np.linalg.norm(delta_velocity, axis=-1)
     delta_state_norm = np.linalg.norm(
@@ -1755,15 +1797,16 @@ def summarize_perturbation_response(
     )
     delta_action_norm = np.linalg.norm(delta_action, axis=-1)
     endpoint_recovery = np.linalg.norm(
-        perturbed.position[:, :, -1, :] - perturbed.target_position[None, :, -1, :],
+        perturbed_position[:, :, -1, :] - target_position[None, :, -1, :],
         axis=-1,
     )
+    base_target_position = _target_window_or_full(base.target_position, base)
     base_endpoint = np.linalg.norm(
-        base.position[:, :, -1, :] - base.target_position[None, :, -1, :],
+        base_position[:, :, -1, :] - base_target_position[None, :, -1, :],
         axis=-1,
     )
-    terminal_speed = np.linalg.norm(perturbed.velocity[:, :, -1, :], axis=-1)
-    base_terminal_speed = np.linalg.norm(base.velocity[:, :, -1, :], axis=-1)
+    terminal_speed = np.linalg.norm(perturbed_velocity[:, :, -1, :], axis=-1)
+    base_terminal_speed = np.linalg.norm(base_velocity[:, :, -1, :], axis=-1)
     metrics = {
         "delta_action_norm": _summary_stats(delta_action_norm),
         "delta_position_trajectory_norm_m": _summary_stats(delta_position_norm),
@@ -1956,10 +1999,11 @@ def score_full_qrf_rollout_cost(
         not hidden.
     """
 
-    _plant, schedule = build_canonical_game()
     state_array = np.asarray(states, dtype=np.float64)
     command_array = np.asarray(commands, dtype=np.float64)
     initial_array = np.asarray(initial_states, dtype=np.float64)
+    _plant, schedule = _full_qrf_game_for_state_dim(int(state_array.shape[-1]))
+    physical_state_dim = int(getattr(_plant, "n_phys", 8))
     if state_array.shape[-1] != schedule.Q.shape[-1]:
         raise ValueError(
             f"Full-Q/R/Q_f scorer expected state dim {schedule.Q.shape[-1]}, "
@@ -1982,8 +2026,16 @@ def score_full_qrf_rollout_cost(
         )
     initial_array = np.broadcast_to(initial_array, (*state_array.shape[:-2], state_array.shape[-1]))
     x_pre = np.concatenate([initial_array[..., None, :], state_array[..., :-1, :]], axis=-2)
-    x_pre = _goal_centered_vectors(x_pre, target_pos=target_pos)
-    x_terminal = _goal_centered_vectors(state_array[..., -1, :], target_pos=target_pos)
+    x_pre = _goal_centered_vectors(
+        x_pre,
+        target_pos=target_pos,
+        physical_state_dim=physical_state_dim,
+    )
+    x_terminal = _goal_centered_vectors(
+        state_array[..., -1, :],
+        target_pos=target_pos,
+        physical_state_dim=physical_state_dim,
+    )
     q = np.asarray(schedule.Q, dtype=np.float64)
     r = np.asarray(schedule.R, dtype=np.float64)
     q_f = np.asarray(schedule.Q_f, dtype=np.float64)
@@ -1999,8 +2051,13 @@ def score_full_qrf_rollout_cost(
         "basis": {
             "state_key": "states.mechanics.vector",
             "command_key": "states.net.output",
-            "state_transform": "subtract TARGET_POS from each physical delay block x/y",
-            "schedule_source": "rlrmp.analysis.cs_game_card.build_canonical_game",
+            "state_transform": "subtract per-trial target position from each physical delay block x/y",
+            "schedule_source": (
+                "rlrmp.analysis.cs_game_card.build_no_integrator_game"
+                if state_array.shape[-1] == 36
+                else "rlrmp.analysis.cs_game_card.build_canonical_game"
+            ),
+            "physical_state_dim": physical_state_dim,
         },
         "total": total,
         "stage_state": stage_state,
@@ -2028,12 +2085,44 @@ def full_qrf_cost_summary(
             "status": "not_available",
             "reason": "trial_specs.inits lacks mechanics.vector initial state.",
         }
-    scored = score_full_qrf_rollout_cost(
-        states=mechanics_vector,
-        commands=evaluation.command,
-        initial_states=trial_specs.inits["mechanics.vector"],
+    mechanics_vector = np.asarray(mechanics_vector, dtype=np.float64)
+    commands = np.asarray(evaluation.command, dtype=np.float64)
+    _plant, schedule = _full_qrf_game_for_state_dim(int(mechanics_vector.shape[-1]))
+    timing = trial_timing_from_specs(
+        trial_specs,
+        n_time_steps=int(commands.shape[-2]),
+        movement_horizon_steps=int(schedule.T),
     )
-    return _cost_arrays_to_summary(scored)
+    target_pos = _target_position_for_qrf(trial_specs)
+    if timing.is_delayed:
+        states_scored = _take_time_window(
+            mechanics_vector,
+            timing.go_index,
+            timing.movement_horizon_steps,
+        )
+        commands_scored = _take_time_window(
+            commands,
+            timing.go_index,
+            timing.movement_horizon_steps,
+        )
+        initial_states = _movement_pre_states(
+            mechanics_vector,
+            np.asarray(trial_specs.inits["mechanics.vector"], dtype=np.float64),
+            timing.go_index,
+        )
+    else:
+        states_scored = mechanics_vector
+        commands_scored = commands
+        initial_states = trial_specs.inits["mechanics.vector"]
+    scored = score_full_qrf_rollout_cost(
+        states=states_scored,
+        commands=commands_scored,
+        initial_states=initial_states,
+        target_pos=target_pos,
+    )
+    summary = _cost_arrays_to_summary(scored)
+    summary["time_basis"] = timing.to_json()
+    return summary
 
 
 def delta_full_qrf_cost_summary(
@@ -2563,6 +2652,7 @@ def _apply_command_input_pulse(
     perturbation: Mapping[str, Any],
     *,
     model: Any | None,
+    movement_horizon_steps: int | None,
     plant_intervenor_label: str,
 ) -> AdapterResult:
     del plant_intervenor_label
@@ -2570,6 +2660,7 @@ def _apply_command_input_pulse(
         trial_specs,
         perturbation,
         model=model,
+        movement_horizon_steps=movement_horizon_steps,
         adapter_spec=_graph_adapter_spec(
             perturbation,
             label_prefix="command_input",
@@ -2591,6 +2682,7 @@ def _apply_named_graph_channel_offset(
     *,
     model: Any | None,
     adapter_spec: GraphAdapterSpec,
+    movement_horizon_steps: int | None = None,
 ) -> AdapterResult:
     """Add a time-varying graph-channel offset payload for one perturbation row."""
 
@@ -2604,11 +2696,28 @@ def _apply_named_graph_channel_offset(
     start = int(timing.get("start_time_index", 0))
     duration = int(timing.get("duration_steps", 1))
     n_time = _infer_trial_n_time(trial_specs, start + duration)
+    try:
+        start_indices, timing_provenance = _effective_timed_pulse_starts(
+            trial_specs,
+            timing,
+            n_time=n_time,
+            batch_size=batch_size,
+            duration=duration,
+            movement_horizon_steps=movement_horizon_steps,
+        )
+    except ValueError as exc:
+        return AdapterResult(
+            status="blocked",
+            trial_specs=trial_specs,
+            model=model,
+            reason=str(exc),
+            adapter_provenance=effective_spec.to_json(),
+        )
     payload = np.zeros((batch_size, n_time, _adapter_payload_dim(effective_spec)), dtype=np.float32)
     axis_index = _axis_index(str(perturbation["axis"]))
-    payload[:, start : start + duration, axis_index] = (
-        float(perturbation["amplitude"]) * int(perturbation["sign"])
-    )
+    amount = float(perturbation["amplitude"]) * int(perturbation["sign"])
+    for batch_idx, effective_start in enumerate(start_indices):
+        payload[batch_idx, effective_start : effective_start + duration, axis_index] = amount
     payload_array = jnp.asarray(payload)
     if effective_spec.input_key in getattr(trial_specs, "inputs", {}):
         payload_array = jnp.asarray(trial_specs.inputs[effective_spec.input_key]) + payload_array
@@ -2624,7 +2733,7 @@ def _apply_named_graph_channel_offset(
         "duration_steps": duration,
         "axis_index": axis_index,
         "requires_zero_payload_base": True,
-    }
+    } | timing_provenance
     if effective_spec.target_node == "mechanics" and effective_spec.target_port == "force":
         provenance["external_load_force"] = False
     if effective_spec is not adapter_spec:
@@ -2661,6 +2770,8 @@ def _apply_named_graph_channel_offset(
 def _apply_process_epsilon_pulse(
     trial_specs: Any,
     perturbation: Mapping[str, Any],
+    *,
+    movement_horizon_steps: int | None = None,
 ) -> AdapterResult:
     if "epsilon" not in trial_specs.inputs:
         return AdapterResult(
@@ -2699,17 +2810,26 @@ def _apply_process_epsilon_pulse(
     timing = perturbation["timing"]
     start = int(timing.get("start_time_index", 0))
     duration = int(timing.get("duration_steps", 1))
-    if start < 0 or duration < 1 or start + duration > epsilon.shape[-2]:
+    try:
+        start_indices, timing_provenance = _effective_timed_pulse_starts(
+            trial_specs,
+            timing,
+            n_time=int(epsilon.shape[-2]),
+            batch_size=int(epsilon.shape[0]),
+            duration=duration,
+            movement_horizon_steps=movement_horizon_steps,
+        )
+    except ValueError as exc:
         return AdapterResult(
             status="blocked",
             trial_specs=trial_specs,
-            reason=(
-                "process_epsilon_pulse timing is outside epsilon time axis: "
-                f"start={start}, duration={duration}, n_time={epsilon.shape[-2]}"
-            ),
+            reason=str(exc),
         )
     amount = float(perturbation["amplitude"]) * int(perturbation["sign"])
-    updated = epsilon.at[..., start : start + duration, epsilon_index].add(amount)
+    updated_np = np.asarray(epsilon, dtype=np.float64).copy()
+    for batch_idx, effective_start in enumerate(start_indices):
+        updated_np[batch_idx, effective_start : effective_start + duration, epsilon_index] += amount
+    updated = jnp.asarray(updated_np)
     return AdapterResult(
         status="evaluated",
         trial_specs=eqx.tree_at(lambda ts: ts.inputs["epsilon"], trial_specs, updated),
@@ -2722,7 +2842,7 @@ def _apply_process_epsilon_pulse(
             "future_graphspec_insertion_point": "mechanics.epsilon",
             "process_channel": "LinearStateSpace.B_w",
             "temporary_eager_adapter": True,
-        },
+        } | timing_provenance,
     )
 
 
@@ -2865,6 +2985,7 @@ def _evaluate_model_on_trial_specs(
     trial_specs: Any,
     n_replicates: int,
     seed: int,
+    movement_horizon_steps: int | None = None,
 ) -> RolloutEvaluation:
     model_arrays, model_other = eqx.partition(
         model,
@@ -2883,17 +3004,24 @@ def _evaluate_model_on_trial_specs(
         model_arrays,
         jr.split(jr.PRNGKey(seed), n_replicates),
     )
-    target_position = np.asarray(trial_specs.inputs["effector_target"].pos, dtype=np.float64)
+    target_position = _target_position_sequence(trial_specs)
+    command = np.asarray(states.net.output, dtype=np.float64)
+    timing = trial_timing_from_specs(
+        trial_specs,
+        n_time_steps=int(command.shape[-2]),
+        movement_horizon_steps=movement_horizon_steps,
+    )
     evaluation = RolloutEvaluation(
         position=np.asarray(states.mechanics.effector.pos, dtype=np.float64),
         velocity=np.asarray(states.mechanics.effector.vel, dtype=np.float64),
-        command=np.asarray(states.net.output, dtype=np.float64),
+        command=command,
         hidden=np.asarray(states.net.hidden, dtype=np.float64),
         gru_input=np.asarray(states.net.input, dtype=np.float64),
         initial_position=np.asarray(_initial_effector_position(trial_specs), dtype=np.float64),
         initial_velocity=np.asarray(initial_effector_velocity(trial_specs), dtype=np.float64),
         target_position=target_position,
         dt=0.01,
+        timing=timing,
     )
     object.__setattr__(
         evaluation,
@@ -3320,18 +3448,86 @@ def _write_perturbation_bulk_arrays(
     return path
 
 
-def _goal_centered_vectors(values: Any, *, target_pos: Any) -> np.ndarray:
-    """Subtract target position from every 8D physical block's x/y entries."""
+def _full_qrf_game_for_state_dim(state_dim: int) -> tuple[Any, Any]:
+    if state_dim == 36:
+        return build_no_integrator_game()
+    if state_dim == 48:
+        return build_canonical_game()
+    raise ValueError(f"unsupported full-Q/R/Q_f state dimension {state_dim}")
+
+
+def _target_position_for_qrf(trial_specs: Any) -> np.ndarray:
+    try:
+        target_array = _target_position_sequence(trial_specs)
+    except ValueError:
+        return np.asarray(TARGET_POS, dtype=np.float64)
+    if target_array.ndim < 2 or target_array.shape[-1] != 2:
+        return np.asarray(TARGET_POS, dtype=np.float64)
+    return target_array[:, -1, :]
+
+
+def _take_time_window(values: np.ndarray, go_index: np.ndarray, length: int) -> np.ndarray:
+    starts = np.asarray(go_index, dtype=np.int64).reshape(-1)
+    return np.stack(
+        [
+            np.asarray(values)[:, trial, start : start + length, ...]
+            for trial, start in enumerate(starts)
+        ],
+        axis=1,
+    )
+
+
+def _movement_pre_states(
+    states: np.ndarray,
+    trial_initial_states: np.ndarray,
+    go_index: np.ndarray,
+) -> np.ndarray:
+    starts = np.asarray(go_index, dtype=np.int64).reshape(-1)
+    rows = []
+    for trial, start in enumerate(starts):
+        if start == 0:
+            rows.append(
+                np.broadcast_to(
+                    trial_initial_states[trial],
+                    (states.shape[0], trial_initial_states.shape[-1]),
+                )
+            )
+        else:
+            rows.append(states[:, trial, start - 1, :])
+    return np.stack(rows, axis=1)
+
+
+def _goal_centered_vectors(
+    values: Any,
+    *,
+    target_pos: Any,
+    physical_state_dim: int = 8,
+) -> np.ndarray:
+    """Subtract target position from every physical delay block's x/y entries."""
 
     result = np.array(values, dtype=np.float64, copy=True)
     target = np.asarray(target_pos, dtype=np.float64)
-    if target.shape != (2,):
-        raise ValueError(f"target_pos must have shape (2,), got {target.shape}")
-    if result.shape[-1] % 8 != 0:
-        raise ValueError(f"state dimension {result.shape[-1]} is not divisible by 8")
-    for start in range(0, result.shape[-1], 8):
-        result[..., start : start + 2] -= target
+    if target.shape[-1:] != (2,):
+        raise ValueError(f"target_pos must end with shape (2,), got {target.shape}")
+    if result.shape[-1] % physical_state_dim != 0:
+        raise ValueError(
+            f"state dimension {result.shape[-1]} is not divisible by {physical_state_dim}"
+        )
+    target_broadcast = _broadcast_target_to_state_leading_axes(target, result)
+    for start in range(0, result.shape[-1], physical_state_dim):
+        result[..., start : start + 2] -= target_broadcast
     return result
+
+
+def _broadcast_target_to_state_leading_axes(target: np.ndarray, values: np.ndarray) -> np.ndarray:
+    if target.ndim == 1:
+        return target.reshape((1,) * (values.ndim - 1) + (2,))
+    if target.ndim == 2:
+        if values.ndim >= 3 and target.shape[0] == values.shape[-3]:
+            return target.reshape((1,) * (values.ndim - 3) + (target.shape[0], 1, 2))
+        if values.ndim >= 2 and target.shape[0] == values.shape[-2]:
+            return target.reshape((1,) * (values.ndim - 2) + target.shape)
+    return np.broadcast_to(target, values.shape[:-1] + (2,))
 
 
 def _cost_arrays_to_summary(scored: Mapping[str, Any]) -> dict[str, Any]:
@@ -3464,8 +3660,8 @@ def _target_relative_alignment_summary(
     """Decompose response vectors into radial/tangential target-relative axes."""
 
     try:
-        base_position = np.asarray(base.position, dtype=np.float64)
-        target = np.asarray(base.target_position, dtype=np.float64)
+        base_position = _movement_window_or_full(base.position, base)
+        target = _target_window_or_full(base.target_position, base)
         delta_pos = np.asarray(delta_position, dtype=np.float64)
         delta_act = np.asarray(delta_action, dtype=np.float64)
     except (TypeError, ValueError) as exc:
@@ -3523,6 +3719,34 @@ def _target_relative_alignment_summary(
             ),
         }
     return result
+
+
+def _movement_window_or_full(values: Any, evaluation: RolloutEvaluation) -> np.ndarray:
+    array = np.asarray(values, dtype=np.float64)
+    timing = getattr(evaluation, "timing", None)
+    if timing is None or not timing.is_delayed:
+        return array
+    return take_per_trial_time_window(
+        array,
+        timing.go_index,
+        int(timing.movement_horizon_steps),
+        trial_axis=1,
+        time_axis=2,
+    )
+
+
+def _target_window_or_full(target_position: Any, evaluation: RolloutEvaluation) -> np.ndarray:
+    target = np.asarray(target_position, dtype=np.float64)
+    timing = getattr(evaluation, "timing", None)
+    if timing is None or not timing.is_delayed:
+        return target
+    return take_per_trial_time_window(
+        target,
+        timing.go_index,
+        int(timing.movement_horizon_steps),
+        trial_axis=0,
+        time_axis=1,
+    )
 
 
 def _radial_tangential_component_summary(
@@ -4257,6 +4481,23 @@ def _initial_effector_position(trial_specs: Any) -> jnp.ndarray:
     raise ValueError("Trial spec does not include an effector position initial state")
 
 
+def _target_position_sequence(trial_specs: Any) -> np.ndarray:
+    inputs = getattr(trial_specs, "inputs", {})
+    if isinstance(inputs, Mapping):
+        target = inputs.get("effector_target")
+        position = getattr(target, "pos", None)
+        if position is not None:
+            return np.asarray(position, dtype=np.float64)
+        target_input = inputs.get("target")
+        if getattr(target_input, "shape", None) is not None and target_input.shape[-1] == 2:
+            return np.asarray(target_input, dtype=np.float64)
+    for target_spec in getattr(trial_specs, "targets", {}).values():
+        value = getattr(target_spec, "value", None)
+        if getattr(value, "shape", None) is not None and value.shape[-1] == 2:
+            return np.asarray(value, dtype=np.float64)
+    raise ValueError("Trial spec does not include a 2D effector target sequence")
+
+
 def _offset_array_axis(values: Any, axis_index: int, amount: float) -> jnp.ndarray:
     array = jnp.asarray(values)
     offset = jnp.zeros_like(array)
@@ -4296,6 +4537,13 @@ def _infer_batch_size(trial_specs: Any) -> int:
     target = trial_specs.inputs.get("effector_target")
     if target is not None and hasattr(target, "pos"):
         return int(target.pos.shape[0])
+    target_input = trial_specs.inputs.get("target")
+    if getattr(target_input, "shape", None) is not None:
+        return int(target_input.shape[0])
+    for target_spec in getattr(trial_specs, "targets", {}).values():
+        value = getattr(target_spec, "value", None)
+        if getattr(value, "shape", None) is not None:
+            return int(value.shape[0])
     raise ValueError("Unable to infer trial batch size")
 
 
@@ -4303,11 +4551,80 @@ def _infer_trial_n_time(trial_specs: Any, minimum: int) -> int:
     target = trial_specs.inputs.get("effector_target")
     if target is not None and hasattr(target, "pos"):
         return max(int(target.pos.shape[-2]), minimum)
+    target_input = trial_specs.inputs.get("target")
+    if getattr(target_input, "shape", None) is not None and len(target_input.shape) >= 2:
+        return max(int(target_input.shape[-2]), minimum)
     for value in trial_specs.inputs.values():
         shape = getattr(value, "shape", None)
         if shape is not None and len(shape) >= 2:
             return max(int(shape[-2]), minimum)
+    for target_spec in getattr(trial_specs, "targets", {}).values():
+        value = getattr(target_spec, "value", None)
+        if getattr(value, "shape", None) is not None and len(value.shape) >= 2:
+            return max(int(value.shape[-2]), minimum)
     return minimum
+
+
+def _effective_timed_pulse_starts(
+    trial_specs: Any,
+    timing: Mapping[str, Any],
+    *,
+    n_time: int,
+    batch_size: int,
+    duration: int,
+    movement_horizon_steps: int | None = None,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Return per-trial effective start indices for a perturbation timing spec."""
+
+    requested_start = int(timing.get("start_time_index", 0))
+    epoch = str(timing.get("epoch", "absolute"))
+    if duration < 1 or requested_start < 0:
+        raise ValueError(
+            f"invalid timed perturbation request: start={requested_start}, duration={duration}"
+        )
+    if epoch in MOVEMENT_RELATIVE_TIMING_EPOCHS:
+        trial_timing = trial_timing_from_specs(
+            trial_specs,
+            n_time_steps=n_time,
+            movement_horizon_steps=movement_horizon_steps,
+        )
+        starts = trial_timing.go_index + requested_start
+        mode = (
+            "go_cue_relative"
+            if trial_timing.is_delayed
+            else "movement_relative_zero_go_non_delayed"
+        )
+        provenance = {
+            "timing_epoch": epoch,
+            "requested_start_time_index": requested_start,
+            "effective_timing_mode": mode,
+            "go_cue_index_min": int(np.min(trial_timing.go_index)),
+            "go_cue_index_max": int(np.max(trial_timing.go_index)),
+            "movement_horizon_steps": int(trial_timing.movement_horizon_steps),
+        }
+    else:
+        starts = np.full((batch_size,), requested_start, dtype=np.int64)
+        provenance = {
+            "timing_epoch": epoch,
+            "requested_start_time_index": requested_start,
+            "effective_timing_mode": "absolute_trial_time",
+        }
+    starts = np.asarray(starts, dtype=np.int64).reshape(-1)
+    if starts.shape[0] != batch_size:
+        starts = np.broadcast_to(starts[:1], (batch_size,)).astype(np.int64)
+    if np.any(starts < 0) or np.any(starts + duration > n_time):
+        raise ValueError(
+            "timed perturbation is outside the trial time axis after applying "
+            f"timebase: starts=[{int(starts.min())}, {int(starts.max())}], "
+            f"duration={duration}, n_time={n_time}, epoch={epoch!r}"
+        )
+    provenance.update(
+        {
+            "effective_start_time_index_min": int(np.min(starts)),
+            "effective_start_time_index_max": int(np.max(starts)),
+        }
+    )
+    return starts, provenance
 
 
 def _is_replicate_array(leaf: Any, n_replicates: int) -> bool:

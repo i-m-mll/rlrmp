@@ -39,12 +39,23 @@ from rlrmp.analysis.cs_released_simulation import (
     sample_forward_noise_draws,
     simulate_lqg_released_forward,
 )
+from rlrmp.analysis.delayed_reach_eval_bank import (
+    DelayedReachEvalBank,
+    make_delayed_reach_eval_bank,
+)
 from rlrmp.analysis.output_feedback import (
     OutputFeedbackConfig,
     delayed_observation_matrix,
     make_cs_output_feedback_initial_state,
     position_velocity_observation_config,
     rollout_with_kalman_estimator,
+)
+from rlrmp.analysis.trial_alignment import (
+    align_trials,
+    canonical_movement_horizon_from_metadata,
+    pooled_trial_mean_with_band,
+    trim_to_full_support,
+    trial_timing_from_specs,
 )
 from rlrmp.modules.training.part2 import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
@@ -81,6 +92,8 @@ class VelocityProfile:
     n_rollout_trials_per_replicate: int
     replicate_mean: np.ndarray | None = None
     replicate_std: np.ndarray | None = None
+    time_basis: str = "absolute_trial_time"
+    alignment: dict[str, Any] | None = None
     checkpoint_selection: tuple[ReplicateCheckpointSelection, ...] = ()
 
     @property
@@ -121,6 +134,8 @@ def materialize_gru_pilot_figures(
     include_reference: bool = True,
     use_validation_selected_checkpoints: bool = False,
     preferred_checkpoint_manifest_path: Path | None = None,
+    pre_go_context_steps: int | None = None,
+    delayed_eval_bank_kind: str | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
     """Write loss and velocity figures for listed GRU pilot runs.
@@ -139,6 +154,9 @@ def materialize_gru_pilot_figures(
         use_validation_selected_checkpoints: If true, assemble each run's model
             from the recoverable validation-selected checkpoint for each
             replicate before evaluating velocity profiles.
+        pre_go_context_steps: Optional number of pre-go samples to retain for
+            delayed go-cue-aligned velocity profiles. If omitted, uses the full
+            common pre-go support.
         repo_root: Repository root for tests and local overrides.
 
     Returns:
@@ -182,6 +200,8 @@ def materialize_gru_pilot_figures(
             use_validation_selected_checkpoints=use_validation_selected_checkpoints,
             preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
             experiment=experiment,
+            pre_go_context_steps=pre_go_context_steps,
+            delayed_eval_bank_kind=delayed_eval_bank_kind,
             repo_root=repo_root,
         )
         for run in runs
@@ -326,10 +346,13 @@ def active_loss_term_labels(run_spec: Mapping[str, Any]) -> tuple[str, ...]:
     """Return active loss labels in Feedbax's serialized term order."""
 
     loss_objective = str(run_spec.get("loss_objective") or "")
-    if loss_objective == "full_analytical_qrf":
-        return ("full_analytical_qrf",)
-
     weights = run_spec.get("hps", {}).get("loss", {}).get("weights", {})
+    if loss_objective == "full_analytical_qrf":
+        labels = ["full_analytical_qrf"]
+        if float(weights.get("nn_output_pre_go", 0.0) or 0.0) != 0.0:
+            labels.append("nn_output_pre_go")
+        return tuple(labels)
+
     candidate_order = (
         "effector_pos_running",
         "effector_terminal_pos",
@@ -365,6 +388,9 @@ def evaluate_stochastic_forward_velocity_profile(
     use_validation_selected_checkpoints: bool = False,
     experiment: str = "",
     preferred_checkpoint_manifest_path: Path | None = None,
+    pre_go_context_steps: int | None = None,
+    evaluation_bank: DelayedReachEvalBank | None = None,
+    delayed_eval_bank_kind: str | None = None,
     repo_root: Path = REPO_ROOT,
 ) -> VelocityProfile:
     """Evaluate one trained GRU under repeated stochastic fixed validation trials."""
@@ -395,7 +421,43 @@ def evaluate_stochastic_forward_velocity_profile(
             setup_func=lambda key, **_kwargs: setup_task_model_pair(hps, key=key).model,
         )
         checkpoint_selection = []
-    trial_specs = repeat_single_validation_trial(pair.task.validation_trials, n_rollout_trials)
+    if evaluation_bank is not None and delayed_eval_bank_kind is not None:
+        raise ValueError("Pass either evaluation_bank or delayed_eval_bank_kind, not both")
+    if delayed_eval_bank_kind is not None:
+        if delayed_eval_bank_kind not in {"no_catch", "catch"}:
+            raise ValueError(
+                "delayed_eval_bank_kind must be one of None, 'no_catch', or 'catch'; "
+                f"got {delayed_eval_bank_kind!r}"
+            )
+        evaluation_bank = make_delayed_reach_eval_bank(
+            pair.task.validation_trials,
+            catch=delayed_eval_bank_kind == "catch",
+            movement_horizon_steps=canonical_movement_horizon_from_metadata(
+                run.run_spec,
+                default=None,
+            ),
+        )
+    source_trial_specs = (
+        evaluation_bank.trial_specs
+        if evaluation_bank is not None
+        else pair.task.validation_trials
+    )
+    base_timing = trial_timing_from_specs(
+        source_trial_specs,
+        movement_horizon_steps=canonical_movement_horizon_from_metadata(
+            run.run_spec,
+            default=None,
+        ),
+    )
+    if evaluation_bank is not None:
+        trial_specs = evaluation_bank.trial_specs
+    else:
+        trial_specs = (
+            repeat_validation_trial_bank(source_trial_specs, n_rollout_trials)
+            if base_timing.is_delayed
+            else repeat_single_validation_trial(source_trial_specs, n_rollout_trials)
+        )
+    eval_trial_count = _trial_count_from_spec(trial_specs)
     initial_velocity = initial_effector_velocity(trial_specs)
     model_arrays, model_other = eqx.partition(
         model,
@@ -407,8 +469,10 @@ def evaluate_stochastic_forward_velocity_profile(
         states = pair.task.eval_trials(
             replicate_model,
             trial_specs,
-            jr.split(key, n_rollout_trials),
+            jr.split(key, eval_trial_count),
         )
+        if base_timing.is_delayed:
+            return states.mechanics.effector.vel
         # Task.eval_trials strips the prepended initial history sample. Reinsert
         # it here so plotted GRU rollouts share the analytical reference time
         # convention: sample 0 is the true trial initial state.
@@ -421,10 +485,55 @@ def evaluate_stochastic_forward_velocity_profile(
         model_arrays,
         jr.split(jr.PRNGKey(0), n_replicates),
     )
-    velocity_np = np.asarray(velocity, dtype=np.float64)
-    forward = velocity_np[..., 0]
-    pooled = forward.reshape(n_replicates * n_rollout_trials, forward.shape[-1])
     dt = float(run.run_spec.get("game_card", {}).get("dt", getattr(hps, "dt", 0.01)))
+    velocity_np = np.asarray(velocity, dtype=np.float64)
+    target_position = _target_position_sequence(trial_specs)
+    initial_position = _initial_effector_position(trial_specs)
+    direction, _distance = _reach_direction(initial_position, target_position[:, -1, :])
+    forward = np.sum(velocity_np * direction[None, :, None, :], axis=-1)
+    timing = trial_timing_from_specs(
+        trial_specs,
+        n_time_steps=int(forward.shape[-1]),
+        movement_horizon_steps=canonical_movement_horizon_from_metadata(
+            run.run_spec,
+            default=int(forward.shape[-1]),
+        ),
+    )
+    if timing.is_delayed:
+        time_s, mean, std, aligned_rep_mean, aligned_rep_std, alignment = (
+            _go_aligned_forward_velocity_profile(
+                forward,
+                timing.go_index,
+                dt=dt,
+                movement_horizon_steps=timing.movement_horizon_steps,
+                pre_go_context_steps=pre_go_context_steps,
+            )
+        )
+        bank_metadata = (
+            {"evaluation_bank": evaluation_bank.metadata}
+            if evaluation_bank is not None
+            else {}
+        )
+        return VelocityProfile(
+            run_id=run.run_id,
+            label=run.label,
+            time_s=time_s,
+            mean=mean,
+            std=std,
+            n_replicates=n_replicates,
+            n_rollout_trials_per_replicate=int(forward.shape[1]),
+            replicate_mean=aligned_rep_mean,
+            replicate_std=aligned_rep_std,
+            time_basis="go_cue_aligned",
+            alignment={**timing.to_json(), **bank_metadata, **alignment},
+            checkpoint_selection=tuple(checkpoint_selection),
+        )
+    bank_metadata = (
+        {"evaluation_bank": evaluation_bank.metadata}
+        if evaluation_bank is not None
+        else {}
+    )
+    pooled = forward.reshape(n_replicates * forward.shape[1], forward.shape[-1])
     return VelocityProfile(
         run_id=run.run_id,
         label=run.label,
@@ -432,9 +541,11 @@ def evaluate_stochastic_forward_velocity_profile(
         mean=np.mean(pooled, axis=0),
         std=np.std(pooled, axis=0),
         n_replicates=n_replicates,
-        n_rollout_trials_per_replicate=n_rollout_trials,
+        n_rollout_trials_per_replicate=int(forward.shape[1]),
         replicate_mean=np.mean(forward, axis=1),
         replicate_std=np.std(forward, axis=1),
+        time_basis="absolute_trial_time",
+        alignment={**timing.to_json(), **bank_metadata},
         checkpoint_selection=tuple(checkpoint_selection),
     )
 
@@ -470,6 +581,79 @@ def repeat_single_validation_trial(trial_specs: Any, n_trials: int) -> Any:
         return leaf
 
     return jt.map(repeat_leaf, trial_specs)
+
+
+def repeat_validation_trial_bank(trial_specs: Any, n_trials: int) -> Any:
+    """Repeat the whole validation bank cyclically instead of only trial zero."""
+
+    source_trials = _trial_count_from_spec(trial_specs)
+    if source_trials < 1:
+        raise ValueError("validation trial bank must contain at least one trial")
+    indices = jnp.asarray(np.arange(n_trials, dtype=np.int32) % source_trials)
+
+    def repeat_leaf(leaf: Any) -> Any:
+        shape = getattr(leaf, "shape", None)
+        if shape is not None and len(shape) >= 1 and shape[0] == source_trials:
+            return jnp.asarray(leaf)[indices]
+        return leaf
+
+    return jt.map(repeat_leaf, trial_specs)
+
+
+def _go_aligned_forward_velocity_profile(
+    forward: np.ndarray,
+    go_index: np.ndarray,
+    *,
+    dt: float,
+    movement_horizon_steps: int,
+    pre_go_context_steps: int | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
+    """Return go-cue aligned velocity statistics clipped to a diagnostic window."""
+
+    aligned_forward, center = align_trials(forward, go_index)
+    _full_support, support_slice = trim_to_full_support(aligned_forward)
+    support_start = int(support_slice.start or 0)
+    support_stop = int(support_slice.stop or aligned_forward.shape[-1])
+    if pre_go_context_steps is None:
+        requested_start = support_start
+        pre_go_context_mode = "full_support"
+        requested_pre_go_context_steps = None
+    else:
+        requested_start = max(0, int(center) - int(pre_go_context_steps))
+        pre_go_context_mode = "explicit_steps"
+        requested_pre_go_context_steps = int(pre_go_context_steps)
+    requested_stop = min(
+        int(aligned_forward.shape[-1]),
+        int(center) + int(movement_horizon_steps),
+    )
+    start = max(support_start, requested_start)
+    stop = min(support_stop, requested_stop)
+    if stop <= start:
+        raise ValueError(
+            "go-aligned velocity window has no full-support samples after clipping: "
+            f"support=[{support_start}, {support_stop}), "
+            f"requested=[{requested_start}, {requested_stop})"
+        )
+
+    window = aligned_forward[..., start:stop]
+    mean, lower, upper = pooled_trial_mean_with_band(window, band="sd", trim=False)
+    replicate_mean = np.nanmean(window, axis=1)
+    replicate_std = np.nanstd(window, axis=1, ddof=1)
+    time_s = (np.arange(start, stop, dtype=np.float64) - float(center)) * float(dt)
+    alignment = {
+        "center_index": int(center),
+        "full_support_slice": [support_start, support_stop],
+        "requested_window_slice": [requested_start, requested_stop],
+        "trim_slice": [start, stop],
+        "untrimmed_aligned_steps": int(aligned_forward.shape[-1]),
+        "pre_go_context_mode": pre_go_context_mode,
+        "requested_pre_go_context_steps": requested_pre_go_context_steps,
+        "full_support_pre_go_steps": int(max(0, center - support_start)),
+        "requested_post_go_movement_steps": int(movement_horizon_steps),
+        "plot_left_context_steps": int(max(0, center - start)),
+        "plot_post_go_steps": int(max(0, stop - center)),
+    }
+    return time_s, mean, (upper - lower) / 2.0, replicate_mean, replicate_std, alignment
 
 
 def _trial_count_from_spec(trial_specs: Any) -> int:
@@ -701,7 +885,18 @@ def write_velocity_figure(
         margin={"l": 70, "r": 20, "t": 60, "b": 60},
         hovermode="x unified",
     )
-    fig.update_xaxes(title_text="Time (s)", row=len(profiles), col=1)
+    if any(profile.time_basis == "go_cue_aligned" for profile in profiles):
+        for row in range(1, len(profiles) + 1):
+            fig.add_vline(
+                x=0.0,
+                line={"color": "black", "dash": "dash", "width": 1},
+                row=row,
+                col=1,
+            )
+        x_title = "Time relative to go cue (s)"
+    else:
+        x_title = "Time (s)"
+    fig.update_xaxes(title_text=x_title, row=len(profiles), col=1)
     fig.update_yaxes(title_text="Forward velocity (m/s)", zeroline=True)
     path = output_dir / "forward_velocity_profiles_stochastic.html"
     fig.write_html(path)
@@ -809,7 +1004,18 @@ def write_velocity_by_replicate_figure(
         hovermode="x unified",
         legend={"groupclick": "togglegroup"},
     )
-    fig.update_xaxes(title_text="Time (s)", row=len(profiles), col=1)
+    if any(profile.time_basis == "go_cue_aligned" for profile in profiles):
+        for row in range(1, len(profiles) + 1):
+            fig.add_vline(
+                x=0.0,
+                line={"color": "black", "dash": "dash", "width": 1},
+                row=row,
+                col=1,
+            )
+        x_title = "Time relative to go cue (s)"
+    else:
+        x_title = "Time (s)"
+    fig.update_xaxes(title_text=x_title, row=len(profiles), col=1)
     fig.update_yaxes(title_text="Forward velocity (m/s)", zeroline=True)
     path = output_dir / "forward_velocity_profiles_by_replicate_stochastic_with_extlqg.html"
     fig.write_html(path)
@@ -842,6 +1048,8 @@ def build_figure_summary(
             "peak_mean_forward_velocity_m_s": float(np.max(profile.mean)),
             "time_of_peak_mean_forward_velocity_s": float(profile.time_s[int(np.argmax(profile.mean))]),
             "replicates": _replicate_velocity_summaries(profile),
+            "time_basis": profile.time_basis,
+            "alignment": profile.alignment,
             "checkpoint_selection": [
                 selection.to_json() for selection in profile.checkpoint_selection
             ],
@@ -945,6 +1153,44 @@ def _replicate_velocity_summaries(profile: VelocityProfile) -> list[dict[str, fl
     return summaries
 
 
+def _initial_effector_position(trial_specs: Any) -> np.ndarray:
+    for init_state in trial_specs.inits.values():
+        position = getattr(init_state, "pos", None)
+        if position is not None:
+            return np.asarray(position, dtype=np.float64)
+        shape = getattr(init_state, "shape", None)
+        if shape is not None and len(shape) >= 1 and shape[-1] >= 2:
+            return np.asarray(init_state, dtype=np.float64)[..., 0:2]
+    raise ValueError("Trial spec does not include an effector position initial state")
+
+
+def _target_position_sequence(trial_specs: Any) -> np.ndarray:
+    inputs = getattr(trial_specs, "inputs", {})
+    if isinstance(inputs, Mapping):
+        target = inputs.get("effector_target")
+        position = getattr(target, "pos", None)
+        if position is not None:
+            return np.asarray(position, dtype=np.float64)
+        target_input = inputs.get("target")
+        if getattr(target_input, "shape", None) is not None and target_input.shape[-1] == 2:
+            return np.asarray(target_input, dtype=np.float64)
+    for target_spec in getattr(trial_specs, "targets", {}).values():
+        value = getattr(target_spec, "value", None)
+        if getattr(value, "shape", None) is not None and value.shape[-1] == 2:
+            return np.asarray(value, dtype=np.float64)
+    raise ValueError("Trial spec does not include a 2D effector target sequence")
+
+
+def _reach_direction(
+    initial_position: np.ndarray,
+    target_position: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    delta = target_position - initial_position
+    distance = np.linalg.norm(delta, axis=-1)
+    safe_distance = np.where(distance > 0.0, distance, 1.0)
+    return delta / safe_distance[:, None], distance
+
+
 def _is_replicate_array(leaf: Any, n_replicates: int) -> bool:
     return eqx.is_array(leaf) and leaf.ndim >= 1 and leaf.shape[0] == n_replicates
 
@@ -973,6 +1219,7 @@ __all__ = [
     "load_gru_training_history",
     "materialize_gru_pilot_figures",
     "repeat_single_validation_trial",
+    "repeat_validation_trial_bank",
     "resolve_run_inputs",
     "write_loss_figures",
     "write_velocity_figure",

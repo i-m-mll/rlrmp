@@ -255,3 +255,25 @@ def test_markdown_renderer_includes_decision_annotations() -> None:
     assert "# GRU Map-Error Decomposition" in markdown
     assert "unit__nominal_clean" in markdown
     assert "low_norm" in markdown
+
+
+def test_markdown_renderer_includes_blocked_response_map_rows() -> None:
+    markdown = render_map_error_decomposition_markdown(
+        {
+            "issue": "ddf7f43",
+            "source_issue": "ffff699",
+            "rows": [
+                {
+                    "run_id": "delayed__nominal_clean",
+                    "decomposition": {
+                        "status": "blocked",
+                        "reason": "unsupported 6D feedback basis",
+                        "top_singular_directions": [],
+                    },
+                }
+            ],
+        }
+    )
+
+    assert "delayed__nominal_clean" in markdown
+    assert "unsupported 6D feedback basis" in markdown

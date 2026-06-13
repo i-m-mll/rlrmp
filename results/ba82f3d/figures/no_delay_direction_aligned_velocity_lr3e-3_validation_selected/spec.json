@@ -1,0 +1,19 @@
+{
+  "args": {
+    "checkpoint_policy": "validation_selected_per_replicate",
+    "direction_count": 20,
+    "label": "target-relative multitarget full Q/R/Qf, lr=3e-3",
+    "reach_length_m": 0.15,
+    "reference_samples": 2100,
+    "run_id": "target_relative_multitarget_fullqrf_warmcos__lr3e-3_clip5_b64",
+    "topic": "no_delay_direction_aligned_velocity_lr3e-3_validation_selected"
+  },
+  "outputs": {
+    "per_direction": "_artifacts/ba82f3d/figures/no_delay_direction_aligned_velocity_lr3e-3_validation_selected/per_direction_aligned_velocity_with_matched_extlqg.html",
+    "pooled": "_artifacts/ba82f3d/figures/no_delay_direction_aligned_velocity_lr3e-3_validation_selected/pooled_direction_aligned_velocity_with_matched_extlqg.html",
+    "summary": "_artifacts/ba82f3d/figures/no_delay_direction_aligned_velocity_lr3e-3_validation_selected/summary.json"
+  },
+  "schema_version": "rlrmp.figure_regeneration_spec.v1",
+  "script": "scripts/materialize_no_delay_direction_aligned_velocity.py",
+  "summary": "_artifacts/ba82f3d/figures/no_delay_direction_aligned_velocity_lr3e-3_validation_selected/summary.json"
+}

@@ -274,6 +274,26 @@ def test_active_loss_term_labels_use_full_qrf_objective() -> None:
     assert active_loss_term_labels(run_spec) == ("full_analytical_qrf",)
 
 
+def test_active_loss_term_labels_include_full_qrf_pre_go_auxiliary() -> None:
+    run_spec = {
+        "loss_objective": "full_analytical_qrf",
+        "hps": {
+            "loss": {
+                "weights": {
+                    "effector_pos_running": 1.0,
+                    "nn_output": 1.0,
+                    "nn_output_pre_go": 1.0,
+                }
+            }
+        },
+    }
+
+    assert active_loss_term_labels(run_spec) == (
+        "full_analytical_qrf",
+        "nn_output_pre_go",
+    )
+
+
 def test_active_loss_term_labels_include_force_filter_ablation_term() -> None:
     run_spec = {
         "loss_objective": "partial_net_output_force_filter",

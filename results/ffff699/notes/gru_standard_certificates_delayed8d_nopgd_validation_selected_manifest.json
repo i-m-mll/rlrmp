@@ -1,0 +1,610 @@
+{
+  "checkpoint_policy": "validation_selected_per_replicate",
+  "checkpoint_selection": {
+    "checkpoint_policy": "validation_selected_per_replicate",
+    "history_validation_log_note": "Validation history contains sparse positive records and zero padding. Durable models are only available at numbered checkpoints, so each checkpoint is scored by the most recent positive validation record at or before that checkpoint.",
+    "issue": "ffff699",
+    "runs": {
+      "delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42": [
+        {
+          "best_logged_validation_batch": 3201,
+          "best_logged_validation_objective": 170.19951930659346,
+          "checkpoint_batches": 3000,
+          "checkpoint_path": "_artifacts/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/checkpoints/checkpoint_0003000",
+          "final_validation_objective": 3486.2011761410886,
+          "final_vs_selected_validation_degradation": 3276.839285398863,
+          "replicate": 0,
+          "scoring_validation_log_batch": 3000,
+          "scoring_validation_objective": 209.3618907422254,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 3601,
+          "best_logged_validation_objective": 176.14820858361318,
+          "checkpoint_batches": 3000,
+          "checkpoint_path": "_artifacts/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/checkpoints/checkpoint_0003000",
+          "final_validation_objective": 1570.8136151301069,
+          "final_vs_selected_validation_degradation": 1384.3550586088297,
+          "replicate": 1,
+          "scoring_validation_log_batch": 3000,
+          "scoring_validation_objective": 186.45855652127716,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 2301,
+          "best_logged_validation_objective": 175.79390337118454,
+          "checkpoint_batches": 2000,
+          "checkpoint_path": "_artifacts/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/checkpoints/checkpoint_0002000",
+          "final_validation_objective": 1526.4828255905281,
+          "final_vs_selected_validation_degradation": 1339.9001663199797,
+          "replicate": 2,
+          "scoring_validation_log_batch": 2000,
+          "scoring_validation_objective": 186.58265927054842,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 3401,
+          "best_logged_validation_objective": 171.87852772461684,
+          "checkpoint_batches": 3000,
+          "checkpoint_path": "_artifacts/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/checkpoints/checkpoint_0003000",
+          "final_validation_objective": 1907.0475780015493,
+          "final_vs_selected_validation_degradation": 1714.970121991418,
+          "replicate": 3,
+          "scoring_validation_log_batch": 3000,
+          "scoring_validation_objective": 192.07745601013136,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 3001,
+          "best_logged_validation_objective": 191.42432184993322,
+          "checkpoint_batches": 3000,
+          "checkpoint_path": "_artifacts/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/checkpoints/checkpoint_0003000",
+          "final_validation_objective": 1214.1762373489535,
+          "final_vs_selected_validation_degradation": 1009.6143165103202,
+          "replicate": 4,
+          "scoring_validation_log_batch": 3000,
+          "scoring_validation_objective": 204.56192083863323,
+          "selection_source": "sparse_history_fallback"
+        }
+      ]
+    },
+    "schema_version": "rlrmp.validation_selected_gru_checkpoints.v1",
+    "selection_policy": "per-replicate checkpoint selected by minimum positive rollout validation objective among available durable checkpoints; analytical action and I/O metrics are audit-only",
+    "selection_source": "sparse_history_fallback"
+  },
+  "failure_decomposition": {
+    "rows": [
+      {
+        "certificate": {
+          "external_mismatch_ratio": 1.0131548249640518,
+          "external_response_map_mismatches": {
+            "disturbance_history_to_action_map_mismatch": null,
+            "disturbance_history_to_output_map_mismatch": null,
+            "disturbance_history_to_state_map_mismatch": null,
+            "measurement_history_to_action_map_mismatch": null,
+            "measurement_history_to_output_map_mismatch": null,
+            "observation_history_to_action_map_mismatch": null
+          },
+          "response_map_mismatch": null,
+          "state_weighted_action_mismatch": 1.0131548249640518
+        },
+        "classification": {
+          "classification": "external_rollout_mismatch",
+          "reasons": [
+            "external_rollout_mismatch"
+          ],
+          "signals": {
+            "certificate_bad": false,
+            "equivalence_metrics_failed": false,
+            "external_certificate_evidence_available": true,
+            "external_map_representation": null,
+            "hidden_state_coordinate_mismatch": null,
+            "io_map_bad": false,
+            "learned_gradient_bad": false,
+            "objective_bad": false,
+            "objective_close": false,
+            "reference_gradient_bad": false,
+            "representation_failed": false,
+            "response_map_evidence_available": false,
+            "rollout_action_mismatch_bad": true,
+            "sidecar_improved": false,
+            "weak_subspace_dominates": false
+          }
+        },
+        "controller_label": "delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42",
+        "evaluation_lens": "nominal_clean",
+        "gain_error_decomposition": {
+          "reason": "Visited gain-error decomposition requires same-coordinate static gains.",
+          "status": "not_applicable"
+        },
+        "gradient_diagnostics": {
+          "reason": "No static gain or optimizer-coordinate gradient is defined for this empirical/nonlinear standard row.",
+          "status": "not_applicable"
+        },
+        "interpolation": {
+          "reason": "Learned-to-reference interpolation is undefined without a shared static gain parameterization.",
+          "status": "not_applicable"
+        },
+        "objective": {
+          "reason": "GRU empirical/nonlinear rows do not expose a static training objective parameterization in the standard row.",
+          "status": "not_applicable"
+        },
+        "row_parameters": {
+          "certificate_mode": "empirical_nonlinear",
+          "evaluation_lens": "nominal_clean",
+          "io_response_map_blocker": "Response-map components are blocked: the ffff699 Feedbax GraphSpec (None) feeds the GRU feedback basis `target_relative_delayed_feedback_plus_force_filter` (6D), while the current standard response-map reference uses the approved delayed position/velocity observation basis (4D). No approved standard-certificate projection for this candidate feedback basis is present.",
+          "io_response_map_status": "blocked_missing_observation_contract",
+          "nn_hidden": 0.0,
+          "source_issue": "ffff699",
+          "source_run_id": "delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42",
+          "stochastic_preset": {
+            "additive_motor_noise_std": 1e-05,
+            "name": "cs2019-rollout",
+            "plant_process_force_noise_std": 0.03162277660168379,
+            "projection_notes": {
+              "additive_motor": "Project C&S input-image motor covariance to command-channel additive noise with std sqrt(motor_covariance_scale).",
+              "plant_process": "Project C&S process/load covariance to independent force noise immediately upstream of mechanics, after the force filter.",
+              "sensory": "Use the C&S sensory covariance diagonal standard deviation on the Feedbax delayed pos/vel feedback channel.",
+              "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
+              "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
+            },
+            "sensory_noise_std": 0.004791329788133908,
+            "signal_dependent_motor_noise_std": 0.02,
+            "source_contract": {
+              "additive_motor_covariance": "input_image_state_covariance_B_B_T",
+              "contract": "cs_released_stochastic_v1",
+              "motor_covariance_scale": 1e-10,
+              "motor_covariance_shape": [
+                48,
+                48
+              ],
+              "output_feedback_process_covariance_scale": 0.001,
+              "process_covariance_scale": 1.0,
+              "process_covariance_shape": [
+                48,
+                48
+              ],
+              "process_noise": "separate_output_feedback_process_covariance",
+              "sensory_covariance_diag": [
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05
+              ],
+              "sensory_noise_scale": 1.0,
+              "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
+              "signal_dependent_scale": 0.02,
+              "signal_dependent_state_shape": [
+                48,
+                2,
+                2
+              ]
+            }
+          }
+        },
+        "run_id": "delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42__nominal_clean",
+        "source_group": "cs_stochastic_gru",
+        "source_standard_status": "partial_standard_certificate_blocked"
+      }
+    ]
+  },
+  "format": "rlrmp.cs_gru_standard_certificates.v1",
+  "issue": "e6a32b8",
+  "regeneration_spec": "results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_validation_selected_manifest_regeneration_spec.json",
+  "rows": [
+    {
+      "arrays": [],
+      "artifacts": {
+        "run_spec": "results/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/run.json",
+        "trained_model": "_artifacts/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/trained_model.eqx",
+        "training_summary": "_artifacts/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/training_summary.json"
+      },
+      "certificate_components": [
+        {
+          "name": "state_weighted_action_mismatch",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "action_label": "command",
+            "aggregate_delta_energy": 1703.440007484455,
+            "aggregate_mismatch_ratio": 1.0131548249640518,
+            "aggregate_reference_energy": 1681.3225042331467,
+            "delta_rms": 5.328289293141616,
+            "mismatch_ratio_max": 38362.147378423746,
+            "mismatch_ratio_mean": 932.4741440992677,
+            "n_samples": 6000,
+            "reference_rms": 5.293584960801056,
+            "state_label": "state"
+          }
+        },
+        {
+          "name": "visited_subspace_diagnostics",
+          "reason": "requires states or state covariances",
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "optimizer_metadata",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "completed_batches": 12000,
+            "full_training_launch": "requested",
+            "learning_rate": 0.003,
+            "n_train_batches": 12000,
+            "optimizer": "adamw",
+            "training_batches_per_second": 21.751900908542417,
+            "training_duration_seconds": 551.6759225069545
+          }
+        },
+        {
+          "name": "observation_history_to_action_map_mismatch",
+          "reason": "Response-map components are blocked: the ffff699 Feedbax GraphSpec (None) feeds the GRU feedback basis `target_relative_delayed_feedback_plus_force_filter` (6D), while the current standard response-map reference uses the approved delayed position/velocity observation basis (4D). No approved standard-certificate projection for this candidate feedback basis is present.",
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "measurement_history_to_action_map_mismatch",
+          "reason": "Response-map components are blocked: the ffff699 Feedbax GraphSpec (None) feeds the GRU feedback basis `target_relative_delayed_feedback_plus_force_filter` (6D), while the current standard response-map reference uses the approved delayed position/velocity observation basis (4D). No approved standard-certificate projection for this candidate feedback basis is present.",
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "measurement_history_to_output_map_mismatch",
+          "reason": "Response-map components are blocked: the ffff699 Feedbax GraphSpec (None) feeds the GRU feedback basis `target_relative_delayed_feedback_plus_force_filter` (6D), while the current standard response-map reference uses the approved delayed position/velocity observation basis (4D). No approved standard-certificate projection for this candidate feedback basis is present.",
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "disturbance_history_to_action_map_mismatch",
+          "reason": "Response-map components are blocked: the ffff699 Feedbax GraphSpec (None) feeds the GRU feedback basis `target_relative_delayed_feedback_plus_force_filter` (6D), while the current standard response-map reference uses the approved delayed position/velocity observation basis (4D). No approved standard-certificate projection for this candidate feedback basis is present.",
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "disturbance_history_to_state_map_mismatch",
+          "reason": "Response-map components are blocked: the ffff699 Feedbax GraphSpec (None) feeds the GRU feedback basis `target_relative_delayed_feedback_plus_force_filter` (6D), while the current standard response-map reference uses the approved delayed position/velocity observation basis (4D). No approved standard-certificate projection for this candidate feedback basis is present.",
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "disturbance_history_to_output_map_mismatch",
+          "reason": "Response-map components are blocked: the ffff699 Feedbax GraphSpec (None) feeds the GRU feedback basis `target_relative_delayed_feedback_plus_force_filter` (6D), while the current standard response-map reference uses the approved delayed position/velocity observation basis (4D). No approved standard-certificate projection for this candidate feedback basis is present.",
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "disturbance_history_to_cost_quadratic",
+          "reason": "Response-map components are blocked: the ffff699 Feedbax GraphSpec (None) feeds the GRU feedback basis `target_relative_delayed_feedback_plus_force_filter` (6D), while the current standard response-map reference uses the approved delayed position/velocity observation basis (4D). No approved standard-certificate projection for this candidate feedback basis is present.",
+          "status": "missing",
+          "summary": {}
+        },
+        {
+          "name": "closed_loop_transition_mismatch",
+          "reason": "gru controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "value_policy_gap",
+          "reason": "gru controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "bellman_hessian_residual",
+          "reason": "gru controllers do not define a global linear certificate without an explicit linearization or recurrence-state model",
+          "status": "not_applicable",
+          "summary": {}
+        },
+        {
+          "name": "recurrence_gru_diagnostics",
+          "reason": "",
+          "status": "available",
+          "summary": {
+            "architecture": "gru",
+            "certificate_mode": "empirical_nonlinear",
+            "controller_kind": "gru",
+            "hidden_size": 180,
+            "io_response_map_blocker": "Response-map components are blocked: the ffff699 Feedbax GraphSpec (None) feeds the GRU feedback basis `target_relative_delayed_feedback_plus_force_filter` (6D), while the current standard response-map reference uses the approved delayed position/velocity observation basis (4D). No approved standard-certificate projection for this candidate feedback basis is present.",
+            "io_response_map_observation_dim": null,
+            "io_response_map_status": "blocked_missing_observation_contract",
+            "n_replicates": 5,
+            "observation_history_covariance": {
+              "audit_only": true,
+              "centering": "not_applicable",
+              "future_lenses": {
+                "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+                "sensory_noise_covariance": "missing_same_basis_contract"
+              },
+              "history_dim": null,
+              "normalization": "not_applicable",
+              "reason": "response-map linearization skipped because the candidate feedback basis is not the approved 4D delayed position/velocity observation basis",
+              "regularization": "not_applicable",
+              "sample_count": null,
+              "source": null,
+              "status": "missing"
+            },
+            "population_structure": {
+              "n_input_only": 0,
+              "n_input_readout": 180,
+              "n_readout_only": 0,
+              "n_recurrent_only": 0
+            }
+          }
+        }
+      ],
+      "metrics": {
+        "candidate_action_shape": [
+          100,
+          60,
+          2
+        ],
+        "evaluation": {
+          "checkpoint_selection": "validation_selected_per_replicate",
+          "io_response_map": {
+            "approved_feedback_dim": 4,
+            "candidate_feedback_dim": 6,
+            "input_channel": "target_relative_delayed_feedback_plus_force_filter",
+            "reason": "Response-map components are blocked: the ffff699 Feedbax GraphSpec (None) feeds the GRU feedback basis `target_relative_delayed_feedback_plus_force_filter` (6D), while the current standard response-map reference uses the approved delayed position/velocity observation basis (4D). No approved standard-certificate projection for this candidate feedback basis is present.",
+            "status": "blocked_unsupported_candidate_feedback_basis"
+          },
+          "n_replicates": 5,
+          "n_trials": 20,
+          "noise": "feedbax Channel noise disabled; plant-process force noise disabled if present",
+          "observation_history_covariance": {
+            "audit_only": true,
+            "centering": "not_applicable",
+            "future_lenses": {
+              "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+              "sensory_noise_covariance": "missing_same_basis_contract"
+            },
+            "history_dim": null,
+            "normalization": "not_applicable",
+            "reason": "response-map linearization skipped because the candidate feedback basis is not the approved 4D delayed position/velocity observation basis",
+            "regularization": "not_applicable",
+            "sample_count": null,
+            "source": null,
+            "status": "missing"
+          },
+          "selected_checkpoints": [
+            {
+              "best_logged_validation_batch": 3201,
+              "best_logged_validation_objective": 170.19951930659346,
+              "checkpoint_batches": 3000,
+              "checkpoint_path": "_artifacts/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/checkpoints/checkpoint_0003000",
+              "final_validation_objective": 3486.2011761410886,
+              "final_vs_selected_validation_degradation": 3276.839285398863,
+              "replicate": 0,
+              "scoring_validation_log_batch": 3000,
+              "scoring_validation_objective": 209.3618907422254,
+              "selection_source": "sparse_history_fallback"
+            },
+            {
+              "best_logged_validation_batch": 3601,
+              "best_logged_validation_objective": 176.14820858361318,
+              "checkpoint_batches": 3000,
+              "checkpoint_path": "_artifacts/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/checkpoints/checkpoint_0003000",
+              "final_validation_objective": 1570.8136151301069,
+              "final_vs_selected_validation_degradation": 1384.3550586088297,
+              "replicate": 1,
+              "scoring_validation_log_batch": 3000,
+              "scoring_validation_objective": 186.45855652127716,
+              "selection_source": "sparse_history_fallback"
+            },
+            {
+              "best_logged_validation_batch": 2301,
+              "best_logged_validation_objective": 175.79390337118454,
+              "checkpoint_batches": 2000,
+              "checkpoint_path": "_artifacts/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/checkpoints/checkpoint_0002000",
+              "final_validation_objective": 1526.4828255905281,
+              "final_vs_selected_validation_degradation": 1339.9001663199797,
+              "replicate": 2,
+              "scoring_validation_log_batch": 2000,
+              "scoring_validation_objective": 186.58265927054842,
+              "selection_source": "sparse_history_fallback"
+            },
+            {
+              "best_logged_validation_batch": 3401,
+              "best_logged_validation_objective": 171.87852772461684,
+              "checkpoint_batches": 3000,
+              "checkpoint_path": "_artifacts/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/checkpoints/checkpoint_0003000",
+              "final_validation_objective": 1907.0475780015493,
+              "final_vs_selected_validation_degradation": 1714.970121991418,
+              "replicate": 3,
+              "scoring_validation_log_batch": 3000,
+              "scoring_validation_objective": 192.07745601013136,
+              "selection_source": "sparse_history_fallback"
+            },
+            {
+              "best_logged_validation_batch": 3001,
+              "best_logged_validation_objective": 191.42432184993322,
+              "checkpoint_batches": 3000,
+              "checkpoint_path": "_artifacts/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/checkpoints/checkpoint_0003000",
+              "final_validation_objective": 1214.1762373489535,
+              "final_vs_selected_validation_degradation": 1009.6143165103202,
+              "replicate": 4,
+              "scoring_validation_log_batch": 3000,
+              "scoring_validation_objective": 204.56192083863323,
+              "selection_source": "sparse_history_fallback"
+            }
+          ],
+          "status": "evaluated_clean_feedbax_rollout",
+          "time_basis": {
+            "go_index_max": 24,
+            "go_index_min": 24,
+            "is_delayed": true,
+            "movement_end_index_max": 84,
+            "movement_end_index_min": 84,
+            "movement_horizon_steps": 60,
+            "n_time_steps": 90,
+            "time_basis": "go_cue_aligned_canonical_movement_window"
+          }
+        },
+        "io_response_map_blocker": "Response-map components are blocked: the ffff699 Feedbax GraphSpec (None) feeds the GRU feedback basis `target_relative_delayed_feedback_plus_force_filter` (6D), while the current standard response-map reference uses the approved delayed position/velocity observation basis (4D). No approved standard-certificate projection for this candidate feedback basis is present.",
+        "io_response_map_status": "blocked_missing_observation_contract",
+        "observation_history_covariance": {
+          "audit_only": true,
+          "centering": "not_applicable",
+          "future_lenses": {
+            "perturbation_bank_covariance": "blocked_pending_issue_3992394",
+            "sensory_noise_covariance": "missing_same_basis_contract"
+          },
+          "history_dim": null,
+          "normalization": "not_applicable",
+          "reason": "response-map linearization skipped because the candidate feedback basis is not the approved 4D delayed position/velocity observation basis",
+          "regularization": "not_applicable",
+          "sample_count": null,
+          "source": null,
+          "status": "missing"
+        },
+        "reference": {
+          "action_dim": 2,
+          "controller": "analytical_lqr_kalman_output_feedback",
+          "cs_observation_dim": 8,
+          "gamma_factor": 1.4,
+          "horizon": 60,
+          "io_response_map": {
+            "action_dim": 2,
+            "controller": "analytical_lqr_kalman_output_feedback",
+            "controller_variant": "cs_released_extlqg_stochastic_fixed_point",
+            "extlqg_expected_cost": 12201.42433801687,
+            "extlqg_iterations": 6,
+            "gamma_factor": 1.4,
+            "history_dim": 240,
+            "map_shape": [
+              60,
+              2,
+              240
+            ],
+            "observation_channel": "delayed_position_velocity",
+            "observation_dim": 4,
+            "parity_status": "fixed_point: local port of extLQG/computeOFC/computeExtKalman"
+          },
+          "output_feedback_config": {
+            "delay_steps": 5,
+            "estimator_initial_covariance": 0.01,
+            "n_phys": 8
+          }
+        },
+        "reference_action_shape": [
+          100,
+          60,
+          2
+        ]
+      },
+      "spec": {
+        "architecture": "gru",
+        "controller_label": "delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42",
+        "evaluation_lane": "deterministic",
+        "gamma_factor": 1.4,
+        "issue_id": "e6a32b8",
+        "notes": "GRU empirical/nonlinear standard row. Clean action behavior is evaluated against the C&S output-feedback LQR/Kalman reference; same-coordinate transition/value/Bellman rows are not applicable.",
+        "objective": "optimal",
+        "optimizer_label": "adamw_nominal_gru",
+        "parameters": {
+          "certificate_mode": "empirical_nonlinear",
+          "evaluation_lens": "nominal_clean",
+          "io_response_map_blocker": "Response-map components are blocked: the ffff699 Feedbax GraphSpec (None) feeds the GRU feedback basis `target_relative_delayed_feedback_plus_force_filter` (6D), while the current standard response-map reference uses the approved delayed position/velocity observation basis (4D). No approved standard-certificate projection for this candidate feedback basis is present.",
+          "io_response_map_status": "blocked_missing_observation_contract",
+          "nn_hidden": 0.0,
+          "source_issue": "ffff699",
+          "source_run_id": "delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42",
+          "stochastic_preset": {
+            "additive_motor_noise_std": 1e-05,
+            "name": "cs2019-rollout",
+            "plant_process_force_noise_std": 0.03162277660168379,
+            "projection_notes": {
+              "additive_motor": "Project C&S input-image motor covariance to command-channel additive noise with std sqrt(motor_covariance_scale).",
+              "plant_process": "Project C&S process/load covariance to independent force noise immediately upstream of mechanics, after the force filter.",
+              "sensory": "Use the C&S sensory covariance diagonal standard deviation on the Feedbax delayed pos/vel feedback channel.",
+              "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
+              "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
+            },
+            "sensory_noise_std": 0.004791329788133908,
+            "signal_dependent_motor_noise_std": 0.02,
+            "source_contract": {
+              "additive_motor_covariance": "input_image_state_covariance_B_B_T",
+              "contract": "cs_released_stochastic_v1",
+              "motor_covariance_scale": 1e-10,
+              "motor_covariance_shape": [
+                48,
+                48
+              ],
+              "output_feedback_process_covariance_scale": 0.001,
+              "process_covariance_scale": 1.0,
+              "process_covariance_shape": [
+                48,
+                48
+              ],
+              "process_noise": "separate_output_feedback_process_covariance",
+              "sensory_covariance_diag": [
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05,
+                2.2956841138659323e-05
+              ],
+              "sensory_noise_scale": 1.0,
+              "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
+              "signal_dependent_scale": 0.02,
+              "signal_dependent_state_shape": [
+                48,
+                2,
+                2
+              ]
+            }
+          }
+        },
+        "reference_controller": "analytical_lqr_kalman_output_feedback",
+        "run_id": "delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42__nominal_clean",
+        "seed": 42,
+        "training_distribution": "nominal"
+      },
+      "status": "partial_standard_certificate_blocked"
+    }
+  ],
+  "scope": "C&S stochastic GRU pilot rows from `ffff699`. The standard certificate is materialized in empirical_nonlinear mode: clean rollout action behavior is available, same-coordinate transition/value/Bellman components are not applicable, and response map rows remain missing until the observation projection contract is defined.",
+  "source_artifacts": {
+    "delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42": "_artifacts/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/trained_model.eqx"
+  },
+  "source_issue": "ffff699",
+  "source_manifests": {
+    "delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42": "results/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/run.json"
+  },
+  "summary": {
+    "blockers": [
+      "Response-map components are blocked: the ffff699 Feedbax GraphSpec (None) feeds the GRU feedback basis `target_relative_delayed_feedback_plus_force_filter` (6D), while the current standard response-map reference uses the approved delayed position/velocity observation basis (4D). No approved standard-certificate projection for this candidate feedback basis is present."
+    ],
+    "component_status_counts": {
+      "bellman_hessian_residual:not_applicable": 1,
+      "closed_loop_transition_mismatch:not_applicable": 1,
+      "disturbance_history_to_action_map_mismatch:missing": 1,
+      "disturbance_history_to_cost_quadratic:missing": 1,
+      "disturbance_history_to_output_map_mismatch:missing": 1,
+      "disturbance_history_to_state_map_mismatch:missing": 1,
+      "measurement_history_to_action_map_mismatch:missing": 1,
+      "measurement_history_to_output_map_mismatch:missing": 1,
+      "observation_history_to_action_map_mismatch:missing": 1,
+      "optimizer_metadata:available": 1,
+      "recurrence_gru_diagnostics:available": 1,
+      "state_weighted_action_mismatch:available": 1,
+      "value_policy_gap:not_applicable": 1,
+      "visited_subspace_diagnostics:missing": 1
+    },
+    "failure_classification_counts": {
+      "external_rollout_mismatch": 1
+    },
+    "n_rows": 1,
+    "status_counts": {
+      "partial_standard_certificate_blocked": 1
+    }
+  }
+}

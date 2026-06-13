@@ -1,0 +1,117 @@
+{
+  "command": {
+    "status": "not_recorded"
+  },
+  "diagnostic_name": "gru_standard_certificate",
+  "future_graphspec": {
+    "expected_successor": "Feedbax-native analysis/regeneration manifests after GraphSpec and provider-manifest migration",
+    "status": "temporary_rlrmp_bridge"
+  },
+  "git": {
+    "branch": "feature/ffff699-no-integrator-delayed",
+    "dirty": true,
+    "head": "53fad0befb1482af94cf34a2b074271f42c8e864",
+    "status_porcelain": [
+      "M scripts/monitor_training_diagnostics.py",
+      " M src/rlrmp/analysis/cs_gru_standard_materialization.py",
+      " M src/rlrmp/analysis/gru_evaluation_diagnostics.py",
+      " M src/rlrmp/analysis/gru_perturbation_bank.py",
+      " M src/rlrmp/analysis/gru_pilot_figures.py",
+      " M src/rlrmp/analysis/trial_alignment.py",
+      " M tests/test_cs_gru_standard_materialization.py",
+      " M tests/test_gru_evaluation_diagnostics.py",
+      " M tests/test_gru_perturbation_response.py",
+      " M tests/test_monitor_training_diagnostics.py",
+      " M tests/test_trial_alignment.py",
+      "?? results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_core_smoke.md",
+      "?? results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_core_smoke_manifest.json",
+      "?? results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_core_smoke_manifest_regeneration_spec.json",
+      "?? results/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/model.graph.manifest.json",
+      "?? results/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/run.json",
+      "?? results/ffff699/runs/delayed_8d_pgd_moderate_lr3e-3_clip5_b64_seed42/model.graph.manifest.json",
+      "?? results/ffff699/runs/delayed_8d_pgd_moderate_lr3e-3_clip5_b64_seed42/run.json",
+      "?? results/ffff699/runs/delayed_no_integrator_no_pgd_lr3e-3_clip5_b64_seed42/model.graph.manifest.json",
+      "?? results/ffff699/runs/delayed_no_integrator_no_pgd_lr3e-3_clip5_b64_seed42/run.json",
+      "?? results/ffff699/runs/delayed_no_integrator_no_pgd_lr3e-3_clip5_b64_seed43/model.graph.manifest.json",
+      "?? results/ffff699/runs/delayed_no_integrator_no_pgd_lr3e-3_clip5_b64_seed43/run.json",
+      "?? results/ffff699/runs/delayed_no_integrator_pgd_moderate_lr3e-3_clip5_b64_seed42/model.graph.manifest.json",
+      "?? results/ffff699/runs/delayed_no_integrator_pgd_moderate_lr3e-3_clip5_b64_seed42/run.json"
+    ]
+  },
+  "inputs": [
+    {
+      "exists": true,
+      "kind": "file",
+      "path": "results/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/run.json",
+      "role": "run_spec",
+      "sha256": "9d9998867217023555870f964058f12b228cc44d72de7ee1e0226d2d76fee2da",
+      "size_bytes": 243886
+    },
+    {
+      "exists": true,
+      "kind": "file",
+      "path": "_artifacts/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/trained_model.eqx",
+      "role": "model_or_checkpoint_artifact",
+      "sha256": "bb0f1a3a2d1aebba4f63e0fadb1d0bd107176d3c84b3f475a43cbacbf966ce4b",
+      "size_bytes": 4367720
+    }
+  ],
+  "materializer": "rlrmp.analysis.cs_gru_standard_materialization.write_gru_standard_result",
+  "notes": [
+    "Standard certificate is in scope for regeneration specs.",
+    "This spec records materialization provenance only; certificate values remain in the manifest."
+  ],
+  "outputs": [
+    {
+      "exists": true,
+      "kind": "file",
+      "path": "results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_core_smoke_manifest.json",
+      "role": "standard_certificate_manifest",
+      "sha256": "173f4382c7153ce0aeb20066b6c268f00f41be8bdf3947de32618a9bf73d5340",
+      "size_bytes": 24618
+    },
+    {
+      "exists": true,
+      "kind": "file",
+      "path": "results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_core_smoke.md",
+      "role": "standard_certificate_note",
+      "sha256": "c7d73b23d7d3c7953b64e81e8a8c68ddd5242c8f0a50245d0a147e9a414c9847",
+      "size_bytes": 1366
+    }
+  ],
+  "parameters": {
+    "checkpoint_policy": "final_checkpoint",
+    "experiment": "ffff699",
+    "materializer_issue_id": "e6a32b8",
+    "run_ids": [
+      "delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42"
+    ]
+  },
+  "schema_version": "rlrmp.diagnostic_regeneration_spec.v1",
+  "source_files": [
+    {
+      "exists": true,
+      "kind": "file",
+      "path": "src/rlrmp/analysis/cs_gru_standard_materialization.py",
+      "role": "source_file",
+      "sha256": "25e36e4719e360bd9379fab0cb6d4ed4b10b08e78e400727c7936010d1198072",
+      "size_bytes": 48301
+    },
+    {
+      "exists": true,
+      "kind": "file",
+      "path": "src/rlrmp/analysis/bridge_certificates.py",
+      "role": "source_file",
+      "sha256": "fc3c94e5060f3e089784ea09f9f6f7534c60260277adf2b28fe9bf9fdfa90400",
+      "size_bytes": 62519
+    },
+    {
+      "exists": true,
+      "kind": "file",
+      "path": "src/rlrmp/analysis/standard_certificate_materialization.py",
+      "role": "source_file",
+      "sha256": "52649b5f34878e7c425747801c5a8ed7d6b5534a70ed1851f63a2e0cad474ae8",
+      "size_bytes": 3956
+    }
+  ]
+}

@@ -28,9 +28,16 @@ from rlrmp.analysis.gru_pilot_figures import (
     RunFigureInputs,
     initial_effector_velocity,
     repeat_single_validation_trial,
+    repeat_validation_trial_bank,
     resolve_run_inputs,
 )
 from rlrmp.analysis.diagnostic_provenance import write_regeneration_spec
+from rlrmp.analysis.trial_alignment import (
+    TrialTiming,
+    canonical_movement_horizon_from_metadata,
+    take_per_trial_time_window,
+    trial_timing_from_specs,
+)
 from rlrmp.modules.training.part2 import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
@@ -57,6 +64,7 @@ class RolloutEvaluation:
     initial_velocity: np.ndarray
     target_position: np.ndarray
     dt: float
+    timing: TrialTiming | None = None
     checkpoint_selection: tuple[ReplicateCheckpointSelection, ...] = ()
 
 
@@ -299,7 +307,18 @@ def evaluate_run_rollouts(
         )
         checkpoint_selection = []
 
-    trial_specs = repeat_single_validation_trial(pair.task.validation_trials, n_rollout_trials)
+    base_timing = trial_timing_from_specs(
+        pair.task.validation_trials,
+        movement_horizon_steps=canonical_movement_horizon_from_metadata(
+            run.run_spec,
+            default=None,
+        ),
+    )
+    trial_specs = (
+        repeat_validation_trial_bank(pair.task.validation_trials, n_rollout_trials)
+        if base_timing.is_delayed
+        else repeat_single_validation_trial(pair.task.validation_trials, n_rollout_trials)
+    )
     model_arrays, model_other = eqx.partition(
         model,
         lambda leaf: _is_replicate_array(leaf, n_replicates),
@@ -317,7 +336,7 @@ def evaluate_run_rollouts(
         model_arrays,
         jr.split(jr.PRNGKey(0), n_replicates),
     )
-    target_position = np.asarray(trial_specs.inputs["effector_target"].pos, dtype=np.float64)
+    target_position = _target_position_sequence(trial_specs)
     initial_position = _initial_effector_position(trial_specs)
     initial_velocity = initial_effector_velocity(trial_specs)
     dt = float(run.run_spec.get("game_card", {}).get("dt", getattr(hps, "dt", 0.01)))
@@ -332,6 +351,14 @@ def evaluate_run_rollouts(
             initial_velocity=np.asarray(initial_velocity, dtype=np.float64),
             target_position=target_position,
             dt=dt,
+            timing=trial_timing_from_specs(
+                trial_specs,
+                n_time_steps=int(states.net.output.shape[-2]),
+                movement_horizon_steps=canonical_movement_horizon_from_metadata(
+                    run.run_spec,
+                    default=int(states.net.output.shape[-2]),
+                ),
+            ),
             checkpoint_selection=tuple(checkpoint_selection),
         ),
         model,
@@ -341,31 +368,42 @@ def evaluate_run_rollouts(
 def summarize_rollout_behavior(evaluation: RolloutEvaluation) -> dict[str, Any]:
     """Return JSON-compatible rollout behavior metrics for one evaluation."""
 
-    command_norm = np.linalg.norm(evaluation.command, axis=-1)
-    first_five = command_norm[..., : min(5, command_norm.shape[-1])]
-    command_jerk = np.diff(evaluation.command, n=2, axis=2)
-    command_jerk_norm = np.linalg.norm(command_jerk, axis=-1)
-    terminal_error = evaluation.position[:, :, -1, :] - evaluation.target_position[None, :, -1, :]
-    endpoint_error = np.linalg.norm(terminal_error, axis=-1)
-    terminal_speed = np.linalg.norm(evaluation.velocity[:, :, -1, :], axis=-1)
-    hidden_norm = np.linalg.norm(evaluation.hidden, axis=-1)
+    timing = _evaluation_timing(evaluation)
+    command = _movement_window(evaluation.command, timing, trial_axis=1, time_axis=2)
+    position = _movement_window(evaluation.position, timing, trial_axis=1, time_axis=2)
+    velocity = _movement_window(evaluation.velocity, timing, trial_axis=1, time_axis=2)
+    hidden = _movement_window(evaluation.hidden, timing, trial_axis=1, time_axis=2)
+    target_position = _movement_window(
+        evaluation.target_position,
+        timing,
+        trial_axis=0,
+        time_axis=1,
+    )
 
-    full_position = _prepend_initial(evaluation.initial_position, evaluation.position)
-    full_velocity = _prepend_initial(evaluation.initial_velocity, evaluation.velocity)
+    command_norm = np.linalg.norm(command, axis=-1)
+    first_five = command_norm[..., : min(5, command_norm.shape[-1])]
+    command_jerk = np.diff(command, n=2, axis=2)
+    command_jerk_norm = np.linalg.norm(command_jerk, axis=-1)
+    terminal_error = position[:, :, -1, :] - target_position[None, :, -1, :]
+    endpoint_error = np.linalg.norm(terminal_error, axis=-1)
+    terminal_speed = np.linalg.norm(velocity[:, :, -1, :], axis=-1)
+    hidden_norm = np.linalg.norm(hidden, axis=-1)
+
     overshoot = _overshoot_along_reach(
-        position=full_position,
-        initial_position=evaluation.initial_position,
-        target_position=evaluation.target_position[:, -1, :],
+        position=position,
+        initial_position=position[:, :, 0, :].mean(axis=0),
+        target_position=target_position[:, -1, :],
     )
     forward_velocity = _forward_velocity_along_reach(
-        velocity=full_velocity,
-        initial_position=evaluation.initial_position,
-        target_position=evaluation.target_position[:, -1, :],
+        velocity=velocity,
+        initial_position=position[:, :, 0, :].mean(axis=0),
+        target_position=target_position[:, -1, :],
     )
     sign_changes = _post_peak_sign_changes(forward_velocity)
     velocity_summary = _velocity_profile_summary(forward_velocity, evaluation.dt)
 
     return {
+        "time_basis": timing.to_json(),
         "command_norm": _summary_stats(command_norm),
         "first_five_step_command_norm": _summary_stats(first_five),
         "command_jerk_norm": _summary_stats(command_jerk_norm),
@@ -443,23 +481,34 @@ def summarize_gru_jacobians(
 
     n_replicates = int(evaluation.hidden.shape[0])
     h_prev = _previous_hidden(evaluation.hidden)
-    full_velocity = _prepend_initial(evaluation.initial_velocity, evaluation.velocity)
+    timing = _evaluation_timing(evaluation)
+    velocity = _movement_window(evaluation.velocity, timing, trial_axis=1, time_axis=2)
+    position = _movement_window(evaluation.position, timing, trial_axis=1, time_axis=2)
+    h_prev_window = _movement_window(h_prev, timing, trial_axis=1, time_axis=2)
+    hidden_window = _movement_window(evaluation.hidden, timing, trial_axis=1, time_axis=2)
+    gru_input_window = _movement_window(evaluation.gru_input, timing, trial_axis=1, time_axis=2)
+    target_position = _movement_window(
+        evaluation.target_position,
+        timing,
+        trial_axis=0,
+        time_axis=1,
+    )
     forward_velocity = _forward_velocity_along_reach(
-        velocity=full_velocity,
-        initial_position=evaluation.initial_position,
-        target_position=evaluation.target_position[:, -1, :],
-    )[:, :, 1:]
+        velocity=velocity,
+        initial_position=position[:, :, 0, :].mean(axis=0),
+        target_position=target_position[:, -1, :],
+    )
     samples: list[dict[str, Any]] = []
     for rep_idx in range(n_replicates):
         cell = _select_replicate_tree(gru_cell, rep_idx, n_replicates)
         sample_times = _jacobian_sample_times(
             forward_velocity[rep_idx, 0],
-            evaluation.hidden.shape[2],
+            hidden_window.shape[2],
             timepoint_policy=timepoint_policy,
         )
         for label, time_idx in sample_times:
-            x_t = jnp.asarray(evaluation.gru_input[rep_idx, 0, time_idx])
-            h_t = jnp.asarray(h_prev[rep_idx, 0, time_idx])
+            x_t = jnp.asarray(gru_input_window[rep_idx, 0, time_idx])
+            h_t = jnp.asarray(h_prev_window[rep_idx, 0, time_idx])
             jacobian = np.asarray(jax.jacfwd(lambda h: cell(x_t, h))(h_t), dtype=np.float64)
             singular_values = np.linalg.svd(jacobian, compute_uv=False)
             eigenvalues = np.linalg.eigvals(jacobian)
@@ -468,6 +517,11 @@ def summarize_gru_jacobians(
                     "replicate": int(rep_idx),
                     "trial": 0,
                     "time_index": int(time_idx),
+                    "absolute_time_index": (
+                        int(timing.go_index[0] + time_idx)
+                        if timing.is_delayed and timing.go_index.size
+                        else int(time_idx)
+                    ),
                     "timepoint": label,
                     "frobenius_norm": float(np.linalg.norm(jacobian, ord="fro")),
                     "spectral_norm": float(singular_values[0]) if singular_values.size else 0.0,
@@ -481,6 +535,7 @@ def summarize_gru_jacobians(
         "status": "sampled",
         "sample_policy": (
             "hidden-to-hidden Jacobian d h_t / d h_{t-1}; trial 0 only; "
+            f"time_basis={timing.to_json()['time_basis']}; "
             f"timepoints={tuple(timepoint_policy)}"
         ),
         "n_samples": len(samples),
@@ -731,6 +786,35 @@ def _jacobian_sample_times(
     return times
 
 
+def _evaluation_timing(evaluation: RolloutEvaluation) -> TrialTiming:
+    if evaluation.timing is not None:
+        return evaluation.timing
+    return TrialTiming(
+        is_delayed=False,
+        go_index=np.zeros((evaluation.command.shape[1],), dtype=np.int64),
+        movement_horizon_steps=int(evaluation.command.shape[2]),
+        n_time_steps=int(evaluation.command.shape[2]),
+    )
+
+
+def _movement_window(
+    values: np.ndarray,
+    timing: TrialTiming,
+    *,
+    trial_axis: int,
+    time_axis: int,
+) -> np.ndarray:
+    if not timing.is_delayed:
+        return np.asarray(values)
+    return take_per_trial_time_window(
+        values,
+        timing.go_index,
+        timing.movement_horizon_steps,
+        trial_axis=trial_axis,
+        time_axis=time_axis,
+    )
+
+
 def _initial_effector_position(trial_specs: Any) -> jnp.ndarray:
     for init_state in trial_specs.inits.values():
         position = getattr(init_state, "pos", None)
@@ -740,6 +824,23 @@ def _initial_effector_position(trial_specs: Any) -> jnp.ndarray:
         if shape is not None and len(shape) >= 1 and shape[-1] >= 2:
             return jnp.asarray(init_state)[..., 0:2]
     raise ValueError("Trial spec does not include an effector position initial state")
+
+
+def _target_position_sequence(trial_specs: Any) -> np.ndarray:
+    inputs = getattr(trial_specs, "inputs", {})
+    if isinstance(inputs, Mapping):
+        target = inputs.get("effector_target")
+        position = getattr(target, "pos", None)
+        if position is not None:
+            return np.asarray(position, dtype=np.float64)
+        target_input = inputs.get("target")
+        if getattr(target_input, "shape", None) is not None and target_input.shape[-1] == 2:
+            return np.asarray(target_input, dtype=np.float64)
+    for target_spec in getattr(trial_specs, "targets", {}).values():
+        value = getattr(target_spec, "value", None)
+        if getattr(value, "shape", None) is not None and value.shape[-1] == 2:
+            return np.asarray(value, dtype=np.float64)
+    raise ValueError("Trial spec does not include a 2D effector target sequence")
 
 
 def _select_replicate_tree(tree: Any, replicate: int, n_replicates: int) -> Any:

@@ -515,6 +515,9 @@ def materialize_optional_feedback_ablation(
             if regeneration_spec_path is None
             else _repo_relative(regeneration_spec_path, repo_root=repo_root)
         ),
+        "bulk_detail_manifest": (
+            result.get("bulk_detail_manifest") if isinstance(result, dict) else None
+        ),
         "selection_role": "audit_only_not_used_for_checkpoint_selection",
         "result": {
             "schema_version": result.get("schema_version") if isinstance(result, dict) else None,

@@ -14,7 +14,9 @@ from feedbax.task import TaskTrialSpec
 from rlrmp.analysis.gru_feedback_ablation import (
     FEEDBACK_AUDIT_SELECTION_ROLE,
     SCHEMA_VERSION,
+    _endpoint_error,
     _per_replicate_cost_delta_values,
+    _target_position_sequence,
     build_observation_ablation_spec,
     build_observation_tape,
     default_ablation_modes,
@@ -23,9 +25,12 @@ from rlrmp.analysis.gru_feedback_ablation import (
     interpret_run_feedback_ablation,
     render_feedback_ablation_markdown,
     selected_feedback_ablation_bins,
+    slim_feedback_ablation_manifest,
     summarize_normalized_feedback_use,
 )
+from rlrmp.analysis.gru_evaluation_diagnostics import RolloutEvaluation
 from rlrmp.analysis.gru_perturbation_bank import default_cs_perturbation_bank
+from rlrmp.analysis.trial_alignment import TrialTiming
 from rlrmp.cs_lss_gru import build_cs_lss_gru_graph
 
 
@@ -66,6 +71,50 @@ def test_selected_feedback_ablation_bins_exist_in_current_bank() -> None:
     for perturbation_id in selected_feedback_ablation_bins().values():
         if perturbation_id is not None:
             assert perturbation_id in perturbations
+
+
+def test_feedback_ablation_target_resolver_accepts_delayed_target_input() -> None:
+    trial_specs = TaskTrialSpec(
+        inits={},
+        targets={},
+        inputs={
+            "target": np.arange(2 * 6 * 2, dtype=np.float64).reshape(2, 6, 2),
+        },
+    )
+
+    np.testing.assert_allclose(
+        _target_position_sequence(trial_specs),
+        trial_specs.inputs["target"],
+    )
+
+
+def test_feedback_ablation_endpoint_error_uses_delayed_movement_endpoint() -> None:
+    position = np.zeros((1, 2, 6, 2), dtype=np.float64)
+    position[0, 0, 3] = np.asarray([1.0, 0.0])
+    position[0, 1, 4] = np.asarray([2.0, 0.0])
+    position[:, :, -1, :] = 100.0
+    target = np.zeros((2, 6, 2), dtype=np.float64)
+    target[0, :, :] = np.asarray([1.0, 0.0])
+    target[1, :, :] = np.asarray([2.0, 0.0])
+    rollout = RolloutEvaluation(
+        position=position,
+        velocity=np.zeros_like(position),
+        command=np.zeros((1, 2, 6, 2), dtype=np.float64),
+        hidden=np.zeros((1, 2, 6, 3), dtype=np.float64),
+        gru_input=np.zeros((1, 2, 6, 5), dtype=np.float64),
+        initial_position=np.zeros((2, 2), dtype=np.float64),
+        initial_velocity=np.zeros((2, 2), dtype=np.float64),
+        target_position=target,
+        dt=0.01,
+        timing=TrialTiming(
+            is_delayed=True,
+            go_index=np.asarray([1, 2], dtype=np.int64),
+            movement_horizon_steps=3,
+            n_time_steps=6,
+        ),
+    )
+
+    np.testing.assert_allclose(_endpoint_error(rollout), np.zeros((1, 2), dtype=np.float64))
 
 
 def test_observation_tape_modes_transform_expected_axes() -> None:
@@ -260,6 +309,57 @@ def test_feedback_checkpoint_selection_audit_has_legacy_run_fallback() -> None:
     assert audit["primary_checkpoint_policy"] == "validation_selected_per_replicate"
     assert audit["selected_candidate"]["run_id"] == "run_b"
     assert audit["candidate_granularity"] == "run_legacy_fallback"
+
+
+def test_slim_feedback_ablation_manifest_moves_row_detail_out_of_tracked_manifest(tmp_path) -> None:
+    manifest = {
+        "schema_version": SCHEMA_VERSION,
+        "runs": {
+            "run_a": {
+                "label": "A",
+                "status_counts": {"evaluated": 1},
+                "interpretation": {"label": "feedback_sensitive"},
+                "ablations": [{"row": "large"}],
+                "feedback_checkpoint_rescore": {
+                    "status": "materialized",
+                    "checkpoint_scores": [{"row": "large"}],
+                    "feedback_selected_checkpoints": [
+                        {"replicate": 0, "feedback_selected_checkpoint_batches": 1000}
+                    ],
+                },
+            }
+        },
+        "feedback_checkpoint_selection_audit": {
+            "schema_version": "rlrmp.gru_feedback_checkpoint_selection_audit.v1",
+            "status": "materialized",
+            "runs": {
+                "run_a": {
+                    "status": "materialized",
+                    "checkpoint_scores": [{"row": "large"}],
+                    "feedback_selected_checkpoints": [
+                        {"replicate": 0, "feedback_selected_checkpoint_batches": 1000}
+                    ],
+                }
+            },
+        },
+    }
+
+    slim = slim_feedback_ablation_manifest(
+        manifest,
+        bulk_detail_path=tmp_path / "_artifacts" / "detail.json",
+        repo_root=tmp_path,
+    )
+
+    run = slim["runs"]["run_a"]
+    assert "ablations" not in run
+    assert run["n_ablations"] == 1
+    assert "checkpoint_scores" not in run["feedback_checkpoint_rescore"]
+    assert run["feedback_checkpoint_rescore"]["n_checkpoint_scores"] == 1
+    audit_run = slim["feedback_checkpoint_selection_audit"]["runs"]["run_a"]
+    assert "checkpoint_scores" not in audit_run
+    assert audit_run["feedback_selected_checkpoints"] == [
+        {"replicate": 0, "feedback_selected_checkpoint_batches": 1000}
+    ]
 
 
 def test_per_replicate_cost_delta_values_reduces_trials_only() -> None:

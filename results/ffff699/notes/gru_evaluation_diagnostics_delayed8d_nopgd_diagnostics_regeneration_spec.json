@@ -1,0 +1,148 @@
+{
+  "command": {
+    "status": "not_recorded"
+  },
+  "diagnostic_name": "gru_evaluation_diagnostics",
+  "future_graphspec": {
+    "expected_successor": "Feedbax-native analysis/regeneration manifests after GraphSpec and provider-manifest migration",
+    "status": "temporary_rlrmp_bridge"
+  },
+  "git": {
+    "branch": "feature/ffff699-no-integrator-delayed",
+    "dirty": true,
+    "head": "53fad0befb1482af94cf34a2b074271f42c8e864",
+    "status_porcelain": [
+      "M scripts/monitor_training_diagnostics.py",
+      " M src/rlrmp/analysis/cs_gru_standard_materialization.py",
+      " M src/rlrmp/analysis/gru_evaluation_diagnostics.py",
+      " M src/rlrmp/analysis/gru_feedback_ablation.py",
+      " M src/rlrmp/analysis/gru_map_error_decomposition.py",
+      " M src/rlrmp/analysis/gru_perturbation_bank.py",
+      " M src/rlrmp/analysis/gru_pilot_figures.py",
+      " M src/rlrmp/analysis/gru_postrun_materialization.py",
+      " M src/rlrmp/analysis/trial_alignment.py",
+      " M tests/test_cs_gru_standard_materialization.py",
+      " M tests/test_gru_evaluation_diagnostics.py",
+      " M tests/test_gru_feedback_ablation.py",
+      " M tests/test_gru_map_error_decomposition.py",
+      " M tests/test_gru_perturbation_response.py",
+      " M tests/test_gru_pilot_figures.py",
+      " M tests/test_monitor_training_diagnostics.py",
+      " M tests/test_trial_alignment.py",
+      "?? results/ffff699/notes/gru_evaluation_diagnostics_delayed8d_nopgd_core_smoke_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_evaluation_diagnostics_delayed8d_nopgd_diagnostics_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_feedback_ablation_delayed8d_nopgd_diagnostics.md",
+      "?? results/ffff699/notes/gru_feedback_ablation_delayed8d_nopgd_diagnostics_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_map_error_decomposition_delayed8d_nopgd_diagnostics.md",
+      "?? results/ffff699/notes/gru_map_error_decomposition_delayed8d_nopgd_diagnostics_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_perturbation_response_delayed8d_nopgd_diagnostics.md",
+      "?? results/ffff699/notes/gru_perturbation_response_delayed8d_nopgd_diagnostics_manifest.json",
+      "?? results/ffff699/notes/gru_perturbation_response_delayed8d_nopgd_diagnostics_manifest_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_pilot_figures_delayed8d_nopgd_core_smoke_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_pilot_figures_delayed8d_nopgd_diagnostics_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_postrun_materialization_delayed8d_nopgd_core_smoke_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_postrun_materialization_delayed8d_nopgd_diagnostics_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_core_smoke.md",
+      "?? results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_core_smoke_manifest.json",
+      "?? results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_core_smoke_manifest_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_diagnostics.md",
+      "?? results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_diagnostics_manifest.json",
+      "?? results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_diagnostics_manifest_regeneration_spec.json",
+      "?? results/ffff699/notes/objective_comparator_delayed8d_nopgd_diagnostics_regeneration_spec.json",
+      "?? results/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/model.graph.manifest.json",
+      "?? results/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/run.json",
+      "?? results/ffff699/runs/delayed_8d_pgd_moderate_lr3e-3_clip5_b64_seed42/model.graph.manifest.json",
+      "?? results/ffff699/runs/delayed_8d_pgd_moderate_lr3e-3_clip5_b64_seed42/run.json",
+      "?? results/ffff699/runs/delayed_no_integrator_no_pgd_lr3e-3_clip5_b64_seed42/model.graph.manifest.json",
+      "?? results/ffff699/runs/delayed_no_integrator_no_pgd_lr3e-3_clip5_b64_seed42/run.json",
+      "?? results/ffff699/runs/delayed_no_integrator_no_pgd_lr3e-3_clip5_b64_seed43/model.graph.manifest.json",
+      "?? results/ffff699/runs/delayed_no_integrator_no_pgd_lr3e-3_clip5_b64_seed43/run.json",
+      "?? results/ffff699/runs/delayed_no_integrator_pgd_moderate_lr3e-3_clip5_b64_seed42/model.graph.manifest.json",
+      "?? results/ffff699/runs/delayed_no_integrator_pgd_moderate_lr3e-3_clip5_b64_seed42/run.json"
+    ]
+  },
+  "inputs": [
+    {
+      "exists": true,
+      "kind": "file",
+      "path": "results/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/run.json",
+      "role": "run_spec",
+      "sha256": "9d9998867217023555870f964058f12b228cc44d72de7ee1e0226d2d76fee2da",
+      "size_bytes": 243886
+    },
+    {
+      "exists": true,
+      "file_count": 66,
+      "hash_file_count": 66,
+      "hash_truncated": false,
+      "kind": "directory",
+      "path": "_artifacts/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42",
+      "role": "run_artifact_dir",
+      "sample_tree_sha256": "db806ec93b76ab0f9c861f6824d67de94fd618bc7ab04c4377093b0694cb6b8b",
+      "total_bytes": 186222956
+    }
+  ],
+  "materializer": "rlrmp.analysis.gru_evaluation_diagnostics.materialize_gru_evaluation_diagnostics",
+  "notes": [
+    "Evaluation diagnostics are non-certificate sidecars.",
+    "Bulk rollout arrays may be deleted and regenerated from this spec if checkpoints remain."
+  ],
+  "outputs": [
+    {
+      "exists": true,
+      "kind": "file",
+      "path": "results/ffff699/notes/gru_evaluation_diagnostics_delayed8d_nopgd_diagnostics.json",
+      "role": "evaluation_diagnostics_manifest",
+      "sha256": "b68dea6d5f06ba11f48285ef49a3c0071443014c813d41692d0398518c24a0ab",
+      "size_bytes": 41416
+    },
+    {
+      "exists": true,
+      "file_count": 1,
+      "hash_file_count": 1,
+      "hash_truncated": false,
+      "kind": "directory",
+      "path": "_artifacts/ffff699/evaluation_diagnostics/gru_delayed8d_nopgd_diagnostics",
+      "role": "bulk_rollout_dir",
+      "sample_tree_sha256": "0f8b81ef9cc4e75b552c894236ef73fb49490ae6b960edd05816b508fa291473",
+      "total_bytes": 2898180
+    }
+  ],
+  "parameters": {
+    "experiment": "ffff699",
+    "jacobian_timepoints": [
+      "first",
+      "peak_forward_velocity",
+      "terminal"
+    ],
+    "labels": [
+      "delayed_8d_no_pgd_seed42"
+    ],
+    "n_rollout_trials": 64,
+    "preferred_checkpoint_manifest_path": null,
+    "run_ids": [
+      "delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42"
+    ],
+    "use_validation_selected_checkpoints": false,
+    "write_bulk_arrays": true
+  },
+  "schema_version": "rlrmp.diagnostic_regeneration_spec.v1",
+  "source_files": [
+    {
+      "exists": true,
+      "kind": "file",
+      "path": "src/rlrmp/analysis/gru_evaluation_diagnostics.py",
+      "role": "source_file",
+      "sha256": "62ea9d78e7cc5e99e306aa3a5e4b8094952a3f3da8562715566f2e51b5048825",
+      "size_bytes": 34136
+    },
+    {
+      "exists": true,
+      "kind": "file",
+      "path": "src/rlrmp/analysis/gru_checkpoint_selection.py",
+      "role": "source_file",
+      "sha256": "73ea0d45a53f4b864d565e77a3c2c3ec210897cec4d5b77ab758011e98274b68",
+      "size_bytes": 31036
+    }
+  ]
+}

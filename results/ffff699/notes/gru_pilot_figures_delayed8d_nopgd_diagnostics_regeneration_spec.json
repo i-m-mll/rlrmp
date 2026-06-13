@@ -1,0 +1,134 @@
+{
+  "command": {
+    "status": "not_recorded"
+  },
+  "diagnostic_name": "gru_pilot_figures",
+  "future_graphspec": {
+    "expected_successor": "Feedbax-native analysis/regeneration manifests after GraphSpec and provider-manifest migration",
+    "status": "temporary_rlrmp_bridge"
+  },
+  "git": {
+    "branch": "feature/ffff699-no-integrator-delayed",
+    "dirty": true,
+    "head": "53fad0befb1482af94cf34a2b074271f42c8e864",
+    "status_porcelain": [
+      "M scripts/monitor_training_diagnostics.py",
+      " M src/rlrmp/analysis/cs_gru_standard_materialization.py",
+      " M src/rlrmp/analysis/gru_evaluation_diagnostics.py",
+      " M src/rlrmp/analysis/gru_feedback_ablation.py",
+      " M src/rlrmp/analysis/gru_map_error_decomposition.py",
+      " M src/rlrmp/analysis/gru_perturbation_bank.py",
+      " M src/rlrmp/analysis/gru_pilot_figures.py",
+      " M src/rlrmp/analysis/gru_postrun_materialization.py",
+      " M src/rlrmp/analysis/trial_alignment.py",
+      " M tests/test_cs_gru_standard_materialization.py",
+      " M tests/test_gru_evaluation_diagnostics.py",
+      " M tests/test_gru_feedback_ablation.py",
+      " M tests/test_gru_map_error_decomposition.py",
+      " M tests/test_gru_perturbation_response.py",
+      " M tests/test_gru_pilot_figures.py",
+      " M tests/test_monitor_training_diagnostics.py",
+      " M tests/test_trial_alignment.py",
+      "?? results/ffff699/notes/gru_evaluation_diagnostics_delayed8d_nopgd_core_smoke_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_evaluation_diagnostics_delayed8d_nopgd_diagnostics_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_feedback_ablation_delayed8d_nopgd_diagnostics.md",
+      "?? results/ffff699/notes/gru_feedback_ablation_delayed8d_nopgd_diagnostics_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_map_error_decomposition_delayed8d_nopgd_diagnostics.md",
+      "?? results/ffff699/notes/gru_map_error_decomposition_delayed8d_nopgd_diagnostics_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_perturbation_response_delayed8d_nopgd_diagnostics.md",
+      "?? results/ffff699/notes/gru_perturbation_response_delayed8d_nopgd_diagnostics_manifest.json",
+      "?? results/ffff699/notes/gru_perturbation_response_delayed8d_nopgd_diagnostics_manifest_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_pilot_figures_delayed8d_nopgd_core_smoke_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_pilot_figures_delayed8d_nopgd_diagnostics_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_postrun_materialization_delayed8d_nopgd_core_smoke_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_postrun_materialization_delayed8d_nopgd_diagnostics_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_core_smoke.md",
+      "?? results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_core_smoke_manifest.json",
+      "?? results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_core_smoke_manifest_regeneration_spec.json",
+      "?? results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_diagnostics.md",
+      "?? results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_diagnostics_manifest.json",
+      "?? results/ffff699/notes/gru_standard_certificates_delayed8d_nopgd_diagnostics_manifest_regeneration_spec.json",
+      "?? results/ffff699/notes/objective_comparator_delayed8d_nopgd_diagnostics_regeneration_spec.json",
+      "?? results/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/model.graph.manifest.json",
+      "?? results/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/run.json",
+      "?? results/ffff699/runs/delayed_8d_pgd_moderate_lr3e-3_clip5_b64_seed42/model.graph.manifest.json",
+      "?? results/ffff699/runs/delayed_8d_pgd_moderate_lr3e-3_clip5_b64_seed42/run.json",
+      "?? results/ffff699/runs/delayed_no_integrator_no_pgd_lr3e-3_clip5_b64_seed42/model.graph.manifest.json",
+      "?? results/ffff699/runs/delayed_no_integrator_no_pgd_lr3e-3_clip5_b64_seed42/run.json",
+      "?? results/ffff699/runs/delayed_no_integrator_no_pgd_lr3e-3_clip5_b64_seed43/model.graph.manifest.json",
+      "?? results/ffff699/runs/delayed_no_integrator_no_pgd_lr3e-3_clip5_b64_seed43/run.json",
+      "?? results/ffff699/runs/delayed_no_integrator_pgd_moderate_lr3e-3_clip5_b64_seed42/model.graph.manifest.json",
+      "?? results/ffff699/runs/delayed_no_integrator_pgd_moderate_lr3e-3_clip5_b64_seed42/run.json"
+    ]
+  },
+  "inputs": [
+    {
+      "exists": true,
+      "kind": "file",
+      "path": "results/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42/run.json",
+      "role": "run_spec",
+      "sha256": "9d9998867217023555870f964058f12b228cc44d72de7ee1e0226d2d76fee2da",
+      "size_bytes": 243886
+    },
+    {
+      "exists": true,
+      "file_count": 66,
+      "hash_file_count": 66,
+      "hash_truncated": false,
+      "kind": "directory",
+      "path": "_artifacts/ffff699/runs/delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42",
+      "role": "run_artifact_dir",
+      "sample_tree_sha256": "db806ec93b76ab0f9c861f6824d67de94fd618bc7ab04c4377093b0694cb6b8b",
+      "total_bytes": 186222956
+    }
+  ],
+  "materializer": "rlrmp.analysis.gru_pilot_figures.materialize_gru_pilot_figures",
+  "notes": [
+    "Postrun-owned regeneration spec for pilot loss/velocity figures."
+  ],
+  "outputs": [
+    {
+      "exists": true,
+      "file_count": 6,
+      "hash_file_count": 6,
+      "hash_truncated": false,
+      "kind": "directory",
+      "path": "_artifacts/ffff699/figures/gru_postrun_delayed8d_nopgd_diagnostics",
+      "role": "pilot_figure_dir",
+      "sample_tree_sha256": "528a24a623a13b6483e7c1a9f8ddaa3e789d5ea251ebdb08ab8fa8338c163576",
+      "total_bytes": 26375134
+    },
+    {
+      "exists": true,
+      "kind": "file",
+      "path": "_artifacts/ffff699/figures/gru_postrun_delayed8d_nopgd_diagnostics/figure_summary.json",
+      "role": "pilot_figure_summary",
+      "sha256": "4c5abb36c4da42c47b0fd4f88b1b4d8575ed0b4d96cebeccfb176fce0ec93580",
+      "size_bytes": 5113
+    }
+  ],
+  "parameters": {
+    "experiment": "ffff699",
+    "include_reference": true,
+    "labels": [
+      "delayed_8d_no_pgd_seed42"
+    ],
+    "n_rollout_trials": 64,
+    "preferred_checkpoint_manifest_path": null,
+    "run_ids": [
+      "delayed_8d_no_pgd_lr3e-3_clip5_b64_seed42"
+    ],
+    "use_validation_selected_checkpoints": false
+  },
+  "schema_version": "rlrmp.diagnostic_regeneration_spec.v1",
+  "source_files": [
+    {
+      "exists": true,
+      "kind": "file",
+      "path": "src/rlrmp/analysis/gru_pilot_figures.py",
+      "role": "source_file",
+      "sha256": "652b36ce35fa11be1d9d7053d7a5386276e2fce2c2d81a2ebe1022179edf6a70",
+      "size_bytes": 44067
+    }
+  ]
+}

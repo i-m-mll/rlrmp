@@ -535,10 +535,13 @@ def active_loss_term_labels(run_spec: Mapping[str, Any]) -> tuple[str, ...]:
     """Return active loss labels in Feedbax's serialized term order."""
 
     loss_objective = str(run_spec.get("loss_objective") or "")
-    if loss_objective == "full_analytical_qrf":
-        return ("full_analytical_qrf",)
-
     weights = run_spec.get("hps", {}).get("loss", {}).get("weights", {})
+    if loss_objective == "full_analytical_qrf":
+        labels = ["full_analytical_qrf"]
+        if float(weights.get("nn_output_pre_go", 0.0) or 0.0) != 0.0:
+            labels.append("nn_output_pre_go")
+        return tuple(labels)
+
     candidate_order = (
         "effector_pos_running",
         "effector_terminal_pos",

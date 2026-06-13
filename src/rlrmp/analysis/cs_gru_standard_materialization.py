@@ -59,6 +59,11 @@ from rlrmp.analysis.standard_certificate_materialization import (
     materialization_summary,
     repo_relative,
 )
+from rlrmp.analysis.trial_alignment import (
+    canonical_movement_horizon_from_metadata,
+    take_per_trial_time_window,
+    trial_timing_from_specs,
+)
 from rlrmp.modules.training.part2 import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.stochastic_runtime import (
@@ -493,32 +498,76 @@ def evaluate_gru_clean_actions(
         model_arrays,
         jr.split(jr.PRNGKey(0), n_replicates),
     )
-    actions = np.asarray(outputs, dtype=np.float64).reshape(
-        n_replicates * n_trials,
-        outputs.shape[-2],
-        outputs.shape[-1],
+    timing = trial_timing_from_specs(
+        trial_specs,
+        n_time_steps=int(outputs.shape[-2]),
+        movement_horizon_steps=canonical_movement_horizon_from_metadata(
+            run_spec,
+            default=int(outputs.shape[-2]),
+        ),
     )
-    response_map_net_inputs = _stochastic_response_map_net_inputs(
-        model_arrays=stochastic_model_arrays,
-        model_other=stochastic_model_other,
-        pair=pair,
-        n_replicates=n_replicates,
-        n_rollout_trials=DEFAULT_RESPONSE_MAP_ROLLOUT_TRIALS,
-    )
-    response_maps = _gru_observation_to_action_maps(
-        model_arrays=model_arrays,
-        model_other=model_other,
-        net_inputs=response_map_net_inputs,
-        n_replicates=n_replicates,
-        feedback_dim=4,
-    )
-    observation_history_covariance, observation_history_covariance_metadata = (
-        observation_history_covariance_from_net_inputs(
-            response_map_net_inputs,
-            feedback_dim=4,
-            source="empirical_validation_observation_history",
+    outputs_window = (
+        take_per_trial_time_window(
+            np.asarray(outputs, dtype=np.float64),
+            timing.go_index,
+            timing.movement_horizon_steps,
+            trial_axis=1,
+            time_axis=2,
         )
+        if timing.is_delayed
+        else np.asarray(outputs, dtype=np.float64)
     )
+    actions = outputs_window.reshape(
+        n_replicates * n_trials,
+        outputs_window.shape[-2],
+        outputs_window.shape[-1],
+    )
+    feedback_dim = _candidate_feedback_dim(run_spec)
+    response_maps = None
+    observation_history_covariance = None
+    observation_history_covariance_metadata = _missing_observation_history_covariance_metadata(
+        "response-map linearization skipped because the candidate feedback basis is not "
+        "the approved 4D delayed position/velocity observation basis",
+    )
+    io_response_map_metadata = {
+        "status": "blocked_unsupported_candidate_feedback_basis",
+        "input_channel": _candidate_feedback_basis(run_spec),
+        "candidate_feedback_dim": int(feedback_dim),
+        "approved_feedback_dim": 4,
+        "reason": gru_io_response_map_blocker(run_spec, source_issue_id=experiment),
+    }
+    if feedback_dim == 4:
+        response_map_net_inputs = _stochastic_response_map_net_inputs(
+            model_arrays=stochastic_model_arrays,
+            model_other=stochastic_model_other,
+            pair=pair,
+            n_replicates=n_replicates,
+            n_rollout_trials=DEFAULT_RESPONSE_MAP_ROLLOUT_TRIALS,
+            run_spec=run_spec,
+        )
+        response_maps = _gru_observation_to_action_maps(
+            model_arrays=model_arrays,
+            model_other=model_other,
+            net_inputs=response_map_net_inputs,
+            n_replicates=n_replicates,
+            feedback_dim=feedback_dim,
+        )
+        observation_history_covariance, observation_history_covariance_metadata = (
+            observation_history_covariance_from_net_inputs(
+                response_map_net_inputs,
+                feedback_dim=feedback_dim,
+                source="empirical_validation_observation_history",
+            )
+        )
+        io_response_map_metadata = {
+            "status": "evaluated_controller_local_jacobian_on_stochastic_histories",
+            "input_channel": "4D delayed position/velocity feedback",
+            "n_rollout_trials_per_replicate": DEFAULT_RESPONSE_MAP_ROLLOUT_TRIALS,
+            "map_shape": [int(dim) for dim in response_maps.shape],
+            "time_basis": (
+                "canonical_movement_window" if timing.is_delayed else "absolute_trial_time"
+            ),
+        }
     return actions, response_maps, {
         "status": "evaluated_clean_feedbax_rollout",
         "checkpoint_selection": (
@@ -531,13 +580,9 @@ def evaluate_gru_clean_actions(
         ],
         "n_replicates": n_replicates,
         "n_trials": n_trials,
+        "time_basis": timing.to_json(),
         "noise": "feedbax Channel noise disabled; plant-process force noise disabled if present",
-        "io_response_map": {
-            "status": "evaluated_controller_local_jacobian_on_stochastic_histories",
-            "input_channel": "4D delayed position/velocity feedback",
-            "n_rollout_trials_per_replicate": DEFAULT_RESPONSE_MAP_ROLLOUT_TRIALS,
-            "map_shape": [int(dim) for dim in response_maps.shape],
-        },
+        "io_response_map": io_response_map_metadata,
         "observation_history_covariance": observation_history_covariance_metadata,
         "_observation_history_covariance_array": observation_history_covariance,
     }
@@ -550,10 +595,22 @@ def _stochastic_response_map_net_inputs(
     pair: Any,
     n_replicates: int,
     n_rollout_trials: int,
+    run_spec: dict[str, Any],
 ) -> Any:
     """Return stochastic network input histories for local I/O linearization."""
 
-    trial_specs = _repeat_single_validation_trial(pair.task.validation_trials, n_rollout_trials)
+    base_timing = trial_timing_from_specs(
+        pair.task.validation_trials,
+        movement_horizon_steps=canonical_movement_horizon_from_metadata(
+            run_spec,
+            default=None,
+        ),
+    )
+    trial_specs = (
+        _repeat_validation_trial_bank(pair.task.validation_trials, n_rollout_trials)
+        if base_timing.is_delayed
+        else _repeat_single_validation_trial(pair.task.validation_trials, n_rollout_trials)
+    )
 
     def eval_one_replicate(model_array_leaves: Any, key: Any) -> Any:
         replicate_model = eqx.combine(model_array_leaves, model_other)
@@ -564,9 +621,26 @@ def _stochastic_response_map_net_inputs(
         )
         return states.net.input
 
-    return eqx.filter_vmap(eval_one_replicate, in_axes=(0, 0))(
+    net_inputs = eqx.filter_vmap(eval_one_replicate, in_axes=(0, 0))(
         model_arrays,
         jr.split(jr.PRNGKey(1), n_replicates),
+    )
+    timing = trial_timing_from_specs(
+        trial_specs,
+        n_time_steps=int(net_inputs.shape[-2]),
+        movement_horizon_steps=canonical_movement_horizon_from_metadata(
+            run_spec,
+            default=int(net_inputs.shape[-2]),
+        ),
+    )
+    if not timing.is_delayed:
+        return net_inputs
+    return take_per_trial_time_window(
+        np.asarray(net_inputs, dtype=np.float64),
+        timing.go_index,
+        timing.movement_horizon_steps,
+        trial_axis=1,
+        time_axis=2,
     )
 
 
@@ -820,6 +894,21 @@ def _repeat_single_validation_trial(trial_specs: Any, n_trials: int) -> Any:
     return jt.map(repeat_leaf, trial_specs)
 
 
+def _repeat_validation_trial_bank(trial_specs: Any, n_trials: int) -> Any:
+    """Repeat the whole validation bank cyclically instead of only trial zero."""
+
+    source_trials = _trial_count(trial_specs)
+    indices = jnp.asarray(np.arange(n_trials, dtype=np.int32) % source_trials)
+
+    def repeat_leaf(leaf: Any) -> Any:
+        shape = getattr(leaf, "shape", None)
+        if shape is not None and len(shape) >= 1 and shape[0] == source_trials:
+            return jnp.asarray(leaf)[indices]
+        return leaf
+
+    return jt.map(repeat_leaf, trial_specs)
+
+
 def normalize_gru_hps(hps: dict[str, Any]) -> dict[str, Any]:
     """Normalize serialized GRU hparams into the training builder contract."""
 
@@ -829,6 +918,30 @@ def normalize_gru_hps(hps: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _candidate_feedback_basis(run_spec: dict[str, Any]) -> str:
+    model_basis = run_spec.get("model_summary", {}).get("feedback", {}).get("basis")
+    input_basis = (
+        run_spec.get("task_timing", {})
+        .get("target_relative_multitarget", {})
+        .get("input_contract", {})
+        .get("controller_feedback_basis")
+    )
+    return str(model_basis or input_basis or "raw_delayed_position_velocity")
+
+
+def _candidate_feedback_dim(run_spec: dict[str, Any]) -> int:
+    feedback = run_spec.get("model_summary", {}).get("feedback", {})
+    if "dimension" in feedback:
+        return int(feedback["dimension"])
+    contract_shape = (
+        run_spec.get("task_timing", {})
+        .get("target_relative_multitarget", {})
+        .get("input_contract", {})
+        .get("shape", [4])
+    )
+    return int(contract_shape[0])
+
+
 def gru_io_response_map_blocker(
     run_spec: dict[str, Any],
     *,
@@ -836,17 +949,18 @@ def gru_io_response_map_blocker(
 ) -> str:
     """Return the current reason GRU response maps cannot be compared honestly."""
 
-    feedback_dim = 4
-    reference_observation_dim = 8
+    feedback_dim = _candidate_feedback_dim(run_spec)
+    feedback_basis = _candidate_feedback_basis(run_spec)
+    reference_observation_dim = 4
     graph_meta = run_spec.get("feedbax_graph", {})
     graph_path = graph_meta.get("graph_spec_path", "model.graph.json")
     return (
         f"Response-map components are blocked: the {source_issue_id} Feedbax GraphSpec "
-        f"({graph_path}) feeds the GRU delayed position/velocity feedback "
-        f"({feedback_dim}D), while the current C&S output-feedback reference "
-        f"uses delayed_observation_matrix over the full physical block "
-        f"({reference_observation_dim}D). No approved 4D-to-8D projection or "
-        "4D analytical reference response-map contract is present."
+        f"({graph_path}) feeds the GRU feedback basis `{feedback_basis}` "
+        f"({feedback_dim}D), while the current standard response-map reference "
+        f"uses the approved delayed position/velocity observation basis "
+        f"({reference_observation_dim}D). No approved standard-certificate "
+        "projection for this candidate feedback basis is present."
     )
 
 

@@ -24,6 +24,7 @@ go cue across ~150 ms.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Tuple
 
 import numpy as np
@@ -128,6 +129,276 @@ def align_trials(
             flat_aligned[outer, t, flat_dest[outer, t, mask]] = flat_profile[outer, t, mask]
 
     return aligned, center
+
+
+@dataclass(frozen=True)
+class TrialTiming:
+    """Task timing metadata needed by post-run diagnostics.
+
+    ``go_index`` is always per trial. For non-delayed reaches it is all zeros,
+    so callers can use the same movement-window code path for delayed and
+    non-delayed tasks.
+    """
+
+    is_delayed: bool
+    go_index: np.ndarray
+    movement_horizon_steps: int
+    n_time_steps: int
+
+    @property
+    def movement_end_index(self) -> np.ndarray:
+        """Return the exclusive movement-window end index for each trial."""
+
+        return self.go_index + int(self.movement_horizon_steps)
+
+    def to_json(self) -> dict[str, object]:
+        """Return JSON-compatible timing metadata."""
+
+        return {
+            "is_delayed": bool(self.is_delayed),
+            "go_index_min": int(np.min(self.go_index)) if self.go_index.size else None,
+            "go_index_max": int(np.max(self.go_index)) if self.go_index.size else None,
+            "movement_horizon_steps": int(self.movement_horizon_steps),
+            "movement_end_index_min": (
+                int(np.min(self.movement_end_index)) if self.go_index.size else None
+            ),
+            "movement_end_index_max": (
+                int(np.max(self.movement_end_index)) if self.go_index.size else None
+            ),
+            "n_time_steps": int(self.n_time_steps),
+            "time_basis": (
+                "go_cue_aligned_canonical_movement_window"
+                if self.is_delayed
+                else "absolute_trial_time"
+            ),
+        }
+
+
+def trial_timing_from_specs(
+    trial_specs: object,
+    *,
+    n_time_steps: int | None = None,
+    movement_horizon_steps: int | None = None,
+) -> TrialTiming:
+    """Infer diagnostic timing metadata from a Feedbax ``TaskTrialSpec``.
+
+    Delayed reach trial specs store epoch boundaries in
+    ``trial_specs.timeline.epoch_bounds``. The movement epoch starts at the
+    penultimate boundary, matching the full-Q/R/Q_f loss implementation. For
+    non-delayed specs, diagnostics use a zero go index and the whole time axis.
+    """
+
+    inferred_n_time = int(n_time_steps) if n_time_steps is not None else infer_trial_n_time(
+        trial_specs
+    )
+    n_trials = infer_trial_count(trial_specs)
+    epoch_bounds = getattr(getattr(trial_specs, "timeline", None), "epoch_bounds", None)
+    if epoch_bounds is None:
+        go_index = np.zeros((n_trials,), dtype=np.int64)
+        return TrialTiming(
+            is_delayed=False,
+            go_index=go_index,
+            movement_horizon_steps=int(movement_horizon_steps or inferred_n_time),
+            n_time_steps=inferred_n_time,
+        )
+
+    bounds = np.asarray(epoch_bounds)
+    if bounds.ndim == 1:
+        bounds = np.broadcast_to(bounds[None, :], (n_trials, bounds.shape[0]))
+    if bounds.shape[-1] < 3:
+        go_index = np.zeros((bounds.shape[0],), dtype=np.int64)
+        return TrialTiming(
+            is_delayed=False,
+            go_index=go_index,
+            movement_horizon_steps=int(movement_horizon_steps or inferred_n_time),
+            n_time_steps=inferred_n_time,
+        )
+
+    go_index = np.asarray(bounds[..., -2], dtype=np.int64).reshape(-1)
+    if go_index.shape[0] != n_trials:
+        go_index = np.broadcast_to(go_index[:1], (n_trials,)).astype(np.int64)
+    horizon = int(
+        movement_horizon_steps
+        if movement_horizon_steps is not None
+        else max(0, inferred_n_time - int(np.max(go_index)))
+    )
+    if horizon < 1:
+        raise ValueError(f"movement_horizon_steps must be positive; got {horizon}")
+    if np.any(go_index < 0) or np.any(go_index + horizon > inferred_n_time):
+        raise ValueError(
+            "movement window is outside the rollout time axis: "
+            f"go=[{int(go_index.min())}, {int(go_index.max())}], "
+            f"horizon={horizon}, n_time_steps={inferred_n_time}"
+        )
+    return TrialTiming(
+        is_delayed=bool(np.any(go_index > 0)),
+        go_index=go_index,
+        movement_horizon_steps=horizon,
+        n_time_steps=inferred_n_time,
+    )
+
+
+def canonical_movement_horizon_from_metadata(
+    metadata: dict[str, object],
+    *,
+    default: int | None = None,
+) -> int | None:
+    """Return the recorded canonical C&S movement horizon when present."""
+
+    paths = (
+        ("task_timing", "movement_window", "cs_horizon_steps"),
+        (
+            "task_timing",
+            "delayed_reach",
+            "movement_epoch",
+            "cs_schedule_horizon_steps",
+        ),
+        ("loss_summary", "time_indexing", "canonical_movement_horizon_steps"),
+        (
+            "loss_summary",
+            "delayed_reach",
+            "movement_epoch",
+            "cs_schedule_horizon_steps",
+        ),
+        (
+            "game_card",
+            "delayed_reach_projection",
+            "canonical_cs_movement_horizon_steps",
+        ),
+        ("game_card", "horizon_steps"),
+    )
+    for path in paths:
+        value: object = metadata
+        for key in path:
+            if not isinstance(value, dict) or key not in value:
+                value = None
+                break
+            value = value[key]
+        if value is not None:
+            return int(value)
+    return default
+
+
+def infer_trial_count(trial_specs: object) -> int:
+    """Infer the leading trial count from common ``TaskTrialSpec`` leaves."""
+
+    for init_state in getattr(trial_specs, "inits", {}).values():
+        count = _leading_count(init_state)
+        if count is not None:
+            return count
+    for target_spec in getattr(trial_specs, "targets", {}).values():
+        count = _leading_count(getattr(target_spec, "value", target_spec))
+        if count is not None:
+            return count
+    inputs = getattr(trial_specs, "inputs", None)
+    values = inputs.values() if isinstance(inputs, dict) else (inputs,)
+    for value in values:
+        count = _leading_count(value)
+        if count is not None:
+            return count
+    epoch_bounds = getattr(getattr(trial_specs, "timeline", None), "epoch_bounds", None)
+    if epoch_bounds is not None:
+        bounds = np.asarray(epoch_bounds)
+        if bounds.ndim >= 2:
+            return int(bounds.shape[0])
+    return 1
+
+
+def infer_trial_n_time(trial_specs: object, *, minimum: int = 1) -> int:
+    """Infer the rollout time-axis length from common trial-spec inputs."""
+
+    inputs = getattr(trial_specs, "inputs", None)
+    values = inputs.values() if isinstance(inputs, dict) else (inputs,)
+    for value in values:
+        n_time = _time_count(value)
+        if n_time is not None:
+            return max(int(n_time), int(minimum))
+    for target_spec in getattr(trial_specs, "targets", {}).values():
+        n_time = _time_count(getattr(target_spec, "value", target_spec))
+        if n_time is not None:
+            return max(int(n_time), int(minimum))
+    return int(minimum)
+
+
+def take_per_trial_time_window(
+    values: np.ndarray,
+    start_index: np.ndarray,
+    length: int,
+    *,
+    trial_axis: int,
+    time_axis: int,
+) -> np.ndarray:
+    """Take a fixed-length time window with a per-trial start index.
+
+    Args:
+        values: Array containing a trial axis and a time axis.
+        start_index: Integer array of shape ``(n_trials,)``.
+        length: Number of time samples to keep.
+        trial_axis: Axis corresponding to trials.
+        time_axis: Axis corresponding to time.
+
+    Returns:
+        An array with the same axis order as ``values`` except that the time
+        axis length is ``length``.
+    """
+
+    array = np.asarray(values)
+    if array.ndim < 2:
+        raise ValueError(f"values must have at least two dimensions; got {array.shape}")
+    trial_axis = _normalize_axis(trial_axis, array.ndim)
+    time_axis = _normalize_axis(time_axis, array.ndim)
+    if trial_axis == time_axis:
+        raise ValueError("trial_axis and time_axis must be distinct")
+
+    starts = np.asarray(start_index, dtype=np.int64).reshape(-1)
+    n_trials = int(array.shape[trial_axis])
+    n_time = int(array.shape[time_axis])
+    if starts.shape[0] != n_trials:
+        raise ValueError(
+            f"start_index has {starts.shape[0]} entries but trial axis has {n_trials}"
+        )
+    if length < 1:
+        raise ValueError(f"length must be positive; got {length}")
+    if np.any(starts < 0) or np.any(starts + length > n_time):
+        raise ValueError(
+            "requested per-trial window is outside the time axis: "
+            f"starts=[{int(starts.min())}, {int(starts.max())}], "
+            f"length={length}, n_time={n_time}"
+        )
+
+    moved = np.moveaxis(array, (trial_axis, time_axis), (0, 1))
+    windowed = np.stack(
+        [moved[trial, starts[trial] : starts[trial] + length, ...] for trial in range(n_trials)],
+        axis=0,
+    )
+    return np.moveaxis(windowed, (0, 1), (trial_axis, time_axis))
+
+
+def _leading_count(value: object) -> int | None:
+    shape = getattr(value, "shape", None)
+    if shape is not None and len(shape) >= 1:
+        return int(shape[0])
+    position = getattr(value, "pos", None)
+    if position is not None:
+        return int(position.shape[0])
+    velocity = getattr(value, "vel", None)
+    if velocity is not None:
+        return int(velocity.shape[0])
+    return None
+
+
+def _time_count(value: object) -> int | None:
+    shape = getattr(value, "shape", None)
+    if shape is not None and len(shape) >= 2:
+        return int(shape[-2])
+    position = getattr(value, "pos", None)
+    if position is not None and len(position.shape) >= 2:
+        return int(position.shape[-2])
+    return None
+
+
+def _normalize_axis(axis: int, ndim: int) -> int:
+    return axis + ndim if axis < 0 else axis
 
 
 def trim_to_full_support(
