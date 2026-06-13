@@ -10,19 +10,17 @@ import jax
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
-from feedbax._mapping import WhereDict
+from feedbax import AbstractTask, TaskTrialSpec, WhereDict
 from feedbax.graph import Component, Wire
-from feedbax.task import AbstractTask, TaskTrialSpec
 from jaxtyping import PRNGKeyArray, PyTree
 
 from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
-    DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S,
     DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS,
+    DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S,
     DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT,
     DEFAULT_PLANT_TIMING_BINS,
     DEFAULT_REACH_RELATIVE_LEVELS,
 )
-
 
 PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_randomized"
 CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE = (

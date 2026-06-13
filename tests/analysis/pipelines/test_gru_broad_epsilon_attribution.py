@@ -6,9 +6,8 @@ from io import StringIO
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
-from feedbax._mapping import WhereDict
+from feedbax import TaskTrialSpec, WhereDict
 from feedbax.loss import AbstractLoss, TermTree
-from feedbax.task import TaskTrialSpec
 from feedbax.types import TreeNamespace
 
 from rlrmp.analysis.pipelines.gru_broad_epsilon_attribution import (

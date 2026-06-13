@@ -6,7 +6,7 @@ from typing import Any, Optional
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from feedbax import AbstractModel
+from feedbax import AbstractModel, TaskTrialSpec
 from feedbax.loss import (
     AbstractLoss,
     CompositeLoss,
@@ -22,15 +22,18 @@ from feedbax.loss import (
     target_final_state,
     target_zero,
 )
-from feedbax.task import TaskTrialSpec
-from feedbax.xabdeef.losses import simple_reach_loss
 from feedbax.misc import deep_merge
 from feedbax.training.loss import get_readout_norm_loss
 from feedbax.types import TreeNamespace
+from feedbax.xabdeef.losses import simple_reach_loss
 from jax_cookbook.misc import window_take
 from jaxtyping import Array, PyTree
 
-from rlrmp.analysis.math.cs_game_card import TARGET_POS, build_canonical_game, build_no_integrator_game
+from rlrmp.analysis.math.cs_game_card import (
+    TARGET_POS,
+    build_canonical_game,
+    build_no_integrator_game,
+)
 
 logger = logging.getLogger(__name__)
 

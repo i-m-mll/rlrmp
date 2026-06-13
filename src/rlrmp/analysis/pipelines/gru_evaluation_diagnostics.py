@@ -14,10 +14,11 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 import numpy as np
-from feedbax._io import load_with_hyperparameters
+from feedbax import load_with_hyperparameters
 from feedbax.types import TreeNamespace, dict_to_namespace
 
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
+from rlrmp.analysis.pipelines.diagnostic_provenance import write_regeneration_spec
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     ReplicateCheckpointSelection,
     load_materialized_fixed_bank_manifest,
@@ -30,10 +31,8 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     repeat_single_validation_trial,
     resolve_run_inputs,
 )
-from rlrmp.analysis.pipelines.diagnostic_provenance import write_regeneration_spec
-from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
-
+from rlrmp.train.task_model import setup_task_model_pair
 
 SCHEMA_VERSION = "rlrmp.gru_evaluation_diagnostics.v1"
 DEFAULT_OUTPUT_FILENAME = "gru_evaluation_diagnostics_validation_selected.json"

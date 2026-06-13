@@ -8,9 +8,9 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 from equinox.nn import StateIndex
+from feedbax import TaskTrialSpec, TrialTimeline, WhereDict
 from feedbax.graph import Component, Graph
 from feedbax.loss import CompositeLoss, ModelLoss
-from feedbax.task import TaskTrialSpec, TrialTimeline, WhereDict
 
 from rlrmp.paths import REPO_ROOT
 

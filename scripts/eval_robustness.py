@@ -30,25 +30,24 @@ import jax.random as jr
 import jax.tree as jt
 import numpy as np
 import plotly.graph_objects as go
+from feedbax import load_with_hyperparameters
+from feedbax.plot import save_figure  # noqa: E402  # Bug: f485c26 — project-config routing
+from feedbax.train import init_task_trainer_history
 from plotly.subplots import make_subplots
 
-# ---------------------------------------------------------------------------
-# Path setup
-# ---------------------------------------------------------------------------
-
-
-from rlrmp.train.standard import build_hps
+from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.eval import (
     N_REPLICATES,
     compute_kinematics,
     eval_ensemble_on_trials,
     set_sisu,
 )
-from feedbax._io import load_with_hyperparameters
-from feedbax.plot import save_figure  # noqa: E402  # Bug: f485c26 — project-config routing
-from feedbax.train import init_task_trainer_history
+
+# ---------------------------------------------------------------------------
+# Path setup
+# ---------------------------------------------------------------------------
+from rlrmp.train.standard import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
-from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 
 WORKTREE = Path(__file__).parent.parent
 # ---------------------------------------------------------------------------

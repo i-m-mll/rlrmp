@@ -14,10 +14,8 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 import numpy as np
-from feedbax._io import load_with_hyperparameters
-from feedbax._mapping import WhereDict
+from feedbax import TaskTrialSpec, WhereDict, load_with_hyperparameters
 from feedbax.misc import BatchInfo
-from feedbax.task import TaskTrialSpec
 from feedbax.train import filter_spec_leaves
 from feedbax.types import TreeNamespace, dict_to_namespace
 
@@ -27,7 +25,6 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     load_validation_selected_checkpoint_model,
     materialize_validation_selected_checkpoint_manifest,
 )
-from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.train.cs_nominal_gru import _where_train
 from rlrmp.train.cs_perturbation_training import (
@@ -36,7 +33,7 @@ from rlrmp.train.cs_perturbation_training import (
     FixedTargetPerturbationTrainingTaskAdapter,
     apply_training_perturbation_mixture,
 )
-
+from rlrmp.train.task_model import setup_task_model_pair
 
 SCHEMA_VERSION = "rlrmp.gru_broad_epsilon_attribution.v1"
 DEFAULT_EXPERIMENT = "b8aa38e"

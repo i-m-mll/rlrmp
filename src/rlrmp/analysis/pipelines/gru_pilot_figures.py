@@ -19,19 +19,15 @@ import jax.random as jr
 import jax.tree as jt
 import numpy as np
 import plotly.graph_objects as go
-from feedbax._io import load_with_hyperparameters
+from feedbax import load_with_hyperparameters
 from feedbax.loss import TermTree
 from feedbax.plot import loss_history_compare
 from feedbax.types import TreeNamespace, dict_to_namespace
 from plotly.subplots import make_subplots
 
-from rlrmp.analysis.math.cs_game_card import OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR
-from rlrmp.analysis.math.cs_game_card import materialize_reference
-from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
-from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
-    ReplicateCheckpointSelection,
-    load_validation_selected_checkpoint_model,
-    materialize_validation_selected_checkpoint_manifest,
+from rlrmp.analysis.math.cs_game_card import (
+    OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
+    materialize_reference,
 )
 from rlrmp.analysis.math.cs_released_simulation import (
     build_extlqg_comparator_path,
@@ -46,9 +42,14 @@ from rlrmp.analysis.math.output_feedback import (
     position_velocity_observation_config,
     rollout_with_kalman_estimator,
 )
-from rlrmp.train.task_model import setup_task_model_pair
+from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
+from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+    ReplicateCheckpointSelection,
+    load_validation_selected_checkpoint_model,
+    materialize_validation_selected_checkpoint_manifest,
+)
 from rlrmp.paths import REPO_ROOT, mkdir_p
-
+from rlrmp.train.task_model import setup_task_model_pair
 
 DEFAULT_FIGURE_SUBDIR = "tmp_figures/gru_pilot"
 DEFAULT_N_ROLLOUT_TRIALS = 64

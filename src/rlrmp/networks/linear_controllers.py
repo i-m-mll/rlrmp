@@ -44,6 +44,7 @@ import jax.numpy as jnp
 import jax.random as jr
 from equinox import Module, field
 from equinox.nn import State, StateIndex
+from feedbax import AbstractTask
 from feedbax.bodies import SimpleFeedback
 from feedbax.graph import Component
 from feedbax.mechanics import Mechanics
@@ -52,10 +53,8 @@ from feedbax.mechanics.skeleton.pointmass import PointMass
 from feedbax.misc import identity_func
 from feedbax.nn import NetworkState
 from feedbax.noise import Multiplicative, Normal
-from feedbax.task import AbstractTask
 from jax.flatten_util import ravel_pytree
 from jaxtyping import Array, Float, PRNGKeyArray, PyTree
-
 
 # ---------------------------------------------------------------------------
 # Helpers

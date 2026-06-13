@@ -6,10 +6,13 @@ import json
 
 import jax.random as jr
 import numpy as np
+from feedbax import TaskTrialSpec
 from feedbax.graph import Wire
 from feedbax.state import CartesianState
-from feedbax.task import TaskTrialSpec
 
+import rlrmp.analysis.pipelines.gru_perturbation_bank as perturbation_bank
+from rlrmp.analysis.math.cs_game_card import build_canonical_game
+from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluation
 from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     GRAPH_ADAPTER_INPUT_PREFIX,
     SCHEMA_VERSION,
@@ -25,9 +28,6 @@ from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     summarize_perturbation_bank,
     summarize_perturbation_response,
 )
-import rlrmp.analysis.pipelines.gru_perturbation_bank as perturbation_bank
-from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluation
-from rlrmp.analysis.math.cs_game_card import build_canonical_game
 from rlrmp.cs_lss_gru import build_cs_lss_gru_graph
 
 

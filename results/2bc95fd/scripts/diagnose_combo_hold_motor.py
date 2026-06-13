@@ -28,8 +28,6 @@ from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
-from rlrmp.paths import REPO_ROOT  # Bug: 8404108 — was __file__-relative
-
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -37,15 +35,14 @@ import jax.random as jr
 import jax.tree as jt
 import numpy as np
 import plotly.graph_objects as go
+from feedbax import load_with_hyperparameters
+from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476
 from plotly.subplots import make_subplots
 
-from feedbax._io import load_with_hyperparameters
-from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476
-
-from rlrmp.train.minimax import build_hps
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
+from rlrmp.paths import REPO_ROOT  # Bug: 8404108 — was __file__-relative
+from rlrmp.train.minimax import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
-
 
 COMBO_LABEL = "gru__jerk_motor_smooth_combo"
 N_REPLICATES = 5

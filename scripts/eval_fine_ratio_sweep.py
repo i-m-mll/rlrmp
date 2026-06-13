@@ -21,17 +21,16 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
+from feedbax import load_with_hyperparameters
 
-
-from rlrmp.train.standard import build_hps
+from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.eval import (
     compute_kinematics,
     eval_ensemble_on_trials,
     set_sisu,
 )
-from feedbax._io import load_with_hyperparameters
+from rlrmp.train.standard import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
-from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 
 WORKTREE = Path(__file__).parent.parent
 RESULTS_BASE = WORKTREE / "results" / "part2_5"

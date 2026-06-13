@@ -1,16 +1,15 @@
 """Task/model construction for rlrmp training and checkpoint reload paths."""
 
-from collections.abc import Callable
-from collections.abc import Mapping
+import warnings
+from collections.abc import Callable, Mapping
 from typing import Literal as L
 from typing import TypeAlias
-import warnings
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-from feedbax._mapping import WhereDict
+from feedbax import AbstractTask, TaskTrialSpec, WhereDict
 from feedbax.intervene import (
     CurlFieldParams,
     FixedFieldParams,
@@ -19,7 +18,6 @@ from feedbax.intervene import (
 from feedbax.misc import get_field_amplitude, vector_with_gaussian_length
 from feedbax.nn import PopulationStructure
 from feedbax.state import CartesianState
-from feedbax.task import AbstractTask, TaskTrialSpec
 from feedbax.training.train import always_active, bernoulli_active
 from feedbax.types import LDict, TaskModelPair, TreeNamespace
 from jaxtyping import PRNGKeyArray
@@ -44,6 +42,7 @@ from rlrmp.models import (
     create_point_mass_linear_ensemble,
     create_point_mass_nn_ensemble,
 )
+from rlrmp.task import TASK_TYPES
 from rlrmp.train.cs_perturbation_training import (
     BroadFullStateEpsilonTrainingTaskAdapter,
     FixedTargetPerturbationTrainingTaskAdapter,
@@ -53,7 +52,6 @@ from rlrmp.train.cs_perturbation_training import (
     config_from_target_hps,
     install_perturbation_training_graph_adapters,
 )
-from rlrmp.task import TASK_TYPES
 
 TrainingMethodLabel: TypeAlias = L["bcs", "dai", "pai-asf", "pai-n", "nominal-cs-gru"]
 PlantBackendLabel: TypeAlias = L["cs_lss", "legacy_causal_simplefeedback"]

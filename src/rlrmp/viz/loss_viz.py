@@ -11,8 +11,8 @@ from typing import Any, Optional
 import jax
 import jax.numpy as jnp
 import plotly.graph_objects as go
+from feedbax import TaskTrialSpec
 from feedbax.loss import CompositeLoss, FuncTermsLoss, TargetSpec, TargetStateLoss
-from feedbax.task import TaskTrialSpec
 from jaxtyping import Array
 from plotly.subplots import make_subplots
 

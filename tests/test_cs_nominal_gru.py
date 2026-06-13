@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import warnings
 from functools import partial
 from pathlib import Path
-import warnings
 
 import equinox as eqx
 import jax
@@ -15,10 +15,9 @@ import jax.random as jr
 import numpy as np
 import optax
 import pytest
-from feedbax.mechanics import LinearStateSpace
-from feedbax._mapping import WhereDict
+from feedbax import TaskTrialSpec, TrialTimeline, WhereDict
 from feedbax.loss import TargetSpec
-from feedbax.task import TaskTrialSpec, TrialTimeline
+from feedbax.mechanics import LinearStateSpace
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
 from feedbax.types import TreeNamespace
 
@@ -27,10 +26,10 @@ from rlrmp.analysis.math.cs_game_card import (
     build_canonical_game,
 )
 from rlrmp.analysis.math.cs_released_simulation import default_cs_noise_covariances
+from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig
 from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
     DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT,
 )
-from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig
 from rlrmp.cs_lss_gru import (
     CS_EPSILON_DIM,
     CS_REDUCED_EPSILON_DIM,
@@ -39,17 +38,10 @@ from rlrmp.cs_lss_gru import (
 )
 from rlrmp.loss import (
     CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
-    CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
     CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
+    CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
     CsAnalyticalQrfLoss,
 )
-from rlrmp.train.task_model import (
-    CS_LSS_PLANT_BACKEND,
-    LEGACY_CAUSAL_BACKEND_WARNING,
-    LEGACY_CAUSAL_PLANT_BACKEND,
-    _cs_lss_process_epsilon_factor,
-)
-from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, run_artifact_dir, run_spec_dir
 from rlrmp.train.cs_nominal_gru import (
     CS_DELAYED_REACH_TASK_TYPE,
@@ -65,27 +57,15 @@ from rlrmp.train.cs_nominal_gru import (
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_PGD_TRAINING_MODE,
     BROAD_EPSILON_TRAINING_MODE,
-    BroadFullStateEpsilonTrainingConfig,
     CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE,
     GRAPH_ADAPTER_SPECS,
     MILD_COMBINED_FAMILIES,
     PERTURBATION_TRAINING_MODE,
     TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
     TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
-    TargetRelativeMultiTargetTrainingConfig,
     VALIDATION_BINS,
-    apply_broad_epsilon_training,
-    config_from_broad_epsilon_pgd_hps,
-    apply_training_perturbation_mixture,
-    apply_training_target_distribution,
-    apply_validation_target_distribution,
-    apply_validation_bin,
-    planned_target_relative_multitarget_h0_rows,
-    planned_target_relative_multitarget_rows,
-    run_broad_epsilon_pgd_inner_maximizer,
-    target_relative_validation_manifest,
-    planned_fixed_target_perturbation_rows,
-    validation_bin_manifest,
+    BroadFullStateEpsilonTrainingConfig,
+    TargetRelativeMultiTargetTrainingConfig,
     _broad_epsilon_l2_radius,
     _ensure_broad_epsilon_input,
     _epsilon_time_mask,
@@ -94,6 +74,25 @@ from rlrmp.train.cs_perturbation_training import (
     _normalize_flattened_per_trial,
     _project_flattened_per_trial_l2_ball,
     _set_input,
+    apply_broad_epsilon_training,
+    apply_training_perturbation_mixture,
+    apply_training_target_distribution,
+    apply_validation_bin,
+    apply_validation_target_distribution,
+    config_from_broad_epsilon_pgd_hps,
+    planned_fixed_target_perturbation_rows,
+    planned_target_relative_multitarget_h0_rows,
+    planned_target_relative_multitarget_rows,
+    run_broad_epsilon_pgd_inner_maximizer,
+    target_relative_validation_manifest,
+    validation_bin_manifest,
+)
+from rlrmp.train.task_model import (
+    CS_LSS_PLANT_BACKEND,
+    LEGACY_CAUSAL_BACKEND_WARNING,
+    LEGACY_CAUSAL_PLANT_BACKEND,
+    _cs_lss_process_epsilon_factor,
+    setup_task_model_pair,
 )
 
 
