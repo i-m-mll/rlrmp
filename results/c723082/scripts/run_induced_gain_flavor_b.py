@@ -45,9 +45,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 import numpy as np
-
-
-from feedbax._io import load_with_hyperparameters
+from feedbax import load_with_hyperparameters
 
 from rlrmp.analysis.hinf_riccati import (
     CostSpec,
@@ -57,17 +55,17 @@ from rlrmp.analysis.hinf_riccati import (
     linearize_pointmass,
 )
 from rlrmp.analysis.induced_gain import (
-    Controller,
     W_ADDITIVE_FORCE,
     W_SENSORY_PERTURBATION,
     W_STRUCTURAL_DA,
     Z_QR_COST,
+    Controller,
     induced_gain,
 )
-from rlrmp.train.task_model import setup_task_model_pair
-from rlrmp.paths import REPO_ROOT, mkdir_p, run_artifact_dir, run_spec_dir
-from rlrmp.intervention_compat import swap_plant_intervenor_to_dynamics_matrix
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
+from rlrmp.intervention_compat import swap_plant_intervenor_to_dynamics_matrix
+from rlrmp.paths import REPO_ROOT, mkdir_p, run_artifact_dir, run_spec_dir
+from rlrmp.train.task_model import setup_task_model_pair
 
 logger = logging.getLogger(__name__)
 

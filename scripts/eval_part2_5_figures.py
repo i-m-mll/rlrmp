@@ -8,6 +8,7 @@ Usage:
 """
 
 import warnings
+
 warnings.filterwarnings("ignore")
 
 import argparse
@@ -17,20 +18,19 @@ from pathlib import Path
 import equinox as eqx
 import jax.random as jr
 import numpy as np
-
-from feedbax._io import load_with_hyperparameters
+from feedbax import load_with_hyperparameters
 from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 — project-config routing
 from feedbax.train import init_task_trainer_history
+
 from rlrmp.eval import (
     N_REPLICATES,
     compute_kinematics,
     eval_ensemble_on_trials,
     set_sisu,
 )
-from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import figure_artifact_dir, figure_spec_dir, run_artifact_dir
 from rlrmp.train.standard import build_hps
-
+from rlrmp.train.task_model import setup_task_model_pair
 
 # ---------------------------------------------------------------------------
 # Helpers

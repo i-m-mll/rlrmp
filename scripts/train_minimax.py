@@ -38,30 +38,30 @@ import jax.tree as jt
 import jax.tree_util as jtu
 import numpy as np
 import optax
-from feedbax._io import load_with_hyperparameters, save as fbx_save
+from feedbax import load_with_hyperparameters, prepare_trial
+from feedbax import save as fbx_save
 from feedbax.iterate import run_component
 from feedbax.misc import BatchInfo
 from feedbax.streaming_loss import make_streaming_loss_fn
-from feedbax.task import prepare_trial
 from feedbax.training.train import (
     TaskTrainer,
     make_delayed_cosine_schedule,
     train_pair,
 )
+
 from rlrmp.adversarial_training import (
     _inject_adversary_delta_A,
     _inject_adversary_forces,
 )
 from rlrmp.adversary import GaussianBumpAdversary, LinearDynamicsAdversary
-from rlrmp.intervention_compat import (
-    swap_plant_intervenor_to_dynamics_matrix,
-    swap_task_intervention_to_dynamics_matrix,
-)
 from rlrmp.feedbax_graph import (
     build_runtime_rlrmp_feedbax_graph_bundle,
     write_graph_spec_bundle,
 )
-from rlrmp.train.task_model import setup_task_model_pair
+from rlrmp.intervention_compat import (
+    swap_plant_intervenor_to_dynamics_matrix,
+    swap_task_intervention_to_dynamics_matrix,
+)
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 # build_hps was extracted to rlrmp.train.minimax in 8404108 (capability-named
@@ -69,6 +69,7 @@ from rlrmp.paths import REPO_ROOT, mkdir_p
 # via sys.path injection). Re-imported for internal use; analysis / eval scripts
 # should import from `rlrmp.train` directly.
 from rlrmp.train.minimax import build_hps  # noqa: F401  (re-exported intentionally)
+from rlrmp.train.task_model import setup_task_model_pair
 
 logger = logging.getLogger(__name__)
 
@@ -586,7 +587,7 @@ def run_training(args: argparse.Namespace) -> None:
         )
 
     if warmup_model is None and args.warmup_model is not None:
-        from feedbax._io import load as fbx_load
+        from feedbax import load as fbx_load
 
         logger.info("Loading pre-trained warm-start model from %s", args.warmup_model)
 

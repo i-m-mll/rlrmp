@@ -24,7 +24,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 import optax
-from feedbax._io import save as fbx_save
+from feedbax import save as fbx_save
 from feedbax.loss import CompositeLoss, TermTree
 from feedbax.training.train import (
     TaskTrainer,
@@ -35,13 +35,14 @@ from feedbax.training.train import (
 from feedbax.types import TaskModelPair, TreeNamespace, dict_to_namespace
 from jaxtyping import PyTree
 
-from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import REPO_ROOT, mkdir_p
+
 # build_hps + loss-mode configs were extracted to rlrmp.train.standard in
 # 8404108 (capability-named library module; previously defined inline and
 # pulled by analysis scripts via sys.path injection). Re-imported for internal
 # use; analysis / eval scripts should import from `rlrmp.train` directly.
 from rlrmp.train.standard import LOSS_MODE_CONFIGS, build_hps  # noqa: F401
+from rlrmp.train.task_model import setup_task_model_pair
 
 logger = logging.getLogger(__name__)
 
@@ -532,10 +533,11 @@ def run_training(args: argparse.Namespace) -> None:
     # APT: adversarial perturbation training via pre_step_fn hook
     pre_step_fn = None
     if args.training_method == "apt":
-        from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
-        from feedbax.intervene.schedule import TimeSeriesParam
         from feedbax.graph import init_state_from_component
+        from feedbax.intervene.schedule import TimeSeriesParam
         from feedbax.train import grad_wrap_abstract_loss
+
+        from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 
         inner_steps = args.apt_inner_steps
         inner_lr = args.apt_inner_lr

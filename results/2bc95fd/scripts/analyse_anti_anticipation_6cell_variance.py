@@ -46,8 +46,6 @@ from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
-from rlrmp.paths import REPO_ROOT  # Bug: 8404108 — was __file__-relative
-
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -55,22 +53,21 @@ import jax.random as jr
 import jax.tree as jt
 import numpy as np
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-from rlrmp.viz import profile_comparison_grid
-
-from feedbax._io import load_with_hyperparameters
+from feedbax import load_with_hyperparameters
 from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 — project-config routing
+from plotly.subplots import make_subplots
 
-from rlrmp.io import update_marked_section
-from rlrmp.train.minimax import build_hps
 from rlrmp.analysis.trial_alignment import (
     align_trials,
     pooled_trial_mean_with_band,
     replicate_mean_curves,
 )
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
+from rlrmp.io import update_marked_section
+from rlrmp.paths import REPO_ROOT  # Bug: 8404108 — was __file__-relative
+from rlrmp.train.minimax import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
-
+from rlrmp.viz import profile_comparison_grid
 
 # ---------------------------------------------------------------------------
 # Cell definitions (from RUN_PLAN.md)

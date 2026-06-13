@@ -47,8 +47,8 @@ import jax
 import jax.numpy as jnp
 import jax.tree as jt
 import optax
+from feedbax import TaskTrialSpec
 from feedbax.intervene import TimeSeriesParam
-from feedbax.task import TaskTrialSpec
 from feedbax.types import TaskModelPair
 from jaxtyping import Array, Float, PyTree
 

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 
-import jax.random as jr
 import jax.numpy as jnp
+import jax.random as jr
 import numpy as np
+from feedbax import TaskTrialSpec
 from feedbax.graph import Wire
 from feedbax.state import CartesianState
-from feedbax.task import TaskTrialSpec
 
 from rlrmp.analysis.pipelines.gru_feedback_ablation import (
     FEEDBACK_AUDIT_SELECTION_ROLE,

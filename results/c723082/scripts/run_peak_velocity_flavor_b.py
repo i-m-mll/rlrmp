@@ -43,17 +43,15 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 import numpy as np
+from feedbax import load_with_hyperparameters
 
-
-from feedbax._io import load_with_hyperparameters
-
+from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.intervention_compat import (
     swap_plant_intervenor_to_dynamics_matrix,
     swap_task_intervention_to_dynamics_matrix,
 )
-from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
-from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.paths import mkdir_p, run_artifact_dir, run_spec_dir
+from rlrmp.train.task_model import setup_task_model_pair
 
 logger = logging.getLogger(__name__)
 
@@ -639,7 +637,9 @@ def main():
             flavor_b_results.append(res)
         except Exception as e:
             logger.error("  FAILED: %s: %s", type(e).__name__, e)
-            import traceback; traceback.print_exc()
+            import traceback
+
+            traceback.print_exc()
             flavor_b_results.append({
                 "group": group.name,
                 "_error": f"{type(e).__name__}: {e}",

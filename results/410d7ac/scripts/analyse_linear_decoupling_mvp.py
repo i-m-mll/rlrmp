@@ -64,20 +64,16 @@ from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
-from rlrmp.paths import REPO_ROOT  # Bug: 8404108 — was __file__-relative
-
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
+import jax.tree as jt
 import numpy as np
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-
-import jax.tree as jt
-
-from feedbax._io import load_with_hyperparameters
+from feedbax import load_with_hyperparameters
 from feedbax.plot import save_figure
+from plotly.subplots import make_subplots
 
 from rlrmp.analysis.trial_alignment import align_trials, replicate_mean_curves
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
@@ -85,9 +81,9 @@ from rlrmp.intervention_compat import (
     swap_plant_intervenor_to_dynamics_matrix,
     swap_task_intervention_to_dynamics_matrix,
 )
-from rlrmp.train.task_model import setup_task_model_pair
+from rlrmp.paths import REPO_ROOT  # Bug: 8404108 — was __file__-relative
 from rlrmp.train.minimax import build_hps
-
+from rlrmp.train.task_model import setup_task_model_pair
 
 EXPERIMENT = "410d7ac"
 N_REPLICATES = 5

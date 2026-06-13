@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import numpy as np
 import jax.numpy as jnp
-from feedbax._mapping import WhereDict
+import numpy as np
+from feedbax import TaskTrialSpec, WhereDict
 from feedbax.loss import TargetSpec
-from feedbax.task import TaskTrialSpec
 
 from rlrmp.analysis.pipelines.bridge_certificates import (
     BELLMAN_HESSIAN_RESIDUAL,
@@ -18,12 +17,12 @@ from rlrmp.analysis.pipelines.bridge_certificates import (
 )
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import (
     RUN_IDS,
+    _repeat_single_validation_trial,
     build_gru_standard_manifest_from_actions,
     materialize_gru_standard_result,
     normalize_gru_hps,
     observation_history_covariance_from_net_inputs,
     render_gru_standard_markdown,
-    _repeat_single_validation_trial,
 )
 from rlrmp.analysis.pipelines.failure_decomposition import failure_diagnostic_from_standard_row
 

@@ -1,27 +1,27 @@
 from functools import partial
 from typing import Optional, Tuple
 
-from equinox import field
 import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
-from feedbax.loss import TargetSpec
-from feedbax._mapping import WhereDict
-from feedbax.task import (
-    DelayedReachTaskInputs,
+from equinox import field
+from feedbax import (
     DelayedReaches,
+    DelayedReachTaskInputs,
     SimpleReaches,
     TaskTrialSpec,
     TrialTimeline,
-    _forceless_task_inputs,
-    _pos_only_states,
+    WhereDict,
     centreout_endpoints,
+    forceless_task_inputs,
     gen_epoch_lengths,
-    get_masks,
     get_masked_seqs,
+    get_masks,
     get_scalar_epoch_seq,
+    pos_only_states,
 )
+from feedbax.loss import TargetSpec
 from jaxtyping import Array, Float, PRNGKeyArray
 
 
@@ -91,7 +91,7 @@ class FixedEpochSimpleReaches(EpochSimpleReaches):
         """Return the fixed endpoint pair, ignoring randomness."""
 
         del key, batch_info
-        effector_init_state, effector_target_state = _pos_only_states(self._fixed_endpoints())
+        effector_init_state, effector_target_state = pos_only_states(self._fixed_endpoints())
         effector_target_state = jt.map(
             lambda x: jnp.broadcast_to(x, (self.n_steps - 1, *x.shape)),
             effector_target_state,
@@ -103,7 +103,7 @@ class FixedEpochSimpleReaches(EpochSimpleReaches):
 
         del key
         endpoints = jnp.stack([self.fixed_init_pos[None, :], self.fixed_target_pos[None, :]])
-        effector_init_states, effector_target_states = _pos_only_states(endpoints)
+        effector_init_states, effector_target_states = pos_only_states(endpoints)
         effector_target_states = jt.map(
             lambda x: jnp.swapaxes(
                 jnp.broadcast_to(x, (self.n_steps - 1, *x.shape)),
@@ -160,7 +160,7 @@ class CenterOutDelayedReaches(DelayedReaches):
         key_dir, key_seq = jr.split(key)
 
         endpoints = _random_centerout_endpoints(key_dir, self.eval_reach_length)
-        effector_init_state, effector_target_state = _pos_only_states(endpoints)
+        effector_init_state, effector_target_state = pos_only_states(endpoints)
 
         task_inputs, effector_target_states, epoch_bounds = self._get_sequences(
             effector_init_state,
@@ -199,7 +199,7 @@ class CenterOutDelayedReaches(DelayedReaches):
             origin, self.eval_n_directions, self.eval_reach_length
         )  # shape (2, eval_n_directions, 2)
 
-        effector_init_states, effector_target_states = _pos_only_states(endpoints)
+        effector_init_states, effector_target_states = pos_only_states(endpoints)
 
         key_val = jr.PRNGKey(self.seed_validation)
         epochs_keys = jr.split(key_val, effector_init_states.pos.shape[0])
@@ -276,7 +276,7 @@ class CsDelayedCenterOutReaches(CenterOutDelayedReaches):
         )
         visible_target = jt.map(
             lambda x: jnp.broadcast_to(x, (n_time, *x.shape)),
-            _forceless_task_inputs(target_states),
+            forceless_task_inputs(target_states),
         )
         stim_on_seq = get_scalar_epoch_seq(epoch_bounds, n_time, 1.0, target_on_epochs)
         hold_seq = get_scalar_epoch_seq(epoch_bounds, n_time, 1.0, hold_epochs)
@@ -290,7 +290,7 @@ class CsDelayedCenterOutReaches(CenterOutDelayedReaches):
         del batch_info
         key_dir, key_seq = jr.split(key)
         endpoints = _random_centerout_endpoints(key_dir, self.eval_reach_length)
-        effector_init_state, effector_target_state = _pos_only_states(endpoints)
+        effector_init_state, effector_target_state = pos_only_states(endpoints)
         task_inputs, effector_target_states, epoch_bounds = self._get_sequences(
             effector_init_state,
             effector_target_state,
@@ -324,7 +324,7 @@ class CsDelayedCenterOutReaches(CenterOutDelayedReaches):
         endpoints = centreout_endpoints(
             origin, self.eval_n_directions, self.eval_reach_length
         )
-        effector_init_states, effector_target_states = _pos_only_states(endpoints)
+        effector_init_states, effector_target_states = pos_only_states(endpoints)
         key_val = jr.PRNGKey(self.seed_validation)
         epochs_keys = jr.split(key_val, effector_init_states.pos.shape[0])
         get_sequences = partial(self._get_sequences, p_catch=0.0)

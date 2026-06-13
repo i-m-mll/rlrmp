@@ -3,7 +3,7 @@
 import jax
 import jax.numpy as jnp
 import yaml
-from feedbax.task import DelayedReaches
+from feedbax import DelayedReaches
 from feedbax_experiments.types import TreeNamespace
 
 from rlrmp.loss import get_reach_loss

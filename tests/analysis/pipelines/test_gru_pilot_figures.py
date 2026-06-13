@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import numpy as np
 import plotly.graph_objects as go
+from feedbax import TaskTrialSpec
 from feedbax.loss import TargetSpec
 from feedbax.state import CartesianState
-from feedbax.task import TaskTrialSpec
 
 from rlrmp.analysis.pipelines.gru_pilot_figures import (
     REFERENCE_4D_LABEL,
@@ -19,8 +19,8 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     initial_effector_velocity,
     load_gru_training_history,
     repeat_single_validation_trial,
-    write_velocity_figure,
     write_velocity_by_replicate_figure,
+    write_velocity_figure,
 )
 
 
