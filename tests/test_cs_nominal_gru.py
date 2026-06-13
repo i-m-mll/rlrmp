@@ -755,6 +755,11 @@ def test_perturbation_training_setup_adds_external_adapters_without_target_input
     for spec in GRAPH_ADAPTER_SPECS.values():
         assert spec.input_key in pair.model.input_ports
         assert spec.input_key in trial.inputs
+        assert spec.target.kind == "edge"
+        assert spec.payload_shape in ([2], [4])
+        adapter_node = f"{spec.label}_additive"
+        assert adapter_node in pair.model.nodes
+        assert pair.model.input_bindings[spec.input_key] == (adapter_node, "b")
     assert not any("target" in port for port in pair.model.input_ports)
     assert trial.inputs["effector_target"].pos.shape == (1, 60, 2)
     assert jnp.allclose(trial.inputs["effector_target"].pos, 0.15 * jnp.array([1.0, 0.0]))
