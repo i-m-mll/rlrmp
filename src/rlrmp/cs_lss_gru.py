@@ -58,6 +58,7 @@ CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT = (
     "RLRMPCsLssTargetRelativeDelayedProprioceptiveFeedback"
 )
 CS_LSS_INITIAL_HIDDEN_NET_COMPONENT = "RLRMPCsLssInitialHiddenStagedNetwork"
+FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT = "StateFeedbackSelector"
 
 
 class DelayedPositionVelocityFeedback(Component):
@@ -326,36 +327,6 @@ def register_cs_lss_graph_components(component_registry: Any | None = None) -> A
 
     registry = register_rlrmp_graph_components(component_registry or get_component_registry())
     registry.register_component_type(
-        CS_LSS_DELAYED_FEEDBACK_COMPONENT,
-        _build_delayed_feedback,
-        category="RLRMP",
-        description="C&S delayed position/velocity feedback selector.",
-        input_ports=["state"],
-        output_ports=["feedback"],
-        output_prototype_fn=_feedback_output_prototype,
-        provenance="rlrmp",
-    )
-    registry.register_component_type(
-        CS_LSS_TARGET_FEEDBACK_COMPONENT,
-        _build_target_relative_feedback,
-        category="RLRMP",
-        description="C&S target-relative delayed position/velocity feedback selector.",
-        input_ports=["state", "target"],
-        output_ports=["feedback"],
-        output_prototype_fn=_feedback_output_prototype,
-        provenance="rlrmp",
-    )
-    registry.register_component_type(
-        CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT,
-        _build_target_relative_proprioceptive_feedback,
-        category="RLRMP",
-        description="C&S target-relative delayed pos/vel plus force/filter feedback selector.",
-        input_ports=["state", "target"],
-        output_ports=["feedback"],
-        output_prototype_fn=_feedback_output_prototype,
-        provenance="rlrmp",
-    )
-    registry.register_component_type(
         CS_LSS_INITIAL_HIDDEN_NET_COMPONENT,
         _build_initial_hidden_staged_network,
         category="RLRMP",
@@ -480,7 +451,7 @@ def build_cs_lss_gru_graph_spec(
             output_ports=["output", "hidden"],
         ),
         "efferent": ComponentSpec(
-            type="RLRMPMotorChannel",
+            type="Channel",
             params={
                 "delay": 0,
                 "additive_noise_std": float(additive_motor_noise_std),
@@ -585,7 +556,7 @@ def materialize_cs_lss_gru_graph_spec(
     """Materialize a CS-LSS GraphSpec and install the CS-LSS runtime hooks."""
 
     registry = register_cs_lss_graph_components(component_registry)
-    graph = spec_to_graph(graph_spec, registry)
+    graph = spec_to_graph(_migrate_legacy_cs_lss_graph_spec(graph_spec), registry)
     return install_cs_lss_gru_runtime_hooks(graph)
 
 
@@ -748,52 +719,98 @@ def _feedback_component_contract(
     state_dim: int,
     feedback_dim: int,
 ) -> tuple[str, dict[str, Any], list[str]]:
-    params = {
-        "expected_state_dim": int(state_dim),
-        "feedback_dim": int(feedback_dim),
-    }
     if force_filter_feedback:
         return (
-            CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT,
-            {**params, "indices": list(delayed_pos_vel_force_indices)},
+            FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
+            _state_feedback_selector_params(
+                indices=delayed_pos_vel_force_indices,
+                expected_state_dim=state_dim,
+                target_relative=True,
+            ),
             ["state", "target"],
         )
     if target_relative_feedback:
         return (
-            CS_LSS_TARGET_FEEDBACK_COMPONENT,
-            {**params, "indices": list(delayed_pos_vel_indices)},
+            FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
+            _state_feedback_selector_params(
+                indices=delayed_pos_vel_indices,
+                expected_state_dim=state_dim,
+                target_relative=True,
+            ),
             ["state", "target"],
         )
     return (
-        CS_LSS_DELAYED_FEEDBACK_COMPONENT,
-        {**params, "indices": list(delayed_pos_vel_indices)},
+        FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
+        _state_feedback_selector_params(
+            indices=delayed_pos_vel_indices,
+            expected_state_dim=state_dim,
+            target_relative=False,
+        ),
         ["state"],
     )
 
 
-def _build_delayed_feedback(params: dict[str, Any]) -> DelayedPositionVelocityFeedback:
-    return DelayedPositionVelocityFeedback(
-        indices=tuple(int(index) for index in params["indices"]),
-        expected_state_dim=int(params["expected_state_dim"]),
-    )
+def _state_feedback_selector_params(
+    *,
+    indices: tuple[int, ...],
+    expected_state_dim: int,
+    target_relative: bool,
+) -> dict[str, Any]:
+    if len(indices) not in {CS_FEEDBACK_DIM, CS_PROPRIOCEPTIVE_FEEDBACK_DIM}:
+        raise ValueError(f"CS-LSS feedback selectors require 4 or 6 indices; got {indices}.")
+    state_slices: dict[str, dict[str, list[int]]] = {
+        "delayed_position": {"indices": [int(index) for index in indices[:2]]},
+        "delayed_velocity": {"indices": [int(index) for index in indices[2:4]]},
+    }
+    channels: list[dict[str, Any]]
+    if target_relative:
+        channels = [
+            {
+                "slice": "delayed_position",
+                "transform": "target_minus",
+                "target_slice": [0, 2],
+            },
+            {"slice": "delayed_velocity", "transform": "negate"},
+        ]
+    else:
+        channels = [
+            {"slice": "delayed_position", "transform": "identity"},
+            {"slice": "delayed_velocity", "transform": "identity"},
+        ]
+    if len(indices) == CS_PROPRIOCEPTIVE_FEEDBACK_DIM:
+        state_slices["delayed_force"] = {"indices": [int(index) for index in indices[4:6]]}
+        channels.append({"slice": "delayed_force", "transform": "identity"})
+    return {
+        "state_slices": state_slices,
+        "channels": channels,
+        "expected_state_dim": int(expected_state_dim),
+        "output_size": len(indices),
+    }
 
 
-def _build_target_relative_feedback(
-    params: dict[str, Any],
-) -> TargetRelativeDelayedFeedback:
-    return TargetRelativeDelayedFeedback(
-        indices=tuple(int(index) for index in params["indices"]),
-        expected_state_dim=int(params["expected_state_dim"]),
-    )
-
-
-def _build_target_relative_proprioceptive_feedback(
-    params: dict[str, Any],
-) -> TargetRelativeDelayedProprioceptiveFeedback:
-    return TargetRelativeDelayedProprioceptiveFeedback(
-        indices=tuple(int(index) for index in params["indices"]),
-        expected_state_dim=int(params["expected_state_dim"]),
-    )
+def _migrate_legacy_cs_lss_graph_spec(graph_spec: GraphSpec) -> GraphSpec:
+    nodes: dict[str, ComponentSpec] = {}
+    for node_id, node_spec in graph_spec.nodes.items():
+        if node_spec.type in {
+            CS_LSS_DELAYED_FEEDBACK_COMPONENT,
+            CS_LSS_TARGET_FEEDBACK_COMPONENT,
+            CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT,
+        }:
+            params = dict(node_spec.params)
+            indices = tuple(int(index) for index in params["indices"])
+            nodes[node_id] = node_spec.model_copy(
+                update={
+                    "type": FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
+                    "params": _state_feedback_selector_params(
+                        indices=indices,
+                        expected_state_dim=int(params["expected_state_dim"]),
+                        target_relative=node_spec.type != CS_LSS_DELAYED_FEEDBACK_COMPONENT,
+                    ),
+                }
+            )
+        else:
+            nodes[node_id] = node_spec
+    return graph_spec.model_copy(update={"nodes": nodes})
 
 
 def _build_initial_hidden_staged_network(
@@ -884,7 +901,7 @@ def _population_structure_from_params(params: Any) -> PopulationStructure | None
 
 def _install_cs_lss_registry_output_prototypes(registry: Any) -> None:
     for name, output_prototype_fn in {
-        "RLRMPMotorChannel": _motor_channel_output_prototype,
+        "Channel": _motor_channel_output_prototype,
         "RLRMPSimpleStagedNetwork": _staged_network_output_prototype,
         "LinearStateSpace": _linear_state_space_output_prototype,
     }.items():

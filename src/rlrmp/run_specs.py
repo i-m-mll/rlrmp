@@ -55,6 +55,7 @@ CS_LSS_PLANT_BACKEND = "cs_lss"
 CS_LSS_REQUIRED_MECHANICS_TYPE = "LinearStateSpace"
 CS_LSS_FEEDBACK_COMPONENT_TYPES = frozenset(
     {
+        "StateFeedbackSelector",
         "RLRMPCsLssDelayedPositionVelocityFeedback",
         "RLRMPCsLssTargetRelativeDelayedFeedback",
         "RLRMPCsLssTargetRelativeDelayedProprioceptiveFeedback",
@@ -64,6 +65,7 @@ LEGACY_POINT_MASS_GRAPH_TYPES = frozenset(
     {
         "FirstOrderFilter",
         "PointMass",
+        "RLRMPFeedbackChannels",
         "RLRMPPointMass",
     }
 )
