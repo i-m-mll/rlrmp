@@ -102,7 +102,9 @@ CS_POSITION_SCALE = 1e6
 CS_VELOCITY_SCALE = 1e5
 CS_CONTROL_SCALE = 1.0
 CS_REGULARIZED_NN_HIDDEN = 1e-5
-CS_DELAYED_REACH_TASK_TYPE = "cs_delayed_center_out_reach"
+CS_DELAYED_REACH_TASK_TYPE = "delayed_reach"
+CS_DELAYED_REACH_TASK_PRESET = "delayed_center_out"
+LEGACY_CS_DELAYED_REACH_TASK_TYPE = "cs_delayed_center_out_reach"
 DELAYED_REACH_TRAINING_MODE = "delayed_reach_target_visible_go_cue"
 DEFAULT_DELAYED_GO_CUE_MIN_STEP = 10
 DEFAULT_DELAYED_GO_CUE_MAX_STEP = 30
@@ -260,6 +262,8 @@ def _delayed_reach_contract_from_args(
         "enabled": True,
         "mode": DELAYED_REACH_TRAINING_MODE,
         "task_type": CS_DELAYED_REACH_TASK_TYPE,
+        "task_preset": CS_DELAYED_REACH_TASK_PRESET,
+        "legacy_task_type": LEGACY_CS_DELAYED_REACH_TASK_TYPE,
         "target_visibility": "visible_from_trial_start",
         "target_on_input": "not_used_target_always_visible",
         "go_cue_input": {
@@ -501,7 +505,9 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         },
         "task": {
             "type": task_type,
+            "preset": CS_DELAYED_REACH_TASK_PRESET if delayed_reach else None,
             "n_steps": task_n_steps,
+            "n_control_stages": task_n_steps - 1 if delayed_reach else None,
             "workspace": task_workspace,
             "fixed_init_pos": (None if delayed_reach else [float(x) for x in INIT_POS.tolist()]),
             "fixed_target_pos": (
@@ -519,6 +525,9 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "hold_epochs": [0] if delayed_reach else [],
             "move_epochs": [1] if delayed_reach else [0],
             "p_catch_trial": delayed_p_catch_trial if delayed_reach else 0.0,
+            "target_visible_from_start": True if delayed_reach else None,
+            "go_cue_event_name": "go_cue" if delayed_reach else None,
+            "catch_metadata_policy": "flag" if delayed_reach else None,
         },
         "delayed_reach": _delayed_reach_contract_from_args(
             enabled=delayed_reach,
@@ -2714,7 +2723,9 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
         )
     return {
         "type": str(hps.task.type),
+        "preset": _plain(getattr(hps.task, "preset", None)),
         "n_steps": int(hps.task.n_steps),
+        "n_control_stages": _plain(getattr(hps.task, "n_control_stages", None)),
         "control_cost_stages": rollout_steps,
         "workspace": _plain(hps.task.workspace),
         "fixed_init_pos": _plain(hps.task.fixed_init_pos),
@@ -2727,6 +2738,11 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
         "hold_epochs": _plain(hps.task.hold_epochs),
         "move_epochs": _plain(hps.task.move_epochs),
         "p_catch_trial": float(hps.task.p_catch_trial),
+        "target_visible_from_start": _plain(
+            getattr(hps.task, "target_visible_from_start", None)
+        ),
+        "go_cue_event_name": _plain(getattr(hps.task, "go_cue_event_name", None)),
+        "catch_metadata_policy": _plain(getattr(hps.task, "catch_metadata_policy", None)),
         "coordinate_contract": (
             "Feedbax SimpleReaches supplies mechanics.effector.pos targets in the same "
             "Cartesian metre coordinates as the point-mass effector state."

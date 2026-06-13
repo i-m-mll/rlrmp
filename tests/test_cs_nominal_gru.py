@@ -1416,6 +1416,8 @@ def test_delayed_reach_run_spec_declares_task_and_movement_pgd_mask(tmp_path: Pa
         DEFAULT_DELAYED_P_CATCH_TRIAL
     )
     assert payload["task_timing"]["type"] == CS_DELAYED_REACH_TASK_TYPE
+    assert payload["task_timing"]["preset"] == "delayed_center_out"
+    assert payload["task_timing"]["n_control_stages"] == payload["task_timing"]["n_steps"] - 1
     assert payload["task_timing"]["p_catch_trial"] == pytest.approx(DEFAULT_DELAYED_P_CATCH_TRIAL)
     assert payload["task_timing"]["extra_inputs"] == ["input", "target", "epsilon"]
     assert payload["task_timing"]["movement_window"]["cost_indexing"] == (
