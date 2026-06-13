@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Optional, Tuple
+from typing import Tuple
 
 import jax
 import jax.numpy as jnp
@@ -85,9 +85,7 @@ class FixedEpochSimpleReaches(EpochSimpleReaches):
     def _fixed_endpoints(self) -> Float[Array, "2 2"]:
         return jnp.stack([self.fixed_init_pos, self.fixed_target_pos])
 
-    def get_train_trial(
-        self, key: PRNGKeyArray, batch_info=None
-    ) -> TaskTrialSpec:
+    def get_train_trial(self, key: PRNGKeyArray, batch_info=None) -> TaskTrialSpec:
         """Return the fixed endpoint pair, ignoring randomness."""
 
         del key, batch_info
@@ -149,9 +147,7 @@ class CenterOutDelayedReaches(DelayedReaches):
     ``eval_n_directions`` evenly-spaced directions.
     """
 
-    def get_train_trial(
-        self, key: PRNGKeyArray, batch_info=None
-    ) -> TaskTrialSpec:
+    def get_train_trial(self, key: PRNGKeyArray, batch_info=None) -> TaskTrialSpec:
         """Center-out reach from origin in a uniformly random direction.
 
         Arguments:
@@ -257,9 +253,9 @@ class CsDelayedCenterOutReaches(CenterOutDelayedReaches):
         *,
         p_catch: float,
     ):
-        del p_catch
         n_time = int(self.n_steps)
-        epoch_lengths_pre = gen_epoch_lengths(key, self.epoch_len_ranges)
+        key_epochs, key_catch = jr.split(key)
+        epoch_lengths_pre = gen_epoch_lengths(key_epochs, self.epoch_len_ranges)
         remaining_len = n_time - jnp.sum(epoch_lengths_pre)
         remaining_len = jnp.maximum(remaining_len, 0)
         epoch_lengths = jnp.concatenate((epoch_lengths_pre, jnp.array([remaining_len])))
@@ -280,18 +276,32 @@ class CsDelayedCenterOutReaches(CenterOutDelayedReaches):
         )
         stim_on_seq = get_scalar_epoch_seq(epoch_bounds, n_time, 1.0, target_on_epochs)
         hold_seq = get_scalar_epoch_seq(epoch_bounds, n_time, 1.0, hold_epochs)
-        return DelayedReachTaskInputs(visible_target, hold_seq, stim_on_seq), target_seqs, epoch_bounds
+        is_catch = jr.bernoulli(key_catch, p_catch)
+        init_seqs_full = jt.map(
+            lambda x: jnp.broadcast_to(x, (n_time, *x.shape)),
+            init_states,
+        )
+        target_seqs = jt.map(
+            lambda normal, catch: jnp.where(is_catch, catch, normal),
+            target_seqs,
+            init_seqs_full,
+        )
+        hold_seq = jnp.where(is_catch, jnp.ones_like(hold_seq), hold_seq)
+        return (
+            DelayedReachTaskInputs(visible_target, hold_seq, stim_on_seq),
+            target_seqs,
+            epoch_bounds,
+            is_catch,
+        )
 
-    def get_train_trial(
-        self, key: PRNGKeyArray, batch_info=None
-    ) -> TaskTrialSpec:
+    def get_train_trial(self, key: PRNGKeyArray, batch_info=None) -> TaskTrialSpec:
         """Center-out delayed reach from origin in a uniformly random direction."""
 
         del batch_info
         key_dir, key_seq = jr.split(key)
         endpoints = _random_centerout_endpoints(key_dir, self.eval_reach_length)
         effector_init_state, effector_target_state = pos_only_states(endpoints)
-        task_inputs, effector_target_states, epoch_bounds = self._get_sequences(
+        task_inputs, effector_target_states, epoch_bounds, is_catch = self._get_sequences(
             effector_init_state,
             effector_target_state,
             key_seq,
@@ -314,6 +324,7 @@ class CsDelayedCenterOutReaches(CenterOutDelayedReaches):
                 epoch_bounds=epoch_bounds,
                 epoch_names=self.epoch_names,
             ),
+            extra={"is_catch_trial": is_catch},
         )
 
     def get_validation_trials(self, key: PRNGKeyArray) -> TaskTrialSpec:
@@ -321,14 +332,12 @@ class CsDelayedCenterOutReaches(CenterOutDelayedReaches):
 
         del key
         origin = jnp.zeros(2)
-        endpoints = centreout_endpoints(
-            origin, self.eval_n_directions, self.eval_reach_length
-        )
+        endpoints = centreout_endpoints(origin, self.eval_n_directions, self.eval_reach_length)
         effector_init_states, effector_target_states = pos_only_states(endpoints)
         key_val = jr.PRNGKey(self.seed_validation)
         epochs_keys = jr.split(key_val, effector_init_states.pos.shape[0])
         get_sequences = partial(self._get_sequences, p_catch=0.0)
-        task_inputs, effector_target_states, epoch_bounds = jax.vmap(get_sequences)(
+        task_inputs, effector_target_states, epoch_bounds, is_catch = jax.vmap(get_sequences)(
             effector_init_states, effector_target_states, epochs_keys
         )
         return TaskTrialSpec(
@@ -348,6 +357,7 @@ class CsDelayedCenterOutReaches(CenterOutDelayedReaches):
                 epoch_bounds=epoch_bounds,
                 epoch_names=self.epoch_names,
             ),
+            extra={"is_catch_trial": is_catch},
         )
 
 
