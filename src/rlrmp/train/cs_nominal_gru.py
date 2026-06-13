@@ -106,6 +106,7 @@ CS_DELAYED_REACH_TASK_TYPE = "cs_delayed_center_out_reach"
 DELAYED_REACH_TRAINING_MODE = "delayed_reach_target_visible_go_cue"
 DEFAULT_DELAYED_GO_CUE_MIN_STEP = 10
 DEFAULT_DELAYED_GO_CUE_MAX_STEP = 30
+DEFAULT_DELAYED_P_CATCH_TRIAL = 0.5
 TRAINING_DIAGNOSTICS_NPZ = "training_diagnostics.npz"
 TRAINING_DIAGNOSTICS_MANIFEST = "training_diagnostics.json"
 VolumeCommit = Callable[[], None]
@@ -249,6 +250,7 @@ def _delayed_reach_contract_from_args(
     enabled: bool,
     go_cue_min_step: int,
     go_cue_max_step: int,
+    p_catch_trial: float,
 ) -> dict[str, Any]:
     """Return the delayed-reach task contract embedded in hps/run specs."""
 
@@ -270,6 +272,14 @@ def _delayed_reach_contract_from_args(
             "min_step_inclusive": int(go_cue_min_step),
             "max_step_inclusive": int(go_cue_max_step),
             "distribution": "uniform_integer",
+        },
+        "catch_trials": {
+            "p_catch_trial": float(p_catch_trial),
+            "semantics": (
+                "target remains visible, movement target is replaced by the initial "
+                "position, and DelayedReachTaskInputs.hold stays 1 for the full trial"
+            ),
+            "go_cue_value": 0.0,
         },
         "movement_epoch": {
             "epoch_name": "movement",
@@ -327,12 +337,17 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
     delayed_reach = bool(getattr(args, "delayed_reach", False))
     delayed_go_min = int(getattr(args, "delayed_reach_go_cue_min_step", 10))
     delayed_go_max = int(getattr(args, "delayed_reach_go_cue_max_step", 30))
+    delayed_p_catch_trial = float(
+        getattr(args, "delayed_reach_p_catch_trial", DEFAULT_DELAYED_P_CATCH_TRIAL)
+    )
     if int(schedule.T) != CS_STAGE_COUNT:
         raise ValueError(f"Expected C&S stage count {CS_STAGE_COUNT}, got {schedule.T}")
     if delayed_go_min < 0 or delayed_go_max < delayed_go_min:
         raise ValueError(
             "--delayed-reach-go-cue-max-step must be >= --delayed-reach-go-cue-min-step >= 0"
         )
+    if delayed_p_catch_trial < 0.0 or delayed_p_catch_trial > 1.0:
+        raise ValueError("--delayed-reach-p-catch-trial must be between 0 and 1")
     nn_hidden = CS_REGULARIZED_NN_HIDDEN if args.regularized_fidelity else 0.0
     nn_output_pre_go = (
         1.0
@@ -503,12 +518,13 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "target_on_epochs": [0, 1] if delayed_reach else [0],
             "hold_epochs": [0] if delayed_reach else [],
             "move_epochs": [1] if delayed_reach else [0],
-            "p_catch_trial": 0.0,
+            "p_catch_trial": delayed_p_catch_trial if delayed_reach else 0.0,
         },
         "delayed_reach": _delayed_reach_contract_from_args(
             enabled=delayed_reach,
             go_cue_min_step=delayed_go_min,
             go_cue_max_step=delayed_go_max,
+            p_catch_trial=delayed_p_catch_trial if delayed_reach else 0.0,
         ),
         "pert": {
             "type": "gusts",
@@ -1484,6 +1500,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=DEFAULT_DELAYED_GO_CUE_MAX_STEP,
         help="Inclusive maximum sampled go-cue/prep length for --delayed-reach.",
+    )
+    parser.add_argument(
+        "--delayed-reach-p-catch-trial",
+        type=float,
+        default=DEFAULT_DELAYED_P_CATCH_TRIAL,
+        help=(
+            "Probability of delayed-reach no-go catch trials. Catch trials keep the "
+            "target visible but keep the go cue at 0 and score holding the initial "
+            "position. Ignored unless --delayed-reach is active."
+        ),
     )
     parser.add_argument(
         "--force-filter-feedback",

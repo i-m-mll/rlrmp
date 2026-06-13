@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Literal, Mapping
 
 import equinox as eqx
 import jax
@@ -2739,8 +2739,18 @@ def _with_static_target(
         jnp.expand_dims(target_array, axis=-2),
         (*batch_shape, n_steps, 2),
     )
+    loss_target_sequence = _catch_preserving_loss_target_sequence(
+        trial_specs,
+        target_sequence=target_sequence,
+        batch_shape=batch_shape,
+        n_steps=n_steps,
+    )
     target_spec = trial_specs.targets["mechanics.effector.pos"]
-    updated_target_spec = eqx.tree_at(lambda spec: spec.value, target_spec, target_sequence)
+    updated_target_spec = eqx.tree_at(
+        lambda spec: spec.value,
+        target_spec,
+        loss_target_sequence,
+    )
     updated_target_spec = jax.tree.map(
         lambda leaf: _broadcast_trial_array(leaf, batch_shape),
         updated_target_spec,
@@ -2756,7 +2766,7 @@ def _with_static_target(
         inputs["effector_target"] = eqx.tree_at(
             lambda state: state.pos,
             inputs["effector_target"],
-            target_sequence,
+            loss_target_sequence,
         )
         inputs["effector_target"] = jax.tree.map(
             lambda leaf: _broadcast_trial_array(leaf, batch_shape),
@@ -2768,7 +2778,7 @@ def _with_static_target(
             task_inputs = eqx.tree_at(
                 lambda task: task.effector_target.pos,
                 task_inputs,
-                target_sequence,
+                loss_target_sequence,
             )
             task_inputs = jax.tree.map(
                 lambda leaf: _broadcast_trial_array(leaf, batch_shape),
@@ -2792,7 +2802,9 @@ def _with_static_target(
         lambda leaf: _broadcast_trial_array(leaf, batch_shape),
         trial_specs.intervene,
     )
-    extra = trial_specs.extra if metadata is None else {**dict(trial_specs.extra or {}), **metadata}
+    extra = _broadcast_trial_extra(trial_specs.extra, batch_shape)
+    if metadata is not None:
+        extra = {**dict(extra or {}), **metadata}
     return TaskTrialSpec(
         inits=WhereDict(inits),
         inputs=inputs,
@@ -2800,6 +2812,83 @@ def _with_static_target(
         intervene=intervene,
         timeline=timeline,
         extra=extra,
+    )
+
+
+def _catch_preserving_loss_target_sequence(
+    trial_specs: TaskTrialSpec,
+    *,
+    target_sequence: jnp.ndarray,
+    batch_shape: tuple[int, ...],
+    n_steps: int,
+) -> jnp.ndarray:
+    """Return scored target sequence, preserving no-go catch trials if present."""
+
+    catch_mask = _catch_mask_from_go_input(trial_specs, batch_shape)
+    if catch_mask is None:
+        return target_sequence
+    init_sequence = _initial_position_sequence(
+        trial_specs,
+        batch_shape=batch_shape,
+        n_steps=n_steps,
+        dtype=target_sequence.dtype,
+    )
+    return jnp.where(
+        _expand_to_rank(catch_mask, target_sequence.ndim),
+        init_sequence,
+        target_sequence,
+    )
+
+
+def _catch_mask_from_go_input(
+    trial_specs: TaskTrialSpec,
+    batch_shape: tuple[int, ...],
+) -> jnp.ndarray | None:
+    """Return per-trial catch mask from a delayed go-cue input, if available."""
+
+    go_input = dict(trial_specs.inputs).get("input")
+    if go_input is None:
+        return None
+    go = jnp.asarray(go_input)
+    if go.ndim == 0:
+        return None
+    if go.ndim >= 2 and go.shape[-1] == 1:
+        any_go = jnp.any(go > 0.5, axis=-2)
+        any_go = jnp.squeeze(any_go, axis=-1)
+    else:
+        any_go = jnp.any(go > 0.5, axis=-1)
+    catch_mask = jnp.logical_not(any_go)
+    if batch_shape:
+        catch_mask = jnp.broadcast_to(catch_mask, batch_shape)
+    return catch_mask
+
+
+def _initial_position_sequence(
+    trial_specs: TaskTrialSpec,
+    *,
+    batch_shape: tuple[int, ...],
+    n_steps: int,
+    dtype: Any,
+) -> jnp.ndarray:
+    """Return the initial effector position broadcast as a time sequence."""
+
+    init_pos = None
+    for value in dict(trial_specs.inits).values():
+        pos = getattr(value, "pos", None)
+        if pos is not None:
+            init_pos = jnp.asarray(pos, dtype=dtype)
+            break
+        if eqx.is_array(value):
+            array = jnp.asarray(value, dtype=dtype)
+            if array.ndim >= 1 and array.shape[-1] >= 2:
+                init_pos = array[..., :2]
+                break
+    if init_pos is None:
+        raise ValueError("Catch-preserving target replacement requires an initial position.")
+    init_pos = _broadcast_trial_array(init_pos, batch_shape)
+    return jnp.broadcast_to(
+        jnp.expand_dims(jnp.asarray(init_pos, dtype=dtype), axis=-2),
+        (*batch_shape, int(n_steps), 2),
     )
 
 
@@ -2818,6 +2907,31 @@ def _broadcast_trial_array(value: Any, batch_shape: tuple[int, ...]) -> Any:
         return jnp.broadcast_to(array, (*batch_shape, *tail))
     except ValueError:
         return value
+
+
+def _broadcast_trial_extra(
+    extra: Mapping[str, Any] | None,
+    batch_shape: tuple[int, ...],
+) -> dict[str, Any] | None:
+    """Broadcast array-valued TaskTrialSpec metadata to a rewritten trial bank."""
+
+    if extra is None:
+        return None
+    if not batch_shape:
+        return dict(extra)
+    result: dict[str, Any] = {}
+    for key, value in dict(extra).items():
+        if not eqx.is_array(value):
+            result[key] = value
+            continue
+        array = jnp.asarray(value)
+        if array.shape[: len(batch_shape)] == batch_shape:
+            result[key] = value
+        elif array.ndim <= 1 and array.size == 1:
+            result[key] = jnp.broadcast_to(jnp.reshape(array, ()), batch_shape)
+        else:
+            result[key] = _broadcast_trial_array(value, batch_shape)
+    return result
 
 
 def _with_perturbation_metadata(

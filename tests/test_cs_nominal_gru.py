@@ -45,6 +45,7 @@ from rlrmp.loss import (
 from rlrmp.paths import REPO_ROOT, run_artifact_dir, run_spec_dir
 from rlrmp.train.cs_nominal_gru import (
     CS_DELAYED_REACH_TASK_TYPE,
+    DEFAULT_DELAYED_P_CATCH_TRIAL,
     DEFAULT_STOCHASTIC_PRESET,
     DELAYED_REACH_TRAINING_MODE,
     build_graph_bundle,
@@ -65,7 +66,9 @@ from rlrmp.train.cs_perturbation_training import (
     TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
     VALIDATION_BINS,
     BroadFullStateEpsilonTrainingConfig,
+    BroadFullStateEpsilonTrainingTaskAdapter,
     TargetRelativeMultiTargetTrainingConfig,
+    TargetRelativeMultiTargetTrainingTaskAdapter,
     _broad_epsilon_l2_radius,
     _ensure_broad_epsilon_input,
     _epsilon_time_mask,
@@ -91,6 +94,9 @@ from rlrmp.train.task_model import (
     CS_LSS_PLANT_BACKEND,
     LEGACY_CAUSAL_BACKEND_WARNING,
     LEGACY_CAUSAL_PLANT_BACKEND,
+    _add_cs_lss_task_inputs,
+    _CsLssTaskAdapter,
+    build_task_base,
     _cs_lss_process_epsilon_factor,
     setup_task_model_pair,
 )
@@ -109,6 +115,26 @@ def _where_train() -> dict[int, object]:
         return (net.hidden, net.readout)
 
     return {0: where_train_fn}
+
+
+def _delayed_cs_task(
+    hps,
+    *,
+    target_relative: bool = True,
+    go_cue_input: bool = True,
+    broad_epsilon: bool = False,
+):
+    task = _add_cs_lss_task_inputs(
+        _CsLssTaskAdapter(build_task_base(hps)),
+        target_relative=target_relative,
+        go_cue_input=go_cue_input,
+        physical_state_dim=int(hps.model.physical_state_dim),
+    )
+    if target_relative:
+        task = TargetRelativeMultiTargetTrainingTaskAdapter(task, hps.target_relative_multitarget)
+    if broad_epsilon:
+        task = BroadFullStateEpsilonTrainingTaskAdapter(task, hps.broad_epsilon_training)
+    return task
 
 
 def test_hps_uses_canonical_cs_nominal_task() -> None:
@@ -1163,6 +1189,7 @@ def test_delayed_reach_setup_adds_go_cue_and_preserves_target_visibility() -> No
         _args(
             smoke=True,
             delayed_reach=True,
+            delayed_reach_p_catch_trial=0.0,
             target_relative_multitarget=True,
             hidden_size=8,
             n_replicates=1,
@@ -1175,6 +1202,7 @@ def test_delayed_reach_setup_adds_go_cue_and_preserves_target_visibility() -> No
     assert hps.task.type == CS_DELAYED_REACH_TASK_TYPE
     assert hps.task.n_steps == 90
     assert hps.task.epoch_len_ranges == [[10, 31]]
+    assert hps.task.p_catch_trial == pytest.approx(0.0)
     assert hps.loss.weights.nn_output_pre_go == pytest.approx(1.0)
     assert pair.model.input_ports[:3] == ("input", "target", "epsilon")
     assert pair.model.nodes["net"].input_size == 5
@@ -1195,6 +1223,71 @@ def test_delayed_reach_setup_adds_go_cue_and_preserves_target_visibility() -> No
     assert validation.inputs["task"].effector_target.pos.shape == validation_targets.shape
     assert validation.inputs["task"].hold.shape[:2] == validation_targets.shape[:2]
     assert validation.inputs["target"].shape == validation_targets.shape
+    assert validation.extra is not None
+    assert validation.extra["is_catch_trial"].shape == (pair.task.n_validation_trials,)
+    assert not bool(jnp.any(validation.extra["is_catch_trial"]))
+
+
+def test_delayed_reach_catch_trials_keep_target_visible_without_go_cue() -> None:
+    hps = build_hps(
+        _args(
+            smoke=True,
+            delayed_reach=True,
+            delayed_reach_p_catch_trial=1.0,
+            target_relative_multitarget=True,
+            hidden_size=8,
+            n_replicates=1,
+        )
+    )
+    task = _delayed_cs_task(hps)
+    trial = task.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
+    go_step = int(trial.timeline.epoch_bounds[-2])
+    visible_target = trial.inputs["target"]
+    scored_target = trial.targets["mechanics.effector.pos"].value
+
+    assert 10 <= go_step <= 30
+    assert hps.task.p_catch_trial == pytest.approx(1.0)
+    assert hps.delayed_reach.catch_trials.p_catch_trial == pytest.approx(1.0)
+    assert trial.extra is not None
+    assert bool(trial.extra["is_catch_trial"])
+    assert jnp.allclose(trial.inputs["input"], 0.0)
+    assert jnp.allclose(
+        visible_target,
+        jnp.broadcast_to(visible_target[..., :1, :], visible_target.shape),
+    )
+    assert jnp.any(jnp.abs(visible_target) > 0.0)
+    assert jnp.allclose(scored_target, jnp.zeros_like(scored_target))
+
+
+def test_delayed_reach_catch_trials_survive_target_distribution() -> None:
+    hps = build_hps(
+        _args(
+            smoke=True,
+            delayed_reach=True,
+            delayed_reach_p_catch_trial=1.0,
+            target_relative_multitarget=True,
+            broad_epsilon_training=True,
+            broad_epsilon_pgd_training=False,
+            hidden_size=8,
+            n_replicates=1,
+        )
+    )
+    task_base = _delayed_cs_task(hps, target_relative=False, go_cue_input=True)
+    base = task_base.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
+    sampled = apply_training_target_distribution(
+        base, hps.target_relative_multitarget, jr.PRNGKey(2)
+    )
+    perturbed = apply_broad_epsilon_training(sampled, hps.broad_epsilon_training, jr.PRNGKey(3))
+    visible_target = perturbed.inputs["target"]
+    scored_target = perturbed.targets["mechanics.effector.pos"].value
+    delta = perturbed.inputs["epsilon"] - sampled.inputs["epsilon"]
+
+    assert perturbed.extra is not None
+    assert bool(perturbed.extra["is_catch_trial"])
+    assert jnp.any(jnp.abs(visible_target) > 0.0)
+    assert jnp.allclose(scored_target, jnp.zeros_like(scored_target))
+    assert jnp.allclose(perturbed.inputs["task"].effector_target.pos, scored_target)
+    assert jnp.allclose(delta, 0.0)
 
 
 def test_delayed_reach_no_integrator_setup_uses_36d_state_and_6d_epsilon() -> None:
@@ -1202,6 +1295,7 @@ def test_delayed_reach_no_integrator_setup_uses_36d_state_and_6d_epsilon() -> No
         _args(
             smoke=True,
             delayed_reach=True,
+            delayed_reach_p_catch_trial=0.0,
             target_relative_multitarget=True,
             force_filter_feedback=True,
             no_integrator_state=True,
@@ -1231,6 +1325,7 @@ def test_delayed_reach_movement_costs_and_broad_epsilon_are_go_cue_gated() -> No
         _args(
             smoke=True,
             delayed_reach=True,
+            delayed_reach_p_catch_trial=0.0,
             target_relative_multitarget=True,
             broad_epsilon_training=True,
             broad_epsilon_pgd_training=False,
@@ -1261,6 +1356,7 @@ def test_delayed_reach_full_qrf_ignores_pre_go_commands() -> None:
         _args(
             smoke=True,
             delayed_reach=True,
+            delayed_reach_p_catch_trial=0.0,
             target_relative_multitarget=True,
             loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
             hidden_size=8,
@@ -1316,7 +1412,11 @@ def test_delayed_reach_run_spec_declares_task_and_movement_pgd_mask(tmp_path: Pa
     assert payload["issue"] == "6c36536"
     assert payload["delayed_reach"]["enabled"] is True
     assert payload["delayed_reach"]["mode"] == DELAYED_REACH_TRAINING_MODE
+    assert payload["delayed_reach"]["catch_trials"]["p_catch_trial"] == pytest.approx(
+        DEFAULT_DELAYED_P_CATCH_TRIAL
+    )
     assert payload["task_timing"]["type"] == CS_DELAYED_REACH_TASK_TYPE
+    assert payload["task_timing"]["p_catch_trial"] == pytest.approx(DEFAULT_DELAYED_P_CATCH_TRIAL)
     assert payload["task_timing"]["extra_inputs"] == ["input", "target", "epsilon"]
     assert payload["task_timing"]["movement_window"]["cost_indexing"] == (
         "movement_age_not_trial_age"
