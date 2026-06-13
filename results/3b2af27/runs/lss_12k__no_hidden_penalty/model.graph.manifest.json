@@ -7,7 +7,16 @@
       "FixedField"
     ]
   },
-  "execution_backend": "rlrmp.legacy_simple_feedback_compat",
+  "execution_backend": "unavailable",
+  "graph_export": {
+    "authoritative_sources": [
+      "run.json.model_summary",
+      "run.json.hps.model.plant_backend",
+      "trained_model.eqx"
+    ],
+    "reason": "The removed model.graph.json sidecar serialized the legacy FirstOrderFilter -> PointMass compatibility path and did not represent this CS-LSS saved model.",
+    "status": "unavailable"
+  },
   "game_card_provenance": {
     "canonical_builder": "build_canonical_game",
     "cost": {

@@ -19,20 +19,18 @@
   "controller_lr": 0.01,
   "feedbax_graph": {
     "component_policy": {
-      "nominal_intervention_policy": "plant_intervenor is present only as an inactive legacy GraphSpec compatibility component; no robust/minimax adversary is scheduled.",
+      "nominal_intervention_policy": "No graph sidecar is exported for this CS-LSS run; use the saved model and run metadata as authoritative.",
       "rlrmp_component_types": [
-        "RLRMPFeedbackChannels",
+        "LinearStateSpace",
+        "RLRMPCsLssDelayedPositionVelocityFeedback",
         "RLRMPSimpleStagedNetwork",
-        "FixedField"
+        "RLRMPMotorChannel"
       ]
     },
-    "execution_backend": "rlrmp.legacy_simple_feedback_compat",
-    "graph_spec_path": "model.graph.json",
-    "legacy_loader": {
-      "checkpoint_format": "feedbax._io.save/load_with_hyperparameters",
-      "setup_function": "rlrmp.modules.training.part2.setup_task_model_pair"
-    },
+    "graph_export_status": "unavailable",
+    "graph_spec_path": null,
     "manifest_path": "model.graph.manifest.json",
+    "reason": "The removed model.graph.json sidecar serialized the legacy FirstOrderFilter -> PointMass compatibility path and did not represent this CS-LSS saved model.",
     "schema_version": "rlrmp.feedbax_graph.v1"
   },
   "fidelity_status": {

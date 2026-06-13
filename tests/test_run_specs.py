@@ -7,6 +7,7 @@ import json
 import pytest
 
 from rlrmp.run_specs import (
+    CS_LSS_PLANT_BACKEND,
     RunSpecValidationError,
     validate_nominal_gru_run_spec,
     validate_nominal_gru_run_spec_file,
@@ -133,6 +134,43 @@ def test_nominal_gru_run_spec_allows_declared_unavailable_graph_export(tmp_path)
     validate_nominal_gru_run_spec(run_spec, spec_dir=tmp_path)
 
 
+def test_nominal_gru_run_spec_rejects_stale_cs_lss_graph_sidecar(tmp_path) -> None:
+    run_spec = _valid_nominal_gru_run_spec()
+    run_spec["model_summary"]["plant_backend"] = CS_LSS_PLANT_BACKEND
+    _write_graph_sidecars(
+        tmp_path,
+        {
+            "nodes": {
+                "feedback": {"type": "RLRMPFeedbackChannels"},
+                "force_filter": {"type": "FirstOrderFilter"},
+                "mechanics": {"type": "PointMass"},
+            }
+        },
+    )
+
+    with pytest.raises(
+        RunSpecValidationError,
+        match="LinearStateSpace.*FirstOrderFilter.*PointMass",
+    ):
+        validate_nominal_gru_run_spec(run_spec, spec_dir=tmp_path)
+
+
+def test_nominal_gru_run_spec_accepts_verified_cs_lss_graph_sidecar(tmp_path) -> None:
+    run_spec = _valid_nominal_gru_run_spec()
+    run_spec["model_summary"]["plant_backend"] = CS_LSS_PLANT_BACKEND
+    _write_graph_sidecars(
+        tmp_path,
+        {
+            "nodes": {
+                "feedback": {"type": "RLRMPCsLssDelayedPositionVelocityFeedback"},
+                "mechanics": {"type": "LinearStateSpace"},
+            }
+        },
+    )
+
+    validate_nominal_gru_run_spec(run_spec, spec_dir=tmp_path)
+
+
 def test_nominal_gru_run_spec_file_loads_json_and_checks_sidecars(tmp_path) -> None:
     run_spec = _valid_nominal_gru_run_spec()
     (tmp_path / "model.graph.json").write_text("{}", encoding="utf-8")
@@ -143,3 +181,11 @@ def test_nominal_gru_run_spec_file_loads_json_and_checks_sidecars(tmp_path) -> N
     )
 
     validate_nominal_gru_run_spec_file(tmp_path / "run.json")
+
+
+def _write_graph_sidecars(tmp_path, graph_payload: dict) -> None:
+    (tmp_path / "model.graph.json").write_text(
+        json.dumps(graph_payload),
+        encoding="utf-8",
+    )
+    (tmp_path / "model.graph.manifest.json").write_text("{}", encoding="utf-8")
