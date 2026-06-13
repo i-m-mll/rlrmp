@@ -134,6 +134,20 @@ update_marked_section(notes_path, "variance_analysis", "\n".join(lines) + "\n")
 
 **`marker_name`** should be a short, stable, underscore-delimited identifier matching the logical content of the block (e.g. `"variance_analysis"`, `"results_table"`, `"delta_v_summary"`). New analysis scripts must follow this convention; do not open notes files with `open(..., "w")`.
 
+## Experiment Protocol
+
+Experiment-running issues use the `experiment` label. They stay open until a
+verdict comment records whether the experiment was `answered`, `superseded`, or
+`bracketed`; intermediate runs and partial analyses do not close the issue by
+themselves.
+
+Use the dotfiles `run-experiment` skill as the detailed workflow owner for
+experiment setup, run management, post-run interpretation, review packets, and
+closure semantics. rlrmp sessions should preserve the standard topology: an
+umbrella or parent thread owns coordination and reads ledger status, an
+implementation thread owns code/spec changes, and a run-management thread owns
+remote/local run execution and monitoring.
+
 ## RunPod Deploy Runbook for rlrmp Experiments
 
 ### Current training-method orientation (May 2026)
