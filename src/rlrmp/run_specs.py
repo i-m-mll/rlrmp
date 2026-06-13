@@ -51,6 +51,22 @@ FEEDBAX_GRAPH_REQUIRED_POINTER_KEYS = frozenset(
         "manifest_path",
     }
 )
+CS_LSS_PLANT_BACKEND = "cs_lss"
+CS_LSS_REQUIRED_MECHANICS_TYPE = "LinearStateSpace"
+CS_LSS_FEEDBACK_COMPONENT_TYPES = frozenset(
+    {
+        "RLRMPCsLssDelayedPositionVelocityFeedback",
+        "RLRMPCsLssTargetRelativeDelayedFeedback",
+        "RLRMPCsLssTargetRelativeDelayedProprioceptiveFeedback",
+    }
+)
+LEGACY_POINT_MASS_GRAPH_TYPES = frozenset(
+    {
+        "FirstOrderFilter",
+        "PointMass",
+        "RLRMPPointMass",
+    }
+)
 
 
 class RunSpecValidationError(ValueError):
@@ -129,6 +145,7 @@ def validate_nominal_gru_run_spec(run_spec: dict[str, Any], *, spec_dir: Path) -
             + ", ".join(missing_graph_pointers)
         )
 
+    graph_spec_sidecar: Path | None = None
     for key in sorted(FEEDBAX_GRAPH_REQUIRED_POINTER_KEYS):
         pointer = graph_metadata[key]
         if pointer is None and key == "graph_spec_path":
@@ -144,6 +161,11 @@ def validate_nominal_gru_run_spec(run_spec: dict[str, Any], *, spec_dir: Path) -
             raise RunSpecValidationError(
                 f"nominal GRU run spec points to missing Feedbax graph sidecar: {sidecar}"
             )
+        if key == "graph_spec_path":
+            graph_spec_sidecar = sidecar
+
+    if graph_spec_sidecar is not None and _is_cs_lss_run_spec(run_spec):
+        _validate_cs_lss_graph_spec_sidecar(graph_spec_sidecar)
 
 
 def validate_nominal_gru_run_spec_file(run_spec_path: Path | str) -> None:
@@ -163,12 +185,79 @@ def _mapping(mapping: dict[str, Any], key: str) -> dict[str, Any]:
     return value
 
 
+def _is_cs_lss_run_spec(run_spec: dict[str, Any]) -> bool:
+    for path in (
+        ("model_summary", "plant_backend"),
+        ("training_summary", "plant_backend"),
+        ("fidelity_status", "plant_backend"),
+        ("hps", "model", "plant_backend"),
+    ):
+        value = _nested_get(run_spec, path)
+        if value == CS_LSS_PLANT_BACKEND:
+            return True
+    return _nested_get(run_spec, ("model_summary", "exact_cs_linear_state_space")) is True
+
+
+def _nested_get(mapping: dict[str, Any], path: tuple[str, ...]) -> Any:
+    value: Any = mapping
+    for key in path:
+        if not isinstance(value, dict):
+            return None
+        value = value.get(key)
+    return value
+
+
+def _validate_cs_lss_graph_spec_sidecar(graph_spec_path: Path) -> None:
+    try:
+        payload = json.loads(graph_spec_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RunSpecValidationError(
+            f"CS-LSS Feedbax graph sidecar is not valid JSON: {graph_spec_path}"
+        ) from exc
+
+    nodes = payload.get("nodes")
+    if not isinstance(nodes, dict):
+        raise RunSpecValidationError(
+            f"CS-LSS Feedbax graph sidecar must contain an object 'nodes': {graph_spec_path}"
+        )
+
+    node_types = {
+        str(node_id): node.get("type")
+        for node_id, node in nodes.items()
+        if isinstance(node, dict)
+    }
+    mechanics_type = node_types.get("mechanics")
+    feedback_type = node_types.get("feedback")
+    legacy_types = sorted(
+        node_type for node_type in set(node_types.values()) if node_type in LEGACY_POINT_MASS_GRAPH_TYPES
+    )
+    if mechanics_type != CS_LSS_REQUIRED_MECHANICS_TYPE:
+        legacy_note = (
+            f"; stale legacy graph types present: {', '.join(legacy_types)}"
+            if legacy_types
+            else ""
+        )
+        raise RunSpecValidationError(
+            "CS-LSS Feedbax graph sidecar must declare mechanics node type "
+            f"{CS_LSS_REQUIRED_MECHANICS_TYPE!r}; found {mechanics_type!r}{legacy_note}"
+        )
+    if feedback_type not in CS_LSS_FEEDBACK_COMPONENT_TYPES:
+        raise RunSpecValidationError(
+            "CS-LSS Feedbax graph sidecar must declare a delayed position/velocity "
+            f"feedback selector; found feedback node type {feedback_type!r}"
+        )
+
+
 def _missing_keys(mapping: dict[str, Any], required_keys: frozenset[str]) -> list[str]:
     return sorted(key for key in required_keys if key not in mapping)
 
 
 __all__ = [
+    "CS_LSS_FEEDBACK_COMPONENT_TYPES",
+    "CS_LSS_PLANT_BACKEND",
+    "CS_LSS_REQUIRED_MECHANICS_TYPE",
     "FEEDBAX_GRAPH_REQUIRED_POINTER_KEYS",
+    "LEGACY_POINT_MASS_GRAPH_TYPES",
     "NOMINAL_GRU_LOSS_OBJECTIVES",
     "NOMINAL_GRU_REQUIRED_PROVENANCE_KEYS",
     "NOMINAL_GRU_REQUIRED_TOP_LEVEL_KEYS",
