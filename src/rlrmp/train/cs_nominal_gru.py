@@ -877,9 +877,13 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "execution_backend": EXECUTION_BACKEND,
         "component_policy": {
             "rlrmp_component_types": [
-                "RLRMPFeedbackChannels",
                 "RLRMPSimpleStagedNetwork",
                 "FixedField",
+            ],
+            "feedbax_native_component_types": [
+                "FeedbackChannels",
+                "PointMass",
+                "Channel",
             ],
             "nominal_intervention_policy": (
                 f"{GRAPH_PLANT_INTERVENOR_NODE} is present only as an inactive legacy "

@@ -114,10 +114,10 @@ def test_minimax_graph_bundle_materializes_runtime_graph() -> None:
     assert bundle.manifest["execution_backend"] == EXECUTION_BACKEND
     assert isinstance(graph, Graph)
     assert graph.nodes["net"].__class__.__name__ == "SimpleStagedNetwork"
-    assert spec.nodes["feedback"].type == "RLRMPFeedbackChannels"
+    assert spec.nodes["feedback"].type == "FeedbackChannels"
     assert spec.nodes["net"].type == "RLRMPSimpleStagedNetwork"
     assert spec.nodes["net"].params["sisu_gating"] == "additive"
-    assert spec.nodes["mechanics"].type == "RLRMPPointMass"
+    assert spec.nodes["mechanics"].type == "PointMass"
     assert spec.nodes["mechanics"].params["damping"] == 10.0
     assert spec.nodes["force_filter"].type == "FirstOrderFilter"
     assert spec.nodes[PLANT_INTERVENOR_LABEL].type == "FixedField"
@@ -194,17 +194,24 @@ def test_graph_spec_serializes_explicit_stochastic_runtime_contract() -> None:
     assert spec.nodes["efferent"].params["additive_noise_std"] == 0.03
     assert spec.nodes["efferent"].params["signal_dependent_noise_std"] == 0.04
     assert spec.nodes["efferent"].params["noise_timing"] == "pre_force_filter"
-    assert spec.nodes[PLANT_PROCESS_FORCE_NOISE_LABEL].type == "RLRMPPlantProcessForceNoise"
+    assert spec.nodes[PLANT_PROCESS_FORCE_NOISE_LABEL].type == "Channel"
     assert spec.nodes[PLANT_PROCESS_FORCE_NOISE_LABEL].params["noise_std"] == 0.05
     assert spec.nodes[PLANT_PROCESS_FORCE_NOISE_LABEL].params["state_diffusion"] is False
     assert bundle.manifest["stochastic_runtime"]["state_diffusion"] == "not_used"
 
     force_edges = [
-        (wire.source_node, wire.target_node) for wire in spec.wires if wire.target_port == "force"
+        (wire.source_node, wire.source_port, wire.target_node, wire.target_port)
+        for wire in spec.wires
+        if wire.source_port == "force" or wire.target_port == "force"
     ]
-    assert ("force_filter", GRAPH_PLANT_INTERVENOR_NODE) in force_edges
-    assert (GRAPH_PLANT_INTERVENOR_NODE, PLANT_PROCESS_FORCE_NOISE_LABEL) in force_edges
-    assert (PLANT_PROCESS_FORCE_NOISE_LABEL, "mechanics") in force_edges
+    assert ("force_filter", "output", GRAPH_PLANT_INTERVENOR_NODE, "force") in force_edges
+    assert (
+        GRAPH_PLANT_INTERVENOR_NODE,
+        "force",
+        PLANT_PROCESS_FORCE_NOISE_LABEL,
+        "input",
+    ) in force_edges
+    assert (PLANT_PROCESS_FORCE_NOISE_LABEL, "output", "mechanics", "force") in force_edges
 
 
 def test_linear_tracker_is_graphspec_addressable_as_rlrmp_component() -> None:
@@ -224,6 +231,45 @@ def test_linear_tracker_is_graphspec_addressable_as_rlrmp_component() -> None:
     assert net.params["target_source"] == "input.task.effector_target.pos"
     assert graph.nodes["net"].__class__.__name__ == "LinearTrackerController"
     assert bundle.training_spec["trainable"] == ["nodes.net.K", "nodes.net.u_ff"]
+
+
+def test_legacy_generic_rlrmp_graph_component_ids_materialize_through_migration() -> None:
+    hps = _hps(
+        hidden_type="linear",
+        sensory_noise_std=0.02,
+        additive_motor_noise_std=0.03,
+        signal_dependent_motor_noise_std=0.04,
+        plant_process_force_noise_std=0.05,
+    )
+    spec = build_point_mass_sensorimotor_graph_spec(hps)
+
+    nodes = dict(spec.nodes)
+    nodes["feedback"] = nodes["feedback"].model_copy(update={"type": "RLRMPFeedbackChannels"})
+    nodes["efferent"] = nodes["efferent"].model_copy(update={"type": "RLRMPMotorChannel"})
+    nodes["mechanics"] = nodes["mechanics"].model_copy(update={"type": "RLRMPPointMass"})
+    nodes[PLANT_PROCESS_FORCE_NOISE_LABEL] = nodes[PLANT_PROCESS_FORCE_NOISE_LABEL].model_copy(
+        update={
+            "type": "RLRMPPlantProcessForceNoise",
+            "input_ports": ["force"],
+            "output_ports": ["force"],
+        }
+    )
+    wires = [
+        wire.model_copy(update={"target_port": "force"})
+        if wire.target_node == PLANT_PROCESS_FORCE_NOISE_LABEL
+        else wire.model_copy(update={"source_port": "force"})
+        if wire.source_node == PLANT_PROCESS_FORCE_NOISE_LABEL
+        else wire
+        for wire in spec.wires
+    ]
+    legacy_spec = spec.model_copy(update={"nodes": nodes, "wires": wires})
+
+    graph = materialize_rlrmp_graph_spec(legacy_spec)
+
+    assert isinstance(graph, Graph)
+    assert graph.nodes["feedback"].__class__.__name__ == "FeedbackChannels"
+    assert graph.nodes["efferent"].__class__.__name__ == "Channel"
+    assert graph.nodes[PLANT_PROCESS_FORCE_NOISE_LABEL].__class__.__name__ == "Channel"
 
 
 def test_dynamics_matrix_perturb_spec_preserves_delta_a_contract() -> None:
@@ -336,7 +382,7 @@ def test_runtime_graph_bundle_exports_constructed_model_intervenor(
     assert bundle.graph_spec.nodes["net"].type == expected_net
     assert bundle.graph_spec.nodes["mechanics"].params["damping"] == hps.model.damping
     assert bundle.graph_spec.nodes["feedback"].params["delay"] == hps.model.feedback_delay_steps
-    assert bundle.graph_spec.nodes["efferent"].type == "RLRMPMotorChannel"
+    assert bundle.graph_spec.nodes["efferent"].type == "Channel"
     assert bundle.graph_spec.nodes["efferent"].params["input_shape"] == [2]
 
 
