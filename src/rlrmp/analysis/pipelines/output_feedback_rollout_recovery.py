@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any
 
 import jax
@@ -1883,14 +1884,20 @@ def write_outputs(
     *,
     discretization: str = DEFAULT_DISCRETIZATION,
     lane: str = DEFAULT_LANE,
+    note_path: Path | str | None = None,
+    manifest_path: Path | str | None = None,
+    artifact_path: Path | str | None = None,
+    repo_root: Path | str = REPO_ROOT,
 ) -> dict[str, Any]:
     """Write tracked rollout-recovery note/manifest and bulk arrays."""
 
     result = run_output_feedback_rollout_recovery()
     summary = result_summary(result, discretization=discretization, lane=lane)
-    results_dir = mkdir_p(REPO_ROOT / "results" / issue_id)
+    active_root = Path(repo_root)
+    results_dir = mkdir_p(active_root / "results" / issue_id)
     notes_dir = mkdir_p(results_dir / "notes")
-    artifact_dir = mkdir_p(REPO_ROOT / "_artifacts" / issue_id / "output_feedback_rollout_recovery")
+    default_artifact_dir = active_root / "_artifacts" / issue_id / "output_feedback_rollout_recovery"
+    artifact_dir = mkdir_p(default_artifact_dir)
     readme = results_dir / "README.md"
     if not readme.exists():
         readme.write_text(
@@ -1898,21 +1905,54 @@ def write_outputs(
             "See `notes/output_feedback_rollout_recovery.md`.\n",
             encoding="utf-8",
         )
-    npz_path = artifact_dir / "output_feedback_rollout_recovery.npz"
+    npz_path = _resolve_output_path(
+        artifact_path,
+        default=artifact_dir / "output_feedback_rollout_recovery.npz",
+        repo_root=active_root,
+    )
+    mkdir_p(npz_path.parent)
     np.savez_compressed(npz_path, **result.arrays)
-    summary["tracked_note"] = f"results/{issue_id}/notes/output_feedback_rollout_recovery.md"
-    summary["tracked_manifest"] = (
-        f"results/{issue_id}/notes/output_feedback_rollout_recovery_manifest.json"
+    note_output = _resolve_output_path(
+        note_path,
+        default=notes_dir / "output_feedback_rollout_recovery.md",
+        repo_root=active_root,
     )
-    summary["artifact_npz"] = (
-        f"_artifacts/{issue_id}/output_feedback_rollout_recovery/{npz_path.name}"
+    manifest_output = _resolve_output_path(
+        manifest_path,
+        default=notes_dir / "output_feedback_rollout_recovery_manifest.json",
+        repo_root=active_root,
     )
+    mkdir_p(note_output.parent)
+    mkdir_p(manifest_output.parent)
+    summary["tracked_note"] = _repo_relative(note_output, repo_root=active_root)
+    summary["tracked_manifest"] = _repo_relative(manifest_output, repo_root=active_root)
+    summary["artifact_npz"] = _repo_relative(npz_path, repo_root=active_root)
     summary["artifact_npz_keys"] = sorted(result.arrays.keys())
-    note_path = notes_dir / "output_feedback_rollout_recovery.md"
-    manifest_path = notes_dir / "output_feedback_rollout_recovery_manifest.json"
-    note_path.write_text(render_markdown(summary), encoding="utf-8")
-    manifest_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    note_output.write_text(render_markdown(summary), encoding="utf-8")
+    manifest_output.write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     return summary
+
+
+def _resolve_output_path(
+    path: Path | str | None,
+    *,
+    default: Path,
+    repo_root: Path,
+) -> Path:
+    if path is None:
+        return default
+    output_path = Path(path).expanduser()
+    return output_path if output_path.is_absolute() else repo_root / output_path
+
+
+def _repo_relative(path: Path, *, repo_root: Path) -> str:
+    try:
+        return str(path.relative_to(repo_root))
+    except ValueError:
+        return str(path)
 
 
 __all__ = [

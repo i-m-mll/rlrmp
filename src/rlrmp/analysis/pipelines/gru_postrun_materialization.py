@@ -357,6 +357,11 @@ def materialize_gru_postrun_analysis(
             ],
             "note": _selection_leakage_guard_note(plan),
         },
+        "primary_run_contract": {
+            "type": "feedbax_analysis_bundle",
+            "bundle": "rlrmp/gru_postrun",
+            "legacy_regeneration_spec": "compatibility_only",
+        },
         "plan": plan.to_json(repo_root=repo_root),
         "regeneration_specs": regeneration_specs,
         "perturbation_bank": {
@@ -722,8 +727,9 @@ def _write_postrun_auxiliary_regeneration_specs(
             "src/rlrmp/analysis/gru_feedback_ablation.py",
         ],
         notes=[
-            "Bundle-level index for active GRU postrun diagnostics.",
-            "This rlrmp-local spec is expected to be superseded by Feedbax-native GraphSpec/provider manifests.",
+            "Compatibility index for active GRU postrun diagnostics.",
+            "The primary run contract is the Feedbax analysis bundle "
+            "`rlrmp/gru_postrun` when bundle manifests are available.",
         ],
         repo_root=repo_root,
     )
@@ -1044,7 +1050,7 @@ def checkpoint_policy_name(use_validation_selected_checkpoints: bool) -> str:
     )
 
 
-def _selection_leakage_guard_note(plan: PostrunMaterializationPlan) -> str:
+def _selection_leakage_guard_note(plan: GruPostrunMaterializationPlan) -> str:
     if plan.fixed_bank_rescore_manifest_path is not None:
         return (
             "This materialization explicitly loads the supplied fixed-bank checkpoint "

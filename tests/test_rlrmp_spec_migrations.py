@@ -5,20 +5,47 @@ from pathlib import Path
 
 import pytest
 from feedbax.manifest import TrainingRunManifest, load_manifest
-from feedbax.migrations import SpecSchemaRegistry, UnsupportedSpecVersion
+from feedbax.migrations import SpecSchemaRegistry, UnknownSpecFamily, UnsupportedSpecVersion
 
 from rlrmp.spec_migrations import (
     ArchiveOnlySpecError,
     CS_GRU_STANDARD_CERTIFICATES_KIND,
     CS_GRU_STANDARD_CERTIFICATES_SCHEMA_ID,
     CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION,
-    DIAGNOSTIC_REGENERATION_SPEC_KIND,
-    DIAGNOSTIC_REGENERATION_SPEC_SCHEMA_ID,
-    DIAGNOSTIC_REGENERATION_SPEC_SCHEMA_VERSION,
+    FEEDBACK_QUALITY_LENS_KIND,
+    FEEDBACK_QUALITY_LENS_SCHEMA_ID,
+    FEEDBACK_QUALITY_LENS_SCHEMA_VERSION,
+    GRU_BROAD_EPSILON_ATTRIBUTION_KIND,
+    GRU_BROAD_EPSILON_ATTRIBUTION_SCHEMA_ID,
+    GRU_BROAD_EPSILON_ATTRIBUTION_SCHEMA_VERSION,
     GRU_EVALUATION_DIAGNOSTICS_KIND,
     GRU_EVALUATION_DIAGNOSTICS_SCHEMA_ID,
     GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION,
+    GRU_FEEDBACK_ABLATION_KIND,
+    GRU_FEEDBACK_ABLATION_SCHEMA_ID,
+    GRU_FEEDBACK_ABLATION_SCHEMA_VERSION,
+    GRU_MAP_ERROR_DECOMPOSITION_KIND,
+    GRU_MAP_ERROR_DECOMPOSITION_SCHEMA_ID,
+    GRU_MAP_ERROR_DECOMPOSITION_SCHEMA_VERSION,
+    GRU_PERTURBATION_BANK_KIND,
+    GRU_PERTURBATION_BANK_SCHEMA_ID,
+    GRU_PERTURBATION_BANK_SCHEMA_VERSION,
+    GRU_PERTURBATION_RESPONSE_NORM_PLOTS_KIND,
+    GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_ID,
+    GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_VERSION,
+    GRU_WORST_CASE_EPSILON_AUDIT_KIND,
+    GRU_WORST_CASE_EPSILON_AUDIT_SCHEMA_ID,
+    GRU_WORST_CASE_EPSILON_AUDIT_SCHEMA_VERSION,
+    HINF_PHENOTYPE_SIDECAR_KIND,
+    HINF_PHENOTYPE_SIDECAR_SCHEMA_ID,
+    HINF_PHENOTYPE_SIDECAR_SCHEMA_VERSION,
     LEGACY_TRAINING_CONFIG_KIND,
+    OBJECTIVE_COMPARATOR_SIDECAR_KIND,
+    OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_ID,
+    OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_VERSION,
+    PERTURBATION_OPEN_LOOP_CALIBRATION_KIND,
+    PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_ID,
+    PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_VERSION,
     RUN_SPEC_KIND,
     RUN_SPEC_SCHEMA_ID,
     RUN_SPEC_SCHEMA_VERSION,
@@ -36,29 +63,81 @@ def test_rlrmp_spec_policy_registers_current_families_and_rejects_v0() -> None:
     registry = ensure_rlrmp_spec_families(SpecSchemaRegistry())
 
     expected = {
-        DIAGNOSTIC_REGENERATION_SPEC_KIND: (
-            DIAGNOSTIC_REGENERATION_SPEC_SCHEMA_ID,
-            DIAGNOSTIC_REGENERATION_SPEC_SCHEMA_VERSION,
-            "rlrmp.diagnostic_regeneration_spec.v0",
-        ),
         GRU_EVALUATION_DIAGNOSTICS_KIND: (
             GRU_EVALUATION_DIAGNOSTICS_SCHEMA_ID,
             GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION,
-            "rlrmp.gru_evaluation_diagnostics.v0",
+            ("rlrmp.gru_evaluation_diagnostics.v0",),
         ),
         CS_GRU_STANDARD_CERTIFICATES_KIND: (
             CS_GRU_STANDARD_CERTIFICATES_SCHEMA_ID,
             CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION,
-            "rlrmp.cs_gru_standard_certificates.v0",
+            ("rlrmp.cs_gru_standard_certificates.v0",),
+        ),
+        OBJECTIVE_COMPARATOR_SIDECAR_KIND: (
+            OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_ID,
+            OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_VERSION,
+            tuple(f"rlrmp.objective_comparator_sidecar.v{version}" for version in range(0, 6)),
+        ),
+        GRU_PERTURBATION_BANK_KIND: (
+            GRU_PERTURBATION_BANK_SCHEMA_ID,
+            GRU_PERTURBATION_BANK_SCHEMA_VERSION,
+            (
+                "rlrmp.gru_perturbation_bank.v0",
+                "rlrmp.gru_perturbation_bank.v2",
+                "rlrmp.gru_perturbation_response.v2",
+            ),
+        ),
+        GRU_PERTURBATION_RESPONSE_NORM_PLOTS_KIND: (
+            GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_ID,
+            GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_VERSION,
+            ("rlrmp.gru_perturbation_response_norm_plots.v0",),
+        ),
+        PERTURBATION_OPEN_LOOP_CALIBRATION_KIND: (
+            PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_ID,
+            PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_VERSION,
+            (
+                "rlrmp.perturbation_open_loop_calibration.v0",
+                "rlrmp.perturbation_open_loop_calibration.v1",
+            ),
+        ),
+        HINF_PHENOTYPE_SIDECAR_KIND: (
+            HINF_PHENOTYPE_SIDECAR_SCHEMA_ID,
+            HINF_PHENOTYPE_SIDECAR_SCHEMA_VERSION,
+            ("rlrmp.hinf_phenotype_sidecar.v0",),
+        ),
+        GRU_WORST_CASE_EPSILON_AUDIT_KIND: (
+            GRU_WORST_CASE_EPSILON_AUDIT_SCHEMA_ID,
+            GRU_WORST_CASE_EPSILON_AUDIT_SCHEMA_VERSION,
+            ("rlrmp.gru_worst_case_epsilon_audit.v0",),
+        ),
+        GRU_BROAD_EPSILON_ATTRIBUTION_KIND: (
+            GRU_BROAD_EPSILON_ATTRIBUTION_SCHEMA_ID,
+            GRU_BROAD_EPSILON_ATTRIBUTION_SCHEMA_VERSION,
+            ("rlrmp.gru_broad_epsilon_attribution.v0",),
+        ),
+        GRU_MAP_ERROR_DECOMPOSITION_KIND: (
+            GRU_MAP_ERROR_DECOMPOSITION_SCHEMA_ID,
+            GRU_MAP_ERROR_DECOMPOSITION_SCHEMA_VERSION,
+            ("rlrmp.gru_map_error_decomposition.v0",),
+        ),
+        GRU_FEEDBACK_ABLATION_KIND: (
+            GRU_FEEDBACK_ABLATION_SCHEMA_ID,
+            GRU_FEEDBACK_ABLATION_SCHEMA_VERSION,
+            ("rlrmp.gru_feedback_ablation.v0",),
+        ),
+        FEEDBACK_QUALITY_LENS_KIND: (
+            FEEDBACK_QUALITY_LENS_SCHEMA_ID,
+            FEEDBACK_QUALITY_LENS_SCHEMA_VERSION,
+            ("rlrmp.feedback_quality_lens.v0",),
         ),
         RUN_SPEC_KIND: (
             RUN_SPEC_SCHEMA_ID,
             RUN_SPEC_SCHEMA_VERSION,
-            "rlrmp.run_spec.v0",
+            ("rlrmp.run_spec.v0",),
         ),
     }
 
-    for kind, (schema_id, current_version, old_version) in expected.items():
+    for kind, (schema_id, current_version, old_versions) in expected.items():
         family = registry.resolve(kind)
         assert family.identity == schema_id
         assert family.current_version == current_version
@@ -69,12 +148,13 @@ def test_rlrmp_spec_policy_registers_current_families_and_rejects_v0() -> None:
         assert result.target_version == current_version
         assert not result.migrated
 
-        with pytest.raises(UnsupportedSpecVersion) as excinfo:
-            registry.migrate(kind, {"schema_version": old_version})
-        message = str(excinfo.value)
-        assert f"family={kind!r}" in message
-        assert f"schema_id={schema_id!r}" in message
-        assert "migration_intentionally_absent=yes" in message
+        for old_version in old_versions:
+            with pytest.raises(UnsupportedSpecVersion) as excinfo:
+                registry.migrate(kind, {"schema_version": old_version})
+            message = str(excinfo.value)
+            assert f"family={kind!r}" in message
+            assert f"schema_id={schema_id!r}" in message
+            assert "migration_intentionally_absent=yes" in message
 
 
 def test_stamp_current_schema_adds_identity_and_version() -> None:
@@ -106,17 +186,6 @@ def test_representative_historical_artifacts_load_or_reject_by_policy() -> None:
     )
     assert run_spec.schema_id == RUN_SPEC_SCHEMA_ID
     assert run_spec.target_version == RUN_SPEC_SCHEMA_VERSION
-
-    regeneration_spec = load_rlrmp_spec_payload(
-        DIAGNOSTIC_REGENERATION_SPEC_KIND,
-        REPO_ROOT
-        / "results"
-        / "0203d1f"
-        / "notes"
-        / "gru_postrun_materialization_validation_selected_regeneration_spec.json",
-    )
-    assert regeneration_spec.target_version == DIAGNOSTIC_REGENERATION_SPEC_SCHEMA_VERSION
-    assert regeneration_spec.payload["diagnostic_name"] == "gru_postrun_materialization_bundle"
 
     evaluation_manifest = load_rlrmp_spec_payload(
         GRU_EVALUATION_DIAGNOSTICS_KIND,
@@ -164,3 +233,127 @@ def test_checked_in_current_gru_diagnostics_can_be_schema_stamped() -> None:
 
     assert result.payload["schema_id"] == GRU_EVALUATION_DIAGNOSTICS_SCHEMA_ID
     assert result.payload["schema_version"] == GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION
+
+
+def test_representative_analysis_sidecar_payloads_are_accepted() -> None:
+    sidecars = {
+        OBJECTIVE_COMPARATOR_SIDECAR_KIND: (
+            OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_ID,
+            OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_VERSION,
+            {
+                "schema_version": OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_VERSION,
+                "scope": "unit",
+                "rows": [{"run_id": "run_a"}],
+                "standard_split_bank_comparator": {"status": "available"},
+            },
+        ),
+        GRU_PERTURBATION_BANK_KIND: (
+            GRU_PERTURBATION_BANK_SCHEMA_ID,
+            GRU_PERTURBATION_BANK_SCHEMA_VERSION,
+            {
+                "schema_version": GRU_PERTURBATION_BANK_SCHEMA_VERSION,
+                "bank_id": "unit-bank",
+                "scope": "controller_independent_perturbation_response",
+                "runs": {"run_a": {"status": "available"}},
+            },
+        ),
+        PERTURBATION_OPEN_LOOP_CALIBRATION_KIND: (
+            PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_ID,
+            PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_VERSION,
+            {
+                "schema_version": PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_VERSION,
+                "bank_schema_version": GRU_PERTURBATION_BANK_SCHEMA_VERSION,
+                "calibration_points": [],
+            },
+        ),
+        HINF_PHENOTYPE_SIDECAR_KIND: (
+            HINF_PHENOTYPE_SIDECAR_SCHEMA_ID,
+            HINF_PHENOTYPE_SIDECAR_SCHEMA_VERSION,
+            {
+                "schema_version": HINF_PHENOTYPE_SIDECAR_SCHEMA_VERSION,
+                "scope": "validation_selected_gru_robustness_phenotype",
+                "components": {},
+                "rows": [],
+            },
+        ),
+        GRU_BROAD_EPSILON_ATTRIBUTION_KIND: (
+            GRU_BROAD_EPSILON_ATTRIBUTION_SCHEMA_ID,
+            GRU_BROAD_EPSILON_ATTRIBUTION_SCHEMA_VERSION,
+            {
+                "schema_version": GRU_BROAD_EPSILON_ATTRIBUTION_SCHEMA_VERSION,
+                "active_vs_zero_semantics": {"paired_condition": "zero_broad_epsilon"},
+                "rows": [],
+            },
+        ),
+        GRU_WORST_CASE_EPSILON_AUDIT_KIND: (
+            GRU_WORST_CASE_EPSILON_AUDIT_SCHEMA_ID,
+            GRU_WORST_CASE_EPSILON_AUDIT_SCHEMA_VERSION,
+            {
+                "schema_version": GRU_WORST_CASE_EPSILON_AUDIT_SCHEMA_VERSION,
+                "scope": "worst_case_full_state_epsilon",
+                "rows": [],
+            },
+        ),
+        GRU_MAP_ERROR_DECOMPOSITION_KIND: (
+            GRU_MAP_ERROR_DECOMPOSITION_SCHEMA_ID,
+            GRU_MAP_ERROR_DECOMPOSITION_SCHEMA_VERSION,
+            {
+                "schema_version": GRU_MAP_ERROR_DECOMPOSITION_SCHEMA_VERSION,
+                "rows": [{"run_id": "run_a", "decomposition": {}}],
+            },
+        ),
+        GRU_FEEDBACK_ABLATION_KIND: (
+            GRU_FEEDBACK_ABLATION_SCHEMA_ID,
+            GRU_FEEDBACK_ABLATION_SCHEMA_VERSION,
+            {
+                "schema_version": GRU_FEEDBACK_ABLATION_SCHEMA_VERSION,
+                "scope": "fixed_target_random_perturb_validation_selected",
+                "rows": [],
+                "feedback_checkpoint_selection_audit_status": "external_custody",
+            },
+        ),
+        GRU_PERTURBATION_RESPONSE_NORM_PLOTS_KIND: (
+            GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_ID,
+            GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_VERSION,
+            {
+                "schema_version": GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_VERSION,
+                "source_manifest": "results/unit/manifest.json",
+                "figures": [],
+            },
+        ),
+        FEEDBACK_QUALITY_LENS_KIND: (
+            FEEDBACK_QUALITY_LENS_SCHEMA_ID,
+            FEEDBACK_QUALITY_LENS_SCHEMA_VERSION,
+            {
+                "schema_version": FEEDBACK_QUALITY_LENS_SCHEMA_VERSION,
+                "scope": "feedback_control_quality_diagnostics",
+                "outputs": {
+                    "perturbation_response": {"status": "materialized"},
+                    "feedback_ablation": {"status": "not_applicable"},
+                },
+            },
+        ),
+    }
+
+    for kind, (schema_id, schema_version, payload) in sidecars.items():
+        result = accept_rlrmp_spec_payload(kind, payload)
+
+        assert result.schema_id == schema_id
+        assert result.target_version == schema_version
+        assert result.payload["schema_version"] == schema_version
+
+
+def test_generic_feedbax_custody_families_are_not_registered_in_rlrmp() -> None:
+    registry = ensure_rlrmp_spec_families(SpecSchemaRegistry())
+    generic_or_sibling_owned_kinds = (
+        "RLRMPDiagnosticRegenerationSpec",
+        "RLRMPValidationSelectedGRUCheckpoints",
+        "RLRMPFixedBankGRUCheckpointRescore",
+        "RLRMPGRUPostrunMaterialization",
+        "RLRMPDiagnosticOutputStatus",
+        "RLRMPArtifactGroup",
+    )
+
+    for kind in generic_or_sibling_owned_kinds:
+        with pytest.raises(UnknownSpecFamily):
+            registry.resolve(kind)

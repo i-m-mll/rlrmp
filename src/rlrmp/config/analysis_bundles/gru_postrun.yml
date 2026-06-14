@@ -1,0 +1,104 @@
+name: gru_postrun
+description: Standard GRU post-run diagnostic bundle for rlrmp experiments.
+predicate:
+  manifest_kind: TrainingRunManifest
+  metadata_equals:
+    gru_postrun_candidate: true
+metadata:
+  primary_contract: feedbax_analysis_bundle
+  legacy_regeneration_contract: compatibility_only
+  output_conventions:
+    tracked_notes: results/{experiment}/notes
+    bulk_artifacts: _artifacts/{experiment}
+  scientific_schema_owner: rlrmp
+  sibling_owned_lenses:
+    - feedback_quality
+    - robustness_phenotype_aggregation
+    - output_feedback_bridge_diagnostics
+    - training_diagnostics
+stages:
+  - name: postrun_diagnostics
+    kind: analysis
+    mode: grouped
+    analysis_type: rlrmp.gru_postrun
+    requested_outputs: [gru_postrun_materialization]
+    params:
+      experiment_metadata_key: rlrmp_experiment
+      output_tag: validation_selected
+      use_validation_selected_checkpoints: true
+      include_reference: true
+      include_objective_comparator: true
+      include_map_decomposition: true
+      include_perturbation_response: true
+      include_feedback_ablation: true
+      bundle_contract:
+        primary: feedbax_analysis_bundle
+        legacy_regeneration_spec: compatibility_only
+    outputs:
+      - role: manifest
+        required: true
+      - role: rlrmp-gru-postrun-manifest
+        required: true
+      - role: rlrmp-gru-checkpoint-selection-manifest
+        required: false
+      - role: rlrmp-gru-standard-certificate-manifest
+        required: false
+      - role: rlrmp-gru-standard-certificate-note
+        required: false
+      - role: rlrmp-gru-evaluation-diagnostics-manifest
+        required: false
+      - role: rlrmp-gru-pilot-figure-summary
+        required: false
+      - role: rlrmp-gru-objective-comparator-manifest
+        required: false
+      - role: rlrmp-gru-objective-comparator-note
+        required: false
+      - role: rlrmp-gru-map-decomposition-manifest
+        required: false
+      - role: rlrmp-gru-map-decomposition-note
+        required: false
+      - role: rlrmp-gru-perturbation-response-manifest
+        required: false
+      - role: rlrmp-gru-perturbation-response-note
+        required: false
+      - role: rlrmp-gru-feedback-ablation-manifest
+        required: false
+      - role: rlrmp-gru-feedback-ablation-note
+        required: false
+      - role: rlrmp-gru-postrun-legacy-regeneration-spec
+        required: false
+  - name: feedback_quality_lens
+    kind: materialization
+    depends_on: [postrun_diagnostics]
+    outputs:
+      - role: rlrmp-feedback-quality-lens
+        required: false
+    not_applicable_reason: "Sibling-owned by af77a06; not part of this bundle migration."
+  - name: robustness_phenotype_aggregation
+    kind: materialization
+    depends_on: [postrun_diagnostics]
+    outputs:
+      - role: rlrmp-robustness-phenotype-aggregation
+        required: false
+    not_applicable_reason: "Sibling-owned by 769aea6; not part of this bundle migration."
+  - name: output_feedback_bridge_diagnostics
+    kind: materialization
+    depends_on: [postrun_diagnostics]
+    outputs:
+      - role: rlrmp-output-feedback-bridge-diagnostics
+        required: false
+    not_applicable_reason: "Sibling-owned by c4416c5; not part of this bundle migration."
+  - name: training_diagnostics
+    kind: materialization
+    depends_on: [postrun_diagnostics]
+    outputs:
+      - role: rlrmp-training-diagnostics
+        required: false
+    not_applicable_reason: "Sibling-owned by 0e3223d; not part of this bundle migration."
+  - name: archive_only_entrypoints
+    kind: materialization
+    depends_on: [postrun_diagnostics]
+    outputs:
+      - role: rlrmp-gru-postrun-historical-script
+        required: false
+    skip_reason: "Historical scripts remain archive-only once the Feedbax bundle is the run contract."

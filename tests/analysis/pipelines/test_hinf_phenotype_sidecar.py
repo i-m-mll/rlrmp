@@ -224,7 +224,7 @@ def test_writer_records_regeneration_spec_and_outputs(tmp_path) -> None:
     assert payload["regeneration_spec_path"] == "sidecar_regeneration_spec.json"
     assert "Regeneration spec: `sidecar_regeneration_spec.json`" in markdown_path.read_text()
     regeneration = json.loads(regeneration_path.read_text())
-    assert regeneration["diagnostic_name"] == "hinf_phenotype_sidecar"
+    assert regeneration["metadata"]["diagnostic_name"] == "hinf_phenotype_sidecar"
     assert any(item["role"] == "objective_comparator_manifest" for item in regeneration["inputs"])
     assert {item["role"] for item in regeneration["outputs"]} == {
         "sidecar_json",

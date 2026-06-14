@@ -1,0 +1,24 @@
+schema_id: feedbax.spec.analysis_bundle
+schema_version: feedbax.spec.analysis_bundle.v2
+name: output_feedback_bridge
+description: Output-feedback bridge diagnostics with Feedbax manifest custody.
+predicate:
+  manifest_kind: AnalysisRunManifest
+  metadata_equals:
+    bundle_family: rlrmp/output_feedback_bridge
+metadata:
+  package: rlrmp
+  bundle_family: rlrmp/output_feedback_bridge
+  issue: c4416c5
+  active_paths:
+    - output_feedback_rollout_recovery
+  archive_only_paths:
+    - output_feedback_gamma_sweep
+    - output_feedback_lane
+templates:
+  - name: rollout_recovery
+    mode: grouped
+    analysis_type: rlrmp.output_feedback_bridge.rollout_recovery
+    requested_outputs: [output_feedback_rollout_recovery]
+    params:
+      issue_id: 7a459bb
