@@ -12,6 +12,9 @@ from rlrmp.spec_migrations import (
     CS_GRU_STANDARD_CERTIFICATES_KIND,
     CS_GRU_STANDARD_CERTIFICATES_SCHEMA_ID,
     CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION,
+    DELAYED_DIAGNOSTIC_BUNDLE_KIND,
+    DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_ID,
+    DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_VERSION,
     FEEDBACK_QUALITY_LENS_KIND,
     FEEDBACK_QUALITY_LENS_SCHEMA_ID,
     FEEDBACK_QUALITY_LENS_SCHEMA_VERSION,
@@ -124,6 +127,14 @@ def test_rlrmp_spec_policy_registers_current_families_and_rejects_v0() -> None:
             GRU_FEEDBACK_ABLATION_SCHEMA_ID,
             GRU_FEEDBACK_ABLATION_SCHEMA_VERSION,
             ("rlrmp.gru_feedback_ablation.v0",),
+        ),
+        DELAYED_DIAGNOSTIC_BUNDLE_KIND: (
+            DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_ID,
+            DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_VERSION,
+            (
+                "rlrmp.delayed_no_pgd_direction_split_velocity.v1",
+                "rlrmp.delayed_peak_decay_diagnostics.v1",
+            ),
         ),
         FEEDBACK_QUALITY_LENS_KIND: (
             FEEDBACK_QUALITY_LENS_SCHEMA_ID,
@@ -319,6 +330,17 @@ def test_representative_analysis_sidecar_payloads_are_accepted() -> None:
                 "schema_version": GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_VERSION,
                 "source_manifest": "results/unit/manifest.json",
                 "figures": [],
+            },
+        ),
+        DELAYED_DIAGNOSTIC_BUNDLE_KIND: (
+            DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_ID,
+            DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_VERSION,
+            {
+                "schema_version": DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_VERSION,
+                "issue": "21f4638",
+                "scope": "unit",
+                "direction_split": {"status": "not_applicable"},
+                "peak_decay": {"status": "available", "signals": {}},
             },
         ),
         FEEDBACK_QUALITY_LENS_KIND: (
