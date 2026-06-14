@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,15 +18,39 @@ from feedbax.types import TreeNamespace, dict_to_namespace
 
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.train.task_model import setup_task_model_pair
+from rlrmp.train.cs_nominal_gru import (
+    CS_DELAYED_REACH_TASK_PRESET,
+    CS_DELAYED_REACH_TASK_TYPE,
+    CS_STAGE_COUNT,
+    DEFAULT_DELAYED_GO_CUE_MAX_STEP,
+    DEFAULT_DELAYED_GO_CUE_MIN_STEP,
+    DELAYED_REACH_TRAINING_MODE,
+)
+from rlrmp.train.cs_perturbation_training import (
+    TargetRelativeMultiTargetTrainingConfig,
+    target_relative_input_contract,
+    target_relative_validation_bins,
+)
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
 
 SPARSE_HISTORY_SCHEMA_VERSION = "rlrmp.validation_selected_gru_checkpoints.v1"
 FIXED_BANK_SCHEMA_VERSION = "rlrmp.fixed_bank_gru_checkpoint_rescore.v1"
+DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION = "rlrmp.delayed_reach_eval_bank.v2"
 SPARSE_HISTORY_CHECKPOINT_POLICY = "validation_selected_per_replicate"
 FIXED_BANK_CHECKPOINT_POLICY = "fixed_bank_rescored_per_replicate"
 DEFAULT_FIXED_BANK_MANIFEST_NAME = "fixed_bank_rescored_checkpoints.json"
+DEFAULT_DELAYED_REACH_FIXED_BANK_MANIFEST_NAME = (
+    "delayed_reach_fixed_bank_rescored_checkpoints.json"
+)
+DEFAULT_DELAYED_REACH_GO_CUE_STEPS = tuple(
+    range(DEFAULT_DELAYED_GO_CUE_MIN_STEP, DEFAULT_DELAYED_GO_CUE_MAX_STEP + 1)
+)
+DEFAULT_DELAYED_REACH_DIRECTION_COUNT = 20
+DEFAULT_DELAYED_REACH_UNIFORM_REACH_LENGTH_M = 0.15
 CheckpointSelectionMode = Literal["sparse_history", "fixed_bank_manifest"]
+DelayedReachCatchBank = Literal["no_catch", "catch"]
+DelayedReachDirectionSource = Literal["uniform_grid", "validation_targets"]
 
 
 @dataclass(frozen=True)
@@ -72,6 +97,7 @@ class FixedValidationBankSpec:
     validation_role: str | None = None
     selection_metric: str | None = None
     nominal_quality_role: str | None = None
+    bank_spec: Mapping[str, Any] | None = None
 
     def to_json(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -90,13 +116,340 @@ class FixedValidationBankSpec:
             payload["selection_metric"] = self.selection_metric
         if self.nominal_quality_role is not None:
             payload["nominal_quality_role"] = self.nominal_quality_role
+        if self.bank_spec is not None:
+            payload["bank_spec"] = _json_ready(self.bank_spec)
         return payload
+
+
+@dataclass(frozen=True)
+class DelayedReachEvalBankSpec:
+    """Reusable fixed validation-bank contract for delayed target-relative GRU runs."""
+
+    bank_role: DelayedReachCatchBank
+    target_config: TargetRelativeMultiTargetTrainingConfig
+    p_catch_trial: float
+    direction_source: DelayedReachDirectionSource = "uniform_grid"
+    direction_count: int = DEFAULT_DELAYED_REACH_DIRECTION_COUNT
+    reach_length_m: float = DEFAULT_DELAYED_REACH_UNIFORM_REACH_LENGTH_M
+    reach_length_explicit: bool = False
+    go_cue_min_step: int = DEFAULT_DELAYED_GO_CUE_MIN_STEP
+    go_cue_max_step: int = DEFAULT_DELAYED_GO_CUE_MAX_STEP
+    seed: int | None = None
+
+    @property
+    def bank_identity(self) -> str:
+        catch_label = "catch" if self.bank_role == "catch" else "no-catch"
+        target_label = "target-relative-force-filter" if self.target_config.force_filter_feedback else (
+            "target-relative"
+        )
+        return (
+            "rlrmp.delayed-reach.fixed-eval-bank:"
+            f"{catch_label}:go{self.go_cue_min_step}-{self.go_cue_max_step}:"
+            f"{self.direction_source}:directions{self.direction_count}:"
+            f"reach{self.reach_length_m:g}:{target_label}"
+        )
+
+    @property
+    def go_cue_steps(self) -> tuple[int, ...]:
+        return tuple(range(int(self.go_cue_min_step), int(self.go_cue_max_step) + 1))
+
+    @property
+    def n_target_conditions(self) -> int:
+        return len(self._targets())
+
+    @property
+    def trial_count(self) -> int:
+        return len(self.go_cue_steps) * self.n_target_conditions
+
+    def to_json(self) -> dict[str, Any]:
+        target_config = self.target_config
+        target_distribution = target_config.to_json()["target_distribution"]
+        target_geometry = _target_geometry_rows(
+            target_config,
+            direction_source=self.direction_source,
+            direction_count=self.direction_count,
+            reach_length_m=self.reach_length_m,
+        )
+        return {
+            "schema_version": DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION,
+            "bank_identity": self.bank_identity,
+            "bank_family": "delayed_reach_fixed_eval_bank",
+            "kind": self.bank_role,
+            "catch": self.bank_role == "catch",
+            "go_cue_min": int(self.go_cue_min_step),
+            "go_cue_max": int(self.go_cue_max_step),
+            "go_cue_steps": [int(step) for step in self.go_cue_steps],
+            "direction_source": self.direction_source,
+            "direction_count": self.n_target_conditions,
+            "requested_direction_count": int(self.direction_count),
+            "trial_count": self.trial_count,
+            "movement_horizon_steps": CS_STAGE_COUNT,
+            "reach_length_m": float(self.reach_length_m),
+            "reach_length_source": (
+                "explicit" if self.reach_length_explicit else f"{self.direction_source}_default"
+            ),
+            "reach_length_m_explicit": bool(self.reach_length_explicit),
+            "direction_source_inferred_from_validation_targets": (
+                self.direction_source == "validation_targets"
+            ),
+            "duplicate_direction_count": _duplicate_direction_count(target_geometry),
+            "target_radii_m": [float(row["target_radius_m"]) for row in target_geometry],
+            "target_angles_rad": [float(row["target_angle_rad"]) for row in target_geometry],
+            "source_trial_indices": [int(row["source_trial_index"]) for row in target_geometry],
+            "task": {
+                "mode": DELAYED_REACH_TRAINING_MODE,
+                "task_type": CS_DELAYED_REACH_TASK_TYPE,
+                "task_preset": CS_DELAYED_REACH_TASK_PRESET,
+                "reach_length_m": float(self.reach_length_m),
+                "target_visibility": "visible_from_trial_start",
+                "movement_epoch": {
+                    "kind": "delayed_reach_movement_epoch",
+                    "start_transition": "sampled_go_cue_step",
+                    "go_cue_min_step": int(self.go_cue_min_step),
+                    "go_cue_max_step": int(self.go_cue_max_step),
+                    "cs_horizon_steps": CS_STAGE_COUNT,
+                    "cost_indexing": "movement_age_not_trial_age",
+                },
+                "go_cue_sampling": {
+                    "min_step_inclusive": int(self.go_cue_min_step),
+                    "max_step_inclusive": int(self.go_cue_max_step),
+                    "distribution": "uniform_integer",
+                },
+                "catch_trials": {
+                    "p_catch_trial": float(self.p_catch_trial),
+                    "go_cue_value_for_catch": 0.0,
+                    "semantics": (
+                        "target remains visible, movement target is replaced by the "
+                        "initial position, and the hold/go-cue input stays in prep state"
+                    ),
+                },
+            },
+            "direction_source_contract": {
+                "kind": "target_relative_multitarget_static",
+                "bank_direction_source": self.direction_source,
+                "validation_targets_source": (
+                    "TargetRelativeMultiTargetTrainingConfig.validation_targets_m"
+                ),
+                "controller_feedback_basis": target_relative_input_contract(
+                    force_filter_feedback=target_config.force_filter_feedback
+                ),
+                "direction_semantics": (
+                    "directions and radii are derived from actual static target "
+                    "coordinates in metres, not from row labels"
+                ),
+            },
+            "target_distribution": target_distribution,
+            "validation_bins": target_relative_validation_bins(target_config),
+            "validation_target_provenance": {
+                "schema": "rlrmp.target_relative_multitarget_validation_targets.v1",
+                "source": "target_config.original + seen_targets_m + held_out_targets_m",
+                "dedupe_policy": (
+                    "uniform_grid" if self.direction_source == "uniform_grid" else (
+                        "preserve_first_occurrence_by_cartesian_target"
+                    )
+                ),
+                "duplicate_direction_metadata": _duplicate_target_metadata(
+                    target_config,
+                    direction_source=self.direction_source,
+                    direction_count=self.direction_count,
+                    reach_length_m=self.reach_length_m,
+                ),
+                "actual_targets": target_geometry,
+                "n_target_conditions": self.n_target_conditions,
+            },
+            "selection_role": (
+                "rollout loss over this delayed-reach fixed bank selects checkpoints; "
+                "analytical action, I/O, perturbation, and objective-comparator metrics "
+                "remain audit-only"
+            ),
+            "nominal_quality_role": (
+                "original anchor, seen targets, held-out targets, and catch/no-catch "
+                "bank separation remain reported sidecars"
+            ),
+            "seed": self.seed,
+        }
+
+    def _targets(self) -> tuple[tuple[float, float], ...]:
+        if self.direction_source == "uniform_grid":
+            return _uniform_targets(
+                direction_count=self.direction_count,
+                reach_length_m=self.reach_length_m,
+            )
+        if self.direction_source == "validation_targets":
+            targets = tuple(self.target_config.validation_targets_m[: self.direction_count])
+            if len(targets) < int(self.direction_count):
+                raise ValueError(
+                    "validation_targets direction source requires at least "
+                    f"direction_count={self.direction_count} targets; got {len(targets)}"
+                )
+            return targets
+        raise ValueError(f"Unsupported direction_source {self.direction_source!r}")
+
+    def to_fixed_validation_bank_spec(
+        self,
+        *,
+        scorer_identity: str = "rlrmp.delayed_reach.fixed_bank_rollout_objective",
+        scorer_version: str | None = None,
+    ) -> FixedValidationBankSpec:
+        """Return a checkpoint-rescore bank wrapper for this delayed bank."""
+
+        return FixedValidationBankSpec(
+            bank_identity=self.bank_identity,
+            scorer_identity=scorer_identity,
+            seed=self.seed,
+            n_trials=self.trial_count,
+            scorer_version=scorer_version,
+            validation_role="delayed_reach_fixed_bank_rollout_validation",
+            selection_metric="aggregate_rollout_validation_objective",
+            nominal_quality_role=(
+                "reported_sidecar_for_target_geometry_and_catch_bank_quality"
+            ),
+            bank_spec=self.to_json(),
+        )
 
 
 CheckpointScorer = Callable[
     [str, int, int, Path, Mapping[str, Any], FixedValidationBankSpec],
     float,
 ]
+
+
+def delayed_reach_eval_bank_spec(
+    *,
+    bank_role: DelayedReachCatchBank,
+    p_catch_trial: float | None = None,
+    target_config: TargetRelativeMultiTargetTrainingConfig | None = None,
+    force_filter_feedback: bool = True,
+    direction_source: DelayedReachDirectionSource = "uniform_grid",
+    direction_count: int = DEFAULT_DELAYED_REACH_DIRECTION_COUNT,
+    go_cue_min_step: int = DEFAULT_DELAYED_GO_CUE_MIN_STEP,
+    go_cue_max_step: int = DEFAULT_DELAYED_GO_CUE_MAX_STEP,
+    reach_length_m: float = DEFAULT_DELAYED_REACH_UNIFORM_REACH_LENGTH_M,
+    reach_length_explicit: bool = False,
+    seed: int | None = None,
+) -> DelayedReachEvalBankSpec:
+    """Return a reusable delayed-reach fixed validation-bank spec."""
+
+    if bank_role not in {"no_catch", "catch"}:
+        raise ValueError(f"Unsupported delayed-reach bank role {bank_role!r}")
+    if p_catch_trial is None:
+        p_catch_trial = 1.0 if bank_role == "catch" else 0.0
+    config = target_config or TargetRelativeMultiTargetTrainingConfig(
+        enabled=True,
+        force_filter_feedback=force_filter_feedback,
+    )
+    return DelayedReachEvalBankSpec(
+        bank_role=bank_role,
+        target_config=config,
+        p_catch_trial=float(p_catch_trial),
+        direction_source=direction_source,
+        direction_count=int(direction_count),
+        reach_length_m=float(reach_length_m),
+        reach_length_explicit=bool(reach_length_explicit),
+        go_cue_min_step=int(go_cue_min_step),
+        go_cue_max_step=int(go_cue_max_step),
+        seed=seed,
+    )
+
+
+def delayed_reach_fixed_eval_bank_specs(
+    *,
+    target_config: TargetRelativeMultiTargetTrainingConfig | None = None,
+    force_filter_feedback: bool = True,
+    direction_source: DelayedReachDirectionSource = "uniform_grid",
+    direction_count: int = DEFAULT_DELAYED_REACH_DIRECTION_COUNT,
+    go_cue_min_step: int = DEFAULT_DELAYED_GO_CUE_MIN_STEP,
+    go_cue_max_step: int = DEFAULT_DELAYED_GO_CUE_MAX_STEP,
+    reach_length_m: float = DEFAULT_DELAYED_REACH_UNIFORM_REACH_LENGTH_M,
+    reach_length_explicit: bool = False,
+    seed: int | None = None,
+) -> tuple[DelayedReachEvalBankSpec, DelayedReachEvalBankSpec]:
+    """Return explicit no-catch and catch delayed-reach evaluation banks."""
+
+    return (
+        delayed_reach_eval_bank_spec(
+            bank_role="no_catch",
+            p_catch_trial=0.0,
+            target_config=target_config,
+            force_filter_feedback=force_filter_feedback,
+            direction_source=direction_source,
+            direction_count=direction_count,
+            go_cue_min_step=go_cue_min_step,
+            go_cue_max_step=go_cue_max_step,
+            reach_length_m=reach_length_m,
+            reach_length_explicit=reach_length_explicit,
+            seed=seed,
+        ),
+        delayed_reach_eval_bank_spec(
+            bank_role="catch",
+            p_catch_trial=1.0,
+            target_config=target_config,
+            force_filter_feedback=force_filter_feedback,
+            direction_source=direction_source,
+            direction_count=direction_count,
+            go_cue_min_step=go_cue_min_step,
+            go_cue_max_step=go_cue_max_step,
+            reach_length_m=reach_length_m,
+            reach_length_explicit=reach_length_explicit,
+            seed=seed,
+        ),
+    )
+
+
+def delayed_reach_fixed_rescore_bank_spec(
+    *,
+    target_config: TargetRelativeMultiTargetTrainingConfig | None = None,
+    force_filter_feedback: bool = True,
+    direction_source: DelayedReachDirectionSource = "uniform_grid",
+    direction_count: int = DEFAULT_DELAYED_REACH_DIRECTION_COUNT,
+    go_cue_min_step: int = DEFAULT_DELAYED_GO_CUE_MIN_STEP,
+    go_cue_max_step: int = DEFAULT_DELAYED_GO_CUE_MAX_STEP,
+    reach_length_m: float = DEFAULT_DELAYED_REACH_UNIFORM_REACH_LENGTH_M,
+    reach_length_explicit: bool = False,
+    seed: int | None = None,
+    scorer_identity: str = "feedbax_task_loss_mean_over_trials",
+    scorer_version: str | None = None,
+) -> FixedValidationBankSpec:
+    """Return the combined no-catch/catch delayed fixed-bank rescore spec."""
+
+    banks = delayed_reach_fixed_eval_bank_specs(
+        target_config=target_config,
+        force_filter_feedback=force_filter_feedback,
+        direction_source=direction_source,
+        direction_count=direction_count,
+        go_cue_min_step=go_cue_min_step,
+        go_cue_max_step=go_cue_max_step,
+        reach_length_m=reach_length_m,
+        reach_length_explicit=reach_length_explicit,
+        seed=seed,
+    )
+    bank_spec = {
+        "schema_version": "rlrmp.delayed_reach_fixed_bank_rescore_bank.v1",
+        "bank_identity": "delayed_reach_go_cue_grid_no_catch_catch",
+        "bank_kinds": [bank.bank_role for bank in banks],
+        "go_cue_steps": [int(step) for step in banks[0].go_cue_steps],
+        "go_cue_min": int(banks[0].go_cue_min_step),
+        "go_cue_max": int(banks[0].go_cue_max_step),
+        "direction_source": direction_source,
+        "direction_count": int(banks[0].n_target_conditions),
+        "requested_direction_count": int(direction_count),
+        "reach_length_m": float(reach_length_m),
+        "selection_source": "delayed_reach_fixed_bank_rescore",
+        "selection_metric": "mean_task_loss_equal_weight_over_declared_banks",
+        "bank_weighting": "equal_weight_over_declared_banks",
+        "banks": [bank.to_json() for bank in banks],
+    }
+    return FixedValidationBankSpec(
+        bank_identity="delayed_reach_go_cue_grid_no_catch_catch",
+        scorer_identity=scorer_identity,
+        seed=seed,
+        n_trials=sum(bank.trial_count for bank in banks),
+        scorer_version=scorer_version,
+        validation_role="fixed_delayed_reach_no_catch_catch_rollout_validation",
+        selection_metric="mean_task_loss_equal_weight_over_declared_banks",
+        nominal_quality_role="reported_sidecar_for_no_catch_and_catch_bank_quality",
+        bank_spec=bank_spec,
+    )
 
 
 def materialize_validation_selected_checkpoint_manifest(
@@ -202,7 +555,7 @@ def plan_fixed_bank_checkpoint_rescore(
         "schema_version": FIXED_BANK_SCHEMA_VERSION,
         "issue": experiment,
         "checkpoint_policy": FIXED_BANK_CHECKPOINT_POLICY,
-        "selection_source": "fixed_bank_rescore",
+        "selection_source": _fixed_bank_selection_source(validation_bank),
         "materialization_status": "planned",
         "validation_bank": validation_bank.to_json(),
         "validation_role": (
@@ -324,7 +677,7 @@ def score_fixed_bank_checkpoints_for_run(
                 replicate=replicate,
                 checkpoint_batches=selected_batch,
                 checkpoint_path=checkpoint_path_for_batches(artifact_dir, selected_batch),
-                selection_source="fixed_bank_rescore",
+                selection_source=_fixed_bank_selection_source(validation_bank),
                 scoring_validation_log_batch=selected_batch,
                 scoring_validation_objective=selected_score,
                 best_logged_validation_batch=selected_batch,
@@ -361,7 +714,11 @@ def select_validation_checkpoints_for_run(
             manifest_path=preferred_manifest_path,
         )
     if effective_selection_mode == "sparse_history" and effective_manifest is not None:
-        effective_selection_mode = "fixed_bank_manifest"
+        return select_sparse_history_validation_checkpoints_for_run(
+            experiment=experiment,
+            run_id=run_id,
+            repo_root=repo_root,
+        )
 
     if effective_selection_mode == "sparse_history":
         return select_sparse_history_validation_checkpoints_for_run(
@@ -739,6 +1096,190 @@ def selections_from_manifest_run(
     return selections
 
 
+def _json_ready(value: Any) -> Any:
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, Mapping):
+        return {str(key): _json_ready(item) for key, item in value.items()}
+    if isinstance(value, tuple | list):
+        return [_json_ready(item) for item in value]
+    if isinstance(value, np.ndarray):
+        return _json_ready(value.tolist())
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+
+def _fixed_bank_selection_source(validation_bank: FixedValidationBankSpec) -> str:
+    bank_spec = validation_bank.bank_spec or {}
+    source = bank_spec.get("selection_source") if isinstance(bank_spec, Mapping) else None
+    return str(source or "fixed_bank_rescore")
+
+
+def _uniform_targets(
+    *,
+    direction_count: int,
+    reach_length_m: float,
+) -> tuple[tuple[float, float], ...]:
+    if int(direction_count) < 2:
+        raise ValueError("direction_count must be at least 2 for uniform center-out evaluation")
+    targets = []
+    for index in range(int(direction_count)):
+        angle = 2.0 * math.pi * index / int(direction_count)
+        targets.append(
+            (
+                _clean_float(float(reach_length_m) * math.cos(angle)),
+                _clean_float(float(reach_length_m) * math.sin(angle)),
+            )
+        )
+    return tuple(targets)
+
+
+def _target_geometry_rows(
+    config: TargetRelativeMultiTargetTrainingConfig,
+    *,
+    direction_source: DelayedReachDirectionSource,
+    direction_count: int,
+    reach_length_m: float,
+) -> list[dict[str, Any]]:
+    if direction_source == "uniform_grid":
+        targets = _uniform_targets(
+            direction_count=direction_count,
+            reach_length_m=reach_length_m,
+        )
+        roles = ["uniform_grid"] * len(targets)
+        source_angles = [0.0] * len(targets)
+        source_indices = list(range(len(targets)))
+    elif direction_source == "validation_targets":
+        sources = _validation_target_geometry_sources(config)
+        targets = tuple(source["target"] for source in sources[: int(direction_count)])
+        if len(targets) < int(direction_count):
+            raise ValueError(
+                "validation_targets direction source requires at least "
+                f"direction_count={direction_count} targets; got {len(targets)}"
+            )
+        roles = [str(source["role"]) for source in sources[: len(targets)]]
+        source_angles = [float(source["angle_rad"]) for source in sources[: len(targets)]]
+        source_indices = list(range(len(targets)))
+    else:
+        raise ValueError(f"Unsupported direction_source {direction_source!r}")
+
+    rows = []
+    for index, (target, role, source_index) in enumerate(zip(targets, roles, source_indices)):
+        x, y = (float(target[0]), float(target[1]))
+        radius = float(math.hypot(x, y))
+        angle = (
+            source_angles[index]
+            if direction_source == "validation_targets"
+            else float(math.atan2(y, x) % (2.0 * math.pi))
+        )
+        rows.append(
+            {
+                "index": int(index),
+                "target_role": str(role),
+                "target_m": [_clean_float(x), _clean_float(y)],
+                "target_radius_m": radius,
+                "target_angle_rad": angle,
+                "target_angle_deg": math.degrees(angle),
+                "source_trial_index": int(source_index),
+            }
+        )
+    return rows
+
+
+def _validation_target_geometry_sources(
+    config: TargetRelativeMultiTargetTrainingConfig,
+) -> list[dict[str, Any]]:
+    seen: set[tuple[float, float]] = set()
+    rows: list[dict[str, Any]] = []
+
+    def append(
+        *,
+        target: tuple[float, float],
+        role: str,
+        direction_deg: float,
+    ) -> None:
+        key = (round(float(target[0]), 12), round(float(target[1]), 12))
+        if key in seen:
+            return
+        seen.add(key)
+        rows.append(
+            {
+                "target": key,
+                "role": role,
+                "angle_rad": math.radians(float(direction_deg)) % (2.0 * math.pi),
+            }
+        )
+
+    append(
+        target=tuple(float(value) for value in config.original_target_anchor_m),
+        role="original_anchor",
+        direction_deg=0.0,
+    )
+    for amplitude in config.seen_amplitudes_m:
+        for direction in config.seen_directions_deg:
+            append(
+                target=_target_from_polar(amplitude_m=amplitude, direction_deg=direction),
+                role="seen_training_support",
+                direction_deg=direction,
+            )
+    for amplitude in config.held_out_amplitudes_m:
+        for direction in config.held_out_directions_deg:
+            append(
+                target=_target_from_polar(amplitude_m=amplitude, direction_deg=direction),
+                role="held_out_validation_support",
+                direction_deg=direction,
+            )
+    return rows
+
+
+def _target_from_polar(*, amplitude_m: float, direction_deg: float) -> tuple[float, float]:
+    angle = math.radians(float(direction_deg))
+    return (
+        round(float(amplitude_m) * math.cos(angle), 12),
+        round(float(amplitude_m) * math.sin(angle), 12),
+    )
+
+
+def _duplicate_target_metadata(
+    config: TargetRelativeMultiTargetTrainingConfig,
+    *,
+    direction_source: DelayedReachDirectionSource,
+    direction_count: int,
+    reach_length_m: float,
+) -> dict[str, Any]:
+    rows = _target_geometry_rows(
+        config,
+        direction_source=direction_source,
+        direction_count=direction_count,
+        reach_length_m=reach_length_m,
+    )
+    angle_counts: dict[float, int] = {}
+    for row in rows:
+        key = round(float(row["target_angle_rad"]), 12)
+        angle_counts[key] = angle_counts.get(key, 0) + 1
+    duplicate_angles = {
+        str(angle): count for angle, count in angle_counts.items() if count > 1
+    }
+    return {
+        "angle_rounding_decimals": 12,
+        "duplicate_direction_count": sum(count - 1 for count in duplicate_angles.values()),
+        "duplicate_angles_rad": duplicate_angles,
+    }
+
+
+def _duplicate_direction_count(rows: Sequence[Mapping[str, Any]]) -> int:
+    angle_counts: dict[float, int] = {}
+    for row in rows:
+        key = round(float(row["target_angle_rad"]), 12)
+        angle_counts[key] = angle_counts.get(key, 0) + 1
+    return sum(count - 1 for count in angle_counts.values() if count > 1)
+
+
+def _clean_float(value: float) -> float:
+    return 0.0 if abs(value) < 1e-15 else float(value)
+
+
 def _n_replicates_from_run_spec(run_spec: Mapping[str, Any]) -> int:
     hps = run_spec.get("hps", {})
     model = hps.get("model", {}) if isinstance(hps, Mapping) else {}
@@ -780,8 +1321,16 @@ __all__ = [
     "CheckpointSelectionMode",
     "ReplicateCheckpointSelection",
     "FixedValidationBankSpec",
+    "DelayedReachEvalBankSpec",
+    "DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION",
+    "DEFAULT_DELAYED_REACH_DIRECTION_COUNT",
+    "DEFAULT_DELAYED_REACH_GO_CUE_STEPS",
+    "DEFAULT_DELAYED_REACH_UNIFORM_REACH_LENGTH_M",
     "active_loss_term_labels",
     "available_checkpoint_batches",
+    "delayed_reach_eval_bank_spec",
+    "delayed_reach_fixed_eval_bank_specs",
+    "delayed_reach_fixed_rescore_bank_spec",
     "fixed_bank_manifest_path",
     "load_validation_selected_checkpoint_model",
     "materialize_fixed_bank_checkpoint_rescore_manifest",
