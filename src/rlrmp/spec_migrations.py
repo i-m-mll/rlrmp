@@ -31,6 +31,48 @@ CS_GRU_STANDARD_CERTIFICATES_KIND = "RLRMPCSGrUStandardCertificateManifest"
 CS_GRU_STANDARD_CERTIFICATES_SCHEMA_ID = "rlrmp.cs_gru_standard_certificates"
 CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION = "rlrmp.cs_gru_standard_certificates.v1"
 
+OBJECTIVE_COMPARATOR_SIDECAR_KIND = "RLRMPObjectiveComparatorSidecar"
+OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_ID = "rlrmp.objective_comparator_sidecar"
+OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_VERSION = "rlrmp.objective_comparator_sidecar.v6"
+
+GRU_PERTURBATION_BANK_KIND = "RLRMPGRUPerturbationBank"
+GRU_PERTURBATION_BANK_SCHEMA_ID = "rlrmp.gru_perturbation_bank"
+GRU_PERTURBATION_BANK_SCHEMA_VERSION = "rlrmp.gru_perturbation_bank.v3"
+
+GRU_PERTURBATION_RESPONSE_NORM_PLOTS_KIND = "RLRMPGRUPerturbationResponseNormPlots"
+GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_ID = (
+    "rlrmp.gru_perturbation_response_norm_plots"
+)
+GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_VERSION = (
+    "rlrmp.gru_perturbation_response_norm_plots.v1"
+)
+
+PERTURBATION_OPEN_LOOP_CALIBRATION_KIND = "RLRMPPerturbationOpenLoopCalibration"
+PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_ID = "rlrmp.perturbation_open_loop_calibration"
+PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_VERSION = (
+    "rlrmp.perturbation_open_loop_calibration.v2"
+)
+
+HINF_PHENOTYPE_SIDECAR_KIND = "RLRMPHinfPhenotypeSidecar"
+HINF_PHENOTYPE_SIDECAR_SCHEMA_ID = "rlrmp.hinf_phenotype_sidecar"
+HINF_PHENOTYPE_SIDECAR_SCHEMA_VERSION = "rlrmp.hinf_phenotype_sidecar.v1"
+
+GRU_WORST_CASE_EPSILON_AUDIT_KIND = "RLRMPGRUWorstCaseEpsilonAudit"
+GRU_WORST_CASE_EPSILON_AUDIT_SCHEMA_ID = "rlrmp.gru_worst_case_epsilon_audit"
+GRU_WORST_CASE_EPSILON_AUDIT_SCHEMA_VERSION = "rlrmp.gru_worst_case_epsilon_audit.v1"
+
+GRU_BROAD_EPSILON_ATTRIBUTION_KIND = "RLRMPGRUBroadEpsilonAttribution"
+GRU_BROAD_EPSILON_ATTRIBUTION_SCHEMA_ID = "rlrmp.gru_broad_epsilon_attribution"
+GRU_BROAD_EPSILON_ATTRIBUTION_SCHEMA_VERSION = "rlrmp.gru_broad_epsilon_attribution.v1"
+
+GRU_MAP_ERROR_DECOMPOSITION_KIND = "RLRMPGRUMapErrorDecomposition"
+GRU_MAP_ERROR_DECOMPOSITION_SCHEMA_ID = "rlrmp.gru_map_error_decomposition"
+GRU_MAP_ERROR_DECOMPOSITION_SCHEMA_VERSION = "rlrmp.gru_map_error_decomposition.v1"
+
+GRU_FEEDBACK_ABLATION_KIND = "RLRMPGRUFeedbackAblation"
+GRU_FEEDBACK_ABLATION_SCHEMA_ID = "rlrmp.gru_feedback_ablation"
+GRU_FEEDBACK_ABLATION_SCHEMA_VERSION = "rlrmp.gru_feedback_ablation.v1"
+
 RUN_SPEC_KIND = "RLRMPRunSpec"
 RUN_SPEC_SCHEMA_ID = "rlrmp.run_spec"
 RUN_SPEC_SCHEMA_VERSION = "rlrmp.run_spec.v1"
@@ -168,6 +210,120 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             rejected_old_versions=("rlrmp.cs_gru_standard_certificates.v0",),
         ),
         _family(
+            OBJECTIVE_COMPARATOR_SIDECAR_KIND,
+            OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_ID,
+            OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.pipelines.objective_comparator",),
+            consumed_by=(
+                "rlrmp.analysis.pipelines.hinf_phenotype_sidecar",
+                "rlrmp post-run diagnostic summaries",
+            ),
+            description="RLRMP full-QRF objective-comparator sidecar.",
+            rejected_old_versions=tuple(
+                f"rlrmp.objective_comparator_sidecar.v{version}"
+                for version in range(0, 6)
+            ),
+        ),
+        _family(
+            GRU_PERTURBATION_BANK_KIND,
+            GRU_PERTURBATION_BANK_SCHEMA_ID,
+            GRU_PERTURBATION_BANK_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.pipelines.gru_perturbation_bank",),
+            consumed_by=(
+                "rlrmp.analysis.pipelines.gru_perturbation_calibration",
+                "rlrmp.analysis.pipelines.gru_feedback_ablation",
+                "rlrmp perturbation-response diagnostics",
+            ),
+            description="Controller-independent C&S GRU perturbation bank and response manifest.",
+            rejected_old_versions=(
+                "rlrmp.gru_perturbation_bank.v0",
+                "rlrmp.gru_perturbation_bank.v1",
+                "rlrmp.gru_perturbation_bank.v2",
+                "rlrmp.gru_perturbation_response.v0",
+                "rlrmp.gru_perturbation_response.v1",
+                "rlrmp.gru_perturbation_response.v2",
+            ),
+        ),
+        _family(
+            GRU_PERTURBATION_RESPONSE_NORM_PLOTS_KIND,
+            GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_ID,
+            GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.pipelines.gru_perturbation_response_norm_plots",),
+            consumed_by=("rlrmp perturbation-response figure notes",),
+            description="RLRMP perturbation-response norm-plot manifest.",
+            rejected_old_versions=("rlrmp.gru_perturbation_response_norm_plots.v0",),
+        ),
+        _family(
+            PERTURBATION_OPEN_LOOP_CALIBRATION_KIND,
+            PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_ID,
+            PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.pipelines.gru_perturbation_calibration",),
+            consumed_by=(
+                "rlrmp.analysis.pipelines.gru_perturbation_bank",
+                "rlrmp perturbation calibration notes",
+            ),
+            description="Open-loop perturbation calibration manifest for C&S GRU banks.",
+            rejected_old_versions=(
+                "rlrmp.perturbation_open_loop_calibration.v0",
+                "rlrmp.perturbation_open_loop_calibration.v1",
+            ),
+        ),
+        _family(
+            HINF_PHENOTYPE_SIDECAR_KIND,
+            HINF_PHENOTYPE_SIDECAR_SCHEMA_ID,
+            HINF_PHENOTYPE_SIDECAR_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.pipelines.hinf_phenotype_sidecar",),
+            consumed_by=("RLRMP robustness phenotype reports",),
+            description="Interpretive H-infinity phenotype sidecar aggregation.",
+            rejected_old_versions=("rlrmp.hinf_phenotype_sidecar.v0",),
+        ),
+        _family(
+            GRU_WORST_CASE_EPSILON_AUDIT_KIND,
+            GRU_WORST_CASE_EPSILON_AUDIT_SCHEMA_ID,
+            GRU_WORST_CASE_EPSILON_AUDIT_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.pipelines.gru_worst_case_epsilon_audit",),
+            consumed_by=("RLRMP broad-epsilon robustness diagnostics",),
+            description="Worst-case full-state epsilon audit manifest for frozen GRU rollouts.",
+            rejected_old_versions=("rlrmp.gru_worst_case_epsilon_audit.v0",),
+        ),
+        _family(
+            GRU_BROAD_EPSILON_ATTRIBUTION_KIND,
+            GRU_BROAD_EPSILON_ATTRIBUTION_SCHEMA_ID,
+            GRU_BROAD_EPSILON_ATTRIBUTION_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.pipelines.gru_broad_epsilon_attribution",),
+            consumed_by=("RLRMP broad-epsilon attribution reports",),
+            description="Paired active-vs-zero broad-epsilon attribution manifest.",
+            rejected_old_versions=("rlrmp.gru_broad_epsilon_attribution.v0",),
+        ),
+        _family(
+            GRU_MAP_ERROR_DECOMPOSITION_KIND,
+            GRU_MAP_ERROR_DECOMPOSITION_SCHEMA_ID,
+            GRU_MAP_ERROR_DECOMPOSITION_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.pipelines.gru_map_error_decomposition",),
+            consumed_by=(
+                "rlrmp.analysis.pipelines.hinf_phenotype_sidecar",
+                "rlrmp post-run diagnostic summaries",
+            ),
+            description="GRU observation-history-to-action map-error decomposition sidecar.",
+            rejected_old_versions=("rlrmp.gru_map_error_decomposition.v0",),
+        ),
+        _family(
+            GRU_FEEDBACK_ABLATION_KIND,
+            GRU_FEEDBACK_ABLATION_SCHEMA_ID,
+            GRU_FEEDBACK_ABLATION_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.pipelines.gru_feedback_ablation",),
+            consumed_by=(
+                "rlrmp.analysis.pipelines.hinf_phenotype_sidecar",
+                "rlrmp post-run diagnostic summaries",
+            ),
+            description="Validation-selected C&S GRU feedback-ablation diagnostics.",
+            rejected_old_versions=("rlrmp.gru_feedback_ablation.v0",),
+            notes=(
+                "RLRMP owns this scientific sidecar schema only; conversion to "
+                "Feedbax bundle outputs remains issue af77a06."
+            ),
+        ),
+        _family(
             RUN_SPEC_KIND,
             RUN_SPEC_SCHEMA_ID,
             RUN_SPEC_SCHEMA_VERSION,
@@ -188,7 +344,13 @@ def _family(
     consumed_by: tuple[str, ...],
     description: str,
     rejected_old_versions: tuple[str, ...],
+    notes: str | None = None,
 ) -> SpecSchemaFamily:
+    policy_notes = (
+        notes
+        or "RLRMP-owned payloads are current-version accepted; old durable versions must "
+        "either be regenerated or gain explicit migrations."
+    )
     return SpecSchemaFamily(
         kind=kind,
         schema_id=schema_id,
@@ -201,8 +363,7 @@ def _family(
             stance="reject",
             rejected_old_versions=rejected_old_versions,
             required_tests=("tests/test_rlrmp_spec_migrations.py",),
-            notes="RLRMP-owned payloads are current-version accepted; old durable versions must "
-            "either be regenerated or gain explicit migrations.",
+            notes=policy_notes,
         ),
     )
 
@@ -218,7 +379,34 @@ __all__ = [
     "GRU_EVALUATION_DIAGNOSTICS_KIND",
     "GRU_EVALUATION_DIAGNOSTICS_SCHEMA_ID",
     "GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION",
+    "GRU_BROAD_EPSILON_ATTRIBUTION_KIND",
+    "GRU_BROAD_EPSILON_ATTRIBUTION_SCHEMA_ID",
+    "GRU_BROAD_EPSILON_ATTRIBUTION_SCHEMA_VERSION",
+    "GRU_FEEDBACK_ABLATION_KIND",
+    "GRU_FEEDBACK_ABLATION_SCHEMA_ID",
+    "GRU_FEEDBACK_ABLATION_SCHEMA_VERSION",
+    "GRU_MAP_ERROR_DECOMPOSITION_KIND",
+    "GRU_MAP_ERROR_DECOMPOSITION_SCHEMA_ID",
+    "GRU_MAP_ERROR_DECOMPOSITION_SCHEMA_VERSION",
+    "GRU_PERTURBATION_BANK_KIND",
+    "GRU_PERTURBATION_BANK_SCHEMA_ID",
+    "GRU_PERTURBATION_BANK_SCHEMA_VERSION",
+    "GRU_PERTURBATION_RESPONSE_NORM_PLOTS_KIND",
+    "GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_ID",
+    "GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_VERSION",
+    "GRU_WORST_CASE_EPSILON_AUDIT_KIND",
+    "GRU_WORST_CASE_EPSILON_AUDIT_SCHEMA_ID",
+    "GRU_WORST_CASE_EPSILON_AUDIT_SCHEMA_VERSION",
+    "HINF_PHENOTYPE_SIDECAR_KIND",
+    "HINF_PHENOTYPE_SIDECAR_SCHEMA_ID",
+    "HINF_PHENOTYPE_SIDECAR_SCHEMA_VERSION",
     "LEGACY_TRAINING_CONFIG_KIND",
+    "OBJECTIVE_COMPARATOR_SIDECAR_KIND",
+    "OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_ID",
+    "OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_VERSION",
+    "PERTURBATION_OPEN_LOOP_CALIBRATION_KIND",
+    "PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_ID",
+    "PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_VERSION",
     "RUN_SPEC_KIND",
     "RUN_SPEC_SCHEMA_ID",
     "RUN_SPEC_SCHEMA_VERSION",
