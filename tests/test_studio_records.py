@@ -6,12 +6,13 @@ from pathlib import Path
 from feedbax.manifest import (
     ArtifactRef,
     Provenance,
-    SpecPayload,
     TrainingRunManifest,
     load_manifest,
+    spec_payload,
     write_manifest,
 )
 
+from rlrmp.spec_migrations import ensure_rlrmp_spec_families
 from rlrmp.studio_records import (
     build_studio_workspace_from_training_manifests,
     main,
@@ -20,6 +21,7 @@ from rlrmp.studio_records import (
 
 
 def _write_training_manifest(root: Path, *, job_id: str = "fixture__ok") -> Path:
+    ensure_rlrmp_spec_families()
     graph_spec = {
         "nodes": {
             "network": {
@@ -42,15 +44,15 @@ def _write_training_manifest(root: Path, *, job_id: str = "fixture__ok") -> Path
         status="completed",
         job_id=job_id,
         run_set_id="fixture-run-set",
-        graph_spec=SpecPayload(
-            kind="GraphSpec",
-            inline=graph_spec,
-            sha256="fixture-graph-sha",
-            metadata={"graph_spec_version": "feedbax.graphspec.fixture.v1"},
-        ),
-        training_spec=SpecPayload(
-            kind="RLRMPRunSpec",
-            inline={"run": job_id, "issue": "10b38d7", "n_train_batches": 1},
+        graph_spec=spec_payload("GraphSpec", graph_spec),
+        training_spec=spec_payload(
+            "RLRMPRunSpec",
+            {
+                "schema_version": "rlrmp.run_spec.v1",
+                "run": job_id,
+                "issue": "10b38d7",
+                "n_train_batches": 1,
+            },
         ),
         provenance=Provenance(issues=["10b38d7", "577806f"]),
         artifacts=[

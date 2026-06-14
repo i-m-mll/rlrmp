@@ -11,6 +11,7 @@ from rlrmp.analysis.pipelines.diagnostic_provenance import (
     sha256_file,
     write_regeneration_spec,
 )
+from rlrmp.spec_migrations import DIAGNOSTIC_REGENERATION_SPEC_SCHEMA_ID
 
 
 def test_path_ref_hashes_files_and_uses_repo_relative_paths(tmp_path: Path) -> None:
@@ -61,6 +62,7 @@ def test_write_regeneration_spec_records_inputs_outputs_and_source_files(
         .read_text(encoding="utf-8")
     )
     assert on_disk == spec
+    assert spec["schema_id"] == DIAGNOSTIC_REGENERATION_SPEC_SCHEMA_ID
     assert spec["schema_version"] == "rlrmp.diagnostic_regeneration_spec.v1"
     assert spec["parameters"]["run_ids"] == ["run_a"]
     assert spec["inputs"][0]["path"] == "results/abc1234/runs/run_a/run.json"

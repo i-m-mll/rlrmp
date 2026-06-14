@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -32,9 +32,14 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     resolve_run_inputs,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.spec_migrations import (
+    GRU_EVALUATION_DIAGNOSTICS_KIND,
+    GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION,
+    stamp_current_schema,
+)
 from rlrmp.train.task_model import setup_task_model_pair
 
-SCHEMA_VERSION = "rlrmp.gru_evaluation_diagnostics.v1"
+SCHEMA_VERSION = GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION
 DEFAULT_OUTPUT_FILENAME = "gru_evaluation_diagnostics_validation_selected.json"
 DEFAULT_BULK_SUBDIR = "evaluation_diagnostics/gru_validation_selected"
 DEFAULT_JACOBIAN_TIMEPOINTS = ("first", "peak_forward_velocity", "terminal")
@@ -156,38 +161,40 @@ def materialize_gru_evaluation_diagnostics(
             ),
         }
 
-    manifest = {
-        "schema_version": SCHEMA_VERSION,
-        "issue": experiment,
-        "checkpoint_policy": (
-            _effective_checkpoint_policy_from_manifest(
-                experiment,
-                preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
-                repo_root=repo_root,
-            )
-            if use_validation_selected_checkpoints
-            else "final_checkpoint"
-        ),
-        "scope": "post_hoc_evaluation_non_certificate_diagnostics",
-        "regeneration_spec": _repo_relative(regeneration_spec_path, repo_root=repo_root),
-        "standard_certificate_metrics": {
-            "status": "excluded",
-            "excluded_metrics": [
-                "state_weighted_action_mismatch",
-                "clean_action_mismatch",
-                "4d_observation_history_to_action_map_mismatch",
-                "closed_loop_transition_mismatch",
-                "value_gap",
-                "bellman_hessian_residual",
-            ],
-            "note": (
-                "This sidecar records rollout behavior and recurrent-controller "
-                "diagnostics only. Standard certificate and action/I/O mismatch "
-                "metrics remain in the standard-certificate manifests."
+    manifest = stamp_current_schema(
+        GRU_EVALUATION_DIAGNOSTICS_KIND,
+        {
+            "issue": experiment,
+            "checkpoint_policy": (
+                _effective_checkpoint_policy_from_manifest(
+                    experiment,
+                    preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
+                    repo_root=repo_root,
+                )
+                if use_validation_selected_checkpoints
+                else "final_checkpoint"
             ),
+            "scope": "post_hoc_evaluation_non_certificate_diagnostics",
+            "regeneration_spec": _repo_relative(regeneration_spec_path, repo_root=repo_root),
+            "standard_certificate_metrics": {
+                "status": "excluded",
+                "excluded_metrics": [
+                    "state_weighted_action_mismatch",
+                    "clean_action_mismatch",
+                    "4d_observation_history_to_action_map_mismatch",
+                    "closed_loop_transition_mismatch",
+                    "value_gap",
+                    "bellman_hessian_residual",
+                ],
+                "note": (
+                    "This sidecar records rollout behavior and recurrent-controller "
+                    "diagnostics only. Standard certificate and action/I/O mismatch "
+                    "metrics remain in the standard-certificate manifests."
+                ),
+            },
+            "runs": run_summaries,
         },
-        "runs": run_summaries,
-    }
+    )
     output_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     write_regeneration_spec(
         spec_path=regeneration_spec_path,
