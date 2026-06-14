@@ -7,7 +7,7 @@ import pytest
 from feedbax.manifest import TrainingRunManifest, load_manifest
 from feedbax.migrations import SpecSchemaRegistry, UnknownSpecFamily, UnsupportedSpecVersion
 
-from rlrmp.spec_migrations import (
+from rlrmp.runtime.spec_migrations import (
     ArchiveOnlySpecError,
     CS_GRU_STANDARD_CERTIFICATES_KIND,
     CS_GRU_STANDARD_CERTIFICATES_SCHEMA_ID,
@@ -153,7 +153,7 @@ def test_rlrmp_spec_policy_registers_current_families_and_rejects_v0() -> None:
         assert family.identity == schema_id
         assert family.current_version == current_version
         assert family.policy is not None
-        assert family.policy.owner_module == "rlrmp.spec_migrations"
+        assert family.policy.owner_module == "rlrmp.runtime.spec_migrations"
 
         result = registry.migrate(kind, {"schema_version": current_version})
         assert result.target_version == current_version

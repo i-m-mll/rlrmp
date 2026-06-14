@@ -156,7 +156,7 @@ def build_studio_workspace_from_training_manifests(
     train_stage.validation = StudioValidationState(
         valid=True,
         metadata={
-            "materialized_by": "rlrmp.studio_records",
+            "materialized_by": "rlrmp.runtime.studio_records",
             "input_training_runs": [manifest.id for _path, manifest in manifests],
         },
     )
@@ -248,7 +248,7 @@ def materialize_studio_records(
                 root=str(root_path),
                 issues=list(issues),
                 metadata={
-                    "source": "rlrmp.studio_records",
+                    "source": "rlrmp.runtime.studio_records",
                     "training_manifest_ids": [manifest.id for _path, manifest in selected],
                 },
             )
@@ -343,7 +343,7 @@ def _studio_default_eval_recipe(spec, _root: Path, _states_path: Path) -> Evalua
     return EvaluationRecipeResult(
         states={"cells": cells},
         summary_metrics={"rlrmp_training_runs": len(cells)},
-        metadata={"standard_matrix": True, "source": "rlrmp.studio_records"},
+        metadata={"standard_matrix": True, "source": "rlrmp.runtime.studio_records"},
     )
 
 

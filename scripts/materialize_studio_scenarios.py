@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from rlrmp.studio_records import main
+from rlrmp.runtime.studio_records import main
 
 
 if __name__ == "__main__":

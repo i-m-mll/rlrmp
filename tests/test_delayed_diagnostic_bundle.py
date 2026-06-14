@@ -12,7 +12,7 @@ from rlrmp.analysis.pipelines.delayed_diagnostic_bundle import (
     summarize_direction_split,
     summarize_peak_decay,
 )
-from rlrmp.spec_migrations import (
+from rlrmp.runtime.spec_migrations import (
     DELAYED_DIAGNOSTIC_BUNDLE_KIND,
     DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_VERSION,
     accept_rlrmp_spec_payload,

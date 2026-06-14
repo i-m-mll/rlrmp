@@ -357,7 +357,7 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             RUN_SPEC_SCHEMA_ID,
             RUN_SPEC_SCHEMA_VERSION,
             emitted_by=("rlrmp post-run tracked specs",),
-            consumed_by=("rlrmp.run_specs", "Feedbax TrainingRunManifest.training_spec"),
+            consumed_by=("rlrmp.runtime.run_specs", "Feedbax TrainingRunManifest.training_spec"),
             description="Tracked RLRMP run recipe under results/<issue>/runs.",
             rejected_old_versions=("rlrmp.run_spec.v0",),
         ),
@@ -386,7 +386,7 @@ def _family(
         current_version=current_version,
         description=description,
         policy=SpecFamilyMigrationPolicy(
-            owner_module="rlrmp.spec_migrations",
+            owner_module="rlrmp.runtime.spec_migrations",
             emitted_by=emitted_by,
             consumed_by=consumed_by,
             stance="reject",

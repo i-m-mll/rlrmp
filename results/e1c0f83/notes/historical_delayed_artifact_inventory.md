@@ -10,7 +10,7 @@ The audited path set contains 87 tracked artifact files across `results/6c36536`
 
 | Artifact class | Count | Disposition | Rationale |
 |---|---:|---|---|
-| Active delayed run specs | 16 | Migrated in place under `results/<issue>/runs/<run>/run.json` | Specs contain full training recipe metadata and load through `rlrmp.run_specs.validate_nominal_gru_run_spec_file`. Absolute `/workspace/rlrmp/...` artifact paths were normalized to repo-relative `_artifacts/...`. |
+| Active delayed run specs | 16 | Migrated in place under `results/<issue>/runs/<run>/run.json` | Specs contain full training recipe metadata and load through `rlrmp.runtime.run_specs.validate_nominal_gru_run_spec_file`. Absolute `/workspace/rlrmp/...` artifact paths were normalized to repo-relative `_artifacts/...`. |
 | Active graph manifests | 16 | Migrated beside each run spec as `model.graph.manifest.json` | Historical C&S LSS runs declare `feedbax_graph.graph_export_status=unavailable`, so the manifest is the current active custody pointer; no full GraphSpec sidecar exists for these runs. |
 | Generated Markdown narratives | 21 | Provenance-only, not restored as active reports | The notes summarize historical analysis outputs whose bulk artifacts and generator state were not part of this lane. Regeneration should use current analysis lanes before treating them as active results. |
 | Analysis/regeneration JSON specs | 20 | Provenance-only | These are old ad hoc regeneration inputs; current Feedbax-native analysis/regeneration manifests should replace them before active use. |
@@ -116,6 +116,6 @@ These files were audited from `3b4eb9c` but intentionally not restored as active
 
 ## Validation Contract
 
-Active run specs must parse as JSON and pass `rlrmp.run_specs.validate_nominal_gru_run_spec_file`. Because these historical C&S LSS specs explicitly declare `feedbax_graph.graph_export_status=unavailable`, validation requires the adjacent `model.graph.manifest.json` pointer but does not require a full `model.graph.json` sidecar.
+Active run specs must parse as JSON and pass `rlrmp.runtime.run_specs.validate_nominal_gru_run_spec_file`. Because these historical C&S LSS specs explicitly declare `feedbax_graph.graph_export_status=unavailable`, validation requires the adjacent `model.graph.manifest.json` pointer but does not require a full `model.graph.json` sidecar.
 
 Residual provenance-only files require current-generator regeneration before becoming active results. The missing inputs are the historical bulk analysis outputs/checkpoints and current Feedbax-native analysis manifests for those pipelines. The rejected `3b2af27` full graph sidecars would also need regenerated CS-LSS GraphSpecs rather than legacy point-mass compatibility exports.
