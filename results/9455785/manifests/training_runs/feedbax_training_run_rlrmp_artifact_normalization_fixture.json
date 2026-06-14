@@ -94,6 +94,8 @@
   ],
   "training_spec": {
     "kind": "RLRMPRunSpec",
+    "schema_id": "rlrmp.run_spec",
+    "schema_version": "rlrmp.run_spec.v1",
     "inline": {
       "run": "artifact_normalization_fixture__sample",
       "issue": "9455785",
@@ -101,7 +103,8 @@
       "n_train_batches": 0
     },
     "ref": "results/9455785/runs/artifact_normalization_fixture__sample.json",
-    "sha256": "c0fd96bd92e21ca6e75f51fb32fffcf763fb88c5f73f7ee495e1fbb68f0676e9",
+    "sha256": "e5202fe3260cac4578ea551db00ee98aab38074e39a62de19eaec993e5ecce1c",
+    "source_sha256": "c0fd96bd92e21ca6e75f51fb32fffcf763fb88c5f73f7ee495e1fbb68f0676e9",
     "metadata": {
       "source_record_role": "tracked_run_spec"
     }

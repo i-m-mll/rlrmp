@@ -6,6 +6,8 @@ from pathlib import Path
 from feedbax.manifest import TrainingRunManifest, load_manifest, sha256_file
 from feedbax.manifest_index import index_manifest_file
 
+from rlrmp.spec_migrations import ensure_rlrmp_spec_families
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_ROOT = REPO_ROOT / "results" / "9455785"
@@ -16,6 +18,8 @@ MANIFEST = (
     / "training_runs"
     / "feedbax_training_run_rlrmp_artifact_normalization_fixture.json"
 )
+
+ensure_rlrmp_spec_families()
 
 
 def test_artifact_manifest_fixture_loads_with_feedbax_contract() -> None:
@@ -38,8 +42,11 @@ def test_artifact_manifest_fixture_preserves_run_spec_parity() -> None:
 
     assert training_spec is not None
     assert training_spec.kind == "RLRMPRunSpec"
+    assert training_spec.schema_id == "rlrmp.run_spec"
+    assert training_spec.schema_version == "rlrmp.run_spec.v1"
     assert training_spec.ref == str(RUN_SPEC.relative_to(REPO_ROOT))
-    assert training_spec.sha256 == sha256_file(RUN_SPEC)
+    assert training_spec.sha256 is not None
+    assert training_spec.source_sha256 == sha256_file(RUN_SPEC)
     assert training_spec.metadata == {"source_record_role": "tracked_run_spec"}
     assert training_spec.inline == {
         "run": run_spec["run"],

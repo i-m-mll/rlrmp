@@ -16,9 +16,14 @@ from pathlib import Path
 from typing import Any
 
 from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.spec_migrations import (
+    DIAGNOSTIC_REGENERATION_SPEC_KIND,
+    DIAGNOSTIC_REGENERATION_SPEC_SCHEMA_VERSION,
+    stamp_current_schema,
+)
 
 
-SCHEMA_VERSION = "rlrmp.diagnostic_regeneration_spec.v1"
+SCHEMA_VERSION = DIAGNOSTIC_REGENERATION_SPEC_SCHEMA_VERSION
 DEFAULT_MAX_TREE_HASH_FILES = 256
 
 
@@ -55,29 +60,31 @@ def write_regeneration_spec(
     """
 
     repo_root = repo_root.resolve()
-    payload: dict[str, Any] = {
-        "schema_version": SCHEMA_VERSION,
-        "diagnostic_name": diagnostic_name,
-        "materializer": materializer,
-        "command": _command_payload(command),
-        "parameters": _jsonify(parameters or {}),
-        "inputs": [_coerce_ref(item, role="input", repo_root=repo_root) for item in inputs],
-        "outputs": [
-            _coerce_ref(item, role="output", repo_root=repo_root) for item in outputs
-        ],
-        "source_files": [
-            path_ref(path, role="source_file", repo_root=repo_root) for path in source_files
-        ],
-        "git": git_provenance(repo_root),
-        "notes": list(notes),
-        "future_graphspec": {
-            "status": "temporary_rlrmp_bridge",
-            "expected_successor": (
-                "Feedbax-native analysis/regeneration manifests after GraphSpec "
-                "and provider-manifest migration"
-            ),
+    payload = stamp_current_schema(
+        DIAGNOSTIC_REGENERATION_SPEC_KIND,
+        {
+            "diagnostic_name": diagnostic_name,
+            "materializer": materializer,
+            "command": _command_payload(command),
+            "parameters": _jsonify(parameters or {}),
+            "inputs": [_coerce_ref(item, role="input", repo_root=repo_root) for item in inputs],
+            "outputs": [
+                _coerce_ref(item, role="output", repo_root=repo_root) for item in outputs
+            ],
+            "source_files": [
+                path_ref(path, role="source_file", repo_root=repo_root) for path in source_files
+            ],
+            "git": git_provenance(repo_root),
+            "notes": list(notes),
+            "future_graphspec": {
+                "status": "temporary_rlrmp_bridge",
+                "expected_successor": (
+                    "Feedbax-native analysis/regeneration manifests after GraphSpec "
+                    "and provider-manifest migration"
+                ),
+            },
         },
-    }
+    )
     mkdir_p(spec_path.parent)
     spec_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return payload
