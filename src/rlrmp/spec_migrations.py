@@ -65,6 +65,10 @@ GRU_FEEDBACK_ABLATION_KIND = "RLRMPGRUFeedbackAblation"
 GRU_FEEDBACK_ABLATION_SCHEMA_ID = "rlrmp.gru_feedback_ablation"
 GRU_FEEDBACK_ABLATION_SCHEMA_VERSION = "rlrmp.gru_feedback_ablation.v1"
 
+DELAYED_DIAGNOSTIC_BUNDLE_KIND = "RLRMPDelayedDiagnosticBundle"
+DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_ID = "rlrmp.delayed_diagnostic_bundle"
+DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_VERSION = "rlrmp.delayed_diagnostic_bundle.v1"
+
 FEEDBACK_QUALITY_LENS_KIND = "RLRMPFeedbackQualityLens"
 FEEDBACK_QUALITY_LENS_SCHEMA_ID = "rlrmp.feedback_quality_lens"
 FEEDBACK_QUALITY_LENS_SCHEMA_VERSION = "rlrmp.feedback_quality_lens.v1"
@@ -310,6 +314,29 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             ),
         ),
         _family(
+            DELAYED_DIAGNOSTIC_BUNDLE_KIND,
+            DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_ID,
+            DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.pipelines.delayed_diagnostic_bundle",),
+            consumed_by=(
+                "rlrmp delayed-reach diagnostic reports",
+                "Feedbax AnalysisRunManifest artifacts",
+            ),
+            description=(
+                "RLRMP delayed-reach direction-split and peak/support-decay "
+                "diagnostic bundle."
+            ),
+            rejected_old_versions=(
+                "rlrmp.delayed_no_pgd_direction_split_velocity.v1",
+                "rlrmp.delayed_peak_decay_diagnostics.v1",
+            ),
+            notes=(
+                "Historical delayed direction-split and peak-decay payloads were "
+                "one-off script outputs. Regenerate through the current bundle "
+                "instead of migrating them structurally."
+            ),
+        ),
+        _family(
             FEEDBACK_QUALITY_LENS_KIND,
             FEEDBACK_QUALITY_LENS_SCHEMA_ID,
             FEEDBACK_QUALITY_LENS_SCHEMA_VERSION,
@@ -375,6 +402,9 @@ __all__ = [
     "CS_GRU_STANDARD_CERTIFICATES_KIND",
     "CS_GRU_STANDARD_CERTIFICATES_SCHEMA_ID",
     "CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION",
+    "DELAYED_DIAGNOSTIC_BUNDLE_KIND",
+    "DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_ID",
+    "DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_VERSION",
     "FEEDBACK_QUALITY_LENS_KIND",
     "FEEDBACK_QUALITY_LENS_SCHEMA_ID",
     "FEEDBACK_QUALITY_LENS_SCHEMA_VERSION",
