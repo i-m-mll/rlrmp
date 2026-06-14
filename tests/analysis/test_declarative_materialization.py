@@ -24,6 +24,7 @@ def _artifact_roles(manifest) -> set[str]:
 def _unregister_declarative_recipes() -> None:
     unregister_analysis_recipe(dm.GRU_STANDARD_ANALYSIS_TYPE)
     unregister_analysis_recipe(dm.GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE)
+    unregister_analysis_recipe(dm.ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE)
     unregister_analysis_recipe(dm.OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE)
 
 

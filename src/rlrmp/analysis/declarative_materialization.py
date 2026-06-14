@@ -36,6 +36,12 @@ from rlrmp.analysis.pipelines.gru_postrun_materialization import (
     materialize_gru_postrun_analysis,
     plan_gru_postrun_materialization,
 )
+from rlrmp.analysis.pipelines.hinf_phenotype_sidecar import (
+    DEFAULT_SCOPE as DEFAULT_HINF_PHENOTYPE_SCOPE,
+    build_hinf_phenotype_sidecar,
+    load_hinf_phenotype_sources,
+    write_hinf_phenotype_sidecar,
+)
 from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
     ISSUE_ID as OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ISSUE_ID,
     write_outputs as write_output_feedback_rollout_recovery_outputs,
@@ -47,10 +53,28 @@ from rlrmp.paths import REPO_ROOT
 GRU_STANDARD_ANALYSIS_TYPE = "rlrmp.certificate.gru_standard"
 GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE = "rlrmp.diagnostic.gru_evaluation"
 GRU_POSTRUN_ANALYSIS_TYPE = "rlrmp.gru_postrun"
+ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE = "rlrmp.robustness_phenotype"
 OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE = (
     "rlrmp.output_feedback_bridge.rollout_recovery"
 )
 BRIDGE_STANDARD_ANALYSIS_TYPE = GRU_STANDARD_ANALYSIS_TYPE
+
+ROBUSTNESS_PHENOTYPE_ISSUE_ID = "769aea6"
+
+ROBUSTNESS_PHENOTYPE_SOURCE_ROLES = {
+    "rlrmp-bridge-standard-certificate": "standard_certificate",
+    "rlrmp-bridge-standard-certificate-manifest": "standard_certificate",
+    "rlrmp-gru-standard-certificate-manifest": "standard_certificate",
+    "rlrmp-gru-objective-comparator-manifest": "objective_comparator",
+    "rlrmp-gru-perturbation-response-manifest": "perturbation_response",
+    "rlrmp-gru-feedback-ablation-manifest": "feedback_ablation",
+    "rlrmp-gru-map-decomposition-manifest": "map_error_decomposition",
+    "rlrmp-gru-evaluation-diagnostics-manifest": "evaluation_diagnostics",
+    "rlrmp-gru-worst-case-epsilon-audit-manifest": "worst_case_epsilon_audit",
+    "rlrmp-gru-broad-epsilon-attribution-manifest": "broad_epsilon_attribution",
+    "rlrmp-induced-gain-manifest": "induced_gain",
+    "rlrmp-exact-audit-manifest": "exact_audit",
+}
 
 
 def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
@@ -69,6 +93,11 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
     register_analysis_recipe(
         GRU_POSTRUN_ANALYSIS_TYPE,
         gru_postrun_recipe,
+        replace=replace,
+    )
+    register_analysis_recipe(
+        ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE,
+        robustness_phenotype_recipe,
         replace=replace,
     )
     register_analysis_recipe(
@@ -227,6 +256,37 @@ def output_feedback_rollout_recovery_spec(
     )
 
 
+def robustness_phenotype_spec(
+    *,
+    source_paths: Mapping[str, Path | str | None] | None = None,
+    issue_id: str = ROBUSTNESS_PHENOTYPE_ISSUE_ID,
+    scope: str = DEFAULT_HINF_PHENOTYPE_SCOPE,
+    output_json: Path | str | None = None,
+    output_markdown: Path | str | None = None,
+    regeneration_spec_path: Path | str | None = None,
+    repo_root: Path | str | None = None,
+) -> AnalysisRunSpec:
+    """Return declarative spec data for the robustness phenotype sidecar."""
+
+    params: dict[str, Any] = {
+        "issue_id": issue_id,
+        "scope": scope,
+    }
+    if source_paths is not None:
+        params["source_paths"] = {
+            str(name): None if path is None else str(path)
+            for name, path in source_paths.items()
+        }
+    _set_optional_path_param(params, "output_json", output_json)
+    _set_optional_path_param(params, "output_markdown", output_markdown)
+    _set_optional_path_param(params, "regeneration_spec_path", regeneration_spec_path)
+    _set_optional_path_param(params, "repo_root", repo_root)
+    return AnalysisRunSpec(
+        analysis_type=ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE,
+        params=params,
+    )
+
+
 def gru_standard_certificate_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
@@ -313,6 +373,30 @@ def output_feedback_rollout_recovery_recipe(
     )
     return AnalysisRecipeResult(
         analyses={"output_feedback_rollout_recovery": analysis},
+        data=_empty_analysis_data(),
+    )
+
+
+def robustness_phenotype_recipe(
+    spec: AnalysisRunSpec,
+    _root: Path,
+    inputs: Sequence[Any],
+) -> AnalysisRecipeResult:
+    """Build the declarative robustness phenotype sidecar recipe."""
+
+    params = dict(spec.params)
+    analysis = ContextMaterializer(
+        materializer=lambda context: _materialize_robustness_phenotype(
+            context,
+            params,
+            inputs,
+        ),
+        artifact_role="rlrmp-robustness-phenotype-sidecar",
+        logical_name="hinf_phenotype_sidecar.json",
+        schema_boundary="rlrmp-owned H-infinity phenotype sidecar payload",
+    )
+    return AnalysisRecipeResult(
+        analyses={"robustness_phenotype": analysis},
         data=_empty_analysis_data(),
     )
 
@@ -571,6 +655,101 @@ def _materialize_output_feedback_rollout_recovery(
     )
 
 
+def _materialize_robustness_phenotype(
+    context: AnalysisRunContext,
+    params: Mapping[str, Any],
+    inputs: Sequence[Any],
+) -> MaterializationResult:
+    repo_root = _repo_root_from_params(params)
+    source_paths = _robustness_phenotype_source_paths(params, inputs, repo_root=repo_root)
+    sources = load_hinf_phenotype_sources(source_paths, repo_root=repo_root)
+    sidecar = build_hinf_phenotype_sidecar(
+        sources=sources,
+        issue=str(params.get("issue_id", ROBUSTNESS_PHENOTYPE_ISSUE_ID)),
+        scope=str(params.get("scope", DEFAULT_HINF_PHENOTYPE_SCOPE)),
+        generated_by="rlrmp.analysis.declarative_materialization.robustness_phenotype",
+    )
+
+    json_path = _optional_path(params.get("output_json"), repo_root=repo_root) or (
+        context.results_cache_dir / "hinf_phenotype_sidecar.json"
+    )
+    markdown_path = _optional_path(params.get("output_markdown"), repo_root=repo_root) or (
+        context.results_cache_dir / "hinf_phenotype_sidecar.md"
+    )
+    regeneration_spec_path = _optional_path(
+        params.get("regeneration_spec_path"),
+        repo_root=repo_root,
+    )
+    write_hinf_phenotype_sidecar(
+        sidecar,
+        json_path=json_path,
+        markdown_path=markdown_path,
+        regeneration_spec_path=regeneration_spec_path,
+        repo_root=repo_root,
+    )
+    payload = {
+        **_read_json_payload(json_path),
+        "declarative_analysis": _declarative_metadata(context),
+        "bundle_contract": {
+            "primary": "feedbax_analysis_bundle",
+            "bundle": "rlrmp/robustness_phenotype",
+            "analysis_manifest_id": context.manifest_id,
+            "schema_owner": "rlrmp",
+            "formal_claim_policy": "conservative_no_upgrade_without_formal_inputs",
+        },
+    }
+    existing_artifacts = tuple(
+        artifact
+        for artifact in (
+            _existing_file(
+                json_path,
+                role="rlrmp-robustness-phenotype-sidecar-json",
+                logical_name=_legacy_logical_name(json_path, repo_root),
+            ),
+            _existing_file(
+                markdown_path,
+                role="rlrmp-robustness-phenotype-sidecar-note",
+                logical_name=_legacy_logical_name(markdown_path, repo_root),
+            ),
+            _existing_file(
+                regeneration_spec_path,
+                role="rlrmp-robustness-phenotype-regeneration-spec",
+                logical_name=_legacy_logical_name(regeneration_spec_path, repo_root),
+            )
+            if regeneration_spec_path is not None
+            else None,
+        )
+        if artifact is not None
+    )
+    return MaterializationResult(
+        payload=payload,
+        existing_artifacts=existing_artifacts,
+    )
+
+
+def _robustness_phenotype_source_paths(
+    params: Mapping[str, Any],
+    inputs: Sequence[Any],
+    *,
+    repo_root: Path,
+) -> dict[str, Path | str | None]:
+    source_paths = {
+        str(name): None if value is None else _optional_path(value, repo_root=repo_root)
+        for name, value in (params.get("source_paths") or {}).items()
+    }
+    for resolved in inputs:
+        manifest = getattr(resolved, "manifest", None)
+        if manifest is None:
+            continue
+        for artifact in getattr(manifest, "artifacts", ()):
+            source_name = ROBUSTNESS_PHENOTYPE_SOURCE_ROLES.get(artifact.role)
+            if source_name is None or source_name in source_paths:
+                continue
+            if artifact.uri is not None:
+                source_paths[source_name] = _optional_path(artifact.uri, repo_root=repo_root)
+    return source_paths
+
+
 def _empty_analysis_data() -> AnalysisInputData:
     return AnalysisInputData(
         models={},
@@ -817,6 +996,7 @@ __all__ = [
     "GRU_POSTRUN_ANALYSIS_TYPE",
     "GRU_STANDARD_ANALYSIS_TYPE",
     "OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE",
+    "ROBUSTNESS_PHENOTYPE_ANALYSIS_TYPE",
     "gru_evaluation_diagnostics_spec",
     "gru_evaluation_diagnostics_recipe",
     "gru_postrun_recipe",
@@ -827,4 +1007,6 @@ __all__ = [
     "output_feedback_rollout_recovery_spec",
     "register_certificate_analysis_recipes",
     "register_declarative_materialization_recipes",
+    "robustness_phenotype_recipe",
+    "robustness_phenotype_spec",
 ]
