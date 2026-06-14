@@ -524,7 +524,6 @@ def materialize_shared_rollout_comparator(
     from rlrmp.analysis.math.cs_released_simulation import (
         build_extlqg_comparator_path,
         default_cs_noise_covariances,
-        simulate_lqg_released_forward,
         zero_forward_noise_draws,
     )
     from rlrmp.analysis.pipelines.gru_checkpoint_selection import load_validation_selected_checkpoint_model
@@ -554,7 +553,6 @@ def materialize_shared_rollout_comparator(
         zero_draws=zero_draws,
     )
     extlqg_cost = extlqg_cost_by_lens["x0_plus_epsilon"]
-    extlqg_decomposition = compute_default_extlqg_cost_decomposition()
     checkpoint_policy = str(
         checkpoint_manifest.get("checkpoint_policy") or "validation_selected_per_replicate"
     )

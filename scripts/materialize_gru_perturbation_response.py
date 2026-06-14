@@ -22,9 +22,6 @@ def main() -> None:
     parser.add_argument("--run-id", action="append", dest="run_ids")
     parser.add_argument("--label", action="append", dest="labels")
     parser.add_argument("--n-rollout-trials", type=int, default=8)
-    parser.add_argument("--bank-mode", choices=("raw", "calibrated"), default="raw")
-    parser.add_argument("--calibration-level", action="append", dest="calibration_levels")
-    parser.add_argument("--calibration-reach")
     parser.add_argument("--no-evaluate", action="store_true")
     parser.add_argument("--no-bulk-arrays", action="store_true")
     parser.add_argument("--bank-mode", choices=("raw", "calibrated"), default="raw")
@@ -58,9 +55,6 @@ def main() -> None:
         note_path=args.note_path,
         bulk_dir=args.bulk_dir,
         repo_root=REPO_ROOT,
-        bank_mode=args.bank_mode,
-        calibration_level=args.calibration_levels,
-        calibration_reach=args.calibration_reach,
     )
     print(
         f"Wrote perturbation-response manifest for {len(manifest['runs'])} run(s) "

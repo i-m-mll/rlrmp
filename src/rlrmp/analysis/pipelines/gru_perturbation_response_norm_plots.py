@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
-from collections import Counter, defaultdict
-from collections.abc import Iterable, Mapping, Sequence
+from collections import Counter
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -410,7 +410,7 @@ def align_and_equalize_response(values: np.ndarray, row: Mapping[str, Any]) -> n
     """
 
     if values.ndim != 4 or values.shape[-1] != 2:
-        raise ValueError(f"response values must have shape (replicate, rollout, time, xy)")
+        raise ValueError("response values must have shape (replicate, rollout, time, xy)")
     sign = int(row.get("sign") or row.get("perturbation", {}).get("sign") or 1)
     return np.asarray(values, dtype=np.float64) * float(sign)
 
