@@ -63,6 +63,7 @@ from rlrmp.intervention_compat import (
     swap_task_intervention_to_dynamics_matrix,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.trainable import staged_network_trainable_parts
 
 # build_hps was extracted to rlrmp.train.minimax in 8404108 (capability-named
 # library module; previously defined inline here and pulled by analysis scripts
@@ -404,7 +405,7 @@ def _get_trainable(model):
         return model.get_node_attrs("net", "K")
     if cls_name == "LinearTrackerController":
         return model.get_node_attrs("net", "K", "u_ff")
-    return model.get_node_attrs("net", "hidden", "readout")
+    return staged_network_trainable_parts(net)
 
 
 def _trainable_where(model):
@@ -424,7 +425,7 @@ def _trainable_where(model):
         return lambda m: m.get_node_attrs("net", "K")
     if cls_name == "LinearTrackerController":
         return lambda m: m.get_node_attrs("net", "K", "u_ff")
-    return lambda m: m.get_node_attrs("net", "hidden", "readout")
+    return lambda m: staged_network_trainable_parts(m.get_node("net"))
 
 
 def _eval_trials_streaming(task, model, trial_specs, keys, loss_func):
@@ -480,11 +481,7 @@ def _make_where_train(sisu_gating: str = "additive"):
             return model.get_node_attrs("net", "K")
         if cls_name == "LinearTrackerController":
             return model.get_node_attrs("net", "K", "u_ff")
-        params = list(model.get_node_attrs("net", "hidden", "readout"))
-        # Include sisu_alpha in trainable params when using multiplicative gating
-        if sisu_gating == "multiplicative" and net.sisu_alpha is not None:
-            params.append(net.sisu_alpha)
-        return tuple(params)
+        return staged_network_trainable_parts(net)
 
     return {0: where_train_fn}
 

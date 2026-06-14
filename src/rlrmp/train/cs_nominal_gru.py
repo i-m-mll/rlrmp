@@ -88,6 +88,7 @@ from rlrmp.train.task_model import (
     LEGACY_CAUSAL_PLANT_BACKEND,
     setup_task_model_pair,
 )
+from rlrmp.trainable import staged_network_trainable_parts, staged_network_trainable_paths
 
 ISSUE_ID = "30f2313"
 SCHEMA_VERSION = "rlrmp.cs_stochastic_gru.v1"
@@ -763,10 +764,9 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
         ),
         "hidden_size": int(hps.model.hidden_size),
         "n_replicates": int(hps.model.n_replicates),
-        "trainable": (
-            ["nodes.net.hidden", "nodes.net.readout", "nodes.net.h0_encoder"]
-            if h0["enabled"]
-            else ["nodes.net.hidden", "nodes.net.readout"]
+        "trainable": staged_network_trainable_paths(
+            sisu_gating=str(getattr(hps, "sisu_gating", "additive")),
+            initial_hidden_encoder=bool(h0["enabled"]),
         ),
         "initial_hidden_encoder": h0,
         "population_structure": {
@@ -865,10 +865,9 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         "n_replicates": int(hps.model.n_replicates),
         "controller_kind": "gru",
         "plant_backend": str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND)),
-        "trainable": (
-            ["nodes.net.hidden", "nodes.net.readout", "nodes.net.h0_encoder"]
-            if _initial_hidden_encoder_enabled(hps)
-            else ["nodes.net.hidden", "nodes.net.readout"]
+        "trainable": staged_network_trainable_paths(
+            sisu_gating=str(getattr(hps, "sisu_gating", "additive")),
+            initial_hidden_encoder=_initial_hidden_encoder_enabled(hps),
         ),
         "method": str(hps.method),
         "nominal_only": _nominal_only(hps),
@@ -1844,12 +1843,10 @@ def _learning_rate_schedule(hps: TreeNamespace) -> Callable[[Any], Any]:
     raise ValueError(f"Unsupported learning-rate schedule {schedule_name!r}")
 
 
-def _where_train() -> dict[int, Callable[[Any], tuple[Any, Any]]]:
+def _where_train() -> dict[int, Callable[[Any], tuple[Any, ...]]]:
     def where_train_fn(model):
         net = model.nodes["net"]
-        if hasattr(net, "h0_encoder"):
-            return (net.hidden, net.readout, net.h0_encoder)
-        return (net.hidden, net.readout)
+        return staged_network_trainable_parts(net)
 
     return {0: where_train_fn}
 

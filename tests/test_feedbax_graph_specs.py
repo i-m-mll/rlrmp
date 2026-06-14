@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 
+import jax.numpy as jnp
 import jax.random as jr
 import pytest
+from feedbax.component_registry import ComponentRegistry
 from feedbax.contracts.graph import GraphSpec
 from feedbax.graph import Graph
 from feedbax.intervene import CurlField, DynamicsMatrixPerturb, FixedField
@@ -23,6 +26,8 @@ from rlrmp.feedbax_graph import (
     graph_spec_from_model,
     graph_spec_payload,
     materialize_rlrmp_graph_spec,
+    register_rlrmp_graph_components,
+    resolve_registered_graph_component_migrations,
     write_graph_spec_bundle,
 )
 from rlrmp.intervention_compat import swap_plant_intervenor_to_dynamics_matrix
@@ -50,6 +55,19 @@ def _hps(**overrides):
     if hps.pert.type == "gusts":
         hps = hps | {"pert": hps.pert | {"type": "constant"}}
     return hps
+
+
+def _plain_network_hps(**overrides):
+    return _hps(**overrides)
+
+
+def _unmasked_population() -> argparse.Namespace:
+    return argparse.Namespace(
+        n_input_only=0,
+        n_readout_only=0,
+        n_recurrent_only=0,
+        n_input_readout=0,
+    )
 
 
 @pytest.mark.parametrize(
@@ -136,6 +154,84 @@ def test_minimax_graph_bundle_materializes_runtime_graph() -> None:
         if wire.temporality == "recurrent"
     }
     assert ("mechanics", "feedback") in recurrent_edges
+
+
+def test_multiplicative_point_mass_training_metadata_includes_sisu_alpha() -> None:
+    hps = _hps(sisu_gating="multiplicative")
+    task = build_task_base(hps)
+    bundle = build_rlrmp_feedbax_graph_bundle(
+        hps,
+        task=task,
+        n_extra_inputs=1,
+        hidden_type=hps.hidden_type,
+        sisu_gating=hps.sisu_gating,
+    )
+
+    assert bundle.training_spec["trainable"] == [
+        "nodes.net.hidden",
+        "nodes.net.readout",
+        "nodes.net.sisu_alpha",
+    ]
+    assert hps.where["0"] == [
+        "nodes.net.hidden",
+        "nodes.net.readout",
+        "nodes.net.sisu_alpha",
+    ]
+
+
+def test_plain_additive_gru_graph_spec_uses_explicit_feedbax_primitives() -> None:
+    hps = _plain_network_hps()
+    task = build_task_base(hps)
+
+    spec = build_point_mass_sensorimotor_graph_spec(
+        hps,
+        task=task,
+        n_extra_inputs=1,
+        population_structure=_unmasked_population(),
+        hidden_type=hps.hidden_type,
+        sisu_gating="additive",
+    )
+    graph = materialize_rlrmp_graph_spec(spec)
+
+    net = spec.nodes["net"]
+    assert net.type == "Subgraph"
+    assert net.input_ports == ["input", "feedback"]
+    assert "sisu_gating" not in net.params
+    assert (
+        net.params["input_size"]
+        == net.params["external_input_size"] + net.params["feedback_size"]
+    )
+    assert spec.input_bindings["input"] == ("net", "input")
+    assert spec.subgraphs is not None
+    net_graph = spec.subgraphs["net"]
+    assert net_graph.nodes["input_mux"].type == "Mux"
+    assert net_graph.nodes["cell"].type == "GRU"
+    assert net_graph.nodes["cell"].params["input_size"] == net.params["input_size"]
+    assert net_graph.nodes["readout"].type == "Linear"
+    assert net_graph.input_ports == ["input", "feedback"]
+    assert net_graph.input_bindings == {"input": ("input_mux", "in_0"), "feedback": ("input_mux", "in_1")}
+    assert isinstance(graph.nodes["net"], Graph)
+
+
+@pytest.mark.parametrize(
+    "hps",
+    [
+        _plain_network_hps(sisu_gating="multiplicative"),
+        _hps(),
+    ],
+)
+def test_rlrmp_owned_sisu_and_population_cases_keep_staged_wrapper(hps) -> None:
+    spec = build_point_mass_sensorimotor_graph_spec(
+        hps,
+        task=build_task_base(hps),
+        n_extra_inputs=1,
+        hidden_type=hps.hidden_type,
+        sisu_gating=hps.sisu_gating,
+    )
+
+    assert spec.nodes["net"].type == "RLRMPSimpleStagedNetwork"
+    assert spec.nodes["net"].params["sisu_gating"] == hps.sisu_gating
+    assert spec.subgraphs is None
 
 
 @pytest.mark.parametrize(
@@ -264,12 +360,82 @@ def test_legacy_generic_rlrmp_graph_component_ids_materialize_through_migration(
     ]
     legacy_spec = spec.model_copy(update={"nodes": nodes, "wires": wires})
 
-    graph = materialize_rlrmp_graph_spec(legacy_spec)
+    registry = register_rlrmp_graph_components(
+        ComponentRegistry(load_user_components=False, discover_plugins=False)
+    )
+    graph = materialize_rlrmp_graph_spec(legacy_spec, registry)
 
     assert isinstance(graph, Graph)
     assert graph.nodes["feedback"].__class__.__name__ == "FeedbackChannels"
     assert graph.nodes["efferent"].__class__.__name__ == "Channel"
     assert graph.nodes[PLANT_PROCESS_FORCE_NOISE_LABEL].__class__.__name__ == "Channel"
+    feedback_definition = next(item for item in registry.list_all() if item.name == "FeedbackChannels")
+    feedback_migration = next(
+        item for item in feedback_definition.migrations if item.source_type == "RLRMPFeedbackChannels"
+    )
+    assert feedback_migration.owner == "rlrmp"
+    assert feedback_migration.target_type == "FeedbackChannels"
+
+
+def test_absent_rlrmp_component_migration_pack_fails_with_owner_context() -> None:
+    registry = ComponentRegistry(load_user_components=False, discover_plugins=False)
+    spec = build_point_mass_sensorimotor_graph_spec(_hps())
+    nodes = dict(spec.nodes)
+    nodes["feedback"] = nodes["feedback"].model_copy(
+        update={"type": "rlrmp.RLRMPFeedbackChannels"}
+    )
+    legacy_spec = spec.model_copy(update={"nodes": nodes})
+
+    with pytest.raises(ValueError) as exc_info:
+        resolve_registered_graph_component_migrations(legacy_spec, registry)
+
+    message = str(exc_info.value)
+    assert "owner='rlrmp'" in message
+    assert "migration pack" in message
+    assert "rlrmp.RLRMPFeedbackChannels" in message
+
+
+def test_b41c940_manifest_inline_graph_validates_through_rlrmp_pack() -> None:
+    manifest_path = (
+        Path("results")
+        / "b41c940"
+        / "migrated"
+        / "efc4d68"
+        / "baseline_gru__smooth"
+        / "model.artifact.manifest.json"
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    graph_payload = manifest["graph_spec"]["inline"]
+    assert graph_payload["nodes"]["feedback"]["type"] == "RLRMPFeedbackChannels"
+    assert manifest["migration_records"] == []
+
+    registry = register_rlrmp_graph_components(
+        ComponentRegistry(load_user_components=False, discover_plugins=False)
+    )
+    migrated = resolve_registered_graph_component_migrations(
+        GraphSpec.model_validate(graph_payload),
+        registry,
+    )
+
+    assert migrated.nodes["feedback"].type == "FeedbackChannels"
+    assert migrated.nodes["feedback"].params["selector"] == "paths"
+    assert migrated.nodes["feedback"].params["paths"] == [
+        "plant.skeleton.pos",
+        "plant.skeleton.vel",
+    ]
+
+
+def test_rlrmp_registry_uses_feedbax_intervention_builders() -> None:
+    registry = register_rlrmp_graph_components(
+        ComponentRegistry(load_user_components=False, discover_plugins=False)
+    )
+
+    for component_type in ("FixedField", "CurlField", "DynamicsMatrixPerturb"):
+        meta = registry.get(component_type)
+        assert meta is not None
+        assert meta.builder is not None
+        assert meta.provenance == "feedbax"
+        assert meta.output_prototype_fn is not None
 
 
 def test_dynamics_matrix_perturb_spec_preserves_delta_a_contract() -> None:
@@ -285,7 +451,8 @@ def test_dynamics_matrix_perturb_spec_preserves_delta_a_contract() -> None:
 
     intervenor = spec.nodes[GRAPH_PLANT_INTERVENOR_NODE]
     assert intervenor.type == "DynamicsMatrixPerturb"
-    assert intervenor.params["delta_A_shape"] == [2, 4]
+    assert jnp.asarray(intervenor.params["delta_A"]).shape == (2, 4)
+    assert "delta_A_shape" not in intervenor.params
     assert "effector" in intervenor.input_ports
     assert isinstance(graph.nodes[PLANT_INTERVENOR_LABEL], DynamicsMatrixPerturb)
     assert graph.nodes[PLANT_INTERVENOR_LABEL].label == PLANT_INTERVENOR_LABEL
@@ -305,6 +472,57 @@ def test_dynamics_matrix_perturb_spec_preserves_delta_a_contract() -> None:
         GRAPH_PLANT_INTERVENOR_NODE,
         "effector",
     ) in recurrent_edges
+
+
+def test_legacy_dynamics_matrix_delta_a_shape_materializes_through_migration() -> None:
+    hps = _hps(hidden_type="linear")
+    spec = build_point_mass_sensorimotor_graph_spec(
+        hps,
+        task=build_task_base(hps),
+        n_extra_inputs=0,
+        hidden_type=hps.hidden_type,
+        intervention_type="DynamicsMatrixPerturb",
+    )
+    nodes = dict(spec.nodes)
+    intervenor = nodes[GRAPH_PLANT_INTERVENOR_NODE]
+    params = dict(intervenor.params)
+    params.pop("delta_A")
+    params["delta_A_shape"] = [2, 4]
+    nodes[GRAPH_PLANT_INTERVENOR_NODE] = intervenor.model_copy(update={"params": params})
+    legacy_spec = spec.model_copy(update={"nodes": nodes})
+
+    graph = materialize_rlrmp_graph_spec(legacy_spec)
+
+    materialized = graph.nodes[PLANT_INTERVENOR_LABEL]
+    assert isinstance(materialized, DynamicsMatrixPerturb)
+    assert materialized.label == PLANT_INTERVENOR_LABEL
+    assert materialized.input_ports == ("effector", "force", "params_override")
+    assert materialized.output_ports == ("force",)
+    assert materialized._initial_state.delta_A.shape == (2, 4)
+
+
+def test_legacy_curl_field_missing_amplitude_materializes_through_migration() -> None:
+    hps = _hps(hidden_type="linear")
+    spec = build_point_mass_sensorimotor_graph_spec(
+        hps,
+        task=build_task_base(hps),
+        n_extra_inputs=0,
+        hidden_type=hps.hidden_type,
+        intervention_type="CurlField",
+    )
+    nodes = dict(spec.nodes)
+    intervenor = nodes[GRAPH_PLANT_INTERVENOR_NODE]
+    params = dict(intervenor.params)
+    params.pop("amplitude")
+    nodes[GRAPH_PLANT_INTERVENOR_NODE] = intervenor.model_copy(update={"params": params})
+    legacy_spec = spec.model_copy(update={"nodes": nodes})
+
+    graph = materialize_rlrmp_graph_spec(legacy_spec)
+
+    materialized = graph.nodes[PLANT_INTERVENOR_LABEL]
+    assert isinstance(materialized, CurlField)
+    assert materialized.label == PLANT_INTERVENOR_LABEL
+    assert materialized._initial_state.amplitude == pytest.approx(1.0)
 
 
 def test_write_graph_spec_bundle_creates_companion_manifest(tmp_path) -> None:
@@ -351,7 +569,7 @@ def test_setup_task_model_pair_materializes_gru_and_linear_graph_paths() -> None
 @pytest.mark.parametrize(
     ("hidden_type", "expected_net"),
     [
-        ("gru", "Network"),
+        ("gru", "RLRMPSimpleStagedNetwork"),
         ("linear", "RLRMPLinearController"),
     ],
 )
@@ -424,5 +642,6 @@ def test_runtime_graph_spec_preserves_dynamics_matrix_intervenor() -> None:
     graph = materialize_rlrmp_graph_spec(graph_spec)
 
     assert graph_spec.nodes[PLANT_INTERVENOR_LABEL].type == "DynamicsMatrixPerturb"
-    assert graph_spec.nodes[PLANT_INTERVENOR_LABEL].params["delta_A_shape"] == [2, 4]
+    assert jnp.asarray(graph_spec.nodes[PLANT_INTERVENOR_LABEL].params["delta_A"]).shape == (2, 4)
+    assert "delta_A_shape" not in graph_spec.nodes[PLANT_INTERVENOR_LABEL].params
     assert isinstance(graph.nodes[PLANT_INTERVENOR_LABEL], DynamicsMatrixPerturb)
