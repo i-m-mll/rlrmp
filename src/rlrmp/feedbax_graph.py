@@ -11,7 +11,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 from feedbax.bodies import FeedbackChannels, SimpleFeedback, SimpleFeedbackState
-from feedbax.component_registry import get_component_registry
+from feedbax.component_registry import ComponentMigration, ComponentMigrationPack, get_component_registry
 from feedbax.contracts.graph import (
     ComponentSpec,
     GraphMetadata,
@@ -53,6 +53,8 @@ GRAPH_PLANT_INTERVENOR_NODE = PLANT_INTERVENOR_LABEL
 NATIVE_POINT_MASS_COMPONENT = "PointMass"
 NATIVE_FEEDBACK_CHANNELS_COMPONENT = "FeedbackChannels"
 NATIVE_CHANNEL_COMPONENT = "Channel"
+RLRMP_MIGRATION_PACK_OWNER = "rlrmp"
+RLRMP_COMPONENT_MIGRATION_PACK_VERSION = "1"
 
 
 def _point_mass_feedback(state: MechanicsState):
@@ -155,60 +157,116 @@ def register_rlrmp_graph_components(component_registry: Any | None = None) -> An
         output_prototype_fn=_force_passthrough_output_prototype,
         provenance="rlrmp",
     )
+    register_rlrmp_graph_migration_pack(registry)
     return registry
 
 
-def _migrate_legacy_rlrmp_graph_spec(graph_spec: GraphSpec) -> GraphSpec:
-    """Rewrite historical generic RLRMP component IDs to Feedbax-native IDs."""
+def register_rlrmp_graph_migration_pack(component_registry: Any | None = None) -> Any:
+    """Register RLRMP-owned historical component migrations with Feedbax."""
 
-    nodes: dict[str, ComponentSpec] = {}
+    registry = component_registry or get_component_registry()
+    pack = ComponentMigrationPack(
+        owner=RLRMP_MIGRATION_PACK_OWNER,
+        package="rlrmp",
+        version=RLRMP_COMPONENT_MIGRATION_PACK_VERSION,
+        description="RLRMP historical GraphSpec component IDs.",
+        migrations=(
+            ComponentMigration(
+                source_type="RLRMPPointMass",
+                target_type=NATIVE_POINT_MASS_COMPONENT,
+                owner=RLRMP_MIGRATION_PACK_OWNER,
+                migration_id="rlrmp.component.RLRMPPointMass-to-PointMass.v1",
+                description="RLRMP historical point-mass alias now materializes via Feedbax.",
+            ),
+            ComponentMigration(
+                source_type="RLRMPFeedbackChannels",
+                target_type=NATIVE_FEEDBACK_CHANNELS_COMPONENT,
+                owner=RLRMP_MIGRATION_PACK_OWNER,
+                migration_id="rlrmp.component.RLRMPFeedbackChannels-to-FeedbackChannels.v1",
+                migrate_params=_migrate_legacy_feedback_channels_params,
+                description="RLRMP historical feedback-channel params to Feedbax selector params.",
+            ),
+            ComponentMigration(
+                source_type="RLRMPMotorChannel",
+                target_type=NATIVE_CHANNEL_COMPONENT,
+                owner=RLRMP_MIGRATION_PACK_OWNER,
+                migration_id="rlrmp.component.RLRMPMotorChannel-to-Channel.v1",
+                description="RLRMP historical motor channel alias now materializes via Feedbax.",
+            ),
+            ComponentMigration(
+                source_type="RLRMPPlantProcessForceNoise",
+                target_type=NATIVE_CHANNEL_COMPONENT,
+                owner=RLRMP_MIGRATION_PACK_OWNER,
+                migration_id="rlrmp.component.RLRMPPlantProcessForceNoise-to-Channel.v1",
+                migrate_params=_migrate_legacy_plant_process_force_noise_params,
+                description="RLRMP historical plant-process force noise channel.",
+            ),
+            ComponentMigration(
+                source_type="rlrmp.RLRMPFeedbackChannels",
+                target_type=NATIVE_FEEDBACK_CHANNELS_COMPONENT,
+                owner=RLRMP_MIGRATION_PACK_OWNER,
+                migration_id="rlrmp.component.qualified-RLRMPFeedbackChannels-to-FeedbackChannels.v1",
+                migrate_params=_migrate_legacy_feedback_channels_params,
+                description="Owner-qualified RLRMP feedback-channel legacy alias.",
+            ),
+        ),
+    )
+    _register_migration_pack_idempotent(registry, pack)
+    return registry
+
+
+def _register_migration_pack_idempotent(registry: Any, pack: ComponentMigrationPack) -> None:
+    try:
+        registry.register_migration_pack(pack)
+    except ValueError as exc:
+        if "Component migration already registered" not in str(exc):
+            raise
+
+
+def _migrate_legacy_feedback_channels_params(params: dict[str, Any]) -> dict[str, Any]:
+    migrated = dict(params)
+    legacy_where = migrated.pop("where", None)
+    if legacy_where is not None and "paths" not in migrated:
+        migrated["selector"] = "paths"
+        migrated["paths"] = list(legacy_where)
+    migrated.setdefault("selector", "point_mass_pos_vel")
+    migrated.setdefault("noise_model", "additive_gaussian")
+    migrated.setdefault("noise_timing", "pre_controller")
+    migrated.setdefault("input_shape", [[2], [2]])
+    return migrated
+
+
+def _migrate_legacy_plant_process_force_noise_params(params: dict[str, Any]) -> dict[str, Any]:
+    migrated = dict(params)
+    noise_std = float(migrated.get("noise_std", 0.0) or 0.0)
+    return {
+        "delay": 0,
+        "noise_model": "additive_gaussian",
+        "noise_std": noise_std,
+        "add_noise": noise_std != 0.0,
+        "noise_role": migrated.get("noise_role", "plant_process_load"),
+        "noise_timing": migrated.get("noise_timing", "post_force_filter_pre_mechanics"),
+        "input_shape": migrated.get("input_shape", [2]),
+    }
+
+
+def _normalize_legacy_rlrmp_graph_topology(graph_spec: GraphSpec) -> GraphSpec:
+    """Normalize legacy topology details that component migrations cannot rewrite."""
+
+    nodes = dict(graph_spec.nodes)
     legacy_plant_process_nodes: set[str] = set()
     for node_id, node_spec in graph_spec.nodes.items():
-        params = dict(node_spec.params)
-        if node_spec.type == "RLRMPPointMass":
-            nodes[node_id] = node_spec.model_copy(update={"type": NATIVE_POINT_MASS_COMPONENT})
-        elif node_spec.type == "RLRMPFeedbackChannels":
-            nodes[node_id] = node_spec.model_copy(
-                update={
-                    "type": NATIVE_FEEDBACK_CHANNELS_COMPONENT,
-                    "params": {
-                        **params,
-                        "selector": params.get("selector", "point_mass_pos_vel"),
-                        "noise_model": params.get("noise_model", "additive_gaussian"),
-                        "noise_timing": params.get("noise_timing", "pre_controller"),
-                        "input_shape": params.get("input_shape", [[2], [2]]),
-                    },
-                }
-            )
-        elif node_spec.type == "RLRMPMotorChannel":
-            nodes[node_id] = node_spec.model_copy(update={"type": NATIVE_CHANNEL_COMPONENT})
-        elif node_spec.type == "RLRMPPlantProcessForceNoise":
+        if node_spec.type == "RLRMPPlantProcessForceNoise":
             legacy_plant_process_nodes.add(node_id)
-            noise_std = float(params.get("noise_std", 0.0) or 0.0)
             nodes[node_id] = node_spec.model_copy(
                 update={
-                    "type": NATIVE_CHANNEL_COMPONENT,
-                    "params": {
-                        "delay": 0,
-                        "noise_model": "additive_gaussian",
-                        "noise_std": noise_std,
-                        "add_noise": noise_std != 0.0,
-                        "noise_role": params.get("noise_role", "plant_process_load"),
-                        "noise_timing": params.get(
-                            "noise_timing",
-                            "post_force_filter_pre_mechanics",
-                        ),
-                        "input_shape": params.get("input_shape", [2]),
-                    },
                     "input_ports": ["input"],
                     "output_ports": ["output"],
                 }
             )
-        else:
-            nodes[node_id] = node_spec
 
     if not legacy_plant_process_nodes:
-        return graph_spec.model_copy(update={"nodes": nodes})
+        return graph_spec
 
     def _rename_source_port(node: str, port: str) -> str:
         if node in legacy_plant_process_nodes and port == "force":
@@ -234,6 +292,35 @@ def _migrate_legacy_rlrmp_graph_spec(graph_spec: GraphSpec) -> GraphSpec:
     return graph_spec.model_copy(update={"nodes": nodes, "wires": wires})
 
 
+def resolve_registered_graph_component_migrations(graph_spec: GraphSpec, registry: Any) -> GraphSpec:
+    """Apply registered Feedbax component migrations before prototype inference."""
+
+    registry_names = set(registry.names()) if callable(getattr(registry, "names", None)) else set()
+    nodes: dict[str, ComponentSpec] = {}
+    changed = False
+    for node_id, node_spec in graph_spec.nodes.items():
+        should_try = node_spec.type not in registry_names or node_spec.param_schema_version is not None
+        if not should_try:
+            nodes[node_id] = node_spec
+            continue
+        resolution = registry.resolve_component_spec(
+            node_spec.type,
+            node_spec.params,
+            param_schema_version=node_spec.param_schema_version,
+        )
+        nodes[node_id] = node_spec.model_copy(
+            update={
+                "type": resolution.type_id,
+                "params": resolution.params,
+                "param_schema_version": resolution.param_schema_version,
+            }
+        )
+        changed = True
+    if not changed:
+        return graph_spec
+    return graph_spec.model_copy(update={"nodes": nodes})
+
+
 def materialize_rlrmp_graph_spec(
     graph_spec: GraphSpec,
     component_registry: Any | None = None,
@@ -243,7 +330,9 @@ def materialize_rlrmp_graph_spec(
     """Materialize an RLRMP GraphSpec through Feedbax and install runtime hooks."""
 
     registry = register_rlrmp_graph_components(component_registry)
-    graph = spec_to_graph(_migrate_legacy_rlrmp_graph_spec(graph_spec), registry)
+    graph_spec = _normalize_legacy_rlrmp_graph_topology(graph_spec)
+    graph_spec = resolve_registered_graph_component_migrations(graph_spec, registry)
+    graph = spec_to_graph(graph_spec, registry)
     if install_runtime_hooks:
         graph = install_simple_feedback_runtime_hooks(graph)
     return graph
