@@ -25,7 +25,7 @@ import jax.random as jr
 from jaxtyping import Array, PRNGKeyArray, PyTree
 
 from feedbax.channel import ChannelState
-from feedbax.component_registry import get_component_registry
+from feedbax.component_registry import ComponentMigration, ComponentMigrationPack, get_component_registry
 from feedbax.contracts.graph import ComponentSpec, GraphMetadata, GraphSpec, WireSpec
 from feedbax.graph import Component, Graph
 from feedbax.mechanics import LinearStateSpace
@@ -35,7 +35,10 @@ from feedbax.state import CartesianState
 
 from rlrmp.analysis.math.cs_game_card import build_canonical_game
 from rlrmp.analysis.pipelines.feedbax_parity import build_cs2019_feedbax_mechanics
-from rlrmp.feedbax_graph import register_rlrmp_graph_components
+from rlrmp.feedbax_graph import (
+    register_rlrmp_graph_components,
+    resolve_registered_graph_component_migrations,
+)
 
 
 CS_PHYSICAL_STATE_DIM = 8
@@ -337,6 +340,60 @@ def register_cs_lss_graph_components(component_registry: Any | None = None) -> A
         provenance="rlrmp",
     )
     _install_cs_lss_registry_output_prototypes(registry)
+    register_cs_lss_graph_migration_pack(registry)
+    return registry
+
+
+def register_cs_lss_graph_migration_pack(component_registry: Any | None = None) -> Any:
+    """Register RLRMP-owned historical C&S component migrations with Feedbax."""
+
+    registry = component_registry or get_component_registry()
+    pack = ComponentMigrationPack(
+        owner="rlrmp",
+        package="rlrmp",
+        version="1",
+        description="RLRMP historical C&S LinearStateSpace GraphSpec component IDs.",
+        migrations=(
+            ComponentMigration(
+                source_type=CS_LSS_DELAYED_FEEDBACK_COMPONENT,
+                target_type=FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
+                owner="rlrmp",
+                migration_id=(
+                    "rlrmp.component.RLRMPCsLssDelayedPositionVelocityFeedback"
+                    "-to-StateFeedbackSelector.v1"
+                ),
+                migrate_params=_migrate_legacy_cs_lss_delayed_feedback_params,
+                description="C&S delayed position/velocity feedback selector.",
+            ),
+            ComponentMigration(
+                source_type=CS_LSS_TARGET_FEEDBACK_COMPONENT,
+                target_type=FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
+                owner="rlrmp",
+                migration_id=(
+                    "rlrmp.component.RLRMPCsLssTargetRelativeDelayedFeedback"
+                    "-to-StateFeedbackSelector.v1"
+                ),
+                migrate_params=_migrate_legacy_cs_lss_target_feedback_params,
+                description="C&S target-relative delayed position/velocity feedback selector.",
+            ),
+            ComponentMigration(
+                source_type=CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT,
+                target_type=FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
+                owner="rlrmp",
+                migration_id=(
+                    "rlrmp.component.RLRMPCsLssTargetRelativeDelayedProprioceptiveFeedback"
+                    "-to-StateFeedbackSelector.v1"
+                ),
+                migrate_params=_migrate_legacy_cs_lss_target_feedback_params,
+                description="C&S target-relative delayed proprioceptive feedback selector.",
+            ),
+        ),
+    )
+    try:
+        registry.register_migration_pack(pack)
+    except ValueError as exc:
+        if "Component migration already registered" not in str(exc):
+            raise
     return registry
 
 
@@ -556,7 +613,8 @@ def materialize_cs_lss_gru_graph_spec(
     """Materialize a CS-LSS GraphSpec and install the CS-LSS runtime hooks."""
 
     registry = register_cs_lss_graph_components(component_registry)
-    graph = spec_to_graph(_migrate_legacy_cs_lss_graph_spec(graph_spec), registry)
+    graph_spec = resolve_registered_graph_component_migrations(graph_spec, registry)
+    graph = spec_to_graph(graph_spec, registry)
     return install_cs_lss_gru_runtime_hooks(graph)
 
 
@@ -788,29 +846,25 @@ def _state_feedback_selector_params(
     }
 
 
-def _migrate_legacy_cs_lss_graph_spec(graph_spec: GraphSpec) -> GraphSpec:
-    nodes: dict[str, ComponentSpec] = {}
-    for node_id, node_spec in graph_spec.nodes.items():
-        if node_spec.type in {
-            CS_LSS_DELAYED_FEEDBACK_COMPONENT,
-            CS_LSS_TARGET_FEEDBACK_COMPONENT,
-            CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT,
-        }:
-            params = dict(node_spec.params)
-            indices = tuple(int(index) for index in params["indices"])
-            nodes[node_id] = node_spec.model_copy(
-                update={
-                    "type": FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
-                    "params": _state_feedback_selector_params(
-                        indices=indices,
-                        expected_state_dim=int(params["expected_state_dim"]),
-                        target_relative=node_spec.type != CS_LSS_DELAYED_FEEDBACK_COMPONENT,
-                    ),
-                }
-            )
-        else:
-            nodes[node_id] = node_spec
-    return graph_spec.model_copy(update={"nodes": nodes})
+def _migrate_legacy_cs_lss_delayed_feedback_params(params: dict[str, Any]) -> dict[str, Any]:
+    return _migrate_legacy_cs_lss_feedback_params(params, target_relative=False)
+
+
+def _migrate_legacy_cs_lss_target_feedback_params(params: dict[str, Any]) -> dict[str, Any]:
+    return _migrate_legacy_cs_lss_feedback_params(params, target_relative=True)
+
+
+def _migrate_legacy_cs_lss_feedback_params(
+    params: dict[str, Any],
+    *,
+    target_relative: bool,
+) -> dict[str, Any]:
+    indices = tuple(int(index) for index in params["indices"])
+    return _state_feedback_selector_params(
+        indices=indices,
+        expected_state_dim=int(params["expected_state_dim"]),
+        target_relative=target_relative,
+    )
 
 
 def _build_initial_hidden_staged_network(

@@ -167,9 +167,19 @@ def test_legacy_cs_lss_feedback_selector_id_materializes_through_migration() -> 
     )
     legacy_spec = spec.model_copy(update={"nodes": nodes})
 
-    graph = materialize_cs_lss_gru_graph_spec(legacy_spec)
+    registry = register_cs_lss_graph_components()
+    graph = materialize_cs_lss_gru_graph_spec(legacy_spec, registry)
 
     assert graph.nodes["feedback"].__class__.__name__ == "StateFeedbackSelector"
+    definition = next(
+        item for item in registry.list_all() if item.name == FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT
+    )
+    migration = next(
+        item
+        for item in definition.migrations
+        if item.source_type == CS_LSS_DELAYED_FEEDBACK_COMPONENT
+    )
+    assert migration.owner == "rlrmp"
 
 
 def test_runtime_cs_lss_graph_export_preserves_executable_component_contract() -> None:

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 
 import jax.random as jr
 import pytest
+from feedbax.component_registry import ComponentRegistry
 from feedbax.contracts.graph import GraphSpec
 from feedbax.graph import Graph
 from feedbax.intervene import CurlField, DynamicsMatrixPerturb, FixedField
@@ -23,6 +25,8 @@ from rlrmp.feedbax_graph import (
     graph_spec_from_model,
     graph_spec_payload,
     materialize_rlrmp_graph_spec,
+    register_rlrmp_graph_components,
+    resolve_registered_graph_component_migrations,
     write_graph_spec_bundle,
 )
 from rlrmp.intervention_compat import swap_plant_intervenor_to_dynamics_matrix
@@ -264,12 +268,69 @@ def test_legacy_generic_rlrmp_graph_component_ids_materialize_through_migration(
     ]
     legacy_spec = spec.model_copy(update={"nodes": nodes, "wires": wires})
 
-    graph = materialize_rlrmp_graph_spec(legacy_spec)
+    registry = register_rlrmp_graph_components(
+        ComponentRegistry(load_user_components=False, discover_plugins=False)
+    )
+    graph = materialize_rlrmp_graph_spec(legacy_spec, registry)
 
     assert isinstance(graph, Graph)
     assert graph.nodes["feedback"].__class__.__name__ == "FeedbackChannels"
     assert graph.nodes["efferent"].__class__.__name__ == "Channel"
     assert graph.nodes[PLANT_PROCESS_FORCE_NOISE_LABEL].__class__.__name__ == "Channel"
+    feedback_definition = next(item for item in registry.list_all() if item.name == "FeedbackChannels")
+    feedback_migration = next(
+        item for item in feedback_definition.migrations if item.source_type == "RLRMPFeedbackChannels"
+    )
+    assert feedback_migration.owner == "rlrmp"
+    assert feedback_migration.target_type == "FeedbackChannels"
+
+
+def test_absent_rlrmp_component_migration_pack_fails_with_owner_context() -> None:
+    registry = ComponentRegistry(load_user_components=False, discover_plugins=False)
+    spec = build_point_mass_sensorimotor_graph_spec(_hps())
+    nodes = dict(spec.nodes)
+    nodes["feedback"] = nodes["feedback"].model_copy(
+        update={"type": "rlrmp.RLRMPFeedbackChannels"}
+    )
+    legacy_spec = spec.model_copy(update={"nodes": nodes})
+
+    with pytest.raises(ValueError) as exc_info:
+        resolve_registered_graph_component_migrations(legacy_spec, registry)
+
+    message = str(exc_info.value)
+    assert "owner='rlrmp'" in message
+    assert "migration pack" in message
+    assert "rlrmp.RLRMPFeedbackChannels" in message
+
+
+def test_b41c940_manifest_inline_graph_validates_through_rlrmp_pack() -> None:
+    manifest_path = (
+        Path("results")
+        / "b41c940"
+        / "migrated"
+        / "efc4d68"
+        / "baseline_gru__smooth"
+        / "model.artifact.manifest.json"
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    graph_payload = manifest["graph_spec"]["inline"]
+    assert graph_payload["nodes"]["feedback"]["type"] == "RLRMPFeedbackChannels"
+    assert manifest["migration_records"] == []
+
+    registry = register_rlrmp_graph_components(
+        ComponentRegistry(load_user_components=False, discover_plugins=False)
+    )
+    migrated = resolve_registered_graph_component_migrations(
+        GraphSpec.model_validate(graph_payload),
+        registry,
+    )
+
+    assert migrated.nodes["feedback"].type == "FeedbackChannels"
+    assert migrated.nodes["feedback"].params["selector"] == "paths"
+    assert migrated.nodes["feedback"].params["paths"] == [
+        "plant.skeleton.pos",
+        "plant.skeleton.vel",
+    ]
 
 
 def test_dynamics_matrix_perturb_spec_preserves_delta_a_contract() -> None:
