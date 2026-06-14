@@ -10,13 +10,14 @@ import jax.numpy as jnp
 import pytest
 import feedbax.serialization_prototypes as fbx_prototypes
 from feedbax.contracts.graph import GraphSpec
-from feedbax.graph import init_state_from_component
+from feedbax.runtime.graph import init_state_from_component
 from feedbax.serialization import spec_to_graph
-from feedbax.state_feedback import StateFeedbackSelector
-from feedbax.train import filter_spec_leaves, get_model_parameters
+from feedbax.runtime.state_feedback import StateFeedbackSelector
+from feedbax._tree import filter_spec_leaves
+from feedbax.training.trainer import get_model_parameters
 
 from rlrmp.analysis.math.cs_game_card import build_canonical_game, build_no_integrator_game
-from rlrmp.cs_lss_gru import (
+from rlrmp.model.cs_lss_gru import (
     CS_DELAYED_POS_VEL_INDICES,
     CS_DELAYED_POS_VEL_FORCE_INDICES,
     CS_EPSILON_DIM,
@@ -34,7 +35,7 @@ from rlrmp.cs_lss_gru import (
     materialize_cs_lss_gru_graph_spec,
     register_cs_lss_graph_components,
 )
-from rlrmp.feedbax_graph import graph_spec_from_model, graph_spec_payload
+from rlrmp.model.feedbax_graph import graph_spec_from_model, graph_spec_payload
 
 
 def test_feedback_selector_uses_oldest_delayed_position_velocity_block() -> None:

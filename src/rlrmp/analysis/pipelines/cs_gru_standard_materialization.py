@@ -15,8 +15,8 @@ import jax.random as jr
 import jax.tree as jt
 import numpy as np
 from feedbax import load_with_hyperparameters
-from feedbax.channel import Channel
-from feedbax.graph import init_state_from_component
+from feedbax.runtime.channel import Channel
+from feedbax.runtime.graph import init_state_from_component
 from feedbax.types import TreeNamespace, dict_to_namespace
 
 from rlrmp.analysis.math.cs_game_card import (
@@ -67,7 +67,7 @@ from rlrmp.spec_migrations import (
     CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION,
     stamp_current_schema,
 )
-from rlrmp.stochastic_runtime import (
+from rlrmp.model.stochastic_runtime import (
     PLANT_PROCESS_FORCE_NOISE_LABEL,
     add_plant_process_force_noise,
 )

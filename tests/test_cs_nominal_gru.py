@@ -16,9 +16,9 @@ import numpy as np
 import optax
 import pytest
 from feedbax import TaskTrialSpec, TrialTimeline, WhereDict
-from feedbax.loss import AbstractLoss, TargetSpec
+from feedbax.objectives.loss import AbstractLoss, TargetSpec
 from feedbax.mechanics import LinearStateSpace
-from feedbax.state_feedback import StateFeedbackSelector
+from feedbax.runtime.state_feedback import StateFeedbackSelector
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
 from feedbax.types import TreeNamespace
 
@@ -31,7 +31,7 @@ from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig
 from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
     DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT,
 )
-from rlrmp.cs_lss_gru import (
+from rlrmp.model.cs_lss_gru import (
     CS_EPSILON_DIM,
     CS_REDUCED_EPSILON_DIM,
     build_cs_lss_gru_graph_spec,
@@ -1240,7 +1240,7 @@ def test_delayed_reach_setup_adds_go_cue_and_preserves_target_visibility() -> No
     assert pair.model.nodes["net"].input_size == 5
     assert trial.timeline.epoch_names == ("prep", "movement")
     assert 10 <= go_step <= 30
-    assert trial.inputs["input"].shape == (90,)
+    assert trial.inputs["input"].shape == (trial.timeline.n_steps - 1,)
     assert jnp.allclose(trial.inputs["input"][:go_step], 0.0)
     assert jnp.allclose(trial.inputs["input"][go_step:], 1.0)
     assert trial.inputs["target"].shape[-2:] == (90, 2)
@@ -1248,12 +1248,15 @@ def test_delayed_reach_setup_adds_go_cue_and_preserves_target_visibility() -> No
         trial.inputs["target"],
         jnp.broadcast_to(trial.inputs["target"][..., :1, :], trial.inputs["target"].shape),
     )
-    assert trial.inputs["epsilon"].shape == (90, CS_EPSILON_DIM)
+    assert trial.inputs["epsilon"].shape == (trial.timeline.n_steps - 1, CS_EPSILON_DIM)
 
     validation = pair.task.validation_trials
     validation_targets = validation.targets["mechanics.effector.pos"].value
     assert validation.inputs["task"].effector_target.pos.shape == validation_targets.shape
-    assert validation.inputs["task"].hold.shape[:2] == validation_targets.shape[:2]
+    assert validation.inputs["task"].hold.shape[:2] == (
+        validation_targets.shape[0],
+        validation.timeline.n_steps - 1,
+    )
     assert validation.inputs["target"].shape == validation_targets.shape
     assert validation.extra is not None
     assert validation.extra["is_catch_trial"].shape == (pair.task.n_validation_trials,)
@@ -1347,7 +1350,7 @@ def test_delayed_reach_no_integrator_setup_uses_36d_state_and_6d_epsilon() -> No
     assert mechanics.A.shape[-2:] == (36, 36)
     assert mechanics.B_w.shape[-2:] == (36, 6)
     assert trial.inits["mechanics.vector"].shape[-1] == 36
-    assert trial.inputs["epsilon"].shape == (90, CS_REDUCED_EPSILON_DIM)
+    assert trial.inputs["epsilon"].shape == (trial.timeline.n_steps - 1, CS_REDUCED_EPSILON_DIM)
     assert loss.Q.shape[-1] == 36
     assert loss.n_phys == 6
 
@@ -2479,7 +2482,8 @@ def test_lss_backend_excludes_fixed_plant_matrices_from_training() -> None:
     hps = build_hps(_args(smoke=True))
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
     where_train = _where_train()[0]
-    from feedbax.train import filter_spec_leaves, get_model_parameters
+    from feedbax._tree import filter_spec_leaves
+    from feedbax.training.trainer import get_model_parameters
 
     where_train_spec = filter_spec_leaves(pair.model, where_train)
     trainable = get_model_parameters(pair.model, where_train_spec)

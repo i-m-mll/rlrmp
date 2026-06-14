@@ -53,7 +53,7 @@ from rlrmp.analysis.math.output_feedback import (
     robust_output_feedback_gains,
 )
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
-from rlrmp.feedbax_channel_adapters import (
+from rlrmp.model.feedbax_channel_adapters import (
     additive_channel_payload_dim,
     additive_channel_provenance,
     find_materialized_additive_channel_adapter,

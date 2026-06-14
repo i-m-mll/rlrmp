@@ -10,8 +10,8 @@ import jax.numpy as jnp
 import jax.random as jr
 from equinox.nn import StateIndex
 from feedbax import TaskTrialSpec, TrialTimeline, WhereDict
-from feedbax.graph import Component, Graph
-from feedbax.loss import CompositeLoss, ModelLoss
+from feedbax.runtime.graph import Component, Graph
+from feedbax.objectives.loss import CompositeLoss, ModelLoss
 
 from rlrmp.paths import REPO_ROOT
 from rlrmp.train.task_model import setup_task_model_pair

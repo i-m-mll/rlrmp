@@ -6,15 +6,15 @@ from collections.abc import Sequence
 from typing import Any
 
 import equinox as eqx
-from feedbax.components import Sum
+from feedbax.runtime.components import Sum
 from feedbax.contracts.graph import (
     AdditiveGraphChannelAdapterSpec,
     ComponentSpec,
     GraphSpec,
     WireSpec,
 )
-from feedbax.graph import Wire
-from feedbax.graph_channel_adapters import materialize_additive_channel_adapters
+from feedbax.runtime.graph import Wire
+from feedbax.runtime.graph_channel_adapters import materialize_additive_channel_adapters
 
 SUM_BASE_PORT = "a"
 SUM_OFFSET_PORT = "b"

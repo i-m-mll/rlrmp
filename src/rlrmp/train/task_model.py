@@ -17,7 +17,7 @@ from feedbax.intervene import (
 )
 from feedbax.misc import get_field_amplitude, vector_with_gaussian_length
 from feedbax.nn import PopulationStructure
-from feedbax.state import CartesianState
+from feedbax.runtime.state import CartesianState
 from feedbax.training.train import always_active, bernoulli_active
 from feedbax.types import LDict, TaskModelPair, TreeNamespace
 from jaxtyping import PRNGKeyArray
@@ -27,7 +27,7 @@ from rlrmp.analysis.math.cs_released_simulation import (
     DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
 )
 from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig, process_covariance
-from rlrmp.cs_lss_gru import (
+from rlrmp.model.cs_lss_gru import (
     CS_PHYSICAL_STATE_DIM,
     CS_REDUCED_PHYSICAL_STATE_DIM,
     build_cs_lss_gru_graph,
@@ -37,7 +37,7 @@ from rlrmp.disturbance import (
     get_gusts_fn,
 )
 from rlrmp.loss import get_reach_loss
-from rlrmp.models import (
+from rlrmp.model import (
     LINEAR_HIDDEN_TYPES,
     create_point_mass_linear_ensemble,
     create_point_mass_nn_ensemble,
@@ -646,4 +646,16 @@ def _create_cs_lss_gru_ensemble(
             key=key_one,
         )
 
-    return eqx.filter_vmap(build_one)(keys)
+    def stack_leaves(*leaves):
+        first = leaves[0]
+        if isinstance(first, eqx.nn.StateIndex):
+            init = jax.tree.map(stack_leaves, *(leaf.init for leaf in leaves))
+            return eqx.nn.StateIndex(init)
+        return jnp.stack(leaves) if all(eqx.is_array(leaf) for leaf in leaves) else first
+
+    models = [build_one(key_one) for key_one in keys]
+    return jax.tree.map(
+        stack_leaves,
+        *models,
+        is_leaf=lambda leaf: isinstance(leaf, eqx.nn.StateIndex),
+    )

@@ -7,9 +7,9 @@ import json
 import jax.random as jr
 import numpy as np
 from feedbax import TaskTrialSpec, TrialTimeline
-from feedbax.graph import Wire
-from feedbax.loss import TargetSpec
-from feedbax.state import CartesianState
+from feedbax.runtime.graph import Wire
+from feedbax.objectives.loss import TargetSpec
+from feedbax.runtime.state import CartesianState
 
 import rlrmp.analysis.pipelines.gru_perturbation_bank as perturbation_bank
 from rlrmp.analysis.math.cs_game_card import build_canonical_game
@@ -29,7 +29,7 @@ from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     summarize_perturbation_bank,
     summarize_perturbation_response,
 )
-from rlrmp.cs_lss_gru import build_cs_lss_gru_graph
+from rlrmp.model.cs_lss_gru import build_cs_lss_gru_graph
 from rlrmp.train.cs_perturbation_training import (
     GRAPH_ADAPTER_SPECS as TRAINING_GRAPH_ADAPTER_SPECS,
     add_zero_graph_channel_inputs,

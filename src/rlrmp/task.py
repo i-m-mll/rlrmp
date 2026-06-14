@@ -8,7 +8,7 @@ from feedbax import (
     TrialTimeline,
     pos_only_states,
 )
-from feedbax.loss import TargetSpec
+from feedbax.objectives.loss import TargetSpec
 from jaxtyping import Array, Float, PRNGKeyArray
 
 

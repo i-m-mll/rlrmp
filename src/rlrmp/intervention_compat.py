@@ -2,7 +2,7 @@
 
 import equinox as eqx
 import jax.numpy as jnp
-from feedbax.graph import Wire
+from feedbax.runtime.graph import Wire
 from feedbax.intervene import (
     DynamicsMatrixPerturb,
     DynamicsMatrixPerturbParams,

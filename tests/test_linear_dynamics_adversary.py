@@ -148,7 +148,7 @@ class TestDynamicsMatrixPerturbIntegration:
             DynamicsMatrixPerturb,
             DynamicsMatrixPerturbParams,
         )
-        from feedbax.state import CartesianState
+        from feedbax.runtime.state import CartesianState
 
         adv = LinearDynamicsAdversary(
             n_state=4, n_dim=2, eta_max=0.5, key=jr.PRNGKey(2),

@@ -13,7 +13,7 @@ import jax.tree as jt
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
-from feedbax.graph import Component, Wire
+from feedbax.runtime.graph import Component, Wire
 from feedbax.types import TreeNamespace, dict_to_namespace
 from jaxtyping import PRNGKeyArray, PyTree
 

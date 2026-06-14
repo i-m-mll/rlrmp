@@ -24,7 +24,7 @@ from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
     DEFAULT_PLANT_TIMING_BINS,
     DEFAULT_REACH_RELATIVE_LEVELS,
 )
-from rlrmp.feedbax_channel_adapters import (
+from rlrmp.model.feedbax_channel_adapters import (
     additive_channel_payload_dim,
     additive_channel_provenance,
     materialize_additive_channel_adapters_on_graph,

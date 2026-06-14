@@ -20,7 +20,7 @@ import jax.tree as jt
 import numpy as np
 import plotly.graph_objects as go
 from feedbax import load_with_hyperparameters
-from feedbax.loss import TermTree
+from feedbax.objectives.loss import TermTree
 from feedbax.plot import loss_history_compare
 from feedbax.types import TreeNamespace, dict_to_namespace
 from plotly.subplots import make_subplots
@@ -40,7 +40,6 @@ from rlrmp.analysis.math.output_feedback import (
     delayed_observation_matrix,
     make_cs_output_feedback_initial_state,
     position_velocity_observation_config,
-    rollout_with_kalman_estimator,
 )
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
