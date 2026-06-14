@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 """Clean evaluation of APT + loss_update models at pert_scale=0.
 
 Two analyses, both using unperturbed (pert_scale=0) evaluation:
@@ -23,7 +24,7 @@ Models evaluated:
     apt_lr001              (APT, no loss_update) — if present
 
 Usage:
-    uv run python scripts/eval_apt_clean.py
+    uv run python results/2ef67ca/scripts/eval_apt_clean.py
 """
 
 import warnings
@@ -35,17 +36,13 @@ import json
 from pathlib import Path
 
 import equinox as eqx
-import jax
 import jax.numpy as jnp
 import jax.random as jr
-import jax.tree as jt
 import numpy as np
 from feedbax import load_with_hyperparameters
-from feedbax.train import init_task_trainer_history
 
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.eval import (
-    N_REPLICATES,
     compute_kinematics,
     eval_ensemble_on_trials,
     set_sisu,
@@ -53,8 +50,8 @@ from rlrmp.eval import (
 from rlrmp.train.standard import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
 
-WORKTREE = Path(__file__).parent.parent
-RESULTS_BASE = WORKTREE / "results" / "part2_5"
+RESULTS_BASE = Path(__file__).resolve().parent.parent
+WORKTREE = RESULTS_BASE.parent.parent
 MODELS_BASE = RESULTS_BASE / "models"
 
 # (display_name, model_dir, train_pert_std, model_type)
@@ -102,7 +99,8 @@ def load_condition(model_dir_name: str):
     """
     cond_dir = MODELS_BASE / model_dir_name
     config_path = cond_dir / "config.json"
-    if not config_path.exists():
+    model_path = cond_dir / "trained_model.eqx"
+    if not config_path.exists() or not model_path.exists():
         return None
 
     with open(config_path) as f:
@@ -114,7 +112,7 @@ def load_condition(model_dir_name: str):
     pair = setup_task_model_pair(hps, key=key)
 
     trained_model, _ = load_with_hyperparameters(
-        cond_dir / "trained_model.eqx",
+        model_path,
         setup_func=lambda key, **kwargs: setup_task_model_pair(hps, key=key).model,
     )
 
@@ -161,11 +159,11 @@ def main():
         print(f"  Loading {display_name} ({model_dir})...")
         result = load_condition(model_dir)
         if result is None:
-            print(f"    SKIPPED — not found")
+            print("    SKIPPED — not found")
             loaded[display_name] = None
         else:
             loaded[display_name] = result
-            print(f"    OK")
+            print("    OK")
 
     print()
 

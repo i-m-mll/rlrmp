@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 """Evaluate pert_std=0 ratio sweep models (r=0.05, 0.1, 0.15) plus baselines.
 
 All evaluations at pert_scale=0.
@@ -6,7 +7,7 @@ Compares with known pert_std=1 results at r=0.1 and r=0.15.
 Table columns: ratio | pert_std | vel(S=0) | vel(S=1) | Δvel% | ep_err
 
 Usage:
-    uv run python scripts/eval_pert0_ratio_sweep.py
+    uv run python results/2ef67ca/scripts/eval_pert0_ratio_sweep.py
 """
 
 import warnings
@@ -32,8 +33,8 @@ from rlrmp.eval import (
 from rlrmp.train.standard import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
 
-WORKTREE = Path(__file__).parent.parent
-RESULTS_BASE = WORKTREE / "results" / "part2_5"
+RESULTS_BASE = Path(__file__).resolve().parent.parent
+WORKTREE = RESULTS_BASE.parent.parent
 MODELS_BASE = RESULTS_BASE / "models"
 
 # (ratio_label, pert_std_label, model_dir_name)
@@ -70,7 +71,7 @@ def load_condition(model_dir_name: str):
     pair = setup_task_model_pair(hps, key=key)
 
     trained_model, _ = load_with_hyperparameters(
-        cond_dir / "trained_model.eqx",
+        model_path,
         setup_func=lambda key, **kwargs: setup_task_model_pair(hps, key=key).model,
     )
 

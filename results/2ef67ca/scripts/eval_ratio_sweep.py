@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 """Evaluate ratio sweep models (r=0.1..0.6) plus baseline for control cost ratio analysis.
 
 Conditions (all std method, pert_std=1, loss_update=yes except baseline):
@@ -13,7 +14,7 @@ Table 1: pert_scale=0, SISU in {0, 0.5, 1}
 Table 2: pert_scale=5, SISU=0.5 (reference task = centerout_baseline_std_pert1)
 
 Usage:
-    uv run python scripts/eval_ratio_sweep.py
+    uv run python results/2ef67ca/scripts/eval_ratio_sweep.py
 """
 
 import warnings
@@ -39,8 +40,8 @@ from rlrmp.eval import (
 from rlrmp.train.standard import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
 
-WORKTREE = Path(__file__).parent.parent
-RESULTS_BASE = WORKTREE / "results" / "part2_5"
+RESULTS_BASE = Path(__file__).resolve().parent.parent
+WORKTREE = RESULTS_BASE.parent.parent
 MODELS_BASE = RESULTS_BASE / "models"
 
 # (index, ratio_label, ratio_value, update, model_dir)
@@ -62,7 +63,8 @@ SISU_TABLE2 = 0.5
 def load_condition(model_dir_name: str):
     cond_dir = MODELS_BASE / model_dir_name
     config_path = cond_dir / "config.json"
-    if not config_path.exists():
+    model_path = cond_dir / "trained_model.eqx"
+    if not config_path.exists() or not model_path.exists():
         return None
 
     with open(config_path) as f:
@@ -74,7 +76,7 @@ def load_condition(model_dir_name: str):
     pair = setup_task_model_pair(hps, key=key)
 
     trained_model, _ = load_with_hyperparameters(
-        cond_dir / "trained_model.eqx",
+        model_path,
         setup_func=lambda key, **kwargs: setup_task_model_pair(hps, key=key).model,
     )
 

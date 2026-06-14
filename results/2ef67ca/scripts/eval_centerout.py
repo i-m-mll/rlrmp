@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 """Evaluate center-out translation-invariant models.
 
 Key question: does the pert_std=0 baseline now converge with center-out reaches?
@@ -16,7 +17,7 @@ Three analyses (all at pert_scale=0):
   Analysis 3: SISU sweep {0.0, 0.25, 0.5, 0.75, 1.0} for models 1, 3, 4
 
 Usage:
-    uv run python scripts/eval_centerout.py
+    uv run python results/2ef67ca/scripts/eval_centerout.py
 """
 
 import warnings
@@ -30,13 +31,11 @@ from pathlib import Path
 import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
-import jax.tree as jt
 import numpy as np
 from feedbax import load_with_hyperparameters
 
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.eval import (
-    N_REPLICATES,
     compute_kinematics,
     eval_ensemble_on_trials,
     set_sisu,
@@ -44,8 +43,8 @@ from rlrmp.eval import (
 from rlrmp.train.standard import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
 
-WORKTREE = Path(__file__).parent.parent
-RESULTS_BASE = WORKTREE / "results" / "part2_5"
+RESULTS_BASE = Path(__file__).resolve().parent.parent
+WORKTREE = RESULTS_BASE.parent.parent
 MODELS_BASE = RESULTS_BASE / "models"
 
 # (index, method, pert_std, update, ratio, model_dir)
@@ -77,7 +76,8 @@ def load_condition(model_dir_name: str):
     """
     cond_dir = MODELS_BASE / model_dir_name
     config_path = cond_dir / "config.json"
-    if not config_path.exists():
+    model_path = cond_dir / "trained_model.eqx"
+    if not config_path.exists() or not model_path.exists():
         return None
 
     with open(config_path) as f:
@@ -89,7 +89,7 @@ def load_condition(model_dir_name: str):
     pair = setup_task_model_pair(hps, key=key)
 
     trained_model, _ = load_with_hyperparameters(
-        cond_dir / "trained_model.eqx",
+        model_path,
         setup_func=lambda key, **kwargs: setup_task_model_pair(hps, key=key).model,
     )
 

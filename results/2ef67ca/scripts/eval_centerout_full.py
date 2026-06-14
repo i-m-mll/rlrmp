@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 """Evaluate all center-out models for the experiment log update.
 
 Ten models (all in results/2ef67ca/models/):
@@ -17,7 +18,7 @@ Table 2: Robustness under perturbation (pert_scale=5, SISU=0.5)
          Reference task for Table 2: centerout_baseline_std_pert1
 
 Usage:
-    uv run python scripts/eval_centerout_full.py
+    uv run python results/2ef67ca/scripts/eval_centerout_full.py
 """
 
 import warnings
@@ -31,13 +32,11 @@ from pathlib import Path
 import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
-import jax.tree as jt
 import numpy as np
 from feedbax import load_with_hyperparameters
 
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.eval import (
-    N_REPLICATES,
     compute_kinematics,
     eval_ensemble_on_trials,
     set_sisu,
@@ -45,8 +44,8 @@ from rlrmp.eval import (
 from rlrmp.train.standard import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
 
-WORKTREE = Path(__file__).parent.parent
-RESULTS_BASE = WORKTREE / "results" / "2ef67ca"  # legacy Part 2.5 archive (Bug: f485c26)
+RESULTS_BASE = Path(__file__).resolve().parent.parent  # legacy Part 2.5 archive (Bug: f485c26)
+WORKTREE = RESULTS_BASE.parent.parent
 MODELS_BASE = RESULTS_BASE / "models"
 
 # (index, method, pert_std, update, ratio, model_dir)
@@ -82,7 +81,8 @@ def load_condition(model_dir_name: str):
     """
     cond_dir = MODELS_BASE / model_dir_name
     config_path = cond_dir / "config.json"
-    if not config_path.exists():
+    model_path = cond_dir / "trained_model.eqx"
+    if not config_path.exists() or not model_path.exists():
         return None
 
     with open(config_path) as f:
@@ -94,7 +94,7 @@ def load_condition(model_dir_name: str):
     pair = setup_task_model_pair(hps, key=key)
 
     trained_model, _ = load_with_hyperparameters(
-        cond_dir / "trained_model.eqx",
+        model_path,
         setup_func=lambda key, **kwargs: setup_task_model_pair(hps, key=key).model,
     )
 

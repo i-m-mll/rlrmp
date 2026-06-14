@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 """Null-space decomposition of SISU effects on converged center-out models.
 
 For each model, runs the forward pass at SISU=0 and SISU=1 (pert_scale=0),
@@ -7,7 +8,7 @@ and projects onto the output-potent and output-null subspaces of the readout mat
 Also performs population-specific analysis (input, readout, recurrent populations).
 
 Usage:
-    uv run python scripts/eval_null_space.py
+    uv run python results/2ef67ca/scripts/eval_null_space.py
 """
 
 import warnings
@@ -21,39 +22,31 @@ from pathlib import Path
 import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
-import jax.tree as jt
 import numpy as np
 from feedbax import load_with_hyperparameters
 
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.eval import (
-    N_REPLICATES,
     eval_ensemble_on_trials,
     set_sisu,
 )
 from rlrmp.train.standard import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
 
-WORKTREE = Path(__file__).parent.parent
+RESULTS_BASE = Path(__file__).resolve().parent.parent
+WORKTREE = RESULTS_BASE.parent.parent
 # ---------------------------------------------------------------------------
-# Paths — models live in the experiment worktree if not in the analysis worktree
+# Paths — archived models live beside these legacy scripts.
 # ---------------------------------------------------------------------------
 
-RESULTS_BASE = WORKTREE / "results" / "part2_5"
 MODELS_BASE = RESULTS_BASE / "models"
-
-_EXPERIMENT_WORKTREE = WORKTREE.parent / "feature__part2.5-experiment"
-_EXPERIMENT_MODELS_BASE = _EXPERIMENT_WORKTREE / "results" / "part2_5" / "models"
 
 
 def _find_model_dir(model_dir_name: str) -> Path | None:
-    """Find model directory, checking analysis worktree first, then experiment worktree."""
+    """Find an archived model directory."""
     candidate = MODELS_BASE / model_dir_name
     if (candidate / "trained_model.eqx").exists():
         return candidate
-    candidate2 = _EXPERIMENT_MODELS_BASE / model_dir_name
-    if (candidate2 / "trained_model.eqx").exists():
-        return candidate2
     return None
 
 
@@ -76,13 +69,9 @@ def load_condition(model_dir_name: str):
     Returns:
         Tuple of (task, trained_model, config), or None if not found.
     """
-    # Config may be in the analysis worktree even if the model isn't
     config_path = MODELS_BASE / model_dir_name / "config.json"
     if not config_path.exists():
-        config_path2 = _EXPERIMENT_MODELS_BASE / model_dir_name / "config.json"
-        if not config_path2.exists():
-            return None
-        config_path = config_path2
+        return None
 
     cond_dir = _find_model_dir(model_dir_name)
     if cond_dir is None:

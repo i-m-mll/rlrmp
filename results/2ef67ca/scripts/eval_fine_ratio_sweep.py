@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 """Evaluate fine ratio sweep models (r=0.1, 0.12, 0.15, 0.18, 0.2) for SISU velocity transition.
 
 All conditions: standard method, pert_std=1, loss_update=yes.
@@ -6,7 +7,7 @@ All evaluations at pert_scale=0.
 Table columns: # | ratio | vel(S=0.5) | ep_err | vel(S=0) | vel(S=1) | Δvel | Δvel%
 
 Usage:
-    uv run python scripts/eval_fine_ratio_sweep.py
+    uv run python results/2ef67ca/scripts/eval_fine_ratio_sweep.py
 """
 
 import warnings
@@ -32,8 +33,8 @@ from rlrmp.eval import (
 from rlrmp.train.standard import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
 
-WORKTREE = Path(__file__).parent.parent
-RESULTS_BASE = WORKTREE / "results" / "part2_5"
+RESULTS_BASE = Path(__file__).resolve().parent.parent
+WORKTREE = RESULTS_BASE.parent.parent
 MODELS_BASE = RESULTS_BASE / "models"
 
 CONDITIONS = [
@@ -48,7 +49,8 @@ CONDITIONS = [
 def load_condition(model_dir_name: str):
     cond_dir = MODELS_BASE / model_dir_name
     config_path = cond_dir / "config.json"
-    if not config_path.exists():
+    model_path = cond_dir / "trained_model.eqx"
+    if not config_path.exists() or not model_path.exists():
         return None
 
     with open(config_path) as f:
@@ -60,7 +62,7 @@ def load_condition(model_dir_name: str):
     pair = setup_task_model_pair(hps, key=key)
 
     trained_model, _ = load_with_hyperparameters(
-        cond_dir / "trained_model.eqx",
+        model_path,
         setup_func=lambda key, **kwargs: setup_task_model_pair(hps, key=key).model,
     )
 
