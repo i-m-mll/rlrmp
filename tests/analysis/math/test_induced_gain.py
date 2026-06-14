@@ -33,6 +33,9 @@ Tests use double precision (the module enables x64 on import).
 
 from __future__ import annotations
 
+import argparse
+
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -61,6 +64,9 @@ from rlrmp.analysis.math.induced_gain import (
     linearise_trajectory,
     lti_controller,
 )
+from rlrmp.analysis.feedbax_controllers import simple_feedback_induced_gain_controller
+from rlrmp.train.minimax import build_hps
+from rlrmp.train.task_model import setup_task_model_pair
 
 
 # -----------------------------------------------------------------------------
@@ -116,6 +122,82 @@ def _brute_force_toeplitz_svd(lin: TrajectoryLinearisation) -> float:
             z_seq = _ltv_forward_sweep(A_t, Bw_t, Cz_t, D_t, w_seq)
             op[:, t * n_w + i] = np.asarray(z_seq).reshape(-1)
     return float(np.linalg.svd(op, compute_uv=False)[0])
+
+
+def _minimax_args(**overrides) -> argparse.Namespace:
+    base = {
+        "n_warmup_batches": 1,
+        "n_adversary_batches": 1,
+        "controller_lr": 0.01,
+        "loss_update_enabled": False,
+        "loss_update_ratio": 0.3,
+        "hidden_type": "gru",
+        "sisu_gating": "additive",
+        "n_replicates": 1,
+        "sensory_noise_std": 0.0,
+        "additive_motor_noise_std": 0.0,
+        "signal_dependent_motor_noise_std": 0.0,
+    }
+    base.update(overrides)
+    return argparse.Namespace(**base)
+
+
+def _small_simple_feedback_model():
+    hps = build_hps(_minimax_args())
+    hps = hps | {
+        "model": hps.model
+        | {
+            "hidden_size": 4,
+            "feedback_delay_steps": 2,
+            "feedback_noise_std": 0.0,
+            "motor_noise_std": 0.0,
+            "sensory_noise_std": 0.0,
+            "additive_motor_noise_std": 0.0,
+            "signal_dependent_motor_noise_std": 0.0,
+            "population_structure": hps.model.population_structure
+            | {
+                "n_input_only": 0,
+                "n_readout_only": 0,
+                "n_recurrent_only": 4,
+                "n_input_readout": 0,
+            },
+        }
+    }
+    model = setup_task_model_pair(hps, key=jax.random.PRNGKey(0)).model
+    return jax.tree.map(
+        lambda x: x[0] if eqx.is_array(x) and x.ndim > 0 and x.shape[0] == 1 else x,
+        model,
+        is_leaf=eqx.is_array,
+    )
+
+
+def _manual_network_controller_outputs(model, ctrl, observations, *, key):
+    """Old net-plus-delay wrapper logic used as a parity oracle."""
+    net = model.nodes["net"]
+    full_state = model.init_state(key=jax.random.PRNGKey(0))
+    net_state = full_state.get(net.state_index)
+    queue = jnp.zeros((ctrl.delay, ctrl.n_obs), dtype=jnp.float64)
+    outputs = []
+    for t, sensory_obs in enumerate(observations):
+        pos_abs = sensory_obs[:2] + ctrl.target_pos
+        obs_abs = jnp.concatenate([pos_abs, sensory_obs[2:4]], axis=0)
+        if ctrl.delay > 0:
+            delayed_obs = queue[0]
+            queue = jnp.concatenate([queue[1:], obs_abs[None, :]], axis=0)
+        else:
+            delayed_obs = obs_abs
+
+        leaves, treedef = jax.tree.flatten(full_state)
+        state = jax.tree.unflatten(treedef, leaves)
+        state = state.set(net.state_index, net_state)
+        net_inputs = {
+            "input": ctrl.task_input,
+            "feedback": (delayed_obs[:2], delayed_obs[2:]),
+        }
+        net_outputs, state_next = net(net_inputs, state, key=jax.random.fold_in(key, t))
+        net_state = state_next.get(net.state_index)
+        outputs.append(net_outputs["output"])
+    return outputs
 
 
 # -----------------------------------------------------------------------------
@@ -770,6 +852,70 @@ def test_feedbax_graph_controller_cyclic_smoke():
     #   a.y = -4.0 + (-4.0) = -8.0; d state was -4.0; d.y = -4.0.
     h3, u3 = ctrl.step(h2, obs, 2)
     assert float(u3[0]) == pytest.approx(-8.0, abs=1e-12)
+
+
+def test_simple_feedback_induced_gain_adapter_matches_manual_network_wrapper():
+    """Feedbax adapter preserves the historical SimpleFeedback wrapper outputs."""
+    model = _small_simple_feedback_model()
+    target_pos = jnp.array([0.15, 0.0], dtype=jnp.float64)
+    key = jax.random.PRNGKey(7)
+    ctrl = simple_feedback_induced_gain_controller(
+        model,
+        target_pos=target_pos,
+        sisu=0.5,
+        key=key,
+    )
+    observations = jnp.array(
+        [
+            [-0.15, 0.00, 0.00, 0.00],
+            [-0.14, 0.01, 0.02, -0.01],
+            [-0.12, 0.02, 0.03, -0.02],
+            [-0.10, 0.03, 0.04, -0.03],
+        ],
+        dtype=jnp.float64,
+    )
+
+    manual_outputs = _manual_network_controller_outputs(model, ctrl, observations, key=key)
+    h = ctrl.initial_state()
+    adapter_outputs = []
+    for t, obs in enumerate(observations):
+        h, u = ctrl.step(h, obs, t)
+        adapter_outputs.append(u)
+
+    for manual, adapter in zip(manual_outputs, adapter_outputs):
+        assert jnp.allclose(adapter, manual, atol=1e-10, rtol=1e-10)
+
+
+def test_simple_feedback_induced_gain_adapter_smoke():
+    """Synthetic SimpleFeedback model runs through induced-gain linearisation."""
+    model = _small_simple_feedback_model()
+    ctrl = simple_feedback_induced_gain_controller(
+        model,
+        target_pos=jnp.array([0.1, 0.0], dtype=jnp.float64),
+        sisu=0.5,
+        key=jax.random.PRNGKey(3),
+    )
+    plant = linearize_pointmass(mass=1.0, damping=10.0, tau=0.05, dt=0.01)
+    schedule = cost_schedule_from_spec(CostSpec(n_steps=8), plant)
+
+    out = induced_gain(
+        plant,
+        ctrl,
+        init_pos=jnp.array([0.0, 0.0], dtype=jnp.float64),
+        target_pos=jnp.array([0.1, 0.0], dtype=jnp.float64),
+        horizon=8,
+        w_channel=W_ADDITIVE_FORCE,
+        z_channel=Z_QR_COST,
+        schedule=schedule,
+        methods=("power_iteration",),
+        n_restarts=1,
+        max_iter=3,
+        rtol=1e-4,
+    )
+
+    result = out["power_iteration"]
+    assert jnp.isfinite(result.gamma)
+    assert result.diagnostics["n_restarts"] == 1
 
 
 def test_dz_feedthrough_lti_analytic():
