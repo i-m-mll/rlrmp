@@ -36,12 +36,20 @@ from rlrmp.analysis.pipelines.gru_postrun_materialization import (
     materialize_gru_postrun_analysis,
     plan_gru_postrun_materialization,
 )
+from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
+    ISSUE_ID as OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ISSUE_ID,
+    write_outputs as write_output_feedback_rollout_recovery_outputs,
+)
+from rlrmp.analysis.rerun_metadata import DEFAULT_DISCRETIZATION, DEFAULT_LANE
 from rlrmp.paths import REPO_ROOT
 
 
 GRU_STANDARD_ANALYSIS_TYPE = "rlrmp.certificate.gru_standard"
 GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE = "rlrmp.diagnostic.gru_evaluation"
 GRU_POSTRUN_ANALYSIS_TYPE = "rlrmp.gru_postrun"
+OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE = (
+    "rlrmp.output_feedback_bridge.rollout_recovery"
+)
 BRIDGE_STANDARD_ANALYSIS_TYPE = GRU_STANDARD_ANALYSIS_TYPE
 
 
@@ -61,6 +69,11 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
     register_analysis_recipe(
         GRU_POSTRUN_ANALYSIS_TYPE,
         gru_postrun_recipe,
+        replace=replace,
+    )
+    register_analysis_recipe(
+        OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE,
+        output_feedback_rollout_recovery_recipe,
         replace=replace,
     )
 
@@ -185,6 +198,35 @@ def gru_postrun_spec(
     )
 
 
+def output_feedback_rollout_recovery_spec(
+    *,
+    issue_id: str = OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ISSUE_ID,
+    discretization: str | None = None,
+    lane: str | None = None,
+    note_output: Path | str | None = None,
+    manifest_output: Path | str | None = None,
+    artifact_output: Path | str | None = None,
+    repo_root: Path | str | None = None,
+) -> AnalysisRunSpec:
+    """Return declarative spec data for the output-feedback rollout-recovery diagnostic."""
+
+    params = {
+        "issue_id": issue_id,
+    }
+    if discretization is not None:
+        params["discretization"] = discretization
+    if lane is not None:
+        params["lane"] = lane
+    _set_optional_path_param(params, "note_output", note_output)
+    _set_optional_path_param(params, "manifest_output", manifest_output)
+    _set_optional_path_param(params, "artifact_output", artifact_output)
+    _set_optional_path_param(params, "repo_root", repo_root)
+    return AnalysisRunSpec(
+        analysis_type=OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE,
+        params=params,
+    )
+
+
 def gru_standard_certificate_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
@@ -248,6 +290,29 @@ def gru_postrun_recipe(
     )
     return AnalysisRecipeResult(
         analyses={"gru_postrun_materialization": analysis},
+        data=_empty_analysis_data(),
+    )
+
+
+def output_feedback_rollout_recovery_recipe(
+    spec: AnalysisRunSpec,
+    _root: Path,
+    _inputs: Sequence[Any],
+) -> AnalysisRecipeResult:
+    """Build the declarative output-feedback rollout-recovery recipe."""
+
+    params = dict(spec.params)
+    analysis = ContextMaterializer(
+        materializer=lambda context: _materialize_output_feedback_rollout_recovery(
+            context,
+            params,
+        ),
+        artifact_role="rlrmp-output-feedback-rollout-recovery",
+        logical_name="output_feedback_rollout_recovery.json",
+        schema_boundary="rlrmp-owned output-feedback bridge diagnostic payload",
+    )
+    return AnalysisRecipeResult(
+        analyses={"output_feedback_rollout_recovery": analysis},
         data=_empty_analysis_data(),
     )
 
@@ -448,6 +513,64 @@ def _materialize_gru_postrun(
     )
 
 
+def _materialize_output_feedback_rollout_recovery(
+    context: AnalysisRunContext,
+    params: Mapping[str, Any],
+) -> MaterializationResult:
+    repo_root = _repo_root_from_params(params)
+    issue_id = str(params.get("issue_id", OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ISSUE_ID))
+    note_path = _optional_path(params.get("note_output"), repo_root=repo_root) or (
+        context.results_cache_dir / "output_feedback_rollout_recovery.md"
+    )
+    manifest_path = _optional_path(params.get("manifest_output"), repo_root=repo_root) or (
+        context.results_cache_dir / "output_feedback_rollout_recovery_manifest.json"
+    )
+    artifact_path = _optional_path(params.get("artifact_output"), repo_root=repo_root) or (
+        context.results_cache_dir / "bulk" / "output_feedback_rollout_recovery.npz"
+    )
+    summary = write_output_feedback_rollout_recovery_outputs(
+        issue_id=issue_id,
+        discretization=str(params.get("discretization", DEFAULT_DISCRETIZATION)),
+        lane=str(params.get("lane", DEFAULT_LANE)),
+        note_path=note_path,
+        manifest_path=manifest_path,
+        artifact_path=artifact_path,
+        repo_root=repo_root,
+    )
+    existing_artifacts = tuple(
+        artifact
+        for artifact in (
+            _existing_file(
+                manifest_path,
+                role="rlrmp-output-feedback-rollout-recovery-manifest",
+                logical_name="legacy/output_feedback_rollout_recovery_manifest.json",
+            ),
+            _existing_file(
+                note_path,
+                role="rlrmp-output-feedback-rollout-recovery-note",
+                logical_name="legacy/output_feedback_rollout_recovery.md",
+            ),
+        )
+        if artifact is not None
+    )
+    artifact_groups = _single_file_artifact_group(
+        artifact_path,
+        role="rlrmp-output-feedback-rollout-recovery-bulk",
+        logical_name="bulk/output_feedback_rollout_recovery.npz",
+        group_id="output_feedback_rollout_recovery_bulk",
+        member_role="rollout_recovery_arrays",
+        repo_root=repo_root,
+    )
+    return MaterializationResult(
+        payload={
+            **summary,
+            "declarative_analysis": _declarative_metadata(context),
+        },
+        existing_artifacts=existing_artifacts,
+        artifact_groups=artifact_groups,
+    )
+
+
 def _empty_analysis_data() -> AnalysisInputData:
     return AnalysisInputData(
         models={},
@@ -634,6 +757,34 @@ def _bulk_artifact_groups(
     )
 
 
+def _single_file_artifact_group(
+    path: Path,
+    *,
+    role: str,
+    logical_name: str,
+    group_id: str,
+    member_role: str,
+    repo_root: Path,
+) -> tuple[AnalysisArtifactGroup, ...]:
+    if not path.exists():
+        return ()
+    return (
+        AnalysisArtifactGroup(
+            group_id=group_id,
+            members=(
+                AnalysisArtifactFile(
+                    path=path,
+                    role=role,
+                    logical_name=logical_name,
+                    metadata={"repo_relative_path": _repo_relative(path, repo_root=repo_root)},
+                    group_role=member_role,
+                ),
+            ),
+            metadata={"schema_boundary": "rlrmp-owned output-feedback bridge diagnostic payload"},
+        ),
+    )
+
+
 def _read_json_payload(path: Path) -> dict[str, Any]:
     import json
 
@@ -665,12 +816,15 @@ __all__ = [
     "GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE",
     "GRU_POSTRUN_ANALYSIS_TYPE",
     "GRU_STANDARD_ANALYSIS_TYPE",
+    "OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE",
     "gru_evaluation_diagnostics_spec",
     "gru_evaluation_diagnostics_recipe",
     "gru_postrun_recipe",
     "gru_postrun_spec",
     "gru_standard_certificate_spec",
     "gru_standard_certificate_recipe",
+    "output_feedback_rollout_recovery_recipe",
+    "output_feedback_rollout_recovery_spec",
     "register_certificate_analysis_recipes",
     "register_declarative_materialization_recipes",
 ]
