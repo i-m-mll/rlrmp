@@ -6,8 +6,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from rlrmp.modal_artifact_sync import ModalArtifactSyncError, sync_modal_run_artifacts
-from rlrmp.modal_runner import MODAL_VOLUME_NAME, shell_join
+from rlrmp.cloud.modal_artifact_sync import ModalArtifactSyncError, sync_modal_run_artifacts
+from rlrmp.cloud.modal_runner import MODAL_VOLUME_NAME, shell_join
 from rlrmp.paths import REPO_ROOT
 
 

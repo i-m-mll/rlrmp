@@ -30,7 +30,7 @@ from typing import Any
 
 import modal
 
-from rlrmp.modal_runner import (
+from rlrmp.cloud.modal_runner import (
     APP_NAME,
     DEFAULT_TRAIN_TIMEOUT_SECONDS,
     LOCAL_FEEDBAX_DIR,
@@ -143,7 +143,7 @@ def main(*args: str) -> None:
         print(json.dumps(dry_run_payload(config), indent=2, sort_keys=True))
         return
     if parsed.command == "local-smoke":
-        from rlrmp.modal_runner import main as local_main
+        from rlrmp.cloud.modal_runner import main as local_main
 
         raise SystemExit(local_main([*args]))
     payload = {
@@ -165,6 +165,6 @@ def main(*args: str) -> None:
 
 
 if __name__ == "__main__":
-    from rlrmp.modal_runner import main as local_main
+    from rlrmp.cloud.modal_runner import main as local_main
 
     raise SystemExit(local_main())

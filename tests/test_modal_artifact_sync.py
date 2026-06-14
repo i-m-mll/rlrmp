@@ -6,12 +6,12 @@ from typing import Sequence
 
 import pytest
 
-from rlrmp.modal_artifact_sync import (
+from rlrmp.cloud.modal_artifact_sync import (
     ModalArtifactSyncError,
     build_modal_run_sync_plan,
     sync_modal_run_artifacts,
 )
-from rlrmp.modal_runner import MODAL_VOLUME_NAME
+from rlrmp.cloud.modal_runner import MODAL_VOLUME_NAME
 
 
 def test_build_plan_uses_role_based_repo_layout(tmp_path: Path) -> None:
