@@ -6,7 +6,7 @@ from pathlib import Path
 from feedbax.manifest import TrainingRunManifest, load_manifest, sha256_file
 from feedbax.manifest_index import index_manifest_file
 
-from rlrmp.spec_migrations import ensure_rlrmp_spec_families
+from rlrmp.runtime.spec_migrations import ensure_rlrmp_spec_families
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

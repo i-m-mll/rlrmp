@@ -18,7 +18,7 @@ from feedbax.manifest import (
 from feedbax.plugins.registry import ExperimentRegistry
 
 from rlrmp.analysis import declarative_materialization as dm
-from rlrmp.spec_migrations import (
+from rlrmp.runtime.spec_migrations import (
     HINF_PHENOTYPE_SIDECAR_KIND,
     HINF_PHENOTYPE_SIDECAR_SCHEMA_VERSION,
     accept_rlrmp_spec_payload,

@@ -11,7 +11,7 @@ from typing import Callable, Sequence
 
 from rlrmp.cloud.modal_runner import MODAL_VOLUME_NAME, shell_join
 from rlrmp.paths import REPO_ROOT
-from rlrmp.run_specs import validate_nominal_gru_run_spec_file
+from rlrmp.runtime.run_specs import validate_nominal_gru_run_spec_file
 
 Runner = Callable[[Sequence[str]], int]
 RunSpecValidator = Callable[[Path], None]

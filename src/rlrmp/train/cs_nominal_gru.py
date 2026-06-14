@@ -60,7 +60,7 @@ from rlrmp.loss import (
     CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
-from rlrmp.run_specs import validate_nominal_gru_run_spec
+from rlrmp.runtime.run_specs import validate_nominal_gru_run_spec
 from rlrmp.model.stochastic_runtime import (
     graphspec_noise_contract,
     stochastic_runtime_config_from_model,

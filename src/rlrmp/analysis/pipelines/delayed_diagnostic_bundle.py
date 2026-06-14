@@ -12,7 +12,7 @@ import numpy as np
 
 from rlrmp.analysis.pipelines.diagnostic_provenance import write_regeneration_spec
 from rlrmp.paths import REPO_ROOT, mkdir_p
-from rlrmp.spec_migrations import (
+from rlrmp.runtime.spec_migrations import (
     DELAYED_DIAGNOSTIC_BUNDLE_KIND,
     DELAYED_DIAGNOSTIC_BUNDLE_SCHEMA_VERSION,
     stamp_current_schema,
@@ -153,7 +153,7 @@ def materialize_delayed_diagnostic_bundle(
         outputs=[{"role": "delayed_diagnostic_bundle_manifest", "path": output_path}],
         source_files=[
             "src/rlrmp/analysis/pipelines/delayed_diagnostic_bundle.py",
-            "src/rlrmp/spec_migrations.py",
+            "src/rlrmp/runtime/spec_migrations.py",
         ],
         notes=[
             "Direction split is only meaningful for multi-direction delayed banks.",

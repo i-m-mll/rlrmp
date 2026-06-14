@@ -62,7 +62,7 @@ from rlrmp.analysis.pipelines.standard_certificate_materialization import (
     repo_relative,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
-from rlrmp.spec_migrations import (
+from rlrmp.runtime.spec_migrations import (
     CS_GRU_STANDARD_CERTIFICATES_KIND,
     CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION,
     stamp_current_schema,

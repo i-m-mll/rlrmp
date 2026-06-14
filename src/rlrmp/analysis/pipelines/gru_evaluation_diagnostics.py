@@ -32,7 +32,7 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     resolve_run_inputs,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
-from rlrmp.spec_migrations import (
+from rlrmp.runtime.spec_migrations import (
     GRU_EVALUATION_DIAGNOSTICS_KIND,
     GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION,
     stamp_current_schema,
