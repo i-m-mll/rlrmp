@@ -1,0 +1,43 @@
+schema_id: feedbax.spec.analysis_bundle
+schema_version: feedbax.spec.analysis_bundle.v2
+name: feedback_quality_lens
+description: Feedback-control quality diagnostics with Feedbax manifest custody.
+predicate:
+  manifest_kind: TrainingRunManifest
+  metadata_equals:
+    feedback_quality_candidate: true
+metadata:
+  package: rlrmp
+  bundle_family: rlrmp/feedback_quality_lens
+  issue: af77a06
+  primary_contract: feedbax_analysis_bundle
+  scientific_schema_owner: rlrmp
+  output_conventions:
+    tracked_notes: results/{experiment}/notes
+    bulk_artifacts: _artifacts/{experiment}
+  active_payload_families:
+    - rlrmp.gru_evaluation_diagnostics
+    - rlrmp.objective_comparator_sidecar
+    - rlrmp.gru_perturbation_bank
+    - rlrmp.gru_feedback_ablation
+    - rlrmp.gru_perturbation_response_norm_plots
+    - rlrmp.perturbation_open_loop_calibration
+  sibling_owned_lenses:
+    - robustness_phenotype_aggregation
+    - output_feedback_bridge_diagnostics
+    - training_diagnostics
+templates:
+  - name: feedback_quality_lens
+    mode: grouped
+    analysis_type: rlrmp.feedback_quality_lens
+    requested_outputs: [feedback_quality_lens]
+    params:
+      experiment_metadata_key: rlrmp_experiment
+      output_tag: validation_selected
+      use_validation_selected_checkpoints: true
+      include_evaluation_diagnostics: true
+      include_objective_comparator: true
+      include_perturbation_response: true
+      include_feedback_ablation: true
+      include_response_norm_plots: true
+      include_perturbation_calibration: true
