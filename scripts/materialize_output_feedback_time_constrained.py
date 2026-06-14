@@ -12,9 +12,9 @@ import numpy as np
 
 import materialize_output_feedback_failure_decomposition as failure
 import materialize_output_feedback_sweep_certificates as certificates
-from rlrmp.analysis.cs_game_card import materialize_reference
-from rlrmp.analysis.output_feedback import OutputFeedbackConfig
-from rlrmp.analysis.output_feedback_time_constrained import (
+from rlrmp.analysis.math.cs_game_card import materialize_reference
+from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig
+from rlrmp.analysis.pipelines.output_feedback_time_constrained import (
     ISSUE_ID,
     SPLINE_RANKS,
     TimeBasisCondition,

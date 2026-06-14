@@ -75,7 +75,7 @@ from feedbax import load_with_hyperparameters
 from feedbax.plot import save_figure
 from plotly.subplots import make_subplots
 
-from rlrmp.analysis.trial_alignment import align_trials, replicate_mean_curves
+from rlrmp.analysis.math.trial_alignment import align_trials, replicate_mean_curves
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.intervention_compat import (
     swap_plant_intervenor_to_dynamics_matrix,

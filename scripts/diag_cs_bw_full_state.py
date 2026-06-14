@@ -14,7 +14,7 @@ import jax
 import jax.numpy as jnp
 import equinox as eqx
 
-from rlrmp.analysis.hinf_riccati import (
+from rlrmp.analysis.math.hinf_riccati import (
     compute_velocity_inflation,
     cs_eq15_cost_schedule,
     find_gamma_star,

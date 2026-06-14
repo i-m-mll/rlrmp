@@ -54,7 +54,7 @@ import jax.numpy as jnp
 # x64 is already enabled by the modules on import; belt-and-suspenders here.
 jax.config.update("jax_enable_x64", True)
 
-from rlrmp.analysis.hinf_riccati import (
+from rlrmp.analysis.math.hinf_riccati import (
     CostSchedule,
     CostSpec,
     cost_schedule_from_spec,
@@ -63,7 +63,7 @@ from rlrmp.analysis.hinf_riccati import (
     solve_hinf_riccati,
     solve_lqr,
 )
-from rlrmp.analysis.induced_gain import (
+from rlrmp.analysis.math.induced_gain import (
     W_ADDITIVE_FORCE,
     Z_QR_COST,
     induced_gain_power_iteration,

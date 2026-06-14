@@ -12,13 +12,13 @@ from typing import Any
 import numpy as np
 
 import materialize_output_feedback_sweep_certificates as certificates
-from rlrmp.analysis.cs_game_card import (
+from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     materialize_reference,
 )
-from rlrmp.analysis.linear_round_trip import LinearTrainingConfig
-from rlrmp.analysis.output_feedback import OutputFeedbackConfig
-from rlrmp.analysis.output_feedback_rollout_recovery import (
+from rlrmp.analysis.math.linear_round_trip import LinearTrainingConfig
+from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig
+from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
     observer_error_coverage_conditions,
     result_summary as rollout_result_summary,
     run_output_feedback_rollout_recovery,

@@ -7,7 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
-from rlrmp.analysis.gru_perturbation_calibration import (
+from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
     DEFAULT_AMPLITUDE_FACTORS,
     DEFAULT_RESULT_EXPERIMENT,
     materialize_perturbation_open_loop_calibration,

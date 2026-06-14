@@ -1,4 +1,4 @@
-"""Tests for ``rlrmp.analysis.hinf_riccati``.
+"""Tests for ``rlrmp.analysis.math.hinf_riccati``.
 
 Bug: 5a44bd3 - production reimplementation of the H-infinity Riccati sanity
 check. The tests verify physical/mathematical correctness, not just absence

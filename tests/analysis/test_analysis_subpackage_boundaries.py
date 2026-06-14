@@ -1,31 +1,26 @@
-"""Compatibility and layering checks for the analysis subpackage split."""
+"""Layering checks for the analysis subpackage split."""
 
 from __future__ import annotations
 
 import ast
-import importlib
+import importlib.util
 from pathlib import Path
-
-import pytest
-
 
 MATH_DIR = Path(__file__).parents[2] / "src" / "rlrmp" / "analysis" / "math"
 
 
-@pytest.mark.parametrize(
-    ("old_path", "new_path"),
-    [
-        ("rlrmp.analysis.rerun_metadata", "rlrmp.analysis.math.rerun_metadata"),
-        ("rlrmp.analysis.bridge_contracts", "rlrmp.analysis.pipelines.bridge_contracts"),
-    ],
-)
-def test_old_analysis_import_paths_alias_canonical_modules(old_path: str, new_path: str) -> None:
-    """Representative old paths remain import-compatible after the split."""
+def test_analysis_compatibility_shims_are_absent() -> None:
+    """Representative old root paths are no longer provided as shim modules."""
 
-    old_module = importlib.import_module(old_path)
-    new_module = importlib.import_module(new_path)
+    assert importlib.util.find_spec("rlrmp.analysis.rerun_metadata") is None
+    assert importlib.util.find_spec("rlrmp.analysis.bridge_contracts") is None
 
-    assert old_module is new_module
+
+def test_canonical_analysis_modules_are_importable() -> None:
+    """Representative canonical paths remain importable after shim removal."""
+
+    assert importlib.util.find_spec("rlrmp.analysis.math.rerun_metadata") is not None
+    assert importlib.util.find_spec("rlrmp.analysis.pipelines.bridge_contracts") is not None
 
 
 def test_analysis_math_layer_does_not_import_pipelines_layer() -> None:

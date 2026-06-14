@@ -6,7 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-from rlrmp.analysis.gru_pilot_figures import (
+from rlrmp.analysis.pipelines.gru_pilot_figures import (
     DEFAULT_N_ROLLOUT_TRIALS,
     materialize_gru_pilot_figures,
 )

@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from rlrmp.analysis.gru_perturbation_response_norm_plots import (
+from rlrmp.analysis.pipelines.gru_perturbation_response_norm_plots import (
     DEFAULT_ASSET_DIR,
     DEFAULT_MANIFEST_PATH,
     DEFAULT_NOTE_PATH,

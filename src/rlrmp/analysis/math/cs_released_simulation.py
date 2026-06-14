@@ -1,6 +1,6 @@
 """C&S released-code stochastic forward-simulation lane.
 
-The deterministic output-feedback lane in :mod:`rlrmp.analysis.output_feedback`
+The deterministic output-feedback lane in :mod:`rlrmp.analysis.math.output_feedback`
 is an analytical scaffold. Crevecoeur & Scott's released MATLAB code also runs
 Monte Carlo forward simulations with sampled sensory noise, motor/process
 noise, and signal-dependent control noise. This module keeps that stochastic

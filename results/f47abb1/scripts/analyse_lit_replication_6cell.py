@@ -3,7 +3,7 @@
 
 Bug: 06f7faf — go-cue alignment fix. Velocity-RMSE-ratio and position-RMSE-ratio
 (primary + secondary metrics) and the velocity/hold-drift profile figures now
-use per-trial go-cue alignment via `rlrmp.analysis.trial_alignment`.
+use per-trial go-cue alignment via `rlrmp.analysis.math.trial_alignment`.
 
 
 Tests whether faithful Chaisanguanthum & Shenoy 2019 (C&S) loss schedule gives
@@ -68,7 +68,7 @@ from feedbax import load_with_hyperparameters
 from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 -- project-config routing
 from plotly.subplots import make_subplots
 
-from rlrmp.analysis.trial_alignment import (
+from rlrmp.analysis.math.trial_alignment import (
     align_trials,
     pooled_trial_mean_with_band,
     replicate_mean_curves,

@@ -6,12 +6,12 @@ import argparse
 from pathlib import Path
 
 from feedbax.analysis.specs import execute_analysis_run_spec
-from rlrmp.analysis.output_feedback_rollout_recovery import ISSUE_ID
+from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import ISSUE_ID
 from rlrmp.analysis.declarative_materialization import (
     output_feedback_rollout_recovery_spec,
     register_certificate_analysis_recipes,
 )
-from rlrmp.analysis.rerun_metadata import (
+from rlrmp.analysis.math.rerun_metadata import (
     DEFAULT_DISCRETIZATION,
     DEFAULT_LANE,
     DISCRETIZATION_CHOICES,

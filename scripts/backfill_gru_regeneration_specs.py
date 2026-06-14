@@ -14,7 +14,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from rlrmp.analysis.diagnostic_provenance import repo_relative, write_regeneration_spec
+from rlrmp.analysis.pipelines.diagnostic_provenance import repo_relative, write_regeneration_spec
 from rlrmp.paths import REPO_ROOT
 
 
@@ -170,7 +170,7 @@ def backfill_perturbation_calibration(
         write_regeneration_spec(
             spec_path=spec_path,
             diagnostic_name="perturbation_open_loop_calibration",
-            materializer="rlrmp.analysis.gru_perturbation_calibration.materialize_perturbation_open_loop_calibration",
+            materializer="rlrmp.analysis.pipelines.gru_perturbation_calibration.materialize_perturbation_open_loop_calibration",
             command=None,
             parameters={
                 "experiment": experiment,
@@ -188,8 +188,8 @@ def backfill_perturbation_calibration(
                 {"role": "calibration_note", "path": note_path},
             ],
             source_files=[
-                "src/rlrmp/analysis/gru_perturbation_calibration.py",
-                "src/rlrmp/analysis/gru_perturbation_bank.py",
+                "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py",
+                "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
             ],
             notes=[
                 "Backfilled for the standard perturbation calibration used by current GRU diagnostics.",
@@ -215,10 +215,10 @@ def classify_manifest(name: str, manifest: Mapping[str, Any]) -> dict[str, Any] 
     ):
         return {
             "diagnostic_name": "gru_standard_certificate",
-            "materializer": "rlrmp.analysis.cs_gru_standard_materialization.write_gru_standard_result",
+            "materializer": "rlrmp.analysis.pipelines.cs_gru_standard_materialization.write_gru_standard_result",
             "source_files": [
-                "src/rlrmp/analysis/cs_gru_standard_materialization.py",
-                "src/rlrmp/analysis/standard_certificate_materialization.py",
+                "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
+                "src/rlrmp/analysis/pipelines/standard_certificate_materialization.py",
             ],
         }
     if schema.startswith("rlrmp.gru_evaluation_diagnostics") or name.startswith(
@@ -226,21 +226,21 @@ def classify_manifest(name: str, manifest: Mapping[str, Any]) -> dict[str, Any] 
     ):
         return {
             "diagnostic_name": "gru_evaluation_diagnostics",
-            "materializer": "rlrmp.analysis.gru_evaluation_diagnostics.materialize_gru_evaluation_diagnostics",
-            "source_files": ["src/rlrmp/analysis/gru_evaluation_diagnostics.py"],
+            "materializer": "rlrmp.analysis.pipelines.gru_evaluation_diagnostics.materialize_gru_evaluation_diagnostics",
+            "source_files": ["src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py"],
         }
     if schema.startswith("rlrmp.gru_postrun_materialization") or name.startswith(
         "gru_postrun_materialization"
     ):
         return {
             "diagnostic_name": "gru_postrun_materialization_bundle",
-            "materializer": "rlrmp.analysis.gru_postrun_materialization.materialize_gru_postrun_analysis",
+            "materializer": "rlrmp.analysis.pipelines.gru_postrun_materialization.materialize_gru_postrun_analysis",
             "source_files": [
-                "src/rlrmp/analysis/gru_postrun_materialization.py",
-                "src/rlrmp/analysis/cs_gru_standard_materialization.py",
-                "src/rlrmp/analysis/gru_evaluation_diagnostics.py",
-                "src/rlrmp/analysis/gru_perturbation_bank.py",
-                "src/rlrmp/analysis/gru_feedback_ablation.py",
+                "src/rlrmp/analysis/pipelines/gru_postrun_materialization.py",
+                "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
+                "src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py",
+                "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+                "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
             ],
         }
     if schema.startswith("rlrmp.objective_comparator_sidecar") or name.startswith(
@@ -248,26 +248,26 @@ def classify_manifest(name: str, manifest: Mapping[str, Any]) -> dict[str, Any] 
     ):
         return {
             "diagnostic_name": "gru_objective_comparator",
-            "materializer": "rlrmp.analysis.objective_comparator.materialize_gru_objective_comparator_sidecar",
-            "source_files": ["src/rlrmp/analysis/objective_comparator.py"],
+            "materializer": "rlrmp.analysis.pipelines.objective_comparator.materialize_gru_objective_comparator_sidecar",
+            "source_files": ["src/rlrmp/analysis/pipelines/objective_comparator.py"],
         }
     if schema.startswith("rlrmp.gru_map_error_decomposition") or name.startswith(
         "gru_map_error_decomposition"
     ):
         return {
             "diagnostic_name": "gru_map_error_decomposition",
-            "materializer": "rlrmp.analysis.gru_map_error_decomposition.materialize_gru_map_error_decomposition",
-            "source_files": ["src/rlrmp/analysis/gru_map_error_decomposition.py"],
+            "materializer": "rlrmp.analysis.pipelines.gru_map_error_decomposition.materialize_gru_map_error_decomposition",
+            "source_files": ["src/rlrmp/analysis/pipelines/gru_map_error_decomposition.py"],
         }
     if schema.startswith("rlrmp.gru_perturbation_bank") or name.startswith(
         "gru_perturbation_response"
     ):
         return {
             "diagnostic_name": "gru_perturbation_response_bank",
-            "materializer": "rlrmp.analysis.gru_perturbation_bank.materialize_gru_perturbation_response",
+            "materializer": "rlrmp.analysis.pipelines.gru_perturbation_bank.materialize_gru_perturbation_response",
             "source_files": [
-                "src/rlrmp/analysis/gru_perturbation_bank.py",
-                "src/rlrmp/analysis/cs_released_simulation.py",
+                "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+                "src/rlrmp/analysis/math/cs_released_simulation.py",
             ],
         }
     if schema.startswith("rlrmp.gru_feedback_ablation") or name.startswith(
@@ -275,10 +275,10 @@ def classify_manifest(name: str, manifest: Mapping[str, Any]) -> dict[str, Any] 
     ):
         return {
             "diagnostic_name": "gru_feedback_ablation",
-            "materializer": "rlrmp.analysis.gru_feedback_ablation.materialize_gru_feedback_ablation",
+            "materializer": "rlrmp.analysis.pipelines.gru_feedback_ablation.materialize_gru_feedback_ablation",
             "source_files": [
-                "src/rlrmp/analysis/gru_feedback_ablation.py",
-                "src/rlrmp/analysis/gru_perturbation_bank.py",
+                "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
+                "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
             ],
         }
     if schema.startswith("rlrmp.validation_selected_gru_checkpoints") or name.startswith(
@@ -286,8 +286,8 @@ def classify_manifest(name: str, manifest: Mapping[str, Any]) -> dict[str, Any] 
     ):
         return {
             "diagnostic_name": "validation_selected_checkpoint_manifest",
-            "materializer": "rlrmp.analysis.gru_checkpoint_selection.materialize_validation_selected_checkpoint_manifest",
-            "source_files": ["src/rlrmp/analysis/gru_checkpoint_selection.py"],
+            "materializer": "rlrmp.analysis.pipelines.gru_checkpoint_selection.materialize_validation_selected_checkpoint_manifest",
+            "source_files": ["src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py"],
         }
     if schema.startswith("rlrmp.cs_stochastic_gru.training_diagnostics_summary"):
         return {

@@ -6,7 +6,7 @@ import argparse
 from pathlib import Path
 
 from feedbax.analysis.specs import execute_analysis_run_spec
-from rlrmp.analysis.cs_gru_standard_materialization import (
+from rlrmp.analysis.pipelines.cs_gru_standard_materialization import (
     MATERIALIZER_ISSUE_ID,
     MANIFEST_PATH,
     NOTE_PATH,

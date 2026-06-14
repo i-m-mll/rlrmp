@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 
 import materialize_output_feedback_failure_decomposition as failure
-from rlrmp.analysis.output_feedback_affine_tracker import (
+from rlrmp.analysis.pipelines.output_feedback_affine_tracker import (
     ISSUE_ID,
     DEFAULT_SPLINE_RANK,
     render_markdown,

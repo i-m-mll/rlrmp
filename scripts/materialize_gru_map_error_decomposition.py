@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from rlrmp.analysis.gru_map_error_decomposition import (
+from rlrmp.analysis.pipelines.gru_map_error_decomposition import (
     DEFAULT_LABEL,
     DEFAULT_STANDARD_MANIFEST,
     SOURCE_ISSUE_ID,

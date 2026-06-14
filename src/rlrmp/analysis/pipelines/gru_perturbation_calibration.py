@@ -1043,7 +1043,7 @@ def _write_calibration_regeneration_spec(
         spec_path=spec_path,
         diagnostic_name="perturbation_open_loop_calibration",
         materializer=(
-            "rlrmp.analysis.gru_perturbation_calibration."
+            "rlrmp.analysis.pipelines.gru_perturbation_calibration."
             "materialize_perturbation_open_loop_calibration"
         ),
         command=command,
@@ -1081,9 +1081,9 @@ def _write_calibration_regeneration_spec(
             {"role": "calibration_markdown_note", "path": note_path},
         ],
         source_files=[
-            "src/rlrmp/analysis/gru_perturbation_calibration.py",
+            "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py",
             "scripts/materialize_perturbation_open_loop_calibration.py",
-            "src/rlrmp/analysis/diagnostic_provenance.py",
+            "src/rlrmp/analysis/pipelines/diagnostic_provenance.py",
         ],
         notes=[
             (

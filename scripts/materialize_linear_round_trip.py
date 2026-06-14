@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import argparse
 
-from rlrmp.analysis.linear_round_trip import ISSUE_ID, write_outputs
-from rlrmp.analysis.rerun_metadata import (
+from rlrmp.analysis.math.linear_round_trip import ISSUE_ID, write_outputs
+from rlrmp.analysis.math.rerun_metadata import (
     DEFAULT_DISCRETIZATION,
     DEFAULT_LANE,
     DISCRETIZATION_CHOICES,

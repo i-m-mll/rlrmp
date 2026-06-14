@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import argparse
 
-from rlrmp.analysis.output_feedback import (
+from rlrmp.analysis.math.output_feedback import (
     GAMMA_FEASIBILITY_SWEEP_ISSUE_ID,
     GAMMA_SWEEP_FACTORS,
     write_gamma_sweep_outputs,
 )
-from rlrmp.analysis.rerun_metadata import (
+from rlrmp.analysis.math.rerun_metadata import (
     DEFAULT_DISCRETIZATION,
     DEFAULT_LANE,
     DISCRETIZATION_CHOICES,

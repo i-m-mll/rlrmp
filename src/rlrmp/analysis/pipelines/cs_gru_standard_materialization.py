@@ -881,7 +881,7 @@ def write_gru_standard_result(
     write_regeneration_spec(
         spec_path=regeneration_spec_path,
         diagnostic_name="gru_standard_certificate",
-        materializer="rlrmp.analysis.cs_gru_standard_materialization.write_gru_standard_result",
+        materializer="rlrmp.analysis.pipelines.cs_gru_standard_materialization.write_gru_standard_result",
         command=None,
         parameters={
             "experiment": result.get("source_issue"),
@@ -902,9 +902,9 @@ def write_gru_standard_result(
             {"role": "standard_certificate_note", "path": note_path},
         ],
         source_files=[
-            "src/rlrmp/analysis/cs_gru_standard_materialization.py",
-            "src/rlrmp/analysis/bridge_certificates.py",
-            "src/rlrmp/analysis/standard_certificate_materialization.py",
+            "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
+            "src/rlrmp/analysis/pipelines/bridge_certificates.py",
+            "src/rlrmp/analysis/pipelines/standard_certificate_materialization.py",
         ],
         notes=[
             "Standard certificate is in scope for regeneration specs.",

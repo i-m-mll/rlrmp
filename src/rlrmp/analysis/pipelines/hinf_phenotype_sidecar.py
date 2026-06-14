@@ -50,7 +50,7 @@ def build_hinf_phenotype_sidecar(
     sources: Mapping[str, Mapping[str, Any] | None],
     issue: str = ISSUE_ID,
     scope: str = DEFAULT_SCOPE,
-    generated_by: str = "rlrmp.analysis.hinf_phenotype_sidecar",
+    generated_by: str = "rlrmp.analysis.pipelines.hinf_phenotype_sidecar",
 ) -> dict[str, Any]:
     """Aggregate existing diagnostic manifests into a robustness phenotype sidecar.
 
@@ -956,7 +956,7 @@ def _write_hinf_regeneration_spec(
     return write_regeneration_spec(
         spec_path=spec_path,
         diagnostic_name="hinf_phenotype_sidecar",
-        materializer="rlrmp.analysis.hinf_phenotype_sidecar.write_hinf_phenotype_sidecar",
+        materializer="rlrmp.analysis.pipelines.hinf_phenotype_sidecar.write_hinf_phenotype_sidecar",
         command=[
             "uv",
             "run",
@@ -983,9 +983,9 @@ def _write_hinf_regeneration_spec(
             {"role": "sidecar_markdown", "path": markdown_path},
         ],
         source_files=[
-            "src/rlrmp/analysis/hinf_phenotype_sidecar.py",
+            "src/rlrmp/analysis/pipelines/hinf_phenotype_sidecar.py",
             "scripts/materialize_hinf_phenotype_sidecar.py",
-            "src/rlrmp/analysis/diagnostic_provenance.py",
+            "src/rlrmp/analysis/pipelines/diagnostic_provenance.py",
         ],
         notes=[
             "Interpretive phenotype sidecar only; not a formal H-infinity certificate.",
