@@ -12,17 +12,20 @@ import feedbax.serialization_prototypes as fbx_prototypes
 from feedbax.contracts.graph import GraphSpec
 from feedbax.graph import init_state_from_component
 from feedbax.serialization import spec_to_graph
+from feedbax.state_feedback import StateFeedbackSelector
 from feedbax.train import filter_spec_leaves, get_model_parameters
 
 from rlrmp.analysis.math.cs_game_card import build_canonical_game, build_no_integrator_game
 from rlrmp.cs_lss_gru import (
     CS_DELAYED_POS_VEL_INDICES,
+    CS_DELAYED_POS_VEL_FORCE_INDICES,
     CS_EPSILON_DIM,
     FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
     CS_LSS_DELAYED_FEEDBACK_COMPONENT,
     CS_LSS_INITIAL_HIDDEN_NET_COMPONENT,
+    CS_LSS_TARGET_FEEDBACK_COMPONENT,
+    CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT,
     CS_REDUCED_EPSILON_DIM,
-    DelayedPositionVelocityFeedback,
     InitialHiddenStagedNetwork,
     build_cs_lss_gru_graph,
     build_cs_lss_gru_graph_spec,
@@ -35,13 +38,19 @@ from rlrmp.feedbax_graph import graph_spec_from_model, graph_spec_payload
 
 
 def test_feedback_selector_uses_oldest_delayed_position_velocity_block() -> None:
-    selector = DelayedPositionVelocityFeedback()
+    spec = build_cs_lss_gru_graph_spec(
+        hidden_size=5,
+        bind_epsilon_input=True,
+        key=jax.random.PRNGKey(0),
+    )
+    selector = StateFeedbackSelector(**spec.nodes["feedback"].params)
     vector = jnp.arange(48, dtype=jnp.float64)
     state = init_state_from_component(selector)
 
     outputs, _ = selector({"state": vector}, state, key=jax.random.PRNGKey(0))
 
     assert outputs["feedback"].shape == (4,)
+    assert spec.nodes["feedback"].type == FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT
     assert tuple(outputs["feedback"].tolist()) == CS_DELAYED_POS_VEL_INDICES
 
 
@@ -148,21 +157,86 @@ def test_cs_lss_graph_specs_round_trip_and_materialize_representative_variants(
         assert graph.nodes["mechanics"].B_w.shape == (36, 6)
 
 
-def test_legacy_cs_lss_feedback_selector_id_materializes_through_migration() -> None:
+@pytest.mark.parametrize(
+    (
+        "legacy_type",
+        "params",
+        "target_relative_feedback",
+        "force_filter_feedback",
+        "inputs",
+        "expected_feedback",
+    ),
+    [
+        (
+            CS_LSS_DELAYED_FEEDBACK_COMPONENT,
+            {
+                "indices": list(CS_DELAYED_POS_VEL_INDICES),
+                "expected_state_dim": 48,
+                "feedback_dim": 4,
+            },
+            False,
+            False,
+            {
+                "state": jnp.arange(48, dtype=jnp.float32),
+            },
+            jnp.asarray(CS_DELAYED_POS_VEL_INDICES, dtype=jnp.float32),
+        ),
+        (
+            CS_LSS_TARGET_FEEDBACK_COMPONENT,
+            {
+                "indices": list(CS_DELAYED_POS_VEL_INDICES),
+                "expected_state_dim": 48,
+                "feedback_dim": 4,
+            },
+            True,
+            False,
+            {
+                "state": jnp.zeros((48,), dtype=jnp.float32).at[40:44].set(
+                    jnp.array([0.02, -0.03, 0.40, -0.20], dtype=jnp.float32)
+                ),
+                "target": jnp.array([0.15, 0.01], dtype=jnp.float32),
+            },
+            jnp.array([0.13, 0.04, -0.40, 0.20], dtype=jnp.float32),
+        ),
+        (
+            CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT,
+            {
+                "indices": list(CS_DELAYED_POS_VEL_FORCE_INDICES),
+                "expected_state_dim": 48,
+                "feedback_dim": 6,
+            },
+            True,
+            True,
+            {
+                "state": jnp.zeros((48,), dtype=jnp.float32).at[40:46].set(
+                    jnp.array([0.02, -0.03, 0.40, -0.20, 0.70, -0.80], dtype=jnp.float32)
+                ),
+                "target": jnp.array([0.15, 0.01], dtype=jnp.float32),
+            },
+            jnp.array([0.13, 0.04, -0.40, 0.20, 0.70, -0.80], dtype=jnp.float32),
+        ),
+    ],
+)
+def test_legacy_cs_lss_feedback_selector_ids_materialize_through_migration(
+    legacy_type: str,
+    params: dict[str, object],
+    target_relative_feedback: bool,
+    force_filter_feedback: bool,
+    inputs: dict[str, jax.Array],
+    expected_feedback: jax.Array,
+) -> None:
     spec = build_cs_lss_gru_graph_spec(
         hidden_size=5,
         bind_epsilon_input=True,
+        target_relative_feedback=target_relative_feedback,
+        force_filter_feedback=force_filter_feedback,
         key=jax.random.PRNGKey(12),
     )
     nodes = dict(spec.nodes)
     nodes["feedback"] = nodes["feedback"].model_copy(
         update={
-            "type": CS_LSS_DELAYED_FEEDBACK_COMPONENT,
-            "params": {
-                "indices": list(CS_DELAYED_POS_VEL_INDICES),
-                "expected_state_dim": 48,
-                "feedback_dim": 4,
-            },
+            "type": legacy_type,
+            "params": params,
         }
     )
     legacy_spec = spec.model_copy(update={"nodes": nodes})
@@ -177,9 +251,56 @@ def test_legacy_cs_lss_feedback_selector_id_materializes_through_migration() -> 
     migration = next(
         item
         for item in definition.migrations
-        if item.source_type == CS_LSS_DELAYED_FEEDBACK_COMPONENT
+        if item.source_type == legacy_type
     )
     assert migration.owner == "rlrmp"
+    outputs, _ = graph.nodes["feedback"](
+        inputs,
+        init_state_from_component(graph.nodes["feedback"]),
+        key=jax.random.PRNGKey(13),
+    )
+    assert jnp.allclose(outputs["feedback"], expected_feedback)
+
+
+def test_cs_lss_materialization_rejects_unsupported_state_diffusion_params() -> None:
+    spec = build_cs_lss_gru_graph_spec(
+        hidden_size=5,
+        bind_epsilon_input=True,
+        key=jax.random.PRNGKey(16),
+    )
+    nodes = dict(spec.nodes)
+    mechanics = nodes["mechanics"]
+    nodes["mechanics"] = mechanics.model_copy(
+        update={
+            "params": {
+                **mechanics.params,
+                "state_diffusion_covariance": [[1.0]],
+            }
+        }
+    )
+    invalid_spec = spec.model_copy(update={"nodes": nodes})
+
+    with pytest.raises(ValueError, match="Unsupported LinearStateSpace stochastic"):
+        materialize_cs_lss_gru_graph_spec(invalid_spec)
+
+
+def test_cs_lss_materialization_rejects_unsupported_stochastic_component_id() -> None:
+    spec = build_cs_lss_gru_graph_spec(
+        hidden_size=5,
+        bind_epsilon_input=True,
+        key=jax.random.PRNGKey(17),
+    )
+    nodes = dict(spec.nodes)
+    nodes["state_noise"] = nodes["feedback"].model_copy(
+        update={
+            "type": "RLRMPCsLssStateDiffusionNoise",
+            "params": {"std": 0.1},
+        }
+    )
+    invalid_spec = spec.model_copy(update={"nodes": nodes})
+
+    with pytest.raises(ValueError, match="Unsupported C&S stochastic component"):
+        materialize_cs_lss_gru_graph_spec(invalid_spec)
 
 
 def test_runtime_cs_lss_graph_export_preserves_executable_component_contract() -> None:
@@ -225,8 +346,8 @@ def test_cs_lss_materialization_uses_registered_prototypes_without_global_patch(
     assert fbx_prototypes.output_prototypes_for_node is original_output_prototypes_for_node
     assert registry.get(FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT).output_prototype_fn is not None
     assert registry.get("RLRMPSimpleStagedNetwork").output_prototype_fn is not None
-    assert registry.get("Channel").output_prototype_fn is not None
-    assert registry.get("LinearStateSpace").output_prototype_fn is not None
+    assert registry.get("Channel").output_prototype_fn is None
+    assert registry.get("LinearStateSpace").output_prototype_fn is None
     assert graph.nodes["mechanics"].A.shape == (48, 48)
 
 
