@@ -10,7 +10,7 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
-from feedbax.bodies import FeedbackChannels, SimpleFeedback, SimpleFeedbackState
+from feedbax.bodies import FeedbackChannels, SimpleFeedbackState
 from feedbax.component_registry import get_component_registry
 from feedbax.contracts.graph import (
     ComponentSpec,
@@ -21,6 +21,7 @@ from feedbax.contracts.graph import (
     RetentionPolicySpec,
     WireSpec,
 )
+from feedbax._tree import tree_sum_n_features
 from feedbax.filters import FilterState
 from feedbax.graph import Graph
 from feedbax.intervene import (
@@ -53,6 +54,17 @@ GRAPH_PLANT_INTERVENOR_NODE = PLANT_INTERVENOR_LABEL
 NATIVE_POINT_MASS_COMPONENT = "PointMass"
 NATIVE_FEEDBACK_CHANNELS_COMPONENT = "FeedbackChannels"
 NATIVE_CHANNEL_COMPONENT = "Channel"
+NATIVE_SUBGRAPH_COMPONENT = "Subgraph"
+
+
+@dataclass(frozen=True)
+class _NetworkInputSizes:
+    external: int
+    feedback: int
+
+    @property
+    def total(self) -> int:
+        return self.external + self.feedback
 
 
 def _point_mass_feedback(state: MechanicsState):
@@ -486,6 +498,12 @@ def _graph_bundle_metadata(
         "schema_version": SCHEMA_VERSION,
         "execution_backend": EXECUTION_BACKEND,
         "component_policy": {
+            "feedbax_component_types": [
+                NATIVE_SUBGRAPH_COMPONENT,
+                "Mux",
+                "GRU",
+                "Linear",
+            ],
             "rlrmp_component_types": [
                 "RLRMPSimpleStagedNetwork",
                 "RLRMPLinearController",
@@ -500,8 +518,11 @@ def _graph_bundle_metadata(
             ],
             "note": (
                 "Generic point-mass mechanics, feedback, and stochastic channel "
-                "nodes use Feedbax-native component types. Historical RLRMP-branded "
-                "generic component IDs are migrated before materialization."
+                "nodes use Feedbax-native component types. Plain/additive unmasked "
+                "GRU controllers emit explicit RLRMP graph wiring around Feedbax Mux, "
+                "GRU, and Linear primitives. RLRMP-branded staged network components "
+                "remain for multiplicative SISU, population masks, and historical specs. "
+                "SISU is an RLRMP task input, not a Feedbax network port."
             ),
         },
         "legacy_loader": {
@@ -551,6 +572,17 @@ def build_point_mass_sensorimotor_graph_spec(
         "mass": float(hps.model.effector_mass),
         "damping": float(hps.model.damping),
     }
+    net_spec, net_subgraph = _controller_component_spec(
+        hps,
+        controller_kind,
+        task=task,
+        n_extra_inputs=n_extra_inputs,
+        population_structure=population_structure,
+        hidden_type=hidden_type,
+        sisu_gating=sisu_gating,
+        key=key_param,
+    )
+    subgraphs = {"net": net_subgraph} if net_subgraph is not None else None
     nodes: dict[str, ComponentSpec] = {
         "feedback": ComponentSpec(
             type=NATIVE_FEEDBACK_CHANNELS_COMPONENT,
@@ -567,16 +599,7 @@ def build_point_mass_sensorimotor_graph_spec(
             input_ports=["mechanics"],
             output_ports=["feedback"],
         ),
-        "net": _controller_component_spec(
-            hps,
-            controller_kind,
-            task=task,
-            n_extra_inputs=n_extra_inputs,
-            population_structure=population_structure,
-            hidden_type=hidden_type,
-            sisu_gating=sisu_gating,
-            key=key_param,
-        ),
+        "net": net_spec,
         "efferent": ComponentSpec(
             type=NATIVE_CHANNEL_COMPONENT,
             params={
@@ -757,6 +780,7 @@ def build_point_mass_sensorimotor_graph_spec(
         retained_observables=_retained_observables(
             include_plant_process_force_noise=noise_config.has_plant_process_force_noise,
         ),
+        subgraphs=subgraphs,
         metadata=GraphMetadata(
             name="RLRMP point-mass sensorimotor loop",
             description=("Executable GraphSpec contract for RLRMP minimax training."),
@@ -882,6 +906,13 @@ def graph_spec_from_model(
         if cs_lss_spec is not None:
             nodes[name] = cs_lss_spec
             drop_subgraphs.add(name)
+        elif isinstance(component, SimpleStagedNetwork):
+            staged_spec, staged_subgraph = _runtime_simple_staged_network_component_spec(component)
+            nodes[name] = staged_spec
+            if staged_subgraph is None:
+                drop_subgraphs.add(name)
+            else:
+                subgraphs[name] = staged_subgraph
         elif isinstance(component, DynamicsMatrixPerturb):
             nodes[name] = ComponentSpec(
                 type="DynamicsMatrixPerturb",
@@ -1017,6 +1048,53 @@ def _cs_lss_simple_staged_network_params(component: SimpleStagedNetwork) -> dict
     }
 
 
+def _runtime_simple_staged_network_component_spec(
+    component: SimpleStagedNetwork,
+) -> tuple[ComponentSpec, GraphSpec | None]:
+    params = _cs_lss_simple_staged_network_params(component)
+    params["n_extra_inputs"] = 0
+    input_size = int(params["input_size"])
+    hidden_size = int(params["hidden_size"])
+    out_size = int(params["out_size"])
+    hidden_type_name = str(params["hidden_type"])
+    population_params = dict(params["population_structure"])
+    if _requires_rlrmp_staged_network_wrapper(
+        controller_kind="gru",
+        input_size=input_size,
+        hidden_type_name=hidden_type_name,
+        sisu_gating=str(params["sisu_gating"]),
+        population_params=population_params,
+    ):
+        return (
+            ComponentSpec(
+                type="RLRMPSimpleStagedNetwork",
+                params=params,
+                input_ports=list(component.input_ports),
+                output_ports=list(component.output_ports),
+            ),
+            None,
+        )
+    return (
+        ComponentSpec(
+            type=NATIVE_SUBGRAPH_COMPONENT,
+            params={
+                "controller_kind": "gru",
+                "input_size": input_size,
+                "hidden_size": hidden_size,
+                "out_size": out_size,
+                "hidden_type": hidden_type_name,
+            },
+            input_ports=list(component.input_ports),
+            output_ports=list(component.output_ports),
+        ),
+        _plain_additive_gru_subgraph(
+            input_size=input_size,
+            hidden_size=hidden_size,
+            out_size=out_size,
+        ),
+    )
+
+
 def _runtime_population_structure_params(
     population_structure: PopulationStructure | None,
     *,
@@ -1138,48 +1216,204 @@ def _controller_component_spec(
     hidden_type: Any | None = None,
     sisu_gating: str = "additive",
     key: list[int] | None = None,
-) -> ComponentSpec:
+) -> tuple[ComponentSpec, GraphSpec | None]:
     if controller_kind == "linear":
-        return ComponentSpec(
-            type="RLRMPLinearController",
-            params={**_linear_controller_params(hps), "key": key},
-            input_ports=["input", "feedback"],
-            output_ports=["output", "hidden"],
+        return (
+            ComponentSpec(
+                type="RLRMPLinearController",
+                params={**_linear_controller_params(hps), "key": key},
+                input_ports=["input", "feedback"],
+                output_ports=["output", "hidden"],
+            ),
+            None,
         )
     if controller_kind == "linear_tracker":
-        return ComponentSpec(
-            type="RLRMPLinearTrackerController",
-            params={**_linear_controller_params(hps), "key": key},
-            input_ports=["input", "feedback"],
-            output_ports=["output", "hidden"],
+        return (
+            ComponentSpec(
+                type="RLRMPLinearTrackerController",
+                params={**_linear_controller_params(hps), "key": key},
+                input_ports=["input", "feedback"],
+                output_ports=["output", "hidden"],
+            ),
+            None,
         )
     input_size = None
+    external_input_size = None
+    feedback_size = None
     if task is not None:
-        input_size = _point_mass_network_input_size(
+        input_sizes = _point_mass_network_input_sizes(
             hps,
             task=task,
             n_extra_inputs=n_extra_inputs,
         )
-    return ComponentSpec(
-        type="RLRMPSimpleStagedNetwork",
-        params={
-            "controller_kind": controller_kind,
-            "input_size": input_size,
-            "input_size_source": "task-derived" if input_size is not None else "unresolved",
-            "hidden_size": int(hps.model.hidden_size),
-            "out_size": 2,
-            "encoding_size": None,
-            "hidden_type": _hidden_type_name(hidden_type),
-            "sisu_gating": sisu_gating,
-            "n_extra_inputs": int(n_extra_inputs),
-            "population_structure": _population_structure_params(
-                hps,
-                population_structure,
+        input_size = input_sizes.total
+        external_input_size = input_sizes.external
+        feedback_size = input_sizes.feedback
+    hidden_type_name = _hidden_type_name(hidden_type)
+    population_params = _population_structure_params(
+        hps,
+        population_structure,
+    )
+    wrapper_params = {
+        "controller_kind": controller_kind,
+        "input_size": input_size,
+        "input_size_source": "task-derived" if input_size is not None else "unresolved",
+        "hidden_size": int(hps.model.hidden_size),
+        "out_size": 2,
+        "encoding_size": None,
+        "hidden_type": hidden_type_name,
+        "sisu_gating": sisu_gating,
+        "n_extra_inputs": int(n_extra_inputs),
+        "population_structure": population_params,
+        "key": key,
+    }
+    if _requires_rlrmp_staged_network_wrapper(
+        controller_kind=controller_kind,
+        input_size=input_size,
+        hidden_type_name=hidden_type_name,
+        sisu_gating=sisu_gating,
+        population_params=population_params,
+    ):
+        return (
+            ComponentSpec(
+                type="RLRMPSimpleStagedNetwork",
+                params=wrapper_params,
+                input_ports=["input", "feedback"],
+                output_ports=["output", "hidden"],
             ),
-            "key": key,
+            None,
+        )
+    return (
+        ComponentSpec(
+            type=NATIVE_SUBGRAPH_COMPONENT,
+            params={
+                "controller_kind": controller_kind,
+                "input_size": input_size,
+                "external_input_size": external_input_size,
+                "feedback_size": feedback_size,
+                "hidden_size": int(hps.model.hidden_size),
+                "out_size": 2,
+                "hidden_type": hidden_type_name,
+            },
+            input_ports=["input", "feedback"],
+            output_ports=["output", "hidden"],
+        ),
+        _plain_additive_gru_subgraph(
+            input_size=int(input_size),
+            hidden_size=int(hps.model.hidden_size),
+            out_size=2,
+        ),
+    )
+
+
+def _plain_additive_gru_subgraph(
+    *,
+    input_size: int,
+    hidden_size: int,
+    out_size: int,
+) -> GraphSpec:
+    """Build explicit ordinary graph wiring for an additive-input GRU controller."""
+
+    return GraphSpec(
+        nodes={
+            "input_mux": ComponentSpec(
+                type="Mux",
+                params={"n_inputs": 2},
+                input_ports=["in_0", "in_1"],
+                output_ports=["output"],
+            ),
+            "cell": ComponentSpec(
+                type="GRU",
+                params={"input_size": int(input_size), "hidden_size": int(hidden_size)},
+                input_ports=["input", "hidden"],
+                output_ports=["output", "hidden"],
+            ),
+            "readout": ComponentSpec(
+                type="Linear",
+                params={
+                    "input_size": int(hidden_size),
+                    "output_size": int(out_size),
+                    "use_bias": True,
+                    "activation": "identity",
+                },
+                input_ports=["input"],
+                output_ports=["output"],
+            ),
         },
+        wires=[
+            WireSpec(
+                source_node="input_mux",
+                source_port="output",
+                target_node="cell",
+                target_port="input",
+            ),
+            WireSpec(
+                source_node="cell",
+                source_port="hidden",
+                target_node="readout",
+                target_port="input",
+            ),
+            WireSpec(
+                source_node="cell",
+                source_port="hidden",
+                target_node="cell",
+                target_port="hidden",
+                temporality="recurrent",
+                recurrent_initializer={
+                    "kind": "zeros",
+                    "scope": "trial",
+                    "source": "state_initializer",
+                    "state_slot": "hidden",
+                    "shape": [int(hidden_size)],
+                },
+            ),
+        ],
         input_ports=["input", "feedback"],
         output_ports=["output", "hidden"],
+        input_bindings={"input": ("input_mux", "in_0"), "feedback": ("input_mux", "in_1")},
+        output_bindings={"output": ("readout", "output"), "hidden": ("cell", "hidden")},
+        metadata=GraphMetadata(
+            name="RLRMP additive GRU controller",
+            description=(
+                "Explicit RLRMP graph wiring around ordinary Feedbax Mux, GRU, "
+                "and Linear primitives."
+            ),
+            created_at="1970-01-01T00:00:00",
+            updated_at="1970-01-01T00:00:00",
+            version="1.0.0",
+            tags=["rlrmp", "feedbax", "gru"],
+        ),
+    )
+
+
+def _requires_rlrmp_staged_network_wrapper(
+    *,
+    controller_kind: str,
+    input_size: int | None,
+    hidden_type_name: str,
+    sisu_gating: str,
+    population_params: dict[str, int],
+) -> bool:
+    if controller_kind != "gru":
+        return True
+    if input_size is None:
+        return True
+    if hidden_type_name not in {"GRU", "GRUCell", "gru"}:
+        return True
+    if sisu_gating != "additive":
+        return True
+    return _has_population_mask(population_params)
+
+
+def _has_population_mask(population_params: dict[str, int]) -> bool:
+    return any(
+        int(population_params.get(name, 0) or 0) > 0
+        for name in (
+            "n_input_only",
+            "n_readout_only",
+            "n_recurrent_only",
+            "n_input_readout",
+        )
     )
 
 
@@ -1189,6 +1423,19 @@ def _point_mass_network_input_size(
     task: Any,
     n_extra_inputs: int,
 ) -> int:
+    return _point_mass_network_input_sizes(
+        hps,
+        task=task,
+        n_extra_inputs=n_extra_inputs,
+    ).total
+
+
+def _point_mass_network_input_sizes(
+    hps: Any,
+    *,
+    task: Any,
+    n_extra_inputs: int,
+) -> _NetworkInputSizes:
     mechanics = Mechanics(
         DirectForceInput(
             PointMass(
@@ -1203,8 +1450,18 @@ def _point_mass_network_input_size(
         "delay": int(hps.model.feedback_delay_steps),
         "noise_func": Normal(std=stochastic_runtime_config_from_model(hps.model).sensory_noise_std),
     }
-    return SimpleFeedback.get_nn_input_size(task, mechanics, feedback_spec=feedback_spec) + int(
-        n_extra_inputs
+    plant_state = mechanics.plant.init(key=jr.PRNGKey(0))
+    example_feedback = feedback_spec["where"](
+        MechanicsState(
+            plant=plant_state,
+            effector=mechanics.plant.skeleton.effector(plant_state.skeleton),
+            solver=None,
+        )
+    )
+    example_trial_spec = task.get_train_trial_with_intervenor_params(key=jr.PRNGKey(0))
+    return _NetworkInputSizes(
+        external=tree_sum_n_features(example_trial_spec.inputs) + int(n_extra_inputs),
+        feedback=tree_sum_n_features(example_feedback),
     )
 
 
