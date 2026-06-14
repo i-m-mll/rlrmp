@@ -1,0 +1,4028 @@
+{
+  "component_policy": {
+    "nominal_intervention_policy": "plant_intervenor is present only as an inactive legacy GraphSpec compatibility component; no robust/minimax adversary is scheduled.",
+    "rlrmp_component_types": [
+      "RLRMPFeedbackChannels",
+      "RLRMPSimpleStagedNetwork",
+      "FixedField"
+    ]
+  },
+  "delayed_reach": {
+    "catch_trials": {
+      "go_cue_value": 0.0,
+      "p_catch_trial": 0.5,
+      "semantics": "target remains visible, movement target is replaced by the initial position, and DelayedReachTaskInputs.hold stays 1 for the full trial"
+    },
+    "enabled": true,
+    "go_cue_input": {
+      "input_port": "input",
+      "shape": [
+        1
+      ],
+      "sign": "0_during_prep_1_during_movement",
+      "source": "1 - DelayedReachTaskInputs.hold"
+    },
+    "go_cue_sampling": {
+      "distribution": "uniform_integer",
+      "max_step_inclusive": 30,
+      "min_step_inclusive": 10
+    },
+    "mode": "delayed_reach_target_visible_go_cue",
+    "movement_epoch": {
+      "cost_indexing": "movement_age_not_trial_age",
+      "cs_schedule_horizon_steps": 60,
+      "epoch_index": 1,
+      "epoch_name": "movement",
+      "source": "trial_specs.timeline.epoch_bounds[-2:]"
+    },
+    "multi_target_contract": "same structured target-relative target bank as non-delayed rows",
+    "pgd_mask": {
+      "mode": "movement_epoch_only",
+      "prep_support": "zero"
+    },
+    "prep_epoch": {
+      "anti_anticipation": "nn_output_pre_go",
+      "epoch_name": "prep",
+      "target_directed_movement_loss": "zero"
+    },
+    "target_on_input": "not_used_target_always_visible",
+    "target_visibility": "visible_from_trial_start",
+    "task_type": "cs_delayed_center_out_reach"
+  },
+  "execution_backend": "rlrmp.legacy_simple_feedback_compat",
+  "game_card_provenance": {
+    "canonical_builder": "build_canonical_game",
+    "cost": {
+      "R": "I_2",
+      "fact_t": "((t + 1) / T)^6, capped at 1",
+      "feedbax_force_filter_state_cost": "included_via_full_qrf",
+      "feedbax_force_filter_state_cost_note": "Full analytical Q/R/Q_f loss scores force/filter and disturbance-integrator state through the canonical delay-augmented C&S Q_t and Q_f matrices.",
+      "force_and_integrator_weight": "1.0",
+      "position_weight": "fact_t * 1e6",
+      "schedule": "C&S Eq. 15 physical 8-state schedule with 5-step delay distribution",
+      "terminal_Q_f": "diag([1e6, 1e6, 1e5, 1e5, 1, 1, 1, 1]) on physical state",
+      "velocity_weight": "fact_t * 1e5"
+    },
+    "delayed_reach_projection": {
+      "canonical_cs_movement_horizon_steps": 60,
+      "cost_indexing": "canonical Q/R/Q_f schedule starts at sampled go cue",
+      "enabled": true,
+      "prep_epoch": "not part of canonical movement-stage C&S cost",
+      "rollout_control_stages": 90
+    },
+    "discretization": "euler",
+    "dt": 0.01,
+    "feedbax_control_cost_stages": 60,
+    "feedbax_task_n_steps": 61,
+    "gamma_usage": "Recorded for C&S provenance only. This nominal run has no robust/minimax adversarial phase and does not claim a certificate pass.",
+    "hold_free": true,
+    "horizon_steps": 60,
+    "init_pos_m": [
+      0.0,
+      0.0
+    ],
+    "output_feedback_certificate_gamma_factor": 1.4,
+    "output_feedback_gamma_selection_issue": "97604a8",
+    "plant": {
+      "bw_contract": "top physical 8x8 block is identity; lag rows are zero",
+      "bw_shape": [
+        48,
+        8
+      ],
+      "control_dim": 2,
+      "damping": 0.1,
+      "delay_steps": 5,
+      "disturbance_dim": 8,
+      "mass": 1.0,
+      "physical_state_dim": 8,
+      "state_dim": 48,
+      "tau": 0.066
+    },
+    "single_reach": true,
+    "source_module": "rlrmp.analysis.cs_game_card",
+    "target_distance_m": 0.15,
+    "target_pos_m": [
+      0.15,
+      0.0
+    ]
+  },
+  "graph_export": {
+    "authoritative_sources": [
+      "run.json.model_summary",
+      "run.json.hps.model.plant_backend",
+      "trained_model.eqx"
+    ],
+    "reason": "C&S cs_lss runs use LinearStateSpace mechanics and delayed position/velocity feedback; the current compatibility GraphSpec builder serializes the legacy FirstOrderFilter -> PointMass path.",
+    "status": "unavailable"
+  },
+  "legacy_loader": {
+    "checkpoint_format": "feedbax._io.save/load_with_hyperparameters",
+    "setup_function": "rlrmp.modules.training.part2.setup_task_model_pair"
+  },
+  "loss_objective": "full_analytical_qrf",
+  "loss_spec": {
+    "active_cs_terms": {
+      "control_r": {
+        "diag": [
+          1.0,
+          1.0
+        ],
+        "source": "canonical C&S schedule.R on intended controller command before efferent/motor-channel noise",
+        "term": "net.output^T R_t net.output"
+      },
+      "state_running_q": {
+        "initial_diag_first_block": [
+          3.572245084590764e-06,
+          3.572245084590764e-06,
+          3.5722450845907636e-07,
+          3.5722450845907636e-07,
+          0.16666666666666666,
+          0.16666666666666666,
+          0.16666666666666666,
+          0.16666666666666666
+        ],
+        "source": "canonical delay-augmented C&S schedule.Q",
+        "term": "mechanics.vector^T Q_t mechanics.vector"
+      },
+      "terminal_q_f": {
+        "diag_first_block": [
+          166666.66666666666,
+          166666.66666666666,
+          16666.666666666664,
+          16666.666666666664,
+          0.16666666666666666,
+          0.16666666666666666,
+          0.16666666666666666,
+          0.16666666666666666
+        ],
+        "source": "canonical delay-augmented C&S schedule.Q_f",
+        "term": "mechanics.vector_T^T Q_f mechanics.vector_T"
+      }
+    },
+    "comparator_variant": null,
+    "delayed_reach": {
+      "catch_trials": {
+        "go_cue_value": 0.0,
+        "p_catch_trial": 0.5,
+        "semantics": "target remains visible, movement target is replaced by the initial position, and DelayedReachTaskInputs.hold stays 1 for the full trial"
+      },
+      "enabled": true,
+      "go_cue_input": {
+        "input_port": "input",
+        "shape": [
+          1
+        ],
+        "sign": "0_during_prep_1_during_movement",
+        "source": "1 - DelayedReachTaskInputs.hold"
+      },
+      "go_cue_sampling": {
+        "distribution": "uniform_integer",
+        "max_step_inclusive": 30,
+        "min_step_inclusive": 10
+      },
+      "mode": "delayed_reach_target_visible_go_cue",
+      "movement_epoch": {
+        "cost_indexing": "movement_age_not_trial_age",
+        "cs_schedule_horizon_steps": 60,
+        "epoch_index": 1,
+        "epoch_name": "movement",
+        "source": "trial_specs.timeline.epoch_bounds[-2:]"
+      },
+      "multi_target_contract": "same structured target-relative target bank as non-delayed rows",
+      "pgd_mask": {
+        "mode": "movement_epoch_only",
+        "prep_support": "zero"
+      },
+      "prep_epoch": {
+        "anti_anticipation": "nn_output_pre_go",
+        "epoch_name": "prep",
+        "target_directed_movement_loss": "zero"
+      },
+      "target_on_input": "not_used_target_always_visible",
+      "target_visibility": "visible_from_trial_start",
+      "task_type": "cs_delayed_center_out_reach"
+    },
+    "disturbance_integrator_state_cost": "included_via_Q_entries_6_7_each_delay_block",
+    "force_filter_state_cost": "included_via_Q_entries_4_5_each_delay_block",
+    "hidden_regularizer": {
+      "configured_weight": 0.0,
+      "term": "not_in_full_analytical_qrf_loss"
+    },
+    "matrix_shapes": {
+      "Q": [
+        60,
+        48,
+        48
+      ],
+      "Q_f": [
+        48,
+        48
+      ],
+      "R": [
+        60,
+        2,
+        2
+      ]
+    },
+    "objective_kind": "finite_horizon_quadratic",
+    "objective_profile": "full_analytical_qrf",
+    "source_module": "rlrmp.analysis.cs_game_card.build_canonical_game",
+    "state_basis": {
+      "coordinate_transform": "absolute Feedbax position entries are converted to target-centred analytical coordinates before applying Q_t and Q_f",
+      "delay_blocks": 6,
+      "dimension": 48,
+      "physical_block_size": 8,
+      "state_key": "states.mechanics.vector"
+    },
+    "time_indexing": {
+      "canonical_movement_horizon_steps": 60,
+      "horizon_steps": 60,
+      "movement_epoch_source": "trial_specs.timeline.epoch_bounds[-2:]",
+      "prep_target_directed_movement_loss": "zero",
+      "running_state": "state before each movement command from sampled go cue",
+      "stage_schedule": "movement_age_from_go_cue",
+      "terminal_state": "state after 60 movement commands from sampled go cue"
+    },
+    "weights": {
+      "effector_final_vel": 0.0,
+      "effector_hold_pos": 0.0,
+      "effector_hold_vel": 0.0,
+      "effector_pos": 0.0,
+      "effector_pos_late": 0.0,
+      "effector_pos_mid": 0.0,
+      "effector_pos_running": 1000000.0,
+      "effector_terminal_pos": 1000000.0,
+      "effector_terminal_vel": 100000.0,
+      "effector_vel_late": 0.0,
+      "effector_vel_mid": 0.0,
+      "effector_vel_running": 100000.0,
+      "goal_hit_in_window": 0.0,
+      "mechanics_force_filter": 0.0,
+      "nn_hidden": 0.0,
+      "nn_hidden_derivative": 0.0,
+      "nn_hidden_derivative_pre_go": 0.0,
+      "nn_output": 1.0,
+      "nn_output_jerk": 0.0,
+      "nn_output_pre_go": 10000.0
+    }
+  },
+  "model_structure": {
+    "adversarial_phase": "none",
+    "analytical_delay_augmented_state_input": false,
+    "certificate_claim": "I/O map certificate framing only; the output-feedback GRU is not fed the 48D delay-augmented analytical state and is not claimed to share same-coordinate gains with the analytical controller.",
+    "certificate_coordinate_claim": "not_same_coordinate_gain",
+    "certificate_lens": "input_output_map_certificate",
+    "controller_input_dimension": 7,
+    "controller_kind": "gru",
+    "delayed_reach": {
+      "catch_trials": {
+        "go_cue_value": 0.0,
+        "p_catch_trial": 0.5,
+        "semantics": "target remains visible, movement target is replaced by the initial position, and DelayedReachTaskInputs.hold stays 1 for the full trial"
+      },
+      "enabled": true,
+      "go_cue_input": {
+        "input_port": "input",
+        "shape": [
+          1
+        ],
+        "sign": "0_during_prep_1_during_movement",
+        "source": "1 - DelayedReachTaskInputs.hold"
+      },
+      "go_cue_sampling": {
+        "distribution": "uniform_integer",
+        "max_step_inclusive": 30,
+        "min_step_inclusive": 10
+      },
+      "mode": "delayed_reach_target_visible_go_cue",
+      "movement_epoch": {
+        "cost_indexing": "movement_age_not_trial_age",
+        "cs_schedule_horizon_steps": 60,
+        "epoch_index": 1,
+        "epoch_name": "movement",
+        "source": "trial_specs.timeline.epoch_bounds[-2:]"
+      },
+      "multi_target_contract": "same structured target-relative target bank as non-delayed rows",
+      "pgd_mask": {
+        "mode": "movement_epoch_only",
+        "prep_support": "zero"
+      },
+      "prep_epoch": {
+        "anti_anticipation": "nn_output_pre_go",
+        "epoch_name": "prep",
+        "target_directed_movement_loss": "zero"
+      },
+      "target_on_input": "not_used_target_always_visible",
+      "target_visibility": "visible_from_trial_start",
+      "task_type": "cs_delayed_center_out_reach"
+    },
+    "efferent": {
+      "additive_motor_noise_std": 1e-05,
+      "force_filter_role": "coupled inside C&S LinearStateSpace dynamics",
+      "force_filter_tau_s": 0.066,
+      "noise_timing": "Feedbax efferent Channel immediately before LinearStateSpace.force",
+      "signal_dependent_motor_noise_std": 0.02
+    },
+    "exact_cs_linear_state_space": true,
+    "feedback": {
+      "basis": "target_relative_delayed_feedback_plus_force_filter",
+      "delay_source": "C&S 48D LinearStateSpace delay-augmented state",
+      "delay_steps": 5,
+      "dimension": 6,
+      "noise_role": "sensory_feedback",
+      "noise_std": 0.004791329788133908,
+      "noise_timing": "Feedbax sensory Channel after delayed LSS feedback selector"
+    },
+    "fixed_plant_parameters": [
+      "nodes.mechanics.A",
+      "nodes.mechanics.B",
+      "nodes.mechanics.B_w"
+    ],
+    "go_cue": {
+      "dimension": 1,
+      "enabled": true,
+      "input_port": "input",
+      "sign": "0_during_prep_1_during_movement"
+    },
+    "hidden_size": 180,
+    "initial_hidden_encoder": {
+      "architecture": "affine",
+      "context_basis": "target_relative_delayed_feedback_plus_force_filter",
+      "context_shape": [
+        6
+      ],
+      "context_source": "first_controller_visible_target_relative_delayed_feedback",
+      "delayed_reach": false,
+      "enabled": false,
+      "initialization": "zero_affine",
+      "initialization_note": "Exact zero affine weights and bias preserve the zero-H0 baseline at initialization while remaining trainable through ordinary rollout loss.",
+      "output_shape": [
+        180
+      ],
+      "plant_live_preview": false,
+      "separate_hidden_width": null,
+      "teacher_or_jacobian_supervision": false
+    },
+    "n_replicates": 5,
+    "no_integrator_state": false,
+    "nominal_only": false,
+    "physical_state_dim": 8,
+    "plant_backend": "cs_lss",
+    "plant_backend_warning": null,
+    "plant_process": {
+      "epsilon_bridge": "sampled physical-process/load epsilon Task input bound to C&S LinearStateSpace mechanics.epsilon using the physical block of the released C&S process covariance",
+      "force_noise_std": 0.03162277660168379,
+      "noise_timing": "mechanics.epsilon_sampled_task_input",
+      "state_diffusion": "mechanics.epsilon"
+    },
+    "population_structure": {
+      "n_input_only": 0,
+      "n_input_readout": 180,
+      "n_readout_only": 0,
+      "n_recurrent_only": 0
+    },
+    "state_dim": 48,
+    "stochastic_preset": {
+      "additive_motor_noise_std": 1e-05,
+      "name": "cs2019-rollout",
+      "plant_process_force_noise_std": 0.03162277660168379,
+      "projection_notes": {
+        "additive_motor": "Project C&S input-image motor covariance to command-channel additive noise with std sqrt(motor_covariance_scale).",
+        "plant_process": "Project C&S process/load covariance to independent force noise immediately upstream of mechanics, after the force filter.",
+        "sensory": "Use the C&S sensory covariance diagonal standard deviation on the Feedbax delayed pos/vel feedback channel.",
+        "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
+        "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
+      },
+      "sensory_noise_std": 0.004791329788133908,
+      "signal_dependent_motor_noise_std": 0.02,
+      "source_contract": {
+        "additive_motor_covariance": "input_image_state_covariance_B_B_T",
+        "contract": "cs_released_stochastic_v1",
+        "motor_covariance_scale": 1e-10,
+        "motor_covariance_shape": [
+          48,
+          48
+        ],
+        "output_feedback_process_covariance_scale": 0.001,
+        "process_covariance_scale": 1.0,
+        "process_covariance_shape": [
+          48,
+          48
+        ],
+        "process_noise": "separate_output_feedback_process_covariance",
+        "sensory_covariance_diag": [
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05
+        ],
+        "sensory_noise_scale": 1.0,
+        "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
+        "signal_dependent_scale": 0.02,
+        "signal_dependent_state_shape": [
+          48,
+          2,
+          2
+        ]
+      }
+    },
+    "stochastic_runtime": {
+      "additive_motor_noise_std": 1e-05,
+      "command_runtime": "Feedbax efferent Channel immediately before LinearStateSpace.force; additive and signal-dependent motor noise are both command-channel noise",
+      "plant_process_force_noise_std": 0.03162277660168379,
+      "plant_process_runtime": "Task-sampled physical-process/load epsilon bound to LinearStateSpace.epsilon",
+      "sensory_noise_std": 0.004791329788133908,
+      "sensory_runtime": "Feedbax sensory Channel after the 4D delayed LSS feedback selector; the delay itself is represented by the C&S 48D LSS state",
+      "signal_dependent_motor_noise_std": 0.02,
+      "state_diffusion": "mechanics.epsilon"
+    },
+    "trainable": [
+      "nodes.net.hidden",
+      "nodes.net.readout"
+    ],
+    "training_distribution": {
+      "adversarial_phase": "none",
+      "broad_epsilon_pgd_training": {
+        "enabled": false
+      },
+      "broad_epsilon_training": {
+        "enabled": false
+      },
+      "checkpoint_selection_role": "target_relative_multitarget_rollout_validation",
+      "controller_internal_mutation": false,
+      "delayed_reach": {
+        "catch_trials": {
+          "go_cue_value": 0.0,
+          "p_catch_trial": 0.5,
+          "semantics": "target remains visible, movement target is replaced by the initial position, and DelayedReachTaskInputs.hold stays 1 for the full trial"
+        },
+        "enabled": true,
+        "go_cue_input": {
+          "input_port": "input",
+          "shape": [
+            1
+          ],
+          "sign": "0_during_prep_1_during_movement",
+          "source": "1 - DelayedReachTaskInputs.hold"
+        },
+        "go_cue_sampling": {
+          "distribution": "uniform_integer",
+          "max_step_inclusive": 30,
+          "min_step_inclusive": 10
+        },
+        "mode": "delayed_reach_target_visible_go_cue",
+        "movement_epoch": {
+          "cost_indexing": "movement_age_not_trial_age",
+          "cs_schedule_horizon_steps": 60,
+          "epoch_index": 1,
+          "epoch_name": "movement",
+          "source": "trial_specs.timeline.epoch_bounds[-2:]"
+        },
+        "multi_target_contract": "same structured target-relative target bank as non-delayed rows",
+        "pgd_mask": {
+          "mode": "movement_epoch_only",
+          "prep_support": "zero"
+        },
+        "prep_epoch": {
+          "anti_anticipation": "nn_output_pre_go",
+          "epoch_name": "prep",
+          "target_directed_movement_loss": "zero"
+        },
+        "target_on_input": "not_used_target_always_visible",
+        "target_visibility": "visible_from_trial_start",
+        "task_type": "cs_delayed_center_out_reach"
+      },
+      "fixed_target_only": false,
+      "force_filter_feedback": true,
+      "go_cue_stream": {
+        "input_port": "input",
+        "shape": [
+          1
+        ],
+        "sign": "0_during_prep_1_during_movement",
+        "source": "1 - DelayedReachTaskInputs.hold"
+      },
+      "held_out_targets_m": [
+        [
+          0.103923048454,
+          0.06
+        ],
+        [
+          -0.103923048454,
+          0.06
+        ],
+        [
+          -0.103923048454,
+          -0.06
+        ],
+        [
+          0.103923048454,
+          -0.06
+        ],
+        [
+          0.155884572681,
+          0.09
+        ],
+        [
+          -0.155884572681,
+          0.09
+        ],
+        [
+          -0.155884572681,
+          -0.09
+        ],
+        [
+          0.155884572681,
+          -0.09
+        ]
+      ],
+      "initial_hidden_encoder": {
+        "architecture": "affine",
+        "context_basis": "target_relative_delayed_feedback_plus_force_filter",
+        "context_shape": [
+          6
+        ],
+        "context_source": "first_controller_visible_target_relative_delayed_feedback",
+        "delayed_reach": false,
+        "enabled": false,
+        "initialization": "zero_affine",
+        "initialization_note": "Exact zero affine weights and bias preserve the zero-H0 baseline at initialization while remaining trainable through ordinary rollout loss.",
+        "output_shape": [
+          180
+        ],
+        "plant_live_preview": false,
+        "separate_hidden_width": null,
+        "teacher_or_jacobian_supervision": false
+      },
+      "mode": "delayed_reach_target_visible_go_cue+target_relative_multitarget_static",
+      "nominal_quality_role": "original_anchor_and_seen_held_out_targets_reported",
+      "original_target_anchor_m": [
+        0.15,
+        0.0
+      ],
+      "perturbation_mixture_emphasis": {
+        "command_input": "optional_diagnostic_only",
+        "initial_position_velocity_fraction": [
+          0.1,
+          0.2
+        ],
+        "nominal_multitarget_fraction": [
+          0.5,
+          0.7
+        ],
+        "process_or_load_fraction": [
+          0.05,
+          0.15
+        ],
+        "sensory_or_delayed_observation_fraction": [
+          0.1,
+          0.2
+        ]
+      },
+      "perturbation_training": {
+        "enabled": false
+      },
+      "seen_targets_m": [
+        [
+          0.1,
+          0.0
+        ],
+        [
+          0.05,
+          0.086602540378
+        ],
+        [
+          -0.05,
+          0.086602540378
+        ],
+        [
+          -0.1,
+          0.0
+        ],
+        [
+          -0.05,
+          -0.086602540378
+        ],
+        [
+          0.05,
+          -0.086602540378
+        ],
+        [
+          0.15,
+          0.0
+        ],
+        [
+          0.075,
+          0.129903810568
+        ],
+        [
+          -0.075,
+          0.129903810568
+        ],
+        [
+          -0.15,
+          0.0
+        ],
+        [
+          -0.075,
+          -0.129903810568
+        ],
+        [
+          0.075,
+          -0.129903810568
+        ]
+      ],
+      "target_distribution": {
+        "held_out_amplitudes_m": [
+          0.12,
+          0.18
+        ],
+        "held_out_directions_deg": [
+          30.0,
+          150.0,
+          210.0,
+          330.0
+        ],
+        "held_out_targets_m": [
+          [
+            0.103923048454,
+            0.06
+          ],
+          [
+            -0.103923048454,
+            0.06
+          ],
+          [
+            -0.103923048454,
+            -0.06
+          ],
+          [
+            0.103923048454,
+            -0.06
+          ],
+          [
+            0.155884572681,
+            0.09
+          ],
+          [
+            -0.155884572681,
+            0.09
+          ],
+          [
+            -0.155884572681,
+            -0.09
+          ],
+          [
+            0.155884572681,
+            -0.09
+          ]
+        ],
+        "kind": "structured_static_targets",
+        "original_target_anchor_m": [
+          0.15,
+          0.0
+        ],
+        "seen_amplitudes_m": [
+          0.1,
+          0.15
+        ],
+        "seen_directions_deg": [
+          0.0,
+          60.0,
+          120.0,
+          180.0,
+          240.0,
+          300.0
+        ],
+        "seen_targets_m": [
+          [
+            0.1,
+            0.0
+          ],
+          [
+            0.05,
+            0.086602540378
+          ],
+          [
+            -0.05,
+            0.086602540378
+          ],
+          [
+            -0.1,
+            0.0
+          ],
+          [
+            -0.05,
+            -0.086602540378
+          ],
+          [
+            0.05,
+            -0.086602540378
+          ],
+          [
+            0.15,
+            0.0
+          ],
+          [
+            0.075,
+            0.129903810568
+          ],
+          [
+            -0.075,
+            0.129903810568
+          ],
+          [
+            -0.15,
+            0.0
+          ],
+          [
+            -0.075,
+            -0.129903810568
+          ],
+          [
+            0.075,
+            -0.129903810568
+          ]
+        ],
+        "validation_targets_m": [
+          [
+            0.15,
+            0.0
+          ],
+          [
+            0.1,
+            0.0
+          ],
+          [
+            0.05,
+            0.086602540378
+          ],
+          [
+            -0.05,
+            0.086602540378
+          ],
+          [
+            -0.1,
+            0.0
+          ],
+          [
+            -0.05,
+            -0.086602540378
+          ],
+          [
+            0.05,
+            -0.086602540378
+          ],
+          [
+            0.075,
+            0.129903810568
+          ],
+          [
+            -0.075,
+            0.129903810568
+          ],
+          [
+            -0.15,
+            0.0
+          ],
+          [
+            -0.075,
+            -0.129903810568
+          ],
+          [
+            0.075,
+            -0.129903810568
+          ],
+          [
+            0.103923048454,
+            0.06
+          ],
+          [
+            -0.103923048454,
+            0.06
+          ],
+          [
+            -0.103923048454,
+            -0.06
+          ],
+          [
+            0.103923048454,
+            -0.06
+          ],
+          [
+            0.155884572681,
+            0.09
+          ],
+          [
+            -0.155884572681,
+            0.09
+          ],
+          [
+            -0.155884572681,
+            -0.09
+          ],
+          [
+            0.155884572681,
+            -0.09
+          ]
+        ]
+      },
+      "target_stream": {
+        "contract": {
+          "controller_feedback_basis": "target_relative_delayed_feedback_plus_force_filter",
+          "force_filter_feedback": {
+            "added_coordinates": [
+              "delayed_force_filter_x",
+              "delayed_force_filter_y"
+            ],
+            "disturbance_integrators_exposed": false,
+            "enabled": true,
+            "rationale": "Expose a proprioception-like delayed force/filter state without exposing the C&S disturbance integrators.",
+            "source": "states.mechanics.vector delayed physical block indices 44:46"
+          },
+          "moving_targets": "out_of_scope",
+          "shape": [
+            6
+          ],
+          "sign_convention": [
+            "target_x - delayed_x",
+            "target_y - delayed_y",
+            "-delayed_vx",
+            "-delayed_vy",
+            "delayed_force_filter_x",
+            "delayed_force_filter_y"
+          ],
+          "static_target_input": "known_immediately_not_visually_delayed"
+        },
+        "input_port": "target",
+        "status": "consumed_as_static_target_relative_feedback"
+      },
+      "training_axes": {
+        "broad_full_state_epsilon_pgd_training": false,
+        "broad_full_state_epsilon_training": false,
+        "calibrated_perturbation_training": false,
+        "delayed_reach": true,
+        "force_filter_feedback": true,
+        "initial_hidden_encoder": false,
+        "target_relative_multitarget": true
+      },
+      "validation_bins": [
+        {
+          "bin": "original_target_nominal",
+          "target_role": "anchor",
+          "targets_m": [
+            [
+              0.15,
+              0.0
+            ]
+          ]
+        },
+        {
+          "bin": "seen_multitarget_nominal",
+          "target_role": "seen_training_support",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ]
+          ]
+        },
+        {
+          "bin": "held_out_multitarget_nominal",
+          "target_role": "held_out_validation_support",
+          "targets_m": [
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "initial_position_offsets",
+          "families": [
+            "initial_position"
+          ],
+          "target_role": "seen_and_held_out_static_targets",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "initial_velocity_offsets",
+          "families": [
+            "initial_velocity"
+          ],
+          "target_role": "seen_and_held_out_static_targets",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "sensory_feedback_offsets",
+          "families": [
+            "sensory_feedback"
+          ],
+          "target_role": "seen_and_held_out_static_targets",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "delayed_observation_offsets",
+          "families": [
+            "delayed_observation"
+          ],
+          "target_role": "seen_and_held_out_static_targets",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "process_load_epsilon",
+          "families": [
+            "process_epsilon"
+          ],
+          "target_role": "seen_and_held_out_static_targets",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "mild_combined",
+          "families": [
+            "initial_position",
+            "sensory_feedback",
+            "process_epsilon"
+          ],
+          "target_role": "seen_and_held_out_static_targets",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "command_input_diagnostic",
+          "checkpoint_selection": "excluded_unless_comparator_defined",
+          "families": [
+            "command_input"
+          ],
+          "target_role": "diagnostic_only",
+          "targets_m": [
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        }
+      ]
+    }
+  },
+  "schema_version": "rlrmp.cs_stochastic_gru.v1",
+  "stochastic_preset": {
+    "additive_motor_noise_std": 1e-05,
+    "name": "cs2019-rollout",
+    "plant_process_force_noise_std": 0.03162277660168379,
+    "projection_notes": {
+      "additive_motor": "Project C&S input-image motor covariance to command-channel additive noise with std sqrt(motor_covariance_scale).",
+      "plant_process": "Project C&S process/load covariance to independent force noise immediately upstream of mechanics, after the force filter.",
+      "sensory": "Use the C&S sensory covariance diagonal standard deviation on the Feedbax delayed pos/vel feedback channel.",
+      "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
+      "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
+    },
+    "sensory_noise_std": 0.004791329788133908,
+    "signal_dependent_motor_noise_std": 0.02,
+    "source_contract": {
+      "additive_motor_covariance": "input_image_state_covariance_B_B_T",
+      "contract": "cs_released_stochastic_v1",
+      "motor_covariance_scale": 1e-10,
+      "motor_covariance_shape": [
+        48,
+        48
+      ],
+      "output_feedback_process_covariance_scale": 0.001,
+      "process_covariance_scale": 1.0,
+      "process_covariance_shape": [
+        48,
+        48
+      ],
+      "process_noise": "separate_output_feedback_process_covariance",
+      "sensory_covariance_diag": [
+        2.2956841138659323e-05,
+        2.2956841138659323e-05,
+        2.2956841138659323e-05,
+        2.2956841138659323e-05,
+        2.2956841138659323e-05,
+        2.2956841138659323e-05,
+        2.2956841138659323e-05,
+        2.2956841138659323e-05
+      ],
+      "sensory_noise_scale": 1.0,
+      "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
+      "signal_dependent_scale": 0.02,
+      "signal_dependent_state_shape": [
+        48,
+        2,
+        2
+      ]
+    }
+  },
+  "stochastic_runtime": {
+    "additive_motor_noise_std": 1e-05,
+    "command_runtime": "Feedbax efferent Channel immediately before LinearStateSpace.force; additive and signal-dependent motor noise are both command-channel noise",
+    "plant_process_force_noise_std": 0.03162277660168379,
+    "plant_process_runtime": "Task-sampled physical-process/load epsilon bound to LinearStateSpace.epsilon",
+    "sensory_noise_std": 0.004791329788133908,
+    "sensory_runtime": "Feedbax sensory Channel after the 4D delayed LSS feedback selector; the delay itself is represented by the C&S 48D LSS state",
+    "signal_dependent_motor_noise_std": 0.02,
+    "state_diffusion": "mechanics.epsilon"
+  },
+  "task_spec": {
+    "broad_epsilon_pgd_training": {
+      "enabled": false
+    },
+    "broad_epsilon_training": {
+      "enabled": false
+    },
+    "control_cost_stages": 90,
+    "coordinate_contract": "Feedbax SimpleReaches supplies mechanics.effector.pos targets in the same Cartesian metre coordinates as the point-mass effector state.",
+    "delayed_reach": {
+      "catch_trials": {
+        "go_cue_value": 0.0,
+        "p_catch_trial": 0.5,
+        "semantics": "target remains visible, movement target is replaced by the initial position, and DelayedReachTaskInputs.hold stays 1 for the full trial"
+      },
+      "enabled": true,
+      "go_cue_input": {
+        "input_port": "input",
+        "shape": [
+          1
+        ],
+        "sign": "0_during_prep_1_during_movement",
+        "source": "1 - DelayedReachTaskInputs.hold"
+      },
+      "go_cue_sampling": {
+        "distribution": "uniform_integer",
+        "max_step_inclusive": 30,
+        "min_step_inclusive": 10
+      },
+      "mode": "delayed_reach_target_visible_go_cue",
+      "movement_epoch": {
+        "cost_indexing": "movement_age_not_trial_age",
+        "cs_schedule_horizon_steps": 60,
+        "epoch_index": 1,
+        "epoch_name": "movement",
+        "source": "trial_specs.timeline.epoch_bounds[-2:]"
+      },
+      "multi_target_contract": "same structured target-relative target bank as non-delayed rows",
+      "pgd_mask": {
+        "mode": "movement_epoch_only",
+        "prep_support": "zero"
+      },
+      "prep_epoch": {
+        "anti_anticipation": "nn_output_pre_go",
+        "epoch_name": "prep",
+        "target_directed_movement_loss": "zero"
+      },
+      "target_on_input": "not_used_target_always_visible",
+      "target_visibility": "visible_from_trial_start",
+      "task_type": "cs_delayed_center_out_reach"
+    },
+    "epoch_len_ranges": [
+      [
+        10,
+        31
+      ]
+    ],
+    "eval_grid_n": 1,
+    "eval_n_directions": 1,
+    "eval_reach_length": 0.15,
+    "extra_inputs": [
+      "input",
+      "target",
+      "epsilon"
+    ],
+    "fixed_init_pos": null,
+    "fixed_target_pos": null,
+    "hold_epochs": [
+      0
+    ],
+    "initial_hidden_encoder": {
+      "architecture": "affine",
+      "context_basis": "target_relative_delayed_feedback_plus_force_filter",
+      "context_shape": [
+        6
+      ],
+      "context_source": "first_controller_visible_target_relative_delayed_feedback",
+      "delayed_reach": false,
+      "enabled": false,
+      "initialization": "zero_affine",
+      "initialization_note": "Exact zero affine weights and bias preserve the zero-H0 baseline at initialization while remaining trainable through ordinary rollout loss.",
+      "output_shape": [
+        180
+      ],
+      "plant_live_preview": false,
+      "separate_hidden_width": null,
+      "teacher_or_jacobian_supervision": false
+    },
+    "move_epochs": [
+      1
+    ],
+    "movement_window": {
+      "cost_indexing": "movement_age_not_trial_age",
+      "cs_horizon_steps": 60,
+      "go_cue_max_step": 30,
+      "go_cue_min_step": 10,
+      "kind": "delayed_reach_movement_epoch",
+      "start_transition": "sampled_go_cue_step"
+    },
+    "n_steps": 90,
+    "p_catch_trial": 0.5,
+    "target_on_epochs": [
+      0,
+      1
+    ],
+    "target_relative_multitarget": {
+      "command_port_comparator": "diagnostic_only",
+      "enabled": true,
+      "force_filter_feedback": true,
+      "force_filter_feedback_contract": {
+        "added_coordinates": [
+          "delayed_force_filter_x",
+          "delayed_force_filter_y"
+        ],
+        "disturbance_integrators_exposed": false,
+        "enabled": true,
+        "rationale": "Expose a proprioception-like delayed force/filter state without exposing the C&S disturbance integrators.",
+        "source": "states.mechanics.vector delayed physical block indices 44:46"
+      },
+      "input_contract": {
+        "controller_feedback_basis": "target_relative_delayed_feedback_plus_force_filter",
+        "force_filter_feedback": {
+          "added_coordinates": [
+            "delayed_force_filter_x",
+            "delayed_force_filter_y"
+          ],
+          "disturbance_integrators_exposed": false,
+          "enabled": true,
+          "rationale": "Expose a proprioception-like delayed force/filter state without exposing the C&S disturbance integrators.",
+          "source": "states.mechanics.vector delayed physical block indices 44:46"
+        },
+        "moving_targets": "out_of_scope",
+        "shape": [
+          6
+        ],
+        "sign_convention": [
+          "target_x - delayed_x",
+          "target_y - delayed_y",
+          "-delayed_vx",
+          "-delayed_vy",
+          "delayed_force_filter_x",
+          "delayed_force_filter_y"
+        ],
+        "static_target_input": "known_immediately_not_visually_delayed"
+      },
+      "mode": "target_relative_multitarget_static",
+      "moving_targets": false,
+      "perturbation_mixture_emphasis": {
+        "command_input": "optional_diagnostic_only",
+        "initial_position_velocity_fraction": [
+          0.1,
+          0.2
+        ],
+        "nominal_multitarget_fraction": [
+          0.5,
+          0.7
+        ],
+        "process_or_load_fraction": [
+          0.05,
+          0.15
+        ],
+        "sensory_or_delayed_observation_fraction": [
+          0.1,
+          0.2
+        ]
+      },
+      "target_distribution": {
+        "held_out_amplitudes_m": [
+          0.12,
+          0.18
+        ],
+        "held_out_directions_deg": [
+          30.0,
+          150.0,
+          210.0,
+          330.0
+        ],
+        "held_out_targets_m": [
+          [
+            0.103923048454,
+            0.06
+          ],
+          [
+            -0.103923048454,
+            0.06
+          ],
+          [
+            -0.103923048454,
+            -0.06
+          ],
+          [
+            0.103923048454,
+            -0.06
+          ],
+          [
+            0.155884572681,
+            0.09
+          ],
+          [
+            -0.155884572681,
+            0.09
+          ],
+          [
+            -0.155884572681,
+            -0.09
+          ],
+          [
+            0.155884572681,
+            -0.09
+          ]
+        ],
+        "kind": "structured_static_targets",
+        "original_target_anchor_m": [
+          0.15,
+          0.0
+        ],
+        "seen_amplitudes_m": [
+          0.1,
+          0.15
+        ],
+        "seen_directions_deg": [
+          0.0,
+          60.0,
+          120.0,
+          180.0,
+          240.0,
+          300.0
+        ],
+        "seen_targets_m": [
+          [
+            0.1,
+            0.0
+          ],
+          [
+            0.05,
+            0.086602540378
+          ],
+          [
+            -0.05,
+            0.086602540378
+          ],
+          [
+            -0.1,
+            0.0
+          ],
+          [
+            -0.05,
+            -0.086602540378
+          ],
+          [
+            0.05,
+            -0.086602540378
+          ],
+          [
+            0.15,
+            0.0
+          ],
+          [
+            0.075,
+            0.129903810568
+          ],
+          [
+            -0.075,
+            0.129903810568
+          ],
+          [
+            -0.15,
+            0.0
+          ],
+          [
+            -0.075,
+            -0.129903810568
+          ],
+          [
+            0.075,
+            -0.129903810568
+          ]
+        ],
+        "validation_targets_m": [
+          [
+            0.15,
+            0.0
+          ],
+          [
+            0.1,
+            0.0
+          ],
+          [
+            0.05,
+            0.086602540378
+          ],
+          [
+            -0.05,
+            0.086602540378
+          ],
+          [
+            -0.1,
+            0.0
+          ],
+          [
+            -0.05,
+            -0.086602540378
+          ],
+          [
+            0.05,
+            -0.086602540378
+          ],
+          [
+            0.075,
+            0.129903810568
+          ],
+          [
+            -0.075,
+            0.129903810568
+          ],
+          [
+            -0.15,
+            0.0
+          ],
+          [
+            -0.075,
+            -0.129903810568
+          ],
+          [
+            0.075,
+            -0.129903810568
+          ],
+          [
+            0.103923048454,
+            0.06
+          ],
+          [
+            -0.103923048454,
+            0.06
+          ],
+          [
+            -0.103923048454,
+            -0.06
+          ],
+          [
+            0.103923048454,
+            -0.06
+          ],
+          [
+            0.155884572681,
+            0.09
+          ],
+          [
+            -0.155884572681,
+            0.09
+          ],
+          [
+            -0.155884572681,
+            -0.09
+          ],
+          [
+            0.155884572681,
+            -0.09
+          ]
+        ]
+      },
+      "teacher_or_jacobian_supervision": false,
+      "validation_bins": [
+        {
+          "bin": "original_target_nominal",
+          "target_role": "anchor",
+          "targets_m": [
+            [
+              0.15,
+              0.0
+            ]
+          ]
+        },
+        {
+          "bin": "seen_multitarget_nominal",
+          "target_role": "seen_training_support",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ]
+          ]
+        },
+        {
+          "bin": "held_out_multitarget_nominal",
+          "target_role": "held_out_validation_support",
+          "targets_m": [
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "initial_position_offsets",
+          "families": [
+            "initial_position"
+          ],
+          "target_role": "seen_and_held_out_static_targets",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "initial_velocity_offsets",
+          "families": [
+            "initial_velocity"
+          ],
+          "target_role": "seen_and_held_out_static_targets",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "sensory_feedback_offsets",
+          "families": [
+            "sensory_feedback"
+          ],
+          "target_role": "seen_and_held_out_static_targets",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "delayed_observation_offsets",
+          "families": [
+            "delayed_observation"
+          ],
+          "target_role": "seen_and_held_out_static_targets",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "process_load_epsilon",
+          "families": [
+            "process_epsilon"
+          ],
+          "target_role": "seen_and_held_out_static_targets",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "mild_combined",
+          "families": [
+            "initial_position",
+            "sensory_feedback",
+            "process_epsilon"
+          ],
+          "target_role": "seen_and_held_out_static_targets",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "command_input_diagnostic",
+          "checkpoint_selection": "excluded_unless_comparator_defined",
+          "families": [
+            "command_input"
+          ],
+          "target_role": "diagnostic_only",
+          "targets_m": [
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        }
+      ]
+    },
+    "time_axis_contract": "Delayed C&S task: target is visible from trial start, prep has no target-directed movement loss, and C&S stage costs are indexed by movement age from the sampled go cue.",
+    "type": "cs_delayed_center_out_reach",
+    "workspace": [
+      [
+        -0.2,
+        -0.2
+      ],
+      [
+        0.2,
+        0.2
+      ]
+    ]
+  },
+  "training_spec": {
+    "adversarial_phase": "none",
+    "analytical_delay_augmented_state_input": false,
+    "batch_size": 64,
+    "certificate_lens": "input_output_map_certificate",
+    "controller_kind": "gru",
+    "dt": 0.01,
+    "initial_hidden_encoder": {
+      "architecture": "affine",
+      "context_basis": "target_relative_delayed_feedback_plus_force_filter",
+      "context_shape": [
+        6
+      ],
+      "context_source": "first_controller_visible_target_relative_delayed_feedback",
+      "delayed_reach": false,
+      "enabled": false,
+      "initialization": "zero_affine",
+      "initialization_note": "Exact zero affine weights and bias preserve the zero-H0 baseline at initialization while remaining trainable through ordinary rollout loss.",
+      "output_shape": [
+        180
+      ],
+      "plant_live_preview": false,
+      "separate_hidden_width": null,
+      "teacher_or_jacobian_supervision": false
+    },
+    "loss_objective": "full_analytical_qrf",
+    "method": "nominal-cs-gru",
+    "n_replicates": 5,
+    "nominal_only": false,
+    "plant_backend": "cs_lss",
+    "stochastic_preset": {
+      "additive_motor_noise_std": 1e-05,
+      "name": "cs2019-rollout",
+      "plant_process_force_noise_std": 0.03162277660168379,
+      "projection_notes": {
+        "additive_motor": "Project C&S input-image motor covariance to command-channel additive noise with std sqrt(motor_covariance_scale).",
+        "plant_process": "Project C&S process/load covariance to independent force noise immediately upstream of mechanics, after the force filter.",
+        "sensory": "Use the C&S sensory covariance diagonal standard deviation on the Feedbax delayed pos/vel feedback channel.",
+        "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
+        "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
+      },
+      "sensory_noise_std": 0.004791329788133908,
+      "signal_dependent_motor_noise_std": 0.02,
+      "source_contract": {
+        "additive_motor_covariance": "input_image_state_covariance_B_B_T",
+        "contract": "cs_released_stochastic_v1",
+        "motor_covariance_scale": 1e-10,
+        "motor_covariance_shape": [
+          48,
+          48
+        ],
+        "output_feedback_process_covariance_scale": 0.001,
+        "process_covariance_scale": 1.0,
+        "process_covariance_shape": [
+          48,
+          48
+        ],
+        "process_noise": "separate_output_feedback_process_covariance",
+        "sensory_covariance_diag": [
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05
+        ],
+        "sensory_noise_scale": 1.0,
+        "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
+        "signal_dependent_scale": 0.02,
+        "signal_dependent_state_shape": [
+          48,
+          2,
+          2
+        ]
+      }
+    },
+    "stochastic_runtime": {
+      "additive_motor_noise_std": 1e-05,
+      "command_runtime": "Feedbax efferent Channel immediately before LinearStateSpace.force; additive and signal-dependent motor noise are both command-channel noise",
+      "plant_process_force_noise_std": 0.03162277660168379,
+      "plant_process_runtime": "Task-sampled physical-process/load epsilon bound to LinearStateSpace.epsilon",
+      "sensory_noise_std": 0.004791329788133908,
+      "sensory_runtime": "Feedbax sensory Channel after the 4D delayed LSS feedback selector; the delay itself is represented by the C&S 48D LSS state",
+      "signal_dependent_motor_noise_std": 0.02,
+      "state_diffusion": "mechanics.epsilon"
+    },
+    "trainable": [
+      "nodes.net.hidden",
+      "nodes.net.readout"
+    ],
+    "training_distribution": {
+      "adversarial_phase": "none",
+      "broad_epsilon_pgd_training": {
+        "enabled": false
+      },
+      "broad_epsilon_training": {
+        "enabled": false
+      },
+      "checkpoint_selection_role": "target_relative_multitarget_rollout_validation",
+      "controller_internal_mutation": false,
+      "delayed_reach": {
+        "catch_trials": {
+          "go_cue_value": 0.0,
+          "p_catch_trial": 0.5,
+          "semantics": "target remains visible, movement target is replaced by the initial position, and DelayedReachTaskInputs.hold stays 1 for the full trial"
+        },
+        "enabled": true,
+        "go_cue_input": {
+          "input_port": "input",
+          "shape": [
+            1
+          ],
+          "sign": "0_during_prep_1_during_movement",
+          "source": "1 - DelayedReachTaskInputs.hold"
+        },
+        "go_cue_sampling": {
+          "distribution": "uniform_integer",
+          "max_step_inclusive": 30,
+          "min_step_inclusive": 10
+        },
+        "mode": "delayed_reach_target_visible_go_cue",
+        "movement_epoch": {
+          "cost_indexing": "movement_age_not_trial_age",
+          "cs_schedule_horizon_steps": 60,
+          "epoch_index": 1,
+          "epoch_name": "movement",
+          "source": "trial_specs.timeline.epoch_bounds[-2:]"
+        },
+        "multi_target_contract": "same structured target-relative target bank as non-delayed rows",
+        "pgd_mask": {
+          "mode": "movement_epoch_only",
+          "prep_support": "zero"
+        },
+        "prep_epoch": {
+          "anti_anticipation": "nn_output_pre_go",
+          "epoch_name": "prep",
+          "target_directed_movement_loss": "zero"
+        },
+        "target_on_input": "not_used_target_always_visible",
+        "target_visibility": "visible_from_trial_start",
+        "task_type": "cs_delayed_center_out_reach"
+      },
+      "fixed_target_only": false,
+      "force_filter_feedback": true,
+      "go_cue_stream": {
+        "input_port": "input",
+        "shape": [
+          1
+        ],
+        "sign": "0_during_prep_1_during_movement",
+        "source": "1 - DelayedReachTaskInputs.hold"
+      },
+      "held_out_targets_m": [
+        [
+          0.103923048454,
+          0.06
+        ],
+        [
+          -0.103923048454,
+          0.06
+        ],
+        [
+          -0.103923048454,
+          -0.06
+        ],
+        [
+          0.103923048454,
+          -0.06
+        ],
+        [
+          0.155884572681,
+          0.09
+        ],
+        [
+          -0.155884572681,
+          0.09
+        ],
+        [
+          -0.155884572681,
+          -0.09
+        ],
+        [
+          0.155884572681,
+          -0.09
+        ]
+      ],
+      "initial_hidden_encoder": {
+        "architecture": "affine",
+        "context_basis": "target_relative_delayed_feedback_plus_force_filter",
+        "context_shape": [
+          6
+        ],
+        "context_source": "first_controller_visible_target_relative_delayed_feedback",
+        "delayed_reach": false,
+        "enabled": false,
+        "initialization": "zero_affine",
+        "initialization_note": "Exact zero affine weights and bias preserve the zero-H0 baseline at initialization while remaining trainable through ordinary rollout loss.",
+        "output_shape": [
+          180
+        ],
+        "plant_live_preview": false,
+        "separate_hidden_width": null,
+        "teacher_or_jacobian_supervision": false
+      },
+      "mode": "delayed_reach_target_visible_go_cue+target_relative_multitarget_static",
+      "nominal_quality_role": "original_anchor_and_seen_held_out_targets_reported",
+      "original_target_anchor_m": [
+        0.15,
+        0.0
+      ],
+      "perturbation_mixture_emphasis": {
+        "command_input": "optional_diagnostic_only",
+        "initial_position_velocity_fraction": [
+          0.1,
+          0.2
+        ],
+        "nominal_multitarget_fraction": [
+          0.5,
+          0.7
+        ],
+        "process_or_load_fraction": [
+          0.05,
+          0.15
+        ],
+        "sensory_or_delayed_observation_fraction": [
+          0.1,
+          0.2
+        ]
+      },
+      "perturbation_training": {
+        "enabled": false
+      },
+      "seen_targets_m": [
+        [
+          0.1,
+          0.0
+        ],
+        [
+          0.05,
+          0.086602540378
+        ],
+        [
+          -0.05,
+          0.086602540378
+        ],
+        [
+          -0.1,
+          0.0
+        ],
+        [
+          -0.05,
+          -0.086602540378
+        ],
+        [
+          0.05,
+          -0.086602540378
+        ],
+        [
+          0.15,
+          0.0
+        ],
+        [
+          0.075,
+          0.129903810568
+        ],
+        [
+          -0.075,
+          0.129903810568
+        ],
+        [
+          -0.15,
+          0.0
+        ],
+        [
+          -0.075,
+          -0.129903810568
+        ],
+        [
+          0.075,
+          -0.129903810568
+        ]
+      ],
+      "target_distribution": {
+        "held_out_amplitudes_m": [
+          0.12,
+          0.18
+        ],
+        "held_out_directions_deg": [
+          30.0,
+          150.0,
+          210.0,
+          330.0
+        ],
+        "held_out_targets_m": [
+          [
+            0.103923048454,
+            0.06
+          ],
+          [
+            -0.103923048454,
+            0.06
+          ],
+          [
+            -0.103923048454,
+            -0.06
+          ],
+          [
+            0.103923048454,
+            -0.06
+          ],
+          [
+            0.155884572681,
+            0.09
+          ],
+          [
+            -0.155884572681,
+            0.09
+          ],
+          [
+            -0.155884572681,
+            -0.09
+          ],
+          [
+            0.155884572681,
+            -0.09
+          ]
+        ],
+        "kind": "structured_static_targets",
+        "original_target_anchor_m": [
+          0.15,
+          0.0
+        ],
+        "seen_amplitudes_m": [
+          0.1,
+          0.15
+        ],
+        "seen_directions_deg": [
+          0.0,
+          60.0,
+          120.0,
+          180.0,
+          240.0,
+          300.0
+        ],
+        "seen_targets_m": [
+          [
+            0.1,
+            0.0
+          ],
+          [
+            0.05,
+            0.086602540378
+          ],
+          [
+            -0.05,
+            0.086602540378
+          ],
+          [
+            -0.1,
+            0.0
+          ],
+          [
+            -0.05,
+            -0.086602540378
+          ],
+          [
+            0.05,
+            -0.086602540378
+          ],
+          [
+            0.15,
+            0.0
+          ],
+          [
+            0.075,
+            0.129903810568
+          ],
+          [
+            -0.075,
+            0.129903810568
+          ],
+          [
+            -0.15,
+            0.0
+          ],
+          [
+            -0.075,
+            -0.129903810568
+          ],
+          [
+            0.075,
+            -0.129903810568
+          ]
+        ],
+        "validation_targets_m": [
+          [
+            0.15,
+            0.0
+          ],
+          [
+            0.1,
+            0.0
+          ],
+          [
+            0.05,
+            0.086602540378
+          ],
+          [
+            -0.05,
+            0.086602540378
+          ],
+          [
+            -0.1,
+            0.0
+          ],
+          [
+            -0.05,
+            -0.086602540378
+          ],
+          [
+            0.05,
+            -0.086602540378
+          ],
+          [
+            0.075,
+            0.129903810568
+          ],
+          [
+            -0.075,
+            0.129903810568
+          ],
+          [
+            -0.15,
+            0.0
+          ],
+          [
+            -0.075,
+            -0.129903810568
+          ],
+          [
+            0.075,
+            -0.129903810568
+          ],
+          [
+            0.103923048454,
+            0.06
+          ],
+          [
+            -0.103923048454,
+            0.06
+          ],
+          [
+            -0.103923048454,
+            -0.06
+          ],
+          [
+            0.103923048454,
+            -0.06
+          ],
+          [
+            0.155884572681,
+            0.09
+          ],
+          [
+            -0.155884572681,
+            0.09
+          ],
+          [
+            -0.155884572681,
+            -0.09
+          ],
+          [
+            0.155884572681,
+            -0.09
+          ]
+        ]
+      },
+      "target_stream": {
+        "contract": {
+          "controller_feedback_basis": "target_relative_delayed_feedback_plus_force_filter",
+          "force_filter_feedback": {
+            "added_coordinates": [
+              "delayed_force_filter_x",
+              "delayed_force_filter_y"
+            ],
+            "disturbance_integrators_exposed": false,
+            "enabled": true,
+            "rationale": "Expose a proprioception-like delayed force/filter state without exposing the C&S disturbance integrators.",
+            "source": "states.mechanics.vector delayed physical block indices 44:46"
+          },
+          "moving_targets": "out_of_scope",
+          "shape": [
+            6
+          ],
+          "sign_convention": [
+            "target_x - delayed_x",
+            "target_y - delayed_y",
+            "-delayed_vx",
+            "-delayed_vy",
+            "delayed_force_filter_x",
+            "delayed_force_filter_y"
+          ],
+          "static_target_input": "known_immediately_not_visually_delayed"
+        },
+        "input_port": "target",
+        "status": "consumed_as_static_target_relative_feedback"
+      },
+      "training_axes": {
+        "broad_full_state_epsilon_pgd_training": false,
+        "broad_full_state_epsilon_training": false,
+        "calibrated_perturbation_training": false,
+        "delayed_reach": true,
+        "force_filter_feedback": true,
+        "initial_hidden_encoder": false,
+        "target_relative_multitarget": true
+      },
+      "validation_bins": [
+        {
+          "bin": "original_target_nominal",
+          "target_role": "anchor",
+          "targets_m": [
+            [
+              0.15,
+              0.0
+            ]
+          ]
+        },
+        {
+          "bin": "seen_multitarget_nominal",
+          "target_role": "seen_training_support",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ]
+          ]
+        },
+        {
+          "bin": "held_out_multitarget_nominal",
+          "target_role": "held_out_validation_support",
+          "targets_m": [
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "initial_position_offsets",
+          "families": [
+            "initial_position"
+          ],
+          "target_role": "seen_and_held_out_static_targets",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "initial_velocity_offsets",
+          "families": [
+            "initial_velocity"
+          ],
+          "target_role": "seen_and_held_out_static_targets",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "sensory_feedback_offsets",
+          "families": [
+            "sensory_feedback"
+          ],
+          "target_role": "seen_and_held_out_static_targets",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "delayed_observation_offsets",
+          "families": [
+            "delayed_observation"
+          ],
+          "target_role": "seen_and_held_out_static_targets",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "process_load_epsilon",
+          "families": [
+            "process_epsilon"
+          ],
+          "target_role": "seen_and_held_out_static_targets",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "mild_combined",
+          "families": [
+            "initial_position",
+            "sensory_feedback",
+            "process_epsilon"
+          ],
+          "target_role": "seen_and_held_out_static_targets",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "command_input_diagnostic",
+          "checkpoint_selection": "excluded_unless_comparator_defined",
+          "families": [
+            "command_input"
+          ],
+          "target_role": "diagnostic_only",
+          "targets_m": [
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        }
+      ]
+    }
+  },
+  "migration": {
+    "source_commit": "3b4eb9c",
+    "source_path": "results/6c36536/runs/delayed_8d_no_pgd_catch0p5_prego1e4_lr3e-3_clip5_b64_seed42/model.graph.manifest.json",
+    "issue": "e1c0f83",
+    "normalized_absolute_artifact_paths": true,
+    "disposition": "active_graph_manifest_pointer",
+    "graph_export_status": "unavailable"
+  }
+}
