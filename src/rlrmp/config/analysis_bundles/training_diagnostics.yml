@@ -1,0 +1,23 @@
+name: training_diagnostics
+description: Training diagnostics summary outputs for active rlrmp training runs.
+predicate:
+  manifest_kind: TrainingRunManifest
+  params_equals:
+    training_diagnostics.enabled: true
+metadata:
+  standard_outputs:
+    - training_diagnostics_summary
+  archive_only_outputs:
+    - training_diagnostics.npz
+    - trained_model.eqx
+    - training_history.eqx
+    - checkpoints
+templates:
+  - name: training_diagnostics_summary
+    mode: per-run
+    analysis_type: rlrmp.training_diagnostics_summary
+    requested_outputs: [summary]
+    params:
+      experiment: training_diagnostics
+      topic: training_diagnostics_summary
+      note_marker: training_diagnostics_summary
