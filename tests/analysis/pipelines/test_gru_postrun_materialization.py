@@ -6,6 +6,12 @@ import json
 from pathlib import Path
 from typing import Any
 
+import rlrmp
+from feedbax.analysis.bundles import execute_staged_analysis_bundle, load_analysis_bundle
+from feedbax.manifest import TrainingRunManifest, load_manifest, spec_payload, write_manifest
+from feedbax.plugins.registry import ExperimentRegistry
+
+from rlrmp.analysis import declarative_materialization as dm
 from rlrmp.analysis import gru_postrun_materialization as postrun
 
 
@@ -643,3 +649,174 @@ def test_materialize_gru_postrun_analysis_preserves_audit_only_skip_semantics(
     }
     assert manifest["selection_leakage_guard"]["status"] == "audit_only"
     assert "map_error_decomposition" in manifest["selection_leakage_guard"]["audit_only_metrics"]
+
+
+def test_gru_postrun_bundle_executes_with_stage_artifact_roles(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    registry = ExperimentRegistry()
+    rlrmp.register_experiment_package(registry)
+    bundle = load_analysis_bundle("rlrmp/gru_postrun", registry=registry)
+    monkeypatch.setattr(dm, "REPO_ROOT", tmp_path)
+
+    for run_id in ("run_a", "run_b"):
+        write_manifest(
+            TrainingRunManifest(
+                id=run_id,
+                status="completed",
+                training_spec=spec_payload(
+                    "RLRMPRunSpec",
+                    {"run_id": run_id, "schema_version": "rlrmp.run_spec.v1"},
+                ),
+                metadata={
+                    "gru_postrun_candidate": True,
+                    "rlrmp_experiment": "5f70333",
+                },
+            ),
+            root=tmp_path,
+        )
+
+    def fake_postrun_materializer(**kwargs: Any) -> dict[str, Any]:
+        plan = postrun.plan_gru_postrun_materialization(
+            experiment=kwargs["experiment"],
+            run_ids=kwargs["run_ids"],
+            output_tag=kwargs["output_tag"],
+            use_validation_selected_checkpoints=kwargs["use_validation_selected_checkpoints"],
+            fixed_bank_rescore_manifest_path=kwargs["fixed_bank_rescore_manifest_path"],
+            repo_root=kwargs["repo_root"],
+        )
+        plan.notes_dir.mkdir(parents=True, exist_ok=True)
+        plan.figure_output_dir.mkdir(parents=True, exist_ok=True)
+        files = {
+            plan.checkpoint_manifest_path: {"status": "materialized"},
+            plan.standard_manifest_path: {"format": "rlrmp.cs_gru_standard_certificates.v1"},
+            plan.evaluation_manifest_path: {
+                "schema_version": "rlrmp.gru_evaluation_diagnostics.v1"
+            },
+            plan.objective_comparator_json_path: {
+                "schema_version": "rlrmp.objective_comparator_sidecar.v6"
+            },
+            plan.map_decomposition_json_path: {
+                "schema_version": "rlrmp.gru_map_error_decomposition.v1"
+            },
+            plan.perturbation_response_json_path: {
+                "schema_version": "rlrmp.gru_perturbation_bank.v3"
+            },
+            plan.feedback_ablation_json_path: {
+                "schema_version": "rlrmp.gru_feedback_ablation.v1"
+            },
+            plan.postrun_regeneration_spec_path: {
+                "metadata": {
+                    "diagnostic_name": "gru_postrun_materialization_bundle",
+                    "contract_role": "compatibility_only",
+                }
+            },
+        }
+        for path, payload in files.items():
+            if path is None:
+                continue
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(payload), encoding="utf-8")
+        note_paths = (
+            plan.standard_note_path,
+            plan.objective_comparator_note_path,
+            plan.map_decomposition_note_path,
+            plan.perturbation_response_note_path,
+            plan.feedback_ablation_note_path,
+        )
+        for path in note_paths:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("diagnostic note\n", encoding="utf-8")
+        (plan.figure_output_dir / "figure_summary.json").write_text("{}", encoding="utf-8")
+        manifest = {
+            "schema_version": postrun.SCHEMA_VERSION,
+            "issue": kwargs["experiment"],
+            "run_ids": list(kwargs["run_ids"]),
+            "primary_run_contract": {
+                "type": "feedbax_analysis_bundle",
+                "bundle": "rlrmp/gru_postrun",
+                "legacy_regeneration_spec": "compatibility_only",
+            },
+            "outputs": {
+                "objective_comparator": {
+                    "status": "materialized",
+                    "json_path": "results/5f70333/notes/objective_comparator_validation_selected.json",
+                    "note_path": "results/5f70333/notes/objective_comparator_validation_selected.md",
+                },
+                "map_decomposition": {
+                    "status": "materialized",
+                    "json_path": (
+                        "results/5f70333/notes/"
+                        "gru_map_error_decomposition_validation_selected.json"
+                    ),
+                    "note_path": (
+                        "results/5f70333/notes/"
+                        "gru_map_error_decomposition_validation_selected.md"
+                    ),
+                },
+                "perturbation_response": {
+                    "status": "materialized",
+                    "json_path": (
+                        "results/5f70333/notes/"
+                        "gru_perturbation_response_validation_selected_manifest.json"
+                    ),
+                    "note_path": (
+                        "results/5f70333/notes/"
+                        "gru_perturbation_response_validation_selected.md"
+                    ),
+                },
+                "feedback_ablation": {
+                    "status": "materialized",
+                    "json_path": "results/5f70333/notes/gru_feedback_ablation_validation_selected.json",
+                    "note_path": "results/5f70333/notes/gru_feedback_ablation_validation_selected.md",
+                },
+            },
+        }
+        plan.postrun_manifest_path.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        return manifest
+
+    monkeypatch.setattr(dm, "materialize_gru_postrun_analysis", fake_postrun_materializer)
+    execution = execute_staged_analysis_bundle(
+        bundle,
+        root=tmp_path,
+        run_ids=["run_a", "run_b"],
+        issues=["2805498"],
+    )
+
+    assert execution.bundle_name == "gru_postrun"
+    assert execution.matched_run_ids == ["run_a", "run_b"]
+    stages = {stage.name: stage for stage in execution.stages}
+    postrun_stage = stages["postrun_diagnostics"]
+    assert postrun_stage.status == "materialized"
+    assert postrun_stage.manifest_refs
+    output_statuses = {output.role: output.status for output in postrun_stage.outputs}
+    assert output_statuses["rlrmp-gru-postrun-manifest"] == "materialized"
+    assert output_statuses["rlrmp-gru-standard-certificate-manifest"] == "materialized"
+    assert output_statuses["rlrmp-gru-evaluation-diagnostics-manifest"] == "materialized"
+    assert output_statuses["rlrmp-gru-objective-comparator-manifest"] == "materialized"
+    assert output_statuses["rlrmp-gru-map-decomposition-manifest"] == "materialized"
+    assert output_statuses["rlrmp-gru-perturbation-response-manifest"] == "materialized"
+    assert output_statuses["rlrmp-gru-feedback-ablation-manifest"] == "materialized"
+    assert stages["archive_only_entrypoints"].status == "skipped"
+    assert stages["feedback_quality_lens"].status == "not_applicable"
+    assert stages["training_diagnostics"].status == "not_applicable"
+
+    manifest_ref = postrun_stage.manifest_refs[0]
+    analysis_manifest, _path = load_manifest(manifest_ref.uri), Path(manifest_ref.uri)
+    artifact_roles = {artifact.role for artifact in analysis_manifest.artifacts}
+    assert "rlrmp-gru-postrun-manifest" in artifact_roles
+    assert "rlrmp-gru-postrun-legacy-regeneration-spec" in artifact_roles
+    assert "rlrmp-gru-feedback-ablation-manifest" in artifact_roles
+    assert analysis_manifest.regeneration_specs
+    payload_artifact = next(
+        artifact
+        for artifact in analysis_manifest.artifacts
+        if artifact.role == "rlrmp-gru-postrun-manifest"
+    )
+    payload = json.loads(Path(payload_artifact.uri).read_text(encoding="utf-8"))
+    assert payload["bundle_contract"]["primary"] == "feedbax_analysis_bundle"
+    assert payload["primary_run_contract"]["legacy_regeneration_spec"] == "compatibility_only"
