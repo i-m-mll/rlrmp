@@ -681,8 +681,8 @@ def build_cs_lss_gru_graph(
             additional inputs internally.
         encoding_size: Optional network encoder width.
         hidden_type: Recurrent cell type; defaults to ``eqx.nn.GRUCell``.
-        population_structure: Optional Feedbax population mask.
-        sisu_gating: Feedbax SISU gating mode for ``SimpleStagedNetwork``.
+        population_structure: Optional staged-network population mask.
+        sisu_gating: RLRMP staged-network SISU gating mode.
         initial_state: Optional 48D C&S plant initial state.
         sensory_noise_std: Additive Gaussian noise standard deviation on the
             4D delayed position/velocity observation sent to the GRU.
