@@ -31,11 +31,17 @@ from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (
     DEFAULT_OUTPUT_FILENAME,
     materialize_gru_evaluation_diagnostics,
 )
+from rlrmp.analysis.pipelines.gru_postrun_materialization import (
+    DEFAULT_OUTPUT_TAG,
+    materialize_gru_postrun_analysis,
+    plan_gru_postrun_materialization,
+)
 from rlrmp.paths import REPO_ROOT
 
 
 GRU_STANDARD_ANALYSIS_TYPE = "rlrmp.certificate.gru_standard"
 GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE = "rlrmp.diagnostic.gru_evaluation"
+GRU_POSTRUN_ANALYSIS_TYPE = "rlrmp.gru_postrun"
 BRIDGE_STANDARD_ANALYSIS_TYPE = GRU_STANDARD_ANALYSIS_TYPE
 
 
@@ -52,6 +58,17 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
         gru_evaluation_diagnostics_recipe,
         replace=replace,
     )
+    register_analysis_recipe(
+        GRU_POSTRUN_ANALYSIS_TYPE,
+        gru_postrun_recipe,
+        replace=replace,
+    )
+
+
+def register_declarative_materialization_recipes(*, replace: bool = False) -> None:
+    """Register all RLRMP declarative materialization recipes."""
+
+    register_certificate_analysis_recipes(replace=replace)
 
 
 def gru_standard_certificate_spec(
@@ -129,6 +146,45 @@ def gru_evaluation_diagnostics_spec(
     )
 
 
+def gru_postrun_spec(
+    *,
+    experiment: str,
+    run_ids: Sequence[str] | None = None,
+    labels: Sequence[str] | None = None,
+    output_tag: str = DEFAULT_OUTPUT_TAG,
+    use_validation_selected_checkpoints: bool = True,
+    include_reference: bool = True,
+    n_rollout_trials: int = DEFAULT_N_ROLLOUT_TRIALS,
+    include_objective_comparator: bool = True,
+    include_map_decomposition: bool = True,
+    include_perturbation_response: bool = True,
+    include_feedback_ablation: bool = True,
+    repo_root: Path | str | None = None,
+) -> AnalysisRunSpec:
+    """Return declarative spec data for the complete GRU post-run bundle."""
+
+    params: dict[str, Any] = {
+        "experiment": experiment,
+        "output_tag": output_tag,
+        "use_validation_selected_checkpoints": use_validation_selected_checkpoints,
+        "include_reference": include_reference,
+        "n_rollout_trials": n_rollout_trials,
+        "include_objective_comparator": include_objective_comparator,
+        "include_map_decomposition": include_map_decomposition,
+        "include_perturbation_response": include_perturbation_response,
+        "include_feedback_ablation": include_feedback_ablation,
+    }
+    if run_ids is not None:
+        params["run_ids"] = list(run_ids)
+    if labels is not None:
+        params["labels"] = list(labels)
+    _set_optional_path_param(params, "repo_root", repo_root)
+    return AnalysisRunSpec(
+        analysis_type=GRU_POSTRUN_ANALYSIS_TYPE,
+        params=params,
+    )
+
+
 def gru_standard_certificate_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
@@ -165,6 +221,33 @@ def gru_evaluation_diagnostics_recipe(
     )
     return AnalysisRecipeResult(
         analyses={"gru_evaluation_diagnostics": analysis},
+        data=_empty_analysis_data(),
+    )
+
+
+def gru_postrun_recipe(
+    spec: AnalysisRunSpec,
+    _root: Path,
+    inputs: Sequence[Any],
+) -> AnalysisRecipeResult:
+    """Build the declarative complete GRU post-run materialization recipe."""
+
+    params = dict(spec.params)
+    resolved_run_ids = _run_ids_from_params_or_inputs(params, inputs)
+    experiment = _experiment_from_params_or_inputs(params, inputs)
+    analysis = ContextMaterializer(
+        materializer=lambda context: _materialize_gru_postrun(
+            context,
+            params,
+            experiment=experiment,
+            run_ids=resolved_run_ids,
+        ),
+        artifact_role="rlrmp-gru-postrun-manifest",
+        logical_name="gru_postrun_materialization.json",
+        schema_boundary="rlrmp-owned GRU post-run diagnostic bundle payload",
+    )
+    return AnalysisRecipeResult(
+        analyses={"gru_postrun_materialization": analysis},
         data=_empty_analysis_data(),
     )
 
@@ -299,6 +382,72 @@ def _materialize_gru_evaluation_diagnostics(
     )
 
 
+def _materialize_gru_postrun(
+    context: AnalysisRunContext,
+    params: Mapping[str, Any],
+    *,
+    experiment: str,
+    run_ids: Sequence[str],
+) -> MaterializationResult:
+    if not run_ids:
+        raise ValueError("GRU post-run recipe requires at least one run ID")
+
+    repo_root = _repo_root_from_params(params)
+    output_tag = str(params.get("output_tag", DEFAULT_OUTPUT_TAG))
+    manifest = materialize_gru_postrun_analysis(
+        experiment=experiment,
+        run_ids=tuple(run_ids),
+        labels=_optional_str_sequence(params.get("labels")),
+        output_tag=output_tag,
+        use_validation_selected_checkpoints=bool(
+            params.get("use_validation_selected_checkpoints", True)
+        ),
+        fixed_bank_rescore_manifest_path=_optional_path(
+            params.get("fixed_bank_rescore_manifest_path"),
+            repo_root=repo_root,
+        ),
+        include_reference=bool(params.get("include_reference", True)),
+        n_rollout_trials=int(params.get("n_rollout_trials", DEFAULT_N_ROLLOUT_TRIALS)),
+        materializer_issue_id=str(params.get("materializer_issue_id", "103db99")),
+        include_objective_comparator=bool(params.get("include_objective_comparator", True)),
+        include_map_decomposition=bool(params.get("include_map_decomposition", True)),
+        include_perturbation_response=bool(params.get("include_perturbation_response", True)),
+        include_feedback_ablation=bool(params.get("include_feedback_ablation", True)),
+        perturbation_bank_mode=str(params.get("perturbation_bank_mode", "raw")),
+        perturbation_calibration_level=params.get("perturbation_calibration_level"),
+        perturbation_calibration_reach=params.get("perturbation_calibration_reach"),
+        feedback_selection_level=str(params.get("feedback_selection_level", "small")),
+        repo_root=repo_root,
+    )
+    plan = plan_gru_postrun_materialization(
+        experiment=experiment,
+        run_ids=tuple(run_ids),
+        output_tag=output_tag,
+        use_validation_selected_checkpoints=bool(
+            params.get("use_validation_selected_checkpoints", True)
+        ),
+        fixed_bank_rescore_manifest_path=_optional_path(
+            params.get("fixed_bank_rescore_manifest_path"),
+            repo_root=repo_root,
+        ),
+        repo_root=repo_root,
+    )
+    payload = {
+        **manifest,
+        "declarative_analysis": _declarative_metadata(context),
+        "bundle_contract": {
+            "primary": "feedbax_analysis_bundle",
+            "bundle": "rlrmp/gru_postrun",
+            "analysis_manifest_id": context.manifest_id,
+            "legacy_regeneration_spec_role": "compatibility",
+        },
+    }
+    return MaterializationResult(
+        payload=payload,
+        existing_artifacts=tuple(_postrun_existing_artifacts(manifest, plan, repo_root=repo_root)),
+    )
+
+
 def _empty_analysis_data() -> AnalysisInputData:
     return AnalysisInputData(
         models={},
@@ -306,6 +455,46 @@ def _empty_analysis_data() -> AnalysisInputData:
         states={},
         hps={},
         extras=TreeNamespace(),
+    )
+
+
+def _run_ids_from_params_or_inputs(
+    params: Mapping[str, Any],
+    inputs: Sequence[Any],
+) -> tuple[str, ...]:
+    if params.get("run_ids") is not None:
+        return tuple(str(run_id) for run_id in params["run_ids"])
+    run_ids: list[str] = []
+    for resolved in inputs:
+        ref = getattr(resolved, "ref", None)
+        if ref is None:
+            continue
+        run_id = getattr(ref, "metadata", {}).get("run_id") or getattr(ref, "id", None)
+        if run_id is not None:
+            run_ids.append(str(run_id))
+    return tuple(run_ids)
+
+
+def _experiment_from_params_or_inputs(
+    params: Mapping[str, Any],
+    inputs: Sequence[Any],
+) -> str:
+    if params.get("experiment") is not None:
+        return str(params["experiment"])
+    metadata_key = str(params.get("experiment_metadata_key", "rlrmp_experiment"))
+    for resolved in inputs:
+        metadata = {}
+        manifest = getattr(resolved, "manifest", None)
+        if manifest is not None:
+            metadata = getattr(manifest, "metadata", {})
+        if not metadata:
+            ref = getattr(resolved, "ref", None)
+            metadata = getattr(ref, "metadata", {}) if ref is not None else {}
+        if metadata_key in metadata:
+            return str(metadata[metadata_key])
+    raise ValueError(
+        "GRU post-run recipe requires params.experiment or input metadata "
+        f"{metadata_key!r}"
     )
 
 
@@ -341,6 +530,69 @@ def _existing_file(
     if not path.exists():
         return None
     return ExistingAnalysisArtifact(path=path, role=role, logical_name=logical_name)
+
+
+def _postrun_existing_artifacts(
+    manifest: Mapping[str, Any],
+    plan: Any,
+    *,
+    repo_root: Path,
+) -> tuple[ExistingAnalysisArtifact, ...]:
+    artifacts: list[ExistingAnalysisArtifact] = []
+    direct_paths = (
+        ("rlrmp-gru-checkpoint-selection-manifest", plan.checkpoint_manifest_path),
+        ("rlrmp-gru-standard-certificate-note", plan.standard_note_path),
+        ("rlrmp-gru-standard-certificate-manifest", plan.standard_manifest_path),
+        ("rlrmp-gru-evaluation-diagnostics-manifest", plan.evaluation_manifest_path),
+        ("rlrmp-gru-pilot-figure-summary", plan.figure_output_dir / "figure_summary.json"),
+        ("rlrmp-gru-postrun-legacy-regeneration-spec", plan.postrun_regeneration_spec_path),
+    )
+    for role, path in direct_paths:
+        if path is None:
+            continue
+        artifact = _existing_file(path, role=role, logical_name=_legacy_logical_name(path, repo_root))
+        if artifact is not None:
+            artifacts.append(artifact)
+
+    output_roles = {
+        "objective_comparator": (
+            "rlrmp-gru-objective-comparator-manifest",
+            "rlrmp-gru-objective-comparator-note",
+        ),
+        "map_decomposition": (
+            "rlrmp-gru-map-decomposition-manifest",
+            "rlrmp-gru-map-decomposition-note",
+        ),
+        "perturbation_response": (
+            "rlrmp-gru-perturbation-response-manifest",
+            "rlrmp-gru-perturbation-response-note",
+        ),
+        "feedback_ablation": (
+            "rlrmp-gru-feedback-ablation-manifest",
+            "rlrmp-gru-feedback-ablation-note",
+        ),
+    }
+    outputs = manifest.get("outputs", {})
+    for output_name, (json_role, note_role) in output_roles.items():
+        output = outputs.get(output_name) if isinstance(outputs, Mapping) else None
+        if not isinstance(output, Mapping):
+            continue
+        for key, role in (("json_path", json_role), ("note_path", note_role)):
+            path = _optional_path(output.get(key), repo_root=repo_root)
+            if path is None:
+                continue
+            artifact = _existing_file(
+                path,
+                role=role,
+                logical_name=_legacy_logical_name(path, repo_root),
+            )
+            if artifact is not None:
+                artifacts.append(artifact)
+    return tuple(artifacts)
+
+
+def _legacy_logical_name(path: Path, repo_root: Path) -> str:
+    return f"legacy/{_repo_relative(path, repo_root=repo_root)}"
 
 
 def _bulk_artifact_groups(
@@ -388,6 +640,13 @@ def _read_json_payload(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _repo_relative(path: Path, *, repo_root: Path) -> str:
+    try:
+        return str(path.relative_to(repo_root))
+    except ValueError:
+        return str(path)
+
+
 def _declarative_metadata(context: AnalysisRunContext) -> dict[str, Any]:
     return materialization_metadata(context, schema_owner="rlrmp")
 
@@ -404,10 +663,14 @@ def _set_optional_path_param(
 __all__ = [
     "BRIDGE_STANDARD_ANALYSIS_TYPE",
     "GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE",
+    "GRU_POSTRUN_ANALYSIS_TYPE",
     "GRU_STANDARD_ANALYSIS_TYPE",
     "gru_evaluation_diagnostics_spec",
     "gru_evaluation_diagnostics_recipe",
+    "gru_postrun_recipe",
+    "gru_postrun_spec",
     "gru_standard_certificate_spec",
     "gru_standard_certificate_recipe",
     "register_certificate_analysis_recipes",
+    "register_declarative_materialization_recipes",
 ]
