@@ -15,10 +15,10 @@ from typing import Any
 
 import equinox as eqx
 import jax.tree as jt
-from feedbax.channel import Channel
+from feedbax.runtime.channel import Channel
 from equinox import field
 from equinox.nn import State
-from feedbax.graph import Component, Wire
+from feedbax.runtime.graph import Component, Wire
 from feedbax.noise import Multiplicative, Normal
 from jax_cookbook import is_module
 from jaxtyping import PRNGKeyArray, PyTree

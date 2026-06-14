@@ -23,7 +23,7 @@ from feedbax.contracts.graph import (
 )
 from feedbax._tree import tree_sum_n_features
 from feedbax.filters import FilterState
-from feedbax.graph import Graph
+from feedbax.runtime.graph import Graph
 from feedbax.intervene import DynamicsMatrixPerturb
 from feedbax.mechanics import Mechanics, MechanicsState
 from feedbax.mechanics.plant import DirectForceInput
@@ -34,12 +34,12 @@ from feedbax.serialization import spec_to_graph
 from equinox.nn import StateIndex
 
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
-from rlrmp.stochastic_runtime import (
+from rlrmp.model.stochastic_runtime import (
     PLANT_PROCESS_FORCE_NOISE_LABEL,
     graphspec_noise_contract,
     stochastic_runtime_config_from_model,
 )
-from rlrmp.trainable import staged_network_trainable_paths
+from rlrmp.model.trainable import staged_network_trainable_paths
 
 
 SCHEMA_VERSION = "rlrmp.feedbax_graph.v1"
@@ -399,7 +399,7 @@ def install_simple_feedback_runtime_hooks(graph: Graph) -> Graph:
 def _build_simple_staged_network(params: dict[str, Any]) -> SimpleStagedNetwork:
     hidden_type_name = str(params.get("hidden_type", "GRUCell"))
     if hidden_type_name == "VanillaRNNCell":
-        from rlrmp.models import VanillaRNNCell
+        from rlrmp.model import VanillaRNNCell
 
         hidden_type = VanillaRNNCell
     elif hidden_type_name in {"GRU", "GRUCell", "gru"}:
@@ -421,7 +421,7 @@ def _build_simple_staged_network(params: dict[str, Any]) -> SimpleStagedNetwork:
 
 
 def _build_linear_controller(params: dict[str, Any]):
-    from rlrmp.networks.linear_controllers import LinearController
+    from rlrmp.controllers.linear import LinearController
 
     return LinearController(
         n_steps=int(params["n_steps"]),
@@ -433,7 +433,7 @@ def _build_linear_controller(params: dict[str, Any]):
 
 
 def _build_linear_tracker_controller(params: dict[str, Any]):
-    from rlrmp.networks.linear_controllers import LinearTrackerController
+    from rlrmp.controllers.linear import LinearTrackerController
 
     return LinearTrackerController(
         n_steps=int(params["n_steps"]),
@@ -986,7 +986,7 @@ def _is_cs_lss_graph(model: Graph) -> bool:
 
 def _cs_lss_runtime_component_spec(component: Any) -> ComponentSpec | None:
     from feedbax.mechanics import LinearStateSpace
-    from rlrmp.cs_lss_gru import (
+    from rlrmp.model.cs_lss_gru import (
         CS_FORCE_DIM,
         CS_LSS_INITIAL_HIDDEN_NET_COMPONENT,
         InitialHiddenStagedNetwork,
@@ -1161,7 +1161,7 @@ def _representative_runtime_graph(
 
 
 def _runtime_linear_controller_params(component: Any) -> dict[str, Any] | None:
-    from rlrmp.networks.linear_controllers import LinearController, LinearTrackerController
+    from rlrmp.controllers.linear import LinearController, LinearTrackerController
 
     if isinstance(component, LinearTrackerController):
         component_type = "RLRMPLinearTrackerController"

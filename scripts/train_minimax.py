@@ -42,7 +42,7 @@ from feedbax import load_with_hyperparameters, prepare_trial
 from feedbax import save as fbx_save
 from feedbax.iterate import run_component
 from feedbax.misc import BatchInfo
-from feedbax.streaming_loss import make_streaming_loss_fn
+from feedbax.objectives.streaming import make_streaming_loss_fn
 from feedbax.training.train import (
     TaskTrainer,
     make_delayed_cosine_schedule,
@@ -54,7 +54,7 @@ from rlrmp.adversarial_training import (
     _inject_adversary_forces,
 )
 from rlrmp.adversary import GaussianBumpAdversary, LinearDynamicsAdversary
-from rlrmp.feedbax_graph import (
+from rlrmp.model.feedbax_graph import (
     build_runtime_rlrmp_feedbax_graph_bundle,
     write_graph_spec_bundle,
 )
@@ -63,7 +63,7 @@ from rlrmp.intervention_compat import (
     swap_task_intervention_to_dynamics_matrix,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
-from rlrmp.trainable import staged_network_trainable_parts
+from rlrmp.model.trainable import staged_network_trainable_parts
 
 # build_hps was extracted to rlrmp.train.minimax in 8404108 (capability-named
 # library module; previously defined inline here and pulled by analysis scripts

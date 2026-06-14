@@ -16,7 +16,7 @@ import jax.tree as jt
 import numpy as np
 from feedbax import TaskTrialSpec, WhereDict, load_with_hyperparameters
 from feedbax.misc import BatchInfo
-from feedbax.train import filter_spec_leaves
+from feedbax._tree import filter_spec_leaves
 from feedbax.types import TreeNamespace, dict_to_namespace
 
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps

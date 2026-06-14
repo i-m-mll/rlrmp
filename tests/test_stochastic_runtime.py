@@ -7,12 +7,12 @@ import argparse
 import jax.random as jr
 import pytest
 from feedbax.noise import CompositeNoise, Multiplicative, Normal
+from feedbax.runtime.channel import Channel
 
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.train.task_model import setup_task_model_pair
-from rlrmp.stochastic_runtime import (
+from rlrmp.model.stochastic_runtime import (
     PLANT_PROCESS_FORCE_NOISE_LABEL,
-    PlantProcessForceNoise,
     stochastic_runtime_config_from_model,
 )
 from rlrmp.train.minimax import build_hps
@@ -81,18 +81,18 @@ def test_runtime_wires_plant_process_noise_after_intervenor_before_mechanics() -
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
     process_node = pair.model.nodes[PLANT_PROCESS_FORCE_NOISE_LABEL]
 
-    assert isinstance(process_node, PlantProcessForceNoise)
+    assert isinstance(process_node, Channel)
     assert process_node.noise_func.std == 0.05
     assert ("force_filter", "output", PLANT_INTERVENOR_LABEL, "force") in _edge_set(pair.model)
     assert (
         PLANT_INTERVENOR_LABEL,
         "force",
         PLANT_PROCESS_FORCE_NOISE_LABEL,
-        "force",
+        "input",
     ) in _edge_set(pair.model)
     assert (
         PLANT_PROCESS_FORCE_NOISE_LABEL,
-        "force",
+        "output",
         "mechanics",
         "force",
     ) in _edge_set(pair.model)
@@ -117,10 +117,10 @@ def test_linear_tracker_runtime_uses_same_stochastic_force_channel() -> None:
     assert isinstance(noise_func, CompositeNoise)
     assert noise_func.terms[0].noise_func.std == 0.04
     assert noise_func.terms[1].std == 0.03
-    assert isinstance(pair.model.nodes[PLANT_PROCESS_FORCE_NOISE_LABEL], PlantProcessForceNoise)
+    assert isinstance(pair.model.nodes[PLANT_PROCESS_FORCE_NOISE_LABEL], Channel)
     assert (
         PLANT_PROCESS_FORCE_NOISE_LABEL,
-        "force",
+        "output",
         "mechanics",
         "force",
     ) in _edge_set(pair.model)

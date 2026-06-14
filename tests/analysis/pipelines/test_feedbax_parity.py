@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import jax
 import jax.numpy as jnp
-from feedbax.graph import init_state_from_component
+from feedbax.runtime.graph import init_state_from_component
 from feedbax.mechanics import LinearStateSpace
 from feedbax.web.serialization import spec_to_graph
 

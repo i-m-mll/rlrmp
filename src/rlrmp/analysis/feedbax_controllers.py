@@ -10,10 +10,10 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 from feedbax.analysis import GraphControllerAdapter, graph_controller
-from feedbax.channel import Channel
-from feedbax.graph import Graph, Wire
+from feedbax.runtime.channel import Channel
+from feedbax.runtime.graph import Graph, Wire
 from feedbax.mechanics import MechanicsState
-from feedbax.state import CartesianState
+from feedbax.runtime.state import CartesianState
 from jaxtyping import Array, PRNGKeyArray
 
 from rlrmp.analysis.math.induced_gain import Controller

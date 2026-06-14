@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
-from rlrmp.trainable import staged_network_trainable_parts
+from rlrmp.model.trainable import staged_network_trainable_parts
 
 
 PREALLOC_ENV = "XLA_PYTHON_CLIENT_PREALLOCATE"

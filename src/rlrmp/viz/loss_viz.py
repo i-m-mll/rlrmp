@@ -5,14 +5,14 @@ particularly showing time masks, discounts, and their combined effects.
 """
 
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable
 from typing import Any, Optional
 
 import jax
 import jax.numpy as jnp
 import plotly.graph_objects as go
 from feedbax import TaskTrialSpec
-from feedbax.loss import CompositeLoss, FuncTermsLoss, TargetSpec, TargetStateLoss
+from feedbax.objectives.loss import CompositeLoss, FuncTermsLoss, TargetStateLoss
 from jaxtyping import Array
 from plotly.subplots import make_subplots
 

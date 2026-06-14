@@ -24,22 +24,22 @@ import jax.numpy as jnp
 import jax.random as jr
 from jaxtyping import Array, PRNGKeyArray, PyTree
 
-from feedbax.channel import ChannelState
+from feedbax.runtime.channel import ChannelState
 from feedbax.component_registry import ComponentMigration, ComponentMigrationPack, get_component_registry
 from feedbax.contracts.graph import ComponentSpec, GraphMetadata, GraphSpec, WireSpec
-from feedbax.graph import Component, Graph
+from feedbax.runtime.graph import Component, Graph
 from feedbax.mechanics import LinearStateSpace
 from feedbax.nn import NetworkState, PopulationStructure, SimpleStagedNetwork
 from feedbax.serialization import spec_to_graph
-from feedbax.state import CartesianState
+from feedbax.runtime.state import CartesianState
 
 from rlrmp.analysis.math.cs_game_card import build_canonical_game
 from rlrmp.analysis.pipelines.feedbax_parity import build_cs2019_feedbax_mechanics
-from rlrmp.feedbax_graph import (
+from rlrmp.model.feedbax_graph import (
     register_rlrmp_graph_components,
     resolve_registered_graph_component_migrations,
 )
-from rlrmp.trainable import staged_network_trainable_parts
+from rlrmp.model.trainable import staged_network_trainable_parts
 
 
 CS_PHYSICAL_STATE_DIM = 8
@@ -202,6 +202,25 @@ class CsLssGruState(Module):
     sensory: ChannelState
     net: NetworkState
     efferent: ChannelState
+
+
+def _cs_lss_gru_state_view(node_states: dict[str, PyTree]) -> CsLssGruState:
+    mechanics_state = node_states["mechanics"]
+    vector = mechanics_state.vector
+    mechanics_view = CsLssMechanicsView(
+        vector=vector,
+        effector=CartesianState(
+            pos=vector[:2],
+            vel=vector[2:4],
+            force=jnp.zeros((CS_FORCE_DIM,), dtype=vector.dtype),
+        ),
+    )
+    return CsLssGruState(
+        mechanics=mechanics_view,
+        sensory=node_states["sensory"],
+        net=node_states["net"],
+        efferent=node_states["efferent"],
+    )
 
 
 def register_cs_lss_graph_components(component_registry: Any | None = None) -> Any:
@@ -503,24 +522,7 @@ def install_cs_lss_gru_runtime_hooks(graph: Graph) -> Graph:
     mechanics = graph.nodes.get("mechanics")
     if not isinstance(mechanics, LinearStateSpace):
         return graph
-
-    def _state_view(node_states: dict[str, PyTree]) -> CsLssGruState:
-        mechanics_state = node_states["mechanics"]
-        mechanics_view = CsLssMechanicsView(
-            vector=mechanics_state.vector,
-            effector=mechanics._effector(
-                mechanics_state.vector,
-                jnp.zeros((CS_FORCE_DIM,), dtype=mechanics.A.dtype),
-            ),
-        )
-        return CsLssGruState(
-            mechanics=mechanics_view,
-            sensory=node_states["sensory"],
-            net=node_states["net"],
-            efferent=node_states["efferent"],
-        )
-
-    return graph.with_state_view(_state_view)
+    return graph.with_state_view(_cs_lss_gru_state_view)
 
 
 def build_cs_lss_gru_graph(
@@ -796,7 +798,7 @@ def _build_simple_staged_network(params: dict[str, Any]) -> SimpleStagedNetwork:
 
 def _hidden_type_from_name(name: str) -> Callable[..., Module]:
     if name == "VanillaRNNCell":
-        from rlrmp.models import VanillaRNNCell
+        from rlrmp.model import VanillaRNNCell
 
         return VanillaRNNCell
     if name in {"GRU", "GRUCell", "gru"}:

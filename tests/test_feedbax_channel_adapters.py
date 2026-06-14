@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from feedbax.components import Constant, Gain, Sum
+from feedbax.runtime.components import Constant, Gain, Sum
 from feedbax.contracts.graph import (
     AdditiveGraphChannelAdapterSpec,
     AdditiveGraphChannelTargetSpec,
@@ -12,10 +12,10 @@ from feedbax.contracts.graph import (
     GraphSpec,
     WireSpec,
 )
-from feedbax.graph import Component, Graph, State, Wire
+from feedbax.runtime.graph import Component, Graph, State, Wire
 from feedbax.serialization import spec_to_graph
 
-from rlrmp.feedbax_channel_adapters import (
+from rlrmp.model.feedbax_channel_adapters import (
     find_materialized_additive_channel_adapter,
     materialize_additive_channel_adapter_on_graph,
 )

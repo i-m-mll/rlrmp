@@ -34,23 +34,16 @@ Design notes
 Bug: 410d7ac
 """
 
-from collections.abc import Callable
-from functools import partial
-from typing import Optional
-
-import equinox as eqx
-import jax
 import jax.numpy as jnp
 import jax.random as jr
-from equinox import Module, field
+from equinox import field
 from equinox.nn import State, StateIndex
 from feedbax import AbstractTask
 from feedbax.bodies import SimpleFeedback
-from feedbax.graph import Component
+from feedbax.runtime.graph import Component
 from feedbax.mechanics import Mechanics
 from feedbax.mechanics.plant import DirectForceInput
 from feedbax.mechanics.skeleton.pointmass import PointMass
-from feedbax.misc import identity_func
 from feedbax.nn import NetworkState
 from feedbax.noise import Multiplicative, Normal
 from jax.flatten_util import ravel_pytree
@@ -94,7 +87,7 @@ def _extract_target_pos(input_value: PyTree) -> Float[Array, "2"]:
     return task_input.effector_target.pos
 
 
-def _flatten_feedback(feedback_value: PyTree) -> Float[Array, "n"]:
+def _flatten_feedback(feedback_value: PyTree) -> Array:
     """Flatten the feedback pytree into a 1-D array. For point-mass feedback
     this yields ``(pos_x, pos_y, vel_x, vel_y)`` of length 4."""
     flat, _ = ravel_pytree(feedback_value)

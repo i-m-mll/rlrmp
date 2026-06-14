@@ -5,7 +5,7 @@ from __future__ import annotations
 import jax.numpy as jnp
 import jax.random as jr
 from feedbax import DelayedReaches
-from feedbax.loss import AbstractLoss
+from feedbax.objectives.loss import AbstractLoss
 
 from rlrmp.task import TASK_TYPES
 

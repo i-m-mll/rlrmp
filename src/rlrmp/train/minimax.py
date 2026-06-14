@@ -17,7 +17,7 @@ from functools import partial
 import equinox as eqx
 from feedbax.types import TreeNamespace, dict_to_namespace
 
-from rlrmp.trainable import staged_network_trainable_paths
+from rlrmp.model.trainable import staged_network_trainable_paths
 
 __all__ = ["build_hps"]
 
@@ -40,7 +40,7 @@ def _resolve_hidden_type(hidden_type_str: str, dt: float):
     if hidden_type_str == "gru":
         return eqx.nn.GRUCell
     elif hidden_type_str == "vanilla_rnn":
-        from rlrmp.models import VanillaRNNCell
+        from rlrmp.model import VanillaRNNCell
         # tau=0.1 s (100 ms) => alpha=dt/tau=0.1 at dt=0.01 — matches cortical-neuron
         # time constant in motor-control RNN literature (Yang 2019, Sussillo 2015).
         return partial(VanillaRNNCell, dt=dt, tau=0.1)
