@@ -19,10 +19,6 @@ from feedbax.migrations import (
 )
 
 
-DIAGNOSTIC_REGENERATION_SPEC_KIND = "RLRMPDiagnosticRegenerationSpec"
-DIAGNOSTIC_REGENERATION_SPEC_SCHEMA_ID = "rlrmp.diagnostic_regeneration_spec"
-DIAGNOSTIC_REGENERATION_SPEC_SCHEMA_VERSION = "rlrmp.diagnostic_regeneration_spec.v1"
-
 GRU_EVALUATION_DIAGNOSTICS_KIND = "RLRMPGRUEvaluationDiagnosticsManifest"
 GRU_EVALUATION_DIAGNOSTICS_SCHEMA_ID = "rlrmp.gru_evaluation_diagnostics"
 GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION = "rlrmp.gru_evaluation_diagnostics.v1"
@@ -182,15 +178,6 @@ def load_rlrmp_spec_payload(
 
 def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
     return (
-        _family(
-            DIAGNOSTIC_REGENERATION_SPEC_KIND,
-            DIAGNOSTIC_REGENERATION_SPEC_SCHEMA_ID,
-            DIAGNOSTIC_REGENERATION_SPEC_SCHEMA_VERSION,
-            emitted_by=("rlrmp.analysis.pipelines.diagnostic_provenance",),
-            consumed_by=("rlrmp analysis re-run tooling",),
-            description="RLRMP-local recipe for regenerating diagnostic artifacts.",
-            rejected_old_versions=("rlrmp.diagnostic_regeneration_spec.v0",),
-        ),
         _family(
             GRU_EVALUATION_DIAGNOSTICS_KIND,
             GRU_EVALUATION_DIAGNOSTICS_SCHEMA_ID,
@@ -373,9 +360,6 @@ __all__ = [
     "CS_GRU_STANDARD_CERTIFICATES_KIND",
     "CS_GRU_STANDARD_CERTIFICATES_SCHEMA_ID",
     "CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION",
-    "DIAGNOSTIC_REGENERATION_SPEC_KIND",
-    "DIAGNOSTIC_REGENERATION_SPEC_SCHEMA_ID",
-    "DIAGNOSTIC_REGENERATION_SPEC_SCHEMA_VERSION",
     "GRU_EVALUATION_DIAGNOSTICS_KIND",
     "GRU_EVALUATION_DIAGNOSTICS_SCHEMA_ID",
     "GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION",

@@ -1,10 +1,4 @@
-"""Regeneration provenance helpers for rlrmp analysis artifacts.
-
-This is intentionally lightweight and rlrmp-local. Feedbax GraphSpec/provider
-manifests should eventually own this contract for graph-native analyses; until
-then these specs keep current GRU diagnostics reproducible without issue-log
-archaeology.
-"""
+"""Feedbax regeneration provenance helpers for rlrmp analysis artifacts."""
 
 from __future__ import annotations
 
@@ -15,15 +9,22 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from rlrmp.paths import REPO_ROOT, mkdir_p
-from rlrmp.spec_migrations import (
-    DIAGNOSTIC_REGENERATION_SPEC_KIND,
-    DIAGNOSTIC_REGENERATION_SPEC_SCHEMA_VERSION,
-    stamp_current_schema,
+from feedbax.manifest import (
+    ArtifactRef,
+    EntrypointRef,
+    FileHashRef,
+    Provenance,
+    REGENERATION_SPEC_SCHEMA_VERSION,
+    RegenerationCommand,
+    RegenerationSpec,
+    TreeHashEntry,
+    TreeHashRef,
 )
 
+from rlrmp.paths import REPO_ROOT, mkdir_p
 
-SCHEMA_VERSION = DIAGNOSTIC_REGENERATION_SPEC_SCHEMA_VERSION
+
+SCHEMA_VERSION = REGENERATION_SPEC_SCHEMA_VERSION
 DEFAULT_MAX_TREE_HASH_FILES = 256
 
 
@@ -40,7 +41,7 @@ def write_regeneration_spec(
     notes: Sequence[str] = (),
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
-    """Write a JSON regeneration spec for a diagnostic artifact.
+    """Write a Feedbax regeneration spec for an RLRMP diagnostic artifact.
 
     Args:
         spec_path: Destination JSON path.
@@ -60,31 +61,35 @@ def write_regeneration_spec(
     """
 
     repo_root = repo_root.resolve()
-    payload = stamp_current_schema(
-        DIAGNOSTIC_REGENERATION_SPEC_KIND,
-        {
+    git = git_provenance(repo_root)
+    source_file_refs, source_tree_refs = _source_refs(source_files, repo_root=repo_root)
+    spec = RegenerationSpec(
+        command=_regeneration_command(command, materializer=materializer, repo_root=repo_root),
+        parameters=_jsonify(parameters or {}),
+        inputs=[
+            _coerce_artifact_ref(item, role="input", repo_root=repo_root) for item in inputs
+        ],
+        outputs=[
+            _coerce_artifact_ref(item, role="output", repo_root=repo_root) for item in outputs
+        ],
+        source_files=source_file_refs,
+        source_trees=source_tree_refs,
+        provenance=Provenance(
+            source_repo=str(repo_root),
+            source_branch=git.get("branch"),
+            source_commit=git.get("head"),
+            dirty=bool(git.get("dirty")),
+            entrypoint=EntrypointRef(kind="rlrmp-diagnostic-materializer", name=materializer),
+            metadata={"status_porcelain": git.get("status_porcelain", [])},
+        ),
+        metadata={
             "diagnostic_name": diagnostic_name,
             "materializer": materializer,
-            "command": _command_payload(command),
-            "parameters": _jsonify(parameters or {}),
-            "inputs": [_coerce_ref(item, role="input", repo_root=repo_root) for item in inputs],
-            "outputs": [
-                _coerce_ref(item, role="output", repo_root=repo_root) for item in outputs
-            ],
-            "source_files": [
-                path_ref(path, role="source_file", repo_root=repo_root) for path in source_files
-            ],
-            "git": git_provenance(repo_root),
             "notes": list(notes),
-            "future_graphspec": {
-                "status": "temporary_rlrmp_bridge",
-                "expected_successor": (
-                    "Feedbax-native analysis/regeneration manifests after GraphSpec "
-                    "and provider-manifest migration"
-                ),
-            },
+            "schema_boundary": "rlrmp diagnostic payload; Feedbax regeneration custody",
         },
     )
+    payload = spec.model_dump(mode="json", exclude_none=True)
     mkdir_p(spec_path.parent)
     spec_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return payload
@@ -215,6 +220,95 @@ def _coerce_ref(
     return path_ref(item, role=role, repo_root=repo_root)
 
 
+def _coerce_artifact_ref(
+    item: Mapping[str, Any] | Path | str,
+    *,
+    role: str,
+    repo_root: Path,
+) -> ArtifactRef:
+    ref = _coerce_ref(item, role=role, repo_root=repo_root)
+    ref_role = str(ref.get("role", role))
+    logical_name = str(ref.get("path") or ref.get("logical_name") or ref_role)
+    metadata = {
+        key: _jsonify(value)
+        for key, value in ref.items()
+        if key not in {"role", "path", "logical_name", "uri"}
+    }
+    return ArtifactRef(
+        role=ref_role,
+        logical_name=logical_name,
+        uri=str(ref.get("uri") or f"repo://{logical_name}"),
+        media_type=_media_type_for_path(logical_name),
+        size_bytes=_optional_int(ref.get("size_bytes")),
+        sha256=str(ref["sha256"]) if ref.get("sha256") is not None else None,
+        metadata=metadata,
+    )
+
+
+def _source_refs(
+    source_files: Sequence[Path | str],
+    *,
+    repo_root: Path,
+) -> tuple[list[FileHashRef], list[TreeHashRef]]:
+    file_refs: list[FileHashRef] = []
+    tree_refs: list[TreeHashRef] = []
+    for source_file in source_files:
+        resolved = _resolve_path(source_file, repo_root=repo_root)
+        if resolved.is_dir():
+            tree_refs.append(_tree_hash_ref(resolved, repo_root=repo_root))
+        elif resolved.exists():
+            stat = resolved.stat()
+            file_refs.append(
+                FileHashRef(
+                    path=repo_relative(resolved, repo_root=repo_root),
+                    sha256=sha256_file(resolved),
+                    size_bytes=stat.st_size,
+                    role="source_file",
+                )
+            )
+        else:
+            file_refs.append(
+                FileHashRef(
+                    path=repo_relative(resolved, repo_root=repo_root),
+                    sha256="missing",
+                    size_bytes=0,
+                    role="source_file",
+                    metadata={"exists": False},
+                )
+            )
+    return file_refs, tree_refs
+
+
+def _tree_hash_ref(path: Path, *, repo_root: Path) -> TreeHashRef:
+    files = sorted(item for item in path.rglob("*") if item.is_file())
+    digest = hashlib.sha256()
+    entries: list[TreeHashEntry] = []
+    for item in files:
+        rel = item.relative_to(path).as_posix()
+        stat = item.stat()
+        item_hash = sha256_file(item)
+        digest.update(rel.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(item_hash.encode("ascii"))
+        digest.update(b"\0")
+        entries.append(
+            TreeHashEntry(
+                path=rel,
+                sha256=item_hash,
+                size_bytes=stat.st_size,
+            )
+        )
+    return TreeHashRef(
+        path=repo_relative(path, repo_root=repo_root),
+        sha256=digest.hexdigest(),
+        file_count=len(files),
+        total_size_bytes=sum(entry.size_bytes for entry in entries),
+        files=entries[:DEFAULT_MAX_TREE_HASH_FILES],
+        role="source_tree",
+        metadata={"hash_truncated": len(entries) > DEFAULT_MAX_TREE_HASH_FILES},
+    )
+
+
 def _resolve_path(path: Path | str, *, repo_root: Path) -> Path:
     candidate = Path(path)
     if candidate.is_absolute():
@@ -222,12 +316,51 @@ def _resolve_path(path: Path | str, *, repo_root: Path) -> Path:
     return (repo_root / candidate).absolute()
 
 
-def _command_payload(command: Sequence[str] | str | None) -> dict[str, Any]:
+def _regeneration_command(
+    command: Sequence[str] | str | None,
+    *,
+    materializer: str,
+    repo_root: Path,
+) -> RegenerationCommand:
     if command is None:
-        return {"status": "not_recorded"}
+        return RegenerationCommand(
+            argv=["unknown"],
+            cwd=repo_relative(repo_root, repo_root=repo_root),
+            metadata={
+                "status": "not_recorded",
+                "materializer": materializer,
+            },
+        )
     if isinstance(command, str):
-        return {"type": "shell", "value": command}
-    return {"type": "argv", "value": list(command)}
+        return RegenerationCommand(
+            shell_command=command,
+            cwd=repo_relative(repo_root, repo_root=repo_root),
+            metadata={"materializer": materializer},
+        )
+    return RegenerationCommand(
+        argv=[str(item) for item in command],
+        cwd=repo_relative(repo_root, repo_root=repo_root),
+        metadata={"materializer": materializer},
+    )
+
+
+def _media_type_for_path(path: str) -> str:
+    suffix = Path(path).suffix.lower()
+    return {
+        ".json": "application/json",
+        ".md": "text/markdown",
+        ".html": "text/html",
+        ".npz": "application/x-npz",
+    }.get(suffix, "application/octet-stream")
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _git(args: Sequence[str], repo_root: Path) -> str:

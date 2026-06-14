@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from feedbax.analysis.materialization import ContextMaterializer
 from feedbax.analysis.specs import execute_analysis_run_spec, unregister_analysis_recipe
 from feedbax.manifest import AnalysisRunSpec, load_manifest
 
@@ -15,6 +16,25 @@ from rlrmp.analysis import declarative_materialization as dm
 
 def _artifact_roles(manifest) -> set[str]:
     return {artifact.role for artifact in manifest.artifacts}
+
+
+def test_declarative_recipes_use_feedbax_context_materializers() -> None:
+    standard = dm.gru_standard_certificate_recipe(
+        dm.gru_standard_certificate_spec(),
+        Path("."),
+        (),
+    )
+    evaluation = dm.gru_evaluation_diagnostics_recipe(
+        dm.gru_evaluation_diagnostics_spec(
+            experiment="unitexp",
+            run_ids=["unit_run"],
+        ),
+        Path("."),
+        (),
+    )
+
+    assert isinstance(standard.analyses["gru_standard_certificate"], ContextMaterializer)
+    assert isinstance(evaluation.analyses["gru_evaluation_diagnostics"], ContextMaterializer)
 
 
 def test_gru_standard_recipe_records_opaque_certificate_payload(

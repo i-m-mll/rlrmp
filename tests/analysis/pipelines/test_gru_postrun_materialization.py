@@ -433,7 +433,9 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         / "gru_postrun_materialization_fullqrf_validation_selected_regeneration_spec.json"
     )
     assert postrun_spec.exists()
-    assert json.loads(postrun_spec.read_text(encoding="utf-8"))["diagnostic_name"] == (
+    assert json.loads(postrun_spec.read_text(encoding="utf-8"))["metadata"][
+        "diagnostic_name"
+    ] == (
         "gru_postrun_materialization_bundle"
     )
 

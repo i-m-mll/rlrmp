@@ -5,13 +5,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from feedbax.manifest import REGENERATION_SPEC_SCHEMA_ID, REGENERATION_SPEC_SCHEMA_VERSION
+
 from rlrmp.analysis.pipelines.diagnostic_provenance import (
     path_ref,
     repo_relative,
     sha256_file,
     write_regeneration_spec,
 )
-from rlrmp.spec_migrations import DIAGNOSTIC_REGENERATION_SPEC_SCHEMA_ID
 
 
 def test_path_ref_hashes_files_and_uses_repo_relative_paths(tmp_path: Path) -> None:
@@ -62,10 +63,13 @@ def test_write_regeneration_spec_records_inputs_outputs_and_source_files(
         .read_text(encoding="utf-8")
     )
     assert on_disk == spec
-    assert spec["schema_id"] == DIAGNOSTIC_REGENERATION_SPEC_SCHEMA_ID
-    assert spec["schema_version"] == "rlrmp.diagnostic_regeneration_spec.v1"
+    assert spec["schema_id"] == REGENERATION_SPEC_SCHEMA_ID
+    assert spec["schema_version"] == REGENERATION_SPEC_SCHEMA_VERSION
     assert spec["parameters"]["run_ids"] == ["run_a"]
-    assert spec["inputs"][0]["path"] == "results/abc1234/runs/run_a/run.json"
-    assert spec["outputs"][0]["path"] == "results/abc1234/notes/diag.json"
+    assert spec["inputs"][0]["logical_name"] == "results/abc1234/runs/run_a/run.json"
+    assert spec["outputs"][0]["logical_name"] == "results/abc1234/notes/diag.json"
     assert spec["source_files"][0]["path"] == "src/rlrmp/analysis/diag.py"
-    assert spec["future_graphspec"]["status"] == "temporary_rlrmp_bridge"
+    assert spec["metadata"]["diagnostic_name"] == "unit_test_diagnostic"
+    assert spec["metadata"]["schema_boundary"] == (
+        "rlrmp diagnostic payload; Feedbax regeneration custody"
+    )
