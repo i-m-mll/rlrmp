@@ -16,7 +16,7 @@ import numpy as np
 import optax
 import pytest
 from feedbax import TaskTrialSpec, TrialTimeline, WhereDict
-from feedbax.loss import TargetSpec
+from feedbax.loss import AbstractLoss, TargetSpec
 from feedbax.mechanics import LinearStateSpace
 from feedbax.state_feedback import StateFeedbackSelector
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
@@ -41,6 +41,8 @@ from rlrmp.loss import (
     CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
     CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
     CsAnalyticalQrfLoss,
+    DelayedReachTrialTypeNormalizedLoss,
+    get_reach_loss,
 )
 from rlrmp.paths import REPO_ROOT, run_artifact_dir, run_spec_dir
 from rlrmp.train.cs_nominal_gru import (
@@ -135,6 +137,19 @@ def _delayed_cs_task(
     if broad_epsilon:
         task = BroadFullStateEpsilonTrainingTaskAdapter(task, hps.broad_epsilon_training)
     return task
+
+
+class _StaticPerTrialLoss(AbstractLoss):
+    label: str
+    values: jax.Array
+
+    def __init__(self, values) -> None:
+        self.label = "static_per_trial"
+        self.values = jnp.asarray(values)
+
+    def term(self, states, trial_specs, model):
+        del states, trial_specs, model
+        return self.values
 
 
 def test_hps_uses_canonical_cs_nominal_task() -> None:
@@ -1408,6 +1423,190 @@ def test_delayed_reach_full_qrf_ignores_pre_go_commands() -> None:
     )
 
 
+def test_delayed_reach_full_qrf_default_keeps_unsplit_objective() -> None:
+    hps = build_hps(
+        _args(
+            smoke=True,
+            delayed_reach=True,
+            delayed_reach_p_catch_trial=0.5,
+            target_relative_multitarget=True,
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            nn_output_pre_go=1.0,
+            hidden_size=8,
+            n_replicates=1,
+        )
+    )
+    loss_func = get_reach_loss(hps)
+
+    assert hps.loss.delayed_trial_type_normalization.enabled is False
+    assert set(loss_func.terms) == {
+        CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+        "nn_output_pre_go",
+    }
+    assert isinstance(
+        loss_func.terms[CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE],
+        CsAnalyticalQrfLoss,
+    )
+
+
+def test_delayed_reach_full_qrf_can_split_trial_type_normalized_terms() -> None:
+    hps = build_hps(
+        _args(
+            smoke=True,
+            delayed_reach=True,
+            delayed_reach_p_catch_trial=0.5,
+            delayed_reach_trial_type_normalized_loss=True,
+            delayed_reach_no_catch_qrf_weight=2.0,
+            delayed_reach_catch_qrf_weight=3.0,
+            target_relative_multitarget=True,
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            nn_output_pre_go=1.0,
+            hidden_size=8,
+            n_replicates=1,
+        )
+    )
+    loss_func = get_reach_loss(hps)
+
+    assert set(loss_func.terms) == {
+        f"{CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE}_no_catch",
+        f"{CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE}_catch",
+        "nn_output_pre_go",
+    }
+    assert isinstance(
+        loss_func.terms[f"{CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE}_no_catch"],
+        DelayedReachTrialTypeNormalizedLoss,
+    )
+    assert isinstance(
+        loss_func.terms[f"{CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE}_catch"],
+        DelayedReachTrialTypeNormalizedLoss,
+    )
+    assert loss_func.weights == {
+        f"{CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE}_no_catch": 2.0,
+        f"{CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE}_catch": 3.0,
+        "nn_output_pre_go": 1.0,
+    }
+    assert hps.loss.delayed_trial_type_normalization.enabled is True
+    assert hps.loss.delayed_trial_type_normalization.no_catch_weight == pytest.approx(2.0)
+    assert hps.loss.delayed_trial_type_normalization.catch_weight == pytest.approx(3.0)
+
+
+def test_delayed_reach_trial_type_normalized_loss_reduces_over_extra_support() -> None:
+    trial = TaskTrialSpec(
+        inits=WhereDict({}),
+        targets=WhereDict({}),
+        inputs={},
+        timeline=TrialTimeline(1),
+        extra={"is_catch_trial": jnp.array([False, False, True, True])},
+    )
+    values = jnp.array([10.0, 20.0, 100.0, 300.0])
+    no_catch = DelayedReachTrialTypeNormalizedLoss(
+        base_loss=_StaticPerTrialLoss(values),
+        trial_type="no_catch",
+        label="no_catch",
+    )
+    catch = DelayedReachTrialTypeNormalizedLoss(
+        base_loss=_StaticPerTrialLoss(values),
+        trial_type="catch",
+        label="catch",
+    )
+
+    no_catch_values = no_catch.term(None, trial, None)
+    catch_values = catch.term(None, trial, None)
+
+    assert jnp.mean(no_catch_values) == pytest.approx(15.0)
+    assert jnp.mean(catch_values) == pytest.approx(200.0)
+    assert jnp.allclose(no_catch_values, jnp.asarray([20.0, 40.0, 0.0, 0.0]))
+    assert jnp.allclose(catch_values, jnp.asarray([0.0, 0.0, 200.0, 600.0]))
+
+
+def test_delayed_reach_trial_type_normalized_loss_falls_back_to_hold_support() -> None:
+    hold = jnp.asarray(
+        [
+            [1.0, 1.0, 1.0, 1.0],
+            [1.0, 1.0, 1.0, 1.0],
+            [1.0, 1.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+        ]
+    )
+    trial = TaskTrialSpec(
+        inits={},
+        inputs={"task": TreeNamespace(hold=hold)},
+        targets={},
+        intervene={},
+        timeline=TrialTimeline.from_epochs_events(
+            n_steps=4,
+            epoch_bounds=jnp.asarray([[0, 2, 4]] * 4),
+            epoch_names=("prep", "movement"),
+        ),
+    )
+    catch = DelayedReachTrialTypeNormalizedLoss(
+        base_loss=_StaticPerTrialLoss([2.0, 4.0, 10.0, 20.0]),
+        trial_type="catch",
+        label="catch",
+    )
+    no_catch = DelayedReachTrialTypeNormalizedLoss(
+        base_loss=_StaticPerTrialLoss([2.0, 4.0, 10.0, 20.0]),
+        trial_type="no_catch",
+        label="no_catch",
+    )
+
+    assert jnp.mean(catch.term(None, trial, None)) == pytest.approx(3.0)
+    assert jnp.mean(no_catch.term(None, trial, None)) == pytest.approx(15.0)
+
+
+def test_delayed_reach_full_qrf_pre_go_auxiliary_masks_only_prep_epoch() -> None:
+    hps = build_hps(
+        _args(
+            smoke=True,
+            delayed_reach=True,
+            delayed_reach_p_catch_trial=0.5,
+            target_relative_multitarget=True,
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            nn_output_pre_go=1.0,
+            hidden_size=8,
+            n_replicates=1,
+        )
+    )
+    loss_func = get_reach_loss(hps)
+    go_step = 12
+    trial = TaskTrialSpec(
+        inits=WhereDict({}),
+        targets=WhereDict({}),
+        inputs={},
+        timeline=TrialTimeline.from_epochs_events(
+            n_steps=90,
+            epoch_bounds=jnp.asarray([0, go_step, go_step + 60]),
+            epoch_names=("prep", "movement"),
+        ),
+        extra={"is_catch_trial": jnp.asarray([False])},
+    )
+    pre_go_loss = loss_func.terms["nn_output_pre_go"]
+    zeros = jnp.zeros((1, 90, 48), dtype=jnp.float64)
+    zero_command = jnp.zeros((1, 90, 2), dtype=jnp.float64)
+
+    def states_with_efferent(command):
+        return TreeNamespace(
+            mechanics=TreeNamespace(vector=zeros),
+            net=TreeNamespace(output=zero_command),
+            efferent=TreeNamespace(output=command),
+        )
+
+    base_states = states_with_efferent(zero_command)
+    prep_states = states_with_efferent(
+        zero_command.at[:, max(go_step - 1, 1), 0].set(3.0)
+    )
+    movement_states = states_with_efferent(zero_command.at[:, go_step, 0].set(3.0))
+    base_value = pre_go_loss(base_states, trial, None).total
+    prep_value = pre_go_loss(prep_states, trial, None).total
+    movement_value = pre_go_loss(movement_states, trial, None).total
+
+    assert loss_func.weights["nn_output_pre_go"] == pytest.approx(1.0)
+    assert pre_go_loss.epoch_indices == (0,)
+    assert trial.timeline.epoch_names == ("prep", "movement")
+    assert prep_value > base_value
+    assert jnp.allclose(movement_value, base_value)
+
+
 def test_delayed_reach_run_spec_declares_task_and_movement_pgd_mask(tmp_path: Path) -> None:
     output_dir = tmp_path / "bulk"
     spec_dir = tmp_path / "spec"
@@ -1451,6 +1650,37 @@ def test_delayed_reach_run_spec_declares_task_and_movement_pgd_mask(tmp_path: Pa
         "movement_age_from_go_cue"
     )
     assert DELAYED_REACH_TRAINING_MODE in payload["training_summary"]["training_mode"]
+
+
+def test_delayed_reach_trial_type_normalized_run_spec_metadata(tmp_path: Path) -> None:
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        smoke=True,
+        dry_run=True,
+        issue="c7c27dd",
+        delayed_reach=True,
+        delayed_reach_trial_type_normalized_loss=True,
+        delayed_reach_no_catch_qrf_weight=2.0,
+        delayed_reach_catch_qrf_weight=3.0,
+        target_relative_multitarget=True,
+        loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+    )
+
+    result = write_run_spec(args)
+    payload = result["run_spec"]
+
+    normalization = payload["hps"]["loss"]["delayed_trial_type_normalization"]
+    assert normalization["enabled"] is True
+    assert normalization["no_catch_weight"] == pytest.approx(2.0)
+    assert normalization["catch_weight"] == pytest.approx(3.0)
+    assert "Feedbax grouped reductions" in normalization["semantics"]
+    assert payload["loss_summary"]["delayed_trial_type_normalization"] == normalization
+    assert payload["loss_summary"]["grouped_reduction_implementation"] == (
+        "rlrmp_bridge_pending_feedbax_69d8d76"
+    )
 
 
 def test_delayed_no_integrator_run_spec_declares_reduced_state_and_pgd_dim(
