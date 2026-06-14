@@ -19,7 +19,7 @@ from typing import Any
 import jax.numpy as jnp
 import numpy as np
 
-from rlrmp.analysis.bridge_certificates import (
+from rlrmp.analysis.pipelines.bridge_certificates import (
     BELLMAN_HESSIAN_RESIDUAL,
     CLOSED_LOOP_TRANSITION_MISMATCH,
     OPTIMIZER_METADATA,
@@ -29,32 +29,32 @@ from rlrmp.analysis.bridge_certificates import (
     build_standard_certificate_components,
     missing_component,
 )
-from rlrmp.analysis.bridge_contracts import (
+from rlrmp.analysis.pipelines.bridge_contracts import (
     BridgeCertificateComponent,
     BridgeRunManifest,
     BridgeRunSpec,
     make_bridge_run_id,
 )
-from rlrmp.analysis.cs_game_card import (
+from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     materialize_reference,
 )
-from rlrmp.analysis.cs_released_simulation import (
+from rlrmp.analysis.math.cs_released_simulation import (
     DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
     CSReleasedStochasticNoiseConfig,
 )
-from rlrmp.analysis.cs_stochastic_phase3 import (
+from rlrmp.analysis.pipelines.cs_stochastic_phase3 import (
     Phase3StochasticConfig,
     process_noise_sweep_summary,
     run_phase3_process_noise_sweep,
 )
-from rlrmp.analysis.linear_round_trip import LinearTrainingConfig
-from rlrmp.analysis.output_feedback import (
+from rlrmp.analysis.math.linear_round_trip import LinearTrainingConfig
+from rlrmp.analysis.math.output_feedback import (
     OutputFeedbackConfig,
     kalman_estimator_joint_matrices,
     rollout_with_kalman_estimator,
 )
-from rlrmp.analysis.output_feedback_rollout_recovery import (
+from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
     STRONG_OPTIMIZER_WHITENED,
     eigenspectrum_coverage_conditions,
     result_summary as rollout_result_summary,

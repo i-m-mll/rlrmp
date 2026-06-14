@@ -4,7 +4,7 @@
 Bug: 06f7faf — go-cue alignment fix. The primary `vel_rmse_ratio` /
 `pos_rmse_ratio` metrics and the velocity/hold-drift profile figures are now
 computed on per-trial go-cue-aligned profiles via
-`rlrmp.analysis.trial_alignment`.
+`rlrmp.analysis.math.trial_alignment`.
 
 
 Computes per-(cell × replicate):
@@ -57,7 +57,7 @@ from feedbax import load_with_hyperparameters
 from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 — project-config routing
 from plotly.subplots import make_subplots
 
-from rlrmp.analysis.trial_alignment import (
+from rlrmp.analysis.math.trial_alignment import (
     align_trials,
     pooled_trial_mean_with_band,
     replicate_mean_curves,

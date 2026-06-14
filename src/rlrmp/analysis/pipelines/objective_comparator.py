@@ -484,7 +484,7 @@ def shared_full_qrf_cost_summary(
             "command_key": "states.net.output or extLQG u_command",
             "state_basis": state_basis,
             "state_transform": state_transform,
-            "schedule_source": "rlrmp.analysis.cs_game_card.build_canonical_game",
+            "schedule_source": "rlrmp.analysis.math.cs_game_card.build_canonical_game",
             "term_split": "coordinate masks over each 8D delay block",
         },
         "total": _summary_with_values(total),
@@ -988,7 +988,7 @@ def materialize_gru_objective_comparator_sidecar(
             f"{checkpoint_policy} checkpoints for C&S GRU runs: "
             + ", ".join(str(run_id) for run_id in run_ids)
         ),
-        generated_by="rlrmp.analysis.objective_comparator.materialize_gru_objective_comparator_sidecar",
+        generated_by="rlrmp.analysis.pipelines.objective_comparator.materialize_gru_objective_comparator_sidecar",
         run_metadata_by_id=run_metadata_by_id,
         shared_rollout_comparator=_try_materialize_shared_rollout_comparator(
             experiment=experiment,
@@ -1777,7 +1777,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--output-md", required=True, type=Path)
     parser.add_argument("--issue", required=True)
     parser.add_argument("--scope", required=True)
-    parser.add_argument("--generated-by", default="python -m rlrmp.analysis.objective_comparator")
+    parser.add_argument("--generated-by", default="python -m rlrmp.analysis.pipelines.objective_comparator")
     parser.add_argument("--extlqg-deterministic", required=True, type=float)
     parser.add_argument("--extlqg-initial-covariance", required=True, type=float)
     parser.add_argument("--extlqg-accumulated-noise", required=True, type=float)

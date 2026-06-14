@@ -465,7 +465,7 @@ def materialize_optional_feedback_ablation(
     """Call the optional feedback-ablation sidecar materializer."""
 
     try:
-        module = importlib.import_module("rlrmp.analysis.gru_feedback_ablation")
+        module = importlib.import_module("rlrmp.analysis.pipelines.gru_feedback_ablation")
         materializer = getattr(module, "materialize_gru_feedback_ablation")
     except (ImportError, AttributeError) as exc:
         return {
@@ -473,7 +473,7 @@ def materialize_optional_feedback_ablation(
             "reason": "optional_feedback_ablation_unavailable",
             "detail": str(exc),
             "expected_hook": (
-                "rlrmp.analysis.gru_feedback_ablation.materialize_gru_feedback_ablation"
+                "rlrmp.analysis.pipelines.gru_feedback_ablation.materialize_gru_feedback_ablation"
             ),
         }
 
@@ -605,7 +605,7 @@ def _write_postrun_auxiliary_regeneration_specs(
     write_regeneration_spec(
         spec_path=plan.notes_dir / f"gru_pilot_figures_{plan.output_tag}_regeneration_spec.json",
         diagnostic_name="gru_pilot_figures",
-        materializer="rlrmp.analysis.gru_pilot_figures.materialize_gru_pilot_figures",
+        materializer="rlrmp.analysis.pipelines.gru_pilot_figures.materialize_gru_pilot_figures",
         command=None,
         parameters={
             "experiment": plan.experiment,
@@ -625,7 +625,7 @@ def _write_postrun_auxiliary_regeneration_specs(
             {"role": "pilot_figure_dir", "path": plan.figure_output_dir},
             {"role": "pilot_figure_summary", "path": plan.figure_output_dir / "figure_summary.json"},
         ],
-        source_files=["src/rlrmp/analysis/gru_pilot_figures.py"],
+        source_files=["src/rlrmp/analysis/pipelines/gru_pilot_figures.py"],
         notes=["Postrun-owned regeneration spec for pilot loss/velocity figures."],
         repo_root=repo_root,
     )
@@ -633,7 +633,7 @@ def _write_postrun_auxiliary_regeneration_specs(
         write_regeneration_spec(
             spec_path=_regeneration_spec_path(plan.objective_comparator_json_path),
             diagnostic_name="gru_objective_comparator",
-            materializer="rlrmp.analysis.objective_comparator.materialize_gru_objective_comparator_sidecar",
+            materializer="rlrmp.analysis.pipelines.objective_comparator.materialize_gru_objective_comparator_sidecar",
             command=None,
             parameters={
                 "experiment": plan.experiment,
@@ -650,8 +650,8 @@ def _write_postrun_auxiliary_regeneration_specs(
                 {"role": "objective_comparator_note", "path": plan.objective_comparator_note_path},
             ],
             source_files=[
-                "src/rlrmp/analysis/objective_comparator.py",
-                "src/rlrmp/analysis/cs_released_simulation.py",
+                "src/rlrmp/analysis/pipelines/objective_comparator.py",
+                "src/rlrmp/analysis/math/cs_released_simulation.py",
             ],
             notes=["Postrun-owned regeneration spec for objective-comparator sidecar."],
             repo_root=repo_root,
@@ -660,7 +660,7 @@ def _write_postrun_auxiliary_regeneration_specs(
         write_regeneration_spec(
             spec_path=_regeneration_spec_path(plan.map_decomposition_json_path),
             diagnostic_name="gru_map_error_decomposition",
-            materializer="rlrmp.analysis.gru_map_error_decomposition.materialize_gru_map_error_decomposition",
+            materializer="rlrmp.analysis.pipelines.gru_map_error_decomposition.materialize_gru_map_error_decomposition",
             command=None,
             parameters={
                 "experiment": plan.experiment,
@@ -674,7 +674,7 @@ def _write_postrun_auxiliary_regeneration_specs(
                 {"role": "map_decomposition_manifest", "path": plan.map_decomposition_json_path},
                 {"role": "map_decomposition_note", "path": plan.map_decomposition_note_path},
             ],
-            source_files=["src/rlrmp/analysis/gru_map_error_decomposition.py"],
+            source_files=["src/rlrmp/analysis/pipelines/gru_map_error_decomposition.py"],
             notes=[
                 "Postrun-owned regeneration spec for target-relative map-error decomposition."
             ],
@@ -683,7 +683,7 @@ def _write_postrun_auxiliary_regeneration_specs(
     write_regeneration_spec(
         spec_path=plan.postrun_regeneration_spec_path,
         diagnostic_name="gru_postrun_materialization_bundle",
-        materializer="rlrmp.analysis.gru_postrun_materialization.materialize_gru_postrun_analysis",
+        materializer="rlrmp.analysis.pipelines.gru_postrun_materialization.materialize_gru_postrun_analysis",
         command=None,
         parameters={
             "experiment": plan.experiment,
@@ -719,12 +719,12 @@ def _write_postrun_auxiliary_regeneration_specs(
             {"role": "feedback_ablation_manifest", "path": plan.feedback_ablation_json_path},
         ],
         source_files=[
-            "src/rlrmp/analysis/gru_postrun_materialization.py",
-            "src/rlrmp/analysis/cs_gru_standard_materialization.py",
-            "src/rlrmp/analysis/gru_evaluation_diagnostics.py",
-            "src/rlrmp/analysis/gru_pilot_figures.py",
-            "src/rlrmp/analysis/gru_perturbation_bank.py",
-            "src/rlrmp/analysis/gru_feedback_ablation.py",
+            "src/rlrmp/analysis/pipelines/gru_postrun_materialization.py",
+            "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
+            "src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py",
+            "src/rlrmp/analysis/pipelines/gru_pilot_figures.py",
+            "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+            "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
         ],
         notes=[
             "Compatibility index for active GRU postrun diagnostics.",
@@ -813,7 +813,7 @@ def materialize_optional_perturbation_response(
     """Call the optional perturbation-response bank materializer."""
 
     try:
-        module = importlib.import_module("rlrmp.analysis.gru_perturbation_bank")
+        module = importlib.import_module("rlrmp.analysis.pipelines.gru_perturbation_bank")
         materializer = getattr(module, "materialize_gru_perturbation_response")
     except (ImportError, AttributeError) as exc:
         return {
@@ -821,7 +821,7 @@ def materialize_optional_perturbation_response(
             "reason": "optional_perturbation_response_unavailable",
             "detail": str(exc),
             "expected_hook": (
-                "rlrmp.analysis.gru_perturbation_bank."
+                "rlrmp.analysis.pipelines.gru_perturbation_bank."
                 "materialize_gru_perturbation_response"
             ),
         }
@@ -899,7 +899,7 @@ def materialize_optional_map_error_decomposition(
     """Call the optional map-error decomposition sidecar where inputs are available."""
 
     try:
-        module = importlib.import_module("rlrmp.analysis.gru_map_error_decomposition")
+        module = importlib.import_module("rlrmp.analysis.pipelines.gru_map_error_decomposition")
         materializer = getattr(module, "materialize_gru_map_error_decomposition")
         writer = getattr(module, "write_map_error_decomposition_result")
     except (ImportError, AttributeError) as exc:
@@ -908,7 +908,7 @@ def materialize_optional_map_error_decomposition(
             "reason": "optional_map_decomposition_unavailable",
             "detail": str(exc),
             "expected_hook": (
-                "rlrmp.analysis.gru_map_error_decomposition."
+                "rlrmp.analysis.pipelines.gru_map_error_decomposition."
                 "materialize_gru_map_error_decomposition"
             ),
         }
@@ -963,7 +963,7 @@ def materialize_optional_objective_comparator(
     """Call the optional objective-comparator sidecar when that module exists."""
 
     try:
-        module = importlib.import_module("rlrmp.analysis.objective_comparator")
+        module = importlib.import_module("rlrmp.analysis.pipelines.objective_comparator")
         materializer = getattr(module, "materialize_gru_objective_comparator_sidecar")
     except (ImportError, AttributeError) as exc:
         return {
@@ -971,7 +971,7 @@ def materialize_optional_objective_comparator(
             "reason": "optional_comparator_unavailable",
             "detail": str(exc),
             "expected_hook": (
-                "rlrmp.analysis.objective_comparator."
+                "rlrmp.analysis.pipelines.objective_comparator."
                 "materialize_gru_objective_comparator_sidecar"
             ),
         }

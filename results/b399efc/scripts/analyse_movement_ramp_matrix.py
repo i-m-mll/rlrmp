@@ -25,7 +25,7 @@ final). Existing hand-edited preamble + Interpretation prose is preserved by
 
 Library policy (Bug: 8404108):
   - Generic eval primitives are imported from ``rlrmp.eval.*``.
-  - Trial-alignment helpers from ``rlrmp.analysis.trial_alignment``.
+  - Trial-alignment helpers from ``rlrmp.analysis.math.trial_alignment``.
   - Notes section management from ``rlrmp.io``.
   - Shared y-axis profile grid from ``rlrmp.viz.profile_grids`` (Plotting
     Conventions in CLAUDE.md).
@@ -66,7 +66,7 @@ from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.train.minimax import build_hps
 from rlrmp.eval.ensemble import N_REPLICATES, eval_ensemble_on_trials
 from rlrmp.eval.minimax_io import load_config, load_model
-from rlrmp.analysis.trial_alignment import (
+from rlrmp.analysis.math.trial_alignment import (
     align_trials,
     pooled_trial_mean_with_band,
     replicate_mean_curves,

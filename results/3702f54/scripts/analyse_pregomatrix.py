@@ -7,7 +7,7 @@ no-jerk powerlaw cells (`lit__post_nojerk`, `lit__full_nojerk`).
 
 Bug: 06f7faf — go-cue alignment fix. Forward velocity profiles, hold drift
 profiles, and the within-cell vel-RMSE metric are now computed on
-per-trial go-cue-aligned profiles using `rlrmp.analysis.trial_alignment`.
+per-trial go-cue-aligned profiles using `rlrmp.analysis.math.trial_alignment`.
 
 Loads 10 models:
   - 8 new cells from `_artifacts/3702f54/runs/<cell>/warmup_model.eqx`
@@ -58,7 +58,7 @@ from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 -- project
 from feedbax.train import TaskTrainerHistory, init_task_trainer_history
 from plotly.subplots import make_subplots
 
-from rlrmp.analysis.trial_alignment import (
+from rlrmp.analysis.math.trial_alignment import (
     align_trials,
     pooled_trial_mean_with_band,
     replicate_mean_curves,

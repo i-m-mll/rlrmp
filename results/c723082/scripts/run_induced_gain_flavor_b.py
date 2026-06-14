@@ -47,14 +47,14 @@ import jax.tree as jt
 import numpy as np
 from feedbax import load_with_hyperparameters
 
-from rlrmp.analysis.hinf_riccati import (
+from rlrmp.analysis.math.hinf_riccati import (
     CostSpec,
     PlantLinearization,
     cost_schedule_from_spec,
     find_gamma_star,
     linearize_pointmass,
 )
-from rlrmp.analysis.induced_gain import (
+from rlrmp.analysis.math.induced_gain import (
     W_ADDITIVE_FORCE,
     W_SENSORY_PERTURBATION,
     W_STRUCTURAL_DA,

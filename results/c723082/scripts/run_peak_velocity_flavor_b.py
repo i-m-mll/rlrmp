@@ -7,7 +7,7 @@ the analytical Δv comparison: rolls out trained controllers on a clean
 compares flavor-(b) trained controllers against the no-perturbation GRU
 baseline.
 
-Δv definition (matches ``rlrmp.analysis.hinf_riccati.compute_velocity_inflation``,
+Δv definition (matches ``rlrmp.analysis.math.hinf_riccati.compute_velocity_inflation``,
 issue ``f90bf74``)::
 
     delta_v_percent =
@@ -712,7 +712,7 @@ def main():
             "delta_v_percent = (pv_target - pv_baseline) / pv_baseline * 100, "
             "where pv = peak forward velocity (signed projection of velocity onto "
             "unit(target - init) reach axis); matches "
-            "rlrmp.analysis.hinf_riccati.compute_velocity_inflation (issue f90bf74)."
+            "rlrmp.analysis.math.hinf_riccati.compute_velocity_inflation (issue f90bf74)."
         ),
         "baseline_for_delta_v": "baseline_standard_12k",
         "baseline_peak_forward_velocity_mean": bsl_pv_mean,

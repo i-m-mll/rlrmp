@@ -199,7 +199,7 @@ def materialize_gru_evaluation_diagnostics(
     write_regeneration_spec(
         spec_path=regeneration_spec_path,
         diagnostic_name="gru_evaluation_diagnostics",
-        materializer="rlrmp.analysis.gru_evaluation_diagnostics.materialize_gru_evaluation_diagnostics",
+        materializer="rlrmp.analysis.pipelines.gru_evaluation_diagnostics.materialize_gru_evaluation_diagnostics",
         command=None,
         parameters={
             "experiment": experiment,
@@ -233,8 +233,8 @@ def materialize_gru_evaluation_diagnostics(
             {"role": "bulk_rollout_dir", "path": bulk_dir},
         ],
         source_files=[
-            "src/rlrmp/analysis/gru_evaluation_diagnostics.py",
-            "src/rlrmp/analysis/gru_checkpoint_selection.py",
+            "src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py",
+            "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py",
         ],
         notes=[
             "Evaluation diagnostics are non-certificate sidecars.",

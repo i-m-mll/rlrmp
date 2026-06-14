@@ -1140,7 +1140,7 @@ def _write_response_norm_regeneration_spec(
         spec_path=spec_path,
         diagnostic_name="gru_perturbation_response_norm_plots",
         materializer=(
-            "rlrmp.analysis.gru_perturbation_response_norm_plots."
+            "rlrmp.analysis.pipelines.gru_perturbation_response_norm_plots."
             "materialize_response_norm_plots"
         ),
         command=command,
@@ -1166,9 +1166,9 @@ def _write_response_norm_regeneration_spec(
             {"role": "html_asset_directory", "path": asset_dir},
         ],
         source_files=[
-            "src/rlrmp/analysis/gru_perturbation_response_norm_plots.py",
+            "src/rlrmp/analysis/pipelines/gru_perturbation_response_norm_plots.py",
             "scripts/materialize_gru_perturbation_response_norm_plots.py",
-            "src/rlrmp/analysis/diagnostic_provenance.py",
+            "src/rlrmp/analysis/pipelines/diagnostic_provenance.py",
         ],
         notes=[
             "Materialization reads existing perturbation-response bulk arrays.",

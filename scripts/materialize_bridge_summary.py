@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from rlrmp.analysis.bridge_aggregation import (
+from rlrmp.analysis.pipelines.bridge_aggregation import (
     render_bridge_summary_markdown,
     summarize_bridge_manifests,
     write_bridge_summary,

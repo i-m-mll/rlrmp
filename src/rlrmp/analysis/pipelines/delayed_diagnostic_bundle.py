@@ -141,7 +141,7 @@ def materialize_delayed_diagnostic_bundle(
     write_regeneration_spec(
         spec_path=regeneration_spec_path,
         diagnostic_name="delayed_diagnostic_bundle",
-        materializer="rlrmp.analysis.delayed_diagnostic_bundle.materialize_delayed_diagnostic_bundle",
+        materializer="rlrmp.analysis.pipelines.delayed_diagnostic_bundle.materialize_delayed_diagnostic_bundle",
         command=None,
         parameters={
             "issue": issue,

@@ -1,4 +1,4 @@
-"""Tests for ``rlrmp.analysis.induced_gain``.
+"""Tests for ``rlrmp.analysis.math.induced_gain``.
 
 Bug: 74bfd86 -- production induced-gain analyser. The tests cover:
 

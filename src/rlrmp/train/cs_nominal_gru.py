@@ -644,7 +644,7 @@ def build_game_card_provenance() -> dict[str, Any]:
     target = [float(x) for x in TARGET_POS.tolist()]
     init = [float(x) for x in INIT_POS.tolist()]
     return {
-        "source_module": "rlrmp.analysis.cs_game_card",
+        "source_module": "rlrmp.analysis.math.cs_game_card",
         "canonical_builder": "build_canonical_game",
         "discretization": plant.discretization,
         "dt": float(plant.dt),
@@ -2874,9 +2874,9 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
                 else "not_enabled"
             ),
             "source_module": (
-                "rlrmp.analysis.cs_game_card.build_no_integrator_game"
+                "rlrmp.analysis.math.cs_game_card.build_no_integrator_game"
                 if no_integrator_state
-                else "rlrmp.analysis.cs_game_card.build_canonical_game"
+                else "rlrmp.analysis.math.cs_game_card.build_canonical_game"
             ),
             "comparator_variant": "no_integrator_state" if no_integrator_state else None,
             "state_basis": {

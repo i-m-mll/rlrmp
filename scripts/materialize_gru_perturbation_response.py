@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from rlrmp.analysis.gru_perturbation_bank import (
+from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     DEFAULT_RESULT_EXPERIMENT,
     DEFAULT_RUN_IDS,
     DEFAULT_SOURCE_EXPERIMENT,

@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from rlrmp.analysis.gru_feedback_ablation import (
+from rlrmp.analysis.pipelines.gru_feedback_ablation import (
     DEFAULT_RESULT_EXPERIMENT,
     DEFAULT_RUN_IDS,
     DEFAULT_SCOPE,

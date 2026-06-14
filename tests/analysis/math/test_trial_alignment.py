@@ -1,4 +1,4 @@
-"""Regression tests for `rlrmp.analysis.trial_alignment`.
+"""Regression tests for `rlrmp.analysis.math.trial_alignment`.
 
 These guard the go-cue alignment fix (Bug: 06f7faf). The original failure was
 that headline RMSE metrics on 3702f54 / f47abb1 / 2bc95fd were computed by
