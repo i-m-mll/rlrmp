@@ -353,6 +353,21 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         )
     if delayed_p_catch_trial < 0.0 or delayed_p_catch_trial > 1.0:
         raise ValueError("--delayed-reach-p-catch-trial must be between 0 and 1")
+    delayed_trial_type_normalized_loss = bool(
+        getattr(args, "delayed_reach_trial_type_normalized_loss", False)
+    )
+    if delayed_trial_type_normalized_loss and not delayed_reach:
+        raise ValueError(
+            "--delayed-reach-trial-type-normalized-loss requires --delayed-reach."
+        )
+    if (
+        delayed_trial_type_normalized_loss
+        and str(args.loss_objective) != CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
+    ):
+        raise ValueError(
+            "--delayed-reach-trial-type-normalized-loss requires "
+            "--loss-objective full_analytical_qrf."
+        )
     nn_hidden = CS_REGULARIZED_NN_HIDDEN if args.regularized_fidelity else 0.0
     nn_output_pre_go = (
         1.0
@@ -588,6 +603,18 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "movement_ramp_shape": "none",
             "movement_ramp_duration_steps": 0,
             "movement_ramp_power": 1.0,
+            "delayed_trial_type_normalization": {
+                "enabled": delayed_trial_type_normalized_loss,
+                "no_catch_weight": float(args.delayed_reach_no_catch_qrf_weight),
+                "catch_weight": float(args.delayed_reach_catch_qrf_weight),
+                "semantics": (
+                    "When enabled, split full_analytical_qrf into no-catch and catch "
+                    "terms, normalize each over its selected trial type, then combine "
+                    "with explicit weights so p_catch controls sampling rather than "
+                    "implicit objective dilution. This is an RLRMP bridge pending "
+                    "Feedbax grouped reductions from Mandible issue 69d8d76."
+                ),
+            },
         },
         "loss_update": {
             "enabled": False,
@@ -1521,6 +1548,36 @@ def build_parser() -> argparse.ArgumentParser:
             "Probability of delayed-reach no-go catch trials. Catch trials keep the "
             "target visible but keep the go cue at 0 and score holding the initial "
             "position. Ignored unless --delayed-reach is active."
+        ),
+    )
+    parser.add_argument(
+        "--delayed-reach-trial-type-normalized-loss",
+        "--delayed-reach-trial-type-normalization",
+        action="store_true",
+        dest="delayed_reach_trial_type_normalized_loss",
+        help=(
+            "For delayed full_analytical_qrf rows, split Q/R/Q_f into no-catch and "
+            "catch trial terms and normalize each over its own selected trials before "
+            "applying explicit weights. This separates p_catch sampling from objective "
+            "weighting."
+        ),
+    )
+    parser.add_argument(
+        "--delayed-reach-no-catch-qrf-weight",
+        type=float,
+        default=1.0,
+        help=(
+            "Explicit weight for the no-catch movement Q/R/Q_f mean when "
+            "--delayed-reach-trial-type-normalized-loss is active."
+        ),
+    )
+    parser.add_argument(
+        "--delayed-reach-catch-qrf-weight",
+        type=float,
+        default=1.0,
+        help=(
+            "Explicit weight for the catch/no-go Q/R/Q_f mean when "
+            "--delayed-reach-trial-type-normalized-loss is active."
         ),
     )
     parser.add_argument(
@@ -2802,11 +2859,20 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
         physical_state_dim = 6 if no_integrator_state else 8
         q_diag = jnp.diag(schedule.Q[0])
         qf_diag = jnp.diag(schedule.Q_f)
+        trial_type_normalization = _plain(
+            getattr(hps.loss, "delayed_trial_type_normalization", {"enabled": False})
+        )
         return {
             "weights": _plain(hps.loss.weights),
+            "delayed_trial_type_normalization": trial_type_normalization,
             "delayed_reach": _plain(hps.delayed_reach),
             "objective_profile": CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
             "objective_kind": "finite_horizon_quadratic",
+            "grouped_reduction_implementation": (
+                "rlrmp_bridge_pending_feedbax_69d8d76"
+                if bool(trial_type_normalization.get("enabled", False))
+                else "not_enabled"
+            ),
             "source_module": (
                 "rlrmp.analysis.cs_game_card.build_no_integrator_game"
                 if no_integrator_state

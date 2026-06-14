@@ -406,6 +406,77 @@ class CsAnalyticalQrfLoss(AbstractLoss):
         return result
 
 
+class DelayedReachTrialTypeNormalizedLoss(AbstractLoss):
+    """Trial-type-normalized wrapper for delayed no-catch/catch objectives.
+
+    This is an RLRMP-side bridge while Feedbax grouped reductions are still
+    tracked on Mandible issue 69d8d76.
+    """
+
+    label: str
+    base_loss: AbstractLoss
+    trial_type: str = eqx.field(static=True)
+    eps: float = eqx.field(static=True)
+
+    def __init__(
+        self,
+        *,
+        base_loss: AbstractLoss,
+        trial_type: str,
+        label: str,
+        eps: float = 1e-8,
+    ):
+        if trial_type not in {"no_catch", "catch"}:
+            raise ValueError("trial_type must be 'no_catch' or 'catch'")
+        self.label = label
+        self.base_loss = base_loss
+        self.trial_type = trial_type
+        self.eps = float(eps)
+
+    def term(
+        self,
+        states: Optional[PyTree],
+        trial_specs: Optional["TaskTrialSpec"],
+        model: Optional[AbstractModel],
+    ) -> Array:
+        assert trial_specs is not None, (
+            "DelayedReachTrialTypeNormalizedLoss requires trial_specs, but trial_specs is None"
+        )
+        values = self.base_loss.term(states, trial_specs, model)
+        catch_mask = self._catch_mask(trial_specs, values)
+        mask = catch_mask if self.trial_type == "catch" else 1.0 - catch_mask
+        denom = jnp.maximum(jnp.sum(mask), self.eps)
+        scale = mask.size / denom
+        return values * mask * scale
+
+    def _catch_mask(self, trial_specs: "TaskTrialSpec", values: Array) -> Array:
+        if trial_specs.extra is not None and "is_catch_trial" in trial_specs.extra:
+            catch = jnp.asarray(trial_specs.extra["is_catch_trial"], dtype=values.dtype)
+            while catch.ndim < values.ndim:
+                catch = jnp.expand_dims(catch, axis=0)
+            return jnp.broadcast_to(catch, values.shape)
+
+        inputs = trial_specs.inputs
+        if isinstance(inputs, Mapping) and "task" in inputs:
+            inputs = inputs["task"]
+        if not hasattr(inputs, "hold"):
+            raise ValueError(
+                "DelayedReachTrialTypeNormalizedLoss requires "
+                "trial_specs.extra['is_catch_trial'] or delayed reach inputs with a hold sequence."
+            )
+        hold = jnp.asarray(inputs.hold)
+        if hold.ndim > 0 and hold.shape[-1] == 1:
+            hold = jnp.squeeze(hold, axis=-1)
+        catch = (
+            jnp.all(hold > 0.5).astype(values.dtype)
+            if hold.ndim == 1
+            else jnp.all(hold > 0.5, axis=-1).astype(values.dtype)
+        )
+        while catch.ndim < values.ndim:
+            catch = jnp.expand_dims(catch, axis=0)
+        return jnp.broadcast_to(catch, values.shape)
+
+
 class CsForceFilterStateLoss(AbstractLoss):
     """Squared C&S force/filter state over every delay block."""
 
@@ -855,6 +926,18 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
         _nsget(hps, "loss.objective", CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE)
         or CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE
     )
+    user_outer_weights = _nsget(hps, "loss.weights", {}) or {}
+    task_type = str(getattr(hps.task, "type", ""))
+    is_feedbax_delayed_center_out = (
+        task_type == "cs_delayed_center_out_reach"
+        or bool(_nsget(hps, "delayed_reach.enabled", False))
+        or (
+            task_type == "delayed_reach"
+            and str(_nsget(hps, "task.preset", "")) == "delayed_center_out"
+        )
+    )
+    pre_go_epoch_indices = (0,) if is_feedbax_delayed_center_out else (0, 1)
+
     if loss_objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE:
         plant_backend = str(_nsget(hps, "model.plant_backend", ""))
         if plant_backend != "cs_lss":
@@ -873,10 +956,53 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
             target_pos=TARGET_POS,
             n_phys=6 if no_integrator_state else 8,
         )
+        trial_type_normalization = bool(
+            _nsget(hps, "loss.delayed_trial_type_normalization.enabled", False)
+        )
+        if trial_type_normalization:
+            terms: dict[str, AbstractLoss] = {
+                f"{CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE}_no_catch": (
+                    DelayedReachTrialTypeNormalizedLoss(
+                        base_loss=term,
+                        trial_type="no_catch",
+                        label=f"{CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE}_no_catch",
+                    )
+                ),
+                f"{CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE}_catch": (
+                    DelayedReachTrialTypeNormalizedLoss(
+                        base_loss=term,
+                        trial_type="catch",
+                        label=f"{CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE}_catch",
+                    )
+                ),
+            }
+            weights = {
+                f"{CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE}_no_catch": float(
+                    _nsget(hps, "loss.delayed_trial_type_normalization.no_catch_weight", 1.0)
+                ),
+                f"{CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE}_catch": float(
+                    _nsget(hps, "loss.delayed_trial_type_normalization.catch_weight", 1.0)
+                ),
+            }
+        else:
+            terms = {CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE: term}
+            weights = {CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE: 1.0}
+        nn_output_pre_go_weight = _as_number(_nsget(user_outer_weights, "nn_output_pre_go", None))
+        if nn_output_pre_go_weight is not None and nn_output_pre_go_weight != 0.0:
+            terms["nn_output_pre_go"] = EpochMaskedLoss(
+                label="nn_output_pre_go",
+                base_loss=TargetStateLoss(
+                    label="nn_output_pre_go",
+                    where=lambda state: state.efferent.output,
+                    spec=target_zero,
+                ),
+                epoch_indices=pre_go_epoch_indices,
+            )
+            weights["nn_output_pre_go"] = float(nn_output_pre_go_weight)
         return CompositeLoss(
             label="reach_loss",
-            terms={CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE: term},
-            weights={CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE: 1.0},
+            terms=terms,
+            weights=weights,
         )
     if loss_objective not in {
         CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
@@ -893,18 +1019,6 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
                 "loss.objective='partial_net_output_force_filter' requires "
                 f"model.plant_backend='cs_lss'; got {plant_backend!r}."
             )
-
-    user_outer_weights = _nsget(hps, "loss.weights", {}) or {}
-    task_type = str(getattr(hps.task, "type", ""))
-    is_feedbax_delayed_center_out = (
-        task_type == "cs_delayed_center_out_reach"
-        or bool(_nsget(hps, "delayed_reach.enabled", False))
-        or (
-            task_type == "delayed_reach"
-            and str(_nsget(hps, "task.preset", "")) == "delayed_center_out"
-        )
-    )
-    pre_go_epoch_indices = (0,) if is_feedbax_delayed_center_out else (0, 1)
 
     terms: Mapping[str, AbstractLoss] = dict(
         nn_output=TargetStateLoss(
