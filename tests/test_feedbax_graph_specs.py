@@ -57,6 +57,19 @@ def _hps(**overrides):
     return hps
 
 
+def _plain_network_hps(**overrides):
+    return _hps(**overrides)
+
+
+def _unmasked_population() -> argparse.Namespace:
+    return argparse.Namespace(
+        n_input_only=0,
+        n_readout_only=0,
+        n_recurrent_only=0,
+        n_input_readout=0,
+    )
+
+
 @pytest.mark.parametrize(
     "hidden_type",
     ["gru", "linear", "linear_tracker"],
@@ -164,6 +177,61 @@ def test_multiplicative_point_mass_training_metadata_includes_sisu_alpha() -> No
         "nodes.net.readout",
         "nodes.net.sisu_alpha",
     ]
+
+
+def test_plain_additive_gru_graph_spec_uses_explicit_feedbax_primitives() -> None:
+    hps = _plain_network_hps()
+    task = build_task_base(hps)
+
+    spec = build_point_mass_sensorimotor_graph_spec(
+        hps,
+        task=task,
+        n_extra_inputs=1,
+        population_structure=_unmasked_population(),
+        hidden_type=hps.hidden_type,
+        sisu_gating="additive",
+    )
+    graph = materialize_rlrmp_graph_spec(spec)
+
+    net = spec.nodes["net"]
+    assert net.type == "Subgraph"
+    assert net.input_ports == ["input", "feedback"]
+    assert "sisu_gating" not in net.params
+    assert (
+        net.params["input_size"]
+        == net.params["external_input_size"] + net.params["feedback_size"]
+    )
+    assert spec.input_bindings["input"] == ("net", "input")
+    assert spec.subgraphs is not None
+    net_graph = spec.subgraphs["net"]
+    assert net_graph.nodes["input_mux"].type == "Mux"
+    assert net_graph.nodes["cell"].type == "GRU"
+    assert net_graph.nodes["cell"].params["input_size"] == net.params["input_size"]
+    assert net_graph.nodes["readout"].type == "Linear"
+    assert net_graph.input_ports == ["input", "feedback"]
+    assert net_graph.input_bindings == {"input": ("input_mux", "in_0"), "feedback": ("input_mux", "in_1")}
+    assert isinstance(graph.nodes["net"], Graph)
+
+
+@pytest.mark.parametrize(
+    "hps",
+    [
+        _plain_network_hps(sisu_gating="multiplicative"),
+        _hps(),
+    ],
+)
+def test_rlrmp_owned_sisu_and_population_cases_keep_staged_wrapper(hps) -> None:
+    spec = build_point_mass_sensorimotor_graph_spec(
+        hps,
+        task=build_task_base(hps),
+        n_extra_inputs=1,
+        hidden_type=hps.hidden_type,
+        sisu_gating=hps.sisu_gating,
+    )
+
+    assert spec.nodes["net"].type == "RLRMPSimpleStagedNetwork"
+    assert spec.nodes["net"].params["sisu_gating"] == hps.sisu_gating
+    assert spec.subgraphs is None
 
 
 @pytest.mark.parametrize(
@@ -501,7 +569,7 @@ def test_setup_task_model_pair_materializes_gru_and_linear_graph_paths() -> None
 @pytest.mark.parametrize(
     ("hidden_type", "expected_net"),
     [
-        ("gru", "Network"),
+        ("gru", "RLRMPSimpleStagedNetwork"),
         ("linear", "RLRMPLinearController"),
     ],
 )
