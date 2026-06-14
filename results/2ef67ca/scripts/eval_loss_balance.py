@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 """Evaluate the 4 loss-balance experiment models and measure the SISU → velocity effect.
 
 Key question: Does balancing control cost against position cost (via adaptive nn_output
@@ -20,7 +21,7 @@ Metrics reported per condition:
   - Final nn_output weight (what the adaptive update converged to)
 
 Usage:
-    uv run python scripts/eval_loss_balance.py
+    uv run python results/2ef67ca/scripts/eval_loss_balance.py
 """
 
 import warnings
@@ -50,8 +51,8 @@ from rlrmp.eval import (
 from rlrmp.train.standard import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
 
-WORKTREE = Path(__file__).parent.parent
-RESULTS_BASE = WORKTREE / "results" / "part2_5"
+RESULTS_BASE = Path(__file__).resolve().parent.parent
+WORKTREE = RESULTS_BASE.parent.parent
 MODELS_BASE = RESULTS_BASE / "models"
 
 # Conditions: (display_name, model_dir, has_loss_update)
@@ -77,8 +78,10 @@ def load_condition(model_dir_name: str):
     """
     cond_dir = MODELS_BASE / model_dir_name
     config_path = cond_dir / "config.json"
-    if not config_path.exists():
-        print(f"  {model_dir_name}: skipped — not found at {cond_dir}")
+    model_path = cond_dir / "trained_model.eqx"
+    history_path = cond_dir / "train_history.eqx"
+    if not config_path.exists() or not model_path.exists() or not history_path.exists():
+        print(f"  {model_dir_name}: skipped — missing archived weights/history at {cond_dir}")
         return None
 
     with open(config_path) as f:
@@ -97,8 +100,6 @@ def load_condition(model_dir_name: str):
         n_replicates=N_REPLICATES,
         ensembled=True,
     )
-    history_path = cond_dir / "train_history.eqx"
-
     def _float_to_array(x):
         if isinstance(x, (float, int)) and not isinstance(x, bool):
             return jnp.array(x)
@@ -146,7 +147,7 @@ def load_condition(model_dir_name: str):
             )
 
     trained_model, _ = load_with_hyperparameters(
-        cond_dir / "trained_model.eqx",
+        model_path,
         setup_func=lambda key, **kwargs: setup_task_model_pair(hps, key=key).model,
     )
 

@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 """Robustness comparison table across all trained conditions at SISU=0.5.
 
 Evaluates each condition at pert_scale=0 and pert_scale=5 and reports:
@@ -9,7 +10,7 @@ The perturbed evaluation uses the reference task from running_cost_standard.
 pert_scale=5 was chosen so that the baseline shows clearly visible lateral deviation.
 
 Usage:
-    uv run python scripts/eval_robustness_table.py
+    uv run python results/2ef67ca/scripts/eval_robustness_table.py
 """
 
 import warnings
@@ -21,16 +22,13 @@ import json
 from pathlib import Path
 
 import equinox as eqx
-import jax
 import jax.numpy as jnp
 import jax.random as jr
-import jax.tree as jt
 import numpy as np
 from feedbax import load_with_hyperparameters
 
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.eval import (
-    N_REPLICATES,
     compute_kinematics,
     eval_ensemble_on_trials,
     set_sisu,
@@ -38,8 +36,8 @@ from rlrmp.eval import (
 from rlrmp.train.standard import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
 
-WORKTREE = Path(__file__).parent.parent
-RESULTS_BASE = WORKTREE / "results" / "part2_5"
+RESULTS_BASE = Path(__file__).resolve().parent.parent
+WORKTREE = RESULTS_BASE.parent.parent
 MODELS_BASE = RESULTS_BASE / "models"
 
 SISU = 0.5
@@ -79,7 +77,8 @@ def load_condition(model_dir_name: str):
     """
     cond_dir = MODELS_BASE / model_dir_name
     config_path = cond_dir / "config.json"
-    if not config_path.exists():
+    model_path = cond_dir / "trained_model.eqx"
+    if not config_path.exists() or not model_path.exists():
         return None
 
     with open(config_path) as f:
@@ -91,7 +90,7 @@ def load_condition(model_dir_name: str):
     pair = setup_task_model_pair(hps, key=key)
 
     trained_model, _ = load_with_hyperparameters(
-        cond_dir / "trained_model.eqx",
+        model_path,
         setup_func=lambda key, **kwargs: setup_task_model_pair(hps, key=key).model,
     )
 
@@ -139,7 +138,7 @@ def eval_at_sisu_pert(task, model, sisu: float, pert_scale: float, *, key, ref_t
 
 
 def main():
-    print(f"Loading reference task (running_cost_standard)...")
+    print("Loading reference task (running_cost_standard)...")
     ref_result = load_condition("running_cost_standard")
     if ref_result is None:
         raise RuntimeError("Reference task 'running_cost_standard' not found.")
@@ -153,7 +152,7 @@ def main():
         print(f"  [{group}] {display_name} ...")
         result = load_condition(model_dir)
         if result is None:
-            print(f"    SKIPPED — not found")
+            print("    SKIPPED — not found")
             rows.append({
                 "name": display_name, "method": method, "pert_std": pert_std,
                 "loss_upd": loss_upd, "group": group, "status": "missing",
@@ -240,14 +239,14 @@ def main():
             )
 
     print()
-    print(f"**Notes:**")
+    print("**Notes:**")
     print(f"- SISU={SISU} for all evaluations.")
-    print(f"- `vel` = peak speed (L2 norm of velocity) after go cue, mean over replicates×trials.")
-    print(f"- `lat_dev` = max lateral deviation from straight-line path, mean over replicates×trials.")
-    print(f"- `ep_err` = endpoint position error (L2 to goal), mean over replicates×trials.")
-    print(f"- `p=0`: perturbation scale set to 0 (no gusts) on each model's own task trials.")
+    print("- `vel` = peak speed (L2 norm of velocity) after go cue, mean over replicates×trials.")
+    print("- `lat_dev` = max lateral deviation from straight-line path, mean over replicates×trials.")
+    print("- `ep_err` = endpoint position error (L2 to goal), mean over replicates×trials.")
+    print("- `p=0`: perturbation scale set to 0 (no gusts) on each model's own task trials.")
     print(f"- `p={X}`: perturbation scale={X}, using running_cost_standard task's validation trials.")
-    print(f"- `loss_upd`: whether adaptive nn_output weight update (enable_loss_update) was used.")
+    print("- `loss_upd`: whether adaptive nn_output weight update (enable_loss_update) was used.")
 
 
 if __name__ == "__main__":
