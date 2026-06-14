@@ -20,6 +20,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
+from rlrmp.trainable import staged_network_trainable_parts
+
 
 PREALLOC_ENV = "XLA_PYTHON_CLIENT_PREALLOCATE"
 JAX_COMPILATION_CACHE_DIR_ENV = "JAX_COMPILATION_CACHE_DIR"
@@ -546,9 +548,7 @@ def _normalize_cs_nominal_gru_key(key: str) -> str:
 def _make_cs_nominal_gru_where_train() -> dict[int, Any]:
     def where_train_fn(model: Any) -> tuple[Any, ...]:
         net = model.nodes["net"]
-        if hasattr(net, "h0_encoder"):
-            return (net.hidden, net.readout, net.h0_encoder)
-        return (net.hidden, net.readout)
+        return staged_network_trainable_parts(net)
 
     return {0: where_train_fn}
 

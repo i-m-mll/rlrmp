@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 
 import equinox as eqx
@@ -13,6 +14,7 @@ from feedbax.graph import Component, Graph
 from feedbax.loss import CompositeLoss, ModelLoss
 
 from rlrmp.paths import REPO_ROOT
+from rlrmp.train.task_model import setup_task_model_pair
 
 
 def _load_train_minimax_module():
@@ -90,3 +92,27 @@ def test_streaming_minimax_eval_uses_public_prepared_trial() -> None:
     )
 
     assert value == jnp.asarray(0.0, dtype=jnp.float32)
+
+
+def test_multiplicative_minimax_adversarial_selector_includes_sisu_alpha() -> None:
+    train_minimax = _load_train_minimax_module()
+    args = argparse.Namespace(
+        n_warmup_batches=10,
+        n_adversary_batches=20,
+        controller_lr=0.01,
+        loss_update_enabled=False,
+        loss_update_ratio=0.3,
+        hidden_type="gru",
+        sisu_gating="multiplicative",
+    )
+    hps = train_minimax.build_hps(args)
+    if hps.pert.type == "gusts":
+        hps = hps | {"pert": hps.pert | {"type": "constant"}}
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+
+    trainable = train_minimax._get_trainable(pair.model)
+    where_trainable = train_minimax._trainable_where(pair.model)(pair.model)
+
+    assert trainable[-1].shape[-1] == hps.model.hidden_size
+    assert where_trainable[-1].shape == trainable[-1].shape
+    assert jnp.all(where_trainable[-1] == pair.model.nodes["net"].sisu_alpha)

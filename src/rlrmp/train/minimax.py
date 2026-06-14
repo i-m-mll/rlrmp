@@ -17,6 +17,8 @@ from functools import partial
 import equinox as eqx
 from feedbax.types import TreeNamespace, dict_to_namespace
 
+from rlrmp.trainable import staged_network_trainable_paths
+
 __all__ = ["build_hps"]
 
 
@@ -201,7 +203,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "start_iteration": 0,
         },
         "where": {
-            0: ["nodes.net.hidden", "nodes.net.readout"],
+            0: staged_network_trainable_paths(sisu_gating=args.sisu_gating),
         },
         # hidden_type is a callable (class or partial), not serialisable to JSON.
         # It is resolved here from the CLI string and stored directly in the namespace.

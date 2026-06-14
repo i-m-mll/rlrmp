@@ -38,6 +38,7 @@ from rlrmp.stochastic_runtime import (
     graphspec_noise_contract,
     stochastic_runtime_config_from_model,
 )
+from rlrmp.trainable import staged_network_trainable_paths
 
 
 SCHEMA_VERSION = "rlrmp.feedbax_graph.v1"
@@ -1373,9 +1374,9 @@ def _training_spec(hps: Any, *, controller_kind: str) -> dict[str, Any]:
         ["nodes.net.K"] if controller_kind == "linear" else ["nodes.net.K", "nodes.net.u_ff"]
     )
     if controller_kind not in {"linear", "linear_tracker"}:
-        trainable = ["nodes.net.hidden", "nodes.net.readout"]
-        if str(getattr(hps, "sisu_gating", "additive")) == "multiplicative":
-            trainable.append("nodes.net.sisu_alpha")
+        trainable = staged_network_trainable_paths(
+            sisu_gating=str(getattr(hps, "sisu_gating", "additive"))
+        )
     return {
         "dt": float(hps.dt),
         "batch_size": int(hps.batch_size),
