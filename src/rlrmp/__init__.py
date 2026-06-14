@@ -8,6 +8,7 @@ def register_experiment_package(registry):
         registry: ExperimentRegistry instance to register with
     """
     from feedbax.plugins.discovery import register_package_from_module_info
+    from rlrmp.analysis.training_diagnostics import register_training_diagnostics_recipes
     from rlrmp.analysis.matrix import register_standard_matrix_recipes
     from rlrmp.spec_migrations import ensure_rlrmp_spec_families
 
@@ -29,3 +30,4 @@ def register_experiment_package(registry):
     )
     ensure_rlrmp_spec_families()
     register_standard_matrix_recipes()
+    register_training_diagnostics_recipes()
