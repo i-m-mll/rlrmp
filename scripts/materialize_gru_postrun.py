@@ -6,11 +6,11 @@ import argparse
 import json
 from pathlib import Path
 
-from rlrmp.analysis.gru_postrun_materialization import (
+from rlrmp.analysis.pipelines.gru_postrun_materialization import (
     DEFAULT_OUTPUT_TAG,
     materialize_gru_postrun_analysis,
 )
-from rlrmp.analysis.gru_pilot_figures import DEFAULT_N_ROLLOUT_TRIALS
+from rlrmp.analysis.pipelines.gru_pilot_figures import DEFAULT_N_ROLLOUT_TRIALS
 
 
 def main() -> None:

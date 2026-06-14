@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
-from collections import Counter, defaultdict
-from collections.abc import Iterable, Mapping, Sequence
+from collections import Counter
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -410,7 +410,7 @@ def align_and_equalize_response(values: np.ndarray, row: Mapping[str, Any]) -> n
     """
 
     if values.ndim != 4 or values.shape[-1] != 2:
-        raise ValueError(f"response values must have shape (replicate, rollout, time, xy)")
+        raise ValueError("response values must have shape (replicate, rollout, time, xy)")
     sign = int(row.get("sign") or row.get("perturbation", {}).get("sign") or 1)
     return np.asarray(values, dtype=np.float64) * float(sign)
 
@@ -1140,7 +1140,7 @@ def _write_response_norm_regeneration_spec(
         spec_path=spec_path,
         diagnostic_name="gru_perturbation_response_norm_plots",
         materializer=(
-            "rlrmp.analysis.gru_perturbation_response_norm_plots."
+            "rlrmp.analysis.pipelines.gru_perturbation_response_norm_plots."
             "materialize_response_norm_plots"
         ),
         command=command,
@@ -1166,9 +1166,9 @@ def _write_response_norm_regeneration_spec(
             {"role": "html_asset_directory", "path": asset_dir},
         ],
         source_files=[
-            "src/rlrmp/analysis/gru_perturbation_response_norm_plots.py",
+            "src/rlrmp/analysis/pipelines/gru_perturbation_response_norm_plots.py",
             "scripts/materialize_gru_perturbation_response_norm_plots.py",
-            "src/rlrmp/analysis/diagnostic_provenance.py",
+            "src/rlrmp/analysis/pipelines/diagnostic_provenance.py",
         ],
         notes=[
             "Materialization reads existing perturbation-response bulk arrays.",

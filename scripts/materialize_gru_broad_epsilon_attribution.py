@@ -7,7 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
-from rlrmp.analysis.gru_broad_epsilon_attribution import (
+from rlrmp.analysis.pipelines.gru_broad_epsilon_attribution import (
     DEFAULT_EXPERIMENT,
     DEFAULT_OUTPUT_TAG,
     materialize_broad_epsilon_attribution,

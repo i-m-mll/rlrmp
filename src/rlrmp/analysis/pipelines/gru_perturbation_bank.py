@@ -53,7 +53,7 @@ from rlrmp.analysis.math.output_feedback import (
     robust_output_feedback_gains,
 )
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
-from rlrmp.feedbax_channel_adapters import (
+from rlrmp.model.feedbax_channel_adapters import (
     additive_channel_payload_dim,
     additive_channel_provenance,
     find_materialized_additive_channel_adapter,
@@ -978,7 +978,7 @@ def default_cs_calibrated_perturbation_bank(
                 "reach_length_m": float(reach.reach_length_m),
                 "level_definitions": [level.to_json() for level in levels],
                 "source": (
-                    "src/rlrmp/analysis/gru_perturbation_calibration.py "
+                    "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py "
                     "DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT and native conventions"
                 ),
             },
@@ -1290,7 +1290,7 @@ def materialize_gru_perturbation_response(
     write_regeneration_spec(
         spec_path=regeneration_spec_path,
         diagnostic_name="gru_perturbation_response_bank",
-        materializer="rlrmp.analysis.gru_perturbation_bank.materialize_gru_perturbation_response",
+        materializer="rlrmp.analysis.pipelines.gru_perturbation_bank.materialize_gru_perturbation_response",
         command=None,
         parameters={
             "source_experiment": source_experiment,
@@ -1334,9 +1334,9 @@ def materialize_gru_perturbation_response(
             else []
         ),
         source_files=[
-            "src/rlrmp/analysis/gru_perturbation_bank.py",
-            "src/rlrmp/analysis/cs_released_simulation.py",
-            "src/rlrmp/analysis/gru_checkpoint_selection.py",
+            "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+            "src/rlrmp/analysis/math/cs_released_simulation.py",
+            "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py",
         ],
         notes=[
             "Perturbation-response arrays and full row manifests are bulk analysis payloads.",
@@ -1933,7 +1933,7 @@ def score_full_qrf_rollout_cost(
             "state_key": "states.mechanics.vector",
             "command_key": "states.net.output",
             "state_transform": "subtract TARGET_POS from each physical delay block x/y",
-            "schedule_source": "rlrmp.analysis.cs_game_card.build_canonical_game",
+            "schedule_source": "rlrmp.analysis.math.cs_game_card.build_canonical_game",
         },
         "total": total,
         "stage_state": stage_state,

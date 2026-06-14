@@ -16,24 +16,19 @@ import logging
 import subprocess
 from functools import partial
 from pathlib import Path
-from typing import Optional
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-import jax.tree as jt
 import optax
 from feedbax import save as fbx_save
-from feedbax.loss import CompositeLoss, TermTree
+from feedbax.objectives.loss import CompositeLoss, TermTree
 from feedbax.training.train import (
     TaskTrainer,
     make_delayed_cosine_schedule,
     train_pair,
-    where_strs_to_fns,
 )
-from feedbax.types import TaskModelPair, TreeNamespace, dict_to_namespace
-from jaxtyping import PyTree
 
 from rlrmp.paths import REPO_ROOT, mkdir_p
 
@@ -533,9 +528,7 @@ def run_training(args: argparse.Namespace) -> None:
     # APT: adversarial perturbation training via pre_step_fn hook
     pre_step_fn = None
     if args.training_method == "apt":
-        from feedbax.graph import init_state_from_component
         from feedbax.intervene.schedule import TimeSeriesParam
-        from feedbax.train import grad_wrap_abstract_loss
 
         from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 
@@ -582,11 +575,7 @@ def run_training(args: argparse.Namespace) -> None:
                     trial_specs,
                     replace=new_intervene,
                 )
-                # Forward pass and loss (same as grad_wrap_abstract_loss)
-                init_states = eqx.filter_vmap(
-                    lambda _: init_state_from_component(model)
-                )(keys)
-                # Simplified forward: use task.eval_trials
+                # Simplified forward: use task.eval_trials.
                 states = task.eval_trials(model, new_trial_specs, keys)
                 losses = loss_func(states, new_trial_specs, model)
                 return losses.total
@@ -645,9 +634,7 @@ def run_training(args: argparse.Namespace) -> None:
     )
     logger.info("Saved trained model to %s", model_path)
 
-    # Save training history (loss curves) as numpy arrays
-    import numpy as np
-
+    # Save training history (loss curves).
     history_path = output_dir / "train_history.eqx"
     fbx_save(history_path, train_history)
     logger.info("Saved training history to %s", history_path)

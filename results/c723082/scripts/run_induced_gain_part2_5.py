@@ -4,7 +4,7 @@ Bug: 6fdf9a4 — produces the first cross-method table of
 ``||T_{w → z}||_∞`` values for trained Part 2.5 networks.
 
 Wraps the trained SimpleFeedback controller path as a ``Controller`` for
-``rlrmp.analysis.induced_gain`` and runs the headline channels:
+``rlrmp.analysis.math.induced_gain`` and runs the headline channels:
     - ``additive_force × qr_cost``  (Riccati-comparable scalar)
     - ``structural_da × qr_cost``   (flavor (a) ⊊ (b) discriminator)
     - ``sensory_perturbation × qr_cost`` (feedback-perturbation analogue)
@@ -53,14 +53,14 @@ import jax.tree as jt
 import numpy as np
 from feedbax import load_with_hyperparameters
 
-from rlrmp.analysis.hinf_riccati import (
+from rlrmp.analysis.math.hinf_riccati import (
     CostSpec,
     PlantLinearization,
     cost_schedule_from_spec,
     find_gamma_star,
     linearize_pointmass,
 )
-from rlrmp.analysis.induced_gain import (
+from rlrmp.analysis.math.induced_gain import (
     W_ADDITIVE_FORCE,
     W_SENSORY_PERTURBATION,
     W_STRUCTURAL_DA,

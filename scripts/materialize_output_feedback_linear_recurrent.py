@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from rlrmp.analysis.output_feedback_linear_recurrent import (
+from rlrmp.analysis.pipelines.output_feedback_linear_recurrent import (
     ARTIFACT_PATH,
     MANIFEST_PATH,
     NOTE_PATH,

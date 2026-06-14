@@ -27,7 +27,8 @@ import numpy as np
 import optax
 from feedbax import save as fbx_save
 from feedbax.misc import BatchInfo
-from feedbax.train import filter_spec_leaves, get_model_parameters
+from feedbax._tree import filter_spec_leaves
+from feedbax.training.trainer import get_model_parameters
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule
 from feedbax.types import TreeNamespace, dict_to_namespace
 
@@ -44,8 +45,8 @@ from rlrmp.analysis.math.cs_released_simulation import (
     default_cs_noise_covariances,
 )
 from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig
-from rlrmp.cs_lss_gru import CS_H0_CONTEXT_DIM, CS_H0_ENCODER_INIT
-from rlrmp.feedbax_graph import (
+from rlrmp.model.cs_lss_gru import CS_H0_CONTEXT_DIM, CS_H0_ENCODER_INIT
+from rlrmp.model.feedbax_graph import (
     EXECUTION_BACKEND,
     GRAPH_PLANT_INTERVENOR_NODE,
     RLRMPFeedbaxGraphBundle,
@@ -59,8 +60,8 @@ from rlrmp.loss import (
     CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
-from rlrmp.run_specs import validate_nominal_gru_run_spec
-from rlrmp.stochastic_runtime import (
+from rlrmp.runtime.run_specs import validate_nominal_gru_run_spec
+from rlrmp.model.stochastic_runtime import (
     graphspec_noise_contract,
     stochastic_runtime_config_from_model,
 )
@@ -88,7 +89,7 @@ from rlrmp.train.task_model import (
     LEGACY_CAUSAL_PLANT_BACKEND,
     setup_task_model_pair,
 )
-from rlrmp.trainable import staged_network_trainable_parts, staged_network_trainable_paths
+from rlrmp.model.trainable import staged_network_trainable_parts, staged_network_trainable_paths
 
 ISSUE_ID = "30f2313"
 SCHEMA_VERSION = "rlrmp.cs_stochastic_gru.v1"
@@ -644,7 +645,7 @@ def build_game_card_provenance() -> dict[str, Any]:
     target = [float(x) for x in TARGET_POS.tolist()]
     init = [float(x) for x in INIT_POS.tolist()]
     return {
-        "source_module": "rlrmp.analysis.cs_game_card",
+        "source_module": "rlrmp.analysis.math.cs_game_card",
         "canonical_builder": "build_canonical_game",
         "discretization": plant.discretization,
         "dt": float(plant.dt),
@@ -2874,9 +2875,9 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
                 else "not_enabled"
             ),
             "source_module": (
-                "rlrmp.analysis.cs_game_card.build_no_integrator_game"
+                "rlrmp.analysis.math.cs_game_card.build_no_integrator_game"
                 if no_integrator_state
-                else "rlrmp.analysis.cs_game_card.build_canonical_game"
+                else "rlrmp.analysis.math.cs_game_card.build_canonical_game"
             ),
             "comparator_variant": "no_integrator_state" if no_integrator_state else None,
             "state_basis": {

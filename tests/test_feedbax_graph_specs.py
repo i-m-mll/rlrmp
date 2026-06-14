@@ -11,12 +11,12 @@ import jax.random as jr
 import pytest
 from feedbax.component_registry import ComponentRegistry
 from feedbax.contracts.graph import GraphSpec
-from feedbax.graph import Graph
+from feedbax.runtime.graph import Graph
 from feedbax.intervene import CurlField, DynamicsMatrixPerturb, FixedField
 from feedbax.manifest import SCHEMA_VERSION as FEEDBAX_MANIFEST_SCHEMA_VERSION
 
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
-from rlrmp.feedbax_graph import (
+from rlrmp.model.feedbax_graph import (
     EXECUTION_BACKEND,
     GRAPH_PLANT_INTERVENOR_NODE,
     SCHEMA_VERSION,
@@ -32,7 +32,7 @@ from rlrmp.feedbax_graph import (
 )
 from rlrmp.intervention_compat import swap_plant_intervenor_to_dynamics_matrix
 from rlrmp.train.task_model import build_task_base, setup_task_model_pair
-from rlrmp.stochastic_runtime import PLANT_PROCESS_FORCE_NOISE_LABEL
+from rlrmp.model.stochastic_runtime import PLANT_PROCESS_FORCE_NOISE_LABEL
 from rlrmp.train.minimax import build_hps
 
 

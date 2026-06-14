@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import argparse
 
-from rlrmp.analysis.cs_released_simulation import (
+from rlrmp.analysis.math.cs_released_simulation import (
     DEFAULT_CS_RELEASED_STOCHASTIC_NOISE_CONFIG,
     CSReleasedStochasticNoiseConfig,
 )
-from rlrmp.analysis.cs_stochastic_phase1 import DEFAULT_SEEDS, ISSUE_ID, write_outputs
-from rlrmp.analysis.rerun_metadata import (
+from rlrmp.analysis.pipelines.cs_stochastic_phase1 import DEFAULT_SEEDS, ISSUE_ID, write_outputs
+from rlrmp.analysis.math.rerun_metadata import (
     DEFAULT_DISCRETIZATION,
     DISCRETIZATION_CHOICES,
     metadata_cli_help,

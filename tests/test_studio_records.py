@@ -12,8 +12,8 @@ from feedbax.manifest import (
     write_manifest,
 )
 
-from rlrmp.spec_migrations import ensure_rlrmp_spec_families
-from rlrmp.studio_records import (
+from rlrmp.runtime.spec_migrations import ensure_rlrmp_spec_families
+from rlrmp.runtime.studio_records import (
     build_studio_workspace_from_training_manifests,
     main,
     materialize_studio_records,

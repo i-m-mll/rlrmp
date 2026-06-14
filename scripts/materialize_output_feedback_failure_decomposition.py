@@ -17,21 +17,21 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from rlrmp.analysis.bridge_certificates import (
+from rlrmp.analysis.pipelines.bridge_certificates import (
     STATE_WEIGHTED_ACTION_MISMATCH,
     state_weighted_action_mismatch_component,
 )
-from rlrmp.analysis.cs_game_card import materialize_reference
-from rlrmp.analysis.failure_decomposition import (
+from rlrmp.analysis.math.cs_game_card import materialize_reference
+from rlrmp.analysis.pipelines.failure_decomposition import (
     classify_failure,
     covariances_from_states,
     gain_error_subspace_decomposition,
     interpolation_curve,
     objective_gradient_summary,
 )
-from rlrmp.analysis.linear_round_trip import LinearTrainingConfig
-from rlrmp.analysis.output_feedback import OutputFeedbackConfig, output_feedback_clean_objective
-from rlrmp.analysis.output_feedback_rollout_recovery import (
+from rlrmp.analysis.math.linear_round_trip import LinearTrainingConfig
+from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig, output_feedback_clean_objective
+from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
     STRONG_OPTIMIZER_WHITENED,
     _training_ensemble,
     eigenspectrum_coverage_conditions,

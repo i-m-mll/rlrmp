@@ -13,7 +13,7 @@ import jax.tree as jt
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
-from feedbax.graph import Component, Wire
+from feedbax.runtime.graph import Component, Wire
 from feedbax.types import TreeNamespace, dict_to_namespace
 from jaxtyping import PRNGKeyArray, PyTree
 
@@ -783,7 +783,7 @@ def materialize_gru_feedback_ablation(
     write_regeneration_spec(
         spec_path=regeneration_spec_path,
         diagnostic_name="gru_feedback_ablation",
-        materializer="rlrmp.analysis.gru_feedback_ablation.materialize_gru_feedback_ablation",
+        materializer="rlrmp.analysis.pipelines.gru_feedback_ablation.materialize_gru_feedback_ablation",
         command=None,
         parameters={
             "source_experiment": source_experiment,
@@ -821,9 +821,9 @@ def materialize_gru_feedback_ablation(
             {"role": "feedback_ablation_note", "path": note_path},
         ],
         source_files=[
-            "src/rlrmp/analysis/gru_feedback_ablation.py",
-            "src/rlrmp/analysis/gru_perturbation_bank.py",
-            "src/rlrmp/analysis/gru_checkpoint_selection.py",
+            "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
+            "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+            "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py",
         ],
         notes=[
             "Feedback ablation and feedback-selected checkpoints are audit-only.",

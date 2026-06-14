@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from rlrmp.run_specs import (
+from rlrmp.runtime.run_specs import (
     CS_LSS_PLANT_BACKEND,
     RunSpecValidationError,
     validate_nominal_gru_run_spec,

@@ -46,7 +46,7 @@ from rlrmp.analysis.pipelines.output_feedback_rollout_recovery import (
     ISSUE_ID as OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ISSUE_ID,
     write_outputs as write_output_feedback_rollout_recovery_outputs,
 )
-from rlrmp.analysis.rerun_metadata import DEFAULT_DISCRETIZATION, DEFAULT_LANE
+from rlrmp.analysis.math.rerun_metadata import DEFAULT_DISCRETIZATION, DEFAULT_LANE
 from rlrmp.paths import REPO_ROOT
 
 

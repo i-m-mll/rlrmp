@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from rlrmp.analysis.hinf_phenotype_sidecar import (
+from rlrmp.analysis.pipelines.hinf_phenotype_sidecar import (
     DEFAULT_OUTPUT_JSON,
     DEFAULT_OUTPUT_MARKDOWN,
     DEFAULT_REGENERATION_SPEC,

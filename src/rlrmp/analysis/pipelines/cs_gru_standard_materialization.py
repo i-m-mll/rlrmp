@@ -15,8 +15,8 @@ import jax.random as jr
 import jax.tree as jt
 import numpy as np
 from feedbax import load_with_hyperparameters
-from feedbax.channel import Channel
-from feedbax.graph import init_state_from_component
+from feedbax.runtime.channel import Channel
+from feedbax.runtime.graph import init_state_from_component
 from feedbax.types import TreeNamespace, dict_to_namespace
 
 from rlrmp.analysis.math.cs_game_card import (
@@ -62,12 +62,12 @@ from rlrmp.analysis.pipelines.standard_certificate_materialization import (
     repo_relative,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
-from rlrmp.spec_migrations import (
+from rlrmp.runtime.spec_migrations import (
     CS_GRU_STANDARD_CERTIFICATES_KIND,
     CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION,
     stamp_current_schema,
 )
-from rlrmp.stochastic_runtime import (
+from rlrmp.model.stochastic_runtime import (
     PLANT_PROCESS_FORCE_NOISE_LABEL,
     add_plant_process_force_noise,
 )
@@ -881,7 +881,7 @@ def write_gru_standard_result(
     write_regeneration_spec(
         spec_path=regeneration_spec_path,
         diagnostic_name="gru_standard_certificate",
-        materializer="rlrmp.analysis.cs_gru_standard_materialization.write_gru_standard_result",
+        materializer="rlrmp.analysis.pipelines.cs_gru_standard_materialization.write_gru_standard_result",
         command=None,
         parameters={
             "experiment": result.get("source_issue"),
@@ -902,9 +902,9 @@ def write_gru_standard_result(
             {"role": "standard_certificate_note", "path": note_path},
         ],
         source_files=[
-            "src/rlrmp/analysis/cs_gru_standard_materialization.py",
-            "src/rlrmp/analysis/bridge_certificates.py",
-            "src/rlrmp/analysis/standard_certificate_materialization.py",
+            "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
+            "src/rlrmp/analysis/pipelines/bridge_certificates.py",
+            "src/rlrmp/analysis/pipelines/standard_certificate_materialization.py",
         ],
         notes=[
             "Standard certificate is in scope for regeneration specs.",

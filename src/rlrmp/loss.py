@@ -6,8 +6,9 @@ from typing import Any, Optional
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from feedbax import AbstractModel, TaskTrialSpec
-from feedbax.loss import (
+from feedbax import TaskTrialSpec
+from feedbax.runtime.model import AbstractModel
+from feedbax.objectives.loss import (
     AbstractLoss,
     CompositeLoss,
     EpochMaskedLoss,

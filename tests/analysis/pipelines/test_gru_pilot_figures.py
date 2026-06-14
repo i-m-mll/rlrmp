@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import plotly.graph_objects as go
 from feedbax import TaskTrialSpec
-from feedbax.loss import TargetSpec
-from feedbax.state import CartesianState
+from feedbax.objectives.loss import TargetSpec
+from feedbax.runtime.state import CartesianState
 
 from rlrmp.analysis.pipelines.gru_pilot_figures import (
     REFERENCE_4D_LABEL,

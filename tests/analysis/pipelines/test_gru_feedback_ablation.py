@@ -8,8 +8,8 @@ import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
 from feedbax import TaskTrialSpec
-from feedbax.graph import Wire
-from feedbax.state import CartesianState
+from feedbax.runtime.graph import Wire
+from feedbax.runtime.state import CartesianState
 
 from rlrmp.analysis.pipelines.gru_feedback_ablation import (
     FEEDBACK_AUDIT_SELECTION_ROLE,
@@ -26,7 +26,7 @@ from rlrmp.analysis.pipelines.gru_feedback_ablation import (
     summarize_normalized_feedback_use,
 )
 from rlrmp.analysis.pipelines.gru_perturbation_bank import default_cs_perturbation_bank
-from rlrmp.cs_lss_gru import build_cs_lss_gru_graph
+from rlrmp.model.cs_lss_gru import build_cs_lss_gru_graph
 
 
 def test_standard_modes_and_bins_are_json_serializable() -> None:

@@ -1,4 +1,4 @@
-"""Tests for ``rlrmp.analysis.induced_gain``.
+"""Tests for ``rlrmp.analysis.math.induced_gain``.
 
 Bug: 74bfd86 -- production induced-gain analyser. The tests cover:
 
@@ -690,7 +690,7 @@ def test_feedbax_graph_controller_smoke():
     flat-state shape is consistent.
     """
     from equinox.nn import StateIndex
-    from feedbax.graph import Component, Graph
+    from feedbax.runtime.graph import Component, Graph
 
     from rlrmp.analysis.math.induced_gain import feedbax_graph_controller
 
@@ -766,7 +766,7 @@ def test_feedbax_graph_controller_cyclic_smoke():
       * three chained ``step`` calls run without error.
     """
     from equinox.nn import StateIndex
-    from feedbax.graph import Component, Graph, Wire
+    from feedbax.runtime.graph import Component, Graph, Wire
 
     from rlrmp.analysis.math.induced_gain import feedbax_graph_controller
 

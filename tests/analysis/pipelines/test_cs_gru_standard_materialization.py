@@ -5,7 +5,7 @@ from __future__ import annotations
 import jax.numpy as jnp
 import numpy as np
 from feedbax import TaskTrialSpec, WhereDict
-from feedbax.loss import TargetSpec
+from feedbax.objectives.loss import TargetSpec
 
 from rlrmp.analysis.pipelines.bridge_certificates import (
     BELLMAN_HESSIAN_RESIDUAL,

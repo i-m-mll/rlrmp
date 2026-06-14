@@ -13,7 +13,7 @@ def register_experiment_package(registry):
     )
     from rlrmp.analysis.training_diagnostics import register_training_diagnostics_recipes
     from rlrmp.analysis.matrix import register_standard_matrix_recipes
-    from rlrmp.spec_migrations import ensure_rlrmp_spec_families
+    from rlrmp.runtime.spec_migrations import ensure_rlrmp_spec_families
 
     register_package_from_module_info(
         registry=registry,
