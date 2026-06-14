@@ -12,8 +12,8 @@ from dataclasses import dataclass
 
 import jax.numpy as jnp
 import numpy as np
+from feedbax.contracts.graph import ComponentSpec, GraphSpec
 from feedbax.mechanics import LinearStateSpace
-from feedbax.web.models.graph import ComponentSpec, GraphSpec
 from jaxtyping import Array, Float
 
 from rlrmp.analysis.math.cs_game_card import (
