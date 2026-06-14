@@ -18,6 +18,7 @@ import pytest
 from feedbax import TaskTrialSpec, TrialTimeline, WhereDict
 from feedbax.loss import TargetSpec
 from feedbax.mechanics import LinearStateSpace
+from feedbax.state_feedback import StateFeedbackSelector
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
 from feedbax.types import TreeNamespace
 
@@ -33,8 +34,7 @@ from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
 from rlrmp.cs_lss_gru import (
     CS_EPSILON_DIM,
     CS_REDUCED_EPSILON_DIM,
-    TargetRelativeDelayedFeedback,
-    TargetRelativeDelayedProprioceptiveFeedback,
+    build_cs_lss_gru_graph_spec,
 )
 from rlrmp.loss import (
     CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
@@ -1085,7 +1085,13 @@ def test_calibrated_timing_run_spec_exposes_family_timing_bins(tmp_path: Path) -
 
 
 def test_target_relative_feedback_sign_contract() -> None:
-    component = TargetRelativeDelayedFeedback()
+    spec = build_cs_lss_gru_graph_spec(
+        hidden_size=4,
+        target_relative_feedback=True,
+        bind_epsilon_input=True,
+        key=jr.PRNGKey(0),
+    )
+    component = StateFeedbackSelector(**spec.nodes["feedback"].params)
     state = (
         jnp.zeros((48,), dtype=jnp.float32)
         .at[40:44]
@@ -1104,7 +1110,13 @@ def test_target_relative_feedback_sign_contract() -> None:
 
 
 def test_target_relative_feedback_batches_over_last_state_axis() -> None:
-    component = TargetRelativeDelayedFeedback()
+    spec = build_cs_lss_gru_graph_spec(
+        hidden_size=4,
+        target_relative_feedback=True,
+        bind_epsilon_input=True,
+        key=jr.PRNGKey(0),
+    )
+    component = StateFeedbackSelector(**spec.nodes["feedback"].params)
     state = jnp.zeros((2, 48), dtype=jnp.float32)
     state = state.at[:, 40:44].set(
         jnp.array(
@@ -1480,7 +1492,14 @@ def test_delayed_no_integrator_run_spec_declares_reduced_state_and_pgd_dim(
 
 
 def test_target_relative_proprioceptive_feedback_extends_sign_contract() -> None:
-    component = TargetRelativeDelayedProprioceptiveFeedback()
+    spec = build_cs_lss_gru_graph_spec(
+        hidden_size=4,
+        target_relative_feedback=True,
+        force_filter_feedback=True,
+        bind_epsilon_input=True,
+        key=jr.PRNGKey(0),
+    )
+    component = StateFeedbackSelector(**spec.nodes["feedback"].params)
     state = jnp.zeros((48,), dtype=jnp.float32)
     state = state.at[40:46].set(
         jnp.array([0.02, -0.03, 0.40, -0.20, 0.70, -0.80], dtype=jnp.float32)
