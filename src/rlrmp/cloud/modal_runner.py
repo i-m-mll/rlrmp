@@ -274,7 +274,7 @@ def build_packing_benchmark_command(
         "--no-sync" if remote else "",
         "python",
         "-m",
-        "rlrmp.packing_benchmark",
+        "rlrmp.benchmarks.packing",
         "parent",
     ]
     command = [part for part in command if part]

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from rlrmp.local_parallel_benchmark import _aggregate, build_parser
+from rlrmp.benchmarks.local_parallel import _aggregate, build_parser
 
 
 def test_parent_parser_defaults_to_cs_lss_cpu_contract() -> None:

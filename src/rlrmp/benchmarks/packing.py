@@ -198,7 +198,7 @@ def run_parent(args: argparse.Namespace) -> int:
         command = [
             sys.executable,
             "-m",
-            "rlrmp.packing_benchmark",
+            "rlrmp.benchmarks.packing",
             "worker",
             "--config-json",
             json.dumps(asdict(worker_config), sort_keys=True),

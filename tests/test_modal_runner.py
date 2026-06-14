@@ -6,16 +6,14 @@ import json
 import os
 import sys
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from rlrmp import packing_benchmark
-from rlrmp.loss import (
+from rlrmp.benchmarks import packing as packing_benchmark
+from rlrmp.cloud.modal_runner import (
     CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
     CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
-)
-from rlrmp.modal_runner import (
     DEFAULT_RUN,
     DEFAULT_GPU,
     DEFAULT_TRAIN_TIMEOUT_SECONDS,
@@ -32,6 +30,49 @@ from rlrmp.modal_runner import (
     dry_run_payload,
     make_config,
 )
+
+
+def _install_fake_cs_nominal_gru_modules(
+    monkeypatch: pytest.MonkeyPatch,
+) -> SimpleNamespace:
+    train_package = ModuleType("rlrmp.train")
+    train_package.__path__ = []
+    task_model = ModuleType("rlrmp.train.task_model")
+    nominal = ModuleType("rlrmp.train.cs_nominal_gru")
+    perturbation = ModuleType("rlrmp.train.cs_perturbation_training")
+
+    class Parser:
+        def parse_args(self, args: list[str]) -> argparse.Namespace:
+            return argparse.Namespace(delayed_reach="--delayed-reach" in args)
+
+    task_model.setup_task_model_pair = lambda hps, key: SimpleNamespace(
+        task=object(),
+        model=object(),
+    )
+    nominal.build_parser = lambda: Parser()
+    nominal.build_hps = lambda args: SimpleNamespace(
+        batch_size=2,
+        broad_epsilon_pgd_training=SimpleNamespace(),
+    )
+    nominal._build_trainer = lambda hps: object()
+    perturbation.make_broad_epsilon_pgd_pre_step = lambda config: None
+
+    train_package.task_model = task_model
+    train_package.cs_nominal_gru = nominal
+    train_package.cs_perturbation_training = perturbation
+    monkeypatch.setitem(sys.modules, "rlrmp.train", train_package)
+    monkeypatch.setitem(sys.modules, "rlrmp.train.task_model", task_model)
+    monkeypatch.setitem(sys.modules, "rlrmp.train.cs_nominal_gru", nominal)
+    monkeypatch.setitem(
+        sys.modules,
+        "rlrmp.train.cs_perturbation_training",
+        perturbation,
+    )
+    return SimpleNamespace(
+        task_model=task_model,
+        nominal=nominal,
+        perturbation=perturbation,
+    )
 
 
 def test_nominal_training_command_is_bounded_and_nominal_only() -> None:
@@ -283,7 +324,7 @@ def test_packing_benchmark_command_disables_sync_and_sets_worker_count() -> None
         "--no-sync",
         "python",
         "-m",
-        "rlrmp.packing_benchmark",
+        "rlrmp.benchmarks.packing",
     ]
     assert command[command.index("--n-workers") + 1] == "2"
     assert command[command.index("--burn-in-seconds") + 1] == "45"
@@ -534,32 +575,23 @@ def test_packing_worker_env_defaults_do_not_force_gpu_or_cpu_caps(tmp_path: Path
 def test_packing_cs_nominal_gru_scenario_wires_pgd_pre_step(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import rlrmp.train.task_model as task_model
-    import rlrmp.train.cs_nominal_gru as nominal
-    import rlrmp.train.cs_perturbation_training as perturbation
-
+    modules = _install_fake_cs_nominal_gru_modules(monkeypatch)
     pgd_hps = SimpleNamespace(enabled=True)
     pre_step_fn = object()
 
-    class Parser:
-        def parse_args(self, args: list[str]) -> argparse.Namespace:
-            assert args == []
-            return argparse.Namespace()
-
-    monkeypatch.setattr(nominal, "build_parser", lambda: Parser())
     monkeypatch.setattr(
-        nominal,
+        modules.nominal,
         "build_hps",
         lambda args: SimpleNamespace(batch_size=2, broad_epsilon_pgd_training=pgd_hps),
     )
-    monkeypatch.setattr(nominal, "_build_trainer", lambda hps: object())
+    monkeypatch.setattr(modules.nominal, "_build_trainer", lambda hps: object())
     monkeypatch.setattr(
-        perturbation,
+        modules.perturbation,
         "make_broad_epsilon_pgd_pre_step",
         lambda config: pre_step_fn if config is pgd_hps else None,
     )
     monkeypatch.setattr(
-        task_model,
+        modules.task_model,
         "setup_task_model_pair",
         lambda hps, key: SimpleNamespace(task=object(), model=object()),
     )
@@ -576,20 +608,18 @@ def test_packing_cs_nominal_gru_scenario_wires_pgd_pre_step(
 def test_packing_cs_nominal_gru_argv_does_not_clobber_payload_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import rlrmp.train.task_model as task_model
-    import rlrmp.train.cs_nominal_gru as nominal
-
+    modules = _install_fake_cs_nominal_gru_modules(monkeypatch)
     captured = {}
 
-    monkeypatch.setattr(nominal, "_build_trainer", lambda hps: object())
+    monkeypatch.setattr(modules.nominal, "_build_trainer", lambda hps: object())
 
     def fake_build_hps(args: argparse.Namespace) -> SimpleNamespace:
         captured.update(vars(args))
         return SimpleNamespace(batch_size=2, broad_epsilon_pgd_training=SimpleNamespace())
 
-    monkeypatch.setattr(nominal, "build_hps", fake_build_hps)
+    monkeypatch.setattr(modules.nominal, "build_hps", fake_build_hps)
     monkeypatch.setattr(
-        task_model,
+        modules.task_model,
         "setup_task_model_pair",
         lambda hps, key: SimpleNamespace(task=object(), model=object()),
     )

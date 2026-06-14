@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence
 
-from rlrmp.modal_runner import MODAL_VOLUME_NAME, shell_join
+from rlrmp.cloud.modal_runner import MODAL_VOLUME_NAME, shell_join
 from rlrmp.paths import REPO_ROOT
 from rlrmp.run_specs import validate_nominal_gru_run_spec_file
 

@@ -127,7 +127,7 @@ def run_parent(args: argparse.Namespace) -> int:
         command = [
             sys.executable,
             "-m",
-            "rlrmp.local_parallel_benchmark",
+            "rlrmp.benchmarks.local_parallel",
             "worker",
             "--config-json",
             json.dumps(asdict(worker_config), sort_keys=True),
