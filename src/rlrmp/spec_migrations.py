@@ -36,18 +36,14 @@ GRU_PERTURBATION_BANK_SCHEMA_ID = "rlrmp.gru_perturbation_bank"
 GRU_PERTURBATION_BANK_SCHEMA_VERSION = "rlrmp.gru_perturbation_bank.v3"
 
 GRU_PERTURBATION_RESPONSE_NORM_PLOTS_KIND = "RLRMPGRUPerturbationResponseNormPlots"
-GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_ID = (
-    "rlrmp.gru_perturbation_response_norm_plots"
-)
+GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_ID = "rlrmp.gru_perturbation_response_norm_plots"
 GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_VERSION = (
     "rlrmp.gru_perturbation_response_norm_plots.v1"
 )
 
 PERTURBATION_OPEN_LOOP_CALIBRATION_KIND = "RLRMPPerturbationOpenLoopCalibration"
 PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_ID = "rlrmp.perturbation_open_loop_calibration"
-PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_VERSION = (
-    "rlrmp.perturbation_open_loop_calibration.v2"
-)
+PERTURBATION_OPEN_LOOP_CALIBRATION_SCHEMA_VERSION = "rlrmp.perturbation_open_loop_calibration.v2"
 
 HINF_PHENOTYPE_SIDECAR_KIND = "RLRMPHinfPhenotypeSidecar"
 HINF_PHENOTYPE_SIDECAR_SCHEMA_ID = "rlrmp.hinf_phenotype_sidecar"
@@ -68,6 +64,10 @@ GRU_MAP_ERROR_DECOMPOSITION_SCHEMA_VERSION = "rlrmp.gru_map_error_decomposition.
 GRU_FEEDBACK_ABLATION_KIND = "RLRMPGRUFeedbackAblation"
 GRU_FEEDBACK_ABLATION_SCHEMA_ID = "rlrmp.gru_feedback_ablation"
 GRU_FEEDBACK_ABLATION_SCHEMA_VERSION = "rlrmp.gru_feedback_ablation.v1"
+
+FEEDBACK_QUALITY_LENS_KIND = "RLRMPFeedbackQualityLens"
+FEEDBACK_QUALITY_LENS_SCHEMA_ID = "rlrmp.feedback_quality_lens"
+FEEDBACK_QUALITY_LENS_SCHEMA_VERSION = "rlrmp.feedback_quality_lens.v1"
 
 RUN_SPEC_KIND = "RLRMPRunSpec"
 RUN_SPEC_SCHEMA_ID = "rlrmp.run_spec"
@@ -207,8 +207,7 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             ),
             description="RLRMP full-QRF objective-comparator sidecar.",
             rejected_old_versions=tuple(
-                f"rlrmp.objective_comparator_sidecar.v{version}"
-                for version in range(0, 6)
+                f"rlrmp.objective_comparator_sidecar.v{version}" for version in range(0, 6)
             ),
         ),
         _family(
@@ -311,6 +310,22 @@ def _rlrmp_spec_families() -> tuple[SpecSchemaFamily, ...]:
             ),
         ),
         _family(
+            FEEDBACK_QUALITY_LENS_KIND,
+            FEEDBACK_QUALITY_LENS_SCHEMA_ID,
+            FEEDBACK_QUALITY_LENS_SCHEMA_VERSION,
+            emitted_by=("rlrmp.analysis.declarative_materialization",),
+            consumed_by=("Feedbax AnalysisRunManifest artifacts", "rlrmp feedback-quality reports"),
+            description=(
+                "Feedback-control quality lens inventory over RLRMP-owned diagnostic sidecars."
+            ),
+            rejected_old_versions=("rlrmp.feedback_quality_lens.v0",),
+            notes=(
+                "This schema is only the RLRMP-owned lens/index payload. "
+                "Generic output status, lineage, and artifact custody remain "
+                "Feedbax-owned bundle/manifest semantics."
+            ),
+        ),
+        _family(
             RUN_SPEC_KIND,
             RUN_SPEC_SCHEMA_ID,
             RUN_SPEC_SCHEMA_VERSION,
@@ -360,6 +375,9 @@ __all__ = [
     "CS_GRU_STANDARD_CERTIFICATES_KIND",
     "CS_GRU_STANDARD_CERTIFICATES_SCHEMA_ID",
     "CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION",
+    "FEEDBACK_QUALITY_LENS_KIND",
+    "FEEDBACK_QUALITY_LENS_SCHEMA_ID",
+    "FEEDBACK_QUALITY_LENS_SCHEMA_VERSION",
     "GRU_EVALUATION_DIAGNOSTICS_KIND",
     "GRU_EVALUATION_DIAGNOSTICS_SCHEMA_ID",
     "GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION",

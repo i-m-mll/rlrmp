@@ -47,9 +47,8 @@ from rlrmp.paths import REPO_ROOT
 GRU_STANDARD_ANALYSIS_TYPE = "rlrmp.certificate.gru_standard"
 GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE = "rlrmp.diagnostic.gru_evaluation"
 GRU_POSTRUN_ANALYSIS_TYPE = "rlrmp.gru_postrun"
-OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE = (
-    "rlrmp.output_feedback_bridge.rollout_recovery"
-)
+FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE = "rlrmp.feedback_quality_lens"
+OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE = "rlrmp.output_feedback_bridge.rollout_recovery"
 BRIDGE_STANDARD_ANALYSIS_TYPE = GRU_STANDARD_ANALYSIS_TYPE
 
 
@@ -69,6 +68,11 @@ def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
     register_analysis_recipe(
         GRU_POSTRUN_ANALYSIS_TYPE,
         gru_postrun_recipe,
+        replace=replace,
+    )
+    register_analysis_recipe(
+        FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE,
+        feedback_quality_lens_recipe,
         replace=replace,
     )
     register_analysis_recipe(
@@ -198,6 +202,48 @@ def gru_postrun_spec(
     )
 
 
+def feedback_quality_lens_spec(
+    *,
+    experiment: str | None = None,
+    run_ids: Sequence[str] | None = None,
+    labels: Sequence[str] | None = None,
+    output_tag: str = DEFAULT_OUTPUT_TAG,
+    use_validation_selected_checkpoints: bool = True,
+    include_evaluation_diagnostics: bool = True,
+    include_objective_comparator: bool = True,
+    include_perturbation_response: bool = True,
+    include_feedback_ablation: bool = True,
+    include_response_norm_plots: bool = True,
+    include_perturbation_calibration: bool = True,
+    not_applicable_components: Sequence[str] = (),
+    repo_root: Path | str | None = None,
+) -> AnalysisRunSpec:
+    """Return declarative spec data for the feedback-control quality lens."""
+
+    params: dict[str, Any] = {
+        "output_tag": output_tag,
+        "use_validation_selected_checkpoints": use_validation_selected_checkpoints,
+        "include_evaluation_diagnostics": include_evaluation_diagnostics,
+        "include_objective_comparator": include_objective_comparator,
+        "include_perturbation_response": include_perturbation_response,
+        "include_feedback_ablation": include_feedback_ablation,
+        "include_response_norm_plots": include_response_norm_plots,
+        "include_perturbation_calibration": include_perturbation_calibration,
+        "not_applicable_components": list(not_applicable_components),
+    }
+    if experiment is not None:
+        params["experiment"] = experiment
+    if run_ids is not None:
+        params["run_ids"] = list(run_ids)
+    if labels is not None:
+        params["labels"] = list(labels)
+    _set_optional_path_param(params, "repo_root", repo_root)
+    return AnalysisRunSpec(
+        analysis_type=FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE,
+        params=params,
+    )
+
+
 def output_feedback_rollout_recovery_spec(
     *,
     issue_id: str = OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ISSUE_ID,
@@ -313,6 +359,33 @@ def output_feedback_rollout_recovery_recipe(
     )
     return AnalysisRecipeResult(
         analyses={"output_feedback_rollout_recovery": analysis},
+        data=_empty_analysis_data(),
+    )
+
+
+def feedback_quality_lens_recipe(
+    spec: AnalysisRunSpec,
+    _root: Path,
+    inputs: Sequence[Any],
+) -> AnalysisRecipeResult:
+    """Build the declarative feedback-control quality lens recipe."""
+
+    params = dict(spec.params)
+    resolved_run_ids = _run_ids_from_params_or_inputs(params, inputs)
+    experiment = _experiment_from_params_or_inputs(params, inputs)
+    analysis = ContextMaterializer(
+        materializer=lambda context: _materialize_feedback_quality_lens(
+            context,
+            params,
+            experiment=experiment,
+            run_ids=resolved_run_ids,
+        ),
+        artifact_role="rlrmp-feedback-quality-lens",
+        logical_name="feedback_quality_lens.json",
+        schema_boundary="rlrmp-owned feedback-control quality lens payload",
+    )
+    return AnalysisRecipeResult(
+        analyses={"feedback_quality_lens": analysis},
         data=_empty_analysis_data(),
     )
 
@@ -513,6 +586,86 @@ def _materialize_gru_postrun(
     )
 
 
+def _materialize_feedback_quality_lens(
+    context: AnalysisRunContext,
+    params: Mapping[str, Any],
+    *,
+    experiment: str,
+    run_ids: Sequence[str],
+) -> MaterializationResult:
+    if not run_ids:
+        raise ValueError("Feedback-quality lens recipe requires at least one run ID")
+
+    repo_root = _repo_root_from_params(params)
+    output_tag = str(params.get("output_tag", DEFAULT_OUTPUT_TAG))
+    plan = plan_gru_postrun_materialization(
+        experiment=experiment,
+        run_ids=tuple(run_ids),
+        output_tag=output_tag,
+        use_validation_selected_checkpoints=bool(
+            params.get("use_validation_selected_checkpoints", True)
+        ),
+        fixed_bank_rescore_manifest_path=_optional_path(
+            params.get("fixed_bank_rescore_manifest_path"),
+            repo_root=repo_root,
+        ),
+        repo_root=repo_root,
+    )
+    not_applicable = set(_optional_str_sequence(params.get("not_applicable_components")) or [])
+    components = _feedback_quality_components(plan, params=params, repo_root=repo_root)
+
+    outputs: dict[str, dict[str, Any]] = {}
+    existing_artifacts: list[ExistingAnalysisArtifact] = []
+    artifact_groups: list[AnalysisArtifactGroup] = []
+    for name, component in components.items():
+        output, existing, groups = _feedback_quality_component_output(
+            name,
+            component,
+            include=bool(params.get(f"include_{name}", True)),
+            not_applicable=name in not_applicable,
+            repo_root=repo_root,
+        )
+        outputs[name] = output
+        existing_artifacts.extend(existing)
+        artifact_groups.extend(groups)
+
+    payload = {
+        "schema_id": "rlrmp.feedback_quality_lens",
+        "schema_version": "rlrmp.feedback_quality_lens.v1",
+        "issue": str(params.get("issue", "af77a06")),
+        "scope": "feedback_control_quality_diagnostics",
+        "experiment": experiment,
+        "run_ids": list(run_ids),
+        "labels": _optional_str_sequence(params.get("labels")),
+        "output_tag": output_tag,
+        "checkpoint_policy": plan.checkpoint_policy,
+        "checkpoint_selection_source": plan.checkpoint_selection_source,
+        "selection_leakage_guard": {
+            "status": "audit_only",
+            "primary_checkpoint_selection": plan.checkpoint_selection_source,
+            "feedback_quality_components": sorted(outputs),
+            "note": (
+                "Feedback-control quality diagnostics are audit sidecars; they do "
+                "not silently replace the explicitly selected checkpoints."
+            ),
+        },
+        "outputs": outputs,
+        "bundle_contract": {
+            "primary": "feedbax_analysis_bundle",
+            "bundle": "rlrmp/feedback_quality_lens",
+            "analysis_manifest_id": context.manifest_id,
+            "scientific_schema_owner": "rlrmp",
+            "artifact_custody": "feedbax.AnalysisRunManifest",
+        },
+        "declarative_analysis": _declarative_metadata(context),
+    }
+    return MaterializationResult(
+        payload=payload,
+        existing_artifacts=tuple(existing_artifacts),
+        artifact_groups=tuple(artifact_groups),
+    )
+
+
 def _materialize_output_feedback_rollout_recovery(
     context: AnalysisRunContext,
     params: Mapping[str, Any],
@@ -616,8 +769,7 @@ def _experiment_from_params_or_inputs(
         if metadata_key in metadata:
             return str(metadata[metadata_key])
     raise ValueError(
-        "GRU post-run recipe requires params.experiment or input metadata "
-        f"{metadata_key!r}"
+        f"GRU post-run recipe requires params.experiment or input metadata {metadata_key!r}"
     )
 
 
@@ -673,7 +825,9 @@ def _postrun_existing_artifacts(
     for role, path in direct_paths:
         if path is None:
             continue
-        artifact = _existing_file(path, role=role, logical_name=_legacy_logical_name(path, repo_root))
+        artifact = _existing_file(
+            path, role=role, logical_name=_legacy_logical_name(path, repo_root)
+        )
         if artifact is not None:
             artifacts.append(artifact)
 
@@ -716,6 +870,228 @@ def _postrun_existing_artifacts(
 
 def _legacy_logical_name(path: Path, repo_root: Path) -> str:
     return f"legacy/{_repo_relative(path, repo_root=repo_root)}"
+
+
+def _feedback_quality_components(
+    plan: Any,
+    *,
+    params: Mapping[str, Any],
+    repo_root: Path,
+) -> dict[str, dict[str, Any]]:
+    notes_dir = repo_root / "results" / plan.experiment / "notes"
+    artifact_dir = repo_root / "_artifacts" / plan.experiment
+    response_norm_topic = str(
+        params.get("response_norm_plots_topic", f"perturbation_response_norms_{plan.output_tag}")
+    )
+    return {
+        "evaluation_diagnostics": {
+            "schema_kind": "RLRMPGRUEvaluationDiagnosticsManifest",
+            "tracked": (
+                _optional_path(
+                    params.get("evaluation_diagnostics_manifest_path"),
+                    repo_root=repo_root,
+                )
+                or plan.evaluation_manifest_path,
+                "rlrmp-feedback-quality-evaluation-diagnostics-manifest",
+            ),
+            "groups": (
+                (
+                    _optional_path(
+                        params.get("evaluation_diagnostics_bulk_dir"),
+                        repo_root=repo_root,
+                    )
+                    or plan.evaluation_bulk_dir,
+                    "rlrmp-feedback-quality-evaluation-diagnostics-bulk",
+                    "feedback_quality_evaluation_diagnostics_bulk",
+                    "rollout_arrays",
+                ),
+            ),
+        },
+        "objective_comparator": {
+            "schema_kind": "RLRMPObjectiveComparatorSidecar",
+            "tracked": (
+                _optional_path(
+                    params.get("objective_comparator_manifest_path"),
+                    repo_root=repo_root,
+                )
+                or plan.objective_comparator_json_path,
+                "rlrmp-feedback-quality-objective-comparator-manifest",
+            ),
+            "notes": (
+                _optional_path(params.get("objective_comparator_note_path"), repo_root=repo_root)
+                or plan.objective_comparator_note_path,
+                "rlrmp-feedback-quality-objective-comparator-note",
+            ),
+        },
+        "perturbation_response": {
+            "schema_kind": "RLRMPGRUPerturbationBank",
+            "tracked": (
+                _optional_path(
+                    params.get("perturbation_response_manifest_path"),
+                    repo_root=repo_root,
+                )
+                or plan.perturbation_response_json_path,
+                "rlrmp-feedback-quality-perturbation-response-manifest",
+            ),
+            "notes": (
+                _optional_path(params.get("perturbation_response_note_path"), repo_root=repo_root)
+                or plan.perturbation_response_note_path,
+                "rlrmp-feedback-quality-perturbation-response-note",
+            ),
+            "groups": (
+                (
+                    _optional_path(
+                        params.get("perturbation_response_bulk_dir"), repo_root=repo_root
+                    )
+                    or plan.perturbation_response_bulk_dir,
+                    "rlrmp-feedback-quality-perturbation-response-bulk",
+                    "feedback_quality_perturbation_response_bulk",
+                    "perturbation_arrays",
+                ),
+            ),
+        },
+        "feedback_ablation": {
+            "schema_kind": "RLRMPGRUFeedbackAblation",
+            "tracked": (
+                _optional_path(params.get("feedback_ablation_manifest_path"), repo_root=repo_root)
+                or plan.feedback_ablation_json_path,
+                "rlrmp-feedback-quality-feedback-ablation-manifest",
+            ),
+            "notes": (
+                _optional_path(params.get("feedback_ablation_note_path"), repo_root=repo_root)
+                or plan.feedback_ablation_note_path,
+                "rlrmp-feedback-quality-feedback-ablation-note",
+            ),
+        },
+        "response_norm_plots": {
+            "schema_kind": "RLRMPGRUPerturbationResponseNormPlots",
+            "tracked": (
+                _optional_path(params.get("response_norm_plots_manifest_path"), repo_root=repo_root)
+                or notes_dir
+                / f"gru_perturbation_response_norm_plots_{plan.output_tag}_manifest.json",
+                "rlrmp-feedback-quality-response-norm-plots-manifest",
+            ),
+            "notes": (
+                _optional_path(params.get("response_norm_plots_note_path"), repo_root=repo_root)
+                or notes_dir / f"gru_perturbation_response_norm_plots_{plan.output_tag}.md",
+                "rlrmp-feedback-quality-response-norm-plots-note",
+            ),
+            "groups": (
+                (
+                    _optional_path(
+                        params.get("response_norm_plots_figure_dir"), repo_root=repo_root
+                    )
+                    or artifact_dir / "figures" / response_norm_topic,
+                    "rlrmp-feedback-quality-response-norm-figure",
+                    "feedback_quality_response_norm_figures",
+                    "plotly_html",
+                ),
+            ),
+        },
+        "perturbation_calibration": {
+            "schema_kind": "RLRMPPerturbationOpenLoopCalibration",
+            "tracked": (
+                _optional_path(
+                    params.get("perturbation_calibration_manifest_path"),
+                    repo_root=repo_root,
+                )
+                or artifact_dir
+                / "perturbation_open_loop_calibration"
+                / "perturbation_open_loop_calibration.json",
+                "rlrmp-feedback-quality-perturbation-calibration-manifest",
+            ),
+            "notes": (
+                _optional_path(
+                    params.get("perturbation_calibration_note_path"), repo_root=repo_root
+                )
+                or notes_dir / "perturbation_open_loop_calibration.md",
+                "rlrmp-feedback-quality-perturbation-calibration-note",
+            ),
+            "groups": (
+                (
+                    _optional_path(
+                        params.get("perturbation_calibration_bulk_dir"),
+                        repo_root=repo_root,
+                    )
+                    or artifact_dir / "perturbation_open_loop_calibration",
+                    "rlrmp-feedback-quality-perturbation-calibration-bulk",
+                    "feedback_quality_perturbation_calibration_bulk",
+                    "calibration_payload",
+                ),
+            ),
+        },
+    }
+
+
+def _feedback_quality_component_output(
+    name: str,
+    component: Mapping[str, Any],
+    *,
+    include: bool,
+    not_applicable: bool,
+    repo_root: Path,
+) -> tuple[dict[str, Any], tuple[ExistingAnalysisArtifact, ...], tuple[AnalysisArtifactGroup, ...]]:
+    paths = _component_paths(component)
+    payload = {
+        "status": "unavailable",
+        "schema_kind": component["schema_kind"],
+        "paths": {key: _repo_relative(path, repo_root=repo_root) for key, path in paths.items()},
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+    }
+    if not include:
+        payload["status"] = "skipped"
+        payload["reason"] = "component disabled by feedback-quality lens params"
+        return payload, (), ()
+    if not_applicable:
+        payload["status"] = "not_applicable"
+        payload["reason"] = "component is not meaningful for this manifest set"
+        return payload, (), ()
+
+    existing: list[ExistingAnalysisArtifact] = []
+    for key, value in component.items():
+        if key not in {"tracked", "notes"}:
+            continue
+        path, role = value
+        artifact = _existing_file(
+            path,
+            role=role,
+            logical_name=_legacy_logical_name(path, repo_root),
+        )
+        if artifact is not None:
+            existing.append(artifact)
+
+    groups: list[AnalysisArtifactGroup] = []
+    for directory, role, group_id, member_role in component.get("groups", ()):
+        groups.extend(
+            _directory_artifact_group(
+                directory,
+                role=role,
+                group_id=group_id,
+                member_role=member_role,
+                repo_root=repo_root,
+            )
+        )
+
+    if existing or groups:
+        payload["status"] = "materialized"
+        payload["artifact_roles"] = [artifact.role for artifact in existing] + [
+            member.role for group in groups for member in group.members
+        ]
+        payload["artifact_group_ids"] = [group.group_id for group in groups]
+    else:
+        payload["reason"] = f"{name} outputs were not found at configured paths"
+    return payload, tuple(existing), tuple(groups)
+
+
+def _component_paths(component: Mapping[str, Any]) -> dict[str, Path]:
+    paths: dict[str, Path] = {}
+    for key, value in component.items():
+        if key in {"tracked", "notes"}:
+            paths[key] = value[0]
+        elif key == "groups":
+            for index, group in enumerate(value):
+                paths[f"group_{index}"] = group[0]
+    return paths
 
 
 def _bulk_artifact_groups(
@@ -785,6 +1161,38 @@ def _single_file_artifact_group(
     )
 
 
+def _directory_artifact_group(
+    path: Path,
+    *,
+    role: str,
+    group_id: str,
+    member_role: str,
+    repo_root: Path,
+) -> tuple[AnalysisArtifactGroup, ...]:
+    if not path.exists():
+        return ()
+    files = sorted(item for item in path.rglob("*") if item.is_file())
+    if not files:
+        return ()
+    members = tuple(
+        AnalysisArtifactFile(
+            path=item,
+            role=role,
+            logical_name=_repo_relative(item, repo_root=repo_root),
+            metadata={"repo_relative_path": _repo_relative(item, repo_root=repo_root)},
+            group_role=member_role,
+        )
+        for item in files
+    )
+    return (
+        AnalysisArtifactGroup(
+            group_id=group_id,
+            members=members,
+            metadata={"schema_boundary": "rlrmp-owned feedback-quality diagnostic payload"},
+        ),
+    )
+
+
 def _read_json_payload(path: Path) -> dict[str, Any]:
     import json
 
@@ -813,10 +1221,13 @@ def _set_optional_path_param(
 
 __all__ = [
     "BRIDGE_STANDARD_ANALYSIS_TYPE",
+    "FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE",
     "GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE",
     "GRU_POSTRUN_ANALYSIS_TYPE",
     "GRU_STANDARD_ANALYSIS_TYPE",
     "OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE",
+    "feedback_quality_lens_recipe",
+    "feedback_quality_lens_spec",
     "gru_evaluation_diagnostics_spec",
     "gru_evaluation_diagnostics_recipe",
     "gru_postrun_recipe",

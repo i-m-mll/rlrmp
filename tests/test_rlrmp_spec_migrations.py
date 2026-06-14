@@ -12,6 +12,9 @@ from rlrmp.spec_migrations import (
     CS_GRU_STANDARD_CERTIFICATES_KIND,
     CS_GRU_STANDARD_CERTIFICATES_SCHEMA_ID,
     CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION,
+    FEEDBACK_QUALITY_LENS_KIND,
+    FEEDBACK_QUALITY_LENS_SCHEMA_ID,
+    FEEDBACK_QUALITY_LENS_SCHEMA_VERSION,
     GRU_BROAD_EPSILON_ATTRIBUTION_KIND,
     GRU_BROAD_EPSILON_ATTRIBUTION_SCHEMA_ID,
     GRU_BROAD_EPSILON_ATTRIBUTION_SCHEMA_VERSION,
@@ -73,10 +76,7 @@ def test_rlrmp_spec_policy_registers_current_families_and_rejects_v0() -> None:
         OBJECTIVE_COMPARATOR_SIDECAR_KIND: (
             OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_ID,
             OBJECTIVE_COMPARATOR_SIDECAR_SCHEMA_VERSION,
-            tuple(
-                f"rlrmp.objective_comparator_sidecar.v{version}"
-                for version in range(0, 6)
-            ),
+            tuple(f"rlrmp.objective_comparator_sidecar.v{version}" for version in range(0, 6)),
         ),
         GRU_PERTURBATION_BANK_KIND: (
             GRU_PERTURBATION_BANK_SCHEMA_ID,
@@ -124,6 +124,11 @@ def test_rlrmp_spec_policy_registers_current_families_and_rejects_v0() -> None:
             GRU_FEEDBACK_ABLATION_SCHEMA_ID,
             GRU_FEEDBACK_ABLATION_SCHEMA_VERSION,
             ("rlrmp.gru_feedback_ablation.v0",),
+        ),
+        FEEDBACK_QUALITY_LENS_KIND: (
+            FEEDBACK_QUALITY_LENS_SCHEMA_ID,
+            FEEDBACK_QUALITY_LENS_SCHEMA_VERSION,
+            ("rlrmp.feedback_quality_lens.v0",),
         ),
         RUN_SPEC_KIND: (
             RUN_SPEC_SCHEMA_ID,
@@ -314,6 +319,18 @@ def test_representative_analysis_sidecar_payloads_are_accepted() -> None:
                 "schema_version": GRU_PERTURBATION_RESPONSE_NORM_PLOTS_SCHEMA_VERSION,
                 "source_manifest": "results/unit/manifest.json",
                 "figures": [],
+            },
+        ),
+        FEEDBACK_QUALITY_LENS_KIND: (
+            FEEDBACK_QUALITY_LENS_SCHEMA_ID,
+            FEEDBACK_QUALITY_LENS_SCHEMA_VERSION,
+            {
+                "schema_version": FEEDBACK_QUALITY_LENS_SCHEMA_VERSION,
+                "scope": "feedback_control_quality_diagnostics",
+                "outputs": {
+                    "perturbation_response": {"status": "materialized"},
+                    "feedback_ablation": {"status": "not_applicable"},
+                },
             },
         ),
     }

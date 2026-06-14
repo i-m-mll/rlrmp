@@ -8,10 +8,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 import rlrmp
-from feedbax.analysis.bundles import load_analysis_bundle
+from feedbax.analysis.bundles import execute_analysis_bundle, load_analysis_bundle
 from feedbax.analysis.materialization import ContextMaterializer
 from feedbax.analysis.specs import execute_analysis_run_spec, unregister_analysis_recipe
-from feedbax.manifest import AnalysisRunSpec, load_manifest
+from feedbax.manifest import AnalysisRunSpec, TrainingRunManifest, load_manifest, write_manifest
 from feedbax.plugins.registry import ExperimentRegistry
 
 from rlrmp.analysis import declarative_materialization as dm
@@ -24,6 +24,7 @@ def _artifact_roles(manifest) -> set[str]:
 def _unregister_declarative_recipes() -> None:
     unregister_analysis_recipe(dm.GRU_STANDARD_ANALYSIS_TYPE)
     unregister_analysis_recipe(dm.GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE)
+    unregister_analysis_recipe(dm.FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE)
     unregister_analysis_recipe(dm.OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE)
 
 
@@ -49,10 +50,19 @@ def test_declarative_recipes_use_feedbax_context_materializers() -> None:
 
     assert isinstance(standard.analyses["gru_standard_certificate"], ContextMaterializer)
     assert isinstance(evaluation.analyses["gru_evaluation_diagnostics"], ContextMaterializer)
+    feedback_quality = dm.feedback_quality_lens_recipe(
+        dm.feedback_quality_lens_spec(
+            experiment="unitexp",
+            run_ids=["unit_run"],
+        ),
+        Path("."),
+        (),
+    )
     assert isinstance(
         rollout_recovery.analyses["output_feedback_rollout_recovery"],
         ContextMaterializer,
     )
+    assert isinstance(feedback_quality.analyses["feedback_quality_lens"], ContextMaterializer)
 
 
 def test_output_feedback_bridge_bundle_resource_loads() -> None:
@@ -65,6 +75,176 @@ def test_output_feedback_bridge_bundle_resource_loads() -> None:
     assert bundle.metadata["bundle_family"] == "rlrmp/output_feedback_bridge"
     assert bundle.templates[0].analysis_type == dm.OUTPUT_FEEDBACK_ROLLOUT_RECOVERY_ANALYSIS_TYPE
     assert bundle.templates[0].requested_outputs == ["output_feedback_rollout_recovery"]
+
+
+def test_feedback_quality_lens_bundle_resource_loads() -> None:
+    registry = ExperimentRegistry()
+    rlrmp.register_experiment_package(registry)
+
+    bundle = load_analysis_bundle("rlrmp/feedback_quality_lens", registry=registry)
+
+    assert bundle.name == "feedback_quality_lens"
+    assert bundle.metadata["bundle_family"] == "rlrmp/feedback_quality_lens"
+    assert bundle.templates[0].analysis_type == dm.FEEDBACK_QUALITY_LENS_ANALYSIS_TYPE
+    assert bundle.templates[0].requested_outputs == ["feedback_quality_lens"]
+
+
+def test_feedback_quality_lens_bundle_executes_fixture_and_groups_artifacts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = ExperimentRegistry()
+    rlrmp.register_experiment_package(registry)
+    bundle = load_analysis_bundle("rlrmp/feedback_quality_lens", registry=registry)
+    repo_root = tmp_path / "repo"
+    feedbax_root = tmp_path / "feedbax_runs"
+    run_id = "rlrmp-test-training-run:feedback-quality"
+    run_manifest = TrainingRunManifest(
+        id=run_id,
+        job_id="feedback-quality-fixture",
+        status="completed",
+        metadata={
+            "feedback_quality_candidate": True,
+            "rlrmp_experiment": "5f70333",
+        },
+    )
+    write_manifest(run_manifest, root=feedbax_root, index=False)
+    monkeypatch.setattr(dm, "REPO_ROOT", repo_root)
+
+    plan = dm.plan_gru_postrun_materialization(
+        experiment="5f70333",
+        run_ids=(run_id,),
+        repo_root=repo_root,
+    )
+    for path, payload in (
+        (
+            plan.evaluation_manifest_path,
+            {"schema_version": "rlrmp.gru_evaluation_diagnostics.v1", "runs": {}},
+        ),
+        (
+            plan.perturbation_response_json_path,
+            {"schema_version": "rlrmp.gru_perturbation_bank.v3", "runs": {}},
+        ),
+        (
+            plan.feedback_ablation_json_path,
+            {"schema_version": "rlrmp.gru_feedback_ablation.v1", "rows": []},
+        ),
+        (
+            plan.objective_comparator_json_path,
+            {"schema_version": "rlrmp.objective_comparator_sidecar.v6", "rows": []},
+        ),
+    ):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+    for path in (
+        plan.perturbation_response_note_path,
+        plan.feedback_ablation_note_path,
+        plan.objective_comparator_note_path,
+    ):
+        path.write_text("# fixture\n", encoding="utf-8")
+
+    plan.evaluation_bulk_dir.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(plan.evaluation_bulk_dir / "unit_rollout.npz", x=np.ones((1,)))
+    plan.perturbation_response_bulk_dir.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        plan.perturbation_response_bulk_dir / "unit_perturbation.npz", x=np.ones((1,))
+    )
+    norm_manifest = (
+        repo_root
+        / "results"
+        / "5f70333"
+        / "notes"
+        / "gru_perturbation_response_norm_plots_validation_selected_manifest.json"
+    )
+    norm_manifest.write_text(
+        json.dumps({"schema_version": "rlrmp.gru_perturbation_response_norm_plots.v1"}) + "\n",
+        encoding="utf-8",
+    )
+    norm_note = norm_manifest.with_name(
+        "gru_perturbation_response_norm_plots_validation_selected.md"
+    )
+    norm_note.write_text("# norm plots\n", encoding="utf-8")
+    norm_fig_dir = (
+        repo_root
+        / "_artifacts"
+        / "5f70333"
+        / "figures"
+        / ("perturbation_response_norms_validation_selected")
+    )
+    norm_fig_dir.mkdir(parents=True, exist_ok=True)
+    (norm_fig_dir / "figure.html").write_text("<html></html>\n", encoding="utf-8")
+
+    outputs = execute_analysis_bundle(
+        bundle,
+        root=feedbax_root,
+        run_ids=[run_id],
+        issues=["af77a06"],
+        fig_dump_formats=("json",),
+    )
+
+    assert len(outputs) == 1
+    _expansion, manifest, manifest_path = outputs[0]
+    assert manifest_path.exists()
+    assert manifest.status == "completed"
+    assert manifest.provenance.issues == ["af77a06"]
+    roles = _artifact_roles(manifest)
+    assert "rlrmp-feedback-quality-lens" in roles
+    assert "rlrmp-feedback-quality-perturbation-response-bulk" in roles
+    assert "rlrmp-feedback-quality-response-norm-figure" in roles
+    assert "rlrmp-feedback-quality-perturbation-calibration-manifest" not in roles
+
+    payload_ref = next(
+        artifact
+        for artifact in manifest.artifacts
+        if artifact.role == "rlrmp-feedback-quality-lens"
+    )
+    payload = json.loads(Path(payload_ref.uri).read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "rlrmp.feedback_quality_lens.v1"
+    assert payload["bundle_contract"]["artifact_custody"] == "feedbax.AnalysisRunManifest"
+    assert payload["outputs"]["perturbation_response"]["status"] == "materialized"
+    assert payload["outputs"]["response_norm_plots"]["status"] == "materialized"
+    assert payload["outputs"]["perturbation_calibration"]["status"] == "unavailable"
+    assert (
+        "feedback_quality_perturbation_response_bulk"
+        in payload["outputs"]["perturbation_response"]["artifact_group_ids"]
+    )
+    bulk_artifact = next(
+        artifact
+        for artifact in manifest.artifacts
+        if artifact.role == "rlrmp-feedback-quality-perturbation-response-bulk"
+    )
+    assert bulk_artifact.metadata["artifact_group"]["id"] == (
+        "feedback_quality_perturbation_response_bulk"
+    )
+    assert load_manifest(manifest_path).id == manifest.id
+
+
+def test_feedback_quality_lens_records_skipped_and_not_applicable_status(
+    tmp_path: Path,
+) -> None:
+    dm.register_certificate_analysis_recipes(replace=True)
+    try:
+        spec = dm.feedback_quality_lens_spec(
+            experiment="unitexp",
+            run_ids=["unit_run"],
+            include_feedback_ablation=False,
+            not_applicable_components=["perturbation_calibration"],
+            repo_root=tmp_path / "repo",
+        )
+
+        manifest, _path = execute_analysis_run_spec(spec, root=tmp_path, issues=["af77a06"])
+
+        payload_ref = next(
+            artifact
+            for artifact in manifest.artifacts
+            if artifact.role == "rlrmp-feedback-quality-lens"
+        )
+        payload = json.loads(Path(payload_ref.uri).read_text(encoding="utf-8"))
+        assert payload["outputs"]["feedback_ablation"]["status"] == "skipped"
+        assert payload["outputs"]["perturbation_calibration"]["status"] == "not_applicable"
+        assert payload["outputs"]["evaluation_diagnostics"]["status"] == "unavailable"
+    finally:
+        _unregister_declarative_recipes()
 
 
 def test_gru_standard_recipe_records_opaque_certificate_payload(
@@ -224,11 +404,7 @@ def test_output_feedback_rollout_recovery_recipe_records_manifest_and_bulk_group
     note_output = repo_root / "results" / "7a459bb" / "notes" / "rollout.md"
     manifest_output = repo_root / "results" / "7a459bb" / "notes" / "rollout_manifest.json"
     artifact_output = (
-        repo_root
-        / "_artifacts"
-        / "7a459bb"
-        / "output_feedback_rollout_recovery"
-        / "rollout.npz"
+        repo_root / "_artifacts" / "7a459bb" / "output_feedback_rollout_recovery" / "rollout.npz"
     )
 
     def fake_write_outputs(**kwargs):
