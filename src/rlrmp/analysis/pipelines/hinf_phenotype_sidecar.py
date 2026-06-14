@@ -33,6 +33,8 @@ DEFAULT_SOURCE_NAMES = (
     "evaluation_diagnostics",
     "induced_gain",
     "exact_audit",
+    "worst_case_epsilon_audit",
+    "broad_epsilon_attribution",
 )
 
 FORMAL_HINF_REQUIREMENTS = (

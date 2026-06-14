@@ -1,0 +1,70 @@
+schema_id: feedbax.spec.analysis_bundle
+schema_version: feedbax.spec.analysis_bundle.v2
+name: robustness_phenotype
+description: Interpretive robustness phenotype sidecars with Feedbax manifest custody.
+predicate:
+  manifest_kind: AnalysisRunManifest
+  metadata_equals:
+    bundle.name: gru_postrun
+metadata:
+  package: rlrmp
+  bundle_family: rlrmp/robustness_phenotype
+  issue: 769aea6
+  primary_contract: feedbax_analysis_bundle
+  scientific_schema_owner: rlrmp
+  interpretation_contract:
+    formal_hinf_claim_policy: conservative_no_upgrade_without_formal_inputs
+    phenotype_aggregation_is_not_formal_proof: true
+  source_artifact_roles:
+    standard_certificate: rlrmp-gru-standard-certificate-manifest
+    objective_comparator: rlrmp-gru-objective-comparator-manifest
+    perturbation_response: rlrmp-gru-perturbation-response-manifest
+    feedback_ablation: rlrmp-gru-feedback-ablation-manifest
+    map_error_decomposition: rlrmp-gru-map-decomposition-manifest
+    evaluation_diagnostics: rlrmp-gru-evaluation-diagnostics-manifest
+    worst_case_epsilon_audit: rlrmp-gru-worst-case-epsilon-audit-manifest
+    broad_epsilon_attribution: rlrmp-gru-broad-epsilon-attribution-manifest
+    induced_gain: rlrmp-induced-gain-manifest
+    exact_audit: rlrmp-exact-audit-manifest
+  output_conventions:
+    tracked_notes: results/769aea6/notes
+    bulk_artifacts: none
+stages:
+  - name: phenotype_sidecar
+    kind: analysis
+    mode: grouped
+    analysis_type: rlrmp.robustness_phenotype
+    requested_outputs: [robustness_phenotype]
+    params:
+      issue_id: 769aea6
+      scope: validation_selected_gru_robustness_phenotype
+      output_json: results/769aea6/notes/hinf_phenotype_sidecar.json
+      output_markdown: results/769aea6/notes/hinf_phenotype_sidecar.md
+      regeneration_spec_path: results/769aea6/notes/hinf_phenotype_sidecar_regeneration_spec.json
+    outputs:
+      - role: manifest
+        required: true
+      - role: rlrmp-robustness-phenotype-sidecar
+        required: true
+      - role: rlrmp-robustness-phenotype-sidecar-json
+        required: true
+      - role: rlrmp-robustness-phenotype-sidecar-note
+        required: true
+      - role: rlrmp-robustness-phenotype-regeneration-spec
+        required: true
+      - role: rlrmp-formal-hinf-certificate
+        required: false
+  - name: formal_hinf_certificate
+    kind: materialization
+    depends_on: [phenotype_sidecar]
+    outputs:
+      - role: rlrmp-formal-hinf-certificate
+        required: false
+    not_applicable_reason: "Phenotype aggregation is interpretive only; formal H-infinity certificates require separate formal inputs."
+  - name: historical_script_entrypoint
+    kind: materialization
+    depends_on: [phenotype_sidecar]
+    outputs:
+      - role: rlrmp-hinf-phenotype-historical-script
+        required: false
+    skip_reason: "Historical script remains compatibility-only once the Feedbax bundle owns the run contract."
