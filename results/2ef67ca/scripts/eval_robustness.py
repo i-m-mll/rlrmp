@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 """Robustness evaluation and publication-quality figure generation for Part 2.5.
 
 Loads trained models from results/2ef67ca/models/, evaluates under fixed gust
@@ -12,7 +13,7 @@ Figures produced:
     fig6_all_loss_curves.html       — Loss curves for all conditions (grid of subplots)
 
 Usage:
-    python scripts/eval_robustness.py
+    uv run python results/2ef67ca/scripts/eval_robustness.py
 """
 
 import warnings
@@ -49,12 +50,12 @@ from rlrmp.eval import (
 from rlrmp.train.standard import build_hps
 from rlrmp.train.task_model import setup_task_model_pair
 
-WORKTREE = Path(__file__).parent.parent
+RESULTS_BASE = Path(__file__).resolve().parent.parent  # legacy Part 2.5 archive (Bug: f485c26)
+WORKTREE = RESULTS_BASE.parent.parent
 # ---------------------------------------------------------------------------
 # Experiment configuration
 # ---------------------------------------------------------------------------
 
-RESULTS_BASE = WORKTREE / "results" / "2ef67ca"  # legacy Part 2.5 archive (Bug: f485c26)
 MODELS_BASE = RESULTS_BASE / "models"
 FIGURES_DIR = RESULTS_BASE / "figures"
 
@@ -95,8 +96,10 @@ def load_condition(display_name: str, model_dir_name: str):
     """
     cond_dir = MODELS_BASE / model_dir_name
     config_path = cond_dir / "config.json"
-    if not config_path.exists():
-        print(f"  {display_name}: skipped — not found at {cond_dir}")
+    model_path = cond_dir / "trained_model.eqx"
+    history_path = cond_dir / "train_history.eqx"
+    if not config_path.exists() or not model_path.exists() or not history_path.exists():
+        print(f"  {display_name}: skipped — missing archived weights/history at {cond_dir}")
         return None
 
     with open(config_path) as f:
@@ -115,7 +118,6 @@ def load_condition(display_name: str, model_dir_name: str):
         n_replicates=N_REPLICATES,
         ensembled=True,
     )
-    history_path = cond_dir / "train_history.eqx"
     with open(history_path, "rb") as f:
         f.readline()  # skip hyperparameters line
         # The file was saved with only multi-element JAX arrays (training curves), not the
@@ -143,7 +145,7 @@ def load_condition(display_name: str, model_dir_name: str):
         )
 
     trained_model, _ = load_with_hyperparameters(
-        cond_dir / "trained_model.eqx",
+        model_path,
         setup_func=lambda key, **kwargs: setup_task_model_pair(hps, key=key).model,
     )
 
@@ -163,7 +165,6 @@ def get_reach_direction(trial_specs):
         init_pos: (n_trials, 2) starting positions at go cue.
         goal_pos: (n_trials, 2) goal positions.
     """
-    go_idx = trial_specs.timeline.epoch_bounds[:, 2]  # (n_trials,)
     # targets value shape: (n_trials, n_steps, 2)
     target_key = list(trial_specs.targets.keys())[0]
     goal_pos = trial_specs.targets[target_key].value[:, -1, :]  # (n_trials, 2)

@@ -62,6 +62,11 @@ from rlrmp.analysis.pipelines.standard_certificate_materialization import (
     repo_relative,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.spec_migrations import (
+    CS_GRU_STANDARD_CERTIFICATES_KIND,
+    CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION,
+    stamp_current_schema,
+)
 from rlrmp.stochastic_runtime import (
     PLANT_PROCESS_FORCE_NOISE_LABEL,
     add_plant_process_force_noise,
@@ -70,6 +75,7 @@ from rlrmp.train.task_model import setup_task_model_pair
 
 MATERIALIZER_ISSUE_ID = "e6a32b8"
 SOURCE_ISSUE_ID = "30f2313"
+SCHEMA_VERSION = CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION
 RUN_IDS = (
     "cs_stochastic_gru__no_hidden_penalty",
     "cs_stochastic_gru__hidden_penalty",
@@ -127,7 +133,6 @@ def materialize_gru_standard_result(
             repo_root=repo_root,
         )
     result_run_root = repo_root / "results" / experiment / "runs"
-    artifact_run_root = repo_root / "_artifacts" / experiment / "runs"
     rows = [
         materialize_gru_standard_row(
             run_id,
@@ -166,39 +171,42 @@ def materialize_gru_standard_result(
             else "final_checkpoint"
         )
     )
-    return {
-        "format": "rlrmp.cs_gru_standard_certificates.v1",
-        "issue": materializer_issue_id,
-        "source_issue": experiment,
-        "checkpoint_policy": effective_checkpoint_policy,
-        "source_manifests": {
-            run_id: repo_relative(result_run_root / run_id / "run.json", repo_root=repo_root)
-            for run_id in run_ids
+    return stamp_current_schema(
+        CS_GRU_STANDARD_CERTIFICATES_KIND,
+        {
+            "format": SCHEMA_VERSION,
+            "issue": materializer_issue_id,
+            "source_issue": experiment,
+            "checkpoint_policy": effective_checkpoint_policy,
+            "source_manifests": {
+                run_id: repo_relative(result_run_root / run_id / "run.json", repo_root=repo_root)
+                for run_id in run_ids
+            },
+            "source_artifacts": {
+                run_id: repo_relative(
+                    _default_model_path(run_id, experiment=experiment, repo_root=repo_root),
+                    repo_root=repo_root,
+                )
+                for run_id in run_ids
+            },
+            "checkpoint_selection": selection_manifest,
+            "summary": materialization_summary(rows)
+            | {
+                "failure_classification_counts": _classification_counts(failure_rows),
+                "blockers": blockers,
+            },
+            "scope": (
+                f"C&S stochastic GRU pilot rows from `{experiment}`. The "
+                "standard certificate is materialized in empirical_nonlinear mode: "
+                "clean rollout action behavior is available, same-coordinate "
+                "transition/value/Bellman components are not applicable, and response "
+                "map rows remain missing until the observation projection contract is "
+                "defined."
+            ),
+            "rows": row_dicts,
+            "failure_decomposition": {"rows": failure_rows},
         },
-        "source_artifacts": {
-            run_id: repo_relative(
-                _default_model_path(run_id, experiment=experiment, repo_root=repo_root),
-                repo_root=repo_root,
-            )
-            for run_id in run_ids
-        },
-        "checkpoint_selection": selection_manifest,
-        "summary": materialization_summary(rows)
-        | {
-            "failure_classification_counts": _classification_counts(failure_rows),
-            "blockers": blockers,
-        },
-        "scope": (
-            f"C&S stochastic GRU pilot rows from `{experiment}`. The "
-            "standard certificate is materialized in empirical_nonlinear mode: "
-            "clean rollout action behavior is available, same-coordinate "
-            "transition/value/Bellman components are not applicable, and response "
-            "map rows remain missing until the observation projection contract is "
-            "defined."
-        ),
-        "rows": row_dicts,
-        "failure_decomposition": {"rows": failure_rows},
-    }
+    )
 
 
 def materialize_gru_standard_row(

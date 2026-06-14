@@ -569,7 +569,7 @@ def test_setup_task_model_pair_materializes_gru_and_linear_graph_paths() -> None
 @pytest.mark.parametrize(
     ("hidden_type", "expected_net"),
     [
-        ("gru", "RLRMPSimpleStagedNetwork"),
+        ("gru", "Subgraph"),
         ("linear", "RLRMPLinearController"),
     ],
 )
@@ -597,7 +597,13 @@ def test_runtime_graph_bundle_exports_constructed_model_intervenor(
     assert bundle.graph_spec.nodes[PLANT_INTERVENOR_LABEL].type == expected_intervenor
     assert isinstance(pair.model.nodes[PLANT_INTERVENOR_LABEL], expected_class)
     assert isinstance(graph.nodes[PLANT_INTERVENOR_LABEL], expected_class)
-    assert bundle.graph_spec.nodes["net"].type == expected_net
+    if hidden_type == "gru":
+        assert bundle.graph_spec.nodes["net_input_mux"].type == "Mux"
+        assert bundle.graph_spec.nodes["net_cell"].type == "GRU"
+        assert bundle.graph_spec.nodes["net_readout"].type == "Linear"
+        assert graph.nodes["net_cell"].__class__.__name__ == "GRU"
+    else:
+        assert bundle.graph_spec.nodes["net"].type == expected_net
     assert bundle.graph_spec.nodes["mechanics"].params["damping"] == hps.model.damping
     assert bundle.graph_spec.nodes["feedback"].params["delay"] == hps.model.feedback_delay_steps
     assert bundle.graph_spec.nodes["efferent"].type == "Channel"

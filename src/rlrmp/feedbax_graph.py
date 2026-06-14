@@ -989,10 +989,7 @@ def _cs_lss_runtime_component_spec(component: Any) -> ComponentSpec | None:
     from rlrmp.cs_lss_gru import (
         CS_FORCE_DIM,
         CS_LSS_INITIAL_HIDDEN_NET_COMPONENT,
-        DelayedPositionVelocityFeedback,
         InitialHiddenStagedNetwork,
-        TargetRelativeDelayedFeedback,
-        TargetRelativeDelayedProprioceptiveFeedback,
     )
 
     if isinstance(component, LinearStateSpace):
@@ -1009,21 +1006,6 @@ def _cs_lss_runtime_component_spec(component: Any) -> ComponentSpec | None:
             },
             input_ports=list(component.input_ports),
             output_ports=list(component.output_ports),
-        )
-    if isinstance(component, TargetRelativeDelayedProprioceptiveFeedback):
-        return _cs_lss_feedback_component_spec(
-            component,
-            target_relative=True,
-        )
-    if isinstance(component, TargetRelativeDelayedFeedback):
-        return _cs_lss_feedback_component_spec(
-            component,
-            target_relative=True,
-        )
-    if isinstance(component, DelayedPositionVelocityFeedback):
-        return _cs_lss_feedback_component_spec(
-            component,
-            target_relative=False,
         )
     if isinstance(component, InitialHiddenStagedNetwork):
         params = _cs_lss_simple_staged_network_params(component.net)
@@ -1050,24 +1032,6 @@ def _cs_lss_runtime_component_spec(component: Any) -> ComponentSpec | None:
             output_ports=list(component.output_ports),
         )
     return None
-
-
-def _cs_lss_feedback_component_spec(component: Any, *, target_relative: bool) -> ComponentSpec:
-    from rlrmp.cs_lss_gru import (
-        FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
-        _state_feedback_selector_params,
-    )
-
-    return ComponentSpec(
-        type=FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT,
-        params=_state_feedback_selector_params(
-            indices=tuple(int(index) for index in component.indices),
-            expected_state_dim=int(component.expected_state_dim),
-            target_relative=target_relative,
-        ),
-        input_ports=list(component.input_ports),
-        output_ports=list(component.output_ports),
-    )
 
 
 def _cs_lss_simple_staged_network_params(component: SimpleStagedNetwork) -> dict[str, Any]:

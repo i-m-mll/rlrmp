@@ -27,7 +27,7 @@ from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
 from rlrmp.feedbax_channel_adapters import (
     additive_channel_payload_dim,
     additive_channel_provenance,
-    materialize_additive_channel_adapter_on_graph,
+    materialize_additive_channel_adapters_on_graph,
 )
 
 PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_randomized"
@@ -1552,9 +1552,10 @@ def _epsilon_time_mask(
 def install_perturbation_training_graph_adapters(model: Any) -> Any:
     """Install the fixed external additive channel adapters on a C&S GRU graph."""
 
-    for spec in GRAPH_ADAPTER_SPECS.values():
-        model = materialize_additive_channel_adapter_on_graph(model, spec)
-    return model
+    return materialize_additive_channel_adapters_on_graph(
+        model,
+        tuple(GRAPH_ADAPTER_SPECS.values()),
+    )
 
 
 def apply_training_target_distribution(

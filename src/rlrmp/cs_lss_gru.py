@@ -63,154 +63,24 @@ CS_LSS_TARGET_PROPRIOCEPTIVE_FEEDBACK_COMPONENT = (
 )
 CS_LSS_INITIAL_HIDDEN_NET_COMPONENT = "RLRMPCsLssInitialHiddenStagedNetwork"
 FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT = "StateFeedbackSelector"
-
-
-class DelayedPositionVelocityFeedback(Component):
-    """Select delayed physical position/velocity from the 48D C&S state.
-
-    Inputs:
-        state: C&S delay-augmented state vector, shape ``[48]``.
-
-    Outputs:
-        feedback: Delayed ``[px, py, vx, vy]`` vector, shape ``[4]``.
-    """
-
-    input_ports = ("state",)
-    output_ports = ("feedback",)
-
-    indices: tuple[int, ...] = field(static=True)
-    expected_state_dim: int = field(static=True)
-
-    def __init__(
-        self,
-        indices: tuple[int, ...] = CS_DELAYED_POS_VEL_INDICES,
-        *,
-        expected_state_dim: int = CS_PHYSICAL_STATE_DIM * CS_DELAY_BLOCKS,
-    ):
-        self.indices = tuple(int(index) for index in indices)
-        self.expected_state_dim = int(expected_state_dim)
-        if len(self.indices) != CS_FEEDBACK_DIM:
-            raise ValueError(f"Delayed pos/vel feedback needs 4 indices; got {self.indices}.")
-
-    def __call__(
-        self,
-        inputs: dict[str, PyTree],
-        state: eqx.nn.State,
-        *,
-        key: PRNGKeyArray,
-    ) -> tuple[dict[str, PyTree], eqx.nn.State]:
-        del key
-        vector = jnp.asarray(inputs["state"])
-        if vector.shape[-1] != self.expected_state_dim:
-            raise ValueError(
-                f"Expected a {self.expected_state_dim}D C&S state vector; got shape {vector.shape}."
-            )
-        feedback = vector[jnp.asarray(self.indices, dtype=jnp.int32)]
-        return {"feedback": feedback}, state
-
-
-class TargetRelativeDelayedFeedback(Component):
-    """Return static-target-relative delayed feedback for C&S GRU controllers.
-
-    The sign convention is ``[target_x - delayed_x, target_y - delayed_y,
-    -delayed_vx, -delayed_vy]``. Static targets are task inputs and are not
-    delayed; only the plant feedback is delayed by the C&S 48D state.
-    """
-
-    input_ports = ("state", "target")
-    output_ports = ("feedback",)
-
-    indices: tuple[int, ...] = field(static=True)
-    expected_state_dim: int = field(static=True)
-
-    def __init__(
-        self,
-        indices: tuple[int, ...] = CS_DELAYED_POS_VEL_INDICES,
-        *,
-        expected_state_dim: int = CS_PHYSICAL_STATE_DIM * CS_DELAY_BLOCKS,
-    ):
-        self.indices = tuple(int(index) for index in indices)
-        self.expected_state_dim = int(expected_state_dim)
-        if len(self.indices) != CS_FEEDBACK_DIM:
-            raise ValueError(
-                f"Target-relative delayed feedback needs 4 indices; got {self.indices}."
-            )
-
-    def __call__(
-        self,
-        inputs: dict[str, PyTree],
-        state: eqx.nn.State,
-        *,
-        key: PRNGKeyArray,
-    ) -> tuple[dict[str, PyTree], eqx.nn.State]:
-        del key
-        vector = jnp.asarray(inputs["state"])
-        target = jnp.asarray(inputs["target"])
-        if vector.shape[-1] != self.expected_state_dim:
-            raise ValueError(
-                f"Expected a {self.expected_state_dim}D C&S state vector; got shape {vector.shape}."
-            )
-        if target.shape[-1] != CS_TARGET_DIM:
-            raise ValueError(f"Expected a 2D target vector; got shape {target.shape}.")
-        delayed = jnp.take(vector, jnp.asarray(self.indices, dtype=jnp.int32), axis=-1)
-        target = jnp.broadcast_to(target, delayed[..., :2].shape)
-        feedback = jnp.concatenate([target - delayed[..., :2], -delayed[..., 2:4]], axis=-1)
-        return {"feedback": feedback}, state
-
-
-class TargetRelativeDelayedProprioceptiveFeedback(Component):
-    """Return target-relative delayed pos/vel plus delayed force/filter state.
-
-    The sign convention extends the 4D target-relative contract:
-    ``[target_x - delayed_x, target_y - delayed_y, -delayed_vx, -delayed_vy,
-    delayed_fx, delayed_fy]``. The final two coordinates expose the C&S
-    force/filter state as a proprioceptive analogue without exposing the
-    disturbance-integrator coordinates.
-    """
-
-    input_ports = ("state", "target")
-    output_ports = ("feedback",)
-
-    indices: tuple[int, ...] = field(static=True)
-    expected_state_dim: int = field(static=True)
-
-    def __init__(
-        self,
-        indices: tuple[int, ...] = CS_DELAYED_POS_VEL_FORCE_INDICES,
-        *,
-        expected_state_dim: int = CS_PHYSICAL_STATE_DIM * CS_DELAY_BLOCKS,
-    ):
-        self.indices = tuple(int(index) for index in indices)
-        self.expected_state_dim = int(expected_state_dim)
-        if len(self.indices) != CS_PROPRIOCEPTIVE_FEEDBACK_DIM:
-            raise ValueError(
-                "Target-relative proprioceptive delayed feedback needs 6 indices; "
-                f"got {self.indices}."
-            )
-
-    def __call__(
-        self,
-        inputs: dict[str, PyTree],
-        state: eqx.nn.State,
-        *,
-        key: PRNGKeyArray,
-    ) -> tuple[dict[str, PyTree], eqx.nn.State]:
-        del key
-        vector = jnp.asarray(inputs["state"])
-        target = jnp.asarray(inputs["target"])
-        if vector.shape[-1] != self.expected_state_dim:
-            raise ValueError(
-                f"Expected a {self.expected_state_dim}D C&S state vector; got shape {vector.shape}."
-            )
-        if target.shape[-1] != CS_TARGET_DIM:
-            raise ValueError(f"Expected a 2D target vector; got shape {target.shape}.")
-        delayed = jnp.take(vector, jnp.asarray(self.indices, dtype=jnp.int32), axis=-1)
-        target = jnp.broadcast_to(target, delayed[..., :2].shape)
-        feedback = jnp.concatenate(
-            [target - delayed[..., :2], -delayed[..., 2:4], delayed[..., 4:6]],
-            axis=-1,
-        )
-        return {"feedback": feedback}, state
+CS_LSS_UNSUPPORTED_STOCHASTIC_COMPONENTS = frozenset(
+    {
+        "RLRMPCsLssStateDiffusion",
+        "RLRMPCsLssStateDiffusionNoise",
+        "RLRMPCsLssProcessNoise",
+        "RLRMPCsLssProcessStateNoise",
+    }
+)
+CS_LSS_UNSUPPORTED_LSS_NOISE_PARAMS = frozenset(
+    {
+        "diffusion",
+        "noise_covariance",
+        "process_noise_covariance",
+        "state_diffusion",
+        "state_diffusion_covariance",
+        "state_noise_std",
+    }
+)
 
 
 class InitialHiddenEncoder(Module):
@@ -348,7 +218,6 @@ def register_cs_lss_graph_components(component_registry: Any | None = None) -> A
         output_prototype_fn=_staged_network_output_prototype,
         provenance="rlrmp",
     )
-    _install_cs_lss_registry_output_prototypes(registry)
     register_cs_lss_graph_migration_pack(registry)
     return registry
 
@@ -622,6 +491,7 @@ def materialize_cs_lss_gru_graph_spec(
     """Materialize a CS-LSS GraphSpec and install the CS-LSS runtime hooks."""
 
     registry = register_cs_lss_graph_components(component_registry)
+    _validate_cs_lss_stochastic_contract(graph_spec)
     graph_spec = resolve_registered_graph_component_migrations(graph_spec, registry)
     graph = spec_to_graph(graph_spec, registry)
     return install_cs_lss_gru_runtime_hooks(graph)
@@ -876,6 +746,25 @@ def _migrate_legacy_cs_lss_feedback_params(
     )
 
 
+def _validate_cs_lss_stochastic_contract(graph_spec: GraphSpec) -> None:
+    for node_id, node in graph_spec.nodes.items():
+        if node.type in CS_LSS_UNSUPPORTED_STOCHASTIC_COMPONENTS:
+            raise ValueError(
+                f"Unsupported C&S stochastic component {node.type!r} on node {node_id!r}. "
+                "CS-LSS GraphSpecs must use explicit mechanics.epsilon inputs for exact "
+                "C&S process noise; Feedbax runtime channel noise is only supported on "
+                "sensory and command channels."
+            )
+        if node.type == "LinearStateSpace":
+            unsupported = sorted(CS_LSS_UNSUPPORTED_LSS_NOISE_PARAMS.intersection(node.params))
+            if unsupported:
+                raise ValueError(
+                    f"Unsupported LinearStateSpace stochastic parameter(s) on node {node_id!r}: "
+                    + ", ".join(unsupported)
+                    + ". Use B_w with an explicit epsilon input for exact C&S process noise."
+                )
+
+
 def _build_initial_hidden_staged_network(
     params: dict[str, Any],
 ) -> InitialHiddenStagedNetwork:
@@ -962,26 +851,6 @@ def _population_structure_from_params(params: Any) -> PopulationStructure | None
     )
 
 
-def _install_cs_lss_registry_output_prototypes(registry: Any) -> None:
-    for name, output_prototype_fn in {
-        "Channel": _motor_channel_output_prototype,
-        "RLRMPSimpleStagedNetwork": _staged_network_output_prototype,
-        "LinearStateSpace": _linear_state_space_output_prototype,
-    }.items():
-        meta = registry.get(name)
-        if meta is None:
-            raise ValueError(f"CS-LSS GraphSpec materialization requires registered {name!r}.")
-        meta.output_prototype_fn = output_prototype_fn
-
-
-def _feedback_output_prototype(
-    params: dict[str, Any],
-    inputs: dict[str, Any],
-) -> dict[str, Any]:
-    del inputs
-    return {"feedback": jnp.zeros((int(params["feedback_dim"]),))}
-
-
 def _staged_network_output_prototype(
     params: dict[str, Any],
     inputs: dict[str, Any],
@@ -991,31 +860,6 @@ def _staged_network_output_prototype(
     return {
         "output": jnp.zeros((int(params.get("out_size", CS_FORCE_DIM)),)),
         "hidden": hidden,
-    }
-
-
-def _motor_channel_output_prototype(
-    params: dict[str, Any],
-    inputs: dict[str, Any],
-) -> dict[str, Any]:
-    del inputs
-    return {"output": jnp.zeros(tuple(int(dim) for dim in params.get("input_shape", [2])))}
-
-
-def _linear_state_space_output_prototype(
-    params: dict[str, Any],
-    inputs: dict[str, Any],
-) -> dict[str, Any]:
-    del inputs
-    state_dim = len(params["A"])
-    dtype = jnp.asarray(params["A"]).dtype
-    return {
-        "effector": CartesianState(
-            pos=jnp.zeros((CS_TARGET_DIM,), dtype=dtype),
-            vel=jnp.zeros((CS_TARGET_DIM,), dtype=dtype),
-            force=jnp.zeros((CS_FORCE_DIM,), dtype=dtype),
-        ),
-        "state": jnp.zeros((state_dim,), dtype=dtype),
     }
 
 
