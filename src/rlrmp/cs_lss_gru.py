@@ -36,6 +36,7 @@ from feedbax.state import CartesianState
 from rlrmp.analysis.math.cs_game_card import build_canonical_game
 from rlrmp.analysis.pipelines.feedbax_parity import build_cs2019_feedbax_mechanics
 from rlrmp.feedbax_graph import register_rlrmp_graph_components
+from rlrmp.trainable import staged_network_trainable_parts
 
 
 CS_PHYSICAL_STATE_DIM = 8
@@ -279,6 +280,14 @@ class InitialHiddenStagedNetwork(Component):
     @property
     def hidden_size(self) -> int:
         return self.net.hidden_size
+
+    @property
+    def sisu_gating(self) -> str:
+        return self.net.sisu_gating
+
+    @property
+    def sisu_alpha(self) -> Array | None:
+        return self.net.sisu_alpha
 
     def __call__(
         self,
@@ -956,14 +965,12 @@ def _linear_state_space_output_prototype(
     }
 
 
-def cs_lss_gru_where_train() -> dict[int, Callable[[Graph], tuple[Module, Module | None]]]:
+def cs_lss_gru_where_train() -> dict[int, Callable[[Graph], tuple[Any, ...]]]:
     """Return a train filter that excludes the fixed C&S plant matrices."""
 
-    def where_train_fn(model: Graph) -> tuple[Module, ...]:
+    def where_train_fn(model: Graph) -> tuple[Any, ...]:
         net = model.nodes["net"]
-        if hasattr(net, "h0_encoder"):
-            return (net.hidden, net.readout, net.h0_encoder)
-        return (net.hidden, net.readout)
+        return staged_network_trainable_parts(net)
 
     return {0: where_train_fn}
 

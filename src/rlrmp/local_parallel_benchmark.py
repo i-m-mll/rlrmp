@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
+from rlrmp.trainable import staged_network_trainable_parts
+
 
 PREALLOC_ENV = "XLA_PYTHON_CLIENT_PREALLOCATE"
 JAX_PLATFORM_ENV = "JAX_PLATFORM_NAME"
@@ -372,7 +374,7 @@ def _timed_train(
 def _make_where_train() -> dict[int, Any]:
     def where_train_fn(model: Any) -> tuple[Any, ...]:
         net = model.nodes["net"]
-        return (net.hidden, net.readout)
+        return staged_network_trainable_parts(net)
 
     return {0: where_train_fn}
 

@@ -465,6 +465,21 @@ def test_train_filter_excludes_canonical_lss_matrices() -> None:
     assert any(leaf.shape == (18, 4) for leaf in trainable_arrays)
 
 
+def test_train_filter_includes_multiplicative_sisu_alpha() -> None:
+    graph = build_cs_lss_gru_graph(
+        hidden_size=6,
+        bind_epsilon_input=True,
+        sisu_gating="multiplicative",
+        key=jax.random.PRNGKey(17),
+    )
+    where_train = cs_lss_gru_where_train()[0]
+    where_train_spec = filter_spec_leaves(graph, where_train)
+    trainable = get_model_parameters(graph, where_train_spec)
+
+    assert trainable.nodes["mechanics"].A is None
+    assert trainable.nodes["net"].sisu_alpha.shape == (6,)
+
+
 def test_train_filter_includes_h0_encoder_only_when_present() -> None:
     graph = build_cs_lss_gru_graph(
         hidden_size=6,
@@ -482,3 +497,21 @@ def test_train_filter_includes_h0_encoder_only_when_present() -> None:
     assert trainable.nodes["net"].h0_encoder.weight.shape == (6, 4)
     assert trainable.nodes["net"].h0_encoder.bias.shape == (6,)
     assert any(leaf.shape == (6, 4) for leaf in trainable_arrays)
+
+
+def test_train_filter_includes_h0_encoder_and_multiplicative_sisu_alpha() -> None:
+    graph = build_cs_lss_gru_graph(
+        hidden_size=6,
+        bind_epsilon_input=True,
+        target_relative_feedback=True,
+        initial_hidden_encoder=True,
+        sisu_gating="multiplicative",
+        key=jax.random.PRNGKey(18),
+    )
+    where_train = cs_lss_gru_where_train()[0]
+    where_train_spec = filter_spec_leaves(graph, where_train)
+    trainable = get_model_parameters(graph, where_train_spec)
+
+    assert trainable.nodes["mechanics"].A is None
+    assert trainable.nodes["net"].h0_encoder.weight.shape == (6, 4)
+    assert trainable.nodes["net"].sisu_alpha.shape == (6,)

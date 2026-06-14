@@ -138,6 +138,29 @@ def test_minimax_graph_bundle_materializes_runtime_graph() -> None:
     assert ("mechanics", "feedback") in recurrent_edges
 
 
+def test_multiplicative_point_mass_training_metadata_includes_sisu_alpha() -> None:
+    hps = _hps(sisu_gating="multiplicative")
+    task = build_task_base(hps)
+    bundle = build_rlrmp_feedbax_graph_bundle(
+        hps,
+        task=task,
+        n_extra_inputs=1,
+        hidden_type=hps.hidden_type,
+        sisu_gating=hps.sisu_gating,
+    )
+
+    assert bundle.training_spec["trainable"] == [
+        "nodes.net.hidden",
+        "nodes.net.readout",
+        "nodes.net.sisu_alpha",
+    ]
+    assert hps.where["0"] == [
+        "nodes.net.hidden",
+        "nodes.net.readout",
+        "nodes.net.sisu_alpha",
+    ]
+
+
 @pytest.mark.parametrize(
     ("tau_rise", "tau_decay", "expected_present"),
     [
