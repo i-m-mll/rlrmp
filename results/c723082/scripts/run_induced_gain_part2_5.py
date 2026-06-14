@@ -3,8 +3,8 @@
 Bug: 6fdf9a4 — produces the first cross-method table of
 ``||T_{w → z}||_∞`` values for trained Part 2.5 networks.
 
-Wraps the trained network as a ``Controller`` for ``rlrmp.analysis.induced_gain``
-and runs the headline channels:
+Wraps the trained SimpleFeedback controller path as a ``Controller`` for
+``rlrmp.analysis.induced_gain`` and runs the headline channels:
     - ``additive_force × qr_cost``  (Riccati-comparable scalar)
     - ``structural_da × qr_cost``   (flavor (a) ⊊ (b) discriminator)
     - ``sensory_perturbation × qr_cost`` (feedback-perturbation analogue)
@@ -12,16 +12,14 @@ and runs the headline channels:
 Plus the Riccati H-inf γ⋆ baseline for the same plant + schedule + horizon
 (so the table normalises RNN gains against the LTI optimum).
 
-The wrap is **not** the trivial ``feedbax_graph_controller(simple_feedback)``
-adapter from ``induced_gain.py``: the latter calls
-``graph._call_single_step(...)`` directly, and SimpleFeedback's cycle wires
-(mechanics → feedback → net) cause that path to fail with
-``KeyError: 'force'`` (mechanics needs the cycle to be threaded). Instead we
-wrap **the network alone** and reconstruct the closed loop by hand:
+The analyzer owns the linearized plant and disturbance injection, so the
+controller adapter intentionally wraps the Feedbax ``feedback -> net`` subgraph
+rather than advancing the full SimpleFeedback mechanics graph internally. This
+uses Feedbax's public ``GraphControllerAdapter`` for graph/state execution and
+keeps only the RLRMP-specific observation-to-mechanics-state bridge downstream:
 
-- Controller hidden state = (network ``NetworkState`` flat) ⊕ (feedback
-  delay-queue flat). For ``feedback_delay_steps=5`` and obs dim 4 the queue
-  contributes 5*4 = 20 dims.
+- Controller hidden state = Feedbax graph state flat (feedback delay channels
+  plus network state) and any recurrent carry owned by the adapter.
 - The trained ``DisturbanceField``, ``efferent`` (motor) channel, and force
   filter are bypassed. Disturbance enters via the analyser's
   ``additive_force`` w channel; motor noise and feedback noise are zeroed.
@@ -41,19 +39,14 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import json
 import logging
 import time
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
-
-warnings.filterwarnings("ignore")
 
 import equinox as eqx
-import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
@@ -75,8 +68,11 @@ from rlrmp.analysis.induced_gain import (
     Controller,
     induced_gain,
 )
+from rlrmp.analysis.feedbax_controllers import simple_feedback_induced_gain_controller
 from rlrmp.paths import REPO_ROOT, mkdir_p, run_artifact_dir, run_spec_dir
 from rlrmp.train.task_model import setup_task_model_pair
+
+warnings.filterwarnings("ignore")
 
 # Note: do NOT enable x64 at top level — saved checkpoints are float32 and
 # `eqx.tree_deserialise_leaves` will refuse to load if the template has
@@ -330,143 +326,6 @@ def _load_warmup(path: Path, hps):
     return model
 
 
-# =============================================================================
-# Network-only controller adapter
-# =============================================================================
-
-
-@dataclass(frozen=True)
-class _NetworkController:
-    """Wrap a SimpleStagedNetwork (alone) as an induced-gain ``Controller``.
-
-    The trained ``SimpleFeedback`` graph cannot be wrapped directly via
-    ``feedbax_graph_controller`` because its cycle wires (mechanics → feedback
-    → net) are not threaded by ``Graph._call_single_step``. Instead we wrap
-    the network alone and rebuild the closed-loop step by hand:
-
-    - The augmented controller hidden state ``h`` packs the network's
-      ``NetworkState`` (input/hidden/output/encoding) and a feedback delay
-      queue of length ``feedback_delay_steps`` × obs-dim.
-    - On ``step(h, sensory_obs, t)``: push ``sensory_obs`` into the queue
-      front, pop the back as the *delayed* observation, build the network
-      input by concatenating the held-fixed task input with the delayed obs,
-      call the network, and return its output.
-    - Noise (feedback / hidden / motor) is zeroed via the deterministic
-      pseudo-key threading; ``hidden_noise_std`` on the network is checked and
-      noted in the diagnostics if non-zero (the analyser does not currently
-      strip stochastic terms from the trained network).
-
-    Bug: 6fdf9a4 — first-run network wrapper.
-
-    Attributes:
-        net: The ``SimpleStagedNetwork``.
-        net_state_index: The state index for the network (used to access net
-            state inside the bundled ``State``).
-        net_state_template: Template ``NetworkState`` (sizes all match the
-            saved replicate).
-        task_input: Held-fixed task-input vector (shape (n_task,)).
-        n_obs: Observation dimensionality (typically 4 = pos2 + vel2).
-        delay: Feedback delay in steps.
-        h0_flat: Initial flat controller state (NetworkState flat ⊕ queue
-            flat, shape (n_ctrl,)).
-        net_treedef: Treedef of the network state for round-tripping.
-        net_leaf_shapes / net_leaf_sizes: Per-leaf shapes/sizes of the network
-            state for unflatten.
-        target_pos: Absolute target position (used to convert goal-centred
-            plant state back to absolute coords for feedback).
-        key: Base PRNG key (unused beyond per-step folding for now; networks
-            here have noise zeroed).
-    """
-
-    net: object
-    state_template: object  # full eqx.nn.State template
-    net_state_index: object
-    net_state_template: object
-    task_input: jnp.ndarray
-    n_obs: int
-    delay: int
-    h0_flat: jnp.ndarray
-    net_treedef: object
-    net_leaf_shapes: tuple
-    net_leaf_sizes: tuple
-    target_pos: jnp.ndarray
-    key: jnp.ndarray
-
-    def initial_state(self):
-        return self.h0_flat
-
-    def _split(self, h):
-        net_size = sum(self.net_leaf_sizes)
-        net_part = h[:net_size]
-        queue_part = h[net_size:]
-        # Unflatten net state
-        leaves = []
-        offset = 0
-        for shape, size in zip(self.net_leaf_shapes, self.net_leaf_sizes):
-            leaves.append(net_part[offset:offset + size].reshape(shape))
-            offset += size
-        net_state = jt.unflatten(self.net_treedef, leaves)
-        # Queue: shape (delay, n_obs)
-        if self.delay > 0:
-            queue = queue_part.reshape(self.delay, self.n_obs)
-        else:
-            queue = jnp.zeros((0, self.n_obs), dtype=jnp.float64)
-        return net_state, queue
-
-    def _join(self, net_state, queue):
-        leaves = jt.leaves(net_state)
-        flat_parts = [jnp.asarray(leaf, dtype=jnp.float64).reshape(-1) for leaf in leaves]
-        net_part = jnp.concatenate(flat_parts, axis=0) if flat_parts else jnp.zeros((0,), dtype=jnp.float64)
-        queue_flat = queue.reshape(-1).astype(jnp.float64)
-        return jnp.concatenate([net_part, queue_flat], axis=0)
-
-    def step(self, h, sensory_obs, t):
-        # sensory_obs is in goal-centred coords (plant.pos = pos - target).
-        # Convert to absolute by adding target. Also separate pos/vel; the
-        # feedback channel observes (pos_abs, vel) as the trained network
-        # was trained on absolute coordinates.
-        pos_gc = sensory_obs[:2]
-        vel = sensory_obs[2:4]
-        pos_abs = pos_gc + self.target_pos
-        obs_abs = jnp.concatenate([pos_abs, vel], axis=0)
-
-        net_state, queue = self._split(h)
-
-        # Push obs into queue front; oldest pops out as delayed_obs.
-        if self.delay > 0:
-            delayed_obs = queue[0]
-            new_queue = jnp.concatenate([queue[1:], obs_abs[None, :]], axis=0)
-        else:
-            delayed_obs = obs_abs
-            new_queue = queue
-
-        # Build a State carrying the network state. The simplest path is to
-        # rewrap the `state_template` with the new net state at the index.
-        # state_template was captured at init and carries default values for
-        # everything else (which we don't use, since we call the network alone).
-        # Clone the State first to avoid equinox's "old state" guard, which
-        # detects re-use of a State object across multiple updates.
-        state_leaves, state_treedef = jt.flatten(self.state_template)
-        state = jt.unflatten(state_treedef, state_leaves)
-        state = state.set(self.net_state_index, net_state)
-
-        # Call the network directly. SimpleStagedNetwork ignores noise when
-        # hidden_noise_std is None (or 0); we don't rely on PRNG here. Use a
-        # deterministic per-step key for consistency.
-        key_t = jax.random.fold_in(self.key, t)
-        net_inputs = {
-            "input": self.task_input,
-            # Feedback is the (pos_abs, vel) tuple (matches feedback_spec.where).
-            "feedback": (delayed_obs[:2], delayed_obs[2:]),
-        }
-        outputs, state_next = self.net(net_inputs, state, key=key_t)
-        u = outputs["output"]
-
-        net_state_next = state_next.get(self.net_state_index)
-        h_next = self._join(net_state_next, new_queue)
-        return h_next, u
-
-
 def build_network_controller(
     model,
     *,
@@ -474,14 +333,12 @@ def build_network_controller(
     sisu: float = 0.5,
     key: jnp.ndarray = jr.PRNGKey(0),
 ) -> Controller:
-    """Build a ``_NetworkController`` adapter from a Part 2.5 SimpleFeedback model.
+    """Build a Feedbax-backed controller adapter for a Part 2.5 model.
 
     Args:
         model: The trained ``SimpleFeedback`` graph (replicate axis already
             indexed — see ``_select_replicate``).
-        target_pos: Absolute target position (shape (2,)). Used to construct
-            the held-fixed task input and to convert goal-centred plant state
-            back to the absolute frame the network was trained in.
+        target_pos: Absolute target position (shape (2,)).
         sisu: SISU level held throughout the analysis. The default 0.5 is a
             mid-range value; the gain depends weakly on SISU.
         key: Base PRNG key. Per-step keys are derived via ``fold_in(t)``.
@@ -489,75 +346,10 @@ def build_network_controller(
     Returns:
         A ``Controller`` ready for ``induced_gain(...)``.
     """
-    net = model.nodes["net"]
-
-    # Initialise full SimpleFeedback state to capture state-index → init mapping.
-    full_state = model.init_state(key=jr.PRNGKey(0))
-    net_state_template = full_state.get(net.state_index)
-
-    # Build the held-fixed task input. The training-time task input layout is
-    # (concatenation across leaves):
-    #   [target_pos2, ?2_zero, hold1, go1] + [sisu1] = 7 dims.
-    # Mid-movement values: target=target_pos, zeros=0, hold=0, go=1, sisu=sisu.
-    target_pos_arr = jnp.asarray(target_pos, dtype=jnp.float32)
-    task_input = jnp.concatenate(
-        [
-            target_pos_arr,                # task[0]: target position
-            jnp.zeros((2,), dtype=jnp.float32),  # task[1]: aux (zero)
-            jnp.zeros((1,), dtype=jnp.float32),  # task[2]: hold cue (released)
-            jnp.ones((1,), dtype=jnp.float32),   # task[3]: go cue (movement)
-            jnp.array([float(sisu)], dtype=jnp.float32),  # sisu
-        ],
-        axis=0,
-    )
-    # net.input_size = n_task + n_feedback. We feed task_input (size 7) +
-    # feedback (size 4) = 11 internally; the network concatenates them.
-    expected_task_size = int(net.input_size) - 4
-    if int(task_input.shape[0]) != expected_task_size:
-        raise ValueError(
-            f"Constructed task_input has dim {task_input.shape[0]} but "
-            f"net expects {expected_task_size} (= {net.input_size} - 4 fb); "
-            f"task layout assumption is wrong for this group."
-        )
-
-    # Detect feedback delay from the feedback channel(s).
-    fb_node = model.nodes.get("feedback")
-    delay = 0
-    n_obs = 4  # default for (pos2, vel2)
-    if fb_node is not None:
-        channels = fb_node.channels
-        if hasattr(channels, "delay"):
-            delay = int(channels.delay)
-        else:
-            # Multi-channel case: pull first delay.
-            ch_leaves = jt.leaves(channels, is_leaf=lambda x: hasattr(x, "delay"))
-            if ch_leaves and hasattr(ch_leaves[0], "delay"):
-                delay = int(ch_leaves[0].delay)
-
-    # Build initial controller hidden state.
-    leaves = jt.leaves(net_state_template)
-    leaf_shapes = tuple(tuple(jnp.asarray(l).shape) for l in leaves)
-    leaf_sizes = tuple(int(jnp.asarray(l).size) for l in leaves)
-    treedef = jt.structure(net_state_template)
-    net_flat = jnp.concatenate(
-        [jnp.asarray(l, dtype=jnp.float64).reshape(-1) for l in leaves], axis=0
-    )
-    queue_flat = jnp.zeros((delay * n_obs,), dtype=jnp.float64)
-    h0 = jnp.concatenate([net_flat, queue_flat], axis=0)
-
-    return _NetworkController(
-        net=net,
-        state_template=full_state,
-        net_state_index=net.state_index,
-        net_state_template=net_state_template,
-        task_input=task_input,
-        n_obs=n_obs,
-        delay=delay,
-        h0_flat=h0,
-        net_treedef=treedef,
-        net_leaf_shapes=leaf_shapes,
-        net_leaf_sizes=leaf_sizes,
-        target_pos=target_pos_arr.astype(jnp.float64),
+    return simple_feedback_induced_gain_controller(
+        model,
+        target_pos=target_pos,
+        sisu=sisu,
         key=key,
     )
 
@@ -669,8 +461,8 @@ def render_markdown_table(rows: list[dict], g_star: float, channels) -> str:
     sp_qr = "sensory_perturbation__qr_cost"
 
     lines = []
-    lines.append(f"| Group | γ⋆ (Riccati) | γ_PI: af×qr | γ_PI: sd×qr | γ_PI: sp×qr | γ/γ⋆ (af) |")
-    lines.append(f"|---|---|---|---|---|---|")
+    lines.append("| Group | γ⋆ (Riccati) | γ_PI: af×qr | γ_PI: sd×qr | γ_PI: sp×qr | γ/γ⋆ (af) |")
+    lines.append("|---|---|---|---|---|---|")
     for r in rows:
         name = r["group"]
         if r.get("_error"):
@@ -682,7 +474,7 @@ def render_markdown_table(rows: list[dict], g_star: float, channels) -> str:
                 converged_mark = "" if r[key]["converged"] else "*"
                 return f"{r[key]['gamma']:.4f}{converged_mark}"
             if key in r and "error" in r[key]:
-                return f"err"
+                return "err"
             return "—"
 
         af = _cell(af_qr)
@@ -940,9 +732,6 @@ def _build_notes_md(args, g_star: float, rows: list[dict], table_md: str, channe
     # Group together findings worth highlighting
     findings_lines: list[str] = []
     af_qr_key = "additive_force__qr_cost"
-    sd_qr_key = "structural_da__qr_cost"
-    sp_qr_key = "sensory_perturbation__qr_cost"
-
     # Sort groups by additive_force gain (excluding mult_single outlier if extreme)
     af_pairs = [
         (r["group"], r[af_qr_key]["gamma"])
@@ -996,38 +785,26 @@ Riccati γ⋆ on the same plant + cost schedule.
 
 **Headline summary (additive_force × qr_cost)**: {af_summary}.
 
-## API integration friction
+## Controller adapter
 
-This was the *first* time the analyser was run on real Part 2.5 checkpoints
-(post audit `b131510`). The expected adapter `feedbax_graph_controller(graph,
-key=...)` from `induced_gain.py` does **not** work directly on a trained
-SimpleFeedback graph: `graph._call_single_step(...)` immediately raises
-`KeyError: 'force'` because SimpleFeedback's cycle wires (mechanics → feedback
-→ net) are not threaded by `_call_single_step` (only by
-`_call_with_iteration`). That code path was previously verified only on the
-synthetic 1-component graph in `tests/test_induced_gain.py`.
+The maintained runner now uses `rlrmp.analysis.feedbax_controllers.
+simple_feedback_induced_gain_controller`. That adapter wraps the original
+Feedbax `feedback -> net` controller subgraph with Feedbax's public
+`GraphControllerAdapter`, while RLRMP supplies the induced-gain-specific bridge
+from analyzer observations to the feedback node's `MechanicsState` input.
 
-**Workaround used here**: a network-only adapter (`_NetworkController` in
-`scripts/run_induced_gain_part2_5.py`). It wraps `model.nodes['net']` directly
-and reconstructs the closed loop step-by-step:
-
-- The augmented controller hidden state packs the network's `NetworkState`
-  (input, hidden, output, encoding) plus the feedback delay queue (`delay=5`,
-  obs dim 4 → +20 dims). Total `n_ctrl ≈ 393` dims for the Part 2.5 ensemble.
+- The augmented controller hidden state is the Feedbax graph-controller state:
+  feedback-channel delay state plus network state, with recurrent carry handled
+  by Feedbax when present.
 - Disturbance enters via `linearize_pointmass`'s `Bw` (additive force on
   velocity), bypassing the trained `DisturbanceField` intervenor.
-- Motor / feedback / hidden noise are zeroed (deterministic linearisation).
+- Motor noise is bypassed with the efferent channel; feedback-channel noise is
+  disabled for deterministic linearisation.
 - Task input is held at a representative mid-movement vector
   (`target_pos`, hold=0, go=1, sisu={args.sisu}).
 - The trained network was trained on absolute coordinates; the adapter
   converts the analyser's goal-centred `pos` back to absolute by adding
   `target_pos`.
-
-**Open follow-up** (file as a separate issue under audit `b131510` if needed):
-either (i) extend `feedbax_graph_controller` to thread cycle wires through
-`_call_single_step` (mirroring `_call_with_iteration`'s `init_cycle_values`
-machinery), or (ii) keep the network-only adapter in `induced_gain.py` as the
-canonical path for SimpleFeedback-shaped models.
 
 Other small frictions handled in the runner:
 - Replicate axis. Trained ensembles save with leading `n_replicates=5` axis

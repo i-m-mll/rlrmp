@@ -51,10 +51,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Callable, Optional, Protocol, Tuple
+from typing import Any, Callable, Mapping, Optional, Protocol, Tuple
 
 import jax
 import jax.numpy as jnp
+from feedbax.analysis import graph_controller as _feedbax_graph_controller
 from jaxtyping import Array, Float
 
 from rlrmp.analysis.math.hinf_riccati import (
@@ -207,215 +208,38 @@ def lti_controller(K: Float[Array, "T m_u n"]) -> Controller:
     return _LTIController(K=jnp.asarray(K, dtype=jnp.float64))
 
 
-def _flatten_pytree_to_array(tree) -> tuple[Float[Array, " n"], object, tuple, tuple]:
-    """Flatten a pytree to a 1D float64 array plus round-trip metadata.
-
-    Args:
-        tree: Any JAX pytree whose leaves are arrays (or array-like).
-
-    Returns:
-        ``(flat, treedef, leaf_shapes, leaf_sizes)`` such that
-        ``_unflatten_array_to_pytree(flat, treedef, leaf_shapes, leaf_sizes)``
-        returns a pytree with the same structure as ``tree``.
-    """
-    leaves = jax.tree.leaves(tree)
-    leaf_shapes = tuple(tuple(jnp.asarray(leaf).shape) for leaf in leaves)
-    leaf_sizes = tuple(int(jnp.asarray(leaf).size) for leaf in leaves)
-    treedef = jax.tree.structure(tree)
-    if leaves:
-        flat = jnp.concatenate(
-            [jnp.asarray(leaf, dtype=jnp.float64).reshape(-1) for leaf in leaves],
-            axis=0,
-        )
-    else:
-        flat = jnp.zeros((0,), dtype=jnp.float64)
-    return flat, treedef, leaf_shapes, leaf_sizes
-
-
-def _unflatten_array_to_pytree(flat, treedef, leaf_shapes, leaf_sizes):
-    """Inverse of ``_flatten_pytree_to_array`` (round-trip the structure)."""
-    leaves = []
-    offset = 0
-    for shape, size in zip(leaf_shapes, leaf_sizes):
-        leaves.append(flat[offset:offset + size].reshape(shape))
-        offset += size
-    return jax.tree.unflatten(treedef, leaves)
-
-
-@dataclass(frozen=True)
-class _FeedbaxGraphController:
-    """Adapter wrapping a feedbax ``Graph`` as a ``Controller``.
-
-    The graph's state is an opaque ``equinox.nn.State`` pytree, and (for
-    cyclic graphs like ``SimpleFeedback``) one-step evaluation also requires
-    threading a ``cycle_port_values`` dict (keyed by ``(target_node,
-    target_port)``) across calls. The analyser's ``Controller`` protocol
-    expects ``h`` to be a 1D array (so it can stack with ``x_plant`` into
-    ``x_aug`` and feed Jacobians through it). This adapter packs both
-    pieces into a single flat ``h`` and handles flatten/unflatten
-    round-trips:
-
-    ``h = concat(flatten(state), flatten(cycle_port_values))``
-
-    The State and the cycle dict are both registered JAX pytrees, so
-    ``jax.tree.flatten``/``unflatten`` handle the round-trip. Treedefs and
-    leaf shapes captured at init are reused on every ``step`` call to
-    reverse the projection. For acyclic graphs the cycle half is empty.
-
-    On ``initial_state()`` the adapter calls ``graph.init_state`` and asks
-    the graph for its initial cycle port-value dict via
-    ``graph.initial_cycle_port_values(state)``.
-
-    On ``step(h, obs, t)`` the adapter unpacks ``h`` into the State and the
-    cycle dict, calls ``graph.step``, and repacks the result into
-    ``h_next``.
-
-    Bug: 53b5fe5 — rewrites the previous ``_call_single_step``-based adapter
-    (which did not thread cycle wires; broke on ``SimpleFeedback`` graphs).
-    Companion to feedbax ``0ec8492``: ``Graph.step`` public API.
-
-    Attributes:
-        graph: The feedbax ``Graph`` to wrap.
-        h0_flat: Flattened initial augmented state, shape ``(n_ctrl,)``.
-        state_treedef / state_shapes / state_sizes: Round-trip metadata for
-            the State half of ``h``.
-        cycle_treedef / cycle_shapes / cycle_sizes: Round-trip metadata for
-            the cycle-port-values half of ``h``. Empty for acyclic graphs.
-        n_state_flat: Number of elements in the state half (slice boundary).
-        key: Base PRNGKey; per-step keys are derived by folding-in ``t``.
-        input_port: External input binding name (default ``"input"``).
-        output_port: External output binding name (default ``"output"``).
-    """
-
-    graph: object  # feedbax.graph.Graph
-    h0_flat: Float[Array, "n_ctrl"]
-    state_treedef: object
-    state_shapes: tuple
-    state_sizes: tuple
-    cycle_treedef: object
-    cycle_shapes: tuple
-    cycle_sizes: tuple
-    n_state_flat: int
-    key: Array
-    input_port: str = "input"
-    output_port: str = "output"
-
-    def initial_state(self) -> Float[Array, "n_ctrl"]:
-        return self.h0_flat
-
-    def _split(self, h: Float[Array, "n_ctrl"]):
-        """Unflatten ``h`` into ``(state, cycle_port_values)``."""
-        state_flat = h[: self.n_state_flat]
-        cycle_flat = h[self.n_state_flat:]
-        state = _unflatten_array_to_pytree(
-            state_flat, self.state_treedef, self.state_shapes, self.state_sizes
-        )
-        cycle_port_values = _unflatten_array_to_pytree(
-            cycle_flat, self.cycle_treedef, self.cycle_shapes, self.cycle_sizes
-        )
-        return state, cycle_port_values
-
-    def _join(self, state, cycle_port_values) -> Float[Array, "n_ctrl"]:
-        """Flatten ``(state, cycle_port_values)`` into the adapter's flat ``h``."""
-        leaves_s = jax.tree.leaves(state)
-        leaves_c = jax.tree.leaves(cycle_port_values)
-        if leaves_s:
-            state_flat = jnp.concatenate(
-                [jnp.asarray(leaf, dtype=jnp.float64).reshape(-1) for leaf in leaves_s],
-                axis=0,
-            )
-        else:
-            state_flat = jnp.zeros((0,), dtype=jnp.float64)
-        if leaves_c:
-            cycle_flat = jnp.concatenate(
-                [jnp.asarray(leaf, dtype=jnp.float64).reshape(-1) for leaf in leaves_c],
-                axis=0,
-            )
-        else:
-            cycle_flat = jnp.zeros((0,), dtype=jnp.float64)
-        return jnp.concatenate([state_flat, cycle_flat], axis=0)
-
-    def step(
-        self,
-        h: Float[Array, "n_ctrl"],
-        sensory_obs: Float[Array, "n_obs"],
-        t: int,
-    ) -> Tuple[Float[Array, "n_ctrl"], Float[Array, "m_u"]]:
-        state, cycle_port_values = self._split(h)
-
-        # Per-step key: fold t in for determinism without leaking randomness
-        # across timesteps (analyser is deterministic given the key).
-        key_t = jax.random.fold_in(self.key, t)
-        outputs, state_next, cycle_port_values_next = self.graph.step(
-            inputs={self.input_port: sensory_obs},
-            state=state,
-            cycle_port_values=cycle_port_values,
-            key=key_t,
-        )
-        u = outputs[self.output_port]
-        h_next = self._join(state_next, cycle_port_values_next)
-        return h_next, u
-
-
 def feedbax_graph_controller(
-    graph,  # feedbax.graph.Graph
+    graph,
     *,
     key: Array,
+    component_registry: Any | None = None,
     input_port: str = "input",
-    output_port: str = "output",
+    output_port: str | None = "output",
+    static_inputs: Mapping[str, object] | None = None,
+    input_builder: Callable[[object, int], Mapping[str, object]] | None = None,
+    output_selector: Callable[[Mapping[str, object]], object] | None = None,
+    trace: tuple[object, ...] = (),
+    cycle_init: Mapping[tuple[str, str], object] | None = None,
+    key_policy: Callable[[Array, int], Array] | None = None,
+    dtype: Any = jnp.float64,
 ) -> Controller:
-    """Wrap a feedbax ``Graph`` as a ``Controller`` for the induced-gain analyser.
-
-    Uses the public ``Graph.step`` API (feedbax issue ``0ec8492``), which —
-    unlike ``Graph._call_single_step`` — threads cycle-wire port values
-    across calls, so this adapter works on real ``SimpleFeedback`` graphs
-    (mechanics → feedback → net cycle), not just acyclic toys.
-
-    The graph's opaque ``State`` pytree and the cycle-port-values dict
-    (keyed by ``(target_node, target_port)``) are both flattened and
-    concatenated into the adapter's 1D ``h`` (float64). Per-step keys are
-    derived from the supplied base ``key`` via ``jax.random.fold_in(t)``.
-
-    Bug: 53b5fe5 — replaces the previous adapter that used
-    ``_call_single_step`` and silently broke on cyclic graphs.
-
-    Args:
-        graph: A feedbax ``Graph``. Must expose ``input_port`` as an external
-            input binding (the sensory observation channel) and ``output_port``
-            as an external output binding (the control vector).
-        key: Base PRNGKey. Per-step keys are derived via ``fold_in(t)`` so
-            the controller is deterministic given ``key`` and ``t``.
-        input_port: External input binding name. Default ``"input"``.
-        output_port: External output binding name. Default ``"output"``.
-
-    Returns:
-        A ``Controller`` whose ``initial_state`` and ``step`` route through
-        ``graph.init_state`` and ``graph.step`` respectively.
-    """
-    init_state = graph.init_state(key=key)
-    cycle_port_values = graph.initial_cycle_port_values(init_state)
-
-    state_flat, state_treedef, state_shapes, state_sizes = _flatten_pytree_to_array(
-        init_state
-    )
-    cycle_flat, cycle_treedef, cycle_shapes, cycle_sizes = _flatten_pytree_to_array(
-        cycle_port_values
-    )
-    h0_flat = jnp.concatenate([state_flat, cycle_flat], axis=0)
-
-    return _FeedbaxGraphController(
+    """Compatibility shim for Feedbax's public graph controller adapter."""
+    kwargs = {}
+    if key_policy is not None:
+        kwargs["key_policy"] = key_policy
+    return _feedbax_graph_controller(
         graph=graph,
-        h0_flat=h0_flat,
-        state_treedef=state_treedef,
-        state_shapes=state_shapes,
-        state_sizes=state_sizes,
-        cycle_treedef=cycle_treedef,
-        cycle_shapes=cycle_shapes,
-        cycle_sizes=cycle_sizes,
-        n_state_flat=int(state_flat.shape[0]),
         key=key,
+        component_registry=component_registry,
         input_port=input_port,
         output_port=output_port,
+        static_inputs=static_inputs,
+        input_builder=input_builder,
+        output_selector=output_selector,
+        trace=trace,
+        cycle_init=cycle_init,
+        dtype=dtype,
+        **kwargs,
     )
 
 
