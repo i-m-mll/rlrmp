@@ -23,14 +23,7 @@ from feedbax.contracts.graph import (
 )
 from feedbax.filters import FilterState
 from feedbax.graph import Graph
-from feedbax.intervene import (
-    CurlField,
-    CurlFieldParams,
-    DynamicsMatrixPerturb,
-    DynamicsMatrixPerturbParams,
-    FixedField,
-    FixedFieldParams,
-)
+from feedbax.intervene import DynamicsMatrixPerturb
 from feedbax.mechanics import Mechanics, MechanicsState
 from feedbax.mechanics.plant import DirectForceInput
 from feedbax.mechanics.skeleton.pointmass import PointMass
@@ -125,37 +118,15 @@ def register_rlrmp_graph_components(component_registry: Any | None = None) -> An
         output_prototype_fn=_linear_controller_output_prototype,
         provenance="rlrmp",
     )
-    registry.register_component_type(
-        "FixedField",
-        _build_fixed_field,
-        category="Intervention",
-        description="Fixed force-field intervention preserving GraphSpec label.",
-        input_ports=["force", "params_override"],
-        output_ports=["force"],
-        output_prototype_fn=_force_passthrough_output_prototype,
-        provenance="rlrmp",
-    )
-    registry.register_component_type(
-        "CurlField",
-        _build_curl_field,
-        category="Intervention",
-        description="Curl force-field intervention preserving GraphSpec label.",
-        input_ports=["effector", "force", "params_override"],
-        output_ports=["force"],
-        output_prototype_fn=_force_passthrough_output_prototype,
-        provenance="rlrmp",
-    )
-    registry.register_component_type(
-        "DynamicsMatrixPerturb",
-        _build_dynamics_matrix_perturb,
-        category="RLRMP",
-        description="State-feedback dynamics matrix perturbation.",
-        input_ports=["effector", "force", "params_override"],
-        output_ports=["force"],
-        output_prototype_fn=_force_passthrough_output_prototype,
-        provenance="rlrmp",
-    )
+    _install_feedbax_intervention_output_prototypes(registry)
     return registry
+
+
+def _install_feedbax_intervention_output_prototypes(registry: Any) -> None:
+    for component_type in ("FixedField", "CurlField", "DynamicsMatrixPerturb"):
+        meta = registry.get(component_type)
+        if meta is not None and meta.output_prototype_fn is None:
+            meta.output_prototype_fn = _force_passthrough_output_prototype
 
 
 def _migrate_legacy_rlrmp_graph_spec(graph_spec: GraphSpec) -> GraphSpec:
@@ -204,6 +175,16 @@ def _migrate_legacy_rlrmp_graph_spec(graph_spec: GraphSpec) -> GraphSpec:
                     "output_ports": ["output"],
                 }
             )
+        elif node_spec.type == "DynamicsMatrixPerturb" and "delta_A_shape" in params:
+            shape = params.pop("delta_A_shape")
+            params["delta_A"] = [
+                [0.0 for _ in range(int(shape[1]))]
+                for _ in range(int(shape[0]))
+            ]
+            nodes[node_id] = node_spec.model_copy(update={"params": params})
+        elif node_spec.type == "CurlField" and "amplitude" not in params:
+            params["amplitude"] = 1.0
+            nodes[node_id] = node_spec.model_copy(update={"params": params})
         else:
             nodes[node_id] = node_spec
 
@@ -356,42 +337,6 @@ def _build_linear_tracker_controller(params: dict[str, Any]):
         K_init_scale=float(params.get("K_init_scale", 0.0) or 0.0),
         u_ff_init_scale=float(params.get("u_ff_init_scale", 0.0) or 0.0),
         key=_key_from_params(params),
-    )
-
-
-def _build_dynamics_matrix_perturb(params: dict[str, Any]) -> DynamicsMatrixPerturb:
-    shape = params.get("delta_A_shape", [2, 4])
-    return DynamicsMatrixPerturb(
-        params=DynamicsMatrixPerturbParams(
-            scale=float(params.get("scale", 1.0)),
-            active=bool(params.get("active", False)),
-            delta_A=jnp.zeros(tuple(int(dim) for dim in shape), dtype=jnp.float32),
-        ),
-        label=str(params.get("label", GRAPH_PLANT_INTERVENOR_NODE)),
-        mass=float(params.get("mass", 1.0)),
-    )
-
-
-def _build_fixed_field(params: dict[str, Any]) -> FixedField:
-    return FixedField(
-        params=FixedFieldParams(
-            scale=float(params.get("scale", 1.0)),
-            amplitude=float(params.get("amplitude", 1.0)),
-            field=jnp.asarray(params.get("field", [0.0, 0.0])),
-            active=bool(params.get("active", False)),
-        ),
-        label=str(params.get("label", GRAPH_PLANT_INTERVENOR_NODE)),
-    )
-
-
-def _build_curl_field(params: dict[str, Any]) -> CurlField:
-    return CurlField(
-        params=CurlFieldParams(
-            scale=float(params.get("scale", 1.0)),
-            amplitude=float(params.get("amplitude", 1.0)),
-            active=bool(params.get("active", False)),
-        ),
-        label=str(params.get("label", GRAPH_PLANT_INTERVENOR_NODE)),
     )
 
 
@@ -888,7 +833,7 @@ def graph_spec_from_model(
                 params={
                     "active": bool(component._initial_state.active),
                     "scale": float(component._initial_state.scale),
-                    "delta_A_shape": [int(dim) for dim in component._initial_state.delta_A.shape],
+                    "delta_A": jnp.asarray(component._initial_state.delta_A).tolist(),
                     "mass": float(component.mass),
                     "label": component.label,
                 },
@@ -1240,10 +1185,12 @@ def _intervention_component_spec(intervention_type: str, hps: Any) -> ComponentS
     }
     if intervention_type == "FixedField":
         params.update({"amplitude": 1.0, "field": [0.0, 0.0]})
+    elif intervention_type == "CurlField":
+        params.update({"amplitude": 1.0})
     elif intervention_type == "DynamicsMatrixPerturb":
         params.update(
             {
-                "delta_A_shape": [2, 4],
+                "delta_A": [[0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]],
                 "mass": float(hps.model.effector_mass),
             }
         )

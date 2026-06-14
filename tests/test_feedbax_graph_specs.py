@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import json
 
+import jax.numpy as jnp
 import jax.random as jr
 import pytest
+from feedbax.component_registry import ComponentRegistry
 from feedbax.contracts.graph import GraphSpec
 from feedbax.graph import Graph
 from feedbax.intervene import CurlField, DynamicsMatrixPerturb, FixedField
@@ -23,6 +25,7 @@ from rlrmp.feedbax_graph import (
     graph_spec_from_model,
     graph_spec_payload,
     materialize_rlrmp_graph_spec,
+    register_rlrmp_graph_components,
     write_graph_spec_bundle,
 )
 from rlrmp.intervention_compat import swap_plant_intervenor_to_dynamics_matrix
@@ -272,6 +275,19 @@ def test_legacy_generic_rlrmp_graph_component_ids_materialize_through_migration(
     assert graph.nodes[PLANT_PROCESS_FORCE_NOISE_LABEL].__class__.__name__ == "Channel"
 
 
+def test_rlrmp_registry_uses_feedbax_intervention_builders() -> None:
+    registry = register_rlrmp_graph_components(
+        ComponentRegistry(load_user_components=False, discover_plugins=False)
+    )
+
+    for component_type in ("FixedField", "CurlField", "DynamicsMatrixPerturb"):
+        meta = registry.get(component_type)
+        assert meta is not None
+        assert meta.builder is not None
+        assert meta.provenance == "feedbax"
+        assert meta.output_prototype_fn is not None
+
+
 def test_dynamics_matrix_perturb_spec_preserves_delta_a_contract() -> None:
     hps = _hps(hidden_type="linear")
     spec = build_point_mass_sensorimotor_graph_spec(
@@ -285,7 +301,8 @@ def test_dynamics_matrix_perturb_spec_preserves_delta_a_contract() -> None:
 
     intervenor = spec.nodes[GRAPH_PLANT_INTERVENOR_NODE]
     assert intervenor.type == "DynamicsMatrixPerturb"
-    assert intervenor.params["delta_A_shape"] == [2, 4]
+    assert jnp.asarray(intervenor.params["delta_A"]).shape == (2, 4)
+    assert "delta_A_shape" not in intervenor.params
     assert "effector" in intervenor.input_ports
     assert isinstance(graph.nodes[PLANT_INTERVENOR_LABEL], DynamicsMatrixPerturb)
     assert graph.nodes[PLANT_INTERVENOR_LABEL].label == PLANT_INTERVENOR_LABEL
@@ -305,6 +322,57 @@ def test_dynamics_matrix_perturb_spec_preserves_delta_a_contract() -> None:
         GRAPH_PLANT_INTERVENOR_NODE,
         "effector",
     ) in recurrent_edges
+
+
+def test_legacy_dynamics_matrix_delta_a_shape_materializes_through_migration() -> None:
+    hps = _hps(hidden_type="linear")
+    spec = build_point_mass_sensorimotor_graph_spec(
+        hps,
+        task=build_task_base(hps),
+        n_extra_inputs=0,
+        hidden_type=hps.hidden_type,
+        intervention_type="DynamicsMatrixPerturb",
+    )
+    nodes = dict(spec.nodes)
+    intervenor = nodes[GRAPH_PLANT_INTERVENOR_NODE]
+    params = dict(intervenor.params)
+    params.pop("delta_A")
+    params["delta_A_shape"] = [2, 4]
+    nodes[GRAPH_PLANT_INTERVENOR_NODE] = intervenor.model_copy(update={"params": params})
+    legacy_spec = spec.model_copy(update={"nodes": nodes})
+
+    graph = materialize_rlrmp_graph_spec(legacy_spec)
+
+    materialized = graph.nodes[PLANT_INTERVENOR_LABEL]
+    assert isinstance(materialized, DynamicsMatrixPerturb)
+    assert materialized.label == PLANT_INTERVENOR_LABEL
+    assert materialized.input_ports == ("effector", "force", "params_override")
+    assert materialized.output_ports == ("force",)
+    assert materialized._initial_state.delta_A.shape == (2, 4)
+
+
+def test_legacy_curl_field_missing_amplitude_materializes_through_migration() -> None:
+    hps = _hps(hidden_type="linear")
+    spec = build_point_mass_sensorimotor_graph_spec(
+        hps,
+        task=build_task_base(hps),
+        n_extra_inputs=0,
+        hidden_type=hps.hidden_type,
+        intervention_type="CurlField",
+    )
+    nodes = dict(spec.nodes)
+    intervenor = nodes[GRAPH_PLANT_INTERVENOR_NODE]
+    params = dict(intervenor.params)
+    params.pop("amplitude")
+    nodes[GRAPH_PLANT_INTERVENOR_NODE] = intervenor.model_copy(update={"params": params})
+    legacy_spec = spec.model_copy(update={"nodes": nodes})
+
+    graph = materialize_rlrmp_graph_spec(legacy_spec)
+
+    materialized = graph.nodes[PLANT_INTERVENOR_LABEL]
+    assert isinstance(materialized, CurlField)
+    assert materialized.label == PLANT_INTERVENOR_LABEL
+    assert materialized._initial_state.amplitude == pytest.approx(1.0)
 
 
 def test_write_graph_spec_bundle_creates_companion_manifest(tmp_path) -> None:
@@ -424,5 +492,6 @@ def test_runtime_graph_spec_preserves_dynamics_matrix_intervenor() -> None:
     graph = materialize_rlrmp_graph_spec(graph_spec)
 
     assert graph_spec.nodes[PLANT_INTERVENOR_LABEL].type == "DynamicsMatrixPerturb"
-    assert graph_spec.nodes[PLANT_INTERVENOR_LABEL].params["delta_A_shape"] == [2, 4]
+    assert jnp.asarray(graph_spec.nodes[PLANT_INTERVENOR_LABEL].params["delta_A"]).shape == (2, 4)
+    assert "delta_A_shape" not in graph_spec.nodes[PLANT_INTERVENOR_LABEL].params
     assert isinstance(graph.nodes[PLANT_INTERVENOR_LABEL], DynamicsMatrixPerturb)
