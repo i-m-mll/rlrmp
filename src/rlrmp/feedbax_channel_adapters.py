@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
-import re
+from collections.abc import Sequence
 from typing import Any
 
 import equinox as eqx
 from feedbax.components import Sum
-from feedbax.contracts.graph import AdditiveGraphChannelAdapterSpec
+from feedbax.contracts.graph import (
+    AdditiveGraphChannelAdapterSpec,
+    ComponentSpec,
+    GraphSpec,
+    WireSpec,
+)
 from feedbax.graph import Wire
+from feedbax.graph_channel_adapters import materialize_additive_channel_adapters
 
 SUM_BASE_PORT = "a"
 SUM_OFFSET_PORT = "b"
@@ -68,13 +74,35 @@ def materialize_additive_channel_adapter_on_graph(
     model: Any,
     spec: AdditiveGraphChannelAdapterSpec,
 ) -> Any:
-    """Lower a Feedbax additive channel spec onto an eager Feedbax ``Graph``."""
+    """Lower one Feedbax additive channel spec onto an eager Feedbax ``Graph``."""
 
-    if spec.input_key in getattr(model, "input_bindings", {}):
+    return materialize_additive_channel_adapters_on_graph(model, (spec,))
+
+
+def materialize_additive_channel_adapters_on_graph(
+    model: Any,
+    specs: Sequence[AdditiveGraphChannelAdapterSpec],
+) -> Any:
+    """Lower Feedbax additive channel specs onto an eager Feedbax ``Graph``.
+
+    Feedbax owns the generic lowering algorithm on ``GraphSpec``. This eager
+    bridge builds a topology-only ``GraphSpec``, lets Feedbax lower the adapter
+    declarations, then applies the resulting topology back to the source graph
+    without reconstructing RLRMP runtime components or hooks.
+    """
+
+    pending = [
+        spec
+        for spec in specs
+        if spec.input_key not in getattr(model, "input_bindings", {})
+        and find_materialized_additive_channel_adapter(model, spec) is None
+    ]
+    if not pending:
         return model
-    if spec.target.kind == "edge":
-        return _materialize_edge_adapter_on_graph(model, spec)
-    return _materialize_input_adapter_on_graph(model, spec)
+
+    topology = _topology_graph_spec_from_model(model, pending)
+    materialized = materialize_additive_channel_adapters(topology)
+    return _apply_materialized_topology(model, materialized)
 
 
 def find_materialized_additive_channel_adapter(
@@ -134,74 +162,6 @@ def find_materialized_additive_channel_adapter(
     return None
 
 
-def _materialize_edge_adapter_on_graph(
-    model: Any,
-    spec: AdditiveGraphChannelAdapterSpec,
-) -> Any:
-    target = spec.target
-    old_wire = Wire(target.source_node, target.source_port, target.target_node, target.target_port)
-    graph = model.remove_wire(old_wire)
-    node_name = _adapter_node_name(spec, graph.nodes)
-    graph = graph.add_node(node_name, Sum())
-    graph = graph.add_wire(
-        Wire(target.source_node, target.source_port, node_name, SUM_BASE_PORT)
-    )
-    graph = graph.add_wire(
-        Wire(node_name, SUM_OUTPUT_PORT, target.target_node, target.target_port)
-    )
-    graph = eqx.tree_at(lambda g: g.input_ports, graph, (*graph.input_ports, spec.input_key))
-    return eqx.tree_at(
-        lambda g: g.input_bindings,
-        graph,
-        {**graph.input_bindings, spec.input_key: (node_name, SUM_OFFSET_PORT)},
-    )
-
-
-def _materialize_input_adapter_on_graph(
-    model: Any,
-    spec: AdditiveGraphChannelAdapterSpec,
-) -> Any:
-    target = spec.target
-    target_key = (target.target_node, target.target_port)
-    incoming = [
-        wire
-        for wire in getattr(model, "wires", ())
-        if (wire.target_node, wire.target_port) == target_key
-    ]
-    if incoming:
-        raise ValueError(
-            f"Input additive channel adapter {spec.label!r} targets "
-            f"{target.target_node}.{target.target_port}, which is already wired; "
-            "use an edge adapter for wired targets"
-        )
-    base_bindings = [
-        key
-        for key, binding in getattr(model, "input_bindings", {}).items()
-        if tuple(binding) == target_key
-    ]
-    if not base_bindings:
-        return _add_graph_input_binding(model, spec.input_key, target_key)
-    if len(base_bindings) != 1:
-        raise ValueError(
-            f"Input additive channel adapter {spec.label!r} found "
-            f"{len(base_bindings)} base bindings for {target.target_node}.{target.target_port}"
-        )
-    base_key = base_bindings[0]
-    node_name = _adapter_node_name(spec, model.nodes)
-    graph = model.add_node(node_name, Sum())
-    graph = eqx.tree_at(lambda g: g.input_ports, graph, (*graph.input_ports, spec.input_key))
-    graph = eqx.tree_at(
-        lambda g: g.input_bindings,
-        graph,
-        {
-            **graph.input_bindings,
-            base_key: (node_name, SUM_BASE_PORT),
-            spec.input_key: (node_name, SUM_OFFSET_PORT),
-        },
-    )
-    return graph.add_wire(Wire(node_name, SUM_OUTPUT_PORT, target.target_node, target.target_port))
-
-
 def _find_materialized_input_adapter(
     model: Any,
     spec: AdditiveGraphChannelAdapterSpec,
@@ -221,28 +181,74 @@ def _find_materialized_input_adapter(
     return spec.model_copy(update={"adapter_node": node_name})
 
 
-def _add_graph_input_binding(
+def _topology_graph_spec_from_model(
     model: Any,
-    input_key: str,
-    target_key: tuple[str, str],
-) -> Any:
-    graph = eqx.tree_at(lambda g: g.input_ports, model, (*model.input_ports, input_key))
-    return eqx.tree_at(
-        lambda g: g.input_bindings,
-        graph,
-        {**graph.input_bindings, input_key: target_key},
+    specs: Sequence[AdditiveGraphChannelAdapterSpec],
+) -> GraphSpec:
+    return GraphSpec(
+        nodes={
+            node_id: ComponentSpec(
+                type=type(component).__name__,
+                params={},
+                input_ports=list(getattr(component, "input_ports", ())),
+                output_ports=list(getattr(component, "output_ports", ())),
+            )
+            for node_id, component in getattr(model, "nodes", {}).items()
+        },
+        wires=[
+            WireSpec(
+                source_node=wire.source_node,
+                source_port=wire.source_port,
+                target_node=wire.target_node,
+                target_port=wire.target_port,
+                temporality=wire.temporality,
+                recurrent_initializer=wire.recurrent_initializer,
+            )
+            for wire in getattr(model, "wires", ())
+        ],
+        input_ports=list(getattr(model, "input_ports", ())),
+        output_ports=list(getattr(model, "output_ports", ())),
+        input_bindings=dict(getattr(model, "input_bindings", {})),
+        output_bindings=dict(getattr(model, "output_bindings", {})),
+        additive_channel_adapters=list(specs),
     )
 
 
-def _adapter_node_name(
-    spec: AdditiveGraphChannelAdapterSpec,
-    nodes: dict[str, Any],
-) -> str:
-    base = spec.adapter_node or f"{spec.label}_additive"
-    candidate = re.sub(r"[^0-9A-Za-z_]+", "_", base).strip("_") or "additive_channel"
-    if candidate not in nodes:
-        return candidate
-    suffix = 2
-    while f"{candidate}_{suffix}" in nodes:
-        suffix += 1
-    return f"{candidate}_{suffix}"
+def _apply_materialized_topology(model: Any, graph_spec: GraphSpec) -> Any:
+    nodes = dict(getattr(model, "nodes", {}))
+    for node_id, node_spec in graph_spec.nodes.items():
+        if node_id in nodes:
+            continue
+        if node_spec.type != "Sum":
+            raise ValueError(
+                f"Feedbax additive channel materialization produced unsupported "
+                f"node {node_id!r} of type {node_spec.type!r}."
+            )
+        nodes[node_id] = Sum()
+
+    wires = tuple(
+        Wire(
+            wire.source_node,
+            wire.source_port,
+            wire.target_node,
+            wire.target_port,
+            temporality=wire.temporality,
+            recurrent_initializer=wire.recurrent_initializer,
+        )
+        for wire in graph_spec.wires
+    )
+    return eqx.tree_at(
+        lambda graph: (
+            graph.nodes,
+            graph.wires,
+            graph.input_ports,
+            graph.input_bindings,
+        ),
+        model,
+        (
+            nodes,
+            wires,
+            tuple(graph_spec.input_ports),
+            dict(graph_spec.input_bindings),
+        ),
+    )
