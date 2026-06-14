@@ -12,9 +12,6 @@ from rlrmp.spec_migrations import (
     CS_GRU_STANDARD_CERTIFICATES_KIND,
     CS_GRU_STANDARD_CERTIFICATES_SCHEMA_ID,
     CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION,
-    DIAGNOSTIC_REGENERATION_SPEC_KIND,
-    DIAGNOSTIC_REGENERATION_SPEC_SCHEMA_ID,
-    DIAGNOSTIC_REGENERATION_SPEC_SCHEMA_VERSION,
     GRU_BROAD_EPSILON_ATTRIBUTION_KIND,
     GRU_BROAD_EPSILON_ATTRIBUTION_SCHEMA_ID,
     GRU_BROAD_EPSILON_ATTRIBUTION_SCHEMA_VERSION,
@@ -63,11 +60,6 @@ def test_rlrmp_spec_policy_registers_current_families_and_rejects_v0() -> None:
     registry = ensure_rlrmp_spec_families(SpecSchemaRegistry())
 
     expected = {
-        DIAGNOSTIC_REGENERATION_SPEC_KIND: (
-            DIAGNOSTIC_REGENERATION_SPEC_SCHEMA_ID,
-            DIAGNOSTIC_REGENERATION_SPEC_SCHEMA_VERSION,
-            ("rlrmp.diagnostic_regeneration_spec.v0",),
-        ),
         GRU_EVALUATION_DIAGNOSTICS_KIND: (
             GRU_EVALUATION_DIAGNOSTICS_SCHEMA_ID,
             GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION,
@@ -189,17 +181,6 @@ def test_representative_historical_artifacts_load_or_reject_by_policy() -> None:
     )
     assert run_spec.schema_id == RUN_SPEC_SCHEMA_ID
     assert run_spec.target_version == RUN_SPEC_SCHEMA_VERSION
-
-    regeneration_spec = load_rlrmp_spec_payload(
-        DIAGNOSTIC_REGENERATION_SPEC_KIND,
-        REPO_ROOT
-        / "results"
-        / "0203d1f"
-        / "notes"
-        / "gru_postrun_materialization_validation_selected_regeneration_spec.json",
-    )
-    assert regeneration_spec.target_version == DIAGNOSTIC_REGENERATION_SPEC_SCHEMA_VERSION
-    assert regeneration_spec.payload["diagnostic_name"] == "gru_postrun_materialization_bundle"
 
     evaluation_manifest = load_rlrmp_spec_payload(
         GRU_EVALUATION_DIAGNOSTICS_KIND,
@@ -348,6 +329,7 @@ def test_representative_analysis_sidecar_payloads_are_accepted() -> None:
 def test_generic_feedbax_custody_families_are_not_registered_in_rlrmp() -> None:
     registry = ensure_rlrmp_spec_families(SpecSchemaRegistry())
     generic_or_sibling_owned_kinds = (
+        "RLRMPDiagnosticRegenerationSpec",
         "RLRMPValidationSelectedGRUCheckpoints",
         "RLRMPFixedBankGRUCheckpointRescore",
         "RLRMPGRUPostrunMaterialization",

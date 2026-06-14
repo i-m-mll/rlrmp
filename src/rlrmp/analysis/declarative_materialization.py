@@ -4,13 +4,18 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
-import equinox as eqx
-from feedbax.analysis.analysis import AbstractAnalysis
-from feedbax.analysis.context import AnalysisRunContext
+from feedbax.analysis.context import AnalysisArtifactFile, AnalysisRunContext
+from feedbax.analysis.materialization import (
+    AnalysisArtifactGroup,
+    ContextMaterializer,
+    ExistingAnalysisArtifact,
+    MaterializationResult,
+    materialization_metadata,
+)
 from feedbax.analysis.specs import AnalysisRecipeResult, register_analysis_recipe
-from feedbax.manifest import AnalysisRunSpec, ArtifactRef
+from feedbax.manifest import AnalysisRunSpec
 from feedbax.types import AnalysisInputData, TreeNamespace
 
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import (
@@ -32,10 +37,6 @@ from rlrmp.paths import REPO_ROOT
 GRU_STANDARD_ANALYSIS_TYPE = "rlrmp.certificate.gru_standard"
 GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE = "rlrmp.diagnostic.gru_evaluation"
 BRIDGE_STANDARD_ANALYSIS_TYPE = GRU_STANDARD_ANALYSIS_TYPE
-
-
-def _unconfigured_materializer(_context: AnalysisRunContext) -> dict[str, Any]:
-    raise RuntimeError("RlrmpMaterializationAnalysis requires a materializer")
 
 
 def register_certificate_analysis_recipes(*, replace: bool = False) -> None:
@@ -128,48 +129,6 @@ def gru_evaluation_diagnostics_spec(
     )
 
 
-class RlrmpMaterializationAnalysis(AbstractAnalysis):
-    """Analysis node that emits an rlrmp-owned materialization payload."""
-
-    materializer: Callable[[AnalysisRunContext], dict[str, Any]] = eqx.field(
-        default=_unconfigured_materializer,
-        static=True,
-    )
-    artifact_role: str = eqx.field(default="rlrmp-analysis-payload", static=True)
-    logical_name: str = eqx.field(default="payload.json", static=True)
-    schema_boundary: str = eqx.field(default="rlrmp-owned payload", static=True)
-
-    def compute(self, data: AnalysisInputData, **kwargs: Any) -> dict[str, Any]:
-        """Return a placeholder; materialization needs the run context."""
-
-        del data, kwargs
-        return {
-            "status": "pending_context_artifact_emission",
-            "schema_boundary": self.schema_boundary,
-        }
-
-    def emit_artifacts(
-        self,
-        context: AnalysisRunContext,
-        data: AnalysisInputData,
-        *,
-        result: dict[str, Any],
-        **kwargs: Any,
-    ) -> dict[str, Any]:
-        """Materialize payload bytes and attach them to the Feedbax manifest."""
-
-        del data, result, kwargs
-        payload = self.materializer(context)
-        context.record_json_artifact(
-            payload,
-            role=self.artifact_role,
-            logical_name=self.logical_name,
-            metadata={"schema_boundary": self.schema_boundary},
-        )
-        context.record_artifact_refs(_artifact_refs_from_payload(payload))
-        return payload
-
-
 def gru_standard_certificate_recipe(
     spec: AnalysisRunSpec,
     _root: Path,
@@ -178,7 +137,7 @@ def gru_standard_certificate_recipe(
     """Build the declarative GRU standard-certificate recipe."""
 
     params = dict(spec.params)
-    analysis = RlrmpMaterializationAnalysis(
+    analysis = ContextMaterializer(
         materializer=lambda context: _materialize_gru_standard(context, params),
         artifact_role="rlrmp-bridge-standard-certificate",
         logical_name="gru_standard_certificates.json",
@@ -198,7 +157,7 @@ def gru_evaluation_diagnostics_recipe(
     """Build the declarative GRU rollout-diagnostics recipe."""
 
     params = dict(spec.params)
-    analysis = RlrmpMaterializationAnalysis(
+    analysis = ContextMaterializer(
         materializer=lambda context: _materialize_gru_evaluation_diagnostics(context, params),
         artifact_role="rlrmp-gru-evaluation-diagnostics",
         logical_name="gru_evaluation_diagnostics.json",
@@ -213,7 +172,7 @@ def gru_evaluation_diagnostics_recipe(
 def _materialize_gru_standard(
     context: AnalysisRunContext,
     params: Mapping[str, Any],
-) -> dict[str, Any]:
+) -> MaterializationResult:
     run_ids = tuple(str(run_id) for run_id in params.get("run_ids", RUN_IDS))
     experiment = str(params.get("experiment", SOURCE_ISSUE_ID))
     repo_root = _repo_root_from_params(params)
@@ -233,6 +192,7 @@ def _materialize_gru_standard(
     )
     note_path = _optional_path(params.get("note_output"), repo_root=repo_root)
     manifest_path = _optional_path(params.get("manifest_output"), repo_root=repo_root)
+    existing_artifacts: list[ExistingAnalysisArtifact] = []
     if note_path is not None or manifest_path is not None:
         manifest_output = manifest_path or _default_output_path(
             context,
@@ -253,30 +213,37 @@ def _materialize_gru_standard(
             **_read_json_payload(manifest_output),
             "declarative_analysis": _declarative_metadata(context),
         }
-        _record_existing_file(
-            context,
-            manifest_output,
-            role="rlrmp-bridge-standard-certificate-manifest",
-            logical_name="legacy/gru_standard_certificates_manifest.json",
-        )
-        _record_existing_file(
-            context,
-            actual_note_path,
-            role="rlrmp-bridge-standard-certificate-note",
-            logical_name="legacy/gru_standard_certificates.md",
+        existing_artifacts.extend(
+            artifact
+            for artifact in (
+                _existing_file(
+                    manifest_output,
+                    role="rlrmp-bridge-standard-certificate-manifest",
+                    logical_name="legacy/gru_standard_certificates_manifest.json",
+                ),
+                _existing_file(
+                    actual_note_path,
+                    role="rlrmp-bridge-standard-certificate-note",
+                    logical_name="legacy/gru_standard_certificates.md",
+                ),
+            )
+            if artifact is not None
         )
     else:
         result = {
             **result,
             "declarative_analysis": _declarative_metadata(context),
         }
-    return result
+    return MaterializationResult(
+        payload=result,
+        existing_artifacts=tuple(existing_artifacts),
+    )
 
 
 def _materialize_gru_evaluation_diagnostics(
     context: AnalysisRunContext,
     params: Mapping[str, Any],
-) -> dict[str, Any]:
+) -> MaterializationResult:
     if "experiment" not in params:
         raise ValueError("GRU evaluation diagnostics recipe requires params.experiment")
     if "run_ids" not in params:
@@ -312,22 +279,24 @@ def _materialize_gru_evaluation_diagnostics(
         ),
         repo_root=repo_root,
     )
-    _record_existing_file(
-        context,
+    existing = _existing_file(
         output_path,
         role="rlrmp-gru-evaluation-diagnostics-manifest",
         logical_name="legacy/gru_evaluation_diagnostics.json",
     )
-    _record_bulk_arrays(
-        context,
+    artifact_groups = _bulk_artifact_groups(
         manifest,
         group_id="gru_evaluation_diagnostics_bulk",
         repo_root=repo_root,
     )
-    return {
-        **manifest,
-        "declarative_analysis": _declarative_metadata(context),
-    }
+    return MaterializationResult(
+        payload={
+            **manifest,
+            "declarative_analysis": _declarative_metadata(context),
+        },
+        existing_artifacts=() if existing is None else (existing,),
+        artifact_groups=artifact_groups,
+    )
 
 
 def _empty_analysis_data() -> AnalysisInputData:
@@ -363,25 +332,24 @@ def _default_output_path(context: AnalysisRunContext, filename: str) -> Path:
     return context.results_cache_dir / filename
 
 
-def _record_existing_file(
-    context: AnalysisRunContext,
+def _existing_file(
     path: Path,
     *,
     role: str,
     logical_name: str,
-) -> None:
+) -> ExistingAnalysisArtifact | None:
     if not path.exists():
-        return
-    context.record_artifact(path, role=role, logical_name=logical_name)
+        return None
+    return ExistingAnalysisArtifact(path=path, role=role, logical_name=logical_name)
 
 
-def _record_bulk_arrays(
-    context: AnalysisRunContext,
+def _bulk_artifact_groups(
     manifest: Mapping[str, Any],
     *,
     group_id: str,
     repo_root: Path,
-) -> None:
+) -> tuple[AnalysisArtifactGroup, ...]:
+    members: list[AnalysisArtifactFile] = []
     for run_id, run_payload in manifest.get("runs", {}).items():
         if not isinstance(run_payload, Mapping):
             continue
@@ -394,28 +362,24 @@ def _record_bulk_arrays(
         path = _optional_path(raw_path, repo_root=repo_root)
         if path is None or not path.exists():
             continue
-        context.record_artifact(
-            path,
-            role="rlrmp-gru-evaluation-diagnostics-bulk",
-            logical_name=f"bulk/{run_id}.npz",
-            metadata={"run_id": str(run_id)},
-            group_id=group_id,
-            group_role="rollout_arrays",
-            group_metadata={"schema_boundary": "rlrmp-owned GRU diagnostic payload"},
+        members.append(
+            AnalysisArtifactFile(
+                path=path,
+                role="rlrmp-gru-evaluation-diagnostics-bulk",
+                logical_name=f"bulk/{run_id}.npz",
+                metadata={"run_id": str(run_id)},
+                group_role="rollout_arrays",
+            )
         )
-
-
-def _artifact_refs_from_payload(payload: Any) -> tuple[ArtifactRef, ...]:
-    refs: list[ArtifactRef] = []
-    if isinstance(payload, ArtifactRef):
-        refs.append(payload)
-    elif isinstance(payload, Mapping):
-        for value in payload.values():
-            refs.extend(_artifact_refs_from_payload(value))
-    elif isinstance(payload, Sequence) and not isinstance(payload, (str, bytes, bytearray)):
-        for value in payload:
-            refs.extend(_artifact_refs_from_payload(value))
-    return tuple(refs)
+    if not members:
+        return ()
+    return (
+        AnalysisArtifactGroup(
+            group_id=group_id,
+            members=tuple(members),
+            metadata={"schema_boundary": "rlrmp-owned GRU diagnostic payload"},
+        ),
+    )
 
 
 def _read_json_payload(path: Path) -> dict[str, Any]:
@@ -425,12 +389,7 @@ def _read_json_payload(path: Path) -> dict[str, Any]:
 
 
 def _declarative_metadata(context: AnalysisRunContext) -> dict[str, Any]:
-    return {
-        "analysis_type": context.spec.analysis_type,
-        "analysis_manifest_id": context.manifest_id,
-        "artifact_owner": "feedbax.AnalysisRunManifest",
-        "schema_owner": "rlrmp",
-    }
+    return materialization_metadata(context, schema_owner="rlrmp")
 
 
 def _set_optional_path_param(
@@ -446,7 +405,6 @@ __all__ = [
     "BRIDGE_STANDARD_ANALYSIS_TYPE",
     "GRU_EVALUATION_DIAGNOSTICS_ANALYSIS_TYPE",
     "GRU_STANDARD_ANALYSIS_TYPE",
-    "RlrmpMaterializationAnalysis",
     "gru_evaluation_diagnostics_spec",
     "gru_evaluation_diagnostics_recipe",
     "gru_standard_certificate_spec",
