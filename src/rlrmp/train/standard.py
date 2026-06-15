@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import argparse
 
-from feedbax.types import TreeNamespace, dict_to_namespace
+from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 
 __all__ = [
     "LOSS_MODE_CONFIGS",

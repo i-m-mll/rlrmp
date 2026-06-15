@@ -22,7 +22,7 @@ import jax
 import jax.numpy as jnp
 import jax.random as jr
 import optax
-from feedbax import save as fbx_save
+from jax_cookbook import save as fbx_save
 from feedbax.objectives.loss import CompositeLoss, TermTree
 from feedbax.training.train import (
     TaskTrainer,

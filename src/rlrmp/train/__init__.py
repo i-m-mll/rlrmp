@@ -1,6 +1,6 @@
 """Hyperparameter constructors for rlrmp training methods.
 
-Modules in this package construct :class:`~feedbax.types.TreeNamespace`
+Modules in this package construct :class:`~feedbax.config.namespace.TreeNamespace`
 hyperparameter trees from CLI argparse Namespaces and build task/model skeletons
 for training and checkpoint reload paths. The training loops themselves live in
 feedbax (:mod:`feedbax.training.train`) and the training-method-specific drivers

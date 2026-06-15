@@ -9,7 +9,7 @@ from typing import Any
 
 import jax.random as jr
 from feedbax.artifact_materialize import materialize_model_artifact
-from feedbax.manifest import ModelArtifactManifest, ParentRef
+from feedbax.contracts.manifest import ModelArtifactManifest, ParentRef
 
 from rlrmp.train.task_model import setup_task_model_pair
 from rlrmp.train.minimax import build_hps

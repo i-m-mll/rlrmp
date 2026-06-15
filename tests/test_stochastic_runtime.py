@@ -6,7 +6,7 @@ import argparse
 
 import jax.random as jr
 import pytest
-from feedbax.noise import CompositeNoise, Multiplicative, Normal
+from feedbax.runtime.noise import CompositeNoise, Multiplicative, Normal
 from feedbax.runtime.channel import Channel
 
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL

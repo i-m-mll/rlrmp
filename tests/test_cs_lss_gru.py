@@ -8,12 +8,12 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import pytest
-import feedbax.serialization_prototypes as fbx_prototypes
+import feedbax.contracts.graphs.prototypes as fbx_prototypes
 from feedbax.contracts.graph import GraphSpec
 from feedbax.runtime.graph import init_state_from_component
-from feedbax.serialization import spec_to_graph
+from feedbax.contracts.graphs.serialization import spec_to_graph
 from feedbax.runtime.state_feedback import StateFeedbackSelector
-from feedbax._tree import filter_spec_leaves
+from jax_cookbook.tree import filter_spec_leaves
 from feedbax.training.trainer import get_model_parameters
 
 from rlrmp.analysis.math.cs_game_card import build_canonical_game, build_no_integrator_game

@@ -15,8 +15,9 @@ from feedbax.analysis.context import AnalysisRunContext
 from feedbax.analysis.evaluation import EvaluationRecipeResult, register_evaluation_recipe
 from feedbax.analysis.specs import AnalysisRecipeResult, ResolvedAnalysisInput
 from feedbax.analysis.specs import register_analysis_recipe
-from feedbax.manifest import EvaluationRunSpec
-from feedbax.types import AnalysisInputData, TreeNamespace
+from feedbax.contracts.manifest import EvaluationRunSpec
+from feedbax.analysis.types import AnalysisInputData
+from feedbax.config.namespace import TreeNamespace
 
 from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT

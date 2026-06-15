@@ -13,7 +13,7 @@ from feedbax.contracts.graph import (
     WireSpec,
 )
 from feedbax.runtime.graph import Component, Graph, State, Wire
-from feedbax.serialization import spec_to_graph
+from feedbax.contracts.graphs.serialization import spec_to_graph
 
 from rlrmp.model.feedbax_channel_adapters import (
     find_materialized_additive_channel_adapter,

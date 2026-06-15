@@ -10,8 +10,8 @@ from feedbax.analysis.analysis import (
     Data,
     InputOf,
 )
-from feedbax.misc import unit_circle_points
-from feedbax.types import LDict
+from rlrmp.misc import unit_circle_points
+from jax_cookbook import LDict
 from jax_cookbook import is_module
 from jaxtyping import ArrayLike, PyTree
 

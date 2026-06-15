@@ -15,7 +15,7 @@ import argparse
 from functools import partial
 
 import equinox as eqx
-from feedbax.types import TreeNamespace, dict_to_namespace
+from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 
 from rlrmp.model.trainable import staged_network_trainable_paths
 

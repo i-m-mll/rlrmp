@@ -8,8 +8,8 @@ from typing import Any, Optional
 
 import equinox as eqx
 import jax.random as jr
-from feedbax.nn import LeakyRNNCell, PopulationStructure
-from feedbax.types import TreeNamespace
+from feedbax.models.networks import LeakyRNNCell, PopulationStructure
+from feedbax.config.namespace import TreeNamespace
 from jaxtyping import Array, PRNGKeyArray
 
 from rlrmp.model.feedbax_graph import create_point_mass_graph_ensemble
@@ -107,7 +107,7 @@ def create_point_mass_nn_ensemble(
             If None and hps.model contains population_structure config, it will be
             parsed from the config.
         hidden_type: The recurrent cell class to use. Defaults to `eqx.nn.GRUCell`.
-            Pass e.g. `functools.partial(feedbax.nn.LeakyRNNCell, dt=hps.dt)` for a
+            Pass e.g. `functools.partial(feedbax.models.networks.LeakyRNNCell, dt=hps.dt)` for a
             vanilla leaky RNN.
         key: Random key for model initialization.
 

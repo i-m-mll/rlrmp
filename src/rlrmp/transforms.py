@@ -4,10 +4,9 @@ from typing import Optional
 import jax.numpy as jnp
 import jax.tree as jt
 from feedbax.analysis.pca import PCAResults
-from feedbax.tree_utils import ldict_level_to_top
-from feedbax.types import LDict, TreeNamespace
-from jax_cookbook import is_module
-from jaxtyping import Array
+from feedbax.config.tree import ldict_level_to_top
+from feedbax.config.namespace import TreeNamespace
+from jax_cookbook import LDict, is_module
 
 
 def get_state_pcs(pca_results: PCAResults, states):

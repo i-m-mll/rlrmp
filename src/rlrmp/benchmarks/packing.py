@@ -471,7 +471,7 @@ class CsNominalGruRuntime:
         )
 
     def train_chunk(self, model: Any, n_batches: int) -> Any:
-        from feedbax.types import TaskModelPair
+        from feedbax.training.types import TaskModelPair
 
         return self._train(
             pair=TaskModelPair(self.pair.task, model),

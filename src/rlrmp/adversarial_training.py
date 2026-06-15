@@ -49,7 +49,7 @@ import jax.tree as jt
 import optax
 from feedbax import TaskTrialSpec
 from feedbax.intervene import TimeSeriesParam
-from feedbax.types import TaskModelPair
+from feedbax.training.types import TaskModelPair
 from jaxtyping import Array, Float, PyTree
 
 from rlrmp.adversary import GaussianBumpAdversary

@@ -9,7 +9,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from feedbax.manifest import (
+from feedbax.contracts.manifest import (
     ArtifactRef,
     EntrypointRef,
     FileHashRef,

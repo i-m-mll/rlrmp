@@ -20,7 +20,7 @@ from feedbax.contracts.graph import (
     StudioWorkspaceSpec,
     build_default_studio_workspace,
 )
-from feedbax.manifest import (
+from feedbax.contracts.manifest import (
     ArtifactRef,
     ParentRef,
     SpecPayload,

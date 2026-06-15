@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from feedbax.manifest import REGENERATION_SPEC_SCHEMA_ID, REGENERATION_SPEC_SCHEMA_VERSION
+from feedbax.contracts.manifest import REGENERATION_SPEC_SCHEMA_ID, REGENERATION_SPEC_SCHEMA_VERSION
 
 from rlrmp.analysis.pipelines.diagnostic_provenance import (
     path_ref,

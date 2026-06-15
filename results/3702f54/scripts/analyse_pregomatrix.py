@@ -53,7 +53,7 @@ import jax.random as jr
 import jax.tree as jt
 import numpy as np
 import plotly.graph_objects as go
-from feedbax import load_with_hyperparameters
+from jax_cookbook import load_with_hyperparameters
 from feedbax.plot import save_figure  # Bug: f485c26, feedbax 67bf476 -- project-config routing
 from feedbax.train import TaskTrainerHistory, init_task_trainer_history
 from plotly.subplots import make_subplots

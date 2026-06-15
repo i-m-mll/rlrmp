@@ -7,7 +7,7 @@ from pathlib import Path
 
 import rlrmp
 from feedbax.analysis.bundles import execute_staged_analysis_bundle, load_analysis_bundle
-from feedbax.manifest import (
+from feedbax.contracts.manifest import (
     AnalysisRunManifest,
     AnalysisRunSpec,
     ArtifactRef,

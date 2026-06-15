@@ -13,7 +13,7 @@ import jax
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
-from feedbax.types import TreeNamespace, dict_to_namespace
+from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 from jaxtyping import Array, Float
 
 from rlrmp.analysis.math.cs_game_card import TARGET_POS, build_canonical_game

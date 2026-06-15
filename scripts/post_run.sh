@@ -154,7 +154,12 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from feedbax.manifest import PROVIDER_VERSION, SCHEMA_VERSION, TrainingRunManifest, load_manifest
+from feedbax.contracts.manifest import (
+    PROVIDER_VERSION,
+    SCHEMA_VERSION,
+    TrainingRunManifest,
+    load_manifest,
+)
 
 
 POST_RUN_SCHEMA_VERSION = "rlrmp.post_run_provenance.v1"

@@ -63,7 +63,7 @@ def test_build_hps_minimax_signature_matches():
     documented minimum field set, and returns a TreeNamespace with the same
     top-level structure as the legacy in-script `build_hps`.
     """
-    from feedbax.types import TreeNamespace
+    from feedbax.config.namespace import TreeNamespace
     from rlrmp.train.minimax import build_hps
 
     args = argparse.Namespace(
@@ -85,7 +85,7 @@ def test_build_hps_minimax_signature_matches():
 
 def test_build_hps_standard_signature_matches():
     """`rlrmp.train.standard.build_hps` accepts the documented loss-mode menu."""
-    from feedbax.types import TreeNamespace
+    from feedbax.config.namespace import TreeNamespace
     from rlrmp.train.standard import LOSS_MODE_CONFIGS, build_hps
 
     # All four loss modes should be present.

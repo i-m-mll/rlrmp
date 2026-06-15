@@ -22,9 +22,9 @@ from feedbax.objectives.loss import (
     target_final_state,
     target_zero,
 )
-from feedbax.misc import deep_merge
+from feedbax.config.utils import deep_merge
 from feedbax.training.loss import get_readout_norm_loss
-from feedbax.types import TreeNamespace
+from feedbax.config.namespace import TreeNamespace
 from jax_cookbook.misc import window_take
 from jaxtyping import Array, PyTree
 

@@ -4,8 +4,8 @@ import json
 from pathlib import Path
 
 import pytest
-from feedbax.manifest import TrainingRunManifest, load_manifest
-from feedbax.migrations import SpecSchemaRegistry, UnknownSpecFamily, UnsupportedSpecVersion
+from feedbax.contracts.manifest import TrainingRunManifest, load_manifest
+from feedbax.contracts.migrations import SpecSchemaRegistry, UnknownSpecFamily, UnsupportedSpecVersion
 
 from rlrmp.runtime.spec_migrations import (
     ArchiveOnlySpecError,

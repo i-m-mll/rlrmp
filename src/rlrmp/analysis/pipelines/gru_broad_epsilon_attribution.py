@@ -14,10 +14,11 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 import numpy as np
-from feedbax import TaskTrialSpec, WhereDict, load_with_hyperparameters
-from feedbax.misc import BatchInfo
-from feedbax._tree import filter_spec_leaves
-from feedbax.types import TreeNamespace, dict_to_namespace
+from feedbax import TaskTrialSpec, WhereDict
+from feedbax.runtime.batch import BatchInfo
+from jax_cookbook.tree import filter_spec_leaves
+from feedbax.config.namespace import TreeNamespace, dict_to_namespace
+from jax_cookbook import load_with_hyperparameters
 
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import (

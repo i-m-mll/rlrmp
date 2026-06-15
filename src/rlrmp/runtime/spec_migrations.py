@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from feedbax.migrations import (
+from feedbax.contracts.migrations import (
     SpecFamilyMigrationPolicy,
     SpecMigrationResult,
     SpecSchemaFamily,

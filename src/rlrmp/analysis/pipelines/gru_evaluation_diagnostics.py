@@ -14,8 +14,8 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 import numpy as np
-from feedbax import load_with_hyperparameters
-from feedbax.types import TreeNamespace, dict_to_namespace
+from jax_cookbook import load_with_hyperparameters
+from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.analysis.pipelines.diagnostic_provenance import write_regeneration_spec

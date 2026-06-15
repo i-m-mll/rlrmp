@@ -25,12 +25,12 @@ import jax.random as jr
 import jax.tree as jt
 import numpy as np
 import optax
-from feedbax import save as fbx_save
-from feedbax.misc import BatchInfo
-from feedbax._tree import filter_spec_leaves
+from jax_cookbook import save as fbx_save
+from feedbax.runtime.batch import BatchInfo
+from jax_cookbook.tree import filter_spec_leaves
 from feedbax.training.trainer import get_model_parameters
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule
-from feedbax.types import TreeNamespace, dict_to_namespace
+from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 
 from rlrmp.analysis.math.cs_game_card import (
     INIT_POS,
@@ -928,7 +928,7 @@ def build_graph_bundle(hps: TreeNamespace) -> RLRMPFeedbaxGraphBundle:
         },
         "legacy_loader": {
             "setup_function": "rlrmp.train.task_model.setup_task_model_pair",
-            "checkpoint_format": "feedbax._io.save/load_with_hyperparameters",
+            "checkpoint_format": "jax_cookbook.save/load_with_hyperparameters",
         },
         "task_spec": task_spec,
         "loss_spec": loss_spec,

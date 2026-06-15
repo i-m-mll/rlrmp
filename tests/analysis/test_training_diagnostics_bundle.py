@@ -10,7 +10,7 @@ import numpy as np
 import rlrmp
 from feedbax.analysis.bundles import execute_analysis_bundle, load_analysis_bundle
 from feedbax.analysis.specs import execute_analysis_run_spec
-from feedbax.manifest import (
+from feedbax.contracts.manifest import (
     AnalysisRunSpec,
     ArtifactRef,
     ParentRef,
