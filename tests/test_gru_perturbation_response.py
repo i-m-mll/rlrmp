@@ -6,6 +6,7 @@ import json
 
 import jax.random as jr
 import numpy as np
+import pytest
 from feedbax import TaskTrialSpec, TrialTimeline
 from feedbax.runtime.graph import Wire
 from feedbax.objectives.loss import TargetSpec
@@ -199,8 +200,55 @@ def test_default_bank_emits_timing_bin_specific_rows() -> None:
     assert bank["timing_bin_conventions"]["controller_visible"][0]["start_time_index"] == 10
 
 
+def _feedback_scale_manifest() -> dict[str, object]:
+    return {
+        "schema_version": "rlrmp.gru_evaluation_diagnostics.v1",
+        "runs": {
+            "run_a": {
+                "controller_feedback_scales": {
+                    "status": "available",
+                    "schema_version": "rlrmp.controller_feedback_scales.v1",
+                    "run_id": "run_a",
+                    "checkpoint_policy": "validation_selected_per_replicate",
+                    "feedback_basis": "target_relative_delayed_feedback_plus_force_filter",
+                    "feedback_dim": 6,
+                    "statistic": "p95_norm",
+                    "components": {
+                        "position": {
+                            "units": "m",
+                            "reference_scale": 0.12,
+                            "reference_scale_statistic": "p95_norm",
+                        },
+                        "velocity": {
+                            "units": "m/s",
+                            "reference_scale": 2.0,
+                            "reference_scale_statistic": "p95_norm",
+                        },
+                        "force_filter": {
+                            "units": "N",
+                            "reference_scale": 40.0,
+                            "reference_scale_statistic": "p95_norm",
+                            "feedback_basis_indices": [4, 5],
+                            "gru_input_indices": [4, 5],
+                        },
+                    },
+                }
+            }
+        },
+    }
+
+
+def test_calibrated_bank_requires_feedback_scale_manifest_for_force_filter_rows() -> None:
+    with pytest.raises(ValueError, match="force/filter feedback rows require"):
+        default_cs_perturbation_bank(mode="calibrated", calibration_level="small")
+
+
 def test_calibrated_bank_includes_force_filter_feedback_rows() -> None:
-    bank = default_cs_perturbation_bank(mode="calibrated", calibration_level="small")
+    bank = default_cs_perturbation_bank(
+        mode="calibrated",
+        calibration_level="small",
+        feedback_scale_manifest=_feedback_scale_manifest(),
+    )
     rows = bank["perturbations"]
 
     force_filter_rows = [
@@ -216,6 +264,19 @@ def test_calibrated_bank_includes_force_filter_feedback_rows() -> None:
     assert all(row["force_filter_feedback_only"] is True for row in force_filter_rows)
     assert all(
         row["calibration_role"] == "reach_relative_calibrated_native_units"
+        for row in force_filter_rows
+    )
+    assert all(
+        row["reference_force_filter_scale_N"] == 40.0
+        for row in force_filter_rows
+    )
+    assert {
+        row["amplitude"] / row["level_fraction_of_reach"]
+        for row in force_filter_rows
+    } == {40.0}
+    assert all(
+        row["controller_feedback_scale"]["aggregation"]
+        == "mean_reference_scale_across_manifest_runs"
         for row in force_filter_rows
     )
 

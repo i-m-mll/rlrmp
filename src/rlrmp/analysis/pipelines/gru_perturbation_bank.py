@@ -173,6 +173,8 @@ def default_cs_perturbation_bank(
     mode: Literal["raw", "calibrated"] = "raw",
     calibration_level: str | Sequence[str] | None = None,
     calibration_reach: str | float | None = None,
+    feedback_scale_manifest: Mapping[str, Any] | None = None,
+    feedback_scale_manifest_path: Path | None = None,
 ) -> dict[str, Any]:
     """Return the JSON-serializable default C&S perturbation-response bank."""
 
@@ -180,6 +182,8 @@ def default_cs_perturbation_bank(
         return default_cs_calibrated_perturbation_bank(
             calibration_level=calibration_level,
             calibration_reach=calibration_reach,
+            feedback_scale_manifest=feedback_scale_manifest,
+            feedback_scale_manifest_path=feedback_scale_manifest_path,
         )
     if mode != "raw":
         raise ValueError(f"unsupported perturbation bank mode {mode!r}")
@@ -577,12 +581,13 @@ def default_cs_calibrated_perturbation_bank(
     *,
     calibration_level: str | Sequence[str] | None = None,
     calibration_reach: str | float | None = None,
+    feedback_scale_manifest: Mapping[str, Any] | None = None,
+    feedback_scale_manifest_path: Path | None = None,
 ) -> dict[str, Any]:
     """Return a reach-relative calibrated C&S perturbation-response bank."""
 
     from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
         DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS,
-        DEFAULT_CONTROLLER_VISIBLE_FORCE_FILTER_SCALE_N,
         DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S,
         DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT,
         DEFAULT_PLANT_TIMING_BINS,
@@ -598,6 +603,25 @@ def default_cs_calibrated_perturbation_bank(
     levels = _select_reach_relative_levels(
         calibration_level,
         levels=DEFAULT_REACH_RELATIVE_LEVELS,
+    )
+    feedback_scale_manifest = _load_feedback_scale_manifest(
+        feedback_scale_manifest,
+        feedback_scale_manifest_path,
+    )
+    position_scale = _controller_feedback_component_scale(
+        feedback_scale_manifest,
+        "position",
+        required=False,
+    )
+    velocity_scale = _controller_feedback_component_scale(
+        feedback_scale_manifest,
+        "velocity",
+        required=False,
+    )
+    force_filter_scale = _controller_feedback_component_scale(
+        feedback_scale_manifest,
+        "force_filter",
+        required=True,
     )
     perturbations: list[PerturbationSpec] = []
 
@@ -860,7 +884,14 @@ def default_cs_calibrated_perturbation_bank(
                                 ),
                                 channel=channel,  # type: ignore[arg-type]
                                 family=family,
-                                amplitude=target_peak,
+                                amplitude=(
+                                    float(
+                                        position_scale["reference_scale"]
+                                        if position_scale is not None
+                                        else reach.reach_length_m
+                                    )
+                                    * float(level.fraction_of_reach)
+                                ),
                                 units="m",
                                 axis=axis,
                                 basis=basis,
@@ -885,11 +916,21 @@ def default_cs_calibrated_perturbation_bank(
                                     calibration_role="reach_relative_calibrated_native_units",
                                     target_open_loop_peak_dx_m=target_peak,
                                     native_unit_rule=(
-                                        "position_offset_m = reach_length_m "
+                                        "position_offset_m = reference_position_scale_m "
                                         "* level_fraction_of_reach"
                                     ),
                                 )
                                 | {
+                                    "reference_position_scale_m": float(
+                                        position_scale["reference_scale"]
+                                        if position_scale is not None
+                                        else reach.reach_length_m
+                                    ),
+                                    "controller_feedback_scale": (
+                                        None
+                                        if position_scale is None
+                                        else _feedback_scale_provenance(position_scale)
+                                    ),
                                     "feedback_quantity": "position",
                                     "feedback_payload_index": (
                                         _controller_visible_feedback_index("position", axis)
@@ -901,7 +942,11 @@ def default_cs_calibrated_perturbation_bank(
                             )
                         )
                 velocity_amplitude = (
-                    float(DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S)
+                    float(
+                        velocity_scale["reference_scale"]
+                        if velocity_scale is not None
+                        else DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S
+                    )
                     * float(level.fraction_of_reach)
                 )
                 for axis in ("vx", "vy"):
@@ -945,7 +990,14 @@ def default_cs_calibrated_perturbation_bank(
                                 )
                                 | {
                                     "nominal_peak_speed_m_s": float(
-                                        DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S
+                                        velocity_scale["reference_scale"]
+                                        if velocity_scale is not None
+                                        else DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S
+                                    ),
+                                    "controller_feedback_scale": (
+                                        None
+                                        if velocity_scale is None
+                                        else _feedback_scale_provenance(velocity_scale)
                                     ),
                                     "feedback_quantity": "velocity",
                                     "feedback_payload_index": (
@@ -958,8 +1010,7 @@ def default_cs_calibrated_perturbation_bank(
                             )
                         )
                 force_filter_amplitude = (
-                    float(DEFAULT_CONTROLLER_VISIBLE_FORCE_FILTER_SCALE_N)
-                    * float(level.fraction_of_reach)
+                    float(force_filter_scale["reference_scale"]) * float(level.fraction_of_reach)
                 )
                 for axis in ("x", "y"):
                     for sign in (-1, 1):
@@ -1004,7 +1055,10 @@ def default_cs_calibrated_perturbation_bank(
                                 )
                                 | {
                                     "reference_force_filter_scale_N": float(
-                                        DEFAULT_CONTROLLER_VISIBLE_FORCE_FILTER_SCALE_N
+                                        force_filter_scale["reference_scale"]
+                                    ),
+                                    "controller_feedback_scale": _feedback_scale_provenance(
+                                        force_filter_scale,
                                     ),
                                     "feedback_quantity": "force_filter",
                                     "feedback_payload_index": (
@@ -1055,15 +1109,139 @@ def default_cs_calibrated_perturbation_bank(
                 "reach_label": reach.label,
                 "reach_length_m": float(reach.reach_length_m),
                 "level_definitions": [level.to_json() for level in levels],
+                "controller_feedback_scale_manifest": (
+                    None
+                    if feedback_scale_manifest_path is None
+                    else _repo_relative(feedback_scale_manifest_path, repo_root=REPO_ROOT)
+                ),
+                "controller_feedback_scales": {
+                    "position": (
+                        None
+                        if position_scale is None
+                        else _feedback_scale_provenance(position_scale)
+                    ),
+                    "velocity": (
+                        None
+                        if velocity_scale is None
+                        else _feedback_scale_provenance(velocity_scale)
+                    ),
+                    "force_filter": _feedback_scale_provenance(force_filter_scale),
+                },
                 "source": (
                     "src/rlrmp/analysis/pipelines/gru_perturbation_calibration.py "
-                    "DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT and native conventions"
+                    "DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT, native conventions, "
+                    "and nominal-rollout controller feedback scale manifest"
                 ),
             },
             "perturbations": [spec.to_json() for spec in perturbations],
         }
     )
     return bank
+
+
+def _load_feedback_scale_manifest(
+    manifest: Mapping[str, Any] | None,
+    manifest_path: Path | None,
+) -> Mapping[str, Any] | None:
+    if manifest is not None and manifest_path is not None:
+        raise ValueError("Pass either feedback_scale_manifest or feedback_scale_manifest_path, not both")
+    if manifest is not None:
+        return manifest
+    if manifest_path is None:
+        return None
+    return json.loads(manifest_path.read_text(encoding="utf-8"))
+
+
+def _controller_feedback_component_scale(
+    manifest: Mapping[str, Any] | None,
+    component: str,
+    *,
+    required: bool,
+) -> dict[str, Any] | None:
+    if manifest is None:
+        if required:
+            raise ValueError(
+                "calibrated force/filter feedback rows require a controller-feedback "
+                "scale manifest; pass feedback_scale_manifest_path generated by "
+                "gru_evaluation_diagnostics"
+            )
+        return None
+
+    scale_entries = _controller_feedback_scale_entries(manifest)
+    component_entries: list[dict[str, Any]] = []
+    for run_id, entry in scale_entries:
+        components = entry.get("components", {})
+        if not isinstance(components, Mapping) or component not in components:
+            continue
+        payload = components[component]
+        if not isinstance(payload, Mapping):
+            continue
+        reference_scale = payload.get("reference_scale", payload.get("p95_norm"))
+        if reference_scale is None:
+            continue
+        component_entries.append(
+            {
+                "run_id": run_id,
+                "reference_scale": float(reference_scale),
+                "reference_scale_statistic": payload.get(
+                    "reference_scale_statistic",
+                    entry.get("statistic", "p95_norm"),
+                ),
+                "units": payload.get("units"),
+                "feedback_basis": entry.get("feedback_basis"),
+                "feedback_dim": entry.get("feedback_dim"),
+                "feedback_basis_indices": payload.get("feedback_basis_indices"),
+                "gru_input_indices": payload.get("gru_input_indices"),
+            }
+        )
+
+    if not component_entries:
+        if required:
+            raise ValueError(
+                f"controller-feedback scale manifest does not include required "
+                f"{component!r} scale data"
+            )
+        return None
+
+    reference_scale = float(np.mean([entry["reference_scale"] for entry in component_entries]))
+    return {
+        "component": component,
+        "reference_scale": reference_scale,
+        "aggregation": "mean_reference_scale_across_manifest_runs",
+        "runs": component_entries,
+    }
+
+
+def _controller_feedback_scale_entries(
+    manifest: Mapping[str, Any],
+) -> list[tuple[str | None, Mapping[str, Any]]]:
+    if manifest.get("schema_version") == "rlrmp.controller_feedback_scales.v1":
+        return [(str(manifest.get("run_id")) if manifest.get("run_id") is not None else None, manifest)]
+
+    runs = manifest.get("runs")
+    if isinstance(runs, Mapping):
+        entries: list[tuple[str | None, Mapping[str, Any]]] = []
+        for run_id, run_payload in runs.items():
+            if not isinstance(run_payload, Mapping):
+                continue
+            scales = run_payload.get("controller_feedback_scales")
+            if isinstance(scales, Mapping) and scales.get("status", "available") == "available":
+                entries.append((str(run_id), scales))
+        return entries
+
+    scales = manifest.get("controller_feedback_scales")
+    if isinstance(scales, Mapping):
+        return [(str(scales.get("run_id")) if scales.get("run_id") is not None else None, scales)]
+    return []
+
+
+def _feedback_scale_provenance(scale: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "component": scale["component"],
+        "reference_scale": float(scale["reference_scale"]),
+        "aggregation": scale["aggregation"],
+        "runs": list(scale["runs"]),
+    }
 
 
 def apply_perturbation_to_trial_specs(
@@ -1232,6 +1410,7 @@ def materialize_gru_perturbation_response(
     bank_mode: Literal["raw", "calibrated"] = "raw",
     calibration_level: str | Sequence[str] | None = None,
     calibration_reach: str | float | None = None,
+    feedback_scale_manifest_path: Path | None = None,
     preferred_checkpoint_manifest_path: Path | None = None,
     checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
 ) -> dict[str, Any]:
@@ -1241,6 +1420,7 @@ def materialize_gru_perturbation_response(
         mode=bank_mode,
         calibration_level=calibration_level,
         calibration_reach=calibration_reach,
+        feedback_scale_manifest_path=feedback_scale_manifest_path,
     )
     output_path = output_path or (
         repo_root / "results" / result_experiment / "notes" / DEFAULT_OUTPUT_FILENAME
@@ -1288,6 +1468,11 @@ def materialize_gru_perturbation_response(
         "scope": "controller_independent_perturbation_response",
         "regeneration_spec": _repo_relative(regeneration_spec_path, repo_root=repo_root),
         "bank_mode": bank_mode,
+        "feedback_scale_manifest": (
+            None
+            if feedback_scale_manifest_path is None
+            else _repo_relative(feedback_scale_manifest_path, repo_root=repo_root)
+        ),
         "semantics_correction": (
             "v2 splits the former plant_force rows into command_input_pulse "
             "(post-controller command-port perturbations) and process_epsilon_pulse "
@@ -1381,6 +1566,11 @@ def materialize_gru_perturbation_response(
             "bank_mode": bank_mode,
             "calibration_level": calibration_level,
             "calibration_reach": calibration_reach,
+            "feedback_scale_manifest_path": (
+                None
+                if feedback_scale_manifest_path is None
+                else _repo_relative(feedback_scale_manifest_path, repo_root=repo_root)
+            ),
             "preferred_checkpoint_manifest_path": (
                 None
                 if preferred_checkpoint_manifest_path is None
@@ -1400,6 +1590,11 @@ def materialize_gru_perturbation_response(
             []
             if preferred_checkpoint_manifest_path is None
             else [{"role": "checkpoint_manifest", "path": preferred_checkpoint_manifest_path}]
+        )
+        + (
+            []
+            if feedback_scale_manifest_path is None
+            else [{"role": "controller_feedback_scale_manifest", "path": feedback_scale_manifest_path}]
         ),
         outputs=[
             {"role": "perturbation_response_manifest", "path": output_path},

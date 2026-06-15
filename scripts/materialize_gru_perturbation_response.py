@@ -38,6 +38,14 @@ def main() -> None:
     parser.add_argument("--output-path", type=Path)
     parser.add_argument("--note-path", type=Path)
     parser.add_argument("--bulk-dir", type=Path)
+    parser.add_argument(
+        "--feedback-scale-manifest",
+        type=Path,
+        help=(
+            "Evaluation-diagnostics manifest containing controller_feedback_scales. "
+            "Required for calibrated force/filter feedback rows."
+        ),
+    )
     args = parser.parse_args()
 
     manifest = materialize_gru_perturbation_response(
@@ -54,6 +62,7 @@ def main() -> None:
         output_path=args.output_path,
         note_path=args.note_path,
         bulk_dir=args.bulk_dir,
+        feedback_scale_manifest_path=args.feedback_scale_manifest,
         repo_root=REPO_ROOT,
     )
     print(

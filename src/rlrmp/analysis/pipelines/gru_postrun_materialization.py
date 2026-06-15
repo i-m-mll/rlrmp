@@ -305,6 +305,7 @@ def materialize_gru_postrun_analysis(
             bank_mode=perturbation_bank_mode,
             calibration_level=perturbation_calibration_level,
             calibration_reach=perturbation_calibration_reach,
+            feedback_scale_manifest_path=plan.evaluation_manifest_path,
             preferred_checkpoint_manifest_path=effective_checkpoint_manifest_path,
             regeneration_spec_path=_regeneration_spec_path(plan.perturbation_response_json_path),
             repo_root=repo_root,
@@ -806,6 +807,7 @@ def materialize_optional_perturbation_response(
     bank_mode: str = "raw",
     calibration_level: str | Sequence[str] | None = None,
     calibration_reach: str | float | None = None,
+    feedback_scale_manifest_path: Path | None = None,
     preferred_checkpoint_manifest_path: Path | None = None,
     regeneration_spec_path: Path | None = None,
     repo_root: Path = REPO_ROOT,
@@ -841,6 +843,7 @@ def materialize_optional_perturbation_response(
             bank_mode=bank_mode,
             calibration_level=calibration_level,
             calibration_reach=calibration_reach,
+            feedback_scale_manifest_path=feedback_scale_manifest_path,
             preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
             checkpoint_selection_mode=(
                 "fixed_bank_manifest"
