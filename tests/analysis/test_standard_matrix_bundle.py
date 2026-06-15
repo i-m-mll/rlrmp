@@ -30,9 +30,10 @@ from feedbax.analysis.specs import (
     register_analysis_recipe,
     unregister_analysis_recipe,
 )
-from feedbax.manifest import AnalysisRunSpec, EvaluationRunSpec, ParentRef, load_manifest
+from feedbax.contracts.manifest import AnalysisRunSpec, EvaluationRunSpec, ParentRef, load_manifest
 from feedbax.plugins.registry import ExperimentRegistry
-from feedbax.types import AnalysisInputData, TreeNamespace
+from feedbax.analysis.types import AnalysisInputData
+from feedbax.config.namespace import TreeNamespace
 from rlrmp.analysis.matrix import STANDARD_MATRIX_ANALYSIS_TYPE, STANDARD_MATRIX_EVALUATION_TYPE
 from rlrmp.analysis.matrix.standard_matrix import _notes_path
 from rlrmp.paths import REPO_ROOT

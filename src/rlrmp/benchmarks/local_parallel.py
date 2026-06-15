@@ -208,7 +208,7 @@ def run_worker(config: WorkerConfig) -> int:
     import jax.random as jr
     import optax
     from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
-    from feedbax.types import TaskModelPair
+    from feedbax.training.types import TaskModelPair
 
     from rlrmp.train.task_model import setup_task_model_pair
     from rlrmp.train.cs_nominal_gru import build_hps, build_parser as build_nominal_parser
@@ -333,7 +333,7 @@ def _timed_train(
 ) -> dict[str, Any]:
     import jax.random as jr
     from feedbax.training.train import train_pair
-    from feedbax.types import TaskModelPair
+    from feedbax.training.types import TaskModelPair
 
     deadline = time.monotonic() + max(0.0, seconds)
     total_batches = 0

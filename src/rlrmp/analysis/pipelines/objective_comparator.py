@@ -518,7 +518,7 @@ def materialize_shared_rollout_comparator(
 ) -> dict[str, Any]:
     """Evaluate extLQG and selected GRUs on one shared bank."""
 
-    from feedbax.types import TreeNamespace, dict_to_namespace
+    from feedbax.config.namespace import TreeNamespace, dict_to_namespace
     from rlrmp.analysis.math.cs_game_card import build_canonical_game
     from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
     from rlrmp.analysis.math.cs_released_simulation import (

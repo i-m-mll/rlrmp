@@ -14,7 +14,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 import numpy as np
-from feedbax.types import TreeNamespace, dict_to_namespace
+from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.train.task_model import setup_task_model_pair

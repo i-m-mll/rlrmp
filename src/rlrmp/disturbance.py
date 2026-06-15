@@ -13,8 +13,8 @@ from feedbax.intervene import (
     FixedFieldParams,
     TimeSeriesParam,
 )
-from feedbax.misc import vector_with_gaussian_length
-from feedbax.types import TreeNamespace
+from rlrmp.misc import vector_with_gaussian_length
+from feedbax.config.namespace import TreeNamespace
 from jaxtyping import Array, Float, Int
 
 FB_INTERVENOR_LABEL = "FeedbackPert"

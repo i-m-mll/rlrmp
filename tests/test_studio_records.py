@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from feedbax.manifest import (
+from feedbax.contracts.manifest import (
     ArtifactRef,
     Provenance,
     TrainingRunManifest,

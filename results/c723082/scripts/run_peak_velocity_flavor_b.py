@@ -43,7 +43,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 import numpy as np
-from feedbax import load_with_hyperparameters
+from jax_cookbook import load_with_hyperparameters
 
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.intervention_compat import (

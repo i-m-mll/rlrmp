@@ -19,7 +19,7 @@ from feedbax.runtime.channel import Channel
 from equinox import field
 from equinox.nn import State
 from feedbax.runtime.graph import Component, Wire
-from feedbax.noise import Multiplicative, Normal
+from feedbax.runtime.noise import Multiplicative, Normal
 from jax_cookbook import is_module
 from jaxtyping import PRNGKeyArray, PyTree
 

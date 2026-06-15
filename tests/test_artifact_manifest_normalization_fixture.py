@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from feedbax.manifest import TrainingRunManifest, load_manifest, sha256_file
-from feedbax.manifest_index import index_manifest_file
+from feedbax.contracts.manifest import TrainingRunManifest, load_manifest, sha256_file
+from feedbax.persistence.manifest_index import index_manifest_file
 
 from rlrmp.runtime.spec_migrations import ensure_rlrmp_spec_families
 

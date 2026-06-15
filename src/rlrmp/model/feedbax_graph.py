@@ -10,7 +10,7 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
-from feedbax.bodies import FeedbackChannels, SimpleFeedbackState
+from feedbax.models.feedback import FeedbackChannels, SimpleFeedbackState
 from feedbax.component_registry import ComponentMigration, ComponentMigrationPack, get_component_registry
 from feedbax.contracts.graph import (
     ComponentSpec,
@@ -21,16 +21,15 @@ from feedbax.contracts.graph import (
     RetentionPolicySpec,
     WireSpec,
 )
-from feedbax._tree import tree_sum_n_features
-from feedbax.filters import FilterState
+from feedbax.runtime.filters import FilterState
 from feedbax.runtime.graph import Graph
 from feedbax.intervene import DynamicsMatrixPerturb
 from feedbax.mechanics import Mechanics, MechanicsState
 from feedbax.mechanics.plant import DirectForceInput
 from feedbax.mechanics.skeleton.pointmass import PointMass
-from feedbax.nn import PopulationStructure, SimpleStagedNetwork
-from feedbax.noise import Normal
-from feedbax.serialization import spec_to_graph
+from feedbax.models.networks import PopulationStructure, SimpleStagedNetwork
+from feedbax.runtime.noise import Normal
+from feedbax.contracts.graphs.serialization import spec_to_graph
 from equinox.nn import StateIndex
 
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
@@ -43,7 +42,11 @@ from rlrmp.model.trainable import staged_network_trainable_paths
 
 
 SCHEMA_VERSION = "rlrmp.feedbax_graph.v1"
-EXECUTION_BACKEND = "feedbax.serialization.spec_to_graph"
+EXECUTION_BACKEND = "feedbax.contracts.graphs.serialization.spec_to_graph"
+
+
+def tree_sum_n_features(tree) -> int:
+    return jt.reduce(lambda x, y: x + y, jt.map(lambda x: x.shape[-1], tree))
 GRAPH_PLANT_INTERVENOR_NODE = PLANT_INTERVENOR_LABEL
 NATIVE_POINT_MASS_COMPONENT = "PointMass"
 NATIVE_FEEDBACK_CHANNELS_COMPONENT = "FeedbackChannels"
@@ -565,7 +568,7 @@ def _graph_bundle_metadata(
         },
         "legacy_loader": {
             "setup_function": "rlrmp.train.task_model.setup_task_model_pair",
-            "checkpoint_format": "feedbax._io.save/load_with_hyperparameters",
+            "checkpoint_format": "jax_cookbook.save/load_with_hyperparameters",
         },
         "task_spec": task_spec,
         "loss_spec": loss_spec,
@@ -923,7 +926,7 @@ def graph_spec_from_model(
 ) -> GraphSpec:
     """Return a GraphSpec for a materialized RLRMP runtime graph."""
 
-    from feedbax.serialization import graph_to_spec
+    from feedbax.contracts.graphs.serialization import graph_to_spec
 
     if n_replicates is not None and n_replicates > 1:
         model = _representative_runtime_graph(

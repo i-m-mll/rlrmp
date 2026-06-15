@@ -15,8 +15,9 @@ from feedbax.analysis.materialization import (
     materialization_metadata,
 )
 from feedbax.analysis.specs import AnalysisRecipeResult, register_analysis_recipe
-from feedbax.manifest import AnalysisRunSpec
-from feedbax.types import AnalysisInputData, TreeNamespace
+from feedbax.contracts.manifest import AnalysisRunSpec
+from feedbax.analysis.types import AnalysisInputData
+from feedbax.config.namespace import TreeNamespace
 
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import (
     MATERIALIZER_ISSUE_ID,

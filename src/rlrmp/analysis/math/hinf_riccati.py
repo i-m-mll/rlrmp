@@ -1393,7 +1393,7 @@ def cost_schedule_from_loss_config(hps, plant: PlantLinearization) -> CostSchedu
     structured mode used in part2_5.
 
     Args:
-        hps: A ``feedbax.types.TreeNamespace`` containing ``loss``, ``task``,
+        hps: A ``feedbax.config.namespace.TreeNamespace`` containing ``loss``, ``task``,
             and ``loss_update`` sub-namespaces (as produced by
             ``rlrmp.config``).
         plant: The plant linearisation.

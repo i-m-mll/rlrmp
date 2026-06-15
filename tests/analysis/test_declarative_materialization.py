@@ -11,7 +11,7 @@ import rlrmp
 from feedbax.analysis.bundles import execute_analysis_bundle, load_analysis_bundle
 from feedbax.analysis.materialization import ContextMaterializer
 from feedbax.analysis.specs import execute_analysis_run_spec, unregister_analysis_recipe
-from feedbax.manifest import AnalysisRunSpec, TrainingRunManifest, load_manifest, write_manifest
+from feedbax.contracts.manifest import AnalysisRunSpec, TrainingRunManifest, load_manifest, write_manifest
 from feedbax.plugins.registry import ExperimentRegistry
 
 from rlrmp.analysis import declarative_materialization as dm

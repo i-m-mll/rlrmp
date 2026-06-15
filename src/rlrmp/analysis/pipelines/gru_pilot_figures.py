@@ -19,10 +19,10 @@ import jax.random as jr
 import jax.tree as jt
 import numpy as np
 import plotly.graph_objects as go
-from feedbax import load_with_hyperparameters
+from jax_cookbook import load_with_hyperparameters
 from feedbax.objectives.loss import TermTree
 from feedbax.plot import loss_history_compare
-from feedbax.types import TreeNamespace, dict_to_namespace
+from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 from plotly.subplots import make_subplots
 
 from rlrmp.analysis.math.cs_game_card import (

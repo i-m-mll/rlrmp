@@ -38,10 +38,11 @@ import jax.tree as jt
 import jax.tree_util as jtu
 import numpy as np
 import optax
-from feedbax import load_with_hyperparameters, prepare_trial
-from feedbax import save as fbx_save
-from feedbax.iterate import run_component
-from feedbax.misc import BatchInfo
+from feedbax import prepare_trial
+from jax_cookbook import load_with_hyperparameters
+from jax_cookbook import save as fbx_save
+from feedbax.runtime.iteration import run_component
+from feedbax.runtime.batch import BatchInfo
 from feedbax.objectives.streaming import make_streaming_loss_fn
 from feedbax.training.train import (
     TaskTrainer,
@@ -584,7 +585,7 @@ def run_training(args: argparse.Namespace) -> None:
         )
 
     if warmup_model is None and args.warmup_model is not None:
-        from feedbax import load as fbx_load
+        from jax_cookbook import load as fbx_load
 
         logger.info("Loading pre-trained warm-start model from %s", args.warmup_model)
 

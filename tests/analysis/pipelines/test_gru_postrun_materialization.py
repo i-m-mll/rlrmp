@@ -8,7 +8,7 @@ from typing import Any
 
 import rlrmp
 from feedbax.analysis.bundles import execute_staged_analysis_bundle, load_analysis_bundle
-from feedbax.manifest import TrainingRunManifest, load_manifest, spec_payload, write_manifest
+from feedbax.contracts.manifest import TrainingRunManifest, load_manifest, spec_payload, write_manifest
 from feedbax.plugins.registry import ExperimentRegistry
 
 from rlrmp.analysis import declarative_materialization as dm

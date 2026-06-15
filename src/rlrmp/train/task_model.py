@@ -15,11 +15,13 @@ from feedbax.intervene import (
     FixedFieldParams,
     schedule_intervenor,
 )
-from feedbax.misc import get_field_amplitude, vector_with_gaussian_length
-from feedbax.nn import PopulationStructure
+from rlrmp.misc import get_field_amplitude, vector_with_gaussian_length
+from feedbax.models.networks import PopulationStructure
 from feedbax.runtime.state import CartesianState
 from feedbax.training.train import always_active, bernoulli_active
-from feedbax.types import LDict, TaskModelPair, TreeNamespace
+from feedbax.config.namespace import TreeNamespace
+from feedbax.training.types import TaskModelPair
+from jax_cookbook import LDict
 from jaxtyping import PRNGKeyArray
 
 from rlrmp.analysis.math.cs_game_card import build_canonical_game, build_no_integrator_game

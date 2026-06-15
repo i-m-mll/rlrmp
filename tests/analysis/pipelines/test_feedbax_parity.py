@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 from feedbax.runtime.graph import init_state_from_component
 from feedbax.mechanics import LinearStateSpace
-from feedbax.serialization import spec_to_graph
+from feedbax.contracts.graphs.serialization import spec_to_graph
 
 from rlrmp.analysis.math.cs_game_card import build_canonical_game
 from rlrmp.analysis.pipelines.feedbax_parity import (

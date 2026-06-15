@@ -14,7 +14,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
 from feedbax.runtime.graph import Component, Wire
-from feedbax.types import TreeNamespace, dict_to_namespace
+from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 from jaxtyping import PRNGKeyArray, PyTree
 
 from rlrmp.analysis.pipelines.diagnostic_provenance import write_regeneration_spec

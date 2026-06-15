@@ -13,7 +13,7 @@ from feedbax.component_registry import ComponentRegistry
 from feedbax.contracts.graph import GraphSpec
 from feedbax.runtime.graph import Graph
 from feedbax.intervene import CurlField, DynamicsMatrixPerturb, FixedField
-from feedbax.manifest import SCHEMA_VERSION as FEEDBAX_MANIFEST_SCHEMA_VERSION
+from feedbax.contracts.manifest import SCHEMA_VERSION as FEEDBAX_MANIFEST_SCHEMA_VERSION
 
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.model.feedbax_graph import (

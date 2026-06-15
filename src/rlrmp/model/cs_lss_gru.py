@@ -29,8 +29,8 @@ from feedbax.component_registry import ComponentMigration, ComponentMigrationPac
 from feedbax.contracts.graph import ComponentSpec, GraphMetadata, GraphSpec, WireSpec
 from feedbax.runtime.graph import Component, Graph
 from feedbax.mechanics import LinearStateSpace
-from feedbax.nn import NetworkState, PopulationStructure, SimpleStagedNetwork
-from feedbax.serialization import spec_to_graph
+from feedbax.models.networks import NetworkState, PopulationStructure, SimpleStagedNetwork
+from feedbax.contracts.graphs.serialization import spec_to_graph
 from feedbax.runtime.state import CartesianState
 
 from rlrmp.analysis.math.cs_game_card import build_canonical_game

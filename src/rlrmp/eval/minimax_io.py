@@ -23,7 +23,7 @@ from pathlib import Path
 import equinox as eqx
 import jax.random as jr
 import jax.tree as jt
-from feedbax import load_with_hyperparameters
+from jax_cookbook import load_with_hyperparameters
 
 from rlrmp.adversary import GaussianBumpAdversary
 from rlrmp.train.task_model import setup_task_model_pair

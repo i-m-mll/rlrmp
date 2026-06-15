@@ -20,7 +20,7 @@ from feedbax.objectives.loss import AbstractLoss, TargetSpec
 from feedbax.mechanics import LinearStateSpace
 from feedbax.runtime.state_feedback import StateFeedbackSelector
 from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule, train_pair
-from feedbax.types import TreeNamespace
+from feedbax.config.namespace import TreeNamespace
 
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
@@ -2482,7 +2482,7 @@ def test_lss_backend_excludes_fixed_plant_matrices_from_training() -> None:
     hps = build_hps(_args(smoke=True))
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
     where_train = _where_train()[0]
-    from feedbax._tree import filter_spec_leaves
+    from jax_cookbook.tree import filter_spec_leaves
     from feedbax.training.trainer import get_model_parameters
 
     where_train_spec = filter_spec_leaves(pair.model, where_train)

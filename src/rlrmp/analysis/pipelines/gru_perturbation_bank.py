@@ -16,7 +16,7 @@ from feedbax.contracts.graph import (
     AdditiveGraphChannelAdapterSpec,
     AdditiveGraphChannelTargetSpec,
 )
-from feedbax.types import TreeNamespace, dict_to_namespace
+from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
