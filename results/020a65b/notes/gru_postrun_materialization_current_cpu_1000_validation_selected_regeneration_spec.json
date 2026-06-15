@@ -1,0 +1,287 @@
+{
+  "command": {
+    "argv": [
+      "unknown"
+    ],
+    "cwd": ".",
+    "metadata": {
+      "materializer": "rlrmp.analysis.pipelines.gru_postrun_materialization.materialize_gru_postrun_analysis",
+      "status": "not_recorded"
+    }
+  },
+  "inputs": [
+    {
+      "logical_name": "results/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64_current_cpu_1000/run.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "b47e80a816199c1428a001e5434f2d33f83c90a56c017352c996b0da17fefb9c",
+        "size_bytes": 299050
+      },
+      "role": "run_spec",
+      "sha256": "b47e80a816199c1428a001e5434f2d33f83c90a56c017352c996b0da17fefb9c",
+      "size_bytes": 299050,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64_current_cpu_1000/run.json"
+    },
+    {
+      "logical_name": "_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64_current_cpu_1000",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 17,
+        "hash_file_count": 17,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "42fa73131722d61ad5d93318362bc0a052535c518b0b583055fc2ef12931e945",
+        "total_bytes": 32894616
+      },
+      "role": "run_artifact_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64_current_cpu_1000"
+    }
+  ],
+  "metadata": {
+    "diagnostic_name": "gru_postrun_materialization_bundle",
+    "materializer": "rlrmp.analysis.pipelines.gru_postrun_materialization.materialize_gru_postrun_analysis",
+    "notes": [
+      "Compatibility index for active GRU postrun diagnostics.",
+      "The primary run contract is the Feedbax analysis bundle `rlrmp/gru_postrun` when bundle manifests are available."
+    ],
+    "schema_boundary": "rlrmp diagnostic payload; Feedbax regeneration custody"
+  },
+  "outputs": [
+    {
+      "logical_name": "results/020a65b/notes/gru_postrun_materialization_current_cpu_1000_validation_selected.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "9e37f13d4c767407f076ae5451351e3608741e4dc83de04ffffb463765350c1e",
+        "size_bytes": 177268
+      },
+      "role": "postrun_manifest",
+      "sha256": "9e37f13d4c767407f076ae5451351e3608741e4dc83de04ffffb463765350c1e",
+      "size_bytes": 177268,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/020a65b/notes/gru_postrun_materialization_current_cpu_1000_validation_selected.json"
+    },
+    {
+      "logical_name": "results/020a65b/notes/gru_standard_certificates_current_cpu_1000_validation_selected_manifest.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "915de53006e507ad8a0fdf8b0b1caf5911b0625b7289e2b1ed2c87dff6089d1f",
+        "size_bytes": 34099
+      },
+      "role": "standard_certificate_manifest",
+      "sha256": "915de53006e507ad8a0fdf8b0b1caf5911b0625b7289e2b1ed2c87dff6089d1f",
+      "size_bytes": 34099,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/020a65b/notes/gru_standard_certificates_current_cpu_1000_validation_selected_manifest.json"
+    },
+    {
+      "logical_name": "results/020a65b/notes/gru_evaluation_diagnostics_current_cpu_1000_validation_selected.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "c66249496c5e791309f6254995a46267f145741a45d7e8c7cc0434d34f587788",
+        "size_bytes": 43949
+      },
+      "role": "evaluation_diagnostics_manifest",
+      "sha256": "c66249496c5e791309f6254995a46267f145741a45d7e8c7cc0434d34f587788",
+      "size_bytes": 43949,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/020a65b/notes/gru_evaluation_diagnostics_current_cpu_1000_validation_selected.json"
+    },
+    {
+      "logical_name": "_artifacts/020a65b/figures/gru_postrun_current_cpu_1000_validation_selected",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 6,
+        "hash_file_count": 6,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "3613be35862c290fd00d145772a349b77b06584f72e84149107461a13634eaa7",
+        "total_bytes": 24494146
+      },
+      "role": "pilot_figure_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/020a65b/figures/gru_postrun_current_cpu_1000_validation_selected"
+    },
+    {
+      "logical_name": "results/020a65b/notes/objective_comparator_current_cpu_1000_validation_selected.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "a072841c6a8d836d979c38afa74c1736002a3b4665730fefd860c7cd445b3788",
+        "size_bytes": 619020
+      },
+      "role": "objective_comparator_manifest",
+      "sha256": "a072841c6a8d836d979c38afa74c1736002a3b4665730fefd860c7cd445b3788",
+      "size_bytes": 619020,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/020a65b/notes/objective_comparator_current_cpu_1000_validation_selected.json"
+    },
+    {
+      "logical_name": "results/020a65b/notes/gru_map_error_decomposition_current_cpu_1000_validation_selected.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "c7a8c5d12dd7347b45aa785507441ee6b34b5157b2201fc807557e158c44fee1",
+        "size_bytes": 55972
+      },
+      "role": "map_decomposition_manifest",
+      "sha256": "c7a8c5d12dd7347b45aa785507441ee6b34b5157b2201fc807557e158c44fee1",
+      "size_bytes": 55972,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/020a65b/notes/gru_map_error_decomposition_current_cpu_1000_validation_selected.json"
+    },
+    {
+      "logical_name": "results/020a65b/notes/gru_perturbation_response_current_cpu_1000_validation_selected_manifest.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "b11f5c6f5402d770fc097eb419928b32a91e80c52fe27f317573124445d6507a",
+        "size_bytes": 197471
+      },
+      "role": "perturbation_response_manifest",
+      "sha256": "b11f5c6f5402d770fc097eb419928b32a91e80c52fe27f317573124445d6507a",
+      "size_bytes": 197471,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/020a65b/notes/gru_perturbation_response_current_cpu_1000_validation_selected_manifest.json"
+    },
+    {
+      "logical_name": "results/020a65b/notes/gru_feedback_ablation_current_cpu_1000_validation_selected.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "1672da7379e0b2f91d34bd54ae9d7189858c6648e8e99f1f54f7c99b321691e8",
+        "size_bytes": 4519125
+      },
+      "role": "feedback_ablation_manifest",
+      "sha256": "1672da7379e0b2f91d34bd54ae9d7189858c6648e8e99f1f54f7c99b321691e8",
+      "size_bytes": 4519125,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/020a65b/notes/gru_feedback_ablation_current_cpu_1000_validation_selected.json"
+    }
+  ],
+  "parameters": {
+    "effective_checkpoint_manifest_path": null,
+    "experiment": "020a65b",
+    "feedback_selection_level": "small",
+    "include_feedback_ablation": true,
+    "include_map_decomposition": true,
+    "include_objective_comparator": true,
+    "include_perturbation_response": true,
+    "include_reference": true,
+    "labels": null,
+    "n_rollout_trials": 64,
+    "output_tag": "current_cpu_1000_validation_selected",
+    "perturbation_bank_mode": "raw",
+    "perturbation_calibration_level": null,
+    "perturbation_calibration_reach": null,
+    "run_ids": [
+      "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64_current_cpu_1000"
+    ],
+    "use_validation_selected_checkpoints": true
+  },
+  "provenance": {
+    "dirty": true,
+    "entrypoint": {
+      "kind": "rlrmp-diagnostic-materializer",
+      "metadata": {},
+      "name": "rlrmp.analysis.pipelines.gru_postrun_materialization.materialize_gru_postrun_analysis"
+    },
+    "issues": [],
+    "metadata": {
+      "status_porcelain": [
+        "M src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+        " M src/rlrmp/train/cs_nominal_gru.py",
+        " M src/rlrmp/train/cs_perturbation_training.py",
+        " M src/rlrmp/train/task_model.py",
+        " M tests/test_cs_nominal_gru.py",
+        " M tests/test_gru_perturbation_response.py",
+        " M uv.lock",
+        "?? .issue",
+        "?? results/020a65b/notes/gru_evaluation_diagnostics_current_cpu_1000_validation_selected_regeneration_spec.json",
+        "?? results/020a65b/notes/gru_feedback_ablation_current_cpu_1000_validation_selected.md",
+        "?? results/020a65b/notes/gru_feedback_ablation_current_cpu_1000_validation_selected_regeneration_spec.json",
+        "?? results/020a65b/notes/gru_map_error_decomposition_current_cpu_1000_validation_selected.md",
+        "?? results/020a65b/notes/gru_map_error_decomposition_current_cpu_1000_validation_selected_regeneration_spec.json",
+        "?? results/020a65b/notes/gru_perturbation_response_current_cpu_1000_validation_selected.md",
+        "?? results/020a65b/notes/gru_perturbation_response_current_cpu_1000_validation_selected_manifest.json",
+        "?? results/020a65b/notes/gru_perturbation_response_current_cpu_1000_validation_selected_manifest_regeneration_spec.json",
+        "?? results/020a65b/notes/gru_pilot_figures_current_cpu_1000_validation_selected_regeneration_spec.json",
+        "?? results/020a65b/notes/gru_standard_certificates_current_cpu_1000_validation_selected.md",
+        "?? results/020a65b/notes/gru_standard_certificates_current_cpu_1000_validation_selected_manifest.json",
+        "?? results/020a65b/notes/gru_standard_certificates_current_cpu_1000_validation_selected_manifest_regeneration_spec.json",
+        "?? results/020a65b/notes/objective_comparator_current_cpu_1000_validation_selected.md",
+        "?? results/020a65b/notes/objective_comparator_current_cpu_1000_validation_selected_regeneration_spec.json",
+        "?? results/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64_current_cpu_1000/model.graph.manifest.json",
+        "?? results/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64_current_cpu_1000/run.json",
+        "?? results/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64_current_cpu_smoke1000/model.graph.manifest.json",
+        "?? results/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64_current_cpu_smoke1000/run.json"
+      ]
+    },
+    "parents": [],
+    "source_branch": "feature/020a65b-current-no-pgd-replay",
+    "source_commit": "e4f1e38bb77a03af0d0d0ea86d76b4c91b6824a5",
+    "source_repo": "/Users/mll/.codex/worktrees/32b1/rlrmp"
+  },
+  "schema_id": "feedbax.spec.regeneration",
+  "schema_version": "feedbax.spec.regeneration.v1",
+  "source_files": [
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/gru_postrun_materialization.py",
+      "role": "source_file",
+      "sha256": "5c57f19c99dfc6485ead620050f0c4f99c0e7a543ddfeb081b08351d4eea3d24",
+      "size_bytes": 46890
+    },
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
+      "role": "source_file",
+      "sha256": "87ef48c0dcf1b0bfd6fe5b9216c3a8b76b1df0cc3a5bdb02697520fe8627118b",
+      "size_bytes": 44497
+    },
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py",
+      "role": "source_file",
+      "sha256": "c31dcec309159043b053cf5dfb4cc267c7f51bc01d15c6d66ca300302b5f7375",
+      "size_bytes": 30814
+    },
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/gru_pilot_figures.py",
+      "role": "source_file",
+      "sha256": "0c543a99c4ea13f621f3b9c6e7885c11be95b800d84f95c54ba1977a1faf3233",
+      "size_bytes": 36418
+    },
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+      "role": "source_file",
+      "sha256": "ccbda8c766ff34eeade6ce68daa651198f99c58865b525a0dbaea16a34f420be",
+      "size_bytes": 177921
+    },
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
+      "role": "source_file",
+      "sha256": "c2db1660a6d5d5932483cd8afad8dc8c35a3bcc656d5190b76f40d0cafe58fdc",
+      "size_bytes": 98736
+    }
+  ],
+  "source_trees": []
+}

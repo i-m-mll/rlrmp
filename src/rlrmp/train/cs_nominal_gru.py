@@ -249,6 +249,201 @@ def derive_spec_dir(output_dir: Path) -> Path:
         return out.parent / f"{out.name}_spec"
 
 
+def _dump_json_metadata_bytes(file: Any, hyperparameters: dict[str, Any] | None) -> None:
+    file.write(json.dumps(hyperparameters, sort_keys=True).encode("utf-8") + b"\n")
+
+
+def _save_pytree(path: Path, tree: Any, *, hyperparameters: dict[str, Any] | None = None) -> None:
+    fbx_save(
+        path,
+        tree,
+        hyperparameters=hyperparameters,
+        dump_fn=_dump_json_metadata_bytes,
+    )
+
+
+def resolve_run_spec_args(
+    args: argparse.Namespace,
+    *,
+    parser: argparse.ArgumentParser | None = None,
+) -> argparse.Namespace:
+    """Return executable CLI arguments replayed from a modern nominal-GRU run spec.
+
+    Explicit CLI values override the checked-in run spec. This keeps replay useful
+    for smoke gates that should write to a new output directory or stop after an
+    intermediate checkpoint without modifying the durable historical run recipe.
+    """
+
+    run_spec_path = getattr(args, "run_spec", None)
+    if run_spec_path is None:
+        return args
+    parser = parser or build_parser()
+    defaults = parser.parse_args([])
+    payload_path = Path(run_spec_path)
+    payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    validate_nominal_gru_run_spec(payload, spec_dir=payload_path.parent)
+
+    values = vars(defaults).copy()
+    values.update(_args_values_from_run_spec(payload))
+    for key, value in vars(args).items():
+        if key == "run_spec":
+            values[key] = value
+            continue
+        if value != getattr(defaults, key):
+            values[key] = value
+    return argparse.Namespace(**values)
+
+
+def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
+    hps = run_spec.get("hps") or {}
+    model = _dict_value(hps, "model")
+    loss = _dict_value(hps, "loss")
+    loss_weights = _dict_value(loss, "weights")
+    perturbation = _dict_value(hps, "perturbation_training")
+    broad = _dict_value(hps, "broad_epsilon_training")
+    broad_pgd = _dict_value(hps, "broad_epsilon_pgd_training")
+    target_relative = _dict_value(hps, "target_relative_multitarget")
+    delayed = _dict_value(hps, "delayed_reach")
+    delayed_go = _dict_value(delayed, "go_cue_sampling")
+    delayed_catch = _dict_value(delayed, "catch_trials")
+    delayed_norm = _dict_value(loss, "delayed_trial_type_normalization")
+    population = _dict_value(model, "population_structure")
+    pgd_inner = _dict_value(broad_pgd, "inner_maximizer")
+
+    return {
+        "output_dir": str(run_spec.get("artifact_output_dir", DEFAULT_OUTPUT_DIR)),
+        "spec_dir": str(run_spec.get("spec_dir")) if run_spec.get("spec_dir") else None,
+        "issue": str(run_spec.get("issue", ISSUE_ID)),
+        "seed": int(run_spec.get("seed", 42)),
+        "n_train_batches": int(run_spec.get("n_train_batches", hps.get("n_batches_condition", 12000))),
+        "batch_size": int(run_spec.get("batch_size", hps.get("batch_size", 250))),
+        "controller_lr": float(run_spec.get("controller_lr", hps.get("learning_rate_0", 1e-2))),
+        "lr_warmup_batches": int(hps.get("constant_lr_iterations", 0)),
+        "lr_warmup_init_fraction": float(hps.get("warmup_init_fraction", 0.1)),
+        "lr_cosine_alpha": float(hps.get("cosine_annealing_alpha", 1.0)),
+        "gradient_clip_norm": hps.get("gradient_clip_norm"),
+        "n_replicates": int(model.get("n_replicates", 5)),
+        "hidden_size": int(model.get("hidden_size", 180)),
+        "plant_backend": str(model.get("plant_backend", CS_LSS_PLANT_BACKEND)),
+        "no_integrator_state": bool(model.get("no_integrator_state", False)),
+        "stochastic_preset": str(model.get("stochastic_preset", DEFAULT_STOCHASTIC_PRESET)),
+        "n_input_only": int(population.get("n_input_only", 0)),
+        "n_readout_only": int(population.get("n_readout_only", 0)),
+        "n_recurrent_only": int(population.get("n_recurrent_only", 0)),
+        "effector_pos_running": float(loss_weights.get("effector_pos_running", CS_POSITION_SCALE)),
+        "effector_vel_running": float(loss_weights.get("effector_vel_running", CS_VELOCITY_SCALE)),
+        "effector_terminal_pos": float(loss_weights.get("effector_terminal_pos", CS_POSITION_SCALE)),
+        "effector_terminal_vel": float(loss_weights.get("effector_terminal_vel", CS_VELOCITY_SCALE)),
+        "effector_final_vel": float(loss_weights.get("effector_final_vel", 0.0)),
+        "nn_output": float(loss_weights.get("nn_output", CS_CONTROL_SCALE)),
+        "nn_output_jerk": float(loss_weights.get("nn_output_jerk", 0.0)),
+        "nn_output_pre_go": float(loss_weights.get("nn_output_pre_go", 0.0)),
+        "loss_objective": str(run_spec.get("loss_objective", loss.get("objective", CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE))),
+        "regularized_fidelity": float(loss_weights.get("nn_hidden", 0.0)) > 0.0,
+        "perturbation_training": bool(perturbation.get("enabled", False)),
+        "perturbation_nominal_fraction": float(perturbation.get("nominal_fraction", 0.45)),
+        "perturbation_single_fraction": float(perturbation.get("single_fraction", 0.45)),
+        "perturbation_combined_fraction": float(perturbation.get("combined_fraction", 0.10)),
+        "perturbation_combined_amplitude_scale": float(
+            perturbation.get("combined_amplitude_scale", 0.5)
+        ),
+        "perturbation_initial_position_offset_m": float(
+            _family_amplitude(perturbation, "initial_position", 0.01)
+        ),
+        "perturbation_initial_velocity_offset_m_s": float(
+            _family_amplitude(perturbation, "initial_velocity", 0.05)
+        ),
+        "perturbation_process_epsilon_scale": float(
+            _family_amplitude(perturbation, "process_epsilon", 0.01)
+        ),
+        "perturbation_command_input_pulse_n": float(
+            _family_amplitude(perturbation, "command_input", 1.0)
+        ),
+        "perturbation_sensory_feedback_offset_m": float(
+            _family_amplitude(perturbation, "sensory_feedback", 0.01)
+        ),
+        "perturbation_delayed_observation_offset_m": float(
+            _family_amplitude(perturbation, "delayed_observation", 0.01)
+        ),
+        "perturbation_pulse_start_step": int(_pulse_value(perturbation, "start_step", 20)),
+        "perturbation_pulse_duration_steps": int(_pulse_value(perturbation, "duration_steps", 5)),
+        "perturbation_calibrated_timing": bool(perturbation.get("calibrated_timing", False)),
+        "perturbation_physical_level": str(perturbation.get("physical_level", "moderate")),
+        "target_relative_multitarget": bool(target_relative.get("enabled", False)),
+        "delayed_reach": bool(delayed.get("enabled", False)),
+        "delayed_reach_go_cue_min_step": int(
+            delayed_go.get("min_step_inclusive", DEFAULT_DELAYED_GO_CUE_MIN_STEP)
+        ),
+        "delayed_reach_go_cue_max_step": int(
+            delayed_go.get("max_step_inclusive", DEFAULT_DELAYED_GO_CUE_MAX_STEP)
+        ),
+        "delayed_reach_p_catch_trial": float(
+            delayed_catch.get("p_catch_trial", DEFAULT_DELAYED_P_CATCH_TRIAL)
+        ),
+        "delayed_reach_trial_type_normalized_loss": bool(delayed_norm.get("enabled", False)),
+        "delayed_reach_no_catch_qrf_weight": float(delayed_norm.get("no_catch_weight", 1.0)),
+        "delayed_reach_catch_qrf_weight": float(delayed_norm.get("catch_weight", 1.0)),
+        "force_filter_feedback": bool(model.get("force_filter_feedback", False)),
+        "broad_epsilon_training": bool(broad.get("enabled", False)),
+        "broad_epsilon_pgd_training": bool(broad_pgd.get("enabled", False)),
+        "broad_epsilon_level": str(
+            broad_pgd.get("level", broad.get("level", "moderate"))
+        ),
+        "broad_epsilon_budget_scale": float(
+            broad_pgd.get("budget_scale", broad.get("budget_scale", 1.0))
+        ),
+        "broad_epsilon_reach_scaling": bool(
+            broad_pgd.get("reach_length_scaling", broad.get("reach_length_scaling", True))
+        ),
+        "broad_epsilon_pgd_steps": int(pgd_inner.get("n_steps", broad_pgd.get("n_steps", 3))),
+        "broad_epsilon_pgd_step_size_fraction": float(
+            pgd_inner.get(
+                "step_size_fraction_of_l2_radius",
+                broad_pgd.get("step_size_fraction", 0.25),
+            )
+        ),
+        "initial_hidden_encoder": bool(model.get("initial_hidden_encoder", False)),
+        "full_train": (
+            run_spec.get("mode") == "full_train"
+            or run_spec.get("full_training_launch") == "requested"
+        ),
+        "checkpoint_interval_batches": int(
+            _dict_value(run_spec, "checkpointing").get(
+                "interval_batches", DEFAULT_CHECKPOINT_INTERVAL_BATCHES
+            )
+        ),
+        "training_diagnostics": bool(
+            _dict_value(run_spec, "training_diagnostics").get(
+                "enabled", hps.get("training_diagnostics", True)
+            )
+        ),
+        "dry_run": False,
+        "resume": False,
+        "stop_after_batches": None,
+        "smoke": False,
+    }
+
+
+def _dict_value(mapping: dict[str, Any], key: str) -> dict[str, Any]:
+    value = mapping.get(key)
+    return value if isinstance(value, dict) else {}
+
+
+def _family_amplitude(
+    perturbation: dict[str, Any],
+    family: str,
+    default: float,
+) -> float:
+    families = _dict_value(perturbation, "families")
+    payload = _dict_value(families, family)
+    return float(payload.get("amplitude", default))
+
+
+def _pulse_value(perturbation: dict[str, Any], key: str, default: int) -> int:
+    pulse = _dict_value(perturbation, "pulse")
+    return int(pulse.get(key, perturbation.get(f"pulse_{key}", default)))
+
+
 def _delayed_reach_contract_from_args(
     *,
     enabled: bool,
@@ -402,6 +597,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         pulse_duration_steps=int(args.perturbation_pulse_duration_steps),
         calibrated_timing=bool(args.perturbation_calibrated_timing),
         physical_level=str(args.perturbation_physical_level),
+        force_filter_feedback=bool(args.force_filter_feedback),
     )
     broad_epsilon_training = BroadFullStateEpsilonTrainingConfig(
         enabled=bool(args.broad_epsilon_training),
@@ -1200,7 +1396,7 @@ def run_full_training(
                 pgd_diagnostic_chunks.append(pgd_diagnostics)
         history_chunk_path = output_dir / "history_chunks" / f"history_{completed:07d}.eqx"
         history_chunk_path.parent.mkdir(parents=True, exist_ok=True)
-        fbx_save(history_chunk_path, history_chunk)
+        _save_pytree(history_chunk_path, history_chunk)
         state = TrainingState(
             model=model,
             optimizer_state=optimizer_state,
@@ -1232,9 +1428,9 @@ def run_full_training(
     final_model_path = output_dir / "trained_model.eqx"
     final_history_path = output_dir / "training_history.eqx"
     final_summary_path = output_dir / "training_summary.json"
-    fbx_save(final_model_path, state.model, hyperparameters=run_spec)
+    _save_pytree(final_model_path, state.model, hyperparameters=run_spec)
     if state.history is not None:
-        fbx_save(final_history_path, state.history)
+        _save_pytree(final_history_path, state.history)
     diagnostics_metadata = write_training_diagnostics_sidecar(
         output_dir,
         args=args,
@@ -1299,7 +1495,7 @@ def save_training_checkpoint(
     eqx.tree_serialise_leaves(tmp / "model.eqx", state.model)
     eqx.tree_serialise_leaves(tmp / "optimizer_state.eqx", state.optimizer_state)
     if state.history is not None:
-        fbx_save(tmp / "history.eqx", state.history)
+        _save_pytree(tmp / "history.eqx", state.history)
     metadata = {
         "schema_version": f"{SCHEMA_VERSION}.checkpoint.v1",
         "issue": str(args.issue),
@@ -1371,6 +1567,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(
         description="Prepare a stochastic C&S-fidelity GRU run spec.",
+    )
+    parser.add_argument(
+        "--run-spec",
+        default=None,
+        help=(
+            "Replay a modern tracked nominal-GRU run.json through the current "
+            "training/spec writer. Explicit CLI flags override the run spec."
+        ),
     )
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--spec-dir", default=None)
@@ -1706,7 +1910,8 @@ def main(
 ) -> int:
     """CLI entry point."""
 
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = resolve_run_spec_args(parser.parse_args(argv), parser=parser)
     if args.planned_perturbation_rows:
         print(_json_dumps({"planned_rows": planned_fixed_target_perturbation_rows()}), end="")
         return 0

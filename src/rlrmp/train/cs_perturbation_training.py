@@ -385,6 +385,41 @@ GRAPH_ADAPTER_SPECS: dict[PerturbationBin, AdditiveGraphChannelAdapterSpec] = {
 }
 
 
+def graph_adapter_specs(
+    *,
+    force_filter_feedback: bool = False,
+) -> dict[PerturbationBin, AdditiveGraphChannelAdapterSpec]:
+    """Return graph-channel adapter specs for the controller feedback width."""
+
+    if not force_filter_feedback:
+        return GRAPH_ADAPTER_SPECS
+    return {
+        **GRAPH_ADAPTER_SPECS,
+        "sensory_feedback": _widen_controller_visible_adapter(
+            GRAPH_ADAPTER_SPECS["sensory_feedback"]
+        ),
+        "delayed_observation": _widen_controller_visible_adapter(
+            GRAPH_ADAPTER_SPECS["delayed_observation"]
+        ),
+    }
+
+
+def _widen_controller_visible_adapter(
+    spec: AdditiveGraphChannelAdapterSpec,
+) -> AdditiveGraphChannelAdapterSpec:
+    return spec.model_copy(
+        update={
+            "payload_shape": [6],
+            "metadata": {
+                **dict(spec.metadata),
+                "force_filter_feedback_payload": "widened_to_controller_feedback_dim",
+                "active_calibrated_components": 4,
+                "inactive_force_filter_components": [4, 5],
+            },
+        }
+    )
+
+
 @dataclass(frozen=True)
 class FixedTargetPerturbationTrainingConfig:
     """Mixture and amplitudes for fixed-target C&S GRU perturbation training."""
@@ -404,6 +439,7 @@ class FixedTargetPerturbationTrainingConfig:
     pulse_duration_steps: int = 5
     calibrated_timing: bool = False
     physical_level: str = "moderate"
+    force_filter_feedback: bool = False
 
     def __post_init__(self) -> None:
         total = self.nominal_fraction + self.single_fraction + self.combined_fraction
@@ -473,6 +509,20 @@ class FixedTargetPerturbationTrainingConfig:
             "combined_amplitude_scale": self.combined_amplitude_scale,
             "calibrated_timing": self.calibrated_timing,
             "physical_level": self.physical_level,
+            "force_filter_feedback": self.force_filter_feedback,
+            "graph_adapter_payloads": {
+                bin_name: {
+                    "input_key": spec.input_key,
+                    "payload_shape": list(spec.payload_shape or []),
+                    "active_calibrated_components": spec.metadata.get(
+                        "active_calibrated_components",
+                        spec.payload_shape[-1] if spec.payload_shape else None,
+                    ),
+                }
+                for bin_name, spec in graph_adapter_specs(
+                    force_filter_feedback=self.force_filter_feedback
+                ).items()
+            },
             "physical_level_fraction_of_reach": REACH_RELATIVE_LEVELS[
                 self.physical_level
             ],
@@ -537,7 +587,7 @@ class FixedTargetPerturbationTrainingConfig:
         payload = self.to_hps_dict()
         payload["graph_adapter_inputs"] = {
             bin_name: additive_channel_provenance(
-                GRAPH_ADAPTER_SPECS[bin_name],
+                graph_adapter_specs(force_filter_feedback=self.force_filter_feedback)[bin_name],
                 adapter="feedbax.additive_channel_adapter",
             )
             for bin_name in GRAPH_CHANNEL_BINS
@@ -862,6 +912,7 @@ def config_from_hps(config: Any) -> FixedTargetPerturbationTrainingConfig:
         pulse_duration_steps=int(getattr(config, "pulse_duration_steps", 5)),
         calibrated_timing=bool(getattr(config, "calibrated_timing", False)),
         physical_level=str(getattr(config, "physical_level", "moderate")),
+        force_filter_feedback=bool(getattr(config, "force_filter_feedback", False)),
     )
 
 
@@ -1549,12 +1600,16 @@ def _epsilon_time_mask(
     return jnp.expand_dims(time_mask.astype(epsilon.dtype), axis=-1)
 
 
-def install_perturbation_training_graph_adapters(model: Any) -> Any:
+def install_perturbation_training_graph_adapters(
+    model: Any,
+    *,
+    force_filter_feedback: bool = False,
+) -> Any:
     """Install the fixed external additive channel adapters on a C&S GRU graph."""
 
     return materialize_additive_channel_adapters_on_graph(
         model,
-        tuple(GRAPH_ADAPTER_SPECS.values()),
+        tuple(graph_adapter_specs(force_filter_feedback=force_filter_feedback).values()),
     )
 
 
@@ -1645,7 +1700,11 @@ def apply_training_perturbation_mixture(
     """Apply one PRNG-driven fixed-target perturbation-training batch."""
 
     cfg = config_from_hps(config)
-    trial_specs = add_zero_graph_channel_inputs(trial_specs)
+    specs = graph_adapter_specs(force_filter_feedback=cfg.force_filter_feedback)
+    trial_specs = add_zero_graph_channel_inputs(
+        trial_specs,
+        force_filter_feedback=cfg.force_filter_feedback,
+    )
     batch_shape = _batch_shape(trial_specs)
     (
         key_mix,
@@ -1706,7 +1765,7 @@ def apply_training_perturbation_mixture(
         trial_specs = _add_graph_channel_calibrated_random_pulse(
             trial_specs,
             cfg,
-            GRAPH_ADAPTER_SPECS["command_input"],
+            specs["command_input"],
             active_mask=(
                 single_mask * _family_mask(family_index, "command_input")
                 + combined_mask * float(cfg.combined_amplitude_scale)
@@ -1716,14 +1775,14 @@ def apply_training_perturbation_mixture(
         trial_specs = _add_graph_channel_calibrated_random_pulse(
             trial_specs,
             cfg,
-            GRAPH_ADAPTER_SPECS["sensory_feedback"],
+            specs["sensory_feedback"],
             active_mask=single_mask * _family_mask(family_index, "sensory_feedback"),
             key=key_sensory,
         )
         trial_specs = _add_graph_channel_calibrated_random_pulse(
             trial_specs,
             cfg,
-            GRAPH_ADAPTER_SPECS["delayed_observation"],
+            specs["delayed_observation"],
             active_mask=single_mask * _family_mask(family_index, "delayed_observation"),
             key=key_delayed,
         )
@@ -1756,7 +1815,7 @@ def apply_training_perturbation_mixture(
         )
         trial_specs = _add_graph_channel_random_pulse(
             trial_specs,
-            GRAPH_ADAPTER_SPECS["command_input"],
+            specs["command_input"],
             base_amount=cfg.command_input_pulse_n,
             active_mask=(
                 single_mask * _family_mask(family_index, "command_input")
@@ -1767,7 +1826,7 @@ def apply_training_perturbation_mixture(
         )
         trial_specs = _add_graph_channel_random_pulse(
             trial_specs,
-            GRAPH_ADAPTER_SPECS["sensory_feedback"],
+            specs["sensory_feedback"],
             base_amount=cfg.sensory_feedback_offset_m,
             active_mask=single_mask * _family_mask(family_index, "sensory_feedback"),
             duration=trial_specs.timeline.n_steps,
@@ -1775,7 +1834,7 @@ def apply_training_perturbation_mixture(
         )
         trial_specs = _add_graph_channel_random_pulse(
             trial_specs,
-            GRAPH_ADAPTER_SPECS["delayed_observation"],
+            specs["delayed_observation"],
             base_amount=cfg.delayed_observation_offset_m,
             active_mask=single_mask * _family_mask(family_index, "delayed_observation"),
             duration=trial_specs.timeline.n_steps,
@@ -1800,7 +1859,11 @@ def apply_validation_bin(
         else config
     )
     if bin_name == "nominal":
-        return _with_perturbation_metadata(trial_specs, "nominal")
+        return _with_perturbation_metadata(
+            trial_specs,
+            "nominal",
+            force_filter_feedback=cfg.force_filter_feedback,
+        )
     if bin_name == "mild_combined":
         trial_specs = _apply_single_bin(
             trial_specs,
@@ -1818,6 +1881,7 @@ def apply_validation_bin(
             trial_specs,
             "mild_combined",
             families=("initial_position", "command_input"),
+            force_filter_feedback=cfg.force_filter_feedback,
         )
     if bin_name not in SINGLE_FAMILY_BINS:
         raise ValueError(f"Unknown perturbation validation bin {bin_name!r}.")
@@ -2019,6 +2083,7 @@ def _apply_single_bin(
     return _with_perturbation_metadata(
         _apply_single_bin_raw(trial_specs, config, bin_name, amplitude_scale),
         bin_name,
+        force_filter_feedback=config.force_filter_feedback,
     )
 
 
@@ -2076,9 +2141,10 @@ def _apply_single_bin_raw(
             duration=config.pulse_duration_steps,
         )
     if bin_name == "sensory_feedback":
+        specs = graph_adapter_specs(force_filter_feedback=config.force_filter_feedback)
         return _add_graph_channel_pulse(
             trial_specs,
-            GRAPH_ADAPTER_SPECS["sensory_feedback"],
+            specs["sensory_feedback"],
             amount=_single_bin_amount(
                 trial_specs,
                 config,
@@ -2093,9 +2159,10 @@ def _apply_single_bin_raw(
             ),
         )
     if bin_name == "delayed_observation":
+        specs = graph_adapter_specs(force_filter_feedback=config.force_filter_feedback)
         return _add_graph_channel_pulse(
             trial_specs,
-            GRAPH_ADAPTER_SPECS["delayed_observation"],
+            specs["delayed_observation"],
             amount=_single_bin_amount(
                 trial_specs,
                 config,
@@ -2441,7 +2508,12 @@ def _add_graph_channel_calibrated_random_pulse(
     key_component, key_start, key_sign = jr.split(key, 3)
     payload = _zero_graph_payload(trial_specs, spec)
     batch_shape = _batch_shape(trial_specs)
-    component = jr.randint(key_component, batch_shape, 0, payload.shape[-1])
+    component = jr.randint(
+        key_component,
+        batch_shape,
+        0,
+        _randomized_payload_width(spec, config, payload.shape[-1]),
+    )
     starts = (
         _plant_timing_starts()
         if spec.label == GRAPH_ADAPTER_SPECS["command_input"].label
@@ -2504,15 +2576,33 @@ def _controller_visible_component_amounts(
         * REACH_RELATIVE_LEVELS[config.physical_level],
         dtype=dtype,
     )
-    return jnp.stack(
-        [
-            jnp.asarray(position_amount, dtype=dtype),
-            jnp.asarray(position_amount, dtype=dtype),
-            jnp.broadcast_to(velocity_amount, jnp.shape(position_amount)),
-            jnp.broadcast_to(velocity_amount, jnp.shape(position_amount)),
-        ],
-        axis=-1,
-    )
+    components = [
+        jnp.asarray(position_amount, dtype=dtype),
+        jnp.asarray(position_amount, dtype=dtype),
+        jnp.broadcast_to(velocity_amount, jnp.shape(position_amount)),
+        jnp.broadcast_to(velocity_amount, jnp.shape(position_amount)),
+    ]
+    if config.force_filter_feedback:
+        zero = jnp.zeros_like(jnp.asarray(position_amount, dtype=dtype))
+        components.extend([zero, zero])
+    return jnp.stack(components, axis=-1)
+
+
+def _randomized_payload_width(
+    spec: AdditiveGraphChannelAdapterSpec,
+    config: FixedTargetPerturbationTrainingConfig,
+    payload_width: int,
+) -> int:
+    if (
+        config.force_filter_feedback
+        and spec.label
+        in {
+            GRAPH_ADAPTER_SPECS["sensory_feedback"].label,
+            GRAPH_ADAPTER_SPECS["delayed_observation"].label,
+        }
+    ):
+        return min(4, int(payload_width))
+    return int(payload_width)
 
 
 def _random_pulse_tensor(
@@ -2651,10 +2741,14 @@ def _zero_graph_payload(
     )
 
 
-def add_zero_graph_channel_inputs(trial_specs: TaskTrialSpec) -> TaskTrialSpec:
+def add_zero_graph_channel_inputs(
+    trial_specs: TaskTrialSpec,
+    *,
+    force_filter_feedback: bool = False,
+) -> TaskTrialSpec:
     """Ensure all graph adapter payload inputs exist with zero values."""
 
-    for spec in GRAPH_ADAPTER_SPECS.values():
+    for spec in graph_adapter_specs(force_filter_feedback=force_filter_feedback).values():
         if spec.input_key not in trial_specs.inputs:
             trial_specs = _set_input(
                 trial_specs,
@@ -2883,8 +2977,12 @@ def _with_perturbation_metadata(
     bin_name: str,
     *,
     families: tuple[str, ...] | None = None,
+    force_filter_feedback: bool = False,
 ) -> TaskTrialSpec:
-    trial_specs = add_zero_graph_channel_inputs(trial_specs)
+    trial_specs = add_zero_graph_channel_inputs(
+        trial_specs,
+        force_filter_feedback=force_filter_feedback,
+    )
     extra = dict(trial_specs.extra or {})
     extra["perturbation_training_bin"] = bin_name
     extra["perturbation_training_families"] = list(families or _bin_families(bin_name))

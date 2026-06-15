@@ -318,7 +318,10 @@ def setup_task_model_pair(
             getattr(hps, "perturbation_training", TreeNamespace(enabled=False))
         )
         if perturbation_training.enabled:
-            models = install_perturbation_training_graph_adapters(models)
+            models = install_perturbation_training_graph_adapters(
+                models,
+                force_filter_feedback=target_training.force_filter_feedback,
+            )
             task = FixedTargetPerturbationTrainingTaskAdapter(
                 task,
                 perturbation_training,
