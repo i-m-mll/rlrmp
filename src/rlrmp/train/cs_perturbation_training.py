@@ -429,6 +429,7 @@ class FixedTargetPerturbationTrainingConfig:
     pulse_start_step: int = 20
     pulse_duration_steps: int = 5
     calibrated_timing: bool = False
+    movement_age_timing: bool = False
     physical_level: str = "moderate"
     force_filter_feedback: bool = False
 
@@ -450,6 +451,8 @@ class FixedTargetPerturbationTrainingConfig:
                 f"Unknown perturbation physical level {self.physical_level!r}; "
                 f"expected one of {levels}."
             )
+        if self.movement_age_timing and not self.calibrated_timing:
+            raise ValueError("Movement-age perturbation timing requires calibrated_timing.")
 
     @property
     def mode(self) -> str:
@@ -481,6 +484,11 @@ class FixedTargetPerturbationTrainingConfig:
                     "sign",
                     "axis_or_component",
                     "timing_bin" if self.calibrated_timing else "pulse_start",
+                    *(
+                        ["movement_start_index"]
+                        if self.calibrated_timing and self.movement_age_timing
+                        else []
+                    ),
                     "physical_level" if self.calibrated_timing else "amplitude_level",
                 ],
                 "amplitude_levels": (
@@ -494,6 +502,7 @@ class FixedTargetPerturbationTrainingConfig:
             "combined_fraction": self.combined_fraction,
             "combined_amplitude_scale": self.combined_amplitude_scale,
             "calibrated_timing": self.calibrated_timing,
+            "movement_age_timing": self.movement_age_timing,
             "physical_level": self.physical_level,
             "force_filter_feedback": self.force_filter_feedback,
             "graph_adapter_payloads": {
@@ -556,7 +565,8 @@ class FixedTargetPerturbationTrainingConfig:
                 "start_step": self.pulse_start_step,
                 "duration_steps": self.pulse_duration_steps,
             },
-            "timing_bins": calibrated_timing_bins_manifest(),
+            "timing_basis": calibrated_timing_basis_manifest(self),
+            "timing_bins": calibrated_timing_bins_manifest(self.movement_age_timing),
             "calibrated_amplitude_policy": calibrated_amplitude_policy_manifest(self),
             "target_stream": {
                 "status": "not_applicable",
@@ -887,25 +897,72 @@ def config_from_hps(config: Any) -> FixedTargetPerturbationTrainingConfig:
         pulse_start_step=int(getattr(config, "pulse_start_step", 20)),
         pulse_duration_steps=int(getattr(config, "pulse_duration_steps", 5)),
         calibrated_timing=bool(getattr(config, "calibrated_timing", False)),
+        movement_age_timing=bool(getattr(config, "movement_age_timing", False)),
         physical_level=str(getattr(config, "physical_level", "moderate")),
         force_filter_feedback=bool(getattr(config, "force_filter_feedback", False)),
     )
 
 
-def calibrated_timing_bins_manifest() -> dict[str, Any]:
+def calibrated_timing_basis_manifest(config: FixedTargetPerturbationTrainingConfig) -> dict[str, Any]:
+    """Return the calibrated timing basis used by starts in run specs."""
+
+    if not config.movement_age_timing:
+        return {
+            "mode": "absolute_trial_time",
+            "start_index_basis": "trial_start_index",
+            "trial_start_index": 0,
+            "epoch_source": None,
+            "start_time_indices_are": "absolute_trial_indices",
+        }
+    return {
+        "mode": "movement_age",
+        "start_index_basis": "movement_start_index",
+        "epoch_source": "trial_specs.timeline.epoch_bounds[-2]",
+        "undelayed_equivalence": (
+            "For one-epoch immediate reaches, epoch_bounds[-2] resolves to 0, so "
+            "movement-age starts match the historical absolute starts."
+        ),
+        "start_time_indices_are": "movement_start_relative_offsets",
+        "prep_support": "zero_for_positive_movement_start",
+        "movement_onset_state_offsets": {
+            "requested_semantics": (
+                "initial_position and initial_velocity become movement-onset state-offset "
+                "diagnostics in movement-age mode"
+            ),
+            "implementation": (
+                "TaskTrialSpec has trial-start inits but no arbitrary state-set event; "
+                "delayed movement-onset offsets are represented as one-step process "
+                "epsilon impulses on the matching mechanics.vector position/velocity "
+                "component at movement_start."
+            ),
+            "direct_state_mutation": False,
+        },
+    }
+
+
+def calibrated_timing_bins_manifest(movement_age_timing: bool = False) -> dict[str, Any]:
     """Return the calibrated timing-bin contract for training/run specs."""
 
     plant_bins = [bin_.to_json() for bin_ in DEFAULT_PLANT_TIMING_BINS]
     visible_bins = [bin_.to_json() for bin_ in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS]
+    start_time_kind = (
+        "movement_start_relative_offsets" if movement_age_timing else "absolute_trial_indices"
+    )
     return {
         "schema_version": "rlrmp.cs_perturbation_calibrated_timing_bins.v1",
         "sampling": "uniform_per_active_family_trial",
+        "timing_basis": "movement_age" if movement_age_timing else "absolute_trial_time",
+        "start_time_indices_are": start_time_kind,
         "pulse_duration_steps": 5,
         "initial_state": {
             "families": ["initial_position", "initial_velocity"],
             "start_time_index": 0,
             "duration_steps": 1,
-            "timing_role": "initial_condition_not_pulse",
+            "timing_role": (
+                "movement_onset_process_epsilon_impulse"
+                if movement_age_timing
+                else "initial_condition_not_pulse"
+            ),
         },
         "plant_side": {
             "families": list(PLANT_TIMED_BINS),
@@ -924,11 +981,13 @@ def calibrated_timing_bins_manifest() -> dict[str, Any]:
                 "start_time_indices": [0],
                 "duration_steps": 1,
                 "timing_set": "initial_state",
+                "start_time_indices_are": start_time_kind,
             },
             "initial_velocity": {
                 "start_time_indices": [0],
                 "duration_steps": 1,
                 "timing_set": "initial_state",
+                "start_time_indices_are": start_time_kind,
             },
             **{
                 family: {
@@ -937,6 +996,7 @@ def calibrated_timing_bins_manifest() -> dict[str, Any]:
                     ],
                     "duration_steps": 5,
                     "timing_set": "plant_side",
+                    "start_time_indices_are": start_time_kind,
                 }
                 for family in PLANT_TIMED_BINS
             },
@@ -948,6 +1008,7 @@ def calibrated_timing_bins_manifest() -> dict[str, Any]:
                     ],
                     "duration_steps": 5,
                     "timing_set": "controller_visible",
+                    "start_time_indices_are": start_time_kind,
                 }
                 for family in CONTROLLER_VISIBLE_TIMED_BINS
             },
@@ -1034,7 +1095,8 @@ def perturbation_training_mixture_semantics(
         ),
         "calibrated_levels": calibrated_level_manifest(config),
         "calibrated_amplitude_policy": calibrated_amplitude_policy_manifest(config),
-        "timing_bins": calibrated_timing_bins_manifest(),
+        "timing_basis": calibrated_timing_basis_manifest(config),
+        "timing_bins": calibrated_timing_bins_manifest(config.movement_age_timing),
         "membership": {
             "unit": "per training trial",
             "nominal_fraction": float(config.nominal_fraction),
@@ -1059,6 +1121,10 @@ def perturbation_training_mixture_semantics(
                 "units": "m",
                 "emission": (
                     "offset one random mechanics.vector position component among x/y "
+                    "at movement_start using a one-step process-epsilon impulse by "
+                    "sign * reach_length * physical_level_fraction"
+                    if config.movement_age_timing
+                    else "offset one random mechanics.vector position component among x/y "
                     "at t=0 by sign * reach_length * physical_level_fraction"
                     if config.calibrated_timing
                     else (
@@ -1077,6 +1143,11 @@ def perturbation_training_mixture_semantics(
                 "units": "m/s",
                 "emission": (
                     "offset one random mechanics.vector velocity component among x/y "
+                    "at movement_start using a one-step process-epsilon impulse by "
+                    "sign * reach_length * physical_level_fraction / "
+                    "initial_velocity_peak_delta_x_per_unit"
+                    if config.movement_age_timing
+                    else "offset one random mechanics.vector velocity component among x/y "
                     "at t=0 by sign * reach_length * physical_level_fraction / "
                     "initial_velocity_peak_delta_x_per_unit"
                     if config.calibrated_timing
@@ -1692,35 +1763,64 @@ def apply_training_perturbation_mixture(
     family_index = jr.randint(key_family, batch_shape, 0, len(SINGLE_FAMILY_BINS))
 
     if cfg.calibrated_timing:
-        trial_specs = _offset_initial_random_components(
-            trial_specs,
-            base_amount=_calibrated_initial_amount(
+        if cfg.movement_age_timing:
+            trial_specs = _add_movement_onset_state_offset_random_components(
                 trial_specs,
-                cfg,
-                "initial_position",
-            ),
-            component_offset=0,
-            n_components=2,
-            active_mask=(
-                single_mask * _family_mask(family_index, "initial_position")
-                + combined_mask * float(cfg.combined_amplitude_scale)
-            ),
-            randomize_amplitude_level=False,
-            key=key_pos,
-        )
-        trial_specs = _offset_initial_random_components(
-            trial_specs,
-            base_amount=_calibrated_initial_amount(
+                base_amount=_calibrated_initial_amount(
+                    trial_specs,
+                    cfg,
+                    "initial_position",
+                ),
+                component_offset=0,
+                n_components=2,
+                active_mask=(
+                    single_mask * _family_mask(family_index, "initial_position")
+                    + combined_mask * float(cfg.combined_amplitude_scale)
+                ),
+                key=key_pos,
+            )
+            trial_specs = _add_movement_onset_state_offset_random_components(
                 trial_specs,
-                cfg,
-                "initial_velocity",
-            ),
-            component_offset=2,
-            n_components=2,
-            active_mask=single_mask * _family_mask(family_index, "initial_velocity"),
-            randomize_amplitude_level=False,
-            key=key_vel,
-        )
+                base_amount=_calibrated_initial_amount(
+                    trial_specs,
+                    cfg,
+                    "initial_velocity",
+                ),
+                component_offset=2,
+                n_components=2,
+                active_mask=single_mask * _family_mask(family_index, "initial_velocity"),
+                key=key_vel,
+            )
+        else:
+            trial_specs = _offset_initial_random_components(
+                trial_specs,
+                base_amount=_calibrated_initial_amount(
+                    trial_specs,
+                    cfg,
+                    "initial_position",
+                ),
+                component_offset=0,
+                n_components=2,
+                active_mask=(
+                    single_mask * _family_mask(family_index, "initial_position")
+                    + combined_mask * float(cfg.combined_amplitude_scale)
+                ),
+                randomize_amplitude_level=False,
+                key=key_pos,
+            )
+            trial_specs = _offset_initial_random_components(
+                trial_specs,
+                base_amount=_calibrated_initial_amount(
+                    trial_specs,
+                    cfg,
+                    "initial_velocity",
+                ),
+                component_offset=2,
+                n_components=2,
+                active_mask=single_mask * _family_mask(family_index, "initial_velocity"),
+                randomize_amplitude_level=False,
+                key=key_vel,
+            )
         trial_specs = _add_process_epsilon_calibrated_random_pulse(
             trial_specs,
             cfg,
@@ -2061,27 +2161,31 @@ def _apply_single_bin_raw(
     amplitude_scale: float,
 ) -> TaskTrialSpec:
     if bin_name == "initial_position":
-        return _offset_initial_vector(
+        amount = _single_bin_amount(
             trial_specs,
-            axis=1,
-            amount=_single_bin_amount(
+            config,
+            "initial_position",
+        ) * amplitude_scale
+        if config.calibrated_timing and config.movement_age_timing:
+            return _add_movement_onset_state_offset_pulse(
                 trial_specs,
-                config,
-                "initial_position",
+                component=1,
+                amount=amount,
             )
-            * amplitude_scale,
-        )
+        return _offset_initial_vector(trial_specs, axis=1, amount=amount)
     if bin_name == "initial_velocity":
-        return _offset_initial_vector(
+        amount = _single_bin_amount(
             trial_specs,
-            axis=3,
-            amount=_single_bin_amount(
+            config,
+            "initial_velocity",
+        ) * amplitude_scale
+        if config.calibrated_timing and config.movement_age_timing:
+            return _add_movement_onset_state_offset_pulse(
                 trial_specs,
-                config,
-                "initial_velocity",
+                component=3,
+                amount=amount,
             )
-            * amplitude_scale,
-        )
+        return _offset_initial_vector(trial_specs, axis=3, amount=amount)
     if bin_name == "process_epsilon":
         return _add_process_epsilon_pulse(
             trial_specs,
@@ -2091,7 +2195,7 @@ def _apply_single_bin_raw(
                 "process_epsilon",
             )
             * amplitude_scale,
-            start=_deterministic_validation_start(config, "process_epsilon"),
+            start=_deterministic_validation_start(trial_specs, config, "process_epsilon"),
             duration=config.pulse_duration_steps,
         )
     if bin_name == "command_input":
@@ -2104,7 +2208,7 @@ def _apply_single_bin_raw(
                 "command_input",
             )
             * amplitude_scale,
-            start=_deterministic_validation_start(config, "command_input"),
+            start=_deterministic_validation_start(trial_specs, config, "command_input"),
             duration=config.pulse_duration_steps,
         )
     if bin_name == "sensory_feedback":
@@ -2118,7 +2222,7 @@ def _apply_single_bin_raw(
                 "sensory_feedback",
             )
             * amplitude_scale,
-            start=_deterministic_validation_start(config, "sensory_feedback"),
+            start=_deterministic_validation_start(trial_specs, config, "sensory_feedback"),
             duration=(
                 config.pulse_duration_steps
                 if config.calibrated_timing
@@ -2136,7 +2240,7 @@ def _apply_single_bin_raw(
                 "delayed_observation",
             )
             * amplitude_scale,
-            start=_deterministic_validation_start(config, "delayed_observation"),
+            start=_deterministic_validation_start(trial_specs, config, "delayed_observation"),
             duration=(
                 config.pulse_duration_steps
                 if config.calibrated_timing
@@ -2331,16 +2435,78 @@ def _offset_initial_random_components(
     return eqx.tree_at(lambda ts: ts.inits["mechanics.vector"], trial_specs, updated)
 
 
+def _add_movement_onset_state_offset_random_components(
+    trial_specs: TaskTrialSpec,
+    *,
+    base_amount: float | jnp.ndarray,
+    component_offset: int,
+    n_components: int,
+    active_mask: jnp.ndarray,
+    key: PRNGKeyArray,
+) -> TaskTrialSpec:
+    key_component, key_sign = jr.split(key, 2)
+    epsilon = jnp.asarray(trial_specs.inputs["epsilon"])
+    batch_shape = _batch_shape(trial_specs)
+    component = jr.randint(key_component, batch_shape, 0, n_components) + int(component_offset)
+    amount = jnp.asarray(base_amount, dtype=epsilon.dtype) * _random_sign(
+        key_sign,
+        batch_shape,
+    ) * active_mask
+    pulse = _pulse_tensor_from_start(
+        batch_shape=batch_shape,
+        n_steps=epsilon.shape[-2],
+        width=epsilon.shape[-1],
+        component=component,
+        amount=amount,
+        duration=1,
+        start=_movement_start_index(trial_specs, batch_shape=batch_shape),
+        dtype=epsilon.dtype,
+    )
+    return eqx.tree_at(lambda ts: ts.inputs["epsilon"], trial_specs, epsilon + pulse)
+
+
+def _add_movement_onset_state_offset_pulse(
+    trial_specs: TaskTrialSpec,
+    *,
+    component: int,
+    amount: float | jnp.ndarray,
+) -> TaskTrialSpec:
+    epsilon = jnp.asarray(trial_specs.inputs["epsilon"])
+    batch_shape = _batch_shape(trial_specs)
+    component_index = jnp.full(batch_shape, int(component), dtype=jnp.int32)
+    pulse = _pulse_tensor_from_start(
+        batch_shape=batch_shape,
+        n_steps=epsilon.shape[-2],
+        width=epsilon.shape[-1],
+        component=component_index,
+        amount=jnp.asarray(amount, dtype=epsilon.dtype),
+        duration=1,
+        start=_movement_start_index(trial_specs, batch_shape=batch_shape),
+        dtype=epsilon.dtype,
+    )
+    return eqx.tree_at(lambda ts: ts.inputs["epsilon"], trial_specs, epsilon + pulse)
+
+
 def _add_process_epsilon_pulse(
     trial_specs: TaskTrialSpec,
     *,
-    amount: float,
-    start: int,
+    amount: float | jnp.ndarray,
+    start: int | jnp.ndarray,
     duration: int,
 ) -> TaskTrialSpec:
     epsilon = jnp.asarray(trial_specs.inputs["epsilon"])
-    end = min(int(start) + int(duration), epsilon.shape[-2])
-    updated = epsilon.at[..., int(start) : end, 5].add(jnp.asarray(amount, dtype=epsilon.dtype))
+    batch_shape = _batch_shape(trial_specs)
+    component = jnp.full(batch_shape, 5, dtype=jnp.int32)
+    updated = epsilon + _pulse_tensor_from_start(
+        batch_shape=batch_shape,
+        n_steps=epsilon.shape[-2],
+        width=epsilon.shape[-1],
+        component=component,
+        amount=jnp.asarray(amount, dtype=epsilon.dtype),
+        duration=duration,
+        start=jnp.asarray(start, dtype=jnp.int32),
+        dtype=epsilon.dtype,
+    )
     return eqx.tree_at(lambda ts: ts.inputs["epsilon"], trial_specs, updated)
 
 
@@ -2393,6 +2559,7 @@ def _add_process_epsilon_calibrated_random_pulse(
         n_steps=epsilon.shape[-2],
         duration=config.pulse_duration_steps,
         starts=_plant_timing_starts(),
+        timing_basis=_calibrated_timing_basis(trial_specs, config, batch_shape=batch_shape),
         key=key_start,
     )
     target_peak_delta_x = _target_peak_delta_x_m(trial_specs, config)
@@ -2420,13 +2587,23 @@ def _add_graph_channel_pulse(
     trial_specs: TaskTrialSpec,
     spec: AdditiveGraphChannelAdapterSpec,
     *,
-    amount: float,
-    start: int,
+    amount: float | jnp.ndarray,
+    start: int | jnp.ndarray,
     duration: int,
 ) -> TaskTrialSpec:
     payload = _zero_graph_payload(trial_specs, spec)
-    end = min(int(start) + int(duration), payload.shape[-2])
-    updated = payload.at[..., int(start) : end, 0].add(jnp.asarray(amount, dtype=payload.dtype))
+    batch_shape = _batch_shape(trial_specs)
+    component = jnp.zeros(batch_shape, dtype=jnp.int32)
+    updated = payload + _pulse_tensor_from_start(
+        batch_shape=batch_shape,
+        n_steps=payload.shape[-2],
+        width=payload.shape[-1],
+        component=component,
+        amount=jnp.asarray(amount, dtype=payload.dtype),
+        duration=duration,
+        start=jnp.asarray(start, dtype=jnp.int32),
+        dtype=payload.dtype,
+    )
     return _set_input(trial_specs, spec.input_key, updated)
 
 
@@ -2491,6 +2668,7 @@ def _add_graph_channel_calibrated_random_pulse(
         n_steps=payload.shape[-2],
         duration=config.pulse_duration_steps,
         starts=starts,
+        timing_basis=_calibrated_timing_basis(trial_specs, config, batch_shape=batch_shape),
         key=key_start,
     )
     if spec.label == GRAPH_ADAPTER_SPECS["command_input"].label:
@@ -2606,6 +2784,7 @@ def _sample_pulse_start(
     duration: int,
     starts: tuple[int, ...] | None,
     key: PRNGKeyArray,
+    timing_basis: jnp.ndarray | None = None,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     if starts is None:
         max_start = max(1, int(n_steps) - int(duration) + 1)
@@ -2624,7 +2803,10 @@ def _sample_pulse_start(
         )
     start_values = jnp.asarray(valid_starts, dtype=jnp.int32)
     start_index = jr.randint(key, batch_shape, 0, len(valid_starts))
-    return start_values[start_index], start_index
+    start = start_values[start_index]
+    if timing_basis is not None:
+        start = start + jnp.asarray(timing_basis, dtype=jnp.int32)
+    return start, start_index
 
 
 def _pulse_tensor_from_start(
@@ -2659,17 +2841,53 @@ def _controller_visible_timing_starts() -> tuple[int, ...]:
     return tuple(int(bin_.start_time_index) for bin_ in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS)
 
 
+def _calibrated_timing_basis(
+    trial_specs: TaskTrialSpec,
+    config: FixedTargetPerturbationTrainingConfig,
+    *,
+    batch_shape: tuple[int, ...],
+) -> jnp.ndarray | None:
+    if not config.movement_age_timing:
+        return None
+    return _movement_start_index(trial_specs, batch_shape=batch_shape)
+
+
+def _movement_start_index(
+    trial_specs: TaskTrialSpec,
+    *,
+    batch_shape: tuple[int, ...] | None = None,
+) -> jnp.ndarray:
+    bounds = trial_specs.timeline.epoch_bounds
+    if batch_shape is None:
+        batch_shape = _batch_shape(trial_specs)
+    if bounds is None:
+        return jnp.zeros(batch_shape, dtype=jnp.int32)
+    bounds = jnp.asarray(bounds)
+    if bounds.ndim == 1:
+        start = jnp.asarray(bounds[-2], dtype=jnp.int32)
+        return jnp.broadcast_to(start, batch_shape)
+    start = jnp.asarray(bounds[..., -2], dtype=jnp.int32)
+    if batch_shape and start.shape != batch_shape:
+        start = jnp.broadcast_to(start, batch_shape)
+    return start
+
+
 def _deterministic_validation_start(
+    trial_specs: TaskTrialSpec,
     config: FixedTargetPerturbationTrainingConfig,
     bin_name: PerturbationBin,
-) -> int:
+) -> int | jnp.ndarray:
     if not config.calibrated_timing:
         return 0 if bin_name in CONTROLLER_VISIBLE_TIMED_BINS else config.pulse_start_step
     if bin_name in PLANT_TIMED_BINS:
-        return _plant_timing_starts()[0]
-    if bin_name in CONTROLLER_VISIBLE_TIMED_BINS:
-        return _controller_visible_timing_starts()[0]
-    return 0
+        start = _plant_timing_starts()[0]
+    elif bin_name in CONTROLLER_VISIBLE_TIMED_BINS:
+        start = _controller_visible_timing_starts()[0]
+    else:
+        start = 0
+    if not config.movement_age_timing:
+        return start
+    return _movement_start_index(trial_specs) + jnp.asarray(start, dtype=jnp.int32)
 
 
 def _random_sign(key: PRNGKeyArray, shape: tuple[int, ...]) -> jnp.ndarray:
