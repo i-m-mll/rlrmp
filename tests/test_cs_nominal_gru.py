@@ -54,6 +54,8 @@ from rlrmp.train.cs_nominal_gru import (
     build_hps,
     build_parser,
     derive_spec_dir,
+    main,
+    _prepend_existing_training_diagnostics,
     resolve_run_spec_args,
     run_full_training,
     write_run_spec,
@@ -87,6 +89,7 @@ from rlrmp.train.cs_perturbation_training import (
     apply_validation_target_distribution,
     config_from_broad_epsilon_pgd_hps,
     graph_adapter_specs,
+    planned_020a65b_h0_pgd_rows,
     planned_fixed_target_perturbation_rows,
     planned_target_relative_multitarget_h0_rows,
     planned_target_relative_multitarget_rows,
@@ -111,6 +114,11 @@ def _args(**overrides) -> argparse.Namespace:
     for key, value in overrides.items():
         setattr(args, key, value)
     return args
+
+
+def _parse_planned_training_command(command: list[str]) -> argparse.Namespace:
+    script_index = command.index("scripts/train_cs_nominal_gru.py")
+    return build_parser().parse_args(command[script_index + 1 :])
 
 
 def _where_train() -> dict[int, object]:
@@ -1597,9 +1605,7 @@ def test_delayed_reach_full_qrf_pre_go_auxiliary_masks_only_prep_epoch() -> None
         )
 
     base_states = states_with_efferent(zero_command)
-    prep_states = states_with_efferent(
-        zero_command.at[:, max(go_step - 1, 1), 0].set(3.0)
-    )
+    prep_states = states_with_efferent(zero_command.at[:, max(go_step - 1, 1), 0].set(3.0))
     movement_states = states_with_efferent(zero_command.at[:, go_step, 0].set(3.0))
     base_value = pre_go_loss(base_states, trial, None).total
     prep_value = pre_go_loss(prep_states, trial, None).total
@@ -2055,6 +2061,165 @@ def test_target_relative_h0_run_spec_and_planned_rows(tmp_path: Path) -> None:
         row["checkpoint_selection"] == "target_relative_multitarget_rollout_validation"
         for row in main_rows
     )
+
+
+def test_020a65b_h0_pgd_planned_rows_and_gate_commands() -> None:
+    rows = planned_020a65b_h0_pgd_rows()
+
+    assert [row["broad_epsilon_pgd_training"] for row in rows] == [False, True]
+    assert [row["run"] for row in rows] == [
+        (
+            "target_relative_multitarget_h0_fullqrf_warmcos__"
+            "proprio_cal_small_no_pgd_lr3e-3_clip5_b64"
+        ),
+        (
+            "target_relative_multitarget_h0_fullqrf_warmcos__"
+            "proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64"
+        ),
+    ]
+
+    for row in rows:
+        command = row["command"]
+        resume_command = row["full_training_contract_command"]
+        parsed = _parse_planned_training_command(command)
+        parsed_resume = _parse_planned_training_command(resume_command)
+
+        assert command[:7] == [
+            "env",
+            "JAX_PLATFORM_NAME=cpu",
+            "PYTHONPATH=src",
+            "uv",
+            "run",
+            "--no-sync",
+            "python",
+        ]
+        assert row["experiment"] == "020a65b"
+        assert row["controller_lr"] == pytest.approx(3e-3)
+        assert row["batch_size"] == 64
+        assert row["n_train_batches"] == 12000
+        assert row["stop_after_batches"] == 1000
+        assert row["force_filter_feedback"] is True
+        assert row["initial_hidden_encoder"] == (
+            "zero_affine_target_relative_feedback_plus_force_filter"
+        )
+        assert parsed.issue == "020a65b"
+        assert parsed.full_train is True
+        assert parsed.resume is True
+        assert parsed.stop_after_batches == 1000
+        assert parsed.n_train_batches == 12000
+        assert parsed.batch_size == 64
+        assert parsed.controller_lr == pytest.approx(3e-3)
+        assert parsed.gradient_clip_norm == pytest.approx(5.0)
+        assert parsed.lr_warmup_batches == 500
+        assert parsed.lr_warmup_init_fraction == pytest.approx(0.1)
+        assert parsed.lr_cosine_alpha == pytest.approx(0.01)
+        assert parsed.n_replicates == 5
+        assert parsed.loss_objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
+        assert parsed.target_relative_multitarget is True
+        assert parsed.initial_hidden_encoder is True
+        assert parsed.force_filter_feedback is True
+        assert parsed.perturbation_training is True
+        assert parsed.perturbation_calibrated_timing is True
+        assert parsed.perturbation_physical_level == "small"
+        assert parsed_resume.stop_after_batches is None
+
+    assert _parse_planned_training_command(rows[0]["command"]).broad_epsilon_pgd_training is False
+    pgd_args = _parse_planned_training_command(rows[1]["command"])
+    assert pgd_args.broad_epsilon_pgd_training is True
+    assert pgd_args.broad_epsilon_level == "moderate"
+    assert pgd_args.broad_epsilon_budget_scale == pytest.approx(3.688240371719434)
+    assert pgd_args.broad_epsilon_pgd_steps == 10
+    assert pgd_args.broad_epsilon_pgd_step_size_fraction == pytest.approx(0.25)
+
+
+def test_020a65b_h0_pgd_planned_rows_build_schema_compliant_specs(tmp_path: Path) -> None:
+    rows = planned_020a65b_h0_pgd_rows()
+
+    for row in rows:
+        args = _parse_planned_training_command(row["command"])
+        args.output_dir = str(tmp_path / "artifacts" / row["run"])
+        args.spec_dir = str(tmp_path / "specs" / row["run"])
+        args.dry_run = True
+        result = write_run_spec(args)
+        payload = result["run_spec"]
+        pgd_enabled = bool(row["broad_epsilon_pgd_training"])
+        pgd_hps = payload["hps"]["broad_epsilon_pgd_training"]
+        distribution = payload["training_summary"]["training_distribution"]
+
+        assert payload["issue"] == "020a65b"
+        assert payload["full_training_launch"] == "requested"
+        assert payload["n_train_batches"] == 12000
+        assert payload["batch_size"] == 64
+        assert payload["controller_lr"] == pytest.approx(3e-3)
+        assert payload["loss_objective"] == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
+        assert payload["hps"]["n_batches_condition"] == 12000
+        assert payload["hps"]["batch_size"] == 64
+        assert payload["hps"]["learning_rate_0"] == pytest.approx(3e-3)
+        assert payload["hps"]["model"]["force_filter_feedback"] is True
+        assert payload["hps"]["model"]["initial_hidden_encoder"] is True
+        assert payload["hps"]["model"]["initial_hidden_encoder_config"]["context_shape"] == [6]
+        assert payload["hps"]["model"]["initial_hidden_encoder_config"]["context_basis"] == (
+            "target_relative_delayed_feedback_plus_force_filter"
+        )
+        assert payload["model_summary"]["initial_hidden_encoder"]["enabled"] is True
+        assert payload["model_summary"]["initial_hidden_encoder"]["context_shape"] == [6]
+        assert payload["training_summary"]["initial_hidden_encoder"]["enabled"] is True
+        assert distribution["force_filter_feedback"] is True
+        assert distribution["initial_hidden_encoder"]["enabled"] is True
+        assert distribution["initial_hidden_encoder"]["context_shape"] == [6]
+        assert payload["hps"]["perturbation_training"]["enabled"] is True
+        assert payload["hps"]["perturbation_training"]["calibrated_timing"] is True
+        assert payload["hps"]["perturbation_training"]["physical_level"] == "small"
+        assert payload["hps"]["target_relative_multitarget"]["force_filter_feedback"] is True
+        assert pgd_hps["enabled"] is pgd_enabled
+        assert distribution["broad_epsilon_pgd_training"]["enabled"] is pgd_enabled
+        assert (
+            BROAD_EPSILON_PGD_TRAINING_MODE in payload["training_summary"]["training_mode"]
+        ) is (pgd_enabled)
+        if pgd_enabled:
+            assert pgd_hps["level"] == "moderate"
+            assert pgd_hps["budget_scale"] == pytest.approx(3.688240371719434)
+            assert pgd_hps["inner_maximizer"]["n_steps"] == 10
+            assert pgd_hps["inner_maximizer"]["step_size_fraction_of_l2_radius"] == (
+                pytest.approx(0.25)
+            )
+            assert pgd_hps["epsilon_channel"]["shape"] == ["batch", "time", 8]
+        else:
+            assert pgd_hps["mode"] == "disabled"
+
+
+def test_020a65b_h0_pgd_planned_rows_cli(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["--planned-020a65b-h0-pgd-rows"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert [row["experiment"] for row in payload["planned_rows"]] == ["020a65b", "020a65b"]
+    assert [row["stop_after_batches"] for row in payload["planned_rows"]] == [1000, 1000]
+
+
+def test_resume_training_diagnostics_stitches_replicate_major_current_chunk(
+    tmp_path: Path,
+) -> None:
+    npz_path = tmp_path / "training_diagnostics.npz"
+    np.savez_compressed(
+        npz_path,
+        batch_index=np.arange(1000),
+        history_learning_rate=np.ones((1000, 5), dtype=np.float32),
+        train_loss__total=np.arange(12000, dtype=np.float32),
+    )
+
+    stitched = _prepend_existing_training_diagnostics(
+        npz_path,
+        {
+            "batch_index": np.arange(12000),
+            "history_learning_rate": np.full((5, 11000), 2.0, dtype=np.float32),
+        },
+        completed_batches=12000,
+    )
+
+    assert stitched["history_learning_rate"].shape == (12000, 5)
+    assert np.all(stitched["history_learning_rate"][:1000] == 1.0)
+    assert np.all(stitched["history_learning_rate"][1000:] == 2.0)
+    assert stitched["train_loss__total"].shape == (12000,)
 
 
 def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Path) -> None:

@@ -77,6 +77,7 @@ from rlrmp.train.cs_perturbation_training import (
     PgdFullStateEpsilonTrainingConfig,
     TargetRelativeMultiTargetTrainingConfig,
     make_broad_epsilon_pgd_pre_step,
+    planned_020a65b_h0_pgd_rows,
     planned_fixed_target_perturbation_rows,
     planned_target_relative_multitarget_h0_rows,
     planned_target_relative_multitarget_rows,
@@ -315,7 +316,9 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         "spec_dir": str(run_spec.get("spec_dir")) if run_spec.get("spec_dir") else None,
         "issue": str(run_spec.get("issue", ISSUE_ID)),
         "seed": int(run_spec.get("seed", 42)),
-        "n_train_batches": int(run_spec.get("n_train_batches", hps.get("n_batches_condition", 12000))),
+        "n_train_batches": int(
+            run_spec.get("n_train_batches", hps.get("n_batches_condition", 12000))
+        ),
         "batch_size": int(run_spec.get("batch_size", hps.get("batch_size", 250))),
         "controller_lr": float(run_spec.get("controller_lr", hps.get("learning_rate_0", 1e-2))),
         "lr_warmup_batches": int(hps.get("constant_lr_iterations", 0)),
@@ -332,13 +335,19 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         "n_recurrent_only": int(population.get("n_recurrent_only", 0)),
         "effector_pos_running": float(loss_weights.get("effector_pos_running", CS_POSITION_SCALE)),
         "effector_vel_running": float(loss_weights.get("effector_vel_running", CS_VELOCITY_SCALE)),
-        "effector_terminal_pos": float(loss_weights.get("effector_terminal_pos", CS_POSITION_SCALE)),
-        "effector_terminal_vel": float(loss_weights.get("effector_terminal_vel", CS_VELOCITY_SCALE)),
+        "effector_terminal_pos": float(
+            loss_weights.get("effector_terminal_pos", CS_POSITION_SCALE)
+        ),
+        "effector_terminal_vel": float(
+            loss_weights.get("effector_terminal_vel", CS_VELOCITY_SCALE)
+        ),
         "effector_final_vel": float(loss_weights.get("effector_final_vel", 0.0)),
         "nn_output": float(loss_weights.get("nn_output", CS_CONTROL_SCALE)),
         "nn_output_jerk": float(loss_weights.get("nn_output_jerk", 0.0)),
         "nn_output_pre_go": float(loss_weights.get("nn_output_pre_go", 0.0)),
-        "loss_objective": str(run_spec.get("loss_objective", loss.get("objective", CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE))),
+        "loss_objective": str(
+            run_spec.get("loss_objective", loss.get("objective", CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE))
+        ),
         "regularized_fidelity": float(loss_weights.get("nn_hidden", 0.0)) > 0.0,
         "perturbation_training": bool(perturbation.get("enabled", False)),
         "perturbation_nominal_fraction": float(perturbation.get("nominal_fraction", 0.45)),
@@ -386,9 +395,7 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         "force_filter_feedback": bool(model.get("force_filter_feedback", False)),
         "broad_epsilon_training": bool(broad.get("enabled", False)),
         "broad_epsilon_pgd_training": bool(broad_pgd.get("enabled", False)),
-        "broad_epsilon_level": str(
-            broad_pgd.get("level", broad.get("level", "moderate"))
-        ),
+        "broad_epsilon_level": str(broad_pgd.get("level", broad.get("level", "moderate"))),
         "broad_epsilon_budget_scale": float(
             broad_pgd.get("budget_scale", broad.get("budget_scale", 1.0))
         ),
@@ -553,9 +560,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         getattr(args, "delayed_reach_trial_type_normalized_loss", False)
     )
     if delayed_trial_type_normalized_loss and not delayed_reach:
-        raise ValueError(
-            "--delayed-reach-trial-type-normalized-loss requires --delayed-reach."
-        )
+        raise ValueError("--delayed-reach-trial-type-normalized-loss requires --delayed-reach.")
     if (
         delayed_trial_type_normalized_loss
         and str(args.loss_objective) != CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
@@ -1862,6 +1867,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the planned issue 643f101 smoke/main target-relative H0 rows and exit.",
     )
     parser.add_argument(
+        "--planned-020a65b-h0-pgd-rows",
+        action="store_true",
+        help="Print the two planned local issue 020a65b H0 no-PGD/PGD gate rows and exit.",
+    )
+    parser.add_argument(
         "--smoke",
         action="store_true",
         help="Use tiny local values; with --full-train this runs a one-batch smoke.",
@@ -1920,6 +1930,9 @@ def main(
         return 0
     if args.planned_target_relative_h0_rows:
         print(_json_dumps({"planned_rows": planned_target_relative_multitarget_h0_rows()}), end="")
+        return 0
+    if args.planned_020a65b_h0_pgd_rows:
+        print(_json_dumps({"planned_rows": planned_020a65b_h0_pgd_rows()}), end="")
         return 0
     result = (
         run_full_training(args, volume_commit=volume_commit)
@@ -2873,6 +2886,12 @@ def _prepend_existing_training_diagnostics(
                 f"Cannot stitch resumed training diagnostics for {name!r}: "
                 "no prior array is available."
             )
+        if (
+            previous.ndim == current.ndim
+            and previous.shape[1:] == current.shape[:-1]
+            and previous.shape[0] + current.shape[-1] == int(completed_batches)
+        ):
+            current = np.moveaxis(current, -1, 0)
         if previous.ndim != current.ndim or previous.shape[1:] != current.shape[1:]:
             raise ValueError(
                 f"Cannot stitch resumed training diagnostics for {name!r}: "
@@ -2884,6 +2903,11 @@ def _prepend_existing_training_diagnostics(
                 f"{previous.shape[0]} + {current.shape[0]} != {completed_batches}."
             )
         stitched[name] = np.concatenate([previous, current], axis=0)
+    for name, previous in prior.items():
+        if name in stitched or name == "batch_index" or previous.ndim == 0:
+            continue
+        if previous.shape[0] == int(completed_batches):
+            stitched[name] = previous
     return stitched
 
 
@@ -3002,9 +3026,7 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
         "hold_epochs": _plain(hps.task.hold_epochs),
         "move_epochs": _plain(hps.task.move_epochs),
         "p_catch_trial": float(hps.task.p_catch_trial),
-        "target_visible_from_start": _plain(
-            getattr(hps.task, "target_visible_from_start", None)
-        ),
+        "target_visible_from_start": _plain(getattr(hps.task, "target_visible_from_start", None)),
         "go_cue_event_name": _plain(getattr(hps.task, "go_cue_event_name", None)),
         "catch_metadata_policy": _plain(getattr(hps.task, "catch_metadata_policy", None)),
         "coordinate_contract": (

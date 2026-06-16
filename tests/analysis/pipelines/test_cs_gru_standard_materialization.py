@@ -17,8 +17,10 @@ from rlrmp.analysis.pipelines.bridge_certificates import (
 )
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import (
     RUN_IDS,
+    _controller_feedback_dim,
     _repeat_single_validation_trial,
     build_gru_standard_manifest_from_actions,
+    gru_io_response_map_blocker,
     materialize_gru_standard_result,
     normalize_gru_hps,
     observation_history_covariance_from_net_inputs,
@@ -61,6 +63,27 @@ def test_normalize_gru_hps_maps_serialized_gru_type_to_builder_default() -> None
 
     assert normalized["hidden_type"] is None
     assert hps["hidden_type"] == "equinox.nn._rnn.GRUCell"
+
+
+def test_controller_feedback_dim_uses_h0_force_filter_context_shape() -> None:
+    run_spec = {
+        "model_summary": {
+            "initial_hidden_encoder": {
+                "enabled": True,
+                "context_shape": [6],
+            }
+        },
+        "hps": {
+            "model": {
+                "force_filter_feedback": True,
+            }
+        },
+    }
+
+    assert _controller_feedback_dim(run_spec) == 6
+    blocker = gru_io_response_map_blocker(run_spec)
+    assert "6D delayed position/velocity plus force-filter feedback" in blocker
+    assert "6D-to-8D" in blocker
 
 
 def test_gru_manifest_keeps_same_coordinate_rows_not_applicable() -> None:
@@ -126,9 +149,10 @@ def test_gru_manifest_accepts_4d_observation_response_maps() -> None:
         2,
         12,
     ]
-    assert by_name[OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH]["summary"][
-        "aggregate_mismatch_ratio"
-    ] == 1.0
+    assert (
+        by_name[OBSERVATION_HISTORY_TO_ACTION_MAP_MISMATCH]["summary"]["aggregate_mismatch_ratio"]
+        == 1.0
+    )
     assert by_name[MEASUREMENT_HISTORY_TO_ACTION_MAP_MISMATCH]["status"] == "available"
 
 
@@ -176,9 +200,7 @@ def test_gru_manifest_adds_covariance_weighted_observation_response_map() -> Non
     assert summary["aggregate_mismatch_ratio"] == 1.0
     assert summary["covariance_weighted_status"] == "available"
     assert summary["covariance_weighted_aggregate_mismatch_ratio"] == 1.0
-    assert summary["covariance_weighting"]["source"] == (
-        "empirical_validation_observation_history"
-    )
+    assert summary["covariance_weighting"]["source"] == ("empirical_validation_observation_history")
     assert summary["covariance_weighting"]["sample_count"] == 2
     assert summary["covariance_weighting"]["centering"] == "sample_mean_subtracted"
     assert summary["covariance_weighting"]["regularization"] == {
@@ -248,11 +270,7 @@ def test_response_map_sampling_repeats_first_trial_from_multitarget_bank() -> No
     trial_specs = TaskTrialSpec(
         inits=WhereDict({"mechanics.vector": jnp.arange(20 * 48).reshape(20, 48)}),
         targets=WhereDict(
-            {
-                "mechanics.effector.pos": TargetSpec(
-                    value=jnp.arange(20 * 60 * 2).reshape(20, 60, 2)
-                )
-            }
+            {"mechanics.effector.pos": TargetSpec(value=jnp.arange(20 * 60 * 2).reshape(20, 60, 2))}
         ),
         inputs={"target": jnp.arange(20 * 60 * 2).reshape(20, 60, 2)},
     )

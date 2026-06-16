@@ -36,9 +36,7 @@ def test_sidecar_aggregates_available_components_with_provenance() -> None:
                         "n_replicates": 3,
                         "gru_mean_selected_validation_full_qrf": 12.0,
                         "shared_rollout_comparator": {
-                            "gru_vs_extlqg": {
-                                "terms": {"total": {"ratio_to_extlqg": 1.4}}
-                            }
+                            "gru_vs_extlqg": {"terms": {"total": {"ratio_to_extlqg": 1.4}}}
                         },
                     },
                 ],
@@ -60,9 +58,7 @@ def test_sidecar_aggregates_available_components_with_provenance() -> None:
                                         "metrics": {
                                             "delta_action_norm": {"mean": 0.2},
                                             "delta_endpoint_error_m": {"mean": 0.01},
-                                            "delta_velocity_trajectory_norm_m_s": {
-                                                "mean": 0.4
-                                            },
+                                            "delta_velocity_trajectory_norm_m_s": {"mean": 0.4},
                                         },
                                         "gru_extlqg_delta_cost_ratio": {
                                             "status": "available",
@@ -95,9 +91,7 @@ def test_sidecar_aggregates_available_components_with_provenance() -> None:
                                 "metrics": {
                                     "endpoint_error_m": {"mean": 0.003},
                                     "terminal_speed_m_s": {"mean": 0.001},
-                                    "rollout_full_qrf": {
-                                        "base_cost": {"control": {"mean": 2.0}}
-                                    },
+                                    "rollout_full_qrf": {"base_cost": {"control": {"mean": 2.0}}},
                                 },
                             }
                         ],
@@ -132,15 +126,13 @@ def test_sidecar_aggregates_available_components_with_provenance() -> None:
     assert sidecar["components"]["objective_comparator"]["source_path"] == (
         "results/unit/objective.json"
     )
-    robust = {
-        row["run_id"]: row
-        for row in sidecar["rows"]
-    }["robust_perturb_fullqrf"]
+    robust = {row["run_id"]: row for row in sidecar["rows"]}["robust_perturb_fullqrf"]
     assert robust["nominal_efficiency"]["values"]["n_replicates"] == 3
     assert robust["nominal_efficiency"]["values"]["endpoint_error_m"] == 0.003
-    assert robust["feedback_competence"]["values"]["feedback_ablation_interpretation"][
-        "label"
-    ] == "feedback_sensitive"
+    assert (
+        robust["feedback_competence"]["values"]["feedback_ablation_interpretation"]["label"]
+        == "feedback_sensitive"
+    )
     assert (
         robust["local_feedback_law"]["values"]["map_decomposition_summary"][
             "candidate_reference_cosine"
@@ -171,6 +163,44 @@ def test_sidecar_degrades_gracefully_when_components_are_missing() -> None:
     assert row["feedback_competence"]["status"] == "missing"
     assert row["hinf_phenotype_markers"]["status"] == "missing"
     assert row["formal_hinf_claim"]["status"] == "not_claimed"
+
+
+def test_sidecar_uses_explicit_paired_run_ids_for_opaque_run_names() -> None:
+    sources = {
+        "objective_comparator": _source(
+            "results/unit/objective.json",
+            {
+                "schema_version": "objective.v1",
+                "rows": [
+                    {"run_id": "row_a", "gru_mean_selected_validation_full_qrf": 1.0},
+                    {"run_id": "row_b", "gru_mean_selected_validation_full_qrf": 2.0},
+                ],
+            },
+        ),
+    }
+
+    sidecar = build_hinf_phenotype_sidecar(
+        sources=sources,
+        paired_run_ids={"row_a": "row_b"},
+    )
+    rows = {row["run_id"]: row for row in sidecar["rows"]}
+
+    assert sidecar["paired_run_ids"] == {"row_a": "row_b"}
+    assert rows["row_a"]["paired_baseline_vs_robust"] == {
+        "status": "candidate_pair_available",
+        "baseline_run_id": "row_a",
+        "robust_run_id": "row_b",
+        "current_row_role": "baseline",
+        "selection_role": "interpretive_pairing_only",
+        "pairing_source": "explicit_paired_run_ids",
+        "current_row_evidence_statuses": {
+            "nominal_efficiency": "available",
+            "feedback_competence": "missing",
+            "local_feedback_law": "missing",
+            "hinf_phenotype_markers": "missing",
+        },
+    }
+    assert rows["row_b"]["paired_baseline_vs_robust"]["current_row_role"] == "robust"
 
 
 def test_loader_records_missing_path_and_markdown_renders(tmp_path) -> None:

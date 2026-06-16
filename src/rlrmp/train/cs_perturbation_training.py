@@ -31,9 +31,7 @@ from rlrmp.model.feedbax_channel_adapters import (
 )
 
 PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_randomized"
-CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE = (
-    "fixed_target_perturbation_calibrated_timing"
-)
+CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_calibrated_timing"
 LEGACY_PERTURBATION_TRAINING_MODE = "fixed_target_perturbation_generalized"
 TARGET_RELATIVE_MULTITARGET_TRAINING_MODE = "target_relative_multitarget_static"
 TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE = "target_relative_multitarget_static_h0"
@@ -92,8 +90,7 @@ CONTROLLER_VISIBLE_TIMED_BINS: tuple[PerturbationBin, ...] = (
     "delayed_observation",
 )
 REACH_RELATIVE_LEVELS: dict[str, float] = {
-    level.name: float(level.fraction_of_reach)
-    for level in DEFAULT_REACH_RELATIVE_LEVELS
+    level.name: float(level.fraction_of_reach) for level in DEFAULT_REACH_RELATIVE_LEVELS
 }
 TRAINING_REACH_RELATIVE_LEVELS: tuple[str, ...] = ("small", "moderate")
 EVAL_ONLY_REACH_RELATIVE_LEVELS: tuple[str, ...] = ("stress",)
@@ -165,10 +162,7 @@ class BroadFullStateEpsilonTrainingConfig:
     def reference_l2_radius(self) -> float:
         """Return the 15 cm reference L2 radius after the explicit budget scale."""
 
-        return (
-            float(self.level_contract["closed_loop_epsilon_l2_15cm"])
-            * float(self.budget_scale)
-        )
+        return float(self.level_contract["closed_loop_epsilon_l2_15cm"]) * float(self.budget_scale)
 
     def to_hps_dict(self) -> dict[str, Any]:
         """Return TreeNamespace-compatible broad-epsilon training metadata."""
@@ -265,10 +259,7 @@ class PgdFullStateEpsilonTrainingConfig:
     def reference_l2_radius(self) -> float:
         """Return the 15 cm reference L2 radius after the explicit budget scale."""
 
-        return (
-            float(self.level_contract["closed_loop_epsilon_l2_15cm"])
-            * float(self.budget_scale)
-        )
+        return float(self.level_contract["closed_loop_epsilon_l2_15cm"]) * float(self.budget_scale)
 
     def to_hps_dict(self) -> dict[str, Any]:
         """Return TreeNamespace-compatible PGD broad-epsilon training metadata."""
@@ -444,10 +435,7 @@ class FixedTargetPerturbationTrainingConfig:
     def __post_init__(self) -> None:
         total = self.nominal_fraction + self.single_fraction + self.combined_fraction
         if not np.isclose(total, 1.0):
-            raise ValueError(
-                "Perturbation-training fractions must sum to 1.0; "
-                f"got {total:.6g}."
-            )
+            raise ValueError(f"Perturbation-training fractions must sum to 1.0; got {total:.6g}.")
         if not 0.40 <= self.nominal_fraction <= 0.50:
             raise ValueError("Nominal perturbation-training fraction must be 40-50%.")
         if not 0.40 <= self.single_fraction <= 0.50:
@@ -479,9 +467,7 @@ class FixedTargetPerturbationTrainingConfig:
         return {
             "enabled": self.enabled,
             "mode": self.mode,
-            "legacy_mode": (
-                LEGACY_PERTURBATION_TRAINING_MODE if self.enabled else None
-            ),
+            "legacy_mode": (LEGACY_PERTURBATION_TRAINING_MODE if self.enabled else None),
             "sampling": {
                 "kind": (
                     "prng_driven_calibrated_timing"
@@ -523,9 +509,7 @@ class FixedTargetPerturbationTrainingConfig:
                     force_filter_feedback=self.force_filter_feedback
                 ).items()
             },
-            "physical_level_fraction_of_reach": REACH_RELATIVE_LEVELS[
-                self.physical_level
-            ],
+            "physical_level_fraction_of_reach": REACH_RELATIVE_LEVELS[self.physical_level],
             "training_physical_levels": list(TRAINING_REACH_RELATIVE_LEVELS),
             "eval_only_physical_levels": list(EVAL_ONLY_REACH_RELATIVE_LEVELS),
             "single_family_bins": list(SINGLE_FAMILY_BINS),
@@ -658,9 +642,7 @@ class TargetRelativeMultiTargetTrainingConfig:
 
         return {
             "enabled": self.enabled,
-            "mode": (
-                TARGET_RELATIVE_MULTITARGET_TRAINING_MODE if self.enabled else "disabled"
-            ),
+            "mode": (TARGET_RELATIVE_MULTITARGET_TRAINING_MODE if self.enabled else "disabled"),
             "force_filter_feedback": self.force_filter_feedback,
             "force_filter_feedback_contract": force_filter_feedback_manifest(
                 self.force_filter_feedback
@@ -896,18 +878,12 @@ def config_from_hps(config: Any) -> FixedTargetPerturbationTrainingConfig:
         single_fraction=float(getattr(config, "single_fraction", 0.45)),
         combined_fraction=float(getattr(config, "combined_fraction", 0.10)),
         combined_amplitude_scale=float(getattr(config, "combined_amplitude_scale", 0.5)),
-        initial_position_offset_m=float(
-            getattr(config, "initial_position_offset_m", 0.01)
-        ),
-        initial_velocity_offset_m_s=float(
-            getattr(config, "initial_velocity_offset_m_s", 0.05)
-        ),
+        initial_position_offset_m=float(getattr(config, "initial_position_offset_m", 0.01)),
+        initial_velocity_offset_m_s=float(getattr(config, "initial_velocity_offset_m_s", 0.05)),
         process_epsilon_scale=float(getattr(config, "process_epsilon_scale", 0.01)),
         command_input_pulse_n=float(getattr(config, "command_input_pulse_n", 1.0)),
         sensory_feedback_offset_m=float(getattr(config, "sensory_feedback_offset_m", 0.01)),
-        delayed_observation_offset_m=float(
-            getattr(config, "delayed_observation_offset_m", 0.01)
-        ),
+        delayed_observation_offset_m=float(getattr(config, "delayed_observation_offset_m", 0.01)),
         pulse_start_step=int(getattr(config, "pulse_start_step", 20)),
         pulse_duration_steps=int(getattr(config, "pulse_duration_steps", 5)),
         calibrated_timing=bool(getattr(config, "calibrated_timing", False)),
@@ -920,9 +896,7 @@ def calibrated_timing_bins_manifest() -> dict[str, Any]:
     """Return the calibrated timing-bin contract for training/run specs."""
 
     plant_bins = [bin_.to_json() for bin_ in DEFAULT_PLANT_TIMING_BINS]
-    visible_bins = [
-        bin_.to_json() for bin_ in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS
-    ]
+    visible_bins = [bin_.to_json() for bin_ in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS]
     return {
         "schema_version": "rlrmp.cs_perturbation_calibrated_timing_bins.v1",
         "sampling": "uniform_per_active_family_trial",
@@ -959,8 +933,7 @@ def calibrated_timing_bins_manifest() -> dict[str, Any]:
             **{
                 family: {
                     "start_time_indices": [
-                        int(bin_.start_time_index)
-                        for bin_ in DEFAULT_PLANT_TIMING_BINS
+                        int(bin_.start_time_index) for bin_ in DEFAULT_PLANT_TIMING_BINS
                     ],
                     "duration_steps": 5,
                     "timing_set": "plant_side",
@@ -991,9 +964,7 @@ def calibrated_level_manifest(
         name: {
             "fraction_of_reach": fraction,
             "training_role": (
-                "training_row"
-                if name in TRAINING_REACH_RELATIVE_LEVELS
-                else "evaluation_only"
+                "training_row" if name in TRAINING_REACH_RELATIVE_LEVELS else "evaluation_only"
             ),
         }
         for name, fraction in REACH_RELATIVE_LEVELS.items()
@@ -1005,9 +976,7 @@ def calibrated_level_manifest(
         "levels": levels,
         "training_levels": list(TRAINING_REACH_RELATIVE_LEVELS),
         "eval_only_levels": list(EVAL_ONLY_REACH_RELATIVE_LEVELS),
-        "amplitude_wiring_status": (
-            "wired_in_sampler_when_calibrated_timing_true"
-        ),
+        "amplitude_wiring_status": ("wired_in_sampler_when_calibrated_timing_true"),
     }
 
 
@@ -1181,9 +1150,7 @@ def perturbation_training_mixture_semantics(
                     "physical_level" if config.calibrated_timing else "amplitude_level",
                 ],
                 "duration_steps": (
-                    int(config.pulse_duration_steps)
-                    if config.calibrated_timing
-                    else "full_trial"
+                    int(config.pulse_duration_steps) if config.calibrated_timing else "full_trial"
                 ),
             },
             "delayed_observation": {
@@ -1207,9 +1174,7 @@ def perturbation_training_mixture_semantics(
                     "physical_level" if config.calibrated_timing else "amplitude_level",
                 ],
                 "duration_steps": (
-                    int(config.pulse_duration_steps)
-                    if config.calibrated_timing
-                    else "full_trial"
+                    int(config.pulse_duration_steps) if config.calibrated_timing else "full_trial"
                 ),
             },
         },
@@ -1721,9 +1686,9 @@ def apply_training_perturbation_mixture(
         (mixture >= float(cfg.nominal_fraction))
         & (mixture < float(cfg.nominal_fraction + cfg.single_fraction))
     ).astype(jnp.float32)
-    combined_mask = (
-        mixture >= float(cfg.nominal_fraction + cfg.single_fraction)
-    ).astype(jnp.float32)
+    combined_mask = (mixture >= float(cfg.nominal_fraction + cfg.single_fraction)).astype(
+        jnp.float32
+    )
     family_index = jr.randint(key_family, batch_shape, 0, len(SINGLE_FAMILY_BINS))
 
     if cfg.calibrated_timing:
@@ -1948,7 +1913,9 @@ def target_relative_validation_manifest(config: Any) -> dict[str, Any]:
     }
 
 
-def target_relative_validation_bins(config: TargetRelativeMultiTargetTrainingConfig) -> list[dict[str, Any]]:
+def target_relative_validation_bins(
+    config: TargetRelativeMultiTargetTrainingConfig,
+) -> list[dict[str, Any]]:
     """Return target validation-bin rows."""
 
     anchor = tuple(float(x) for x in config.original_target_anchor_m)
@@ -2201,19 +2168,19 @@ def _single_bin_amount(
     if bin_name == "initial_position":
         return target_peak_delta_x
     if bin_name == "initial_velocity":
-        sensitivity = DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[
-            "initial_velocity_offset"
-        ]["initial_condition"]
+        sensitivity = DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT["initial_velocity_offset"][
+            "initial_condition"
+        ]
         return target_peak_delta_x / sensitivity
     if bin_name == "process_epsilon":
-        sensitivity = DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[
-            "process_epsilon_force_state_xy"
-        ][TIMING_LABELS_PLANT[0]]
+        sensitivity = DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT["process_epsilon_force_state_xy"][
+            TIMING_LABELS_PLANT[0]
+        ]
         return target_peak_delta_x / sensitivity
     if bin_name == "command_input":
-        sensitivity = DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[
-            "command_input_pulse"
-        ][TIMING_LABELS_PLANT[0]]
+        sensitivity = DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT["command_input_pulse"][
+            TIMING_LABELS_PLANT[0]
+        ]
         return target_peak_delta_x / sensitivity
     if bin_name in {"sensory_feedback", "delayed_observation"}:
         return target_peak_delta_x
@@ -2250,9 +2217,9 @@ def _calibrated_initial_amount(
     target_peak_delta_x = _target_peak_delta_x_m(trial_specs, config)
     if bin_name == "initial_position":
         return target_peak_delta_x
-    sensitivity = DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT[
-        "initial_velocity_offset"
-    ]["initial_condition"]
+    sensitivity = DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT["initial_velocity_offset"][
+        "initial_condition"
+    ]
     return target_peak_delta_x / jnp.asarray(sensitivity, dtype=jnp.float32)
 
 
@@ -2593,14 +2560,10 @@ def _randomized_payload_width(
     config: FixedTargetPerturbationTrainingConfig,
     payload_width: int,
 ) -> int:
-    if (
-        config.force_filter_feedback
-        and spec.label
-        in {
-            GRAPH_ADAPTER_SPECS["sensory_feedback"].label,
-            GRAPH_ADAPTER_SPECS["delayed_observation"].label,
-        }
-    ):
+    if config.force_filter_feedback and spec.label in {
+        GRAPH_ADAPTER_SPECS["sensory_feedback"].label,
+        GRAPH_ADAPTER_SPECS["delayed_observation"].label,
+    }:
         return min(4, int(payload_width))
     return int(payload_width)
 
@@ -2651,8 +2614,7 @@ def _sample_pulse_start(
     valid_starts = tuple(
         int(start)
         for start in starts
-        if 0 <= int(start) < int(n_steps)
-        and int(start) + int(duration) <= int(n_steps)
+        if 0 <= int(start) < int(n_steps) and int(start) + int(duration) <= int(n_steps)
     )
     if not valid_starts:
         raise ValueError("At least one calibrated timing-bin start must fit the trial.")
@@ -2694,10 +2656,7 @@ def _plant_timing_starts() -> tuple[int, ...]:
 
 
 def _controller_visible_timing_starts() -> tuple[int, ...]:
-    return tuple(
-        int(bin_.start_time_index)
-        for bin_ in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS
-    )
+    return tuple(int(bin_.start_time_index) for bin_ in DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS)
 
 
 def _deterministic_validation_start(
@@ -3285,6 +3244,113 @@ def planned_target_relative_multitarget_h0_rows(
                     "--perturbation-training",
                     "--full-train",
                     "--resume",
+                ],
+            }
+        )
+    return rows
+
+
+def planned_020a65b_h0_pgd_rows(
+    *,
+    experiment: str = "020a65b",
+) -> list[dict[str, Any]]:
+    """Return the two local H0 replication rows for the 020a65b PGD lane."""
+
+    common_command = [
+        "env",
+        "JAX_PLATFORM_NAME=cpu",
+        "PYTHONPATH=src",
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "scripts/train_cs_nominal_gru.py",
+        "--issue",
+        "020a65b",
+        "--n-train-batches",
+        "12000",
+        "--batch-size",
+        "64",
+        "--controller-lr",
+        "0.003",
+        "--gradient-clip-norm",
+        "5",
+        "--lr-warmup-batches",
+        "500",
+        "--lr-warmup-init-fraction",
+        "0.1",
+        "--lr-cosine-alpha",
+        "0.01",
+        "--n-replicates",
+        "5",
+        "--loss-objective",
+        "full_analytical_qrf",
+        "--target-relative-multitarget",
+        "--initial-hidden-encoder",
+        "--force-filter-feedback",
+        "--perturbation-training",
+        "--perturbation-calibrated-timing",
+        "--perturbation-physical-level",
+        "small",
+    ]
+
+    rows = []
+    for pgd_enabled in (False, True):
+        pgd_label = "pgd_ofb" if pgd_enabled else "no_pgd"
+        run = (
+            "target_relative_multitarget_h0_fullqrf_warmcos__"
+            f"proprio_cal_small_{pgd_label}_lr3e-3_clip5_b64"
+        )
+        command = [
+            *common_command,
+            "--output-dir",
+            f"_artifacts/{experiment}/runs/{run}",
+        ]
+        if pgd_enabled:
+            command.extend(
+                [
+                    "--broad-epsilon-pgd-training",
+                    "--broad-epsilon-level",
+                    "moderate",
+                    "--broad-epsilon-budget-scale",
+                    "3.688240371719434",
+                    "--broad-epsilon-pgd-steps",
+                    "10",
+                    "--broad-epsilon-pgd-step-size-fraction",
+                    "0.25",
+                ]
+            )
+        full_resume_command = [*command, "--full-train", "--resume"]
+        rows.append(
+            {
+                "experiment": experiment,
+                "run": run,
+                "controller_lr": 3e-3,
+                "batch_size": 64,
+                "gradient_clip_norm": 5.0,
+                "n_replicates": 5,
+                "n_train_batches": 12000,
+                "stop_after_batches": 1000,
+                "loss_objective": "full_analytical_qrf",
+                "lr_schedule": "warmup_cosine",
+                "row_kind": "checkpoint_gate",
+                "local_device": "cpu",
+                "training": TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
+                "force_filter_feedback": True,
+                "perturbation_training": "fixed_target_perturbation_calibrated_timing",
+                "perturbation_physical_level": "small",
+                "initial_hidden_encoder": "zero_affine_target_relative_feedback_plus_force_filter",
+                "broad_epsilon_pgd_training": pgd_enabled,
+                "broad_epsilon_level": "moderate" if pgd_enabled else None,
+                "broad_epsilon_budget_scale": 3.688240371719434 if pgd_enabled else None,
+                "broad_epsilon_pgd_steps": 10 if pgd_enabled else None,
+                "broad_epsilon_pgd_step_size_fraction": 0.25 if pgd_enabled else None,
+                "checkpoint_selection": "target_relative_multitarget_rollout_validation",
+                "full_training_contract_command": full_resume_command,
+                "command": [
+                    *full_resume_command,
+                    "--stop-after-batches",
+                    "1000",
                 ],
             }
         )

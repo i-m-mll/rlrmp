@@ -1,0 +1,185 @@
+{
+  "command": {
+    "argv": [
+      "unknown"
+    ],
+    "cwd": ".",
+    "metadata": {
+      "materializer": "rlrmp.analysis.pipelines.gru_pilot_figures.materialize_gru_pilot_figures",
+      "status": "not_recorded"
+    }
+  },
+  "inputs": [
+    {
+      "logical_name": "results/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/run.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "127bbf0641514ae81ad4feb8e3ea7d32ae6f18bbcdc8d02ab7902b2813419a0b",
+        "size_bytes": 299056
+      },
+      "role": "run_spec",
+      "sha256": "127bbf0641514ae81ad4feb8e3ea7d32ae6f18bbcdc8d02ab7902b2813419a0b",
+      "size_bytes": 299056,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/run.json"
+    },
+    {
+      "logical_name": "_artifacts/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 126,
+        "hash_file_count": 126,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "9274f6c40993d0688e6c867d9b1cd7a29be20cd6c314285e1a57eab57544b83d",
+        "total_bytes": 363291739
+      },
+      "role": "run_artifact_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64"
+    },
+    {
+      "logical_name": "results/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/run.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "18a4edcd2e1c0c603646282d6bc1b1d80b1596d57a1d3d963b26001eef96a9ad",
+        "size_bytes": 306188
+      },
+      "role": "run_spec",
+      "sha256": "18a4edcd2e1c0c603646282d6bc1b1d80b1596d57a1d3d963b26001eef96a9ad",
+      "size_bytes": 306188,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/run.json"
+    },
+    {
+      "logical_name": "_artifacts/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 126,
+        "hash_file_count": 126,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "f755420720668c35766599b8e9994124140c5c79977acf0d6f8b43b2e2c5440a",
+        "total_bytes": 363481954
+      },
+      "role": "run_artifact_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64"
+    }
+  ],
+  "metadata": {
+    "diagnostic_name": "gru_pilot_figures",
+    "materializer": "rlrmp.analysis.pipelines.gru_pilot_figures.materialize_gru_pilot_figures",
+    "notes": [
+      "Postrun-owned regeneration spec for pilot loss/velocity figures."
+    ],
+    "schema_boundary": "rlrmp diagnostic payload; Feedbax regeneration custody"
+  },
+  "outputs": [
+    {
+      "logical_name": "_artifacts/020a65b/figures/gru_postrun_h0_pgd_bank_two_rows_validation_selected",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 6,
+        "hash_file_count": 6,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "9ac4c8caa0fb383495a057f242c6f79dfbbc310104a7e2312d0a472b2dd5382a",
+        "total_bytes": 28174071
+      },
+      "role": "pilot_figure_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/020a65b/figures/gru_postrun_h0_pgd_bank_two_rows_validation_selected"
+    },
+    {
+      "logical_name": "_artifacts/020a65b/figures/gru_postrun_h0_pgd_bank_two_rows_validation_selected/figure_summary.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "7e9667d1e52a20bcbff08b54415c86471b5d8c24b221bceb0ed513dea0a3ae68",
+        "size_bytes": 20717
+      },
+      "role": "pilot_figure_summary",
+      "sha256": "7e9667d1e52a20bcbff08b54415c86471b5d8c24b221bceb0ed513dea0a3ae68",
+      "size_bytes": 20717,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/020a65b/figures/gru_postrun_h0_pgd_bank_two_rows_validation_selected/figure_summary.json"
+    }
+  ],
+  "parameters": {
+    "experiment": "020a65b",
+    "include_reference": true,
+    "labels": [
+      "h0 no-PGD lr3e-3",
+      "h0 PGD-OFB lr3e-3"
+    ],
+    "n_rollout_trials": 64,
+    "preferred_checkpoint_manifest_path": null,
+    "run_ids": [
+      "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
+      "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64"
+    ],
+    "use_validation_selected_checkpoints": true
+  },
+  "provenance": {
+    "dirty": true,
+    "entrypoint": {
+      "kind": "rlrmp-diagnostic-materializer",
+      "metadata": {},
+      "name": "rlrmp.analysis.pipelines.gru_pilot_figures.materialize_gru_pilot_figures"
+    },
+    "issues": [],
+    "metadata": {
+      "status_porcelain": [
+        "M scripts/materialize_hinf_phenotype_sidecar.py",
+        " M src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
+        " M src/rlrmp/analysis/pipelines/hinf_phenotype_sidecar.py",
+        " M src/rlrmp/train/cs_nominal_gru.py",
+        " M src/rlrmp/train/cs_perturbation_training.py",
+        " M tests/analysis/pipelines/test_cs_gru_standard_materialization.py",
+        " M tests/analysis/pipelines/test_hinf_phenotype_sidecar.py",
+        " M tests/test_cs_nominal_gru.py",
+        "?? .issue",
+        "?? results/020a65b/notes/gru_evaluation_diagnostics_h0_pgd_bank_two_rows_validation_selected_regeneration_spec.json",
+        "?? results/020a65b/notes/gru_feedback_ablation_h0_pgd_bank_two_rows_validation_selected.md",
+        "?? results/020a65b/notes/gru_feedback_ablation_h0_pgd_bank_two_rows_validation_selected_regeneration_spec.json",
+        "?? results/020a65b/notes/gru_map_error_decomposition_h0_pgd_bank_two_rows_validation_selected.md",
+        "?? results/020a65b/notes/gru_perturbation_response_h0_pgd_bank_two_rows_validation_selected.md",
+        "?? results/020a65b/notes/gru_perturbation_response_h0_pgd_bank_two_rows_validation_selected_manifest.json",
+        "?? results/020a65b/notes/gru_perturbation_response_h0_pgd_bank_two_rows_validation_selected_manifest_regeneration_spec.json",
+        "?? results/020a65b/notes/gru_standard_certificates_h0_pgd_bank_two_rows_validation_selected.md",
+        "?? results/020a65b/notes/gru_standard_certificates_h0_pgd_bank_two_rows_validation_selected_manifest.json",
+        "?? results/020a65b/notes/gru_standard_certificates_h0_pgd_bank_two_rows_validation_selected_manifest_regeneration_spec.json",
+        "?? results/020a65b/notes/objective_comparator_h0_pgd_bank_two_rows_validation_selected.md",
+        "?? results/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/model.graph.manifest.json",
+        "?? results/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/run.json",
+        "?? results/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/model.graph.manifest.json",
+        "?? results/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/run.json"
+      ]
+    },
+    "parents": [],
+    "source_branch": "feature/020a65b-h0-pgd-local",
+    "source_commit": "85285a4d150e911ccf9091e25d9d264d49450b3e",
+    "source_repo": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__020a65b-h0-pgd-local"
+  },
+  "schema_id": "feedbax.spec.regeneration",
+  "schema_version": "feedbax.spec.regeneration.v1",
+  "source_files": [
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/gru_pilot_figures.py",
+      "role": "source_file",
+      "sha256": "0c543a99c4ea13f621f3b9c6e7885c11be95b800d84f95c54ba1977a1faf3233",
+      "size_bytes": 36418
+    }
+  ],
+  "source_trees": []
+}
