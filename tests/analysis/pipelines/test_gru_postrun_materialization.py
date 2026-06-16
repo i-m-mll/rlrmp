@@ -12,7 +12,7 @@ from feedbax.contracts.manifest import TrainingRunManifest, load_manifest, spec_
 from feedbax.plugins.registry import ExperimentRegistry
 
 from rlrmp.analysis import declarative_materialization as dm
-from rlrmp.analysis import gru_postrun_materialization as postrun
+from rlrmp.analysis.pipelines import gru_postrun_materialization as postrun
 
 
 def test_plan_gru_postrun_materialization_routes_tracked_and_bulk_outputs(
@@ -309,6 +309,13 @@ def test_materialize_gru_postrun_analysis_passes_validation_selection_to_materia
         / "5f70333"
         / "perturbation_response"
         / "gru_fullqrf_validation_selected"
+    )
+    assert calls["perturbation"]["feedback_scale_manifest_path"] == (
+        tmp_path
+        / "results"
+        / "5f70333"
+        / "notes"
+        / "gru_evaluation_diagnostics_fullqrf_validation_selected.json"
     )
     assert calls["feedback"]["n_rollout_trials"] == postrun.DEFAULT_N_ROLLOUT_TRIALS
     assert calls["feedback"]["labels"] == ("A", "B")

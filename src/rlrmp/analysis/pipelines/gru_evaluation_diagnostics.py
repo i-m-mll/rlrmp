@@ -43,6 +43,7 @@ SCHEMA_VERSION = GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION
 DEFAULT_OUTPUT_FILENAME = "gru_evaluation_diagnostics_validation_selected.json"
 DEFAULT_BULK_SUBDIR = "evaluation_diagnostics/gru_validation_selected"
 DEFAULT_JACOBIAN_TIMEPOINTS = ("first", "peak_forward_velocity", "terminal")
+CONTROLLER_FEEDBACK_SCALE_STATISTIC = "p95_norm"
 GATE_SATURATION_LOW = 0.05
 GATE_SATURATION_HIGH = 0.95
 SIGN_CHANGE_EPS = 1e-6
@@ -107,6 +108,15 @@ def materialize_gru_evaluation_diagnostics(
             repo_root=repo_root,
         )
         behavior = summarize_rollout_behavior(evaluation)
+        feedback_scales = summarize_controller_feedback_scales(
+            evaluation,
+            run_id=run.run_id,
+            checkpoint_policy=_effective_checkpoint_policy_from_manifest(
+                experiment,
+                preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
+                repo_root=repo_root,
+            ),
+        )
         gates = summarize_gru_gates(model.nodes["net"].hidden, evaluation)
         jacobians = summarize_gru_jacobians(
             model.nodes["net"].hidden,
@@ -141,6 +151,7 @@ def materialize_gru_evaluation_diagnostics(
             "dt_s": evaluation.dt,
             "definitions": diagnostic_definitions(),
             "behavior": behavior,
+            "controller_feedback_scales": feedback_scales,
             "gru_gates": gates,
             "local_recurrent_jacobians": jacobians,
             "bulk_arrays": (
@@ -420,6 +431,91 @@ def summarize_gru_gates(gru_cell: Any, evaluation: RolloutEvaluation) -> dict[st
     }
 
 
+def summarize_controller_feedback_scales(
+    evaluation: RolloutEvaluation,
+    *,
+    run_id: str | None = None,
+    checkpoint_policy: str | None = None,
+    statistic: str = CONTROLLER_FEEDBACK_SCALE_STATISTIC,
+) -> dict[str, Any]:
+    """Summarize rollout-derived scales for controller-visible feedback channels.
+
+    The GRU input may include non-feedback features before the feedback block. The
+    feedback contract is therefore read from the trailing four or six columns:
+    position x/y, velocity x/y, and optionally force/filter x/y.
+    """
+
+    if statistic != CONTROLLER_FEEDBACK_SCALE_STATISTIC:
+        raise ValueError(f"unsupported feedback scale statistic {statistic!r}")
+
+    gru_input = np.asarray(evaluation.gru_input, dtype=np.float64)
+    if gru_input.ndim < 4:
+        raise ValueError("evaluation.gru_input must have shape replicate/trial/time/feature")
+    input_dim = int(gru_input.shape[-1])
+    feedback_dim = 6 if input_dim >= 6 else 4 if input_dim >= 4 else input_dim
+    if feedback_dim < 4:
+        return {
+            "status": "unavailable",
+            "reason": f"gru_input trailing feedback block requires at least 4 dims, got {input_dim}",
+            "run_id": run_id,
+            "checkpoint_policy": checkpoint_policy,
+            "gru_input_dim": input_dim,
+            "feedback_dim": feedback_dim,
+            "components": {},
+        }
+
+    start = input_dim - feedback_dim
+    component_specs = [
+        ("position", "m", (0, 1)),
+        ("velocity", "m/s", (2, 3)),
+    ]
+    if feedback_dim >= 6:
+        component_specs.append(("force_filter", "N", (4, 5)))
+
+    components: dict[str, Any] = {}
+    for name, units, basis_indices in component_specs:
+        absolute_indices = tuple(start + idx for idx in basis_indices)
+        values = gru_input[..., absolute_indices]
+        norm = np.linalg.norm(values, axis=-1)
+        abs_values = np.abs(values)
+        components[name] = {
+            "units": units,
+            "feedback_basis_indices": list(basis_indices),
+            "gru_input_indices": list(absolute_indices),
+            "rms_norm": float(np.sqrt(np.mean(np.square(norm)))),
+            "p95_norm": float(np.quantile(norm.reshape(-1), 0.95)),
+            "per_component_rms": [
+                float(np.sqrt(np.mean(np.square(abs_values[..., idx]))))
+                for idx in range(abs_values.shape[-1])
+            ],
+            "per_component_p95_abs": [
+                float(np.quantile(abs_values[..., idx].reshape(-1), 0.95))
+                for idx in range(abs_values.shape[-1])
+            ],
+        }
+        components[name]["reference_scale"] = float(components[name][statistic])
+        components[name]["reference_scale_statistic"] = statistic
+
+    return {
+        "status": "available",
+        "schema_version": "rlrmp.controller_feedback_scales.v1",
+        "run_id": run_id,
+        "checkpoint_policy": checkpoint_policy,
+        "source": "nominal_selected_checkpoint_rollouts.states.net.input.trailing_feedback_channels",
+        "feedback_basis": (
+            "target_relative_delayed_feedback_plus_force_filter"
+            if feedback_dim >= 6
+            else "target_relative_delayed_feedback"
+        ),
+        "gru_input_dim": input_dim,
+        "feedback_dim": feedback_dim,
+        "feedback_start_index": start,
+        "statistic": statistic,
+        "scale_rule": "amplitude = component.reference_scale * level_fraction_of_reach",
+        "components": components,
+    }
+
+
 def compute_gru_gate_arrays(
     gru_cell: Any,
     gru_input: np.ndarray,
@@ -544,6 +640,11 @@ def diagnostic_definitions() -> dict[str, str]:
             f"ignoring samples with absolute value <= {SIGN_CHANGE_EPS}"
         ),
         "hidden_state_norm": "Euclidean norm of GRU hidden state at every evaluated time step",
+        "controller_feedback_scales": (
+            "RMS and p95-norm scales computed from nominal rollout "
+            "states.net.input trailing feedback channels. The reference scale is "
+            f"{CONTROLLER_FEEDBACK_SCALE_STATISTIC}."
+        ),
         "gru_gate_saturation": (
             f"bounded gate saturation uses value < {GATE_SATURATION_LOW} and "
             f"value > {GATE_SATURATION_HIGH}; candidate saturation uses "

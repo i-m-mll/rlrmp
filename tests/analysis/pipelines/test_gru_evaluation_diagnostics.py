@@ -7,6 +7,7 @@ import numpy as np
 from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (
     RolloutEvaluation,
     compute_gru_gate_arrays,
+    summarize_controller_feedback_scales,
     summarize_rollout_behavior,
 )
 
@@ -66,3 +67,51 @@ def test_compute_gru_gate_arrays_reconstructs_equations() -> None:
     assert gates["candidate"].shape == (1, 1, 2, 1)
     assert np.all((gates["reset"] >= 0.0) & (gates["reset"] <= 1.0))
     assert np.all((gates["update"] >= 0.0) & (gates["update"] <= 1.0))
+
+
+def test_summarize_controller_feedback_scales_uses_trailing_feedback_channels() -> None:
+    gru_input = np.zeros((1, 2, 3, 7), dtype=np.float64)
+    gru_input[..., -6:] = np.array(
+        [
+            [
+                [1.0, 0.0, 3.0, 4.0, 5.0, 12.0],
+                [2.0, 0.0, 0.0, 6.0, 8.0, 15.0],
+                [4.0, 3.0, 5.0, 12.0, 7.0, 24.0],
+            ],
+            [
+                [0.0, 1.0, 8.0, 15.0, 9.0, 40.0],
+                [0.0, 2.0, 7.0, 24.0, 11.0, 60.0],
+                [3.0, 4.0, 20.0, 21.0, 13.0, 84.0],
+            ],
+        ]
+    )
+    evaluation = RolloutEvaluation(
+        position=np.zeros((1, 2, 3, 2)),
+        velocity=np.zeros((1, 2, 3, 2)),
+        command=np.zeros((1, 2, 3, 2)),
+        hidden=np.zeros((1, 2, 3, 2)),
+        gru_input=gru_input,
+        initial_position=np.zeros((2, 2)),
+        initial_velocity=np.zeros((2, 2)),
+        target_position=np.zeros((2, 3, 2)),
+        dt=0.01,
+    )
+
+    summary = summarize_controller_feedback_scales(
+        evaluation,
+        run_id="run_a",
+        checkpoint_policy="validation_selected_per_replicate",
+    )
+
+    assert summary["status"] == "available"
+    assert summary["run_id"] == "run_a"
+    assert summary["feedback_dim"] == 6
+    assert summary["feedback_start_index"] == 1
+    assert summary["feedback_basis"] == "target_relative_delayed_feedback_plus_force_filter"
+    assert summary["components"]["position"]["gru_input_indices"] == [1, 2]
+    assert summary["components"]["velocity"]["gru_input_indices"] == [3, 4]
+    assert summary["components"]["force_filter"]["gru_input_indices"] == [5, 6]
+    np.testing.assert_allclose(
+        summary["components"]["force_filter"]["reference_scale"],
+        np.quantile(np.linalg.norm(gru_input[..., -2:], axis=-1).reshape(-1), 0.95),
+    )
