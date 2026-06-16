@@ -218,7 +218,8 @@ DEFAULT_NATIVE_CONVENTIONS = (
         channel="sensory_feedback",
         native_unit_rule=(
             "position offsets are fractions of reach length; velocity offsets are "
-            "fractions of nominal peak speed when available"
+            "fractions of nominal peak speed when available; force/filter offsets "
+            "are fractions of a native 1 N reference offset"
         ),
         timing_rule="controller-visible starts 10/20/40 with 5-step duration",
         report_metric="closed-loop induced discrepancy against paired nominal rollout",
@@ -230,7 +231,8 @@ DEFAULT_NATIVE_CONVENTIONS = (
         native_unit_rule=(
             "pre-noise delayed-measurement position offsets are fractions of reach "
             "length; velocity offsets use nominal peak speed placeholder when the "
-            "actual peak speed is unavailable"
+            "actual peak speed is unavailable; force/filter offsets are fractions "
+            "of a native 1 N reference offset"
         ),
         timing_rule="controller-visible starts 10/20/40 with 5-step duration",
         report_metric="closed-loop induced discrepancy against paired nominal rollout",
@@ -288,6 +290,7 @@ DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT = {
     },
 }
 DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S = 0.7310094144305818
+DEFAULT_CONTROLLER_VISIBLE_FORCE_FILTER_SCALE_N = 1.0
 
 
 def materialize_perturbation_open_loop_calibration(
@@ -1160,6 +1163,7 @@ __all__ = [
     "DEFAULT_REACH_RELATIVE_LEVELS",
     "DEFAULT_PLANT_TIMING_BINS",
     "DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS",
+    "DEFAULT_CONTROLLER_VISIBLE_FORCE_FILTER_SCALE_N",
     "DEFAULT_NATIVE_CONVENTIONS",
     "DEFAULT_NOMINAL_GRU_BASELINE",
     "DEFAULT_REGENERATION_SPEC_FILENAME",

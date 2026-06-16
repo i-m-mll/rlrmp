@@ -33,6 +33,7 @@ from rlrmp.model.cs_lss_gru import build_cs_lss_gru_graph
 from rlrmp.train.cs_perturbation_training import (
     GRAPH_ADAPTER_SPECS as TRAINING_GRAPH_ADAPTER_SPECS,
     add_zero_graph_channel_inputs,
+    graph_adapter_specs,
     install_perturbation_training_graph_adapters,
 )
 
@@ -109,7 +110,7 @@ def test_default_bank_is_json_serializable_with_required_channels() -> None:
         row["channel_provenance"]["target_relative_axis_role"] == "tangential"
         for row in lateral_rows
     )
-    assert len(decoded["perturbations"]) == 123
+    assert len(decoded["perturbations"]) == 147
 
 
 def test_default_bank_emits_timing_bin_specific_rows() -> None:
@@ -137,8 +138,8 @@ def test_default_bank_emits_timing_bin_specific_rows() -> None:
 
     sensory_rows = [row for row in rows if row["family"] == "sensory_feedback_offset"]
     delayed_rows = [row for row in rows if row["family"] == "delayed_observation_offset"]
-    assert len(sensory_rows) == 24
-    assert len(delayed_rows) == 24
+    assert len(sensory_rows) == 36
+    assert len(delayed_rows) == 36
     assert {
         (row["timing_bin"], row["timing"]["start_time_index"], row["timing"]["duration_steps"])
         for row in sensory_rows
@@ -167,7 +168,26 @@ def test_default_bank_emits_timing_bin_specific_rows() -> None:
         ("velocity", "radial", 1),
         ("velocity", "tangential", -1),
         ("velocity", "tangential", 1),
+        ("force_filter", "radial", -1),
+        ("force_filter", "radial", 1),
+        ("force_filter", "tangential", -1),
+        ("force_filter", "tangential", 1),
     }
+    force_filter_rows = [
+        row
+        for row in sensory_rows + delayed_rows
+        if row["channel_provenance"]["feedback_quantity"] == "force_filter"
+    ]
+    assert len(force_filter_rows) == 24
+    assert {row["units"] for row in force_filter_rows} == {"N"}
+    assert {row["channel_provenance"]["feedback_payload_index"] for row in force_filter_rows} == {
+        4,
+        5,
+    }
+    assert all(
+        row["channel_provenance"]["force_filter_feedback_only"] is True
+        for row in force_filter_rows
+    )
     assert all(
         row["channel_provenance"]["not_literal_extra_delay"] is True for row in delayed_rows
     )
@@ -177,6 +197,27 @@ def test_default_bank_emits_timing_bin_specific_rows() -> None:
     assert {row["timing"]["time_index"] for row in initial_rows} == {0}
     assert bank["timing_bin_conventions"]["plant_side"][0]["start_time_index"] == 5
     assert bank["timing_bin_conventions"]["controller_visible"][0]["start_time_index"] == 10
+
+
+def test_calibrated_bank_includes_force_filter_feedback_rows() -> None:
+    bank = default_cs_perturbation_bank(mode="calibrated", calibration_level="small")
+    rows = bank["perturbations"]
+
+    force_filter_rows = [
+        row for row in rows if row.get("feedback_quantity") == "force_filter"
+    ]
+    assert len(force_filter_rows) == 24
+    assert {row["channel"] for row in force_filter_rows} == {
+        "sensory_feedback",
+        "delayed_observation",
+    }
+    assert {row["units"] for row in force_filter_rows} == {"N"}
+    assert {row["feedback_payload_index"] for row in force_filter_rows} == {4, 5}
+    assert all(row["force_filter_feedback_only"] is True for row in force_filter_rows)
+    assert all(
+        row["calibration_role"] == "reach_relative_calibrated_native_units"
+        for row in force_filter_rows
+    )
 
 
 def test_initial_position_adapter_offsets_cartesian_state_without_mutating_source() -> None:
@@ -432,8 +473,112 @@ def test_sensory_adapter_uses_external_graph_channel_payload() -> None:
     payload = result.trial_specs.inputs[input_key]
     assert payload.shape == (2, 10, 4)
     np.testing.assert_allclose(payload[:, :, 0], 0.01)
+    assert result.adapter_provenance["effective_payload_dim"] == 4
+    assert result.adapter_provenance["active_calibrated_components"] == 4
+    assert result.adapter_provenance["payload_shape_source"] == "adapter_spec"
     assert result.adapter_provenance["insertion_point"] == "sensory.output -> net.feedback"
     assert result.adapter_provenance["controller_input_mutated"] is False
+
+
+def test_sensory_adapter_applies_force_filter_feedback_row_to_payload_index() -> None:
+    graph = build_cs_lss_gru_graph(
+        hidden_size=4,
+        key=jr.PRNGKey(0),
+        target_relative_feedback=True,
+        force_filter_feedback=True,
+    )
+    graph = install_perturbation_training_graph_adapters(graph, force_filter_feedback=True)
+    trial_specs = TaskTrialSpec(
+        inits={"mechanics.vector": np.zeros((2, 8), dtype=np.float64)},
+        targets={
+            "mechanics.effector.pos": TargetSpec(
+                value=np.zeros((2, 10, 2), dtype=np.float32),
+            )
+        },
+        inputs={"effector_target": CartesianState(pos=np.zeros((2, 10, 2)))},
+        timeline=TrialTimeline(n_steps=10),
+    )
+    trial_specs = add_zero_graph_channel_inputs(trial_specs, force_filter_feedback=True)
+    specs = graph_adapter_specs(force_filter_feedback=True)
+    perturbation = {
+        "perturbation_id": "sensory_feedback_offset__force_filter__x_pos",
+        "channel": "sensory_feedback",
+        "family": "sensory_feedback_offset",
+        "amplitude": 0.25,
+        "units": "N",
+        "axis": "x",
+        "sign": 1,
+        "timing": {"start_time_index": 0, "duration_steps": 10},
+        "channel_provenance": {
+            "feedback_quantity": "force_filter",
+            "feedback_payload_index": 4,
+            "force_filter_feedback_only": True,
+        },
+    }
+
+    result = apply_perturbation_to_trial_specs(trial_specs, perturbation, model=graph)
+
+    assert result.status == "evaluated"
+    payload = result.trial_specs.inputs[specs["sensory_feedback"].input_key]
+    assert payload.shape == (2, 10, 6)
+    np.testing.assert_allclose(payload[:, :, :4], 0.0)
+    np.testing.assert_allclose(payload[:, :, 4], 0.25)
+    np.testing.assert_allclose(payload[:, :, 5], 0.0)
+    assert result.adapter_provenance["graph_adapter_reused"] is True
+    assert result.adapter_provenance["declared_payload_dim"] == 4
+    assert result.adapter_provenance["effective_payload_dim"] == 6
+    assert result.adapter_provenance["active_calibrated_components"] == 6
+    assert result.adapter_provenance["payload_shape_source"] == "existing_trial_input"
+
+
+def test_delayed_observation_adapter_applies_force_filter_feedback_row_to_payload_index() -> None:
+    graph = build_cs_lss_gru_graph(
+        hidden_size=4,
+        key=jr.PRNGKey(0),
+        target_relative_feedback=True,
+        force_filter_feedback=True,
+    )
+    graph = install_perturbation_training_graph_adapters(graph, force_filter_feedback=True)
+    trial_specs = TaskTrialSpec(
+        inits={"mechanics.vector": np.zeros((2, 8), dtype=np.float64)},
+        targets={
+            "mechanics.effector.pos": TargetSpec(
+                value=np.zeros((2, 10, 2), dtype=np.float32),
+            )
+        },
+        inputs={"effector_target": CartesianState(pos=np.zeros((2, 10, 2)))},
+        timeline=TrialTimeline(n_steps=10),
+    )
+    trial_specs = add_zero_graph_channel_inputs(trial_specs, force_filter_feedback=True)
+    specs = graph_adapter_specs(force_filter_feedback=True)
+    perturbation = {
+        "perturbation_id": "delayed_observation_offset__force_filter__y_neg",
+        "channel": "delayed_observation",
+        "family": "delayed_observation_offset",
+        "amplitude": 0.5,
+        "units": "N",
+        "axis": "y",
+        "sign": -1,
+        "timing": {"start_time_index": 0, "duration_steps": 10},
+        "channel_provenance": {
+            "feedback_quantity": "force_filter",
+            "feedback_payload_index": 5,
+            "force_filter_feedback_only": True,
+        },
+    }
+
+    result = apply_perturbation_to_trial_specs(trial_specs, perturbation, model=graph)
+
+    assert result.status == "evaluated"
+    payload = result.trial_specs.inputs[specs["delayed_observation"].input_key]
+    assert payload.shape == (2, 10, 6)
+    np.testing.assert_allclose(payload[:, :, :5], 0.0)
+    np.testing.assert_allclose(payload[:, :, 5], -0.5)
+    assert result.adapter_provenance["graph_adapter_reused"] is True
+    assert result.adapter_provenance["declared_payload_dim"] == 4
+    assert result.adapter_provenance["effective_payload_dim"] == 6
+    assert result.adapter_provenance["active_calibrated_components"] == 6
+    assert result.adapter_provenance["payload_shape_source"] == "existing_trial_input"
 
 
 def test_delayed_observation_adapter_uses_clean_pre_noise_graph_channel() -> None:

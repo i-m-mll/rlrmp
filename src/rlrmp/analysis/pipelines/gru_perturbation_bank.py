@@ -390,16 +390,21 @@ def default_cs_perturbation_bank(
                     "not_literal_extra_delay": True,
                 },
             ),
-        ):
-            for feedback_quantity, units, amplitude, axes in (
-                ("position", "m", 0.01, ("x", "y")),
-                ("velocity", "m/s", 0.05, ("vx", "vy")),
             ):
-                for axis in axes:
-                    for sign in (-1, 1):
-                        axis_role = _target_relative_axis_role(axis)
-                        perturbations.append(
-                            PerturbationSpec(
+                for feedback_quantity, units, amplitude, axes in (
+                    ("position", "m", 0.01, ("x", "y")),
+                    ("velocity", "m/s", 0.05, ("vx", "vy")),
+                    ("force_filter", "N", 0.1, ("x", "y")),
+                ):
+                    for axis in axes:
+                        for sign in (-1, 1):
+                            axis_role = _target_relative_axis_role(axis)
+                            feedback_index = _controller_visible_feedback_index(
+                                feedback_quantity,
+                                axis,
+                            )
+                            perturbations.append(
+                                PerturbationSpec(
                                 perturbation_id=(
                                     f"{family}__{feedback_quantity}__"
                                     f"{timing_bin.label}_t{start}_{axis}_{_sign_label(sign)}"
@@ -430,6 +435,9 @@ def default_cs_perturbation_bank(
                                 channel_provenance={
                                     **provenance,
                                     "feedback_quantity": feedback_quantity,
+                                    "feedback_payload_index": feedback_index,
+                                    "force_filter_feedback_only": feedback_quantity
+                                    == "force_filter",
                                     "target_relative_axis_role": axis_role,
                                     "target_relative_basis": "canonical_plus_x_reach",
                                     "false_feedback_probe": True,
@@ -574,6 +582,7 @@ def default_cs_calibrated_perturbation_bank(
 
     from rlrmp.analysis.pipelines.gru_perturbation_calibration import (
         DEFAULT_CONTROLLER_VISIBLE_TIMING_BINS,
+        DEFAULT_CONTROLLER_VISIBLE_FORCE_FILTER_SCALE_N,
         DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S,
         DEFAULT_OPEN_LOOP_PEAK_DELTA_X_PER_UNIT,
         DEFAULT_PLANT_TIMING_BINS,
@@ -882,6 +891,9 @@ def default_cs_calibrated_perturbation_bank(
                                 )
                                 | {
                                     "feedback_quantity": "position",
+                                    "feedback_payload_index": (
+                                        _controller_visible_feedback_index("position", axis)
+                                    ),
                                     "target_relative_axis_role": axis_role,
                                     "target_relative_basis": "canonical_plus_x_reach",
                                     "false_feedback_probe": True,
@@ -936,6 +948,72 @@ def default_cs_calibrated_perturbation_bank(
                                         DEFAULT_CONTROLLER_VISIBLE_VELOCITY_SCALE_M_S
                                     ),
                                     "feedback_quantity": "velocity",
+                                    "feedback_payload_index": (
+                                        _controller_visible_feedback_index("velocity", axis)
+                                    ),
+                                    "target_relative_axis_role": axis_role,
+                                    "target_relative_basis": "canonical_plus_x_reach",
+                                    "false_feedback_probe": True,
+                                },
+                            )
+                        )
+                force_filter_amplitude = (
+                    float(DEFAULT_CONTROLLER_VISIBLE_FORCE_FILTER_SCALE_N)
+                    * float(level.fraction_of_reach)
+                )
+                for axis in ("x", "y"):
+                    for sign in (-1, 1):
+                        axis_role = _target_relative_axis_role(axis)
+                        perturbations.append(
+                            PerturbationSpec(
+                                perturbation_id=(
+                                    f"{family}__force_filter_{level.name}__"
+                                    f"{timing_bin.label}_t{start}_{axis}_{_sign_label(sign)}"
+                                ),
+                                channel=channel,  # type: ignore[arg-type]
+                                family=family,
+                                amplitude=force_filter_amplitude,
+                                units="N",
+                                axis=axis,
+                                basis=basis,
+                                sign=sign,
+                                timing={
+                                    "epoch": "controller_visible",
+                                    "start_time_index": start,
+                                    "duration_steps": duration,
+                                    "timing_bin": timing_bin.label,
+                                    "timing_bin_role": timing_bin.role,
+                                },
+                                adapter=f"feedbax.additive_channel_adapter.{channel}",
+                                description=(
+                                    "Native controller-visible force/filter feedback "
+                                    "offset in model force units. This row applies only "
+                                    "when force_filter_feedback widens the feedback "
+                                    "payload to 6D."
+                                ),
+                                timing_bin=timing_bin.label,
+                                semantic_family=semantic_family or "false_feedback_offset",
+                                channel_provenance=channel_provenance,
+                                calibration_provenance=provenance(
+                                    level=level,
+                                    calibration_role="reach_relative_calibrated_native_units",
+                                    native_unit_rule=(
+                                        "force_filter_offset_N = reference_force_filter_scale_N "
+                                        "* level_fraction_of_reach"
+                                    ),
+                                )
+                                | {
+                                    "reference_force_filter_scale_N": float(
+                                        DEFAULT_CONTROLLER_VISIBLE_FORCE_FILTER_SCALE_N
+                                    ),
+                                    "feedback_quantity": "force_filter",
+                                    "feedback_payload_index": (
+                                        _controller_visible_feedback_index(
+                                            "force_filter",
+                                            axis,
+                                        )
+                                    ),
+                                    "force_filter_feedback_only": True,
                                     "target_relative_axis_role": axis_role,
                                     "target_relative_basis": "canonical_plus_x_reach",
                                     "false_feedback_probe": True,
@@ -2537,17 +2615,41 @@ def _apply_named_graph_channel_offset(
     start = int(timing.get("start_time_index", 0))
     duration = int(timing.get("duration_steps", 1))
     n_time = _infer_trial_n_time(trial_specs, start + duration)
+    existing_payload = getattr(trial_specs, "inputs", {}).get(effective_spec.input_key)
+    declared_payload_dim = additive_channel_payload_dim(effective_spec)
+    payload_dim = (
+        int(np.shape(existing_payload)[-1])
+        if existing_payload is not None and len(np.shape(existing_payload)) >= 1
+        else declared_payload_dim
+    )
+    active_calibrated_components = _active_graph_channel_components(
+        effective_spec,
+        payload_dim=payload_dim,
+    )
+    if _is_force_filter_feedback_row(perturbation) and payload_dim >= 6:
+        active_calibrated_components = payload_dim
     payload = np.zeros(
-        (batch_size, n_time, additive_channel_payload_dim(effective_spec)),
+        (batch_size, n_time, payload_dim),
         dtype=np.float32,
     )
-    axis_index = _axis_index(str(perturbation["axis"]))
+    axis_index = _graph_channel_payload_index(perturbation)
+    if axis_index >= active_calibrated_components:
+        return AdapterResult(
+            status="blocked",
+            trial_specs=trial_specs,
+            model=model,
+            reason=(
+                f"Perturbation axis index {axis_index} exceeds additive-channel payload "
+                f"active calibrated width {active_calibrated_components} for input "
+                f"{effective_spec.input_key!r}."
+            ),
+        )
     payload[:, start : start + duration, axis_index] = (
         float(perturbation["amplitude"]) * int(perturbation["sign"])
     )
     payload_array = jnp.asarray(payload)
-    if effective_spec.input_key in getattr(trial_specs, "inputs", {}):
-        payload_array = jnp.asarray(trial_specs.inputs[effective_spec.input_key]) + payload_array
+    if existing_payload is not None:
+        payload_array = jnp.asarray(existing_payload) + payload_array
     updated_trial_specs = _add_trial_input(
         trial_specs,
         effective_spec.input_key,
@@ -2562,8 +2664,19 @@ def _apply_named_graph_channel_offset(
         "start_time_index": start,
         "duration_steps": duration,
         "axis_index": axis_index,
+        "declared_payload_dim": declared_payload_dim,
+        "effective_payload_dim": payload_dim,
+        "active_calibrated_components": active_calibrated_components,
         "requires_zero_payload_base": True,
     }
+    if payload_dim != declared_payload_dim:
+        provenance["payload_shape_source"] = "existing_trial_input"
+    else:
+        provenance["payload_shape_source"] = "adapter_spec"
+    if payload_dim > active_calibrated_components:
+        provenance["inactive_force_filter_components"] = list(
+            range(active_calibrated_components, payload_dim)
+        )
     target = effective_spec.target
     if target.target_node == "mechanics" and target.target_port == "force":
         provenance["external_load_force"] = False
@@ -2712,16 +2825,18 @@ def _graph_adapter_spec(
 ) -> AdditiveGraphChannelAdapterSpec:
     perturbation_id = str(perturbation["perturbation_id"])
     stable_id = _stable_label(perturbation_id)
+    payload_dim = 4 if target_node in {"net", "sensory"} else 2
     return AdditiveGraphChannelAdapterSpec(
         label=label_prefix,
         input_key=f"{GRAPH_ADAPTER_INPUT_PREFIX}.{label_prefix}.{stable_id}",
         adapter_node=f"{label_prefix}_{stable_id}_additive",
-        payload_shape=[4 if target_node in {"net", "sensory"} else 2],
+        payload_shape=[payload_dim],
         payload_dtype="float32",
         provenance_role="perturbation_response_input",
         metadata={
             "perturbation_id": perturbation_id,
             "graphspec_mapping": graphspec_mapping,
+            "active_calibrated_components": payload_dim,
         },
         target=AdditiveGraphChannelTargetSpec(
             kind="edge",
@@ -2731,6 +2846,54 @@ def _graph_adapter_spec(
             target_port=target_port,
         ),
     )
+
+
+def _active_graph_channel_components(
+    spec: AdditiveGraphChannelAdapterSpec,
+    *,
+    payload_dim: int,
+) -> int:
+    active = spec.metadata.get("active_calibrated_components")
+    if active is not None:
+        return min(int(active), payload_dim)
+    if spec.label in {"sensory_feedback", "delayed_observation"}:
+        return min(4, payload_dim)
+    return payload_dim
+
+
+def _graph_channel_payload_index(perturbation: Mapping[str, Any]) -> int:
+    channel_provenance = perturbation.get("channel_provenance")
+    if isinstance(channel_provenance, Mapping):
+        feedback_index = channel_provenance.get("feedback_payload_index")
+        if feedback_index is not None:
+            return int(feedback_index)
+    feedback_index = perturbation.get("feedback_payload_index")
+    if feedback_index is not None:
+        return int(feedback_index)
+    return _axis_index(str(perturbation["axis"]))
+
+
+def _is_force_filter_feedback_row(perturbation: Mapping[str, Any]) -> bool:
+    if perturbation.get("force_filter_feedback_only") is True:
+        return True
+    if perturbation.get("feedback_quantity") == "force_filter":
+        return True
+    channel_provenance = perturbation.get("channel_provenance")
+    if isinstance(channel_provenance, Mapping):
+        return (
+            channel_provenance.get("force_filter_feedback_only") is True
+            or channel_provenance.get("feedback_quantity") == "force_filter"
+        )
+    return False
+
+
+def _controller_visible_feedback_index(feedback_quantity: str, axis: str) -> int:
+    axis_index = _axis_index(axis)
+    if feedback_quantity in {"position", "velocity"}:
+        return axis_index
+    if feedback_quantity == "force_filter":
+        return 4 + axis_index
+    raise ValueError(f"Unsupported controller-visible feedback quantity {feedback_quantity!r}")
 
 
 def _process_epsilon_adapter_spec(

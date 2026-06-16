@@ -168,7 +168,7 @@ def test_calibration_regeneration_spec_records_source_model_and_outputs(tmp_path
     )
 
     regeneration = json.loads(spec_path.read_text())
-    assert regeneration["diagnostic_name"] == "perturbation_open_loop_calibration"
+    assert regeneration["metadata"]["diagnostic_name"] == "perturbation_open_loop_calibration"
     assert regeneration["parameters"]["source_model"]["run_id"]
     assert "extLQG nominal command replay" in regeneration["parameters"]["source_run_ids"]
     assert {item["role"] for item in regeneration["outputs"]} == {

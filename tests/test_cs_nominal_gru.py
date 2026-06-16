@@ -54,6 +54,7 @@ from rlrmp.train.cs_nominal_gru import (
     build_hps,
     build_parser,
     derive_spec_dir,
+    resolve_run_spec_args,
     run_full_training,
     write_run_spec,
 )
@@ -85,6 +86,7 @@ from rlrmp.train.cs_perturbation_training import (
     apply_validation_bin,
     apply_validation_target_distribution,
     config_from_broad_epsilon_pgd_hps,
+    graph_adapter_specs,
     planned_fixed_target_perturbation_rows,
     planned_target_relative_multitarget_h0_rows,
     planned_target_relative_multitarget_rows,
@@ -1769,6 +1771,37 @@ def test_force_filter_feedback_setup_uses_six_dimensional_feedback() -> None:
     assert pair.model.nodes["sensory"].input_proto.shape[-1] == 6
 
 
+def test_force_filter_perturbation_adapters_use_six_dimensional_feedback_payloads() -> None:
+    hps = build_hps(
+        _args(
+            smoke=True,
+            target_relative_multitarget=True,
+            force_filter_feedback=True,
+            perturbation_training=True,
+            perturbation_calibrated_timing=True,
+            perturbation_physical_level="small",
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            hidden_size=8,
+            n_replicates=1,
+        )
+    )
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    specs = graph_adapter_specs(force_filter_feedback=True)
+    trial = pair.task.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
+    validation = pair.task.validation_trials
+
+    assert hps.perturbation_training.force_filter_feedback is True
+    for bin_name in ("sensory_feedback", "delayed_observation"):
+        spec = specs[bin_name]
+        adapter_node = f"{spec.label}_additive"
+        assert spec.input_key in pair.model.input_ports
+        assert pair.model.input_bindings[spec.input_key] == (adapter_node, "b")
+        assert pair.model.nodes[adapter_node].__class__.__name__ == "Sum"
+        assert trial.inputs[spec.input_key].shape[-1] == 6
+        assert jnp.all(trial.inputs[spec.input_key][..., 4:] == 0.0)
+        assert validation.inputs[spec.input_key].shape[-1] == 6
+
+
 def test_broad_epsilon_sampler_randomized_per_trial_and_l2_budgeted() -> None:
     base_hps = build_hps(
         _args(
@@ -1888,6 +1921,68 @@ def test_target_relative_multitarget_run_spec_and_planned_rows(tmp_path: Path) -
         for row in rows
         if row["row_kind"] == "main"
     )
+
+
+def test_modern_run_spec_replays_to_current_training_args(tmp_path: Path) -> None:
+    spec_dir = tmp_path / "historical_spec"
+    output_dir = tmp_path / "historical_artifacts"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        issue="020a65b",
+        full_train=True,
+        target_relative_multitarget=True,
+        perturbation_training=True,
+        perturbation_calibrated_timing=True,
+        perturbation_physical_level="small",
+        force_filter_feedback=True,
+        loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+        batch_size=64,
+        controller_lr=3e-3,
+        gradient_clip_norm=5.0,
+        lr_warmup_batches=1000,
+        lr_cosine_alpha=0.1,
+    )
+    result = write_run_spec(args)
+
+    replay_output_dir = tmp_path / "current_artifacts"
+    replay_spec_dir = tmp_path / "current_spec"
+    parser = build_parser()
+    replay_args = resolve_run_spec_args(
+        parser.parse_args(
+            [
+                "--run-spec",
+                result["run_spec_path"],
+                "--output-dir",
+                str(replay_output_dir),
+                "--spec-dir",
+                str(replay_spec_dir),
+                "--stop-after-batches",
+                "1000",
+            ]
+        ),
+        parser=parser,
+    )
+
+    assert replay_args.issue == "020a65b"
+    assert replay_args.output_dir == str(replay_output_dir)
+    assert replay_args.spec_dir == str(replay_spec_dir)
+    assert replay_args.full_train is True
+    assert replay_args.stop_after_batches == 1000
+    assert replay_args.n_train_batches == 12000
+    assert replay_args.batch_size == 64
+    assert replay_args.controller_lr == pytest.approx(3e-3)
+    assert replay_args.gradient_clip_norm == pytest.approx(5.0)
+    assert replay_args.lr_warmup_batches == 1000
+    assert replay_args.lr_cosine_alpha == pytest.approx(0.1)
+    assert replay_args.loss_objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
+    assert replay_args.target_relative_multitarget is True
+    assert replay_args.perturbation_training is True
+    assert replay_args.perturbation_calibrated_timing is True
+    assert replay_args.perturbation_physical_level == "small"
+    assert replay_args.force_filter_feedback is True
+    assert replay_args.broad_epsilon_training is False
+    assert replay_args.broad_epsilon_pgd_training is False
 
 
 def test_initial_hidden_encoder_requires_target_relative_hps() -> None:
