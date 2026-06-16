@@ -264,6 +264,21 @@ def materialize_gru_standard_row(
         reference_batch = np.broadcast_to(reference_actions[None, :, :], candidate_actions.shape)
     else:
         reference_batch = candidate_actions
+    reference_response_map = None
+    if candidate_map is not None:
+        expected_shape = candidate_map.shape[1:]
+        if reference_map.shape == expected_shape:
+            reference_response_map = np.broadcast_to(
+                reference_map[None, :, :, :], candidate_map.shape
+            )
+        else:
+            evaluation_metadata["io_response_map"]["reference_status"] = "shape_mismatch_blocked"
+            evaluation_metadata["io_response_map"]["candidate_map_shape"] = [
+                int(dim) for dim in candidate_map.shape
+            ]
+            evaluation_metadata["io_response_map"]["reference_map_shape"] = [
+                int(dim) for dim in reference_map.shape
+            ]
     return build_gru_standard_manifest_from_actions(
         run_id=run_id,
         run_spec=run_spec,
@@ -272,11 +287,7 @@ def materialize_gru_standard_row(
         reference_actions=reference_batch,
         action_weight=action_weight,
         candidate_observation_to_action_map=candidate_map,
-        reference_observation_to_action_map=(
-            None
-            if candidate_map is None
-            else np.broadcast_to(reference_map[None, :, :, :], candidate_map.shape)
-        ),
+        reference_observation_to_action_map=reference_response_map,
         observation_history_covariance=observation_history_covariance,
         observation_history_covariance_metadata=evaluation_metadata.get(
             "observation_history_covariance"
@@ -519,37 +530,41 @@ def evaluate_gru_clean_actions(
         model_other=model_other,
         net_inputs=response_map_net_inputs,
         n_replicates=n_replicates,
-        feedback_dim=4,
+        feedback_dim=_controller_feedback_dim(run_spec),
     )
     observation_history_covariance, observation_history_covariance_metadata = (
         observation_history_covariance_from_net_inputs(
             response_map_net_inputs,
-            feedback_dim=4,
+            feedback_dim=_controller_feedback_dim(run_spec),
             source="empirical_validation_observation_history",
         )
     )
-    return actions, response_maps, {
-        "status": "evaluated_clean_feedbax_rollout",
-        "checkpoint_selection": (
-            "validation_selected_per_replicate"
-            if use_validation_selected_checkpoints
-            else "final_checkpoint"
-        ),
-        "selected_checkpoints": [
-            selection.to_json(repo_root=repo_root) for selection in checkpoint_selection
-        ],
-        "n_replicates": n_replicates,
-        "n_trials": n_trials,
-        "noise": "feedbax Channel noise disabled; plant-process force noise disabled if present",
-        "io_response_map": {
-            "status": "evaluated_controller_local_jacobian_on_stochastic_histories",
-            "input_channel": "4D delayed position/velocity feedback",
-            "n_rollout_trials_per_replicate": DEFAULT_RESPONSE_MAP_ROLLOUT_TRIALS,
-            "map_shape": [int(dim) for dim in response_maps.shape],
+    return (
+        actions,
+        response_maps,
+        {
+            "status": "evaluated_clean_feedbax_rollout",
+            "checkpoint_selection": (
+                "validation_selected_per_replicate"
+                if use_validation_selected_checkpoints
+                else "final_checkpoint"
+            ),
+            "selected_checkpoints": [
+                selection.to_json(repo_root=repo_root) for selection in checkpoint_selection
+            ],
+            "n_replicates": n_replicates,
+            "n_trials": n_trials,
+            "noise": "feedbax Channel noise disabled; plant-process force noise disabled if present",
+            "io_response_map": {
+                "status": "evaluated_controller_local_jacobian_on_stochastic_histories",
+                "input_channel": _controller_feedback_channel_label(run_spec),
+                "n_rollout_trials_per_replicate": DEFAULT_RESPONSE_MAP_ROLLOUT_TRIALS,
+                "map_shape": [int(dim) for dim in response_maps.shape],
+            },
+            "observation_history_covariance": observation_history_covariance_metadata,
+            "_observation_history_covariance_array": observation_history_covariance,
         },
-        "observation_history_covariance": observation_history_covariance_metadata,
-        "_observation_history_covariance_array": observation_history_covariance,
-    }
+    )
 
 
 def _stochastic_response_map_net_inputs(
@@ -838,6 +853,29 @@ def normalize_gru_hps(hps: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _controller_feedback_dim(run_spec: Mapping[str, Any]) -> int:
+    h0 = run_spec.get("model_summary", {}).get("initial_hidden_encoder", {})
+    context_shape = h0.get("context_shape") if isinstance(h0, Mapping) else None
+    if context_shape:
+        return int(context_shape[0])
+    model = run_spec.get("hps", {}).get("model", {})
+    if isinstance(model, Mapping) and bool(model.get("force_filter_feedback")):
+        return 6
+    target_relative = run_spec.get("hps", {}).get("target_relative_multitarget", {})
+    if isinstance(target_relative, Mapping) and bool(target_relative.get("force_filter_feedback")):
+        return 6
+    return 4
+
+
+def _controller_feedback_channel_label(run_spec: Mapping[str, Any]) -> str:
+    feedback_dim = _controller_feedback_dim(run_spec)
+    if feedback_dim == 6:
+        return "6D delayed position/velocity plus force-filter feedback"
+    if feedback_dim == 4:
+        return "4D delayed position/velocity feedback"
+    return f"{feedback_dim}D delayed controller feedback"
+
+
 def gru_io_response_map_blocker(
     run_spec: dict[str, Any],
     *,
@@ -845,17 +883,17 @@ def gru_io_response_map_blocker(
 ) -> str:
     """Return the current reason GRU response maps cannot be compared honestly."""
 
-    feedback_dim = 4
+    feedback_dim = _controller_feedback_dim(run_spec)
     reference_observation_dim = 8
     graph_meta = run_spec.get("feedbax_graph", {})
     graph_path = graph_meta.get("graph_spec_path", "model.graph.json")
     return (
         f"Response-map components are blocked: the {source_issue_id} Feedbax GraphSpec "
-        f"({graph_path}) feeds the GRU delayed position/velocity feedback "
+        f"({graph_path}) feeds the GRU {_controller_feedback_channel_label(run_spec)} "
         f"({feedback_dim}D), while the current C&S output-feedback reference "
         f"uses delayed_observation_matrix over the full physical block "
-        f"({reference_observation_dim}D). No approved 4D-to-8D projection or "
-        "4D analytical reference response-map contract is present."
+        f"({reference_observation_dim}D). No approved {feedback_dim}D-to-8D projection or "
+        f"{feedback_dim}D analytical reference response-map contract is present."
     )
 
 

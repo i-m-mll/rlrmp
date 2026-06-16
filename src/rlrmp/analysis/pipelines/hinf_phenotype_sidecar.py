@@ -14,12 +14,8 @@ from rlrmp.paths import REPO_ROOT
 SCHEMA_VERSION = "rlrmp.hinf_phenotype_sidecar.v1"
 ISSUE_ID = "abe33da"
 DEFAULT_SCOPE = "validation_selected_gru_robustness_phenotype"
-DEFAULT_OUTPUT_JSON = (
-    REPO_ROOT / "results" / ISSUE_ID / "notes" / "hinf_phenotype_sidecar.json"
-)
-DEFAULT_OUTPUT_MARKDOWN = (
-    REPO_ROOT / "results" / ISSUE_ID / "notes" / "hinf_phenotype_sidecar.md"
-)
+DEFAULT_OUTPUT_JSON = REPO_ROOT / "results" / ISSUE_ID / "notes" / "hinf_phenotype_sidecar.json"
+DEFAULT_OUTPUT_MARKDOWN = REPO_ROOT / "results" / ISSUE_ID / "notes" / "hinf_phenotype_sidecar.md"
 DEFAULT_REGENERATION_SPEC = (
     REPO_ROOT / "results" / ISSUE_ID / "notes" / "hinf_phenotype_sidecar_regeneration_spec.json"
 )
@@ -50,6 +46,7 @@ def build_hinf_phenotype_sidecar(
     sources: Mapping[str, Mapping[str, Any] | None],
     issue: str = ISSUE_ID,
     scope: str = DEFAULT_SCOPE,
+    paired_run_ids: Mapping[str, str] | None = None,
     generated_by: str = "rlrmp.analysis.pipelines.hinf_phenotype_sidecar",
 ) -> dict[str, Any]:
     """Aggregate existing diagnostic manifests into a robustness phenotype sidecar.
@@ -65,7 +62,12 @@ def build_hinf_phenotype_sidecar(
     }
     row_ids = _collect_row_ids(sources)
     rows = [
-        _build_row(run_id=run_id, sources=sources, components=components)
+        _build_row(
+            run_id=run_id,
+            sources=sources,
+            components=components,
+            paired_run_ids=paired_run_ids,
+        )
         for run_id in row_ids
     ]
     return {
@@ -83,6 +85,7 @@ def build_hinf_phenotype_sidecar(
             ),
             "formal_hinf_requirements": list(FORMAL_HINF_REQUIREMENTS),
         },
+        "paired_run_ids": dict(paired_run_ids or {}),
         "components": components,
         "summary": _sidecar_summary(rows=rows, components=components),
         "rows": rows,
@@ -216,6 +219,7 @@ def _build_row(
     run_id: str,
     sources: Mapping[str, Mapping[str, Any] | None],
     components: Mapping[str, Mapping[str, Any]],
+    paired_run_ids: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     standard = _source_payload(sources.get("standard_certificate"))
     objective = _source_payload(sources.get("objective_comparator"))
@@ -278,6 +282,7 @@ def _build_row(
         run_id=run_id,
         row=row,
         all_run_ids=_collect_row_ids(sources),
+        paired_run_ids=paired_run_ids,
     )
     row["formal_hinf_claim"] = _formal_hinf_claim(row)
     row["warnings"] = _row_warnings(row)
@@ -498,9 +503,16 @@ def _paired_comparison(
     run_id: str,
     row: Mapping[str, Any],
     all_run_ids: Sequence[str],
+    paired_run_ids: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
-    baseline = _paired_candidate(run_id, all_run_ids, robust=False)
-    robust = _paired_candidate(run_id, all_run_ids, robust=True)
+    explicit_pair = _explicit_paired_candidate(run_id, paired_run_ids or {})
+    if explicit_pair is not None:
+        baseline, robust = explicit_pair
+        pairing_source = "explicit_paired_run_ids"
+    else:
+        baseline = _paired_candidate(run_id, all_run_ids, robust=False)
+        robust = _paired_candidate(run_id, all_run_ids, robust=True)
+        pairing_source = "inferred_run_id_tokens"
     if baseline is None or robust is None:
         return {
             "status": "not_available",
@@ -512,6 +524,7 @@ def _paired_comparison(
         "robust_run_id": robust,
         "current_row_role": "robust" if run_id == robust else "baseline",
         "selection_role": "interpretive_pairing_only",
+        "pairing_source": pairing_source,
         "current_row_evidence_statuses": {
             section: row.get(section, {}).get("status")
             for section in (
@@ -662,9 +675,7 @@ def _evidence_block(
     evidence: Sequence[Mapping[str, Any]],
     missing_reason: str,
 ) -> dict[str, Any]:
-    compact_values = {
-        key: value for key, value in values.items() if value not in (None, {}, [])
-    }
+    compact_values = {key: value for key, value in values.items() if value not in (None, {}, [])}
     if not compact_values:
         return {
             "status": "missing",
@@ -885,14 +896,22 @@ def _contains_key(source: Any, keys: Sequence[str]) -> bool:
     return False
 
 
+def _explicit_paired_candidate(
+    run_id: str,
+    paired_run_ids: Mapping[str, str],
+) -> tuple[str, str] | None:
+    for baseline, robust in paired_run_ids.items():
+        if run_id == baseline or run_id == robust:
+            return str(baseline), str(robust)
+    return None
+
+
 def _paired_candidate(run_id: str, all_run_ids: Sequence[str], *, robust: bool) -> str | None:
     robust_tokens = ("robust", "perturb", "adversary", "minimax", "hinf")
     baseline_tokens = ("baseline", "nominal", "standard")
     tokens = robust_tokens if robust else baseline_tokens
     matches = [
-        candidate
-        for candidate in all_run_ids
-        if any(token in candidate for token in tokens)
+        candidate for candidate in all_run_ids if any(token in candidate for token in tokens)
     ]
     if run_id in matches:
         return run_id
@@ -953,6 +972,11 @@ def _write_hinf_regeneration_spec(
                     "reason": component.get("reason", "source path not provided"),
                 }
             )
+    paired_run_ids = sidecar.get("paired_run_ids", {})
+    paired_args: list[str] = []
+    if isinstance(paired_run_ids, Mapping):
+        for baseline, robust in paired_run_ids.items():
+            paired_args.extend(["--paired-run", f"{baseline}={robust}"])
     return write_regeneration_spec(
         spec_path=spec_path,
         diagnostic_name="hinf_phenotype_sidecar",
@@ -965,6 +989,7 @@ def _write_hinf_regeneration_spec(
             "--scope",
             str(sidecar.get("scope", DEFAULT_SCOPE)),
             *source_args,
+            *paired_args,
             "--json-output",
             repo_relative(json_path, repo_root=repo_root),
             "--markdown-output",
@@ -975,6 +1000,7 @@ def _write_hinf_regeneration_spec(
         parameters={
             "issue": sidecar.get("issue"),
             "scope": sidecar.get("scope"),
+            "paired_run_ids": dict(paired_run_ids) if isinstance(paired_run_ids, Mapping) else {},
             "component_names": sorted(str(name) for name in sidecar.get("components", {})),
         },
         inputs=source_inputs,
