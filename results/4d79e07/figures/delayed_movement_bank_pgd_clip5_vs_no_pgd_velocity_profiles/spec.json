@@ -1,0 +1,37 @@
+{
+  "banks": [
+    "no_catch",
+    "catch"
+  ],
+  "description": "Overlay existing delayed movement-bank PGD clip5 velocity traces with the matched no-PGD delayed_movement_bank baseline from 6c36536.",
+  "issue": "4d79e07",
+  "output_root": "_artifacts/4d79e07/figures/delayed_movement_bank_pgd_clip5_vs_no_pgd_velocity_profiles",
+  "plot": {
+    "band": "mean +/- 1 SD over pooled replicate x fixed-bank go-cue/direction trials",
+    "h_infinity_reference": "output-feedback robust analytical movement-period trace copied from _artifacts/020a65b/figures/nominal_velocity_overlay_3e3_pgd_vs_baseline_with_analytical/nominal_forward_velocity_overlay_3e3_pgd_vs_baseline_with_analytical.html",
+    "references": "C&S output-feedback extLQG overlays on no_catch only",
+    "x_axis": "time relative to go cue (s)",
+    "y_axis": "target-radial velocity (m/s)"
+  },
+  "rows": [
+    {
+      "issue": "4d79e07",
+      "label": "PGD delayed movement-bank clip5",
+      "role": "pgd",
+      "run_id": "delayed_movement_bank_pgd_clip5"
+    },
+    {
+      "issue": "6c36536",
+      "label": "No-PGD delayed movement-bank (6c36536)",
+      "role": "baseline",
+      "run_id": "delayed_movement_bank",
+      "selection_reason": "previous good delayed_movement_bank baseline, not a gradient-clip repeat"
+    }
+  ],
+  "schema_version": "rlrmp.figure_spec.delayed_velocity_profile_comparison.v1",
+  "source_figures": {
+    "baseline": "_artifacts/6c36536/figures/delayed_movement_bank_velocity_profiles/{bank}/forward_velocity_profiles_stochastic.html",
+    "pgd": "_artifacts/4d79e07/figures/delayed_movement_bank_pgd_clip5_velocity_profiles/{bank}/forward_velocity_profiles_stochastic.html"
+  },
+  "topic": "delayed_movement_bank_pgd_clip5_vs_no_pgd_velocity_profiles"
+}
