@@ -4343,7 +4343,7 @@
     },
     "rlrmp": {
       "branch": "feature/4d79e07-delayed-movement-pgd",
-      "commit": "39805dd0e99635d6269c1467100d7fe7f051391f",
+      "commit": "0b65fa632c20bd860418dabca381493b2cd0adb7",
       "dirty": true,
       "remote": "https://github.com/i-m-mll/rlrmp.git"
     },
