@@ -198,10 +198,11 @@ def test_no_committed_file_is_now_ignored() -> None:
 # rlrmp.paths helper assertions
 # ---------------------------------------------------------------------------
 
-from rlrmp.paths import (
+from rlrmp.paths import (  # noqa: E402
     REPO_ROOT as PATHS_REPO_ROOT,
     figure_artifact_dir,
     figure_spec_dir,
+    resolve_run_artifact_path,
     run_artifact_dir,
     run_spec_dir,
     run_spec_path,
@@ -263,6 +264,52 @@ class TestRunArtifactDir:
     def test_is_inside_artifacts(self) -> None:
         path = run_artifact_dir("foo", "bar")
         assert str(path).startswith(str(PATHS_REPO_ROOT / "_artifacts"))
+
+
+class TestResolveRunArtifactPath:
+    """``resolve_run_artifact_path`` supports legacy and post-run layouts."""
+
+    def test_prefers_direct_existing_path(self, tmp_path: Path) -> None:
+        artifact_dir = tmp_path / "run_a"
+        direct = artifact_dir / "trained_model.eqx"
+        post_run = artifact_dir / "artifacts" / "trained_model.eqx"
+        direct.parent.mkdir(parents=True)
+        post_run.parent.mkdir(parents=True)
+        direct.write_text("legacy", encoding="utf-8")
+        post_run.write_text("post-run", encoding="utf-8")
+
+        assert resolve_run_artifact_path(artifact_dir, "trained_model.eqx") == direct
+
+    def test_uses_post_run_artifacts_child(self, tmp_path: Path) -> None:
+        artifact_dir = tmp_path / "run_a"
+        post_run = artifact_dir / "artifacts" / "training_history.eqx"
+        post_run.parent.mkdir(parents=True)
+        post_run.write_text("post-run", encoding="utf-8")
+
+        assert resolve_run_artifact_path(artifact_dir, "training_history.eqx") == post_run
+
+    def test_uses_existing_nested_legacy_path(self, tmp_path: Path) -> None:
+        artifact_dir = tmp_path / "run_a"
+        nested = artifact_dir / "run_a" / "checkpoints" / "checkpoint_0000100"
+        nested.parent.mkdir(parents=True)
+        nested.write_text("checkpoint", encoding="utf-8")
+
+        assert (
+            resolve_run_artifact_path(
+                artifact_dir,
+                "checkpoints",
+                "checkpoint_0000100",
+            )
+            == nested
+        )
+
+    def test_missing_path_points_to_direct_convention(self, tmp_path: Path) -> None:
+        artifact_dir = tmp_path / "run_a"
+
+        assert (
+            resolve_run_artifact_path(artifact_dir, "trained_model.eqx")
+            == artifact_dir / "trained_model.eqx"
+        )
 
 
 class TestRunDirMirrorInvariant:

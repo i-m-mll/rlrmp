@@ -1,0 +1,146 @@
+{
+  "command": {
+    "argv": [
+      "unknown"
+    ],
+    "cwd": ".",
+    "metadata": {
+      "materializer": "rlrmp.analysis.pipelines.cs_gru_standard_materialization.write_gru_standard_result",
+      "status": "not_recorded"
+    }
+  },
+  "inputs": [
+    {
+      "logical_name": "results/4d79e07/runs/delayed_movement_bank_pgd_clip5.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "a834d4c95f056fa7df5d31dd4c4f8c379b19bbbe286fa0560532b02d66f9ba8e",
+        "size_bytes": 335268
+      },
+      "role": "run_spec",
+      "sha256": "a834d4c95f056fa7df5d31dd4c4f8c379b19bbbe286fa0560532b02d66f9ba8e",
+      "size_bytes": 335268,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/4d79e07/runs/delayed_movement_bank_pgd_clip5.json"
+    },
+    {
+      "logical_name": "_artifacts/4d79e07/runs/delayed_movement_bank_pgd_clip5/artifacts/trained_model.eqx",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "7448d4079a4fa8867bff029a8c3bc12ea4b39c26d093414a1f9e2358519d7445",
+        "size_bytes": 4430761
+      },
+      "role": "model_or_checkpoint_artifact",
+      "sha256": "7448d4079a4fa8867bff029a8c3bc12ea4b39c26d093414a1f9e2358519d7445",
+      "size_bytes": 4430761,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/4d79e07/runs/delayed_movement_bank_pgd_clip5/artifacts/trained_model.eqx"
+    }
+  ],
+  "metadata": {
+    "diagnostic_name": "gru_standard_certificate",
+    "materializer": "rlrmp.analysis.pipelines.cs_gru_standard_materialization.write_gru_standard_result",
+    "notes": [
+      "Standard certificate is in scope for regeneration specs.",
+      "This spec records materialization provenance only; certificate values remain in the manifest."
+    ],
+    "schema_boundary": "rlrmp diagnostic payload; Feedbax regeneration custody"
+  },
+  "outputs": [
+    {
+      "logical_name": "results/4d79e07/notes/gru_standard_certificates_delayed_movement_bank_pgd_clip5_final_checkpoints_calibrated_manifest.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "e4c8b42aadbe2d8d4bb1b7f8f6d1d2385a17f0fee7e48368c624c79d263b13ea",
+        "size_bytes": 25422
+      },
+      "role": "standard_certificate_manifest",
+      "sha256": "e4c8b42aadbe2d8d4bb1b7f8f6d1d2385a17f0fee7e48368c624c79d263b13ea",
+      "size_bytes": 25422,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/4d79e07/notes/gru_standard_certificates_delayed_movement_bank_pgd_clip5_final_checkpoints_calibrated_manifest.json"
+    },
+    {
+      "logical_name": "results/4d79e07/notes/gru_standard_certificates_delayed_movement_bank_pgd_clip5_final_checkpoints_calibrated.md",
+      "media_type": "text/markdown",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "185bcfd875fc53e836c107d5f5d9cc187bb032d519e6ccef5253c84d4697822a",
+        "size_bytes": 1344
+      },
+      "role": "standard_certificate_note",
+      "sha256": "185bcfd875fc53e836c107d5f5d9cc187bb032d519e6ccef5253c84d4697822a",
+      "size_bytes": 1344,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/4d79e07/notes/gru_standard_certificates_delayed_movement_bank_pgd_clip5_final_checkpoints_calibrated.md"
+    }
+  ],
+  "parameters": {
+    "checkpoint_policy": "final_checkpoint",
+    "experiment": "4d79e07",
+    "materializer_issue_id": "e6a32b8",
+    "run_ids": [
+      "delayed_movement_bank_pgd_clip5"
+    ]
+  },
+  "provenance": {
+    "dirty": true,
+    "entrypoint": {
+      "kind": "rlrmp-diagnostic-materializer",
+      "metadata": {},
+      "name": "rlrmp.analysis.pipelines.cs_gru_standard_materialization.write_gru_standard_result"
+    },
+    "issues": [],
+    "metadata": {
+      "status_porcelain": [
+        "M src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
+        " M src/rlrmp/analysis/pipelines/gru_broad_epsilon_attribution.py",
+        " M src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py",
+        " M src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py",
+        " M src/rlrmp/analysis/pipelines/gru_feedback_ablation.py",
+        " M src/rlrmp/analysis/pipelines/gru_pilot_figures.py",
+        " M src/rlrmp/paths.py",
+        "?? .issue",
+        "?? results/4d79e07/notes/gru_standard_certificates_delayed_movement_bank_pgd_clip5_final_checkpoints_calibrated.md",
+        "?? results/4d79e07/notes/gru_standard_certificates_delayed_movement_bank_pgd_clip5_final_checkpoints_calibrated_manifest.json"
+      ]
+    },
+    "parents": [],
+    "source_branch": "feature/4d79e07-delayed-pgd-materialization",
+    "source_commit": "2aafb91d1f87b8682034fa2afe64e354e5591aed",
+    "source_repo": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__4d79e07-delayed-pgd-materialization"
+  },
+  "schema_id": "feedbax.spec.regeneration",
+  "schema_version": "feedbax.spec.regeneration.v1",
+  "source_files": [
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
+      "role": "source_file",
+      "sha256": "675916e1ced2404230a8b4998eee56edac2af7f3b17b5253b213b887fbd020c3",
+      "size_bytes": 48494
+    },
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/bridge_certificates.py",
+      "role": "source_file",
+      "sha256": "91ea1a5fafa36d8ee6c77c338720f07041e43545a79bcbca07492763f2de2926",
+      "size_bytes": 62529
+    },
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/standard_certificate_materialization.py",
+      "role": "source_file",
+      "sha256": "e6cf1fcb633cd15e47afdcdd788483061c17fe30038c804b882cea0968bb03ba",
+      "size_bytes": 3976
+    }
+  ],
+  "source_trees": []
+}

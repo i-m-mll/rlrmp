@@ -26,7 +26,7 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     load_validation_selected_checkpoint_model,
     materialize_validation_selected_checkpoint_manifest,
 )
-from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path
 from rlrmp.train.cs_nominal_gru import _where_train
 from rlrmp.train.cs_perturbation_training import (
     BROAD_EPSILON_TRAINING_MODE,
@@ -433,7 +433,7 @@ def load_model_for_run(
             repo_root=repo_root,
         )
     model, _hyperparameters = load_with_hyperparameters(
-        run.artifact_dir / "trained_model.eqx",
+        resolve_run_artifact_path(run.artifact_dir, "trained_model.eqx"),
         setup_func=lambda key, **_kwargs: setup_task_model_pair(hps, key=key).model,
     )
     return model, []

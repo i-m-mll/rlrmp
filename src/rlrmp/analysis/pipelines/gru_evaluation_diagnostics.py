@@ -32,7 +32,7 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     resolve_run_inputs,
     trial_effector_target_position,
 )
-from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path
 from rlrmp.runtime.spec_migrations import (
     GRU_EVALUATION_DIAGNOSTICS_KIND,
     GRU_EVALUATION_DIAGNOSTICS_SCHEMA_VERSION,
@@ -312,7 +312,7 @@ def evaluate_run_rollouts(
         )
     else:
         model, _hyperparameters = load_with_hyperparameters(
-            run.artifact_dir / "trained_model.eqx",
+            resolve_run_artifact_path(run.artifact_dir, "trained_model.eqx"),
             setup_func=lambda key, **_kwargs: setup_task_model_pair(hps, key=key).model,
         )
         checkpoint_selection = []

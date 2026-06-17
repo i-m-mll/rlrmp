@@ -47,7 +47,7 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     load_validation_selected_checkpoint_model,
     materialize_validation_selected_checkpoint_manifest,
 )
-from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path
+from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path, run_spec_path
 from rlrmp.train.task_model import setup_task_model_pair
 
 DEFAULT_FIGURE_SUBDIR = "tmp_figures/gru_pilot"
@@ -170,7 +170,10 @@ def materialize_gru_pilot_figures(
     )
 
     histories = {
-        run.label: load_gru_training_history(run.run_spec, run.artifact_dir / "training_history.eqx")
+        run.label: load_gru_training_history(
+            run.run_spec,
+            resolve_run_artifact_path(run.artifact_dir, "training_history.eqx"),
+        )
         for run in runs
     }
     loss_files = write_loss_figures(histories, output_dir=output_dir)
@@ -398,7 +401,7 @@ def evaluate_stochastic_forward_velocity_profile(
         )
     else:
         model, _hyperparameters = load_with_hyperparameters(
-            run.artifact_dir / "trained_model.eqx",
+            resolve_run_artifact_path(run.artifact_dir, "trained_model.eqx"),
             setup_func=lambda key, **_kwargs: setup_task_model_pair(hps, key=key).model,
         )
         checkpoint_selection = []

@@ -61,7 +61,7 @@ from rlrmp.analysis.pipelines.standard_certificate_materialization import (
     materialization_summary,
     repo_relative,
 )
-from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path
+from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path, run_spec_path
 from rlrmp.runtime.spec_migrations import (
     CS_GRU_STANDARD_CERTIFICATES_KIND,
     CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION,
@@ -132,7 +132,6 @@ def materialize_gru_standard_result(
             ),
             repo_root=repo_root,
         )
-    result_run_root = repo_root / "results" / experiment / "runs"
     rows = [
         materialize_gru_standard_row(
             run_id,
@@ -1213,10 +1212,7 @@ def _run_artifact_path(
     repo_root: Path = REPO_ROOT,
 ) -> Path:
     artifact_run_root = repo_root / "_artifacts" / experiment / "runs"
-    normalized = artifact_run_root / run_id / file_name
-    if normalized.exists():
-        return normalized
-    return artifact_run_root / run_id / run_id / file_name
+    return resolve_run_artifact_path(artifact_run_root / run_id, file_name)
 
 
 __all__ = [
