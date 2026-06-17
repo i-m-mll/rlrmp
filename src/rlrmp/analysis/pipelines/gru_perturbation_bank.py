@@ -45,6 +45,7 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     initial_effector_velocity,
     repeat_single_validation_trial,
     resolve_run_inputs,
+    trial_effector_target_position,
 )
 from rlrmp.analysis.math.output_feedback import (
     OutputFeedbackConfig,
@@ -2234,12 +2235,86 @@ def full_qrf_cost_summary(
             "status": "not_available",
             "reason": "trial_specs.inits lacks mechanics.vector initial state.",
         }
+    mechanics_vector, commands, initial_states, window_metadata = _full_qrf_window_inputs(
+        mechanics_vector,
+        evaluation.command,
+        trial_specs,
+    )
     scored = score_full_qrf_rollout_cost(
         states=mechanics_vector,
-        commands=evaluation.command,
-        initial_states=trial_specs.inits["mechanics.vector"],
+        commands=commands,
+        initial_states=initial_states,
     )
+    scored["basis"]["time_window"] = window_metadata
     return _cost_arrays_to_summary(scored)
+
+
+def _full_qrf_window_inputs(
+    states: Any,
+    commands: Any,
+    trial_specs: Any,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
+    """Return C&S full-QRF movement-window arrays for immediate or delayed trials."""
+
+    _plant, schedule = build_canonical_game()
+    horizon = int(schedule.T)
+    state_array = np.asarray(states, dtype=np.float64)
+    command_array = np.asarray(commands, dtype=np.float64)
+    initial_array = np.asarray(trial_specs.inits["mechanics.vector"], dtype=np.float64)
+    if state_array.shape[-2] == horizon and command_array.shape[-2] == horizon:
+        return (
+            state_array,
+            command_array,
+            initial_array,
+            {"basis": "full_rollout_matches_canonical_horizon", "start": 0, "stop": horizon},
+        )
+    if state_array.shape[-2] < horizon or command_array.shape[-2] < horizon:
+        return (
+            state_array,
+            command_array,
+            initial_array,
+            {
+                "basis": "shorter_than_canonical_horizon",
+                "state_steps": int(state_array.shape[-2]),
+                "command_steps": int(command_array.shape[-2]),
+                "canonical_horizon": horizon,
+            },
+        )
+
+    start = _constant_movement_start(trial_specs)
+    if start is None or start + horizon > state_array.shape[-2]:
+        start = int(state_array.shape[-2] - horizon)
+        basis = "trailing_canonical_movement_window"
+    else:
+        basis = "timeline_epoch_bounds_movement_window"
+    stop = int(start + horizon)
+    window_initial = (
+        initial_array
+        if start == 0
+        else np.asarray(state_array[..., start - 1, :], dtype=np.float64)
+    )
+    return (
+        state_array[..., start:stop, :],
+        command_array[..., start:stop, :],
+        window_initial,
+        {"basis": basis, "start": int(start), "stop": stop, "canonical_horizon": horizon},
+    )
+
+
+def _constant_movement_start(trial_specs: Any) -> int | None:
+    """Return a unique delayed movement start from timeline metadata, if present."""
+
+    timeline = getattr(trial_specs, "timeline", None)
+    epoch_bounds = getattr(timeline, "epoch_bounds", None)
+    if epoch_bounds is None:
+        return None
+    bounds = np.asarray(epoch_bounds)
+    if bounds.ndim < 2 or bounds.shape[-1] < 2:
+        return None
+    starts = np.unique(bounds[..., 1])
+    if starts.size != 1:
+        return None
+    return int(starts[0])
 
 
 def delta_full_qrf_cost_summary(
@@ -3148,7 +3223,7 @@ def _evaluate_model_on_trial_specs(
         model_arrays,
         jr.split(jr.PRNGKey(seed), n_replicates),
     )
-    target_position = np.asarray(trial_specs.inputs["effector_target"].pos, dtype=np.float64)
+    target_position = trial_effector_target_position(trial_specs)
     evaluation = RolloutEvaluation(
         position=np.asarray(states.mechanics.effector.pos, dtype=np.float64),
         velocity=np.asarray(states.mechanics.effector.vel, dtype=np.float64),
@@ -4559,6 +4634,9 @@ def _infer_batch_size(trial_specs: Any) -> int:
         if position is not None:
             return int(position.shape[0])
     target = trial_specs.inputs.get("effector_target")
+    if target is None:
+        delayed_inputs = trial_specs.inputs.get("task")
+        target = getattr(delayed_inputs, "effector_target", None)
     if target is not None and hasattr(target, "pos"):
         return int(target.pos.shape[0])
     raise ValueError("Unable to infer trial batch size")
@@ -4566,6 +4644,9 @@ def _infer_batch_size(trial_specs: Any) -> int:
 
 def _infer_trial_n_time(trial_specs: Any, minimum: int) -> int:
     target = trial_specs.inputs.get("effector_target")
+    if target is None:
+        delayed_inputs = trial_specs.inputs.get("task")
+        target = getattr(delayed_inputs, "effector_target", None)
     if target is not None and hasattr(target, "pos"):
         return max(int(target.pos.shape[-2]), minimum)
     for value in trial_specs.inputs.values():

@@ -60,6 +60,25 @@ def run_spec_dir(exp: str, run: str) -> Path:
     return _spec_root() / exp / "runs" / run
 
 
+def run_spec_path(exp: str, run: str, *, repo_root: Path | None = None) -> Path:
+    """Return the tracked run-spec file for ``exp/run``.
+
+    New post-run artifacts use the flat ``results/<exp>/runs/<run>.json``
+    convention. Older runs may still use ``results/<exp>/runs/<run>/run.json``.
+    When neither path exists, return the flat path so new callers fail or write
+    against the current convention.
+    """
+
+    root = REPO_ROOT if repo_root is None else repo_root
+    flat_path = root / "results" / exp / "runs" / f"{run}.json"
+    legacy_path = root / "results" / exp / "runs" / run / "run.json"
+    if flat_path.exists():
+        return flat_path
+    if legacy_path.exists():
+        return legacy_path
+    return flat_path
+
+
 def run_artifact_dir(exp: str, run: str) -> Path:
     """Return the artifact directory for a training run.
 

@@ -13,7 +13,7 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
-from rlrmp.paths import REPO_ROOT
+from rlrmp.paths import REPO_ROOT, run_spec_path
 
 
 SCHEMA_VERSION = "rlrmp.objective_comparator_sidecar.v6"
@@ -972,7 +972,7 @@ def materialize_gru_objective_comparator_sidecar(
     extlqg = compute_default_extlqg_cost_decomposition()
     run_metadata_by_id = {
         str(run_id): load_run_objective_metadata(
-            repo_root / "results" / experiment / "runs" / str(run_id) / "run.json",
+            run_spec_path(experiment, str(run_id), repo_root=repo_root),
             repo_root=repo_root,
         )
         for run_id in run_ids

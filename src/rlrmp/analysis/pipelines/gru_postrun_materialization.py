@@ -27,7 +27,7 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     DEFAULT_N_ROLLOUT_TRIALS,
     materialize_gru_pilot_figures,
 )
-from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path
 
 
 SCHEMA_VERSION = "rlrmp.gru_postrun_materialization.v1"
@@ -747,7 +747,7 @@ def _run_input_refs(
         refs.append(
             {
                 "role": "run_spec",
-                "path": repo_root / "results" / experiment / "runs" / run_id / "run.json",
+                "path": run_spec_path(experiment, run_id, repo_root=repo_root),
             }
         )
         refs.append(

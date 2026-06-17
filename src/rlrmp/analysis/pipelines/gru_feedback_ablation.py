@@ -39,10 +39,11 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     initial_effector_velocity,
     repeat_single_validation_trial,
     resolve_run_inputs,
+    trial_effector_target_position,
 )
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.train.task_model import setup_task_model_pair
-from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path as tracked_run_spec_path
 
 
 SCHEMA_VERSION = "rlrmp.gru_feedback_ablation.v1"
@@ -877,7 +878,7 @@ def materialize_feedback_selected_checkpoint_manifest(
     for run_id, run_audit in audit_runs.items():
         if not isinstance(run_audit, Mapping):
             continue
-        run_spec_path = repo_root / "results" / experiment / "runs" / str(run_id) / "run.json"
+        run_spec_path = tracked_run_spec_path(experiment, str(run_id), repo_root=repo_root)
         artifact_dir = repo_root / "_artifacts" / experiment / "runs" / str(run_id)
         run_spec = json.loads(run_spec_path.read_text(encoding="utf-8"))
         validation_objective, valid_records = validation_objective_history(
@@ -2371,7 +2372,7 @@ def _evaluate_model_on_trial_specs(
             model_arrays,
             jr.split(jr.PRNGKey(seed), n_replicates),
         )
-    target_position = np.asarray(trial_specs.inputs["effector_target"].pos, dtype=np.float64)
+    target_position = trial_effector_target_position(trial_specs)
     rollout = RolloutEvaluation(
         position=np.asarray(states.mechanics.effector.pos, dtype=np.float64),
         velocity=np.asarray(states.mechanics.effector.vel, dtype=np.float64),

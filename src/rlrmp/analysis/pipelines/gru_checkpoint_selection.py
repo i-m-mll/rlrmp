@@ -31,7 +31,7 @@ from rlrmp.train.cs_perturbation_training import (
     target_relative_input_contract,
     target_relative_validation_bins,
 )
-from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path
 
 
 SPARSE_HISTORY_SCHEMA_VERSION = "rlrmp.validation_selected_gru_checkpoints.v1"
@@ -642,9 +642,10 @@ def score_fixed_bank_checkpoints_for_run(
 ) -> list[ReplicateCheckpointSelection]:
     """Score all durable checkpoints for a run and select the best per replicate."""
 
-    run_spec_path = repo_root / "results" / experiment / "runs" / run_id / "run.json"
     artifact_dir = repo_root / "_artifacts" / experiment / "runs" / run_id
-    run_spec = json.loads(run_spec_path.read_text(encoding="utf-8"))
+    run_spec = json.loads(
+        run_spec_path(experiment, run_id, repo_root=repo_root).read_text(encoding="utf-8")
+    )
     checkpoint_batches = available_checkpoint_batches(artifact_dir)
     if not checkpoint_batches:
         raise FileNotFoundError(
@@ -759,9 +760,10 @@ def select_sparse_history_validation_checkpoints_for_run(
 ) -> list[ReplicateCheckpointSelection]:
     """Select checkpoints from sparse logged validation records."""
 
-    run_spec_path = repo_root / "results" / experiment / "runs" / run_id / "run.json"
     artifact_dir = repo_root / "_artifacts" / experiment / "runs" / run_id
-    run_spec = json.loads(run_spec_path.read_text(encoding="utf-8"))
+    run_spec = json.loads(
+        run_spec_path(experiment, run_id, repo_root=repo_root).read_text(encoding="utf-8")
+    )
     objective, valid_records = validation_objective_history(
         run_spec=run_spec,
         history_path=artifact_dir / "training_history.eqx",
@@ -876,13 +878,18 @@ def validation_objective_history(
         header = stream.readline()
         if header.strip() != b"null":
             raise ValueError(f"Expected null history metadata header in {history_path}")
-        _skip_loss_tree(stream, labels)
-        for _label in labels:
-            value = np.load(stream, allow_pickle=False)
-            weight = float(np.load(stream, allow_pickle=False))
-            components.append(np.asarray(value, dtype=np.float64) * weight)
-            real_record_terms.append(np.asarray(value) != 0)
-        branch_weight = _scalar_weight(np.load(stream, allow_pickle=False))
+        arrays = _read_history_arrays(stream)
+    if len(arrays) < 7 or (len(arrays) - 1) % 2:
+        raise ValueError(f"Unexpected GRU history array count {len(arrays)} in {history_path}")
+    arrays_per_loss_tree = (len(arrays) - 1) // 2
+    _labels = _history_term_labels(labels, arrays_per_loss_tree)
+    validation_arrays = arrays[arrays_per_loss_tree : 2 * arrays_per_loss_tree]
+    for idx, _label in enumerate(_labels):
+        value = validation_arrays[2 * idx]
+        weight = _scalar_weight(validation_arrays[2 * idx + 1])
+        components.append(np.asarray(value, dtype=np.float64) * weight)
+        real_record_terms.append(np.asarray(value) != 0)
+    branch_weight = _scalar_weight(validation_arrays[-1])
     objective = np.sum(np.stack(components), axis=0) * branch_weight
     valid_records = np.any(np.stack(real_record_terms), axis=0)
     return objective, valid_records
@@ -1295,19 +1302,47 @@ def _skip_loss_tree(stream: Any, labels: Sequence[str]) -> None:
     np.load(stream, allow_pickle=False)
 
 
+def _read_history_arrays(stream: Any) -> list[np.ndarray]:
+    """Read all NumPy arrays from a simple Feedbax history stream."""
+
+    arrays: list[np.ndarray] = []
+    while True:
+        try:
+            arrays.append(np.load(stream, allow_pickle=False))
+        except (EOFError, ValueError):
+            return arrays
+
+
+def _history_term_labels(term_labels: Sequence[str], arrays_per_loss_tree: int) -> tuple[str, ...]:
+    """Return labels matching the serialized loss-tree leaf count."""
+
+    n_leaves = (arrays_per_loss_tree - 1) // 2
+    labels = tuple(term_labels)
+    if len(labels) == n_leaves:
+        return labels
+    if len(labels) == 1:
+        return tuple(f"{labels[0]}_component_{idx}" for idx in range(n_leaves))
+    return tuple(labels[:n_leaves]) + tuple(
+        f"loss_component_{idx}" for idx in range(len(labels), n_leaves)
+    )
+
+
 def _scalar_weight(value: np.ndarray) -> float:
-    """Return a scalar weight from Feedbax history scalar or broadcast array records."""
+    """Return a scalar summary from Feedbax history weight records."""
 
     array = np.asarray(value)
     if array.size == 1:
         return float(array.reshape(()))
-    nonzero = array[array != 0]
+    finite = array[np.isfinite(array)]
+    if finite.size == 0:
+        return 0.0
+    nonzero = finite[finite != 0]
     if nonzero.size == 0:
         return 0.0
     first = float(nonzero.reshape(-1)[0])
-    if not np.allclose(nonzero, first):
-        raise ValueError(f"Expected scalar or broadcast history weight, got shape {array.shape}")
-    return first
+    if np.allclose(nonzero, first):
+        return first
+    return float(np.mean(nonzero))
 
 
 def _repo_relative(path: Path, *, repo_root: Path = REPO_ROOT) -> str:
