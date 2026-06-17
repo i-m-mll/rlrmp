@@ -1,0 +1,192 @@
+{
+  "command": {
+    "argv": [
+      "unknown"
+    ],
+    "cwd": ".",
+    "metadata": {
+      "materializer": "rlrmp.analysis.pipelines.cs_gru_standard_materialization.write_gru_standard_result",
+      "status": "not_recorded"
+    }
+  },
+  "inputs": [
+    {
+      "logical_name": "results/ef9c882/runs/hold__force_filter.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "d3b9af871ced2c2e4a0b90f698040747bce89cb7b0efafce86902c16ffb66dc3",
+        "size_bytes": 328137
+      },
+      "role": "run_spec",
+      "sha256": "d3b9af871ced2c2e4a0b90f698040747bce89cb7b0efafce86902c16ffb66dc3",
+      "size_bytes": 328137,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/ef9c882/runs/hold__force_filter.json"
+    },
+    {
+      "logical_name": "results/ef9c882/runs/hold__start_pos_zero_vel.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "8cd1f4194f4700efd023b56caa88e363c635216e3ea310cfa96e5a8fd5f8cd37",
+        "size_bytes": 328393
+      },
+      "role": "run_spec",
+      "sha256": "8cd1f4194f4700efd023b56caa88e363c635216e3ea310cfa96e5a8fd5f8cd37",
+      "size_bytes": 328393,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/ef9c882/runs/hold__start_pos_zero_vel.json"
+    },
+    {
+      "logical_name": "_artifacts/ef9c882/runs/hold__force_filter/trained_model.eqx",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "5da31a6879a2d8edf2e5da2ebaefe7925c8662f66de8aa2f5625054056c1f9e9",
+        "size_bytes": 4425089
+      },
+      "role": "model_or_checkpoint_artifact",
+      "sha256": "5da31a6879a2d8edf2e5da2ebaefe7925c8662f66de8aa2f5625054056c1f9e9",
+      "size_bytes": 4425089,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/ef9c882/runs/hold__force_filter/trained_model.eqx"
+    },
+    {
+      "logical_name": "_artifacts/ef9c882/runs/hold__start_pos_zero_vel/trained_model.eqx",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "0c1c1a46e06e5831b7a6b888ad83ed102c113df8637e75040648a36c23e3c809",
+        "size_bytes": 4425297
+      },
+      "role": "model_or_checkpoint_artifact",
+      "sha256": "0c1c1a46e06e5831b7a6b888ad83ed102c113df8637e75040648a36c23e3c809",
+      "size_bytes": 4425297,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/ef9c882/runs/hold__start_pos_zero_vel/trained_model.eqx"
+    }
+  ],
+  "metadata": {
+    "diagnostic_name": "gru_standard_certificate",
+    "materializer": "rlrmp.analysis.pipelines.cs_gru_standard_materialization.write_gru_standard_result",
+    "notes": [
+      "Standard certificate is in scope for regeneration specs.",
+      "This spec records materialization provenance only; certificate values remain in the manifest."
+    ],
+    "schema_boundary": "rlrmp diagnostic payload; Feedbax regeneration custody"
+  },
+  "outputs": [
+    {
+      "logical_name": "results/ef9c882/notes/gru_standard_certificates_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "c30b9a2aa38ac6910f54ba08bda7b44d46e3146ffb5eccc392f656f51ad550b3",
+        "size_bytes": 48203
+      },
+      "role": "standard_certificate_manifest",
+      "sha256": "c30b9a2aa38ac6910f54ba08bda7b44d46e3146ffb5eccc392f656f51ad550b3",
+      "size_bytes": 48203,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/ef9c882/notes/gru_standard_certificates_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest.json"
+    },
+    {
+      "logical_name": "results/ef9c882/notes/gru_standard_certificates_delayed_timing_hold_lane_final_checkpoints_calibrated.md",
+      "media_type": "text/markdown",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "31a896723955b225933802c12a9458ed4966fe78a5a667b125bf923c0fe64fd3",
+        "size_bytes": 1515
+      },
+      "role": "standard_certificate_note",
+      "sha256": "31a896723955b225933802c12a9458ed4966fe78a5a667b125bf923c0fe64fd3",
+      "size_bytes": 1515,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/ef9c882/notes/gru_standard_certificates_delayed_timing_hold_lane_final_checkpoints_calibrated.md"
+    }
+  ],
+  "parameters": {
+    "checkpoint_policy": "final_checkpoint",
+    "experiment": "ef9c882",
+    "materializer_issue_id": "e6a32b8",
+    "run_ids": [
+      "hold__force_filter",
+      "hold__start_pos_zero_vel"
+    ]
+  },
+  "provenance": {
+    "dirty": true,
+    "entrypoint": {
+      "kind": "rlrmp-diagnostic-materializer",
+      "metadata": {},
+      "name": "rlrmp.analysis.pipelines.cs_gru_standard_materialization.write_gru_standard_result"
+    },
+    "issues": [],
+    "metadata": {
+      "status_porcelain": [
+        "M uv.lock",
+        "?? results/6c36536/notes/gru_evaluation_diagnostics_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json",
+        "?? results/6c36536/notes/gru_map_error_decomposition_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json",
+        "?? results/6c36536/notes/gru_perturbation_response_delayed_timing_hold_lane_final_checkpoints_calibrated.md",
+        "?? results/6c36536/notes/gru_perturbation_response_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest.json",
+        "?? results/6c36536/notes/gru_perturbation_response_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest_regeneration_spec.json",
+        "?? results/6c36536/notes/gru_pilot_figures_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json",
+        "?? results/6c36536/notes/gru_postrun_materialization_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json",
+        "?? results/6c36536/notes/gru_standard_certificates_delayed_timing_hold_lane_final_checkpoints_calibrated.md",
+        "?? results/6c36536/notes/gru_standard_certificates_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest.json",
+        "?? results/6c36536/notes/gru_standard_certificates_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest_regeneration_spec.json",
+        "?? results/6c36536/notes/objective_comparator_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json",
+        "?? results/bf71d86/notes/gru_evaluation_diagnostics_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json",
+        "?? results/bf71d86/notes/gru_map_error_decomposition_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json",
+        "?? results/bf71d86/notes/gru_perturbation_response_delayed_timing_hold_lane_final_checkpoints_calibrated.md",
+        "?? results/bf71d86/notes/gru_perturbation_response_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest.json",
+        "?? results/bf71d86/notes/gru_perturbation_response_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest_regeneration_spec.json",
+        "?? results/bf71d86/notes/gru_pilot_figures_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json",
+        "?? results/bf71d86/notes/gru_postrun_materialization_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json",
+        "?? results/bf71d86/notes/gru_standard_certificates_delayed_timing_hold_lane_final_checkpoints_calibrated.md",
+        "?? results/bf71d86/notes/gru_standard_certificates_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest.json",
+        "?? results/bf71d86/notes/gru_standard_certificates_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest_regeneration_spec.json",
+        "?? results/bf71d86/notes/objective_comparator_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json",
+        "?? results/ef9c882/notes/gru_standard_certificates_delayed_timing_hold_lane_final_checkpoints_calibrated.md",
+        "?? results/ef9c882/notes/gru_standard_certificates_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest.json"
+      ]
+    },
+    "parents": [],
+    "source_branch": "feature/ef9c882-pre-go-hold-penalties",
+    "source_commit": "306b65ebc134b9d1f8d601b409c15a8852439383",
+    "source_repo": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__ef9c882-pre-go-hold-penalties"
+  },
+  "schema_id": "feedbax.spec.regeneration",
+  "schema_version": "feedbax.spec.regeneration.v1",
+  "source_files": [
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/cs_gru_standard_materialization.py",
+      "role": "source_file",
+      "sha256": "519117bb17b776023d5c99cf4abf5385107cb7181b17a0e25b2bfcb0a16a9ef8",
+      "size_bytes": 48560
+    },
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/bridge_certificates.py",
+      "role": "source_file",
+      "sha256": "91ea1a5fafa36d8ee6c77c338720f07041e43545a79bcbca07492763f2de2926",
+      "size_bytes": 62529
+    },
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/standard_certificate_materialization.py",
+      "role": "source_file",
+      "sha256": "e6cf1fcb633cd15e47afdcdd788483061c17fe30038c804b882cea0968bb03ba",
+      "size_bytes": 3976
+    }
+  ],
+  "source_trees": []
+}

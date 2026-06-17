@@ -1,0 +1,52 @@
+{
+  "figure_family": "delayed_fixed_bank_target_radial_velocity_profiles",
+  "materializer": "results/40e1911/scripts/materialize_delayed_timing_hold_lane_velocity_profiles.py",
+  "outputs": {
+    "catch": "_artifacts/40e1911/figures/delayed_timing_hold_lane_velocity_profiles/catch",
+    "no_catch": "_artifacts/40e1911/figures/delayed_timing_hold_lane_velocity_profiles/no_catch"
+  },
+  "parameters": {
+    "checkpoint_policy": "final_checkpoint",
+    "direction_count": 20,
+    "go_cue_steps": "per_run_declared_range",
+    "include_reference": true,
+    "pre_go_context_steps": 10,
+    "reach_length_m": 0.15,
+    "shared_yaxes": "all"
+  },
+  "result_experiment": "40e1911",
+  "run_refs": [
+    {
+      "experiment": "6c36536",
+      "label": "baseline delayed repeat",
+      "run_id": "baseline__delayed_repeat"
+    },
+    {
+      "experiment": "bf71d86",
+      "label": "fixed go 10",
+      "run_id": "timing__fixed_go10"
+    },
+    {
+      "experiment": "bf71d86",
+      "label": "fixed go 20",
+      "run_id": "timing__fixed_go20"
+    },
+    {
+      "experiment": "bf71d86",
+      "label": "go 10-15",
+      "run_id": "timing__go10_15"
+    },
+    {
+      "experiment": "ef9c882",
+      "label": "force-filter hold",
+      "run_id": "hold__force_filter"
+    },
+    {
+      "experiment": "ef9c882",
+      "label": "start-pos zero-vel hold",
+      "run_id": "hold__start_pos_zero_vel"
+    }
+  ],
+  "schema_version": "rlrmp.figure_spec.delayed_timing_hold_velocity.v1",
+  "topic": "delayed_timing_hold_lane_velocity_profiles"
+}

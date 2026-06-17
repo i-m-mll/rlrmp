@@ -1,0 +1,1209 @@
+"""Materialize six-row delayed timing / pre-go hold velocity profiles.
+
+This issue-local script evaluates final checkpoints on the corrected
+delayed-reach no-catch and catch banks: go cues 10..30, 20 uniform center-out
+directions, 0.15 m reach length, and go-cue-aligned target-radial velocity
+windows. It is adapted from the one-run delayed_movement_bank materializer under
+``results/6c36536/scripts/`` so the delayed fixed-bank semantics stay identical
+while the presentation becomes a six-row comparison.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Literal
+
+import equinox as eqx
+import jax.numpy as jnp
+import jax.random as jr
+import jax.tree as jt
+import numpy as np
+import plotly.graph_objects as go
+from feedbax import DelayedReachTaskInputs, TaskTrialSpec, TrialTimeline, WhereDict
+from feedbax.config.namespace import TreeNamespace, dict_to_namespace
+from feedbax.objectives.loss import TargetSpec
+from feedbax.runtime.state import CartesianState
+from jax_cookbook import load_with_hyperparameters
+
+from rlrmp.analysis.math.trial_alignment import align_trials, trim_to_full_support
+from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
+from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+    DEFAULT_DELAYED_REACH_DIRECTION_COUNT,
+    DEFAULT_DELAYED_REACH_GO_CUE_STEPS,
+    DEFAULT_DELAYED_REACH_UNIFORM_REACH_LENGTH_M,
+    DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION,
+)
+from rlrmp.analysis.pipelines.gru_pilot_figures import cs_output_feedback_reference_profiles
+from rlrmp.io import update_marked_section
+from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.train.task_model import setup_task_model_pair
+from rlrmp.viz import profile_comparison_grid
+
+
+RESULT_EXPERIMENT = "40e1911"
+TOPIC = "delayed_timing_hold_lane_velocity_profiles"
+PRE_GO_CONTEXT_STEPS = 10
+REFERENCE_COLOR = "#111827"
+BankKind = Literal["no_catch", "catch"]
+DEFAULT_RUN_REFS = (
+    "6c36536/baseline__delayed_repeat=baseline delayed repeat",
+    "bf71d86/timing__fixed_go10=fixed go 10",
+    "bf71d86/timing__fixed_go20=fixed go 20",
+    "bf71d86/timing__go10_15=go 10-15",
+    "ef9c882/hold__force_filter=force-filter hold",
+    "ef9c882/hold__start_pos_zero_vel=start-pos zero-vel hold",
+)
+
+
+@dataclass(frozen=True)
+class RunInputs:
+    """Resolved local files for one run."""
+
+    experiment: str
+    run_id: str
+    label: str
+    run_spec_path: Path
+    artifact_dir: Path
+    run_spec: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class DelayedEvalBank:
+    """A concrete delayed evaluation bank plus JSON metadata."""
+
+    trial_specs: TaskTrialSpec
+    metadata: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class VelocityProfile:
+    """Go-cue-aligned target-radial velocity profile."""
+
+    experiment: str
+    run_id: str
+    label: str
+    run_spec_path: Path
+    artifact_dir: Path
+    bank_kind: BankKind
+    time_s: np.ndarray
+    mean: np.ndarray
+    std: np.ndarray
+    replicate_mean: np.ndarray
+    replicate_std: np.ndarray
+    n_replicates: int
+    n_trials_per_replicate: int
+    alignment: dict[str, Any]
+    evaluation_bank: dict[str, Any]
+
+    @property
+    def n_pooled_samples(self) -> int:
+        """Return replicate x trial sample count."""
+
+        return int(self.n_replicates * self.n_trials_per_replicate)
+
+
+def main() -> None:
+    """CLI entry point."""
+
+    args = build_parser().parse_args()
+    run_refs = tuple(args.run_ref or DEFAULT_RUN_REFS)
+    runs = [
+        resolve_run_inputs(ref=parse_run_ref(run_ref), repo_root=args.repo_root)
+        for run_ref in run_refs
+    ]
+    output_root = args.output_dir or (
+        args.repo_root / "_artifacts" / args.result_experiment / "figures" / args.topic
+    )
+    tracked_root = args.repo_root / "results" / args.result_experiment / "figures" / args.topic
+    notes_path = args.repo_root / "results" / args.result_experiment / "notes" / f"{args.topic}.md"
+    mkdir_p(output_root)
+    mkdir_p(tracked_root)
+    mkdir_p(notes_path.parent)
+    summaries: dict[str, Any] = {}
+    for bank_kind in ("no_catch", "catch"):
+        output_dir = output_root / bank_kind
+        mkdir_p(output_dir)
+        profiles = [
+            evaluate_velocity_profile(
+                run,
+                bank_kind=bank_kind,
+                go_cue_steps=(
+                    run_go_cue_steps(run.run_spec)
+                    if args.go_cue_step is None
+                    else tuple(args.go_cue_step)
+                ),
+                direction_count=args.direction_count,
+                reach_length_m=args.reach_length_m,
+                pre_go_context_steps=args.pre_go_context_steps,
+            )
+            for run in runs
+        ]
+        include_reference = bool(args.include_reference and bank_kind == "no_catch")
+        references = (
+            cs_output_feedback_reference_profiles(
+                n_samples=max(profile.n_pooled_samples for profile in profiles)
+            )
+            if include_reference
+            else ()
+        )
+        pooled_file = write_velocity_figure(
+            profiles,
+            output_dir=output_dir,
+            references=references,
+        )
+        replicate_file = write_velocity_by_replicate_figure(
+            profiles,
+            output_dir=output_dir,
+            references=references,
+        )
+        summary = build_bank_summary(
+            profiles=profiles,
+            pooled_file=pooled_file,
+            replicate_file=replicate_file,
+            references=references,
+            output_dir=output_dir,
+            direction_split_status=(
+                "not_materialized: prior good/bad direction split was a "
+                "diagnostic grouping for earlier no-PGD rows, not a natural "
+                "movement-bank row grouping; by-replicate profiles were "
+                "materialized as the cheap directly analogous variant"
+            ),
+        )
+        summary_path = output_dir / "velocity_profile_summary.json"
+        summary_path.write_text(
+            json.dumps(summary, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        summaries[bank_kind] = summary
+    manifest = build_manifest(
+        runs=runs,
+        summaries=summaries,
+        output_root=output_root,
+        tracked_root=tracked_root,
+        args=args,
+    )
+    manifest_path = tracked_root / "manifest.json"
+    spec_path = tracked_root / "spec.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    spec_path.write_text(
+        json.dumps(build_figure_spec(runs=runs, args=args), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    update_marked_section(
+        notes_path,
+        "delayed_timing_hold_velocity_profiles",
+        render_notes(manifest) + "\n",
+    )
+    print(json.dumps(summaries, indent=2, sort_keys=True))
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Return the command-line parser."""
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--run-ref",
+        action="append",
+        help=(
+            "Run reference as EXPERIMENT/RUN_ID=label. May be passed multiple times; "
+            "defaults to the six completed delayed timing / pre-go hold rows."
+        ),
+    )
+    parser.add_argument("--result-experiment", default=RESULT_EXPERIMENT)
+    parser.add_argument("--topic", default=TOPIC)
+    parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--repo-root", type=Path, default=REPO_ROOT)
+    parser.add_argument(
+        "--go-cue-step",
+        type=int,
+        action="append",
+        default=None,
+        help=(
+            "Override delayed-bank go-cue steps for every row. Defaults to each "
+            "run spec's declared delayed_reach.go_cue_sampling range."
+        ),
+    )
+    parser.add_argument(
+        "--direction-count",
+        type=int,
+        default=DEFAULT_DELAYED_REACH_DIRECTION_COUNT,
+    )
+    parser.add_argument(
+        "--reach-length-m",
+        type=float,
+        default=DEFAULT_DELAYED_REACH_UNIFORM_REACH_LENGTH_M,
+    )
+    parser.add_argument("--pre-go-context-steps", type=int, default=PRE_GO_CONTEXT_STEPS)
+    parser.add_argument(
+        "--include-reference",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Overlay extLQG references on the no-catch profile.",
+    )
+    return parser
+
+
+@dataclass(frozen=True)
+class RunRef:
+    """Parsed CLI run reference."""
+
+    experiment: str
+    run_id: str
+    label: str
+
+
+def parse_run_ref(value: str) -> RunRef:
+    """Parse ``EXPERIMENT/RUN_ID=label`` into a run reference."""
+
+    path_part, sep, label = value.partition("=")
+    experiment, slash, run_id = path_part.partition("/")
+    if not sep or not slash or not experiment or not run_id or not label:
+        raise ValueError(f"run ref must be EXPERIMENT/RUN_ID=label; got {value!r}")
+    return RunRef(experiment=experiment, run_id=run_id, label=label)
+
+
+def resolve_run_inputs(
+    *,
+    ref: RunRef,
+    repo_root: Path,
+) -> RunInputs:
+    """Resolve the flat or legacy directory-form run spec for one run."""
+
+    flat_path = repo_root / "results" / ref.experiment / "runs" / f"{ref.run_id}.json"
+    legacy_path = repo_root / "results" / ref.experiment / "runs" / ref.run_id / "run.json"
+    if flat_path.exists():
+        run_spec_path = flat_path
+    elif legacy_path.exists():
+        run_spec_path = legacy_path
+    else:
+        raise FileNotFoundError(f"Missing run spec for {ref.experiment}/{ref.run_id}")
+    artifact_dir = repo_root / "_artifacts" / ref.experiment / "runs" / ref.run_id
+    if not artifact_dir.exists():
+        raise FileNotFoundError(f"Missing artifact directory: {artifact_dir}")
+    return RunInputs(
+        experiment=ref.experiment,
+        run_id=ref.run_id,
+        label=ref.label,
+        run_spec_path=run_spec_path,
+        artifact_dir=artifact_dir,
+        run_spec=json.loads(run_spec_path.read_text(encoding="utf-8")),
+    )
+
+
+def evaluate_velocity_profile(
+    run: RunInputs,
+    *,
+    bank_kind: BankKind,
+    go_cue_steps: Sequence[int],
+    direction_count: int,
+    reach_length_m: float,
+    pre_go_context_steps: int,
+) -> VelocityProfile:
+    """Evaluate the final checkpoint on one fixed delayed-reach bank."""
+
+    hps = dict_to_namespace(normalize_gru_hps(run.run_spec["hps"]), to_type=TreeNamespace)
+    n_replicates = int(hps.model.n_replicates)
+    seed = int(run.run_spec.get("seed", 42))
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
+    movement_horizon_steps = canonical_movement_horizon(run.run_spec)
+    bank = make_delayed_eval_bank(
+        pair.task.validation_trials,
+        bank_kind=bank_kind,
+        go_cue_steps=go_cue_steps,
+        direction_count=direction_count,
+        reach_length_m=reach_length_m,
+        movement_horizon_steps=movement_horizon_steps,
+    )
+    model, _hyperparameters = load_with_hyperparameters(
+        run.artifact_dir / "trained_model.eqx",
+        setup_func=lambda key, **_kwargs: setup_task_model_pair(hps, key=key).model,
+    )
+    eval_trial_count = int(bank.metadata["trial_count"])
+    initial_velocity = initial_effector_velocity(bank.trial_specs)
+    model_arrays, model_other = eqx.partition(
+        model,
+        lambda leaf: eqx.is_array(leaf) and leaf.ndim >= 1 and leaf.shape[0] == n_replicates,
+    )
+
+    def eval_one_replicate(model_array_leaves: Any, key: Any) -> Any:
+        replicate_model = eqx.combine(model_array_leaves, model_other)
+        states = pair.task.eval_trials(
+            replicate_model,
+            bank.trial_specs,
+            jr.split(key, eval_trial_count),
+        )
+        return jnp.concatenate(
+            [initial_velocity[:, None, :], states.mechanics.effector.vel],
+            axis=1,
+        )
+
+    velocity = eqx.filter_vmap(eval_one_replicate, in_axes=(0, 0))(
+        model_arrays,
+        jr.split(jr.PRNGKey(0), n_replicates),
+    )
+    velocity_np = np.asarray(velocity, dtype=np.float64)
+    target_position = target_position_sequence(bank.trial_specs)
+    initial_position = initial_effector_position(bank.trial_specs)
+    direction, _distance = reach_direction(initial_position, target_position[:, -1, :])
+    forward = np.sum(velocity_np * direction[None, :, None, :], axis=-1)
+    go_index = np.asarray(bank.trial_specs.timeline.epoch_bounds[:, 1], dtype=np.int64)
+    aligned_forward, center = align_trials(forward, go_index)
+    _support, support_slice = trim_to_full_support(aligned_forward)
+    support_start = int(support_slice.start or 0)
+    support_stop = int(support_slice.stop or aligned_forward.shape[-1])
+    requested_start = max(0, int(center) - int(pre_go_context_steps))
+    requested_stop = min(
+        int(aligned_forward.shape[-1]),
+        int(center) + int(movement_horizon_steps),
+    )
+    start = max(support_start, requested_start)
+    stop = min(support_stop, requested_stop)
+    if stop <= start:
+        raise ValueError(f"{bank_kind} aligned profile has no full-support samples")
+    window = aligned_forward[..., start:stop]
+    flat = window.reshape(-1, window.shape[-1])
+    mean = np.nanmean(flat, axis=0)
+    std = np.nanstd(flat, axis=0, ddof=1)
+    replicate_mean = np.nanmean(window, axis=1)
+    replicate_std = np.nanstd(window, axis=1, ddof=1)
+    dt = float(run.run_spec.get("game_card", {}).get("dt", getattr(hps, "dt", 0.01)))
+    time_s = (np.arange(start, stop, dtype=np.float64) - float(center)) * dt
+    alignment = {
+        "time_basis": "go_cue_aligned_canonical_movement_window",
+        "center_index": int(center),
+        "go_index_min": int(go_index.min()),
+        "go_index_max": int(go_index.max()),
+        "movement_horizon_steps": int(movement_horizon_steps),
+        "requested_pre_go_context_steps": int(pre_go_context_steps),
+        "requested_post_go_movement_steps": int(movement_horizon_steps),
+        "full_support_slice": [support_start, support_stop],
+        "requested_window_slice": [requested_start, requested_stop],
+        "plotted_window_slice": [start, stop],
+        "plotted_time_start_s": float(time_s[0]),
+        "plotted_time_stop_s": float(time_s[-1]),
+    }
+    return VelocityProfile(
+        experiment=run.experiment,
+        run_id=run.run_id,
+        label=run.label,
+        run_spec_path=run.run_spec_path,
+        artifact_dir=run.artifact_dir,
+        bank_kind=bank_kind,
+        time_s=time_s,
+        mean=mean,
+        std=std,
+        replicate_mean=replicate_mean,
+        replicate_std=replicate_std,
+        n_replicates=n_replicates,
+        n_trials_per_replicate=eval_trial_count,
+        alignment=alignment,
+        evaluation_bank=bank.metadata,
+    )
+
+
+def make_delayed_eval_bank(
+    trial_specs: TaskTrialSpec,
+    *,
+    bank_kind: BankKind,
+    go_cue_steps: Iterable[int],
+    direction_count: int,
+    reach_length_m: float,
+    movement_horizon_steps: int,
+) -> DelayedEvalBank:
+    """Return a uniform-grid fixed delayed-reach evaluation bank."""
+
+    go_steps = tuple(int(step) for step in go_cue_steps)
+    if not go_steps:
+        raise ValueError("go_cue_steps must not be empty")
+    if min(go_steps) < 0:
+        raise ValueError(f"go cue steps must be nonnegative; got {go_steps}")
+    source_trials = infer_trial_count(trial_specs)
+    n_state_steps = int(
+        getattr(getattr(trial_specs, "timeline", None), "n_steps", None)
+        or infer_trial_n_time(trial_specs)
+    )
+    if max(go_steps) + int(movement_horizon_steps) > n_state_steps:
+        raise ValueError(
+            "delayed eval bank does not fit trial axis: "
+            f"go_max={max(go_steps)}, horizon={movement_horizon_steps}, "
+            f"n_state_steps={n_state_steps}"
+        )
+    init_pos = np.asarray(initial_effector_position(trial_specs)[0], dtype=np.float64)
+    angles = np.linspace(0.0, 2.0 * np.pi, int(direction_count), endpoint=False)
+    directions = np.stack([np.cos(angles), np.sin(angles)], axis=-1)
+    targets = init_pos[None, :] + float(reach_length_m) * directions
+    go_index = np.repeat(np.asarray(go_steps, dtype=np.int32), int(direction_count))
+    direction_index = np.tile(np.arange(int(direction_count), dtype=np.int32), len(go_steps))
+    source_index = np.asarray(direction_index % int(source_trials), dtype=np.int32)
+    target_position = targets[direction_index]
+    initial_position_batch = np.broadcast_to(init_pos[None, :], target_position.shape)
+
+    state_time = np.arange(n_state_steps, dtype=np.int32)[None, :]
+    control_steps = max(1, n_state_steps - 1)
+    control_time = np.arange(control_steps, dtype=np.int32)[None, :]
+    go_column = go_index[:, None]
+    visible_target = np.broadcast_to(
+        target_position[:, None, :],
+        (go_index.shape[0], n_state_steps, 2),
+    )
+    init_sequence = np.broadcast_to(
+        initial_position_batch[:, None, :],
+        (go_index.shape[0], n_state_steps, 2),
+    )
+    no_catch_target = np.where(state_time[..., None] >= go_column[..., None], visible_target, init_sequence)
+    scored_target = init_sequence if bank_kind == "catch" else no_catch_target
+    control_hold = (
+        np.ones((go_index.shape[0], control_steps), dtype=np.float32)
+        if bank_kind == "catch"
+        else (control_time < go_column).astype(np.float32)
+    )
+    target_on = np.ones_like(control_hold, dtype=np.float32)
+    go_input = 1.0 - control_hold
+    timeline = TrialTimeline.from_epochs_events(
+        n_state_steps,
+        epoch_bounds=np.stack(
+            [
+                np.zeros_like(go_index),
+                go_index,
+                np.full_like(go_index, n_state_steps),
+            ],
+            axis=-1,
+        ),
+        epoch_names=("prep", "movement"),
+        event_steps=go_index[:, None],
+        event_names=("go_cue",),
+    )
+
+    remapped = remap_source_trials(
+        trial_specs,
+        source_index=source_index,
+        source_trials=source_trials,
+    )
+    direction_angles = np.mod(angles, 2.0 * np.pi).astype(np.float64)
+    metadata = {
+        "schema_version": DELAYED_REACH_EVAL_BANK_SCHEMA_VERSION,
+        "bank_family": "delayed_reach_fixed_eval_bank",
+        "kind": bank_kind,
+        "catch": bank_kind == "catch",
+        "go_cue_min": int(min(go_steps)),
+        "go_cue_max": int(max(go_steps)),
+        "go_cue_steps": [int(step) for step in go_steps],
+        "direction_source": "uniform_grid",
+        "direction_count": int(direction_count),
+        "requested_direction_count": int(direction_count),
+        "trial_count": int(go_index.shape[0]),
+        "n_time_steps": int(n_state_steps),
+        "control_time_steps": int(control_steps),
+        "movement_horizon_steps": int(movement_horizon_steps),
+        "reach_length_m": float(reach_length_m),
+        "reach_length_source": "uniform_grid_default",
+        "reach_length_m_explicit": False,
+        "direction_source_inferred_from_validation_targets": False,
+        "duplicate_direction_count": 0,
+        "target_radii_m": [float(reach_length_m)] * int(direction_count),
+        "target_angles_rad": [float(angle) for angle in direction_angles],
+        "source_trial_indices": [int(index) for index in source_index[: int(direction_count)]],
+    }
+    updated = TaskTrialSpec(
+        inits=WhereDict(update_initial_positions(remapped.inits, initial_position_batch)),
+        inputs=update_inputs(
+            remapped.inputs,
+            visible_target=visible_target,
+            scored_target=scored_target,
+            hold=control_hold,
+            target_on=target_on,
+            go_input=go_input,
+        ),
+        targets=WhereDict(update_targets(remapped.targets, scored_target)),
+        intervene=remapped.intervene,
+        timeline=timeline,
+        extra={
+            **dict(remapped.extra or {}),
+            "delayed_reach_eval_bank": metadata,
+            "is_catch_trial": np.full(go_index.shape[0], bank_kind == "catch"),
+        },
+    )
+    return DelayedEvalBank(trial_specs=updated, metadata=metadata)
+
+
+def remap_source_trials(
+    trial_specs: TaskTrialSpec,
+    *,
+    source_index: np.ndarray,
+    source_trials: int,
+) -> TaskTrialSpec:
+    """Copy source trial leaves onto the fixed-bank trial axis."""
+
+    indices = jnp.asarray(source_index, dtype=jnp.int32)
+
+    def remap_leaf(leaf: Any) -> Any:
+        shape = getattr(leaf, "shape", None)
+        if shape is not None and len(shape) >= 1 and int(shape[0]) == int(source_trials):
+            return jnp.asarray(leaf)[indices]
+        return leaf
+
+    return jt.map(remap_leaf, trial_specs)
+
+
+def update_initial_positions(inits: Mapping[Any, Any], position: np.ndarray) -> dict[Any, Any]:
+    """Return init mapping with effector position replaced."""
+
+    updated = dict(inits)
+    for key, init_state in list(updated.items()):
+        current = getattr(init_state, "pos", None)
+        if current is not None:
+            updated[key] = eqx.tree_at(
+                lambda state: state.pos,
+                init_state,
+                jnp.asarray(position, dtype=jnp.asarray(current).dtype),
+            )
+            continue
+        shape = getattr(init_state, "shape", None)
+        if shape is not None and len(shape) >= 1 and shape[-1] >= 2:
+            value = jnp.asarray(init_state)
+            updated[key] = value.at[..., 0:2].set(jnp.asarray(position, dtype=value.dtype))
+    return updated
+
+
+def update_targets(targets: Mapping[Any, Any], scored_target: np.ndarray) -> dict[Any, Any]:
+    """Return target mapping with scored effector position replaced."""
+
+    updated = dict(targets)
+    for key, target_spec in list(updated.items()):
+        value = getattr(target_spec, "value", None)
+        if getattr(value, "shape", None) is not None and value.shape[-1] == 2:
+            updated[key] = eqx.tree_at(
+                lambda spec: spec.value,
+                target_spec,
+                jnp.asarray(scored_target, dtype=jnp.asarray(value).dtype),
+            )
+        elif isinstance(target_spec, TargetSpec):
+            updated[key] = eqx.tree_at(
+                lambda spec: spec.value,
+                target_spec,
+                jnp.asarray(scored_target),
+            )
+    return updated
+
+
+def update_inputs(
+    inputs: Any,
+    *,
+    visible_target: np.ndarray,
+    scored_target: np.ndarray,
+    hold: np.ndarray,
+    target_on: np.ndarray,
+    go_input: np.ndarray,
+) -> Any:
+    """Return input tree with target/go-cue surfaces replaced."""
+
+    if isinstance(inputs, DelayedReachTaskInputs):
+        return update_delayed_task_inputs(
+            inputs,
+            visible_target=visible_target,
+            hold=hold,
+            target_on=target_on,
+        )
+    if not isinstance(inputs, Mapping):
+        return inputs
+    updated = dict(inputs)
+    if "input" in updated:
+        updated["input"] = like_existing_time_input(updated["input"], go_input)
+    if "target" in updated:
+        updated["target"] = like_existing_array(updated["target"], visible_target)
+    if "effector_target" in updated:
+        updated["effector_target"] = update_cartesian_position(
+            updated["effector_target"],
+            scored_target,
+        )
+    if "task" in updated and isinstance(updated["task"], DelayedReachTaskInputs):
+        updated["task"] = update_delayed_task_inputs(
+            updated["task"],
+            visible_target=visible_target,
+            hold=hold,
+            target_on=target_on,
+        )
+    return updated
+
+
+def update_delayed_task_inputs(
+    inputs: DelayedReachTaskInputs,
+    *,
+    visible_target: np.ndarray,
+    hold: np.ndarray,
+    target_on: np.ndarray,
+) -> DelayedReachTaskInputs:
+    """Return delayed task inputs with visible target and go cue replaced."""
+
+    effector_target = update_cartesian_position(inputs.effector_target, visible_target)
+    if getattr(effector_target, "pos", None) is None:
+        effector_target = CartesianState(pos=jnp.asarray(visible_target))
+    return DelayedReachTaskInputs(
+        effector_target=effector_target,
+        hold=like_existing_time_input(inputs.hold, hold),
+        target_on=like_existing_time_input(inputs.target_on, target_on),
+    )
+
+
+def update_cartesian_position(value: Any, position: np.ndarray) -> Any:
+    """Return a Cartesian-like state with replaced position when possible."""
+
+    current = getattr(value, "pos", None)
+    if current is None:
+        return value
+    return eqx.tree_at(
+        lambda state: state.pos,
+        value,
+        jnp.asarray(position, dtype=jnp.asarray(current).dtype),
+    )
+
+
+def like_existing_time_input(existing: Any, value: np.ndarray) -> jnp.ndarray:
+    """Cast and shape a scalar time input like an existing control input."""
+
+    array = jnp.asarray(existing)
+    replacement = jnp.asarray(value, dtype=array.dtype)
+    if array.ndim >= 3 and array.shape[-1] == 1 and replacement.ndim == array.ndim - 1:
+        replacement = replacement[..., None]
+    return replacement
+
+
+def like_existing_array(existing: Any, value: np.ndarray) -> jnp.ndarray:
+    """Cast a replacement array like an existing array."""
+
+    return jnp.asarray(value, dtype=jnp.asarray(existing).dtype)
+
+
+def initial_effector_position(trial_specs: Any) -> np.ndarray:
+    """Return initial effector position, shape ``(trials, 2)``."""
+
+    for init_state in trial_specs.inits.values():
+        position = getattr(init_state, "pos", None)
+        if position is not None:
+            return np.asarray(position, dtype=np.float64)
+        shape = getattr(init_state, "shape", None)
+        if shape is not None and len(shape) >= 1 and shape[-1] >= 2:
+            return np.asarray(init_state, dtype=np.float64)[..., 0:2]
+    raise ValueError("Trial spec does not include effector position initial state")
+
+
+def initial_effector_velocity(trial_specs: Any) -> jnp.ndarray:
+    """Return initial effector velocity, shape ``(trials, 2)``."""
+
+    for init_state in trial_specs.inits.values():
+        velocity = getattr(init_state, "vel", None)
+        if velocity is not None:
+            return velocity
+        shape = getattr(init_state, "shape", None)
+        if shape is not None and len(shape) >= 1 and shape[-1] >= 4:
+            return jnp.asarray(init_state)[..., 2:4]
+    raise ValueError("Trial spec does not include effector velocity initial state")
+
+
+def target_position_sequence(trial_specs: Any) -> np.ndarray:
+    """Return the scored target position sequence, shape ``(trials, time, 2)``."""
+
+    for target_spec in trial_specs.targets.values():
+        value = getattr(target_spec, "value", None)
+        if getattr(value, "shape", None) is not None and value.shape[-1] == 2:
+            return np.asarray(value, dtype=np.float64)
+    raise ValueError("Trial spec does not include 2D target sequence")
+
+
+def reach_direction(
+    initial_position: np.ndarray,
+    target_position: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return target-radial unit vectors and distances."""
+
+    delta = target_position - initial_position
+    distance = np.linalg.norm(delta, axis=-1)
+    safe_distance = np.where(distance > 0.0, distance, 1.0)
+    return delta / safe_distance[:, None], distance
+
+
+def infer_trial_count(trial_specs: Any) -> int:
+    """Infer trial count from common TaskTrialSpec leaves."""
+
+    for target_spec in getattr(trial_specs, "targets", {}).values():
+        value = getattr(target_spec, "value", None)
+        if getattr(value, "shape", None) is not None and len(value.shape) >= 1:
+            return int(value.shape[0])
+    initial = initial_effector_position(trial_specs)
+    return int(initial.shape[0])
+
+
+def infer_trial_n_time(trial_specs: Any) -> int:
+    """Infer state-time length from targets or task inputs."""
+
+    try:
+        return int(target_position_sequence(trial_specs).shape[1])
+    except ValueError:
+        pass
+    inputs = getattr(trial_specs, "inputs", None)
+    if isinstance(inputs, Mapping) and "target" in inputs:
+        target = jnp.asarray(inputs["target"])
+        if target.ndim >= 2:
+            return int(target.shape[1])
+    raise ValueError("Could not infer trial time axis")
+
+
+def canonical_movement_horizon(run_spec: Mapping[str, Any]) -> int:
+    """Return the canonical delayed movement horizon from run metadata."""
+
+    movement = run_spec.get("delayed_reach", {}).get("movement_epoch", {})
+    if "cs_schedule_horizon_steps" in movement:
+        return int(movement["cs_schedule_horizon_steps"])
+    projection = run_spec.get("game_card", {}).get("delayed_reach_projection", {})
+    if "canonical_cs_movement_horizon_steps" in projection:
+        return int(projection["canonical_cs_movement_horizon_steps"])
+    if "horizon_steps" in run_spec.get("game_card", {}):
+        return int(run_spec["game_card"]["horizon_steps"])
+    return 60
+
+
+def run_go_cue_steps(run_spec: Mapping[str, Any]) -> tuple[int, ...]:
+    """Return the declared delayed go-cue steps for one run spec."""
+
+    sampling = run_spec.get("delayed_reach", {}).get("go_cue_sampling", {})
+    min_step = sampling.get("min_step_inclusive")
+    max_step = sampling.get("max_step_inclusive")
+    if min_step is not None and max_step is not None:
+        return tuple(range(int(min_step), int(max_step) + 1))
+    return tuple(DEFAULT_DELAYED_REACH_GO_CUE_STEPS)
+
+
+def write_velocity_figure(
+    profiles: Sequence[VelocityProfile],
+    *,
+    output_dir: Path,
+    references: Sequence[Any],
+) -> Path:
+    """Write the pooled fixed-bank velocity profile."""
+
+    if not profiles:
+        raise ValueError("At least one profile is required")
+    bank_kind = profiles[0].bank_kind
+    fig = profile_comparison_grid(
+        n_panels=len(profiles),
+        subplot_titles=[profile.label for profile in profiles],
+        vertical_spacing=0.025,
+    )
+    colors = ("#2563eb", "#dc2626", "#059669", "#7c3aed", "#ea580c", "#0891b2")
+    for row, profile in enumerate(profiles, start=1):
+        add_band_trace(
+            fig,
+            x=profile.time_s,
+            mean=profile.mean,
+            std=profile.std,
+            row=row,
+            color=colors[(row - 1) % len(colors)],
+            name=profile.label,
+            legendgroup=f"run-{profile.experiment}-{profile.run_id}",
+            showlegend=True,
+        )
+        for reference in references:
+            add_reference_trace(fig, reference=reference, row=row, showlegend=row == 1)
+        fig.add_vline(x=0.0, line={"color": "black", "dash": "dash", "width": 1}, row=row, col=1)
+    fig.update_layout(
+        title=f"Delayed timing / pre-go hold target-radial velocity ({bank_kind})",
+        width=980,
+        height=max(520, 260 * len(profiles)),
+        margin={"l": 72, "r": 24, "t": 76, "b": 72},
+        hovermode="x unified",
+    )
+    fig.update_xaxes(title_text="Time relative to go cue (s)", row=len(profiles), col=1)
+    fig.update_yaxes(title_text="Target-radial velocity (m/s)", zeroline=True)
+    path = output_dir / "forward_velocity_profiles_stochastic.html"
+    fig.write_html(path)
+    return path
+
+
+def write_velocity_by_replicate_figure(
+    profiles: Sequence[VelocityProfile],
+    *,
+    output_dir: Path,
+    references: Sequence[Any],
+) -> Path:
+    """Write replicate-resolved fixed-bank velocity profiles."""
+
+    if not profiles:
+        raise ValueError("At least one profile is required")
+    bank_kind = profiles[0].bank_kind
+    fig = profile_comparison_grid(
+        n_panels=len(profiles),
+        subplot_titles=[profile.label for profile in profiles],
+        vertical_spacing=0.025,
+    )
+    colors = ("#2563eb", "#dc2626", "#059669", "#7c3aed", "#ea580c", "#0891b2", "#be123c")
+    for row, profile in enumerate(profiles, start=1):
+        for rep_idx in range(profile.n_replicates):
+            add_band_trace(
+                fig,
+                x=profile.time_s,
+                mean=profile.replicate_mean[rep_idx],
+                std=profile.replicate_std[rep_idx],
+                row=row,
+                color=colors[rep_idx % len(colors)],
+                name=f"replicate {rep_idx}",
+                legendgroup=f"replicate-{rep_idx}",
+                showlegend=row == 1,
+                fill_alpha=0.10,
+                line_width=1.8,
+            )
+        for reference in references:
+            add_reference_trace(fig, reference=reference, row=row, showlegend=row == 1)
+        fig.add_vline(x=0.0, line={"color": "black", "dash": "dash", "width": 1}, row=row, col=1)
+    fig.update_layout(
+        title=(
+            "Delayed timing / pre-go hold target-radial velocity by replicate "
+            f"({bank_kind})"
+        ),
+        width=1020,
+        height=max(560, 280 * len(profiles)),
+        margin={"l": 72, "r": 24, "t": 76, "b": 76},
+        hovermode="x unified",
+        legend={"groupclick": "togglegroup"},
+    )
+    fig.update_xaxes(title_text="Time relative to go cue (s)", row=len(profiles), col=1)
+    fig.update_yaxes(title_text="Target-radial velocity (m/s)", zeroline=True)
+    path = output_dir / "forward_velocity_profiles_by_replicate_stochastic.html"
+    fig.write_html(path)
+    return path
+
+
+def add_band_trace(
+    fig: go.Figure,
+    *,
+    x: np.ndarray,
+    mean: np.ndarray,
+    std: np.ndarray,
+    row: int,
+    color: str,
+    name: str,
+    legendgroup: str,
+    showlegend: bool,
+    fill_alpha: float = 0.16,
+    line_width: float = 2.4,
+) -> None:
+    """Add mean +/- SD band and mean line to a subplot."""
+
+    upper = mean + std
+    lower = mean - std
+    fig.add_trace(
+        go.Scatter(
+            x=np.concatenate([x, x[::-1]]),
+            y=np.concatenate([upper, lower[::-1]]),
+            fill="toself",
+            fillcolor=rgba(color, fill_alpha),
+            line={"color": "rgba(0,0,0,0)"},
+            hoverinfo="skip",
+            name=f"{name} mean +/- 1 SD",
+            legendgroup=legendgroup,
+            showlegend=False,
+        ),
+        row=row,
+        col=1,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=mean,
+            mode="lines",
+            line={"color": color, "width": line_width},
+            name=name,
+            legendgroup=legendgroup,
+            showlegend=showlegend,
+        ),
+        row=row,
+        col=1,
+    )
+
+
+def add_reference_trace(
+    fig: go.Figure,
+    *,
+    reference: Any,
+    row: int,
+    showlegend: bool,
+) -> None:
+    """Add one extLQG reference profile."""
+
+    upper = reference.forward_velocity + reference.forward_velocity_std
+    lower = reference.forward_velocity - reference.forward_velocity_std
+    legendgroup = f"reference-{reference.observation_channel}"
+    fig.add_trace(
+        go.Scatter(
+            x=np.concatenate([reference.time_s, reference.time_s[::-1]]),
+            y=np.concatenate([upper, lower[::-1]]),
+            fill="toself",
+            fillcolor=rgba(reference.line_color, 0.08),
+            line={"color": "rgba(0,0,0,0)"},
+            hoverinfo="skip",
+            name=f"{reference.label} mean +/- 1 SD",
+            legendgroup=legendgroup,
+            showlegend=False,
+        ),
+        row=row,
+        col=1,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=reference.time_s,
+            y=reference.forward_velocity,
+            mode="lines",
+            line={
+                "color": reference.line_color or REFERENCE_COLOR,
+                "width": 2.2,
+                "dash": reference.line_dash,
+            },
+            name=reference.label,
+            legendgroup=legendgroup,
+            showlegend=showlegend,
+        ),
+        row=row,
+        col=1,
+    )
+
+
+def build_bank_summary(
+    *,
+    profiles: Sequence[VelocityProfile],
+    pooled_file: Path,
+    replicate_file: Path,
+    references: Sequence[Any],
+    output_dir: Path,
+    direction_split_status: str,
+) -> dict[str, Any]:
+    """Return JSON-compatible sidecar metadata."""
+
+    return {
+        "schema_version": "rlrmp.delayed_timing_hold_velocity_profiles.v1",
+        "issue": RESULT_EXPERIMENT,
+        "output_dir": repo_relative(output_dir),
+        "bank_kind": profiles[0].bank_kind if profiles else None,
+        "checkpoint_policy": "final_checkpoint",
+        "figure": pooled_file.name,
+        "replicate_figure": replicate_file.name,
+        "projection": "target-radial velocity: dot(effector velocity, unit(target - initial_position))",
+        "error_band": (
+            "mean +/- 1 SD over pooled replicate x fixed-bank go-cue/direction trials"
+        ),
+        "direction_split": {"status": direction_split_status},
+        "profiles": [profile_summary(profile) for profile in profiles],
+        "references": {reference.label: reference_summary(reference) for reference in references},
+    }
+
+
+def profile_summary(profile: VelocityProfile) -> dict[str, Any]:
+    """Return JSON-compatible summary for one run profile."""
+
+    peak_idx = int(np.nanargmax(profile.mean))
+    return {
+        "experiment": profile.experiment,
+        "run_id": profile.run_id,
+        "run_label": profile.label,
+        "run_spec": repo_relative(profile.run_spec_path),
+        "artifact_dir": repo_relative(profile.artifact_dir),
+        "checkpoint_source": repo_relative(profile.artifact_dir / "trained_model.eqx"),
+        "alignment": profile.alignment,
+        "evaluation_bank": profile.evaluation_bank,
+        "profile": {
+            "n_replicates": int(profile.n_replicates),
+            "n_trials_per_replicate": int(profile.n_trials_per_replicate),
+            "n_pooled_samples": int(profile.n_pooled_samples),
+            "n_time_steps": int(profile.mean.shape[0]),
+            "peak_mean_forward_velocity_m_s": float(profile.mean[peak_idx]),
+            "time_of_peak_mean_forward_velocity_s": float(profile.time_s[peak_idx]),
+            "mean_forward_velocity_min_m_s": float(np.nanmin(profile.mean)),
+            "mean_forward_velocity_max_m_s": float(np.nanmax(profile.mean)),
+            "time_start_s": float(profile.time_s[0]),
+            "time_stop_s": float(profile.time_s[-1]),
+            "finite": bool(
+                np.isfinite(profile.mean).all()
+                and np.isfinite(profile.std).all()
+                and np.isfinite(profile.replicate_mean).all()
+                and np.isfinite(profile.replicate_std).all()
+            ),
+        },
+        "replicates": [
+            replicate_summary(profile, rep_idx) for rep_idx in range(profile.n_replicates)
+        ],
+    }
+
+
+def reference_summary(reference: Any) -> dict[str, Any]:
+    """Return JSON-compatible summary for one analytical reference."""
+
+    return {
+        "controller": "analytical_lqr_kalman_output_feedback",
+        "display_label": reference.label,
+        "observation_channel": reference.observation_channel,
+        "observation_dim": int(reference.observation_dim),
+        "observed_physical_indices": list(reference.observed_physical_indices),
+        "gamma_factor_recorded_for_certificate": float(reference.gamma_factor),
+        "n_stochastic_samples": int(reference.n_samples),
+        "parity_status": reference.parity_status,
+        "n_time_steps": int(reference.forward_velocity.shape[0]),
+        "peak_forward_velocity_m_s": float(reference.peak_forward_velocity_m_s),
+        "time_of_peak_forward_velocity_s": float(reference.time_of_peak_forward_velocity_s),
+        "terminal_position_error_m": float(reference.terminal_position_error_m),
+    }
+
+
+def build_manifest(
+    *,
+    runs: Sequence[RunInputs],
+    summaries: Mapping[str, Any],
+    output_root: Path,
+    tracked_root: Path,
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    """Return the tracked cross-lane figure manifest."""
+
+    return {
+        "schema_version": "rlrmp.delayed_timing_hold_velocity_manifest.v1",
+        "issue": args.result_experiment,
+        "topic": args.topic,
+        "source": "results/40e1911/scripts/materialize_delayed_timing_hold_lane_velocity_profiles.py",
+        "lineage": (
+            "Adapted from results/6c36536/scripts/"
+            "materialize_delayed_movement_bank_velocity_profiles.py"
+        ),
+        "output_root": repo_relative(output_root),
+        "tracked_root": repo_relative(tracked_root),
+        "checkpoint_policy": "final_checkpoint",
+        "bank_kinds": sorted(summaries.keys()),
+        "run_refs": [
+            {
+                "experiment": run.experiment,
+                "run_id": run.run_id,
+                "label": run.label,
+                "run_spec": repo_relative(run.run_spec_path),
+                "artifact_dir": repo_relative(run.artifact_dir),
+            }
+            for run in runs
+        ],
+        "figures": {
+            bank_kind: {
+                "aggregate": f"{bank_kind}/forward_velocity_profiles_stochastic.html",
+                "by_replicate": (
+                    f"{bank_kind}/forward_velocity_profiles_by_replicate_stochastic.html"
+                ),
+                "summary": f"{bank_kind}/velocity_profile_summary.json",
+            }
+            for bank_kind in summaries
+        },
+        "summaries": dict(summaries),
+    }
+
+
+def build_figure_spec(*, runs: Sequence[RunInputs], args: argparse.Namespace) -> dict[str, Any]:
+    """Return a tracked regeneration spec for the cross-lane figures."""
+
+    return {
+        "schema_version": "rlrmp.figure_spec.delayed_timing_hold_velocity.v1",
+        "figure_family": "delayed_fixed_bank_target_radial_velocity_profiles",
+        "materializer": (
+            "results/40e1911/scripts/"
+            "materialize_delayed_timing_hold_lane_velocity_profiles.py"
+        ),
+        "result_experiment": args.result_experiment,
+        "topic": args.topic,
+        "run_refs": [
+            {
+                "experiment": run.experiment,
+                "run_id": run.run_id,
+                "label": run.label,
+            }
+            for run in runs
+        ],
+        "parameters": {
+            "go_cue_steps": (
+                "per_run_declared_range"
+                if args.go_cue_step is None
+                else [int(step) for step in args.go_cue_step]
+            ),
+            "direction_count": int(args.direction_count),
+            "reach_length_m": float(args.reach_length_m),
+            "pre_go_context_steps": int(args.pre_go_context_steps),
+            "include_reference": bool(args.include_reference),
+            "checkpoint_policy": "final_checkpoint",
+            "shared_yaxes": "all",
+        },
+        "outputs": {
+            "catch": "_artifacts/40e1911/figures/delayed_timing_hold_lane_velocity_profiles/catch",
+            "no_catch": (
+                "_artifacts/40e1911/figures/"
+                "delayed_timing_hold_lane_velocity_profiles/no_catch"
+            ),
+        },
+    }
+
+
+def render_notes(manifest: Mapping[str, Any]) -> str:
+    """Render a compact Markdown note for the generated figures."""
+
+    lines = [
+        "## Delayed timing / pre-go hold velocity profiles",
+        "",
+        "Generated six-row fixed delayed-bank target-radial velocity profiles.",
+        "",
+        "| Bank | Aggregate HTML | By-replicate HTML |",
+        "|---|---|---|",
+    ]
+    figures = manifest.get("figures", {})
+    output_root = str(manifest.get("output_root", ""))
+    for bank_kind in ("no_catch", "catch"):
+        row = figures.get(bank_kind, {})
+        lines.append(
+            f"| `{bank_kind}` | `{output_root}/{row.get('aggregate')}` | "
+            f"`{output_root}/{row.get('by_replicate')}` |"
+        )
+    lines.extend(
+        [
+            "",
+            "Rows:",
+        ]
+    )
+    for run in manifest.get("run_refs", []):
+        lines.append(f"- `{run['experiment']}/{run['run_id']}` - {run['label']}")
+    return "\n".join(lines)
+
+
+def replicate_summary(profile: VelocityProfile, rep_idx: int) -> dict[str, float | int]:
+    """Return one replicate profile summary."""
+
+    peak_idx = int(np.nanargmax(profile.replicate_mean[rep_idx]))
+    return {
+        "replicate": int(rep_idx),
+        "peak_mean_forward_velocity_m_s": float(profile.replicate_mean[rep_idx, peak_idx]),
+        "time_of_peak_mean_forward_velocity_s": float(profile.time_s[peak_idx]),
+        "trial_sd_at_peak_m_s": float(profile.replicate_std[rep_idx, peak_idx]),
+    }
+
+
+def rgba(hex_color: str, alpha: float) -> str:
+    """Return CSS rgba text for a hex color."""
+
+    red = int(hex_color[1:3], 16)
+    green = int(hex_color[3:5], 16)
+    blue = int(hex_color[5:7], 16)
+    return f"rgba({red},{green},{blue},{alpha})"
+
+
+def repo_relative(path: Path, *, repo_root: Path = REPO_ROOT) -> str:
+    """Return repo-relative path text when possible."""
+
+    try:
+        return str(path.relative_to(repo_root))
+    except ValueError:
+        return str(path)
+
+
+if __name__ == "__main__":
+    main()

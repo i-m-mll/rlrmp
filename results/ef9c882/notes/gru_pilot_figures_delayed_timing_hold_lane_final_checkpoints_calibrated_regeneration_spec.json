@@ -1,0 +1,191 @@
+{
+  "command": {
+    "argv": [
+      "unknown"
+    ],
+    "cwd": ".",
+    "metadata": {
+      "materializer": "rlrmp.analysis.pipelines.gru_pilot_figures.materialize_gru_pilot_figures",
+      "status": "not_recorded"
+    }
+  },
+  "inputs": [
+    {
+      "logical_name": "results/ef9c882/runs/hold__force_filter.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "d3b9af871ced2c2e4a0b90f698040747bce89cb7b0efafce86902c16ffb66dc3",
+        "size_bytes": 328137
+      },
+      "role": "run_spec",
+      "sha256": "d3b9af871ced2c2e4a0b90f698040747bce89cb7b0efafce86902c16ffb66dc3",
+      "size_bytes": 328137,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/ef9c882/runs/hold__force_filter.json"
+    },
+    {
+      "logical_name": "_artifacts/ef9c882/runs/hold__force_filter",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 128,
+        "hash_file_count": 128,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "3b769ff0bd1fd67871f627e2379f03b8162a47a8913bb6db90e529d62ace14f5",
+        "total_bytes": 379553060
+      },
+      "role": "run_artifact_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/ef9c882/runs/hold__force_filter"
+    },
+    {
+      "logical_name": "results/ef9c882/runs/hold__start_pos_zero_vel.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "8cd1f4194f4700efd023b56caa88e363c635216e3ea310cfa96e5a8fd5f8cd37",
+        "size_bytes": 328393
+      },
+      "role": "run_spec",
+      "sha256": "8cd1f4194f4700efd023b56caa88e363c635216e3ea310cfa96e5a8fd5f8cd37",
+      "size_bytes": 328393,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/ef9c882/runs/hold__start_pos_zero_vel.json"
+    },
+    {
+      "logical_name": "_artifacts/ef9c882/runs/hold__start_pos_zero_vel",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 128,
+        "hash_file_count": 128,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "e9f86720170503eab196a2a8c1a7c8271dfd13774091bffe3619ea298d99e863",
+        "total_bytes": 393957239
+      },
+      "role": "run_artifact_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/ef9c882/runs/hold__start_pos_zero_vel"
+    }
+  ],
+  "metadata": {
+    "diagnostic_name": "gru_pilot_figures",
+    "materializer": "rlrmp.analysis.pipelines.gru_pilot_figures.materialize_gru_pilot_figures",
+    "notes": [
+      "Postrun-owned regeneration spec for pilot loss/velocity figures."
+    ],
+    "schema_boundary": "rlrmp diagnostic payload; Feedbax regeneration custody"
+  },
+  "outputs": [
+    {
+      "logical_name": "_artifacts/ef9c882/figures/gru_postrun_delayed_timing_hold_lane_final_checkpoints_calibrated",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 6,
+        "hash_file_count": 6,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "6e934803a47a02d72a9b33388f5b943e8712761e2b29b69a984efec688aed322",
+        "total_bytes": 31701879
+      },
+      "role": "pilot_figure_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/ef9c882/figures/gru_postrun_delayed_timing_hold_lane_final_checkpoints_calibrated"
+    },
+    {
+      "logical_name": "_artifacts/ef9c882/figures/gru_postrun_delayed_timing_hold_lane_final_checkpoints_calibrated/figure_summary.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "cc5916c842a9a1991d96247d3c3f29f50902d0ba273bc492d217cdb864ae7723",
+        "size_bytes": 5845
+      },
+      "role": "pilot_figure_summary",
+      "sha256": "cc5916c842a9a1991d96247d3c3f29f50902d0ba273bc492d217cdb864ae7723",
+      "size_bytes": 5845,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/ef9c882/figures/gru_postrun_delayed_timing_hold_lane_final_checkpoints_calibrated/figure_summary.json"
+    }
+  ],
+  "parameters": {
+    "experiment": "ef9c882",
+    "include_reference": true,
+    "labels": [
+      "hold__force_filter",
+      "hold__start_pos_zero_vel"
+    ],
+    "n_rollout_trials": 64,
+    "preferred_checkpoint_manifest_path": null,
+    "run_ids": [
+      "hold__force_filter",
+      "hold__start_pos_zero_vel"
+    ],
+    "use_validation_selected_checkpoints": false
+  },
+  "provenance": {
+    "dirty": true,
+    "entrypoint": {
+      "kind": "rlrmp-diagnostic-materializer",
+      "metadata": {},
+      "name": "rlrmp.analysis.pipelines.gru_pilot_figures.materialize_gru_pilot_figures"
+    },
+    "issues": [],
+    "metadata": {
+      "status_porcelain": [
+        "M uv.lock",
+        "?? results/6c36536/notes/gru_evaluation_diagnostics_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json",
+        "?? results/6c36536/notes/gru_map_error_decomposition_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json",
+        "?? results/6c36536/notes/gru_perturbation_response_delayed_timing_hold_lane_final_checkpoints_calibrated.md",
+        "?? results/6c36536/notes/gru_perturbation_response_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest.json",
+        "?? results/6c36536/notes/gru_perturbation_response_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest_regeneration_spec.json",
+        "?? results/6c36536/notes/gru_pilot_figures_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json",
+        "?? results/6c36536/notes/gru_postrun_materialization_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json",
+        "?? results/6c36536/notes/gru_standard_certificates_delayed_timing_hold_lane_final_checkpoints_calibrated.md",
+        "?? results/6c36536/notes/gru_standard_certificates_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest.json",
+        "?? results/6c36536/notes/gru_standard_certificates_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest_regeneration_spec.json",
+        "?? results/6c36536/notes/objective_comparator_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json",
+        "?? results/bf71d86/notes/gru_evaluation_diagnostics_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json",
+        "?? results/bf71d86/notes/gru_map_error_decomposition_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json",
+        "?? results/bf71d86/notes/gru_perturbation_response_delayed_timing_hold_lane_final_checkpoints_calibrated.md",
+        "?? results/bf71d86/notes/gru_perturbation_response_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest.json",
+        "?? results/bf71d86/notes/gru_perturbation_response_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest_regeneration_spec.json",
+        "?? results/bf71d86/notes/gru_pilot_figures_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json",
+        "?? results/bf71d86/notes/gru_postrun_materialization_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json",
+        "?? results/bf71d86/notes/gru_standard_certificates_delayed_timing_hold_lane_final_checkpoints_calibrated.md",
+        "?? results/bf71d86/notes/gru_standard_certificates_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest.json",
+        "?? results/bf71d86/notes/gru_standard_certificates_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest_regeneration_spec.json",
+        "?? results/bf71d86/notes/objective_comparator_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json",
+        "?? results/ef9c882/notes/gru_evaluation_diagnostics_delayed_timing_hold_lane_final_checkpoints_calibrated_regeneration_spec.json",
+        "?? results/ef9c882/notes/gru_perturbation_response_delayed_timing_hold_lane_final_checkpoints_calibrated.md",
+        "?? results/ef9c882/notes/gru_perturbation_response_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest.json",
+        "?? results/ef9c882/notes/gru_perturbation_response_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest_regeneration_spec.json",
+        "?? results/ef9c882/notes/gru_standard_certificates_delayed_timing_hold_lane_final_checkpoints_calibrated.md",
+        "?? results/ef9c882/notes/gru_standard_certificates_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest.json",
+        "?? results/ef9c882/notes/gru_standard_certificates_delayed_timing_hold_lane_final_checkpoints_calibrated_manifest_regeneration_spec.json"
+      ]
+    },
+    "parents": [],
+    "source_branch": "feature/ef9c882-pre-go-hold-penalties",
+    "source_commit": "306b65ebc134b9d1f8d601b409c15a8852439383",
+    "source_repo": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__ef9c882-pre-go-hold-penalties"
+  },
+  "schema_id": "feedbax.spec.regeneration",
+  "schema_version": "feedbax.spec.regeneration.v1",
+  "source_files": [
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/gru_pilot_figures.py",
+      "role": "source_file",
+      "sha256": "e40872c3847a4131955d7a2d61f580c6c7ef3de93b27082b3ccb95543a423294",
+      "size_bytes": 39023
+    }
+  ],
+  "source_trees": []
+}
