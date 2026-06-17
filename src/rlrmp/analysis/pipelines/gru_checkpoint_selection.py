@@ -31,7 +31,7 @@ from rlrmp.train.cs_perturbation_training import (
     target_relative_input_contract,
     target_relative_validation_bins,
 )
-from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path
+from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path, run_spec_path
 
 
 SPARSE_HISTORY_SCHEMA_VERSION = "rlrmp.validation_selected_gru_checkpoints.v1"
@@ -766,7 +766,7 @@ def select_sparse_history_validation_checkpoints_for_run(
     )
     objective, valid_records = validation_objective_history(
         run_spec=run_spec,
-        history_path=artifact_dir / "training_history.eqx",
+        history_path=resolve_run_artifact_path(artifact_dir, "training_history.eqx"),
     )
     checkpoint_batches = available_checkpoint_batches(artifact_dir)
     if not checkpoint_batches:
@@ -936,7 +936,7 @@ def active_loss_term_labels(run_spec: Mapping[str, Any]) -> tuple[str, ...]:
 def available_checkpoint_batches(artifact_dir: Path) -> list[int]:
     """Return sorted numbered checkpoint batch counts for a run artifact directory."""
 
-    checkpoint_root = artifact_dir / "checkpoints"
+    checkpoint_root = resolve_run_artifact_path(artifact_dir, "checkpoints")
     batches = []
     for path in checkpoint_root.glob("checkpoint_[0-9]*"):
         try:
@@ -949,7 +949,11 @@ def available_checkpoint_batches(artifact_dir: Path) -> list[int]:
 def checkpoint_path_for_batches(artifact_dir: Path, completed_batches: int) -> Path:
     """Return the path for a numbered checkpoint."""
 
-    return artifact_dir / "checkpoints" / f"checkpoint_{completed_batches:07d}"
+    return resolve_run_artifact_path(
+        artifact_dir,
+        "checkpoints",
+        f"checkpoint_{completed_batches:07d}",
+    )
 
 
 def fixed_bank_manifest_path(experiment: str, *, repo_root: Path = REPO_ROOT) -> Path:

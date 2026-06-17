@@ -95,6 +95,29 @@ def run_artifact_dir(exp: str, run: str) -> Path:
     return _artifact_root() / exp / "runs" / run
 
 
+def resolve_run_artifact_path(artifact_dir: Path, *parts: str) -> Path:
+    """Return a run artifact path across historical and post-run layouts.
+
+    Older GRU materializers wrote files directly under
+    ``_artifacts/<exp>/runs/<run>/``. The post-run sync wrapper now preserves
+    provider output shape, with model/history/checkpoint payloads under an
+    ``artifacts/`` child. Some legacy runs also contain a nested
+    ``<run>/<file>`` payload. This resolver returns the first existing candidate
+    while keeping the direct path as the default for clearer missing-file errors.
+    """
+
+    direct_path = artifact_dir.joinpath(*parts)
+    candidates = (
+        direct_path,
+        artifact_dir / "artifacts" / Path(*parts),
+        artifact_dir / artifact_dir.name / Path(*parts),
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return direct_path
+
+
 def figure_spec_dir(exp: str, fig: str) -> Path:
     """Return the spec directory for a figure.
 

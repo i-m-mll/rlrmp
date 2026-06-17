@@ -43,7 +43,12 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
 )
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.train.task_model import setup_task_model_pair
-from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path as tracked_run_spec_path
+from rlrmp.paths import (
+    REPO_ROOT,
+    mkdir_p,
+    resolve_run_artifact_path,
+    run_spec_path as tracked_run_spec_path,
+)
 
 
 SCHEMA_VERSION = "rlrmp.gru_feedback_ablation.v1"
@@ -883,7 +888,7 @@ def materialize_feedback_selected_checkpoint_manifest(
         run_spec = json.loads(run_spec_path.read_text(encoding="utf-8"))
         validation_objective, valid_records = validation_objective_history(
             run_spec=run_spec,
-            history_path=artifact_dir / "training_history.eqx",
+            history_path=resolve_run_artifact_path(artifact_dir, "training_history.eqx"),
         )
         selected_rows = run_audit.get("feedback_selected_checkpoints", ())
         if not isinstance(selected_rows, Sequence):
