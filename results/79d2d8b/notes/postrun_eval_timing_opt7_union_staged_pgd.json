@@ -1,0 +1,145 @@
+{
+  "bundles": [
+    {
+      "bundle": "standard_certificate",
+      "elapsed_s": 11.892354249954224,
+      "status": "ok",
+      "summary": {
+        "checkpoint_policy": "final_checkpoint",
+        "output": "_artifacts/79d2d8b/postrun_eval_benchmark/opt7_union_staged_pgd/notes/gru_standard_manifest.json",
+        "rows": 1
+      }
+    },
+    {
+      "bundle": "evaluation_diagnostics",
+      "elapsed_s": 1.9704543750267476,
+      "status": "ok",
+      "summary": {
+        "run_status_counts": {
+          "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64": {}
+        },
+        "runs": 1
+      }
+    },
+    {
+      "bundle": "pilot_figures",
+      "elapsed_s": 3.289357167086564,
+      "status": "ok",
+      "summary": {
+        "figure_keys": [
+          "checkpoint_policy",
+          "checkpoint_selection",
+          "issue",
+          "loss_plots",
+          "runs",
+          "velocity_profiles"
+        ]
+      }
+    },
+    {
+      "bundle": "objective_comparator",
+      "elapsed_s": 25.529377791914158,
+      "status": "materialized",
+      "summary": {
+        "keys": [
+          "extlqg_deterministic_full_qrf",
+          "extlqg_total_expected_cost",
+          "n_rows",
+          "schema_version",
+          "standard_split_bank_comparator_status",
+          "status"
+        ],
+        "status": "materialized"
+      }
+    },
+    {
+      "bundle": "map_decomposition",
+      "elapsed_s": 4.157589541049674,
+      "status": "ok",
+      "summary": {
+        "keys": [
+          "checkpoint_policy",
+          "format",
+          "issue",
+          "rows",
+          "selection_role",
+          "source_issue",
+          "source_standard_manifest"
+        ],
+        "rows": 1
+      }
+    },
+    {
+      "bundle": "perturbation_response",
+      "elapsed_s": 6.3766896249726415,
+      "status": "ok",
+      "summary": {
+        "rows": 20,
+        "status_counts": {
+          "evaluated": 20
+        }
+      }
+    },
+    {
+      "bundle": "feedback_ablation",
+      "elapsed_s": 12.59570054197684,
+      "status": "ok",
+      "summary": {
+        "rows": 0,
+        "status_counts": {
+          "evaluated": 35
+        }
+      }
+    },
+    {
+      "bundle": "worst_case_epsilon",
+      "elapsed_s": 3.4086992499651387,
+      "status": "evaluated",
+      "summary": {
+        "keys": [
+          "artifact_dir",
+          "budget",
+          "bulk_arrays",
+          "candidates",
+          "checkpoint_selection",
+          "epsilon_dim",
+          "horizon",
+          "label",
+          "n_replicates",
+          "n_rollout_trials_per_replicate",
+          "optimizer",
+          "run_spec_path",
+          "status",
+          "summary"
+        ],
+        "status": "evaluated"
+      }
+    }
+  ],
+  "captured_at_unix_s": 1781713001.4796538,
+  "context": {
+    "feedback_bins": 5,
+    "n_rollout_trials": 1,
+    "perturbation_evaluation_backend": "process_epsilon_union",
+    "perturbation_rows": 20,
+    "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
+    "source_experiment": "020a65b",
+    "worst_case_optimizer_backend": "staged",
+    "worst_case_restarts": 3,
+    "worst_case_steps": 4,
+    "write_bulk_arrays": false
+  },
+  "environment": {
+    "jax_default_backend": "cpu",
+    "jax_devices": [
+      "TFRT_CPU_0"
+    ],
+    "jax_version": "0.9.0",
+    "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+    "python": "3.13.5"
+  },
+  "issue": "79d2d8b",
+  "schema_version": "rlrmp.postrun_eval_materialization_benchmark.v1",
+  "step_label": "opt7_union_staged_pgd",
+  "total_elapsed_s": 69.22027795796748
+}

@@ -12,6 +12,21 @@ from rlrmp.analysis.pipelines.gru_worst_case_epsilon_audit import (
 )
 
 
+def _assert_numeric_dict_sequence_close(
+    actual: tuple[dict[str, float | int], ...],
+    expected: tuple[dict[str, float | int], ...],
+) -> None:
+    assert len(actual) == len(expected)
+    for actual_row, expected_row in zip(actual, expected, strict=True):
+        assert actual_row.keys() == expected_row.keys()
+        for key, expected_value in expected_row.items():
+            actual_value = actual_row[key]
+            if isinstance(expected_value, int):
+                assert actual_value == expected_value
+            else:
+                np.testing.assert_allclose(actual_value, expected_value, rtol=1e-12, atol=1e-12)
+
+
 def test_project_l2_ball_preserves_inside_and_projects_outside() -> None:
     inside = jnp.asarray([3.0, 4.0])
     np.testing.assert_allclose(project_l2_ball(inside, 5.0), inside)
@@ -85,3 +100,64 @@ def test_optimize_epsilon_sequence_improves_quadratic_objective() -> None:
     assert result.objective > result.initial_objective
     assert result.l2_norm <= 1.0 + 1e-12
     np.testing.assert_allclose(result.epsilon, np.asarray(target), atol=0.21)
+
+
+def test_staged_optimizer_matches_serial_with_multiple_restarts() -> None:
+    weights = jnp.asarray([[1.0, 0.5], [0.25, 1.5]], dtype=jnp.float64)
+    target = jnp.asarray([[0.35, -0.15], [0.1, 0.25]], dtype=jnp.float64)
+
+    def objective(epsilon):
+        return -jnp.sum(weights * jnp.square(epsilon - target)) + 0.05 * jnp.sum(epsilon)
+
+    kwargs = {
+        "shape": (2, 2),
+        "radius": 0.9,
+        "n_steps": 5,
+        "n_restarts": 4,
+        "step_size": 0.17,
+        "seed": 21,
+        "initial_candidates": (
+            jnp.zeros((2, 2), dtype=jnp.float64),
+            jnp.asarray([[0.8, 0.0], [0.0, 0.0]], dtype=jnp.float64),
+        ),
+    }
+
+    serial = optimize_epsilon_sequence(objective, backend="serial", **kwargs)
+    staged = optimize_epsilon_sequence(objective, backend="staged", **kwargs)
+
+    assert staged.restart_index == serial.restart_index
+    np.testing.assert_allclose(staged.epsilon, serial.epsilon, rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(staged.objective, serial.objective, rtol=1e-12, atol=1e-12)
+    _assert_numeric_dict_sequence_close(staged.history, serial.history)
+    _assert_numeric_dict_sequence_close(staged.restart_summaries, serial.restart_summaries)
+
+
+def test_staged_optimizer_matches_serial_zero_step_candidate_edge() -> None:
+    candidates = (
+        jnp.asarray([[0.2, 0.0], [0.0, 0.0]], dtype=jnp.float64),
+        jnp.asarray([[0.0, 0.4], [0.0, 0.0]], dtype=jnp.float64),
+    )
+
+    def objective(epsilon):
+        return epsilon[0, 1] - 0.5 * epsilon[0, 0]
+
+    kwargs = {
+        "shape": (2, 2),
+        "radius": 1.0,
+        "n_steps": 0,
+        "n_restarts": 0,
+        "step_size": 0.25,
+        "seed": 3,
+        "initial_candidates": candidates,
+    }
+
+    serial = optimize_epsilon_sequence(objective, backend="serial", **kwargs)
+    staged = optimize_epsilon_sequence(objective, backend="staged", **kwargs)
+
+    assert staged.restart_index == serial.restart_index == 1
+    np.testing.assert_allclose(staged.epsilon, serial.epsilon, rtol=1e-12, atol=1e-12)
+    assert staged.history == serial.history == (
+        {"step": 0, "objective": 0.4, "epsilon_l2": 0.4},
+    )
+    assert len(staged.restart_summaries) == len(candidates)
+    assert staged.restart_summaries == serial.restart_summaries

@@ -88,6 +88,7 @@ PerturbationChannel = Literal[
 PerturbationStatus = Literal["evaluated", "blocked", "not_implemented", "not_applicable"]
 
 GRAPH_ADAPTER_INPUT_PREFIX = "perturbation.channel"
+PerturbationEvaluationBackend = Literal["serial"]
 
 
 @dataclass(frozen=True)
@@ -1702,6 +1703,7 @@ def evaluate_run_perturbation_bank(
     n_rollout_trials: int,
     write_bulk_arrays: bool,
     bulk_dir: Path,
+    evaluation_backend: PerturbationEvaluationBackend = "serial",
     preferred_checkpoint_manifest_path: Path | None = None,
     checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
     repo_root: Path = REPO_ROOT,
@@ -1733,6 +1735,12 @@ def evaluate_run_perturbation_bank(
     robust_context = _build_robust_output_feedback_comparator_context()
     rows = []
     bulk_files: dict[str, str] = {}
+    if evaluation_backend != "serial":
+        raise ValueError(
+            f"unsupported perturbation evaluation backend {evaluation_backend!r}; "
+            "expected 'serial'"
+        )
+
     for perturbation in bank["perturbations"]:
         adapter = apply_perturbation_to_trial_specs(
             base_trial_specs,
@@ -1768,6 +1776,7 @@ def evaluate_run_perturbation_bank(
                 }
             )
             continue
+
         row_base_model, row_base_trial_specs = _paired_base_for_adapter(
             model=model,
             base_trial_specs=base_trial_specs,
@@ -1793,107 +1802,21 @@ def evaluate_run_perturbation_bank(
             seed=0,
         )
         perturbed_cost = full_qrf_cost_summary(perturbed_evaluation, adapter.trial_specs)
-        metrics = summarize_perturbation_response(
-            base_evaluation,
-            perturbed_evaluation,
-            base_full_qrf_cost=base_cost,
-            perturbed_full_qrf_cost=perturbed_cost,
-        )
-        metrics = _with_attenuation_metrics(metrics, perturbation)
-        no_op_guard = _command_input_no_op_guard(
-            perturbation=perturbation,
-            adapter=adapter,
-            metrics=metrics,
-        )
-        if no_op_guard is not None and no_op_guard["status"] == "blocked":
-            rows.append(
-                {
-                    "perturbation_id": perturbation["perturbation_id"],
-                    "channel": perturbation["channel"],
-                    "family": perturbation.get("family"),
-                    "axis": perturbation.get("axis"),
-                    "sign": perturbation.get("sign"),
-                    "amplitude": perturbation.get("amplitude"),
-                    "timing_bin": perturbation.get("timing_bin"),
-                    "semantic_family": perturbation.get("semantic_family"),
-                    "timing": perturbation.get("timing"),
-                    "perturbation": dict(perturbation),
-                    "status": "blocked",
-                    "reason": no_op_guard["reason"],
-                    "adapter": adapter.to_json(),
-                    "metrics": metrics,
-                    "evaluation_guard": no_op_guard,
-                    "extlqg_comparator": extlqg_comparator_status(
-                        perturbation,
-                        status="not_applicable",
-                    ),
-                    "robust_output_feedback_comparator": (
-                        robust_output_feedback_comparator_status(
-                            perturbation,
-                            status="not_applicable",
-                        )
-                    ),
-                }
-            )
-            continue
-        extlqg_comparator = evaluate_extlqg_perturbation_comparator(
-            perturbation,
-            context=extlqg_context,
-            gru_metrics=metrics,
-        )
-        robust_comparator = evaluate_robust_output_feedback_perturbation_comparator(
-            perturbation,
-            context=robust_context,
-            gru_metrics=metrics,
-        )
-        bulk_file = None
-        if write_bulk_arrays:
-            bulk_file = _write_perturbation_bulk_arrays(
-                base_evaluation,
-                perturbed_evaluation,
-                bulk_dir=bulk_dir / run.run_id,
-                perturbation_id=str(perturbation["perturbation_id"]),
-            )
-            bulk_files[str(perturbation["perturbation_id"])] = _repo_relative(
-                bulk_file,
-                repo_root=repo_root,
-            )
         rows.append(
-            {
-                "perturbation_id": perturbation["perturbation_id"],
-                "channel": perturbation["channel"],
-                "family": perturbation.get("family"),
-                "axis": perturbation.get("axis"),
-                "sign": perturbation.get("sign"),
-                "amplitude": perturbation.get("amplitude"),
-                "timing_bin": perturbation.get("timing_bin"),
-                "semantic_family": perturbation.get("semantic_family"),
-                "timing": perturbation.get("timing"),
-                "perturbation": dict(perturbation),
-                "status": "evaluated",
-                "adapter": adapter.to_json(),
-                "metrics": metrics,
-                "evaluation_guard": no_op_guard
-                or {"status": "passed", "guard": "command_input_nonzero_payload_nonzero_effect"},
-                "extlqg_comparator": extlqg_comparator,
-                "robust_output_feedback_comparator": robust_comparator,
-                "bulk_arrays": None
-                if bulk_file is None
-                else {
-                    "path": _repo_relative(bulk_file, repo_root=repo_root),
-                    "format": "np.savez_compressed",
-                    "arrays": [
-                        "delta_action",
-                        "delta_gru_input",
-                        "delta_position",
-                        "delta_velocity",
-                        "base_position",
-                        "perturbed_position",
-                        "base_gru_input",
-                        "perturbed_gru_input",
-                    ],
-                },
-            }
+            _evaluated_perturbation_row(
+                perturbation=perturbation,
+                adapter=adapter,
+                base_evaluation=base_evaluation,
+                perturbed_evaluation=perturbed_evaluation,
+                base_cost=base_cost,
+                perturbed_cost=perturbed_cost,
+                extlqg_context=extlqg_context,
+                robust_context=robust_context,
+                write_bulk_arrays=write_bulk_arrays,
+                bulk_dir=bulk_dir / run.run_id,
+                repo_root=repo_root,
+                bulk_files=bulk_files,
+            )
         )
 
     return {
@@ -1939,6 +1862,122 @@ def _paired_base_for_adapter(
             return adapter.model, _add_trial_input(base_trial_specs, input_key, payload)
         return adapter.model, base_trial_specs
     return model, base_trial_specs
+
+
+def _evaluated_perturbation_row(
+    *,
+    perturbation: Mapping[str, Any],
+    adapter: AdapterResult,
+    base_evaluation: RolloutEvaluation,
+    perturbed_evaluation: RolloutEvaluation,
+    base_cost: Mapping[str, Any],
+    perturbed_cost: Mapping[str, Any],
+    extlqg_context: Mapping[str, Any],
+    robust_context: Mapping[str, Any],
+    write_bulk_arrays: bool,
+    bulk_dir: Path,
+    repo_root: Path,
+    bulk_files: dict[str, str],
+) -> dict[str, Any]:
+    """Build the manifest row for one evaluated perturbation."""
+
+    metrics = summarize_perturbation_response(
+        base_evaluation,
+        perturbed_evaluation,
+        base_full_qrf_cost=base_cost,
+        perturbed_full_qrf_cost=perturbed_cost,
+    )
+    metrics = _with_attenuation_metrics(metrics, perturbation)
+    no_op_guard = _command_input_no_op_guard(
+        perturbation=perturbation,
+        adapter=adapter,
+        metrics=metrics,
+    )
+    if no_op_guard is not None and no_op_guard["status"] == "blocked":
+        return {
+            "perturbation_id": perturbation["perturbation_id"],
+            "channel": perturbation["channel"],
+            "family": perturbation.get("family"),
+            "axis": perturbation.get("axis"),
+            "sign": perturbation.get("sign"),
+            "amplitude": perturbation.get("amplitude"),
+            "timing_bin": perturbation.get("timing_bin"),
+            "semantic_family": perturbation.get("semantic_family"),
+            "timing": perturbation.get("timing"),
+            "perturbation": dict(perturbation),
+            "status": "blocked",
+            "reason": no_op_guard["reason"],
+            "adapter": adapter.to_json(),
+            "metrics": metrics,
+            "evaluation_guard": no_op_guard,
+            "extlqg_comparator": extlqg_comparator_status(
+                perturbation,
+                status="not_applicable",
+            ),
+            "robust_output_feedback_comparator": (
+                robust_output_feedback_comparator_status(
+                    perturbation,
+                    status="not_applicable",
+                )
+            ),
+        }
+    extlqg_comparator = evaluate_extlqg_perturbation_comparator(
+        perturbation,
+        context=extlqg_context,
+        gru_metrics=metrics,
+    )
+    robust_comparator = evaluate_robust_output_feedback_perturbation_comparator(
+        perturbation,
+        context=robust_context,
+        gru_metrics=metrics,
+    )
+    bulk_file = None
+    if write_bulk_arrays:
+        bulk_file = _write_perturbation_bulk_arrays(
+            base_evaluation,
+            perturbed_evaluation,
+            bulk_dir=bulk_dir,
+            perturbation_id=str(perturbation["perturbation_id"]),
+        )
+        bulk_files[str(perturbation["perturbation_id"])] = _repo_relative(
+            bulk_file,
+            repo_root=repo_root,
+        )
+    return {
+        "perturbation_id": perturbation["perturbation_id"],
+        "channel": perturbation["channel"],
+        "family": perturbation.get("family"),
+        "axis": perturbation.get("axis"),
+        "sign": perturbation.get("sign"),
+        "amplitude": perturbation.get("amplitude"),
+        "timing_bin": perturbation.get("timing_bin"),
+        "semantic_family": perturbation.get("semantic_family"),
+        "timing": perturbation.get("timing"),
+        "perturbation": dict(perturbation),
+        "status": "evaluated",
+        "adapter": adapter.to_json(),
+        "metrics": metrics,
+        "evaluation_guard": no_op_guard
+        or {"status": "passed", "guard": "command_input_nonzero_payload_nonzero_effect"},
+        "extlqg_comparator": extlqg_comparator,
+        "robust_output_feedback_comparator": robust_comparator,
+        "bulk_arrays": None
+        if bulk_file is None
+        else {
+            "path": _repo_relative(bulk_file, repo_root=repo_root),
+            "format": "np.savez_compressed",
+            "arrays": [
+                "delta_action",
+                "delta_gru_input",
+                "delta_position",
+                "delta_velocity",
+                "base_position",
+                "perturbed_position",
+                "base_gru_input",
+                "perturbed_gru_input",
+            ],
+        },
+    }
 
 
 def summarize_perturbation_response(

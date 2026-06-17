@@ -92,9 +92,25 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--step-label", default="baseline")
     parser.add_argument("--n-rollout-trials", type=int, default=1)
     parser.add_argument("--perturbation-rows", type=int, default=6)
+    parser.add_argument(
+        "--perturbation-evaluation-backend",
+        choices=("serial",),
+        default="serial",
+        help=(
+            "Backend passed to evaluate_run_perturbation_bank. "
+            "Only serial is currently supported; the rejected union-graph attempt is "
+            "documented in issue timing notes."
+        ),
+    )
     parser.add_argument("--feedback-bins", type=int, default=3)
     parser.add_argument("--worst-case-steps", type=int, default=1)
     parser.add_argument("--worst-case-restarts", type=int, default=1)
+    parser.add_argument(
+        "--worst-case-optimizer-backend",
+        choices=("serial", "staged"),
+        default="serial",
+        help="Backend passed to the worst-case epsilon optimizer.",
+    )
     parser.add_argument("--no-write-bulk-arrays", action="store_true")
     parser.add_argument("--output-path", type=Path)
     parser.add_argument("--scratch-dir", type=Path)
@@ -113,9 +129,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         step_label=args.step_label,
         n_rollout_trials=args.n_rollout_trials,
         perturbation_rows=args.perturbation_rows,
+        perturbation_evaluation_backend=args.perturbation_evaluation_backend,
         feedback_bins=args.feedback_bins,
         worst_case_steps=args.worst_case_steps,
         worst_case_restarts=args.worst_case_restarts,
+        worst_case_optimizer_backend=args.worst_case_optimizer_backend,
         write_bulk_arrays=not args.no_write_bulk_arrays,
         output_path=args.output_path,
         scratch_dir=args.scratch_dir,
@@ -133,9 +151,11 @@ def run_benchmark(
     step_label: str = "baseline",
     n_rollout_trials: int = 1,
     perturbation_rows: int = 6,
+    perturbation_evaluation_backend: str = "serial",
     feedback_bins: int = 3,
     worst_case_steps: int = 1,
     worst_case_restarts: int = 1,
+    worst_case_optimizer_backend: str = "serial",
     write_bulk_arrays: bool = True,
     output_path: Path | None = None,
     scratch_dir: Path | None = None,
@@ -180,10 +200,12 @@ def run_benchmark(
         "run_id": run_id,
         "n_rollout_trials": int(n_rollout_trials),
         "perturbation_rows": int(len(bank["perturbations"])),
+        "perturbation_evaluation_backend": str(perturbation_evaluation_backend),
         "feedback_bins": int(len(feedback_evaluation_bins)),
         "write_bulk_arrays": bool(write_bulk_arrays),
         "worst_case_steps": int(worst_case_steps),
         "worst_case_restarts": int(worst_case_restarts),
+        "worst_case_optimizer_backend": str(worst_case_optimizer_backend),
     }
     bundle_results: list[TimedBundle] = []
     total_start = time.perf_counter()
@@ -292,6 +314,7 @@ def run_benchmark(
             n_rollout_trials=n_rollout_trials,
             write_bulk_arrays=write_bulk_arrays,
             bulk_dir=step_scratch / "perturbation_response",
+            evaluation_backend=perturbation_evaluation_backend,
             repo_root=repo_root,
         )
         return {
@@ -331,6 +354,7 @@ def run_benchmark(
             budget_level_override="moderate",
             budget_scale_override=None,
             bulk_dir=step_scratch / "worst_case_epsilon",
+            optimizer_backend=worst_case_optimizer_backend,
             repo_root=repo_root,
         )
         return {"status": result.get("status", "evaluated"), "keys": sorted(result.keys())}

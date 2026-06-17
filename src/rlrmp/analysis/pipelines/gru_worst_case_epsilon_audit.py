@@ -6,7 +6,7 @@ import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import equinox as eqx
 import jax
@@ -45,6 +45,7 @@ DEFAULT_NOTE_FILENAME = "gru_worst_case_epsilon_audit.md"
 DEFAULT_BULK_SUBDIR = "worst_case_epsilon_audit"
 
 ObjectiveFn = Callable[[Float[Array, "T m_w"]], Float[Array, ""]]
+EpsilonOptimizerBackend = Literal["serial", "staged"]
 
 
 @dataclass(frozen=True)
@@ -149,6 +150,7 @@ def optimize_epsilon_sequence(
     step_size: float,
     seed: int = 0,
     initial_candidates: Sequence[Any] = (),
+    backend: EpsilonOptimizerBackend = "serial",
 ) -> EpsilonOptimizationResult:
     """Run projected gradient ascent with best-incumbent retention."""
 
@@ -160,20 +162,66 @@ def optimize_epsilon_sequence(
         raise ValueError("step_size must be positive")
     if radius < 0:
         raise ValueError("radius must be non-negative")
+    if backend not in ("serial", "staged"):
+        raise ValueError(f"unknown epsilon optimizer backend {backend!r}")
 
-    starts = [
+    starts = _epsilon_optimizer_starts(
+        shape=shape,
+        radius=radius,
+        n_restarts=n_restarts,
+        seed=seed,
+        initial_candidates=initial_candidates,
+    )
+    if backend == "staged":
+        return _optimize_epsilon_sequence_staged(
+            objective,
+            starts=starts,
+            radius=radius,
+            n_steps=n_steps,
+            step_size=step_size,
+        )
+    return _optimize_epsilon_sequence_serial(
+        objective,
+        starts=starts,
+        radius=radius,
+        n_steps=n_steps,
+        step_size=step_size,
+    )
+
+
+def _epsilon_optimizer_starts(
+    *,
+    shape: tuple[int, int],
+    radius: float,
+    n_restarts: int,
+    seed: int,
+    initial_candidates: Sequence[Any],
+) -> tuple[Float[Array, "T m_w"], ...]:
+    starts = tuple(
         project_l2_ball(jnp.asarray(candidate, dtype=jnp.float64), radius)
         for candidate in initial_candidates
-    ]
+    )
     n_random = max(0, n_restarts - len(starts))
+    random_starts: tuple[Float[Array, "T m_w"], ...] = ()
     if n_random:
         keys = jr.split(jr.PRNGKey(seed), n_random)
-        starts.extend(
+        random_starts = tuple(
             project_l2_ball(jr.normal(key, shape, dtype=jnp.float64), radius) for key in keys
         )
+    starts = (*starts, *random_starts)
     if not starts:
-        starts = [jnp.zeros(shape, dtype=jnp.float64)]
+        starts = (jnp.zeros(shape, dtype=jnp.float64),)
+    return starts
 
+
+def _optimize_epsilon_sequence_serial(
+    objective: ObjectiveFn,
+    *,
+    starts: Sequence[Any],
+    radius: float,
+    n_steps: int,
+    step_size: float,
+) -> EpsilonOptimizationResult:
     value_and_grad = jax.value_and_grad(objective)
     best_global: dict[str, Any] | None = None
     restart_summaries: list[dict[str, float | int]] = []
@@ -239,6 +287,98 @@ def optimize_epsilon_sequence(
     )
 
 
+def _optimize_epsilon_sequence_staged(
+    objective: ObjectiveFn,
+    *,
+    starts: Sequence[Any],
+    radius: float,
+    n_steps: int,
+    step_size: float,
+) -> EpsilonOptimizationResult:
+    starts_array = jnp.stack([jnp.asarray(start, dtype=jnp.float64) for start in starts], axis=0)
+    value_and_grad = jax.value_and_grad(objective)
+    batch_objective = jax.vmap(objective)
+    batch_value_and_grad = jax.vmap(value_and_grad)
+
+    initial_values = batch_objective(starts_array)
+    initial_l2 = jax.vmap(jnp.linalg.norm)(starts_array)
+
+    def step_fn(carry: tuple[Any, Any, Any], step: Any) -> tuple[tuple[Any, Any, Any], Any]:
+        eps, best_eps, best_values = carry
+        _values, grads = batch_value_and_grad(eps)
+        grad_norms = jax.vmap(jnp.linalg.norm)(grads)
+        directions = grads / (grad_norms.reshape((-1, *([1] * (grads.ndim - 1)))) + 1e-30)
+        next_eps = jax.vmap(lambda candidate: project_l2_ball(candidate, radius))(
+            eps + float(step_size) * directions
+        )
+        current_values = batch_objective(next_eps)
+        improved = current_values > best_values
+        best_eps = jnp.where(improved.reshape((-1, *([1] * (next_eps.ndim - 1)))), next_eps, best_eps)
+        best_values = jnp.where(improved, current_values, best_values)
+        step_history = {
+            "step": step,
+            "objective": current_values,
+            "best_objective": best_values,
+            "epsilon_l2": jax.vmap(jnp.linalg.norm)(next_eps),
+            "gradient_l2": grad_norms,
+        }
+        return (next_eps, best_eps, best_values), step_history
+
+    (final_eps, best_eps, best_values), scan_history = jax.lax.scan(
+        step_fn,
+        (starts_array, starts_array, initial_values),
+        jnp.arange(1, n_steps + 1),
+    )
+    final_values = batch_objective(final_eps)
+    best_l2 = jax.vmap(jnp.linalg.norm)(best_eps)
+    best_restart_index = int(jnp.argmax(best_values))
+
+    restart_summaries = tuple(
+        {
+            "restart_index": int(restart_index),
+            "initial_objective": float(initial_values[restart_index]),
+            "final_objective": float(final_values[restart_index]),
+            "best_objective": float(best_values[restart_index]),
+            "best_epsilon_l2": float(best_l2[restart_index]),
+        }
+        for restart_index in range(int(starts_array.shape[0]))
+    )
+    history = [
+        {
+            "step": 0,
+            "objective": float(initial_values[best_restart_index]),
+            "epsilon_l2": float(initial_l2[best_restart_index]),
+        }
+    ]
+    for step_index in range(n_steps):
+        history.append(
+            {
+                "step": int(scan_history["step"][step_index]),
+                "objective": float(scan_history["objective"][step_index, best_restart_index]),
+                "best_objective": float(
+                    scan_history["best_objective"][step_index, best_restart_index]
+                ),
+                "epsilon_l2": float(scan_history["epsilon_l2"][step_index, best_restart_index]),
+                "gradient_l2": float(
+                    scan_history["gradient_l2"][step_index, best_restart_index]
+                ),
+            }
+        )
+
+    best_epsilon = np.asarray(best_eps[best_restart_index], dtype=np.float64)
+    return EpsilonOptimizationResult(
+        epsilon=best_epsilon,
+        objective=float(best_values[best_restart_index]),
+        initial_objective=float(initial_values[best_restart_index]),
+        final_objective=float(final_values[best_restart_index]),
+        energy=epsilon_energy(best_epsilon),
+        l2_norm=float(np.linalg.norm(best_epsilon)),
+        restart_index=best_restart_index,
+        history=tuple(history),
+        restart_summaries=restart_summaries,
+    )
+
+
 def materialize_gru_worst_case_epsilon_audit(
     *,
     source_experiment: str = DEFAULT_SOURCE_EXPERIMENT,
@@ -256,6 +396,7 @@ def materialize_gru_worst_case_epsilon_audit(
     output_path: Path | None = None,
     note_path: Path | None = None,
     bulk_dir: Path | None = None,
+    optimizer_backend: EpsilonOptimizerBackend = "serial",
     preferred_checkpoint_manifest_path: Path | None = None,
     checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
     repo_root: Path = REPO_ROOT,
@@ -296,6 +437,7 @@ def materialize_gru_worst_case_epsilon_audit(
             budget_level_override=budget_level_override,
             budget_scale_override=budget_scale_override,
             bulk_dir=bulk_dir / run.run_id,
+            optimizer_backend=optimizer_backend,
             preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
             checkpoint_selection_mode=checkpoint_selection_mode,
             repo_root=repo_root,
@@ -321,6 +463,7 @@ def materialize_gru_worst_case_epsilon_audit(
             "n_steps": int(n_steps),
             "n_restarts": int(n_restarts),
             "step_size": "radius * 0.25" if step_size is None else float(step_size),
+            "backend": optimizer_backend,
             "best_incumbent_retention": True,
             "objective": "mean realized full Q/R/Q_f rollout cost over selected replicates/trials",
         },
@@ -359,6 +502,7 @@ def audit_run_worst_case_epsilon(
     budget_level_override: str | None,
     budget_scale_override: float | None,
     bulk_dir: Path,
+    optimizer_backend: EpsilonOptimizerBackend = "serial",
     preferred_checkpoint_manifest_path: Path | None = None,
     checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
     repo_root: Path = REPO_ROOT,
@@ -425,6 +569,7 @@ def audit_run_worst_case_epsilon(
         step_size=effective_step,
         seed=seed,
         initial_candidates=(zero_epsilon, *random_epsilons),
+        backend=optimizer_backend,
     )
 
     zero = _evaluate_candidate(
@@ -504,6 +649,7 @@ def audit_run_worst_case_epsilon(
             "n_steps": int(n_steps),
             "n_restarts": int(n_restarts),
             "step_size": effective_step,
+            "backend": optimizer_backend,
             "best_restart_index": optimization.restart_index,
             "initial_objective": optimization.initial_objective,
             "final_objective": optimization.final_objective,
