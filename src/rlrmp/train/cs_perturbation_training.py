@@ -37,6 +37,12 @@ TARGET_RELATIVE_MULTITARGET_TRAINING_MODE = "target_relative_multitarget_static"
 TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE = "target_relative_multitarget_static_h0"
 BROAD_EPSILON_TRAINING_MODE = "broad_full_state_epsilon_l2"
 BROAD_EPSILON_PGD_TRAINING_MODE = "broad_full_state_epsilon_pgd_l2"
+BROAD_EPSILON_PGD_FIXED_BUDGET_SCHEDULE = "fixed"
+BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE = "sisu_energy_fraction"
+DEFAULT_PGD_SISU_LEVELS: tuple[float, ...] = (0.0, 0.25, 0.5, 0.75, 1.0)
+DEFAULT_PGD_SISU_EXACT_ZERO_MASS = 0.30
+RAW_STRONG_GAMMA_1P05_RADIUS_15CM = 0.0023284905801002004
+EFFECTIVE_020A65B_PGD_RADIUS_15CM = 0.004545500088363065
 MILD_COMBINED_FAMILIES: tuple["PerturbationBin", ...] = (
     "initial_position",
     "command_input",
@@ -123,6 +129,25 @@ BROAD_EPSILON_LEVELS: dict[str, dict[str, Any]] = {
         "delta_v_percent": 7.460371202249536,
         "source_issue": "a7dad8a",
         "source_note": "results/a7dad8a/notes/adversary_equivalence_manifest.json",
+    },
+}
+PGD_SISU_MAX_RADIUS_SOURCES: dict[str, dict[str, Any]] = {
+    "raw_strong_gamma_1p05_radius": {
+        "source_kind": "raw_analytical_gamma_anchor",
+        "source_issue": "a7dad8a",
+        "source_note": "results/a7dad8a/notes/adversary_equivalence_manifest.json",
+        "gamma_factor": 1.05,
+        "gamma_equivalent_analytical_anchor": True,
+        "description": "raw strong gamma-1.05 analytical radius",
+    },
+    "effective_020a65b_pgd_training_radius": {
+        "source_kind": "effective_pgd_training_radius",
+        "source_issue": "020a65b",
+        "source_note": "020a65b broad-epsilon PGD local training contract",
+        "gamma_equivalent_analytical_anchor": False,
+        "description": (
+            "effective 020a65b PGD training radius; not a new gamma-equivalent analytical anchor"
+        ),
     },
 }
 
@@ -229,6 +254,12 @@ class PgdFullStateEpsilonTrainingConfig:
     init: str = "zero"
     movement_epoch_only: bool = False
     epsilon_dim: int = BROAD_EPSILON_DIM
+    budget_schedule: str = BROAD_EPSILON_PGD_FIXED_BUDGET_SCHEDULE
+    sisu_levels: tuple[float, ...] = DEFAULT_PGD_SISU_LEVELS
+    sisu_exact_zero_mass: float = DEFAULT_PGD_SISU_EXACT_ZERO_MASS
+    sisu_condition_input: str = "auto"
+    sisu_max_l2_radius_15cm: float | None = None
+    sisu_max_radius_source: str | None = None
 
     def __post_init__(self) -> None:
         if self.level not in BROAD_EPSILON_LEVELS:
@@ -248,6 +279,19 @@ class PgdFullStateEpsilonTrainingConfig:
             raise ValueError("PGD broad epsilon epsilon_dim must be positive.")
         if self.init != "zero":
             raise ValueError("Only zero-initialized PGD broad epsilon is currently supported.")
+        if self.budget_schedule not in (
+            BROAD_EPSILON_PGD_FIXED_BUDGET_SCHEDULE,
+            BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
+        ):
+            raise ValueError(
+                "PGD broad epsilon budget_schedule must be 'fixed' or 'sisu_energy_fraction'."
+            )
+        if self.budget_schedule == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE:
+            _sisu_level_probabilities(self.sisu_levels, self.sisu_exact_zero_mass)
+            if self.sisu_condition_input not in ("auto", "input", "sisu"):
+                raise ValueError("SISU PGD budget condition input must be auto, input, or sisu.")
+            if self.sisu_max_l2_radius_15cm is not None and self.sisu_max_l2_radius_15cm <= 0.0:
+                raise ValueError("SISU PGD max L2 radius must be positive when provided.")
 
     @property
     def level_contract(self) -> dict[str, Any]:
@@ -261,10 +305,19 @@ class PgdFullStateEpsilonTrainingConfig:
 
         return float(self.level_contract["closed_loop_epsilon_l2_15cm"]) * float(self.budget_scale)
 
+    @property
+    def sisu_max_l2_radius(self) -> float:
+        """Return the 15 cm max radius for SISU-conditioned PGD budgets."""
+
+        if self.sisu_max_l2_radius_15cm is not None:
+            return float(self.sisu_max_l2_radius_15cm)
+        return self.reference_l2_radius
+
     def to_hps_dict(self) -> dict[str, Any]:
         """Return TreeNamespace-compatible PGD broad-epsilon training metadata."""
 
         contract = self.level_contract
+        budget_schedule = pgd_budget_schedule_contract(self)
         return {
             "enabled": self.enabled,
             "mode": BROAD_EPSILON_PGD_TRAINING_MODE if self.enabled else "disabled",
@@ -274,6 +327,7 @@ class PgdFullStateEpsilonTrainingConfig:
             "nominal_reach_length_m": float(self.nominal_reach_length_m),
             "movement_epoch_only": bool(self.movement_epoch_only),
             "epsilon_dim": int(self.epsilon_dim),
+            "budget_schedule": budget_schedule,
             "epsilon_channel": {
                 "state_basis": _broad_epsilon_state_basis(int(self.epsilon_dim)),
                 "shape": ["batch", "time", int(self.epsilon_dim)],
@@ -302,6 +356,11 @@ class PgdFullStateEpsilonTrainingConfig:
                 **contract,
                 "reference_reach_m": BROAD_EPSILON_REFERENCE_REACH_M,
                 "effective_l2_radius_15cm": self.reference_l2_radius,
+                "active_max_l2_radius_15cm": (
+                    self.sisu_max_l2_radius
+                    if self.budget_schedule == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
+                    else self.reference_l2_radius
+                ),
                 "reach_length_scaling_note": (
                     "Reach scaling is an explicit multi-target normalization choice; "
                     "the original analytical game card reports the 15 cm budget."
@@ -313,6 +372,101 @@ class PgdFullStateEpsilonTrainingConfig:
         """Return JSON-serializable PGD broad-epsilon metadata."""
 
         return self.to_hps_dict()
+
+
+def pgd_budget_schedule_contract(
+    config: PgdFullStateEpsilonTrainingConfig,
+) -> dict[str, Any]:
+    """Return the active PGD budget-schedule metadata."""
+
+    if config.budget_schedule == BROAD_EPSILON_PGD_FIXED_BUDGET_SCHEDULE:
+        return {
+            "mode": BROAD_EPSILON_PGD_FIXED_BUDGET_SCHEDULE,
+            "conditioned": False,
+            "mapping_rule": "epsilon_l2_radius = fixed_l2_radius",
+        }
+    levels = tuple(float(level) for level in config.sisu_levels)
+    probabilities = _sisu_level_probabilities(levels, float(config.sisu_exact_zero_mass))
+    return {
+        "mode": BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
+        "conditioned": True,
+        "conditioning_scalar": {
+            "name": "SISU",
+            "input_key": config.sisu_condition_input,
+            "input_key_resolution": (
+                "auto resolves to trial_specs.inputs['sisu'] when present, otherwise "
+                "trial_specs.inputs['input']"
+            ),
+        },
+        "levels": list(levels),
+        "probabilities": list(probabilities),
+        "exact_zero_mass": float(config.sisu_exact_zero_mass),
+        "remaining_nonzero_mass": float(1.0 - config.sisu_exact_zero_mass),
+        "nonzero_mass_policy": "uniform_split_over_nonzero_levels",
+        "mapping_rule": "epsilon_l2_radius = max_l2_radius_15cm * sqrt(SISU)",
+        "mapping": {
+            "sisu_interpretation": "energy_fraction",
+            "radius_fraction": "sqrt(SISU)",
+            "zero_sisu_radius_fraction": 0.0,
+            "unit_sisu_radius_fraction": 1.0,
+        },
+        "max_l2_radius_15cm": config.sisu_max_l2_radius,
+        "max_radius_source": _pgd_sisu_max_radius_source(config),
+        "controller_internal_mutation": False,
+        "teacher_or_distillation": "not_used",
+    }
+
+
+def _sisu_level_probabilities(
+    levels: tuple[float, ...],
+    exact_zero_mass: float,
+) -> tuple[float, ...]:
+    """Return the exact-zero plus uniform nonzero SISU level probabilities."""
+
+    if not levels:
+        raise ValueError("SISU PGD budget schedule requires at least one level.")
+    zero_count = sum(np.isclose(level, 0.0) for level in levels)
+    if zero_count != 1:
+        raise ValueError("SISU PGD budget levels must include exactly one zero level.")
+    nonzero_levels = [level for level in levels if not np.isclose(level, 0.0)]
+    if not nonzero_levels:
+        raise ValueError("SISU PGD budget schedule requires at least one nonzero level.")
+    if any(level < 0.0 or level > 1.0 for level in levels):
+        raise ValueError("SISU PGD budget levels must lie in [0, 1].")
+    if not 0.0 < exact_zero_mass < 1.0:
+        raise ValueError("SISU exact-zero mass must lie in (0, 1).")
+    nonzero_probability = (1.0 - float(exact_zero_mass)) / len(nonzero_levels)
+    return tuple(
+        float(exact_zero_mass) if np.isclose(level, 0.0) else float(nonzero_probability)
+        for level in levels
+    )
+
+
+def _pgd_sisu_max_radius_source(
+    config: PgdFullStateEpsilonTrainingConfig,
+) -> dict[str, Any]:
+    source_key = config.sisu_max_radius_source
+    if source_key is not None:
+        return {
+            "key": source_key,
+            **PGD_SISU_MAX_RADIUS_SOURCES.get(
+                source_key,
+                {
+                    "source_kind": "caller_declared",
+                    "gamma_equivalent_analytical_anchor": False,
+                    "description": source_key,
+                },
+            ),
+        }
+    return {
+        "key": f"analytical_broad_epsilon_level:{config.level}",
+        "source_kind": "analytical_broad_epsilon_anchor",
+        "source_issue": config.level_contract.get("source_issue"),
+        "source_note": config.level_contract.get("source_note"),
+        "gamma_factor": config.level_contract.get("gamma_factor"),
+        "gamma_equivalent_analytical_anchor": True,
+        "description": f"{config.level} analytical broad-epsilon radius after budget_scale",
+    }
 
 
 GRAPH_ADAPTER_SPECS: dict[PerturbationBin, AdditiveGraphChannelAdapterSpec] = {
@@ -903,7 +1057,9 @@ def config_from_hps(config: Any) -> FixedTargetPerturbationTrainingConfig:
     )
 
 
-def calibrated_timing_basis_manifest(config: FixedTargetPerturbationTrainingConfig) -> dict[str, Any]:
+def calibrated_timing_basis_manifest(
+    config: FixedTargetPerturbationTrainingConfig,
+) -> dict[str, Any]:
     """Return the calibrated timing basis used by starts in run specs."""
 
     if not config.movement_age_timing:
@@ -1329,6 +1485,7 @@ def config_from_broad_epsilon_pgd_hps(config: Any) -> PgdFullStateEpsilonTrainin
     """Normalize an hps PGD broad-epsilon payload to a dataclass."""
 
     inner = _payload_get(config, "inner_maximizer", None)
+    schedule = _payload_get(config, "budget_schedule", None)
     return PgdFullStateEpsilonTrainingConfig(
         enabled=bool(_payload_get(config, "enabled", False)),
         level=str(_payload_get(config, "level", "moderate")),
@@ -1358,6 +1515,52 @@ def config_from_broad_epsilon_pgd_hps(config: Any) -> PgdFullStateEpsilonTrainin
         ),
         movement_epoch_only=bool(_payload_get(config, "movement_epoch_only", False)),
         epsilon_dim=int(_payload_get(config, "epsilon_dim", BROAD_EPSILON_DIM)),
+        budget_schedule=str(
+            _first_payload_value(
+                (schedule, "mode"),
+                (config, "budget_schedule_mode"),
+                (config, "budget_schedule"),
+                default=BROAD_EPSILON_PGD_FIXED_BUDGET_SCHEDULE,
+            )
+        ),
+        sisu_levels=tuple(
+            float(x)
+            for x in _first_payload_value(
+                (schedule, "levels"),
+                (config, "sisu_levels"),
+                default=DEFAULT_PGD_SISU_LEVELS,
+            )
+        ),
+        sisu_exact_zero_mass=float(
+            _first_payload_value(
+                (schedule, "exact_zero_mass"),
+                (config, "sisu_exact_zero_mass"),
+                default=DEFAULT_PGD_SISU_EXACT_ZERO_MASS,
+            )
+        ),
+        sisu_condition_input=str(
+            _first_payload_value(
+                (schedule, "conditioning_input"),
+                (_payload_get(schedule, "conditioning_scalar", None), "input_key"),
+                (config, "sisu_condition_input"),
+                default="auto",
+            )
+        ),
+        sisu_max_l2_radius_15cm=_optional_float(
+            _first_payload_value(
+                (schedule, "max_l2_radius_15cm"),
+                (config, "sisu_max_l2_radius_15cm"),
+                default=None,
+            )
+        ),
+        sisu_max_radius_source=_optional_str(
+            _first_payload_value(
+                (schedule, "max_radius_source_key"),
+                (_payload_get(schedule, "max_radius_source", None), "key"),
+                (config, "sisu_max_radius_source"),
+                default=None,
+            )
+        ),
     )
 
 
@@ -1380,6 +1583,18 @@ def _first_payload_value(*candidates: tuple[Any, str], default: Any) -> Any:
         if value is not _MISSING:
             return value
     return default
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    return float(value)
+
+
+def _optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(value)
 
 
 def make_broad_epsilon_pgd_pre_step(config: Any) -> Callable | None:
@@ -1634,6 +1849,73 @@ def _epsilon_time_mask(
     while time_mask.ndim < epsilon.ndim - 1:
         time_mask = jnp.expand_dims(time_mask, axis=0)
     return jnp.expand_dims(time_mask.astype(epsilon.dtype), axis=-1)
+
+
+def _sample_sisu_budget_conditioning_input(
+    trial_specs: TaskTrialSpec,
+    config: PgdFullStateEpsilonTrainingConfig,
+    key_source: Any,
+) -> TaskTrialSpec:
+    """Sample per-trial SISU levels when PGD uses a SISU budget schedule."""
+
+    if config.budget_schedule != BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE:
+        return trial_specs
+    input_name = _resolve_sisu_condition_input(trial_specs, config)
+    current = jnp.asarray(trial_specs.inputs[input_name])
+    key = _extract_prng_key(key_source)
+    levels = jnp.asarray(config.sisu_levels, dtype=current.dtype)
+    probabilities = jnp.asarray(
+        _sisu_level_probabilities(config.sisu_levels, config.sisu_exact_zero_mass),
+        dtype=current.dtype,
+    )
+    sampled = jr.choice(key, levels, shape=_batch_shape(trial_specs), p=probabilities)
+    sampled = jnp.broadcast_to(_expand_radius(sampled, current.ndim), current.shape)
+    return _set_input(trial_specs, input_name, sampled)
+
+
+def _extract_prng_key(key_source: Any) -> PRNGKeyArray:
+    if hasattr(key_source, "shape") and tuple(key_source.shape) == (2,):
+        return key_source
+    for leaf in jax.tree.leaves(key_source):
+        if hasattr(leaf, "shape") and tuple(leaf.shape) == (2,):
+            return leaf
+    raise ValueError("SISU-conditioned PGD budget sampling requires a PRNG key.")
+
+
+def _resolve_sisu_condition_input(
+    trial_specs: TaskTrialSpec,
+    config: PgdFullStateEpsilonTrainingConfig,
+) -> str:
+    if config.sisu_condition_input != "auto":
+        if config.sisu_condition_input not in trial_specs.inputs:
+            raise ValueError(
+                f"SISU-conditioned PGD budget requested input "
+                f"{config.sisu_condition_input!r}, but the trial has inputs "
+                f"{sorted(trial_specs.inputs)}."
+            )
+        return config.sisu_condition_input
+    for name in ("sisu", "input"):
+        if name in trial_specs.inputs:
+            return name
+    raise ValueError(
+        "SISU-conditioned PGD budget requires trial_specs.inputs['sisu'] or "
+        "trial_specs.inputs['input']."
+    )
+
+
+def _sisu_condition_values(
+    trial_specs: TaskTrialSpec,
+    config: PgdFullStateEpsilonTrainingConfig,
+) -> jnp.ndarray:
+    input_name = _resolve_sisu_condition_input(trial_specs, config)
+    values = jnp.asarray(trial_specs.inputs[input_name], dtype=jnp.float32)
+    batch_shape = _batch_shape(trial_specs)
+    if values.shape == batch_shape:
+        return values
+    reduce_axes = tuple(range(len(batch_shape), values.ndim))
+    if not reduce_axes:
+        return values
+    return jnp.mean(values, axis=reduce_axes)
 
 
 def install_perturbation_training_graph_adapters(
@@ -2161,11 +2443,14 @@ def _apply_single_bin_raw(
     amplitude_scale: float,
 ) -> TaskTrialSpec:
     if bin_name == "initial_position":
-        amount = _single_bin_amount(
-            trial_specs,
-            config,
-            "initial_position",
-        ) * amplitude_scale
+        amount = (
+            _single_bin_amount(
+                trial_specs,
+                config,
+                "initial_position",
+            )
+            * amplitude_scale
+        )
         if config.calibrated_timing and config.movement_age_timing:
             return _add_movement_onset_state_offset_pulse(
                 trial_specs,
@@ -2174,11 +2459,14 @@ def _apply_single_bin_raw(
             )
         return _offset_initial_vector(trial_specs, axis=1, amount=amount)
     if bin_name == "initial_velocity":
-        amount = _single_bin_amount(
-            trial_specs,
-            config,
-            "initial_velocity",
-        ) * amplitude_scale
+        amount = (
+            _single_bin_amount(
+                trial_specs,
+                config,
+                "initial_velocity",
+            )
+            * amplitude_scale
+        )
         if config.calibrated_timing and config.movement_age_timing:
             return _add_movement_onset_state_offset_pulse(
                 trial_specs,
@@ -2344,13 +2632,27 @@ def _broad_epsilon_l2_radius(
 ) -> jnp.ndarray:
     """Return per-trial L2 radius for broad full-state epsilon sampling."""
 
-    radius = jnp.asarray(config.reference_l2_radius, dtype=jnp.float32)
+    if (
+        isinstance(config, PgdFullStateEpsilonTrainingConfig)
+        and config.budget_schedule == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
+    ):
+        radius = jnp.asarray(config.sisu_max_l2_radius, dtype=jnp.float32)
+    else:
+        radius = jnp.asarray(config.reference_l2_radius, dtype=jnp.float32)
     if not config.reach_length_scaling:
-        return jnp.broadcast_to(radius, _batch_shape(trial_specs))
-    reach_length = _trial_reach_length_m(trial_specs)
-    return radius * (
-        reach_length / jnp.asarray(config.nominal_reach_length_m, dtype=reach_length.dtype)
-    )
+        scaled_radius = jnp.broadcast_to(radius, _batch_shape(trial_specs))
+    else:
+        reach_length = _trial_reach_length_m(trial_specs)
+        scaled_radius = radius * (
+            reach_length / jnp.asarray(config.nominal_reach_length_m, dtype=reach_length.dtype)
+        )
+    if (
+        isinstance(config, PgdFullStateEpsilonTrainingConfig)
+        and config.budget_schedule == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
+    ):
+        sisu = jnp.clip(_sisu_condition_values(trial_specs, config), 0.0, 1.0)
+        return scaled_radius * jnp.sqrt(sisu.astype(scaled_radius.dtype))
+    return scaled_radius
 
 
 def _trial_reach_length_m(trial_specs: TaskTrialSpec) -> jnp.ndarray:
@@ -2448,10 +2750,14 @@ def _add_movement_onset_state_offset_random_components(
     epsilon = jnp.asarray(trial_specs.inputs["epsilon"])
     batch_shape = _batch_shape(trial_specs)
     component = jr.randint(key_component, batch_shape, 0, n_components) + int(component_offset)
-    amount = jnp.asarray(base_amount, dtype=epsilon.dtype) * _random_sign(
-        key_sign,
-        batch_shape,
-    ) * active_mask
+    amount = (
+        jnp.asarray(base_amount, dtype=epsilon.dtype)
+        * _random_sign(
+            key_sign,
+            batch_shape,
+        )
+        * active_mask
+    )
     pulse = _pulse_tensor_from_start(
         batch_shape=batch_shape,
         n_steps=epsilon.shape[-2],
@@ -3039,7 +3345,7 @@ def _catch_preserving_loss_target_sequence(
 ) -> jnp.ndarray:
     """Return scored target sequence, preserving no-go catch trials if present."""
 
-    catch_mask = _catch_mask_from_go_input(trial_specs, batch_shape)
+    catch_mask = _catch_mask_from_trial_contract(trial_specs, batch_shape)
     if catch_mask is None:
         return target_sequence
     init_sequence = _initial_position_sequence(
@@ -3055,27 +3361,74 @@ def _catch_preserving_loss_target_sequence(
     )
 
 
-def _catch_mask_from_go_input(
+def _catch_mask_from_trial_contract(
     trial_specs: TaskTrialSpec,
     batch_shape: tuple[int, ...],
 ) -> jnp.ndarray | None:
-    """Return per-trial catch mask from a delayed go-cue input, if available."""
+    """Return per-trial catch mask from explicit catch metadata or task structure."""
 
-    go_input = dict(trial_specs.inputs).get("input")
-    if go_input is None:
+    if trial_specs.extra is not None and "is_catch_trial" in trial_specs.extra:
+        return _broadcast_catch_mask(trial_specs.extra["is_catch_trial"], batch_shape)
+
+    task_inputs = _task_inputs_from_trial_inputs(trial_specs.inputs)
+    if hasattr(task_inputs, "hold"):
+        hold = jnp.asarray(task_inputs.hold)
+        if hold.ndim > 0 and hold.shape[-1] == 1:
+            hold = jnp.squeeze(hold, axis=-1)
+        reduce_axes = tuple(range(len(batch_shape), hold.ndim))
+        catch_mask = jnp.all(hold > 0.5, axis=reduce_axes) if reduce_axes else hold > 0.5
+        return _broadcast_catch_mask(catch_mask, batch_shape)
+
+    input_key = _declared_go_cue_input_key(trial_specs.extra)
+    if input_key is None:
         return None
+    inputs = dict(trial_specs.inputs)
+    if input_key not in inputs:
+        raise ValueError(
+            f"Trial metadata declares {input_key!r} as a go-cue input, "
+            f"but trial_specs.inputs has keys {sorted(inputs)}."
+        )
+    return _catch_mask_from_declared_go_input(inputs[input_key], batch_shape)
+
+
+def _task_inputs_from_trial_inputs(inputs: Mapping[str, Any]) -> Any:
+    return inputs["task"] if "task" in inputs else inputs
+
+
+def _declared_go_cue_input_key(extra: Mapping[str, Any] | None) -> str | None:
+    if extra is None:
+        return None
+    if "go_cue_input_key" in extra:
+        return str(extra["go_cue_input_key"])
+    roles = extra.get("input_roles")
+    if isinstance(roles, Mapping):
+        for key, role in roles.items():
+            role_name = role.get("role") if isinstance(role, Mapping) else role
+            if role_name in {"go_cue", "delayed_go_cue"}:
+                return str(key)
+    return None
+
+
+def _catch_mask_from_declared_go_input(
+    go_input: Any,
+    batch_shape: tuple[int, ...],
+) -> jnp.ndarray | None:
     go = jnp.asarray(go_input)
     if go.ndim == 0:
         return None
-    if go.ndim >= 2 and go.shape[-1] == 1:
-        any_go = jnp.any(go > 0.5, axis=-2)
-        any_go = jnp.squeeze(any_go, axis=-1)
-    else:
-        any_go = jnp.any(go > 0.5, axis=-1)
+    if go.ndim > len(batch_shape) and go.shape[-1] == 1:
+        go = jnp.squeeze(go, axis=-1)
+    reduce_axes = tuple(range(len(batch_shape), go.ndim))
+    any_go = jnp.any(go > 0.5, axis=reduce_axes) if reduce_axes else go > 0.5
     catch_mask = jnp.logical_not(any_go)
-    if batch_shape:
-        catch_mask = jnp.broadcast_to(catch_mask, batch_shape)
-    return catch_mask
+    return _broadcast_catch_mask(catch_mask, batch_shape)
+
+
+def _broadcast_catch_mask(catch_mask: Any, batch_shape: tuple[int, ...]) -> jnp.ndarray:
+    catch = jnp.asarray(catch_mask, dtype=bool)
+    while catch.ndim > len(batch_shape) and catch.shape[-1] == 1:
+        catch = jnp.squeeze(catch, axis=-1)
+    return jnp.broadcast_to(catch, batch_shape)
 
 
 def _initial_position_sequence(
@@ -3476,7 +3829,6 @@ def planned_020a65b_h0_pgd_rows(
 
     common_command = [
         "env",
-        "JAX_PLATFORM_NAME=cpu",
         "PYTHONPATH=src",
         "uv",
         "run",
@@ -3552,7 +3904,7 @@ def planned_020a65b_h0_pgd_rows(
                 "loss_objective": "full_analytical_qrf",
                 "lr_schedule": "warmup_cosine",
                 "row_kind": "checkpoint_gate",
-                "local_device": "cpu",
+                "remote_device": "runpod_rtx_5090",
                 "training": TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
                 "force_filter_feedback": True,
                 "perturbation_training": "fixed_target_perturbation_calibrated_timing",
@@ -3570,6 +3922,155 @@ def planned_020a65b_h0_pgd_rows(
                     "--stop-after-batches",
                     "1000",
                 ],
+            }
+        )
+    return rows
+
+
+def planned_e4800d6_sisu_spectrum_rows(
+    *,
+    experiment: str = "e4800d6",
+) -> list[dict[str, Any]]:
+    """Return the two pre-launch SISU-conditioned PGD spectrum rows."""
+
+    common_command = [
+        "env",
+        "PYTHONPATH=src",
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "scripts/train_cs_nominal_gru.py",
+        "--issue",
+        experiment,
+        "--n-train-batches",
+        "12000",
+        "--batch-size",
+        "64",
+        "--controller-lr",
+        "0.003",
+        "--gradient-clip-norm",
+        "5",
+        "--lr-warmup-batches",
+        "500",
+        "--lr-warmup-init-fraction",
+        "0.1",
+        "--lr-cosine-alpha",
+        "0.1",
+        "--n-replicates",
+        "5",
+        "--target-relative-multitarget",
+        "--initial-hidden-encoder",
+        "--force-filter-feedback",
+        "--perturbation-training",
+        "--perturbation-calibrated-timing",
+        "--perturbation-physical-level",
+        "small",
+        "--loss-objective",
+        "full_analytical_qrf",
+        "--broad-epsilon-pgd-training",
+        "--broad-epsilon-pgd-budget-schedule",
+        BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
+        "--broad-epsilon-pgd-sisu-condition-input",
+        "input",
+        "--no-broad-epsilon-reach-scaling",
+        "--broad-epsilon-pgd-steps",
+        "10",
+        "--broad-epsilon-pgd-step-size-fraction",
+        "0.25",
+    ]
+    row_specs = [
+        {
+            "row": "A",
+            "label": "raw_strong_gamma_1p05_radius",
+            "max_l2_radius_15cm": RAW_STRONG_GAMMA_1P05_RADIUS_15CM,
+            "max_radius_source": "raw_strong_gamma_1p05_radius",
+        },
+        {
+            "row": "B",
+            "label": "effective_020a65b_pgd_radius",
+            "max_l2_radius_15cm": EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+            "max_radius_source": "effective_020a65b_pgd_training_radius",
+        },
+    ]
+
+    rows = []
+    for row_spec in row_specs:
+        run = (
+            f"cs_gru_h0_sisu_spectrum_targetfix__"
+            f"{row_spec['label']}_lr3e-3_clip5_b64"
+        )
+        full_resume_command = [
+            *common_command,
+            "--broad-epsilon-pgd-sisu-max-radius",
+            str(row_spec["max_l2_radius_15cm"]),
+            "--broad-epsilon-pgd-sisu-max-radius-source",
+            str(row_spec["max_radius_source"]),
+            "--output-dir",
+            f"_artifacts/{experiment}/runs/{run}",
+            "--full-train",
+            "--resume",
+        ]
+        rows.append(
+            {
+                "experiment": experiment,
+                "issue": experiment,
+                "row": row_spec["row"],
+                "run": run,
+                "controller_lr": 3e-3,
+                "lr_schedule": "warmup_cosine",
+                "lr_warmup_batches": 500,
+                "lr_warmup_init_fraction": 0.1,
+                "lr_cosine_alpha": 0.1,
+                "final_learning_rate": 3e-4,
+                "batch_size": 64,
+                "gradient_clip_norm": 5.0,
+                "n_replicates": 5,
+                "n_train_batches": 12000,
+                "stop_after_batches": None,
+                "loss_objective": "full_analytical_qrf",
+                "row_kind": "full_train",
+                "remote_device": "runpod_rtx_5090",
+                "training": (
+                    f"{TARGET_RELATIVE_MULTITARGET_TRAINING_MODE}+"
+                    f"{CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE}+"
+                    f"{BROAD_EPSILON_PGD_TRAINING_MODE}"
+                ),
+                "force_filter_feedback": True,
+                "initial_hidden_encoder": (
+                    "zero_affine_target_relative_feedback_plus_force_filter"
+                ),
+                "perturbation_training": CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE,
+                "perturbation_physical_level": "small",
+                "broad_epsilon_pgd_training": True,
+                "broad_epsilon_pgd_budget_schedule": BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
+                "sisu_levels": list(DEFAULT_PGD_SISU_LEVELS),
+                "sisu_probabilities": list(
+                    _sisu_level_probabilities(
+                        DEFAULT_PGD_SISU_LEVELS,
+                        DEFAULT_PGD_SISU_EXACT_ZERO_MASS,
+                    )
+                ),
+                "sisu_exact_zero_mass": DEFAULT_PGD_SISU_EXACT_ZERO_MASS,
+                "sisu_mapping_rule": "epsilon_l2_radius = Rmax * sqrt(SISU)",
+                "sisu_condition_input": "input",
+                "broad_epsilon_reach_scaling": False,
+                "max_l2_radius_15cm": row_spec["max_l2_radius_15cm"],
+                "max_radius_source": row_spec["max_radius_source"],
+                "max_radius_source_metadata": PGD_SISU_MAX_RADIUS_SOURCES[
+                    str(row_spec["max_radius_source"])
+                ],
+                "broad_epsilon_pgd_steps": 10,
+                "broad_epsilon_pgd_step_size_fraction": 0.25,
+                "teacher_or_distillation": "not_used",
+                "checkpoint_selection": "target_relative_multitarget_rollout_validation",
+                "full_training_contract_command": full_resume_command,
+                "checkpoint_gate_command": [
+                    *full_resume_command,
+                    "--stop-after-batches",
+                    "1000",
+                ],
+                "command": full_resume_command,
             }
         )
     return rows

@@ -61,9 +61,13 @@ from rlrmp.train.cs_nominal_gru import (
     write_run_spec,
 )
 from rlrmp.train.cs_perturbation_training import (
+    BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
     BROAD_EPSILON_PGD_TRAINING_MODE,
     BROAD_EPSILON_TRAINING_MODE,
     CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE,
+    DEFAULT_PGD_SISU_EXACT_ZERO_MASS,
+    DEFAULT_PGD_SISU_LEVELS,
+    EFFECTIVE_020A65B_PGD_RADIUS_15CM,
     GRAPH_ADAPTER_SPECS,
     MILD_COMBINED_FAMILIES,
     PERTURBATION_TRAINING_MODE,
@@ -72,6 +76,7 @@ from rlrmp.train.cs_perturbation_training import (
     VALIDATION_BINS,
     BroadFullStateEpsilonTrainingConfig,
     BroadFullStateEpsilonTrainingTaskAdapter,
+    PgdFullStateEpsilonTrainingConfig,
     TargetRelativeMultiTargetTrainingConfig,
     TargetRelativeMultiTargetTrainingTaskAdapter,
     _broad_epsilon_l2_radius,
@@ -90,6 +95,7 @@ from rlrmp.train.cs_perturbation_training import (
     config_from_broad_epsilon_pgd_hps,
     graph_adapter_specs,
     planned_020a65b_h0_pgd_rows,
+    planned_e4800d6_sisu_spectrum_rows,
     planned_fixed_target_perturbation_rows,
     planned_target_relative_multitarget_h0_rows,
     planned_target_relative_multitarget_rows,
@@ -286,8 +292,126 @@ def test_pgd_broad_epsilon_hps_parser_consumes_nested_and_legacy_fields() -> Non
     assert parsed_dict.step_size_fraction == pytest.approx(0.2)
 
 
+def test_pgd_sisu_budget_schedule_metadata_and_parser_round_trip() -> None:
+    cfg = PgdFullStateEpsilonTrainingConfig(
+        enabled=True,
+        budget_schedule=BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
+        reach_length_scaling=False,
+        sisu_condition_input="input",
+        sisu_max_l2_radius_15cm=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+        sisu_max_radius_source="effective_020a65b_pgd_training_radius",
+    )
+    payload = cfg.to_hps_dict()
+    schedule = payload["budget_schedule"]
+
+    assert schedule["mode"] == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
+    assert schedule["levels"] == list(DEFAULT_PGD_SISU_LEVELS)
+    assert schedule["probabilities"] == pytest.approx([0.30, 0.175, 0.175, 0.175, 0.175])
+    assert schedule["exact_zero_mass"] == pytest.approx(DEFAULT_PGD_SISU_EXACT_ZERO_MASS)
+    assert schedule["mapping_rule"] == "epsilon_l2_radius = max_l2_radius_15cm * sqrt(SISU)"
+    assert schedule["max_l2_radius_15cm"] == pytest.approx(EFFECTIVE_020A65B_PGD_RADIUS_15CM)
+    assert schedule["conditioning_scalar"]["input_key"] == "input"
+    assert schedule["max_radius_source"]["source_kind"] == "effective_pgd_training_radius"
+    assert schedule["max_radius_source"]["gamma_equivalent_analytical_anchor"] is False
+    assert payload["budget_contract"]["active_max_l2_radius_15cm"] == pytest.approx(
+        EFFECTIVE_020A65B_PGD_RADIUS_15CM
+    )
+
+    parsed = config_from_broad_epsilon_pgd_hps(payload)
+    assert parsed.budget_schedule == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
+    assert parsed.sisu_condition_input == "input"
+    assert parsed.sisu_levels == DEFAULT_PGD_SISU_LEVELS
+    assert parsed.sisu_exact_zero_mass == pytest.approx(DEFAULT_PGD_SISU_EXACT_ZERO_MASS)
+    assert parsed.sisu_max_l2_radius == pytest.approx(EFFECTIVE_020A65B_PGD_RADIUS_15CM)
+    assert parsed.sisu_max_radius_source == "effective_020a65b_pgd_training_radius"
+
+
+def test_pgd_sisu_budget_radius_uses_sqrt_energy_fraction() -> None:
+    cfg = PgdFullStateEpsilonTrainingConfig(
+        enabled=True,
+        budget_schedule=BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
+        reach_length_scaling=False,
+        sisu_condition_input="input",
+        sisu_max_l2_radius_15cm=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+        epsilon_dim=1,
+    )
+    trial_specs = TaskTrialSpec(
+        inits=WhereDict({"mechanics.vector": jnp.zeros((3, 8), dtype=jnp.float32)}),
+        targets=WhereDict(
+            {
+                "mechanics.effector.pos": TargetSpec(
+                    value=jnp.zeros((3, 2, 2), dtype=jnp.float32),
+                )
+            }
+        ),
+        inputs={
+            "input": jnp.asarray(
+                [[0.0, 0.0], [0.25, 0.25], [1.0, 1.0]],
+                dtype=jnp.float32,
+            ),
+            "epsilon": jnp.zeros((3, 2, 1), dtype=jnp.float32),
+        },
+        timeline=TrialTimeline(n_steps=2),
+    )
+
+    radius = _broad_epsilon_l2_radius(trial_specs, cfg)
+
+    np.testing.assert_allclose(
+        radius,
+        np.asarray(
+            [
+                0.0,
+                0.5 * EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+                EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+            ],
+            dtype=np.float32,
+        ),
+        rtol=1e-6,
+        atol=1e-10,
+    )
+
+
+def test_pgd_sisu_budget_cli_and_run_spec_metadata(tmp_path: Path) -> None:
+    args = _args(
+        output_dir=str(tmp_path / "artifacts"),
+        spec_dir=str(tmp_path / "spec"),
+        dry_run=True,
+        broad_epsilon_pgd_training=True,
+        target_relative_multitarget=True,
+        broad_epsilon_reach_scaling=False,
+        broad_epsilon_pgd_budget_schedule=BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
+        broad_epsilon_pgd_sisu_condition_input="input",
+        broad_epsilon_pgd_sisu_max_radius=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+        broad_epsilon_pgd_sisu_max_radius_source="effective_020a65b_pgd_training_radius",
+    )
+
+    payload = write_run_spec(args)["run_spec"]
+    pgd = payload["hps"]["broad_epsilon_pgd_training"]
+    distribution = payload["training_summary"]["training_distribution"][
+        "broad_epsilon_pgd_training"
+    ]
+
+    assert pgd["enabled"] is True
+    assert pgd["reach_length_scaling"] is False
+    assert pgd["budget_schedule"]["mode"] == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
+    assert pgd["budget_schedule"]["probabilities"] == pytest.approx(
+        [0.30, 0.175, 0.175, 0.175, 0.175]
+    )
+    assert pgd["budget_schedule"]["max_l2_radius_15cm"] == pytest.approx(
+        EFFECTIVE_020A65B_PGD_RADIUS_15CM
+    )
+    assert pgd["budget_schedule"]["max_radius_source"]["source_kind"] == (
+        "effective_pgd_training_radius"
+    )
+    assert (
+        pgd["budget_schedule"]["max_radius_source"]["gamma_equivalent_analytical_anchor"] is False
+    )
+    assert distribution["budget_schedule"]["mode"] == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
+    assert payload["task_timing"]["extra_inputs"] == ["input", "target", "epsilon"]
+
+
 def test_pgd_broad_epsilon_lane_requires_target_relative_and_excludes_random_lane() -> None:
-    with pytest.raises(ValueError, match="requires --target-relative-multitarget"):
+    with pytest.raises(ValueError, match="Reach-scaled broad-epsilon"):
         build_hps(_args(broad_epsilon_pgd_training=True))
 
     with pytest.raises(ValueError, match="cannot be combined"):
@@ -298,6 +422,66 @@ def test_pgd_broad_epsilon_lane_requires_target_relative_and_excludes_random_lan
                 broad_epsilon_pgd_training=True,
             )
         )
+
+
+def test_e4800d6_sisu_spectrum_planned_rows_parse_to_sisu_pgd_args() -> None:
+    rows = planned_e4800d6_sisu_spectrum_rows()
+
+    assert [row["row"] for row in rows] == ["A", "B"]
+    assert [row["max_l2_radius_15cm"] for row in rows] == pytest.approx(
+        [0.0023284905801002004, EFFECTIVE_020A65B_PGD_RADIUS_15CM]
+    )
+    assert [row["max_radius_source"] for row in rows] == [
+        "raw_strong_gamma_1p05_radius",
+        "effective_020a65b_pgd_training_radius",
+    ]
+    assert rows[1]["max_radius_source_metadata"]["gamma_equivalent_analytical_anchor"] is False
+    for row in rows:
+        parsed = _parse_planned_training_command(row["command"])
+        parsed_gate = _parse_planned_training_command(row["checkpoint_gate_command"])
+
+        assert parsed.issue == "e4800d6"
+        assert row["command"][:6] == [
+            "env",
+            "PYTHONPATH=src",
+            "uv",
+            "run",
+            "--no-sync",
+            "python",
+        ]
+        assert "JAX_PLATFORM_NAME=cpu" not in row["command"]
+        assert row["run"].startswith("cs_gru_h0_sisu_spectrum_targetfix__")
+        assert row["remote_device"] == "runpod_rtx_5090"
+        assert row["row_kind"] == "full_train"
+        assert row["stop_after_batches"] is None
+        assert row["lr_schedule"] == "warmup_cosine"
+        assert row["lr_warmup_batches"] == 500
+        assert row["lr_warmup_init_fraction"] == pytest.approx(0.1)
+        assert row["lr_cosine_alpha"] == pytest.approx(0.1)
+        assert row["final_learning_rate"] == pytest.approx(3e-4)
+        assert row["initial_hidden_encoder"] == (
+            "zero_affine_target_relative_feedback_plus_force_filter"
+        )
+        assert parsed.target_relative_multitarget is True
+        assert parsed.initial_hidden_encoder is True
+        assert parsed.stop_after_batches is None
+        assert parsed_gate.stop_after_batches == 1000
+        assert parsed.force_filter_feedback is True
+        assert parsed.perturbation_training is True
+        assert parsed.perturbation_calibrated_timing is True
+        assert parsed.perturbation_physical_level == "small"
+        assert parsed.loss_objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
+        assert parsed.broad_epsilon_pgd_training is True
+        assert parsed.broad_epsilon_reach_scaling is False
+        assert parsed.broad_epsilon_pgd_budget_schedule == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
+        assert parsed.broad_epsilon_pgd_sisu_condition_input == "input"
+        assert parsed.broad_epsilon_pgd_sisu_max_radius == pytest.approx(row["max_l2_radius_15cm"])
+        assert parsed.broad_epsilon_pgd_sisu_max_radius_source == row["max_radius_source"]
+        assert parsed.broad_epsilon_pgd_steps == 10
+        assert parsed.broad_epsilon_pgd_step_size_fraction == pytest.approx(0.25)
+        assert parsed.lr_warmup_batches == 500
+        assert parsed.lr_warmup_init_fraction == pytest.approx(0.1)
+        assert parsed.lr_cosine_alpha == pytest.approx(0.1)
 
 
 def test_full_analytical_qrf_loss_scores_non_pos_vel_state_and_command() -> None:
@@ -1422,6 +1606,75 @@ def test_target_relative_multitarget_setup_uses_target_input_and_anchor() -> Non
     assert jnp.any(trial.inputs["target"][..., -1, :] != jnp.array([0.15, 0.0]))
 
 
+def test_sisu_conditioned_input_does_not_trigger_catch_target_rewrite() -> None:
+    hps = build_hps(
+        _args(
+            smoke=True,
+            batch_size=5,
+            target_relative_multitarget=True,
+            force_filter_feedback=True,
+            broad_epsilon_pgd_training=True,
+            broad_epsilon_pgd_budget_schedule=BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
+            broad_epsilon_pgd_sisu_condition_input="input",
+            broad_epsilon_pgd_sisu_max_radius=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+            broad_epsilon_reach_scaling=False,
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            hidden_size=8,
+            n_replicates=1,
+        )
+    )
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    base = pair.task.task.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
+
+    assert hps.task.p_catch_trial == pytest.approx(0.0)
+    assert pair.model.input_ports[:3] == ("input", "target", "epsilon")
+    assert sorted(base.inputs) == ["effector_target", "epsilon", "input"]
+
+    for i, sisu in enumerate((0.0, 0.25, 0.5, 0.75, 1.0)):
+        trial = _set_input(base, "input", jnp.full_like(base.inputs["input"], sisu))
+        retargeted = apply_training_target_distribution(
+            trial,
+            hps.target_relative_multitarget,
+            jr.PRNGKey(10 + i),
+        )
+        scored_target = retargeted.targets["mechanics.effector.pos"].value
+        visible_target = retargeted.inputs["target"]
+
+        assert jnp.allclose(scored_target, visible_target)
+        assert jnp.any(jnp.abs(scored_target) > 0.0)
+
+
+def test_generic_input_without_go_cue_role_does_not_preserve_catch_target() -> None:
+    trial = TaskTrialSpec(
+        inits=WhereDict({"mechanics.vector": jnp.zeros((8,), dtype=jnp.float32)}),
+        targets=WhereDict(
+            {
+                "mechanics.effector.pos": TargetSpec(
+                    value=jnp.zeros((3, 2), dtype=jnp.float32),
+                )
+            }
+        ),
+        inputs={"input": jnp.zeros((3,), dtype=jnp.float32)},
+        timeline=TrialTimeline(n_steps=3),
+    )
+    config = TargetRelativeMultiTargetTrainingConfig(
+        enabled=True,
+        seen_directions_deg=(0.0,),
+        held_out_directions_deg=(90.0,),
+        seen_amplitudes_m=(0.15,),
+        held_out_amplitudes_m=(0.12,),
+        original_target_anchor_m=(0.15, 0.0),
+    )
+
+    retargeted = apply_training_target_distribution(trial, config, jr.PRNGKey(1))
+
+    assert jnp.allclose(
+        retargeted.targets["mechanics.effector.pos"].value,
+        retargeted.inputs["target"],
+    )
+    assert jnp.any(jnp.abs(retargeted.targets["mechanics.effector.pos"].value) > 0.0)
+
+
 def test_delayed_reach_requires_target_relative_contract() -> None:
     with pytest.raises(ValueError, match="requires --target-relative-multitarget"):
         build_hps(_args(delayed_reach=True))
@@ -1534,6 +1787,36 @@ def test_delayed_reach_catch_trials_survive_target_distribution() -> None:
     assert jnp.allclose(scored_target, jnp.zeros_like(scored_target))
     assert jnp.allclose(perturbed.inputs["task"].effector_target.pos, scored_target)
     assert jnp.allclose(delta, 0.0)
+
+
+def test_delayed_reach_task_hold_preserves_catch_target_without_extra_metadata() -> None:
+    hps = build_hps(
+        _args(
+            smoke=True,
+            delayed_reach=True,
+            delayed_reach_p_catch_trial=1.0,
+            target_relative_multitarget=True,
+            hidden_size=8,
+            n_replicates=1,
+        )
+    )
+    task_base = _delayed_cs_task(hps, target_relative=False, go_cue_input=False)
+    base = task_base.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
+    base = eqx.tree_at(lambda trial: trial.extra, base, None)
+
+    sampled = apply_training_target_distribution(
+        base,
+        hps.target_relative_multitarget,
+        jr.PRNGKey(2),
+    )
+
+    assert sampled.extra is None
+    assert jnp.all(sampled.inputs["task"].hold > 0.5)
+    assert jnp.any(jnp.abs(sampled.inputs["target"]) > 0.0)
+    assert jnp.allclose(
+        sampled.targets["mechanics.effector.pos"].value,
+        jnp.zeros_like(sampled.targets["mechanics.effector.pos"].value),
+    )
 
 
 def test_delayed_reach_no_integrator_setup_uses_36d_state_and_6d_epsilon() -> None:

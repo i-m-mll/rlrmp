@@ -54,6 +54,34 @@ def test_declared_epsilon_radius_accepts_level_override_without_run_broad_config
     np.testing.assert_allclose(radius, 0.0023284905801002004 * 2.0)
 
 
+def test_declared_epsilon_radius_uses_active_pgd_schedule_when_broad_disabled() -> None:
+    run_spec = {
+        "hps": {
+            "broad_epsilon_training": {
+                "enabled": False,
+                "budget_contract": {"effective_l2_radius_15cm": 0.1},
+            },
+            "broad_epsilon_pgd_training": {
+                "enabled": True,
+                "budget_scale": 2.0,
+                "reach_length_scaling": False,
+                "budget_contract": {
+                    "active_max_l2_radius_15cm": 0.2,
+                    "effective_l2_radius_15cm": 0.1,
+                },
+                "budget_schedule": {
+                    "mode": "sisu_energy_fraction",
+                    "max_l2_radius_15cm": 0.3,
+                },
+            },
+        }
+    }
+
+    radius = declared_epsilon_l2_radius(run_spec, reach_length_m=0.30)
+
+    np.testing.assert_allclose(radius, 0.6)
+
+
 def test_declared_epsilon_radius_scales_level_override() -> None:
     radius = declared_epsilon_l2_radius(
         {"hps": {}},

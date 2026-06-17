@@ -46,7 +46,14 @@ DEFAULT_REGENERATION_SPEC_PATH = (
 METRICS = ("delta_position", "delta_action")
 STAT_COLUMNS = ("mean_norm", "max_norm")
 LR_ORDER = ("lr1e-3", "lr3e-3")
-TRAINING_LEVEL_ORDER = ("none", "small", "moderate", "stress")
+TRAINING_LEVEL_ORDER = (
+    "none",
+    "small",
+    "moderate",
+    "stress",
+    "sisu_raw_strong_gamma_1p05",
+    "sisu_effective_020a65b_pgd",
+)
 SEVERITY_ORDER = ("small", "moderate", "stress")
 TIMING_ORDER = ("initial_condition", "early", "mid", "late")
 SUPPORTED_EXTLQG_CHANNELS = {
@@ -73,6 +80,8 @@ TRAINING_WIDTHS = {
     "small": 2.2,
     "moderate": 3.0,
     "stress": 3.8,
+    "sisu_raw_strong_gamma_1p05": 2.2,
+    "sisu_effective_020a65b_pgd": 3.2,
 }
 EXTLQG_WIDTH = 2.0
 
@@ -1188,6 +1197,17 @@ def _parse_learning_rate(label: str, *, run_id: str | None = None) -> str:
 
 def _parse_training_level(label: str, *, run_id: str | None = None) -> str:
     for source in (label, run_id or ""):
+        normalized = (
+            source.lower()
+            .replace("-", "_")
+            .replace("=", "_")
+            .replace(" ", "_")
+            .replace(".", "p")
+        )
+        if "sisu" in normalized and "raw_strong_gamma_1p05" in normalized:
+            return "sisu_raw_strong_gamma_1p05"
+        if "sisu" in normalized and "effective_020a65b_pgd" in normalized:
+            return "sisu_effective_020a65b_pgd"
         if source.startswith("proprio_"):
             return source.split("_", maxsplit=1)[1]
         if source.startswith("none_") or "__none_" in source:

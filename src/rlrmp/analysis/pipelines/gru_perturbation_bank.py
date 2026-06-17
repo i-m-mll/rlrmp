@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -1702,6 +1702,7 @@ def evaluate_run_perturbation_bank(
     n_rollout_trials: int,
     write_bulk_arrays: bool,
     bulk_dir: Path,
+    trial_spec_transform: Callable[[Any], Any] | None = None,
     preferred_checkpoint_manifest_path: Path | None = None,
     checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
     repo_root: Path = REPO_ROOT,
@@ -1721,6 +1722,8 @@ def evaluate_run_perturbation_bank(
         repo_root=repo_root,
     )
     base_trial_specs = repeat_single_validation_trial(pair.task.validation_trials, n_rollout_trials)
+    if trial_spec_transform is not None:
+        base_trial_specs = trial_spec_transform(base_trial_specs)
     nominal_base_evaluation = _evaluate_model_on_trial_specs(
         model=model,
         task=pair.task,
