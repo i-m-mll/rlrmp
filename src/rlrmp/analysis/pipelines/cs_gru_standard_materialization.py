@@ -61,7 +61,7 @@ from rlrmp.analysis.pipelines.standard_certificate_materialization import (
     materialization_summary,
     repo_relative,
 )
-from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path
 from rlrmp.runtime.spec_migrations import (
     CS_GRU_STANDARD_CERTIFICATES_KIND,
     CS_GRU_STANDARD_CERTIFICATES_SCHEMA_VERSION,
@@ -179,7 +179,10 @@ def materialize_gru_standard_result(
             "source_issue": experiment,
             "checkpoint_policy": effective_checkpoint_policy,
             "source_manifests": {
-                run_id: repo_relative(result_run_root / run_id / "run.json", repo_root=repo_root)
+                run_id: repo_relative(
+                    run_spec_path(experiment, run_id, repo_root=repo_root),
+                    repo_root=repo_root,
+                )
                 for run_id in run_ids
             },
             "source_artifacts": {
@@ -221,8 +224,8 @@ def materialize_gru_standard_row(
 ) -> BridgeRunManifest:
     """Materialize one GRU pilot standard row."""
 
-    run_spec_path = repo_root / "results" / experiment / "runs" / run_id / "run.json"
-    run_spec = _read_json(run_spec_path)
+    resolved_run_spec_path = run_spec_path(experiment, run_id, repo_root=repo_root)
+    run_spec = _read_json(resolved_run_spec_path)
     training_summary_path = _default_training_summary_path(
         run_id,
         experiment=experiment,
@@ -260,6 +263,12 @@ def materialize_gru_standard_row(
                 _missing_observation_history_covariance_metadata("model loading was disabled")
             ),
         }
+    candidate_actions = _align_candidate_actions_to_reference_window(
+        candidate_actions,
+        reference_actions=reference_actions,
+        run_spec=run_spec,
+        evaluation_metadata=evaluation_metadata,
+    )
     if candidate_actions.size:
         reference_batch = np.broadcast_to(reference_actions[None, :, :], candidate_actions.shape)
     else:
@@ -293,7 +302,7 @@ def materialize_gru_standard_row(
             "observation_history_covariance"
         ),
         evaluation_metadata=evaluation_metadata,
-        run_spec_path=run_spec_path,
+        run_spec_path=resolved_run_spec_path,
         model_path=_default_model_path(run_id, experiment=experiment, repo_root=repo_root),
         training_summary_path=training_summary_path,
         reference_metadata=serializable_reference_metadata,
@@ -301,6 +310,54 @@ def materialize_gru_standard_row(
         materializer_issue_id=materializer_issue_id,
         repo_root=repo_root,
     )
+
+
+def _align_candidate_actions_to_reference_window(
+    candidate_actions: np.ndarray,
+    *,
+    reference_actions: np.ndarray,
+    run_spec: Mapping[str, Any],
+    evaluation_metadata: dict[str, Any],
+) -> np.ndarray:
+    """Align delayed full-trial GRU actions to the standard movement window."""
+
+    candidate = np.asarray(candidate_actions)
+    reference = np.asarray(reference_actions)
+    if (
+        candidate.ndim != 3
+        or reference.ndim != 2
+        or candidate.shape[1] == reference.shape[0]
+    ):
+        return candidate_actions
+    if not _is_delayed_reach_run_spec(run_spec) or candidate.shape[1] < reference.shape[0]:
+        evaluation_metadata["action_alignment"] = {
+            "status": "shape_mismatch_unaligned",
+            "candidate_action_shape": [int(dim) for dim in candidate.shape],
+            "reference_action_shape": [int(dim) for dim in reference.shape],
+        }
+        return candidate_actions
+
+    start = int(candidate.shape[1] - reference.shape[0])
+    stop = int(candidate.shape[1])
+    evaluation_metadata["action_alignment"] = {
+        "status": "aligned_to_delayed_movement_window",
+        "basis": "trailing_canonical_movement_window",
+        "candidate_action_shape_before": [int(dim) for dim in candidate.shape],
+        "reference_action_shape": [int(dim) for dim in reference.shape],
+        "window_start": start,
+        "window_stop": stop,
+    }
+    return candidate[:, start:stop, :]
+
+
+def _is_delayed_reach_run_spec(run_spec: Mapping[str, Any]) -> bool:
+    """Return whether a run spec describes the delayed-reach task contract."""
+
+    delayed = run_spec.get("delayed_reach", {})
+    if isinstance(delayed, Mapping) and delayed.get("enabled") is True:
+        return True
+    hps_delayed = run_spec.get("hps", {}).get("delayed_reach", {})
+    return isinstance(hps_delayed, Mapping) and hps_delayed.get("enabled") is True
 
 
 def build_gru_standard_manifest_from_actions(
@@ -459,9 +516,7 @@ def evaluate_gru_clean_actions(
         JSON-compatible evaluation metadata.
     """
 
-    run_spec = run_spec or _read_json(
-        repo_root / "results" / experiment / "runs" / run_id / "run.json"
-    )
+    run_spec = run_spec or _read_json(run_spec_path(experiment, run_id, repo_root=repo_root))
     hps = dict_to_namespace(normalize_gru_hps(run_spec["hps"]), to_type=TreeNamespace)
     n_replicates = int(hps.model.n_replicates)
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(int(run_spec.get("seed", 42))))

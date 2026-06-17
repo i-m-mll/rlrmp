@@ -77,6 +77,8 @@ def assert_ignored(path: str) -> None:
         "results/part2_5/figures/peak_velocity/spec.json",
         "results/part2_5/figures/peak_velocity/figure.json",
         "results/part2_5/figures/peak_velocity/figure.png",
+        # Local navigation symlinks to ignored figure renders stay tracked:
+        "results/part2_5/figures/big/figure.html",
         # Legacy stub configs:
         "results/2ef67ca/models/centerout_apt_pert1/config.json",
         # Typora markdown sidecar PNGs stay tracked:
@@ -102,15 +104,9 @@ def test_committable(path: str) -> None:
         "results/part2_5/runpod/baseline/standard_12k/checkpoint.eqx",
         "results/part2_5/modal/some_run/checkpoint.eqx",
         "results/part2_5/coreweave/run/x.eqx",
-        # Heavy figure renders:
-        "results/part2_5/figures/big/figure.html",
         # Unknown file kinds in unknown subdirs:
         "results/part2_5/some_random_dir/data.pkl",
         "results/part2_5/something/random.png",
-        # Everything under _artifacts/ except the README:
-        "_artifacts/part2_5/runs/baseline/checkpoints/x.eqx",
-        "_artifacts/part2_5/runs/baseline/run.json",
-        "_artifacts/part2_5/figures/big/figure.html",
     ],
 )
 def test_ignored(path: str) -> None:
@@ -161,10 +157,18 @@ def test_bulk_config_json_ignored(path: str) -> None:
     assert_ignored(path)
 
 
-# --- The _artifacts/README is the one tracked file under _artifacts/ ------
+# --- _artifacts/ is ignored as the bulk-output tree -----------------------
 
-def test_artifacts_readme_is_tracked() -> None:
-    assert_committable("_artifacts/README.md")
+def test_artifacts_tree_is_ignored() -> None:
+    """The bulk artifact tree itself is ignored.
+
+    Worktrees normally expose ``_artifacts`` as a symlink to the repo-root
+    shared artifact directory. Asking ``git check-ignore`` about nested paths
+    through that symlink fails with "beyond a symbolic link", so the durable
+    policy assertion is on the tree root.
+    """
+
+    assert_ignored("_artifacts")
 
 
 # --- Every currently-committed file under results/ stays committable ------
@@ -200,6 +204,7 @@ from rlrmp.paths import (
     figure_spec_dir,
     run_artifact_dir,
     run_spec_dir,
+    run_spec_path,
 )
 
 
@@ -216,6 +221,33 @@ class TestRunSpecDir:
     def test_is_inside_results(self) -> None:
         path = run_spec_dir("foo", "bar")
         assert str(path).startswith(str(PATHS_REPO_ROOT / "results"))
+
+
+class TestRunSpecPath:
+    """``run_spec_path`` resolves flat specs while preserving legacy fallback."""
+
+    def test_prefers_existing_flat_spec(self, tmp_path: Path) -> None:
+        flat = tmp_path / "results" / "abc1234" / "runs" / "run_a.json"
+        legacy = tmp_path / "results" / "abc1234" / "runs" / "run_a" / "run.json"
+        flat.parent.mkdir(parents=True)
+        legacy.parent.mkdir(parents=True)
+        flat.write_text("{}", encoding="utf-8")
+        legacy.write_text("{}", encoding="utf-8")
+
+        assert run_spec_path("abc1234", "run_a", repo_root=tmp_path) == flat
+
+    def test_uses_existing_legacy_spec(self, tmp_path: Path) -> None:
+        legacy = tmp_path / "results" / "abc1234" / "runs" / "run_a" / "run.json"
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text("{}", encoding="utf-8")
+
+        assert run_spec_path("abc1234", "run_a", repo_root=tmp_path) == legacy
+
+    def test_missing_path_points_to_flat_convention(self, tmp_path: Path) -> None:
+        assert (
+            run_spec_path("abc1234", "run_a", repo_root=tmp_path)
+            == tmp_path / "results" / "abc1234" / "runs" / "run_a.json"
+        )
 
 
 class TestRunArtifactDir:

@@ -30,6 +30,7 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     initial_effector_velocity,
     repeat_single_validation_trial,
     resolve_run_inputs,
+    trial_effector_target_position,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.runtime.spec_migrations import (
@@ -334,7 +335,7 @@ def evaluate_run_rollouts(
         model_arrays,
         jr.split(jr.PRNGKey(0), n_replicates),
     )
-    target_position = np.asarray(trial_specs.inputs["effector_target"].pos, dtype=np.float64)
+    target_position = trial_effector_target_position(trial_specs)
     initial_position = _initial_effector_position(trial_specs)
     initial_velocity = initial_effector_velocity(trial_specs)
     dt = float(run.run_spec.get("game_card", {}).get("dt", getattr(hps, "dt", 0.01)))

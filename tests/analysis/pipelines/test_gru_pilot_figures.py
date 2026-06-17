@@ -14,11 +14,13 @@ from rlrmp.analysis.pipelines.gru_pilot_figures import (
     ReferenceProfile,
     RunFigureInputs,
     VelocityProfile,
+    _scalar_weight,
     active_loss_term_labels,
     build_figure_summary,
     initial_effector_velocity,
     load_gru_training_history,
     repeat_single_validation_trial,
+    trial_effector_target_position,
     write_velocity_by_replicate_figure,
     write_velocity_figure,
 )
@@ -162,6 +164,53 @@ def test_initial_effector_velocity_reads_cs_lss_vector_init() -> None:
         initial_effector_velocity(trial_specs),
         np.asarray([[0.1, -0.2], [0.3, -0.4]]),
     )
+
+
+def test_trial_effector_target_position_reads_delayed_task_input() -> None:
+    class DelayedInputs:
+        def __init__(self) -> None:
+            self.effector_target = CartesianState(
+                pos=np.asarray([[[0.1, 0.2], [0.3, 0.4]]], dtype=np.float64)
+            )
+
+    trial_specs = TaskTrialSpec(
+        inits={"effector": CartesianState(pos=np.zeros((1, 2)))},
+        inputs={"task": DelayedInputs()},
+        targets={},
+    )
+
+    np.testing.assert_allclose(
+        trial_effector_target_position(trial_specs),
+        np.asarray([[[0.1, 0.2], [0.3, 0.4]]], dtype=np.float64),
+    )
+
+
+def test_scalar_weight_averages_variable_history_weight_arrays() -> None:
+    weight = _scalar_weight(np.asarray([[1.0, 3.0], [0.0, 5.0]], dtype=np.float64))
+
+    assert weight == 3.0
+
+
+def test_load_gru_training_history_infers_extra_full_qrf_components(tmp_path) -> None:
+    path = tmp_path / "training_history.eqx"
+    with path.open("wb") as stream:
+        stream.write(b"null\n")
+        for offset in (0.0, 10.0):
+            np.save(stream, np.full((3, 2), offset + 1.0, dtype=np.float64))
+            np.save(stream, np.asarray(1.0, dtype=np.float64))
+            np.save(stream, np.full((3, 2), offset + 2.0, dtype=np.float64))
+            np.save(stream, np.asarray(100000.0, dtype=np.float64))
+            np.save(stream, np.ones((3, 2), dtype=np.float64))
+        np.save(stream, np.asarray([0.003, 0.002, 0.001], dtype=np.float64))
+
+    history = load_gru_training_history({"loss_objective": "full_analytical_qrf"}, path)
+
+    assert tuple(child.label for child in history.loss.children) == (
+        "full_analytical_qrf_component_0",
+        "full_analytical_qrf_component_1",
+    )
+    assert history.loss.aggregate(leaf_fn=lambda value: value).shape == (3, 2)
+    assert history.loss_validation.aggregate(leaf_fn=lambda value: value).shape == (3, 2)
 
 
 def test_build_figure_summary_records_8d_and_4d_reference_metadata(tmp_path) -> None:

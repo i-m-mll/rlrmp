@@ -98,6 +98,34 @@ def test_select_validation_checkpoints_ignores_zero_padding(tmp_path: Path) -> N
     assert selections[0].final_vs_selected_validation_degradation == 0.0
 
 
+def test_validation_objective_history_infers_extra_full_qrf_components(tmp_path: Path) -> None:
+    history_path = tmp_path / "training_history.eqx"
+    zeros = np.zeros((3, 2), dtype=np.float64)
+    validation_a = np.asarray([[0.0, 0.0], [2.0, 3.0], [4.0, 0.0]], dtype=np.float64)
+    validation_b = np.asarray([[0.0, 0.0], [0.5, 0.25], [1.0, 0.0]], dtype=np.float64)
+    branch_weight = np.ones_like(validation_a)
+    with history_path.open("wb") as stream:
+        stream.write(b"null\n")
+        _write_loss_tree(
+            stream,
+            ((np.ones_like(validation_a), 1.0), (np.ones_like(validation_b), 100000.0)),
+        )
+        _write_loss_tree(
+            stream,
+            ((validation_a, 1.0), (validation_b, 100000.0)),
+            branch_weight=branch_weight,
+        )
+        np.save(stream, zeros, allow_pickle=False)
+
+    objective, valid_records = validation_objective_history(
+        run_spec={"loss_objective": "full_analytical_qrf"},
+        history_path=history_path,
+    )
+
+    np.testing.assert_allclose(objective, validation_a + validation_b * 100000.0)
+    np.testing.assert_array_equal(valid_records, np.asarray([[False, False], [True, True], [True, False]]))
+
+
 def test_fixed_bank_rescore_manifest_scores_all_durable_checkpoints(tmp_path: Path) -> None:
     experiment = "issue123"
     run_id = "run_a"
