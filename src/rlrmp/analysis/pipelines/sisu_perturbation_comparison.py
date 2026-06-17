@@ -466,9 +466,24 @@ def render_markdown(manifest: Mapping[str, Any]) -> str:
         f"- Rollout trials per replicate: {manifest['n_rollout_trials_per_replicate']}",
         "",
     ]
-    for run_id, run in manifest["runs"].items():
+    for run_id, run in _ordered_runs(manifest["runs"]):
         lines.extend(_render_run(run_id, run))
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _ordered_runs(runs: Mapping[str, Any]) -> list[tuple[str, Any]]:
+    """Return rows in the phase-spec order when labels identify rows A/B."""
+
+    def sort_key(item: tuple[str, Any]) -> tuple[int, str]:
+        run_id, run = item
+        label = str(run.get("label", run_id)).lower() if isinstance(run, Mapping) else run_id
+        if "raw strong" in label or "gamma-1.05" in label:
+            return (0, label)
+        if "effective" in label and "020a65b" in label:
+            return (1, label)
+        return (2, label)
+
+    return sorted(runs.items(), key=sort_key)
 
 
 def _render_run(run_id: str, run: Mapping[str, Any]) -> list[str]:
@@ -476,6 +491,18 @@ def _render_run(run_id: str, run: Mapping[str, Any]) -> list[str]:
         f"## {run['label']}",
         "",
         f"Run: `{run_id}`",
+        "",
+        "### Metric Glossary",
+        "",
+        "- Ratios are `SISU=1 / SISU=0`; values below 1 mean the high-SISU "
+        "condition had the smaller perturbation response.",
+        "- `Mean delta action ratio`: mean command-change norm under perturbation.",
+        "- `Max delta x ratio`: peak hand-position response magnitude in meters.",
+        "- `AUC delta x ratio`: time-integrated hand-position response magnitude.",
+        "- `Cost SISU=0`, `Cost SISU=1`, `Cost ratio`, and `Cost diff`: "
+        "post-hoc full-Q/R/Q_f perturbation delta cost, with `diff = SISU1 - SISU0`.",
+        "- Signed diagnostics are separated because endpoint and terminal-speed "
+        "deltas are directional sidecars, not simple lower-is-better ratios.",
         "",
         "### Headline",
         "",
@@ -497,16 +524,27 @@ def _render_run(run_id: str, run: Mapping[str, Any]) -> list[str]:
             "",
             "### Class-Binned Summary",
             "",
-            "| Class | Rows | Mean delta action 0 | Mean delta action 1 | action ratio | "
-            "Max dx 0 | Max dx 1 | max-dx ratio | AUC dx 0 | AUC dx 1 | AUC ratio | "
-            "Endpoint delta 0 | Endpoint delta 1 | endpoint diff | Terminal-speed "
-            "delta 0 | Terminal-speed delta 1 | terminal diff | Full-Q/R/Qf cost 0 | "
-            "Full-Q/R/Qf cost 1 | cost ratio | cost diff | Notes |",
-            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+            "| Class | Rows | Status | Mean delta action ratio | Max delta x ratio | "
+            "AUC delta x ratio | Cost SISU=0 | Cost SISU=1 | Cost ratio | "
+            "Cost diff | Notes |",
+            "|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---|",
         ]
     )
     for class_key, row in run["class_comparison"].items():
         lines.append(_render_comparison_row(class_key, row))
+    lines.extend(
+        [
+            "",
+            "#### Signed Diagnostics",
+            "",
+            "| Class | Endpoint delta SISU=0 | Endpoint delta SISU=1 | endpoint diff | "
+            "Terminal-speed delta SISU=0 | Terminal-speed delta SISU=1 | "
+            "terminal diff |",
+            "|---|---:|---:|---:|---:|---:|---:|",
+        ]
+    )
+    for class_key, row in run["class_comparison"].items():
+        lines.append(_render_signed_diagnostic_row(class_key, row))
     lines.extend(
         [
             "",
@@ -539,33 +577,36 @@ def _render_comparison_row(group_key: str, row: Mapping[str, Any]) -> str:
     action = metrics["mean_delta_action"]
     max_dx = metrics["max_delta_x_m"]
     auc_dx = metrics["auc_delta_x_m_s"]
-    endpoint = metrics["mean_endpoint_delta_m"]
-    terminal = metrics["mean_terminal_speed_delta_m_s"]
     cost = metrics["mean_full_qrf_delta_cost"]
     return (
         "| "
         f"`{group_key}` | "
         f"{_rows_text(row)} | "
-        f"{_fmt_float(action['sisu_0'])} | "
-        f"{_fmt_float(action['sisu_1'])} | "
+        f"{_status_text(row)} | "
         f"{_fmt_ratio(action)} | "
-        f"{_fmt_float(max_dx['sisu_0'])} | "
-        f"{_fmt_float(max_dx['sisu_1'])} | "
         f"{_fmt_ratio(max_dx)} | "
-        f"{_fmt_float(auc_dx['sisu_0'])} | "
-        f"{_fmt_float(auc_dx['sisu_1'])} | "
         f"{_fmt_ratio(auc_dx)} | "
-        f"{_fmt_float(endpoint['sisu_0'])} | "
-        f"{_fmt_float(endpoint['sisu_1'])} | "
-        f"{_fmt_float(endpoint['delta_1_minus_0'])} | "
-        f"{_fmt_float(terminal['sisu_0'])} | "
-        f"{_fmt_float(terminal['sisu_1'])} | "
-        f"{_fmt_float(terminal['delta_1_minus_0'])} | "
         f"{_fmt_float(cost['sisu_0'])} | "
         f"{_fmt_float(cost['sisu_1'])} | "
         f"{_fmt_ratio(cost)} | "
         f"{_fmt_float(cost['delta_1_minus_0'])} | "
         f"{_fmt_notes(row.get('notes', []))} |"
+    )
+
+
+def _render_signed_diagnostic_row(group_key: str, row: Mapping[str, Any]) -> str:
+    metrics = row["metrics"]
+    endpoint = metrics["mean_endpoint_delta_m"]
+    terminal = metrics["mean_terminal_speed_delta_m_s"]
+    return (
+        "| "
+        f"`{group_key}` | "
+        f"{_fmt_float(endpoint['sisu_0'])} | "
+        f"{_fmt_float(endpoint['sisu_1'])} | "
+        f"{_fmt_float(endpoint['delta_1_minus_0'])} | "
+        f"{_fmt_float(terminal['sisu_0'])} | "
+        f"{_fmt_float(terminal['sisu_1'])} | "
+        f"{_fmt_float(terminal['delta_1_minus_0'])} |"
     )
 
 
@@ -623,6 +664,20 @@ def _rows_text(row: Mapping[str, Any]) -> str:
     low = row.get("rows_sisu_0")
     high = row.get("rows_sisu_1")
     return str(low) if low == high else f"{low}/{high}"
+
+
+def _status_text(row: Mapping[str, Any]) -> str:
+    low = row.get("status_counts_sisu_0", {})
+    high = row.get("status_counts_sisu_1", {})
+    low_text = _format_status_counts(low)
+    high_text = _format_status_counts(high)
+    return low_text if low_text == high_text else f"0:{low_text}; 1:{high_text}"
+
+
+def _format_status_counts(counts: Any) -> str:
+    if not isinstance(counts, Mapping) or not counts:
+        return "unknown"
+    return ", ".join(f"{key}={value}" for key, value in sorted(counts.items()))
 
 
 def _fmt_float(value: Any) -> str:

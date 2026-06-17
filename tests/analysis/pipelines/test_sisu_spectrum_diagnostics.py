@@ -206,6 +206,12 @@ def test_sisu_perturbation_markdown_declares_rerollout_policy() -> None:
         },
         "n_rollout_trials_per_replicate": 2,
         "runs": {
+            "run_b": {
+                "label": "effective 020a65b PGD targetfix",
+                "headline": summarize_headline(groups),
+                "class_comparison": groups,
+                "timing_cell_comparison": groups,
+            },
             "run_a": {
                 "label": "raw strong gamma-1.05 targetfix",
                 "headline": summarize_headline(groups),
@@ -221,6 +227,12 @@ def test_sisu_perturbation_markdown_declares_rerollout_policy() -> None:
     assert "ratio below 1 is an improvement" in markdown
     assert "reran both SISU=0 and SISU=1 locally" in markdown
     assert "raw strong gamma-1.05 targetfix" in markdown
+    assert "### Metric Glossary" in markdown
+    assert "Mean delta action 0" not in markdown
+    assert "Signed Diagnostics" in markdown
+    assert markdown.index("raw strong gamma-1.05 targetfix") < markdown.index(
+        "effective 020a65b PGD targetfix"
+    )
 
 
 def _curve(sisu: float, *, endpoint: float = 0.1, peak: float = 0.2) -> SisuCurve:

@@ -21,6 +21,15 @@ This report compares SISU=1 against SISU=0 within each trained targetfix model o
 
 Run: `cs_gru_h0_sisu_spectrum_targetfix__raw_strong_gamma_1p05_radius_lr3e-3_clip5_b64`
 
+### Metric Glossary
+
+- Ratios are `SISU=1 / SISU=0`; values below 1 mean the high-SISU condition had the smaller perturbation response.
+- `Mean delta action ratio`: mean command-change norm under perturbation.
+- `Max delta x ratio`: peak hand-position response magnitude in meters.
+- `AUC delta x ratio`: time-integrated hand-position response magnitude.
+- `Cost SISU=0`, `Cost SISU=1`, `Cost ratio`, and `Cost diff`: post-hoc full-Q/R/Q_f perturbation delta cost, with `diff = SISU1 - SISU0`.
+- Signed diagnostics are separated because endpoint and terminal-speed deltas are directional sidecars, not simple lower-is-better ratios.
+
 ### Headline
 
 | Metric | Class groups with ratio < 1 | ratio = 1 | ratio > 1 | unavailable |
@@ -31,19 +40,35 @@ Run: `cs_gru_h0_sisu_spectrum_targetfix__raw_strong_gamma_1p05_radius_lr3e-3_cli
 
 ### Class-Binned Summary
 
-| Class | Rows | Mean delta action 0 | Mean delta action 1 | action ratio | Max dx 0 | Max dx 1 | max-dx ratio | AUC dx 0 | AUC dx 1 | AUC ratio | Endpoint delta 0 | Endpoint delta 1 | endpoint diff | Terminal-speed delta 0 | Terminal-speed delta 1 | terminal diff | Full-Q/R/Qf cost 0 | Full-Q/R/Qf cost 1 | cost ratio | cost diff | Notes |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| `command_input/command_input_pulse` | 36 | 0.270897 | 0.334467 | 1.23466 | 0.00454908 | 0.00429872 | 0.944966 | 0.000872233 | 0.000725359 | 0.831612 | 0.00143757 | 0.00166697 | 0.000229398 | 0.0044814 | 0.00279902 | -0.00168239 | 702.14 | 682.582 | 0.972146 | -19.5576 | none |
-| `command_input/target_aligned_lateral_command_load_pulse` | 18 | 0.271861 | 0.343744 | 1.26441 | 0.00450812 | 0.00423255 | 0.938873 | 0.000827216 | 0.000698412 | 0.844292 | 0.00155605 | 0.00162122 | 6.51679e-05 | 0.00462398 | 0.00311609 | -0.00150789 | 702.074 | 686.989 | 0.978514 | -15.0845 | none |
-| `delayed_observation/delayed_observation_offset` | 108 | 0.406286 | 0.596225 | 1.4675 | 0.0042095 | 0.00468389 | 1.1127 | 0.000868351 | 0.000778576 | 0.896614 | 0.00110429 | 0.00145837 | 0.000354076 | 0.00231431 | 0.00419249 | 0.00187818 | 475.156 | 737.926 | 1.55302 | 262.77 | sisu_0:robust_analytical_not_applicable_reasons=1; sisu_1:robust_analytical_not_applicable_reasons=1 |
-| `initial_state/initial_position_offset` | 12 | 0.354891 | 0.406019 | 1.14407 | 0.02 | 0.02 | 1 | 0.00614132 | 0.00564963 | 0.919937 | 0.00100101 | 0.000582097 | -0.000418914 | 9.45585e-05 | 0.000308754 | 0.000214196 | 353.957 | 331.525 | 0.936624 | -22.4322 | none |
-| `initial_state/initial_velocity_offset` | 12 | 0.198472 | 0.227179 | 1.14464 | 0.00440114 | 0.00436549 | 0.991899 | 0.00104601 | 0.00100663 | 0.962353 | 2.50926e-05 | 8.59744e-05 | 6.08818e-05 | 2.14064e-05 | 5.02957e-05 | 2.88893e-05 | 32.9283 | 38.6112 | 1.17258 | 5.6829 | none |
-| `process_epsilon/process_epsilon_force_state_xy` | 36 | 0.270997 | 0.334537 | 1.23447 | 0.0045485 | 0.00429872 | 0.945085 | 0.000872688 | 0.000725899 | 0.831796 | 0.0014538 | 0.0016653 | 0.000211503 | 0.00446537 | 0.00280862 | -0.00165675 | 702.399 | 682.961 | 0.972326 | -19.4384 | none |
-| `process_epsilon/process_epsilon_integrator_xy` | 36 | 0.187989 | 0.20383 | 1.08426 | 0.00997725 | 0.00910701 | 0.912778 | 0.00150526 | 0.00132821 | 0.882378 | 0.00741358 | 0.00799564 | 0.000582065 | 0.0391035 | 0.0402998 | 0.00119625 | 3537.64 | 3361.8 | 0.950292 | -175.847 | sisu_0:inflated_ratio; sisu_1:inflated_ratio |
-| `process_epsilon/process_epsilon_position_xy` | 36 | 0.293771 | 0.445609 | 1.51686 | 0.02 | 0.02 | 1 | 0.00558332 | 0.00499273 | 0.894223 | 0.00766817 | 0.00690001 | -0.000768161 | 0.00410788 | 0.00277592 | -0.00133197 | 2280.5 | 2332.12 | 1.02263 | 51.6119 | none |
-| `process_epsilon/process_epsilon_velocity_xy` | 36 | 0.271643 | 0.358698 | 1.32048 | 0.00706713 | 0.00682476 | 0.965705 | 0.00146917 | 0.00125849 | 0.856598 | 0.00271759 | 0.00291624 | 0.000198648 | 0.00562834 | 0.00425143 | -0.0013769 | 1139.53 | 1138.93 | 0.999473 | -0.60104 | none |
-| `sensory_feedback/sensory_feedback_offset` | 108 | 0.406286 | 0.596225 | 1.4675 | 0.0042095 | 0.00468389 | 1.1127 | 0.000868351 | 0.000778576 | 0.896614 | 0.00110429 | 0.00145837 | 0.000354076 | 0.00231431 | 0.00419249 | 0.00187818 | 475.156 | 737.926 | 1.55302 | 262.77 | sisu_0:robust_analytical_not_applicable_reasons=1; sisu_1:robust_analytical_not_applicable_reasons=1 |
-| `target_stream/target_stream_jump` | 1 | NA | NA | NA | NA | NA | NA | NA | NA | NA | NA | NA | NA | NA | NA | NA | NA | NA | NA | NA | sisu_0:extlqg_not_applicable_reasons=1; sisu_0:not_applicable_reasons=1; sisu_0:robust_analytical_not_applicable_reasons=1; sisu_1:extlqg_not_applicable_reasons=1; sisu_1:not_applicable_reasons=1; sisu_1:robust_analytical_not_applicable_reasons=1 |
+| Class | Rows | Status | Mean delta action ratio | Max delta x ratio | AUC delta x ratio | Cost SISU=0 | Cost SISU=1 | Cost ratio | Cost diff | Notes |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---|
+| `command_input/command_input_pulse` | 36 | evaluated=36 | 1.23466 | 0.944966 | 0.831612 | 702.14 | 682.582 | 0.972146 | -19.5576 | none |
+| `command_input/target_aligned_lateral_command_load_pulse` | 18 | evaluated=18 | 1.26441 | 0.938873 | 0.844292 | 702.074 | 686.989 | 0.978514 | -15.0845 | none |
+| `delayed_observation/delayed_observation_offset` | 108 | evaluated=108 | 1.4675 | 1.1127 | 0.896614 | 475.156 | 737.926 | 1.55302 | 262.77 | sisu_0:robust_analytical_not_applicable_reasons=1; sisu_1:robust_analytical_not_applicable_reasons=1 |
+| `initial_state/initial_position_offset` | 12 | evaluated=12 | 1.14407 | 1 | 0.919937 | 353.957 | 331.525 | 0.936624 | -22.4322 | none |
+| `initial_state/initial_velocity_offset` | 12 | evaluated=12 | 1.14464 | 0.991899 | 0.962353 | 32.9283 | 38.6112 | 1.17258 | 5.6829 | none |
+| `process_epsilon/process_epsilon_force_state_xy` | 36 | evaluated=36 | 1.23447 | 0.945085 | 0.831796 | 702.399 | 682.961 | 0.972326 | -19.4384 | none |
+| `process_epsilon/process_epsilon_integrator_xy` | 36 | evaluated=36 | 1.08426 | 0.912778 | 0.882378 | 3537.64 | 3361.8 | 0.950292 | -175.847 | sisu_0:inflated_ratio; sisu_1:inflated_ratio |
+| `process_epsilon/process_epsilon_position_xy` | 36 | evaluated=36 | 1.51686 | 1 | 0.894223 | 2280.5 | 2332.12 | 1.02263 | 51.6119 | none |
+| `process_epsilon/process_epsilon_velocity_xy` | 36 | evaluated=36 | 1.32048 | 0.965705 | 0.856598 | 1139.53 | 1138.93 | 0.999473 | -0.60104 | none |
+| `sensory_feedback/sensory_feedback_offset` | 108 | evaluated=108 | 1.4675 | 1.1127 | 0.896614 | 475.156 | 737.926 | 1.55302 | 262.77 | sisu_0:robust_analytical_not_applicable_reasons=1; sisu_1:robust_analytical_not_applicable_reasons=1 |
+| `target_stream/target_stream_jump` | 1 | not_applicable=1 | NA | NA | NA | NA | NA | NA | NA | sisu_0:extlqg_not_applicable_reasons=1; sisu_0:not_applicable_reasons=1; sisu_0:robust_analytical_not_applicable_reasons=1; sisu_1:extlqg_not_applicable_reasons=1; sisu_1:not_applicable_reasons=1; sisu_1:robust_analytical_not_applicable_reasons=1 |
+
+#### Signed Diagnostics
+
+| Class | Endpoint delta SISU=0 | Endpoint delta SISU=1 | endpoint diff | Terminal-speed delta SISU=0 | Terminal-speed delta SISU=1 | terminal diff |
+|---|---:|---:|---:|---:|---:|---:|
+| `command_input/command_input_pulse` | 0.00143757 | 0.00166697 | 0.000229398 | 0.0044814 | 0.00279902 | -0.00168239 |
+| `command_input/target_aligned_lateral_command_load_pulse` | 0.00155605 | 0.00162122 | 6.51679e-05 | 0.00462398 | 0.00311609 | -0.00150789 |
+| `delayed_observation/delayed_observation_offset` | 0.00110429 | 0.00145837 | 0.000354076 | 0.00231431 | 0.00419249 | 0.00187818 |
+| `initial_state/initial_position_offset` | 0.00100101 | 0.000582097 | -0.000418914 | 9.45585e-05 | 0.000308754 | 0.000214196 |
+| `initial_state/initial_velocity_offset` | 2.50926e-05 | 8.59744e-05 | 6.08818e-05 | 2.14064e-05 | 5.02957e-05 | 2.88893e-05 |
+| `process_epsilon/process_epsilon_force_state_xy` | 0.0014538 | 0.0016653 | 0.000211503 | 0.00446537 | 0.00280862 | -0.00165675 |
+| `process_epsilon/process_epsilon_integrator_xy` | 0.00741358 | 0.00799564 | 0.000582065 | 0.0391035 | 0.0402998 | 0.00119625 |
+| `process_epsilon/process_epsilon_position_xy` | 0.00766817 | 0.00690001 | -0.000768161 | 0.00410788 | 0.00277592 | -0.00133197 |
+| `process_epsilon/process_epsilon_velocity_xy` | 0.00271759 | 0.00291624 | 0.000198648 | 0.00562834 | 0.00425143 | -0.0013769 |
+| `sensory_feedback/sensory_feedback_offset` | 0.00110429 | 0.00145837 | 0.000354076 | 0.00231431 | 0.00419249 | 0.00187818 |
+| `target_stream/target_stream_jump` | NA | NA | NA | NA | NA | NA |
 
 ### Timing-Cell Summary
 
@@ -81,6 +106,15 @@ Run: `cs_gru_h0_sisu_spectrum_targetfix__raw_strong_gamma_1p05_radius_lr3e-3_cli
 
 Run: `cs_gru_h0_sisu_spectrum_targetfix__effective_020a65b_pgd_radius_lr3e-3_clip5_b64`
 
+### Metric Glossary
+
+- Ratios are `SISU=1 / SISU=0`; values below 1 mean the high-SISU condition had the smaller perturbation response.
+- `Mean delta action ratio`: mean command-change norm under perturbation.
+- `Max delta x ratio`: peak hand-position response magnitude in meters.
+- `AUC delta x ratio`: time-integrated hand-position response magnitude.
+- `Cost SISU=0`, `Cost SISU=1`, `Cost ratio`, and `Cost diff`: post-hoc full-Q/R/Q_f perturbation delta cost, with `diff = SISU1 - SISU0`.
+- Signed diagnostics are separated because endpoint and terminal-speed deltas are directional sidecars, not simple lower-is-better ratios.
+
 ### Headline
 
 | Metric | Class groups with ratio < 1 | ratio = 1 | ratio > 1 | unavailable |
@@ -91,19 +125,35 @@ Run: `cs_gru_h0_sisu_spectrum_targetfix__effective_020a65b_pgd_radius_lr3e-3_cli
 
 ### Class-Binned Summary
 
-| Class | Rows | Mean delta action 0 | Mean delta action 1 | action ratio | Max dx 0 | Max dx 1 | max-dx ratio | AUC dx 0 | AUC dx 1 | AUC ratio | Endpoint delta 0 | Endpoint delta 1 | endpoint diff | Terminal-speed delta 0 | Terminal-speed delta 1 | terminal diff | Full-Q/R/Qf cost 0 | Full-Q/R/Qf cost 1 | cost ratio | cost diff | Notes |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| `command_input/command_input_pulse` | 36 | 0.267912 | 0.348908 | 1.30232 | 0.00436785 | 0.00398875 | 0.913207 | 0.000919961 | 0.00062921 | 0.683954 | 0.00146103 | 0.00148365 | 2.2615e-05 | 0.00255341 | 0.000594924 | -0.00195848 | 641.638 | 564.131 | 0.879204 | -77.507 | none |
-| `command_input/target_aligned_lateral_command_load_pulse` | 18 | 0.26992 | 0.351924 | 1.30381 | 0.00433537 | 0.00396191 | 0.913857 | 0.000889529 | 0.000615283 | 0.691696 | 0.0016032 | 0.00148686 | -0.000116338 | 0.00280245 | 0.000605037 | -0.00219741 | 641.113 | 564.032 | 0.879769 | -77.0817 | none |
-| `delayed_observation/delayed_observation_offset` | 108 | 0.415736 | 0.76185 | 1.83253 | 0.00405403 | 0.00469101 | 1.15712 | 0.00093015 | 0.000693984 | 0.746099 | 0.00121496 | 0.00103756 | -0.000177403 | 0.00265054 | 0.00384389 | 0.00119334 | 437.282 | 777.037 | 1.77697 | 339.755 | sisu_0:robust_analytical_not_applicable_reasons=1; sisu_1:robust_analytical_not_applicable_reasons=1 |
-| `initial_state/initial_position_offset` | 12 | 0.398867 | 0.518812 | 1.30072 | 0.02 | 0.02 | 1 | 0.00580334 | 0.00490962 | 0.845999 | 0.00082143 | 1.36154e-05 | -0.000807814 | 0.000172195 | 1.48396e-05 | -0.000157355 | 293.539 | 270.492 | 0.921485 | -23.0471 | none |
-| `initial_state/initial_velocity_offset` | 12 | 0.186524 | 0.228859 | 1.22697 | 0.00430696 | 0.00426673 | 0.990659 | 0.0011105 | 0.000903817 | 0.813881 | 4.41611e-05 | -5.57161e-07 | -4.47182e-05 | 2.65992e-05 | -4.61557e-07 | -2.70608e-05 | 30.0456 | 29.8008 | 0.991853 | -0.244781 | none |
-| `process_epsilon/process_epsilon_force_state_xy` | 36 | 0.268019 | 0.349083 | 1.30246 | 0.00436754 | 0.00398859 | 0.913237 | 0.00092002 | 0.000628809 | 0.683473 | 0.0014844 | 0.00148066 | -3.7432e-06 | 0.00255612 | 0.000649278 | -0.00190684 | 642.183 | 564.947 | 0.879728 | -77.2366 | none |
-| `process_epsilon/process_epsilon_integrator_xy` | 36 | 0.179571 | 0.19208 | 1.06966 | 0.0103339 | 0.00889878 | 0.861127 | 0.00155957 | 0.00125806 | 0.806675 | 0.00769697 | 0.00761887 | -7.80984e-05 | 0.0411956 | 0.0431717 | 0.00197613 | 3619.15 | 3296.61 | 0.91088 | -322.541 | sisu_0:inflated_ratio; sisu_1:inflated_ratio |
-| `process_epsilon/process_epsilon_position_xy` | 36 | 0.27339 | 0.628269 | 2.29807 | 0.02 | 0.02 | 1 | 0.00575836 | 0.00447939 | 0.777894 | 0.0086948 | 0.00587428 | -0.00282052 | 0.00431029 | 0.000721094 | -0.0035892 | 2247.66 | 2227.98 | 0.991242 | -19.6851 | none |
-| `process_epsilon/process_epsilon_velocity_xy` | 36 | 0.247441 | 0.373462 | 1.5093 | 0.00700571 | 0.00653846 | 0.933304 | 0.00160091 | 0.00114531 | 0.715412 | 0.0031176 | 0.00273306 | -0.000384537 | 0.00315097 | 0.000795935 | -0.00235504 | 1092.65 | 980.106 | 0.896996 | -112.548 | none |
-| `sensory_feedback/sensory_feedback_offset` | 108 | 0.415736 | 0.76185 | 1.83253 | 0.00405403 | 0.00469101 | 1.15712 | 0.00093015 | 0.000693984 | 0.746099 | 0.00121496 | 0.00103756 | -0.000177403 | 0.00265054 | 0.00384389 | 0.00119334 | 437.282 | 777.037 | 1.77697 | 339.755 | sisu_0:robust_analytical_not_applicable_reasons=1; sisu_1:robust_analytical_not_applicable_reasons=1 |
-| `target_stream/target_stream_jump` | 1 | NA | NA | NA | NA | NA | NA | NA | NA | NA | NA | NA | NA | NA | NA | NA | NA | NA | NA | NA | sisu_0:extlqg_not_applicable_reasons=1; sisu_0:not_applicable_reasons=1; sisu_0:robust_analytical_not_applicable_reasons=1; sisu_1:extlqg_not_applicable_reasons=1; sisu_1:not_applicable_reasons=1; sisu_1:robust_analytical_not_applicable_reasons=1 |
+| Class | Rows | Status | Mean delta action ratio | Max delta x ratio | AUC delta x ratio | Cost SISU=0 | Cost SISU=1 | Cost ratio | Cost diff | Notes |
+|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---|
+| `command_input/command_input_pulse` | 36 | evaluated=36 | 1.30232 | 0.913207 | 0.683954 | 641.638 | 564.131 | 0.879204 | -77.507 | none |
+| `command_input/target_aligned_lateral_command_load_pulse` | 18 | evaluated=18 | 1.30381 | 0.913857 | 0.691696 | 641.113 | 564.032 | 0.879769 | -77.0817 | none |
+| `delayed_observation/delayed_observation_offset` | 108 | evaluated=108 | 1.83253 | 1.15712 | 0.746099 | 437.282 | 777.037 | 1.77697 | 339.755 | sisu_0:robust_analytical_not_applicable_reasons=1; sisu_1:robust_analytical_not_applicable_reasons=1 |
+| `initial_state/initial_position_offset` | 12 | evaluated=12 | 1.30072 | 1 | 0.845999 | 293.539 | 270.492 | 0.921485 | -23.0471 | none |
+| `initial_state/initial_velocity_offset` | 12 | evaluated=12 | 1.22697 | 0.990659 | 0.813881 | 30.0456 | 29.8008 | 0.991853 | -0.244781 | none |
+| `process_epsilon/process_epsilon_force_state_xy` | 36 | evaluated=36 | 1.30246 | 0.913237 | 0.683473 | 642.183 | 564.947 | 0.879728 | -77.2366 | none |
+| `process_epsilon/process_epsilon_integrator_xy` | 36 | evaluated=36 | 1.06966 | 0.861127 | 0.806675 | 3619.15 | 3296.61 | 0.91088 | -322.541 | sisu_0:inflated_ratio; sisu_1:inflated_ratio |
+| `process_epsilon/process_epsilon_position_xy` | 36 | evaluated=36 | 2.29807 | 1 | 0.777894 | 2247.66 | 2227.98 | 0.991242 | -19.6851 | none |
+| `process_epsilon/process_epsilon_velocity_xy` | 36 | evaluated=36 | 1.5093 | 0.933304 | 0.715412 | 1092.65 | 980.106 | 0.896996 | -112.548 | none |
+| `sensory_feedback/sensory_feedback_offset` | 108 | evaluated=108 | 1.83253 | 1.15712 | 0.746099 | 437.282 | 777.037 | 1.77697 | 339.755 | sisu_0:robust_analytical_not_applicable_reasons=1; sisu_1:robust_analytical_not_applicable_reasons=1 |
+| `target_stream/target_stream_jump` | 1 | not_applicable=1 | NA | NA | NA | NA | NA | NA | NA | sisu_0:extlqg_not_applicable_reasons=1; sisu_0:not_applicable_reasons=1; sisu_0:robust_analytical_not_applicable_reasons=1; sisu_1:extlqg_not_applicable_reasons=1; sisu_1:not_applicable_reasons=1; sisu_1:robust_analytical_not_applicable_reasons=1 |
+
+#### Signed Diagnostics
+
+| Class | Endpoint delta SISU=0 | Endpoint delta SISU=1 | endpoint diff | Terminal-speed delta SISU=0 | Terminal-speed delta SISU=1 | terminal diff |
+|---|---:|---:|---:|---:|---:|---:|
+| `command_input/command_input_pulse` | 0.00146103 | 0.00148365 | 2.2615e-05 | 0.00255341 | 0.000594924 | -0.00195848 |
+| `command_input/target_aligned_lateral_command_load_pulse` | 0.0016032 | 0.00148686 | -0.000116338 | 0.00280245 | 0.000605037 | -0.00219741 |
+| `delayed_observation/delayed_observation_offset` | 0.00121496 | 0.00103756 | -0.000177403 | 0.00265054 | 0.00384389 | 0.00119334 |
+| `initial_state/initial_position_offset` | 0.00082143 | 1.36154e-05 | -0.000807814 | 0.000172195 | 1.48396e-05 | -0.000157355 |
+| `initial_state/initial_velocity_offset` | 4.41611e-05 | -5.57161e-07 | -4.47182e-05 | 2.65992e-05 | -4.61557e-07 | -2.70608e-05 |
+| `process_epsilon/process_epsilon_force_state_xy` | 0.0014844 | 0.00148066 | -3.7432e-06 | 0.00255612 | 0.000649278 | -0.00190684 |
+| `process_epsilon/process_epsilon_integrator_xy` | 0.00769697 | 0.00761887 | -7.80984e-05 | 0.0411956 | 0.0431717 | 0.00197613 |
+| `process_epsilon/process_epsilon_position_xy` | 0.0086948 | 0.00587428 | -0.00282052 | 0.00431029 | 0.000721094 | -0.0035892 |
+| `process_epsilon/process_epsilon_velocity_xy` | 0.0031176 | 0.00273306 | -0.000384537 | 0.00315097 | 0.000795935 | -0.00235504 |
+| `sensory_feedback/sensory_feedback_offset` | 0.00121496 | 0.00103756 | -0.000177403 | 0.00265054 | 0.00384389 | 0.00119334 |
+| `target_stream/target_stream_jump` | NA | NA | NA | NA | NA | NA |
 
 ### Timing-Cell Summary
 
