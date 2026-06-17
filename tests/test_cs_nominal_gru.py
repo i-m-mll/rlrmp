@@ -890,6 +890,46 @@ def _max_nonzero_pulse_width(delta: jnp.ndarray) -> int:
     return max(widths) if widths else 0
 
 
+def _nonzero_pulse_start_offsets(delta: jnp.ndarray, movement_start: jnp.ndarray) -> set[int]:
+    active = np.asarray(jnp.any(delta != 0.0, axis=-1).reshape((-1, delta.shape[-2])))
+    starts = np.asarray(movement_start).reshape((-1,))
+    offsets = set()
+    for row, start in zip(active, starts, strict=True):
+        if np.any(row):
+            offsets.add(int(np.flatnonzero(row)[0]) - int(start))
+    return offsets
+
+
+def _assert_no_prep_pulse_support(delta: jnp.ndarray, movement_start: jnp.ndarray) -> None:
+    active = np.asarray(jnp.any(delta != 0.0, axis=-1).reshape((-1, delta.shape[-2])))
+    starts = np.asarray(movement_start).reshape((-1,))
+    for row, start in zip(active, starts, strict=True):
+        assert not np.any(row[: int(start)])
+
+
+def _manual_movement_age_trial(go_steps: jnp.ndarray, *, n_steps: int = 90) -> TaskTrialSpec:
+    go_steps = jnp.asarray(go_steps, dtype=jnp.int32)
+    batch = int(go_steps.shape[0])
+    target = jnp.broadcast_to(
+        jnp.asarray([0.15, 0.0], dtype=jnp.float32),
+        (batch, n_steps, 2),
+    )
+    epoch_bounds = jnp.stack(
+        [
+            jnp.zeros_like(go_steps),
+            go_steps,
+            jnp.full_like(go_steps, n_steps),
+        ],
+        axis=-1,
+    )
+    return TaskTrialSpec(
+        inits=WhereDict({"mechanics.vector": jnp.zeros((batch, 8), dtype=jnp.float32)}),
+        targets=WhereDict({"mechanics.effector.pos": TargetSpec(value=target)}),
+        inputs={"epsilon": jnp.zeros((batch, n_steps, 8), dtype=jnp.float32)},
+        timeline=TrialTimeline(n_steps=n_steps, epoch_bounds=epoch_bounds),
+    )
+
+
 def test_calibrated_timing_sampler_uses_family_timing_bins() -> None:
     hps = build_hps(
         _args(
@@ -923,6 +963,98 @@ def test_calibrated_timing_sampler_uses_family_timing_bins() -> None:
     assert _max_nonzero_pulse_width(sensory) <= 5
     assert _max_nonzero_pulse_width(delayed) <= 5
     assert hps.perturbation_training.mode == CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE
+
+
+def test_calibrated_movement_age_timing_preserves_undelayed_starts() -> None:
+    hps = build_hps(
+        _args(
+            perturbation_training=True,
+            perturbation_calibrated_timing=True,
+            perturbation_movement_age_timing=True,
+            perturbation_physical_level="small",
+            batch_size=512,
+            hidden_size=4,
+            n_replicates=1,
+        )
+    )
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    base = pair.task.task.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
+    sampled = apply_training_perturbation_mixture(
+        base,
+        hps.perturbation_training,
+        jr.PRNGKey(2),
+    )
+
+    command = sampled.inputs[GRAPH_ADAPTER_SPECS["command_input"].input_key]
+    sensory = sampled.inputs[GRAPH_ADAPTER_SPECS["sensory_feedback"].input_key]
+    delayed = sampled.inputs[GRAPH_ADAPTER_SPECS["delayed_observation"].input_key]
+
+    assert hps.perturbation_training.timing_basis.mode == "movement_age"
+    assert _nonzero_pulse_starts(command).issubset({5, 15, 35})
+    assert _nonzero_pulse_starts(sensory).issubset({10, 20, 40})
+    assert _nonzero_pulse_starts(delayed).issubset({10, 20, 40})
+
+
+def test_calibrated_movement_age_timing_shifts_by_delayed_go_cue() -> None:
+    go_steps = jnp.tile(jnp.arange(10, 31, dtype=jnp.int32), 32)
+    base = _manual_movement_age_trial(go_steps)
+    hps = build_hps(
+        _args(
+            perturbation_training=True,
+            perturbation_calibrated_timing=True,
+            perturbation_movement_age_timing=True,
+            perturbation_physical_level="small",
+            target_relative_multitarget=True,
+            delayed_reach=True,
+            batch_size=int(go_steps.shape[0]),
+            hidden_size=4,
+            n_replicates=1,
+        )
+    )
+    sampled = apply_training_perturbation_mixture(
+        base,
+        hps.perturbation_training,
+        jr.PRNGKey(2),
+    )
+
+    process_delta = sampled.inputs["epsilon"] - base.inputs["epsilon"]
+    command = sampled.inputs[GRAPH_ADAPTER_SPECS["command_input"].input_key]
+    sensory = sampled.inputs[GRAPH_ADAPTER_SPECS["sensory_feedback"].input_key]
+    delayed = sampled.inputs[GRAPH_ADAPTER_SPECS["delayed_observation"].input_key]
+
+    assert _nonzero_pulse_start_offsets(process_delta, go_steps).issubset({0, 5, 15, 35})
+    assert _nonzero_pulse_start_offsets(command, go_steps).issubset({5, 15, 35})
+    assert _nonzero_pulse_start_offsets(sensory, go_steps).issubset({10, 20, 40})
+    assert _nonzero_pulse_start_offsets(delayed, go_steps).issubset({10, 20, 40})
+    _assert_no_prep_pulse_support(process_delta, go_steps)
+    _assert_no_prep_pulse_support(command, go_steps)
+    _assert_no_prep_pulse_support(sensory, go_steps)
+    _assert_no_prep_pulse_support(delayed, go_steps)
+
+
+def test_movement_age_initial_offsets_are_movement_onset_process_impulses() -> None:
+    go_steps = jnp.asarray([10, 20, 30], dtype=jnp.int32)
+    base = _manual_movement_age_trial(go_steps)
+    hps = build_hps(
+        _args(
+            perturbation_training=True,
+            perturbation_calibrated_timing=True,
+            perturbation_movement_age_timing=True,
+            perturbation_physical_level="small",
+            target_relative_multitarget=True,
+            delayed_reach=True,
+            batch_size=int(go_steps.shape[0]),
+            hidden_size=4,
+            n_replicates=1,
+        )
+    )
+
+    shifted = apply_validation_bin(base, hps.perturbation_training, "initial_position")
+    delta = shifted.inputs["epsilon"] - base.inputs["epsilon"]
+
+    assert jnp.allclose(shifted.inits["mechanics.vector"], base.inits["mechanics.vector"])
+    assert _nonzero_pulse_start_offsets(delta, go_steps) == {0}
+    _assert_no_prep_pulse_support(delta, go_steps)
 
 
 def _unique_abs_nonzero(values: jnp.ndarray) -> np.ndarray:
@@ -1107,6 +1239,75 @@ def test_calibrated_timing_run_spec_exposes_family_timing_bins(tmp_path: Path) -
         == "wired_in_sampler_when_calibrated_timing_true"
     )
     assert hps_config["calibrated_amplitude_policy"]["artifact_dependency"] == ("none_at_runtime")
+
+
+def test_movement_age_timing_run_spec_distinguishes_timing_basis(tmp_path: Path) -> None:
+    absolute_result = write_run_spec(
+        _args(
+            output_dir=str(tmp_path / "absolute_bulk"),
+            spec_dir=str(tmp_path / "absolute_spec"),
+            smoke=True,
+            issue="020a65b",
+            perturbation_training=True,
+            perturbation_calibrated_timing=True,
+            perturbation_physical_level="small",
+        )
+    )
+    movement_result = write_run_spec(
+        _args(
+            output_dir=str(tmp_path / "movement_bulk"),
+            spec_dir=str(tmp_path / "movement_spec"),
+            smoke=True,
+            issue="6c36536",
+            perturbation_training=True,
+            perturbation_calibrated_timing=True,
+            perturbation_movement_age_timing=True,
+            perturbation_physical_level="small",
+            target_relative_multitarget=True,
+            delayed_reach=True,
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+        )
+    )
+    absolute = json.loads(Path(absolute_result["run_spec_path"]).read_text())
+    movement = json.loads(Path(movement_result["run_spec_path"]).read_text())
+
+    absolute_perturbation = absolute["hps"]["perturbation_training"]
+    movement_perturbation = movement["hps"]["perturbation_training"]
+    assert absolute_perturbation["movement_age_timing"] is False
+    assert absolute_perturbation["timing_basis"]["mode"] == "absolute_trial_time"
+    assert absolute_perturbation["timing_bins"]["start_time_indices_are"] == (
+        "absolute_trial_indices"
+    )
+    assert movement_perturbation["movement_age_timing"] is True
+    assert movement_perturbation["timing_basis"]["mode"] == "movement_age"
+    assert movement_perturbation["timing_basis"]["epoch_source"] == (
+        "trial_specs.timeline.epoch_bounds[-2]"
+    )
+    assert movement_perturbation["timing_bins"]["start_time_indices_are"] == (
+        "movement_start_relative_offsets"
+    )
+    assert (
+        movement["model_summary"]["training_distribution"]["perturbation_training"][
+            "movement_age_timing"
+        ]
+        is True
+    )
+
+    parser = build_parser()
+    replay_args = resolve_run_spec_args(
+        parser.parse_args(
+            [
+                "--run-spec",
+                movement_result["run_spec_path"],
+                "--output-dir",
+                str(tmp_path / "replay_bulk"),
+                "--spec-dir",
+                str(tmp_path / "replay_spec"),
+            ]
+        ),
+        parser=parser,
+    )
+    assert replay_args.perturbation_movement_age_timing is True
 
 
 def test_target_relative_feedback_sign_contract() -> None:

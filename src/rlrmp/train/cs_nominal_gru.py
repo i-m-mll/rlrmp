@@ -377,6 +377,9 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         "perturbation_pulse_start_step": int(_pulse_value(perturbation, "start_step", 20)),
         "perturbation_pulse_duration_steps": int(_pulse_value(perturbation, "duration_steps", 5)),
         "perturbation_calibrated_timing": bool(perturbation.get("calibrated_timing", False)),
+        "perturbation_movement_age_timing": bool(
+            perturbation.get("movement_age_timing", False)
+        ),
         "perturbation_physical_level": str(perturbation.get("physical_level", "moderate")),
         "target_relative_multitarget": bool(target_relative.get("enabled", False)),
         "delayed_reach": bool(delayed.get("enabled", False)),
@@ -601,9 +604,16 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         pulse_start_step=int(args.perturbation_pulse_start_step),
         pulse_duration_steps=int(args.perturbation_pulse_duration_steps),
         calibrated_timing=bool(args.perturbation_calibrated_timing),
+        movement_age_timing=bool(args.perturbation_movement_age_timing),
         physical_level=str(args.perturbation_physical_level),
         force_filter_feedback=bool(args.force_filter_feedback),
     )
+    if bool(args.perturbation_movement_age_timing) and not bool(
+        args.perturbation_calibrated_timing
+    ):
+        raise ValueError(
+            "--perturbation-movement-age-timing requires --perturbation-calibrated-timing."
+        )
     broad_epsilon_training = BroadFullStateEpsilonTrainingConfig(
         enabled=bool(args.broad_epsilon_training),
         level=str(args.broad_epsilon_level),
@@ -1712,6 +1722,17 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--perturbation-movement-age-timing",
+        action="store_true",
+        help=(
+            "Index calibrated perturbation timing bins by movement age: plant "
+            "process/command pulses use movement_start + 5/15/35, controller-visible "
+            "sensory/delayed-observation pulses use movement_start + 10/20/40, and "
+            "initial position/velocity diagnostics use movement-onset process-epsilon "
+            "impulses. Requires --perturbation-calibrated-timing."
+        ),
+    )
+    parser.add_argument(
         "--perturbation-physical-level",
         choices=("small", "moderate", "stress"),
         default="moderate",
@@ -2409,6 +2430,7 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
                 else "prng_driven_signed_random_axes_components_timings_levels"
             ),
             "calibrated_timing": bool(getattr(config, "calibrated_timing", False)),
+            "movement_age_timing": bool(getattr(config, "movement_age_timing", False)),
             "physical_level": str(getattr(config, "physical_level", "moderate")),
             "physical_level_fraction_of_reach": float(
                 getattr(config, "physical_level_fraction_of_reach", 0.10)
@@ -2417,6 +2439,7 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
         "mild_combined_families": ["initial_position", "command_input"],
         "single_family_bins": list(config.single_family_bins),
         "validation_bins": list(config.validation_bins),
+        "timing_basis": _plain(config.timing_basis),
         "timing_bins": _plain(config.timing_bins),
         "calibrated_levels": _plain(config.mixture_semantics.calibrated_levels),
         "checkpoint_selection_role": "generalized_held_out_perturbation_validation",

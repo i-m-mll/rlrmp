@@ -241,7 +241,8 @@ results/**
 !results/**/
 # Narratives (long-form analyses, READMEs, per-run notes):
 !results/**/*.md
-# Run specs (canonical: run.json; legacy: config.json):
+# Run specs (canonical: results/<issue>/runs/<variant>.json or run.json; legacy: config.json):
+!results/*/runs/*.json
 !results/**/run.json
 # Durable model-artifact migration specs/manifests:
 !results/**/model.graph.json

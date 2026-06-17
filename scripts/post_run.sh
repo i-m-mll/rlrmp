@@ -188,7 +188,12 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def rel(path: Path, root: Path) -> str:
-    return str(path.resolve().relative_to(root.resolve()))
+    root_absolute = root.absolute()
+    path_absolute = path if path.is_absolute() else root_absolute / path
+    try:
+        return str(path_absolute.relative_to(root_absolute))
+    except ValueError:
+        return str(path.resolve().relative_to(root.resolve()))
 
 
 def git_value(repo: Path, *args: str) -> str | None:
@@ -490,7 +495,7 @@ def main() -> None:
     artifact_dir = Path(sys.argv[5]).resolve()
     issue = sys.argv[6]
     run_label = sys.argv[7]
-    manifest_root = Path(sys.argv[8]).resolve()
+    manifest_root = Path(sys.argv[8])
     script_repo_root = Path.cwd().resolve()
 
     if rel(manifest_root, repo_root) != PINNED_MANIFEST_ROOT:
