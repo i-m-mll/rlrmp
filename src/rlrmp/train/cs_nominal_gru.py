@@ -66,6 +66,7 @@ from rlrmp.model.stochastic_runtime import (
     stochastic_runtime_config_from_model,
 )
 from rlrmp.train.cs_perturbation_training import (
+    BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
     BROAD_EPSILON_PGD_TRAINING_MODE,
     BROAD_EPSILON_TRAINING_MODE,
     LEGACY_PERTURBATION_TRAINING_MODE,
@@ -78,6 +79,7 @@ from rlrmp.train.cs_perturbation_training import (
     TargetRelativeMultiTargetTrainingConfig,
     make_broad_epsilon_pgd_pre_step,
     planned_020a65b_h0_pgd_rows,
+    planned_e4800d6_sisu_spectrum_rows,
     planned_fixed_target_perturbation_rows,
     planned_target_relative_multitarget_h0_rows,
     planned_target_relative_multitarget_rows,
@@ -303,6 +305,9 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
     perturbation = _dict_value(hps, "perturbation_training")
     broad = _dict_value(hps, "broad_epsilon_training")
     broad_pgd = _dict_value(hps, "broad_epsilon_pgd_training")
+    broad_pgd_schedule = _dict_value(broad_pgd, "budget_schedule")
+    broad_pgd_conditioning = _dict_value(broad_pgd_schedule, "conditioning_scalar")
+    broad_pgd_max_radius_source = _dict_value(broad_pgd_schedule, "max_radius_source")
     target_relative = _dict_value(hps, "target_relative_multitarget")
     delayed = _dict_value(hps, "delayed_reach")
     delayed_go = _dict_value(delayed, "go_cue_sampling")
@@ -377,9 +382,7 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         "perturbation_pulse_start_step": int(_pulse_value(perturbation, "start_step", 20)),
         "perturbation_pulse_duration_steps": int(_pulse_value(perturbation, "duration_steps", 5)),
         "perturbation_calibrated_timing": bool(perturbation.get("calibrated_timing", False)),
-        "perturbation_movement_age_timing": bool(
-            perturbation.get("movement_age_timing", False)
-        ),
+        "perturbation_movement_age_timing": bool(perturbation.get("movement_age_timing", False)),
         "perturbation_physical_level": str(perturbation.get("physical_level", "moderate")),
         "target_relative_multitarget": bool(target_relative.get("enabled", False)),
         "delayed_reach": bool(delayed.get("enabled", False)),
@@ -411,6 +414,23 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
                 "step_size_fraction_of_l2_radius",
                 broad_pgd.get("step_size_fraction", 0.25),
             )
+        ),
+        "broad_epsilon_pgd_budget_schedule": str(
+            broad_pgd_schedule.get("mode", broad_pgd.get("budget_schedule_mode", "fixed"))
+        ),
+        "broad_epsilon_pgd_sisu_condition_input": str(
+            broad_pgd_conditioning.get(
+                "input_key",
+                broad_pgd.get("sisu_condition_input", "auto"),
+            )
+        ),
+        "broad_epsilon_pgd_sisu_max_radius": broad_pgd_schedule.get(
+            "max_l2_radius_15cm",
+            broad_pgd.get("sisu_max_l2_radius_15cm"),
+        ),
+        "broad_epsilon_pgd_sisu_max_radius_source": broad_pgd_max_radius_source.get(
+            "key",
+            broad_pgd.get("sisu_max_radius_source"),
         ),
         "initial_hidden_encoder": bool(model.get("initial_hidden_encoder", False)),
         "full_train": (
@@ -631,6 +651,10 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         step_size_fraction=float(args.broad_epsilon_pgd_step_size_fraction),
         movement_epoch_only=delayed_reach,
         epsilon_dim=int(plant.m_w),
+        budget_schedule=str(args.broad_epsilon_pgd_budget_schedule),
+        sisu_condition_input=str(args.broad_epsilon_pgd_sisu_condition_input),
+        sisu_max_l2_radius_15cm=args.broad_epsilon_pgd_sisu_max_radius,
+        sisu_max_radius_source=args.broad_epsilon_pgd_sisu_max_radius_source,
     )
     target_relative_multitarget = TargetRelativeMultiTargetTrainingConfig(
         enabled=bool(args.target_relative_multitarget),
@@ -641,12 +665,14 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "--broad-epsilon-training and --broad-epsilon-pgd-training are separate "
             "broad-epsilon lanes and cannot be combined in the same row."
         )
-    if (
-        broad_epsilon_training.enabled or broad_epsilon_pgd_training.enabled
-    ) and not target_relative_multitarget.enabled:
+    broad_epsilon_needs_target_relative = (
+        broad_epsilon_training.enabled and broad_epsilon_training.reach_length_scaling
+    ) or (broad_epsilon_pgd_training.enabled and broad_epsilon_pgd_training.reach_length_scaling)
+    if broad_epsilon_needs_target_relative and not target_relative_multitarget.enabled:
         raise ValueError(
-            "Broad-epsilon training currently requires --target-relative-multitarget "
-            "so reach-scaled budgets are computed after explicit target sampling."
+            "Reach-scaled broad-epsilon training requires --target-relative-multitarget "
+            "so budgets are computed after explicit target sampling. For fixed-target "
+            "scalar/SISU rows, use --no-broad-epsilon-reach-scaling."
         )
     if bool(args.force_filter_feedback) and not target_relative_multitarget.enabled:
         raise ValueError(
@@ -1863,6 +1889,38 @@ def build_parser() -> argparse.ArgumentParser:
         help="PGD ascent step size as a fraction of each trial's L2 radius.",
     )
     parser.add_argument(
+        "--broad-epsilon-pgd-budget-schedule",
+        choices=("fixed", "sisu_energy_fraction"),
+        default="fixed",
+        help=(
+            "Select the PGD L2 budget schedule. fixed preserves the existing single "
+            "radius; sisu_energy_fraction maps SISU to radius via sqrt(SISU)."
+        ),
+    )
+    parser.add_argument(
+        "--broad-epsilon-pgd-sisu-condition-input",
+        choices=("auto", "input", "sisu"),
+        default="auto",
+        help=(
+            "Trial input that carries the scalar SISU value for sisu_energy_fraction PGD budgets."
+        ),
+    )
+    parser.add_argument(
+        "--broad-epsilon-pgd-sisu-max-radius",
+        type=float,
+        default=None,
+        help=("Maximum 15 cm PGD L2 radius at SISU=1 for sisu_energy_fraction budgets."),
+    )
+    parser.add_argument(
+        "--broad-epsilon-pgd-sisu-max-radius-source",
+        type=str,
+        default=None,
+        help=(
+            "Metadata key/source for the SISU PGD max radius, e.g. "
+            "raw_strong_gamma_1p05_radius or effective_020a65b_pgd_training_radius."
+        ),
+    )
+    parser.add_argument(
         "--initial-hidden-encoder",
         "--h0-encoder",
         action="store_true",
@@ -1891,6 +1949,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--planned-020a65b-h0-pgd-rows",
         action="store_true",
         help="Print the two planned local issue 020a65b H0 no-PGD/PGD gate rows and exit.",
+    )
+    parser.add_argument(
+        "--planned-e4800d6-sisu-spectrum-rows",
+        action="store_true",
+        help="Print the two planned local issue e4800d6 SISU-conditioned PGD rows and exit.",
     )
     parser.add_argument(
         "--smoke",
@@ -1954,6 +2017,9 @@ def main(
         return 0
     if args.planned_020a65b_h0_pgd_rows:
         print(_json_dumps({"planned_rows": planned_020a65b_h0_pgd_rows()}), end="")
+        return 0
+    if args.planned_e4800d6_sisu_spectrum_rows:
+        print(_json_dumps({"planned_rows": planned_e4800d6_sisu_spectrum_rows()}), end="")
         return 0
     result = (
         run_full_training(args, volume_commit=volume_commit)
@@ -2315,8 +2381,14 @@ def _training_mode(hps: TreeNamespace) -> str:
             parts.insert(0, DELAYED_REACH_TRAINING_MODE)
         return "+".join(parts)
     if _perturbation_training_enabled(hps):
-        return PERTURBATION_TRAINING_MODE
-    return "nominal"
+        parts = [PERTURBATION_TRAINING_MODE]
+    else:
+        parts = []
+    if _broad_epsilon_training_enabled(hps):
+        parts.append(BROAD_EPSILON_TRAINING_MODE)
+    if _broad_epsilon_pgd_training_enabled(hps):
+        parts.append(BROAD_EPSILON_PGD_TRAINING_MODE)
+    return "+".join(parts) if parts else "nominal"
 
 
 def _controller_feedback_basis(hps: TreeNamespace) -> str:
@@ -2402,14 +2474,18 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
             "controller_internal_mutation": False,
             "adversarial_phase": "none",
         }
-    if not bool(getattr(config, "enabled", False)):
+    if (
+        not bool(getattr(config, "enabled", False))
+        and not _broad_epsilon_training_enabled(hps)
+        and not _broad_epsilon_pgd_training_enabled(hps)
+    ):
         return {
             "mode": "nominal",
             "fixed_target_only": True,
             "target_stream": "not_consumed",
         }
     return {
-        "mode": str(getattr(config, "mode", PERTURBATION_TRAINING_MODE)),
+        "mode": _training_mode(hps),
         "legacy_mode": LEGACY_PERTURBATION_TRAINING_MODE,
         "fixed_target_only": True,
         "target_stream": {
@@ -2442,6 +2518,21 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
         "timing_basis": _plain(config.timing_basis),
         "timing_bins": _plain(config.timing_bins),
         "calibrated_levels": _plain(config.mixture_semantics.calibrated_levels),
+        "broad_epsilon_training": (
+            _plain(hps.broad_epsilon_training)
+            if _broad_epsilon_training_enabled(hps)
+            else {"enabled": False}
+        ),
+        "broad_epsilon_pgd_training": (
+            _plain(hps.broad_epsilon_pgd_training)
+            if _broad_epsilon_pgd_training_enabled(hps)
+            else {"enabled": False}
+        ),
+        "perturbation_training": (
+            _plain(hps.perturbation_training)
+            if _perturbation_training_enabled(hps)
+            else {"enabled": False}
+        ),
         "checkpoint_selection_role": "generalized_held_out_perturbation_validation",
         "nominal_quality_role": "reported_quality_sidecar_gate",
         "controller_internal_mutation": False,
@@ -3006,6 +3097,24 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
     plant_backend = str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND))
     target_relative = _target_relative_multitarget_enabled(hps)
     delayed_reach = _delayed_reach_enabled(hps)
+    pgd = getattr(hps, "broad_epsilon_pgd_training", None)
+    pgd_schedule = getattr(pgd, "budget_schedule", None)
+    pgd_schedule_mode = (
+        getattr(pgd_schedule, "mode", None)
+        if pgd_schedule is not None
+        else getattr(pgd, "budget_schedule", "")
+    )
+    pgd_conditioning = getattr(pgd_schedule, "conditioning_scalar", None)
+    pgd_condition_input = (
+        getattr(pgd_conditioning, "input_key", None)
+        if pgd_conditioning is not None
+        else getattr(pgd, "sisu_condition_input", "auto")
+    )
+    sisu_conditioned_pgd_budget = bool(
+        getattr(pgd, "enabled", False)
+        and str(pgd_schedule_mode) == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
+        and str(pgd_condition_input) in {"auto", "input"}
+    )
     rollout_steps = int(hps.task.n_steps) if delayed_reach else int(hps.task.n_steps) - 1
     if delayed_reach:
         movement_window = {
@@ -3060,7 +3169,11 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
         "movement_window": movement_window,
         "extra_inputs": (
             ["input", "target", "epsilon"]
-            if plant_backend == CS_LSS_PLANT_BACKEND and target_relative and delayed_reach
+            if (
+                plant_backend == CS_LSS_PLANT_BACKEND
+                and target_relative
+                and (delayed_reach or sisu_conditioned_pgd_budget)
+            )
             else ["target", "epsilon"]
             if plant_backend == CS_LSS_PLANT_BACKEND and target_relative
             else ["input", "epsilon"]

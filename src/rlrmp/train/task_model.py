@@ -295,10 +295,15 @@ def setup_task_model_pair(
             CS_REDUCED_PHYSICAL_STATE_DIM if no_integrator_state else CS_PHYSICAL_STATE_DIM
         )
         delayed_reach = _cs_delayed_reach_enabled(hps)
+        sisu_conditioned_pgd = _sisu_conditioned_pgd_budget_enabled(hps)
         task = _add_cs_lss_task_inputs(
             _CsLssTaskAdapter(task_base, physical_state_dim=physical_state_dim),
             target_relative=target_training.enabled,
             go_cue_input=target_training.enabled and delayed_reach,
+            scalar_input=sisu_conditioned_pgd,
+            scalar_input_fn=_sisu_conditioned_pgd_budget_input_fn(hps)
+            if sisu_conditioned_pgd
+            else None,
             physical_state_dim=physical_state_dim,
         )
         models = _create_cs_lss_gru_ensemble(
@@ -509,6 +514,8 @@ def _add_cs_lss_task_inputs(
     *,
     target_relative: bool = False,
     go_cue_input: bool = False,
+    scalar_input: bool = False,
+    scalar_input_fn: Callable | None = None,
     physical_state_dim: int = CS_PHYSICAL_STATE_DIM,
 ) -> _CsLssTaskAdapter:
     if go_cue_input:
@@ -516,10 +523,10 @@ def _add_cs_lss_task_inputs(
             name="input",
             input_fn=_cs_delayed_go_cue_input,
         )
-    elif not target_relative:
+    elif scalar_input or not target_relative:
         task = task.add_input(
             name="input",
-            input_fn=SISU_FNS["nominal-cs-gru"],
+            input_fn=scalar_input_fn or SISU_FNS["nominal-cs-gru"],
         )
     return task.add_input(
         name="epsilon",
@@ -538,9 +545,52 @@ def _cs_delayed_reach_enabled(hps: TreeNamespace) -> bool:
     task = getattr(hps, "task", TreeNamespace())
     task_type = str(getattr(task, "type", ""))
     return task_type == "cs_delayed_center_out_reach" or (
-        task_type == "delayed_reach"
-        and str(getattr(task, "preset", "")) == "delayed_center_out"
+        task_type == "delayed_reach" and str(getattr(task, "preset", "")) == "delayed_center_out"
     )
+
+
+def _sisu_conditioned_pgd_budget_enabled(hps: TreeNamespace) -> bool:
+    config = _sisu_conditioned_pgd_budget_config(hps)
+    return config is not None
+
+
+def _sisu_conditioned_pgd_budget_config(hps: TreeNamespace) -> TreeNamespace | None:
+    config = getattr(hps, "broad_epsilon_pgd_training", TreeNamespace(enabled=False))
+    if not bool(getattr(config, "enabled", False)):
+        return None
+    schedule = getattr(config, "budget_schedule", None)
+    mode = getattr(schedule, "mode", schedule)
+    if str(mode) != "sisu_energy_fraction":
+        return None
+    return config
+
+
+def _sisu_conditioned_pgd_budget_input_fn(hps: TreeNamespace) -> Callable | None:
+    config = _sisu_conditioned_pgd_budget_config(hps)
+    if config is None:
+        return None
+    schedule = config.budget_schedule
+    levels = tuple(float(value) for value in schedule.levels)
+    probabilities = tuple(float(value) for value in schedule.probabilities)
+
+    def input_fn(trial_spec, key):
+        epoch_bounds = trial_spec.timeline.epoch_bounds
+        n_steps = int(trial_spec.timeline.n_steps)
+        if epoch_bounds is not None and getattr(epoch_bounds, "ndim", 0) > 1:
+            batch_shape = (int(epoch_bounds.shape[0]),)
+        else:
+            batch_shape = ()
+        sampled = jr.choice(
+            key,
+            jnp.asarray(levels, dtype=jnp.float32),
+            shape=batch_shape,
+            p=jnp.asarray(probabilities, dtype=jnp.float32),
+        )
+        if batch_shape:
+            return jnp.broadcast_to(sampled[:, None], (*batch_shape, n_steps))
+        return jnp.broadcast_to(sampled, (n_steps,))
+
+    return input_fn
 
 
 def _cs_delayed_go_cue_input(
@@ -634,9 +684,11 @@ def _create_cs_lss_gru_ensemble(
         )
         no_integrator_state = bool(getattr(hps.model, "no_integrator_state", False))
         delayed_reach = _cs_delayed_reach_enabled(hps)
+        scalar_input = delayed_reach or not target_training.enabled
+        scalar_input = scalar_input or _sisu_conditioned_pgd_budget_enabled(hps)
         return build_cs_lss_gru_graph(
             hidden_size=int(hps.model.hidden_size),
-            input_size=1 if (delayed_reach or not target_training.enabled) else 0,
+            input_size=1 if scalar_input else 0,
             hidden_type=hidden_type,
             population_structure=population_structure,
             sisu_gating=sisu_gating,
