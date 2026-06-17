@@ -12,7 +12,7 @@ Interpretive robustness phenotype report. This is not a standard certificate and
 | induced_gain | missing | source not provided |
 | map_error_decomposition | available | results/b8aa38e/notes/gru_map_error_decomposition_overnight_robust_proprio_validation_selected_corrected.json |
 | objective_comparator | available | results/b8aa38e/notes/objective_comparator_overnight_robust_proprio_validation_selected_corrected.json |
-| perturbation_response | available | _artifacts/b8aa38e/notes/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_manifest.json |
+| perturbation_response | available | results/b8aa38e/notes/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_manifest.json |
 | standard_certificate | available | results/b8aa38e/notes/gru_standard_certificates_overnight_robust_proprio_validation_selected_corrected_manifest.json |
 
 ## Rows
