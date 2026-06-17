@@ -17,6 +17,7 @@ from rlrmp.analysis.pipelines.bridge_certificates import (
 )
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import (
     RUN_IDS,
+    _align_candidate_actions_to_reference_window,
     _controller_feedback_dim,
     _repeat_single_validation_trial,
     build_gru_standard_manifest_from_actions,
@@ -84,6 +85,23 @@ def test_controller_feedback_dim_uses_h0_force_filter_context_shape() -> None:
     blocker = gru_io_response_map_blocker(run_spec)
     assert "6D delayed position/velocity plus force-filter feedback" in blocker
     assert "6D-to-8D" in blocker
+
+
+def test_delayed_candidate_actions_align_to_reference_movement_window() -> None:
+    candidate = np.arange(2 * 90 * 2, dtype=np.float64).reshape(2, 90, 2)
+    reference = np.zeros((60, 2), dtype=np.float64)
+    metadata: dict[str, object] = {}
+
+    aligned = _align_candidate_actions_to_reference_window(
+        candidate,
+        reference_actions=reference,
+        run_spec={"delayed_reach": {"enabled": True}},
+        evaluation_metadata=metadata,
+    )
+
+    assert aligned.shape == (2, 60, 2)
+    np.testing.assert_array_equal(aligned, candidate[:, 30:, :])
+    assert metadata["action_alignment"]["status"] == "aligned_to_delayed_movement_window"  # type: ignore[index]
 
 
 def test_gru_manifest_keeps_same_coordinate_rows_not_applicable() -> None:

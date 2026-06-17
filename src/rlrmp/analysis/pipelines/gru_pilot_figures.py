@@ -47,7 +47,7 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     load_validation_selected_checkpoint_model,
     materialize_validation_selected_checkpoint_manifest,
 )
-from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path
 from rlrmp.train.task_model import setup_task_model_pair
 
 DEFAULT_FIGURE_SUBDIR = "tmp_figures/gru_pilot"
@@ -244,19 +244,19 @@ def resolve_run_inputs(
 
     runs: list[RunFigureInputs] = []
     for run_id, label in zip(run_ids, labels, strict=True):
-        run_spec_path = repo_root / "results" / experiment / "runs" / run_id / "run.json"
+        resolved_run_spec_path = run_spec_path(experiment, run_id, repo_root=repo_root)
         artifact_dir = repo_root / "_artifacts" / experiment / "runs" / run_id
-        if not run_spec_path.exists():
-            raise FileNotFoundError(f"Missing run spec: {run_spec_path}")
+        if not resolved_run_spec_path.exists():
+            raise FileNotFoundError(f"Missing run spec: {resolved_run_spec_path}")
         if not artifact_dir.exists():
             raise FileNotFoundError(f"Missing artifact directory: {artifact_dir}")
         runs.append(
             RunFigureInputs(
                 run_id=run_id,
                 label=label,
-                run_spec_path=run_spec_path,
+                run_spec_path=resolved_run_spec_path,
                 artifact_dir=artifact_dir,
-                run_spec=json.loads(run_spec_path.read_text(encoding="utf-8")),
+                run_spec=json.loads(resolved_run_spec_path.read_text(encoding="utf-8")),
             )
         )
     return runs
@@ -312,9 +312,16 @@ def load_gru_training_history(run_spec: Mapping[str, Any], path: Path) -> Simple
         header = stream.readline()
         if header.strip() != b"null":
             raise ValueError(f"Expected null history metadata header in {path}")
-        loss = _read_loss_tree(stream, term_labels)
-        loss_validation = _read_loss_tree(stream, term_labels)
-        learning_rate = np.load(stream, allow_pickle=False)
+        arrays = _read_history_arrays(stream)
+    if len(arrays) < 7 or (len(arrays) - 1) % 2:
+        raise ValueError(f"Unexpected GRU history array count {len(arrays)} in {path}")
+    arrays_per_loss_tree = (len(arrays) - 1) // 2
+    loss = _loss_tree_from_arrays(arrays[:arrays_per_loss_tree], term_labels)
+    loss_validation = _loss_tree_from_arrays(
+        arrays[arrays_per_loss_tree : 2 * arrays_per_loss_tree],
+        term_labels,
+    )
+    learning_rate = arrays[-1]
     return SimpleNamespace(
         loss=loss,
         loss_validation=loss_validation,
@@ -450,6 +457,20 @@ def initial_effector_velocity(trial_specs: Any) -> jnp.ndarray:
         if shape is not None and len(shape) >= 1 and shape[-1] >= 4:
             return jnp.asarray(init_state)[..., 2:4]
     raise ValueError("Trial spec does not include an effector velocity initial state")
+
+
+def trial_effector_target_position(trial_specs: Any) -> np.ndarray:
+    """Return target positions from legacy or delayed trial input layouts."""
+
+    inputs = getattr(trial_specs, "inputs", {})
+    target = inputs.get("effector_target") if isinstance(inputs, Mapping) else None
+    if target is None and isinstance(inputs, Mapping):
+        delayed_inputs = inputs.get("task")
+        target = getattr(delayed_inputs, "effector_target", None)
+    position = getattr(target, "pos", None)
+    if position is None:
+        raise KeyError("could not locate effector_target.pos in trial inputs")
+    return np.asarray(position, dtype=np.float64)
 
 
 def repeat_single_validation_trial(trial_specs: Any, n_trials: int) -> Any:
@@ -903,29 +924,72 @@ def build_figure_summary(
     return summary
 
 
+def _read_history_arrays(stream: Any) -> list[np.ndarray]:
+    """Read all NumPy arrays from a simple Feedbax history stream."""
+
+    arrays: list[np.ndarray] = []
+    while True:
+        try:
+            arrays.append(np.load(stream, allow_pickle=False))
+        except (EOFError, ValueError):
+            return arrays
+
+
+def _loss_tree_from_arrays(arrays: Sequence[np.ndarray], term_labels: Sequence[str]) -> TermTree:
+    """Build a loss tree from serialized value/weight pairs plus branch weight."""
+
+    if len(arrays) < 3 or not len(arrays) % 2:
+        raise ValueError(f"Expected value/weight pairs plus branch weight, got {len(arrays)}")
+    n_leaves = (len(arrays) - 1) // 2
+    labels = _history_term_labels(term_labels, n_leaves)
+    children: dict[str, TermTree] = {}
+    for idx, label in enumerate(labels):
+        value = arrays[2 * idx]
+        weight = _scalar_weight(arrays[2 * idx + 1])
+        children[label] = TermTree.leaf(label, jnp.asarray(value), weight=weight)
+    branch_weight = _scalar_weight(arrays[-1])
+    return TermTree.branch("reach_loss", children, weight=branch_weight)
+
+
+def _history_term_labels(term_labels: Sequence[str], n_leaves: int) -> tuple[str, ...]:
+    """Return labels matching the serialized loss-tree leaf count."""
+
+    labels = tuple(term_labels)
+    if len(labels) == n_leaves:
+        return labels
+    if len(labels) == 1:
+        return tuple(f"{labels[0]}_component_{idx}" for idx in range(n_leaves))
+    return tuple(labels[:n_leaves]) + tuple(
+        f"loss_component_{idx}" for idx in range(len(labels), n_leaves)
+    )
+
+
 def _read_loss_tree(stream: Any, term_labels: Sequence[str]) -> TermTree:
     children: dict[str, TermTree] = {}
     for label in term_labels:
         value = np.load(stream, allow_pickle=False)
-        weight = float(np.load(stream, allow_pickle=False))
+        weight = _scalar_weight(np.load(stream, allow_pickle=False))
         children[label] = TermTree.leaf(label, jnp.asarray(value), weight=weight)
     branch_weight = _scalar_weight(np.load(stream, allow_pickle=False))
     return TermTree.branch("reach_loss", children, weight=branch_weight)
 
 
 def _scalar_weight(value: np.ndarray) -> float:
-    """Return a scalar weight from Feedbax history scalar or broadcast array records."""
+    """Return a scalar plotting weight from Feedbax history weight records."""
 
     array = np.asarray(value)
     if array.size == 1:
         return float(array.reshape(()))
-    nonzero = array[array != 0]
+    finite = array[np.isfinite(array)]
+    if finite.size == 0:
+        return 0.0
+    nonzero = finite[finite != 0]
     if nonzero.size == 0:
         return 0.0
     first = float(nonzero.reshape(-1)[0])
-    if not np.allclose(nonzero, first):
-        raise ValueError(f"Expected scalar or broadcast history weight, got shape {array.shape}")
-    return first
+    if np.allclose(nonzero, first):
+        return first
+    return float(np.mean(nonzero))
 
 
 def _replicate_velocity_summaries(profile: VelocityProfile) -> list[dict[str, float | int]]:

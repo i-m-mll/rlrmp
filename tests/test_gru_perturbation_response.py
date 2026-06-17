@@ -24,6 +24,7 @@ from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     evaluate_extlqg_perturbation_comparator,
     evaluate_robust_output_feedback_perturbation_comparator,
     extlqg_comparator_status,
+    full_qrf_cost_summary,
     render_perturbation_response_markdown,
     robust_output_feedback_comparator_status,
     score_full_qrf_rollout_cost,
@@ -724,6 +725,43 @@ def test_full_qrf_cost_scorer_reports_control_and_delta_breakdown() -> None:
     np.testing.assert_allclose(perturbed["control"], 2.0 * schedule.T)
     assert delta["status"] == "available"
     assert delta["delta_cost"]["control"]["mean"] == 2.0 * schedule.T
+
+
+def test_full_qrf_cost_summary_slices_delayed_movement_window() -> None:
+    _plant, schedule = build_canonical_game()
+    states = np.zeros((1, 1, 90, schedule.Q.shape[-1]), dtype=np.float64)
+    commands = np.zeros((1, 1, 90, schedule.R.shape[-1]), dtype=np.float64)
+    initial = np.zeros((1, schedule.Q.shape[-1]), dtype=np.float64)
+    trial_specs = TaskTrialSpec(
+        inits={"mechanics.vector": initial},
+        inputs={},
+        targets={},
+        timeline=TrialTimeline(
+            epoch_bounds=np.asarray([[0, 30, 90]], dtype=np.int32),
+            epoch_names=("prep", "movement"),
+            event_steps=np.asarray([[30]], dtype=np.int32),
+        ),
+    )
+    evaluation = RolloutEvaluation(
+        position=np.zeros((1, 1, 90, 2), dtype=np.float64),
+        velocity=np.zeros((1, 1, 90, 2), dtype=np.float64),
+        command=commands,
+        hidden=np.zeros((1, 1, 90, 1), dtype=np.float64),
+        gru_input=np.zeros((1, 1, 90, 1), dtype=np.float64),
+        initial_position=np.zeros((1, 2), dtype=np.float64),
+        initial_velocity=np.zeros((1, 2), dtype=np.float64),
+        target_position=np.zeros((1, 90, 2), dtype=np.float64),
+        dt=0.01,
+    )
+    object.__setattr__(evaluation, "mechanics_vector", states)
+
+    summary = full_qrf_cost_summary(evaluation, trial_specs)
+
+    assert summary["status"] == "available"
+    assert summary["basis"]["time_window"]["basis"] == "timeline_epoch_bounds_movement_window"
+    assert summary["basis"]["time_window"]["start"] == 30
+    assert summary["basis"]["time_window"]["stop"] == 90
+    assert summary["timewise_control"]["count"] == 60
 
 
 def test_perturbation_response_reports_controller_io_metrics() -> None:
