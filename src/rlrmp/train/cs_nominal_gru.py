@@ -282,7 +282,11 @@ def resolve_run_spec_args(
     defaults = parser.parse_args([])
     payload_path = Path(run_spec_path)
     payload = json.loads(payload_path.read_text(encoding="utf-8"))
-    validate_nominal_gru_run_spec(payload, spec_dir=payload_path.parent)
+    validate_nominal_gru_run_spec(
+        payload,
+        spec_dir=payload_path.parent,
+        require_graph_sidecars=False,
+    )
 
     values = vars(defaults).copy()
     values.update(_args_values_from_run_spec(payload))
@@ -377,9 +381,7 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         "perturbation_pulse_start_step": int(_pulse_value(perturbation, "start_step", 20)),
         "perturbation_pulse_duration_steps": int(_pulse_value(perturbation, "duration_steps", 5)),
         "perturbation_calibrated_timing": bool(perturbation.get("calibrated_timing", False)),
-        "perturbation_movement_age_timing": bool(
-            perturbation.get("movement_age_timing", False)
-        ),
+        "perturbation_movement_age_timing": bool(perturbation.get("movement_age_timing", False)),
         "perturbation_physical_level": str(perturbation.get("physical_level", "moderate")),
         "target_relative_multitarget": bool(target_relative.get("enabled", False)),
         "delayed_reach": bool(delayed.get("enabled", False)),
