@@ -1,0 +1,1 @@
+Post-run evaluation materialization speed work for issue 79d2d8b. This directory records the local all-diagnostic benchmark subset and timing evidence used to compare cumulative optimization steps across separate GRU post-run bundles.

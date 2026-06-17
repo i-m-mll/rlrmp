@@ -177,6 +177,7 @@ def materialize_gru_postrun_analysis(
     perturbation_bank_mode: str = "raw",
     perturbation_calibration_level: str | Sequence[str] | None = None,
     perturbation_calibration_reach: str | float | None = None,
+    write_perturbation_bulk_arrays: bool = False,
     feedback_selection_level: str = "small",
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
@@ -305,6 +306,7 @@ def materialize_gru_postrun_analysis(
             bank_mode=perturbation_bank_mode,
             calibration_level=perturbation_calibration_level,
             calibration_reach=perturbation_calibration_reach,
+            write_bulk_arrays=write_perturbation_bulk_arrays,
             feedback_scale_manifest_path=plan.evaluation_manifest_path,
             preferred_checkpoint_manifest_path=effective_checkpoint_manifest_path,
             regeneration_spec_path=_regeneration_spec_path(plan.perturbation_response_json_path),
@@ -376,6 +378,7 @@ def materialize_gru_postrun_analysis(
             ),
             "calibration_reach": perturbation_calibration_reach,
             "feedback_selection_level": feedback_selection_level,
+            "write_perturbation_bulk_arrays": bool(write_perturbation_bulk_arrays),
         },
         "outputs": {
             "checkpoint_manifest": (
@@ -441,6 +444,7 @@ def materialize_gru_postrun_analysis(
         perturbation_bank_mode=perturbation_bank_mode,
         perturbation_calibration_level=perturbation_calibration_level,
         perturbation_calibration_reach=perturbation_calibration_reach,
+        write_perturbation_bulk_arrays=write_perturbation_bulk_arrays,
         feedback_selection_level=feedback_selection_level,
         repo_root=repo_root,
     )
@@ -592,6 +596,7 @@ def _write_postrun_auxiliary_regeneration_specs(
     perturbation_bank_mode: str,
     perturbation_calibration_level: str | Sequence[str] | None,
     perturbation_calibration_reach: str | float | None,
+    write_perturbation_bulk_arrays: bool,
     feedback_selection_level: str,
     repo_root: Path,
 ) -> None:
@@ -701,6 +706,7 @@ def _write_postrun_auxiliary_regeneration_specs(
             "perturbation_bank_mode": perturbation_bank_mode,
             "perturbation_calibration_level": perturbation_calibration_level,
             "perturbation_calibration_reach": perturbation_calibration_reach,
+            "write_perturbation_bulk_arrays": bool(write_perturbation_bulk_arrays),
             "feedback_selection_level": feedback_selection_level,
             "effective_checkpoint_manifest_path": (
                 None
@@ -807,6 +813,7 @@ def materialize_optional_perturbation_response(
     bank_mode: str = "raw",
     calibration_level: str | Sequence[str] | None = None,
     calibration_reach: str | float | None = None,
+    write_bulk_arrays: bool = False,
     feedback_scale_manifest_path: Path | None = None,
     preferred_checkpoint_manifest_path: Path | None = None,
     regeneration_spec_path: Path | None = None,
@@ -836,7 +843,7 @@ def materialize_optional_perturbation_response(
             labels=None if labels is None else tuple(labels),
             n_rollout_trials=n_rollout_trials,
             evaluate=True,
-            write_bulk_arrays=True,
+            write_bulk_arrays=write_bulk_arrays,
             output_path=output_path,
             note_path=note_path,
             bulk_dir=bulk_dir,
@@ -871,6 +878,7 @@ def materialize_optional_perturbation_response(
         "json_path": _repo_relative(output_path, repo_root=repo_root),
         "note_path": _repo_relative(note_path, repo_root=repo_root),
         "bulk_dir": _repo_relative(bulk_dir, repo_root=repo_root),
+        "bulk_arrays_written": bool(write_bulk_arrays),
         "regeneration_spec": (
             None
             if regeneration_spec_path is None

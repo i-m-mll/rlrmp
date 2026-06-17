@@ -9,6 +9,8 @@ import numpy as np
 
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     FixedValidationBankSpec,
+    ReplicateCheckpointSelection,
+    _selected_model_cache_key,
     active_loss_term_labels,
     materialize_fixed_bank_checkpoint_rescore_manifest,
     materialize_validation_selected_checkpoint_manifest,
@@ -96,6 +98,61 @@ def test_select_validation_checkpoints_ignores_zero_padding(tmp_path: Path) -> N
         "sparse_history_fallback",
     ]
     assert selections[0].final_vs_selected_validation_degradation == 0.0
+
+
+def test_selected_model_cache_key_tracks_run_spec_and_model_files(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "_artifacts" / "issue123" / "runs" / "run_a" / "checkpoints"
+    checkpoint_a = checkpoint / "checkpoint_0000003"
+    checkpoint_b = checkpoint / "checkpoint_0000006"
+    checkpoint_a.mkdir(parents=True)
+    checkpoint_b.mkdir(parents=True)
+    (checkpoint_a / "model.eqx").write_text("a", encoding="utf-8")
+    (checkpoint_b / "model.eqx").write_text("b", encoding="utf-8")
+    selections = [
+        ReplicateCheckpointSelection(
+            replicate=0,
+            checkpoint_batches=3,
+            checkpoint_path=checkpoint_a,
+            selection_source="sparse_history_fallback",
+            scoring_validation_log_batch=3,
+            scoring_validation_objective=1.0,
+            best_logged_validation_batch=3,
+            best_logged_validation_objective=1.0,
+            final_validation_objective=1.0,
+            final_vs_selected_validation_degradation=0.0,
+        ),
+        ReplicateCheckpointSelection(
+            replicate=1,
+            checkpoint_batches=6,
+            checkpoint_path=checkpoint_b,
+            selection_source="sparse_history_fallback",
+            scoring_validation_log_batch=6,
+            scoring_validation_objective=2.0,
+            best_logged_validation_batch=6,
+            best_logged_validation_objective=2.0,
+            final_validation_objective=2.0,
+            final_vs_selected_validation_degradation=0.0,
+        ),
+    ]
+
+    first = _selected_model_cache_key(
+        run_spec={"hps": {"model": {"n_replicates": 2}}},
+        selections=selections,
+        repo_root=tmp_path,
+    )
+    same = _selected_model_cache_key(
+        run_spec={"hps": {"model": {"n_replicates": 2}}},
+        selections=selections,
+        repo_root=tmp_path,
+    )
+    changed_spec = _selected_model_cache_key(
+        run_spec={"hps": {"model": {"n_replicates": 3}}},
+        selections=selections,
+        repo_root=tmp_path,
+    )
+
+    assert first == same
+    assert first != changed_spec
 
 
 def test_validation_objective_history_infers_extra_full_qrf_components(tmp_path: Path) -> None:

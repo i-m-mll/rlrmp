@@ -1084,13 +1084,16 @@ def evaluate_run_feedback_ablation(
                 continue
             trial_specs = adapter.trial_specs
             bin_model = adapter.model if adapter.model is not None else model
-        baseline = _evaluate_model_on_trial_specs(
-            model=bin_model,
-            task=pair.task,
-            trial_specs=trial_specs,
-            n_replicates=n_replicates,
-            seed=0,
-        )
+        if perturbation_id is None and bin_model is model and trial_specs is base_trial_specs:
+            baseline = nominal
+        else:
+            baseline = _evaluate_model_on_trial_specs(
+                model=bin_model,
+                task=pair.task,
+                trial_specs=trial_specs,
+                n_replicates=n_replicates,
+                seed=0,
+            )
         baseline_cost = full_qrf_cost_summary(baseline.rollout, trial_specs)
         for mode in default_ablation_modes():
             spec = build_observation_ablation_spec(mode, bin_id=bin_id)

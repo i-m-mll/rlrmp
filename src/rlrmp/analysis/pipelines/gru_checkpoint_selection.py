@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from collections.abc import Callable, Mapping, Sequence
@@ -51,6 +52,10 @@ DEFAULT_DELAYED_REACH_UNIFORM_REACH_LENGTH_M = 0.15
 CheckpointSelectionMode = Literal["sparse_history", "fixed_bank_manifest"]
 DelayedReachCatchBank = Literal["no_catch", "catch"]
 DelayedReachDirectionSource = Literal["uniform_grid", "validation_targets"]
+_VALIDATION_SELECTED_MODEL_CACHE: dict[
+    tuple[Any, ...],
+    tuple[Any, list["ReplicateCheckpointSelection"]],
+] = {}
 
 
 @dataclass(frozen=True)
@@ -834,6 +839,17 @@ def load_validation_selected_checkpoint_model(
         preferred_manifest is not None or preferred_manifest_path is not None
     ):
         effective_selection_mode = "fixed_bank_manifest"
+    cache_key = _validation_selected_model_cache_key(
+        experiment=experiment,
+        run_id=run_id,
+        run_spec=run_spec,
+        preferred_manifest=preferred_manifest,
+        preferred_manifest_path=preferred_manifest_path,
+        checkpoint_selection_mode=effective_selection_mode,
+        repo_root=repo_root,
+    )
+    if cache_key is not None and cache_key in _VALIDATION_SELECTED_MODEL_CACHE:
+        return _VALIDATION_SELECTED_MODEL_CACHE[cache_key]
     selections = select_validation_checkpoints_for_run(
         experiment=experiment,
         run_id=run_id,
@@ -842,6 +858,13 @@ def load_validation_selected_checkpoint_model(
         checkpoint_selection_mode=effective_selection_mode,
         repo_root=repo_root,
     )
+    selected_model_key = _selected_model_cache_key(
+        run_spec=run_spec,
+        selections=selections,
+        repo_root=repo_root,
+    )
+    if selected_model_key in _VALIDATION_SELECTED_MODEL_CACHE:
+        return _VALIDATION_SELECTED_MODEL_CACHE[selected_model_key]
     hps = dict_to_namespace(normalize_gru_hps(run_spec["hps"]), to_type=TreeNamespace)
     n_replicates = int(hps.model.n_replicates)
     if len(selections) != n_replicates:
@@ -861,7 +884,85 @@ def load_validation_selected_checkpoint_model(
             return jnp.stack([replicate_leaf[idx] for idx, replicate_leaf in enumerate(leaves)])
         return leaf
 
-    return jt.map(select_leaf, *models), selections
+    result = jt.map(select_leaf, *models), selections
+    if cache_key is not None:
+        _VALIDATION_SELECTED_MODEL_CACHE[cache_key] = result
+    _VALIDATION_SELECTED_MODEL_CACHE[selected_model_key] = result
+    return result
+
+
+def _validation_selected_model_cache_key(
+    *,
+    experiment: str,
+    run_id: str,
+    run_spec: Mapping[str, Any],
+    preferred_manifest: Mapping[str, Any] | None,
+    preferred_manifest_path: Path | None,
+    checkpoint_selection_mode: CheckpointSelectionMode,
+    repo_root: Path,
+) -> tuple[Any, ...] | None:
+    """Return a stable key for per-process selected-model reuse."""
+
+    if preferred_manifest is not None:
+        return None
+    manifest_fingerprint: tuple[str, int, int] | None = None
+    if preferred_manifest_path is not None:
+        manifest_path = (
+            preferred_manifest_path
+            if preferred_manifest_path.is_absolute()
+            else repo_root / preferred_manifest_path
+        )
+        try:
+            stat = manifest_path.stat()
+        except FileNotFoundError:
+            return None
+        manifest_fingerprint = (
+            str(manifest_path.resolve()),
+            int(stat.st_mtime_ns),
+            int(stat.st_size),
+        )
+    run_spec_hash = hashlib.sha256(
+        json.dumps(run_spec, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
+    return (
+        str(Path(repo_root).resolve()),
+        str(experiment),
+        str(run_id),
+        str(checkpoint_selection_mode),
+        manifest_fingerprint,
+        run_spec_hash,
+    )
+
+
+def _selected_model_cache_key(
+    *,
+    run_spec: Mapping[str, Any],
+    selections: Sequence[ReplicateCheckpointSelection],
+    repo_root: Path,
+) -> tuple[Any, ...]:
+    """Return a cache key based on the concrete selected checkpoint files."""
+
+    run_spec_hash = hashlib.sha256(
+        json.dumps(run_spec, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
+    model_files = []
+    for selection in selections:
+        model_path = selection.checkpoint_path / "model.eqx"
+        stat = model_path.stat()
+        model_files.append(
+            (
+                int(selection.replicate),
+                str(model_path.resolve()),
+                int(stat.st_mtime_ns),
+                int(stat.st_size),
+            )
+        )
+    return (
+        "selected_model_files",
+        str(Path(repo_root).resolve()),
+        run_spec_hash,
+        tuple(model_files),
+    )
 
 
 def validation_objective_history(
