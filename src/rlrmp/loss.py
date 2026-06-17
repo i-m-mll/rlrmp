@@ -516,6 +516,143 @@ class CsForceFilterStateLoss(AbstractLoss):
         return jnp.sum(force_filter**2, axis=(-3, -2, -1))
 
 
+def _build_epoch_mask(trial_specs: "TaskTrialSpec", T: int, epoch_indices: tuple[int, ...]) -> Array:
+    """Return a per-trial boolean mask over ``T`` timestep samples."""
+
+    timeline = trial_specs.timeline
+    if timeline.epoch_bounds is None:
+        raise ValueError("Prep-only loss requires trial_specs.timeline.epoch_bounds.")
+    bounds = jnp.asarray(timeline.epoch_bounds)
+    if bounds.ndim == 1:
+        bounds = bounds[None, :]
+    t = jnp.arange(T, dtype=bounds.dtype)
+    mask = jnp.zeros((bounds.shape[0], T), dtype=jnp.bool_)
+    for epoch in epoch_indices:
+        start = bounds[:, epoch : epoch + 1]
+        end = bounds[:, epoch + 1 : epoch + 2]
+        mask = mask | ((t[None, :] >= start) & (t[None, :] < end))
+    return mask
+
+
+def _sum_masked_time_density(
+    density: Array,
+    trial_specs: "TaskTrialSpec",
+    epoch_indices: tuple[int, ...],
+) -> Array:
+    """Sum per-trial/per-time loss density over selected epoch samples."""
+
+    mask = _build_epoch_mask(trial_specs, int(density.shape[-1]) + 1, epoch_indices)
+    mask = mask[:, 1:].astype(density.dtype)
+    mask_shape = [1] * density.ndim
+    mask_shape[0] = mask.shape[0]
+    mask_shape[-1] = mask.shape[1]
+    return jnp.sum(density * mask.reshape(mask_shape), axis=-1)
+
+
+class InitialEffectorPositionHoldLoss(AbstractLoss):
+    """Prep-epoch squared distance from the trial's initial effector position."""
+
+    label: str
+    epoch_indices: tuple[int, ...] = eqx.field(static=True)
+
+    def __init__(
+        self,
+        *,
+        label: str = "delayed_pre_go_start_pos_hold",
+        epoch_indices: tuple[int, ...] = (0,),
+    ):
+        self.label = label
+        self.epoch_indices = tuple(epoch_indices)
+
+    def term(
+        self,
+        states: Optional[PyTree],
+        trial_specs: Optional["TaskTrialSpec"],
+        model: Optional[AbstractModel],
+    ) -> Array:
+        del model
+        assert states is not None, "InitialEffectorPositionHoldLoss requires states."
+        assert trial_specs is not None, "InitialEffectorPositionHoldLoss requires trial_specs."
+        if "mechanics.vector" not in trial_specs.inits:
+            raise ValueError(
+                "Initial position hold requires trial_specs.inits['mechanics.vector']."
+            )
+        pos = jnp.asarray(states.mechanics.effector.pos)
+        initial = jnp.asarray(trial_specs.inits["mechanics.vector"], dtype=pos.dtype)[..., :2]
+        initial = jnp.broadcast_to(initial, (*pos.shape[:-2], pos.shape[-1]))
+        density = jnp.sum((pos[..., 1:, :] - initial[..., None, :]) ** 2, axis=-1)
+        return _sum_masked_time_density(density, trial_specs, self.epoch_indices)
+
+
+class PrepZeroVelocityHoldLoss(AbstractLoss):
+    """Prep-epoch squared effector velocity."""
+
+    label: str
+    epoch_indices: tuple[int, ...] = eqx.field(static=True)
+
+    def __init__(
+        self,
+        *,
+        label: str = "delayed_pre_go_zero_vel_hold",
+        epoch_indices: tuple[int, ...] = (0,),
+    ):
+        self.label = label
+        self.epoch_indices = tuple(epoch_indices)
+
+    def term(
+        self,
+        states: Optional[PyTree],
+        trial_specs: Optional["TaskTrialSpec"],
+        model: Optional[AbstractModel],
+    ) -> Array:
+        del model
+        assert states is not None, "PrepZeroVelocityHoldLoss requires states."
+        assert trial_specs is not None, "PrepZeroVelocityHoldLoss requires trial_specs."
+        vel = jnp.asarray(states.mechanics.effector.vel)
+        density = jnp.sum(vel[..., 1:, :] ** 2, axis=-1)
+        return _sum_masked_time_density(density, trial_specs, self.epoch_indices)
+
+
+class PrepForceFilterHoldLoss(AbstractLoss):
+    """Prep-epoch squared C&S force/filter state over every delay block."""
+
+    label: str
+    n_phys: int = eqx.field(static=True)
+    epoch_indices: tuple[int, ...] = eqx.field(static=True)
+
+    def __init__(
+        self,
+        *,
+        label: str = "delayed_pre_go_force_filter_hold",
+        n_phys: int = 8,
+        epoch_indices: tuple[int, ...] = (0,),
+    ):
+        self.label = label
+        self.n_phys = int(n_phys)
+        self.epoch_indices = tuple(epoch_indices)
+
+    def term(
+        self,
+        states: Optional[PyTree],
+        trial_specs: Optional["TaskTrialSpec"],
+        model: Optional[AbstractModel],
+    ) -> Array:
+        del model
+        assert states is not None, "PrepForceFilterHoldLoss requires states."
+        assert trial_specs is not None, "PrepForceFilterHoldLoss requires trial_specs."
+        vector = jnp.asarray(states.mechanics.vector)
+        if vector.shape[-1] % self.n_phys != 0:
+            raise ValueError(
+                f"state dimension {vector.shape[-1]} is not divisible by n_phys={self.n_phys}."
+            )
+        blocks = vector[..., 1:, :].reshape(
+            vector.shape[:-2] + (vector.shape[-2] - 1, -1, self.n_phys)
+        )
+        force_filter = blocks[..., 4:6]
+        density = jnp.sum(force_filter**2, axis=(-2, -1))
+        return _sum_masked_time_density(density, trial_specs, self.epoch_indices)
+
+
 DEFAULT_TOP_WEIGHTS: dict[str, float] = {
     # leaf terms
     "effector_pos": 1.0,
@@ -552,6 +689,9 @@ DEFAULT_TOP_WEIGHTS: dict[str, float] = {
     # behaviour unchanged. Suggested initial weight 1e-2 (1000x the
     # post-aggregated nn_output weight). Bug: efc4d68 (feedbax 50507a9)
     "nn_output_pre_go": 0.0,
+    "delayed_pre_go_force_filter_hold": 0.0,
+    "delayed_pre_go_start_pos_hold": 0.0,
+    "delayed_pre_go_zero_vel_hold": 0.0,
     # Anti-preparation companion: same epoch mask wrapped around the
     # hidden-state derivative term. Exposed for completeness — the user's
     # primary intervention is the motor-pre-go term above; this exists so
@@ -635,6 +775,35 @@ def get_epoch_weights(
 
 during_hold = TargetSpec(time_mask=partial(get_epoch_weights, end_epoch=-2))
 during_movement = TargetSpec(time_mask=partial(get_epoch_weights, start_epoch=-2))
+
+
+def _add_delayed_pre_go_auxiliary_terms(
+    terms: dict[str, AbstractLoss],
+    weights: dict[str, float],
+    user_outer_weights: Any,
+    *,
+    epoch_indices: tuple[int, ...],
+    n_phys: int,
+) -> None:
+    """Append nonzero delayed-reach prep-only auxiliary terms."""
+
+    term_builders: dict[str, Callable[[], AbstractLoss]] = {
+        "delayed_pre_go_force_filter_hold": lambda: PrepForceFilterHoldLoss(
+            n_phys=n_phys,
+            epoch_indices=epoch_indices,
+        ),
+        "delayed_pre_go_start_pos_hold": lambda: InitialEffectorPositionHoldLoss(
+            epoch_indices=epoch_indices,
+        ),
+        "delayed_pre_go_zero_vel_hold": lambda: PrepZeroVelocityHoldLoss(
+            epoch_indices=epoch_indices,
+        ),
+    }
+    for name, builder in term_builders.items():
+        weight = _as_number(_nsget(user_outer_weights, name, None))
+        if weight is not None and weight != 0.0:
+            terms[name] = builder()
+            weights[name] = float(weight)
 
 
 def make_late_discount_from_epoch(
@@ -1000,6 +1169,13 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
                 epoch_indices=pre_go_epoch_indices,
             )
             weights["nn_output_pre_go"] = float(nn_output_pre_go_weight)
+        _add_delayed_pre_go_auxiliary_terms(
+            terms,
+            weights,
+            user_outer_weights,
+            epoch_indices=pre_go_epoch_indices,
+            n_phys=6 if no_integrator_state else 8,
+        )
         return CompositeLoss(
             label="reach_loss",
             terms=terms,
@@ -1087,6 +1263,13 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
         terms["mechanics_force_filter"] = CsForceFilterStateLoss(
             n_phys=6 if no_integrator_state else 8,
         )
+    _add_delayed_pre_go_auxiliary_terms(
+        terms,
+        {},
+        user_outer_weights,
+        epoch_indices=pre_go_epoch_indices,
+        n_phys=6 if bool(_nsget(hps, "model.no_integrator_state", False)) else 8,
+    )
 
     # Power-law schedule parameters (Bug: 2e1a6ad).
     # "flat" (default) keeps existing uniform weighting; "powerlaw" applies

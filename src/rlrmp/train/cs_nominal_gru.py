@@ -345,6 +345,15 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         "nn_output": float(loss_weights.get("nn_output", CS_CONTROL_SCALE)),
         "nn_output_jerk": float(loss_weights.get("nn_output_jerk", 0.0)),
         "nn_output_pre_go": float(loss_weights.get("nn_output_pre_go", 0.0)),
+        "delayed_pre_go_force_filter_hold": float(
+            loss_weights.get("delayed_pre_go_force_filter_hold", 0.0)
+        ),
+        "delayed_pre_go_start_pos_hold": float(
+            loss_weights.get("delayed_pre_go_start_pos_hold", 0.0)
+        ),
+        "delayed_pre_go_zero_vel_hold": float(
+            loss_weights.get("delayed_pre_go_zero_vel_hold", 0.0)
+        ),
         "loss_objective": str(
             run_spec.get("loss_objective", loss.get("objective", CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE))
         ),
@@ -578,6 +587,22 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         if delayed_reach and getattr(args, "nn_output_pre_go", None) is None
         else float(getattr(args, "nn_output_pre_go", 0.0) or 0.0)
     )
+    delayed_pre_go_force_filter_hold = float(
+        getattr(args, "delayed_pre_go_force_filter_hold", 0.0) or 0.0
+    )
+    delayed_pre_go_start_pos_hold = float(
+        getattr(args, "delayed_pre_go_start_pos_hold", 0.0) or 0.0
+    )
+    delayed_pre_go_zero_vel_hold = float(
+        getattr(args, "delayed_pre_go_zero_vel_hold", 0.0) or 0.0
+    )
+    delayed_pre_go_aux_weights = {
+        "delayed_pre_go_force_filter_hold": delayed_pre_go_force_filter_hold,
+        "delayed_pre_go_start_pos_hold": delayed_pre_go_start_pos_hold,
+        "delayed_pre_go_zero_vel_hold": delayed_pre_go_zero_vel_hold,
+    }
+    if any(weight != 0.0 for weight in delayed_pre_go_aux_weights.values()) and not delayed_reach:
+        raise ValueError("Delayed pre-go hold penalties require --delayed-reach.")
     n_input_readout = int(args.hidden_size) - (
         int(args.n_input_only) + int(args.n_readout_only) + int(args.n_recurrent_only)
     )
@@ -794,6 +819,9 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
                 "nn_hidden_derivative": 0.0,
                 "nn_output_jerk": float(args.nn_output_jerk),
                 "nn_output_pre_go": nn_output_pre_go,
+                "delayed_pre_go_force_filter_hold": delayed_pre_go_force_filter_hold,
+                "delayed_pre_go_start_pos_hold": delayed_pre_go_start_pos_hold,
+                "delayed_pre_go_zero_vel_hold": delayed_pre_go_zero_vel_hold,
                 "nn_hidden_derivative_pre_go": 0.0,
                 "mechanics_force_filter": (
                     1.0 / float(schedule.Q.shape[-1] // 8)
@@ -1674,6 +1702,33 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Anti-anticipation controller-output penalty during delayed-reach prep. "
             "Defaults to 1.0 only when --delayed-reach is active; otherwise 0.0."
+        ),
+    )
+    parser.add_argument(
+        "--delayed-pre-go-force-filter-hold",
+        type=float,
+        default=0.0,
+        help=(
+            "Prep-only delayed-reach auxiliary penalty on the C&S force/filter state. "
+            "Default 0.0 preserves the movement-window Q/R/Q_f comparator."
+        ),
+    )
+    parser.add_argument(
+        "--delayed-pre-go-start-pos-hold",
+        type=float,
+        default=0.0,
+        help=(
+            "Prep-only delayed-reach auxiliary penalty on effector position away from "
+            "the sampled start position. Default 0.0."
+        ),
+    )
+    parser.add_argument(
+        "--delayed-pre-go-zero-vel-hold",
+        type=float,
+        default=0.0,
+        help=(
+            "Prep-only delayed-reach auxiliary penalty on nonzero effector velocity "
+            "before the go cue. Default 0.0."
         ),
     )
     parser.add_argument(
@@ -3085,6 +3140,35 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
     }
 
 
+def _delayed_pre_go_auxiliary_terms_metadata(hps: TreeNamespace) -> dict[str, Any]:
+    weights = getattr(hps.loss, "weights", TreeNamespace())
+    terms = {
+        "delayed_pre_go_force_filter_hold": {
+            "scale": float(getattr(weights, "delayed_pre_go_force_filter_hold", 0.0)),
+            "state_key": "states.mechanics.vector delay blocks[..., 4:6]",
+            "target": "zero_force_filter_state",
+        },
+        "delayed_pre_go_start_pos_hold": {
+            "scale": float(getattr(weights, "delayed_pre_go_start_pos_hold", 0.0)),
+            "state_key": "states.mechanics.effector.pos",
+            "target": "trial_specs.inits['mechanics.vector'][..., :2]",
+        },
+        "delayed_pre_go_zero_vel_hold": {
+            "scale": float(getattr(weights, "delayed_pre_go_zero_vel_hold", 0.0)),
+            "state_key": "states.mechanics.effector.vel",
+            "target": "zero_velocity",
+        },
+    }
+    active = {name: meta for name, meta in terms.items() if meta["scale"] != 0.0}
+    return {
+        "scope": "prep_epoch_only" if _delayed_reach_enabled(hps) else "inactive",
+        "epoch_indices": [0] if _delayed_reach_enabled(hps) else [],
+        "movement_window_qrf_comparator": "unchanged",
+        "terms": terms,
+        "active_terms": active,
+    }
+
+
 def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
     objective = str(getattr(hps.loss, "objective", CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE))
     delayed_reach = _delayed_reach_enabled(hps)
@@ -3115,6 +3199,7 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
         )
         return {
             "weights": _plain(hps.loss.weights),
+            "delayed_pre_go_auxiliary_terms": _delayed_pre_go_auxiliary_terms_metadata(hps),
             "delayed_trial_type_normalization": trial_type_normalization,
             "delayed_reach": _plain(hps.delayed_reach),
             "objective_profile": CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
@@ -3189,6 +3274,7 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
     if objective == CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE:
         return {
             "weights": _plain(hps.loss.weights),
+            "delayed_pre_go_auxiliary_terms": _delayed_pre_go_auxiliary_terms_metadata(hps),
             "delayed_reach": _plain(hps.delayed_reach),
             "effector_pos_late": _plain(hps.loss.effector_pos_late),
             "effector_vel_late": _plain(hps.loss.effector_vel_late),
@@ -3254,6 +3340,7 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
 
     return {
         "weights": _plain(hps.loss.weights),
+        "delayed_pre_go_auxiliary_terms": _delayed_pre_go_auxiliary_terms_metadata(hps),
         "delayed_reach": _plain(hps.delayed_reach),
         "effector_pos_late": _plain(hps.loss.effector_pos_late),
         "effector_vel_late": _plain(hps.loss.effector_vel_late),
