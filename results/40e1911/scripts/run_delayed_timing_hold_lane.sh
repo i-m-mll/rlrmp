@@ -3,7 +3,10 @@ set -euo pipefail
 
 RUN_ROOT="${RUN_ROOT:-/workspace/feedbax_runs/40e1911_delayed_timing_hold}"
 PYTHONPATH="${PYTHONPATH:-src}"
+MAX_PARALLEL_ROWS="${MAX_PARALLEL_ROWS:-6}"
+ROW_LAUNCH_STAGGER_SECONDS="${ROW_LAUNCH_STAGGER_SECONDS:-10}"
 export PYTHONPATH
+export XLA_PYTHON_CLIENT_PREALLOCATE="${XLA_PYTHON_CLIENT_PREALLOCATE:-false}"
 
 COMMON_FLAGS=(
   --full-train
@@ -74,8 +77,20 @@ ef9c882	hold__force_filter	10	30	0	100000	0	0
 ef9c882	hold__start_pos_zero_vel	10	30	0	0	1000000	100000
 ROWS
 
-tail -n +2 "$RUN_ROOT/rows.tsv" |
-  while IFS=$'\t' read -r issue row go_min go_max nn_output_pre_go force_filter_hold start_pos_hold zero_vel_hold; do
+declare -a ROW_PIDS=()
+launched_rows=0
+
+wait_for_slot() {
+  while [ "${#ROW_PIDS[@]}" -ge "$MAX_PARALLEL_ROWS" ]; do
+    local next_pid="${ROW_PIDS[0]}"
+    wait "$next_pid"
+    ROW_PIDS=("${ROW_PIDS[@]:1}")
+  done
+}
+
+while IFS=$'\t' read -r issue row go_min go_max nn_output_pre_go force_filter_hold start_pos_hold zero_vel_hold; do
+    wait_for_slot
+    mkdir -p "$RUN_ROOT/logs"
     run_row \
       "$issue" \
       "$row" \
@@ -84,5 +99,16 @@ tail -n +2 "$RUN_ROOT/rows.tsv" |
       "$nn_output_pre_go" \
       "$force_filter_hold" \
       "$start_pos_hold" \
-      "$zero_vel_hold"
-  done
+      "$zero_vel_hold" \
+      > "$RUN_ROOT/logs/${issue}__${row}.log" \
+      2>&1 &
+    ROW_PIDS+=("$!")
+    launched_rows=$((launched_rows + 1))
+    if [ "$ROW_LAUNCH_STAGGER_SECONDS" -gt 0 ] && [ "$launched_rows" -lt 6 ]; then
+      sleep "$ROW_LAUNCH_STAGGER_SECONDS"
+    fi
+  done < <(tail -n +2 "$RUN_ROOT/rows.tsv")
+
+for pid in "${ROW_PIDS[@]}"; do
+  wait "$pid"
+done
