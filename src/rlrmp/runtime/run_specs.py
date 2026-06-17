@@ -75,12 +75,20 @@ class RunSpecValidationError(ValueError):
     """Raised when a tracked run spec is missing required metadata."""
 
 
-def validate_nominal_gru_run_spec(run_spec: dict[str, Any], *, spec_dir: Path) -> None:
+def validate_nominal_gru_run_spec(
+    run_spec: dict[str, Any],
+    *,
+    spec_dir: Path,
+    require_graph_sidecars: bool = True,
+) -> None:
     """Validate the C&S-fidelity GRU run metadata contract.
 
     Args:
         run_spec: Decoded ``run.json`` payload.
         spec_dir: Directory containing the ``run.json`` file and graph sidecars.
+        require_graph_sidecars: When false, validate pointer metadata without
+            requiring adjacent sidecar files. This is used only for replaying a
+            historical flat run spec into a fresh output/spec directory.
 
     Raises:
         RunSpecValidationError: If the run spec is missing top-level metadata,
@@ -159,6 +167,8 @@ def validate_nominal_gru_run_spec(run_spec: dict[str, Any], *, spec_dir: Path) -
                 "declare feedbax_graph.graph_export_status='unavailable'"
             )
         sidecar = spec_dir / str(pointer)
+        if not require_graph_sidecars:
+            continue
         if not sidecar.is_file():
             raise RunSpecValidationError(
                 f"nominal GRU run spec points to missing Feedbax graph sidecar: {sidecar}"
@@ -224,20 +234,18 @@ def _validate_cs_lss_graph_spec_sidecar(graph_spec_path: Path) -> None:
         )
 
     node_types = {
-        str(node_id): node.get("type")
-        for node_id, node in nodes.items()
-        if isinstance(node, dict)
+        str(node_id): node.get("type") for node_id, node in nodes.items() if isinstance(node, dict)
     }
     mechanics_type = node_types.get("mechanics")
     feedback_type = node_types.get("feedback")
     legacy_types = sorted(
-        node_type for node_type in set(node_types.values()) if node_type in LEGACY_POINT_MASS_GRAPH_TYPES
+        node_type
+        for node_type in set(node_types.values())
+        if node_type in LEGACY_POINT_MASS_GRAPH_TYPES
     )
     if mechanics_type != CS_LSS_REQUIRED_MECHANICS_TYPE:
         legacy_note = (
-            f"; stale legacy graph types present: {', '.join(legacy_types)}"
-            if legacy_types
-            else ""
+            f"; stale legacy graph types present: {', '.join(legacy_types)}" if legacy_types else ""
         )
         raise RunSpecValidationError(
             "CS-LSS Feedbax graph sidecar must declare mechanics node type "

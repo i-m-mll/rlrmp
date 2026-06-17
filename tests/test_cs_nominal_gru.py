@@ -2192,6 +2192,63 @@ def test_modern_run_spec_replays_to_current_training_args(tmp_path: Path) -> Non
     assert replay_args.broad_epsilon_pgd_training is False
 
 
+def test_flat_run_spec_replay_does_not_require_adjacent_graph_manifest(
+    tmp_path: Path,
+) -> None:
+    result = write_run_spec(
+        _args(
+            output_dir=str(tmp_path / "historical_artifacts"),
+            spec_dir=str(tmp_path / "historical_spec"),
+            issue="6c36536",
+            full_train=True,
+            target_relative_multitarget=True,
+            delayed_reach=True,
+            perturbation_training=True,
+            perturbation_calibrated_timing=True,
+            perturbation_movement_age_timing=True,
+            perturbation_physical_level="small",
+            force_filter_feedback=True,
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+        )
+    )
+    flat_spec_dir = tmp_path / "flat_specs"
+    flat_spec_dir.mkdir()
+    flat_run_spec = flat_spec_dir / "delayed_movement_bank.json"
+    flat_run_spec.write_text(Path(result["run_spec_path"]).read_text(), encoding="utf-8")
+
+    replay_spec_dir = tmp_path / "replayed_spec"
+    parser = build_parser()
+    replay_args = resolve_run_spec_args(
+        parser.parse_args(
+            [
+                "--run-spec",
+                str(flat_run_spec),
+                "--output-dir",
+                str(tmp_path / "replayed_artifacts"),
+                "--spec-dir",
+                str(replay_spec_dir),
+                "--broad-epsilon-pgd-training",
+                "--broad-epsilon-budget-scale",
+                "3.688240371719434",
+                "--broad-epsilon-pgd-steps",
+                "10",
+            ]
+        ),
+        parser=parser,
+    )
+    replay_result = write_run_spec(replay_args)
+    replay_payload = json.loads(Path(replay_result["run_spec_path"]).read_text())
+
+    assert Path(replay_result["graph_manifest_path"]).is_file()
+    assert Path(replay_result["run_spec_path"]).parent == replay_spec_dir
+    pgd = replay_payload["hps"]["broad_epsilon_pgd_training"]
+    assert pgd["enabled"] is True
+    assert pgd["epsilon_dim"] == 8
+    assert pgd["movement_epoch_only"] is True
+    assert pgd["budget_scale"] == pytest.approx(3.688240371719434)
+    assert pgd["inner_maximizer"]["n_steps"] == 10
+
+
 def test_initial_hidden_encoder_requires_target_relative_hps() -> None:
     with pytest.raises(ValueError, match="requires --target-relative-multitarget"):
         build_hps(_args(initial_hidden_encoder=True))
