@@ -1704,6 +1704,74 @@ def test_delayed_reach_full_qrf_can_split_trial_type_normalized_terms() -> None:
     assert hps.loss.delayed_trial_type_normalization.catch_weight == pytest.approx(3.0)
 
 
+def test_delayed_reach_pre_go_hold_penalty_defaults_are_zero() -> None:
+    hps = build_hps(
+        _args(
+            smoke=True,
+            delayed_reach=True,
+            delayed_reach_p_catch_trial=0.5,
+            target_relative_multitarget=True,
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            hidden_size=8,
+            n_replicates=1,
+        )
+    )
+    loss_func = get_reach_loss(hps)
+
+    assert hps.loss.weights.delayed_pre_go_force_filter_hold == pytest.approx(0.0)
+    assert hps.loss.weights.delayed_pre_go_start_pos_hold == pytest.approx(0.0)
+    assert hps.loss.weights.delayed_pre_go_zero_vel_hold == pytest.approx(0.0)
+    assert "delayed_pre_go_force_filter_hold" not in loss_func.terms
+    assert "delayed_pre_go_start_pos_hold" not in loss_func.terms
+    assert "delayed_pre_go_zero_vel_hold" not in loss_func.terms
+
+
+def test_delayed_reach_pre_go_hold_penalty_args_build_hps_and_run_spec(
+    tmp_path: Path,
+) -> None:
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "--dry-run",
+            "--smoke",
+            "--output-dir",
+            str(tmp_path / "bulk"),
+            "--spec-dir",
+            str(tmp_path / "spec"),
+            "--delayed-reach",
+            "--target-relative-multitarget",
+            "--loss-objective",
+            CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            "--nn-output-pre-go",
+            "0",
+            "--delayed-pre-go-force-filter-hold",
+            "11",
+            "--delayed-pre-go-start-pos-hold",
+            "22",
+            "--delayed-pre-go-zero-vel-hold",
+            "33",
+        ]
+    )
+    hps = build_hps(args)
+    payload = write_run_spec(args)["run_spec"]
+    aux = payload["loss_summary"]["delayed_pre_go_auxiliary_terms"]
+
+    assert hps.loss.weights.nn_output_pre_go == pytest.approx(0.0)
+    assert hps.loss.weights.delayed_pre_go_force_filter_hold == pytest.approx(11.0)
+    assert hps.loss.weights.delayed_pre_go_start_pos_hold == pytest.approx(22.0)
+    assert hps.loss.weights.delayed_pre_go_zero_vel_hold == pytest.approx(33.0)
+    assert payload["hps"]["loss"]["weights"]["delayed_pre_go_force_filter_hold"] == 11.0
+    assert payload["hps"]["loss"]["weights"]["delayed_pre_go_start_pos_hold"] == 22.0
+    assert payload["hps"]["loss"]["weights"]["delayed_pre_go_zero_vel_hold"] == 33.0
+    assert aux["scope"] == "prep_epoch_only"
+    assert aux["movement_window_qrf_comparator"] == "unchanged"
+    assert set(aux["active_terms"]) == {
+        "delayed_pre_go_force_filter_hold",
+        "delayed_pre_go_start_pos_hold",
+        "delayed_pre_go_zero_vel_hold",
+    }
+
+
 def test_delayed_reach_trial_type_normalized_loss_reduces_over_extra_support() -> None:
     trial = TaskTrialSpec(
         inits=WhereDict({}),
@@ -1817,6 +1885,79 @@ def test_delayed_reach_full_qrf_pre_go_auxiliary_masks_only_prep_epoch() -> None
     assert trial.timeline.epoch_names == ("prep", "movement")
     assert prep_value > base_value
     assert jnp.allclose(movement_value, base_value)
+
+
+def test_delayed_reach_full_qrf_pre_go_hold_auxiliaries_mask_only_prep_epoch() -> None:
+    hps = build_hps(
+        _args(
+            smoke=True,
+            delayed_reach=True,
+            delayed_reach_p_catch_trial=0.5,
+            target_relative_multitarget=True,
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            nn_output_pre_go=0.0,
+            delayed_pre_go_force_filter_hold=1.0,
+            delayed_pre_go_start_pos_hold=1.0,
+            delayed_pre_go_zero_vel_hold=1.0,
+            hidden_size=8,
+            n_replicates=1,
+        )
+    )
+    loss_func = get_reach_loss(hps)
+    go_step = 12
+    initial_vector = jnp.zeros((1, 48), dtype=jnp.float64).at[:, :2].set(
+        jnp.asarray([[1.0, -2.0]], dtype=jnp.float64)
+    )
+    trial = TaskTrialSpec(
+        inits=WhereDict({"mechanics.vector": initial_vector}),
+        targets=WhereDict({}),
+        inputs={},
+        timeline=TrialTimeline.from_epochs_events(
+            n_steps=90,
+            epoch_bounds=jnp.asarray([0, go_step, go_step + 60]),
+            epoch_names=("prep", "movement"),
+        ),
+        extra={"is_catch_trial": jnp.asarray([False])},
+    )
+    base_vector = jnp.zeros((1, 90, 48), dtype=jnp.float64)
+    base_pos = jnp.broadcast_to(initial_vector[:, None, :2], (1, 90, 2))
+    base_vel = jnp.zeros((1, 90, 2), dtype=jnp.float64)
+
+    def states_with(*, vector=base_vector, pos=base_pos, vel=base_vel):
+        return TreeNamespace(
+            mechanics=TreeNamespace(
+                vector=vector,
+                effector=TreeNamespace(pos=pos, vel=vel),
+            ),
+            net=TreeNamespace(output=jnp.zeros((1, 90, 2), dtype=jnp.float64)),
+        )
+
+    cases = {
+        "delayed_pre_go_force_filter_hold": (
+            states_with(vector=base_vector.at[:, max(go_step - 1, 1), 4].set(3.0)),
+            states_with(vector=base_vector.at[:, go_step, 4].set(3.0)),
+        ),
+        "delayed_pre_go_start_pos_hold": (
+            states_with(pos=base_pos.at[:, max(go_step - 1, 1), 0].add(3.0)),
+            states_with(pos=base_pos.at[:, go_step, 0].add(3.0)),
+        ),
+        "delayed_pre_go_zero_vel_hold": (
+            states_with(vel=base_vel.at[:, max(go_step - 1, 1), 0].set(3.0)),
+            states_with(vel=base_vel.at[:, go_step, 0].set(3.0)),
+        ),
+    }
+
+    assert loss_func.weights["delayed_pre_go_force_filter_hold"] == pytest.approx(1.0)
+    assert loss_func.weights["delayed_pre_go_start_pos_hold"] == pytest.approx(1.0)
+    assert loss_func.weights["delayed_pre_go_zero_vel_hold"] == pytest.approx(1.0)
+    for name, (prep_states, movement_states) in cases.items():
+        term = loss_func.terms[name]
+        base_value = term.term(states_with(), trial, None)
+        prep_value = term.term(prep_states, trial, None)
+        movement_value = term.term(movement_states, trial, None)
+        assert term.epoch_indices == (0,)
+        assert prep_value > base_value
+        assert jnp.allclose(movement_value, base_value)
 
 
 def test_delayed_reach_run_spec_declares_task_and_movement_pgd_mask(tmp_path: Path) -> None:
