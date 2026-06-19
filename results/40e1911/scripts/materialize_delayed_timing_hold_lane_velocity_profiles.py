@@ -166,6 +166,7 @@ def main() -> None:
             replicate_file=replicate_file,
             references=references,
             output_dir=output_dir,
+            issue=args.result_experiment,
             direction_split_status=(
                 "not_materialized: prior good/bad direction split was a "
                 "diagnostic grouping for earlier no-PGD rows, not a natural "
@@ -977,13 +978,14 @@ def build_bank_summary(
     replicate_file: Path,
     references: Sequence[Any],
     output_dir: Path,
+    issue: str,
     direction_split_status: str,
 ) -> dict[str, Any]:
     """Return JSON-compatible sidecar metadata."""
 
     return {
         "schema_version": "rlrmp.delayed_timing_hold_velocity_profiles.v1",
-        "issue": RESULT_EXPERIMENT,
+        "issue": issue,
         "output_dir": repo_relative(output_dir),
         "bank_kind": profiles[0].bank_kind if profiles else None,
         "checkpoint_policy": "final_checkpoint",
@@ -1136,11 +1138,8 @@ def build_figure_spec(*, runs: Sequence[RunInputs], args: argparse.Namespace) ->
             "shared_yaxes": "all",
         },
         "outputs": {
-            "catch": "_artifacts/40e1911/figures/delayed_timing_hold_lane_velocity_profiles/catch",
-            "no_catch": (
-                "_artifacts/40e1911/figures/"
-                "delayed_timing_hold_lane_velocity_profiles/no_catch"
-            ),
+            "catch": f"_artifacts/{args.result_experiment}/figures/{args.topic}/catch",
+            "no_catch": f"_artifacts/{args.result_experiment}/figures/{args.topic}/no_catch",
         },
     }
 
@@ -1151,7 +1150,11 @@ def render_notes(manifest: Mapping[str, Any]) -> str:
     lines = [
         "## Delayed timing / pre-go hold velocity profiles",
         "",
-        "Generated six-row fixed delayed-bank target-radial velocity profiles.",
+        (
+            "Generated "
+            f"{len(manifest.get('run_refs', []))}-row fixed delayed-bank "
+            "target-radial velocity profiles."
+        ),
         "",
         "| Bank | Aggregate HTML | By-replicate HTML |",
         "|---|---|---|",
