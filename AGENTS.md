@@ -193,8 +193,12 @@ Before any **billable** training launch (`runpodctl pod create` for a run, or a 
 
 ### 3. GPU choice
 (Cross-ref subagent GPU analysis, Part 2.5 session.)
-- **RTX 4090** (community cloud): cheapest validated option.
-- **RTX 4090 secure cloud**: acceptable when the user requests secure cloud; availability can be low, but do not infer failure from `uptimeSeconds: 0` (see §4b).
+- **Secure cloud is the default for billable RunPod launches.** Use community
+  cloud only when the user explicitly accepts the lower isolation tier for that
+  run.
+- **RTX 4090 secure cloud**: validated baseline when available; availability can
+  be low, but do not infer failure from `uptimeSeconds: 0` (see §4b).
+- **RTX 4090 community cloud**: cheapest validated option, but not the default.
 - **RTX 5090** (Blackwell, EUR-IS-2 or similar): faster, but some templates carry stale image references.
   - Template `runpod-torch-v280` / image `runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404` has been observed to boot and expose SSH on a 5090 (driver 570.124.06). After `uv sync`, install `jax[cuda12]`; this upgrades to CUDA 12.9 wheels (`jax==0.10.0`) and exposes `CudaDevice(id=0)`.
   - Image `runpod/pytorch:1.0.3-cu1281-torch290-ubuntu2204` or newer (`cu1290`/`cu1300`) should also support Blackwell — verify the Docker tag exists before creating the pod.
@@ -218,6 +222,9 @@ Manual fallback/debugging invariants:
 
 - Expose `22/tcp` at pod creation; the default RunPod port set can make direct
   TCP SSH unreachable.
+- Acquire the direct endpoint first: immediately read the `.ssh.ssh_command`
+  from `runpodctl pod get`, then verify it with `ssh ... 'true'` or
+  `ssh ... 'nvidia-smi'` before setup, installs, or run launches.
 - Poll readiness from the `.ssh` object and a functional SSH probe such as
   `nvidia-smi`, not from `.runtime`, `.runtime.ports`, or `uptimeSeconds`
   (Bug: b399efc).
@@ -253,7 +260,12 @@ Adjust flags to match the current script's CLI if it has changed.
 ### 8. Cost discipline
 (Cross-ref dotfiles `3602840`.)
 - Pod billing starts on **creation**, not on container start.
-- Verify the pod is reachable via the `.ssh.ssh_command` from `runpodctl pod get`, confirmed by a functional SSH probe (`ssh ... 'true'` or `ssh ... 'nvidia-smi'`). Do NOT rely on `uptimeSeconds > 0`, `.runtime`, or `.runtime.ports` as the primary liveness signal — a working pod can show `uptimeSeconds: 0` and no `.runtime` object while `.ssh` is valid (Bug: b399efc).
+- After creation, acquire and verify the direct SSH endpoint before any expensive
+  setup step. Use the `.ssh.ssh_command` from `runpodctl pod get`, confirmed by
+  a functional SSH probe (`ssh ... 'true'` or `ssh ... 'nvidia-smi'`). Do NOT
+  rely on `uptimeSeconds > 0`, `.runtime`, or `.runtime.ports` as the primary
+  liveness signal — a working pod can show `uptimeSeconds: 0` and no `.runtime`
+  object while `.ssh` is valid (Bug: b399efc).
 - Do not unilaterally upgrade cloud tier or GPU class — ask the user first.
 - **Modal:** destructive CLI ops (`modal app stop`, `modal volume rm`) require `--yes`/`-y`; non-interactive shells abort without it.
 
@@ -309,6 +321,10 @@ Stable post-run provenance contract:
 - Non-dry runs stamp the tracked run spec with `post_run_provenance`, then run
   Feedbax `TrainingRunManifest` parity before `git add` / `agent-commit`. A
   mismatched tracked run spec and matching manifest blocks the commit.
+- Non-dry runs must verify `uv.lock` is clean before `git add` /
+  `agent-commit` / auth submission. `POST_RUN_ALLOW_DIRTY_UV_LOCK=1` is an
+  emergency override only when the lockfile change is deliberate and documented
+  elsewhere.
 - Existing legacy runs without a matching Feedbax `TrainingRunManifest` may
   continue through the wrapper, but the output must report that parity was
   `not_found` rather than silently implying a checked manifest.
@@ -341,16 +357,24 @@ Inside each `<hash>/`:
 ├── RUN_PLAN.md                    if the work involves training runs
 ├── notes/<topic>.md               narrative + analysis writeups
 ├── figures/<topic>/spec.json      figure specs (one dir per topic)
-└── runs/<variant>.json            per-run hyperparameters (flat, not nested)
+└── runs/<variant>.json            canonical per-run recipe (flat, not nested)
 ```
 
-The mirror `_artifacts/<hash>/...` follows the same structure (`runs/<variant>/` is a dir here, holding the bulk training outputs; `runs/<variant>.json` in `results/` is the corresponding spec file).
+The mirror `_artifacts/<hash>/...` follows the same structure by role:
+`_artifacts/<hash>/runs/<variant>/` is a directory holding the bulk training
+outputs; `results/<hash>/runs/<variant>.json` is the corresponding canonical
+recipe. If a run needs additional tracked sidecars, use
+`results/<hash>/runs/<variant>/` for those sidecars only.
 
 ### Run-folder convention
 
 - **`runs/<variant>.json`** flat by default — one JSON file per run, not a directory with a single file in it.
+- **`runs/<variant>/`** is optional tracked sidecar space for lightweight
+  per-run notes, debug metadata, or historical `run.json` compatibility. Do not
+  put new canonical recipes there.
 - For complex sweeps where variant names balloon (~50+ chars), use `runs/<hash>.json` + `runs_index.json` mapping hash → human label + params.
-- Promote a run from file to directory (`runs/<variant>/` with `run.json` inside) only when additional per-run files accrue (notes, debug artifacts). Lazy promotion.
+- Keep bulk arrays/checkpoints/logs under `_artifacts/<hash>/runs/<variant>/`;
+  do not promote heavy run outputs into `results/<hash>/runs/<variant>/`.
 
 ### Script placement: experiment-specific vs reusable (Bug: 8404108)
 
