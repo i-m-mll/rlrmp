@@ -166,6 +166,7 @@ def main() -> None:
             replicate_file=replicate_file,
             references=references,
             output_dir=output_dir,
+            issue=args.result_experiment,
             direction_split_status=(
                 "not_materialized: prior good/bad direction split was a "
                 "diagnostic grouping for earlier no-PGD rows, not a natural "
@@ -346,9 +347,7 @@ def evaluate_velocity_profile(
         jr.split(jr.PRNGKey(0), n_replicates),
     )
     velocity_np = np.asarray(velocity, dtype=np.float64)
-    target_position = target_position_sequence(bank.trial_specs)
-    initial_position = initial_effector_position(bank.trial_specs)
-    direction, _distance = reach_direction(initial_position, target_position[:, -1, :])
+    direction = target_radial_projection_direction(bank.trial_specs, bank.metadata)
     forward = np.sum(velocity_np * direction[None, :, None, :], axis=-1)
     go_index = np.asarray(bank.trial_specs.timeline.epoch_bounds[:, 1], dtype=np.int64)
     aligned_forward, center = align_trials(forward, go_index)
@@ -714,6 +713,56 @@ def target_position_sequence(trial_specs: Any) -> np.ndarray:
     raise ValueError("Trial spec does not include 2D target sequence")
 
 
+def target_radial_projection_direction(
+    trial_specs: Any,
+    bank_metadata: Mapping[str, Any],
+) -> np.ndarray:
+    """Return intended target-radial projection directions for an eval bank."""
+
+    initial_position = initial_effector_position(trial_specs)
+    fixed_bank_direction = fixed_bank_projection_direction(
+        bank_metadata,
+        trial_count=int(initial_position.shape[0]),
+    )
+    if fixed_bank_direction is not None:
+        return fixed_bank_direction
+
+    target_position = target_position_sequence(trial_specs)
+    direction, _distance = reach_direction(initial_position, target_position[:, -1, :])
+    return direction
+
+
+def fixed_bank_projection_direction(
+    bank_metadata: Mapping[str, Any],
+    *,
+    trial_count: int,
+) -> np.ndarray | None:
+    """Return fixed-bank intended reach directions from metadata when available."""
+
+    if bank_metadata.get("bank_family") != "delayed_reach_fixed_eval_bank":
+        return None
+    angles = bank_metadata.get("target_angles_rad")
+    direction_count = int(bank_metadata.get("direction_count", 0))
+    if angles is None or direction_count <= 0:
+        return None
+
+    angles_array = np.asarray(angles, dtype=np.float64)
+    if angles_array.shape != (direction_count,):
+        raise ValueError(
+            "fixed-bank target_angles_rad must have shape "
+            f"({direction_count},); got {angles_array.shape}"
+        )
+    if trial_count % direction_count != 0:
+        raise ValueError(
+            "fixed-bank trial count must be a multiple of direction_count; "
+            f"got trial_count={trial_count}, direction_count={direction_count}"
+        )
+
+    directions = np.stack([np.cos(angles_array), np.sin(angles_array)], axis=-1)
+    repeat_count = trial_count // direction_count
+    return np.tile(directions, (repeat_count, 1))
+
+
 def reach_direction(
     initial_position: np.ndarray,
     target_position: np.ndarray,
@@ -977,19 +1026,23 @@ def build_bank_summary(
     replicate_file: Path,
     references: Sequence[Any],
     output_dir: Path,
+    issue: str,
     direction_split_status: str,
 ) -> dict[str, Any]:
     """Return JSON-compatible sidecar metadata."""
 
     return {
         "schema_version": "rlrmp.delayed_timing_hold_velocity_profiles.v1",
-        "issue": RESULT_EXPERIMENT,
+        "issue": issue,
         "output_dir": repo_relative(output_dir),
         "bank_kind": profiles[0].bank_kind if profiles else None,
         "checkpoint_policy": "final_checkpoint",
         "figure": pooled_file.name,
         "replicate_figure": replicate_file.name,
-        "projection": "target-radial velocity: dot(effector velocity, unit(target - initial_position))",
+        "projection": (
+            "target-radial velocity: dot(effector velocity, "
+            "unit(intended_visible_target - initial_position))"
+        ),
         "error_band": (
             "mean +/- 1 SD over pooled replicate x fixed-bank go-cue/direction trials"
         ),
@@ -1136,11 +1189,8 @@ def build_figure_spec(*, runs: Sequence[RunInputs], args: argparse.Namespace) ->
             "shared_yaxes": "all",
         },
         "outputs": {
-            "catch": "_artifacts/40e1911/figures/delayed_timing_hold_lane_velocity_profiles/catch",
-            "no_catch": (
-                "_artifacts/40e1911/figures/"
-                "delayed_timing_hold_lane_velocity_profiles/no_catch"
-            ),
+            "catch": f"_artifacts/{args.result_experiment}/figures/{args.topic}/catch",
+            "no_catch": f"_artifacts/{args.result_experiment}/figures/{args.topic}/no_catch",
         },
     }
 
@@ -1151,7 +1201,11 @@ def render_notes(manifest: Mapping[str, Any]) -> str:
     lines = [
         "## Delayed timing / pre-go hold velocity profiles",
         "",
-        "Generated six-row fixed delayed-bank target-radial velocity profiles.",
+        (
+            "Generated "
+            f"{len(manifest.get('run_refs', []))}-row fixed delayed-bank "
+            "target-radial velocity profiles."
+        ),
         "",
         "| Bank | Aggregate HTML | By-replicate HTML |",
         "|---|---|---|",

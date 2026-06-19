@@ -360,6 +360,9 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         "delayed_pre_go_start_pos_hold": float(
             loss_weights.get("delayed_pre_go_start_pos_hold", 0.0)
         ),
+        "delayed_pre_go_start_pos_hold_norm": str(
+            loss.get("delayed_pre_go_start_pos_hold_norm", "l2")
+        ),
         "delayed_pre_go_zero_vel_hold": float(
             loss_weights.get("delayed_pre_go_zero_vel_hold", 0.0)
         ),
@@ -549,6 +552,12 @@ def _delayed_reach_enabled(hps: TreeNamespace) -> bool:
     return bool(getattr(getattr(hps, "delayed_reach", None), "enabled", False))
 
 
+def _resolve_auto_bool(value: bool | None, *, default: bool) -> bool:
+    """Resolve tri-state CLI booleans that have context-dependent defaults."""
+
+    return bool(default) if value is None else bool(value)
+
+
 def build_hps(args: argparse.Namespace) -> TreeNamespace:
     """Build nominal C&S-aligned GRU hyperparameters from CLI arguments."""
 
@@ -617,6 +626,11 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
     delayed_pre_go_start_pos_hold = float(
         getattr(args, "delayed_pre_go_start_pos_hold", 0.0) or 0.0
     )
+    delayed_pre_go_start_pos_hold_norm = str(
+        getattr(args, "delayed_pre_go_start_pos_hold_norm", "l2") or "l2"
+    )
+    if delayed_pre_go_start_pos_hold_norm not in {"l2", "l1"}:
+        raise ValueError("--delayed-pre-go-start-pos-hold-norm must be one of: l2, l1")
     delayed_pre_go_zero_vel_hold = float(
         getattr(args, "delayed_pre_go_zero_vel_hold", 0.0) or 0.0
     )
@@ -638,8 +652,30 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             f"n_readout_only={args.n_readout_only}, "
             f"n_recurrent_only={args.n_recurrent_only}"
         )
+    force_filter_feedback = _resolve_auto_bool(
+        getattr(args, "force_filter_feedback", None),
+        default=delayed_reach,
+    )
+    perturbation_training_enabled = _resolve_auto_bool(
+        getattr(args, "perturbation_training", None),
+        default=delayed_reach,
+    )
+    perturbation_calibrated_timing = _resolve_auto_bool(
+        getattr(args, "perturbation_calibrated_timing", None),
+        default=delayed_reach and perturbation_training_enabled,
+    )
+    perturbation_movement_age_timing = _resolve_auto_bool(
+        getattr(args, "perturbation_movement_age_timing", None),
+        default=delayed_reach
+        and perturbation_training_enabled
+        and perturbation_calibrated_timing,
+    )
+    perturbation_physical_level = str(
+        getattr(args, "perturbation_physical_level", None)
+        or ("small" if delayed_reach else "moderate")
+    )
     perturbation_training = FixedTargetPerturbationTrainingConfig(
-        enabled=bool(args.perturbation_training),
+        enabled=perturbation_training_enabled,
         nominal_fraction=float(args.perturbation_nominal_fraction),
         single_fraction=float(args.perturbation_single_fraction),
         combined_fraction=float(args.perturbation_combined_fraction),
@@ -652,14 +688,12 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         delayed_observation_offset_m=float(args.perturbation_delayed_observation_offset_m),
         pulse_start_step=int(args.perturbation_pulse_start_step),
         pulse_duration_steps=int(args.perturbation_pulse_duration_steps),
-        calibrated_timing=bool(args.perturbation_calibrated_timing),
-        movement_age_timing=bool(args.perturbation_movement_age_timing),
-        physical_level=str(args.perturbation_physical_level),
-        force_filter_feedback=bool(args.force_filter_feedback),
+        calibrated_timing=perturbation_calibrated_timing,
+        movement_age_timing=perturbation_movement_age_timing,
+        physical_level=perturbation_physical_level,
+        force_filter_feedback=force_filter_feedback,
     )
-    if bool(args.perturbation_movement_age_timing) and not bool(
-        args.perturbation_calibrated_timing
-    ):
+    if perturbation_movement_age_timing and not perturbation_calibrated_timing:
         raise ValueError(
             "--perturbation-movement-age-timing requires --perturbation-calibrated-timing."
         )
@@ -687,7 +721,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
     )
     target_relative_multitarget = TargetRelativeMultiTargetTrainingConfig(
         enabled=bool(args.target_relative_multitarget),
-        force_filter_feedback=bool(args.force_filter_feedback),
+        force_filter_feedback=force_filter_feedback,
     )
     if broad_epsilon_training.enabled and broad_epsilon_pgd_training.enabled:
         raise ValueError(
@@ -703,7 +737,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "so budgets are computed after explicit target sampling. For fixed-target "
             "scalar/SISU rows, use --no-broad-epsilon-reach-scaling."
         )
-    if bool(args.force_filter_feedback) and not target_relative_multitarget.enabled:
+    if force_filter_feedback and not target_relative_multitarget.enabled:
         raise ValueError(
             "--force-filter-feedback requires --target-relative-multitarget because it "
             "extends the target-relative delayed feedback vector."
@@ -765,15 +799,15 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "state_dim": int(plant.n),
             "physical_state_dim": int(plant.m_w),
             "delay_blocks": int(plant.n // plant.m_w),
-            "force_filter_feedback": bool(args.force_filter_feedback),
+            "force_filter_feedback": force_filter_feedback,
             "initial_hidden_encoder": initial_hidden_encoder,
             "initial_hidden_encoder_config": _initial_hidden_encoder_config(
                 enabled=initial_hidden_encoder,
                 hidden_size=int(args.hidden_size),
-                context_dim=6 if bool(args.force_filter_feedback) else CS_H0_CONTEXT_DIM,
+                context_dim=6 if force_filter_feedback else CS_H0_CONTEXT_DIM,
                 context_basis=(
                     "target_relative_delayed_feedback_plus_force_filter"
-                    if bool(args.force_filter_feedback)
+                    if force_filter_feedback
                     else "target_relative_delayed_feedback"
                 ),
             ),
@@ -859,6 +893,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
                     else 0.0
                 ),
             },
+            "delayed_pre_go_start_pos_hold_norm": delayed_pre_go_start_pos_hold_norm,
             "effector_pos_late": {
                 "start_step_after_go": int(schedule.T),
                 "final_scale_factor": 1.0,
@@ -1372,6 +1407,128 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def planned_ef9c882_start_pos_hold_rows(
+    *,
+    experiment: str = "ef9c882",
+) -> list[dict[str, Any]]:
+    """Return the locked delayed pre-go start-position hold rows for ef9c882."""
+
+    common_command = [
+        "env",
+        "PYTHONPATH=src",
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "scripts/train_cs_nominal_gru.py",
+        "--issue",
+        experiment,
+        "--n-train-batches",
+        "12000",
+        "--batch-size",
+        "64",
+        "--gradient-clip-norm",
+        "5",
+        "--lr-warmup-batches",
+        "500",
+        "--lr-warmup-init-fraction",
+        "0.1",
+        "--lr-cosine-alpha",
+        "0.1",
+        "--n-replicates",
+        "5",
+        "--hidden-size",
+        "180",
+        "--loss-objective",
+        CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+        "--delayed-reach",
+        "--delayed-reach-go-cue-min-step",
+        "10",
+        "--delayed-reach-go-cue-max-step",
+        "30",
+        "--delayed-reach-p-catch-trial",
+        "0.5",
+        "--target-relative-multitarget",
+        "--force-filter-feedback",
+        "--perturbation-training",
+        "--perturbation-calibrated-timing",
+        "--perturbation-movement-age-timing",
+        "--perturbation-physical-level",
+        "small",
+        "--nn-output-pre-go",
+        "0",
+        "--delayed-pre-go-force-filter-hold",
+        "0",
+    ]
+    row_specs = [
+        ("hold_start_pos_l2_ffpert__w1e6_lr3e-3", "l2", 1e6, 3e-3, 0.0),
+        ("hold_start_pos_l2_ffpert__w1e8_lr3e-3", "l2", 1e8, 3e-3, 0.0),
+        ("hold_start_pos_l1_ffpert__w1e6_lr3e-3", "l1", 1e6, 3e-3, 0.0),
+        ("hold_start_pos_l1_ffpert__w1e5_lr3e-3", "l1", 1e5, 3e-3, 0.0),
+        ("hold_start_pos_l2_ffpert__w1e8_lr1e-2", "l2", 1e8, 1e-2, 0.0),
+        ("hold_start_pos_l1_ffpert__w1e5_lr1e-2", "l1", 1e5, 1e-2, 0.0),
+        ("hold__start_pos_zero_vel_lr1e-2", "l2", 1e6, 1e-2, 1e5),
+        ("hold__start_pos_zero_vel_lr3e-2", "l2", 1e6, 3e-2, 1e5),
+    ]
+    rows = []
+    for run, norm, weight, controller_lr, zero_vel_hold in row_specs:
+        command = [
+            *common_command,
+            "--controller-lr",
+            f"{controller_lr:g}",
+            "--delayed-pre-go-zero-vel-hold",
+            f"{zero_vel_hold:g}",
+            "--delayed-pre-go-start-pos-hold",
+            f"{weight:g}",
+            "--delayed-pre-go-start-pos-hold-norm",
+            norm,
+            "--output-dir",
+            f"_artifacts/{experiment}/runs/{run}",
+        ]
+        rows.append(
+            {
+                "experiment": experiment,
+                "run": run,
+                "row_kind": "full_training_contract",
+                "adversarial_phase": "none",
+                "broad_epsilon_pgd_training": False,
+                "delayed_reach": True,
+                "target_visible_from_start": True,
+                "go_cue_min_step": 10,
+                "go_cue_max_step": 30,
+                "p_catch_trial": 0.5,
+                "loss_objective": CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+                "movement_period_position_error_norm": "l2",
+                "movement_window_qrf_comparator": "full_analytical_qrf_movement_age",
+                "nn_output_pre_go": 0.0,
+                "delayed_pre_go_force_filter_hold": 0.0,
+                "delayed_pre_go_zero_vel_hold": float(zero_vel_hold),
+                "delayed_pre_go_start_pos_hold": float(weight),
+                "delayed_pre_go_start_pos_hold_norm": norm,
+                "force_filter_feedback": True,
+                "perturbation_training": True,
+                "perturbation_calibrated_timing": True,
+                "perturbation_movement_age_timing": True,
+                "perturbation_physical_level": "small",
+                "hidden_size": 180,
+                "batch_size": 64,
+                "controller_lr": float(controller_lr),
+                "lr_schedule": "warmup_cosine",
+                "lr_warmup_batches": 500,
+                "lr_warmup_init_fraction": 0.1,
+                "lr_cosine_alpha": 0.1,
+                "gradient_clip_norm": 5.0,
+                "n_replicates": 5,
+                "n_train_batches": 12000,
+                "n_adversary_batches": 0,
+                "eval_bank": "current_corrected_fixed_delayed_movement_bank",
+                "spec_command": [*command, "--dry-run"],
+                "command": [*command, "--full-train", "--resume"],
+            }
+        )
+    return rows
+
+
 def run_full_training(
     args: argparse.Namespace,
     *,
@@ -1753,6 +1910,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--delayed-pre-go-start-pos-hold-norm",
+        choices=["l2", "l1"],
+        default="l2",
+        help=(
+            "Norm for --delayed-pre-go-start-pos-hold. l2 preserves the existing "
+            "squared-distance penalty; l1 scores absolute coordinate displacement."
+        ),
+    )
+    parser.add_argument(
         "--delayed-pre-go-zero-vel-hold",
         type=float,
         default=0.0,
@@ -1778,10 +1944,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--perturbation-training",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=None,
         help=(
             "Enable fixed-target perturbation-generalized training using external "
-            "task/plant/channel adapters. Target-position streams are not added."
+            "task/plant/channel adapters. Defaults to on for --delayed-reach and off "
+            "otherwise. Target-position streams are not added."
         ),
     )
     parser.add_argument("--perturbation-nominal-fraction", type=float, default=0.45)
@@ -1798,32 +1966,36 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--perturbation-pulse-duration-steps", type=int, default=5)
     parser.add_argument(
         "--perturbation-calibrated-timing",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=None,
         help=(
             "Use timing-bin calibrated perturbation training: plant process/command "
             "pulses sample starts 5/15/35 uniformly, controller-visible sensory and "
             "delayed-observation offsets sample starts 10/20/40 uniformly, all with "
-            "5-step pulses."
+            "5-step pulses. Defaults to on for --delayed-reach perturbation training."
         ),
     )
     parser.add_argument(
         "--perturbation-movement-age-timing",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=None,
         help=(
             "Index calibrated perturbation timing bins by movement age: plant "
             "process/command pulses use movement_start + 5/15/35, controller-visible "
             "sensory/delayed-observation pulses use movement_start + 10/20/40, and "
             "initial position/velocity diagnostics use movement-onset process-epsilon "
-            "impulses. Requires --perturbation-calibrated-timing."
+            "impulses. Requires --perturbation-calibrated-timing and defaults to on "
+            "for --delayed-reach perturbation training."
         ),
     )
     parser.add_argument(
         "--perturbation-physical-level",
         choices=("small", "moderate", "stress"),
-        default="moderate",
+        default=None,
         help=(
             "Declared reach-relative perturbation level for calibrated screens. "
-            "Small/moderate are training rows; stress is reserved for evaluation."
+            "Small/moderate are training rows; stress is reserved for evaluation. "
+            "Defaults to small for --delayed-reach and moderate otherwise."
         ),
     )
     parser.add_argument(
@@ -1899,10 +2071,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--force-filter-feedback",
         "--proprioceptive-feedback",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=None,
         help=(
             "Extend target-relative delayed feedback with delayed force/filter x/y "
-            "coordinates. Requires --target-relative-multitarget."
+            "coordinates. Defaults to on for --delayed-reach and off otherwise. "
+            "Requires --target-relative-multitarget."
         ),
     )
     parser.add_argument(
@@ -2015,6 +2189,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the two planned local issue e4800d6 SISU-conditioned PGD rows and exit.",
     )
     parser.add_argument(
+        "--planned-ef9c882-start-pos-hold-rows",
+        action="store_true",
+        help="Print the five planned issue ef9c882 delayed pre-go start-position hold rows.",
+    )
+    parser.add_argument(
         "--smoke",
         action="store_true",
         help="Use tiny local values; with --full-train this runs a one-batch smoke.",
@@ -2079,6 +2258,9 @@ def main(
         return 0
     if args.planned_e4800d6_sisu_spectrum_rows:
         print(_json_dumps({"planned_rows": planned_e4800d6_sisu_spectrum_rows()}), end="")
+        return 0
+    if args.planned_ef9c882_start_pos_hold_rows:
+        print(_json_dumps({"planned_rows": planned_ef9c882_start_pos_hold_rows()}), end="")
         return 0
     result = (
         run_full_training(args, volume_commit=volume_commit)
@@ -2544,7 +2726,7 @@ def _training_distribution_metadata(hps: TreeNamespace) -> dict[str, Any]:
             "target_stream": "not_consumed",
         }
     return {
-        "mode": _training_mode(hps),
+        "mode": str(getattr(config, "mode", PERTURBATION_TRAINING_MODE)),
         "legacy_mode": LEGACY_PERTURBATION_TRAINING_MODE,
         "fixed_target_only": True,
         "target_stream": {
@@ -3259,6 +3441,7 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
 
 def _delayed_pre_go_auxiliary_terms_metadata(hps: TreeNamespace) -> dict[str, Any]:
     weights = getattr(hps.loss, "weights", TreeNamespace())
+    start_pos_norm = str(getattr(hps.loss, "delayed_pre_go_start_pos_hold_norm", "l2"))
     terms = {
         "delayed_pre_go_force_filter_hold": {
             "scale": float(getattr(weights, "delayed_pre_go_force_filter_hold", 0.0)),
@@ -3269,6 +3452,7 @@ def _delayed_pre_go_auxiliary_terms_metadata(hps: TreeNamespace) -> dict[str, An
             "scale": float(getattr(weights, "delayed_pre_go_start_pos_hold", 0.0)),
             "state_key": "states.mechanics.effector.pos",
             "target": "trial_specs.inits['mechanics.vector'][..., :2]",
+            "norm": start_pos_norm,
         },
         "delayed_pre_go_zero_vel_hold": {
             "scale": float(getattr(weights, "delayed_pre_go_zero_vel_hold", 0.0)),
