@@ -360,6 +360,9 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         "delayed_pre_go_start_pos_hold": float(
             loss_weights.get("delayed_pre_go_start_pos_hold", 0.0)
         ),
+        "delayed_pre_go_start_pos_hold_norm": str(
+            loss.get("delayed_pre_go_start_pos_hold_norm", "l2")
+        ),
         "delayed_pre_go_zero_vel_hold": float(
             loss_weights.get("delayed_pre_go_zero_vel_hold", 0.0)
         ),
@@ -617,6 +620,11 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
     delayed_pre_go_start_pos_hold = float(
         getattr(args, "delayed_pre_go_start_pos_hold", 0.0) or 0.0
     )
+    delayed_pre_go_start_pos_hold_norm = str(
+        getattr(args, "delayed_pre_go_start_pos_hold_norm", "l2") or "l2"
+    )
+    if delayed_pre_go_start_pos_hold_norm not in {"l2", "l1"}:
+        raise ValueError("--delayed-pre-go-start-pos-hold-norm must be one of: l2, l1")
     delayed_pre_go_zero_vel_hold = float(
         getattr(args, "delayed_pre_go_zero_vel_hold", 0.0) or 0.0
     )
@@ -859,6 +867,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
                     else 0.0
                 ),
             },
+            "delayed_pre_go_start_pos_hold_norm": delayed_pre_go_start_pos_hold_norm,
             "effector_pos_late": {
                 "start_step_after_go": int(schedule.T),
                 "final_scale_factor": 1.0,
@@ -1372,6 +1381,114 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def planned_ef9c882_start_pos_hold_rows(
+    *,
+    experiment: str = "ef9c882",
+) -> list[dict[str, Any]]:
+    """Return the locked delayed pre-go start-position hold rows for ef9c882."""
+
+    common_command = [
+        "env",
+        "PYTHONPATH=src",
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "scripts/train_cs_nominal_gru.py",
+        "--issue",
+        experiment,
+        "--n-train-batches",
+        "12000",
+        "--batch-size",
+        "64",
+        "--controller-lr",
+        "0.003",
+        "--gradient-clip-norm",
+        "5",
+        "--lr-warmup-batches",
+        "500",
+        "--lr-warmup-init-fraction",
+        "0.1",
+        "--lr-cosine-alpha",
+        "0.1",
+        "--n-replicates",
+        "5",
+        "--hidden-size",
+        "180",
+        "--loss-objective",
+        CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+        "--delayed-reach",
+        "--delayed-reach-go-cue-min-step",
+        "10",
+        "--delayed-reach-go-cue-max-step",
+        "30",
+        "--delayed-reach-p-catch-trial",
+        "0.5",
+        "--target-relative-multitarget",
+        "--nn-output-pre-go",
+        "0",
+        "--delayed-pre-go-force-filter-hold",
+        "0",
+        "--delayed-pre-go-zero-vel-hold",
+        "0",
+    ]
+    row_specs = [
+        ("hold_start_pos_l2__w1e4", "l2", 1e4),
+        ("hold_start_pos_l2__w1e6", "l2", 1e6),
+        ("hold_start_pos_l2__w1e8", "l2", 1e8),
+        ("hold_start_pos_l1__w1e8", "l1", 1e8),
+        ("hold_start_pos_l1__w1e6", "l1", 1e6),
+    ]
+    rows = []
+    for run, norm, weight in row_specs:
+        command = [
+            *common_command,
+            "--delayed-pre-go-start-pos-hold",
+            f"{weight:g}",
+            "--delayed-pre-go-start-pos-hold-norm",
+            norm,
+            "--output-dir",
+            f"_artifacts/{experiment}/runs/{run}",
+        ]
+        rows.append(
+            {
+                "experiment": experiment,
+                "run": run,
+                "row_kind": "full_training_contract",
+                "adversarial_phase": "none",
+                "broad_epsilon_pgd_training": False,
+                "delayed_reach": True,
+                "target_visible_from_start": True,
+                "go_cue_min_step": 10,
+                "go_cue_max_step": 30,
+                "p_catch_trial": 0.5,
+                "loss_objective": CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+                "movement_period_position_error_norm": "l2",
+                "movement_window_qrf_comparator": "full_analytical_qrf_movement_age",
+                "nn_output_pre_go": 0.0,
+                "delayed_pre_go_force_filter_hold": 0.0,
+                "delayed_pre_go_zero_vel_hold": 0.0,
+                "delayed_pre_go_start_pos_hold": float(weight),
+                "delayed_pre_go_start_pos_hold_norm": norm,
+                "hidden_size": 180,
+                "batch_size": 64,
+                "controller_lr": 3e-3,
+                "lr_schedule": "warmup_cosine",
+                "lr_warmup_batches": 500,
+                "lr_warmup_init_fraction": 0.1,
+                "lr_cosine_alpha": 0.1,
+                "gradient_clip_norm": 5.0,
+                "n_replicates": 5,
+                "n_train_batches": 12000,
+                "n_adversary_batches": 0,
+                "eval_bank": "current_corrected_fixed_delayed_movement_bank",
+                "spec_command": [*command, "--dry-run"],
+                "command": [*command, "--full-train", "--resume"],
+            }
+        )
+    return rows
+
+
 def run_full_training(
     args: argparse.Namespace,
     *,
@@ -1753,6 +1870,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--delayed-pre-go-start-pos-hold-norm",
+        choices=["l2", "l1"],
+        default="l2",
+        help=(
+            "Norm for --delayed-pre-go-start-pos-hold. l2 preserves the existing "
+            "squared-distance penalty; l1 scores absolute coordinate displacement."
+        ),
+    )
+    parser.add_argument(
         "--delayed-pre-go-zero-vel-hold",
         type=float,
         default=0.0,
@@ -2015,6 +2141,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the two planned local issue e4800d6 SISU-conditioned PGD rows and exit.",
     )
     parser.add_argument(
+        "--planned-ef9c882-start-pos-hold-rows",
+        action="store_true",
+        help="Print the five planned issue ef9c882 delayed pre-go start-position hold rows.",
+    )
+    parser.add_argument(
         "--smoke",
         action="store_true",
         help="Use tiny local values; with --full-train this runs a one-batch smoke.",
@@ -2079,6 +2210,9 @@ def main(
         return 0
     if args.planned_e4800d6_sisu_spectrum_rows:
         print(_json_dumps({"planned_rows": planned_e4800d6_sisu_spectrum_rows()}), end="")
+        return 0
+    if args.planned_ef9c882_start_pos_hold_rows:
+        print(_json_dumps({"planned_rows": planned_ef9c882_start_pos_hold_rows()}), end="")
         return 0
     result = (
         run_full_training(args, volume_commit=volume_commit)
@@ -3259,6 +3393,7 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
 
 def _delayed_pre_go_auxiliary_terms_metadata(hps: TreeNamespace) -> dict[str, Any]:
     weights = getattr(hps.loss, "weights", TreeNamespace())
+    start_pos_norm = str(getattr(hps.loss, "delayed_pre_go_start_pos_hold_norm", "l2"))
     terms = {
         "delayed_pre_go_force_filter_hold": {
             "scale": float(getattr(weights, "delayed_pre_go_force_filter_hold", 0.0)),
@@ -3269,6 +3404,7 @@ def _delayed_pre_go_auxiliary_terms_metadata(hps: TreeNamespace) -> dict[str, An
             "scale": float(getattr(weights, "delayed_pre_go_start_pos_hold", 0.0)),
             "state_key": "states.mechanics.effector.pos",
             "target": "trial_specs.inits['mechanics.vector'][..., :2]",
+            "norm": start_pos_norm,
         },
         "delayed_pre_go_zero_vel_hold": {
             "scale": float(getattr(weights, "delayed_pre_go_zero_vel_hold", 0.0)),

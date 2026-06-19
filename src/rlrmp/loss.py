@@ -550,18 +550,23 @@ def _sum_masked_time_density(
 
 
 class InitialEffectorPositionHoldLoss(AbstractLoss):
-    """Prep-epoch squared distance from the trial's initial effector position."""
+    """Prep-epoch distance from the trial's initial effector position."""
 
     label: str
+    norm: str = eqx.field(static=True)
     epoch_indices: tuple[int, ...] = eqx.field(static=True)
 
     def __init__(
         self,
         *,
         label: str = "delayed_pre_go_start_pos_hold",
+        norm: str = "l2",
         epoch_indices: tuple[int, ...] = (0,),
     ):
+        if norm not in {"l2", "l1"}:
+            raise ValueError(f"Unknown start-position hold norm {norm!r}; expected 'l2' or 'l1'.")
         self.label = label
+        self.norm = norm
         self.epoch_indices = tuple(epoch_indices)
 
     def term(
@@ -580,7 +585,11 @@ class InitialEffectorPositionHoldLoss(AbstractLoss):
         pos = jnp.asarray(states.mechanics.effector.pos)
         initial = jnp.asarray(trial_specs.inits["mechanics.vector"], dtype=pos.dtype)[..., :2]
         initial = jnp.broadcast_to(initial, (*pos.shape[:-2], pos.shape[-1]))
-        density = jnp.sum((pos[..., 1:, :] - initial[..., None, :]) ** 2, axis=-1)
+        delta = pos[..., 1:, :] - initial[..., None, :]
+        if self.norm == "l1":
+            density = jnp.sum(jnp.abs(delta), axis=-1)
+        else:
+            density = jnp.sum(delta**2, axis=-1)
         return _sum_masked_time_density(density, trial_specs, self.epoch_indices)
 
 
@@ -780,6 +789,7 @@ during_movement = TargetSpec(time_mask=partial(get_epoch_weights, start_epoch=-2
 def _add_delayed_pre_go_auxiliary_terms(
     terms: dict[str, AbstractLoss],
     weights: dict[str, float],
+    user_loss_config: Any,
     user_outer_weights: Any,
     *,
     epoch_indices: tuple[int, ...],
@@ -787,12 +797,16 @@ def _add_delayed_pre_go_auxiliary_terms(
 ) -> None:
     """Append nonzero delayed-reach prep-only auxiliary terms."""
 
+    start_pos_norm = str(
+        _nsget(user_loss_config, "delayed_pre_go_start_pos_hold_norm", "l2") or "l2"
+    )
     term_builders: dict[str, Callable[[], AbstractLoss]] = {
         "delayed_pre_go_force_filter_hold": lambda: PrepForceFilterHoldLoss(
             n_phys=n_phys,
             epoch_indices=epoch_indices,
         ),
         "delayed_pre_go_start_pos_hold": lambda: InitialEffectorPositionHoldLoss(
+            norm=start_pos_norm,
             epoch_indices=epoch_indices,
         ),
         "delayed_pre_go_zero_vel_hold": lambda: PrepZeroVelocityHoldLoss(
@@ -1172,6 +1186,7 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
         _add_delayed_pre_go_auxiliary_terms(
             terms,
             weights,
+            _nsget(hps, "loss", None),
             user_outer_weights,
             epoch_indices=pre_go_epoch_indices,
             n_phys=6 if no_integrator_state else 8,
@@ -1266,6 +1281,7 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
     _add_delayed_pre_go_auxiliary_terms(
         terms,
         {},
+        _nsget(hps, "loss", None),
         user_outer_weights,
         epoch_indices=pre_go_epoch_indices,
         n_phys=6 if bool(_nsget(hps, "model.no_integrator_state", False)) else 8,
