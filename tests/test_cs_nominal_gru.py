@@ -128,6 +128,34 @@ def _parse_planned_training_command(command: list[str]) -> argparse.Namespace:
     return build_parser().parse_args(command[script_index + 1 :])
 
 
+def test_delayed_reach_resolves_force_filter_and_perturbation_defaults() -> None:
+    hps = build_hps(
+        _args(
+            delayed_reach=True,
+            target_relative_multitarget=True,
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+        )
+    )
+
+    assert hps.model.force_filter_feedback is True
+    assert hps.target_relative_multitarget.force_filter_feedback is True
+    assert hps.perturbation_training.enabled is True
+    assert hps.perturbation_training.calibrated_timing is True
+    assert hps.perturbation_training.timing_basis.mode == "movement_age"
+    assert hps.perturbation_training.physical_level == "small"
+
+
+def test_non_delayed_rows_keep_force_filter_and_perturbation_defaults_off() -> None:
+    hps = build_hps(_args(target_relative_multitarget=True))
+
+    assert hps.model.force_filter_feedback is False
+    assert hps.target_relative_multitarget.force_filter_feedback is False
+    assert hps.perturbation_training.enabled is False
+    assert hps.perturbation_training.calibrated_timing is False
+    assert hps.perturbation_training.timing_basis.mode == "absolute_trial_time"
+    assert hps.perturbation_training.physical_level == "moderate"
+
+
 def _where_train() -> dict[int, object]:
     def where_train_fn(model):
         net = model.nodes["net"]
@@ -1702,7 +1730,7 @@ def test_delayed_reach_setup_adds_go_cue_and_preserves_target_visibility() -> No
     assert hps.task.p_catch_trial == pytest.approx(0.0)
     assert hps.loss.weights.nn_output_pre_go == pytest.approx(1.0)
     assert pair.model.input_ports[:3] == ("input", "target", "epsilon")
-    assert pair.model.nodes["net"].input_size == 5
+    assert pair.model.nodes["net"].input_size == 7
     assert trial.timeline.epoch_names == ("prep", "movement")
     assert 10 <= go_step <= 30
     assert trial.inputs["input"].shape == (trial.timeline.n_steps - 1,)
@@ -2303,6 +2331,7 @@ def test_ef9c882_start_pos_hold_planned_rows_parse_and_build_specs(tmp_path: Pat
         "hold_start_pos_l1_ffpert__w1e5_lr3e-3",
         "hold_start_pos_l2_ffpert__w1e8_lr1e-2",
         "hold_start_pos_l1_ffpert__w1e5_lr1e-2",
+        "hold__start_pos_zero_vel_lr1e-2",
     ]
     assert [row["delayed_pre_go_start_pos_hold_norm"] for row in rows] == [
         "l2",
@@ -2311,6 +2340,7 @@ def test_ef9c882_start_pos_hold_planned_rows_parse_and_build_specs(tmp_path: Pat
         "l1",
         "l2",
         "l1",
+        "l2",
     ]
     assert [row["delayed_pre_go_start_pos_hold"] for row in rows] == [
         1e6,
@@ -2319,6 +2349,7 @@ def test_ef9c882_start_pos_hold_planned_rows_parse_and_build_specs(tmp_path: Pat
         1e5,
         1e8,
         1e5,
+        1e6,
     ]
     assert [row["controller_lr"] for row in rows] == [
         3e-3,
@@ -2327,6 +2358,16 @@ def test_ef9c882_start_pos_hold_planned_rows_parse_and_build_specs(tmp_path: Pat
         3e-3,
         1e-2,
         1e-2,
+        1e-2,
+    ]
+    assert [row["delayed_pre_go_zero_vel_hold"] for row in rows] == [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1e5,
     ]
 
     for row in rows:
@@ -2366,7 +2407,9 @@ def test_ef9c882_start_pos_hold_planned_rows_parse_and_build_specs(tmp_path: Pat
         assert parsed.broad_epsilon_pgd_training is False
         assert parsed.nn_output_pre_go == pytest.approx(0.0)
         assert parsed.delayed_pre_go_force_filter_hold == pytest.approx(0.0)
-        assert parsed.delayed_pre_go_zero_vel_hold == pytest.approx(0.0)
+        assert parsed.delayed_pre_go_zero_vel_hold == pytest.approx(
+            row["delayed_pre_go_zero_vel_hold"]
+        )
         assert parsed.delayed_pre_go_start_pos_hold == pytest.approx(
             row["delayed_pre_go_start_pos_hold"]
         )
@@ -2388,14 +2431,16 @@ def test_ef9c882_start_pos_hold_planned_rows_parse_and_build_specs(tmp_path: Pat
         assert payload["hps"]["perturbation_training"]["physical_level"] == "small"
         assert payload["hps"]["loss"]["weights"]["nn_output_pre_go"] == 0.0
         assert payload["hps"]["loss"]["weights"]["delayed_pre_go_force_filter_hold"] == 0.0
-        assert payload["hps"]["loss"]["weights"]["delayed_pre_go_zero_vel_hold"] == 0.0
+        assert payload["hps"]["loss"]["weights"]["delayed_pre_go_zero_vel_hold"] == (
+            pytest.approx(row["delayed_pre_go_zero_vel_hold"])
+        )
         assert payload["hps"]["loss"]["weights"]["delayed_pre_go_start_pos_hold"] == (
             pytest.approx(row["delayed_pre_go_start_pos_hold"])
         )
         assert payload["hps"]["loss"]["delayed_pre_go_start_pos_hold_norm"] == row[
             "delayed_pre_go_start_pos_hold_norm"
         ]
-        assert aux["active_terms"] == {
+        expected_active_terms = {
             "delayed_pre_go_start_pos_hold": {
                 "scale": row["delayed_pre_go_start_pos_hold"],
                 "state_key": "states.mechanics.effector.pos",
@@ -2403,6 +2448,13 @@ def test_ef9c882_start_pos_hold_planned_rows_parse_and_build_specs(tmp_path: Pat
                 "norm": row["delayed_pre_go_start_pos_hold_norm"],
             }
         }
+        if row["delayed_pre_go_zero_vel_hold"] != 0.0:
+            expected_active_terms["delayed_pre_go_zero_vel_hold"] = {
+                "scale": row["delayed_pre_go_zero_vel_hold"],
+                "state_key": "states.mechanics.effector.vel",
+                "target": "zero_velocity",
+            }
+        assert aux["active_terms"] == expected_active_terms
         assert payload["delayed_reach"]["go_cue_sampling"]["min_step_inclusive"] == 10
         assert payload["delayed_reach"]["go_cue_sampling"]["max_step_inclusive"] == 30
         assert payload["delayed_reach"]["catch_trials"]["p_catch_trial"] == pytest.approx(0.5)
@@ -2419,6 +2471,7 @@ def test_ef9c882_start_pos_hold_planned_rows_cli(capsys: pytest.CaptureFixture[s
         "hold_start_pos_l1_ffpert__w1e5_lr3e-3",
         "hold_start_pos_l2_ffpert__w1e8_lr1e-2",
         "hold_start_pos_l1_ffpert__w1e5_lr1e-2",
+        "hold__start_pos_zero_vel_lr1e-2",
     ]
 
 
@@ -2455,7 +2508,7 @@ def test_delayed_reach_run_spec_declares_task_and_movement_pgd_mask(tmp_path: Pa
         "movement_age_not_trial_age"
     )
     assert payload["model_summary"]["go_cue"]["enabled"] is True
-    assert payload["model_summary"]["controller_input_dimension"] == 5
+    assert payload["model_summary"]["controller_input_dimension"] == 7
     assert payload["hps"]["loss"]["weights"]["nn_output_pre_go"] == 1.0
     assert payload["hps"]["broad_epsilon_pgd_training"]["movement_epoch_only"] is True
     assert payload["hps"]["broad_epsilon_pgd_training"]["time_mask"]["mode"] == (
