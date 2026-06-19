@@ -40,6 +40,16 @@
       "experiment": "ef9c882",
       "label": "L1 hold 1e6",
       "run_id": "hold_start_pos_l1__w1e6"
+    },
+    {
+      "experiment": "ef9c882",
+      "label": "L1 hold 1e5",
+      "run_id": "hold_start_pos_l1__w1e5"
+    },
+    {
+      "experiment": "ef9c882",
+      "label": "L1 hold 1e4",
+      "run_id": "hold_start_pos_l1__w1e4"
     }
   ],
   "schema_version": "rlrmp.figure_spec.delayed_timing_hold_velocity.v1",

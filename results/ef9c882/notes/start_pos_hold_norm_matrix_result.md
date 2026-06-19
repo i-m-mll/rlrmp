@@ -1,7 +1,8 @@
 # Start-Position Hold Norm Matrix Result
 
-This note records the first fixed-bank readout for the five delayed pre-go
-start-position-only hold rows requested under issue `ef9c882`. All rows used
+This note records the fixed-bank readout for the delayed pre-go
+start-position-only hold rows requested under issue `ef9c882`, including the
+two-row L1 low-weight addendum. All rows used
 target-visible delayed reach, go cues 10-30, `p_catch_trial=0.5`, 5 GRU
 replicates, hidden size 180, batch size 64, 12000 training batches, full
 movement-period C&S Q/R/Qf, no PGD, no `nn_output_pre_go`, no pre-go
@@ -17,18 +18,24 @@ uniform target directions at 0.15 m reach length.
 | `hold_start_pos_l2__w1e8` | L2 | 1e8 | 0.666288 | 0.15 | 0.022336 | 0.022096 | 0.142716 | 0.136639 | 0.006792 |
 | `hold_start_pos_l1__w1e8` | L1 | 1e8 | 0.679563 | 0.18 | 0.031241 | 0.034507 | 0.139385 | 0.129507 | 0.003859 |
 | `hold_start_pos_l1__w1e6` | L1 | 1e6 | 0.674028 | 0.16 | 0.028532 | 0.015766 | 0.139844 | 0.132874 | 0.002262 |
+| `hold_start_pos_l1__w1e5` | L1 | 1e5 | 0.663752 | 0.15 | 0.023404 | 0.020197 | 0.140184 | 0.134482 | 0.007041 |
+| `hold_start_pos_l1__w1e4` | L1 | 1e4 | 0.664547 | 0.15 | 0.020165 | 0.018201 | 0.142605 | 0.139053 | 0.040395 |
 
 Reference sidecar from the same velocity materialization: the 8D extLQG
 output-feedback comparator peaks at 0.731057 m/s at 0.16 s and has terminal
 position error 0.003262 m; the 4D comparator peaks at 0.730759 m/s at 0.16 s
 and has terminal position error 0.003300 m.
 
-Catch-bank target-radial velocity stayed flat for all five rows in this
+Catch-bank target-radial velocity stayed flat for all seven rows in this
 fixed-bank readout. The weak L2 1e4 row has the smallest endpoint error among
 the five new rows, but it is not usable as anti-anticipation evidence because
 its mean pre-go peak speed is 0.243493 m/s. The strongest L1/L2 holds suppress
 pre-go speed much better, but the improved no-catch peak velocity remains below
 the extLQG reference and comes with larger endpoint error or terminal speed.
+The L1 low-weight addendum (`1e5`, `1e4`) did not improve no-catch peak
+velocity over the stronger L1 rows; both addendum peaks are near 0.664 m/s.
+The `1e4` addendum has somewhat better endpoint error than the stronger L1 rows,
+but its pre-go peak speed rises to 0.040395 m/s.
 
 Compared with the previous `hold__start_pos_zero_vel` row from the same issue
 (peak 0.676107 m/s, endpoint error 0.018476 m, terminal speed 0.012682 m/s,
