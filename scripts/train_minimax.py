@@ -120,11 +120,11 @@ def _adversary_update(adversary_optimizer, adversary, dL_dforces, adv_opt_st):
 
 
 def derive_spec_dir(output_dir: Path) -> Path:
-    """Derive the run spec directory from the run artifact directory.
+    """Derive the tracked run sidecar/spec directory from the artifact directory.
 
     Applies the mirror invariant ``run_artifact_dir(exp, run)`` ↔
-    ``run_spec_dir(exp, run)``: paths under ``<repo>/_artifacts/...`` are
-    re-rooted under ``<repo>/results/...``. Paths outside the
+    ``run_spec_sidecar_dir(exp, run)``: paths under ``<repo>/_artifacts/...``
+    are re-rooted under ``<repo>/results/...``. Paths outside the
     ``_artifacts/`` tree fall back to a sibling ``<output_dir>_spec``.
 
     Args:
@@ -132,7 +132,7 @@ def derive_spec_dir(output_dir: Path) -> Path:
             (typically under ``_artifacts/<exp>/runs/<run>/``).
 
     Returns:
-        Absolute path to the corresponding spec directory.
+        Absolute path to the corresponding sidecar/spec directory.
     """
     out = Path(output_dir).resolve()
     artifact_root = (REPO_ROOT / "_artifacts").resolve()
@@ -494,9 +494,12 @@ def run_training(args: argparse.Namespace) -> None:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Spec dir holds tracked recipe/run.json; artifact dir holds bulk outputs.
+    # This legacy training entry point writes run.json into a tracked sidecar
+    # directory. Post-run closeout promotes/copies the canonical recipe to the
+    # flat results/<exp>/runs/<run>.json path.
     # When --spec-dir is unset, derive it from --output-dir via the mirror
-    # invariant (paths.run_artifact_dir(exp, run) ↔ paths.run_spec_dir(exp, run)).
+    # invariant (paths.run_artifact_dir(exp, run) ↔
+    # paths.run_spec_sidecar_dir(exp, run)).
     # Bug: 0077b42
     spec_dir = Path(args.spec_dir) if args.spec_dir is not None else derive_spec_dir(output_dir)
     mkdir_p(spec_dir)
@@ -1684,8 +1687,8 @@ def parse_args() -> argparse.Namespace:
             "Output directory for bulk artifacts (checkpoints, .eqx, .npz, logs). "
             "Default mirrors the role-based layout: _artifacts/<exp>/runs/<run>/. "
             "Use rlrmp.paths.run_artifact_dir(exp, run) to construct this path "
-            "programmatically. Write run.json to the sibling spec directory "
-            "results/<exp>/runs/<run>/ via rlrmp.paths.run_spec_dir(exp, run)."
+            "programmatically. This legacy script writes run.json to the sibling "
+            "tracked sidecar directory results/<exp>/runs/<run>/."
         ),
     )
     parser.add_argument(
@@ -1696,8 +1699,8 @@ def parse_args() -> argparse.Namespace:
             "Spec directory for the tracked run.json recipe (default: derived "
             "from --output-dir via the mirror invariant, mapping "
             "_artifacts/<exp>/runs/<run>/ -> results/<exp>/runs/<run>/). "
-            "Use rlrmp.paths.run_spec_dir(exp, run) to construct this path "
-            "programmatically. Bug: 0077b42."
+            "For new post-run recipes, prefer the flat "
+            "rlrmp.paths.run_spec_path(exp, run) convention. Bug: 0077b42."
         ),
     )
     parser.add_argument(

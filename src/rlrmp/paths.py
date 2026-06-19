@@ -45,10 +45,12 @@ def _artifact_root() -> Path:
 # ---------------------------------------------------------------------------
 
 def run_spec_dir(exp: str, run: str) -> Path:
-    """Return the spec directory for a training run.
+    """Return the optional tracked sidecar directory for a training run.
 
-    This directory is tracked in git and holds lightweight spec files such as
-    ``run.json`` and optional ``notes.md``.
+    New run recipes use the flat ``run_spec_path(exp, run)`` convention:
+    ``results/<exp>/runs/<run>.json``. This directory is for lightweight
+    tracked sidecars that accrue after the recipe exists, or for legacy runs
+    that still keep their recipe at ``results/<exp>/runs/<run>/run.json``.
 
     Args:
         exp: Experiment slug (e.g. ``"part2_5"``).
@@ -60,13 +62,25 @@ def run_spec_dir(exp: str, run: str) -> Path:
     return _spec_root() / exp / "runs" / run
 
 
+def run_spec_sidecar_dir(exp: str, run: str) -> Path:
+    """Return the optional tracked sidecar directory for ``exp/run``.
+
+    This is a clearer alias for ``run_spec_dir`` for new code. The older helper
+    name remains available because legacy callers still use it when reading
+    historical ``runs/<run>/run.json`` layouts.
+    """
+
+    return run_spec_dir(exp, run)
+
+
 def run_spec_path(exp: str, run: str, *, repo_root: Path | None = None) -> Path:
-    """Return the tracked run-spec file for ``exp/run``.
+    """Return the canonical tracked run-recipe file for ``exp/run``.
 
     New post-run artifacts use the flat ``results/<exp>/runs/<run>.json``
     convention. Older runs may still use ``results/<exp>/runs/<run>/run.json``.
     When neither path exists, return the flat path so new callers fail or write
-    against the current convention.
+    against the current convention. Use ``run_spec_sidecar_dir`` for optional
+    tracked files that belong to the same run but are not the recipe itself.
     """
 
     root = REPO_ROOT if repo_root is None else repo_root

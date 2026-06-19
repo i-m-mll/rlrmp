@@ -9,6 +9,10 @@
 #   /path/to/run-dir            Same as local:/path/to/run-dir.
 #   modal[:volume-name]         Pull results/ and _artifacts/ paths from a Modal volume.
 #   pod:<rsync-source>          Rsync from an SSH source such as host:/path/to/run-dir/.
+#
+# Emergency override:
+#   POST_RUN_ALLOW_DIRTY_UV_LOCK=1 skips the uv.lock cleanliness guard. Use only
+#   when the lockfile change is deliberate and already accounted for elsewhere.
 
 set -euo pipefail
 
@@ -52,6 +56,24 @@ run_in_repo_or_print() {
 require_clean_index() {
     if ! git -C "$REPO_ROOT" diff --cached --quiet; then
         die "git index is not clean; commit or unstage existing changes before post_run.sh"
+    fi
+}
+
+require_uv_lock_clean() {
+    local uv_lock="$REPO_ROOT/uv.lock"
+    [[ -e "$uv_lock" ]] || return 0
+    if [[ "${POST_RUN_ALLOW_DIRTY_UV_LOCK:-0}" == "1" ]]; then
+        echo "warning: POST_RUN_ALLOW_DIRTY_UV_LOCK=1; skipping uv.lock cleanliness guard" >&2
+        return 0
+    fi
+    if ! git -C "$REPO_ROOT" ls-files --error-unmatch uv.lock >/dev/null 2>&1; then
+        die "uv.lock exists but is not tracked; refusing post-run commit/auth work"
+    fi
+    if ! git -C "$REPO_ROOT" diff --quiet -- uv.lock; then
+        die "uv.lock has unstaged changes; set POST_RUN_ALLOW_DIRTY_UV_LOCK=1 only for an emergency"
+    fi
+    if ! git -C "$REPO_ROOT" diff --cached --quiet -- uv.lock; then
+        die "uv.lock has staged changes; set POST_RUN_ALLOW_DIRTY_UV_LOCK=1 only for an emergency"
     fi
 }
 
@@ -740,6 +762,10 @@ echo "- Outcome: TODO(agent)"
 echo "- Key metric movement: TODO(agent)"
 echo "- Residuals/blockers: TODO(agent)"
 echo
+
+if [[ "$DRY_RUN" -eq 0 ]]; then
+    require_uv_lock_clean
+fi
 
 run_in_repo_or_print git add "$SPEC_PATH"
 run_in_repo_or_print "$AGENT_COMMIT" --issue "$ISSUE" \

@@ -72,6 +72,7 @@ def assert_ignored(path: str) -> None:
     [
         "results/2ef67ca/README.md",
         "results/b557d4e/synthesis_review.md",
+        "results/part2_5/runs/baseline__standard_12k.json",
         "results/part2_5/runs/baseline__standard_12k/run.json",
         "results/part2_5/runs/baseline__standard_12k/notes.md",
         "results/part2_5/figures/peak_velocity/spec.json",
@@ -206,11 +207,12 @@ from rlrmp.paths import (  # noqa: E402
     run_artifact_dir,
     run_spec_dir,
     run_spec_path,
+    run_spec_sidecar_dir,
 )
 
 
 class TestRunSpecDir:
-    """``run_spec_dir`` returns absolute paths inside ``results/``."""
+    """``run_spec_dir`` returns the optional tracked run sidecar directory."""
 
     def test_correct_path(self) -> None:
         path = run_spec_dir("foo", "bar")
@@ -222,6 +224,20 @@ class TestRunSpecDir:
     def test_is_inside_results(self) -> None:
         path = run_spec_dir("foo", "bar")
         assert str(path).startswith(str(PATHS_REPO_ROOT / "results"))
+
+
+class TestRunSpecSidecarDir:
+    """``run_spec_sidecar_dir`` names the optional sidecar directory explicitly."""
+
+    def test_matches_legacy_helper(self) -> None:
+        assert run_spec_sidecar_dir("foo", "bar") == run_spec_dir("foo", "bar")
+
+    def test_is_distinct_from_flat_recipe_path(self, tmp_path: Path) -> None:
+        recipe = run_spec_path("foo", "bar", repo_root=tmp_path)
+        sidecar = tmp_path / "results" / "foo" / "runs" / "bar"
+
+        assert recipe == tmp_path / "results" / "foo" / "runs" / "bar.json"
+        assert sidecar != recipe
 
 
 class TestRunSpecPath:
