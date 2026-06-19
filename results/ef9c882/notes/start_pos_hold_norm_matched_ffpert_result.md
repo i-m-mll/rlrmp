@@ -23,18 +23,23 @@ profile materializer: 20 directions, go cues 10..30, 0.15 m reach length, final 
 | `hold_start_pos_l2_ffpert__w1e8_lr1e-2` | 0.677548 | 0.16 | 0.024156 | 0.015427 | 0.143171 | 0.004250 | 0.038262 |
 | `hold_start_pos_l1_ffpert__w1e5_lr1e-2` | 0.679120 | 0.16 | 0.021174 | 0.017226 | 0.142945 | 0.008157 | 0.042579 |
 | `hold__start_pos_zero_vel_lr1e-2` | 0.683531 | 0.16 | 0.017386 | 0.009713 | 0.143314 | 0.004239 | 0.019454 |
+| `hold__start_pos_zero_vel_lr3e-2` | 0.524810 | 0.17 | 0.106742 | 0.368539 | 0.269967 | 0.026324 | 1.820174 |
 
 The matched addendum does not solve the peak-velocity depression relative to the 8D extLQG
-reference peak (0.731057 m/s), but the high-LR zero-velocity row is the strongest row in
-this addendum: it has the highest no-catch peak, lower endpoint error than the original
-zero-velocity row, and lower terminal speed. Among start-position-only rows, L1 1e5 at
-LR 1e-2 has the highest peak, while L2 1e6 at LR 3e-3 has the smallest endpoint error but
-substantially more pre-go leakage.
+reference peak (0.731057 m/s). The LR 1e-2 zero-velocity row remains the strongest row in
+this addendum: it has the highest no-catch peak among stable rows, lower endpoint error than
+the original zero-velocity row, and lower terminal speed. Raising the same row to LR 3e-2 is
+not a useful fix: the pooled no-catch peak falls to 0.524810 m/s because one replicate
+collapses badly (replicate peak 0.117846 m/s at 0.56 s), endpoint error rises to 0.106742 m,
+terminal speed rises to 0.368539 m/s, and the strict pre-go peak speed reaches 1.820174 m/s.
+Among start-position-only rows, L1 1e5 at LR 1e-2 has the highest peak, while L2 1e6 at
+LR 3e-3 has the smallest endpoint error but substantially more pre-go leakage.
 
 ## Artifacts
 
-- Tracked run specs: `results/ef9c882/runs/hold_start_pos_*_ffpert__*.json` and
-  `results/ef9c882/runs/hold__start_pos_zero_vel_lr1e-2.json`
+- Tracked run specs: `results/ef9c882/runs/hold_start_pos_*_ffpert__*.json`,
+  `results/ef9c882/runs/hold__start_pos_zero_vel_lr1e-2.json`, and
+  `results/ef9c882/runs/hold__start_pos_zero_vel_lr3e-2.json`
 - Bulk run artifacts: `_artifacts/ef9c882/runs/<run>/`
 - Velocity figure spec:
   `results/ef9c882/figures/start_pos_hold_norm_matched_ffpert_velocity_profiles/spec.json`

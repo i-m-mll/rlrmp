@@ -1468,6 +1468,7 @@ def planned_ef9c882_start_pos_hold_rows(
         ("hold_start_pos_l2_ffpert__w1e8_lr1e-2", "l2", 1e8, 1e-2, 0.0),
         ("hold_start_pos_l1_ffpert__w1e5_lr1e-2", "l1", 1e5, 1e-2, 0.0),
         ("hold__start_pos_zero_vel_lr1e-2", "l2", 1e6, 1e-2, 1e5),
+        ("hold__start_pos_zero_vel_lr3e-2", "l2", 1e6, 3e-2, 1e5),
     ]
     rows = []
     for run, norm, weight, controller_lr, zero_vel_hold in row_specs:

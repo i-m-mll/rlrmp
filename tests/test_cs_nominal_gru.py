@@ -2332,6 +2332,7 @@ def test_ef9c882_start_pos_hold_planned_rows_parse_and_build_specs(tmp_path: Pat
         "hold_start_pos_l2_ffpert__w1e8_lr1e-2",
         "hold_start_pos_l1_ffpert__w1e5_lr1e-2",
         "hold__start_pos_zero_vel_lr1e-2",
+        "hold__start_pos_zero_vel_lr3e-2",
     ]
     assert [row["delayed_pre_go_start_pos_hold_norm"] for row in rows] == [
         "l2",
@@ -2340,6 +2341,7 @@ def test_ef9c882_start_pos_hold_planned_rows_parse_and_build_specs(tmp_path: Pat
         "l1",
         "l2",
         "l1",
+        "l2",
         "l2",
     ]
     assert [row["delayed_pre_go_start_pos_hold"] for row in rows] == [
@@ -2350,6 +2352,7 @@ def test_ef9c882_start_pos_hold_planned_rows_parse_and_build_specs(tmp_path: Pat
         1e8,
         1e5,
         1e6,
+        1e6,
     ]
     assert [row["controller_lr"] for row in rows] == [
         3e-3,
@@ -2359,6 +2362,7 @@ def test_ef9c882_start_pos_hold_planned_rows_parse_and_build_specs(tmp_path: Pat
         1e-2,
         1e-2,
         1e-2,
+        3e-2,
     ]
     assert [row["delayed_pre_go_zero_vel_hold"] for row in rows] == [
         0.0,
@@ -2367,6 +2371,7 @@ def test_ef9c882_start_pos_hold_planned_rows_parse_and_build_specs(tmp_path: Pat
         0.0,
         0.0,
         0.0,
+        1e5,
         1e5,
     ]
 
@@ -2472,6 +2477,7 @@ def test_ef9c882_start_pos_hold_planned_rows_cli(capsys: pytest.CaptureFixture[s
         "hold_start_pos_l2_ffpert__w1e8_lr1e-2",
         "hold_start_pos_l1_ffpert__w1e5_lr1e-2",
         "hold__start_pos_zero_vel_lr1e-2",
+        "hold__start_pos_zero_vel_lr3e-2",
     ]
 
 

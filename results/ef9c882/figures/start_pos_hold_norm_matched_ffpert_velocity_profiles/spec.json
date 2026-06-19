@@ -55,6 +55,11 @@
       "experiment": "ef9c882",
       "label": "zero-vel LR1e-2",
       "run_id": "hold__start_pos_zero_vel_lr1e-2"
+    },
+    {
+      "experiment": "ef9c882",
+      "label": "zero-vel LR3e-2",
+      "run_id": "hold__start_pos_zero_vel_lr3e-2"
     }
   ],
   "schema_version": "rlrmp.figure_spec.delayed_timing_hold_velocity.v1",
