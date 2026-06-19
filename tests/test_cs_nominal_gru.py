@@ -2297,25 +2297,36 @@ def test_ef9c882_start_pos_hold_planned_rows_parse_and_build_specs(tmp_path: Pat
     rows = planned_ef9c882_start_pos_hold_rows()
 
     assert [row["run"] for row in rows] == [
-        "hold_start_pos_l2__w1e4",
-        "hold_start_pos_l2__w1e6",
-        "hold_start_pos_l2__w1e8",
-        "hold_start_pos_l1__w1e8",
-        "hold_start_pos_l1__w1e6",
+        "hold_start_pos_l2_ffpert__w1e6_lr3e-3",
+        "hold_start_pos_l2_ffpert__w1e8_lr3e-3",
+        "hold_start_pos_l1_ffpert__w1e6_lr3e-3",
+        "hold_start_pos_l1_ffpert__w1e5_lr3e-3",
+        "hold_start_pos_l2_ffpert__w1e8_lr1e-2",
+        "hold_start_pos_l1_ffpert__w1e5_lr1e-2",
     ]
     assert [row["delayed_pre_go_start_pos_hold_norm"] for row in rows] == [
         "l2",
         "l2",
-        "l2",
         "l1",
+        "l1",
+        "l2",
         "l1",
     ]
     assert [row["delayed_pre_go_start_pos_hold"] for row in rows] == [
-        1e4,
         1e6,
         1e8,
-        1e8,
         1e6,
+        1e5,
+        1e8,
+        1e5,
+    ]
+    assert [row["controller_lr"] for row in rows] == [
+        3e-3,
+        3e-3,
+        3e-3,
+        3e-3,
+        1e-2,
+        1e-2,
     ]
 
     for row in rows:
@@ -2334,7 +2345,7 @@ def test_ef9c882_start_pos_hold_planned_rows_parse_and_build_specs(tmp_path: Pat
         assert parsed_spec.dry_run is True
         assert parsed.n_train_batches == 12000
         assert parsed.batch_size == 64
-        assert parsed.controller_lr == pytest.approx(3e-3)
+        assert parsed.controller_lr == pytest.approx(row["controller_lr"])
         assert parsed.gradient_clip_norm == pytest.approx(5.0)
         assert parsed.lr_warmup_batches == 500
         assert parsed.lr_warmup_init_fraction == pytest.approx(0.1)
@@ -2347,6 +2358,11 @@ def test_ef9c882_start_pos_hold_planned_rows_parse_and_build_specs(tmp_path: Pat
         assert parsed.delayed_reach_go_cue_max_step == 30
         assert parsed.delayed_reach_p_catch_trial == pytest.approx(0.5)
         assert parsed.target_relative_multitarget is True
+        assert parsed.force_filter_feedback is True
+        assert parsed.perturbation_training is True
+        assert parsed.perturbation_calibrated_timing is True
+        assert parsed.perturbation_movement_age_timing is True
+        assert parsed.perturbation_physical_level == "small"
         assert parsed.broad_epsilon_pgd_training is False
         assert parsed.nn_output_pre_go == pytest.approx(0.0)
         assert parsed.delayed_pre_go_force_filter_hold == pytest.approx(0.0)
@@ -2361,9 +2377,15 @@ def test_ef9c882_start_pos_hold_planned_rows_parse_and_build_specs(tmp_path: Pat
         assert payload["issue"] == "ef9c882"
         assert payload["n_train_batches"] == 12000
         assert payload["batch_size"] == 64
-        assert payload["controller_lr"] == pytest.approx(3e-3)
+        assert payload["controller_lr"] == pytest.approx(row["controller_lr"])
         assert payload["training_summary"]["n_adversary_batches"] == 0
         assert payload["hps"]["broad_epsilon_pgd_training"]["enabled"] is False
+        assert payload["hps"]["model"]["force_filter_feedback"] is True
+        assert payload["hps"]["target_relative_multitarget"]["force_filter_feedback"] is True
+        assert payload["hps"]["perturbation_training"]["enabled"] is True
+        assert payload["hps"]["perturbation_training"]["calibrated_timing"] is True
+        assert payload["hps"]["perturbation_training"]["timing_basis"]["mode"] == "movement_age"
+        assert payload["hps"]["perturbation_training"]["physical_level"] == "small"
         assert payload["hps"]["loss"]["weights"]["nn_output_pre_go"] == 0.0
         assert payload["hps"]["loss"]["weights"]["delayed_pre_go_force_filter_hold"] == 0.0
         assert payload["hps"]["loss"]["weights"]["delayed_pre_go_zero_vel_hold"] == 0.0
@@ -2391,11 +2413,12 @@ def test_ef9c882_start_pos_hold_planned_rows_cli(capsys: pytest.CaptureFixture[s
     payload = json.loads(capsys.readouterr().out)
 
     assert [row["run"] for row in payload["planned_rows"]] == [
-        "hold_start_pos_l2__w1e4",
-        "hold_start_pos_l2__w1e6",
-        "hold_start_pos_l2__w1e8",
-        "hold_start_pos_l1__w1e8",
-        "hold_start_pos_l1__w1e6",
+        "hold_start_pos_l2_ffpert__w1e6_lr3e-3",
+        "hold_start_pos_l2_ffpert__w1e8_lr3e-3",
+        "hold_start_pos_l1_ffpert__w1e6_lr3e-3",
+        "hold_start_pos_l1_ffpert__w1e5_lr3e-3",
+        "hold_start_pos_l2_ffpert__w1e8_lr1e-2",
+        "hold_start_pos_l1_ffpert__w1e5_lr1e-2",
     ]
 
 
