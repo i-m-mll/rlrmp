@@ -357,8 +357,13 @@ def graph_metadata(run_spec: dict[str, Any], spec_path: Path, artifact_dir: Path
         if value in (None, ""):
             return None
         raw = Path(str(value))
+        # For a FLAT recipe results/<hash>/runs/<run>.json the GraphSpec bundle
+        # lives in the tracked sidecar dir results/<hash>/runs/<run>/ beside it,
+        # i.e. spec_path.with_suffix("") (W8/e926665, FIX B). spec_path.parent
+        # is the runs/ dir, which does NOT contain the sidecar bundle.
         candidates = [raw] if raw.is_absolute() else [
             spec_path.parent / raw,
+            spec_path.with_suffix("") / raw,
             artifact_dir / raw,
             artifact_dir / raw.name,
         ]

@@ -53,17 +53,23 @@ def write_json(path: Path, payload: dict[str, object]) -> str:
     return sha256(encoded.encode("utf-8")).hexdigest()
 
 
-def write_run_source(path: Path, *, mismatched_spec_hash: bool = False) -> None:
+def write_run_source(
+    path: Path,
+    *,
+    mismatched_spec_hash: bool = False,
+    include_graph_sidecar: bool = True,
+) -> None:
     path.mkdir()
     manifest_relpath = "training_run_manifest.json"
-    write_json(
-        path / "graph_spec.json",
-        {
-            "schema_version": "feedbax.graph_spec.v1",
-            "nodes": {},
-            "output_ports": [],
-        },
-    )
+    if include_graph_sidecar:
+        write_json(
+            path / "graph_spec.json",
+            {
+                "schema_version": "feedbax.graph_spec.v1",
+                "nodes": {},
+                "output_ports": [],
+            },
+        )
     run_spec = {
         "run": "fixture__ok",
         "issue": "731fdf7",
@@ -309,6 +315,64 @@ def test_local_fixture_syncs_spec_commits_and_records_auth(tmp_path: Path) -> No
     assert payload["metrics_summary"]["completed_batches"] == 3
     assert payload["metrics_summary"]["final_validation_loss"] == 0.125
     assert "timestamp" in payload
+
+
+def test_graphspec_resolves_from_flat_recipe_sidecar_dir(tmp_path: Path) -> None:
+    """FIX B: GraphSpec bundle in the flat-recipe sidecar dir is resolvable.
+
+    Under the FLAT recipe ``results/<hash>/runs/<run>.json``, the training
+    script writes the GraphSpec bundle into the tracked sidecar directory
+    ``results/<hash>/runs/<run>/`` (beside the flat recipe), storing only the
+    bare filename in ``feedbax_graph.graph_spec_path``. ``post_run.sh`` must
+    add that sidecar dir (``spec_path.with_suffix("")``) to the GraphSpec
+    candidate paths, otherwise provenance prints ``GraphSpec hash: unavailable``.
+    """
+    repo = tmp_path / "repo"
+    source = tmp_path / "source"
+    bin_dir = tmp_path / "bin"
+    auth_record = tmp_path / "auth_args.txt"
+    init_git_repo(repo)
+    # No graph_spec.json in the source: it must NOT land in the _artifacts dir,
+    # so the only resolvable copy is the tracked flat-recipe sidecar below.
+    write_run_source(source, include_graph_sidecar=False)
+    fake_agent_commit, fake_mandible = write_fake_commands(bin_dir, auth_record)
+
+    hash_ = "731fdf7"
+    sidecar_graph = (
+        repo / "results" / hash_ / "runs" / "fixture__ok" / "graph_spec.json"
+    )
+    graph_sha = write_json(
+        sidecar_graph,
+        {"schema_version": "feedbax.graph_spec.v1", "nodes": {}, "output_ports": []},
+    )
+
+    env = os.environ.copy()
+    env["POST_RUN_AGENT_COMMIT"] = str(fake_agent_commit)
+    env["POST_RUN_MANDIBLE_AUTH"] = str(fake_mandible)
+
+    run_command(
+        [
+            "bash",
+            str(SCRIPT),
+            "--repo-root",
+            str(repo),
+            "--issue",
+            hash_,
+            "--run",
+            "fixture__ok",
+            "--artifacts-src",
+            f"local:{source}",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    spec_path = repo / "results" / hash_ / "runs" / "fixture__ok.json"
+    stamped_spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    graph = stamped_spec["post_run_provenance"]["feedbax_graph"]
+    assert graph["graph_spec_sha256"] == graph_sha
+    assert graph["graph_spec_sha256"] is not None
+    assert graph["graph_spec_version"] == "feedbax.graph_spec.v1"
 
 
 def test_dry_run_previews_run_status_checkpoint_without_writing(tmp_path: Path) -> None:
