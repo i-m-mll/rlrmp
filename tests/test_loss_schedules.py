@@ -4,6 +4,7 @@ import jax.numpy as jnp
 import pytest
 
 from rlrmp.loss import (
+    CsAnalyticalQrfLoss,
     make_cs_eq15_stage_schedule,
     make_epoch_locked_ramp,
     make_movement_cs_eq15_stage_schedule,
@@ -84,3 +85,53 @@ def test_movement_cs_eq15_stage_schedule_handles_batched_go_cues():
     assert weights[1, 30] == pytest.approx((1.0 / 60.0) ** 6)
     assert weights[0, 69] == pytest.approx(1.0)
     assert weights[1, 89] == pytest.approx(1.0)
+
+
+def _qrf_trial_spec(*, go_step: int = 10, n_steps: int = 90):
+    return SimpleNamespace(
+        inits={"mechanics.vector": jnp.zeros((8,), dtype=jnp.float32)},
+        targets={},
+        timeline=SimpleNamespace(
+            n_steps=n_steps,
+            epoch_bounds=jnp.asarray((0, go_step, n_steps)),
+        ),
+    )
+
+
+def _qrf_states(*, n_steps: int = 90):
+    return SimpleNamespace(
+        mechanics=SimpleNamespace(vector=jnp.ones((n_steps, 8), dtype=jnp.float32)),
+        net=SimpleNamespace(output=jnp.zeros((n_steps, 2), dtype=jnp.float32)),
+    )
+
+
+def test_delayed_full_qrf_default_stops_after_canonical_window():
+    q = jnp.broadcast_to(
+        jnp.diag(jnp.asarray([1, 1, 1, 1, 0, 0, 0, 0], dtype=jnp.float32)), (60, 8, 8)
+    )
+    r = jnp.zeros((60, 2, 2), dtype=jnp.float32)
+    q_f = q[-1]
+    term = CsAnalyticalQrfLoss(Q=q, R=r, Q_f=q_f, target_pos=jnp.zeros((2,)))
+
+    value = term.term(_qrf_states(), _qrf_trial_spec(), None)
+
+    assert value == pytest.approx(60 * 4 + 4)
+
+
+def test_delayed_full_qrf_flat_tail_keeps_terminal_running_weights_active():
+    q = jnp.broadcast_to(
+        jnp.diag(jnp.asarray([1, 1, 1, 1, 0, 0, 0, 0], dtype=jnp.float32)), (60, 8, 8)
+    )
+    r = jnp.zeros((60, 2, 2), dtype=jnp.float32)
+    q_f = q[-1]
+    term = CsAnalyticalQrfLoss(
+        Q=q,
+        R=r,
+        Q_f=q_f,
+        target_pos=jnp.zeros((2,)),
+        delayed_movement_cost_tail_mode="flat_after_canonical_horizon",
+    )
+
+    value = term.term(_qrf_states(), _qrf_trial_spec(), None)
+
+    assert value == pytest.approx(80 * 4 + 4)

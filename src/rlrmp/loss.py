@@ -236,6 +236,7 @@ class CsAnalyticalQrfLoss(AbstractLoss):
     Q_f: Array
     target_pos: Array
     n_phys: int = eqx.field(static=True)
+    delayed_movement_cost_tail_mode: str = eqx.field(static=True)
 
     def __init__(
         self,
@@ -245,6 +246,7 @@ class CsAnalyticalQrfLoss(AbstractLoss):
         Q_f: Array,
         target_pos: Array,
         n_phys: int = 8,
+        delayed_movement_cost_tail_mode: str = "canonical_window",
         label: str = CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
     ):
         self.label = label
@@ -253,15 +255,14 @@ class CsAnalyticalQrfLoss(AbstractLoss):
         self.Q_f = jnp.asarray(Q_f)
         self.target_pos = jnp.asarray(target_pos)
         self.n_phys = int(n_phys)
+        self.delayed_movement_cost_tail_mode = str(delayed_movement_cost_tail_mode)
 
         if self.Q.ndim != 3:
             raise ValueError(f"Q must have shape [T, n, n], got {self.Q.shape}.")
         if self.R.ndim != 3:
             raise ValueError(f"R must have shape [T, m, m], got {self.R.shape}.")
         if self.Q_f.shape != self.Q.shape[1:]:
-            raise ValueError(
-                f"Q_f must have shape {self.Q.shape[1:]}, got {self.Q_f.shape}."
-            )
+            raise ValueError(f"Q_f must have shape {self.Q.shape[1:]}, got {self.Q_f.shape}.")
         if self.Q.shape[0] != self.R.shape[0]:
             raise ValueError(
                 f"Q and R must have the same horizon length, got {self.Q.shape[0]} "
@@ -273,6 +274,14 @@ class CsAnalyticalQrfLoss(AbstractLoss):
             )
         if self.target_pos.shape != (2,):
             raise ValueError(f"target_pos must have shape [2], got {self.target_pos.shape}.")
+        if self.delayed_movement_cost_tail_mode not in {
+            "canonical_window",
+            "flat_after_canonical_horizon",
+        }:
+            raise ValueError(
+                "delayed_movement_cost_tail_mode must be 'canonical_window' or "
+                f"'flat_after_canonical_horizon', got {delayed_movement_cost_tail_mode!r}."
+            )
 
     def term(
         self,
@@ -329,6 +338,14 @@ class CsAnalyticalQrfLoss(AbstractLoss):
             x_pre = x_pre_all
             command_window = command
             x_terminal_raw = vector[..., -1, :]
+        elif self.delayed_movement_cost_tail_mode == "flat_after_canonical_horizon":
+            return self._delayed_flat_tail_term(
+                x_pre_all=x_pre_all,
+                command=command,
+                vector=vector,
+                movement_start=movement_start,
+                target_pos=target_pos,
+            )
         else:
             x_pre = self._time_window(x_pre_all, movement_start, horizon)
             command_window = self._time_window(command, movement_start, horizon)
@@ -339,6 +356,48 @@ class CsAnalyticalQrfLoss(AbstractLoss):
         command_terms = jnp.einsum("...ti,tij,...tj->...t", command_window, self.R, command_window)
         terminal = jnp.einsum("...i,ij,...j->...", x_terminal, self.Q_f, x_terminal)
         return jnp.sum(state_terms + command_terms, axis=-1) + terminal
+
+    def _delayed_flat_tail_term(
+        self,
+        *,
+        x_pre_all: Array,
+        command: Array,
+        vector: Array,
+        movement_start: Array,
+        target_pos: Array,
+    ) -> Array:
+        horizon = self.Q.shape[0]
+        time = x_pre_all.shape[-2]
+        t = jnp.arange(time, dtype=jnp.int32)
+        starts = jnp.asarray(movement_start, dtype=jnp.int32)
+        leading_shape = x_pre_all.shape[:-2]
+        flat_x = x_pre_all.reshape((-1, time, x_pre_all.shape[-1]))
+        flat_command = command.reshape((-1, time, command.shape[-1]))
+        flat_target = jnp.broadcast_to(target_pos, (*leading_shape, 2)).reshape((-1, 2))
+        flat_starts = jnp.broadcast_to(starts, leading_shape).reshape((-1,))
+        flat_vector = vector.reshape((-1, time, vector.shape[-1]))
+
+        def score_one_with_terminal(x_one, command_one, vector_one, target_one, start_one):
+            age = t - start_one
+            active = age >= 0
+            stage = jnp.clip(age, 0, horizon - 1)
+            x_centered = self._goal_centered(x_one, target_one)
+            terminal = self._goal_centered(vector_one[-1], target_one)
+            q = self.Q[stage]
+            r = self.R[stage]
+            state_terms = jnp.einsum("ti,tij,tj->t", x_centered, q, x_centered)
+            command_terms = jnp.einsum("ti,tij,tj->t", command_one, r, command_one)
+            terminal_term = jnp.einsum("i,ij,j->", terminal, self.Q_f, terminal)
+            return jnp.sum(jnp.where(active, state_terms + command_terms, 0.0)) + terminal_term
+
+        flat_result = jax.vmap(score_one_with_terminal)(
+            flat_x,
+            flat_command,
+            flat_vector,
+            flat_target,
+            flat_starts,
+        )
+        return flat_result.reshape(leading_shape)
 
     def _movement_start(self, trial_specs: "TaskTrialSpec") -> Array | None:
         bounds = trial_specs.timeline.epoch_bounds
@@ -516,7 +575,9 @@ class CsForceFilterStateLoss(AbstractLoss):
         return jnp.sum(force_filter**2, axis=(-3, -2, -1))
 
 
-def _build_epoch_mask(trial_specs: "TaskTrialSpec", T: int, epoch_indices: tuple[int, ...]) -> Array:
+def _build_epoch_mask(
+    trial_specs: "TaskTrialSpec", T: int, epoch_indices: tuple[int, ...]
+) -> Array:
     """Return a per-trial boolean mask over ``T`` timestep samples."""
 
     timeline = trial_specs.timeline
@@ -1139,6 +1200,10 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
             Q_f=schedule.Q_f,
             target_pos=TARGET_POS,
             n_phys=6 if no_integrator_state else 8,
+            delayed_movement_cost_tail_mode=str(
+                _nsget(hps, "loss.delayed_movement_cost_tail_mode", "canonical_window")
+                or "canonical_window"
+            ),
         )
         trial_type_normalization = bool(
             _nsget(hps, "loss.delayed_trial_type_normalization.enabled", False)
@@ -1515,11 +1580,7 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
                     )
                 )
             else:
-                running_spec = (
-                    TargetSpec()
-                    if is_transition_aligned_reach
-                    else during_movement
-                )
+                running_spec = TargetSpec() if is_transition_aligned_reach else during_movement
 
             terms["effector_pos_running"] = effector_pos_running_loss_cls(
                 "effector_pos_running",
@@ -1552,14 +1613,14 @@ def get_reach_loss(hps: TreeNamespace) -> CompositeLoss:
                         )
                     )
                 else:
-                    vel_running_spec = target_zero & during_movement & TargetSpec(
-                        discount=make_power_law_schedule(power=_powerlaw_power)
+                    vel_running_spec = (
+                        target_zero
+                        & during_movement
+                        & TargetSpec(discount=make_power_law_schedule(power=_powerlaw_power))
                     )
             else:
                 vel_running_spec = (
-                    target_zero
-                    if is_transition_aligned_reach
-                    else target_zero & during_movement
+                    target_zero if is_transition_aligned_reach else target_zero & during_movement
                 )
 
             terms["effector_vel_running"] = effector_vel_running_loss_cls(
@@ -1721,9 +1782,7 @@ def get_adaptive_control_penalty_update(
         # Keep this shape to compute per-replicate weight updates
 
         # Sum multiple goal terms if provided (maintains replicate dimension)
-        J_x = sum(
-            losses[term].total for term in goal_terms if term in losses
-        )
+        J_x = sum(losses[term].total for term in goal_terms if term in losses)
         J_u = losses[control_term].total  # Control cost (shape: (replicates,) or ())
 
         # Compute multiplicative update per replicate
@@ -1731,7 +1790,7 @@ def get_adaptive_control_penalty_update(
         # So if J_u is too small, increase weight; if too large, decrease weight
         current_weight = loss_func.weights[control_term]
         ratio = J_x / (target_ratio * J_u + 1e-12)  # Add epsilon to avoid division by zero
-        new_weight = current_weight * (ratio ** alpha)
+        new_weight = current_weight * (ratio**alpha)
 
         # Clip to reasonable range to prevent runaway.
         new_weight = jnp.clip(new_weight, 1e-8, 1e-2)
