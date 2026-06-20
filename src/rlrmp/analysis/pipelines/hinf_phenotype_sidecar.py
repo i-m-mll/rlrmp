@@ -211,6 +211,18 @@ def render_hinf_phenotype_markdown(sidecar: Mapping[str, Any]) -> str:
             ),
         ]
     )
+    delayed_caveat = sidecar.get("delayed_contract_caveat")
+    if isinstance(delayed_caveat, Mapping):
+        lines.extend(
+            [
+                (
+                    "- Delayed contract caveat: "
+                    f"{delayed_caveat.get('blocker', 'see sidecar JSON')} "
+                    f"Formal H-infinity equivalence is "
+                    f"{delayed_caveat.get('formal_hinf_equivalence', 'not_claimed')}."
+                )
+            ]
+        )
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -378,6 +390,10 @@ def _feedback_competence(
     if isinstance(summary, Mapping):
         values["perturbation_class_summary"] = _compact_class_summary(summary)
         evidence.append(_evidence("perturbation_response", perturbation_source, "available"))
+    sisu_summary = _compact_sisu_perturbation_comparison(perturbation_row)
+    if sisu_summary:
+        values["sisu_1_vs_0_perturbation_class_summary"] = sisu_summary
+        evidence.append(_evidence("perturbation_response", perturbation_source, "available"))
     if feedback_row:
         values["feedback_ablation_interpretation"] = feedback_row.get("interpretation")
         values["feedback_ablation_status_counts"] = feedback_row.get("status_counts")
@@ -445,6 +461,10 @@ def _hinf_markers(
     summary = perturbation_row.get("robust_response_summary")
     if isinstance(summary, Mapping):
         values["delta_v_and_displacement_markers"] = _perturbation_marker_summary(summary)
+        evidence.append(_evidence("perturbation_response", perturbation_source, "available"))
+    sisu_markers = _sisu_perturbation_marker_summary(perturbation_row)
+    if sisu_markers:
+        values["sisu_1_vs_0_perturbation_markers"] = sisu_markers
         evidence.append(_evidence("perturbation_response", perturbation_source, "available"))
     if feedback_row:
         interp = feedback_row.get("interpretation")
@@ -801,13 +821,41 @@ def _run_evaluation_metrics(payload: Mapping[str, Any], run_id: str) -> dict[str
         record = runs.get(run_id)
         if isinstance(record, Mapping):
             metrics = record.get("metrics", record)
-            return dict(metrics) if isinstance(metrics, Mapping) else {}
+            flattened = dict(metrics) if isinstance(metrics, Mapping) else {}
+            flattened.update(_flatten_behavior_metrics(record.get("behavior")))
+            return flattened
     metrics = payload.get("metrics")
     if isinstance(metrics, Mapping):
         record = metrics.get(run_id)
         if isinstance(record, Mapping):
             return dict(record)
     return {}
+
+
+def _flatten_behavior_metrics(behavior: Any) -> dict[str, Any]:
+    """Flatten standard evaluation behavior stats into sidecar metric names."""
+
+    if not isinstance(behavior, Mapping):
+        return {}
+    flattened = {
+        "endpoint_error_m": _nested_get(behavior, ("endpoint_error_m", "mean")),
+        "terminal_speed_m_s": _nested_get(behavior, ("terminal_speed_m_s", "mean")),
+    }
+    velocity = behavior.get("velocity_profile")
+    if isinstance(velocity, Mapping):
+        flattened.update(
+            {
+                "peak_velocity_m_s": (
+                    _nested_get(velocity, ("peak_forward_velocity_m_s", "mean"))
+                    or velocity.get("mean_profile_peak_forward_velocity_m_s")
+                ),
+                "time_to_peak_s": (
+                    _nested_get(velocity, ("time_to_peak_forward_velocity_s", "mean"))
+                    or velocity.get("mean_profile_time_to_peak_forward_velocity_s")
+                ),
+            }
+        )
+    return {key: value for key, value in flattened.items() if value is not None}
 
 
 def _compact_class_summary(summary: Mapping[str, Any]) -> dict[str, Any]:
@@ -842,6 +890,56 @@ def _compact_class_summary(summary: Mapping[str, Any]) -> dict[str, Any]:
     return compact
 
 
+def _compact_sisu_perturbation_comparison(run_record: Mapping[str, Any]) -> dict[str, Any]:
+    """Return compact class ratios from a SISU perturbation comparison run."""
+
+    class_comparison = run_record.get("class_comparison")
+    if not isinstance(class_comparison, Mapping):
+        return {}
+    compact = {}
+    for group_id, group in class_comparison.items():
+        if not isinstance(group, Mapping):
+            continue
+        metrics = group.get("metrics")
+        if not isinstance(metrics, Mapping):
+            continue
+        compact[str(group_id)] = {
+            "status_counts_sisu_0": group.get("status_counts_sisu_0"),
+            "status_counts_sisu_1": group.get("status_counts_sisu_1"),
+            "n_rows_sisu_0": group.get("rows_sisu_0"),
+            "n_rows_sisu_1": group.get("rows_sisu_1"),
+            "mean_delta_action_ratio_1_over_0": _nested_get(
+                metrics,
+                ("mean_delta_action", "ratio_1_over_0"),
+            ),
+            "max_delta_x_ratio_1_over_0": _nested_get(
+                metrics,
+                ("max_delta_x_m", "ratio_1_over_0"),
+            ),
+            "auc_delta_x_ratio_1_over_0": _nested_get(
+                metrics,
+                ("auc_delta_x_m_s", "ratio_1_over_0"),
+            ),
+            "full_qrf_delta_cost_ratio_1_over_0": _nested_get(
+                metrics,
+                ("mean_full_qrf_delta_cost", "ratio_1_over_0"),
+            ),
+            "full_qrf_delta_cost_delta_1_minus_0": _nested_get(
+                metrics,
+                ("mean_full_qrf_delta_cost", "delta_1_minus_0"),
+            ),
+            "notes": group.get("notes"),
+        }
+    return {
+        group_id: {
+            key: value
+            for key, value in group.items()
+            if value not in (None, {}, [])
+        }
+        for group_id, group in compact.items()
+    }
+
+
 def _perturbation_marker_summary(summary: Mapping[str, Any]) -> dict[str, Any]:
     compact = _compact_class_summary(summary)
     return {
@@ -860,6 +958,20 @@ def _perturbation_marker_summary(summary: Mapping[str, Any]) -> dict[str, Any]:
             and value not in (None, {}, [])
         }
         for group_id, group in compact.items()
+    }
+
+
+def _sisu_perturbation_marker_summary(run_record: Mapping[str, Any]) -> dict[str, Any]:
+    """Return headline SISU perturbation markers for a sidecar row."""
+
+    headline = run_record.get("headline")
+    if not isinstance(headline, Mapping):
+        return {}
+    return {
+        "full_qrf_delta_cost": headline.get("full_qrf_delta_cost"),
+        "max_delta_x_m": headline.get("max_delta_x_m"),
+        "mean_delta_action": headline.get("mean_delta_action"),
+        "ratio_meaning": "SISU1/SISU0 ratio below 1 means the SISU=1 condition was smaller.",
     }
 
 

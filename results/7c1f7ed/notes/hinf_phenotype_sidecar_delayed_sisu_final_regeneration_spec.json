@@ -1,0 +1,271 @@
+{
+  "command": {
+    "argv": [
+      "uv",
+      "run",
+      "python",
+      "scripts/materialize_hinf_phenotype_sidecar.py",
+      "--scope",
+      "delayed_sisu_two_rows_final",
+      "--evaluation-diagnostics",
+      "results/7c1f7ed/notes/gru_evaluation_diagnostics_delayed_sisu_final.json",
+      "--perturbation-response",
+      "results/7c1f7ed/notes/delayed_sisu_perturbation_class_comparison.json",
+      "--standard-certificate",
+      "results/7c1f7ed/notes/gru_standard_certificates_delayed_sisu_final_manifest.json",
+      "--json-output",
+      "results/7c1f7ed/notes/hinf_phenotype_sidecar_delayed_sisu_final.json",
+      "--markdown-output",
+      "results/7c1f7ed/notes/hinf_phenotype_sidecar_delayed_sisu_final.md",
+      "--regeneration-spec-path",
+      "results/7c1f7ed/notes/hinf_phenotype_sidecar_delayed_sisu_final_regeneration_spec.json"
+    ],
+    "cwd": ".",
+    "metadata": {
+      "materializer": "rlrmp.analysis.pipelines.hinf_phenotype_sidecar.write_hinf_phenotype_sidecar"
+    }
+  },
+  "inputs": [
+    {
+      "logical_name": "broad_epsilon_attribution_manifest",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "reason": "source not provided",
+        "status": "missing"
+      },
+      "role": "broad_epsilon_attribution_manifest",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://broad_epsilon_attribution_manifest"
+    },
+    {
+      "logical_name": "results/7c1f7ed/notes/gru_evaluation_diagnostics_delayed_sisu_final.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "0a01ef3753945480685db0f427558b61c44a49bc97fccced7262666fcbb02bc5",
+        "size_bytes": 86499,
+        "status": "available"
+      },
+      "role": "evaluation_diagnostics_manifest",
+      "sha256": "0a01ef3753945480685db0f427558b61c44a49bc97fccced7262666fcbb02bc5",
+      "size_bytes": 86499,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/7c1f7ed/notes/gru_evaluation_diagnostics_delayed_sisu_final.json"
+    },
+    {
+      "logical_name": "exact_audit_manifest",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "reason": "source not provided",
+        "status": "missing"
+      },
+      "role": "exact_audit_manifest",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://exact_audit_manifest"
+    },
+    {
+      "logical_name": "feedback_ablation_manifest",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "reason": "source not provided",
+        "status": "missing"
+      },
+      "role": "feedback_ablation_manifest",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://feedback_ablation_manifest"
+    },
+    {
+      "logical_name": "induced_gain_manifest",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "reason": "source not provided",
+        "status": "missing"
+      },
+      "role": "induced_gain_manifest",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://induced_gain_manifest"
+    },
+    {
+      "logical_name": "map_error_decomposition_manifest",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "reason": "source not provided",
+        "status": "missing"
+      },
+      "role": "map_error_decomposition_manifest",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://map_error_decomposition_manifest"
+    },
+    {
+      "logical_name": "objective_comparator_manifest",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "reason": "source not provided",
+        "status": "missing"
+      },
+      "role": "objective_comparator_manifest",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://objective_comparator_manifest"
+    },
+    {
+      "logical_name": "results/7c1f7ed/notes/delayed_sisu_perturbation_class_comparison.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "d5a72e4c59f797a7f9527564930de4d34c03a8f26629f4e99df0a84093d6ab2f",
+        "size_bytes": 285254,
+        "status": "available"
+      },
+      "role": "perturbation_response_manifest",
+      "sha256": "d5a72e4c59f797a7f9527564930de4d34c03a8f26629f4e99df0a84093d6ab2f",
+      "size_bytes": 285254,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/7c1f7ed/notes/delayed_sisu_perturbation_class_comparison.json"
+    },
+    {
+      "logical_name": "results/7c1f7ed/notes/gru_standard_certificates_delayed_sisu_final_manifest.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "03c44b6088c196fee35f7b4b2336853f09b456cd27826457bb5778f3c79da431",
+        "size_bytes": 49379,
+        "status": "available"
+      },
+      "role": "standard_certificate_manifest",
+      "sha256": "03c44b6088c196fee35f7b4b2336853f09b456cd27826457bb5778f3c79da431",
+      "size_bytes": 49379,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/7c1f7ed/notes/gru_standard_certificates_delayed_sisu_final_manifest.json"
+    },
+    {
+      "logical_name": "worst_case_epsilon_audit_manifest",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "reason": "source not provided",
+        "status": "missing"
+      },
+      "role": "worst_case_epsilon_audit_manifest",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://worst_case_epsilon_audit_manifest"
+    }
+  ],
+  "metadata": {
+    "diagnostic_name": "hinf_phenotype_sidecar",
+    "materializer": "rlrmp.analysis.pipelines.hinf_phenotype_sidecar.write_hinf_phenotype_sidecar",
+    "notes": [
+      "Interpretive phenotype sidecar only; not a formal H-infinity certificate.",
+      "Spec records source manifests loaded for aggregation and the JSON/Markdown outputs."
+    ],
+    "schema_boundary": "rlrmp diagnostic payload; Feedbax regeneration custody"
+  },
+  "outputs": [
+    {
+      "logical_name": "results/7c1f7ed/notes/hinf_phenotype_sidecar_delayed_sisu_final.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "a3d77b2a0264779f517c30a7d8fc40f196665baaf594368844b7f32c769c88d3",
+        "size_bytes": 30159
+      },
+      "role": "sidecar_json",
+      "sha256": "a3d77b2a0264779f517c30a7d8fc40f196665baaf594368844b7f32c769c88d3",
+      "size_bytes": 30159,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/7c1f7ed/notes/hinf_phenotype_sidecar_delayed_sisu_final.json"
+    },
+    {
+      "logical_name": "results/7c1f7ed/notes/hinf_phenotype_sidecar_delayed_sisu_final.md",
+      "media_type": "text/markdown",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "b0ad891516317f2d506cc0ee438d6a48e7d0efac0bf2269194d3752d1ae6816b",
+        "size_bytes": 2034
+      },
+      "role": "sidecar_markdown",
+      "sha256": "b0ad891516317f2d506cc0ee438d6a48e7d0efac0bf2269194d3752d1ae6816b",
+      "size_bytes": 2034,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/7c1f7ed/notes/hinf_phenotype_sidecar_delayed_sisu_final.md"
+    }
+  ],
+  "parameters": {
+    "component_names": [
+      "broad_epsilon_attribution",
+      "evaluation_diagnostics",
+      "exact_audit",
+      "feedback_ablation",
+      "induced_gain",
+      "map_error_decomposition",
+      "objective_comparator",
+      "perturbation_response",
+      "standard_certificate",
+      "worst_case_epsilon_audit"
+    ],
+    "issue": "7c1f7ed",
+    "paired_run_ids": {},
+    "scope": "delayed_sisu_two_rows_final"
+  },
+  "provenance": {
+    "dirty": true,
+    "entrypoint": {
+      "kind": "rlrmp-diagnostic-materializer",
+      "metadata": {},
+      "name": "rlrmp.analysis.pipelines.hinf_phenotype_sidecar.write_hinf_phenotype_sidecar"
+    },
+    "issues": [],
+    "metadata": {
+      "status_porcelain": [
+        "M results/40e1911/scripts/materialize_delayed_timing_hold_lane_velocity_profiles.py",
+        " M src/rlrmp/analysis/pipelines/hinf_phenotype_sidecar.py",
+        " M src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py",
+        " M tests/analysis/pipelines/test_hinf_phenotype_sidecar.py",
+        " M tests/analysis/pipelines/test_sisu_spectrum_diagnostics.py",
+        " M tests/test_delayed_reach_eval_bank.py",
+        "?? results/7c1f7ed/figures/delayed_sisu_velocity_profiles/spec.json",
+        "?? results/7c1f7ed/notes/delayed_sisu_perturbation_class_comparison.md",
+        "?? results/7c1f7ed/notes/delayed_sisu_perturbation_class_comparison_regeneration_spec.json",
+        "?? results/7c1f7ed/notes/delayed_sisu_velocity_profiles.md",
+        "?? results/7c1f7ed/notes/hinf_phenotype_sidecar_delayed_sisu_final.md",
+        "?? results/7c1f7ed/notes/hinf_phenotype_sidecar_delayed_sisu_final_regeneration_spec.json",
+        "?? results/7c1f7ed/scripts/materialize_delayed_sisu_hinf_sidecar.py",
+        "?? results/7c1f7ed/scripts/materialize_delayed_sisu_perturbation_comparison.py",
+        "?? results/7c1f7ed/scripts/materialize_delayed_sisu_velocity_profiles.py"
+      ]
+    },
+    "parents": [],
+    "source_branch": "feature/7c1f7ed-delayed-sisu-spectrum",
+    "source_commit": "b2ce8a64e3dcd18ffc25fffc2a5d09d9e6910ebe",
+    "source_repo": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__7c1f7ed-delayed-sisu-spectrum"
+  },
+  "schema_id": "feedbax.spec.regeneration",
+  "schema_version": "feedbax.spec.regeneration.v1",
+  "source_files": [
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/hinf_phenotype_sidecar.py",
+      "role": "source_file",
+      "sha256": "bf4a362216978407007197047fdf47004619da0b93b9b33a47b575fb31b59df3",
+      "size_bytes": 42704
+    },
+    {
+      "metadata": {},
+      "path": "scripts/materialize_hinf_phenotype_sidecar.py",
+      "role": "source_file",
+      "sha256": "3b1ce199946f25f3272fc926e5e7af448e2fca819ce9d3c3185dc19c8507e43d",
+      "size_bytes": 3207
+    },
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/diagnostic_provenance.py",
+      "role": "source_file",
+      "sha256": "416f1c3972cd233e6597833dda7570e2137e9af92123e02ebec2cacbb40115a5",
+      "size_bytes": 12939
+    }
+  ],
+  "source_trees": []
+}

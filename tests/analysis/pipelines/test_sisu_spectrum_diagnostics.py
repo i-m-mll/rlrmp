@@ -43,6 +43,23 @@ def test_set_sisu_condition_prefers_sisu_without_clobbering_input() -> None:
     np.testing.assert_allclose(np.asarray(updated.inputs["input"]), 7.0)
 
 
+def test_set_sisu_condition_updates_delayed_controller_sisu_column() -> None:
+    controller_input = jnp.zeros((2, 3, 2))
+    controller_input = controller_input.at[..., 0].set(1.0)
+    trials = TrialSpec(
+        inputs={
+            "sisu": jnp.ones((2, 4)),
+            "input": controller_input,
+        }
+    )
+
+    updated = set_sisu_condition(trials, 0.25)
+
+    np.testing.assert_allclose(np.asarray(updated.inputs["sisu"]), 0.25)
+    np.testing.assert_allclose(np.asarray(updated.inputs["input"][..., 0]), 1.0)
+    np.testing.assert_allclose(np.asarray(updated.inputs["input"][..., 1]), 0.25)
+
+
 def test_set_sisu_condition_uses_input_when_sisu_absent() -> None:
     trials = TrialSpec(inputs={"input": jnp.ones((2, 3))})
 

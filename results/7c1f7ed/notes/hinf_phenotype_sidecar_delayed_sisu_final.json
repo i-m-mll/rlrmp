@@ -1,0 +1,788 @@
+{
+  "components": {
+    "broad_epsilon_attribution": {
+      "reason": "source not provided",
+      "status": "missing"
+    },
+    "evaluation_diagnostics": {
+      "component": "evaluation_diagnostics",
+      "payload_issue": "7c1f7ed",
+      "payload_schema": "rlrmp.gru_evaluation_diagnostics.v1",
+      "payload_scope": "post_hoc_evaluation_non_certificate_diagnostics",
+      "source_path": "results/7c1f7ed/notes/gru_evaluation_diagnostics_delayed_sisu_final.json",
+      "status": "available"
+    },
+    "exact_audit": {
+      "reason": "source not provided",
+      "status": "missing"
+    },
+    "feedback_ablation": {
+      "reason": "source not provided",
+      "status": "missing"
+    },
+    "induced_gain": {
+      "reason": "source not provided",
+      "status": "missing"
+    },
+    "map_error_decomposition": {
+      "reason": "source not provided",
+      "status": "missing"
+    },
+    "objective_comparator": {
+      "reason": "source not provided",
+      "status": "missing"
+    },
+    "perturbation_response": {
+      "component": "perturbation_response",
+      "payload_issue": "7c1f7ed",
+      "payload_schema": "rlrmp.sisu_perturbation_class_comparison.v1",
+      "payload_scope": null,
+      "source_path": "results/7c1f7ed/notes/delayed_sisu_perturbation_class_comparison.json",
+      "status": "available"
+    },
+    "standard_certificate": {
+      "component": "standard_certificate",
+      "payload_issue": "e6a32b8",
+      "payload_schema": "rlrmp.cs_gru_standard_certificates.v1",
+      "payload_scope": "C&S stochastic GRU pilot rows from `7c1f7ed`. The standard certificate is materialized in empirical_nonlinear mode: clean rollout action behavior is available, same-coordinate transition/value/Bellman components are not applicable, and response map rows remain missing until the observation projection contract is defined.",
+      "source_path": "results/7c1f7ed/notes/gru_standard_certificates_delayed_sisu_final_manifest.json",
+      "status": "available"
+    },
+    "worst_case_epsilon_audit": {
+      "reason": "source not provided",
+      "status": "missing"
+    }
+  },
+  "delayed_contract_caveat": {
+    "blocker": "Current standard certificate reports 6D delayed feedback/force-filter GraphSpec versus 8D output-feedback analytical reference response-map mismatch, so this sidecar is interpretive phenotype evidence only.",
+    "formal_hinf_equivalence": "not_claimed"
+  },
+  "generated_by": "rlrmp.analysis.pipelines.hinf_phenotype_sidecar",
+  "interpretation_contract": {
+    "formal_hinf_claim_policy": "formal claims require an explicit game card, gamma or budget, disturbance channel, and exact audit or induced-gain metric",
+    "formal_hinf_requirements": [
+      "game_card",
+      "gamma_or_budget",
+      "disturbance_channel",
+      "exact_audit_or_induced_gain"
+    ],
+    "kind": "interpretive_sidecar",
+    "not_checkpoint_selection_input": true,
+    "not_standard_certificate": true
+  },
+  "issue": "7c1f7ed",
+  "paired_run_ids": {},
+  "regeneration_spec_path": "results/7c1f7ed/notes/hinf_phenotype_sidecar_delayed_sisu_final_regeneration_spec.json",
+  "rows": [
+    {
+      "component_statuses": {
+        "broad_epsilon_attribution": {
+          "reason": "source not provided",
+          "status": "missing"
+        },
+        "evaluation_diagnostics": {
+          "component": "evaluation_diagnostics",
+          "payload_schema": "rlrmp.gru_evaluation_diagnostics.v1",
+          "source_path": "results/7c1f7ed/notes/gru_evaluation_diagnostics_delayed_sisu_final.json",
+          "status": "available"
+        },
+        "exact_audit": {
+          "reason": "source not provided",
+          "status": "missing"
+        },
+        "feedback_ablation": {
+          "reason": "source not provided",
+          "status": "missing"
+        },
+        "induced_gain": {
+          "reason": "source not provided",
+          "status": "missing"
+        },
+        "map_error_decomposition": {
+          "reason": "source not provided",
+          "status": "missing"
+        },
+        "objective_comparator": {
+          "reason": "source not provided",
+          "status": "missing"
+        },
+        "perturbation_response": {
+          "component": "perturbation_response",
+          "payload_schema": "rlrmp.sisu_perturbation_class_comparison.v1",
+          "source_path": "results/7c1f7ed/notes/delayed_sisu_perturbation_class_comparison.json",
+          "status": "available"
+        },
+        "standard_certificate": {
+          "component": "standard_certificate",
+          "payload_schema": "rlrmp.cs_gru_standard_certificates.v1",
+          "source_path": "results/7c1f7ed/notes/gru_standard_certificates_delayed_sisu_final_manifest.json",
+          "status": "available"
+        },
+        "worst_case_epsilon_audit": {
+          "reason": "source not provided",
+          "status": "missing"
+        }
+      },
+      "feedback_competence": {
+        "evidence": [
+          {
+            "component": "perturbation_response",
+            "payload_schema": "rlrmp.sisu_perturbation_class_comparison.v1",
+            "source_path": "results/7c1f7ed/notes/delayed_sisu_perturbation_class_comparison.json",
+            "status": "available"
+          }
+        ],
+        "status": "available",
+        "values": {
+          "sisu_1_vs_0_perturbation_class_summary": {
+            "command_input/command_input_pulse": {
+              "auc_delta_x_ratio_1_over_0": 0.7088919267522019,
+              "full_qrf_delta_cost_delta_1_minus_0": -14.002285717008107,
+              "full_qrf_delta_cost_ratio_1_over_0": 0.87284515453128,
+              "max_delta_x_ratio_1_over_0": 0.9576600616403967,
+              "mean_delta_action_ratio_1_over_0": 1.2371296116795805,
+              "n_rows_sisu_0": 36,
+              "n_rows_sisu_1": 36,
+              "status_counts_sisu_0": {
+                "evaluated": 36
+              },
+              "status_counts_sisu_1": {
+                "evaluated": 36
+              }
+            },
+            "command_input/target_aligned_lateral_command_load_pulse": {
+              "auc_delta_x_ratio_1_over_0": 0.7233119212775718,
+              "full_qrf_delta_cost_delta_1_minus_0": -1.7457472434373358,
+              "full_qrf_delta_cost_ratio_1_over_0": 0.9827780081056952,
+              "max_delta_x_ratio_1_over_0": 0.9664769131985087,
+              "mean_delta_action_ratio_1_over_0": 1.2250763905136062,
+              "n_rows_sisu_0": 18,
+              "n_rows_sisu_1": 18,
+              "status_counts_sisu_0": {
+                "evaluated": 18
+              },
+              "status_counts_sisu_1": {
+                "evaluated": 18
+              }
+            },
+            "delayed_observation/delayed_observation_offset": {
+              "auc_delta_x_ratio_1_over_0": 0.6908872477428534,
+              "full_qrf_delta_cost_delta_1_minus_0": -206.9707347331393,
+              "full_qrf_delta_cost_ratio_1_over_0": 0.35295417093247233,
+              "max_delta_x_ratio_1_over_0": 0.950564489749185,
+              "mean_delta_action_ratio_1_over_0": 1.1868241248711136,
+              "n_rows_sisu_0": 108,
+              "n_rows_sisu_1": 108,
+              "notes": [
+                "sisu_0:robust_analytical_not_applicable_reasons=1",
+                "sisu_1:robust_analytical_not_applicable_reasons=1"
+              ],
+              "status_counts_sisu_0": {
+                "evaluated": 108
+              },
+              "status_counts_sisu_1": {
+                "evaluated": 108
+              }
+            },
+            "initial_state/initial_position_offset": {
+              "auc_delta_x_ratio_1_over_0": 0.9205786493659146,
+              "full_qrf_delta_cost_delta_1_minus_0": -119.67867898901417,
+              "full_qrf_delta_cost_ratio_1_over_0": 0.5406584396524134,
+              "max_delta_x_ratio_1_over_0": 0.9999129503477555,
+              "mean_delta_action_ratio_1_over_0": 1.2785535069679164,
+              "n_rows_sisu_0": 12,
+              "n_rows_sisu_1": 12,
+              "status_counts_sisu_0": {
+                "evaluated": 12
+              },
+              "status_counts_sisu_1": {
+                "evaluated": 12
+              }
+            },
+            "initial_state/initial_velocity_offset": {
+              "auc_delta_x_ratio_1_over_0": 0.9166617778344913,
+              "full_qrf_delta_cost_delta_1_minus_0": -14.282721139301222,
+              "full_qrf_delta_cost_ratio_1_over_0": -0.006733950530287994,
+              "max_delta_x_ratio_1_over_0": 0.989072758155443,
+              "mean_delta_action_ratio_1_over_0": 1.0693556800591215,
+              "n_rows_sisu_0": 12,
+              "n_rows_sisu_1": 12,
+              "status_counts_sisu_0": {
+                "evaluated": 12
+              },
+              "status_counts_sisu_1": {
+                "evaluated": 12
+              }
+            },
+            "process_epsilon/process_epsilon_force_state_xy": {
+              "auc_delta_x_ratio_1_over_0": 0.7086716765815113,
+              "full_qrf_delta_cost_delta_1_minus_0": -13.118544380973788,
+              "full_qrf_delta_cost_ratio_1_over_0": 0.8814182093632156,
+              "max_delta_x_ratio_1_over_0": 0.9574369475185205,
+              "mean_delta_action_ratio_1_over_0": 1.2310924445252163,
+              "n_rows_sisu_0": 36,
+              "n_rows_sisu_1": 36,
+              "status_counts_sisu_0": {
+                "evaluated": 36
+              },
+              "status_counts_sisu_1": {
+                "evaluated": 36
+              }
+            },
+            "process_epsilon/process_epsilon_integrator_xy": {
+              "auc_delta_x_ratio_1_over_0": 0.7689101899301588,
+              "full_qrf_delta_cost_delta_1_minus_0": -1532.2671715713163,
+              "full_qrf_delta_cost_ratio_1_over_0": 0.6802725185620364,
+              "max_delta_x_ratio_1_over_0": 0.7577004825093586,
+              "mean_delta_action_ratio_1_over_0": 1.2057137289072384,
+              "n_rows_sisu_0": 36,
+              "n_rows_sisu_1": 36,
+              "notes": [
+                "sisu_0:inflated_ratio",
+                "sisu_1:inflated_ratio"
+              ],
+              "status_counts_sisu_0": {
+                "evaluated": 36
+              },
+              "status_counts_sisu_1": {
+                "evaluated": 36
+              }
+            },
+            "process_epsilon/process_epsilon_position_xy": {
+              "auc_delta_x_ratio_1_over_0": 0.8442158333492257,
+              "full_qrf_delta_cost_delta_1_minus_0": -129.20155273137425,
+              "full_qrf_delta_cost_ratio_1_over_0": 0.7281368221250192,
+              "max_delta_x_ratio_1_over_0": 0.9999959959767736,
+              "mean_delta_action_ratio_1_over_0": 1.4685190245840343,
+              "n_rows_sisu_0": 36,
+              "n_rows_sisu_1": 36,
+              "status_counts_sisu_0": {
+                "evaluated": 36
+              },
+              "status_counts_sisu_1": {
+                "evaluated": 36
+              }
+            },
+            "process_epsilon/process_epsilon_velocity_xy": {
+              "auc_delta_x_ratio_1_over_0": 0.7624612884104667,
+              "full_qrf_delta_cost_delta_1_minus_0": -33.14772964281801,
+              "full_qrf_delta_cost_ratio_1_over_0": 0.801020971892445,
+              "max_delta_x_ratio_1_over_0": 0.9801163143986621,
+              "mean_delta_action_ratio_1_over_0": 1.2320356306880704,
+              "n_rows_sisu_0": 36,
+              "n_rows_sisu_1": 36,
+              "status_counts_sisu_0": {
+                "evaluated": 36
+              },
+              "status_counts_sisu_1": {
+                "evaluated": 36
+              }
+            },
+            "sensory_feedback/sensory_feedback_offset": {
+              "auc_delta_x_ratio_1_over_0": 0.6908872477428536,
+              "full_qrf_delta_cost_delta_1_minus_0": -206.97073473313895,
+              "full_qrf_delta_cost_ratio_1_over_0": 0.35295417093247305,
+              "max_delta_x_ratio_1_over_0": 0.9505644897491852,
+              "mean_delta_action_ratio_1_over_0": 1.1868241248711144,
+              "n_rows_sisu_0": 108,
+              "n_rows_sisu_1": 108,
+              "notes": [
+                "sisu_0:robust_analytical_not_applicable_reasons=1",
+                "sisu_1:robust_analytical_not_applicable_reasons=1"
+              ],
+              "status_counts_sisu_0": {
+                "evaluated": 108
+              },
+              "status_counts_sisu_1": {
+                "evaluated": 108
+              }
+            },
+            "target_stream/target_stream_jump": {
+              "n_rows_sisu_0": 1,
+              "n_rows_sisu_1": 1,
+              "notes": [
+                "sisu_0:extlqg_not_applicable_reasons=1",
+                "sisu_0:not_applicable_reasons=1",
+                "sisu_0:robust_analytical_not_applicable_reasons=1",
+                "sisu_1:extlqg_not_applicable_reasons=1",
+                "sisu_1:not_applicable_reasons=1",
+                "sisu_1:robust_analytical_not_applicable_reasons=1"
+              ],
+              "status_counts_sisu_0": {
+                "not_applicable": 1
+              },
+              "status_counts_sisu_1": {
+                "not_applicable": 1
+              }
+            }
+          }
+        }
+      },
+      "formal_hinf_claim": {
+        "label": "phenotype_evidence_only",
+        "missing": [
+          "game_card",
+          "gamma_or_budget",
+          "disturbance_channel",
+          "exact_audit_or_induced_gain"
+        ],
+        "requirements": {
+          "disturbance_channel": false,
+          "exact_audit_or_induced_gain": false,
+          "game_card": false,
+          "gamma_or_budget": false
+        },
+        "status": "not_claimed"
+      },
+      "hinf_phenotype_markers": {
+        "evidence": [
+          {
+            "component": "perturbation_response",
+            "payload_schema": "rlrmp.sisu_perturbation_class_comparison.v1",
+            "source_path": "results/7c1f7ed/notes/delayed_sisu_perturbation_class_comparison.json",
+            "status": "available"
+          }
+        ],
+        "status": "available",
+        "values": {
+          "sisu_1_vs_0_perturbation_markers": {
+            "full_qrf_delta_cost": {
+              "equal": 0,
+              "improved": 10,
+              "not_available": 1,
+              "worse": 0
+            },
+            "max_delta_x_m": {
+              "equal": 0,
+              "improved": 10,
+              "not_available": 1,
+              "worse": 0
+            },
+            "mean_delta_action": {
+              "equal": 0,
+              "improved": 0,
+              "not_available": 1,
+              "worse": 10
+            },
+            "ratio_meaning": "SISU1/SISU0 ratio below 1 means the SISU=1 condition was smaller."
+          }
+        }
+      },
+      "local_feedback_law": {
+        "evidence": [],
+        "reason": "no local map evidence source",
+        "status": "missing"
+      },
+      "nominal_efficiency": {
+        "evidence": [
+          {
+            "component": "evaluation_diagnostics",
+            "payload_schema": "rlrmp.gru_evaluation_diagnostics.v1",
+            "source_path": "results/7c1f7ed/notes/gru_evaluation_diagnostics_delayed_sisu_final.json",
+            "status": "available"
+          }
+        ],
+        "status": "available",
+        "values": {
+          "endpoint_error_m": 0.0018512998668811348,
+          "peak_velocity_m_s": 0.7718572009904868,
+          "terminal_speed_m_s": 0.00656426808349254,
+          "time_to_peak_s": 0.45000000000000007
+        }
+      },
+      "paired_baseline_vs_robust": {
+        "reason": "no inferable baseline-vs-robust run pair in loaded sources",
+        "status": "not_available"
+      },
+      "run_id": "delayed_sisu_spectrum__effective_020a65b_pgd_radius_lr1e-2_clip5_b64",
+      "warnings": [
+        {
+          "code": "local_feedback_law_unavailable",
+          "reason": "no local map evidence source",
+          "status": "missing"
+        },
+        {
+          "code": "formal_hinf_not_claimed",
+          "missing": [
+            "game_card",
+            "gamma_or_budget",
+            "disturbance_channel",
+            "exact_audit_or_induced_gain"
+          ]
+        },
+        {
+          "code": "replicate_spread_unavailable",
+          "reason": "n_replicates was not found in loaded nominal-efficiency evidence"
+        }
+      ]
+    },
+    {
+      "component_statuses": {
+        "broad_epsilon_attribution": {
+          "reason": "source not provided",
+          "status": "missing"
+        },
+        "evaluation_diagnostics": {
+          "component": "evaluation_diagnostics",
+          "payload_schema": "rlrmp.gru_evaluation_diagnostics.v1",
+          "source_path": "results/7c1f7ed/notes/gru_evaluation_diagnostics_delayed_sisu_final.json",
+          "status": "available"
+        },
+        "exact_audit": {
+          "reason": "source not provided",
+          "status": "missing"
+        },
+        "feedback_ablation": {
+          "reason": "source not provided",
+          "status": "missing"
+        },
+        "induced_gain": {
+          "reason": "source not provided",
+          "status": "missing"
+        },
+        "map_error_decomposition": {
+          "reason": "source not provided",
+          "status": "missing"
+        },
+        "objective_comparator": {
+          "reason": "source not provided",
+          "status": "missing"
+        },
+        "perturbation_response": {
+          "component": "perturbation_response",
+          "payload_schema": "rlrmp.sisu_perturbation_class_comparison.v1",
+          "source_path": "results/7c1f7ed/notes/delayed_sisu_perturbation_class_comparison.json",
+          "status": "available"
+        },
+        "standard_certificate": {
+          "component": "standard_certificate",
+          "payload_schema": "rlrmp.cs_gru_standard_certificates.v1",
+          "source_path": "results/7c1f7ed/notes/gru_standard_certificates_delayed_sisu_final_manifest.json",
+          "status": "available"
+        },
+        "worst_case_epsilon_audit": {
+          "reason": "source not provided",
+          "status": "missing"
+        }
+      },
+      "feedback_competence": {
+        "evidence": [
+          {
+            "component": "perturbation_response",
+            "payload_schema": "rlrmp.sisu_perturbation_class_comparison.v1",
+            "source_path": "results/7c1f7ed/notes/delayed_sisu_perturbation_class_comparison.json",
+            "status": "available"
+          }
+        ],
+        "status": "available",
+        "values": {
+          "sisu_1_vs_0_perturbation_class_summary": {
+            "command_input/command_input_pulse": {
+              "auc_delta_x_ratio_1_over_0": 0.8071357324868627,
+              "full_qrf_delta_cost_delta_1_minus_0": -24.620167427140274,
+              "full_qrf_delta_cost_ratio_1_over_0": 0.8538078193594498,
+              "max_delta_x_ratio_1_over_0": 0.9837043845657464,
+              "mean_delta_action_ratio_1_over_0": 1.0889904254203047,
+              "n_rows_sisu_0": 36,
+              "n_rows_sisu_1": 36,
+              "status_counts_sisu_0": {
+                "evaluated": 36
+              },
+              "status_counts_sisu_1": {
+                "evaluated": 36
+              }
+            },
+            "command_input/target_aligned_lateral_command_load_pulse": {
+              "auc_delta_x_ratio_1_over_0": 0.81283907363515,
+              "full_qrf_delta_cost_delta_1_minus_0": -66.3762009031562,
+              "full_qrf_delta_cost_ratio_1_over_0": 0.6499796637790289,
+              "max_delta_x_ratio_1_over_0": 0.978577064863496,
+              "mean_delta_action_ratio_1_over_0": 1.0831537384614416,
+              "n_rows_sisu_0": 18,
+              "n_rows_sisu_1": 18,
+              "status_counts_sisu_0": {
+                "evaluated": 18
+              },
+              "status_counts_sisu_1": {
+                "evaluated": 18
+              }
+            },
+            "delayed_observation/delayed_observation_offset": {
+              "auc_delta_x_ratio_1_over_0": 0.7729755091470123,
+              "full_qrf_delta_cost_delta_1_minus_0": -145.31207378670595,
+              "full_qrf_delta_cost_ratio_1_over_0": 0.4722427724739766,
+              "max_delta_x_ratio_1_over_0": 0.9689409848164802,
+              "mean_delta_action_ratio_1_over_0": 1.0777442783673685,
+              "n_rows_sisu_0": 108,
+              "n_rows_sisu_1": 108,
+              "notes": [
+                "sisu_0:robust_analytical_not_applicable_reasons=1",
+                "sisu_1:robust_analytical_not_applicable_reasons=1"
+              ],
+              "status_counts_sisu_0": {
+                "evaluated": 108
+              },
+              "status_counts_sisu_1": {
+                "evaluated": 108
+              }
+            },
+            "initial_state/initial_position_offset": {
+              "auc_delta_x_ratio_1_over_0": 0.9382264713344247,
+              "full_qrf_delta_cost_delta_1_minus_0": -121.76175278404466,
+              "full_qrf_delta_cost_ratio_1_over_0": 0.6272467069552292,
+              "max_delta_x_ratio_1_over_0": 0.9989558779959554,
+              "mean_delta_action_ratio_1_over_0": 1.1096057095453948,
+              "n_rows_sisu_0": 12,
+              "n_rows_sisu_1": 12,
+              "status_counts_sisu_0": {
+                "evaluated": 12
+              },
+              "status_counts_sisu_1": {
+                "evaluated": 12
+              }
+            },
+            "initial_state/initial_velocity_offset": {
+              "auc_delta_x_ratio_1_over_0": 0.8719763259630864,
+              "full_qrf_delta_cost_delta_1_minus_0": -46.07867576260211,
+              "full_qrf_delta_cost_ratio_1_over_0": 0.5124616670648856,
+              "max_delta_x_ratio_1_over_0": 0.9357522646456072,
+              "mean_delta_action_ratio_1_over_0": 0.9956327239905101,
+              "n_rows_sisu_0": 12,
+              "n_rows_sisu_1": 12,
+              "status_counts_sisu_0": {
+                "evaluated": 12
+              },
+              "status_counts_sisu_1": {
+                "evaluated": 12
+              }
+            },
+            "process_epsilon/process_epsilon_force_state_xy": {
+              "auc_delta_x_ratio_1_over_0": 0.8049857116942872,
+              "full_qrf_delta_cost_delta_1_minus_0": -14.402550646677213,
+              "full_qrf_delta_cost_ratio_1_over_0": 0.9090409995415918,
+              "max_delta_x_ratio_1_over_0": 0.9824174907874234,
+              "mean_delta_action_ratio_1_over_0": 1.0908818262573436,
+              "n_rows_sisu_0": 36,
+              "n_rows_sisu_1": 36,
+              "status_counts_sisu_0": {
+                "evaluated": 36
+              },
+              "status_counts_sisu_1": {
+                "evaluated": 36
+              }
+            },
+            "process_epsilon/process_epsilon_integrator_xy": {
+              "auc_delta_x_ratio_1_over_0": 0.8410950352151668,
+              "full_qrf_delta_cost_delta_1_minus_0": -1274.6736936703346,
+              "full_qrf_delta_cost_ratio_1_over_0": 0.7174362682224023,
+              "max_delta_x_ratio_1_over_0": 0.8282028941022133,
+              "mean_delta_action_ratio_1_over_0": 1.0366045514931188,
+              "n_rows_sisu_0": 36,
+              "n_rows_sisu_1": 36,
+              "notes": [
+                "sisu_0:inflated_ratio",
+                "sisu_1:inflated_ratio"
+              ],
+              "status_counts_sisu_0": {
+                "evaluated": 36
+              },
+              "status_counts_sisu_1": {
+                "evaluated": 36
+              }
+            },
+            "process_epsilon/process_epsilon_position_xy": {
+              "auc_delta_x_ratio_1_over_0": 0.8879791878258622,
+              "full_qrf_delta_cost_delta_1_minus_0": -114.07336526824542,
+              "full_qrf_delta_cost_ratio_1_over_0": 0.7856277958905172,
+              "max_delta_x_ratio_1_over_0": 0.9999997618788279,
+              "mean_delta_action_ratio_1_over_0": 1.2365495029166165,
+              "n_rows_sisu_0": 36,
+              "n_rows_sisu_1": 36,
+              "status_counts_sisu_0": {
+                "evaluated": 36
+              },
+              "status_counts_sisu_1": {
+                "evaluated": 36
+              }
+            },
+            "process_epsilon/process_epsilon_velocity_xy": {
+              "auc_delta_x_ratio_1_over_0": 0.8028444398929271,
+              "full_qrf_delta_cost_delta_1_minus_0": -95.01967274694806,
+              "full_qrf_delta_cost_ratio_1_over_0": 0.7115663543026678,
+              "max_delta_x_ratio_1_over_0": 0.9497562882653213,
+              "mean_delta_action_ratio_1_over_0": 1.0864198506691836,
+              "n_rows_sisu_0": 36,
+              "n_rows_sisu_1": 36,
+              "status_counts_sisu_0": {
+                "evaluated": 36
+              },
+              "status_counts_sisu_1": {
+                "evaluated": 36
+              }
+            },
+            "sensory_feedback/sensory_feedback_offset": {
+              "auc_delta_x_ratio_1_over_0": 0.7729755091470123,
+              "full_qrf_delta_cost_delta_1_minus_0": -145.31207378670587,
+              "full_qrf_delta_cost_ratio_1_over_0": 0.472242772473977,
+              "max_delta_x_ratio_1_over_0": 0.9689409848164802,
+              "mean_delta_action_ratio_1_over_0": 1.0777442783673687,
+              "n_rows_sisu_0": 108,
+              "n_rows_sisu_1": 108,
+              "notes": [
+                "sisu_0:robust_analytical_not_applicable_reasons=1",
+                "sisu_1:robust_analytical_not_applicable_reasons=1"
+              ],
+              "status_counts_sisu_0": {
+                "evaluated": 108
+              },
+              "status_counts_sisu_1": {
+                "evaluated": 108
+              }
+            },
+            "target_stream/target_stream_jump": {
+              "n_rows_sisu_0": 1,
+              "n_rows_sisu_1": 1,
+              "notes": [
+                "sisu_0:extlqg_not_applicable_reasons=1",
+                "sisu_0:not_applicable_reasons=1",
+                "sisu_0:robust_analytical_not_applicable_reasons=1",
+                "sisu_1:extlqg_not_applicable_reasons=1",
+                "sisu_1:not_applicable_reasons=1",
+                "sisu_1:robust_analytical_not_applicable_reasons=1"
+              ],
+              "status_counts_sisu_0": {
+                "not_applicable": 1
+              },
+              "status_counts_sisu_1": {
+                "not_applicable": 1
+              }
+            }
+          }
+        }
+      },
+      "formal_hinf_claim": {
+        "label": "phenotype_evidence_only",
+        "missing": [
+          "game_card",
+          "gamma_or_budget",
+          "disturbance_channel",
+          "exact_audit_or_induced_gain"
+        ],
+        "requirements": {
+          "disturbance_channel": false,
+          "exact_audit_or_induced_gain": false,
+          "game_card": false,
+          "gamma_or_budget": false
+        },
+        "status": "not_claimed"
+      },
+      "hinf_phenotype_markers": {
+        "evidence": [
+          {
+            "component": "perturbation_response",
+            "payload_schema": "rlrmp.sisu_perturbation_class_comparison.v1",
+            "source_path": "results/7c1f7ed/notes/delayed_sisu_perturbation_class_comparison.json",
+            "status": "available"
+          }
+        ],
+        "status": "available",
+        "values": {
+          "sisu_1_vs_0_perturbation_markers": {
+            "full_qrf_delta_cost": {
+              "equal": 0,
+              "improved": 10,
+              "not_available": 1,
+              "worse": 0
+            },
+            "max_delta_x_m": {
+              "equal": 0,
+              "improved": 10,
+              "not_available": 1,
+              "worse": 0
+            },
+            "mean_delta_action": {
+              "equal": 0,
+              "improved": 1,
+              "not_available": 1,
+              "worse": 9
+            },
+            "ratio_meaning": "SISU1/SISU0 ratio below 1 means the SISU=1 condition was smaller."
+          }
+        }
+      },
+      "local_feedback_law": {
+        "evidence": [],
+        "reason": "no local map evidence source",
+        "status": "missing"
+      },
+      "nominal_efficiency": {
+        "evidence": [
+          {
+            "component": "evaluation_diagnostics",
+            "payload_schema": "rlrmp.gru_evaluation_diagnostics.v1",
+            "source_path": "results/7c1f7ed/notes/gru_evaluation_diagnostics_delayed_sisu_final.json",
+            "status": "available"
+          }
+        ],
+        "status": "available",
+        "values": {
+          "endpoint_error_m": 0.00169900858999968,
+          "peak_velocity_m_s": 0.7589134103699864,
+          "terminal_speed_m_s": 0.005569411771048706,
+          "time_to_peak_s": 0.44981250000000006
+        }
+      },
+      "paired_baseline_vs_robust": {
+        "reason": "no inferable baseline-vs-robust run pair in loaded sources",
+        "status": "not_available"
+      },
+      "run_id": "delayed_sisu_spectrum__raw_strong_gamma_1p05_radius_lr1e-2_clip5_b64",
+      "warnings": [
+        {
+          "code": "local_feedback_law_unavailable",
+          "reason": "no local map evidence source",
+          "status": "missing"
+        },
+        {
+          "code": "formal_hinf_not_claimed",
+          "missing": [
+            "game_card",
+            "gamma_or_budget",
+            "disturbance_channel",
+            "exact_audit_or_induced_gain"
+          ]
+        },
+        {
+          "code": "replicate_spread_unavailable",
+          "reason": "n_replicates was not found in loaded nominal-efficiency evidence"
+        }
+      ]
+    }
+  ],
+  "schema_version": "rlrmp.hinf_phenotype_sidecar.v1",
+  "scope": "delayed_sisu_two_rows_final",
+  "summary": {
+    "component_status_counts": {
+      "available": 3,
+      "missing": 7
+    },
+    "formal_hinf_claim_status_counts": {
+      "not_claimed": 2
+    },
+    "n_rows": 2,
+    "row_evidence_status_counts": {
+      "feedback_competence": {
+        "available": 2
+      },
+      "hinf_phenotype_markers": {
+        "available": 2
+      },
+      "local_feedback_law": {
+        "missing": 2
+      },
+      "nominal_efficiency": {
+        "available": 2
+      }
+    }
+  }
+}

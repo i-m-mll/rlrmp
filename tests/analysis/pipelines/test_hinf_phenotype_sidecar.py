@@ -165,6 +165,79 @@ def test_sidecar_degrades_gracefully_when_components_are_missing() -> None:
     assert row["formal_hinf_claim"]["status"] == "not_claimed"
 
 
+def test_sidecar_reads_sisu_perturbation_comparison_schema() -> None:
+    run_id = "delayed_sisu_spectrum__raw"
+    sources = {
+        "evaluation_diagnostics": _source(
+            "results/7c1f7ed/notes/gru_eval.json",
+            {
+                "schema_version": "rlrmp.gru_evaluation_diagnostics.v1",
+                "runs": {
+                    run_id: {
+                        "behavior": {
+                            "endpoint_error_m": {"mean": 0.003},
+                            "terminal_speed_m_s": {"mean": 0.002},
+                            "velocity_profile": {
+                                "mean_profile_peak_forward_velocity_m_s": 0.75,
+                                "mean_profile_time_to_peak_forward_velocity_s": 0.16,
+                            },
+                        },
+                    }
+                },
+            },
+        ),
+        "perturbation_response": _source(
+            "results/7c1f7ed/notes/sisu_perturbation.json",
+            {
+                "schema_version": "rlrmp.sisu_perturbation_class_comparison.v1",
+                "issue": "7c1f7ed",
+                "runs": {
+                    run_id: {
+                        "label": "raw",
+                        "headline": {
+                            "full_qrf_delta_cost": {"improved": 2, "equal": 0, "worse": 1},
+                            "max_delta_x_m": {"improved": 3, "equal": 0, "worse": 0},
+                            "mean_delta_action": {"improved": 0, "equal": 0, "worse": 3},
+                        },
+                        "class_comparison": {
+                            "command_input/command_input_pulse": {
+                                "rows_sisu_0": 4,
+                                "rows_sisu_1": 4,
+                                "status_counts_sisu_0": {"evaluated": 4},
+                                "status_counts_sisu_1": {"evaluated": 4},
+                                "metrics": {
+                                    "mean_delta_action": {"ratio_1_over_0": 1.2},
+                                    "max_delta_x_m": {"ratio_1_over_0": 0.7},
+                                    "auc_delta_x_m_s": {"ratio_1_over_0": 0.8},
+                                    "mean_full_qrf_delta_cost": {
+                                        "ratio_1_over_0": 0.5,
+                                        "delta_1_minus_0": -2.0,
+                                    },
+                                },
+                            }
+                        },
+                    }
+                },
+            },
+        )
+    }
+
+    sidecar = build_hinf_phenotype_sidecar(sources=sources)
+    row = sidecar["rows"][0]
+
+    assert row["run_id"] == run_id
+    assert row["nominal_efficiency"]["values"]["endpoint_error_m"] == 0.003
+    assert row["nominal_efficiency"]["values"]["peak_velocity_m_s"] == 0.75
+    assert row["feedback_competence"]["status"] == "available"
+    assert row["hinf_phenotype_markers"]["status"] == "available"
+    markers = row["hinf_phenotype_markers"]["values"]["sisu_1_vs_0_perturbation_markers"]
+    assert markers["full_qrf_delta_cost"]["improved"] == 2
+    summary = row["feedback_competence"]["values"]["sisu_1_vs_0_perturbation_class_summary"]
+    assert summary["command_input/command_input_pulse"][
+        "full_qrf_delta_cost_ratio_1_over_0"
+    ] == 0.5
+
+
 def test_sidecar_uses_explicit_paired_run_ids_for_opaque_run_names() -> None:
     sources = {
         "objective_comparator": _source(
