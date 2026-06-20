@@ -1,0 +1,197 @@
+{
+  "command": {
+    "argv": [],
+    "cwd": ".",
+    "metadata": {
+      "materializer": "rlrmp.analysis.pipelines.gru_steady_state_perturbation_bank.materialize_steady_state_comparisons"
+    },
+    "shell_command": "PYTHONPATH=$PWD/src uv run --no-sync python results/87424a4/scripts/materialize_steady_state_perturbation_bank.py"
+  },
+  "inputs": [
+    {
+      "logical_name": "results/7c1f7ed/runs/delayed_sisu_spectrum__effective_020a65b_pgd_radius_lr1e-2_clip5_b64.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "77d1fb45d6b6a6b768168596ff12c1b16e53c505dc9a6f4e2cf3cc9a0815ac06",
+        "size_bytes": 345645
+      },
+      "role": "run_spec",
+      "sha256": "77d1fb45d6b6a6b768168596ff12c1b16e53c505dc9a6f4e2cf3cc9a0815ac06",
+      "size_bytes": 345645,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/7c1f7ed/runs/delayed_sisu_spectrum__effective_020a65b_pgd_radius_lr1e-2_clip5_b64.json"
+    },
+    {
+      "logical_name": "results/7c1f7ed/runs/delayed_sisu_spectrum__effective_020a65b_pgd_radius_lr1e-2_clip5_b64.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "77d1fb45d6b6a6b768168596ff12c1b16e53c505dc9a6f4e2cf3cc9a0815ac06",
+        "size_bytes": 345645
+      },
+      "role": "run_spec",
+      "sha256": "77d1fb45d6b6a6b768168596ff12c1b16e53c505dc9a6f4e2cf3cc9a0815ac06",
+      "size_bytes": 345645,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/7c1f7ed/runs/delayed_sisu_spectrum__effective_020a65b_pgd_radius_lr1e-2_clip5_b64.json"
+    },
+    {
+      "logical_name": "results/e4800d6/runs/cs_gru_h0_sisu_spectrum_targetfix__effective_020a65b_pgd_radius_lr3e-3_clip5_b64/run.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "5d6ce88aaa7e4c0b7c8a50939d6de50aca92dd9f513ca09304d11e9940b48faa",
+        "size_bytes": 320525
+      },
+      "role": "run_spec",
+      "sha256": "5d6ce88aaa7e4c0b7c8a50939d6de50aca92dd9f513ca09304d11e9940b48faa",
+      "size_bytes": 320525,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/e4800d6/runs/cs_gru_h0_sisu_spectrum_targetfix__effective_020a65b_pgd_radius_lr3e-3_clip5_b64/run.json"
+    },
+    {
+      "logical_name": "results/e4800d6/runs/cs_gru_h0_sisu_spectrum_targetfix__effective_020a65b_pgd_radius_lr3e-3_clip5_b64/run.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "5d6ce88aaa7e4c0b7c8a50939d6de50aca92dd9f513ca09304d11e9940b48faa",
+        "size_bytes": 320525
+      },
+      "role": "run_spec",
+      "sha256": "5d6ce88aaa7e4c0b7c8a50939d6de50aca92dd9f513ca09304d11e9940b48faa",
+      "size_bytes": 320525,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/e4800d6/runs/cs_gru_h0_sisu_spectrum_targetfix__effective_020a65b_pgd_radius_lr3e-3_clip5_b64/run.json"
+    },
+    {
+      "logical_name": "results/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/run.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "f920cdf057d2e6b5c3b2ed5f11332667d95f8052dcbd3b4e682d8c1a434a981a",
+        "size_bytes": 292985
+      },
+      "role": "run_spec",
+      "sha256": "f920cdf057d2e6b5c3b2ed5f11332667d95f8052dcbd3b4e682d8c1a434a981a",
+      "size_bytes": 292985,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/run.json"
+    },
+    {
+      "logical_name": "results/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/run.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "e5c1f9fa6fe0e4918f92a0ec713cf986efa3cda0789348d2518dd415abbf001e",
+        "size_bytes": 299029
+      },
+      "role": "run_spec",
+      "sha256": "e5c1f9fa6fe0e4918f92a0ec713cf986efa3cda0789348d2518dd415abbf001e",
+      "size_bytes": 299029,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/020a65b/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/run.json"
+    }
+  ],
+  "metadata": {
+    "diagnostic_name": "gru_steady_state_perturbation_bank",
+    "materializer": "rlrmp.analysis.pipelines.gru_steady_state_perturbation_bank.materialize_steady_state_comparisons",
+    "notes": [
+      "Local model evaluation only; no retraining, pod, or reach-context bank rerun.",
+      "Raw rollout arrays are not written; tracked summaries and figure specs are sufficient."
+    ],
+    "schema_boundary": "rlrmp diagnostic payload; Feedbax regeneration custody"
+  },
+  "outputs": [
+    {
+      "logical_name": "results/87424a4/notes/steady_state_perturbation_bank_summary.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "a6e09e0520f449db556b42da8b3ebecc9eee6fb6c38600f683391078dd761c7d",
+        "size_bytes": 447782
+      },
+      "role": "summary_json",
+      "sha256": "a6e09e0520f449db556b42da8b3ebecc9eee6fb6c38600f683391078dd761c7d",
+      "size_bytes": 447782,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/87424a4/notes/steady_state_perturbation_bank_summary.json"
+    },
+    {
+      "logical_name": "results/87424a4/notes/steady_state_perturbation_bank.md",
+      "media_type": "text/markdown",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "8e845e07ad7b8c9416ee2835bf43f583e23cc465edcf38a9596617cf4eaff781",
+        "size_bytes": 2164
+      },
+      "role": "summary_markdown",
+      "sha256": "8e845e07ad7b8c9416ee2835bf43f583e23cc465edcf38a9596617cf4eaff781",
+      "size_bytes": 2164,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/87424a4/notes/steady_state_perturbation_bank.md"
+    }
+  ],
+  "parameters": {
+    "n_rollout_trials": 4,
+    "pulse_duration_steps": 5,
+    "result_experiment": "87424a4"
+  },
+  "provenance": {
+    "dirty": true,
+    "entrypoint": {
+      "kind": "rlrmp-diagnostic-materializer",
+      "metadata": {},
+      "name": "rlrmp.analysis.pipelines.gru_steady_state_perturbation_bank.materialize_steady_state_comparisons"
+    },
+    "issues": [],
+    "metadata": {
+      "status_porcelain": [
+        "M .issue",
+        "?? results/87424a4/README.md",
+        "?? results/87424a4/figures/delayed_sisu_effective_020a65b/figure.html",
+        "?? results/87424a4/figures/delayed_sisu_effective_020a65b/spec.json",
+        "?? results/87424a4/figures/matched_020a65b_no_pgd_vs_pgd/figure.html",
+        "?? results/87424a4/figures/matched_020a65b_no_pgd_vs_pgd/spec.json",
+        "?? results/87424a4/figures/undelayed_targetfix_sisu_effective_020a65b/figure.html",
+        "?? results/87424a4/figures/undelayed_targetfix_sisu_effective_020a65b/spec.json",
+        "?? results/87424a4/notes/steady_state_perturbation_bank.md",
+        "?? results/87424a4/notes/steady_state_perturbation_bank_regeneration_spec.json",
+        "?? results/87424a4/scripts/materialize_steady_state_perturbation_bank.py",
+        "?? src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py",
+        "?? tests/analysis/pipelines/test_gru_steady_state_perturbation_bank.py"
+      ]
+    },
+    "parents": [],
+    "source_branch": "feature/87424a4-steady-state-perturb-bank",
+    "source_commit": "102774675e1fd475059390ec37b2371f699a34a0",
+    "source_repo": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__87424a4-steady-state-perturb-bank"
+  },
+  "schema_id": "feedbax.spec.regeneration",
+  "schema_version": "feedbax.spec.regeneration.v1",
+  "source_files": [
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py",
+      "role": "source_file",
+      "sha256": "248a7bc85292a229824fa509247a27bb21a9cd70de4919e7ed34c2a28afd9602",
+      "size_bytes": 39887
+    },
+    {
+      "metadata": {},
+      "path": "results/87424a4/scripts/materialize_steady_state_perturbation_bank.py",
+      "role": "source_file",
+      "sha256": "287c875dda64f35c5441bcbdc8700d8d13349386a4c1bd5df56cfa78541aae9c",
+      "size_bytes": 2937
+    }
+  ],
+  "source_trees": []
+}

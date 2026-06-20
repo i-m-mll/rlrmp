@@ -1,0 +1,54 @@
+{
+  "comparison_id": "undelayed_targetfix_sisu_effective_020a65b",
+  "feedback_offset_scales": {
+    "force_filter": 0.05,
+    "position_m": 0.1,
+    "velocity_m_s": 0.5
+  },
+  "inputs": [],
+  "issue": "87424a4",
+  "n_rollout_trials": 4,
+  "pulse_duration_steps": 5,
+  "run_id": "cs_gru_h0_sisu_spectrum_targetfix__effective_020a65b_pgd_radius_lr3e-3_clip5_b64",
+  "schema_version": "rlrmp.gru_steady_state_perturbation_bank.v1",
+  "source_experiment": "e4800d6",
+  "timestamp": "2026-06-20T17:32:37.141669+00:00",
+  "timing_by_condition": {
+    "sisu_0": {
+      "fanout_policy": "prefix_equivalent_batched_trials; Feedbax task API does not expose a stable hidden-state resume hook, so every perturbation row shares the same deterministic wash-in prefix and zero-noise inputs inside the same materialization pass.",
+      "horizon_steps": 60,
+      "post_go_washin_steps_requested": 50,
+      "pre_go_steps": 0,
+      "pulse_duration_steps": 5,
+      "pulse_start_step": 50,
+      "response_steps": 10,
+      "washin_policy": "immediate_hold_prefix"
+    },
+    "sisu_1": {
+      "fanout_policy": "prefix_equivalent_batched_trials; Feedbax task API does not expose a stable hidden-state resume hook, so every perturbation row shares the same deterministic wash-in prefix and zero-noise inputs inside the same materialization pass.",
+      "horizon_steps": 60,
+      "post_go_washin_steps_requested": 50,
+      "pre_go_steps": 0,
+      "pulse_duration_steps": 5,
+      "pulse_start_step": 50,
+      "response_steps": 10,
+      "washin_policy": "immediate_hold_prefix"
+    }
+  },
+  "title": "Undelayed target-fix SISU effective 020a65b PGD-radius row",
+  "versions": {
+    "equinox": "0.13.4",
+    "feedbax": "0.1.2",
+    "jax": "0.9.0",
+    "numpy": "2.4.1",
+    "plotly": "6.5.2",
+    "rlrmp": "0.1.0"
+  },
+  "washin_contract": {
+    "delayed_go_cue": "go cue off for 10 steps, then on; target visible throughout.",
+    "fanout_policy": "prefix_equivalent_batched_trials because the current Feedbax eval API does not expose a supported hidden-state resume hook.",
+    "initial_mechanics": "mechanics.vector is zeroed, then every 8D current/delayed mechanics block receives target x/y position with zero velocity, force/filter, and integrator state.",
+    "noise": "epsilon inputs are zeroed before evaluation.",
+    "schema_version": "rlrmp.gru_steady_state_perturbation_bank.v1"
+  }
+}
