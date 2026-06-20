@@ -104,12 +104,12 @@
       "metadata": {
         "exists": true,
         "kind": "file",
-        "sha256": "d5a72e4c59f797a7f9527564930de4d34c03a8f26629f4e99df0a84093d6ab2f",
-        "size_bytes": 285254
+        "sha256": "9e106cbdc0723cf453d0254c781b53673d11e08aca008f7a9c485fac067e8846",
+        "size_bytes": 284876
       },
       "role": "comparison_json",
-      "sha256": "d5a72e4c59f797a7f9527564930de4d34c03a8f26629f4e99df0a84093d6ab2f",
-      "size_bytes": 285254,
+      "sha256": "9e106cbdc0723cf453d0254c781b53673d11e08aca008f7a9c485fac067e8846",
+      "size_bytes": 284876,
       "storage_backend": "feedbax-local",
       "uri": "repo://results/7c1f7ed/notes/delayed_sisu_perturbation_class_comparison.json"
     },
@@ -119,12 +119,12 @@
       "metadata": {
         "exists": true,
         "kind": "file",
-        "sha256": "2c573eb80137bf71f61adb3631b699fdd2110ba960885b109ee91e9ff8fe2ef4",
-        "size_bytes": 19745
+        "sha256": "a3a49469f60d2aa4fedda43a6aab672c786e9ed8c27f81d68780ab9f52ef9e83",
+        "size_bytes": 19580
       },
       "role": "comparison_markdown",
-      "sha256": "2c573eb80137bf71f61adb3631b699fdd2110ba960885b109ee91e9ff8fe2ef4",
-      "size_bytes": 19745,
+      "sha256": "a3a49469f60d2aa4fedda43a6aab672c786e9ed8c27f81d68780ab9f52ef9e83",
+      "size_bytes": 19580,
       "storage_backend": "feedbax-local",
       "uri": "repo://results/7c1f7ed/notes/delayed_sisu_perturbation_class_comparison.md"
     }
@@ -164,23 +164,15 @@
     "issues": [],
     "metadata": {
       "status_porcelain": [
-        "M results/40e1911/scripts/materialize_delayed_timing_hold_lane_velocity_profiles.py",
-        " M src/rlrmp/analysis/pipelines/hinf_phenotype_sidecar.py",
-        " M src/rlrmp/analysis/pipelines/sisu_spectrum_diagnostics.py",
-        " M tests/analysis/pipelines/test_hinf_phenotype_sidecar.py",
-        " M tests/analysis/pipelines/test_sisu_spectrum_diagnostics.py",
-        " M tests/test_delayed_reach_eval_bank.py",
-        "?? results/7c1f7ed/figures/delayed_sisu_velocity_profiles/spec.json",
-        "?? results/7c1f7ed/notes/delayed_sisu_perturbation_class_comparison.md",
-        "?? results/7c1f7ed/notes/delayed_sisu_velocity_profiles.md",
-        "?? results/7c1f7ed/scripts/materialize_delayed_sisu_hinf_sidecar.py",
-        "?? results/7c1f7ed/scripts/materialize_delayed_sisu_perturbation_comparison.py",
-        "?? results/7c1f7ed/scripts/materialize_delayed_sisu_velocity_profiles.py"
+        "M results/7c1f7ed/notes/delayed_sisu_perturbation_class_comparison.json",
+        " M results/7c1f7ed/notes/delayed_sisu_perturbation_class_comparison.md",
+        " M src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
+        " M tests/test_gru_perturbation_response.py"
       ]
     },
     "parents": [],
     "source_branch": "feature/7c1f7ed-delayed-sisu-spectrum",
-    "source_commit": "b2ce8a64e3dcd18ffc25fffc2a5d09d9e6910ebe",
+    "source_commit": "d48de65014795d6455a23aef46f38c80ab5c0b60",
     "source_repo": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__7c1f7ed-delayed-sisu-spectrum"
   },
   "schema_id": "feedbax.spec.regeneration",
@@ -197,8 +189,8 @@
       "metadata": {},
       "path": "src/rlrmp/analysis/pipelines/gru_perturbation_bank.py",
       "role": "source_file",
-      "sha256": "4ae0652240cfbbe7d9131ff4c49d3edfc4d1bd97ad8237e108a26665acd28be6",
-      "size_bytes": 196490
+      "sha256": "f7af534263fd3b2307bd95a2e104b2dad5249f17a032362f2a9f4099f7d948e1",
+      "size_bytes": 205824
     },
     {
       "metadata": {},
