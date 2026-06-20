@@ -31,6 +31,7 @@ from feedbax.training.train import (
 )
 
 from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path
+from rlrmp.train.progress import make_batch_log_callbacks
 
 # build_hps + loss-mode configs were extracted to rlrmp.train.standard in
 # 8404108 (capability-named library module; previously defined inline and
@@ -638,6 +639,16 @@ def run_training(args: argparse.Namespace) -> None:
         logger.info("APT enabled: %d inner steps, lr=%f, budget=%f", inner_steps, inner_lr, pert_budget)
 
     train_kwargs["pre_step_fn"] = pre_step_fn
+
+    # Grep-friendly per-batch progress for remote monitoring. feedbax fires
+    # these no-arg callbacks host-side (outside the JIT step), so they add no
+    # per-step device->host sync — same pattern as train_minimax.py's warmup
+    # phase. The loss is not visible to a no-arg callback, so lines report the
+    # batch index + elapsed only.
+    train_kwargs.setdefault(
+        "batch_callbacks",
+        make_batch_log_callbacks("train", n_batches, logger=logger),
+    )
 
     # Train
     logger.info("Starting training for %d batches", n_batches)

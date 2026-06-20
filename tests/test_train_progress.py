@@ -8,8 +8,10 @@ reading any JAX array (no per-step device->host sync is introduced).
 
 from __future__ import annotations
 
+import importlib.util
 import logging
 import re
+from pathlib import Path
 
 import pytest
 
@@ -22,6 +24,18 @@ from rlrmp.train.progress import (
     make_batch_log_callbacks,
     should_log_batch,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _load_script_module(module_name: str, file_path: Path):
+    """Import a script-style module by file path without executing as __main__."""
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load {module_name} from {file_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class TestBatchLogEvery:
@@ -118,3 +132,49 @@ class TestMakeBatchLogCallbacks:
         assert all(m.startswith(BATCH_LINE_TOKEN) for m in lines)
         assert any("phase=warmup" in m for m in lines)
         assert any("elapsed=" in m for m in lines)
+
+    def test_train_phase_callbacks_emit_lines(self, caplog) -> None:
+        """The ``train`` phase used by train_part2_5.py emits BATCH lines."""
+        log = logging.getLogger("test_progress_train")
+        callbacks = make_batch_log_callbacks("train", 5, logger=log)
+        with caplog.at_level(logging.INFO, logger="test_progress_train"):
+            for funcs in callbacks.values():
+                for func in funcs:
+                    func()
+        lines = [r.message for r in caplog.records]
+        assert lines
+        assert all(m.startswith(BATCH_LINE_TOKEN) for m in lines)
+        assert any("phase=train batch=" in m for m in lines)
+
+
+class TestTrainScriptWiring:
+    """Both training entry-points wire the zero-arg BATCH-progress callbacks.
+
+    FIX D / W5: ``train_part2_5.py`` must wire ``make_batch_log_callbacks`` into
+    its ``train_pair`` call, the same host-side pattern ``train_minimax.py``
+    already uses for its warmup phase — so neither path goes dark between the
+    JIT message and the completion sentinel, and no new per-step device->host
+    sync is introduced.
+    """
+
+    def test_minimax_imports_progress_helper(self) -> None:
+        module = _load_script_module(
+            "train_minimax_progress_wiring",
+            REPO_ROOT / "scripts" / "train_minimax.py",
+        )
+        assert hasattr(module, "make_batch_log_callbacks")
+
+    def test_part2_5_imports_progress_helper(self) -> None:
+        module = _load_script_module(
+            "train_part2_5_progress_wiring",
+            REPO_ROOT / "scripts" / "train_part2_5.py",
+        )
+        assert hasattr(module, "make_batch_log_callbacks")
+
+    def test_part2_5_run_training_wires_batch_callbacks(self) -> None:
+        """``run_training`` references the BATCH-progress helper + callbacks kwarg."""
+        source = (REPO_ROOT / "scripts" / "train_part2_5.py").read_text(
+            encoding="utf-8"
+        )
+        assert "make_batch_log_callbacks(" in source
+        assert "batch_callbacks" in source
