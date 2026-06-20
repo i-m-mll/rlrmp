@@ -460,6 +460,75 @@ class TestDerivedSpecDirMirrorInvariant:
         assert spec == run_spec_dir("part2_5", "foo")
 
 
+class TestDerivedSpecPathFlat:
+    """``derive_spec_path`` returns the canonical FLAT run-recipe file path.
+
+    W8/e926665: training scripts previously wrote the recipe to the legacy
+    nested ``results/<exp>/runs/<run>/run.json`` directory form. The recipe
+    must instead live at the flat ``results/<exp>/runs/<run>.json`` path
+    (``rlrmp.paths.run_spec_path``).
+    """
+
+    def test_part2_5_artifact_to_flat_recipe(self, train_part2_5_module) -> None:
+        artifact = run_artifact_dir("part2_5", "baseline__standard_12k")
+        spec = train_part2_5_module.derive_spec_path(artifact)
+        assert spec == run_spec_path("part2_5", "baseline__standard_12k")
+        assert spec.name == "baseline__standard_12k.json"
+        # No nested runs/<run>/run.json directory form.
+        assert spec.parent == run_spec_dir("part2_5", "baseline__standard_12k").parent
+
+    def test_minimax_artifact_to_flat_recipe(self, train_minimax_module) -> None:
+        artifact = run_artifact_dir("minimax", "seed_0")
+        spec = train_minimax_module.derive_spec_path(artifact)
+        assert spec == run_spec_path("minimax", "seed_0")
+        assert spec.name == "seed_0.json"
+
+    def test_relative_artifact_path_resolves_to_flat(
+        self, train_minimax_module
+    ) -> None:
+        spec = train_minimax_module.derive_spec_path(
+            Path("_artifacts/minimax/runs/foo")
+        )
+        assert spec == run_spec_path("minimax", "foo")
+
+    def test_flat_recipe_is_not_nested_run_json(
+        self, train_minimax_module
+    ) -> None:
+        artifact = run_artifact_dir("minimax", "seed_0")
+        spec = train_minimax_module.derive_spec_path(artifact)
+        nested = run_spec_dir("minimax", "seed_0") / "run.json"
+        assert spec != nested
+
+
+class TestDerivedSpecPathFallback:
+    """Out-of-tree paths map to a flat ``<output_dir>_spec.json`` sibling file.
+
+    The ``_spec`` suffix (inherited from ``derive_spec_dir``) keeps the flat
+    recipe file from colliding with an out-of-tree artifact directory of the
+    same name. The recipe is still a flat ``.json`` file, never nested.
+    """
+
+    def test_minimax_out_of_tree_path_uses_flat_sibling(
+        self, tmp_path, train_minimax_module
+    ) -> None:
+        out = tmp_path / "minirun"
+        out.mkdir()
+        spec = train_minimax_module.derive_spec_path(out)
+        assert spec.name == "minirun_spec.json"
+        assert spec.parent == out.parent
+        assert spec.suffix == ".json"
+
+    def test_part2_5_out_of_tree_path_uses_flat_sibling(
+        self, tmp_path, train_part2_5_module
+    ) -> None:
+        out = tmp_path / "myrun"
+        out.mkdir()
+        spec = train_part2_5_module.derive_spec_path(out)
+        assert spec.name == "myrun_spec.json"
+        assert spec.parent == out.parent
+        assert spec.suffix == ".json"
+
+
 class TestDerivedSpecDirFallback:
     """When ``output_dir`` is outside ``_artifacts/``, fall back to a sibling."""
 
