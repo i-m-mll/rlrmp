@@ -4336,6 +4336,39 @@
     "warmup_initial_learning_rate": 0.001,
     "weight_decay": 0.0
   },
+  "post_run_provenance": {
+    "feedbax": {
+      "branch": "develop",
+      "commit": "cd6a8c8564972056e65f6923c63e132819d4f166",
+      "dirty": false,
+      "remote": "https://github.com/i-m-mll/feedbax.git"
+    },
+    "feedbax_graph": {
+      "graph_manifest_path": "model.graph.manifest.json",
+      "graph_manifest_sha256": null,
+      "graph_spec_path": null,
+      "graph_spec_sha256": null,
+      "graph_spec_version": null
+    },
+    "feedbax_manifest_root": {
+      "absolute_path_sha256": "b77671c7b627828cba9a1085ed40ff599cd5cf43ea2a5191488007b3742986ab",
+      "env": "FEEDBAX_RUNS_DIR",
+      "path": "_artifacts/feedbax_runs"
+    },
+    "rlrmp": {
+      "branch": "feature/246182c-post-movement-cost-tail",
+      "commit": "6cf38983b01f394461f75c247094a9c0af772491",
+      "dirty": true,
+      "remote": "https://github.com/i-m-mll/rlrmp.git"
+    },
+    "schema_version": "rlrmp.post_run_provenance.v1",
+    "schemas": {
+      "feedbax_manifest": "feedbax.manifest.v1",
+      "feedbax_provider": "feedbax-provider.v1",
+      "post_run_provenance": "rlrmp.post_run_provenance.v1"
+    },
+    "tool": "scripts/post_run.sh"
+  },
   "provenance": {
     "dependencies": {
       "feedbax": "0.1.2",
