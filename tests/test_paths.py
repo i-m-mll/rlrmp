@@ -203,6 +203,7 @@ from rlrmp.paths import (  # noqa: E402
     REPO_ROOT as PATHS_REPO_ROOT,
     figure_artifact_dir,
     figure_spec_dir,
+    flat_run_spec_path,
     resolve_run_artifact_path,
     run_artifact_dir,
     run_spec_dir,
@@ -264,6 +265,30 @@ class TestRunSpecPath:
         assert (
             run_spec_path("abc1234", "run_a", repo_root=tmp_path)
             == tmp_path / "results" / "abc1234" / "runs" / "run_a.json"
+        )
+
+    def test_for_write_ignores_existing_legacy_spec(self, tmp_path: Path) -> None:
+        """The WRITER path never resolves to a legacy nested recipe.
+
+        W8/e926665: re-running training for a run whose legacy nested
+        ``results/<exp>/runs/<run>/run.json`` recipe still exists on disk must
+        write the flat ``results/<exp>/runs/<run>.json`` path, NOT overwrite the
+        non-canonical nested file (which the reader/resolver would return).
+        """
+        legacy = tmp_path / "results" / "abc1234" / "runs" / "run_a" / "run.json"
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text("{}", encoding="utf-8")
+
+        # The reader/resolver still finds the legacy recipe ...
+        assert run_spec_path("abc1234", "run_a", repo_root=tmp_path) == legacy
+        # ... but the writer always lands on the flat canonical path.
+        flat = tmp_path / "results" / "abc1234" / "runs" / "run_a.json"
+        assert (
+            run_spec_path("abc1234", "run_a", repo_root=tmp_path, for_write=True)
+            == flat
+        )
+        assert (
+            flat_run_spec_path("abc1234", "run_a", repo_root=tmp_path) == flat
         )
 
 
@@ -498,6 +523,48 @@ class TestDerivedSpecPathFlat:
         spec = train_minimax_module.derive_spec_path(artifact)
         nested = run_spec_dir("minimax", "seed_0") / "run.json"
         assert spec != nested
+
+    @pytest.mark.parametrize("module_fixture", ["minimax", "part2_5"])
+    def test_writer_ignores_preexisting_legacy_recipe(
+        self, module_fixture, train_minimax_module, train_part2_5_module
+    ) -> None:
+        """Writer resolves to the flat path even when a legacy recipe is present.
+
+        W8/e926665: the original defect was that ``derive_spec_path`` went
+        through the reader/resolver ``run_spec_path``, which returns the legacy
+        ``results/<exp>/runs/<run>/run.json`` recipe when it already exists on
+        disk. A re-run would then overwrite the non-canonical nested file. The
+        writer path must always land on the flat ``<run>.json`` recipe.
+        """
+        module = {
+            "minimax": train_minimax_module,
+            "part2_5": train_part2_5_module,
+        }[module_fixture]
+        exp = "zzz_test_legacy_writer"
+        run = "writer_run"
+        legacy = run_spec_dir(exp, run) / "run.json"
+        try:
+            legacy.parent.mkdir(parents=True, exist_ok=True)
+            legacy.write_text("{}", encoding="utf-8")
+            # Reader/resolver would point at the legacy recipe ...
+            assert run_spec_path(exp, run) == legacy
+            # ... but the script writer path lands on the flat recipe.
+            spec = module.derive_spec_path(run_artifact_dir(exp, run))
+            assert spec == flat_run_spec_path(exp, run)
+            assert spec.name == f"{run}.json"
+            assert spec != legacy
+        finally:
+            if legacy.exists():
+                legacy.unlink()
+            run_dir = run_spec_dir(exp, run)
+            if run_dir.exists():
+                run_dir.rmdir()
+            exp_runs = run_dir.parent
+            if exp_runs.exists() and not any(exp_runs.iterdir()):
+                exp_runs.rmdir()
+            exp_dir = exp_runs.parent
+            if exp_dir.exists() and not any(exp_dir.iterdir()):
+                exp_dir.rmdir()
 
 
 class TestDerivedSpecPathFallback:

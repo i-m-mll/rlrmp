@@ -422,8 +422,10 @@ def derive_spec_path(output_dir: Path) -> Path:
     except ValueError:
         return sidecar_dir.parent / (sidecar_dir.name + ".json")
     parts = rel.parts
+    # for_write=True forces the canonical flat path with no legacy fallback so
+    # re-training never overwrites a stale nested legacy recipe (W8/e926665).
     if len(parts) == 3 and parts[1] == "runs":
-        return run_spec_path(parts[0], parts[2])
+        return run_spec_path(parts[0], parts[2], for_write=True)
     return sidecar_dir.parent / (sidecar_dir.name + ".json")
 
 
