@@ -172,10 +172,18 @@ git commit -m "$message"
     fake_agent_commit.chmod(0o755)
 
     fake_mandible = bin_dir / "mandible"
+    checkpoint_record = Path(str(auth_record) + ".checkpoint")
     fake_mandible.write_text(
         f"""#!/usr/bin/env bash
 set -euo pipefail
-printf '%s\\n' "$*" > {str(auth_record)!r}
+# `mandible issue checkpoint add ... --payload-file -` reads JSON from stdin;
+# capture it separately. All other invocations (auth request) record their
+# args to the auth-record file.
+if [[ "$1" == "issue" && "$2" == "checkpoint" && "$3" == "add" ]]; then
+    {{ printf 'ARGS: %s\\n' "$*"; echo '---PAYLOAD---'; cat; }} > {str(checkpoint_record)!r}
+else
+    printf '%s\\n' "$*" > {str(auth_record)!r}
+fi
 """,
         encoding="utf-8",
     )
@@ -282,6 +290,108 @@ def test_local_fixture_syncs_spec_commits_and_records_auth(tmp_path: Path) -> No
     assert "auth request" in auth_args
     assert "--issue 731fdf7" in auth_args
     assert "--no-watch" in auth_args
+
+    # Exactly one terminal run-status checkpoint is emitted (W10/e8b5b3b).
+    checkpoint_record = Path(str(auth_record) + ".checkpoint")
+    assert checkpoint_record.is_file()
+    checkpoint_text = checkpoint_record.read_text(encoding="utf-8")
+    assert "issue checkpoint add 731fdf7 --kind run-status --payload-file -" in checkpoint_text
+    args_line, _, payload_text = checkpoint_text.partition("---PAYLOAD---")
+    assert "--kind run-status" in args_line
+    payload = json.loads(payload_text)
+    assert payload["kind"] == "run-status"
+    assert payload["schema_version"] == 1
+    assert payload["phase"] == "completed"
+    assert payload["run_id"] == "fixture__ok"
+    assert payload["run_spec_path"] == "results/731fdf7/runs/fixture__ok.json"
+    assert payload["artifact_dir"] == "_artifacts/731fdf7/runs/fixture__ok"
+    # metrics_summary references scalar summary fields, not hyperparameters.
+    assert payload["metrics_summary"]["completed_batches"] == 3
+    assert payload["metrics_summary"]["final_validation_loss"] == 0.125
+    assert "timestamp" in payload
+
+
+def test_dry_run_previews_run_status_checkpoint_without_writing(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    source = tmp_path / "source"
+    init_git_repo(repo)
+    write_run_source(source)
+
+    output = run_command(
+        [
+            "bash",
+            str(SCRIPT),
+            "--repo-root",
+            str(repo),
+            "--issue",
+            "731fdf7",
+            "--run",
+            "fixture__ok",
+            "--artifacts-src",
+            f"local:{source}",
+            "--dry-run",
+        ],
+        cwd=REPO_ROOT,
+    )
+
+    assert "Run-status checkpoint (preview, not written)" in output
+    assert "issue checkpoint add 731fdf7 --kind run-status --payload-file -" in output
+    # The previewed payload JSON is printed (kind + schema_version visible).
+    assert '"kind": "run-status"' in output
+    assert '"schema_version": 1' in output
+    assert '"phase": "completed"' in output
+    assert '"run_spec_path": "results/731fdf7/runs/fixture__ok.json"' in output
+    # Nothing is written on a dry run.
+    assert not (repo / "results").exists()
+    assert not (repo / "_artifacts").exists()
+
+
+def test_legacy_nested_run_spec_raises_explicit_error(tmp_path: Path) -> None:
+    """W8/e926665: a legacy nested results/<hash>/runs/<run>/run.json recipe is
+    refused with an explicit error rather than silently promoted to the flat
+    canonical path."""
+    repo = tmp_path / "repo"
+    bin_dir = tmp_path / "bin"
+    auth_record = tmp_path / "auth_args.txt"
+    init_git_repo(repo)
+    fake_agent_commit, fake_mandible = write_fake_commands(bin_dir, auth_record)
+
+    # Seed the artifact dir (with training_summary) and the LEGACY nested spec,
+    # but no flat recipe and no run.json in the artifact dir.
+    hash_ = "731fdf7"
+    artifact_dir = repo / "_artifacts" / hash_ / "runs" / "fixture__ok"
+    artifact_dir.mkdir(parents=True)
+    write_json(
+        artifact_dir / "training_summary.json",
+        {"completed_batches": 3, "final_validation_loss": 0.125},
+    )
+    legacy_spec = repo / "results" / hash_ / "runs" / "fixture__ok" / "run.json"
+    write_json(legacy_spec, {"run": "fixture__ok"})
+
+    env = os.environ.copy()
+    env["POST_RUN_AGENT_COMMIT"] = str(fake_agent_commit)
+    env["POST_RUN_MANDIBLE_AUTH"] = str(fake_mandible)
+
+    result = run_command_result(
+        [
+            "bash",
+            str(SCRIPT),
+            "--repo-root",
+            str(repo),
+            "--issue",
+            hash_,
+            "--run",
+            "fixture__ok",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    assert result.returncode != 0
+    assert "legacy nested run spec" in result.stdout
+    assert "fixture__ok/run.json" in result.stdout
+    assert not auth_record.exists()
+    assert not Path(str(auth_record) + ".checkpoint").exists()
 
 
 def test_rejects_unpinned_feedbax_runs_dir_before_writing(tmp_path: Path) -> None:

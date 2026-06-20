@@ -159,6 +159,88 @@ PY
     )
 }
 
+# Build the run-status checkpoint payload JSON (kind=run-status,
+# schema_version=1) on stdout. The payload references the tracked run.json by
+# repo-relative path and embeds only the scalar metrics summary — never the
+# run hyperparameters. See CLAUDE.md RunPod runbook §9 (run-status checkpoint
+# convention) and issue e8b5b3b.
+build_run_status_payload() {
+    local phase="$1"
+    local summary_path="$2"
+    (
+        cd "$SCRIPT_REPO_ROOT"
+        uv run --no-sync python - \
+            "$phase" "$RUN_LABEL" "$REPO_ROOT" "$SPEC_PATH" "$ARTIFACT_DIR" "$summary_path" <<'PY'
+from __future__ import annotations
+
+import datetime as _dt
+import json
+import math
+import sys
+from pathlib import Path
+from typing import Any
+
+phase = sys.argv[1]
+run_id = sys.argv[2]
+repo_root = Path(sys.argv[3]).resolve()
+spec_path = Path(sys.argv[4])
+artifact_dir = Path(sys.argv[5])
+summary_path = Path(sys.argv[6])
+
+
+def rel(path: Path) -> str:
+    abs_path = path if path.is_absolute() else (repo_root / path)
+    try:
+        return str(abs_path.resolve().relative_to(repo_root))
+    except ValueError:
+        return str(path)
+
+
+def scalar(value: Any) -> bool:
+    return value is None or isinstance(value, (str, int, float, bool))
+
+
+def clean(value: Any) -> Any:
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    return value
+
+
+metrics_summary: dict[str, Any] = {}
+if summary_path.is_file():
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    priority_keys = [
+        "training_mode",
+        "loss_objective",
+        "completed_batches",
+        "n_train_batches",
+        "best_batch",
+        "final_train_loss",
+        "final_validation_loss",
+        "best_validation_loss",
+        "validation_loss",
+        "training_duration_seconds",
+        "training_batches_per_second",
+    ]
+    for key in priority_keys:
+        if key in summary and scalar(summary[key]):
+            metrics_summary[key] = clean(summary[key])
+
+payload = {
+    "kind": "run-status",
+    "schema_version": 1,
+    "run_id": run_id,
+    "phase": phase,
+    "timestamp": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+    "artifact_dir": rel(artifact_dir),
+    "run_spec_path": rel(spec_path),
+    "metrics_summary": metrics_summary,
+}
+print(json.dumps(payload, indent=2, sort_keys=True))
+PY
+    )
+}
+
 run_post_run_contract() {
     local mode="$1"
     local input_spec_path="$2"
@@ -729,12 +811,16 @@ else
     mkdir -p "$RUNS_DIR"
     if [[ -f "$ARTIFACT_DIR/run.json" ]]; then
         cp "$ARTIFACT_DIR/run.json" "$SPEC_PATH"
-    elif [[ -f "$LEGACY_SPEC_DIR/run.json" ]]; then
-        cp "$LEGACY_SPEC_DIR/run.json" "$SPEC_PATH"
     elif [[ -f "$SPEC_PATH" ]]; then
         :
+    elif [[ -f "$LEGACY_SPEC_DIR/run.json" ]]; then
+        # A run that wrote its recipe to the legacy nested
+        # results/<hash>/runs/<run>/run.json path. The training scripts now
+        # emit the flat results/<hash>/runs/<run>.json recipe (W8/e926665), so
+        # this is a non-conforming run; refuse rather than silently promoting it.
+        die "legacy nested run spec at $LEGACY_SPEC_DIR/run.json; expected the flat recipe at $SPEC_PATH. Re-run training with the updated scripts (which write the flat path) or move the recipe to $SPEC_PATH before re-running post_run.sh."
     else
-        die "could not find run spec; expected $ARTIFACT_DIR/run.json or $LEGACY_SPEC_DIR/run.json"
+        die "could not find run spec; expected $ARTIFACT_DIR/run.json or $SPEC_PATH"
     fi
     (cd "$SCRIPT_REPO_ROOT" && uv run --no-sync python -m json.tool "$SPEC_PATH" >/dev/null)
     run_post_run_contract "write" "$INPUT_SPEC_PATH"
@@ -794,6 +880,27 @@ run_in_repo_or_print "$MANDIBLE" auth request "$BRANCH" \
     --issue "$ISSUE" \
     --spec "$AUTH_SPEC" \
     --no-watch
+
+# Terminal run-status checkpoint (exactly one per run; phase=completed). This
+# is the durable ledger marker a fresh session needs to tell a finished run
+# from an in-flight one. Transient poll/retry detail stays in chat/nohup logs.
+# See CLAUDE.md RunPod runbook §9 and issue e8b5b3b.
+echo
+if [[ "$DRY_RUN" -eq 1 ]]; then
+    echo "Run-status checkpoint (preview, not written)"
+    echo "  command: $MANDIBLE issue checkpoint add $ISSUE --kind run-status --payload-file -"
+    if [[ -f "$SUMMARY_PATH" ]]; then
+        build_run_status_payload "completed" "$SUMMARY_PATH"
+    else
+        echo "  (training_summary.json absent; payload metrics_summary would be empty)"
+        build_run_status_payload "completed" "$SUMMARY_PATH" 2>/dev/null || true
+    fi
+else
+    echo "Emitting terminal run-status checkpoint (phase=completed) on $ISSUE"
+    RUN_STATUS_PAYLOAD="$(build_run_status_payload "completed" "$SUMMARY_PATH")"
+    printf '%s\n' "$RUN_STATUS_PAYLOAD" \
+        | "$MANDIBLE" issue checkpoint add "$ISSUE" --kind run-status --payload-file -
+fi
 
 echo
 echo "Checklist: decide whether this run requires coordination comments on c99ad9d (training-methods) and/or 4d38c15 (analyses)."
