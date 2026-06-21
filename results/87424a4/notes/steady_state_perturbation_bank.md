@@ -6,8 +6,8 @@ This materialization probes GRU feedback sensitivity around a hold-at-target end
 ## Wash-In Contract
 
 - Fan-out policy: prefix_equivalent_batched_trials because the current Feedbax eval API does not expose a supported hidden-state resume hook.
-- Delayed rows use a 10-step pre-go prefix followed by post-go hold wash-in.
-- Undelayed rows use an immediate hold prefix on the validated trial horizon.
+- Delayed rows use a 10-step pre-go prefix followed by 30 post-go hold steps, then preserve a 50-step post-onset response window.
+- Undelayed rows use a 30-step immediate hold prefix and extend short hold-at-target validation trials when needed, rather than shortening the 50-step post-onset window.
 - Default pulse shape: 5 steps; position=0.1 m, velocity=0.5 m/s, force/filter=10.0.
 - Output, position, and velocity rows show primary aligned traces plus lower-emphasis orthogonal companion traces. The orthogonal trace uses the same signed direction rotated +90 degrees in the right-handed x-y plane.
 
@@ -30,8 +30,8 @@ This materialization probes GRU feedback sensitivity around a hold-at-target end
 
 | Condition | Response label | Baseline command | Peak output by family |
 |---|---:|---:|---|
-| SISU=0 | washin_endpoint_response | 1.307 | position=11.01, velocity=13.25, force_filter=15.49 |
-| SISU=1 | washin_endpoint_response | 1.397 | position=16.21, velocity=17.37, force_filter=18.6 |
+| SISU=0 | washin_endpoint_response | 0.6067 | position=7.524, velocity=15.87, force_filter=19.4 |
+| SISU=1 | washin_endpoint_response | 1.398 | position=19.89, velocity=21.63, force_filter=23.18 |
 
 ### `matched_020a65b_no_pgd_vs_pgd`
 
@@ -40,8 +40,8 @@ This materialization probes GRU feedback sensitivity around a hold-at-target end
 
 | Condition | Response label | Baseline command | Peak output by family |
 |---|---:|---:|---|
-| No PGD | washin_endpoint_response | 3.957 | position=7.842, velocity=15.78, force_filter=22.86 |
-| PGD | washin_endpoint_response | 1.384 | position=11.92, velocity=13.63, force_filter=20.43 |
+| No PGD | washin_endpoint_response | 1.637 | position=12.04, velocity=18.67, force_filter=26.18 |
+| PGD | washin_endpoint_response | 0.9042 | position=23.48, velocity=23.43, force_filter=27.98 |
 
 ### `matched_020a65b_h0_no_pgd_vs_pgd`
 
@@ -50,7 +50,7 @@ This materialization probes GRU feedback sensitivity around a hold-at-target end
 
 | Condition | Response label | Baseline command | Peak output by family |
 |---|---:|---:|---|
-| No PGD H0 | washin_endpoint_response | 3.904 | position=2.455, velocity=9.221, force_filter=10.96 |
-| PGD H0 | washin_endpoint_response | 0.7439 | position=14.15, velocity=16, force_filter=18.24 |
+| No PGD H0 | washin_endpoint_response | 3.318 | position=2.594, velocity=10.58, force_filter=13.02 |
+| PGD H0 | washin_endpoint_response | 0.8743 | position=17.99, velocity=19.43, force_filter=21.06 |
 
 <!-- /AUTO-GENERATED -->

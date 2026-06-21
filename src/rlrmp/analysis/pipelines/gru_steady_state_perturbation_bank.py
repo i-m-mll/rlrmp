@@ -11,6 +11,7 @@ from typing import Any, Literal
 import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
+import jax.tree as jt
 import numpy as np
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
 from feedbax.plot import save_figure
@@ -44,7 +45,7 @@ from rlrmp.train.task_model import setup_task_model_pair
 SCHEMA_VERSION = "rlrmp.gru_steady_state_perturbation_bank.v1"
 ISSUE = "87424a4"
 DEFAULT_PRE_GO_STEPS = 10
-DEFAULT_POST_GO_WASHIN_STEPS = 50
+DEFAULT_POST_GO_WASHIN_STEPS = 30
 DEFAULT_PULSE_DURATION_STEPS = 5
 DEFAULT_FINAL_WINDOW_STEPS = 10
 DEFAULT_N_ROLLOUT_TRIALS = 4
@@ -350,6 +351,7 @@ def evaluate_comparison(
             delayed=delayed,
             target_position=np.asarray(_target_position(run, base_trials), dtype=np.float64),
             pulse_duration_steps=pulse_duration_steps,
+            min_post_onset_steps=DEFAULT_POST_ONSET_FIGURE_STEPS,
         )
         steady_trials = pad_feedback_offset_inputs(
             steady_trials,
@@ -430,39 +432,61 @@ def make_steady_state_trial_specs(
     pre_go_steps: int = DEFAULT_PRE_GO_STEPS,
     post_go_washin_steps: int = DEFAULT_POST_GO_WASHIN_STEPS,
     pulse_duration_steps: int = DEFAULT_PULSE_DURATION_STEPS,
+    min_post_onset_steps: int | None = None,
 ) -> tuple[Any, dict[str, Any]]:
     """Return trial specs initialized at the target with a steady-state wash-in prefix."""
 
     updated = set_mechanics_vector_to_target(trial_specs, target_position)
     updated = set_target_streams_to_constant(updated, target_position)
     updated = zero_disturbance_payload(updated)
+    original_horizon = _trial_horizon(updated)
+    nominal_pre_go_steps = pre_go_steps if delayed else 0
+    nominal_pulse_start = int(nominal_pre_go_steps + post_go_washin_steps)
+    horizon_extension = {"extended": False, "original_horizon_steps": int(original_horizon)}
+    if min_post_onset_steps is not None:
+        min_horizon = int(nominal_pulse_start) + int(min_post_onset_steps)
+        updated, horizon_extension = extend_trial_specs_to_horizon(
+            updated,
+            min_horizon_steps=min_horizon,
+        )
     horizon = _trial_horizon(updated)
     if delayed:
         effective_pre_go = min(pre_go_steps, max(horizon - 1, 0))
         updated = set_delayed_go_cue(updated, pre_go_steps=effective_pre_go)
-        requested_pulse_start = min(
+        horizon_clamped_pulse_start = min(
             effective_pre_go + post_go_washin_steps,
             max(horizon - 1, 0),
         )
         washin_policy = "10_pre_go_then_post_go_hold_prefix"
     else:
         effective_pre_go = 0
-        requested_pulse_start = min(post_go_washin_steps, max(horizon - 1, 0))
+        horizon_clamped_pulse_start = min(post_go_washin_steps, max(horizon - 1, 0))
         washin_policy = "immediate_hold_prefix"
     pulse_start = _figure_compatible_pulse_start(
-        requested_pulse_start,
+        horizon_clamped_pulse_start,
         horizon_steps=horizon,
     )
     response_steps = max(horizon - pulse_start, 0)
     return updated, {
         "horizon_steps": int(horizon),
+        "original_horizon_steps": int(original_horizon),
+        "pre_go_steps_requested": int(nominal_pre_go_steps),
         "pre_go_steps": int(effective_pre_go),
         "post_go_washin_steps_requested": int(post_go_washin_steps),
         "post_go_washin_steps_actual": int(max(pulse_start - effective_pre_go, 0)),
-        "pulse_start_step_requested": int(requested_pulse_start),
+        "horizon_extension": horizon_extension,
+        "pulse_start_step_nominal": int(nominal_pulse_start),
+        "pulse_start_step_requested": int(nominal_pulse_start),
+        "pulse_start_step_requested_meaning": (
+            "legacy compatibility key; nominal onset before horizon/window clamping"
+        ),
+        "pulse_start_step_horizon_clamped": int(horizon_clamped_pulse_start),
         "pulse_start_step": int(pulse_start),
         "pulse_duration_steps": int(min(max(pulse_duration_steps, 1), max(response_steps, 1))),
         "response_steps": int(response_steps),
+        "post_onset_steps_requested": (
+            None if min_post_onset_steps is None else int(min_post_onset_steps)
+        ),
         "post_onset_steps_available": int(response_steps),
         "washin_policy": washin_policy,
         "fanout_policy": (
@@ -471,6 +495,83 @@ def make_steady_state_trial_specs(
             "wash-in prefix and zero-noise inputs inside the same materialization pass."
         ),
     }
+
+
+def extend_trial_specs_to_horizon(
+    trial_specs: Any,
+    *,
+    min_horizon_steps: int,
+) -> tuple[Any, dict[str, Any]]:
+    """Extend time-indexed trial-spec leaves by holding their final time value."""
+
+    current_horizon = _trial_horizon(trial_specs)
+    if current_horizon >= min_horizon_steps:
+        return trial_specs, {
+            "extended": False,
+            "original_horizon_steps": int(current_horizon),
+            "horizon_steps": int(current_horizon),
+            "min_horizon_steps": int(min_horizon_steps),
+        }
+
+    def extend_leaf(leaf: Any) -> Any:
+        shape = getattr(leaf, "shape", None)
+        if shape is None or len(shape) < 2:
+            return leaf
+        if int(shape[1]) == current_horizon:
+            return _pad_time_axis_with_final_value(leaf, min_horizon_steps)
+        if int(shape[1]) == current_horizon - 1:
+            return _pad_time_axis_with_final_value(leaf, min_horizon_steps - 1)
+        return leaf
+
+    updated = jt.map(extend_leaf, trial_specs)
+    updated = _extend_timeline_to_horizon(
+        updated,
+        original_horizon=current_horizon,
+        min_horizon_steps=min_horizon_steps,
+    )
+    return updated, {
+        "extended": True,
+        "original_horizon_steps": int(current_horizon),
+        "horizon_steps": int(min_horizon_steps),
+        "min_horizon_steps": int(min_horizon_steps),
+        "policy": "pad_time_axis_with_final_value_for_hold_at_target_endpoint_eval",
+    }
+
+
+def _pad_time_axis_with_final_value(leaf: Any, target_steps: int) -> Any:
+    """Pad axis 1 to ``target_steps`` by repeating the final slice."""
+
+    current_steps = int(leaf.shape[1])
+    if current_steps >= target_steps:
+        return leaf
+    pad_count = int(target_steps - current_steps)
+    final = leaf[:, -1:, ...]
+    padding = jnp.repeat(final, pad_count, axis=1)
+    return jnp.concatenate([leaf, padding.astype(leaf.dtype)], axis=1)
+
+
+def _extend_timeline_to_horizon(
+    trial_specs: Any,
+    *,
+    original_horizon: int,
+    min_horizon_steps: int,
+) -> Any:
+    """Update optional timeline metadata when it uses the old horizon endpoint."""
+
+    timeline = getattr(trial_specs, "timeline", None)
+    if timeline is None:
+        return trial_specs
+    updated = trial_specs
+    if getattr(timeline, "n_steps", None) is not None:
+        updated = eqx.tree_at(lambda ts: ts.timeline.n_steps, updated, int(min_horizon_steps))
+        timeline = updated.timeline
+    epoch_bounds = getattr(timeline, "epoch_bounds", None)
+    if epoch_bounds is not None:
+        bounds = jnp.asarray(epoch_bounds)
+        if bool(np.all(np.asarray(bounds[..., -1]) == int(original_horizon))):
+            new_bounds = bounds.at[..., -1].set(int(min_horizon_steps))
+            updated = eqx.tree_at(lambda ts: ts.timeline.epoch_bounds, updated, new_bounds)
+    return updated
 
 
 def _figure_compatible_pulse_start(requested_pulse_start: int, *, horizon_steps: int) -> int:
@@ -1110,8 +1211,15 @@ def render_summary_markdown(manifest: Mapping[str, Any]) -> str:
         "## Wash-In Contract",
         "",
         f"- Fan-out policy: {manifest['washin_contract']['fanout_policy']}",
-        "- Delayed rows use a 10-step pre-go prefix followed by post-go hold wash-in.",
-        "- Undelayed rows use an immediate hold prefix on the validated trial horizon.",
+        (
+            "- Delayed rows use a 10-step pre-go prefix followed by 30 post-go hold "
+            "steps, then preserve a 50-step post-onset response window."
+        ),
+        (
+            "- Undelayed rows use a 30-step immediate hold prefix and extend short "
+            "hold-at-target validation trials when needed, rather than shortening "
+            "the 50-step post-onset window."
+        ),
         (
             "- Default pulse shape: "
             f"{manifest['pulse_duration_steps']} steps; "

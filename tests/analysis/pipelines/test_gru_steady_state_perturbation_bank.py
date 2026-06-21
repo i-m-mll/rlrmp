@@ -118,6 +118,53 @@ def test_pulse_start_preserves_default_post_onset_window_when_possible() -> None
     assert timing["post_onset_steps_available"] == 50
 
 
+def test_undelayed_washin_extends_short_hold_trials_to_keep_recovery_window() -> None:
+    trials = _trial_spec(horizon=60, feedback_dim=6)
+
+    updated, timing = make_steady_state_trial_specs(
+        trials,
+        delayed=False,
+        target_position=np.array([0.0, 0.0]),
+        post_go_washin_steps=30,
+        min_post_onset_steps=50,
+    )
+
+    assert timing["pulse_start_step_requested"] == 30
+    assert timing["pulse_start_step_requested_meaning"].startswith("legacy compatibility")
+    assert timing["pulse_start_step_horizon_clamped"] == 30
+    assert timing["pulse_start_step"] == 30
+    assert timing["post_go_washin_steps_actual"] == 30
+    assert timing["post_onset_steps_available"] == 50
+    assert timing["horizon_steps"] == 80
+    assert timing["horizon_extension"]["extended"] is True
+    assert timing["horizon_extension"]["original_horizon_steps"] == 60
+    assert np.asarray(updated.inputs["target"]).shape[1] == 80
+    assert np.asarray(updated.inputs["input"]).shape[1] == 79
+    assert np.asarray(updated.inputs["epsilon"]).shape[1] == 79
+    assert np.asarray(updated.inputs["task"].hold).shape[1] == 79
+
+
+def test_delayed_washin_keeps_pre_go_plus_post_go_hold_timing() -> None:
+    trials = _trial_spec(horizon=90, feedback_dim=6)
+
+    _, timing = make_steady_state_trial_specs(
+        trials,
+        delayed=True,
+        target_position=np.array([0.0, 0.0]),
+        pre_go_steps=10,
+        post_go_washin_steps=30,
+        min_post_onset_steps=50,
+    )
+
+    assert timing["pre_go_steps"] == 10
+    assert timing["post_go_washin_steps_actual"] == 30
+    assert timing["pulse_start_step_requested"] == 40
+    assert timing["pulse_start_step_horizon_clamped"] == 40
+    assert timing["pulse_start_step"] == 40
+    assert timing["post_onset_steps_available"] == 50
+    assert timing["horizon_extension"]["extended"] is False
+
+
 def test_direction_aligned_aggregation_and_antisymmetry() -> None:
     rows = [
         _row("position", (1.0, 0.0), [1.0, 0.5]),
