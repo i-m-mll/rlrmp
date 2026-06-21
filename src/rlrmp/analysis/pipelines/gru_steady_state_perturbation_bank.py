@@ -687,13 +687,27 @@ def summarize_feedback_row(
         signed_direction,
         axes=([-1], [0]),
     )
+    orthogonal_position = np.tensordot(
+        perturbed.position - base.position,
+        orthogonal_direction,
+        axes=([-1], [0]),
+    )
     aligned_velocity = np.tensordot(
         perturbed.velocity - base.velocity,
         signed_direction,
         axes=([-1], [0]),
     )
+    orthogonal_velocity = np.tensordot(
+        perturbed.velocity - base.velocity,
+        orthogonal_direction,
+        axes=([-1], [0]),
+    )
     response = aligned_command[:, :, pulse_start:]
     orthogonal_response = orthogonal_command[:, :, pulse_start:]
+    position_response = aligned_position[:, :, pulse_start:]
+    orthogonal_position_response = orthogonal_position[:, :, pulse_start:]
+    velocity_response = aligned_velocity[:, :, pulse_start:]
+    orthogonal_velocity_response = orthogonal_velocity[:, :, pulse_start:]
     command_window, relative_steps = _mean_onset_window(
         aligned_command,
         pulse_start=pulse_start,
@@ -706,8 +720,16 @@ def summarize_feedback_row(
         aligned_position,
         pulse_start=pulse_start,
     )
+    orthogonal_position_window, _ = _mean_onset_window(
+        orthogonal_position,
+        pulse_start=pulse_start,
+    )
     velocity_window, _ = _mean_onset_window(
         aligned_velocity,
+        pulse_start=pulse_start,
+    )
+    orthogonal_velocity_window, _ = _mean_onset_window(
+        orthogonal_velocity,
         pulse_start=pulse_start,
     )
     action_norm = np.linalg.norm(delta_command[:, :, pulse_start:, :], axis=-1)
@@ -734,11 +756,29 @@ def summarize_feedback_row(
         "orthogonal_output_profile": [
             float(value) for value in np.mean(orthogonal_response, axis=(0, 1))
         ],
+        "aligned_position_profile": [
+            float(value) for value in np.mean(position_response, axis=(0, 1))
+        ],
+        "orthogonal_position_profile": [
+            float(value) for value in np.mean(orthogonal_position_response, axis=(0, 1))
+        ],
+        "aligned_velocity_profile": [
+            float(value) for value in np.mean(velocity_response, axis=(0, 1))
+        ],
+        "orthogonal_velocity_profile": [
+            float(value) for value in np.mean(orthogonal_velocity_response, axis=(0, 1))
+        ],
         "relative_time_steps": [int(value) for value in relative_steps],
         "aligned_output_window_profile": [float(value) for value in command_window],
         "orthogonal_output_window_profile": [float(value) for value in orthogonal_command_window],
         "aligned_position_window_profile": [float(value) for value in position_window],
+        "orthogonal_position_window_profile": [
+            float(value) for value in orthogonal_position_window
+        ],
         "aligned_velocity_window_profile": [float(value) for value in velocity_window],
+        "orthogonal_velocity_window_profile": [
+            float(value) for value in orthogonal_velocity_window
+        ],
         "metrics": {
             "peak_output_response": float(peak_abs(response)),
             "peak_orthogonal_output_response": float(peak_abs(orthogonal_response)),
@@ -754,7 +794,9 @@ def summarize_feedback_row(
             "hidden_delta_peak": float(peak_abs(hidden_norm)),
             "output_norm_peak": float(peak_abs(action_norm)),
             "peak_position_m": float(peak_abs(position_window)),
+            "peak_orthogonal_position_m": float(peak_abs(orthogonal_position_window)),
             "peak_velocity_m_s": float(peak_abs(velocity_window)),
+            "peak_orthogonal_velocity_m_s": float(peak_abs(orthogonal_velocity_window)),
         },
     }
 
@@ -769,37 +811,10 @@ def aggregate_family_profiles(rows: Sequence[Mapping[str, Any]]) -> dict[str, An
         groups.setdefault(str(row["family"]), []).append(row)
     summary: dict[str, Any] = {}
     for family, family_rows in groups.items():
-        profiles = np.asarray(
-            [row["aligned_output_profile"] for row in family_rows], dtype=np.float64
-        )
-        orthogonal_profiles = np.asarray(
-            [row["orthogonal_output_profile"] for row in family_rows], dtype=np.float64
-        )
-        mean_profile = np.mean(profiles, axis=0)
-        orthogonal_mean_profile = np.mean(orthogonal_profiles, axis=0)
         pair_scores = signed_pair_antisymmetry(family_rows)
         metrics = [row["metrics"] for row in family_rows if isinstance(row.get("metrics"), Mapping)]
         summary[family] = {
             "n_rows": int(len(family_rows)),
-            "aligned_output_profile_mean": [float(value) for value in mean_profile],
-            "aligned_output_profile_sem": [
-                float(value)
-                for value in (
-                    np.std(profiles, axis=0, ddof=1) / np.sqrt(profiles.shape[0])
-                    if profiles.shape[0] > 1
-                    else np.zeros_like(mean_profile)
-                )
-            ],
-            "orthogonal_output_profile_mean": [float(value) for value in orthogonal_mean_profile],
-            "orthogonal_output_profile_sem": [
-                float(value)
-                for value in (
-                    np.std(orthogonal_profiles, axis=0, ddof=1)
-                    / np.sqrt(orthogonal_profiles.shape[0])
-                    if orthogonal_profiles.shape[0] > 1
-                    else np.zeros_like(orthogonal_mean_profile)
-                )
-            ],
             "peak_output_response": float(
                 np.mean([metric["peak_output_response"] for metric in metrics])
             ),
@@ -820,8 +835,23 @@ def aggregate_family_profiles(rows: Sequence[Mapping[str, Any]]) -> dict[str, An
             ),
             "signed_pair_antisymmetry": pair_scores,
         }
+        summary[family].update(_aggregate_profiles(family_rows))
         summary[family].update(_aggregate_window_profiles(family_rows))
     return summary
+
+
+def _aggregate_profiles(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Return mean/SEM traces for post-onset response profiles."""
+
+    profile_keys = (
+        "aligned_output_profile",
+        "orthogonal_output_profile",
+        "aligned_position_profile",
+        "orthogonal_position_profile",
+        "aligned_velocity_profile",
+        "orthogonal_velocity_profile",
+    )
+    return _mean_sem_profile_fields(rows, profile_keys)
 
 
 def _aggregate_window_profiles(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
@@ -839,8 +869,23 @@ def _aggregate_window_profiles(rows: Sequence[Mapping[str, Any]]) -> dict[str, A
         "aligned_output_window_profile",
         "orthogonal_output_window_profile",
         "aligned_position_window_profile",
+        "orthogonal_position_window_profile",
         "aligned_velocity_window_profile",
+        "orthogonal_velocity_window_profile",
     )
+    return output | _mean_sem_profile_fields(rows, profile_keys)
+
+
+def _mean_sem_profile_fields(
+    rows: Sequence[Mapping[str, Any]],
+    profile_keys: Sequence[str],
+) -> dict[str, Any]:
+    """Return mean/SEM fields for profile keys present on row dictionaries."""
+
+    output: dict[str, Any] = {}
+    if not rows:
+        return output
+    first = rows[0]
     for key in profile_keys:
         if key not in first:
             fallback = "aligned_output_profile"
@@ -919,9 +964,19 @@ def build_response_figure(
 
     families = ("position", "velocity", "force_filter")
     row_specs = (
-        ("aligned_output_window_profile", "Output", None),
-        ("aligned_position_window_profile", "Position (m)", "m"),
-        ("aligned_velocity_window_profile", "Velocity (m/s)", "m/s"),
+        ("aligned_output_window_profile", "orthogonal_output_window_profile", "Output", None),
+        (
+            "aligned_position_window_profile",
+            "orthogonal_position_window_profile",
+            "Position (m)",
+            "m",
+        ),
+        (
+            "aligned_velocity_window_profile",
+            "orthogonal_velocity_window_profile",
+            "Velocity (m/s)",
+            "m/s",
+        ),
     )
     fig = make_subplots(
         rows=3,
@@ -942,7 +997,7 @@ def build_response_figure(
         vertical_spacing=0.055,
     )
     for col, family in enumerate(families, start=1):
-        for row_index, (profile_key, _, _) in enumerate(row_specs, start=1):
+        for row_index, (profile_key, orthogonal_profile_key, _, _) in enumerate(row_specs, start=1):
             for idx, condition in enumerate(conditions.values()):
                 family_summary = condition.get("family_summary", {}).get(family)
                 if not family_summary:
@@ -980,9 +1035,9 @@ def build_response_figure(
                     row=row_index,
                     col=col,
                 )
-                if row_index == 1:
+                if f"{orthogonal_profile_key}_mean" in family_summary:
                     orthogonal_y = np.asarray(
-                        family_summary["orthogonal_output_window_profile_mean"],
+                        family_summary[f"{orthogonal_profile_key}_mean"],
                         dtype=float,
                     )
                     fig.add_trace(
@@ -993,11 +1048,11 @@ def build_response_figure(
                             line={
                                 "color": _rgba(color, 0.60),
                                 "width": 1.6,
-                                "dash": "dot",
+                                "dash": "solid",
                             },
                             name=f"{label} orthogonal",
                             legendgroup=f"{label} orthogonal",
-                            showlegend=col == 1,
+                            showlegend=(col, row_index) == (1, 1),
                         ),
                         row=row_index,
                         col=col,
@@ -1034,7 +1089,7 @@ def build_response_figure(
         },
         hovermode="x unified",
     )
-    for row_index, (_, title, _) in enumerate(row_specs, start=1):
+    for row_index, (_, _, title, _) in enumerate(row_specs, start=1):
         fig.update_yaxes(title_text=title, row=row_index, col=1)
         for col in (2, 3):
             fig.update_yaxes(title_text=None, row=row_index, col=col)
@@ -1065,9 +1120,9 @@ def render_summary_markdown(manifest: Mapping[str, Any]) -> str:
             f"force/filter={manifest['feedback_offset_scales']['force_filter']}."
         ),
         (
-            "- Output row: aligned command is the signed projection onto the perturbation "
-            "direction; the companion orthogonal trace uses the same signed direction "
-            "rotated +90 degrees in the right-handed x-y plane."
+            "- Output, position, and velocity rows show primary aligned traces plus "
+            "lower-emphasis orthogonal companion traces. The orthogonal trace uses the "
+            "same signed direction rotated +90 degrees in the right-handed x-y plane."
         ),
         "",
         "## Comparisons",
@@ -1269,8 +1324,8 @@ def _response_window_contract() -> dict[str, Any]:
         },
         "rows": [
             "network output aligned with perturbation direction plus lower-emphasis orthogonal companion traces",
-            "point-mass position along aligned perturbation direction",
-            "point-mass velocity along aligned perturbation direction",
+            "point-mass position along aligned perturbation direction plus lower-emphasis orthogonal companion traces",
+            "point-mass velocity along aligned perturbation direction plus lower-emphasis orthogonal companion traces",
         ],
     }
 

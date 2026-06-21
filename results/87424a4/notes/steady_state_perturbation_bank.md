@@ -9,7 +9,7 @@ This materialization probes GRU feedback sensitivity around a hold-at-target end
 - Delayed rows use a 10-step pre-go prefix followed by post-go hold wash-in.
 - Undelayed rows use an immediate hold prefix on the validated trial horizon.
 - Default pulse shape: 5 steps; position=0.1 m, velocity=0.5 m/s, force/filter=10.0.
-- Output row: aligned command is the signed projection onto the perturbation direction; the companion orthogonal trace uses the same signed direction rotated +90 degrees in the right-handed x-y plane.
+- Output, position, and velocity rows show primary aligned traces plus lower-emphasis orthogonal companion traces. The orthogonal trace uses the same signed direction rotated +90 degrees in the right-handed x-y plane.
 
 ## Comparisons
 

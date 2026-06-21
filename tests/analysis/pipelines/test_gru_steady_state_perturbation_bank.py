@@ -7,6 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from rlrmp.analysis.pipelines.gru_steady_state_perturbation_bank import (
+    FeedbackPerturbation,
     aggregate_family_profiles,
     build_response_figure,
     default_feedback_perturbations,
@@ -15,7 +16,9 @@ from rlrmp.analysis.pipelines.gru_steady_state_perturbation_bank import (
     pad_feedback_offset_inputs,
     right_handed_orthogonal_direction,
     signed_pair_antisymmetry,
+    summarize_feedback_row,
 )
+from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluation
 
 
 class CartesianState(eqx.Module):
@@ -143,7 +146,9 @@ def test_family_aggregation_preserves_onset_window_rows() -> None:
             output_window=[0.0, 1.0, 0.5],
             orthogonal_window=[0.0, 0.1, 0.2],
             position_window=[0.0, 0.1, 0.2],
+            orthogonal_position_window=[0.0, -0.1, -0.2],
             velocity_window=[0.0, 0.3, 0.1],
+            orthogonal_velocity_window=[0.0, -0.3, -0.1],
         ),
         _row(
             "velocity",
@@ -153,7 +158,9 @@ def test_family_aggregation_preserves_onset_window_rows() -> None:
             output_window=[0.0, 1.2, 0.7],
             orthogonal_window=[0.0, 0.3, 0.4],
             position_window=[0.0, 0.2, 0.4],
+            orthogonal_position_window=[0.0, -0.2, -0.4],
             velocity_window=[0.0, 0.4, 0.2],
+            orthogonal_velocity_window=[0.0, -0.4, -0.2],
         ),
     ]
 
@@ -170,10 +177,50 @@ def test_family_aggregation_preserves_onset_window_rows() -> None:
         [0.0, 0.1, 0.1],
     )
     np.testing.assert_allclose(summary["aligned_position_window_profile_mean"], [0.0, 0.15, 0.3])
+    np.testing.assert_allclose(
+        summary["orthogonal_position_window_profile_mean"],
+        [0.0, -0.15, -0.3],
+    )
     np.testing.assert_allclose(summary["aligned_velocity_window_profile_mean"], [0.0, 0.35, 0.15])
+    np.testing.assert_allclose(
+        summary["orthogonal_velocity_window_profile_mean"],
+        [0.0, -0.35, -0.15],
+    )
 
 
-def test_response_figure_adds_lower_emphasis_orthogonal_output_traces() -> None:
+def test_summarize_feedback_row_stores_orthogonal_plant_projections() -> None:
+    base = _rollout_evaluation()
+    perturbed = _rollout_evaluation(
+        command_delta=[[[[0.0, 0.0], [1.0, 10.0], [2.0, 20.0]]]],
+        position_delta=[[[[0.0, 0.0], [3.0, 30.0], [4.0, 40.0]]]],
+        velocity_delta=[[[[0.0, 0.0], [5.0, 50.0], [6.0, 60.0]]]],
+    )
+    perturbation = FeedbackPerturbation(
+        perturbation_id="position_x_pos",
+        family="position",
+        feedback_indices=(0, 1),
+        direction=(1.0, 0.0),
+        amplitude=0.1,
+        units="m",
+        sign=1,
+    )
+
+    row = summarize_feedback_row(
+        perturbation=perturbation,
+        base=base,
+        perturbed=perturbed,
+        pulse_start=1,
+    )
+
+    np.testing.assert_allclose(row["orthogonal_output_profile"], [10.0, 20.0])
+    np.testing.assert_allclose(row["orthogonal_position_profile"], [30.0, 40.0])
+    np.testing.assert_allclose(row["orthogonal_velocity_profile"], [50.0, 60.0])
+    np.testing.assert_allclose(row["orthogonal_position_window_profile"], [0.0, 30.0, 40.0])
+    np.testing.assert_allclose(row["orthogonal_velocity_window_profile"], [0.0, 50.0, 60.0])
+    assert row["projection_basis"]["orthogonal_convention"] == "right_handed_plus_90_degrees_xy"
+
+
+def test_response_figure_adds_solid_lower_emphasis_orthogonal_traces_to_all_rows() -> None:
     conditions = {
         "a": {
             "label": "A",
@@ -199,9 +246,12 @@ def test_response_figure_adds_lower_emphasis_orthogonal_output_traces() -> None:
         "B aligned",
         "B orthogonal",
     ]
-    orthogonal_trace = next(trace for trace in figure.data if trace.name == "A orthogonal")
-    assert orthogonal_trace.line.dash == "dot"
-    assert "0.6" in orthogonal_trace.line.color
+    orthogonal_traces = [trace for trace in figure.data if trace.name == "A orthogonal"]
+    assert len(orthogonal_traces) == 3
+    for trace in orthogonal_traces:
+        assert trace.line.dash == "solid"
+        assert trace.line.width < 2.1
+        assert "0.6" in trace.line.color
 
 
 def test_feedback_offset_padding_preserves_existing_components() -> None:
@@ -255,7 +305,9 @@ def _row(
     orthogonal_profile: list[float] | None = None,
     orthogonal_window: list[float] | None = None,
     position_window: list[float] | None = None,
+    orthogonal_position_window: list[float] | None = None,
     velocity_window: list[float] | None = None,
+    orthogonal_velocity_window: list[float] | None = None,
 ) -> dict[str, object]:
     row = {
         "status": "evaluated",
@@ -267,6 +319,12 @@ def _row(
             if orthogonal_profile is not None
             else [0.1 * value for value in profile]
         ),
+        "aligned_position_profile": position_window or profile,
+        "orthogonal_position_profile": orthogonal_position_window
+        or [0.01 * value for value in profile],
+        "aligned_velocity_profile": velocity_window or profile,
+        "orthogonal_velocity_profile": orthogonal_velocity_window
+        or [0.02 * value for value in profile],
         "metrics": {
             "peak_output_response": max(abs(value) for value in profile),
             "peak_orthogonal_output_response": max(
@@ -297,8 +355,12 @@ def _row(
         row["orthogonal_output_window_profile"] = orthogonal_window
     if position_window is not None:
         row["aligned_position_window_profile"] = position_window
+    if orthogonal_position_window is not None:
+        row["orthogonal_position_window_profile"] = orthogonal_position_window
     if velocity_window is not None:
         row["aligned_velocity_window_profile"] = velocity_window
+    if orthogonal_velocity_window is not None:
+        row["orthogonal_velocity_window_profile"] = orthogonal_velocity_window
     return row
 
 
@@ -311,6 +373,34 @@ def _family_summary() -> dict[str, object]:
         "orthogonal_output_window_profile_sem": [0.0, 0.02, 0.01],
         "aligned_position_window_profile_mean": [0.0, 0.1, 0.2],
         "aligned_position_window_profile_sem": [0.0, 0.01, 0.02],
+        "orthogonal_position_window_profile_mean": [0.0, -0.1, -0.2],
+        "orthogonal_position_window_profile_sem": [0.0, 0.01, 0.02],
         "aligned_velocity_window_profile_mean": [0.0, 0.2, 0.1],
         "aligned_velocity_window_profile_sem": [0.0, 0.02, 0.01],
+        "orthogonal_velocity_window_profile_mean": [0.0, -0.2, -0.1],
+        "orthogonal_velocity_window_profile_sem": [0.0, 0.02, 0.01],
     }
+
+
+def _rollout_evaluation(
+    *,
+    command_delta: list[list[list[list[float]]]] | None = None,
+    position_delta: list[list[list[list[float]]]] | None = None,
+    velocity_delta: list[list[list[list[float]]]] | None = None,
+) -> RolloutEvaluation:
+    zeros_2d = np.zeros((1, 1, 3, 2), dtype=float)
+    zeros_hidden = np.zeros((1, 1, 3, 4), dtype=float)
+    command = np.asarray(command_delta, dtype=float) if command_delta is not None else zeros_2d
+    position = np.asarray(position_delta, dtype=float) if position_delta is not None else zeros_2d
+    velocity = np.asarray(velocity_delta, dtype=float) if velocity_delta is not None else zeros_2d
+    return RolloutEvaluation(
+        position=position,
+        velocity=velocity,
+        command=command,
+        hidden=zeros_hidden,
+        gru_input=zeros_hidden,
+        initial_position=np.zeros((1, 2), dtype=float),
+        initial_velocity=np.zeros((1, 2), dtype=float),
+        target_position=np.zeros(2, dtype=float),
+        dt=0.01,
+    )

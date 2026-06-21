@@ -18,15 +18,15 @@
     },
     "rows": [
       "network output aligned with perturbation direction plus lower-emphasis orthogonal companion traces",
-      "point-mass position along aligned perturbation direction",
-      "point-mass velocity along aligned perturbation direction"
+      "point-mass position along aligned perturbation direction plus lower-emphasis orthogonal companion traces",
+      "point-mass velocity along aligned perturbation direction plus lower-emphasis orthogonal companion traces"
     ],
     "x_axis": "seconds relative to perturbation onset"
   },
   "run_id": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
   "schema_version": "rlrmp.gru_steady_state_perturbation_bank.v1",
   "source_experiment": "020a65b",
-  "timestamp": "2026-06-21T03:09:01.634963+00:00",
+  "timestamp": "2026-06-21T03:26:16.575461+00:00",
   "timing_by_condition": {
     "no_pgd": {
       "fanout_policy": "prefix_equivalent_batched_trials; Feedbax task API does not expose a stable hidden-state resume hook, so every perturbation row shares the same deterministic wash-in prefix and zero-noise inputs inside the same materialization pass.",

@@ -115,12 +115,12 @@
       "metadata": {
         "exists": true,
         "kind": "file",
-        "sha256": "fb7e080344f82f2d589535bd92679ced6c6e999ca3a59e357c37a9f8df0817d3",
-        "size_bytes": 1871255
+        "sha256": "4f3ec576bea6895e6a8d2083a9ea26cf17b7209dd877ddf092108fad38b2a962",
+        "size_bytes": 3212142
       },
       "role": "summary_json",
-      "sha256": "fb7e080344f82f2d589535bd92679ced6c6e999ca3a59e357c37a9f8df0817d3",
-      "size_bytes": 1871255,
+      "sha256": "4f3ec576bea6895e6a8d2083a9ea26cf17b7209dd877ddf092108fad38b2a962",
+      "size_bytes": 3212142,
       "storage_backend": "feedbax-local",
       "uri": "repo://results/87424a4/notes/steady_state_perturbation_bank_summary.json"
     },
@@ -130,12 +130,12 @@
       "metadata": {
         "exists": true,
         "kind": "file",
-        "sha256": "8cf720c04d77e92325170c26d35b644e9dfd8a85ab7829f80c16717f2f736768",
-        "size_bytes": 2439
+        "sha256": "3f99b956f8988d26b6ef506cc06adbc04a7657e3d7399c914c46bb60aae6ef27",
+        "size_bytes": 2456
       },
       "role": "summary_markdown",
-      "sha256": "8cf720c04d77e92325170c26d35b644e9dfd8a85ab7829f80c16717f2f736768",
-      "size_bytes": 2439,
+      "sha256": "3f99b956f8988d26b6ef506cc06adbc04a7657e3d7399c914c46bb60aae6ef27",
+      "size_bytes": 2456,
       "storage_backend": "feedbax-local",
       "uri": "repo://results/87424a4/notes/steady_state_perturbation_bank.md"
     }
@@ -163,14 +163,13 @@
         " M results/87424a4/figures/undelayed_targetfix_sisu_effective_020a65b/spec.json",
         " M results/87424a4/notes/steady_state_perturbation_bank.md",
         " M results/87424a4/notes/steady_state_perturbation_bank_summary.json",
-        " M results/87424a4/scripts/materialize_steady_state_perturbation_bank.py",
         " M src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py",
         " M tests/analysis/pipelines/test_gru_steady_state_perturbation_bank.py"
       ]
     },
     "parents": [],
     "source_branch": "feature/87424a4-steady-state-perturb-bank",
-    "source_commit": "6d12a9dbcf7f51a5a31a14da4b1e6c59ffd240ec",
+    "source_commit": "5d90aba84ac6fa6d32bd59d428ff55c0f1c8bbbb",
     "source_repo": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__87424a4-steady-state-perturb-bank"
   },
   "schema_id": "feedbax.spec.regeneration",
@@ -180,8 +179,8 @@
       "metadata": {},
       "path": "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py",
       "role": "source_file",
-      "sha256": "0f1ce31a9bc76d1fd32d265cddab7bd0c66edfe059a8231049a68f478478aabf",
-      "size_bytes": 52571
+      "sha256": "c83bec272a4cc3bbd242d5f34b192d5301c102f29a8bb9f754051bc0fb57730e",
+      "size_bytes": 54461
     },
     {
       "metadata": {},
