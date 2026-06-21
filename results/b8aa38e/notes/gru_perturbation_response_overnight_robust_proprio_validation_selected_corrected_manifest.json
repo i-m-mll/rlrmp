@@ -1,0 +1,3262 @@
+{
+  "bank": {
+    "bank_id": "cs_standard_perturbation_response_v3",
+    "calibration_metadata_hooks": {
+      "coordinating_issue": "1ad3c16",
+      "fields": [
+        "calibrated_amplitude_set_id",
+        "physical_units",
+        "effect_size_reference",
+        "open_loop_command_replay_response",
+        "extlqg_same_bank_response",
+        "gru_same_bank_response"
+      ],
+      "policy": "Raw amplitudes are not interpreted as cross-coordinate normalized effect sizes. Same-bank open-loop, extLQG, and GRU calibration metadata can be attached here once parent coordination materializes the calibrated amplitude sets.",
+      "status": "declared_unbound"
+    },
+    "controller_independence": "Perturbations are declared on task, plant, sensory, observation, or target interfaces. GRU hidden state, readout state, and controller input tensors are not edited directly.",
+    "graphspec_alignment": {
+      "adapter_contract": "Each row records the current eager adapter and remains portable to future GraphSpec named-channel adapters.",
+      "named_channels": [
+        "initial_state",
+        "command_input",
+        "process_epsilon",
+        "sensory_feedback",
+        "delayed_observation",
+        "target_stream"
+      ],
+      "temporary_eager_adapters": {
+        "command_input_pulse": "Temporary eager path inserts an external additive graph component on efferent.output -> mechanics.force and binds the row payload from trial_specs.inputs. Future GraphSpec insertion point: named additive command_input channel on that same edge.",
+        "delayed_observation_offset": "Temporary eager path inserts an external additive graph component on feedback.feedback -> sensory.input. This preserves the legacy delayed_observation channel name for compatibility, but the family semantics are a pre-noise delayed-measurement offset, not literal extra observation delay. Future GraphSpec mapping: named additive pre_noise_delayed_measurement channel before sensory noise.",
+        "process_epsilon_pulse": "Current eager path edits trial_specs.inputs['epsilon'] only when the model exposes an epsilon input bound to mechanics.epsilon. Future GraphSpec insertion point: named process channel into LinearStateSpace.epsilon / B_w. Rows declare epsilon_component and epsilon_index over the canonical current physical block [px, py, vx, vy, fx, fy, eps_x_int, eps_y_int].",
+        "sensory_feedback_offset": "Temporary eager path inserts an external additive graph component on sensory.output -> net.feedback. Future GraphSpec mapping: named additive sensory_feedback channel after sensory noise and before the controller feedback port.",
+        "target_stream_jump": "Deferred: current fixed-target C&S GRU checkpoints do not consume a target-position input stream."
+      }
+    },
+    "initial_position_information_contracts": {
+      "cases": {
+        "A_target_changed_hand_start_nominal": {
+          "future_graphspec_mapping": "task target transform with nominal hand start",
+          "reason": "Current fixed-target checkpoints do not consume a controller-visible target stream, so a target-only initial-position contract cannot be applied without changing the model input contract.",
+          "status": "not_available"
+        },
+        "B_hand_start_and_delay_history_changed_consistently": {
+          "future_graphspec_mapping": "task-data initial hand transform plus delayed-observation buffer initializer transform",
+          "reason": "Current eager validation specs do not expose a separate delayed history/buffer initializer that can be shifted consistently with the hand start.",
+          "status": "not_available"
+        },
+        "C_hand_start_changed_history_nominal_until_delay_elapses": {
+          "future_graphspec_mapping": "task-data initial hand transform with delayed-observation buffer held at nominal values",
+          "reason": "Blind-delay stress rows require explicit delayed-history buffer control so the nominal history can be preserved until the delay horizon elapses.",
+          "status": "not_available"
+        },
+        "D_current_state_immediately_visible": {
+          "current_adapter": "task_trial_spec.inits",
+          "future_graphspec_mapping": "task-data initial hand transform with immediate current-state visibility",
+          "reason": "The current adapter shifts the exposed initial effector/current mechanics state. It is the feasible eager contract for current validation-selected checkpoints.",
+          "row_family": "initial_position_offset",
+          "status": "implemented"
+        }
+      },
+      "default_current_adapter_case": "D_current_state_immediately_visible",
+      "status": "declared"
+    },
+    "legacy_migration": {
+      "plant_force": "Deprecated v1 channel name. The C&S LSS graph path is net.output -> efferent -> mechanics.force, with the force/filter state inside mechanics, so the former plant_force_pulse rows are command_input_pulse rows in v2. True process rows use process_epsilon_pulse through mechanics.epsilon / B_w.",
+      "v2": "v3 preserves v2 row identity and status fields while adding response-shape summaries, target-relative alignment summaries, initial-position information-contract metadata, and calibration metadata hooks."
+    },
+    "perturbations": [
+      {
+        "adapter": "task_trial_spec.inits",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "plant_cartesian_xy",
+        "calibration_role": "raw_default_unscaled_effect_size",
+        "channel": "initial_state",
+        "description": "Offset the external task initial effector position.",
+        "family": "initial_position_offset",
+        "initial_position_case": "D_current_state_immediately_visible",
+        "perturbation_id": "initial_position_offset__x_neg",
+        "sign": -1,
+        "timing": {
+          "epoch": "initial_condition",
+          "time_index": 0
+        },
+        "timing_bin": "initial_condition",
+        "units": "m"
+      },
+      {
+        "adapter": "task_trial_spec.inits",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "plant_cartesian_xy",
+        "calibration_role": "raw_default_unscaled_effect_size",
+        "channel": "initial_state",
+        "description": "Offset the external task initial effector position.",
+        "family": "initial_position_offset",
+        "initial_position_case": "D_current_state_immediately_visible",
+        "perturbation_id": "initial_position_offset__x_pos",
+        "sign": 1,
+        "timing": {
+          "epoch": "initial_condition",
+          "time_index": 0
+        },
+        "timing_bin": "initial_condition",
+        "units": "m"
+      },
+      {
+        "adapter": "task_trial_spec.inits",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "plant_cartesian_xy",
+        "calibration_role": "raw_default_unscaled_effect_size",
+        "channel": "initial_state",
+        "description": "Offset the external task initial effector position.",
+        "family": "initial_position_offset",
+        "initial_position_case": "D_current_state_immediately_visible",
+        "perturbation_id": "initial_position_offset__y_neg",
+        "sign": -1,
+        "timing": {
+          "epoch": "initial_condition",
+          "time_index": 0
+        },
+        "timing_bin": "initial_condition",
+        "units": "m"
+      },
+      {
+        "adapter": "task_trial_spec.inits",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "plant_cartesian_xy",
+        "calibration_role": "raw_default_unscaled_effect_size",
+        "channel": "initial_state",
+        "description": "Offset the external task initial effector position.",
+        "family": "initial_position_offset",
+        "initial_position_case": "D_current_state_immediately_visible",
+        "perturbation_id": "initial_position_offset__y_pos",
+        "sign": 1,
+        "timing": {
+          "epoch": "initial_condition",
+          "time_index": 0
+        },
+        "timing_bin": "initial_condition",
+        "units": "m"
+      },
+      {
+        "adapter": "task_trial_spec.inits",
+        "amplitude": 0.05,
+        "axis": "x",
+        "basis": "plant_cartesian_xy",
+        "calibration_role": "raw_default_unscaled_effect_size",
+        "channel": "initial_state",
+        "description": "Offset the external task initial effector velocity.",
+        "family": "initial_velocity_offset",
+        "perturbation_id": "initial_velocity_offset__x_neg",
+        "sign": -1,
+        "timing": {
+          "epoch": "initial_condition",
+          "time_index": 0
+        },
+        "timing_bin": "initial_condition",
+        "units": "m/s"
+      },
+      {
+        "adapter": "task_trial_spec.inits",
+        "amplitude": 0.05,
+        "axis": "x",
+        "basis": "plant_cartesian_xy",
+        "calibration_role": "raw_default_unscaled_effect_size",
+        "channel": "initial_state",
+        "description": "Offset the external task initial effector velocity.",
+        "family": "initial_velocity_offset",
+        "perturbation_id": "initial_velocity_offset__x_pos",
+        "sign": 1,
+        "timing": {
+          "epoch": "initial_condition",
+          "time_index": 0
+        },
+        "timing_bin": "initial_condition",
+        "units": "m/s"
+      },
+      {
+        "adapter": "task_trial_spec.inits",
+        "amplitude": 0.05,
+        "axis": "y",
+        "basis": "plant_cartesian_xy",
+        "calibration_role": "raw_default_unscaled_effect_size",
+        "channel": "initial_state",
+        "description": "Offset the external task initial effector velocity.",
+        "family": "initial_velocity_offset",
+        "perturbation_id": "initial_velocity_offset__y_neg",
+        "sign": -1,
+        "timing": {
+          "epoch": "initial_condition",
+          "time_index": 0
+        },
+        "timing_bin": "initial_condition",
+        "units": "m/s"
+      },
+      {
+        "adapter": "task_trial_spec.inits",
+        "amplitude": 0.05,
+        "axis": "y",
+        "basis": "plant_cartesian_xy",
+        "calibration_role": "raw_default_unscaled_effect_size",
+        "channel": "initial_state",
+        "description": "Offset the external task initial effector velocity.",
+        "family": "initial_velocity_offset",
+        "perturbation_id": "initial_velocity_offset__y_pos",
+        "sign": 1,
+        "timing": {
+          "epoch": "initial_condition",
+          "time_index": 0
+        },
+        "timing_bin": "initial_condition",
+        "units": "m/s"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.command_input",
+        "amplitude": 1.0,
+        "axis": "x",
+        "basis": "command_cartesian_force_xy",
+        "calibration_role": "raw_default_requires_same_bank_calibration",
+        "channel": "command_input",
+        "description": "Add a pulse at the post-controller command port that feeds mechanics.force. This is not an external load-force row.",
+        "family": "command_input_pulse",
+        "perturbation_id": "command_input_pulse__early_t5_x_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 5,
+          "timing_bin": "early",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "early",
+        "units": "N"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.command_input",
+        "amplitude": 1.0,
+        "axis": "x",
+        "basis": "command_cartesian_force_xy",
+        "calibration_role": "raw_default_requires_same_bank_calibration",
+        "channel": "command_input",
+        "description": "Add a pulse at the post-controller command port that feeds mechanics.force. This is not an external load-force row.",
+        "family": "command_input_pulse",
+        "perturbation_id": "command_input_pulse__early_t5_x_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 5,
+          "timing_bin": "early",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "early",
+        "units": "N"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.command_input",
+        "amplitude": 1.0,
+        "axis": "y",
+        "basis": "command_cartesian_force_xy",
+        "calibration_role": "raw_default_requires_same_bank_calibration",
+        "channel": "command_input",
+        "description": "Add a pulse at the post-controller command port that feeds mechanics.force. This is not an external load-force row.",
+        "family": "command_input_pulse",
+        "perturbation_id": "command_input_pulse__early_t5_y_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 5,
+          "timing_bin": "early",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "early",
+        "units": "N"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.command_input",
+        "amplitude": 1.0,
+        "axis": "y",
+        "basis": "command_cartesian_force_xy",
+        "calibration_role": "raw_default_requires_same_bank_calibration",
+        "channel": "command_input",
+        "description": "Add a pulse at the post-controller command port that feeds mechanics.force. This is not an external load-force row.",
+        "family": "command_input_pulse",
+        "perturbation_id": "command_input_pulse__early_t5_y_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 5,
+          "timing_bin": "early",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "early",
+        "units": "N"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is position_x at epsilon index 0.",
+        "epsilon_component": "position_x",
+        "epsilon_index": 0,
+        "family": "process_epsilon_position_xy",
+        "perturbation_id": "process_epsilon_pulse__position_x__early_t5_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 5,
+          "timing_bin": "early",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "early",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is position_x at epsilon index 0.",
+        "epsilon_component": "position_x",
+        "epsilon_index": 0,
+        "family": "process_epsilon_position_xy",
+        "perturbation_id": "process_epsilon_pulse__position_x__early_t5_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 5,
+          "timing_bin": "early",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "early",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is position_y at epsilon index 1.",
+        "epsilon_component": "position_y",
+        "epsilon_index": 1,
+        "family": "process_epsilon_position_xy",
+        "perturbation_id": "process_epsilon_pulse__position_y__early_t5_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 5,
+          "timing_bin": "early",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "early",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is position_y at epsilon index 1.",
+        "epsilon_component": "position_y",
+        "epsilon_index": 1,
+        "family": "process_epsilon_position_xy",
+        "perturbation_id": "process_epsilon_pulse__position_y__early_t5_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 5,
+          "timing_bin": "early",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "early",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is velocity_x at epsilon index 2.",
+        "epsilon_component": "velocity_x",
+        "epsilon_index": 2,
+        "family": "process_epsilon_velocity_xy",
+        "perturbation_id": "process_epsilon_pulse__velocity_x__early_t5_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 5,
+          "timing_bin": "early",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "early",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is velocity_x at epsilon index 2.",
+        "epsilon_component": "velocity_x",
+        "epsilon_index": 2,
+        "family": "process_epsilon_velocity_xy",
+        "perturbation_id": "process_epsilon_pulse__velocity_x__early_t5_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 5,
+          "timing_bin": "early",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "early",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is velocity_y at epsilon index 3.",
+        "epsilon_component": "velocity_y",
+        "epsilon_index": 3,
+        "family": "process_epsilon_velocity_xy",
+        "perturbation_id": "process_epsilon_pulse__velocity_y__early_t5_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 5,
+          "timing_bin": "early",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "early",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is velocity_y at epsilon index 3.",
+        "epsilon_component": "velocity_y",
+        "epsilon_index": 3,
+        "family": "process_epsilon_velocity_xy",
+        "perturbation_id": "process_epsilon_pulse__velocity_y__early_t5_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 5,
+          "timing_bin": "early",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "early",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is force_state_x at epsilon index 4.",
+        "epsilon_component": "force_state_x",
+        "epsilon_index": 4,
+        "family": "process_epsilon_force_state_xy",
+        "perturbation_id": "process_epsilon_pulse__force_state_x__early_t5_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 5,
+          "timing_bin": "early",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "early",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is force_state_x at epsilon index 4.",
+        "epsilon_component": "force_state_x",
+        "epsilon_index": 4,
+        "family": "process_epsilon_force_state_xy",
+        "perturbation_id": "process_epsilon_pulse__force_state_x__early_t5_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 5,
+          "timing_bin": "early",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "early",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is force_state_y at epsilon index 5.",
+        "epsilon_component": "force_state_y",
+        "epsilon_index": 5,
+        "family": "process_epsilon_force_state_xy",
+        "perturbation_id": "process_epsilon_pulse__force_state_y__early_t5_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 5,
+          "timing_bin": "early",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "early",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is force_state_y at epsilon index 5.",
+        "epsilon_component": "force_state_y",
+        "epsilon_index": 5,
+        "family": "process_epsilon_force_state_xy",
+        "perturbation_id": "process_epsilon_pulse__force_state_y__early_t5_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 5,
+          "timing_bin": "early",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "early",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is integrator_x at epsilon index 6.",
+        "epsilon_component": "integrator_x",
+        "epsilon_index": 6,
+        "family": "process_epsilon_integrator_xy",
+        "perturbation_id": "process_epsilon_pulse__integrator_x__early_t5_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 5,
+          "timing_bin": "early",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "early",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is integrator_x at epsilon index 6.",
+        "epsilon_component": "integrator_x",
+        "epsilon_index": 6,
+        "family": "process_epsilon_integrator_xy",
+        "perturbation_id": "process_epsilon_pulse__integrator_x__early_t5_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 5,
+          "timing_bin": "early",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "early",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is integrator_y at epsilon index 7.",
+        "epsilon_component": "integrator_y",
+        "epsilon_index": 7,
+        "family": "process_epsilon_integrator_xy",
+        "perturbation_id": "process_epsilon_pulse__integrator_y__early_t5_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 5,
+          "timing_bin": "early",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "early",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is integrator_y at epsilon index 7.",
+        "epsilon_component": "integrator_y",
+        "epsilon_index": 7,
+        "family": "process_epsilon_integrator_xy",
+        "perturbation_id": "process_epsilon_pulse__integrator_y__early_t5_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 5,
+          "timing_bin": "early",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "early",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.command_input",
+        "amplitude": 1.0,
+        "axis": "x",
+        "basis": "command_cartesian_force_xy",
+        "calibration_role": "raw_default_requires_same_bank_calibration",
+        "channel": "command_input",
+        "description": "Add a pulse at the post-controller command port that feeds mechanics.force. This is not an external load-force row.",
+        "family": "command_input_pulse",
+        "perturbation_id": "command_input_pulse__mid_t15_x_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 15,
+          "timing_bin": "mid",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "mid",
+        "units": "N"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.command_input",
+        "amplitude": 1.0,
+        "axis": "x",
+        "basis": "command_cartesian_force_xy",
+        "calibration_role": "raw_default_requires_same_bank_calibration",
+        "channel": "command_input",
+        "description": "Add a pulse at the post-controller command port that feeds mechanics.force. This is not an external load-force row.",
+        "family": "command_input_pulse",
+        "perturbation_id": "command_input_pulse__mid_t15_x_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 15,
+          "timing_bin": "mid",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "mid",
+        "units": "N"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.command_input",
+        "amplitude": 1.0,
+        "axis": "y",
+        "basis": "command_cartesian_force_xy",
+        "calibration_role": "raw_default_requires_same_bank_calibration",
+        "channel": "command_input",
+        "description": "Add a pulse at the post-controller command port that feeds mechanics.force. This is not an external load-force row.",
+        "family": "command_input_pulse",
+        "perturbation_id": "command_input_pulse__mid_t15_y_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 15,
+          "timing_bin": "mid",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "mid",
+        "units": "N"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.command_input",
+        "amplitude": 1.0,
+        "axis": "y",
+        "basis": "command_cartesian_force_xy",
+        "calibration_role": "raw_default_requires_same_bank_calibration",
+        "channel": "command_input",
+        "description": "Add a pulse at the post-controller command port that feeds mechanics.force. This is not an external load-force row.",
+        "family": "command_input_pulse",
+        "perturbation_id": "command_input_pulse__mid_t15_y_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 15,
+          "timing_bin": "mid",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "mid",
+        "units": "N"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is position_x at epsilon index 0.",
+        "epsilon_component": "position_x",
+        "epsilon_index": 0,
+        "family": "process_epsilon_position_xy",
+        "perturbation_id": "process_epsilon_pulse__position_x__mid_t15_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 15,
+          "timing_bin": "mid",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "mid",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is position_x at epsilon index 0.",
+        "epsilon_component": "position_x",
+        "epsilon_index": 0,
+        "family": "process_epsilon_position_xy",
+        "perturbation_id": "process_epsilon_pulse__position_x__mid_t15_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 15,
+          "timing_bin": "mid",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "mid",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is position_y at epsilon index 1.",
+        "epsilon_component": "position_y",
+        "epsilon_index": 1,
+        "family": "process_epsilon_position_xy",
+        "perturbation_id": "process_epsilon_pulse__position_y__mid_t15_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 15,
+          "timing_bin": "mid",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "mid",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is position_y at epsilon index 1.",
+        "epsilon_component": "position_y",
+        "epsilon_index": 1,
+        "family": "process_epsilon_position_xy",
+        "perturbation_id": "process_epsilon_pulse__position_y__mid_t15_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 15,
+          "timing_bin": "mid",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "mid",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is velocity_x at epsilon index 2.",
+        "epsilon_component": "velocity_x",
+        "epsilon_index": 2,
+        "family": "process_epsilon_velocity_xy",
+        "perturbation_id": "process_epsilon_pulse__velocity_x__mid_t15_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 15,
+          "timing_bin": "mid",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "mid",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is velocity_x at epsilon index 2.",
+        "epsilon_component": "velocity_x",
+        "epsilon_index": 2,
+        "family": "process_epsilon_velocity_xy",
+        "perturbation_id": "process_epsilon_pulse__velocity_x__mid_t15_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 15,
+          "timing_bin": "mid",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "mid",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is velocity_y at epsilon index 3.",
+        "epsilon_component": "velocity_y",
+        "epsilon_index": 3,
+        "family": "process_epsilon_velocity_xy",
+        "perturbation_id": "process_epsilon_pulse__velocity_y__mid_t15_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 15,
+          "timing_bin": "mid",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "mid",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is velocity_y at epsilon index 3.",
+        "epsilon_component": "velocity_y",
+        "epsilon_index": 3,
+        "family": "process_epsilon_velocity_xy",
+        "perturbation_id": "process_epsilon_pulse__velocity_y__mid_t15_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 15,
+          "timing_bin": "mid",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "mid",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is force_state_x at epsilon index 4.",
+        "epsilon_component": "force_state_x",
+        "epsilon_index": 4,
+        "family": "process_epsilon_force_state_xy",
+        "perturbation_id": "process_epsilon_pulse__force_state_x__mid_t15_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 15,
+          "timing_bin": "mid",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "mid",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is force_state_x at epsilon index 4.",
+        "epsilon_component": "force_state_x",
+        "epsilon_index": 4,
+        "family": "process_epsilon_force_state_xy",
+        "perturbation_id": "process_epsilon_pulse__force_state_x__mid_t15_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 15,
+          "timing_bin": "mid",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "mid",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is force_state_y at epsilon index 5.",
+        "epsilon_component": "force_state_y",
+        "epsilon_index": 5,
+        "family": "process_epsilon_force_state_xy",
+        "perturbation_id": "process_epsilon_pulse__force_state_y__mid_t15_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 15,
+          "timing_bin": "mid",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "mid",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is force_state_y at epsilon index 5.",
+        "epsilon_component": "force_state_y",
+        "epsilon_index": 5,
+        "family": "process_epsilon_force_state_xy",
+        "perturbation_id": "process_epsilon_pulse__force_state_y__mid_t15_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 15,
+          "timing_bin": "mid",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "mid",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is integrator_x at epsilon index 6.",
+        "epsilon_component": "integrator_x",
+        "epsilon_index": 6,
+        "family": "process_epsilon_integrator_xy",
+        "perturbation_id": "process_epsilon_pulse__integrator_x__mid_t15_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 15,
+          "timing_bin": "mid",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "mid",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is integrator_x at epsilon index 6.",
+        "epsilon_component": "integrator_x",
+        "epsilon_index": 6,
+        "family": "process_epsilon_integrator_xy",
+        "perturbation_id": "process_epsilon_pulse__integrator_x__mid_t15_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 15,
+          "timing_bin": "mid",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "mid",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is integrator_y at epsilon index 7.",
+        "epsilon_component": "integrator_y",
+        "epsilon_index": 7,
+        "family": "process_epsilon_integrator_xy",
+        "perturbation_id": "process_epsilon_pulse__integrator_y__mid_t15_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 15,
+          "timing_bin": "mid",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "mid",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is integrator_y at epsilon index 7.",
+        "epsilon_component": "integrator_y",
+        "epsilon_index": 7,
+        "family": "process_epsilon_integrator_xy",
+        "perturbation_id": "process_epsilon_pulse__integrator_y__mid_t15_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 15,
+          "timing_bin": "mid",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "mid",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.command_input",
+        "amplitude": 1.0,
+        "axis": "x",
+        "basis": "command_cartesian_force_xy",
+        "calibration_role": "raw_default_requires_same_bank_calibration",
+        "channel": "command_input",
+        "description": "Add a pulse at the post-controller command port that feeds mechanics.force. This is not an external load-force row.",
+        "family": "command_input_pulse",
+        "perturbation_id": "command_input_pulse__late_t35_x_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 35,
+          "timing_bin": "late",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "late",
+        "units": "N"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.command_input",
+        "amplitude": 1.0,
+        "axis": "x",
+        "basis": "command_cartesian_force_xy",
+        "calibration_role": "raw_default_requires_same_bank_calibration",
+        "channel": "command_input",
+        "description": "Add a pulse at the post-controller command port that feeds mechanics.force. This is not an external load-force row.",
+        "family": "command_input_pulse",
+        "perturbation_id": "command_input_pulse__late_t35_x_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 35,
+          "timing_bin": "late",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "late",
+        "units": "N"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.command_input",
+        "amplitude": 1.0,
+        "axis": "y",
+        "basis": "command_cartesian_force_xy",
+        "calibration_role": "raw_default_requires_same_bank_calibration",
+        "channel": "command_input",
+        "description": "Add a pulse at the post-controller command port that feeds mechanics.force. This is not an external load-force row.",
+        "family": "command_input_pulse",
+        "perturbation_id": "command_input_pulse__late_t35_y_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 35,
+          "timing_bin": "late",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "late",
+        "units": "N"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.command_input",
+        "amplitude": 1.0,
+        "axis": "y",
+        "basis": "command_cartesian_force_xy",
+        "calibration_role": "raw_default_requires_same_bank_calibration",
+        "channel": "command_input",
+        "description": "Add a pulse at the post-controller command port that feeds mechanics.force. This is not an external load-force row.",
+        "family": "command_input_pulse",
+        "perturbation_id": "command_input_pulse__late_t35_y_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 35,
+          "timing_bin": "late",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "late",
+        "units": "N"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is position_x at epsilon index 0.",
+        "epsilon_component": "position_x",
+        "epsilon_index": 0,
+        "family": "process_epsilon_position_xy",
+        "perturbation_id": "process_epsilon_pulse__position_x__late_t35_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 35,
+          "timing_bin": "late",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "late",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is position_x at epsilon index 0.",
+        "epsilon_component": "position_x",
+        "epsilon_index": 0,
+        "family": "process_epsilon_position_xy",
+        "perturbation_id": "process_epsilon_pulse__position_x__late_t35_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 35,
+          "timing_bin": "late",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "late",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is position_y at epsilon index 1.",
+        "epsilon_component": "position_y",
+        "epsilon_index": 1,
+        "family": "process_epsilon_position_xy",
+        "perturbation_id": "process_epsilon_pulse__position_y__late_t35_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 35,
+          "timing_bin": "late",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "late",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is position_y at epsilon index 1.",
+        "epsilon_component": "position_y",
+        "epsilon_index": 1,
+        "family": "process_epsilon_position_xy",
+        "perturbation_id": "process_epsilon_pulse__position_y__late_t35_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 35,
+          "timing_bin": "late",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "late",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is velocity_x at epsilon index 2.",
+        "epsilon_component": "velocity_x",
+        "epsilon_index": 2,
+        "family": "process_epsilon_velocity_xy",
+        "perturbation_id": "process_epsilon_pulse__velocity_x__late_t35_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 35,
+          "timing_bin": "late",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "late",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is velocity_x at epsilon index 2.",
+        "epsilon_component": "velocity_x",
+        "epsilon_index": 2,
+        "family": "process_epsilon_velocity_xy",
+        "perturbation_id": "process_epsilon_pulse__velocity_x__late_t35_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 35,
+          "timing_bin": "late",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "late",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is velocity_y at epsilon index 3.",
+        "epsilon_component": "velocity_y",
+        "epsilon_index": 3,
+        "family": "process_epsilon_velocity_xy",
+        "perturbation_id": "process_epsilon_pulse__velocity_y__late_t35_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 35,
+          "timing_bin": "late",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "late",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is velocity_y at epsilon index 3.",
+        "epsilon_component": "velocity_y",
+        "epsilon_index": 3,
+        "family": "process_epsilon_velocity_xy",
+        "perturbation_id": "process_epsilon_pulse__velocity_y__late_t35_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 35,
+          "timing_bin": "late",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "late",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is force_state_x at epsilon index 4.",
+        "epsilon_component": "force_state_x",
+        "epsilon_index": 4,
+        "family": "process_epsilon_force_state_xy",
+        "perturbation_id": "process_epsilon_pulse__force_state_x__late_t35_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 35,
+          "timing_bin": "late",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "late",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is force_state_x at epsilon index 4.",
+        "epsilon_component": "force_state_x",
+        "epsilon_index": 4,
+        "family": "process_epsilon_force_state_xy",
+        "perturbation_id": "process_epsilon_pulse__force_state_x__late_t35_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 35,
+          "timing_bin": "late",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "late",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is force_state_y at epsilon index 5.",
+        "epsilon_component": "force_state_y",
+        "epsilon_index": 5,
+        "family": "process_epsilon_force_state_xy",
+        "perturbation_id": "process_epsilon_pulse__force_state_y__late_t35_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 35,
+          "timing_bin": "late",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "late",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is force_state_y at epsilon index 5.",
+        "epsilon_component": "force_state_y",
+        "epsilon_index": 5,
+        "family": "process_epsilon_force_state_xy",
+        "perturbation_id": "process_epsilon_pulse__force_state_y__late_t35_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 35,
+          "timing_bin": "late",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "late",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is integrator_x at epsilon index 6.",
+        "epsilon_component": "integrator_x",
+        "epsilon_index": 6,
+        "family": "process_epsilon_integrator_xy",
+        "perturbation_id": "process_epsilon_pulse__integrator_x__late_t35_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 35,
+          "timing_bin": "late",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "late",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is integrator_x at epsilon index 6.",
+        "epsilon_component": "integrator_x",
+        "epsilon_index": 6,
+        "family": "process_epsilon_integrator_xy",
+        "perturbation_id": "process_epsilon_pulse__integrator_x__late_t35_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 35,
+          "timing_bin": "late",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "late",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is integrator_y at epsilon index 7.",
+        "epsilon_component": "integrator_y",
+        "epsilon_index": 7,
+        "family": "process_epsilon_integrator_xy",
+        "perturbation_id": "process_epsilon_pulse__integrator_y__late_t35_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 35,
+          "timing_bin": "late",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "late",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "calibration_role": "raw_coordinate_not_scale_normalized",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is integrator_y at epsilon index 7.",
+        "epsilon_component": "integrator_y",
+        "epsilon_index": 7,
+        "family": "process_epsilon_integrator_xy",
+        "perturbation_id": "process_epsilon_pulse__integrator_y__late_t35_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 35,
+          "timing_bin": "late",
+          "timing_bin_role": "plant_side_open_loop_calibration"
+        },
+        "timing_bin": "late",
+        "units": "epsilon"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.sensory_feedback",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "sensory_feedback_named_channel",
+        "calibration_role": "raw_default_requires_same_bank_calibration",
+        "channel": "sensory_feedback",
+        "channel_provenance": {
+          "information_structure": "post_noise_controller_visible_feedback",
+          "insertion_point": "sensory.output -> net.feedback"
+        },
+        "description": "Offset the external post-noise sensory channel between sensory.output and net.feedback.",
+        "family": "sensory_feedback_offset",
+        "perturbation_id": "sensory_feedback_offset__early_visible_t10_x_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "controller_visible",
+          "start_time_index": 10,
+          "timing_bin": "early_visible",
+          "timing_bin_role": "controller_visible_offset_convention"
+        },
+        "timing_bin": "early_visible",
+        "units": "m"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.delayed_observation",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "pre_noise_delayed_measurement_named_channel",
+        "calibration_role": "raw_default_requires_same_bank_calibration",
+        "channel": "delayed_observation",
+        "channel_provenance": {
+          "compatibility_channel": "delayed_observation",
+          "information_structure": "pre_noise_delayed_measurement_offset",
+          "insertion_point": "feedback.feedback -> sensory.input",
+          "not_literal_extra_delay": true
+        },
+        "description": "Offset the clean pre-noise delayed measurement on feedback.feedback -> sensory.input. This is not literal extra observation delay.",
+        "family": "delayed_observation_offset",
+        "perturbation_id": "delayed_observation_offset__early_visible_t10_x_pos",
+        "semantic_family": "pre_noise_delayed_measurement_offset",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "controller_visible",
+          "start_time_index": 10,
+          "timing_bin": "early_visible",
+          "timing_bin_role": "controller_visible_offset_convention"
+        },
+        "timing_bin": "early_visible",
+        "units": "m"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.sensory_feedback",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "sensory_feedback_named_channel",
+        "calibration_role": "raw_default_requires_same_bank_calibration",
+        "channel": "sensory_feedback",
+        "channel_provenance": {
+          "information_structure": "post_noise_controller_visible_feedback",
+          "insertion_point": "sensory.output -> net.feedback"
+        },
+        "description": "Offset the external post-noise sensory channel between sensory.output and net.feedback.",
+        "family": "sensory_feedback_offset",
+        "perturbation_id": "sensory_feedback_offset__mid_visible_t20_x_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "controller_visible",
+          "start_time_index": 20,
+          "timing_bin": "mid_visible",
+          "timing_bin_role": "controller_visible_offset_convention"
+        },
+        "timing_bin": "mid_visible",
+        "units": "m"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.delayed_observation",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "pre_noise_delayed_measurement_named_channel",
+        "calibration_role": "raw_default_requires_same_bank_calibration",
+        "channel": "delayed_observation",
+        "channel_provenance": {
+          "compatibility_channel": "delayed_observation",
+          "information_structure": "pre_noise_delayed_measurement_offset",
+          "insertion_point": "feedback.feedback -> sensory.input",
+          "not_literal_extra_delay": true
+        },
+        "description": "Offset the clean pre-noise delayed measurement on feedback.feedback -> sensory.input. This is not literal extra observation delay.",
+        "family": "delayed_observation_offset",
+        "perturbation_id": "delayed_observation_offset__mid_visible_t20_x_pos",
+        "semantic_family": "pre_noise_delayed_measurement_offset",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "controller_visible",
+          "start_time_index": 20,
+          "timing_bin": "mid_visible",
+          "timing_bin_role": "controller_visible_offset_convention"
+        },
+        "timing_bin": "mid_visible",
+        "units": "m"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.sensory_feedback",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "sensory_feedback_named_channel",
+        "calibration_role": "raw_default_requires_same_bank_calibration",
+        "channel": "sensory_feedback",
+        "channel_provenance": {
+          "information_structure": "post_noise_controller_visible_feedback",
+          "insertion_point": "sensory.output -> net.feedback"
+        },
+        "description": "Offset the external post-noise sensory channel between sensory.output and net.feedback.",
+        "family": "sensory_feedback_offset",
+        "perturbation_id": "sensory_feedback_offset__late_visible_t40_x_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "controller_visible",
+          "start_time_index": 40,
+          "timing_bin": "late_visible",
+          "timing_bin_role": "controller_visible_offset_convention"
+        },
+        "timing_bin": "late_visible",
+        "units": "m"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.delayed_observation",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "pre_noise_delayed_measurement_named_channel",
+        "calibration_role": "raw_default_requires_same_bank_calibration",
+        "channel": "delayed_observation",
+        "channel_provenance": {
+          "compatibility_channel": "delayed_observation",
+          "information_structure": "pre_noise_delayed_measurement_offset",
+          "insertion_point": "feedback.feedback -> sensory.input",
+          "not_literal_extra_delay": true
+        },
+        "description": "Offset the clean pre-noise delayed measurement on feedback.feedback -> sensory.input. This is not literal extra observation delay.",
+        "family": "delayed_observation_offset",
+        "perturbation_id": "delayed_observation_offset__late_visible_t40_x_pos",
+        "semantic_family": "pre_noise_delayed_measurement_offset",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "controller_visible",
+          "start_time_index": 40,
+          "timing_bin": "late_visible",
+          "timing_bin_role": "controller_visible_offset_convention"
+        },
+        "timing_bin": "late_visible",
+        "units": "m"
+      },
+      {
+        "adapter": "not_applicable_current_fixed_target_checkpoint",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "target_cartesian_xy",
+        "calibration_role": "raw_default_requires_same_bank_calibration",
+        "channel": "target_stream",
+        "description": "blocked because current C&S GRU input is scalar SISU, not a target stream",
+        "family": "target_stream_jump",
+        "perturbation_id": "target_stream_jump__x_pos",
+        "sign": 1,
+        "timing": {
+          "epoch": "adapter_defined"
+        },
+        "timing_bin": "not_applicable",
+        "units": "m"
+      }
+    ],
+    "schema_version": "rlrmp.gru_perturbation_bank.v3",
+    "signed_pairing_rule": "signed_axis_pairs; aggregate absolute and signed responses",
+    "target_relative_alignment": {
+      "basis": "Per-time radial axis points from current base hand position to the current target position; tangential is the signed 2D orthogonal axis.",
+      "default": "radial_tangential_when_target_and_current_geometry_available",
+      "missing_inputs_status": "not_available"
+    },
+    "timing_bin_conventions": {
+      "controller_visible": [
+        {
+          "duration_steps": 5,
+          "label": "early_visible",
+          "role": "controller_visible_offset_convention",
+          "start_time_index": 10
+        },
+        {
+          "duration_steps": 5,
+          "label": "mid_visible",
+          "role": "controller_visible_offset_convention",
+          "start_time_index": 20
+        },
+        {
+          "duration_steps": 5,
+          "label": "late_visible",
+          "role": "controller_visible_offset_convention",
+          "start_time_index": 40
+        }
+      ],
+      "plant_side": [
+        {
+          "duration_steps": 5,
+          "label": "early",
+          "role": "plant_side_open_loop_calibration",
+          "start_time_index": 5
+        },
+        {
+          "duration_steps": 5,
+          "label": "mid",
+          "role": "plant_side_open_loop_calibration",
+          "start_time_index": 15
+        },
+        {
+          "duration_steps": 5,
+          "label": "late",
+          "role": "plant_side_open_loop_calibration",
+          "start_time_index": 35
+        }
+      ],
+      "policy": "Initial-condition rows stay at t=0. Plant-side command_input and process_epsilon rows use early/mid/late bins. Controller-visible sensory and pre-noise delayed-measurement offsets use early_visible/mid_visible/late_visible bins."
+    }
+  },
+  "bank_mode": "raw",
+  "bulk_detail_manifest": {
+    "contains": [
+      "runs.*.perturbations",
+      "runs.*.robust_response_summary",
+      "runs.*.raw_rollout_payloads"
+    ],
+    "custody": "local_only_ignored_artifact",
+    "path": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+    "schema_version": "rlrmp.gru_perturbation_bank.bulk_detail.v1"
+  },
+  "checkpoint_policy": "validation_selected_per_replicate",
+  "extlqg_comparator": {
+    "checkpoint_selection_role": "audit_only_not_used_for_selection",
+    "reason": "Deterministic extLQG response rows are evaluated for perturbations with clean analytical interfaces: initial_state, command_input, process_epsilon, sensory_feedback, and delayed_observation. Command-input rows add an external pulse after the controller command and before the plant input. Sensory-feedback rows offset the post-noise measurement delivered to the estimator; delayed-observation rows offset the clean delayed measurement before sensory noise. Target-stream remains deferred for current fixed-target checkpoints.",
+    "status": "available_for_initial_state_command_input_process_epsilon_sensory_feedback_and_delayed_observation"
+  },
+  "full_qrf_cost": {
+    "lens": "realized_deterministic_rollout_full_qrf",
+    "reason": "Costs are rescored post hoc from states.mechanics.vector and states.net.output using the canonical C&S Q_t/R_t/Q_f schedule. They are audit-only perturbation diagnostics and are not used for checkpoint selection.",
+    "status": "available"
+  },
+  "issue": "b8aa38e",
+  "manifest_retention": {
+    "dense_run_detail": {
+      "path": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "status": "moved_to_bulk_detail_artifact"
+    },
+    "normalized_for": "tracked summary/provenance retention before deleting local raw perturbation-response rollout payloads",
+    "normalized_from": "_artifacts/b8aa38e/notes/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_manifest.json",
+    "normalized_to": "results/b8aa38e/notes/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_manifest.json",
+    "raw_rollout_payload_metadata": {
+      "file_extension": ".npz",
+      "per_run_payload_counts_preserved": true,
+      "previous_subtree": "_artifacts/b8aa38e/perturbation_response/gru_overnight_robust_proprio_validation_selected_corrected",
+      "retention_status": "deleted_after_manifest_normalization",
+      "summary_metrics_preserved_in_manifest": true
+    }
+  },
+  "runs": {
+    "target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_moderate_lr1e-3_clip5_b64": {
+      "artifact_dir": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_moderate_lr1e-3_clip5_b64",
+      "checkpoint_selection": [
+        {
+          "best_logged_validation_batch": 10201,
+          "best_logged_validation_objective": 3946.226560761976,
+          "checkpoint_batches": 11000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_moderate_lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+          "final_validation_objective": 3968.534444318549,
+          "final_vs_selected_validation_degradation": 2.1349811976383535,
+          "replicate": 0,
+          "scoring_validation_log_batch": 11000,
+          "scoring_validation_objective": 3966.3994631209107,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10500,
+          "best_logged_validation_objective": 3956.4492942139414,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_moderate_lr1e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 3965.495221013129,
+          "final_vs_selected_validation_degradation": 9.045926799187782,
+          "replicate": 1,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 3956.4492942139414,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10601,
+          "best_logged_validation_objective": 3965.893049283416,
+          "checkpoint_batches": 10000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_moderate_lr1e-3_clip5_b64/checkpoints/checkpoint_0010000",
+          "final_validation_objective": 4004.054799811485,
+          "final_vs_selected_validation_degradation": 27.543140874719484,
+          "replicate": 2,
+          "scoring_validation_log_batch": 10000,
+          "scoring_validation_objective": 3976.5116589367653,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11101,
+          "best_logged_validation_objective": 3957.205233906393,
+          "checkpoint_batches": 11500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_moderate_lr1e-3_clip5_b64/checkpoints/checkpoint_0011500",
+          "final_validation_objective": 3969.0455568464477,
+          "final_vs_selected_validation_degradation": 2.505934932107266,
+          "replicate": 3,
+          "scoring_validation_log_batch": 11500,
+          "scoring_validation_objective": 3966.5396219143404,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10601,
+          "best_logged_validation_objective": 3946.3553789043217,
+          "checkpoint_batches": 12000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_moderate_lr1e-3_clip5_b64/checkpoints/checkpoint_0012000",
+          "final_validation_objective": 3950.693822915522,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 4,
+          "scoring_validation_log_batch": 12000,
+          "scoring_validation_objective": 3950.693822915522,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "dt_s": 0.01,
+      "label": "broad_moderate_moderate",
+      "n_perturbation_rows": 75,
+      "n_replicates": 5,
+      "n_rollout_trials_per_replicate": 64,
+      "n_time_steps": 60,
+      "perturbation_row_summary": {
+        "families": [
+          "command_input_pulse",
+          "delayed_observation_offset",
+          "initial_position_offset",
+          "initial_velocity_offset",
+          "process_epsilon_force_state_xy",
+          "process_epsilon_integrator_xy",
+          "process_epsilon_position_xy",
+          "process_epsilon_velocity_xy",
+          "sensory_feedback_offset",
+          "target_stream_jump"
+        ],
+        "status_counts": {
+          "evaluated": 74,
+          "not_applicable": 1
+        }
+      },
+      "perturbation_rows_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_digest": {
+        "file_count": 74,
+        "file_extension": ".npz",
+        "retention_status": "deleted_after_manifest_normalization"
+      },
+      "robust_response_summary_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "robust_response_summary_digest": {
+        "ratio_of_means_keys": [
+          "command_input/command_input_pulse",
+          "delayed_observation/delayed_observation_offset",
+          "initial_state/initial_position_offset",
+          "initial_state/initial_velocity_offset",
+          "process_epsilon/process_epsilon_force_state_xy",
+          "process_epsilon/process_epsilon_integrator_xy",
+          "process_epsilon/process_epsilon_position_xy",
+          "process_epsilon/process_epsilon_velocity_xy",
+          "sensory_feedback/sensory_feedback_offset"
+        ],
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "status": "available",
+        "timing_bin_count": 23
+      },
+      "run_spec_path": "results/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_moderate_lr1e-3_clip5_b64/run.json",
+      "status_counts": {
+        "evaluated": 74,
+        "not_applicable": 1
+      }
+    },
+    "target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_small_lr1e-3_clip5_b64": {
+      "artifact_dir": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_small_lr1e-3_clip5_b64",
+      "checkpoint_selection": [
+        {
+          "best_logged_validation_batch": 10201,
+          "best_logged_validation_objective": 3969.1974133235717,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_small_lr1e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 3988.9120640652095,
+          "final_vs_selected_validation_degradation": 3.1759092014908674,
+          "replicate": 0,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 3985.7361548637186,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10500,
+          "best_logged_validation_objective": 3968.5902871239336,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_small_lr1e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 3978.2101889905844,
+          "final_vs_selected_validation_degradation": 9.619901866650707,
+          "replicate": 1,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 3968.5902871239336,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10000,
+          "best_logged_validation_objective": 3970.0651205688296,
+          "checkpoint_batches": 10000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_small_lr1e-3_clip5_b64/checkpoints/checkpoint_0010000",
+          "final_validation_objective": 4011.9654572584827,
+          "final_vs_selected_validation_degradation": 41.90033668965316,
+          "replicate": 2,
+          "scoring_validation_log_batch": 10000,
+          "scoring_validation_objective": 3970.0651205688296,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10901,
+          "best_logged_validation_objective": 3965.737228551372,
+          "checkpoint_batches": 12000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_small_lr1e-3_clip5_b64/checkpoints/checkpoint_0012000",
+          "final_validation_objective": 3973.0555174023234,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 3,
+          "scoring_validation_log_batch": 12000,
+          "scoring_validation_objective": 3973.0555174023234,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10601,
+          "best_logged_validation_objective": 3949.6082883656945,
+          "checkpoint_batches": 12000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_small_lr1e-3_clip5_b64/checkpoints/checkpoint_0012000",
+          "final_validation_objective": 3965.168819973142,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 4,
+          "scoring_validation_log_batch": 12000,
+          "scoring_validation_objective": 3965.168819973142,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "dt_s": 0.01,
+      "label": "broad_moderate_small",
+      "n_perturbation_rows": 75,
+      "n_replicates": 5,
+      "n_rollout_trials_per_replicate": 64,
+      "n_time_steps": 60,
+      "perturbation_row_summary": {
+        "families": [
+          "command_input_pulse",
+          "delayed_observation_offset",
+          "initial_position_offset",
+          "initial_velocity_offset",
+          "process_epsilon_force_state_xy",
+          "process_epsilon_integrator_xy",
+          "process_epsilon_position_xy",
+          "process_epsilon_velocity_xy",
+          "sensory_feedback_offset",
+          "target_stream_jump"
+        ],
+        "status_counts": {
+          "evaluated": 74,
+          "not_applicable": 1
+        }
+      },
+      "perturbation_rows_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_digest": {
+        "file_count": 74,
+        "file_extension": ".npz",
+        "retention_status": "deleted_after_manifest_normalization"
+      },
+      "robust_response_summary_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "robust_response_summary_digest": {
+        "ratio_of_means_keys": [
+          "command_input/command_input_pulse",
+          "delayed_observation/delayed_observation_offset",
+          "initial_state/initial_position_offset",
+          "initial_state/initial_velocity_offset",
+          "process_epsilon/process_epsilon_force_state_xy",
+          "process_epsilon/process_epsilon_integrator_xy",
+          "process_epsilon/process_epsilon_position_xy",
+          "process_epsilon/process_epsilon_velocity_xy",
+          "sensory_feedback/sensory_feedback_offset"
+        ],
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "status": "available",
+        "timing_bin_count": 23
+      },
+      "run_spec_path": "results/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_small_lr1e-3_clip5_b64/run.json",
+      "status_counts": {
+        "evaluated": 74,
+        "not_applicable": 1
+      }
+    },
+    "target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_stress_lr1e-3_clip5_b64": {
+      "artifact_dir": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_stress_lr1e-3_clip5_b64",
+      "checkpoint_selection": [
+        {
+          "best_logged_validation_batch": 10201,
+          "best_logged_validation_objective": 3995.7549757127317,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_stress_lr1e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 4030.0543762474335,
+          "final_vs_selected_validation_degradation": 6.976436956044836,
+          "replicate": 0,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 4023.0779392913887,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11500,
+          "best_logged_validation_objective": 4013.636767561012,
+          "checkpoint_batches": 11500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_stress_lr1e-3_clip5_b64/checkpoints/checkpoint_0011500",
+          "final_validation_objective": 4040.5665732802768,
+          "final_vs_selected_validation_degradation": 26.92980571926455,
+          "replicate": 1,
+          "scoring_validation_log_batch": 11500,
+          "scoring_validation_objective": 4013.636767561012,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11901,
+          "best_logged_validation_objective": 4015.869199165058,
+          "checkpoint_batches": 11000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_stress_lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+          "final_validation_objective": 4051.4114831831353,
+          "final_vs_selected_validation_degradation": 19.256229437322418,
+          "replicate": 2,
+          "scoring_validation_log_batch": 11000,
+          "scoring_validation_objective": 4032.155253745813,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11401,
+          "best_logged_validation_objective": 4021.2271966400294,
+          "checkpoint_batches": 12000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_stress_lr1e-3_clip5_b64/checkpoints/checkpoint_0012000",
+          "final_validation_objective": 4034.928255305186,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 3,
+          "scoring_validation_log_batch": 12000,
+          "scoring_validation_objective": 4034.928255305186,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11401,
+          "best_logged_validation_objective": 4015.389806379366,
+          "checkpoint_batches": 11000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_stress_lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+          "final_validation_objective": 4037.131411135742,
+          "final_vs_selected_validation_degradation": 10.935058511529405,
+          "replicate": 4,
+          "scoring_validation_log_batch": 11000,
+          "scoring_validation_objective": 4026.1963526242125,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "dt_s": 0.01,
+      "label": "broad_moderate_stress",
+      "n_perturbation_rows": 75,
+      "n_replicates": 5,
+      "n_rollout_trials_per_replicate": 64,
+      "n_time_steps": 60,
+      "perturbation_row_summary": {
+        "families": [
+          "command_input_pulse",
+          "delayed_observation_offset",
+          "initial_position_offset",
+          "initial_velocity_offset",
+          "process_epsilon_force_state_xy",
+          "process_epsilon_integrator_xy",
+          "process_epsilon_position_xy",
+          "process_epsilon_velocity_xy",
+          "sensory_feedback_offset",
+          "target_stream_jump"
+        ],
+        "status_counts": {
+          "evaluated": 74,
+          "not_applicable": 1
+        }
+      },
+      "perturbation_rows_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_digest": {
+        "file_count": 74,
+        "file_extension": ".npz",
+        "retention_status": "deleted_after_manifest_normalization"
+      },
+      "robust_response_summary_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "robust_response_summary_digest": {
+        "ratio_of_means_keys": [
+          "command_input/command_input_pulse",
+          "delayed_observation/delayed_observation_offset",
+          "initial_state/initial_position_offset",
+          "initial_state/initial_velocity_offset",
+          "process_epsilon/process_epsilon_force_state_xy",
+          "process_epsilon/process_epsilon_integrator_xy",
+          "process_epsilon/process_epsilon_position_xy",
+          "process_epsilon/process_epsilon_velocity_xy",
+          "sensory_feedback/sensory_feedback_offset"
+        ],
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "status": "available",
+        "timing_bin_count": 23
+      },
+      "run_spec_path": "results/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_cal_stress_lr1e-3_clip5_b64/run.json",
+      "status_counts": {
+        "evaluated": 74,
+        "not_applicable": 1
+      }
+    },
+    "target_relative_multitarget_fullqrf_warmcos__broad_moderate_none_lr1e-3_clip5_b64": {
+      "artifact_dir": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_none_lr1e-3_clip5_b64",
+      "checkpoint_selection": [
+        {
+          "best_logged_validation_batch": 9901,
+          "best_logged_validation_objective": 4028.8323892077774,
+          "checkpoint_batches": 11500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_none_lr1e-3_clip5_b64/checkpoints/checkpoint_0011500",
+          "final_validation_objective": 4059.0464059085384,
+          "final_vs_selected_validation_degradation": 25.099483433910336,
+          "replicate": 0,
+          "scoring_validation_log_batch": 11500,
+          "scoring_validation_objective": 4033.946922474628,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10500,
+          "best_logged_validation_objective": 4003.6906068267995,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_none_lr1e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 4038.9124103372033,
+          "final_vs_selected_validation_degradation": 35.22180351040379,
+          "replicate": 1,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 4003.6906068267995,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11501,
+          "best_logged_validation_objective": 3987.2196486662174,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_none_lr1e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 4012.907664631089,
+          "final_vs_selected_validation_degradation": 16.181548989946805,
+          "replicate": 2,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 3996.7261156411423,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10901,
+          "best_logged_validation_objective": 3985.3967039846852,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_none_lr1e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 4030.599824559751,
+          "final_vs_selected_validation_degradation": 38.93506961234061,
+          "replicate": 3,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 3991.6647549474105,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11701,
+          "best_logged_validation_objective": 4011.2166512711865,
+          "checkpoint_batches": 11500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_none_lr1e-3_clip5_b64/checkpoints/checkpoint_0011500",
+          "final_validation_objective": 4026.5464617854263,
+          "final_vs_selected_validation_degradation": 10.885254052187065,
+          "replicate": 4,
+          "scoring_validation_log_batch": 11500,
+          "scoring_validation_objective": 4015.6612077332393,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "dt_s": 0.01,
+      "label": "broad_moderate_none",
+      "n_perturbation_rows": 75,
+      "n_replicates": 5,
+      "n_rollout_trials_per_replicate": 64,
+      "n_time_steps": 60,
+      "perturbation_row_summary": {
+        "families": [
+          "command_input_pulse",
+          "delayed_observation_offset",
+          "initial_position_offset",
+          "initial_velocity_offset",
+          "process_epsilon_force_state_xy",
+          "process_epsilon_integrator_xy",
+          "process_epsilon_position_xy",
+          "process_epsilon_velocity_xy",
+          "sensory_feedback_offset",
+          "target_stream_jump"
+        ],
+        "status_counts": {
+          "evaluated": 74,
+          "not_applicable": 1
+        }
+      },
+      "perturbation_rows_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_digest": {
+        "file_count": 74,
+        "file_extension": ".npz",
+        "retention_status": "deleted_after_manifest_normalization"
+      },
+      "robust_response_summary_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "robust_response_summary_digest": {
+        "ratio_of_means_keys": [
+          "command_input/command_input_pulse",
+          "delayed_observation/delayed_observation_offset",
+          "initial_state/initial_position_offset",
+          "initial_state/initial_velocity_offset",
+          "process_epsilon/process_epsilon_force_state_xy",
+          "process_epsilon/process_epsilon_integrator_xy",
+          "process_epsilon/process_epsilon_position_xy",
+          "process_epsilon/process_epsilon_velocity_xy",
+          "sensory_feedback/sensory_feedback_offset"
+        ],
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "status": "available",
+        "timing_bin_count": 23
+      },
+      "run_spec_path": "results/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_moderate_none_lr1e-3_clip5_b64/run.json",
+      "status_counts": {
+        "evaluated": 74,
+        "not_applicable": 1
+      }
+    },
+    "target_relative_multitarget_fullqrf_warmcos__broad_strong_cal_moderate_lr1e-3_clip5_b64": {
+      "artifact_dir": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_cal_moderate_lr1e-3_clip5_b64",
+      "checkpoint_selection": [
+        {
+          "best_logged_validation_batch": 11401,
+          "best_logged_validation_objective": 3952.6850572455464,
+          "checkpoint_batches": 11000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_cal_moderate_lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+          "final_validation_objective": 3972.8991700466295,
+          "final_vs_selected_validation_degradation": 2.152255134391453,
+          "replicate": 0,
+          "scoring_validation_log_batch": 11000,
+          "scoring_validation_objective": 3970.746914912238,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11201,
+          "best_logged_validation_objective": 3956.8149075847123,
+          "checkpoint_batches": 11500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_cal_moderate_lr1e-3_clip5_b64/checkpoints/checkpoint_0011500",
+          "final_validation_objective": 3967.3318284975185,
+          "final_vs_selected_validation_degradation": 7.647122612201201,
+          "replicate": 1,
+          "scoring_validation_log_batch": 11500,
+          "scoring_validation_objective": 3959.6847058853173,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11901,
+          "best_logged_validation_objective": 3969.4588566626453,
+          "checkpoint_batches": 10000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_cal_moderate_lr1e-3_clip5_b64/checkpoints/checkpoint_0010000",
+          "final_validation_objective": 4006.461286032725,
+          "final_vs_selected_validation_degradation": 31.00154874188138,
+          "replicate": 2,
+          "scoring_validation_log_batch": 10000,
+          "scoring_validation_objective": 3975.459737290844,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11601,
+          "best_logged_validation_objective": 3958.5786602961484,
+          "checkpoint_batches": 11500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_cal_moderate_lr1e-3_clip5_b64/checkpoints/checkpoint_0011500",
+          "final_validation_objective": 3970.142988050697,
+          "final_vs_selected_validation_degradation": 3.702007213116758,
+          "replicate": 3,
+          "scoring_validation_log_batch": 11500,
+          "scoring_validation_objective": 3966.4409808375804,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10601,
+          "best_logged_validation_objective": 3949.2540032678316,
+          "checkpoint_batches": 12000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_cal_moderate_lr1e-3_clip5_b64/checkpoints/checkpoint_0012000",
+          "final_validation_objective": 3954.026462462427,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 4,
+          "scoring_validation_log_batch": 12000,
+          "scoring_validation_objective": 3954.026462462427,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "dt_s": 0.01,
+      "label": "broad_strong_moderate",
+      "n_perturbation_rows": 75,
+      "n_replicates": 5,
+      "n_rollout_trials_per_replicate": 64,
+      "n_time_steps": 60,
+      "perturbation_row_summary": {
+        "families": [
+          "command_input_pulse",
+          "delayed_observation_offset",
+          "initial_position_offset",
+          "initial_velocity_offset",
+          "process_epsilon_force_state_xy",
+          "process_epsilon_integrator_xy",
+          "process_epsilon_position_xy",
+          "process_epsilon_velocity_xy",
+          "sensory_feedback_offset",
+          "target_stream_jump"
+        ],
+        "status_counts": {
+          "evaluated": 74,
+          "not_applicable": 1
+        }
+      },
+      "perturbation_rows_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_digest": {
+        "file_count": 74,
+        "file_extension": ".npz",
+        "retention_status": "deleted_after_manifest_normalization"
+      },
+      "robust_response_summary_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "robust_response_summary_digest": {
+        "ratio_of_means_keys": [
+          "command_input/command_input_pulse",
+          "delayed_observation/delayed_observation_offset",
+          "initial_state/initial_position_offset",
+          "initial_state/initial_velocity_offset",
+          "process_epsilon/process_epsilon_force_state_xy",
+          "process_epsilon/process_epsilon_integrator_xy",
+          "process_epsilon/process_epsilon_position_xy",
+          "process_epsilon/process_epsilon_velocity_xy",
+          "sensory_feedback/sensory_feedback_offset"
+        ],
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "status": "available",
+        "timing_bin_count": 23
+      },
+      "run_spec_path": "results/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_cal_moderate_lr1e-3_clip5_b64/run.json",
+      "status_counts": {
+        "evaluated": 74,
+        "not_applicable": 1
+      }
+    },
+    "target_relative_multitarget_fullqrf_warmcos__broad_strong_cal_small_lr1e-3_clip5_b64": {
+      "artifact_dir": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_cal_small_lr1e-3_clip5_b64",
+      "checkpoint_selection": [
+        {
+          "best_logged_validation_batch": 10201,
+          "best_logged_validation_objective": 3975.632440585906,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_cal_small_lr1e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 3996.5045612272343,
+          "final_vs_selected_validation_degradation": 6.164309039907039,
+          "replicate": 0,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 3990.340252187327,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10500,
+          "best_logged_validation_objective": 3971.994922876127,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_cal_small_lr1e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 3982.9288026976774,
+          "final_vs_selected_validation_degradation": 10.933879821550363,
+          "replicate": 1,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 3971.994922876127,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11801,
+          "best_logged_validation_objective": 3970.206447929855,
+          "checkpoint_batches": 10000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_cal_small_lr1e-3_clip5_b64/checkpoints/checkpoint_0010000",
+          "final_validation_objective": 4008.6839720906246,
+          "final_vs_selected_validation_degradation": 34.94856222410135,
+          "replicate": 2,
+          "scoring_validation_log_batch": 10000,
+          "scoring_validation_objective": 3973.7354098665232,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10901,
+          "best_logged_validation_objective": 3963.2333824881043,
+          "checkpoint_batches": 12000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_cal_small_lr1e-3_clip5_b64/checkpoints/checkpoint_0012000",
+          "final_validation_objective": 3971.4828844356234,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 3,
+          "scoring_validation_log_batch": 12000,
+          "scoring_validation_objective": 3971.4828844356234,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10601,
+          "best_logged_validation_objective": 3951.23804450906,
+          "checkpoint_batches": 12000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_cal_small_lr1e-3_clip5_b64/checkpoints/checkpoint_0012000",
+          "final_validation_objective": 3966.972545478518,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 4,
+          "scoring_validation_log_batch": 12000,
+          "scoring_validation_objective": 3966.972545478518,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "dt_s": 0.01,
+      "label": "broad_strong_small",
+      "n_perturbation_rows": 75,
+      "n_replicates": 5,
+      "n_rollout_trials_per_replicate": 64,
+      "n_time_steps": 60,
+      "perturbation_row_summary": {
+        "families": [
+          "command_input_pulse",
+          "delayed_observation_offset",
+          "initial_position_offset",
+          "initial_velocity_offset",
+          "process_epsilon_force_state_xy",
+          "process_epsilon_integrator_xy",
+          "process_epsilon_position_xy",
+          "process_epsilon_velocity_xy",
+          "sensory_feedback_offset",
+          "target_stream_jump"
+        ],
+        "status_counts": {
+          "evaluated": 74,
+          "not_applicable": 1
+        }
+      },
+      "perturbation_rows_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_digest": {
+        "file_count": 74,
+        "file_extension": ".npz",
+        "retention_status": "deleted_after_manifest_normalization"
+      },
+      "robust_response_summary_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "robust_response_summary_digest": {
+        "ratio_of_means_keys": [
+          "command_input/command_input_pulse",
+          "delayed_observation/delayed_observation_offset",
+          "initial_state/initial_position_offset",
+          "initial_state/initial_velocity_offset",
+          "process_epsilon/process_epsilon_force_state_xy",
+          "process_epsilon/process_epsilon_integrator_xy",
+          "process_epsilon/process_epsilon_position_xy",
+          "process_epsilon/process_epsilon_velocity_xy",
+          "sensory_feedback/sensory_feedback_offset"
+        ],
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "status": "available",
+        "timing_bin_count": 23
+      },
+      "run_spec_path": "results/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_cal_small_lr1e-3_clip5_b64/run.json",
+      "status_counts": {
+        "evaluated": 74,
+        "not_applicable": 1
+      }
+    },
+    "target_relative_multitarget_fullqrf_warmcos__broad_strong_cal_stress_lr1e-3_clip5_b64": {
+      "artifact_dir": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_cal_stress_lr1e-3_clip5_b64",
+      "checkpoint_selection": [
+        {
+          "best_logged_validation_batch": 10401,
+          "best_logged_validation_objective": 3996.6560644072365,
+          "checkpoint_batches": 8000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_cal_stress_lr1e-3_clip5_b64/checkpoints/checkpoint_0008000",
+          "final_validation_objective": 4038.6203009987184,
+          "final_vs_selected_validation_degradation": 14.007990118920588,
+          "replicate": 0,
+          "scoring_validation_log_batch": 8000,
+          "scoring_validation_objective": 4024.612310879798,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10500,
+          "best_logged_validation_objective": 4019.4025825593817,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_cal_stress_lr1e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 4038.679691646323,
+          "final_vs_selected_validation_degradation": 19.277109086941437,
+          "replicate": 1,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 4019.4025825593817,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10801,
+          "best_logged_validation_objective": 4016.0717473490713,
+          "checkpoint_batches": 9000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_cal_stress_lr1e-3_clip5_b64/checkpoints/checkpoint_0009000",
+          "final_validation_objective": 4040.25829501106,
+          "final_vs_selected_validation_degradation": 5.800920008344747,
+          "replicate": 2,
+          "scoring_validation_log_batch": 9000,
+          "scoring_validation_objective": 4034.4573750027153,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10401,
+          "best_logged_validation_objective": 4031.565584894444,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_cal_stress_lr1e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 4053.485430005222,
+          "final_vs_selected_validation_degradation": 8.518764486711007,
+          "replicate": 3,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 4044.966665518511,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10001,
+          "best_logged_validation_objective": 3994.356046885862,
+          "checkpoint_batches": 11000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_cal_stress_lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+          "final_validation_objective": 4012.7049553949687,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 4,
+          "scoring_validation_log_batch": 11000,
+          "scoring_validation_objective": 4012.7049553949687,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "dt_s": 0.01,
+      "label": "broad_strong_stress",
+      "n_perturbation_rows": 75,
+      "n_replicates": 5,
+      "n_rollout_trials_per_replicate": 64,
+      "n_time_steps": 60,
+      "perturbation_row_summary": {
+        "families": [
+          "command_input_pulse",
+          "delayed_observation_offset",
+          "initial_position_offset",
+          "initial_velocity_offset",
+          "process_epsilon_force_state_xy",
+          "process_epsilon_integrator_xy",
+          "process_epsilon_position_xy",
+          "process_epsilon_velocity_xy",
+          "sensory_feedback_offset",
+          "target_stream_jump"
+        ],
+        "status_counts": {
+          "evaluated": 74,
+          "not_applicable": 1
+        }
+      },
+      "perturbation_rows_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_digest": {
+        "file_count": 74,
+        "file_extension": ".npz",
+        "retention_status": "deleted_after_manifest_normalization"
+      },
+      "robust_response_summary_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "robust_response_summary_digest": {
+        "ratio_of_means_keys": [
+          "command_input/command_input_pulse",
+          "delayed_observation/delayed_observation_offset",
+          "initial_state/initial_position_offset",
+          "initial_state/initial_velocity_offset",
+          "process_epsilon/process_epsilon_force_state_xy",
+          "process_epsilon/process_epsilon_integrator_xy",
+          "process_epsilon/process_epsilon_position_xy",
+          "process_epsilon/process_epsilon_velocity_xy",
+          "sensory_feedback/sensory_feedback_offset"
+        ],
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "status": "available",
+        "timing_bin_count": 23
+      },
+      "run_spec_path": "results/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_cal_stress_lr1e-3_clip5_b64/run.json",
+      "status_counts": {
+        "evaluated": 74,
+        "not_applicable": 1
+      }
+    },
+    "target_relative_multitarget_fullqrf_warmcos__broad_strong_none_lr1e-3_clip5_b64": {
+      "artifact_dir": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_none_lr1e-3_clip5_b64",
+      "checkpoint_selection": [
+        {
+          "best_logged_validation_batch": 9901,
+          "best_logged_validation_objective": 4009.6931927833025,
+          "checkpoint_batches": 11500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_none_lr1e-3_clip5_b64/checkpoints/checkpoint_0011500",
+          "final_validation_objective": 4041.363966861338,
+          "final_vs_selected_validation_degradation": 18.956902585130592,
+          "replicate": 0,
+          "scoring_validation_log_batch": 11500,
+          "scoring_validation_objective": 4022.4070642762076,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10500,
+          "best_logged_validation_objective": 3994.7087898628424,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_none_lr1e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 4029.9029563353456,
+          "final_vs_selected_validation_degradation": 35.194166472503184,
+          "replicate": 1,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 3994.7087898628424,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11501,
+          "best_logged_validation_objective": 3983.547656652403,
+          "checkpoint_batches": 11000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_none_lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+          "final_validation_objective": 4004.5381677104438,
+          "final_vs_selected_validation_degradation": 12.155988343637546,
+          "replicate": 2,
+          "scoring_validation_log_batch": 11000,
+          "scoring_validation_objective": 3992.382179366806,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10001,
+          "best_logged_validation_objective": 3994.2872939115186,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_none_lr1e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 4034.907826449633,
+          "final_vs_selected_validation_degradation": 34.272112783837656,
+          "replicate": 3,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 4000.6357136657953,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11701,
+          "best_logged_validation_objective": 4010.333472133814,
+          "checkpoint_batches": 10000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_none_lr1e-3_clip5_b64/checkpoints/checkpoint_0010000",
+          "final_validation_objective": 4023.9052816730873,
+          "final_vs_selected_validation_degradation": 10.53056005801318,
+          "replicate": 4,
+          "scoring_validation_log_batch": 10000,
+          "scoring_validation_objective": 4013.374721615074,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "dt_s": 0.01,
+      "label": "broad_strong_none",
+      "n_perturbation_rows": 75,
+      "n_replicates": 5,
+      "n_rollout_trials_per_replicate": 64,
+      "n_time_steps": 60,
+      "perturbation_row_summary": {
+        "families": [
+          "command_input_pulse",
+          "delayed_observation_offset",
+          "initial_position_offset",
+          "initial_velocity_offset",
+          "process_epsilon_force_state_xy",
+          "process_epsilon_integrator_xy",
+          "process_epsilon_position_xy",
+          "process_epsilon_velocity_xy",
+          "sensory_feedback_offset",
+          "target_stream_jump"
+        ],
+        "status_counts": {
+          "evaluated": 74,
+          "not_applicable": 1
+        }
+      },
+      "perturbation_rows_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_digest": {
+        "file_count": 74,
+        "file_extension": ".npz",
+        "retention_status": "deleted_after_manifest_normalization"
+      },
+      "robust_response_summary_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "robust_response_summary_digest": {
+        "ratio_of_means_keys": [
+          "command_input/command_input_pulse",
+          "delayed_observation/delayed_observation_offset",
+          "initial_state/initial_position_offset",
+          "initial_state/initial_velocity_offset",
+          "process_epsilon/process_epsilon_force_state_xy",
+          "process_epsilon/process_epsilon_integrator_xy",
+          "process_epsilon/process_epsilon_position_xy",
+          "process_epsilon/process_epsilon_velocity_xy",
+          "sensory_feedback/sensory_feedback_offset"
+        ],
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "status": "available",
+        "timing_bin_count": 23
+      },
+      "run_spec_path": "results/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__broad_strong_none_lr1e-3_clip5_b64/run.json",
+      "status_counts": {
+        "evaluated": 74,
+        "not_applicable": 1
+      }
+    },
+    "target_relative_multitarget_fullqrf_warmcos__proprio_cal_moderate_lr1e-3_clip5_b64": {
+      "artifact_dir": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_moderate_lr1e-3_clip5_b64",
+      "checkpoint_selection": [
+        {
+          "best_logged_validation_batch": 11601,
+          "best_logged_validation_objective": 4790.895843991662,
+          "checkpoint_batches": 11500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_moderate_lr1e-3_clip5_b64/checkpoints/checkpoint_0011500",
+          "final_validation_objective": 4975.124305551984,
+          "final_vs_selected_validation_degradation": 38.042611645590114,
+          "replicate": 0,
+          "scoring_validation_log_batch": 11500,
+          "scoring_validation_objective": 4937.081693906394,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11701,
+          "best_logged_validation_objective": 5371.060305724757,
+          "checkpoint_batches": 12000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_moderate_lr1e-3_clip5_b64/checkpoints/checkpoint_0012000",
+          "final_validation_objective": 5434.942037207706,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 1,
+          "scoring_validation_log_batch": 12000,
+          "scoring_validation_objective": 5434.942037207706,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11801,
+          "best_logged_validation_objective": 4373.553905953837,
+          "checkpoint_batches": 11500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_moderate_lr1e-3_clip5_b64/checkpoints/checkpoint_0011500",
+          "final_validation_objective": 4425.7732946405,
+          "final_vs_selected_validation_degradation": 13.650558892605659,
+          "replicate": 2,
+          "scoring_validation_log_batch": 11500,
+          "scoring_validation_objective": 4412.122735747895,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11601,
+          "best_logged_validation_objective": 4750.505354727309,
+          "checkpoint_batches": 12000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_moderate_lr1e-3_clip5_b64/checkpoints/checkpoint_0012000",
+          "final_validation_objective": 4758.027112973968,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 3,
+          "scoring_validation_log_batch": 12000,
+          "scoring_validation_objective": 4758.027112973968,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11401,
+          "best_logged_validation_objective": 4237.1144578954545,
+          "checkpoint_batches": 12000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_moderate_lr1e-3_clip5_b64/checkpoints/checkpoint_0012000",
+          "final_validation_objective": 4266.097930644922,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 4,
+          "scoring_validation_log_batch": 12000,
+          "scoring_validation_objective": 4266.097930644922,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "dt_s": 0.01,
+      "label": "proprio_moderate",
+      "n_perturbation_rows": 75,
+      "n_replicates": 5,
+      "n_rollout_trials_per_replicate": 64,
+      "n_time_steps": 60,
+      "perturbation_row_summary": {
+        "families": [
+          "command_input_pulse",
+          "delayed_observation_offset",
+          "initial_position_offset",
+          "initial_velocity_offset",
+          "process_epsilon_force_state_xy",
+          "process_epsilon_integrator_xy",
+          "process_epsilon_position_xy",
+          "process_epsilon_velocity_xy",
+          "sensory_feedback_offset",
+          "target_stream_jump"
+        ],
+        "status_counts": {
+          "evaluated": 74,
+          "not_applicable": 1
+        }
+      },
+      "perturbation_rows_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_digest": {
+        "file_count": 74,
+        "file_extension": ".npz",
+        "retention_status": "deleted_after_manifest_normalization"
+      },
+      "robust_response_summary_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "robust_response_summary_digest": {
+        "ratio_of_means_keys": [
+          "command_input/command_input_pulse",
+          "delayed_observation/delayed_observation_offset",
+          "initial_state/initial_position_offset",
+          "initial_state/initial_velocity_offset",
+          "process_epsilon/process_epsilon_force_state_xy",
+          "process_epsilon/process_epsilon_integrator_xy",
+          "process_epsilon/process_epsilon_position_xy",
+          "process_epsilon/process_epsilon_velocity_xy",
+          "sensory_feedback/sensory_feedback_offset"
+        ],
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "status": "available",
+        "timing_bin_count": 23
+      },
+      "run_spec_path": "results/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_moderate_lr1e-3_clip5_b64/run.json",
+      "status_counts": {
+        "evaluated": 74,
+        "not_applicable": 1
+      }
+    },
+    "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_lr1e-3_clip5_b64": {
+      "artifact_dir": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_lr1e-3_clip5_b64",
+      "checkpoint_selection": [
+        {
+          "best_logged_validation_batch": 10101,
+          "best_logged_validation_objective": 5541.669637221294,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_lr1e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 5660.944589660256,
+          "final_vs_selected_validation_degradation": 56.33376346076602,
+          "replicate": 0,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 5604.61082619949,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10401,
+          "best_logged_validation_objective": 6637.697840028843,
+          "checkpoint_batches": 11500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_lr1e-3_clip5_b64/checkpoints/checkpoint_0011500",
+          "final_validation_objective": 6928.898975790997,
+          "final_vs_selected_validation_degradation": 207.8203862097016,
+          "replicate": 1,
+          "scoring_validation_log_batch": 11500,
+          "scoring_validation_objective": 6721.078589581295,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10000,
+          "best_logged_validation_objective": 5009.7649206181,
+          "checkpoint_batches": 10000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_lr1e-3_clip5_b64/checkpoints/checkpoint_0010000",
+          "final_validation_objective": 5150.596575711468,
+          "final_vs_selected_validation_degradation": 140.83165509336777,
+          "replicate": 2,
+          "scoring_validation_log_batch": 10000,
+          "scoring_validation_objective": 5009.7649206181,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11501,
+          "best_logged_validation_objective": 5360.283482458426,
+          "checkpoint_batches": 11500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_lr1e-3_clip5_b64/checkpoints/checkpoint_0011500",
+          "final_validation_objective": 5535.280818660242,
+          "final_vs_selected_validation_degradation": 93.25755316012419,
+          "replicate": 3,
+          "scoring_validation_log_batch": 11500,
+          "scoring_validation_objective": 5442.023265500118,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 7501,
+          "best_logged_validation_objective": 4943.795562871423,
+          "checkpoint_batches": 12000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_lr1e-3_clip5_b64/checkpoints/checkpoint_0012000",
+          "final_validation_objective": 5087.232634454817,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 4,
+          "scoring_validation_log_batch": 12000,
+          "scoring_validation_objective": 5087.232634454817,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "dt_s": 0.01,
+      "label": "proprio_small",
+      "n_perturbation_rows": 75,
+      "n_replicates": 5,
+      "n_rollout_trials_per_replicate": 64,
+      "n_time_steps": 60,
+      "perturbation_row_summary": {
+        "families": [
+          "command_input_pulse",
+          "delayed_observation_offset",
+          "initial_position_offset",
+          "initial_velocity_offset",
+          "process_epsilon_force_state_xy",
+          "process_epsilon_integrator_xy",
+          "process_epsilon_position_xy",
+          "process_epsilon_velocity_xy",
+          "sensory_feedback_offset",
+          "target_stream_jump"
+        ],
+        "status_counts": {
+          "evaluated": 74,
+          "not_applicable": 1
+        }
+      },
+      "perturbation_rows_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_digest": {
+        "file_count": 74,
+        "file_extension": ".npz",
+        "retention_status": "deleted_after_manifest_normalization"
+      },
+      "robust_response_summary_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "robust_response_summary_digest": {
+        "ratio_of_means_keys": [
+          "command_input/command_input_pulse",
+          "delayed_observation/delayed_observation_offset",
+          "initial_state/initial_position_offset",
+          "initial_state/initial_velocity_offset",
+          "process_epsilon/process_epsilon_force_state_xy",
+          "process_epsilon/process_epsilon_integrator_xy",
+          "process_epsilon/process_epsilon_position_xy",
+          "process_epsilon/process_epsilon_velocity_xy",
+          "sensory_feedback/sensory_feedback_offset"
+        ],
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "status": "available",
+        "timing_bin_count": 23
+      },
+      "run_spec_path": "results/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_lr1e-3_clip5_b64/run.json",
+      "status_counts": {
+        "evaluated": 74,
+        "not_applicable": 1
+      }
+    },
+    "target_relative_multitarget_fullqrf_warmcos__proprio_cal_stress_lr1e-3_clip5_b64": {
+      "artifact_dir": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_stress_lr1e-3_clip5_b64",
+      "checkpoint_selection": [
+        {
+          "best_logged_validation_batch": 8201,
+          "best_logged_validation_objective": 3984.778856620607,
+          "checkpoint_batches": 11000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_stress_lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+          "final_validation_objective": 4007.566657462436,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 0,
+          "scoring_validation_log_batch": 11000,
+          "scoring_validation_objective": 4007.566657462436,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 8301,
+          "best_logged_validation_objective": 4096.904793892797,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_stress_lr1e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 4106.741668736205,
+          "final_vs_selected_validation_degradation": 3.5650441607685934,
+          "replicate": 1,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 4103.176624575436,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 9601,
+          "best_logged_validation_objective": 4032.463265717267,
+          "checkpoint_batches": 9000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_stress_lr1e-3_clip5_b64/checkpoints/checkpoint_0009000",
+          "final_validation_objective": 4057.6213719307148,
+          "final_vs_selected_validation_degradation": 6.063738253646989,
+          "replicate": 2,
+          "scoring_validation_log_batch": 9000,
+          "scoring_validation_objective": 4051.5576336770678,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10301,
+          "best_logged_validation_objective": 3996.909497991043,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_stress_lr1e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 4008.5339986611675,
+          "final_vs_selected_validation_degradation": 8.930742550973719,
+          "replicate": 3,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 3999.603256110194,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 9701,
+          "best_logged_validation_objective": 3990.1503587956017,
+          "checkpoint_batches": 10000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_stress_lr1e-3_clip5_b64/checkpoints/checkpoint_0010000",
+          "final_validation_objective": 3994.433076250654,
+          "final_vs_selected_validation_degradation": 0.10215098661274169,
+          "replicate": 4,
+          "scoring_validation_log_batch": 10000,
+          "scoring_validation_objective": 3994.330925264041,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "dt_s": 0.01,
+      "label": "proprio_stress",
+      "n_perturbation_rows": 75,
+      "n_replicates": 5,
+      "n_rollout_trials_per_replicate": 64,
+      "n_time_steps": 60,
+      "perturbation_row_summary": {
+        "families": [
+          "command_input_pulse",
+          "delayed_observation_offset",
+          "initial_position_offset",
+          "initial_velocity_offset",
+          "process_epsilon_force_state_xy",
+          "process_epsilon_integrator_xy",
+          "process_epsilon_position_xy",
+          "process_epsilon_velocity_xy",
+          "sensory_feedback_offset",
+          "target_stream_jump"
+        ],
+        "status_counts": {
+          "evaluated": 74,
+          "not_applicable": 1
+        }
+      },
+      "perturbation_rows_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_digest": {
+        "file_count": 74,
+        "file_extension": ".npz",
+        "retention_status": "deleted_after_manifest_normalization"
+      },
+      "robust_response_summary_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "robust_response_summary_digest": {
+        "ratio_of_means_keys": [
+          "command_input/command_input_pulse",
+          "delayed_observation/delayed_observation_offset",
+          "initial_state/initial_position_offset",
+          "initial_state/initial_velocity_offset",
+          "process_epsilon/process_epsilon_force_state_xy",
+          "process_epsilon/process_epsilon_integrator_xy",
+          "process_epsilon/process_epsilon_position_xy",
+          "process_epsilon/process_epsilon_velocity_xy",
+          "sensory_feedback/sensory_feedback_offset"
+        ],
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "status": "available",
+        "timing_bin_count": 23
+      },
+      "run_spec_path": "results/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_cal_stress_lr1e-3_clip5_b64/run.json",
+      "status_counts": {
+        "evaluated": 74,
+        "not_applicable": 1
+      }
+    },
+    "target_relative_multitarget_fullqrf_warmcos__proprio_none_lr1e-3_clip5_b64": {
+      "artifact_dir": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_none_lr1e-3_clip5_b64",
+      "checkpoint_selection": [
+        {
+          "best_logged_validation_batch": 11000,
+          "best_logged_validation_objective": 5317.799311715362,
+          "checkpoint_batches": 11000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_none_lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+          "final_validation_objective": 5560.3515203216975,
+          "final_vs_selected_validation_degradation": 242.55220860633563,
+          "replicate": 0,
+          "scoring_validation_log_batch": 11000,
+          "scoring_validation_objective": 5317.799311715362,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10301,
+          "best_logged_validation_objective": 6542.043221210219,
+          "checkpoint_batches": 11500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_none_lr1e-3_clip5_b64/checkpoints/checkpoint_0011500",
+          "final_validation_objective": 7305.588658360769,
+          "final_vs_selected_validation_degradation": 629.5357373376128,
+          "replicate": 1,
+          "scoring_validation_log_batch": 11500,
+          "scoring_validation_objective": 6676.052921023156,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11801,
+          "best_logged_validation_objective": 4959.852537211692,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_none_lr1e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 5119.2205082896435,
+          "final_vs_selected_validation_degradation": 80.29257990236783,
+          "replicate": 2,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 5038.927928387276,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 5301,
+          "best_logged_validation_objective": 5791.221879565808,
+          "checkpoint_batches": 5000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_none_lr1e-3_clip5_b64/checkpoints/checkpoint_0005000",
+          "final_validation_objective": 6202.794056359267,
+          "final_vs_selected_validation_degradation": 112.19066001661031,
+          "replicate": 3,
+          "scoring_validation_log_batch": 5000,
+          "scoring_validation_objective": 6090.603396342657,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10000,
+          "best_logged_validation_objective": 4910.488350475726,
+          "checkpoint_batches": 10000,
+          "checkpoint_path": "_artifacts/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_none_lr1e-3_clip5_b64/checkpoints/checkpoint_0010000",
+          "final_validation_objective": 5053.992394699823,
+          "final_vs_selected_validation_degradation": 143.50404422409702,
+          "replicate": 4,
+          "scoring_validation_log_batch": 10000,
+          "scoring_validation_objective": 4910.488350475726,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "dt_s": 0.01,
+      "label": "proprio_none",
+      "n_perturbation_rows": 75,
+      "n_replicates": 5,
+      "n_rollout_trials_per_replicate": 64,
+      "n_time_steps": 60,
+      "perturbation_row_summary": {
+        "families": [
+          "command_input_pulse",
+          "delayed_observation_offset",
+          "initial_position_offset",
+          "initial_velocity_offset",
+          "process_epsilon_force_state_xy",
+          "process_epsilon_integrator_xy",
+          "process_epsilon_position_xy",
+          "process_epsilon_velocity_xy",
+          "sensory_feedback_offset",
+          "target_stream_jump"
+        ],
+        "status_counts": {
+          "evaluated": 74,
+          "not_applicable": 1
+        }
+      },
+      "perturbation_rows_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "raw_rollout_payloads_digest": {
+        "file_count": 74,
+        "file_extension": ".npz",
+        "retention_status": "deleted_after_manifest_normalization"
+      },
+      "robust_response_summary_detail_manifest": "_artifacts/b8aa38e/perturbation_response/gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json",
+      "robust_response_summary_digest": {
+        "ratio_of_means_keys": [
+          "command_input/command_input_pulse",
+          "delayed_observation/delayed_observation_offset",
+          "initial_state/initial_position_offset",
+          "initial_state/initial_velocity_offset",
+          "process_epsilon/process_epsilon_force_state_xy",
+          "process_epsilon/process_epsilon_integrator_xy",
+          "process_epsilon/process_epsilon_position_xy",
+          "process_epsilon/process_epsilon_velocity_xy",
+          "sensory_feedback/sensory_feedback_offset"
+        ],
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "status": "available",
+        "timing_bin_count": 23
+      },
+      "run_spec_path": "results/b8aa38e/runs/target_relative_multitarget_fullqrf_warmcos__proprio_none_lr1e-3_clip5_b64/run.json",
+      "status_counts": {
+        "evaluated": 74,
+        "not_applicable": 1
+      }
+    }
+  },
+  "schema_version": "rlrmp.gru_perturbation_bank.v3",
+  "scope": "controller_independent_perturbation_response",
+  "semantics_correction": "v2 splits the former plant_force rows into command_input_pulse (post-controller command-port perturbations) and process_epsilon_pulse (mechanics.epsilon / B_w process perturbations). Process-epsilon rows span the canonical current physical block [px, py, vx, vy, fx, fy, eps_x_int, eps_y_int]. v3 timing-aware rows evaluate plant-side command/process pulses at early/mid/late bins and controller-visible sensory/pre-noise delayed-measurement offsets at early_visible/mid_visible/late_visible bins.",
+  "source_experiment": "b8aa38e"
+}

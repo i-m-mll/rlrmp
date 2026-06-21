@@ -17,6 +17,11 @@ PERTURBATION_RESPONSE_MANIFEST = (
     / "results/020a65b/notes/"
     / "gru_perturbation_response_h0_pgd_bank_two_rows_validation_selected_manifest.json"
 )
+HISTORICAL_PERTURBATION_RESPONSE_MANIFEST = (
+    REPO_ROOT
+    / "results/b8aa38e/notes/"
+    / "gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_manifest.json"
+)
 OBJECTIVE_COMPARATOR_SIDECAR = (
     REPO_ROOT / "results/5f70333/notes/objective_comparator_fullqrf_validation_selected.json"
 )
@@ -61,6 +66,49 @@ def test_active_perturbation_response_manifest_keeps_run_detail_in_bulk_artifact
         assert "robust_response_summary" not in run_payload, run_id
         assert run_payload["perturbation_rows_detail_manifest"] == detail_path
         assert run_payload["robust_response_summary_detail_manifest"] == detail_path
+
+
+def test_historical_perturbation_response_manifest_keeps_run_detail_in_bulk_artifact() -> None:
+    payload = _load_json(HISTORICAL_PERTURBATION_RESPONSE_MANIFEST)
+
+    detail_path = _require_bulk_detail_pointer(payload)
+    assert detail_path == (
+        "_artifacts/b8aa38e/perturbation_response/"
+        "gru_perturbation_response_overnight_robust_proprio_validation_selected_corrected_detail.json"
+    )
+
+    failures = _dense_payload_failures(payload)
+    assert failures == []
+
+    for run_id, run_payload in payload["runs"].items():
+        assert "perturbations" not in run_payload, run_id
+        assert "raw_rollout_payloads" not in run_payload, run_id
+        assert "robust_response_summary" not in run_payload, run_id
+        assert run_payload["perturbation_rows_detail_manifest"] == detail_path
+        assert run_payload["robust_response_summary_detail_manifest"] == detail_path
+        assert run_payload["raw_rollout_payloads_detail_manifest"] == detail_path
+
+
+def test_all_tracked_perturbation_response_manifests_avoid_inline_run_detail() -> None:
+    manifest_paths = sorted(
+        (REPO_ROOT / "results").glob("*/notes/gru_perturbation_response*manifest.json")
+    )
+    assert manifest_paths
+
+    failures: list[str] = []
+    for manifest_path in manifest_paths:
+        payload = _load_json(manifest_path)
+        runs = payload.get("runs")
+        if not isinstance(runs, Mapping):
+            continue
+        for run_id, run_payload in runs.items():
+            if not isinstance(run_payload, Mapping):
+                continue
+            for key in RUN_DETAIL_PAYLOAD_KEYS:
+                if key in run_payload:
+                    failures.append(f"{manifest_path.relative_to(REPO_ROOT)}:{run_id}.{key}")
+
+    assert failures == []
 
 
 def test_objective_comparator_sidecar_has_no_dense_values_arrays() -> None:

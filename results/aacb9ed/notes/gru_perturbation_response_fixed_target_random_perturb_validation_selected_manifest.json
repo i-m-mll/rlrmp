@@ -1,0 +1,1725 @@
+{
+  "bank": {
+    "bank_id": "cs_standard_perturbation_response_v2",
+    "controller_independence": "Perturbations are declared on task, plant, sensory, observation, or target interfaces. GRU hidden state, readout state, and controller input tensors are not edited directly.",
+    "graphspec_alignment": {
+      "adapter_contract": "Each row records the current eager adapter and remains portable to future GraphSpec named-channel adapters.",
+      "named_channels": [
+        "initial_state",
+        "command_input",
+        "process_epsilon",
+        "sensory_feedback",
+        "delayed_observation",
+        "target_stream"
+      ],
+      "temporary_eager_adapters": {
+        "command_input_pulse": "Temporary eager path inserts an external additive graph component on efferent.output -> mechanics.force and binds the row payload from trial_specs.inputs. Future GraphSpec insertion point: named additive command_input channel on that same edge.",
+        "delayed_observation_offset": "Temporary eager path inserts an external additive graph component on feedback.feedback -> sensory.input. Future GraphSpec mapping: named additive delayed_observation channel before sensory noise.",
+        "process_epsilon_pulse": "Current eager path edits trial_specs.inputs['epsilon'] only when the model exposes an epsilon input bound to mechanics.epsilon. Future GraphSpec insertion point: named process channel into LinearStateSpace.epsilon / B_w. Rows declare epsilon_component and epsilon_index over the canonical current physical block [px, py, vx, vy, fx, fy, eps_x_int, eps_y_int].",
+        "sensory_feedback_offset": "Temporary eager path inserts an external additive graph component on sensory.output -> net.feedback. Future GraphSpec mapping: named additive sensory_feedback channel after sensory noise and before the controller feedback port.",
+        "target_stream_jump": "Deferred: current fixed-target C&S GRU checkpoints do not consume a target-position input stream."
+      }
+    },
+    "legacy_migration": {
+      "plant_force": "Deprecated v1 channel name. The C&S LSS graph path is net.output -> efferent -> mechanics.force, with the force/filter state inside mechanics, so the former plant_force_pulse rows are command_input_pulse rows in v2. True process rows use process_epsilon_pulse through mechanics.epsilon / B_w."
+    },
+    "perturbations": [
+      {
+        "adapter": "task_trial_spec.inits",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "plant_cartesian_xy",
+        "channel": "initial_state",
+        "description": "Offset the external task initial effector position.",
+        "family": "initial_position_offset",
+        "perturbation_id": "initial_position_offset__x_neg",
+        "sign": -1,
+        "timing": {
+          "epoch": "initial_condition",
+          "time_index": 0
+        },
+        "units": "m"
+      },
+      {
+        "adapter": "task_trial_spec.inits",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "plant_cartesian_xy",
+        "channel": "initial_state",
+        "description": "Offset the external task initial effector position.",
+        "family": "initial_position_offset",
+        "perturbation_id": "initial_position_offset__x_pos",
+        "sign": 1,
+        "timing": {
+          "epoch": "initial_condition",
+          "time_index": 0
+        },
+        "units": "m"
+      },
+      {
+        "adapter": "task_trial_spec.inits",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "plant_cartesian_xy",
+        "channel": "initial_state",
+        "description": "Offset the external task initial effector position.",
+        "family": "initial_position_offset",
+        "perturbation_id": "initial_position_offset__y_neg",
+        "sign": -1,
+        "timing": {
+          "epoch": "initial_condition",
+          "time_index": 0
+        },
+        "units": "m"
+      },
+      {
+        "adapter": "task_trial_spec.inits",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "plant_cartesian_xy",
+        "channel": "initial_state",
+        "description": "Offset the external task initial effector position.",
+        "family": "initial_position_offset",
+        "perturbation_id": "initial_position_offset__y_pos",
+        "sign": 1,
+        "timing": {
+          "epoch": "initial_condition",
+          "time_index": 0
+        },
+        "units": "m"
+      },
+      {
+        "adapter": "task_trial_spec.inits",
+        "amplitude": 0.05,
+        "axis": "x",
+        "basis": "plant_cartesian_xy",
+        "channel": "initial_state",
+        "description": "Offset the external task initial effector velocity.",
+        "family": "initial_velocity_offset",
+        "perturbation_id": "initial_velocity_offset__x_neg",
+        "sign": -1,
+        "timing": {
+          "epoch": "initial_condition",
+          "time_index": 0
+        },
+        "units": "m/s"
+      },
+      {
+        "adapter": "task_trial_spec.inits",
+        "amplitude": 0.05,
+        "axis": "x",
+        "basis": "plant_cartesian_xy",
+        "channel": "initial_state",
+        "description": "Offset the external task initial effector velocity.",
+        "family": "initial_velocity_offset",
+        "perturbation_id": "initial_velocity_offset__x_pos",
+        "sign": 1,
+        "timing": {
+          "epoch": "initial_condition",
+          "time_index": 0
+        },
+        "units": "m/s"
+      },
+      {
+        "adapter": "task_trial_spec.inits",
+        "amplitude": 0.05,
+        "axis": "y",
+        "basis": "plant_cartesian_xy",
+        "channel": "initial_state",
+        "description": "Offset the external task initial effector velocity.",
+        "family": "initial_velocity_offset",
+        "perturbation_id": "initial_velocity_offset__y_neg",
+        "sign": -1,
+        "timing": {
+          "epoch": "initial_condition",
+          "time_index": 0
+        },
+        "units": "m/s"
+      },
+      {
+        "adapter": "task_trial_spec.inits",
+        "amplitude": 0.05,
+        "axis": "y",
+        "basis": "plant_cartesian_xy",
+        "channel": "initial_state",
+        "description": "Offset the external task initial effector velocity.",
+        "family": "initial_velocity_offset",
+        "perturbation_id": "initial_velocity_offset__y_pos",
+        "sign": 1,
+        "timing": {
+          "epoch": "initial_condition",
+          "time_index": 0
+        },
+        "units": "m/s"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.command_input",
+        "amplitude": 1.0,
+        "axis": "x",
+        "basis": "command_cartesian_force_xy",
+        "channel": "command_input",
+        "description": "Add a pulse at the post-controller command port that feeds mechanics.force. This is not an external load-force row.",
+        "family": "command_input_pulse",
+        "perturbation_id": "command_input_pulse__t20_x_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 20
+        },
+        "units": "N"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.command_input",
+        "amplitude": 1.0,
+        "axis": "x",
+        "basis": "command_cartesian_force_xy",
+        "channel": "command_input",
+        "description": "Add a pulse at the post-controller command port that feeds mechanics.force. This is not an external load-force row.",
+        "family": "command_input_pulse",
+        "perturbation_id": "command_input_pulse__t20_x_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 20
+        },
+        "units": "N"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.command_input",
+        "amplitude": 1.0,
+        "axis": "y",
+        "basis": "command_cartesian_force_xy",
+        "channel": "command_input",
+        "description": "Add a pulse at the post-controller command port that feeds mechanics.force. This is not an external load-force row.",
+        "family": "command_input_pulse",
+        "perturbation_id": "command_input_pulse__t20_y_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 20
+        },
+        "units": "N"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.command_input",
+        "amplitude": 1.0,
+        "axis": "y",
+        "basis": "command_cartesian_force_xy",
+        "channel": "command_input",
+        "description": "Add a pulse at the post-controller command port that feeds mechanics.force. This is not an external load-force row.",
+        "family": "command_input_pulse",
+        "perturbation_id": "command_input_pulse__t20_y_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 20
+        },
+        "units": "N"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is position_x at epsilon index 0.",
+        "epsilon_component": "position_x",
+        "epsilon_index": 0,
+        "family": "process_epsilon_position_xy",
+        "perturbation_id": "process_epsilon_pulse__position_x__t20_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 20
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is position_x at epsilon index 0.",
+        "epsilon_component": "position_x",
+        "epsilon_index": 0,
+        "family": "process_epsilon_position_xy",
+        "perturbation_id": "process_epsilon_pulse__position_x__t20_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 20
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is position_y at epsilon index 1.",
+        "epsilon_component": "position_y",
+        "epsilon_index": 1,
+        "family": "process_epsilon_position_xy",
+        "perturbation_id": "process_epsilon_pulse__position_y__t20_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 20
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is position_y at epsilon index 1.",
+        "epsilon_component": "position_y",
+        "epsilon_index": 1,
+        "family": "process_epsilon_position_xy",
+        "perturbation_id": "process_epsilon_pulse__position_y__t20_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 20
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is velocity_x at epsilon index 2.",
+        "epsilon_component": "velocity_x",
+        "epsilon_index": 2,
+        "family": "process_epsilon_velocity_xy",
+        "perturbation_id": "process_epsilon_pulse__velocity_x__t20_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 20
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is velocity_x at epsilon index 2.",
+        "epsilon_component": "velocity_x",
+        "epsilon_index": 2,
+        "family": "process_epsilon_velocity_xy",
+        "perturbation_id": "process_epsilon_pulse__velocity_x__t20_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 20
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is velocity_y at epsilon index 3.",
+        "epsilon_component": "velocity_y",
+        "epsilon_index": 3,
+        "family": "process_epsilon_velocity_xy",
+        "perturbation_id": "process_epsilon_pulse__velocity_y__t20_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 20
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is velocity_y at epsilon index 3.",
+        "epsilon_component": "velocity_y",
+        "epsilon_index": 3,
+        "family": "process_epsilon_velocity_xy",
+        "perturbation_id": "process_epsilon_pulse__velocity_y__t20_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 20
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is force_state_x at epsilon index 4.",
+        "epsilon_component": "force_state_x",
+        "epsilon_index": 4,
+        "family": "process_epsilon_force_state_xy",
+        "perturbation_id": "process_epsilon_pulse__force_state_x__t20_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 20
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is force_state_x at epsilon index 4.",
+        "epsilon_component": "force_state_x",
+        "epsilon_index": 4,
+        "family": "process_epsilon_force_state_xy",
+        "perturbation_id": "process_epsilon_pulse__force_state_x__t20_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 20
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is force_state_y at epsilon index 5.",
+        "epsilon_component": "force_state_y",
+        "epsilon_index": 5,
+        "family": "process_epsilon_force_state_xy",
+        "perturbation_id": "process_epsilon_pulse__force_state_y__t20_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 20
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is force_state_y at epsilon index 5.",
+        "epsilon_component": "force_state_y",
+        "epsilon_index": 5,
+        "family": "process_epsilon_force_state_xy",
+        "perturbation_id": "process_epsilon_pulse__force_state_y__t20_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 20
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is integrator_x at epsilon index 6.",
+        "epsilon_component": "integrator_x",
+        "epsilon_index": 6,
+        "family": "process_epsilon_integrator_xy",
+        "perturbation_id": "process_epsilon_pulse__integrator_x__t20_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 20
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is integrator_x at epsilon index 6.",
+        "epsilon_component": "integrator_x",
+        "epsilon_index": 6,
+        "family": "process_epsilon_integrator_xy",
+        "perturbation_id": "process_epsilon_pulse__integrator_x__t20_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 20
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is integrator_y at epsilon index 7.",
+        "epsilon_component": "integrator_y",
+        "epsilon_index": 7,
+        "family": "process_epsilon_integrator_xy",
+        "perturbation_id": "process_epsilon_pulse__integrator_y__t20_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 20
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is integrator_y at epsilon index 7.",
+        "epsilon_component": "integrator_y",
+        "epsilon_index": 7,
+        "family": "process_epsilon_integrator_xy",
+        "perturbation_id": "process_epsilon_pulse__integrator_y__t20_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 20
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.command_input",
+        "amplitude": 1.0,
+        "axis": "x",
+        "basis": "command_cartesian_force_xy",
+        "channel": "command_input",
+        "description": "Add a pulse at the post-controller command port that feeds mechanics.force. This is not an external load-force row.",
+        "family": "command_input_pulse",
+        "perturbation_id": "command_input_pulse__t40_x_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 40
+        },
+        "units": "N"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.command_input",
+        "amplitude": 1.0,
+        "axis": "x",
+        "basis": "command_cartesian_force_xy",
+        "channel": "command_input",
+        "description": "Add a pulse at the post-controller command port that feeds mechanics.force. This is not an external load-force row.",
+        "family": "command_input_pulse",
+        "perturbation_id": "command_input_pulse__t40_x_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 40
+        },
+        "units": "N"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.command_input",
+        "amplitude": 1.0,
+        "axis": "y",
+        "basis": "command_cartesian_force_xy",
+        "channel": "command_input",
+        "description": "Add a pulse at the post-controller command port that feeds mechanics.force. This is not an external load-force row.",
+        "family": "command_input_pulse",
+        "perturbation_id": "command_input_pulse__t40_y_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 40
+        },
+        "units": "N"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.command_input",
+        "amplitude": 1.0,
+        "axis": "y",
+        "basis": "command_cartesian_force_xy",
+        "channel": "command_input",
+        "description": "Add a pulse at the post-controller command port that feeds mechanics.force. This is not an external load-force row.",
+        "family": "command_input_pulse",
+        "perturbation_id": "command_input_pulse__t40_y_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 40
+        },
+        "units": "N"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is position_x at epsilon index 0.",
+        "epsilon_component": "position_x",
+        "epsilon_index": 0,
+        "family": "process_epsilon_position_xy",
+        "perturbation_id": "process_epsilon_pulse__position_x__t40_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 40
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is position_x at epsilon index 0.",
+        "epsilon_component": "position_x",
+        "epsilon_index": 0,
+        "family": "process_epsilon_position_xy",
+        "perturbation_id": "process_epsilon_pulse__position_x__t40_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 40
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is position_y at epsilon index 1.",
+        "epsilon_component": "position_y",
+        "epsilon_index": 1,
+        "family": "process_epsilon_position_xy",
+        "perturbation_id": "process_epsilon_pulse__position_y__t40_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 40
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is position_y at epsilon index 1.",
+        "epsilon_component": "position_y",
+        "epsilon_index": 1,
+        "family": "process_epsilon_position_xy",
+        "perturbation_id": "process_epsilon_pulse__position_y__t40_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 40
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is velocity_x at epsilon index 2.",
+        "epsilon_component": "velocity_x",
+        "epsilon_index": 2,
+        "family": "process_epsilon_velocity_xy",
+        "perturbation_id": "process_epsilon_pulse__velocity_x__t40_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 40
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is velocity_x at epsilon index 2.",
+        "epsilon_component": "velocity_x",
+        "epsilon_index": 2,
+        "family": "process_epsilon_velocity_xy",
+        "perturbation_id": "process_epsilon_pulse__velocity_x__t40_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 40
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is velocity_y at epsilon index 3.",
+        "epsilon_component": "velocity_y",
+        "epsilon_index": 3,
+        "family": "process_epsilon_velocity_xy",
+        "perturbation_id": "process_epsilon_pulse__velocity_y__t40_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 40
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is velocity_y at epsilon index 3.",
+        "epsilon_component": "velocity_y",
+        "epsilon_index": 3,
+        "family": "process_epsilon_velocity_xy",
+        "perturbation_id": "process_epsilon_pulse__velocity_y__t40_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 40
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is force_state_x at epsilon index 4.",
+        "epsilon_component": "force_state_x",
+        "epsilon_index": 4,
+        "family": "process_epsilon_force_state_xy",
+        "perturbation_id": "process_epsilon_pulse__force_state_x__t40_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 40
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is force_state_x at epsilon index 4.",
+        "epsilon_component": "force_state_x",
+        "epsilon_index": 4,
+        "family": "process_epsilon_force_state_xy",
+        "perturbation_id": "process_epsilon_pulse__force_state_x__t40_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 40
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is force_state_y at epsilon index 5.",
+        "epsilon_component": "force_state_y",
+        "epsilon_index": 5,
+        "family": "process_epsilon_force_state_xy",
+        "perturbation_id": "process_epsilon_pulse__force_state_y__t40_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 40
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is force_state_y at epsilon index 5.",
+        "epsilon_component": "force_state_y",
+        "epsilon_index": 5,
+        "family": "process_epsilon_force_state_xy",
+        "perturbation_id": "process_epsilon_pulse__force_state_y__t40_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 40
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is integrator_x at epsilon index 6.",
+        "epsilon_component": "integrator_x",
+        "epsilon_index": 6,
+        "family": "process_epsilon_integrator_xy",
+        "perturbation_id": "process_epsilon_pulse__integrator_x__t40_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 40
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is integrator_x at epsilon index 6.",
+        "epsilon_component": "integrator_x",
+        "epsilon_index": 6,
+        "family": "process_epsilon_integrator_xy",
+        "perturbation_id": "process_epsilon_pulse__integrator_x__t40_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 40
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is integrator_y at epsilon index 7.",
+        "epsilon_component": "integrator_y",
+        "epsilon_index": 7,
+        "family": "process_epsilon_integrator_xy",
+        "perturbation_id": "process_epsilon_pulse__integrator_y__t40_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 40
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is integrator_y at epsilon index 7.",
+        "epsilon_component": "integrator_y",
+        "epsilon_index": 7,
+        "family": "process_epsilon_integrator_xy",
+        "perturbation_id": "process_epsilon_pulse__integrator_y__t40_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 40
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.command_input",
+        "amplitude": 1.0,
+        "axis": "x",
+        "basis": "command_cartesian_force_xy",
+        "channel": "command_input",
+        "description": "Add a pulse at the post-controller command port that feeds mechanics.force. This is not an external load-force row.",
+        "family": "command_input_pulse",
+        "perturbation_id": "command_input_pulse__t50_x_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 50
+        },
+        "units": "N"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.command_input",
+        "amplitude": 1.0,
+        "axis": "x",
+        "basis": "command_cartesian_force_xy",
+        "channel": "command_input",
+        "description": "Add a pulse at the post-controller command port that feeds mechanics.force. This is not an external load-force row.",
+        "family": "command_input_pulse",
+        "perturbation_id": "command_input_pulse__t50_x_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 50
+        },
+        "units": "N"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.command_input",
+        "amplitude": 1.0,
+        "axis": "y",
+        "basis": "command_cartesian_force_xy",
+        "channel": "command_input",
+        "description": "Add a pulse at the post-controller command port that feeds mechanics.force. This is not an external load-force row.",
+        "family": "command_input_pulse",
+        "perturbation_id": "command_input_pulse__t50_y_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 50
+        },
+        "units": "N"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.command_input",
+        "amplitude": 1.0,
+        "axis": "y",
+        "basis": "command_cartesian_force_xy",
+        "channel": "command_input",
+        "description": "Add a pulse at the post-controller command port that feeds mechanics.force. This is not an external load-force row.",
+        "family": "command_input_pulse",
+        "perturbation_id": "command_input_pulse__t50_y_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 50
+        },
+        "units": "N"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is position_x at epsilon index 0.",
+        "epsilon_component": "position_x",
+        "epsilon_index": 0,
+        "family": "process_epsilon_position_xy",
+        "perturbation_id": "process_epsilon_pulse__position_x__t50_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 50
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is position_x at epsilon index 0.",
+        "epsilon_component": "position_x",
+        "epsilon_index": 0,
+        "family": "process_epsilon_position_xy",
+        "perturbation_id": "process_epsilon_pulse__position_x__t50_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 50
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is position_y at epsilon index 1.",
+        "epsilon_component": "position_y",
+        "epsilon_index": 1,
+        "family": "process_epsilon_position_xy",
+        "perturbation_id": "process_epsilon_pulse__position_y__t50_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 50
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is position_y at epsilon index 1.",
+        "epsilon_component": "position_y",
+        "epsilon_index": 1,
+        "family": "process_epsilon_position_xy",
+        "perturbation_id": "process_epsilon_pulse__position_y__t50_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 50
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is velocity_x at epsilon index 2.",
+        "epsilon_component": "velocity_x",
+        "epsilon_index": 2,
+        "family": "process_epsilon_velocity_xy",
+        "perturbation_id": "process_epsilon_pulse__velocity_x__t50_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 50
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is velocity_x at epsilon index 2.",
+        "epsilon_component": "velocity_x",
+        "epsilon_index": 2,
+        "family": "process_epsilon_velocity_xy",
+        "perturbation_id": "process_epsilon_pulse__velocity_x__t50_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 50
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is velocity_y at epsilon index 3.",
+        "epsilon_component": "velocity_y",
+        "epsilon_index": 3,
+        "family": "process_epsilon_velocity_xy",
+        "perturbation_id": "process_epsilon_pulse__velocity_y__t50_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 50
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is velocity_y at epsilon index 3.",
+        "epsilon_component": "velocity_y",
+        "epsilon_index": 3,
+        "family": "process_epsilon_velocity_xy",
+        "perturbation_id": "process_epsilon_pulse__velocity_y__t50_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 50
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is force_state_x at epsilon index 4.",
+        "epsilon_component": "force_state_x",
+        "epsilon_index": 4,
+        "family": "process_epsilon_force_state_xy",
+        "perturbation_id": "process_epsilon_pulse__force_state_x__t50_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 50
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is force_state_x at epsilon index 4.",
+        "epsilon_component": "force_state_x",
+        "epsilon_index": 4,
+        "family": "process_epsilon_force_state_xy",
+        "perturbation_id": "process_epsilon_pulse__force_state_x__t50_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 50
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is force_state_y at epsilon index 5.",
+        "epsilon_component": "force_state_y",
+        "epsilon_index": 5,
+        "family": "process_epsilon_force_state_xy",
+        "perturbation_id": "process_epsilon_pulse__force_state_y__t50_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 50
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is force_state_y at epsilon index 5.",
+        "epsilon_component": "force_state_y",
+        "epsilon_index": 5,
+        "family": "process_epsilon_force_state_xy",
+        "perturbation_id": "process_epsilon_pulse__force_state_y__t50_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 50
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is integrator_x at epsilon index 6.",
+        "epsilon_component": "integrator_x",
+        "epsilon_index": 6,
+        "family": "process_epsilon_integrator_xy",
+        "perturbation_id": "process_epsilon_pulse__integrator_x__t50_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 50
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is integrator_x at epsilon index 6.",
+        "epsilon_component": "integrator_x",
+        "epsilon_index": 6,
+        "family": "process_epsilon_integrator_xy",
+        "perturbation_id": "process_epsilon_pulse__integrator_x__t50_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 50
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is integrator_y at epsilon index 7.",
+        "epsilon_component": "integrator_y",
+        "epsilon_index": 7,
+        "family": "process_epsilon_integrator_xy",
+        "perturbation_id": "process_epsilon_pulse__integrator_y__t50_neg",
+        "sign": -1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 50
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "task_trial_spec.inputs['epsilon']",
+        "amplitude": 0.01,
+        "axis": "y",
+        "basis": "cs_lss_process_epsilon_current_physical_block",
+        "channel": "process_epsilon",
+        "description": "Add a pulse on the C&S LSS mechanics.epsilon input, which is injected through the plant B_w process channel. The component is integrator_y at epsilon index 7.",
+        "epsilon_component": "integrator_y",
+        "epsilon_index": 7,
+        "family": "process_epsilon_integrator_xy",
+        "perturbation_id": "process_epsilon_pulse__integrator_y__t50_pos",
+        "sign": 1,
+        "timing": {
+          "duration_steps": 5,
+          "epoch": "movement_indexed",
+          "start_time_index": 50
+        },
+        "units": "epsilon"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.sensory_feedback",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "sensory_feedback_named_channel",
+        "channel": "sensory_feedback",
+        "description": "Offset the external sensory channel between sensory.output and net.feedback.",
+        "family": "sensory_feedback_offset",
+        "perturbation_id": "sensory_feedback_offset__x_pos",
+        "sign": 1,
+        "timing": {
+          "epoch": "adapter_defined"
+        },
+        "units": "m"
+      },
+      {
+        "adapter": "temporary_external_graph_adapter.delayed_observation",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "observation_history_named_channel",
+        "channel": "delayed_observation",
+        "description": "Offset the clean delayed-observation channel before sensory noise.",
+        "family": "delayed_observation_offset",
+        "perturbation_id": "delayed_observation_offset__x_pos",
+        "sign": 1,
+        "timing": {
+          "epoch": "adapter_defined"
+        },
+        "units": "m"
+      },
+      {
+        "adapter": "not_applicable_current_fixed_target_checkpoint",
+        "amplitude": 0.01,
+        "axis": "x",
+        "basis": "target_cartesian_xy",
+        "channel": "target_stream",
+        "description": "blocked because current C&S GRU input is scalar SISU, not a target stream",
+        "family": "target_stream_jump",
+        "perturbation_id": "target_stream_jump__x_pos",
+        "sign": 1,
+        "timing": {
+          "epoch": "adapter_defined"
+        },
+        "units": "m"
+      }
+    ],
+    "schema_version": "rlrmp.gru_perturbation_bank.v2",
+    "signed_pairing_rule": "signed_axis_pairs; aggregate absolute and signed responses"
+  },
+  "bulk_detail_manifest": {
+    "contains": [
+      "runs.*.perturbations",
+      "runs.*.robust_response_summary",
+      "runs.*.raw_rollout_payloads"
+    ],
+    "custody": "local_only_ignored_artifact",
+    "path": "_artifacts/aacb9ed/perturbation_response/gru_perturbation_response_fixed_target_random_perturb_validation_selected_detail.json",
+    "schema_version": "rlrmp.gru_perturbation_bank.bulk_detail.v1"
+  },
+  "checkpoint_policy": "validation_selected_per_replicate",
+  "extlqg_comparator": {
+    "checkpoint_selection_role": "audit_only_not_used_for_selection",
+    "reason": "Deterministic extLQG response rows are evaluated for perturbations with clean analytical interfaces: initial_state, process_epsilon, sensory_feedback, and delayed_observation. Sensory-feedback rows offset the post-noise measurement delivered to the estimator; delayed-observation rows offset the clean delayed measurement before sensory noise. Command-input rows still require a separate analytical command-port intervention, and target-stream is deferred for current fixed-target checkpoints.",
+    "status": "available_for_initial_state_process_epsilon_sensory_feedback_and_delayed_observation"
+  },
+  "full_qrf_cost": {
+    "lens": "realized_deterministic_rollout_full_qrf",
+    "reason": "Costs are rescored post hoc from states.mechanics.vector and states.net.output using the canonical C&S Q_t/R_t/Q_f schedule. They are audit-only perturbation diagnostics and are not used for checkpoint selection.",
+    "status": "available"
+  },
+  "issue": "aacb9ed",
+  "manifest_retention": {
+    "dense_run_detail": {
+      "path": "_artifacts/aacb9ed/perturbation_response/gru_perturbation_response_fixed_target_random_perturb_validation_selected_detail.json",
+      "status": "moved_to_bulk_detail_artifact"
+    }
+  },
+  "regeneration_spec": "results/aacb9ed/notes/gru_perturbation_response_fixed_target_random_perturb_validation_selected_manifest_regeneration_spec.json",
+  "runs": {
+    "fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64": {
+      "artifact_dir": "_artifacts/aacb9ed/runs/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64",
+      "bulk_files": {
+        "command_input_pulse__t20_x_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t20_x_neg.npz",
+        "command_input_pulse__t20_x_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t20_x_pos.npz",
+        "command_input_pulse__t20_y_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t20_y_neg.npz",
+        "command_input_pulse__t20_y_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t20_y_pos.npz",
+        "command_input_pulse__t40_x_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t40_x_neg.npz",
+        "command_input_pulse__t40_x_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t40_x_pos.npz",
+        "command_input_pulse__t40_y_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t40_y_neg.npz",
+        "command_input_pulse__t40_y_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t40_y_pos.npz",
+        "command_input_pulse__t50_x_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t50_x_neg.npz",
+        "command_input_pulse__t50_x_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t50_x_pos.npz",
+        "command_input_pulse__t50_y_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t50_y_neg.npz",
+        "command_input_pulse__t50_y_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/command_input_pulse__t50_y_pos.npz",
+        "delayed_observation_offset__x_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/delayed_observation_offset__x_pos.npz",
+        "initial_position_offset__x_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/initial_position_offset__x_neg.npz",
+        "initial_position_offset__x_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/initial_position_offset__x_pos.npz",
+        "initial_position_offset__y_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/initial_position_offset__y_neg.npz",
+        "initial_position_offset__y_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/initial_position_offset__y_pos.npz",
+        "initial_velocity_offset__x_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/initial_velocity_offset__x_neg.npz",
+        "initial_velocity_offset__x_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/initial_velocity_offset__x_pos.npz",
+        "initial_velocity_offset__y_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/initial_velocity_offset__y_neg.npz",
+        "initial_velocity_offset__y_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/initial_velocity_offset__y_pos.npz",
+        "process_epsilon_pulse__force_state_x__t20_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__force_state_x__t20_neg.npz",
+        "process_epsilon_pulse__force_state_x__t20_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__force_state_x__t20_pos.npz",
+        "process_epsilon_pulse__force_state_x__t40_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__force_state_x__t40_neg.npz",
+        "process_epsilon_pulse__force_state_x__t40_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__force_state_x__t40_pos.npz",
+        "process_epsilon_pulse__force_state_x__t50_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__force_state_x__t50_neg.npz",
+        "process_epsilon_pulse__force_state_x__t50_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__force_state_x__t50_pos.npz",
+        "process_epsilon_pulse__force_state_y__t20_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__force_state_y__t20_neg.npz",
+        "process_epsilon_pulse__force_state_y__t20_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__force_state_y__t20_pos.npz",
+        "process_epsilon_pulse__force_state_y__t40_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__force_state_y__t40_neg.npz",
+        "process_epsilon_pulse__force_state_y__t40_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__force_state_y__t40_pos.npz",
+        "process_epsilon_pulse__force_state_y__t50_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__force_state_y__t50_neg.npz",
+        "process_epsilon_pulse__force_state_y__t50_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__force_state_y__t50_pos.npz",
+        "process_epsilon_pulse__integrator_x__t20_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__integrator_x__t20_neg.npz",
+        "process_epsilon_pulse__integrator_x__t20_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__integrator_x__t20_pos.npz",
+        "process_epsilon_pulse__integrator_x__t40_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__integrator_x__t40_neg.npz",
+        "process_epsilon_pulse__integrator_x__t40_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__integrator_x__t40_pos.npz",
+        "process_epsilon_pulse__integrator_x__t50_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__integrator_x__t50_neg.npz",
+        "process_epsilon_pulse__integrator_x__t50_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__integrator_x__t50_pos.npz",
+        "process_epsilon_pulse__integrator_y__t20_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__integrator_y__t20_neg.npz",
+        "process_epsilon_pulse__integrator_y__t20_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__integrator_y__t20_pos.npz",
+        "process_epsilon_pulse__integrator_y__t40_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__integrator_y__t40_neg.npz",
+        "process_epsilon_pulse__integrator_y__t40_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__integrator_y__t40_pos.npz",
+        "process_epsilon_pulse__integrator_y__t50_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__integrator_y__t50_neg.npz",
+        "process_epsilon_pulse__integrator_y__t50_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__integrator_y__t50_pos.npz",
+        "process_epsilon_pulse__position_x__t20_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__position_x__t20_neg.npz",
+        "process_epsilon_pulse__position_x__t20_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__position_x__t20_pos.npz",
+        "process_epsilon_pulse__position_x__t40_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__position_x__t40_neg.npz",
+        "process_epsilon_pulse__position_x__t40_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__position_x__t40_pos.npz",
+        "process_epsilon_pulse__position_x__t50_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__position_x__t50_neg.npz",
+        "process_epsilon_pulse__position_x__t50_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__position_x__t50_pos.npz",
+        "process_epsilon_pulse__position_y__t20_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__position_y__t20_neg.npz",
+        "process_epsilon_pulse__position_y__t20_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__position_y__t20_pos.npz",
+        "process_epsilon_pulse__position_y__t40_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__position_y__t40_neg.npz",
+        "process_epsilon_pulse__position_y__t40_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__position_y__t40_pos.npz",
+        "process_epsilon_pulse__position_y__t50_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__position_y__t50_neg.npz",
+        "process_epsilon_pulse__position_y__t50_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__position_y__t50_pos.npz",
+        "process_epsilon_pulse__velocity_x__t20_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__velocity_x__t20_neg.npz",
+        "process_epsilon_pulse__velocity_x__t20_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__velocity_x__t20_pos.npz",
+        "process_epsilon_pulse__velocity_x__t40_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__velocity_x__t40_neg.npz",
+        "process_epsilon_pulse__velocity_x__t40_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__velocity_x__t40_pos.npz",
+        "process_epsilon_pulse__velocity_x__t50_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__velocity_x__t50_neg.npz",
+        "process_epsilon_pulse__velocity_x__t50_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__velocity_x__t50_pos.npz",
+        "process_epsilon_pulse__velocity_y__t20_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__velocity_y__t20_neg.npz",
+        "process_epsilon_pulse__velocity_y__t20_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__velocity_y__t20_pos.npz",
+        "process_epsilon_pulse__velocity_y__t40_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__velocity_y__t40_neg.npz",
+        "process_epsilon_pulse__velocity_y__t40_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__velocity_y__t40_pos.npz",
+        "process_epsilon_pulse__velocity_y__t50_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__velocity_y__t50_neg.npz",
+        "process_epsilon_pulse__velocity_y__t50_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/process_epsilon_pulse__velocity_y__t50_pos.npz",
+        "sensory_feedback_offset__x_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/sensory_feedback_offset__x_pos.npz"
+      },
+      "checkpoint_selection": [
+        {
+          "best_logged_validation_batch": 8801,
+          "best_logged_validation_objective": 4353.023262205566,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/aacb9ed/runs/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 4438.842336205838,
+          "final_vs_selected_validation_degradation": 63.03012085793944,
+          "replicate": 0,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 4375.812215347899,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11601,
+          "best_logged_validation_objective": 4327.873247938515,
+          "checkpoint_batches": 11000,
+          "checkpoint_path": "_artifacts/aacb9ed/runs/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0011000",
+          "final_validation_objective": 4450.815323429099,
+          "final_vs_selected_validation_degradation": 65.54224384444115,
+          "replicate": 1,
+          "scoring_validation_log_batch": 11000,
+          "scoring_validation_objective": 4385.273079584658,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 9901,
+          "best_logged_validation_objective": 4335.2815587817,
+          "checkpoint_batches": 8500,
+          "checkpoint_path": "_artifacts/aacb9ed/runs/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0008500",
+          "final_validation_objective": 4412.847422929258,
+          "final_vs_selected_validation_degradation": 67.08414704986353,
+          "replicate": 2,
+          "scoring_validation_log_batch": 8500,
+          "scoring_validation_objective": 4345.763275879394,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 10601,
+          "best_logged_validation_objective": 4355.619635628197,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/aacb9ed/runs/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 4395.685148882216,
+          "final_vs_selected_validation_degradation": 15.125290574733299,
+          "replicate": 3,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 4380.5598583074825,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 12000,
+          "best_logged_validation_objective": 4343.167873387215,
+          "checkpoint_batches": 12000,
+          "checkpoint_path": "_artifacts/aacb9ed/runs/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/checkpoints/checkpoint_0012000",
+          "final_validation_objective": 4343.167873387215,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 4,
+          "scoring_validation_log_batch": 12000,
+          "scoring_validation_objective": 4343.167873387215,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "dt_s": 0.01,
+      "label": "random_lr1e-3",
+      "n_perturbation_rows": 71,
+      "n_replicates": 5,
+      "n_rollout_trials_per_replicate": 8,
+      "n_time_steps": 60,
+      "perturbation_row_summary": {
+        "families": [
+          "command_input_pulse",
+          "delayed_observation_offset",
+          "initial_position_offset",
+          "initial_velocity_offset",
+          "process_epsilon_force_state_xy",
+          "process_epsilon_integrator_xy",
+          "process_epsilon_position_xy",
+          "process_epsilon_velocity_xy",
+          "sensory_feedback_offset",
+          "target_stream_jump"
+        ],
+        "status_counts": {
+          "evaluated": 70,
+          "not_applicable": 1
+        }
+      },
+      "perturbation_rows_detail_manifest": "_artifacts/aacb9ed/perturbation_response/gru_perturbation_response_fixed_target_random_perturb_validation_selected_detail.json",
+      "raw_rollout_payloads_detail_manifest": "_artifacts/aacb9ed/perturbation_response/gru_perturbation_response_fixed_target_random_perturb_validation_selected_detail.json",
+      "robust_response_summary_detail_manifest": "_artifacts/aacb9ed/perturbation_response/gru_perturbation_response_fixed_target_random_perturb_validation_selected_detail.json",
+      "robust_response_summary_digest": {
+        "ratio_of_means_keys": [
+          "command_input/command_input_pulse",
+          "delayed_observation/delayed_observation_offset",
+          "initial_state/initial_position_offset",
+          "initial_state/initial_velocity_offset",
+          "process_epsilon/process_epsilon_force_state_xy",
+          "process_epsilon/process_epsilon_integrator_xy",
+          "process_epsilon/process_epsilon_position_xy",
+          "process_epsilon/process_epsilon_velocity_xy",
+          "sensory_feedback/sensory_feedback_offset"
+        ],
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "status": "available",
+        "timing_bin_count": 0
+      },
+      "run_spec_path": "results/aacb9ed/runs/fixed_target_random_perturb_fullqrf_warmcos__lr1e-3_clip5_b64/run.json",
+      "status_counts": {
+        "evaluated": 70,
+        "not_applicable": 1
+      }
+    },
+    "fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64": {
+      "artifact_dir": "_artifacts/aacb9ed/runs/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64",
+      "bulk_files": {
+        "command_input_pulse__t20_x_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t20_x_neg.npz",
+        "command_input_pulse__t20_x_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t20_x_pos.npz",
+        "command_input_pulse__t20_y_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t20_y_neg.npz",
+        "command_input_pulse__t20_y_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t20_y_pos.npz",
+        "command_input_pulse__t40_x_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t40_x_neg.npz",
+        "command_input_pulse__t40_x_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t40_x_pos.npz",
+        "command_input_pulse__t40_y_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t40_y_neg.npz",
+        "command_input_pulse__t40_y_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t40_y_pos.npz",
+        "command_input_pulse__t50_x_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t50_x_neg.npz",
+        "command_input_pulse__t50_x_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t50_x_pos.npz",
+        "command_input_pulse__t50_y_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t50_y_neg.npz",
+        "command_input_pulse__t50_y_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/command_input_pulse__t50_y_pos.npz",
+        "delayed_observation_offset__x_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/delayed_observation_offset__x_pos.npz",
+        "initial_position_offset__x_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/initial_position_offset__x_neg.npz",
+        "initial_position_offset__x_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/initial_position_offset__x_pos.npz",
+        "initial_position_offset__y_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/initial_position_offset__y_neg.npz",
+        "initial_position_offset__y_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/initial_position_offset__y_pos.npz",
+        "initial_velocity_offset__x_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/initial_velocity_offset__x_neg.npz",
+        "initial_velocity_offset__x_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/initial_velocity_offset__x_pos.npz",
+        "initial_velocity_offset__y_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/initial_velocity_offset__y_neg.npz",
+        "initial_velocity_offset__y_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/initial_velocity_offset__y_pos.npz",
+        "process_epsilon_pulse__force_state_x__t20_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__force_state_x__t20_neg.npz",
+        "process_epsilon_pulse__force_state_x__t20_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__force_state_x__t20_pos.npz",
+        "process_epsilon_pulse__force_state_x__t40_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__force_state_x__t40_neg.npz",
+        "process_epsilon_pulse__force_state_x__t40_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__force_state_x__t40_pos.npz",
+        "process_epsilon_pulse__force_state_x__t50_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__force_state_x__t50_neg.npz",
+        "process_epsilon_pulse__force_state_x__t50_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__force_state_x__t50_pos.npz",
+        "process_epsilon_pulse__force_state_y__t20_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__force_state_y__t20_neg.npz",
+        "process_epsilon_pulse__force_state_y__t20_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__force_state_y__t20_pos.npz",
+        "process_epsilon_pulse__force_state_y__t40_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__force_state_y__t40_neg.npz",
+        "process_epsilon_pulse__force_state_y__t40_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__force_state_y__t40_pos.npz",
+        "process_epsilon_pulse__force_state_y__t50_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__force_state_y__t50_neg.npz",
+        "process_epsilon_pulse__force_state_y__t50_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__force_state_y__t50_pos.npz",
+        "process_epsilon_pulse__integrator_x__t20_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__integrator_x__t20_neg.npz",
+        "process_epsilon_pulse__integrator_x__t20_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__integrator_x__t20_pos.npz",
+        "process_epsilon_pulse__integrator_x__t40_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__integrator_x__t40_neg.npz",
+        "process_epsilon_pulse__integrator_x__t40_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__integrator_x__t40_pos.npz",
+        "process_epsilon_pulse__integrator_x__t50_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__integrator_x__t50_neg.npz",
+        "process_epsilon_pulse__integrator_x__t50_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__integrator_x__t50_pos.npz",
+        "process_epsilon_pulse__integrator_y__t20_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__integrator_y__t20_neg.npz",
+        "process_epsilon_pulse__integrator_y__t20_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__integrator_y__t20_pos.npz",
+        "process_epsilon_pulse__integrator_y__t40_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__integrator_y__t40_neg.npz",
+        "process_epsilon_pulse__integrator_y__t40_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__integrator_y__t40_pos.npz",
+        "process_epsilon_pulse__integrator_y__t50_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__integrator_y__t50_neg.npz",
+        "process_epsilon_pulse__integrator_y__t50_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__integrator_y__t50_pos.npz",
+        "process_epsilon_pulse__position_x__t20_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__position_x__t20_neg.npz",
+        "process_epsilon_pulse__position_x__t20_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__position_x__t20_pos.npz",
+        "process_epsilon_pulse__position_x__t40_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__position_x__t40_neg.npz",
+        "process_epsilon_pulse__position_x__t40_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__position_x__t40_pos.npz",
+        "process_epsilon_pulse__position_x__t50_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__position_x__t50_neg.npz",
+        "process_epsilon_pulse__position_x__t50_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__position_x__t50_pos.npz",
+        "process_epsilon_pulse__position_y__t20_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__position_y__t20_neg.npz",
+        "process_epsilon_pulse__position_y__t20_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__position_y__t20_pos.npz",
+        "process_epsilon_pulse__position_y__t40_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__position_y__t40_neg.npz",
+        "process_epsilon_pulse__position_y__t40_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__position_y__t40_pos.npz",
+        "process_epsilon_pulse__position_y__t50_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__position_y__t50_neg.npz",
+        "process_epsilon_pulse__position_y__t50_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__position_y__t50_pos.npz",
+        "process_epsilon_pulse__velocity_x__t20_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__velocity_x__t20_neg.npz",
+        "process_epsilon_pulse__velocity_x__t20_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__velocity_x__t20_pos.npz",
+        "process_epsilon_pulse__velocity_x__t40_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__velocity_x__t40_neg.npz",
+        "process_epsilon_pulse__velocity_x__t40_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__velocity_x__t40_pos.npz",
+        "process_epsilon_pulse__velocity_x__t50_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__velocity_x__t50_neg.npz",
+        "process_epsilon_pulse__velocity_x__t50_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__velocity_x__t50_pos.npz",
+        "process_epsilon_pulse__velocity_y__t20_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__velocity_y__t20_neg.npz",
+        "process_epsilon_pulse__velocity_y__t20_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__velocity_y__t20_pos.npz",
+        "process_epsilon_pulse__velocity_y__t40_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__velocity_y__t40_neg.npz",
+        "process_epsilon_pulse__velocity_y__t40_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__velocity_y__t40_pos.npz",
+        "process_epsilon_pulse__velocity_y__t50_neg": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__velocity_y__t50_neg.npz",
+        "process_epsilon_pulse__velocity_y__t50_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/process_epsilon_pulse__velocity_y__t50_pos.npz",
+        "sensory_feedback_offset__x_pos": "_artifacts/aacb9ed/perturbation_response/fixed_target_random_perturb_validation_selected/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/sensory_feedback_offset__x_pos.npz"
+      },
+      "checkpoint_selection": [
+        {
+          "best_logged_validation_batch": 8801,
+          "best_logged_validation_objective": 4342.032773710387,
+          "checkpoint_batches": 8500,
+          "checkpoint_path": "_artifacts/aacb9ed/runs/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/checkpoints/checkpoint_0008500",
+          "final_validation_objective": 4453.034192342362,
+          "final_vs_selected_validation_degradation": 82.17308957963269,
+          "replicate": 0,
+          "scoring_validation_log_batch": 8500,
+          "scoring_validation_objective": 4370.861102762729,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11601,
+          "best_logged_validation_objective": 4329.089306486241,
+          "checkpoint_batches": 5000,
+          "checkpoint_path": "_artifacts/aacb9ed/runs/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/checkpoints/checkpoint_0005000",
+          "final_validation_objective": 4442.2050643087905,
+          "final_vs_selected_validation_degradation": 70.17200765994312,
+          "replicate": 1,
+          "scoring_validation_log_batch": 5000,
+          "scoring_validation_objective": 4372.033056648847,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 9901,
+          "best_logged_validation_objective": 4341.580159770985,
+          "checkpoint_batches": 8500,
+          "checkpoint_path": "_artifacts/aacb9ed/runs/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/checkpoints/checkpoint_0008500",
+          "final_validation_objective": 4413.339509878222,
+          "final_vs_selected_validation_degradation": 58.877893186961046,
+          "replicate": 2,
+          "scoring_validation_log_batch": 8500,
+          "scoring_validation_objective": 4354.461616691261,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 6301,
+          "best_logged_validation_objective": 4348.902924719691,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/aacb9ed/runs/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 4409.476117984297,
+          "final_vs_selected_validation_degradation": 27.72092323551351,
+          "replicate": 3,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 4381.755194748784,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11801,
+          "best_logged_validation_objective": 4343.476439646385,
+          "checkpoint_batches": 12000,
+          "checkpoint_path": "_artifacts/aacb9ed/runs/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/checkpoints/checkpoint_0012000",
+          "final_validation_objective": 4347.527693670638,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 4,
+          "scoring_validation_log_batch": 12000,
+          "scoring_validation_objective": 4347.527693670638,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "dt_s": 0.01,
+      "label": "random_lr3e-3",
+      "n_perturbation_rows": 71,
+      "n_replicates": 5,
+      "n_rollout_trials_per_replicate": 8,
+      "n_time_steps": 60,
+      "perturbation_row_summary": {
+        "families": [
+          "command_input_pulse",
+          "delayed_observation_offset",
+          "initial_position_offset",
+          "initial_velocity_offset",
+          "process_epsilon_force_state_xy",
+          "process_epsilon_integrator_xy",
+          "process_epsilon_position_xy",
+          "process_epsilon_velocity_xy",
+          "sensory_feedback_offset",
+          "target_stream_jump"
+        ],
+        "status_counts": {
+          "evaluated": 70,
+          "not_applicable": 1
+        }
+      },
+      "perturbation_rows_detail_manifest": "_artifacts/aacb9ed/perturbation_response/gru_perturbation_response_fixed_target_random_perturb_validation_selected_detail.json",
+      "raw_rollout_payloads_detail_manifest": "_artifacts/aacb9ed/perturbation_response/gru_perturbation_response_fixed_target_random_perturb_validation_selected_detail.json",
+      "robust_response_summary_detail_manifest": "_artifacts/aacb9ed/perturbation_response/gru_perturbation_response_fixed_target_random_perturb_validation_selected_detail.json",
+      "robust_response_summary_digest": {
+        "ratio_of_means_keys": [
+          "command_input/command_input_pulse",
+          "delayed_observation/delayed_observation_offset",
+          "initial_state/initial_position_offset",
+          "initial_state/initial_velocity_offset",
+          "process_epsilon/process_epsilon_force_state_xy",
+          "process_epsilon/process_epsilon_integrator_xy",
+          "process_epsilon/process_epsilon_position_xy",
+          "process_epsilon/process_epsilon_velocity_xy",
+          "sensory_feedback/sensory_feedback_offset"
+        ],
+        "selection_role": "audit_only_not_used_for_checkpoint_selection",
+        "status": "available",
+        "timing_bin_count": 0
+      },
+      "run_spec_path": "results/aacb9ed/runs/fixed_target_random_perturb_fullqrf_warmcos__lr3e-3_clip5_b64/run.json",
+      "status_counts": {
+        "evaluated": 70,
+        "not_applicable": 1
+      }
+    }
+  },
+  "schema_version": "rlrmp.gru_perturbation_bank.v2",
+  "scope": "controller_independent_perturbation_response",
+  "semantics_correction": "v2 splits the former plant_force rows into command_input_pulse (post-controller command-port perturbations) and process_epsilon_pulse (mechanics.epsilon / B_w process perturbations). Process-epsilon rows span the canonical current physical block [px, py, vx, vy, fx, fy, eps_x_int, eps_y_int].",
+  "source_experiment": "aacb9ed"
+}

@@ -21,6 +21,7 @@ under the mirror invariant.
 The gitignore tests shell out to `git check-ignore -q`, which is the
 authoritative oracle for whether a path would be tracked.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -45,27 +46,24 @@ def _is_ignored(path: str) -> bool:
         check=False,
     )
     if result.returncode not in (0, 1):
-        raise RuntimeError(
-            f"git check-ignore failed for {path!r}: rc={result.returncode}"
-        )
+        raise RuntimeError(f"git check-ignore failed for {path!r}: rc={result.returncode}")
     return result.returncode == 0
 
 
 def assert_committable(path: str) -> None:
     assert not _is_ignored(path), (
-        f"{path!r} should be committable under the role-based policy "
-        f"but is currently ignored."
+        f"{path!r} should be committable under the role-based policy but is currently ignored."
     )
 
 
 def assert_ignored(path: str) -> None:
     assert _is_ignored(path), (
-        f"{path!r} should be ignored under the role-based policy "
-        f"but would currently be tracked."
+        f"{path!r} should be ignored under the role-based policy but would currently be tracked."
     )
 
 
 # --- Specs and narratives under `results/` are tracked --------------------
+
 
 @pytest.mark.parametrize(
     "path",
@@ -82,9 +80,6 @@ def assert_ignored(path: str) -> None:
         "results/part2_5/figures/big/figure.html",
         # Legacy stub configs:
         "results/2ef67ca/models/centerout_apt_pert1/config.json",
-        # Typora markdown sidecar PNGs stay tracked:
-        "results/1_general.assets/some_image.png",
-        "results/2_general.assets/file-20241126113220236.png",
     ],
 )
 def test_committable(path: str) -> None:
@@ -92,6 +87,7 @@ def test_committable(path: str) -> None:
 
 
 # --- Bulk artifacts and unknown kinds under `results/` are ignored --------
+
 
 @pytest.mark.parametrize(
     "path",
@@ -108,6 +104,10 @@ def test_committable(path: str) -> None:
         # Unknown file kinds in unknown subdirs:
         "results/part2_5/some_random_dir/data.pkl",
         "results/part2_5/something/random.png",
+        # Legacy markdown sidecar asset directories are bulk artifacts:
+        "results/1_general.assets/some_image.png",
+        "results/2_general.assets/file-20241126113220236.png",
+        "results/2_training-methods.assets/file-20250620091043895.png",
     ],
 )
 def test_ignored(path: str) -> None:
@@ -118,6 +118,7 @@ def test_ignored(path: str) -> None:
 # The broad `!results/**/config.json` whitelist was depth-blind and caused
 # bulk per-run configs from cloud providers to be tracked. It is now replaced
 # with three depth-specific patterns. These tests encode that contract.
+
 
 @pytest.mark.parametrize(
     "path",
@@ -160,6 +161,7 @@ def test_bulk_config_json_ignored(path: str) -> None:
 
 # --- _artifacts/ is ignored as the bulk-output tree -----------------------
 
+
 def test_artifacts_tree_is_ignored() -> None:
     """The bulk artifact tree itself is ignored.
 
@@ -174,6 +176,7 @@ def test_artifacts_tree_is_ignored() -> None:
 
 # --- Every currently-committed file under results/ stays committable ------
 
+
 def test_no_committed_file_is_now_ignored() -> None:
     """Regression guard: the migration must not retroactively ignore anything
     already tracked under `results/`. If this fails, the gitignore needs another
@@ -185,10 +188,7 @@ def test_no_committed_file_is_now_ignored() -> None:
         capture_output=True,
         text=True,
     )
-    broken = [
-        line for line in listing.stdout.splitlines()
-        if line and _is_ignored(line)
-    ]
+    broken = [line for line in listing.stdout.splitlines() if line and _is_ignored(line)]
     assert not broken, (
         f"{len(broken)} currently-committed file(s) became ignored after the "
         f"migration:\n  " + "\n  ".join(broken[:20])
@@ -283,13 +283,8 @@ class TestRunSpecPath:
         assert run_spec_path("abc1234", "run_a", repo_root=tmp_path) == legacy
         # ... but the writer always lands on the flat canonical path.
         flat = tmp_path / "results" / "abc1234" / "runs" / "run_a.json"
-        assert (
-            run_spec_path("abc1234", "run_a", repo_root=tmp_path, for_write=True)
-            == flat
-        )
-        assert (
-            flat_run_spec_path("abc1234", "run_a", repo_root=tmp_path) == flat
-        )
+        assert run_spec_path("abc1234", "run_a", repo_root=tmp_path, for_write=True) == flat
+        assert flat_run_spec_path("abc1234", "run_a", repo_root=tmp_path) == flat
 
 
 class TestRunArtifactDir:
@@ -426,6 +421,7 @@ class TestFigureDirMirrorInvariant:
 # Train-script ``derive_spec_dir`` helpers (Bug: 0077b42)
 # ---------------------------------------------------------------------------
 
+
 def _load_module(module_name: str, file_path: Path):
     """Import a script-style module by file path without executing as __main__.
 
@@ -475,13 +471,9 @@ class TestDerivedSpecDirMirrorInvariant:
         spec = train_minimax_module.derive_spec_dir(artifact)
         assert spec == run_spec_dir("minimax", "seed_0")
 
-    def test_relative_artifact_path_resolves_correctly(
-        self, train_part2_5_module
-    ) -> None:
+    def test_relative_artifact_path_resolves_correctly(self, train_part2_5_module) -> None:
         """A relative ``_artifacts/...`` path should still map under ``results/``."""
-        spec = train_part2_5_module.derive_spec_dir(
-            Path("_artifacts/part2_5/runs/foo")
-        )
+        spec = train_part2_5_module.derive_spec_dir(Path("_artifacts/part2_5/runs/foo"))
         assert spec == run_spec_dir("part2_5", "foo")
 
 
@@ -508,17 +500,11 @@ class TestDerivedSpecPathFlat:
         assert spec == run_spec_path("minimax", "seed_0")
         assert spec.name == "seed_0.json"
 
-    def test_relative_artifact_path_resolves_to_flat(
-        self, train_minimax_module
-    ) -> None:
-        spec = train_minimax_module.derive_spec_path(
-            Path("_artifacts/minimax/runs/foo")
-        )
+    def test_relative_artifact_path_resolves_to_flat(self, train_minimax_module) -> None:
+        spec = train_minimax_module.derive_spec_path(Path("_artifacts/minimax/runs/foo"))
         assert spec == run_spec_path("minimax", "foo")
 
-    def test_flat_recipe_is_not_nested_run_json(
-        self, train_minimax_module
-    ) -> None:
+    def test_flat_recipe_is_not_nested_run_json(self, train_minimax_module) -> None:
         artifact = run_artifact_dir("minimax", "seed_0")
         spec = train_minimax_module.derive_spec_path(artifact)
         nested = run_spec_dir("minimax", "seed_0") / "run.json"
@@ -599,9 +585,7 @@ class TestDerivedSpecPathFallback:
 class TestDerivedSpecDirFallback:
     """When ``output_dir`` is outside ``_artifacts/``, fall back to a sibling."""
 
-    def test_out_of_tree_path_uses_sibling_spec(
-        self, tmp_path, train_part2_5_module
-    ) -> None:
+    def test_out_of_tree_path_uses_sibling_spec(self, tmp_path, train_part2_5_module) -> None:
         """Paths outside the artifact tree map to ``<dir>_spec`` next to them."""
         out = tmp_path / "myrun"
         out.mkdir()
