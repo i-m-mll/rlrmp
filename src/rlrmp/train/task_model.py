@@ -301,6 +301,7 @@ def setup_task_model_pair(
             target_relative=target_training.enabled,
             go_cue_input=target_training.enabled and delayed_reach,
             scalar_input=sisu_conditioned_pgd,
+            scalar_input_name=_sisu_conditioned_pgd_budget_input_name(hps),
             scalar_input_fn=_sisu_conditioned_pgd_budget_input_fn(hps)
             if sisu_conditioned_pgd
             else None,
@@ -515,18 +516,34 @@ def _add_cs_lss_task_inputs(
     target_relative: bool = False,
     go_cue_input: bool = False,
     scalar_input: bool = False,
+    scalar_input_name: str = "input",
     scalar_input_fn: Callable | None = None,
     physical_state_dim: int = CS_PHYSICAL_STATE_DIM,
 ) -> _CsLssTaskAdapter:
-    if go_cue_input:
+    if go_cue_input and scalar_input:
+        scalar_fn = scalar_input_fn or SISU_FNS["nominal-cs-gru"]
+        task = task.add_input(
+            name=scalar_input_name,
+            input_fn=scalar_fn,
+        )
+        task = task.add_input(
+            name="input",
+            input_fn=_cs_delayed_go_cue_with_scalar_input(scalar_fn),
+        )
+    elif go_cue_input:
         task = task.add_input(
             name="input",
             input_fn=_cs_delayed_go_cue_input,
         )
-    elif scalar_input or not target_relative:
+    elif scalar_input:
+        task = task.add_input(
+            name=scalar_input_name,
+            input_fn=scalar_input_fn or SISU_FNS["nominal-cs-gru"],
+        )
+    elif not go_cue_input and not target_relative:
         task = task.add_input(
             name="input",
-            input_fn=scalar_input_fn or SISU_FNS["nominal-cs-gru"],
+            input_fn=SISU_FNS["nominal-cs-gru"],
         )
     return task.add_input(
         name="epsilon",
@@ -593,6 +610,20 @@ def _sisu_conditioned_pgd_budget_input_fn(hps: TreeNamespace) -> Callable | None
     return input_fn
 
 
+def _sisu_conditioned_pgd_budget_input_name(hps: TreeNamespace) -> str:
+    config = _sisu_conditioned_pgd_budget_config(hps)
+    if config is None:
+        return "input"
+    schedule = config.budget_schedule
+    conditioning = getattr(schedule, "conditioning_scalar", TreeNamespace())
+    input_name = str(
+        getattr(conditioning, "input_key", getattr(config, "sisu_condition_input", "auto"))
+    )
+    if input_name == "auto":
+        return "sisu" if _cs_delayed_reach_enabled(hps) else "input"
+    return input_name
+
+
 def _cs_delayed_go_cue_input(
     trial_spec: TaskTrialSpec,
     key: PRNGKeyArray,
@@ -607,6 +638,19 @@ def _cs_delayed_go_cue_input(
     hold = jnp.asarray(task_inputs.hold, dtype=jnp.float32)
     go = 1.0 - hold
     return go[..., 0] if go.ndim > 0 and go.shape[-1] == 1 else go
+
+
+def _cs_delayed_go_cue_with_scalar_input(scalar_input_fn: Callable) -> Callable:
+    def input_fn(trial_spec: TaskTrialSpec, key: PRNGKeyArray) -> jax.Array:
+        go = jnp.asarray(_cs_delayed_go_cue_input(trial_spec, key), dtype=jnp.float32)
+        scalar = jnp.asarray(scalar_input_fn(trial_spec, key), dtype=go.dtype)
+        if scalar.ndim >= 1 and scalar.shape[-1] == go.shape[-1] + 1:
+            scalar = scalar[..., :-1]
+        if scalar.shape != go.shape:
+            scalar = jnp.broadcast_to(scalar, go.shape)
+        return jnp.stack([go, scalar], axis=-1)
+
+    return input_fn
 
 
 def _sample_cs_lss_process_epsilon(
@@ -684,11 +728,14 @@ def _create_cs_lss_gru_ensemble(
         )
         no_integrator_state = bool(getattr(hps.model, "no_integrator_state", False))
         delayed_reach = _cs_delayed_reach_enabled(hps)
-        scalar_input = delayed_reach or not target_training.enabled
-        scalar_input = scalar_input or _sisu_conditioned_pgd_budget_enabled(hps)
+        scalar_input_count = int(delayed_reach or not target_training.enabled)
+        if _sisu_conditioned_pgd_budget_enabled(hps):
+            sisu_input_name = _sisu_conditioned_pgd_budget_input_name(hps)
+            if not (sisu_input_name == "input" and scalar_input_count > 0):
+                scalar_input_count += 1
         return build_cs_lss_gru_graph(
             hidden_size=int(hps.model.hidden_size),
-            input_size=1 if scalar_input else 0,
+            input_size=scalar_input_count,
             hidden_type=hidden_type,
             population_structure=population_structure,
             sisu_gating=sisu_gating,

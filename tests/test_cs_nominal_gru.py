@@ -98,6 +98,7 @@ from rlrmp.train.cs_perturbation_training import (
     config_from_broad_epsilon_pgd_hps,
     graph_adapter_specs,
     planned_020a65b_h0_pgd_rows,
+    planned_7c1f7ed_delayed_sisu_spectrum_rows,
     planned_e4800d6_sisu_spectrum_rows,
     planned_fixed_target_perturbation_rows,
     planned_target_relative_multitarget_h0_rows,
@@ -513,6 +514,198 @@ def test_e4800d6_sisu_spectrum_planned_rows_parse_to_sisu_pgd_args() -> None:
         assert parsed.lr_warmup_batches == 500
         assert parsed.lr_warmup_init_fraction == pytest.approx(0.1)
         assert parsed.lr_cosine_alpha == pytest.approx(0.1)
+
+
+def test_delayed_sisu_rejects_overloaded_input_condition_key() -> None:
+    with pytest.raises(ValueError, match="go cue and SISU budget key are distinct"):
+        build_hps(
+            _args(
+                delayed_reach=True,
+                target_relative_multitarget=True,
+                broad_epsilon_pgd_training=True,
+                broad_epsilon_pgd_budget_schedule=BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
+                broad_epsilon_pgd_sisu_condition_input="input",
+                broad_epsilon_pgd_sisu_max_radius=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+                broad_epsilon_reach_scaling=False,
+            )
+        )
+
+
+def test_delayed_sisu_uses_separate_budget_key_and_composite_controller_input() -> None:
+    hps = build_hps(
+        _args(
+            smoke=True,
+            batch_size=5,
+            delayed_reach=True,
+            delayed_reach_p_catch_trial=0.0,
+            target_relative_multitarget=True,
+            force_filter_feedback=True,
+            broad_epsilon_pgd_training=True,
+            broad_epsilon_pgd_budget_schedule=BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
+            broad_epsilon_pgd_sisu_condition_input="sisu",
+            broad_epsilon_pgd_sisu_max_radius=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+            broad_epsilon_reach_scaling=False,
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            hidden_size=8,
+            n_replicates=1,
+        )
+    )
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    trial = pair.task.task.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
+    go_step = int(trial.timeline.epoch_bounds[-2])
+
+    assert pair.model.input_ports[:3] == ("input", "target", "epsilon")
+    assert pair.model.nodes["net"].input_size == 8
+    assert sorted(trial.inputs) == ["epsilon", "input", "sisu", "target", "task"]
+    assert trial.inputs["input"].shape[-1] == 2
+    assert jnp.allclose(trial.inputs["input"][:go_step, 0], 0.0)
+    assert jnp.allclose(trial.inputs["input"][go_step:, 0], 1.0)
+    assert jnp.allclose(trial.inputs["input"][..., 1], trial.inputs["sisu"][..., :-1])
+
+    radius = _broad_epsilon_l2_radius(
+        trial,
+        config_from_broad_epsilon_pgd_hps(hps.broad_epsilon_pgd_training),
+    )
+    expected_radius = EFFECTIVE_020A65B_PGD_RADIUS_15CM * jnp.sqrt(
+        jnp.mean(trial.inputs["sisu"])
+    )
+    assert radius == pytest.approx(float(expected_radius))
+
+    spec = build_graph_bundle(hps).task_spec
+    summary = build_graph_bundle(hps).manifest["model_structure"]
+    assert spec["extra_inputs"] == ["input", "sisu", "target", "epsilon"]
+    assert summary["go_cue"]["controller_input_index"] == 0
+    assert summary["sisu_conditioning"]["input_key"] == "sisu"
+    assert summary["sisu_conditioning"]["controller_input_index"] == 1
+
+
+def test_delayed_sisu_catch_trials_preserve_hold_targets_with_sisu_present() -> None:
+    hps = build_hps(
+        _args(
+            smoke=True,
+            delayed_reach=True,
+            delayed_reach_p_catch_trial=1.0,
+            target_relative_multitarget=True,
+            broad_epsilon_pgd_training=True,
+            broad_epsilon_pgd_budget_schedule=BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
+            broad_epsilon_pgd_sisu_condition_input="sisu",
+            broad_epsilon_pgd_sisu_max_radius=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+            broad_epsilon_reach_scaling=False,
+            hidden_size=8,
+            n_replicates=1,
+        )
+    )
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    base = pair.task.task.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
+    sampled = apply_training_target_distribution(
+        base,
+        hps.target_relative_multitarget,
+        jr.PRNGKey(2),
+    )
+
+    assert sampled.extra is not None
+    assert bool(sampled.extra["is_catch_trial"])
+    assert "sisu" in sampled.inputs
+    assert jnp.allclose(sampled.inputs["input"][..., 0], 0.0)
+    assert jnp.allclose(sampled.inputs["input"][..., 1], sampled.inputs["sisu"][..., :-1])
+    assert jnp.any(jnp.abs(sampled.inputs["target"]) > 0.0)
+    assert jnp.allclose(
+        sampled.targets["mechanics.effector.pos"].value,
+        jnp.zeros_like(sampled.targets["mechanics.effector.pos"].value),
+    )
+
+
+def test_7c1f7ed_delayed_sisu_planned_rows_parse_and_dry_run_specs(tmp_path: Path) -> None:
+    rows = planned_7c1f7ed_delayed_sisu_spectrum_rows()
+
+    assert [row["row"] for row in rows] == ["A", "B"]
+    assert [row["max_l2_radius_15cm"] for row in rows] == pytest.approx(
+        [0.0023284905801002004, EFFECTIVE_020A65B_PGD_RADIUS_15CM]
+    )
+    assert [row["run"] for row in rows] == [
+        "delayed_sisu_spectrum__raw_strong_gamma_1p05_radius_lr1e-2_clip5_b64",
+        "delayed_sisu_spectrum__effective_020a65b_pgd_radius_lr1e-2_clip5_b64",
+    ]
+    for row in rows:
+        parsed = _parse_planned_training_command(row["command"])
+        parsed_gate = _parse_planned_training_command(row["checkpoint_gate_command"])
+
+        assert row["base_row"] == "ef9c882/hold__start_pos_zero_vel_lr1e-2"
+        assert row["controller_lr"] == pytest.approx(1e-2)
+        assert row["final_learning_rate"] == pytest.approx(1e-3)
+        assert row["hidden_size"] == 180
+        assert row["nn_output_pre_go"] == pytest.approx(0.0)
+        assert row["delayed_pre_go_force_filter_hold"] == pytest.approx(0.0)
+        assert row["delayed_pre_go_start_pos_hold"] == pytest.approx(1e6)
+        assert row["delayed_pre_go_start_pos_hold_norm"] == "l2"
+        assert row["delayed_pre_go_zero_vel_hold"] == pytest.approx(1e5)
+        assert parsed.issue == "7c1f7ed"
+        assert parsed.delayed_reach is True
+        assert parsed.delayed_reach_go_cue_min_step == 10
+        assert parsed.delayed_reach_go_cue_max_step == 30
+        assert parsed.delayed_reach_p_catch_trial == pytest.approx(0.5)
+        assert parsed.target_relative_multitarget is True
+        assert parsed.initial_hidden_encoder is False
+        assert parsed.force_filter_feedback is True
+        assert parsed.perturbation_training is True
+        assert parsed.perturbation_calibrated_timing is True
+        assert parsed.perturbation_movement_age_timing is True
+        assert parsed.perturbation_physical_level == "small"
+        assert parsed.loss_objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
+        assert parsed.nn_output_pre_go == pytest.approx(0.0)
+        assert parsed.delayed_pre_go_force_filter_hold == pytest.approx(0.0)
+        assert parsed.delayed_pre_go_start_pos_hold == pytest.approx(1e6)
+        assert parsed.delayed_pre_go_start_pos_hold_norm == "l2"
+        assert parsed.delayed_pre_go_zero_vel_hold == pytest.approx(1e5)
+        assert parsed.broad_epsilon_pgd_training is True
+        assert parsed.broad_epsilon_reach_scaling is False
+        assert parsed.broad_epsilon_pgd_budget_schedule == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
+        assert parsed.broad_epsilon_pgd_sisu_condition_input == "sisu"
+        assert parsed.broad_epsilon_pgd_sisu_max_radius == pytest.approx(
+            row["max_l2_radius_15cm"]
+        )
+        assert parsed.broad_epsilon_pgd_steps == 10
+        assert parsed.broad_epsilon_pgd_step_size_fraction == pytest.approx(0.25)
+        assert parsed.controller_lr == pytest.approx(1e-2)
+        assert parsed.lr_warmup_batches == 500
+        assert parsed.lr_warmup_init_fraction == pytest.approx(0.1)
+        assert parsed.lr_cosine_alpha == pytest.approx(0.1)
+        assert parsed.hidden_size == 180
+        assert parsed.stop_after_batches is None
+        assert parsed_gate.stop_after_batches == 1000
+        assert row["delayed_reach"]["sisu_budget_input"] == "sisu"
+        assert row["broad_epsilon_pgd_scope"] == "movement_epoch_only"
+
+        parsed.output_dir = str(tmp_path / row["run"] / "artifacts")
+        parsed.spec_dir = str(tmp_path / row["run"] / "spec")
+        parsed.dry_run = True
+        payload = write_run_spec(parsed)["run_spec"]
+        assert payload["task_timing"]["extra_inputs"] == ["input", "sisu", "target", "epsilon"]
+        assert payload["hps"]["broad_epsilon_pgd_training"]["movement_epoch_only"] is True
+        assert payload["hps"]["broad_epsilon_pgd_training"]["budget_schedule"][
+            "conditioning_scalar"
+        ]["input_key"] == "sisu"
+        assert payload["hps"]["model"]["force_filter_feedback"] is True
+        assert payload["hps"]["target_relative_multitarget"]["force_filter_feedback"] is True
+        assert payload["hps"]["perturbation_training"]["enabled"] is True
+        assert payload["hps"]["perturbation_training"]["calibrated_timing"] is True
+        assert payload["hps"]["perturbation_training"]["timing_basis"]["mode"] == "movement_age"
+        assert payload["hps"]["perturbation_training"]["physical_level"] == "small"
+        assert payload["hps"]["loss"]["weights"]["nn_output_pre_go"] == pytest.approx(0.0)
+        assert payload["hps"]["loss"]["weights"]["delayed_pre_go_force_filter_hold"] == (
+            pytest.approx(0.0)
+        )
+        assert payload["hps"]["loss"]["weights"]["delayed_pre_go_start_pos_hold"] == (
+            pytest.approx(1e6)
+        )
+        assert payload["hps"]["loss"]["delayed_pre_go_start_pos_hold_norm"] == "l2"
+        assert payload["hps"]["loss"]["weights"]["delayed_pre_go_zero_vel_hold"] == (
+            pytest.approx(1e5)
+        )
+        assert payload["hps"]["delayed_reach"]["catch_trials"]["p_catch_trial"] == pytest.approx(
+            0.5
+        )
+        assert payload["model_summary"]["initial_hidden_encoder"]["enabled"] is False
 
 
 def test_full_analytical_qrf_loss_scores_non_pos_vel_state_and_command() -> None:

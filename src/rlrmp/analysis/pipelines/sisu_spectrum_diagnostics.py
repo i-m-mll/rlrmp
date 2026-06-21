@@ -142,11 +142,21 @@ def set_sisu_condition(trial_specs: Any, sisu: float, *, input_key: str | None =
 
     key = input_key or resolve_sisu_input_key(trial_specs)
     current = jnp.asarray(trial_specs.inputs[key])
-    return eqx.tree_at(
+    updated = eqx.tree_at(
         lambda t: t.inputs[key],
         trial_specs,
         jnp.full_like(current, float(sisu)),
     )
+    if key == "sisu" and "input" in updated.inputs:
+        controller_input = jnp.asarray(updated.inputs["input"])
+        if controller_input.ndim >= 3 and controller_input.shape[-1] >= 2:
+            sisu_column = jnp.full_like(controller_input[..., 1], float(sisu))
+            updated = eqx.tree_at(
+                lambda t: t.inputs["input"],
+                updated,
+                controller_input.at[..., 1].set(sisu_column),
+            )
+    return updated
 
 
 def zero_disturbance_payload(trial_specs: Any, *, input_key: str = "epsilon") -> Any:
