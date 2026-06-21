@@ -55,6 +55,8 @@ DEFAULT_FORCE_FILTER_SCALE = 10.0
 DEFAULT_PRE_ONSET_FIGURE_STEPS = 10
 DEFAULT_POST_ONSET_FIGURE_STEPS = 50
 SUMMARY_MARKER = "steady_state_perturbation_bank"
+SUMMARY_FILENAME = "steady_state_perturbation_bank_summary.json"
+DETAIL_FILENAME = "steady_state_perturbation_bank_detail.json"
 
 PerturbationFamily = Literal["position", "velocity", "force_filter"]
 ComparisonKind = Literal["sisu", "pgd"]
@@ -243,7 +245,7 @@ def materialize_steady_state_comparisons(
             repo_root=repo_root,
         )
 
-    manifest = {
+    detail_manifest = {
         "schema_version": SCHEMA_VERSION,
         "issue": result_experiment,
         "n_rollout_trials": int(n_rollout_trials),
@@ -253,11 +255,33 @@ def materialize_steady_state_comparisons(
         "washin_contract": _washin_contract(),
         "comparisons": all_results,
     }
-    summary_path = notes_dir / "steady_state_perturbation_bank_summary.json"
+    summary_path = notes_dir / SUMMARY_FILENAME
+    detail_path = repo_root / "_artifacts" / result_experiment / "notes" / DETAIL_FILENAME
     markdown_path = notes_dir / "steady_state_perturbation_bank.md"
     regeneration_path = notes_dir / "steady_state_perturbation_bank_regeneration_spec.json"
-    summary_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
-    _update_summary_markdown(markdown_path, render_summary_markdown(manifest))
+    summary_manifest = slim_steady_state_manifest(
+        detail_manifest,
+        detail_manifest_path=detail_path,
+        repo_root=repo_root,
+    )
+    outputs = {
+        "summary_json": repo_relative(summary_path, repo_root=repo_root),
+        "summary_markdown": repo_relative(markdown_path, repo_root=repo_root),
+        "detail_json": repo_relative(detail_path, repo_root=repo_root),
+        "regeneration_spec": repo_relative(regeneration_path, repo_root=repo_root),
+    }
+    detail_manifest["outputs"] = outputs
+    summary_manifest["outputs"] = outputs
+    mkdir_p(detail_path.parent)
+    detail_path.write_text(
+        json.dumps(detail_manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    summary_path.write_text(
+        json.dumps(summary_manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _update_summary_markdown(markdown_path, render_summary_markdown(summary_manifest))
     write_regeneration_spec(
         spec_path=regeneration_path,
         diagnostic_name="gru_steady_state_perturbation_bank",
@@ -282,6 +306,7 @@ def materialize_steady_state_comparisons(
         outputs=[
             {"role": "summary_json", "path": summary_path},
             {"role": "summary_markdown", "path": markdown_path},
+            {"role": "steady_state_perturbation_bank_detail_json", "path": detail_path},
         ],
         source_files=[
             "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py",
@@ -289,17 +314,188 @@ def materialize_steady_state_comparisons(
         ],
         notes=[
             "Local model evaluation only; no retraining, pod, or reach-context bank rerun.",
-            "Raw rollout arrays are not written; tracked summaries and figure specs are sufficient.",
+            "Tracked summary JSON is scalar-only and points to ignored _artifacts detail bytes.",
         ],
         repo_root=repo_root,
     )
-    manifest["outputs"] = {
-        "summary_json": repo_relative(summary_path, repo_root=repo_root),
-        "summary_markdown": repo_relative(markdown_path, repo_root=repo_root),
-        "regeneration_spec": repo_relative(regeneration_path, repo_root=repo_root),
+    return summary_manifest
+
+
+def slim_steady_state_manifest(
+    manifest: Mapping[str, Any],
+    *,
+    detail_manifest_path: Path,
+    repo_root: Path,
+) -> dict[str, Any]:
+    """Remove dense profiles and adapter detail from the tracked summary manifest."""
+
+    slim = {key: value for key, value in manifest.items() if key not in {"comparisons", "outputs"}}
+    slim["bulk_detail_manifest"] = {
+        "path": repo_relative(detail_manifest_path, repo_root=repo_root),
+        "format": "json",
+        "contains": (
+            "full steady-state comparison payloads, dense response profiles, "
+            "onset-window profile arrays, adapter detail, and checkpoint provenance"
+        ),
     }
-    summary_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
-    return manifest
+    slim["comparisons"] = {
+        str(comparison_id): _compact_comparison_payload(comparison)
+        for comparison_id, comparison in dict(manifest.get("comparisons", {})).items()
+    }
+    return slim
+
+
+def _compact_comparison_payload(comparison: Mapping[str, Any]) -> dict[str, Any]:
+    """Return a scalar summary for one steady-state comparison."""
+
+    compact = {
+        key: comparison[key]
+        for key in (
+            "schema_version",
+            "issue",
+            "comparison_id",
+            "title",
+            "source_experiment",
+            "run_id",
+            "n_rollout_trials",
+            "pulse_duration_steps",
+            "feedback_offset_scales",
+            "response_window",
+            "timing_by_condition",
+            "washin_contract",
+            "feedback_dim_by_condition",
+            "figure",
+        )
+        if key in comparison
+    }
+    compact["conditions"] = {
+        str(condition_id): _compact_condition_payload(condition)
+        for condition_id, condition in dict(comparison.get("conditions", {})).items()
+    }
+    return compact
+
+
+def _compact_condition_payload(condition: Mapping[str, Any]) -> dict[str, Any]:
+    """Return scalar condition metadata and row metrics without profile arrays."""
+
+    compact = {
+        key: condition[key]
+        for key in (
+            "condition_id",
+            "label",
+            "metadata",
+            "run_id",
+            "run_spec_path",
+            "artifact_dir",
+            "n_replicates",
+            "n_rollout_trials_per_replicate",
+            "dt_s",
+            "washin",
+            "response_label",
+        )
+        if key in condition
+    }
+    rows = condition.get("rows", [])
+    compact["n_rows"] = len(rows) if isinstance(rows, Sequence) else 0
+    compact["rows"] = [_compact_row_payload(row) for row in rows if isinstance(row, Mapping)]
+    compact["family_summary"] = _compact_family_summary(condition.get("family_summary", {}))
+    checkpoint_selection = condition.get("checkpoint_selection")
+    if isinstance(checkpoint_selection, Sequence) and not isinstance(checkpoint_selection, str):
+        compact["checkpoint_selection_summary"] = _checkpoint_selection_summary(
+            checkpoint_selection
+        )
+    return compact
+
+
+def _compact_row_payload(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Return row identity plus scalar metrics."""
+
+    return {
+        key: row[key]
+        for key in (
+            "perturbation_id",
+            "family",
+            "status",
+            "reason",
+            "direction",
+            "projection_basis",
+            "sign",
+            "amplitude",
+            "units",
+            "metrics",
+        )
+        if key in row
+    }
+
+
+def _compact_family_summary(family_summary: Any) -> dict[str, Any]:
+    """Keep family scalar metrics while dropping profile arrays."""
+
+    if not isinstance(family_summary, Mapping):
+        return {}
+    compact: dict[str, Any] = {}
+    for family, payload in family_summary.items():
+        if not isinstance(payload, Mapping):
+            continue
+        compact[str(family)] = {
+            key: value for key, value in payload.items() if _is_compact_family_field(key, value)
+        }
+    return compact
+
+
+def _is_compact_family_field(key: str, value: Any) -> bool:
+    """Return whether a family-summary field belongs in tracked JSON."""
+
+    if key == "relative_time_steps" or "profile" in key:
+        return False
+    return _is_json_scalar(value) or _is_scalar_mapping(value)
+
+
+def _checkpoint_selection_summary(selections: Sequence[Any]) -> dict[str, Any]:
+    """Summarize checkpoint-selection provenance without listing every replica path."""
+
+    rows = [selection for selection in selections if isinstance(selection, Mapping)]
+    summary: dict[str, Any] = {"n_replicates": int(len(rows))}
+    sources = sorted(
+        {str(row["selection_source"]) for row in rows if row.get("selection_source") is not None}
+    )
+    if sources:
+        summary["selection_sources"] = sources
+    for source_key, output_key in (
+        ("checkpoint_batches", "checkpoint_batches"),
+        ("best_logged_validation_batch", "best_logged_validation_batch"),
+        ("scoring_validation_log_batch", "scoring_validation_log_batch"),
+    ):
+        values = [row[source_key] for row in rows if isinstance(row.get(source_key), int | float)]
+        if values:
+            summary[output_key] = {
+                "min": int(min(values)),
+                "max": int(max(values)),
+            }
+    for source_key, output_key in (
+        ("best_logged_validation_objective", "best_logged_validation_objective"),
+        ("scoring_validation_objective", "scoring_validation_objective"),
+        ("final_validation_objective", "final_validation_objective"),
+        (
+            "final_vs_selected_validation_degradation",
+            "final_vs_selected_validation_degradation",
+        ),
+    ):
+        values = [
+            float(row[source_key]) for row in rows if isinstance(row.get(source_key), int | float)
+        ]
+        if values:
+            arr = np.asarray(values, dtype=np.float64)
+            summary[output_key] = _summary_stats(arr)
+    return summary
+
+
+def _is_json_scalar(value: Any) -> bool:
+    return value is None or isinstance(value, str | int | float | bool)
+
+
+def _is_scalar_mapping(value: Any) -> bool:
+    return isinstance(value, Mapping) and all(_is_json_scalar(nested) for nested in value.values())
 
 
 def evaluate_comparison(
@@ -1497,6 +1693,7 @@ __all__ = [
     "materialize_steady_state_comparisons",
     "pad_feedback_offset_inputs",
     "right_handed_orthogonal_direction",
+    "slim_steady_state_manifest",
     "sisu_condition",
     "signed_pair_antisymmetry",
     "washin_diagnostics",

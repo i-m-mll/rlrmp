@@ -134,7 +134,7 @@
     "materializer": "rlrmp.analysis.pipelines.gru_steady_state_perturbation_bank.materialize_steady_state_comparisons",
     "notes": [
       "Local model evaluation only; no retraining, pod, or reach-context bank rerun.",
-      "Raw rollout arrays are not written; tracked summaries and figure specs are sufficient."
+      "Tracked summary JSON is scalar-only and points to ignored _artifacts detail bytes."
     ],
     "schema_boundary": "rlrmp diagnostic payload; Feedbax regeneration custody"
   },
@@ -145,12 +145,12 @@
       "metadata": {
         "exists": true,
         "kind": "file",
-        "sha256": "288b8bf2a6458d885d7b5310e24b48dddb38ec0799c99e97b22bfdc23c42b87f",
-        "size_bytes": 4279817
+        "sha256": "b19d832ebdc8e79bf5f9b108dbad8e1593d38e899e42f583c3ab996508225e60",
+        "size_bytes": 207443
       },
       "role": "summary_json",
-      "sha256": "288b8bf2a6458d885d7b5310e24b48dddb38ec0799c99e97b22bfdc23c42b87f",
-      "size_bytes": 4279817,
+      "sha256": "b19d832ebdc8e79bf5f9b108dbad8e1593d38e899e42f583c3ab996508225e60",
+      "size_bytes": 207443,
       "storage_backend": "feedbax-local",
       "uri": "repo://results/87424a4/notes/steady_state_perturbation_bank_summary.json"
     },
@@ -168,6 +168,21 @@
       "size_bytes": 3134,
       "storage_backend": "feedbax-local",
       "uri": "repo://results/87424a4/notes/steady_state_perturbation_bank.md"
+    },
+    {
+      "logical_name": "_artifacts/87424a4/notes/steady_state_perturbation_bank_detail.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "71e9bb5c2ec5e41ab1d8cf54f39904362c52f30a0289232fef5334264f8e157d",
+        "size_bytes": 4280202
+      },
+      "role": "steady_state_perturbation_bank_detail_json",
+      "sha256": "71e9bb5c2ec5e41ab1d8cf54f39904362c52f30a0289232fef5334264f8e157d",
+      "size_bytes": 4280202,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/87424a4/notes/steady_state_perturbation_bank_detail.json"
     }
   ],
   "parameters": {
@@ -192,7 +207,7 @@
         " M results/87424a4/figures/matched_020a65b_h0_no_pgd_vs_pgd/spec.json",
         " M results/87424a4/figures/matched_020a65b_no_pgd_vs_pgd/spec.json",
         " M results/87424a4/figures/undelayed_targetfix_sisu_effective_020a65b/spec.json",
-        " M results/87424a4/notes/steady_state_perturbation_bank.md",
+        " M results/87424a4/notes/steady_state_perturbation_bank_regeneration_spec.json",
         " M results/87424a4/notes/steady_state_perturbation_bank_summary.json",
         " M src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py",
         " M tests/analysis/pipelines/test_gru_steady_state_perturbation_bank.py"
@@ -200,7 +215,7 @@
     },
     "parents": [],
     "source_branch": "feature/87424a4-steady-state-perturb-bank",
-    "source_commit": "a9c1ba9ce120796a3bd9d12c628d397c9d3d63da",
+    "source_commit": "c595f3b1cdfeb2780690934d46a627da3fca7cdf",
     "source_repo": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__87424a4-steady-state-perturb-bank"
   },
   "schema_id": "feedbax.spec.regeneration",
@@ -210,8 +225,8 @@
       "metadata": {},
       "path": "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py",
       "role": "source_file",
-      "sha256": "52a78be409651cf5c2c2a619beb97799f8b6fc3afb5a8eaa5b2fbeb73c42cd15",
-      "size_bytes": 58801
+      "sha256": "64a0c9f942b3af3e6bc3ae220e7930ec96825efee2adf6b255e7d8bbf07238f8",
+      "size_bytes": 65692
     },
     {
       "metadata": {},

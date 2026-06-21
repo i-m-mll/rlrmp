@@ -5,6 +5,7 @@ from __future__ import annotations
 import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
+from pathlib import Path
 
 from rlrmp.analysis.pipelines.gru_steady_state_perturbation_bank import (
     FeedbackPerturbation,
@@ -16,6 +17,7 @@ from rlrmp.analysis.pipelines.gru_steady_state_perturbation_bank import (
     pad_feedback_offset_inputs,
     right_handed_orthogonal_direction,
     signed_pair_antisymmetry,
+    slim_steady_state_manifest,
     summarize_feedback_row,
 )
 from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluation
@@ -317,6 +319,95 @@ def test_identity_condition_accepts_run_override() -> None:
 
     assert condition.condition_id == "pgd"
     assert condition.run_id == "run-b"
+
+
+def test_slim_manifest_moves_profiles_and_adapter_detail_to_bulk(tmp_path: Path) -> None:
+    row = _row(
+        "position",
+        (1.0, 0.0),
+        [1.0, 0.5],
+        relative_steps=[-1, 0, 1],
+        output_window=[0.0, 1.0, 0.5],
+    ) | {
+        "perturbation_id": "steady_state_position_feedback_offset__x_pos",
+        "direction": [1.0, 0.0],
+        "projection_basis": {
+            "aligned_direction": [1.0, 0.0],
+            "orthogonal_direction": [0.0, 1.0],
+        },
+        "sign": 1,
+        "amplitude": 0.1,
+        "units": "m",
+        "adapter": {"dense": {"path": ["not", "tracked"]}},
+    }
+    detail = {
+        "schema_version": "test",
+        "issue": "87424a4",
+        "n_rollout_trials": 4,
+        "pulse_duration_steps": 5,
+        "comparisons": {
+            "cmp": {
+                "comparison_id": "cmp",
+                "title": "Comparison",
+                "timing_by_condition": {"a": {"pulse_start_step": 30}},
+                "conditions": {
+                    "a": {
+                        "condition_id": "a",
+                        "label": "A",
+                        "run_id": "run-a",
+                        "run_spec_path": "results/x/runs/run-a.json",
+                        "artifact_dir": "_artifacts/x/runs/run-a",
+                        "n_replicates": 1,
+                        "n_rollout_trials_per_replicate": 4,
+                        "dt_s": 0.01,
+                        "washin": {"network_output_drift": {"mean": 0.0, "max": 0.0}},
+                        "response_label": "steady_state_response",
+                        "checkpoint_selection": [
+                            {
+                                "replicate": 0,
+                                "checkpoint_path": "_artifacts/x/checkpoint",
+                                "checkpoint_batches": 10,
+                                "selection_source": "sparse_history",
+                                "scoring_validation_objective": 1.25,
+                            }
+                        ],
+                        "rows": [row],
+                        "family_summary": aggregate_family_profiles([row]),
+                    }
+                },
+                "figure": {"spec_path": "results/87424a4/figures/cmp/spec.json"},
+            }
+        },
+    }
+
+    slim = slim_steady_state_manifest(
+        detail,
+        detail_manifest_path=(
+            tmp_path / "_artifacts" / "87424a4" / "notes" / "steady_state_detail.json"
+        ),
+        repo_root=tmp_path,
+    )
+
+    assert slim["bulk_detail_manifest"]["path"] == (
+        "_artifacts/87424a4/notes/steady_state_detail.json"
+    )
+    condition = slim["comparisons"]["cmp"]["conditions"]["a"]
+    slim_row = condition["rows"][0]
+    family_summary = condition["family_summary"]["position"]
+    assert slim_row["metrics"]["peak_output_response"] == 1.0
+    assert "adapter" not in slim_row
+    assert "aligned_output_profile" not in slim_row
+    assert "aligned_output_window_profile" not in slim_row
+    assert "relative_time_steps" not in slim_row
+    assert "aligned_output_profile_mean" not in family_summary
+    assert "aligned_output_window_profile_mean" not in family_summary
+    assert "relative_time_steps" not in family_summary
+    assert "checkpoint_selection" not in condition
+    assert condition["checkpoint_selection_summary"]["n_replicates"] == 1
+    assert condition["checkpoint_selection_summary"]["checkpoint_batches"] == {
+        "min": 10,
+        "max": 10,
+    }
 
 
 def _trial_spec(*, horizon: int, feedback_dim: int) -> TrialSpec:

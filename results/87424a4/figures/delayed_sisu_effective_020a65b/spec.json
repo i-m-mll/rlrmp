@@ -26,7 +26,7 @@
   "run_id": "delayed_sisu_spectrum__effective_020a65b_pgd_radius_lr1e-2_clip5_b64",
   "schema_version": "rlrmp.gru_steady_state_perturbation_bank.v1",
   "source_experiment": "7c1f7ed",
-  "timestamp": "2026-06-21T03:48:39.118127+00:00",
+  "timestamp": "2026-06-21T04:33:22.877291+00:00",
   "timing_by_condition": {
     "sisu_0": {
       "fanout_policy": "prefix_equivalent_batched_trials; Feedbax task API does not expose a stable hidden-state resume hook, so every perturbation row shares the same deterministic wash-in prefix and zero-noise inputs inside the same materialization pass.",
