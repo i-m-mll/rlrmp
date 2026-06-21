@@ -46,6 +46,7 @@ def test_default_bank_is_symmetric_and_omits_force_filter_for_4d_feedback() -> N
 
     assert {row.family for row in bank_4d} == {"position", "velocity"}
     assert {row.family for row in bank_6d} == {"position", "velocity", "force_filter"}
+    assert {row.amplitude for row in bank_6d if row.family == "force_filter"} == {1.0}
     for family in {row.family for row in bank_6d}:
         directions = {row.direction for row in bank_6d if row.family == family}
         assert directions == {(1.0, 0.0), (-1.0, -0.0), (0.0, 1.0), (-0.0, -1.0)}
@@ -82,6 +83,21 @@ def test_washin_transform_sets_target_state_and_parametric_pulse_duration() -> N
     )
 
 
+def test_pulse_start_preserves_default_post_onset_window_when_possible() -> None:
+    trials = _trial_spec(horizon=80, feedback_dim=6)
+
+    _, timing = make_steady_state_trial_specs(
+        trials,
+        delayed=False,
+        target_position=np.array([0.0, 0.0]),
+        post_go_washin_steps=70,
+    )
+
+    assert timing["pulse_start_step_requested"] == 70
+    assert timing["pulse_start_step"] == 30
+    assert timing["post_onset_steps_available"] == 50
+
+
 def test_direction_aligned_aggregation_and_antisymmetry() -> None:
     rows = [
         _row("position", (1.0, 0.0), [1.0, 0.5]),
@@ -97,6 +113,36 @@ def test_direction_aligned_aggregation_and_antisymmetry() -> None:
     assert summary["position"]["n_rows"] == 4
     assert antisymmetry["status"] == "available"
     assert antisymmetry["mean_aligned_pair_difference_ratio"] < 0.08
+
+
+def test_family_aggregation_preserves_onset_window_rows() -> None:
+    rows = [
+        _row(
+            "velocity",
+            (1.0, 0.0),
+            [1.0, 0.5],
+            relative_steps=[-1, 0, 1],
+            output_window=[0.0, 1.0, 0.5],
+            position_window=[0.0, 0.1, 0.2],
+            velocity_window=[0.0, 0.3, 0.1],
+        ),
+        _row(
+            "velocity",
+            (-1.0, 0.0),
+            [1.0, 0.5],
+            relative_steps=[-1, 0, 1],
+            output_window=[0.0, 1.2, 0.7],
+            position_window=[0.0, 0.2, 0.4],
+            velocity_window=[0.0, 0.4, 0.2],
+        ),
+    ]
+
+    summary = aggregate_family_profiles(rows)["velocity"]
+
+    assert summary["relative_time_steps"] == [-1, 0, 1]
+    np.testing.assert_allclose(summary["aligned_output_window_profile_mean"], [0.0, 1.1, 0.6])
+    np.testing.assert_allclose(summary["aligned_position_window_profile_mean"], [0.0, 0.15, 0.3])
+    np.testing.assert_allclose(summary["aligned_velocity_window_profile_mean"], [0.0, 0.35, 0.15])
 
 
 def test_feedback_offset_padding_preserves_existing_components() -> None:
@@ -140,8 +186,17 @@ def _trial_spec(*, horizon: int, feedback_dim: int) -> TrialSpec:
     )
 
 
-def _row(family: str, direction: tuple[float, float], profile: list[float]) -> dict[str, object]:
-    return {
+def _row(
+    family: str,
+    direction: tuple[float, float],
+    profile: list[float],
+    *,
+    relative_steps: list[int] | None = None,
+    output_window: list[float] | None = None,
+    position_window: list[float] | None = None,
+    velocity_window: list[float] | None = None,
+) -> dict[str, object]:
+    row = {
         "status": "evaluated",
         "family": family,
         "direction": direction,
@@ -152,3 +207,12 @@ def _row(family: str, direction: tuple[float, float], profile: list[float]) -> d
             "terminal_residual": abs(profile[-1]),
         },
     }
+    if relative_steps is not None:
+        row["relative_time_steps"] = relative_steps
+    if output_window is not None:
+        row["aligned_output_window_profile"] = output_window
+    if position_window is not None:
+        row["aligned_position_window_profile"] = position_window
+    if velocity_window is not None:
+        row["aligned_velocity_window_profile"] = velocity_window
+    return row

@@ -20,6 +20,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--pulse-duration-steps", type=int, default=5)
     parser.add_argument("--n-rollout-trials", type=int, default=4)
+    parser.add_argument("--position-scale-m", type=float, default=0.1)
+    parser.add_argument("--velocity-scale-m-s", type=float, default=0.5)
+    parser.add_argument("--force-filter-scale", type=float, default=1.0)
     return parser.parse_args()
 
 
@@ -46,8 +49,7 @@ def main() -> None:
             kind="sisu",
             source_experiment="e4800d6",
             run_id=(
-                "cs_gru_h0_sisu_spectrum_targetfix__"
-                "effective_020a65b_pgd_radius_lr3e-3_clip5_b64"
+                "cs_gru_h0_sisu_spectrum_targetfix__effective_020a65b_pgd_radius_lr3e-3_clip5_b64"
             ),
             conditions=(
                 sisu_condition(0.0, label="SISU=0"),
@@ -80,6 +82,9 @@ def main() -> None:
         result_experiment="87424a4",
         n_rollout_trials=args.n_rollout_trials,
         pulse_duration_steps=args.pulse_duration_steps,
+        position_scale_m=args.position_scale_m,
+        velocity_scale_m_s=args.velocity_scale_m_s,
+        force_filter_scale=args.force_filter_scale,
         repo_root=Path(REPO_ROOT),
     )
 

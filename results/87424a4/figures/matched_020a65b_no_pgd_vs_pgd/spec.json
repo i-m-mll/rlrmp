@@ -1,7 +1,7 @@
 {
   "comparison_id": "matched_020a65b_no_pgd_vs_pgd",
   "feedback_offset_scales": {
-    "force_filter": 0.05,
+    "force_filter": 1.0,
     "position_m": 0.1,
     "velocity_m_s": 0.5
   },
@@ -9,29 +9,45 @@
   "issue": "87424a4",
   "n_rollout_trials": 4,
   "pulse_duration_steps": 5,
+  "response_window": {
+    "post_onset_steps": 50,
+    "pre_onset_steps": 10,
+    "rows": [
+      "network output",
+      "point-mass position along aligned perturbation direction",
+      "point-mass velocity along aligned perturbation direction"
+    ],
+    "x_axis": "seconds relative to perturbation onset"
+  },
   "run_id": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
   "schema_version": "rlrmp.gru_steady_state_perturbation_bank.v1",
   "source_experiment": "020a65b",
-  "timestamp": "2026-06-20T17:32:39.377841+00:00",
+  "timestamp": "2026-06-21T02:34:07.407696+00:00",
   "timing_by_condition": {
     "no_pgd": {
       "fanout_policy": "prefix_equivalent_batched_trials; Feedbax task API does not expose a stable hidden-state resume hook, so every perturbation row shares the same deterministic wash-in prefix and zero-noise inputs inside the same materialization pass.",
       "horizon_steps": 60,
+      "post_go_washin_steps_actual": 10,
       "post_go_washin_steps_requested": 50,
+      "post_onset_steps_available": 50,
       "pre_go_steps": 0,
       "pulse_duration_steps": 5,
-      "pulse_start_step": 50,
-      "response_steps": 10,
+      "pulse_start_step": 10,
+      "pulse_start_step_requested": 50,
+      "response_steps": 50,
       "washin_policy": "immediate_hold_prefix"
     },
     "pgd": {
       "fanout_policy": "prefix_equivalent_batched_trials; Feedbax task API does not expose a stable hidden-state resume hook, so every perturbation row shares the same deterministic wash-in prefix and zero-noise inputs inside the same materialization pass.",
       "horizon_steps": 60,
+      "post_go_washin_steps_actual": 10,
       "post_go_washin_steps_requested": 50,
+      "post_onset_steps_available": 50,
       "pre_go_steps": 0,
       "pulse_duration_steps": 5,
-      "pulse_start_step": 50,
-      "response_steps": 10,
+      "pulse_start_step": 10,
+      "pulse_start_step_requested": 50,
+      "response_steps": 50,
       "washin_policy": "immediate_hold_prefix"
     }
   },

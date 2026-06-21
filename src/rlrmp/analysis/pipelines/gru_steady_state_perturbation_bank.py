@@ -12,10 +12,10 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
-import plotly.graph_objects as go
-from feedbax.plot import save_figure
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
+from feedbax.plot import save_figure
 from plotly.subplots import make_subplots
+import plotly.graph_objects as go
 
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.analysis.pipelines.diagnostic_provenance import repo_relative, write_regeneration_spec
@@ -36,6 +36,7 @@ from rlrmp.analysis.pipelines.sisu_spectrum_diagnostics import (
     set_sisu_condition,
     zero_disturbance_payload,
 )
+from rlrmp.io import update_marked_section
 from rlrmp.paths import REPO_ROOT, mkdir_p
 from rlrmp.train.task_model import setup_task_model_pair
 
@@ -49,7 +50,10 @@ DEFAULT_FINAL_WINDOW_STEPS = 10
 DEFAULT_N_ROLLOUT_TRIALS = 4
 DEFAULT_POSITION_SCALE_M = 0.1
 DEFAULT_VELOCITY_SCALE_M_S = 0.5
-DEFAULT_FORCE_FILTER_SCALE = 0.05
+DEFAULT_FORCE_FILTER_SCALE = 1.0
+DEFAULT_PRE_ONSET_FIGURE_STEPS = 10
+DEFAULT_POST_ONSET_FIGURE_STEPS = 50
+SUMMARY_MARKER = "steady_state_perturbation_bank"
 
 PerturbationFamily = Literal["position", "velocity", "force_filter"]
 ComparisonKind = Literal["sisu", "pgd"]
@@ -68,7 +72,9 @@ class FeedbackPerturbation:
     units: str
     sign: int
 
-    def to_bank_row(self, *, feedback_dim: int, pulse_start: int, pulse_duration: int) -> dict[str, Any]:
+    def to_bank_row(
+        self, *, feedback_dim: int, pulse_start: int, pulse_duration: int
+    ) -> dict[str, Any]:
         """Return the graph-adapter perturbation row consumed by existing adapters."""
 
         payload_index = self.feedback_indices[0] if self.direction[0] else self.feedback_indices[1]
@@ -209,12 +215,20 @@ def materialize_steady_state_comparisons(
     result_experiment: str = ISSUE,
     n_rollout_trials: int = DEFAULT_N_ROLLOUT_TRIALS,
     pulse_duration_steps: int = DEFAULT_PULSE_DURATION_STEPS,
+    position_scale_m: float = DEFAULT_POSITION_SCALE_M,
+    velocity_scale_m_s: float = DEFAULT_VELOCITY_SCALE_M_S,
+    force_filter_scale: float = DEFAULT_FORCE_FILTER_SCALE,
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, Any]:
     """Materialize steady-state feedback responses and comparison figures."""
 
     repo_root = repo_root.resolve()
     notes_dir = mkdir_p(repo_root / "results" / result_experiment / "notes")
+    feedback_offset_scales = _feedback_offset_scales(
+        position_scale_m=position_scale_m,
+        velocity_scale_m_s=velocity_scale_m_s,
+        force_filter_scale=force_filter_scale,
+    )
     all_results: dict[str, Any] = {}
     for comparison in comparisons:
         all_results[comparison.comparison_id] = evaluate_comparison(
@@ -222,6 +236,9 @@ def materialize_steady_state_comparisons(
             result_experiment=result_experiment,
             n_rollout_trials=n_rollout_trials,
             pulse_duration_steps=pulse_duration_steps,
+            position_scale_m=position_scale_m,
+            velocity_scale_m_s=velocity_scale_m_s,
+            force_filter_scale=force_filter_scale,
             repo_root=repo_root,
         )
 
@@ -230,7 +247,8 @@ def materialize_steady_state_comparisons(
         "issue": result_experiment,
         "n_rollout_trials": int(n_rollout_trials),
         "pulse_duration_steps": int(pulse_duration_steps),
-        "feedback_offset_scales": _feedback_offset_scale_defaults(),
+        "feedback_offset_scales": feedback_offset_scales,
+        "response_window": _response_window_contract(),
         "washin_contract": _washin_contract(),
         "comparisons": all_results,
     }
@@ -238,7 +256,7 @@ def materialize_steady_state_comparisons(
     markdown_path = notes_dir / "steady_state_perturbation_bank.md"
     regeneration_path = notes_dir / "steady_state_perturbation_bank_regeneration_spec.json"
     summary_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
-    markdown_path.write_text(render_summary_markdown(manifest))
+    _update_summary_markdown(markdown_path, render_summary_markdown(manifest))
     write_regeneration_spec(
         spec_path=regeneration_path,
         diagnostic_name="gru_steady_state_perturbation_bank",
@@ -251,6 +269,9 @@ def materialize_steady_state_comparisons(
             "result_experiment": result_experiment,
             "n_rollout_trials": n_rollout_trials,
             "pulse_duration_steps": pulse_duration_steps,
+            "position_scale_m": position_scale_m,
+            "velocity_scale_m_s": velocity_scale_m_s,
+            "force_filter_scale": force_filter_scale,
         },
         inputs=[
             {"role": "run_spec", "path": row["run_spec_path"]}
@@ -286,6 +307,9 @@ def evaluate_comparison(
     result_experiment: str,
     n_rollout_trials: int,
     pulse_duration_steps: int,
+    position_scale_m: float,
+    velocity_scale_m_s: float,
+    force_filter_scale: float,
     repo_root: Path,
 ) -> dict[str, Any]:
     """Evaluate one comparison and write its three-panel figure."""
@@ -293,6 +317,11 @@ def evaluate_comparison(
     condition_payloads: dict[str, Any] = {}
     timing_payloads: dict[str, Any] = {}
     feedback_dims: dict[str, int] = {}
+    feedback_offset_scales = _feedback_offset_scales(
+        position_scale_m=position_scale_m,
+        velocity_scale_m_s=velocity_scale_m_s,
+        force_filter_scale=force_filter_scale,
+    )
     for condition in comparison.conditions:
         source_experiment = condition.source_experiment or comparison.source_experiment
         run_id = condition.run_id or comparison.run_id
@@ -328,8 +357,15 @@ def evaluate_comparison(
         )
         steady_trials = zero_disturbance_payload(steady_trials)
         feedback_dim = _feedback_dim(steady_trials)
-        perturbations = default_feedback_perturbations(feedback_dim=feedback_dim)
-        trials = steady_trials if condition.transform is None else condition.transform(steady_trials)
+        perturbations = default_feedback_perturbations(
+            feedback_dim=feedback_dim,
+            position_scale_m=position_scale_m,
+            velocity_scale_m_s=velocity_scale_m_s,
+            force_filter_scale=force_filter_scale,
+        )
+        trials = (
+            steady_trials if condition.transform is None else condition.transform(steady_trials)
+        )
         condition_payloads[condition.condition_id] = evaluate_condition(
             condition=condition,
             run=run,
@@ -350,6 +386,7 @@ def evaluate_comparison(
         comparison_title=comparison.title,
         conditions=condition_payloads,
         dt=float(next(iter(condition_payloads.values()))["dt_s"]),
+        pulse_duration_steps=pulse_duration_steps,
     )
     spec = {
         "schema_version": SCHEMA_VERSION,
@@ -360,7 +397,8 @@ def evaluate_comparison(
         "run_id": comparison.run_id,
         "n_rollout_trials": int(n_rollout_trials),
         "pulse_duration_steps": int(pulse_duration_steps),
-        "feedback_offset_scales": _feedback_offset_scale_defaults(),
+        "feedback_offset_scales": feedback_offset_scales,
+        "response_window": _response_window_contract(),
         "timing_by_condition": timing_payloads,
         "washin_contract": _washin_contract(),
     }
@@ -402,20 +440,30 @@ def make_steady_state_trial_specs(
     if delayed:
         effective_pre_go = min(pre_go_steps, max(horizon - 1, 0))
         updated = set_delayed_go_cue(updated, pre_go_steps=effective_pre_go)
-        pulse_start = min(effective_pre_go + post_go_washin_steps, max(horizon - 1, 0))
+        requested_pulse_start = min(
+            effective_pre_go + post_go_washin_steps,
+            max(horizon - 1, 0),
+        )
         washin_policy = "10_pre_go_then_post_go_hold_prefix"
     else:
         effective_pre_go = 0
-        pulse_start = min(post_go_washin_steps, max(horizon - 1, 0))
+        requested_pulse_start = min(post_go_washin_steps, max(horizon - 1, 0))
         washin_policy = "immediate_hold_prefix"
+    pulse_start = _figure_compatible_pulse_start(
+        requested_pulse_start,
+        horizon_steps=horizon,
+    )
     response_steps = max(horizon - pulse_start, 0)
     return updated, {
         "horizon_steps": int(horizon),
         "pre_go_steps": int(effective_pre_go),
         "post_go_washin_steps_requested": int(post_go_washin_steps),
+        "post_go_washin_steps_actual": int(max(pulse_start - effective_pre_go, 0)),
+        "pulse_start_step_requested": int(requested_pulse_start),
         "pulse_start_step": int(pulse_start),
         "pulse_duration_steps": int(min(max(pulse_duration_steps, 1), max(response_steps, 1))),
         "response_steps": int(response_steps),
+        "post_onset_steps_available": int(response_steps),
         "washin_policy": washin_policy,
         "fanout_policy": (
             "prefix_equivalent_batched_trials; Feedbax task API does not expose a stable "
@@ -423,6 +471,15 @@ def make_steady_state_trial_specs(
             "wash-in prefix and zero-noise inputs inside the same materialization pass."
         ),
     }
+
+
+def _figure_compatible_pulse_start(requested_pulse_start: int, *, horizon_steps: int) -> int:
+    """Keep the requested wash-in unless it would starve the recovery figure window."""
+
+    if horizon_steps >= DEFAULT_PRE_ONSET_FIGURE_STEPS + DEFAULT_POST_ONSET_FIGURE_STEPS:
+        latest = max(horizon_steps - DEFAULT_POST_ONSET_FIGURE_STEPS, 0)
+        return int(min(requested_pulse_start, latest))
+    return int(requested_pulse_start)
 
 
 def set_mechanics_vector_to_target(trial_specs: Any, target_position: np.ndarray) -> Any:
@@ -453,7 +510,11 @@ def set_target_streams_to_constant(trial_specs: Any, target_position: np.ndarray
     if "effector_target" in updated.inputs:
         effector_target = updated.inputs["effector_target"]
         pos = jnp.asarray(effector_target.pos)
-        vel = None if effector_target.vel is None else jnp.zeros_like(jnp.asarray(effector_target.vel))
+        vel = (
+            None
+            if effector_target.vel is None
+            else jnp.zeros_like(jnp.asarray(effector_target.vel))
+        )
         new_effector_target = eqx.tree_at(
             lambda s: (s.pos, s.vel),
             effector_target,
@@ -614,13 +675,37 @@ def summarize_feedback_row(
     delta_hidden = perturbed.hidden - base.hidden
     direction = np.asarray(perturbation.direction, dtype=np.float64)
     signed_direction = direction / max(float(np.linalg.norm(direction)), 1e-12)
-    aligned = np.tensordot(delta_command, signed_direction, axes=([-1], [0]))
-    response = aligned[:, :, pulse_start:]
+    aligned_command = np.tensordot(delta_command, signed_direction, axes=([-1], [0]))
+    aligned_position = np.tensordot(
+        perturbed.position - base.position,
+        signed_direction,
+        axes=([-1], [0]),
+    )
+    aligned_velocity = np.tensordot(
+        perturbed.velocity - base.velocity,
+        signed_direction,
+        axes=([-1], [0]),
+    )
+    response = aligned_command[:, :, pulse_start:]
+    command_window, relative_steps = _mean_onset_window(
+        aligned_command,
+        pulse_start=pulse_start,
+    )
+    position_window, _ = _mean_onset_window(
+        aligned_position,
+        pulse_start=pulse_start,
+    )
+    velocity_window, _ = _mean_onset_window(
+        aligned_velocity,
+        pulse_start=pulse_start,
+    )
     action_norm = np.linalg.norm(delta_command[:, :, pulse_start:, :], axis=-1)
     hidden_norm = np.linalg.norm(delta_hidden[:, :, pulse_start:, :], axis=-1)
     mean_profile = np.mean(response, axis=(0, 1))
     terminal = response[..., -1] if response.shape[-1] else np.zeros(response.shape[:2])
-    settling = settling_step(np.abs(mean_profile), tolerance=max(0.05 * peak_abs(mean_profile), 1e-8))
+    settling = settling_step(
+        np.abs(mean_profile), tolerance=max(0.05 * peak_abs(mean_profile), 1e-8)
+    )
     return {
         "perturbation_id": perturbation.perturbation_id,
         "family": perturbation.family,
@@ -630,14 +715,22 @@ def summarize_feedback_row(
         "amplitude": float(perturbation.amplitude),
         "units": perturbation.units,
         "aligned_output_profile": [float(value) for value in mean_profile],
+        "relative_time_steps": [int(value) for value in relative_steps],
+        "aligned_output_window_profile": [float(value) for value in command_window],
+        "aligned_position_window_profile": [float(value) for value in position_window],
+        "aligned_velocity_window_profile": [float(value) for value in velocity_window],
         "metrics": {
             "peak_output_response": float(peak_abs(response)),
             "output_auc_impulse": float(np.sum(np.abs(response)) * float(base.dt) / response.size),
             "terminal_residual": float(np.mean(np.abs(terminal))) if terminal.size else 0.0,
             "recovery_settling_step": settling,
-            "direction_variability": float(np.std(np.mean(response, axis=-1))) if response.size else 0.0,
+            "direction_variability": float(np.std(np.mean(response, axis=-1)))
+            if response.size
+            else 0.0,
             "hidden_delta_peak": float(peak_abs(hidden_norm)),
             "output_norm_peak": float(peak_abs(action_norm)),
+            "peak_position_m": float(peak_abs(position_window)),
+            "peak_velocity_m_s": float(peak_abs(velocity_window)),
         },
     }
 
@@ -652,7 +745,9 @@ def aggregate_family_profiles(rows: Sequence[Mapping[str, Any]]) -> dict[str, An
         groups.setdefault(str(row["family"]), []).append(row)
     summary: dict[str, Any] = {}
     for family, family_rows in groups.items():
-        profiles = np.asarray([row["aligned_output_profile"] for row in family_rows], dtype=np.float64)
+        profiles = np.asarray(
+            [row["aligned_output_profile"] for row in family_rows], dtype=np.float64
+        )
         mean_profile = np.mean(profiles, axis=0)
         pair_scores = signed_pair_antisymmetry(family_rows)
         metrics = [row["metrics"] for row in family_rows if isinstance(row.get("metrics"), Mapping)]
@@ -670,14 +765,52 @@ def aggregate_family_profiles(rows: Sequence[Mapping[str, Any]]) -> dict[str, An
             "peak_output_response": float(
                 np.mean([metric["peak_output_response"] for metric in metrics])
             ),
-            "output_auc_impulse": float(np.mean([metric["output_auc_impulse"] for metric in metrics])),
-            "terminal_residual": float(np.mean([metric["terminal_residual"] for metric in metrics])),
+            "output_auc_impulse": float(
+                np.mean([metric["output_auc_impulse"] for metric in metrics])
+            ),
+            "terminal_residual": float(
+                np.mean([metric["terminal_residual"] for metric in metrics])
+            ),
             "direction_variability": float(
                 np.std([metric["peak_output_response"] for metric in metrics])
             ),
             "signed_pair_antisymmetry": pair_scores,
         }
+        summary[family].update(_aggregate_window_profiles(family_rows))
     return summary
+
+
+def _aggregate_window_profiles(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Return mean/SEM traces for all onset-centered figure profiles."""
+
+    output: dict[str, Any] = {}
+    if not rows:
+        return output
+    first = rows[0]
+    if "relative_time_steps" in first:
+        output["relative_time_steps"] = [int(value) for value in first["relative_time_steps"]]
+    else:
+        output["relative_time_steps"] = list(range(len(first["aligned_output_profile"])))
+    profile_keys = (
+        "aligned_output_window_profile",
+        "aligned_position_window_profile",
+        "aligned_velocity_window_profile",
+    )
+    for key in profile_keys:
+        if key not in first:
+            fallback = "aligned_output_profile"
+            profiles = np.asarray([row[fallback] for row in rows], dtype=np.float64)
+        else:
+            profiles = np.asarray([row[key] for row in rows], dtype=np.float64)
+        mean_profile = np.mean(profiles, axis=0)
+        sem_profile = (
+            np.std(profiles, axis=0, ddof=1) / np.sqrt(profiles.shape[0])
+            if profiles.shape[0] > 1
+            else np.zeros_like(mean_profile)
+        )
+        output[f"{key}_mean"] = [float(value) for value in mean_profile]
+        output[f"{key}_sem"] = [float(value) for value in sem_profile]
+    return output
 
 
 def signed_pair_antisymmetry(rows: Sequence[Mapping[str, Any]]) -> dict[str, float | str]:
@@ -735,63 +868,110 @@ def build_response_figure(
     comparison_title: str,
     conditions: Mapping[str, Mapping[str, Any]],
     dt: float,
+    pulse_duration_steps: int,
 ) -> go.Figure:
-    """Build one three-panel condition-comparison figure."""
+    """Build one condition-comparison figure with output and plant responses."""
 
     families = ("position", "velocity", "force_filter")
+    row_specs = (
+        ("aligned_output_window_profile", "Output", None),
+        ("aligned_position_window_profile", "Position (m)", "m"),
+        ("aligned_velocity_window_profile", "Velocity (m/s)", "m/s"),
+    )
     fig = make_subplots(
-        rows=1,
+        rows=3,
         cols=3,
-        subplot_titles=("Position feedback", "Velocity feedback", "Force/filter feedback"),
+        subplot_titles=(
+            "Position feedback",
+            "Velocity feedback",
+            "Force/filter feedback",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+        ),
+        shared_xaxes=True,
         shared_yaxes=True,
+        vertical_spacing=0.055,
     )
     for col, family in enumerate(families, start=1):
-        for idx, condition in enumerate(conditions.values()):
-            family_summary = condition.get("family_summary", {}).get(family)
-            if not family_summary:
-                continue
-            y = np.asarray(family_summary["aligned_output_profile_mean"], dtype=float)
-            sem = np.asarray(family_summary["aligned_output_profile_sem"], dtype=float)
-            x = np.arange(y.shape[0], dtype=float) * dt
-            color = _condition_color(idx)
-            fig.add_trace(
-                go.Scatter(
-                    x=x,
-                    y=y,
-                    mode="lines",
-                    line={"color": color, "width": 2.5},
-                    name=str(condition["label"]),
-                    legendgroup=str(condition["label"]),
-                    showlegend=col == 1,
-                ),
-                row=1,
-                col=col,
-            )
-            fig.add_trace(
-                go.Scatter(
-                    x=np.concatenate([x, x[::-1]]),
-                    y=np.concatenate([y - sem, (y + sem)[::-1]]),
-                    mode="lines",
-                    line={"width": 0, "color": color},
-                    fill="toself",
-                    fillcolor=_rgba(color, 0.16),
-                    hoverinfo="skip",
-                    showlegend=False,
-                    legendgroup=str(condition["label"]),
-                ),
-                row=1,
-                col=col,
-            )
+        for row_index, (profile_key, _, _) in enumerate(row_specs, start=1):
+            for idx, condition in enumerate(conditions.values()):
+                family_summary = condition.get("family_summary", {}).get(family)
+                if not family_summary:
+                    continue
+                y = np.asarray(family_summary[f"{profile_key}_mean"], dtype=float)
+                sem = np.asarray(family_summary[f"{profile_key}_sem"], dtype=float)
+                x = np.asarray(family_summary["relative_time_steps"], dtype=float) * dt
+                color = _condition_color(idx)
+                fig.add_trace(
+                    go.Scatter(
+                        x=x,
+                        y=y,
+                        mode="lines",
+                        line={"color": color, "width": 2.1},
+                        name=str(condition["label"]),
+                        legendgroup=str(condition["label"]),
+                        showlegend=(col, row_index) == (1, 1),
+                    ),
+                    row=row_index,
+                    col=col,
+                )
+                fig.add_trace(
+                    go.Scatter(
+                        x=np.concatenate([x, x[::-1]]),
+                        y=np.concatenate([y - sem, (y + sem)[::-1]]),
+                        mode="lines",
+                        line={"width": 0, "color": color},
+                        fill="toself",
+                        fillcolor=_rgba(color, 0.14),
+                        hoverinfo="skip",
+                        showlegend=False,
+                        legendgroup=str(condition["label"]),
+                    ),
+                    row=row_index,
+                    col=col,
+                )
+    if pulse_duration_steps > 1:
+        fig.add_vrect(
+            x0=0,
+            x1=float(pulse_duration_steps) * dt,
+            fillcolor="lightgray",
+            opacity=0.35,
+            line_width=0,
+            row="all",
+            col="all",
+            layer="below",
+        )
+    else:
+        fig.add_vline(
+            x=0,
+            line={"color": "rgba(90,90,90,0.65)", "width": 1.4},
+            row="all",
+            col="all",
+        )
     fig.update_layout(
         title=comparison_title,
-        width=1120,
-        height=430,
-        margin={"l": 70, "r": 34, "t": 72, "b": 58},
-        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "left", "x": 0},
+        width=1180,
+        height=760,
+        margin={"l": 78, "r": 34, "t": 92, "b": 86},
+        legend={
+            "orientation": "h",
+            "yanchor": "top",
+            "y": -0.09,
+            "xanchor": "center",
+            "x": 0.5,
+        },
         hovermode="x unified",
     )
-    fig.update_xaxes(title_text="Time after perturbation onset (s)")
-    fig.update_yaxes(title_text="Direction-aligned network output response")
+    for row_index, (_, title, _) in enumerate(row_specs, start=1):
+        fig.update_yaxes(title_text=title, row=row_index, col=1)
+        for col in (2, 3):
+            fig.update_yaxes(title_text=None, row=row_index, col=col)
+    for col in (1, 2, 3):
+        fig.update_xaxes(title_text="Time from onset (s)", row=3, col=col)
     return fig
 
 
@@ -951,6 +1131,22 @@ def peak_abs(values: np.ndarray) -> float:
     return float(np.max(np.abs(arr))) if arr.size else 0.0
 
 
+def _mean_onset_window(
+    aligned_values: np.ndarray,
+    *,
+    pulse_start: int,
+    pre_steps: int = DEFAULT_PRE_ONSET_FIGURE_STEPS,
+    post_steps: int = DEFAULT_POST_ONSET_FIGURE_STEPS,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return trial/replicate mean in a small pre-onset and recovery window."""
+
+    start = max(int(pulse_start) - int(pre_steps), 0)
+    stop = min(int(pulse_start) + int(post_steps), aligned_values.shape[2])
+    window = aligned_values[:, :, start:stop]
+    relative_steps = np.arange(start, stop, dtype=int) - int(pulse_start)
+    return np.mean(window, axis=(0, 1)), relative_steps
+
+
 def settling_step(profile: np.ndarray, *, tolerance: float) -> int | None:
     """Return first step after which the profile remains within tolerance."""
 
@@ -978,12 +1174,52 @@ def _washin_contract() -> dict[str, Any]:
     }
 
 
-def _feedback_offset_scale_defaults() -> dict[str, float]:
+def _response_window_contract() -> dict[str, Any]:
     return {
-        "position_m": DEFAULT_POSITION_SCALE_M,
-        "velocity_m_s": DEFAULT_VELOCITY_SCALE_M_S,
-        "force_filter": DEFAULT_FORCE_FILTER_SCALE,
+        "pre_onset_steps": DEFAULT_PRE_ONSET_FIGURE_STEPS,
+        "post_onset_steps": DEFAULT_POST_ONSET_FIGURE_STEPS,
+        "x_axis": "seconds relative to perturbation onset",
+        "rows": [
+            "network output",
+            "point-mass position along aligned perturbation direction",
+            "point-mass velocity along aligned perturbation direction",
+        ],
     }
+
+
+def _feedback_offset_scales(
+    *,
+    position_scale_m: float,
+    velocity_scale_m_s: float,
+    force_filter_scale: float,
+) -> dict[str, float]:
+    return {
+        "position_m": float(position_scale_m),
+        "velocity_m_s": float(velocity_scale_m_s),
+        "force_filter": float(force_filter_scale),
+    }
+
+
+def _feedback_offset_scale_defaults() -> dict[str, float]:
+    return _feedback_offset_scales(
+        position_scale_m=DEFAULT_POSITION_SCALE_M,
+        velocity_scale_m_s=DEFAULT_VELOCITY_SCALE_M_S,
+        force_filter_scale=DEFAULT_FORCE_FILTER_SCALE,
+    )
+
+
+def _update_summary_markdown(path: Path, content: str) -> None:
+    """Update the generated Markdown block, migrating the legacy whole-file summary."""
+
+    marker = f"<!-- AUTO-GENERATED: {SUMMARY_MARKER} -->"
+    if path.exists():
+        text = path.read_text()
+        marker_pos = text.find(marker)
+        if marker_pos >= 0 and marker_pos > 0 and text[:marker_pos].strip() == "":
+            path.write_text(text[marker_pos:])
+        elif marker not in text and text.startswith("# Steady-State Perturbation Bank\n"):
+            path.unlink()
+    update_marked_section(path, SUMMARY_MARKER, content)
 
 
 def _condition_color(index: int) -> str:
