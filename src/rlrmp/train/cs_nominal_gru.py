@@ -115,6 +115,12 @@ DELAYED_REACH_TRAINING_MODE = "delayed_reach_target_visible_go_cue"
 DEFAULT_DELAYED_GO_CUE_MIN_STEP = 10
 DEFAULT_DELAYED_GO_CUE_MAX_STEP = 30
 DEFAULT_DELAYED_P_CATCH_TRIAL = 0.5
+DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW = "canonical_window"
+DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON = "flat_after_canonical_horizon"
+DELAYED_MOVEMENT_COST_TAIL_MODES = (
+    DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW,
+    DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON,
+)
 TRAINING_DIAGNOSTICS_NPZ = "training_diagnostics.npz"
 TRAINING_DIAGNOSTICS_MANIFEST = "training_diagnostics.json"
 VolumeCommit = Callable[[], None]
@@ -415,6 +421,15 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         "delayed_reach_trial_type_normalized_loss": bool(delayed_norm.get("enabled", False)),
         "delayed_reach_no_catch_qrf_weight": float(delayed_norm.get("no_catch_weight", 1.0)),
         "delayed_reach_catch_qrf_weight": float(delayed_norm.get("catch_weight", 1.0)),
+        "delayed_movement_cost_tail_mode": str(
+            loss.get(
+                "delayed_movement_cost_tail_mode",
+                _dict_value(delayed, "movement_epoch").get(
+                    "cost_tail_mode",
+                    DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW,
+                ),
+            )
+        ),
         "force_filter_feedback": bool(model.get("force_filter_feedback", False)),
         "broad_epsilon_training": bool(broad.get("enabled", False)),
         "broad_epsilon_pgd_training": bool(broad_pgd.get("enabled", False)),
@@ -497,6 +512,7 @@ def _delayed_reach_contract_from_args(
     go_cue_min_step: int,
     go_cue_max_step: int,
     p_catch_trial: float,
+    movement_cost_tail_mode: str = DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW,
 ) -> dict[str, Any]:
     """Return the delayed-reach task contract embedded in hps/run specs."""
 
@@ -535,6 +551,15 @@ def _delayed_reach_contract_from_args(
             "source": "trial_specs.timeline.epoch_bounds[-2:]",
             "cs_schedule_horizon_steps": CS_STAGE_COUNT,
             "cost_indexing": "movement_age_not_trial_age",
+            "cost_tail_mode": movement_cost_tail_mode,
+            "cost_tail_semantics": (
+                "score exactly the canonical 60 movement-age stages, then stop"
+                if movement_cost_tail_mode == DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW
+                else (
+                    "score canonical movement-age stages 0..59, then reuse stage 59 "
+                    "Q/R weights through the remaining trial tail"
+                )
+            ),
         },
         "prep_epoch": {
             "epoch_name": "prep",
@@ -594,6 +619,14 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
     delayed_p_catch_trial = float(
         getattr(args, "delayed_reach_p_catch_trial", DEFAULT_DELAYED_P_CATCH_TRIAL)
     )
+    delayed_movement_cost_tail_mode = str(
+        getattr(
+            args,
+            "delayed_movement_cost_tail_mode",
+            DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW,
+        )
+        or DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW
+    )
     if int(schedule.T) != CS_STAGE_COUNT:
         raise ValueError(f"Expected C&S stage count {CS_STAGE_COUNT}, got {schedule.T}")
     if delayed_go_min < 0 or delayed_go_max < delayed_go_min:
@@ -602,6 +635,16 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         )
     if delayed_p_catch_trial < 0.0 or delayed_p_catch_trial > 1.0:
         raise ValueError("--delayed-reach-p-catch-trial must be between 0 and 1")
+    if delayed_movement_cost_tail_mode not in DELAYED_MOVEMENT_COST_TAIL_MODES:
+        raise ValueError(
+            "--delayed-movement-cost-tail-mode must be one of: "
+            + ", ".join(DELAYED_MOVEMENT_COST_TAIL_MODES)
+        )
+    if (
+        delayed_movement_cost_tail_mode != DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW
+        and not delayed_reach
+    ):
+        raise ValueError("--delayed-movement-cost-tail-mode requires --delayed-reach.")
     delayed_trial_type_normalized_loss = bool(
         getattr(args, "delayed_reach_trial_type_normalized_loss", False)
     )
@@ -632,9 +675,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
     )
     if delayed_pre_go_start_pos_hold_norm not in {"l2", "l1"}:
         raise ValueError("--delayed-pre-go-start-pos-hold-norm must be one of: l2, l1")
-    delayed_pre_go_zero_vel_hold = float(
-        getattr(args, "delayed_pre_go_zero_vel_hold", 0.0) or 0.0
-    )
+    delayed_pre_go_zero_vel_hold = float(getattr(args, "delayed_pre_go_zero_vel_hold", 0.0) or 0.0)
     delayed_pre_go_aux_weights = {
         "delayed_pre_go_force_filter_hold": delayed_pre_go_force_filter_hold,
         "delayed_pre_go_start_pos_hold": delayed_pre_go_start_pos_hold,
@@ -667,9 +708,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
     )
     perturbation_movement_age_timing = _resolve_auto_bool(
         getattr(args, "perturbation_movement_age_timing", None),
-        default=delayed_reach
-        and perturbation_training_enabled
-        and perturbation_calibrated_timing,
+        default=delayed_reach and perturbation_training_enabled and perturbation_calibrated_timing,
     )
     perturbation_physical_level = str(
         getattr(args, "perturbation_physical_level", None)
@@ -862,6 +901,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             go_cue_min_step=delayed_go_min,
             go_cue_max_step=delayed_go_max,
             p_catch_trial=delayed_p_catch_trial if delayed_reach else 0.0,
+            movement_cost_tail_mode=delayed_movement_cost_tail_mode,
         ),
         "pert": {
             "type": "gusts",
@@ -914,6 +954,7 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
                 "final_scale_factor": 1.0,
             },
             "effector_pos_running_schedule": "cs_eq15_power6",
+            "delayed_movement_cost_tail_mode": delayed_movement_cost_tail_mode,
             "effector_hold_pos_schedule": "disabled",
             "position_powerlaw_power": 6.0,
             "movement_ramp_shape": "none",
@@ -1045,6 +1086,7 @@ def build_loss_game_card_provenance(hps: TreeNamespace) -> dict[str, Any]:
             "rollout_control_stages": int(hps.task.n_steps),
             "canonical_cs_movement_horizon_steps": CS_STAGE_COUNT,
             "cost_indexing": "canonical Q/R/Q_f schedule starts at sampled go cue",
+            "cost_tail_mode": str(hps.loss.delayed_movement_cost_tail_mode),
             "prep_epoch": "not part of canonical movement-stage C&S cost",
         }
     objective = str(getattr(hps.loss, "objective", CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE))
@@ -1550,6 +1592,121 @@ def planned_ef9c882_start_pos_hold_rows(
             }
         )
     return rows
+
+
+def planned_246182c_post_movement_cost_tail_rows(
+    *,
+    experiment: str = "246182c",
+) -> list[dict[str, Any]]:
+    """Return the locked delayed movement cost-tail diagnostic row for 246182c."""
+
+    run = "hold__start_pos_zero_vel_lr1e-2_flat_tail"
+    command = [
+        "env",
+        "PYTHONPATH=src",
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "scripts/train_cs_nominal_gru.py",
+        "--issue",
+        experiment,
+        "--n-train-batches",
+        "12000",
+        "--batch-size",
+        "64",
+        "--gradient-clip-norm",
+        "5",
+        "--lr-warmup-batches",
+        "500",
+        "--lr-warmup-init-fraction",
+        "0.1",
+        "--lr-cosine-alpha",
+        "0.1",
+        "--n-replicates",
+        "5",
+        "--hidden-size",
+        "180",
+        "--loss-objective",
+        CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+        "--delayed-reach",
+        "--delayed-reach-go-cue-min-step",
+        "10",
+        "--delayed-reach-go-cue-max-step",
+        "30",
+        "--delayed-reach-p-catch-trial",
+        "0.5",
+        "--delayed-movement-cost-tail-mode",
+        DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON,
+        "--target-relative-multitarget",
+        "--force-filter-feedback",
+        "--perturbation-training",
+        "--perturbation-calibrated-timing",
+        "--perturbation-movement-age-timing",
+        "--perturbation-physical-level",
+        "small",
+        "--nn-output-pre-go",
+        "0",
+        "--delayed-pre-go-force-filter-hold",
+        "0",
+        "--controller-lr",
+        "0.01",
+        "--delayed-pre-go-zero-vel-hold",
+        "100000",
+        "--delayed-pre-go-start-pos-hold",
+        "1000000",
+        "--delayed-pre-go-start-pos-hold-norm",
+        "l2",
+        "--output-dir",
+        f"_artifacts/{experiment}/runs/{run}",
+    ]
+    return [
+        {
+            "experiment": experiment,
+            "run": run,
+            "row_kind": "full_training_contract",
+            "comparator": "ef9c882/hold__start_pos_zero_vel_lr1e-2",
+            "adversarial_phase": "none",
+            "broad_epsilon_pgd_training": False,
+            "delayed_reach": True,
+            "target_visible_from_start": True,
+            "go_cue_min_step": 10,
+            "go_cue_max_step": 30,
+            "p_catch_trial": 0.5,
+            "loss_objective": CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            "movement_window_qrf_comparator": "full_analytical_qrf_movement_age",
+            "delayed_movement_cost_tail_mode": DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON,
+            "cost_tail_semantics": (
+                "canonical movement-age Q/R stages 0..59, then stage 59 Q/R held "
+                "flat through the remaining sampled trial tail; Q_f scores the final "
+                "rollout state"
+            ),
+            "nn_output_pre_go": 0.0,
+            "delayed_pre_go_force_filter_hold": 0.0,
+            "delayed_pre_go_zero_vel_hold": 1e5,
+            "delayed_pre_go_start_pos_hold": 1e6,
+            "delayed_pre_go_start_pos_hold_norm": "l2",
+            "force_filter_feedback": True,
+            "perturbation_training": True,
+            "perturbation_calibrated_timing": True,
+            "perturbation_movement_age_timing": True,
+            "perturbation_physical_level": "small",
+            "hidden_size": 180,
+            "batch_size": 64,
+            "controller_lr": 1e-2,
+            "lr_schedule": "warmup_cosine",
+            "lr_warmup_batches": 500,
+            "lr_warmup_init_fraction": 0.1,
+            "lr_cosine_alpha": 0.1,
+            "gradient_clip_norm": 5.0,
+            "n_replicates": 5,
+            "n_train_batches": 12000,
+            "n_adversary_batches": 0,
+            "planned_run_spec_path": f"results/{experiment}/runs/{run}.json",
+            "spec_command": [*command, "--dry-run"],
+            "command": [*command, "--full-train", "--resume"],
+        }
+    ]
 
 
 def run_full_training(
@@ -2062,6 +2219,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--delayed-movement-cost-tail-mode",
+        choices=DELAYED_MOVEMENT_COST_TAIL_MODES,
+        default=DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW,
+        help=(
+            "Delayed-reach full-Q/R/Qf tail support. canonical_window preserves the "
+            "60 movement-age stage objective; flat_after_canonical_horizon reuses the "
+            "terminal running Q/R stage after movement age 59 through the trial tail."
+        ),
+    )
+    parser.add_argument(
         "--delayed-reach-trial-type-normalized-loss",
         "--delayed-reach-trial-type-normalization",
         action="store_true",
@@ -2217,6 +2384,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the five planned issue ef9c882 delayed pre-go start-position hold rows.",
     )
     parser.add_argument(
+        "--planned-246182c-post-movement-cost-tail-rows",
+        action="store_true",
+        help="Print the planned issue 246182c delayed post-movement cost-tail row.",
+    )
+    parser.add_argument(
         "--planned-7c1f7ed-delayed-sisu-spectrum-rows",
         action="store_true",
         help="Print the two planned issue 7c1f7ed delayed SISU-conditioned PGD rows and exit.",
@@ -2290,6 +2462,12 @@ def main(
     if args.planned_ef9c882_start_pos_hold_rows:
         print(_json_dumps({"planned_rows": planned_ef9c882_start_pos_hold_rows()}), end="")
         return 0
+    if args.planned_246182c_post_movement_cost_tail_rows:
+        print(
+            _json_dumps({"planned_rows": planned_246182c_post_movement_cost_tail_rows()}),
+            end="",
+        )
+        return 0
     if args.planned_7c1f7ed_delayed_sisu_spectrum_rows:
         print(
             _json_dumps({"planned_rows": planned_7c1f7ed_delayed_sisu_spectrum_rows()}),
@@ -2298,7 +2476,7 @@ def main(
         return 0
     result = (
         run_full_training(args, volume_commit=volume_commit)
-        if args.full_train
+        if args.full_train and not args.dry_run
         else write_run_spec(args)
     )
     print(_json_dumps(result), end="")
@@ -3383,6 +3561,7 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
             "go_cue_max_step": int(hps.delayed_reach.go_cue_sampling.max_step_inclusive),
             "cs_horizon_steps": CS_STAGE_COUNT,
             "cost_indexing": "movement_age_not_trial_age",
+            "cost_tail_mode": str(hps.loss.delayed_movement_cost_tail_mode),
         }
         time_axis_contract = (
             "Delayed C&S task: target is visible from trial start, prep has no "
@@ -3527,6 +3706,13 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
             "movement_epoch_source": "trial_specs.timeline.epoch_bounds[-2:]",
             "prep_target_directed_movement_loss": "zero",
             "canonical_movement_horizon_steps": CS_STAGE_COUNT,
+            "cost_tail_mode": str(hps.loss.delayed_movement_cost_tail_mode),
+            "post_horizon_tail": (
+                "zero_weight_after_canonical_horizon"
+                if str(hps.loss.delayed_movement_cost_tail_mode)
+                == DELAYED_MOVEMENT_COST_TAIL_CANONICAL_WINDOW
+                else "hold_terminal_running_qr_weights_flat_to_trial_end"
+            ),
         }
         if delayed_reach
         else {
@@ -3581,7 +3767,12 @@ def _loss_spec(hps: TreeNamespace) -> dict[str, Any]:
                     else "trial init plus rollout states[:-1], paired with commands"
                 ),
                 "terminal_state": (
-                    "state after 60 movement commands from sampled go cue"
+                    (
+                        "final rollout state after the variable post-horizon tail"
+                        if str(hps.loss.delayed_movement_cost_tail_mode)
+                        == DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON
+                        else "state after 60 movement commands from sampled go cue"
+                    )
                     if delayed_reach
                     else "rollout states[-1]"
                 ),
