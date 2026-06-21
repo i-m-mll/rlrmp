@@ -1,7 +1,7 @@
 {
   "comparison_id": "matched_020a65b_no_pgd_vs_pgd",
   "feedback_offset_scales": {
-    "force_filter": 1.0,
+    "force_filter": 10.0,
     "position_m": 0.1,
     "velocity_m_s": 0.5
   },
@@ -12,8 +12,12 @@
   "response_window": {
     "post_onset_steps": 50,
     "pre_onset_steps": 10,
+    "projection_basis": {
+      "aligned": "signed projection onto the normalized perturbation direction",
+      "orthogonal": "signed projection onto the normalized perturbation direction rotated +90 degrees in the right-handed x-y plane: (-dy, dx)"
+    },
     "rows": [
-      "network output",
+      "network output aligned with perturbation direction plus lower-emphasis orthogonal companion traces",
       "point-mass position along aligned perturbation direction",
       "point-mass velocity along aligned perturbation direction"
     ],
@@ -22,7 +26,7 @@
   "run_id": "target_relative_multitarget_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
   "schema_version": "rlrmp.gru_steady_state_perturbation_bank.v1",
   "source_experiment": "020a65b",
-  "timestamp": "2026-06-21T02:34:07.407696+00:00",
+  "timestamp": "2026-06-21T03:09:01.634963+00:00",
   "timing_by_condition": {
     "no_pgd": {
       "fanout_policy": "prefix_equivalent_batched_trials; Feedbax task API does not expose a stable hidden-state resume hook, so every perturbation row shares the same deterministic wash-in prefix and zero-noise inputs inside the same materialization pass.",

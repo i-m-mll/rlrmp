@@ -115,12 +115,12 @@
       "metadata": {
         "exists": true,
         "kind": "file",
-        "sha256": "ff35c72acb2a52b48ca2c9ee9f838b6a44bdb67489b3fbdb13fbc214af485243",
-        "size_bytes": 1400646
+        "sha256": "fb7e080344f82f2d589535bd92679ced6c6e999ca3a59e357c37a9f8df0817d3",
+        "size_bytes": 1871255
       },
       "role": "summary_json",
-      "sha256": "ff35c72acb2a52b48ca2c9ee9f838b6a44bdb67489b3fbdb13fbc214af485243",
-      "size_bytes": 1400646,
+      "sha256": "fb7e080344f82f2d589535bd92679ced6c6e999ca3a59e357c37a9f8df0817d3",
+      "size_bytes": 1871255,
       "storage_backend": "feedbax-local",
       "uri": "repo://results/87424a4/notes/steady_state_perturbation_bank_summary.json"
     },
@@ -130,18 +130,18 @@
       "metadata": {
         "exists": true,
         "kind": "file",
-        "sha256": "16294649ac70a639db9464ac0b2ccb5f97a6011a5ba1e3d68217009c40c0e368",
-        "size_bytes": 2238
+        "sha256": "8cf720c04d77e92325170c26d35b644e9dfd8a85ab7829f80c16717f2f736768",
+        "size_bytes": 2439
       },
       "role": "summary_markdown",
-      "sha256": "16294649ac70a639db9464ac0b2ccb5f97a6011a5ba1e3d68217009c40c0e368",
-      "size_bytes": 2238,
+      "sha256": "8cf720c04d77e92325170c26d35b644e9dfd8a85ab7829f80c16717f2f736768",
+      "size_bytes": 2439,
       "storage_backend": "feedbax-local",
       "uri": "repo://results/87424a4/notes/steady_state_perturbation_bank.md"
     }
   ],
   "parameters": {
-    "force_filter_scale": 1.0,
+    "force_filter_scale": 10.0,
     "n_rollout_trials": 4,
     "position_scale_m": 0.1,
     "pulse_duration_steps": 5,
@@ -162,7 +162,6 @@
         " M results/87424a4/figures/matched_020a65b_no_pgd_vs_pgd/spec.json",
         " M results/87424a4/figures/undelayed_targetfix_sisu_effective_020a65b/spec.json",
         " M results/87424a4/notes/steady_state_perturbation_bank.md",
-        " M results/87424a4/notes/steady_state_perturbation_bank_regeneration_spec.json",
         " M results/87424a4/notes/steady_state_perturbation_bank_summary.json",
         " M results/87424a4/scripts/materialize_steady_state_perturbation_bank.py",
         " M src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py",
@@ -171,7 +170,7 @@
     },
     "parents": [],
     "source_branch": "feature/87424a4-steady-state-perturb-bank",
-    "source_commit": "9fd46eb25c2cf78e7ebda97b919080b669ac4afd",
+    "source_commit": "6d12a9dbcf7f51a5a31a14da4b1e6c59ffd240ec",
     "source_repo": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__87424a4-steady-state-perturb-bank"
   },
   "schema_id": "feedbax.spec.regeneration",
@@ -181,15 +180,15 @@
       "metadata": {},
       "path": "src/rlrmp/analysis/pipelines/gru_steady_state_perturbation_bank.py",
       "role": "source_file",
-      "sha256": "791a89bae2fe660a2b63c6d3a5c6979b0ba2a2a9ec5660276ae4015e2570e723",
-      "size_bytes": 48165
+      "sha256": "0f1ce31a9bc76d1fd32d265cddab7bd0c66edfe059a8231049a68f478478aabf",
+      "size_bytes": 52571
     },
     {
       "metadata": {},
       "path": "results/87424a4/scripts/materialize_steady_state_perturbation_bank.py",
       "role": "source_file",
-      "sha256": "68a9fb98f1c128ab22cd3aa4a1e66a347215a89903a50ae50f5e2d785bf432fb",
-      "size_bytes": 3306
+      "sha256": "9710800e2d7a330e665081afcc9396f0779367f0aa1ed93677765f712e13b329",
+      "size_bytes": 3288
     }
   ],
   "source_trees": []

@@ -22,7 +22,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n-rollout-trials", type=int, default=4)
     parser.add_argument("--position-scale-m", type=float, default=0.1)
     parser.add_argument("--velocity-scale-m-s", type=float, default=0.5)
-    parser.add_argument("--force-filter-scale", type=float, default=1.0)
+    parser.add_argument("--force-filter-scale", type=float, default=10.0)
     return parser.parse_args()
 
 

@@ -50,7 +50,7 @@ DEFAULT_FINAL_WINDOW_STEPS = 10
 DEFAULT_N_ROLLOUT_TRIALS = 4
 DEFAULT_POSITION_SCALE_M = 0.1
 DEFAULT_VELOCITY_SCALE_M_S = 0.5
-DEFAULT_FORCE_FILTER_SCALE = 1.0
+DEFAULT_FORCE_FILTER_SCALE = 10.0
 DEFAULT_PRE_ONSET_FIGURE_STEPS = 10
 DEFAULT_POST_ONSET_FIGURE_STEPS = 50
 SUMMARY_MARKER = "steady_state_perturbation_bank"
@@ -675,7 +675,13 @@ def summarize_feedback_row(
     delta_hidden = perturbed.hidden - base.hidden
     direction = np.asarray(perturbation.direction, dtype=np.float64)
     signed_direction = direction / max(float(np.linalg.norm(direction)), 1e-12)
+    orthogonal_direction = right_handed_orthogonal_direction(signed_direction)
     aligned_command = np.tensordot(delta_command, signed_direction, axes=([-1], [0]))
+    orthogonal_command = np.tensordot(
+        delta_command,
+        orthogonal_direction,
+        axes=([-1], [0]),
+    )
     aligned_position = np.tensordot(
         perturbed.position - base.position,
         signed_direction,
@@ -687,8 +693,13 @@ def summarize_feedback_row(
         axes=([-1], [0]),
     )
     response = aligned_command[:, :, pulse_start:]
+    orthogonal_response = orthogonal_command[:, :, pulse_start:]
     command_window, relative_steps = _mean_onset_window(
         aligned_command,
+        pulse_start=pulse_start,
+    )
+    orthogonal_command_window, _ = _mean_onset_window(
+        orthogonal_command,
         pulse_start=pulse_start,
     )
     position_window, _ = _mean_onset_window(
@@ -711,17 +722,30 @@ def summarize_feedback_row(
         "family": perturbation.family,
         "status": "evaluated",
         "direction": [float(value) for value in perturbation.direction],
+        "projection_basis": {
+            "aligned_direction": [float(value) for value in signed_direction],
+            "orthogonal_direction": [float(value) for value in orthogonal_direction],
+            "orthogonal_convention": "right_handed_plus_90_degrees_xy",
+        },
         "sign": int(perturbation.sign),
         "amplitude": float(perturbation.amplitude),
         "units": perturbation.units,
         "aligned_output_profile": [float(value) for value in mean_profile],
+        "orthogonal_output_profile": [
+            float(value) for value in np.mean(orthogonal_response, axis=(0, 1))
+        ],
         "relative_time_steps": [int(value) for value in relative_steps],
         "aligned_output_window_profile": [float(value) for value in command_window],
+        "orthogonal_output_window_profile": [float(value) for value in orthogonal_command_window],
         "aligned_position_window_profile": [float(value) for value in position_window],
         "aligned_velocity_window_profile": [float(value) for value in velocity_window],
         "metrics": {
             "peak_output_response": float(peak_abs(response)),
+            "peak_orthogonal_output_response": float(peak_abs(orthogonal_response)),
             "output_auc_impulse": float(np.sum(np.abs(response)) * float(base.dt) / response.size),
+            "orthogonal_output_auc_impulse": float(
+                np.sum(np.abs(orthogonal_response)) * float(base.dt) / orthogonal_response.size
+            ),
             "terminal_residual": float(np.mean(np.abs(terminal))) if terminal.size else 0.0,
             "recovery_settling_step": settling,
             "direction_variability": float(np.std(np.mean(response, axis=-1)))
@@ -748,7 +772,11 @@ def aggregate_family_profiles(rows: Sequence[Mapping[str, Any]]) -> dict[str, An
         profiles = np.asarray(
             [row["aligned_output_profile"] for row in family_rows], dtype=np.float64
         )
+        orthogonal_profiles = np.asarray(
+            [row["orthogonal_output_profile"] for row in family_rows], dtype=np.float64
+        )
         mean_profile = np.mean(profiles, axis=0)
+        orthogonal_mean_profile = np.mean(orthogonal_profiles, axis=0)
         pair_scores = signed_pair_antisymmetry(family_rows)
         metrics = [row["metrics"] for row in family_rows if isinstance(row.get("metrics"), Mapping)]
         summary[family] = {
@@ -762,11 +790,27 @@ def aggregate_family_profiles(rows: Sequence[Mapping[str, Any]]) -> dict[str, An
                     else np.zeros_like(mean_profile)
                 )
             ],
+            "orthogonal_output_profile_mean": [float(value) for value in orthogonal_mean_profile],
+            "orthogonal_output_profile_sem": [
+                float(value)
+                for value in (
+                    np.std(orthogonal_profiles, axis=0, ddof=1)
+                    / np.sqrt(orthogonal_profiles.shape[0])
+                    if orthogonal_profiles.shape[0] > 1
+                    else np.zeros_like(orthogonal_mean_profile)
+                )
+            ],
             "peak_output_response": float(
                 np.mean([metric["peak_output_response"] for metric in metrics])
             ),
+            "peak_orthogonal_output_response": float(
+                np.mean([metric["peak_orthogonal_output_response"] for metric in metrics])
+            ),
             "output_auc_impulse": float(
                 np.mean([metric["output_auc_impulse"] for metric in metrics])
+            ),
+            "orthogonal_output_auc_impulse": float(
+                np.mean([metric["orthogonal_output_auc_impulse"] for metric in metrics])
             ),
             "terminal_residual": float(
                 np.mean([metric["terminal_residual"] for metric in metrics])
@@ -793,6 +837,7 @@ def _aggregate_window_profiles(rows: Sequence[Mapping[str, Any]]) -> dict[str, A
         output["relative_time_steps"] = list(range(len(first["aligned_output_profile"])))
     profile_keys = (
         "aligned_output_window_profile",
+        "orthogonal_output_window_profile",
         "aligned_position_window_profile",
         "aligned_velocity_window_profile",
     )
@@ -906,14 +951,15 @@ def build_response_figure(
                 sem = np.asarray(family_summary[f"{profile_key}_sem"], dtype=float)
                 x = np.asarray(family_summary["relative_time_steps"], dtype=float) * dt
                 color = _condition_color(idx)
+                label = str(condition["label"])
                 fig.add_trace(
                     go.Scatter(
                         x=x,
                         y=y,
                         mode="lines",
                         line={"color": color, "width": 2.1},
-                        name=str(condition["label"]),
-                        legendgroup=str(condition["label"]),
+                        name=f"{label} aligned" if row_index == 1 else label,
+                        legendgroup=label,
                         showlegend=(col, row_index) == (1, 1),
                     ),
                     row=row_index,
@@ -929,11 +975,33 @@ def build_response_figure(
                         fillcolor=_rgba(color, 0.14),
                         hoverinfo="skip",
                         showlegend=False,
-                        legendgroup=str(condition["label"]),
+                        legendgroup=label,
                     ),
                     row=row_index,
                     col=col,
                 )
+                if row_index == 1:
+                    orthogonal_y = np.asarray(
+                        family_summary["orthogonal_output_window_profile_mean"],
+                        dtype=float,
+                    )
+                    fig.add_trace(
+                        go.Scatter(
+                            x=x,
+                            y=orthogonal_y,
+                            mode="lines",
+                            line={
+                                "color": _rgba(color, 0.60),
+                                "width": 1.6,
+                                "dash": "dot",
+                            },
+                            name=f"{label} orthogonal",
+                            legendgroup=f"{label} orthogonal",
+                            showlegend=col == 1,
+                        ),
+                        row=row_index,
+                        col=col,
+                    )
     if pulse_duration_steps > 1:
         fig.add_vrect(
             x0=0,
@@ -995,6 +1063,11 @@ def render_summary_markdown(manifest: Mapping[str, Any]) -> str:
             f"position={manifest['feedback_offset_scales']['position_m']} m, "
             f"velocity={manifest['feedback_offset_scales']['velocity_m_s']} m/s, "
             f"force/filter={manifest['feedback_offset_scales']['force_filter']}."
+        ),
+        (
+            "- Output row: aligned command is the signed projection onto the perturbation "
+            "direction; the companion orthogonal trace uses the same signed direction "
+            "rotated +90 degrees in the right-handed x-y plane."
         ),
         "",
         "## Comparisons",
@@ -1131,6 +1204,14 @@ def peak_abs(values: np.ndarray) -> float:
     return float(np.max(np.abs(arr))) if arr.size else 0.0
 
 
+def right_handed_orthogonal_direction(direction: np.ndarray) -> np.ndarray:
+    """Return the +90 degree right-handed x-y rotation of ``direction``."""
+
+    arr = np.asarray(direction, dtype=np.float64)
+    unit = arr / max(float(np.linalg.norm(arr)), 1e-12)
+    return np.asarray([-unit[1], unit[0]], dtype=np.float64)
+
+
 def _mean_onset_window(
     aligned_values: np.ndarray,
     *,
@@ -1179,8 +1260,15 @@ def _response_window_contract() -> dict[str, Any]:
         "pre_onset_steps": DEFAULT_PRE_ONSET_FIGURE_STEPS,
         "post_onset_steps": DEFAULT_POST_ONSET_FIGURE_STEPS,
         "x_axis": "seconds relative to perturbation onset",
+        "projection_basis": {
+            "aligned": "signed projection onto the normalized perturbation direction",
+            "orthogonal": (
+                "signed projection onto the normalized perturbation direction rotated "
+                "+90 degrees in the right-handed x-y plane: (-dy, dx)"
+            ),
+        },
         "rows": [
-            "network output",
+            "network output aligned with perturbation direction plus lower-emphasis orthogonal companion traces",
             "point-mass position along aligned perturbation direction",
             "point-mass velocity along aligned perturbation direction",
         ],
@@ -1245,6 +1333,7 @@ __all__ = [
     "make_steady_state_trial_specs",
     "materialize_steady_state_comparisons",
     "pad_feedback_offset_inputs",
+    "right_handed_orthogonal_direction",
     "sisu_condition",
     "signed_pair_antisymmetry",
     "washin_diagnostics",
