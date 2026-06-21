@@ -79,6 +79,7 @@ from rlrmp.train.cs_perturbation_training import (
     TargetRelativeMultiTargetTrainingConfig,
     make_broad_epsilon_pgd_pre_step,
     planned_020a65b_h0_pgd_rows,
+    planned_7c1f7ed_delayed_sisu_spectrum_rows,
     planned_e4800d6_sisu_spectrum_rows,
     planned_fixed_target_perturbation_rows,
     planned_target_relative_multitarget_h0_rows,
@@ -719,6 +720,16 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
         sisu_max_l2_radius_15cm=args.broad_epsilon_pgd_sisu_max_radius,
         sisu_max_radius_source=args.broad_epsilon_pgd_sisu_max_radius_source,
     )
+    if (
+        delayed_reach
+        and broad_epsilon_pgd_training.enabled
+        and broad_epsilon_pgd_training.budget_schedule == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
+        and broad_epsilon_pgd_training.sisu_condition_input == "input"
+    ):
+        raise ValueError(
+            "Delayed SISU-conditioned PGD must use --broad-epsilon-pgd-sisu-condition-input "
+            "sisu (or auto) so the delayed go cue and SISU budget key are distinct."
+        )
     target_relative_multitarget = TargetRelativeMultiTargetTrainingConfig(
         enabled=bool(args.target_relative_multitarget),
         force_filter_feedback=force_filter_feedback,
@@ -1079,6 +1090,8 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
     state_dim = int(getattr(hps.model, "state_dim", 48))
     no_integrator_state = bool(getattr(hps.model, "no_integrator_state", False))
     go_cue_dim = 1 if delayed_reach else 0
+    sisu_condition_input = _sisu_conditioned_pgd_input_key(hps)
+    sisu_condition_dim = 1 if sisu_condition_input is not None else 0
     return {
         "controller_kind": "gru",
         "plant_backend": plant_backend,
@@ -1129,8 +1142,18 @@ def build_model_structure_summary(hps: TreeNamespace) -> dict[str, Any]:
             "input_port": "input" if delayed_reach else None,
             "dimension": go_cue_dim,
             "sign": "0_during_prep_1_during_movement" if delayed_reach else None,
+            "controller_input_index": 0 if delayed_reach else None,
         },
-        "controller_input_dimension": _controller_feedback_dim(hps) + go_cue_dim,
+        "sisu_conditioning": {
+            "enabled": sisu_condition_input is not None,
+            "input_key": sisu_condition_input,
+            "controller_input_port": "input" if sisu_condition_input is not None else None,
+            "controller_input_index": 1 if delayed_reach and sisu_condition_input else 0,
+            "budget_role": "pgd_energy_fraction" if sisu_condition_input is not None else None,
+        },
+        "controller_input_dimension": (
+            _controller_feedback_dim(hps) + go_cue_dim + sisu_condition_dim
+        ),
         "efferent": {
             "additive_motor_noise_std": stochastic_runtime["additive_motor_noise_std"],
             "signal_dependent_motor_noise_std": (
@@ -2194,6 +2217,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the five planned issue ef9c882 delayed pre-go start-position hold rows.",
     )
     parser.add_argument(
+        "--planned-7c1f7ed-delayed-sisu-spectrum-rows",
+        action="store_true",
+        help="Print the two planned issue 7c1f7ed delayed SISU-conditioned PGD rows and exit.",
+    )
+    parser.add_argument(
         "--smoke",
         action="store_true",
         help="Use tiny local values; with --full-train this runs a one-batch smoke.",
@@ -2261,6 +2289,12 @@ def main(
         return 0
     if args.planned_ef9c882_start_pos_hold_rows:
         print(_json_dumps({"planned_rows": planned_ef9c882_start_pos_hold_rows()}), end="")
+        return 0
+    if args.planned_7c1f7ed_delayed_sisu_spectrum_rows:
+        print(
+            _json_dumps({"planned_rows": planned_7c1f7ed_delayed_sisu_spectrum_rows()}),
+            end="",
+        )
         return 0
     result = (
         run_full_training(args, volume_commit=volume_commit)
@@ -3338,24 +3372,8 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
     plant_backend = str(getattr(hps.model, "plant_backend", CS_LSS_PLANT_BACKEND))
     target_relative = _target_relative_multitarget_enabled(hps)
     delayed_reach = _delayed_reach_enabled(hps)
-    pgd = getattr(hps, "broad_epsilon_pgd_training", None)
-    pgd_schedule = getattr(pgd, "budget_schedule", None)
-    pgd_schedule_mode = (
-        getattr(pgd_schedule, "mode", None)
-        if pgd_schedule is not None
-        else getattr(pgd, "budget_schedule", "")
-    )
-    pgd_conditioning = getattr(pgd_schedule, "conditioning_scalar", None)
-    pgd_condition_input = (
-        getattr(pgd_conditioning, "input_key", None)
-        if pgd_conditioning is not None
-        else getattr(pgd, "sisu_condition_input", "auto")
-    )
-    sisu_conditioned_pgd_budget = bool(
-        getattr(pgd, "enabled", False)
-        and str(pgd_schedule_mode) == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
-        and str(pgd_condition_input) in {"auto", "input"}
-    )
+    sisu_condition_input = _sisu_conditioned_pgd_input_key(hps)
+    sisu_conditioned_pgd_budget = sisu_condition_input is not None
     rollout_steps = int(hps.task.n_steps) if delayed_reach else int(hps.task.n_steps) - 1
     if delayed_reach:
         movement_window = {
@@ -3409,7 +3427,14 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
         "time_axis_contract": time_axis_contract,
         "movement_window": movement_window,
         "extra_inputs": (
-            ["input", "target", "epsilon"]
+            ["input", "sisu", "target", "epsilon"]
+            if (
+                plant_backend == CS_LSS_PLANT_BACKEND
+                and target_relative
+                and delayed_reach
+                and sisu_conditioned_pgd_budget
+            )
+            else ["input", "target", "epsilon"]
             if (
                 plant_backend == CS_LSS_PLANT_BACKEND
                 and target_relative
@@ -3437,6 +3462,29 @@ def _task_spec(hps: TreeNamespace) -> dict[str, Any]:
         ),
         "initial_hidden_encoder": _initial_hidden_encoder_metadata(hps),
     }
+
+
+def _sisu_conditioned_pgd_input_key(hps: TreeNamespace) -> str | None:
+    pgd = getattr(hps, "broad_epsilon_pgd_training", None)
+    if not bool(getattr(pgd, "enabled", False)):
+        return None
+    pgd_schedule = getattr(pgd, "budget_schedule", None)
+    pgd_schedule_mode = (
+        getattr(pgd_schedule, "mode", None)
+        if pgd_schedule is not None
+        else getattr(pgd, "budget_schedule", "")
+    )
+    if str(pgd_schedule_mode) != BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE:
+        return None
+    pgd_conditioning = getattr(pgd_schedule, "conditioning_scalar", None)
+    pgd_condition_input = (
+        getattr(pgd_conditioning, "input_key", None)
+        if pgd_conditioning is not None
+        else getattr(pgd, "sisu_condition_input", "auto")
+    )
+    if str(pgd_condition_input) == "auto":
+        return "sisu" if _delayed_reach_enabled(hps) else "input"
+    return str(pgd_condition_input)
 
 
 def _delayed_pre_go_auxiliary_terms_metadata(hps: TreeNamespace) -> dict[str, Any]:
