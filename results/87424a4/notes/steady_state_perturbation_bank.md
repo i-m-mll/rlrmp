@@ -43,4 +43,14 @@ This materialization probes GRU feedback sensitivity around a hold-at-target end
 | No PGD | washin_endpoint_response | 3.957 | position=7.842, velocity=15.78, force_filter=22.86 |
 | PGD | washin_endpoint_response | 1.384 | position=11.92, velocity=13.63, force_filter=20.43 |
 
+### `matched_020a65b_h0_no_pgd_vs_pgd`
+
+- Figure: `results/87424a4/figures/matched_020a65b_h0_no_pgd_vs_pgd/spec.json`
+- Source run: `020a65b/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64`
+
+| Condition | Response label | Baseline command | Peak output by family |
+|---|---:|---:|---|
+| No PGD H0 | washin_endpoint_response | 3.904 | position=2.455, velocity=9.221, force_filter=10.96 |
+| PGD H0 | washin_endpoint_response | 0.7439 | position=14.15, velocity=16, force_filter=18.24 |
+
 <!-- /AUTO-GENERATED -->

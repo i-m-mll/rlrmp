@@ -76,6 +76,28 @@ def main() -> None:
             ),
             delayed=False,
         ),
+        ComparisonSpec(
+            comparison_id="matched_020a65b_h0_no_pgd_vs_pgd",
+            title="Matched 020a65b H0 no-PGD vs PGD feedback rows",
+            kind="pgd",
+            source_experiment="020a65b",
+            run_id=(
+                "target_relative_multitarget_h0_fullqrf_warmcos__"
+                "proprio_cal_small_no_pgd_lr3e-3_clip5_b64"
+            ),
+            conditions=(
+                identity_condition("no_pgd", "No PGD H0"),
+                identity_condition(
+                    "pgd",
+                    "PGD H0",
+                    run_id=(
+                        "target_relative_multitarget_h0_fullqrf_warmcos__"
+                        "proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64"
+                    ),
+                ),
+            ),
+            delayed=False,
+        ),
     )
     materialize_steady_state_comparisons(
         comparisons=comparisons,
