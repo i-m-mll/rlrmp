@@ -39,13 +39,12 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     load_materialized_fixed_bank_manifest,
     load_validation_selected_checkpoint_model,
 )
+from rlrmp.analysis.pipelines._selected_eval_rollouts import SelectedEvalRolloutProduct
 from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluation
 from rlrmp.analysis.pipelines.gru_pilot_figures import (
     RunFigureInputs,
-    initial_effector_velocity,
     repeat_single_validation_trial,
     resolve_run_inputs,
-    trial_effector_target_position,
 )
 from rlrmp.analysis.math.output_feedback import (
     OutputFeedbackConfig,
@@ -1723,7 +1722,7 @@ def evaluate_run_perturbation_bank(
         repo_root=repo_root,
     )
     base_trial_specs = repeat_single_validation_trial(pair.task.validation_trials, n_rollout_trials)
-    nominal_base_evaluation = _evaluate_model_on_trial_specs(
+    nominal_base_evaluation = _evaluate_model_rollout_product(
         model=model,
         task=pair.task,
         trial_specs=base_trial_specs,
@@ -1786,7 +1785,7 @@ def evaluate_run_perturbation_bank(
             base_evaluation = nominal_base_evaluation
             base_cost = nominal_base_cost
         else:
-            base_evaluation = _evaluate_model_on_trial_specs(
+            base_evaluation = _evaluate_model_rollout_product(
                 model=row_base_model,
                 task=pair.task,
                 trial_specs=row_base_trial_specs,
@@ -1794,7 +1793,7 @@ def evaluate_run_perturbation_bank(
                 seed=0,
             )
             base_cost = full_qrf_cost_summary(base_evaluation, row_base_trial_specs)
-        perturbed_evaluation = _evaluate_model_on_trial_specs(
+        perturbed_evaluation = _evaluate_model_rollout_product(
             model=adapter.model if adapter.model is not None else model,
             task=pair.task,
             trial_specs=adapter.trial_specs,
@@ -1973,6 +1972,10 @@ def _evaluated_perturbation_row(
                 "delta_velocity",
                 "base_position",
                 "perturbed_position",
+                "base_velocity",
+                "perturbed_velocity",
+                "base_action",
+                "perturbed_action",
                 "base_gru_input",
                 "perturbed_gru_input",
             ],
@@ -1989,27 +1992,38 @@ def summarize_perturbation_response(
 ) -> dict[str, Any]:
     """Compute paired perturbation-response metrics."""
 
-    delta_action = perturbed.command - base.command
-    delta_input = perturbed.gru_input - base.gru_input
-    delta_position = perturbed.position - base.position
-    delta_velocity = perturbed.velocity - base.velocity
-    delta_position_norm = np.linalg.norm(delta_position, axis=-1)
-    delta_velocity_norm = np.linalg.norm(delta_velocity, axis=-1)
-    delta_state_norm = np.linalg.norm(
-        np.concatenate([delta_position, delta_velocity], axis=-1),
+    base_command = jnp.asarray(base.command, dtype=jnp.float64)
+    base_input = jnp.asarray(base.gru_input, dtype=jnp.float64)
+    base_position = jnp.asarray(base.position, dtype=jnp.float64)
+    base_velocity = jnp.asarray(base.velocity, dtype=jnp.float64)
+    base_target = jnp.asarray(base.target_position, dtype=jnp.float64)
+    perturbed_command = jnp.asarray(perturbed.command, dtype=jnp.float64)
+    perturbed_input = jnp.asarray(perturbed.gru_input, dtype=jnp.float64)
+    perturbed_position = jnp.asarray(perturbed.position, dtype=jnp.float64)
+    perturbed_velocity = jnp.asarray(perturbed.velocity, dtype=jnp.float64)
+    perturbed_target = jnp.asarray(perturbed.target_position, dtype=jnp.float64)
+
+    delta_action = perturbed_command - base_command
+    delta_input = perturbed_input - base_input
+    delta_position = perturbed_position - base_position
+    delta_velocity = perturbed_velocity - base_velocity
+    delta_position_norm = jnp.linalg.norm(delta_position, axis=-1)
+    delta_velocity_norm = jnp.linalg.norm(delta_velocity, axis=-1)
+    delta_state_norm = jnp.linalg.norm(
+        jnp.concatenate([delta_position, delta_velocity], axis=-1),
         axis=-1,
     )
-    delta_action_norm = np.linalg.norm(delta_action, axis=-1)
-    endpoint_recovery = np.linalg.norm(
-        perturbed.position[:, :, -1, :] - perturbed.target_position[None, :, -1, :],
+    delta_action_norm = jnp.linalg.norm(delta_action, axis=-1)
+    endpoint_recovery = jnp.linalg.norm(
+        perturbed_position[:, :, -1, :] - perturbed_target[None, :, -1, :],
         axis=-1,
     )
-    base_endpoint = np.linalg.norm(
-        base.position[:, :, -1, :] - base.target_position[None, :, -1, :],
+    base_endpoint = jnp.linalg.norm(
+        base_position[:, :, -1, :] - base_target[None, :, -1, :],
         axis=-1,
     )
-    terminal_speed = np.linalg.norm(perturbed.velocity[:, :, -1, :], axis=-1)
-    base_terminal_speed = np.linalg.norm(base.velocity[:, :, -1, :], axis=-1)
+    terminal_speed = jnp.linalg.norm(perturbed_velocity[:, :, -1, :], axis=-1)
+    base_terminal_speed = jnp.linalg.norm(base_velocity[:, :, -1, :], axis=-1)
     metrics = {
         "delta_action_norm": _summary_stats(delta_action_norm),
         "delta_position_trajectory_norm_m": _summary_stats(delta_position_norm),
@@ -3248,6 +3262,24 @@ def _evaluate_model_on_trial_specs(
     n_replicates: int,
     seed: int,
 ) -> RolloutEvaluation:
+    product = _evaluate_model_rollout_product(
+        model=model,
+        task=task,
+        trial_specs=trial_specs,
+        n_replicates=n_replicates,
+        seed=seed,
+    )
+    return product.to_rollout_evaluation(RolloutEvaluation)
+
+
+def _evaluate_model_rollout_product(
+    *,
+    model: Any,
+    task: Any,
+    trial_specs: Any,
+    n_replicates: int,
+    seed: int,
+) -> SelectedEvalRolloutProduct:
     model_arrays, model_other = eqx.partition(
         model,
         lambda leaf: _is_replicate_array(leaf, n_replicates),
@@ -3265,24 +3297,12 @@ def _evaluate_model_on_trial_specs(
         model_arrays,
         jr.split(jr.PRNGKey(seed), n_replicates),
     )
-    target_position = trial_effector_target_position(trial_specs)
-    evaluation = RolloutEvaluation(
-        position=np.asarray(states.mechanics.effector.pos, dtype=np.float64),
-        velocity=np.asarray(states.mechanics.effector.vel, dtype=np.float64),
-        command=np.asarray(states.net.output, dtype=np.float64),
-        hidden=np.asarray(states.net.hidden, dtype=np.float64),
-        gru_input=np.asarray(states.net.input, dtype=np.float64),
-        initial_position=np.asarray(_initial_effector_position(trial_specs), dtype=np.float64),
-        initial_velocity=np.asarray(initial_effector_velocity(trial_specs), dtype=np.float64),
-        target_position=target_position,
+    return SelectedEvalRolloutProduct.from_states(
+        states,
+        trial_specs,
         dt=0.01,
+        include_mechanics_vector=True,
     )
-    object.__setattr__(
-        evaluation,
-        "mechanics_vector",
-        np.asarray(states.mechanics.vector, dtype=np.float64),
-    )
-    return evaluation
 
 
 def _build_extlqg_comparator_context() -> dict[str, Any]:
@@ -3686,18 +3706,18 @@ def _write_perturbation_bulk_arrays(
     path = bulk_dir / f"{perturbation_id}.npz"
     np.savez_compressed(
         path,
-        delta_action=perturbed.command - base.command,
-        delta_gru_input=perturbed.gru_input - base.gru_input,
-        delta_position=perturbed.position - base.position,
-        delta_velocity=perturbed.velocity - base.velocity,
-        base_position=base.position,
-        perturbed_position=perturbed.position,
-        base_velocity=base.velocity,
-        perturbed_velocity=perturbed.velocity,
-        base_action=base.command,
-        perturbed_action=perturbed.command,
-        base_gru_input=base.gru_input,
-        perturbed_gru_input=perturbed.gru_input,
+        delta_action=np.asarray(perturbed.command - base.command, dtype=np.float64),
+        delta_gru_input=np.asarray(perturbed.gru_input - base.gru_input, dtype=np.float64),
+        delta_position=np.asarray(perturbed.position - base.position, dtype=np.float64),
+        delta_velocity=np.asarray(perturbed.velocity - base.velocity, dtype=np.float64),
+        base_position=np.asarray(base.position, dtype=np.float64),
+        perturbed_position=np.asarray(perturbed.position, dtype=np.float64),
+        base_velocity=np.asarray(base.velocity, dtype=np.float64),
+        perturbed_velocity=np.asarray(perturbed.velocity, dtype=np.float64),
+        base_action=np.asarray(base.command, dtype=np.float64),
+        perturbed_action=np.asarray(perturbed.command, dtype=np.float64),
+        base_gru_input=np.asarray(base.gru_input, dtype=np.float64),
+        perturbed_gru_input=np.asarray(perturbed.gru_input, dtype=np.float64),
     )
     return path
 

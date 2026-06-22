@@ -15,6 +15,7 @@ from feedbax.runtime.state import CartesianState
 from rlrmp.analysis.pipelines.gru_feedback_ablation import (
     FEEDBACK_AUDIT_SELECTION_ROLE,
     SCHEMA_VERSION,
+    _per_replicate_command_penalty_metrics,
     _per_replicate_cost_delta_values,
     build_observation_ablation_spec,
     build_observation_tape,
@@ -307,6 +308,28 @@ def test_per_replicate_cost_delta_values_reduces_trials_only() -> None:
         perturbed_cost,
         n_replicates=2,
     ) == [2.0, 12.0]
+
+
+def test_per_replicate_command_penalty_metrics_accepts_jax_arrays() -> None:
+    baseline = jnp.asarray(
+        [
+            [[[1.0, 0.0], [0.0, 1.0], [-1.0, 0.0]]],
+            [[[2.0, 0.0], [0.0, 2.0], [-2.0, 0.0]]],
+        ],
+        dtype=jnp.float64,
+    )
+    perturbed = baseline * 2.0
+
+    metrics = _per_replicate_command_penalty_metrics(
+        baseline_command=baseline,
+        perturbed_command=perturbed,
+        n_replicates=2,
+    )
+
+    assert [row["status"] for row in metrics] == ["available", "available"]
+    np.testing.assert_allclose(metrics[0]["command_energy_ratio"], 4.0)
+    np.testing.assert_allclose(metrics[1]["command_smoothness_ratio"], 4.0)
+    assert metrics[0]["command_oscillation_ratio"] == metrics[1]["command_oscillation_ratio"]
 
 
 def test_markdown_renders_not_available_rows() -> None:

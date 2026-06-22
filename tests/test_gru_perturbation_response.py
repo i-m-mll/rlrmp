@@ -1365,6 +1365,99 @@ def test_robust_output_feedback_comparator_reports_available_and_not_applicable(
     assert "measurement-offset ports" in sensory_status["reason"]
 
 
+def test_perturbation_bulk_writer_materializes_jax_arrays_and_schema_keys(tmp_path) -> None:
+    base = _minimal_rollout_evaluation(command_value=0.0)
+    perturbed = _minimal_rollout_evaluation(command_value=1.0)
+    base = RolloutEvaluation(
+        position=jnp.asarray(base.position, dtype=jnp.float64),
+        velocity=jnp.asarray(base.velocity, dtype=jnp.float64),
+        command=jnp.asarray(base.command, dtype=jnp.float64),
+        hidden=jnp.asarray(base.hidden, dtype=jnp.float64),
+        gru_input=jnp.asarray(base.gru_input, dtype=jnp.float64),
+        initial_position=jnp.asarray(base.initial_position, dtype=jnp.float64),
+        initial_velocity=jnp.asarray(base.initial_velocity, dtype=jnp.float64),
+        target_position=jnp.asarray(base.target_position, dtype=jnp.float64),
+        dt=base.dt,
+    )
+    perturbed = RolloutEvaluation(
+        position=jnp.asarray(perturbed.position, dtype=jnp.float64),
+        velocity=jnp.asarray(perturbed.velocity, dtype=jnp.float64),
+        command=jnp.asarray(perturbed.command, dtype=jnp.float64),
+        hidden=jnp.asarray(perturbed.hidden, dtype=jnp.float64),
+        gru_input=jnp.asarray(perturbed.gru_input, dtype=jnp.float64),
+        initial_position=jnp.asarray(perturbed.initial_position, dtype=jnp.float64),
+        initial_velocity=jnp.asarray(perturbed.initial_velocity, dtype=jnp.float64),
+        target_position=jnp.asarray(perturbed.target_position, dtype=jnp.float64),
+        dt=perturbed.dt,
+    )
+
+    path = perturbation_bank._write_perturbation_bulk_arrays(
+        base,
+        perturbed,
+        bulk_dir=tmp_path,
+        perturbation_id="row_a",
+    )
+
+    with np.load(path) as archive:
+        assert set(archive.files) == {
+            "delta_action",
+            "delta_gru_input",
+            "delta_position",
+            "delta_velocity",
+            "base_position",
+            "perturbed_position",
+            "base_velocity",
+            "perturbed_velocity",
+            "base_action",
+            "perturbed_action",
+            "base_gru_input",
+            "perturbed_gru_input",
+        }
+        assert archive["delta_action"].dtype == np.float64
+        np.testing.assert_allclose(archive["delta_action"], 1.0)
+
+
+def test_summarize_perturbation_response_accepts_jax_backed_rollout_with_parity() -> None:
+    base = _minimal_rollout_evaluation(command_value=0.0)
+    perturbed = _minimal_rollout_evaluation(command_value=1.0)
+    jax_base = RolloutEvaluation(
+        **{
+            field: jnp.asarray(getattr(base, field), dtype=jnp.float64)
+            for field in (
+                "position",
+                "velocity",
+                "command",
+                "hidden",
+                "gru_input",
+                "initial_position",
+                "initial_velocity",
+                "target_position",
+            )
+        },
+        dt=base.dt,
+    )
+    jax_perturbed = RolloutEvaluation(
+        **{
+            field: jnp.asarray(getattr(perturbed, field), dtype=jnp.float64)
+            for field in (
+                "position",
+                "velocity",
+                "command",
+                "hidden",
+                "gru_input",
+                "initial_position",
+                "initial_velocity",
+                "target_position",
+            )
+        },
+        dt=perturbed.dt,
+    )
+
+    assert summarize_perturbation_response(jax_base, jax_perturbed) == (
+        summarize_perturbation_response(base, perturbed)
+    )
+
+
 def _minimal_rollout_evaluation(*, command_value: float) -> RolloutEvaluation:
     position = np.zeros((1, 1, 2, 2), dtype=np.float64)
     velocity = np.zeros_like(position)
