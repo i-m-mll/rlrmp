@@ -963,14 +963,24 @@ def _endpoint_terminal_summary(evaluation: Any) -> dict[str, Any]:
 
 
 def _cost_arrays_to_summary(costs: Mapping[str, Any]) -> dict[str, Any]:
+    arrays = {
+        key: np.asarray(costs[key], dtype=np.float64)
+        for key in ("total", "stage_state", "control", "terminal")
+    }
     return {
         "status": "available",
         "lens": "realized_deterministic_rollout_full_qrf",
         **{
-            key: {"values": np.asarray(costs[key], dtype=np.float64).tolist()}
-            | _summary_stats(np.asarray(costs[key], dtype=np.float64))
-            for key in ("total", "stage_state", "control", "terminal")
+            key: {"values": array.tolist()} | _summary_stats(array)
+            for key, array in arrays.items()
         },
+    }
+
+
+def _cost_summary_values(summary: Mapping[str, Any]) -> dict[str, np.ndarray]:
+    return {
+        key: np.asarray(summary[key]["values"], dtype=np.float64)
+            for key in ("total", "stage_state", "control", "terminal")
     }
 
 
@@ -985,11 +995,10 @@ def _delta_cost_summary(
     base: Mapping[str, Any],
     candidate: Mapping[str, Any],
 ) -> dict[str, Any]:
+    base_values = _cost_summary_values(base)
+    candidate_values = _cost_summary_values(candidate)
     return {
-        key: _summary_stats(
-            np.asarray(candidate[key]["values"], dtype=np.float64)
-            - np.asarray(base[key]["values"], dtype=np.float64)
-        )
+        key: _summary_stats(candidate_values[key] - base_values[key])
         for key in ("total", "stage_state", "control", "terminal")
     }
 

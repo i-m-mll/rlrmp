@@ -409,6 +409,38 @@ def test_shared_full_qrf_cost_summary_decomposes_zero_rollout() -> None:
     assert summary["total"]["shape"] == [2]
 
 
+def test_shared_full_qrf_cost_summary_matches_numpy_and_jax_inputs() -> None:
+    states = np.zeros((1, 60, 48), dtype=np.float64)
+    states[..., :, 0] = 0.01
+    commands = np.ones((1, 60, 2), dtype=np.float64)
+    initial_states = np.zeros((1, 48), dtype=np.float64)
+
+    numpy_summary = shared_full_qrf_cost_summary(
+        states=states,
+        commands=commands,
+        initial_states=initial_states,
+        state_basis="target_centered",
+    )
+    jax_summary = shared_full_qrf_cost_summary(
+        states=jnp.asarray(states),
+        commands=jnp.asarray(commands),
+        initial_states=jnp.asarray(initial_states),
+        state_basis="target_centered",
+    )
+
+    for key in (
+        "total",
+        "running_state",
+        "terminal_state",
+        "command_control",
+        "force_filter_state",
+        "disturbance_integrator_state",
+    ):
+        assert jax_summary[key]["shape"] == numpy_summary[key]["shape"]
+        np.testing.assert_allclose(jax_summary[key]["values"], numpy_summary[key]["values"])
+        np.testing.assert_allclose(jax_summary[key]["mean"], numpy_summary[key]["mean"])
+
+
 def test_shared_full_qrf_cost_summary_declares_state_basis_contract() -> None:
     from rlrmp.analysis.math.cs_game_card import TARGET_POS
 

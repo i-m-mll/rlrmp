@@ -418,9 +418,9 @@ def shared_full_qrf_cost_summary(
             f"got {state_basis!r}."
         )
     _plant, schedule = build_canonical_game()
-    state_array = np.asarray(states, dtype=np.float64)
-    command_array = np.asarray(commands, dtype=np.float64)
-    initial_array = np.asarray(initial_states, dtype=np.float64)
+    state_array = jnp.asarray(states, dtype=jnp.float64)
+    command_array = jnp.asarray(commands, dtype=jnp.float64)
+    initial_array = jnp.asarray(initial_states, dtype=jnp.float64)
     if state_array.shape[-1] != schedule.Q.shape[-1]:
         raise ValueError(
             f"Full-Q/R/Q_f scorer expected state dim {schedule.Q.shape[-1]}, "
@@ -436,18 +436,18 @@ def shared_full_qrf_cost_summary(
         raise ValueError(f"Full-Q/R/Q_f scorer expected {horizon} states.")
     if command_array.shape[-2] != horizon:
         raise ValueError(f"Full-Q/R/Q_f scorer expected {horizon} commands.")
-    initial_array = np.broadcast_to(initial_array, (*state_array.shape[:-2], state_array.shape[-1]))
-    x_pre = np.concatenate([initial_array[..., None, :], state_array[..., :-1, :]], axis=-2)
+    initial_array = jnp.broadcast_to(initial_array, (*state_array.shape[:-2], state_array.shape[-1]))
+    x_pre = jnp.concatenate([initial_array[..., None, :], state_array[..., :-1, :]], axis=-2)
     if state_basis == "absolute_workspace":
         x_pre = _goal_centered_vectors(x_pre, target_pos=TARGET_POS)
         x_terminal = _goal_centered_vectors(state_array[..., -1, :], target_pos=TARGET_POS)
         state_transform = "subtract TARGET_POS from each physical delay block x/y"
     else:
-        x_terminal = np.asarray(state_array[..., -1, :], dtype=np.float64)
+        x_terminal = jnp.asarray(state_array[..., -1, :], dtype=jnp.float64)
         state_transform = "none; states are already target-centered"
-    q = np.asarray(schedule.Q, dtype=np.float64)
-    r = np.asarray(schedule.R, dtype=np.float64)
-    q_f = np.asarray(schedule.Q_f, dtype=np.float64)
+    q = jnp.asarray(schedule.Q, dtype=jnp.float64)
+    r = jnp.asarray(schedule.R, dtype=jnp.float64)
+    q_f = jnp.asarray(schedule.Q_f, dtype=jnp.float64)
     groups = _state_term_groups(state_array.shape[-1])
     running_state = _state_quadratic_group(x_pre, q, groups["running_state"])
     force_filter = _state_quadratic_group(x_pre, q, groups["force_filter_state"])
@@ -463,8 +463,8 @@ def shared_full_qrf_cost_summary(
         q_f,
         groups["disturbance_integrator_state"],
     )
-    command_control = np.sum(
-        np.einsum("...ti,tij,...tj->...t", command_array, r, command_array),
+    command_control = jnp.sum(
+        jnp.einsum("...ti,tij,...tj->...t", command_array, r, command_array),
         axis=-1,
     )
     force_filter = force_filter + terminal_force
@@ -1586,28 +1586,31 @@ def _state_term_groups(state_dim: int) -> dict[str, list[int]]:
     return groups
 
 
-def _state_quadratic_group(values: np.ndarray, matrices: np.ndarray, indices: Sequence[int]) -> Any:
-    idx = np.asarray(indices, dtype=np.int64)
+def _state_quadratic_group(values: Any, matrices: Any, indices: Sequence[int]) -> Any:
+    idx = jnp.asarray(indices, dtype=jnp.int32)
     selected = values[..., idx]
     selected_matrices = matrices[:, idx[:, None], idx]
-    return np.sum(np.einsum("...ti,tij,...tj->...t", selected, selected_matrices, selected), axis=-1)
+    return jnp.sum(
+        jnp.einsum("...ti,tij,...tj->...t", selected, selected_matrices, selected),
+        axis=-1,
+    )
 
 
-def _terminal_quadratic_group(values: np.ndarray, matrix: np.ndarray, indices: Sequence[int]) -> Any:
-    idx = np.asarray(indices, dtype=np.int64)
+def _terminal_quadratic_group(values: Any, matrix: Any, indices: Sequence[int]) -> Any:
+    idx = jnp.asarray(indices, dtype=jnp.int32)
     selected = values[..., idx]
     selected_matrix = matrix[idx[:, None], idx]
-    return np.einsum("...i,ij,...j->...", selected, selected_matrix, selected)
+    return jnp.einsum("...i,ij,...j->...", selected, selected_matrix, selected)
 
 
-def _goal_centered_vectors(values: Any, *, target_pos: Any) -> np.ndarray:
-    result = np.array(values, dtype=np.float64, copy=True)
-    target = np.asarray(target_pos, dtype=np.float64)
+def _goal_centered_vectors(values: Any, *, target_pos: Any) -> Any:
+    result = jnp.asarray(values, dtype=jnp.float64)
+    target = jnp.asarray(target_pos, dtype=result.dtype)
     if result.shape[-1] % 8 != 0:
         raise ValueError(f"state dimension {result.shape[-1]} is not divisible by 8")
-    for start in range(0, result.shape[-1], 8):
-        result[..., start : start + 2] -= target
-    return result
+    reshaped = result.reshape((*result.shape[:-1], result.shape[-1] // 8, 8))
+    centered = reshaped.at[..., 0:2].add(-target)
+    return centered.reshape(result.shape)
 
 
 def _summary_with_values(values: Any) -> dict[str, Any]:

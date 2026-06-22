@@ -302,13 +302,13 @@ def _select_representative_perturbation_id(
 def build_observation_tape(
     mode: AblationMode,
     *,
-    bin_feedback: np.ndarray,
-    nominal_feedback: np.ndarray,
-) -> np.ndarray | None:
+    bin_feedback: Any,
+    nominal_feedback: Any,
+) -> Any | None:
     """Return the external delayed-feedback tape for a payload-based ablation."""
 
-    feedback = np.asarray(bin_feedback, dtype=np.float64)
-    nominal = np.asarray(nominal_feedback, dtype=np.float64)
+    feedback = jnp.asarray(bin_feedback, dtype=jnp.float64)
+    nominal = jnp.asarray(nominal_feedback, dtype=jnp.float64)
     if feedback.shape != nominal.shape:
         raise ValueError(
             "bin_feedback and nominal_feedback must have the same shape; "
@@ -323,11 +323,11 @@ def build_observation_tape(
         return nominal
     if mode == "shuffled_observation_history":
         if feedback.shape[1] < 2:
-            return feedback.copy()
-        return np.roll(feedback, shift=1, axis=1)
+            return jnp.array(feedback, copy=True)
+        return jnp.roll(feedback, shift=1, axis=1)
     if mode == "lagged_observation_history":
         first = feedback[:, :, :1, :]
-        return np.concatenate([first, feedback[:, :, :-1, :]], axis=2)
+        return jnp.concatenate([first, feedback[:, :, :-1, :]], axis=2)
     if mode in {"position_only_observation", "velocity_only_observation"}:
         return None
     raise ValueError(f"unsupported feedback ablation mode {mode!r}")

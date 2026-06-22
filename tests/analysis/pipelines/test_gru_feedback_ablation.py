@@ -6,6 +6,7 @@ import json
 
 import jax.numpy as jnp
 import jax.random as jr
+from jax import Array as JaxArray
 import numpy as np
 from feedbax import TaskTrialSpec
 from feedbax.runtime.graph import Wire
@@ -103,6 +104,35 @@ def test_observation_tape_modes_transform_expected_axes() -> None:
         bin_feedback=feedback,
         nominal_feedback=nominal,
     ) is None
+
+
+def test_observation_tape_preserves_jax_array_boundary() -> None:
+    feedback = jnp.arange(2 * 3 * 4 * 4, dtype=jnp.float64).reshape(2, 3, 4, 4)
+    nominal = jnp.full_like(feedback, -1.0)
+
+    frozen = build_observation_tape(
+        "frozen_nominal_observation_tape",
+        bin_feedback=feedback,
+        nominal_feedback=nominal,
+    )
+    shuffled = build_observation_tape(
+        "shuffled_observation_history",
+        bin_feedback=feedback,
+        nominal_feedback=nominal,
+    )
+    lagged = build_observation_tape(
+        "lagged_observation_history",
+        bin_feedback=feedback,
+        nominal_feedback=nominal,
+    )
+
+    assert isinstance(frozen, JaxArray)
+    assert isinstance(shuffled, JaxArray)
+    assert isinstance(lagged, JaxArray)
+    np.testing.assert_allclose(np.asarray(frozen), np.asarray(nominal))
+    np.testing.assert_allclose(np.asarray(shuffled[:, 0]), np.asarray(feedback[:, -1]))
+    np.testing.assert_allclose(np.asarray(lagged[:, :, 0]), np.asarray(feedback[:, :, 0]))
+    np.testing.assert_allclose(np.asarray(lagged[:, :, 1:]), np.asarray(feedback[:, :, :-1]))
 
 
 def test_feedback_ablation_inserts_override_and_mask_nodes() -> None:

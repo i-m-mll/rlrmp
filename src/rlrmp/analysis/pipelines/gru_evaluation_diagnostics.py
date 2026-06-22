@@ -449,7 +449,7 @@ def summarize_controller_feedback_scales(
     if statistic != CONTROLLER_FEEDBACK_SCALE_STATISTIC:
         raise ValueError(f"unsupported feedback scale statistic {statistic!r}")
 
-    gru_input = np.asarray(evaluation.gru_input, dtype=np.float64)
+    gru_input = jnp.asarray(evaluation.gru_input, dtype=jnp.float64)
     if gru_input.ndim < 4:
         raise ValueError("evaluation.gru_input must have shape replicate/trial/time/feature")
     input_dim = int(gru_input.shape[-1])
@@ -477,20 +477,20 @@ def summarize_controller_feedback_scales(
     for name, units, basis_indices in component_specs:
         absolute_indices = tuple(start + idx for idx in basis_indices)
         values = gru_input[..., absolute_indices]
-        norm = np.linalg.norm(values, axis=-1)
-        abs_values = np.abs(values)
+        norm = jnp.linalg.norm(values, axis=-1)
+        abs_values = jnp.abs(values)
         components[name] = {
             "units": units,
             "feedback_basis_indices": list(basis_indices),
             "gru_input_indices": list(absolute_indices),
-            "rms_norm": float(np.sqrt(np.mean(np.square(norm)))),
-            "p95_norm": float(np.quantile(norm.reshape(-1), 0.95)),
+            "rms_norm": float(jnp.sqrt(jnp.mean(jnp.square(norm)))),
+            "p95_norm": float(jnp.quantile(norm.reshape(-1), 0.95)),
             "per_component_rms": [
-                float(np.sqrt(np.mean(np.square(abs_values[..., idx]))))
+                float(jnp.sqrt(jnp.mean(jnp.square(abs_values[..., idx]))))
                 for idx in range(abs_values.shape[-1])
             ],
             "per_component_p95_abs": [
-                float(np.quantile(abs_values[..., idx].reshape(-1), 0.95))
+                float(jnp.quantile(abs_values[..., idx].reshape(-1), 0.95))
                 for idx in range(abs_values.shape[-1])
             ],
         }
@@ -519,11 +519,13 @@ def summarize_controller_feedback_scales(
 
 def compute_gru_gate_arrays(
     gru_cell: Any,
-    gru_input: np.ndarray,
-    hidden: np.ndarray,
-) -> dict[str, np.ndarray]:
+    gru_input: Any,
+    hidden: Any,
+) -> dict[str, Any]:
     """Return GRU gate arrays with shape ``(replicate, trial, time, hidden)``."""
 
+    gru_input = jnp.asarray(gru_input, dtype=jnp.float64)
+    hidden = jnp.asarray(hidden, dtype=jnp.float64)
     n_replicates = int(hidden.shape[0])
     h_prev = _previous_hidden(hidden)
     gate_rows = []
@@ -531,7 +533,7 @@ def compute_gru_gate_arrays(
         cell = _select_replicate_tree(gru_cell, rep_idx, n_replicates)
         gate_rows.append(_compute_single_replicate_gates(cell, gru_input[rep_idx], h_prev[rep_idx]))
     return {
-        key: np.stack([row[key] for row in gate_rows], axis=0)
+        key: jnp.stack([row[key] for row in gate_rows], axis=0)
         for key in ("reset", "update", "candidate")
     }
 
@@ -660,20 +662,20 @@ def diagnostic_definitions() -> dict[str, str]:
 
 def _compute_single_replicate_gates(
     cell: Any,
-    x: np.ndarray,
-    h_prev: np.ndarray,
-) -> dict[str, np.ndarray]:
-    weight_ih = np.asarray(cell.weight_ih, dtype=np.float64)
-    weight_hh = np.asarray(cell.weight_hh, dtype=np.float64)
-    bias = np.asarray(cell.bias if cell.use_bias else 0.0, dtype=np.float64)
-    bias_n = np.asarray(cell.bias_n if cell.use_bias else 0.0, dtype=np.float64)
+    x: Any,
+    h_prev: Any,
+) -> dict[str, Any]:
+    weight_ih = jnp.asarray(cell.weight_ih, dtype=jnp.float64)
+    weight_hh = jnp.asarray(cell.weight_hh, dtype=jnp.float64)
+    bias = jnp.asarray(cell.bias if cell.use_bias else 0.0, dtype=jnp.float64)
+    bias_n = jnp.asarray(cell.bias_n if cell.use_bias else 0.0, dtype=jnp.float64)
     flat_x = x.reshape((-1, x.shape[-1]))
     flat_h = h_prev.reshape((-1, h_prev.shape[-1]))
-    igates = np.split(flat_x @ weight_ih.T + bias, 3, axis=-1)
-    hgates = np.split(flat_h @ weight_hh.T, 3, axis=-1)
+    igates = jnp.split(flat_x @ weight_ih.T + bias, 3, axis=-1)
+    hgates = jnp.split(flat_h @ weight_hh.T, 3, axis=-1)
     reset = _sigmoid(igates[0] + hgates[0])
     update = _sigmoid(igates[1] + hgates[1])
-    candidate = np.tanh(igates[2] + reset * (hgates[2] + bias_n))
+    candidate = jnp.tanh(igates[2] + reset * (hgates[2] + bias_n))
     out_shape = x.shape[:-1] + (flat_h.shape[-1],)
     return {
         "reset": reset.reshape(out_shape),
@@ -761,9 +763,10 @@ def _gate_summary(values: np.ndarray, *, bounded: bool) -> dict[str, Any]:
     return summary
 
 
-def _previous_hidden(hidden: np.ndarray) -> np.ndarray:
-    zeros = np.zeros_like(hidden[:, :, :1, :])
-    return np.concatenate([zeros, hidden[:, :, :-1, :]], axis=2)
+def _previous_hidden(hidden: Any) -> Any:
+    hidden = jnp.asarray(hidden)
+    zeros = jnp.zeros_like(hidden[:, :, :1, :])
+    return jnp.concatenate([zeros, hidden[:, :, :-1, :]], axis=2)
 
 
 def _prepend_initial(initial: np.ndarray, values: np.ndarray) -> np.ndarray:
@@ -861,8 +864,8 @@ def _is_replicate_array(leaf: Any, n_replicates: int) -> bool:
     return eqx.is_array(leaf) and leaf.ndim >= 1 and leaf.shape[0] == n_replicates
 
 
-def _sigmoid(x: np.ndarray) -> np.ndarray:
-    return 1.0 / (1.0 + np.exp(-x))
+def _sigmoid(x: Any) -> Any:
+    return 1.0 / (1.0 + jnp.exp(-x))
 
 
 def _repo_relative(path: Path, *, repo_root: Path = REPO_ROOT) -> str:

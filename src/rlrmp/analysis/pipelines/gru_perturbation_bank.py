@@ -2203,9 +2203,9 @@ def score_full_qrf_rollout_cost(
     """
 
     _plant, schedule = build_canonical_game()
-    state_array = np.asarray(states, dtype=np.float64)
-    command_array = np.asarray(commands, dtype=np.float64)
-    initial_array = np.asarray(initial_states, dtype=np.float64)
+    state_array = jnp.asarray(states, dtype=jnp.float64)
+    command_array = jnp.asarray(commands, dtype=jnp.float64)
+    initial_array = jnp.asarray(initial_states, dtype=jnp.float64)
     if state_array.shape[-1] != schedule.Q.shape[-1]:
         raise ValueError(
             f"Full-Q/R/Q_f scorer expected state dim {schedule.Q.shape[-1]}, "
@@ -2226,18 +2226,21 @@ def score_full_qrf_rollout_cost(
         raise ValueError(
             f"Full-Q/R/Q_f scorer expected {horizon} commands, got {command_array.shape[-2]}."
         )
-    initial_array = np.broadcast_to(initial_array, (*state_array.shape[:-2], state_array.shape[-1]))
-    x_pre = np.concatenate([initial_array[..., None, :], state_array[..., :-1, :]], axis=-2)
+    initial_array = jnp.broadcast_to(
+        initial_array,
+        (*state_array.shape[:-2], state_array.shape[-1]),
+    )
+    x_pre = jnp.concatenate([initial_array[..., None, :], state_array[..., :-1, :]], axis=-2)
     x_pre = _goal_centered_vectors(x_pre, target_pos=target_pos)
     x_terminal = _goal_centered_vectors(state_array[..., -1, :], target_pos=target_pos)
-    q = np.asarray(schedule.Q, dtype=np.float64)
-    r = np.asarray(schedule.R, dtype=np.float64)
-    q_f = np.asarray(schedule.Q_f, dtype=np.float64)
-    state_terms = np.einsum("...ti,tij,...tj->...t", x_pre, q, x_pre)
-    control_terms = np.einsum("...ti,tij,...tj->...t", command_array, r, command_array)
-    terminal_terms = np.einsum("...i,ij,...j->...", x_terminal, q_f, x_terminal)
-    stage_state = np.sum(state_terms, axis=-1)
-    control = np.sum(control_terms, axis=-1)
+    q = jnp.asarray(schedule.Q, dtype=jnp.float64)
+    r = jnp.asarray(schedule.R, dtype=jnp.float64)
+    q_f = jnp.asarray(schedule.Q_f, dtype=jnp.float64)
+    state_terms = jnp.einsum("...ti,tij,...tj->...t", x_pre, q, x_pre)
+    control_terms = jnp.einsum("...ti,tij,...tj->...t", command_array, r, command_array)
+    terminal_terms = jnp.einsum("...i,ij,...j->...", x_terminal, q_f, x_terminal)
+    stage_state = jnp.sum(state_terms, axis=-1)
+    control = jnp.sum(control_terms, axis=-1)
     total = stage_state + control + terminal_terms
     return {
         "status": "available",
@@ -2292,14 +2295,14 @@ def _full_qrf_window_inputs(
     states: Any,
     commands: Any,
     trial_specs: Any,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
+) -> tuple[Any, Any, Any, dict[str, Any]]:
     """Return C&S full-QRF movement-window arrays for immediate or delayed trials."""
 
     _plant, schedule = build_canonical_game()
     horizon = int(schedule.T)
-    state_array = np.asarray(states, dtype=np.float64)
-    command_array = np.asarray(commands, dtype=np.float64)
-    initial_array = np.asarray(trial_specs.inits["mechanics.vector"], dtype=np.float64)
+    state_array = jnp.asarray(states, dtype=jnp.float64)
+    command_array = jnp.asarray(commands, dtype=jnp.float64)
+    initial_array = jnp.asarray(trial_specs.inits["mechanics.vector"], dtype=jnp.float64)
     if state_array.shape[-2] == horizon and command_array.shape[-2] == horizon:
         return (
             state_array,
@@ -2330,7 +2333,7 @@ def _full_qrf_window_inputs(
     window_initial = (
         initial_array
         if start == 0
-        else np.asarray(state_array[..., start - 1, :], dtype=np.float64)
+        else state_array[..., start - 1, :]
     )
     return (
         state_array[..., start:stop, :],
@@ -3699,17 +3702,17 @@ def _write_perturbation_bulk_arrays(
     return path
 
 
-def _goal_centered_vectors(values: Any, *, target_pos: Any) -> np.ndarray:
+def _goal_centered_vectors(values: Any, *, target_pos: Any) -> Any:
     """Subtract target position from every 8D physical block's x/y entries."""
 
-    result = np.array(values, dtype=np.float64, copy=True)
-    target = np.asarray(target_pos, dtype=np.float64)
+    result = jnp.asarray(values, dtype=jnp.float64)
+    target = jnp.asarray(target_pos, dtype=jnp.float64)
     if target.shape != (2,):
         raise ValueError(f"target_pos must have shape (2,), got {target.shape}")
     if result.shape[-1] % 8 != 0:
         raise ValueError(f"state dimension {result.shape[-1]} is not divisible by 8")
     for start in range(0, result.shape[-1], 8):
-        result[..., start : start + 2] -= target
+        result = result.at[..., start : start + 2].add(-target)
     return result
 
 

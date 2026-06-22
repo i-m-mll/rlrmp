@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import jax.numpy as jnp
 import numpy as np
 
 from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import (
@@ -62,6 +63,7 @@ def test_compute_gru_gate_arrays_reconstructs_equations() -> None:
 
     gates = compute_gru_gate_arrays(Cell(), gru_input, hidden)
 
+    assert hasattr(gates["reset"], "block_until_ready")
     assert gates["reset"].shape == (1, 1, 2, 1)
     assert gates["update"].shape == (1, 1, 2, 1)
     assert gates["candidate"].shape == (1, 1, 2, 1)
@@ -115,3 +117,27 @@ def test_summarize_controller_feedback_scales_uses_trailing_feedback_channels() 
         summary["components"]["force_filter"]["reference_scale"],
         np.quantile(np.linalg.norm(gru_input[..., -2:], axis=-1).reshape(-1), 0.95),
     )
+
+
+def test_controller_feedback_scales_accepts_jax_inputs() -> None:
+    gru_input = jnp.zeros((1, 1, 2, 4), dtype=jnp.float64)
+    gru_input = gru_input.at[..., -4:].set(
+        jnp.asarray([[[[3.0, 4.0, 5.0, 12.0], [6.0, 8.0, 8.0, 15.0]]]])
+    )
+    evaluation = RolloutEvaluation(
+        position=np.zeros((1, 1, 2, 2)),
+        velocity=np.zeros((1, 1, 2, 2)),
+        command=np.zeros((1, 1, 2, 2)),
+        hidden=np.zeros((1, 1, 2, 2)),
+        gru_input=gru_input,
+        initial_position=np.zeros((1, 2)),
+        initial_velocity=np.zeros((1, 2)),
+        target_position=np.zeros((1, 2, 2)),
+        dt=0.01,
+    )
+
+    summary = summarize_controller_feedback_scales(evaluation)
+
+    assert summary["status"] == "available"
+    assert summary["feedback_basis"] == "target_relative_delayed_feedback"
+    np.testing.assert_allclose(summary["components"]["position"]["p95_norm"], 9.75)

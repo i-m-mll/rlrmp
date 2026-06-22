@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
 import pytest
@@ -725,6 +726,46 @@ def test_full_qrf_cost_scorer_reports_control_and_delta_breakdown() -> None:
     np.testing.assert_allclose(perturbed["control"], 2.0 * schedule.T)
     assert delta["status"] == "available"
     assert delta["delta_cost"]["control"]["mean"] == 2.0 * schedule.T
+
+
+def test_full_qrf_cost_scorer_keeps_internal_arrays_device_backed() -> None:
+    _plant, schedule = build_canonical_game()
+    states = jnp.zeros((1, 1, schedule.T, schedule.Q.shape[-1]), dtype=jnp.float64)
+    commands = jnp.ones((1, 1, schedule.T, schedule.R.shape[-1]), dtype=jnp.float64)
+    initial = jnp.zeros((1, schedule.Q.shape[-1]), dtype=jnp.float64)
+
+    scored = score_full_qrf_rollout_cost(
+        states=states,
+        commands=commands,
+        initial_states=initial,
+        target_pos=jnp.zeros((2,), dtype=jnp.float64),
+    )
+    evaluation = RolloutEvaluation(
+        position=jnp.zeros((1, 1, schedule.T, 2), dtype=jnp.float64),
+        velocity=jnp.zeros((1, 1, schedule.T, 2), dtype=jnp.float64),
+        command=commands,
+        hidden=jnp.zeros((1, 1, schedule.T, 1), dtype=jnp.float64),
+        gru_input=jnp.zeros((1, 1, schedule.T, 1), dtype=jnp.float64),
+        initial_position=jnp.zeros((1, 2), dtype=jnp.float64),
+        initial_velocity=jnp.zeros((1, 2), dtype=jnp.float64),
+        target_position=jnp.zeros((1, schedule.T, 2), dtype=jnp.float64),
+        dt=0.01,
+    )
+    object.__setattr__(evaluation, "mechanics_vector", states)
+    summary = full_qrf_cost_summary(
+        evaluation,
+        TaskTrialSpec(
+            inits={"mechanics.vector": initial},
+            inputs={},
+            targets={},
+        ),
+    )
+
+    assert hasattr(scored["total"], "block_until_ready")
+    assert hasattr(scored["timewise_control"], "block_until_ready")
+    assert summary["status"] == "available"
+    assert summary["control"]["values"] == np.asarray(scored["control"]).tolist()
+    np.testing.assert_allclose(summary["control"]["mean"], 2.0 * schedule.T)
 
 
 def test_full_qrf_cost_summary_slices_delayed_movement_window() -> None:
