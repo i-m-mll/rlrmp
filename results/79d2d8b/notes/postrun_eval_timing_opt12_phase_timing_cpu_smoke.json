@@ -1,0 +1,329 @@
+{
+  "bundles": [
+    {
+      "bundle": "standard_certificate",
+      "cold_call_definition": "Elapsed time for the first bundle invocation. This may include Python setup inside the materializer, XLA compilation, first execution, internal host transfer/synchronization, and materializer-owned output writes. It is not pure compile or calculation time.",
+      "cold_call_elapsed_s": 12.145867375074886,
+      "cold_ready_block_note": "no JAX leaves with block_until_ready",
+      "cold_ready_block_s": 0.0,
+      "cold_ready_blocked_leaves": 0,
+      "output_write_elapsed_s": 0.1512332079000771,
+      "output_write_mode": "separate_measured",
+      "output_write_note": "The benchmark separates standard certificate manifest/note writes after the cold materializer call.",
+      "status": "ok",
+      "summary": {
+        "checkpoint_policy": "final_checkpoint",
+        "output": "_artifacts/79d2d8b/postrun_eval_benchmark/opt12_phase_timing_cpu_smoke/notes/gru_standard_manifest.json",
+        "rows": 1
+      },
+      "summary_elapsed_s": 2.1332991309463978e-05,
+      "total_elapsed_s": 12.297186958021484,
+      "warm_call_elapsed_s": null,
+      "warm_ready_block_note": null,
+      "warm_ready_block_s": null,
+      "warm_ready_blocked_leaves": null,
+      "warm_replay_note": "Warm replay is disabled by default because it reruns every bundle and can roughly double benchmark cost. Pass --warm-replay to enable a second call with separate warm-replay scratch paths.",
+      "warm_replay_status": "disabled",
+      "xla_compile_execution_split": {
+        "reason": "This harness measures the first materializer call as a cold call. XLA compile, first execution, internal host transfers, Python work, and materializer-owned writes are not separable at this boundary.",
+        "status": "not_measured"
+      }
+    },
+    {
+      "bundle": "evaluation_diagnostics",
+      "cold_call_definition": "Elapsed time for the first bundle invocation. This may include Python setup inside the materializer, XLA compilation, first execution, internal host transfer/synchronization, and materializer-owned output writes. It is not pure compile or calculation time.",
+      "cold_call_elapsed_s": 3.366678334074095,
+      "cold_ready_block_note": "no JAX leaves with block_until_ready",
+      "cold_ready_block_s": 0.0,
+      "cold_ready_blocked_leaves": 0,
+      "output_write_elapsed_s": null,
+      "output_write_mode": "included_in_cold_call_elapsed_s",
+      "output_write_note": "materialize_gru_evaluation_diagnostics writes its JSON/bulk outputs inside the materializer call.",
+      "status": "ok",
+      "summary": {
+        "run_status_counts": {
+          "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64": {}
+        },
+        "runs": 1
+      },
+      "summary_elapsed_s": 5.749985575675964e-06,
+      "total_elapsed_s": 3.3669399169739336,
+      "warm_call_elapsed_s": null,
+      "warm_ready_block_note": null,
+      "warm_ready_block_s": null,
+      "warm_ready_blocked_leaves": null,
+      "warm_replay_note": "Warm replay is disabled by default because it reruns every bundle and can roughly double benchmark cost. Pass --warm-replay to enable a second call with separate warm-replay scratch paths.",
+      "warm_replay_status": "disabled",
+      "xla_compile_execution_split": {
+        "reason": "This harness measures the first materializer call as a cold call. XLA compile, first execution, internal host transfers, Python work, and materializer-owned writes are not separable at this boundary.",
+        "status": "not_measured"
+      }
+    },
+    {
+      "bundle": "pilot_figures",
+      "cold_call_definition": "Elapsed time for the first bundle invocation. This may include Python setup inside the materializer, XLA compilation, first execution, internal host transfer/synchronization, and materializer-owned output writes. It is not pure compile or calculation time.",
+      "cold_call_elapsed_s": 3.4739635420264676,
+      "cold_ready_block_note": "no JAX leaves with block_until_ready",
+      "cold_ready_block_s": 0.0,
+      "cold_ready_blocked_leaves": 0,
+      "output_write_elapsed_s": null,
+      "output_write_mode": "included_in_cold_call_elapsed_s",
+      "output_write_note": "materialize_gru_pilot_figures writes figure outputs inside the materializer call.",
+      "status": "ok",
+      "summary": {
+        "figure_keys": [
+          "checkpoint_policy",
+          "checkpoint_selection",
+          "issue",
+          "loss_plots",
+          "runs",
+          "velocity_profiles"
+        ]
+      },
+      "summary_elapsed_s": 3.2079406082630157e-06,
+      "total_elapsed_s": 3.4740102919749916,
+      "warm_call_elapsed_s": null,
+      "warm_ready_block_note": null,
+      "warm_ready_block_s": null,
+      "warm_ready_blocked_leaves": null,
+      "warm_replay_note": "Warm replay is disabled by default because it reruns every bundle and can roughly double benchmark cost. Pass --warm-replay to enable a second call with separate warm-replay scratch paths.",
+      "warm_replay_status": "disabled",
+      "xla_compile_execution_split": {
+        "reason": "This harness measures the first materializer call as a cold call. XLA compile, first execution, internal host transfers, Python work, and materializer-owned writes are not separable at this boundary.",
+        "status": "not_measured"
+      }
+    },
+    {
+      "bundle": "objective_comparator",
+      "cold_call_definition": "Elapsed time for the first bundle invocation. This may include Python setup inside the materializer, XLA compilation, first execution, internal host transfer/synchronization, and materializer-owned output writes. It is not pure compile or calculation time.",
+      "cold_call_elapsed_s": 26.74204791698139,
+      "cold_ready_block_note": "no JAX leaves with block_until_ready",
+      "cold_ready_block_s": 0.0,
+      "cold_ready_blocked_leaves": 0,
+      "output_write_elapsed_s": null,
+      "output_write_mode": "included_in_cold_call_elapsed_s",
+      "output_write_note": "materialize_gru_objective_comparator_sidecar writes its JSON/note outputs inside the materializer call.",
+      "status": "materialized",
+      "summary": {
+        "keys": [
+          "extlqg_deterministic_full_qrf",
+          "extlqg_total_expected_cost",
+          "n_rows",
+          "schema_version",
+          "standard_split_bank_comparator_status",
+          "status"
+        ],
+        "status": "materialized"
+      },
+      "summary_elapsed_s": 2.125045284628868e-06,
+      "total_elapsed_s": 26.742066040984355,
+      "warm_call_elapsed_s": null,
+      "warm_ready_block_note": null,
+      "warm_ready_block_s": null,
+      "warm_ready_blocked_leaves": null,
+      "warm_replay_note": "Warm replay is disabled by default because it reruns every bundle and can roughly double benchmark cost. Pass --warm-replay to enable a second call with separate warm-replay scratch paths.",
+      "warm_replay_status": "disabled",
+      "xla_compile_execution_split": {
+        "reason": "This harness measures the first materializer call as a cold call. XLA compile, first execution, internal host transfers, Python work, and materializer-owned writes are not separable at this boundary.",
+        "status": "not_measured"
+      }
+    },
+    {
+      "bundle": "map_decomposition",
+      "cold_call_definition": "Elapsed time for the first bundle invocation. This may include Python setup inside the materializer, XLA compilation, first execution, internal host transfer/synchronization, and materializer-owned output writes. It is not pure compile or calculation time.",
+      "cold_call_elapsed_s": 4.138235584017821,
+      "cold_ready_block_note": "no JAX leaves with block_until_ready",
+      "cold_ready_block_s": 0.0,
+      "cold_ready_blocked_leaves": 0,
+      "output_write_elapsed_s": 0.00046083307825028896,
+      "output_write_mode": "separate_measured",
+      "output_write_note": "The benchmark separates map-decomposition JSON serialization after the cold materializer call.",
+      "status": "ok",
+      "summary": {
+        "keys": [
+          "checkpoint_policy",
+          "format",
+          "issue",
+          "rows",
+          "selection_role",
+          "source_issue",
+          "source_standard_manifest"
+        ],
+        "rows": 1
+      },
+      "summary_elapsed_s": 6.417045369744301e-06,
+      "total_elapsed_s": 4.1388392499648035,
+      "warm_call_elapsed_s": null,
+      "warm_ready_block_note": null,
+      "warm_ready_block_s": null,
+      "warm_ready_blocked_leaves": null,
+      "warm_replay_note": "Warm replay is disabled by default because it reruns every bundle and can roughly double benchmark cost. Pass --warm-replay to enable a second call with separate warm-replay scratch paths.",
+      "warm_replay_status": "disabled",
+      "xla_compile_execution_split": {
+        "reason": "This harness measures the first materializer call as a cold call. XLA compile, first execution, internal host transfers, Python work, and materializer-owned writes are not separable at this boundary.",
+        "status": "not_measured"
+      }
+    },
+    {
+      "bundle": "perturbation_response",
+      "cold_call_definition": "Elapsed time for the first bundle invocation. This may include Python setup inside the materializer, XLA compilation, first execution, internal host transfer/synchronization, and materializer-owned output writes. It is not pure compile or calculation time.",
+      "cold_call_elapsed_s": 4.106472708983347,
+      "cold_ready_block_note": "no JAX leaves with block_until_ready",
+      "cold_ready_block_s": 0.0,
+      "cold_ready_blocked_leaves": 0,
+      "output_write_elapsed_s": null,
+      "output_write_mode": "included_in_cold_call_elapsed_s",
+      "output_write_note": "evaluate_run_perturbation_bank owns its bulk output writes inside the timed call.",
+      "status": "ok",
+      "summary": {
+        "rows": 7,
+        "status_counts": {
+          "evaluated": 7
+        }
+      },
+      "summary_elapsed_s": 1.4170072972774506e-06,
+      "total_elapsed_s": 4.107473708107136,
+      "warm_call_elapsed_s": null,
+      "warm_ready_block_note": null,
+      "warm_ready_block_s": null,
+      "warm_ready_blocked_leaves": null,
+      "warm_replay_note": "Warm replay is disabled by default because it reruns every bundle and can roughly double benchmark cost. Pass --warm-replay to enable a second call with separate warm-replay scratch paths.",
+      "warm_replay_status": "disabled",
+      "xla_compile_execution_split": {
+        "reason": "This harness measures the first materializer call as a cold call. XLA compile, first execution, internal host transfers, Python work, and materializer-owned writes are not separable at this boundary.",
+        "status": "not_measured"
+      }
+    },
+    {
+      "bundle": "feedback_ablation",
+      "cold_call_definition": "Elapsed time for the first bundle invocation. This may include Python setup inside the materializer, XLA compilation, first execution, internal host transfer/synchronization, and materializer-owned output writes. It is not pure compile or calculation time.",
+      "cold_call_elapsed_s": 13.41902208304964,
+      "cold_ready_block_note": "no JAX leaves with block_until_ready",
+      "cold_ready_block_s": 0.0,
+      "cold_ready_blocked_leaves": 0,
+      "output_write_elapsed_s": null,
+      "output_write_mode": "not_applicable",
+      "output_write_note": "evaluate_run_feedback_ablation returns summaries only.",
+      "status": "ok",
+      "summary": {
+        "rows": 0,
+        "status_counts": {
+          "evaluated": 35
+        }
+      },
+      "summary_elapsed_s": 1.0830117389559746e-06,
+      "total_elapsed_s": 13.420211583026685,
+      "warm_call_elapsed_s": null,
+      "warm_ready_block_note": null,
+      "warm_ready_block_s": null,
+      "warm_ready_blocked_leaves": null,
+      "warm_replay_note": "Warm replay is disabled by default because it reruns every bundle and can roughly double benchmark cost. Pass --warm-replay to enable a second call with separate warm-replay scratch paths.",
+      "warm_replay_status": "disabled",
+      "xla_compile_execution_split": {
+        "reason": "This harness measures the first materializer call as a cold call. XLA compile, first execution, internal host transfers, Python work, and materializer-owned writes are not separable at this boundary.",
+        "status": "not_measured"
+      }
+    },
+    {
+      "bundle": "worst_case_epsilon",
+      "cold_call_definition": "Elapsed time for the first bundle invocation. This may include Python setup inside the materializer, XLA compilation, first execution, internal host transfer/synchronization, and materializer-owned output writes. It is not pure compile or calculation time.",
+      "cold_call_elapsed_s": 2.471435916959308,
+      "cold_ready_block_note": "no JAX leaves with block_until_ready",
+      "cold_ready_block_s": 0.0,
+      "cold_ready_blocked_leaves": 0,
+      "output_write_elapsed_s": null,
+      "output_write_mode": "included_in_cold_call_elapsed_s",
+      "output_write_note": "audit_run_worst_case_epsilon owns its bulk output writes inside the timed call.",
+      "status": "evaluated",
+      "summary": {
+        "keys": [
+          "artifact_dir",
+          "budget",
+          "bulk_arrays",
+          "candidates",
+          "checkpoint_selection",
+          "epsilon_dim",
+          "horizon",
+          "label",
+          "n_replicates",
+          "n_rollout_trials_per_replicate",
+          "optimizer",
+          "run_spec_path",
+          "status",
+          "summary"
+        ],
+        "status": "evaluated"
+      },
+      "summary_elapsed_s": 2.2919848561286926e-06,
+      "total_elapsed_s": 2.471589250024408,
+      "warm_call_elapsed_s": null,
+      "warm_ready_block_note": null,
+      "warm_ready_block_s": null,
+      "warm_ready_blocked_leaves": null,
+      "warm_replay_note": "Warm replay is disabled by default because it reruns every bundle and can roughly double benchmark cost. Pass --warm-replay to enable a second call with separate warm-replay scratch paths.",
+      "warm_replay_status": "disabled",
+      "xla_compile_execution_split": {
+        "reason": "This harness measures the first materializer call as a cold call. XLA compile, first execution, internal host transfers, Python work, and materializer-owned writes are not separable at this boundary.",
+        "status": "not_measured"
+      }
+    }
+  ],
+  "captured_at_unix_s": 1782095470.495533,
+  "context": {
+    "feedback_bins": 5,
+    "n_rollout_trials": 1,
+    "perturbation_evaluation_backend": "serial",
+    "perturbation_rows": 7,
+    "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
+    "source_experiment": "020a65b",
+    "warm_replay": {
+      "default_enabled": false,
+      "enabled": false,
+      "reason_if_disabled": "Warm replay is disabled by default because it reruns every bundle and can roughly double benchmark cost. Pass --warm-replay to enable a second call with separate warm-replay scratch paths.",
+      "scratch_path_policy": "not_applicable"
+    },
+    "worst_case_optimizer_backend": "serial",
+    "worst_case_restarts": 1,
+    "worst_case_steps": 1,
+    "write_bulk_arrays": false
+  },
+  "environment": {
+    "jax_default_backend": "cpu",
+    "jax_devices": [
+      "TFRT_CPU_0"
+    ],
+    "jax_version": "0.9.0",
+    "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+    "python": "3.13.5"
+  },
+  "issue": "79d2d8b",
+  "phase_definitions": {
+    "bundle.cold_call_elapsed_s": "First invocation of the bundle. This is the earliest honest boundary available here and may include XLA compile, first execution, internal sync/host transfer, Python work, and materializer-owned writes.",
+    "bundle.cold_ready_block_s": "Explicit block_until_ready on JAX leaves returned by the cold call. A zero value with no leaves means the bundle returned host summaries, so readiness already happened inside cold_call_elapsed_s.",
+    "bundle.output_write_elapsed_s": "Measured only when the benchmark can separate a benchmark-owned write from the materializer call; otherwise the bundle records that writes are included in cold_call_elapsed_s or not applicable.",
+    "bundle.summary_elapsed_s": "Small report-summary extraction after cold readiness and any separated benchmark-owned output write.",
+    "bundle.warm_call_elapsed_s": "Second invocation after the cold call, only when --warm-replay is enabled. This is a warm call boundary, not pure calculation time.",
+    "process_startup_elapsed_s": "Not measured from inside Python. This harness begins after the interpreter and module imports have already started.",
+    "report_serialization_timing.elapsed_s": "Serialization and writing of the benchmark timing JSON report.",
+    "setup_timing.elapsed_s": "Benchmark harness setup before bundles: output path creation, run resolution, bank slicing, and feedback-bin selection."
+  },
+  "process_timing": {
+    "module_import_to_benchmark_entry_elapsed_s": 0.001176416059024632,
+    "process_startup_elapsed_s": {
+      "reason": "Python code inside this benchmark cannot observe interpreter startup or module import time before the module begins executing.",
+      "status": "not_measured"
+    }
+  },
+  "report_serialization_timing": {
+    "definition": "JSON serialization plus writing the benchmark timing report.",
+    "elapsed_s": 0.00040545896627008915,
+    "output": "results/79d2d8b/notes/postrun_eval_timing_opt12_phase_timing_cpu_smoke.json"
+  },
+  "schema_version": "rlrmp.postrun_eval_materialization_benchmark.v2",
+  "setup_timing": {
+    "definition": "Path creation, run context resolution, perturbation-bank slicing, and feedback-bin selection before the first bundle starts.",
+    "elapsed_s": 0.0038368329405784607
+  },
+  "step_label": "opt12_phase_timing_cpu_smoke",
+  "total_elapsed_s": 70.15316704206634
+}

@@ -1,5 +1,23 @@
 # RTX 5090 post-run eval materialization benchmark
 
+## Correction: phase attribution
+
+This report predates the benchmark phase-timing schema added after review. The
+tracked timing JSON for `opt11_rollout_product_5090_small` reports only
+per-bundle call, post-call ready-block, summary, and total times. Because the
+bundle calls return host summaries, XLA compilation, first execution, internal
+synchronization/host transfer, Python materialization work, and materializer-
+owned writes are all hidden inside the old `call_elapsed_s` field. Treat the
+5090 table below as end-to-end per-bundle wall-clock evidence, not as a clean
+compile/calculation/transfer decomposition.
+
+Future benchmark reports use schema
+`rlrmp.postrun_eval_materialization_benchmark.v2`, which records setup timing,
+cold-call timing, optional warm replay, explicit JAX readiness blocks,
+output-write timing/classification, report serialization timing, and an
+explicit `not_measured` compile/execution split when that split is not available
+from the harness boundary.
+
 Benchmark date: 2026-06-22 UTC.
 
 Source implementation: `74177a2c710da3f5e0c22b03e319d227f2e20acc`

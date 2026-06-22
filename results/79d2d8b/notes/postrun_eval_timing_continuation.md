@@ -39,3 +39,29 @@ Raw timing payloads:
 - `postrun_eval_timing_opt6_process_epsilon_union.json`
 - `postrun_eval_timing_opt7_union_staged_pgd.json`
 - `postrun_eval_timing_opt8_adopted_backends.json`
+
+## Phase-timing correction
+
+The RTX 5090 small benchmark exposed that the original timing schema did not
+separate startup, setup, cold call, warm call, synchronization, and output-write
+boundaries. Older payloads through `opt11_rollout_product_5090_small` should be
+read as per-bundle end-to-end call timings rather than compile/calculation
+decompositions.
+
+The corrected schema starts at
+`postrun_eval_timing_opt12_phase_timing_cpu_smoke.json` and records explicit
+setup timing, cold-call timing, post-call JAX readiness, optional warm replay
+state, benchmark-owned output-write timing/classification, report serialization
+timing, and `not_measured` compile/execution split fields. The local CPU smoke
+used the same small all-bundle settings as the 5090 run: seven perturbation
+rows, five feedback bins, worst-case epsilon with one PGD step and one restart,
+and no raw bulk arrays.
+
+| Step | Total (s) | Standard cold | Eval diag cold | Figures cold | Objective cold | Map cold | Perturb cold | Feedback cold | Worst-case cold |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| opt12 phase-timing CPU smoke | 70.15 | 12.15 | 3.37 | 3.47 | 26.74 | 4.14 | 4.11 | 13.42 | 2.47 |
+
+Warm replay is disabled in the smoke by default and recorded per bundle with an
+explicit reason. Standard-certificate and map-decomposition writes are measured
+separately; materializer-owned writes remain explicitly classified as included
+inside `cold_call_elapsed_s`.
