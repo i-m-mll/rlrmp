@@ -215,6 +215,71 @@ def test_verify_and_restore_materialize_archived_run(tmp_path: Path) -> None:
     assert [record["status"] for record in read_index(repo)] == ["archived", "restored"]
 
 
+def test_internal_checkpoint_symlink_is_preserved(tmp_path: Path) -> None:
+    repo, archive_root = make_fixture_roots(tmp_path)
+    source = write_run(repo, "b58592e", "checkpoint_symlink")
+    checkpoint_dir = source / "checkpoints"
+    checkpoint_dir.mkdir()
+    (checkpoint_dir / "ckpt_0001.eqx").write_text("checkpoint\n", encoding="utf-8")
+    (checkpoint_dir / "checkpoint_latest").symlink_to("ckpt_0001.eqx")
+
+    plan = archive.build_archive_plan(
+        repo_root=repo,
+        archive_root=archive_root,
+        run_ref=archive.parse_run_ref("b58592e/checkpoint_symlink"),
+        volume_id="fixture-volume",
+        reason="cold run",
+    )
+    symlink_entry = plan.inventory.manifest["checkpoints/checkpoint_latest"]
+    assert symlink_entry == {"type": "symlink", "target": "ckpt_0001.eqx"}
+
+    archive.apply_archive(
+        repo_root=repo,
+        archive_root=archive_root,
+        run_ref=archive.parse_run_ref("b58592e/checkpoint_symlink"),
+        volume_id="fixture-volume",
+        reason="cold run",
+    )
+
+    archived_link = (
+        archive_root
+        / "_artifacts"
+        / "b58592e"
+        / "runs"
+        / "checkpoint_symlink"
+        / "checkpoints"
+        / "checkpoint_latest"
+    )
+    assert archived_link.is_symlink()
+    assert archive.os.readlink(archived_link) == "ckpt_0001.eqx"
+    verified = archive.verify_archive(
+        repo_root=repo,
+        archive_root=archive_root,
+        run_ref=archive.parse_run_ref("b58592e/checkpoint_symlink"),
+        volume_id="fixture-volume",
+    )
+    assert verified["archive_status"] == "archived"
+
+    archive.restore_archive(
+        repo_root=repo,
+        archive_root=archive_root,
+        run_ref=archive.parse_run_ref("b58592e/checkpoint_symlink"),
+        volume_id="fixture-volume",
+        reason="need local copy",
+    )
+
+    restored_link = source / "checkpoints" / "checkpoint_latest"
+    assert restored_link.is_symlink()
+    assert archive.os.readlink(restored_link) == "ckpt_0001.eqx"
+    verified_restored = archive.verify_archive(
+        repo_root=repo,
+        archive_root=archive_root,
+        run_ref=archive.parse_run_ref("b58592e/checkpoint_symlink"),
+        volume_id="fixture-volume",
+    )
+    assert verified_restored["archive_status"] == "restored"
+
+
 def test_refuses_noncanonical_run_refs_and_symlink_sources(tmp_path: Path) -> None:
     repo, archive_root = make_fixture_roots(tmp_path)
     target = write_run(repo, "2ec5fa6", "cold__seed_0")
