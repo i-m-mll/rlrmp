@@ -297,11 +297,12 @@ def inventory_directory(path: Path) -> Inventory:
     files = 0
     manifest: dict[str, dict[str, str | int]] = {}
     for child in sorted(path.rglob("*")):
+        relpath = child.relative_to(path).as_posix()
         if child.is_symlink():
-            raise ArchiveError(f"refusing symlink inside run directory: {child}")
+            manifest[relpath] = {"type": "symlink", "target": os.readlink(child)}
+            continue
         if not child.is_file():
             continue
-        relpath = child.relative_to(path).as_posix()
         digest = hashlib.sha256()
         size = 0
         with child.open("rb") as stream:
@@ -310,7 +311,11 @@ def inventory_directory(path: Path) -> Inventory:
                 digest.update(chunk)
         total_bytes += size
         files += 1
-        manifest[relpath] = {"bytes": size, "sha256": digest.hexdigest()}
+        manifest[relpath] = {
+            "type": "file",
+            "bytes": size,
+            "sha256": digest.hexdigest(),
+        }
     return Inventory(bytes=total_bytes, files=files, manifest=manifest)
 
 
@@ -320,7 +325,7 @@ def copy_verified_directory(source: Path, target: Path, source_inventory: Invent
         tempfile.mkdtemp(prefix=f".{target.name}.tmp-", dir=str(target.parent))
     )
     try:
-        shutil.copytree(source, temp_dir / target.name, symlinks=False)
+        shutil.copytree(source, temp_dir / target.name, symlinks=True)
         copied = temp_dir / target.name
         copied_inventory = inventory_directory(copied)
         if copied_inventory.manifest != source_inventory.manifest:
@@ -355,7 +360,7 @@ def materialize_symlink(local_path: Path, target_path: Path, target_inventory: I
     )
     restored = temp_dir / local_path.name
     try:
-        shutil.copytree(target_path, restored, symlinks=False)
+        shutil.copytree(target_path, restored, symlinks=True)
         restored_inventory = inventory_directory(restored)
         if restored_inventory.manifest != target_inventory.manifest:
             raise ArchiveError("restored inventory does not match archive target")
