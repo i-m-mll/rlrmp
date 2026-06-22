@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import jax.numpy as jnp
 import numpy as np
 
+import rlrmp.analysis.pipelines.gru_worst_case_epsilon_audit as audit
 from rlrmp.analysis.pipelines.gru_worst_case_epsilon_audit import (
     declared_epsilon_l2_radius,
     optimize_epsilon_sequence,
@@ -161,3 +164,62 @@ def test_staged_optimizer_matches_serial_zero_step_candidate_edge() -> None:
     )
     assert len(staged.restart_summaries) == len(candidates)
     assert staged.restart_summaries == serial.restart_summaries
+
+
+def test_prebuilt_full_qrf_cost_context_matches_default_and_reuses_setup(monkeypatch) -> None:
+    calls = {"build_canonical_game": 0}
+    horizon = 3
+    state_dim = 8
+    command_dim = 2
+
+    def fake_build_canonical_game():
+        calls["build_canonical_game"] += 1
+        schedule = SimpleNamespace(
+            Q=jnp.stack([jnp.eye(state_dim) * (idx + 1.0) for idx in range(horizon)]),
+            R=jnp.stack([jnp.eye(command_dim) * (idx + 0.5) for idx in range(horizon)]),
+            Q_f=jnp.eye(state_dim) * 4.0,
+        )
+        return None, schedule
+
+    monkeypatch.setattr(audit, "build_canonical_game", fake_build_canonical_game)
+
+    states = jnp.arange(2 * horizon * state_dim, dtype=jnp.float64).reshape(2, horizon, state_dim)
+    states = states / 100.0
+    commands = jnp.arange(2 * horizon * command_dim, dtype=jnp.float64).reshape(
+        2,
+        horizon,
+        command_dim,
+    )
+    commands = commands / 10.0
+    initial_states = jnp.asarray([[0.1] * state_dim, [0.2] * state_dim], dtype=jnp.float64)
+    target_pos = jnp.asarray([0.05, -0.025], dtype=jnp.float64)
+
+    context = audit._full_qrf_rollout_cost_context(
+        initial_states=initial_states,
+        target_pos=target_pos,
+    )
+    assert calls["build_canonical_game"] == 1
+
+    with_context = audit._jax_full_qrf_rollout_cost(
+        states=states,
+        commands=commands,
+        context=context,
+    )
+    second_with_context = audit._jax_full_qrf_rollout_cost(
+        states=states,
+        commands=commands,
+        context=context,
+    )
+    assert calls["build_canonical_game"] == 1
+
+    default = audit._jax_full_qrf_rollout_cost(
+        states=states,
+        commands=commands,
+        initial_states=initial_states,
+        target_pos=target_pos,
+    )
+    assert calls["build_canonical_game"] == 2
+
+    for key, value in default.items():
+        np.testing.assert_allclose(with_context[key], value, rtol=1e-12, atol=1e-12)
+        np.testing.assert_allclose(second_with_context[key], value, rtol=1e-12, atol=1e-12)

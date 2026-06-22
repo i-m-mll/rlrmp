@@ -75,6 +75,17 @@ class JaxRolloutEvaluation:
     gru_input: Any
 
 
+@dataclass(frozen=True)
+class FullQrfRolloutCostContext:
+    """Candidate-invariant full-Q/R/Q_f rollout-cost arrays."""
+
+    initial_states: Any
+    target_pos: Any
+    q: Any
+    r: Any
+    q_f: Any
+
+
 def project_l2_ball(
     epsilon: Float[Array, "..."],
     radius: float,
@@ -546,12 +557,16 @@ def audit_run_worst_case_epsilon(
         budget_scale_override=budget_scale_override,
     )
     effective_step = float(step_size) if step_size is not None else max(radius * 0.25, 1e-12)
+    cost_context = _full_qrf_rollout_cost_context(
+        initial_states=trial_specs.inits["mechanics.vector"],
+    )
     objective = _build_objective(
         model=model,
         task=pair.task,
         trial_specs=trial_specs,
         n_replicates=n_replicates,
         seed=seed,
+        cost_context=cost_context,
     )
     zero_epsilon = np.zeros((horizon, epsilon_dim), dtype=np.float64)
     random_epsilons = _projected_random_epsilons(
@@ -580,6 +595,7 @@ def audit_run_worst_case_epsilon(
         trial_specs=trial_specs,
         n_replicates=n_replicates,
         seed=seed,
+        cost_context=cost_context,
         budget_radius=radius,
     )
     optimized = _evaluate_candidate(
@@ -590,6 +606,7 @@ def audit_run_worst_case_epsilon(
         trial_specs=trial_specs,
         n_replicates=n_replicates,
         seed=seed,
+        cost_context=cost_context,
         base_candidate=zero,
         budget_radius=radius,
     )
@@ -602,6 +619,7 @@ def audit_run_worst_case_epsilon(
             trial_specs=trial_specs,
             n_replicates=n_replicates,
             seed=seed,
+            cost_context=cost_context,
             base_candidate=zero,
             budget_radius=radius,
         )
@@ -702,6 +720,7 @@ def _build_objective(
     trial_specs: Any,
     n_replicates: int,
     seed: int,
+    cost_context: FullQrfRolloutCostContext,
 ) -> ObjectiveFn:
     def objective(epsilon: Float[Array, "T m_w"]) -> Float[Array, ""]:
         evaluation = _evaluate_jax_rollout(
@@ -714,7 +733,7 @@ def _build_objective(
         costs = _jax_full_qrf_rollout_cost(
             states=evaluation.mechanics_vector,
             commands=evaluation.command,
-            initial_states=trial_specs.inits["mechanics.vector"],
+            context=cost_context,
         )
         return jnp.mean(costs["total"])
 
@@ -762,6 +781,7 @@ def _evaluate_candidate(
     trial_specs: Any,
     n_replicates: int,
     seed: int,
+    cost_context: FullQrfRolloutCostContext,
     base_candidate: Mapping[str, Any] | None = None,
     budget_radius: float | None = None,
 ) -> dict[str, Any]:
@@ -776,7 +796,7 @@ def _evaluate_candidate(
     cost_arrays = _jax_full_qrf_rollout_cost(
         states=jax_eval.mechanics_vector,
         commands=jax_eval.command,
-        initial_states=trial_specs.inits["mechanics.vector"],
+        context=cost_context,
     )
     evaluation = _numpy_rollout_evaluation(jax_eval, candidate_specs)
     cost_summary = _cost_arrays_to_summary(cost_arrays)
@@ -810,30 +830,52 @@ def _with_epsilon_sequence(trial_specs: Any, epsilon: Float[Array, "T m_w"]) -> 
     return eqx.tree_at(lambda ts: ts.inputs, trial_specs, inputs)
 
 
+def _full_qrf_rollout_cost_context(
+    *,
+    initial_states: Any,
+    target_pos: Any = TARGET_POS,
+) -> FullQrfRolloutCostContext:
+    _plant, schedule = build_canonical_game()
+    return FullQrfRolloutCostContext(
+        initial_states=jnp.asarray(initial_states, dtype=jnp.float64),
+        target_pos=jnp.asarray(target_pos, dtype=jnp.float64),
+        q=jnp.asarray(schedule.Q, dtype=jnp.float64),
+        r=jnp.asarray(schedule.R, dtype=jnp.float64),
+        q_f=jnp.asarray(schedule.Q_f, dtype=jnp.float64),
+    )
+
+
 def _jax_full_qrf_rollout_cost(
     *,
     states: Any,
     commands: Any,
-    initial_states: Any,
+    initial_states: Any | None = None,
     target_pos: Any = TARGET_POS,
+    context: FullQrfRolloutCostContext | None = None,
 ) -> dict[str, Any]:
-    _plant, schedule = build_canonical_game()
+    if context is None:
+        if initial_states is None:
+            raise ValueError("initial_states is required when context is not provided")
+        context = _full_qrf_rollout_cost_context(
+            initial_states=initial_states,
+            target_pos=target_pos,
+        )
     state_array = jnp.asarray(states, dtype=jnp.float64)
     command_array = jnp.asarray(commands, dtype=jnp.float64)
-    initial_array = jnp.asarray(initial_states, dtype=jnp.float64)
+    initial_array = context.initial_states
     initial_array = jnp.broadcast_to(
         initial_array,
         (*state_array.shape[:-2], state_array.shape[-1]),
     )
     x_pre = jnp.concatenate([initial_array[..., None, :], state_array[..., :-1, :]], axis=-2)
-    x_pre = _goal_centered_vectors_jax(x_pre, target_pos=target_pos)
-    x_terminal = _goal_centered_vectors_jax(state_array[..., -1, :], target_pos=target_pos)
-    q = jnp.asarray(schedule.Q, dtype=jnp.float64)
-    r = jnp.asarray(schedule.R, dtype=jnp.float64)
-    q_f = jnp.asarray(schedule.Q_f, dtype=jnp.float64)
-    state_terms = jnp.einsum("...ti,tij,...tj->...t", x_pre, q, x_pre)
-    control_terms = jnp.einsum("...ti,tij,...tj->...t", command_array, r, command_array)
-    terminal_terms = jnp.einsum("...i,ij,...j->...", x_terminal, q_f, x_terminal)
+    x_pre = _goal_centered_vectors_jax(x_pre, target_pos=context.target_pos)
+    x_terminal = _goal_centered_vectors_jax(
+        state_array[..., -1, :],
+        target_pos=context.target_pos,
+    )
+    state_terms = jnp.einsum("...ti,tij,...tj->...t", x_pre, context.q, x_pre)
+    control_terms = jnp.einsum("...ti,tij,...tj->...t", command_array, context.r, command_array)
+    terminal_terms = jnp.einsum("...i,ij,...j->...", x_terminal, context.q_f, x_terminal)
     stage_state = jnp.sum(state_terms, axis=-1)
     control = jnp.sum(control_terms, axis=-1)
     return {

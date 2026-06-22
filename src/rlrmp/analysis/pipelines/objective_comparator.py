@@ -1302,6 +1302,12 @@ def _gru_split_bank_costs(
     else:
         default_initial = np.broadcast_to(default_initial[:1], bank.initial_states.shape)
     lens_inputs = _split_bank_inputs(bank=bank, default_initial=default_initial)
+    evaluator = _prepare_replicate_model_evaluator(
+        model=model,
+        task=task,
+        n_replicates=n_replicates,
+        seed=seed,
+    )
     costs: dict[str, dict[str, Any]] = {}
     for lens in _STANDARD_SPLIT_BANK_LENSES:
         initial_states = lens_inputs[lens]["initial_states"]
@@ -1314,13 +1320,7 @@ def _gru_split_bank_costs(
             initial_covariance=bank.initial_covariance,
         )
         trial_specs = _trial_specs_with_shared_bank(base_trial_specs, lens_bank)
-        states = _evaluate_replicate_model_states(
-            model=model,
-            task=task,
-            trial_specs=trial_specs,
-            n_replicates=n_replicates,
-            seed=seed,
-        )
+        states = evaluator.evaluate(trial_specs)
         costs[lens] = shared_full_qrf_cost_summary(
             states=np.asarray(states.mechanics.vector, dtype=np.float64),
             commands=np.asarray(states.net.output, dtype=np.float64),
@@ -1489,6 +1489,55 @@ def _trial_specs_with_shared_bank(trial_specs: Any, bank: SharedRolloutBank) -> 
     )
 
 
+@dataclass(frozen=True)
+class _ReplicateModelEvaluator:
+    """Reusable serial evaluator setup for split-bank lens materialization."""
+
+    task: Any
+    model_arrays: Any
+    model_other: Any
+    n_replicates: int
+    seed: int
+
+    def evaluate(self, trial_specs: Any) -> Any:
+        """Evaluate all replicate models on one trial bank with serial key semantics."""
+
+        def eval_one_replicate(model_array_leaves: Any, key: Any) -> Any:
+            replicate_model = eqx.combine(model_array_leaves, self.model_other)
+            return self.task.eval_trials(
+                replicate_model,
+                trial_specs,
+                jr.split(key, bank_batch_size(trial_specs)),
+            )
+
+        return eqx.filter_vmap(eval_one_replicate, in_axes=(0, 0))(
+            self.model_arrays,
+            jr.split(jr.PRNGKey(self.seed), self.n_replicates),
+        )
+
+
+def _prepare_replicate_model_evaluator(
+    *,
+    model: Any,
+    task: Any,
+    n_replicates: int,
+    seed: int,
+) -> _ReplicateModelEvaluator:
+    """Prepare model partitioning reused across serial lens banks."""
+
+    model_arrays, model_other = eqx.partition(
+        model,
+        lambda leaf: _is_replicate_array(leaf, n_replicates),
+    )
+    return _ReplicateModelEvaluator(
+        task=task,
+        model_arrays=model_arrays,
+        model_other=model_other,
+        n_replicates=n_replicates,
+        seed=seed,
+    )
+
+
 def _evaluate_replicate_model_states(
     *,
     model: Any,
@@ -1497,23 +1546,13 @@ def _evaluate_replicate_model_states(
     n_replicates: int,
     seed: int,
 ) -> Any:
-    model_arrays, model_other = eqx.partition(
-        model,
-        lambda leaf: _is_replicate_array(leaf, n_replicates),
+    evaluator = _prepare_replicate_model_evaluator(
+        model=model,
+        task=task,
+        n_replicates=n_replicates,
+        seed=seed,
     )
-
-    def eval_one_replicate(model_array_leaves: Any, key: Any) -> Any:
-        replicate_model = eqx.combine(model_array_leaves, model_other)
-        return task.eval_trials(
-            replicate_model,
-            trial_specs,
-            jr.split(key, bank_batch_size(trial_specs)),
-        )
-
-    return eqx.filter_vmap(eval_one_replicate, in_axes=(0, 0))(
-        model_arrays,
-        jr.split(jr.PRNGKey(seed), n_replicates),
-    )
+    return evaluator.evaluate(trial_specs)
 
 
 def bank_batch_size(trial_specs: Any) -> int:

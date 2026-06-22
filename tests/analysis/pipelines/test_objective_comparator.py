@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
-
 from pathlib import Path
+from typing import Any
 
+import equinox as eqx
+import jax.numpy as jnp
+import jax.random as jr
 import numpy as np
 
 import rlrmp.analysis.pipelines.objective_comparator as objective_comparator
@@ -21,6 +24,44 @@ from rlrmp.analysis.pipelines.objective_comparator import (
     shared_full_qrf_cost_summary,
     write_objective_comparator_sidecar,
 )
+
+
+class _FakeNamespace(eqx.Module):
+    vector: Any | None = None
+    output: Any | None = None
+
+
+class _FakeStates(eqx.Module):
+    mechanics: _FakeNamespace
+    net: _FakeNamespace
+
+
+class _FakeModel(eqx.Module):
+    gain: Any
+
+
+class _FakeTrialSpecs(eqx.Module):
+    inits: dict[str, Any]
+    inputs: dict[str, Any]
+
+
+class _FakeTask:
+    def eval_trials(self, model: _FakeModel, trial_specs: _FakeTrialSpecs, keys: Any) -> Any:
+        n_trials = int(trial_specs.inits["mechanics.vector"].shape[0])
+        state_dim = int(trial_specs.inits["mechanics.vector"].shape[-1])
+        horizon = 60
+        states = jnp.broadcast_to(
+            trial_specs.inits["mechanics.vector"][:, None, :],
+            (n_trials, horizon, state_dim),
+        )
+        key_signal = jnp.mod(jnp.sum(keys, axis=-1), 997).astype(jnp.float32)
+        epsilon_signal = jnp.sum(trial_specs.inputs["epsilon"], axis=(1, 2))
+        command_signal = model.gain + 0.0001 * key_signal + 0.001 * epsilon_signal
+        commands = jnp.broadcast_to(command_signal[:, None, None], (n_trials, horizon, 2))
+        return _FakeStates(
+            mechanics=_FakeNamespace(vector=states),
+            net=_FakeNamespace(output=commands),
+        )
 
 
 def _checkpoint_selection() -> dict[str, object]:
@@ -279,6 +320,67 @@ def test_split_bank_inputs_mask_x0_and_process_components() -> None:
     )
 
 
+def test_gru_split_bank_costs_match_legacy_per_lens_evaluation() -> None:
+    bank = SharedRolloutBank(
+        bank_id="unit-bank",
+        seed=123,
+        initial_states=np.arange(48, dtype=np.float64).reshape(1, 48) * 0.01,
+        process_epsilon=np.arange(480, dtype=np.float64).reshape(1, 60, 8) * 0.001,
+        initial_covariance=0.01,
+    )
+    model = _FakeModel(gain=jnp.array([0.25, 0.75], dtype=jnp.float64))
+    task = _FakeTask()
+    base_trial_specs = _FakeTrialSpecs(
+        inits={"mechanics.vector": jnp.zeros((1, 48), dtype=jnp.float64)},
+        inputs={"epsilon": jnp.zeros((1, 60, 8), dtype=jnp.float64)},
+    )
+
+    # Warm the mocked JAX path so the parity assertion is about serial semantics,
+    # not first-trace behavior in the fake task.
+    _legacy_gru_split_bank_costs(
+        model=model,
+        task=task,
+        base_trial_specs=base_trial_specs,
+        bank=bank,
+        n_replicates=2,
+        seed=17,
+    )
+    objective_comparator._gru_split_bank_costs(
+        model=model,
+        task=task,
+        base_trial_specs=base_trial_specs,
+        bank=bank,
+        n_replicates=2,
+        seed=17,
+    )
+
+    expected = _legacy_gru_split_bank_costs(
+        model=model,
+        task=task,
+        base_trial_specs=base_trial_specs,
+        bank=bank,
+        n_replicates=2,
+        seed=17,
+    )
+    actual = objective_comparator._gru_split_bank_costs(
+        model=model,
+        task=task,
+        base_trial_specs=base_trial_specs,
+        bank=bank,
+        n_replicates=2,
+        seed=17,
+    )
+
+    assert tuple(actual) == tuple(objective_comparator._STANDARD_SPLIT_BANK_LENSES)
+    for lens in objective_comparator._STANDARD_SPLIT_BANK_LENSES:
+        for term in ("total", "command_control", "running_state"):
+            assert actual[lens][term]["shape"] == expected[lens][term]["shape"]
+            np.testing.assert_allclose(
+                actual[lens][term]["values"],
+                expected[lens][term]["values"],
+            )
+
+
 def test_shared_full_qrf_cost_summary_decomposes_zero_rollout() -> None:
     states = np.zeros((2, 60, 48), dtype=np.float64)
     commands = np.zeros((2, 60, 2), dtype=np.float64)
@@ -393,6 +495,80 @@ def _states_at_target(values: np.ndarray, target_pos: np.ndarray) -> np.ndarray:
     for start in range(0, result.shape[-1], 8):
         result[..., start : start + 2] = target_pos
     return result
+
+
+def _legacy_gru_split_bank_costs(
+    *,
+    model: Any,
+    task: Any,
+    base_trial_specs: Any,
+    bank: SharedRolloutBank,
+    n_replicates: int,
+    seed: int,
+) -> dict[str, dict[str, Any]]:
+    default_initial = np.asarray(base_trial_specs.inits["mechanics.vector"], dtype=np.float64)
+    if default_initial.ndim == 1:
+        default_initial = np.broadcast_to(default_initial, bank.initial_states.shape)
+    else:
+        default_initial = np.broadcast_to(default_initial[:1], bank.initial_states.shape)
+    lens_inputs = objective_comparator._split_bank_inputs(
+        bank=bank,
+        default_initial=default_initial,
+    )
+    costs: dict[str, dict[str, Any]] = {}
+    for lens in objective_comparator._STANDARD_SPLIT_BANK_LENSES:
+        lens_bank = SharedRolloutBank(
+            bank_id=f"{bank.bank_id}:{lens}",
+            seed=bank.seed,
+            initial_states=np.asarray(lens_inputs[lens]["initial_states"], dtype=np.float64),
+            process_epsilon=np.asarray(lens_inputs[lens]["process_epsilon"], dtype=np.float64),
+            initial_covariance=bank.initial_covariance,
+        )
+        trial_specs = objective_comparator._trial_specs_with_shared_bank(
+            base_trial_specs,
+            lens_bank,
+        )
+        states = _legacy_evaluate_replicate_model_states(
+            model=model,
+            task=task,
+            trial_specs=trial_specs,
+            n_replicates=n_replicates,
+            seed=seed,
+        )
+        costs[lens] = shared_full_qrf_cost_summary(
+            states=np.asarray(states.mechanics.vector, dtype=np.float64),
+            commands=np.asarray(states.net.output, dtype=np.float64),
+            initial_states=lens_bank.initial_states,
+            state_basis="absolute_workspace",
+        )
+    return costs
+
+
+def _legacy_evaluate_replicate_model_states(
+    *,
+    model: Any,
+    task: Any,
+    trial_specs: Any,
+    n_replicates: int,
+    seed: int,
+) -> Any:
+    model_arrays, model_other = eqx.partition(
+        model,
+        lambda leaf: objective_comparator._is_replicate_array(leaf, n_replicates),
+    )
+
+    def eval_one_replicate(model_array_leaves: Any, key: Any) -> Any:
+        replicate_model = eqx.combine(model_array_leaves, model_other)
+        return task.eval_trials(
+            replicate_model,
+            trial_specs,
+            jr.split(key, objective_comparator.bank_batch_size(trial_specs)),
+        )
+
+    return eqx.filter_vmap(eval_one_replicate, in_axes=(0, 0))(
+        model_arrays,
+        jr.split(jr.PRNGKey(seed), n_replicates),
+    )
 
 
 def test_extlqg_x0_only_sanity_check_reports_pass_and_warning() -> None:

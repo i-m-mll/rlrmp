@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import jax
+import jax.tree as jt
 
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import (
     MATERIALIZER_ISSUE_ID,
@@ -70,6 +71,11 @@ class TimedBundle:
 
     bundle: str
     elapsed_s: float
+    call_elapsed_s: float
+    ready_block_s: float
+    ready_blocked_leaves: int
+    ready_block_note: str
+    summary_elapsed_s: float
     status: str
     summary: Mapping[str, Any]
 
@@ -77,9 +83,23 @@ class TimedBundle:
         return {
             "bundle": self.bundle,
             "elapsed_s": self.elapsed_s,
+            "call_elapsed_s": self.call_elapsed_s,
+            "ready_block_s": self.ready_block_s,
+            "ready_blocked_leaves": self.ready_blocked_leaves,
+            "ready_block_note": self.ready_block_note,
+            "summary_elapsed_s": self.summary_elapsed_s,
             "status": self.status,
             "summary": dict(self.summary),
         }
+
+
+@dataclass(frozen=True)
+class ReadyBlockTiming:
+    """Post-call JAX readiness timing for a bundle result."""
+
+    elapsed_s: float
+    blocked_leaves: int
+    note: str
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -212,7 +232,6 @@ def run_benchmark(
 
     standard_manifest_path = notes_scratch / "gru_standard_manifest.json"
     standard_note_path = notes_scratch / "gru_standard.md"
-    standard_result_holder: dict[str, Any] = {}
 
     def run_standard() -> Mapping[str, Any]:
         result = materialize_gru_standard_result(
@@ -228,17 +247,22 @@ def run_benchmark(
             manifest_path=standard_manifest_path,
             repo_root=repo_root,
         )
-        standard_result_holder["result"] = result
-        return {
-            "rows": len(result.get("rows", ())),
-            "checkpoint_policy": result.get("checkpoint_policy"),
-            "output": _repo_relative(standard_manifest_path, repo_root=repo_root),
-        }
+        return result
 
-    bundle_results.append(_time_bundle("standard_certificate", run_standard))
+    bundle_results.append(
+        _time_bundle(
+            "standard_certificate",
+            run_standard,
+            summarize=lambda result: {
+                "rows": len(result.get("rows", ())),
+                "checkpoint_policy": result.get("checkpoint_policy"),
+                "output": _repo_relative(standard_manifest_path, repo_root=repo_root),
+            },
+        )
+    )
 
     def run_evaluation_diagnostics() -> Mapping[str, Any]:
-        result = materialize_gru_evaluation_diagnostics(
+        return materialize_gru_evaluation_diagnostics(
             experiment=source_experiment,
             run_ids=(run_id,),
             labels=None,
@@ -249,12 +273,17 @@ def run_benchmark(
             write_bulk_arrays=write_bulk_arrays,
             repo_root=repo_root,
         )
-        return _bundle_status_counts(result)
 
-    bundle_results.append(_time_bundle("evaluation_diagnostics", run_evaluation_diagnostics))
+    bundle_results.append(
+        _time_bundle(
+            "evaluation_diagnostics",
+            run_evaluation_diagnostics,
+            summarize=_bundle_status_counts,
+        )
+    )
 
     def run_pilot_figures() -> Mapping[str, Any]:
-        result = materialize_gru_pilot_figures(
+        return materialize_gru_pilot_figures(
             experiment=source_experiment,
             run_ids=(run_id,),
             labels=None,
@@ -264,12 +293,17 @@ def run_benchmark(
             use_validation_selected_checkpoints=True,
             repo_root=repo_root,
         )
-        return {"figure_keys": sorted(result.keys())}
 
-    bundle_results.append(_time_bundle("pilot_figures", run_pilot_figures))
+    bundle_results.append(
+        _time_bundle(
+            "pilot_figures",
+            run_pilot_figures,
+            summarize=lambda result: {"figure_keys": sorted(result.keys())},
+        )
+    )
 
     def run_objective_comparator() -> Mapping[str, Any]:
-        result = materialize_gru_objective_comparator_sidecar(
+        return materialize_gru_objective_comparator_sidecar(
             experiment=source_experiment,
             run_ids=(run_id,),
             labels=None,
@@ -285,12 +319,20 @@ def run_benchmark(
             note_path=notes_scratch / "objective_comparator.md",
             repo_root=repo_root,
         )
-        return {"status": result.get("status", "materialized"), "keys": sorted(result.keys())}
 
-    bundle_results.append(_time_bundle("objective_comparator", run_objective_comparator))
+    bundle_results.append(
+        _time_bundle(
+            "objective_comparator",
+            run_objective_comparator,
+            summarize=lambda result: {
+                "status": result.get("status", "materialized"),
+                "keys": sorted(result.keys()),
+            },
+        )
+    )
 
     def run_map_decomposition() -> Mapping[str, Any]:
-        result = materialize_gru_map_error_decomposition(
+        return materialize_gru_map_error_decomposition(
             standard_manifest_path=standard_manifest_path,
             experiment=source_experiment,
             run_ids=(run_id,),
@@ -298,16 +340,24 @@ def run_benchmark(
             top_k=3,
             repo_root=repo_root,
         )
+
+    def summarize_map_decomposition(result: Mapping[str, Any]) -> Mapping[str, Any]:
         (notes_scratch / "gru_map_error_decomposition.json").write_text(
             json.dumps(result, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
         return {"rows": len(result.get("rows", ())), "keys": sorted(result.keys())}
 
-    bundle_results.append(_time_bundle("map_decomposition", run_map_decomposition))
+    bundle_results.append(
+        _time_bundle(
+            "map_decomposition",
+            run_map_decomposition,
+            summarize=summarize_map_decomposition,
+        )
+    )
 
     def run_perturbation_response() -> Mapping[str, Any]:
-        result = evaluate_run_perturbation_bank(
+        return evaluate_run_perturbation_bank(
             run,
             source_experiment=source_experiment,
             bank=bank,
@@ -317,15 +367,20 @@ def run_benchmark(
             evaluation_backend=perturbation_evaluation_backend,
             repo_root=repo_root,
         )
-        return {
-            "status_counts": result.get("status_counts", {}),
-            "rows": len(result.get("perturbations", ())),
-        }
 
-    bundle_results.append(_time_bundle("perturbation_response", run_perturbation_response))
+    bundle_results.append(
+        _time_bundle(
+            "perturbation_response",
+            run_perturbation_response,
+            summarize=lambda result: {
+                "status_counts": result.get("status_counts", {}),
+                "rows": len(result.get("perturbations", ())),
+            },
+        )
+    )
 
     def run_feedback_ablation() -> Mapping[str, Any]:
-        result = evaluate_run_feedback_ablation(
+        return evaluate_run_feedback_ablation(
             run,
             source_experiment=source_experiment,
             n_rollout_trials=n_rollout_trials,
@@ -334,15 +389,20 @@ def run_benchmark(
             evaluation_bins=feedback_evaluation_bins,
             repo_root=repo_root,
         )
-        return {
-            "status_counts": result.get("status_counts", {}),
-            "rows": len(result.get("rows", ())),
-        }
 
-    bundle_results.append(_time_bundle("feedback_ablation", run_feedback_ablation))
+    bundle_results.append(
+        _time_bundle(
+            "feedback_ablation",
+            run_feedback_ablation,
+            summarize=lambda result: {
+                "status_counts": result.get("status_counts", {}),
+                "rows": len(result.get("rows", ())),
+            },
+        )
+    )
 
     def run_worst_case_epsilon() -> Mapping[str, Any]:
-        result = audit_run_worst_case_epsilon(
+        return audit_run_worst_case_epsilon(
             run,
             source_experiment=source_experiment,
             n_rollout_trials=n_rollout_trials,
@@ -357,9 +417,17 @@ def run_benchmark(
             optimizer_backend=worst_case_optimizer_backend,
             repo_root=repo_root,
         )
-        return {"status": result.get("status", "evaluated"), "keys": sorted(result.keys())}
 
-    bundle_results.append(_time_bundle("worst_case_epsilon", run_worst_case_epsilon))
+    bundle_results.append(
+        _time_bundle(
+            "worst_case_epsilon",
+            run_worst_case_epsilon,
+            summarize=lambda result: {
+                "status": result.get("status", "evaluated"),
+                "keys": sorted(result.keys()),
+            },
+        )
+    )
 
     total_elapsed = time.perf_counter() - total_start
     payload = {
@@ -418,10 +486,29 @@ def subset_perturbation_bank(
     return sliced
 
 
-def _time_bundle(bundle: str, fn: Callable[[], Mapping[str, Any]]) -> TimedBundle:
+def _time_bundle(
+    bundle: str,
+    fn: Callable[[], Mapping[str, Any]],
+    *,
+    summarize: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+) -> TimedBundle:
     start = time.perf_counter()
+    call_elapsed_s = 0.0
+    ready_block = ReadyBlockTiming(
+        elapsed_s=0.0,
+        blocked_leaves=0,
+        note="bundle raised before result readiness could be checked",
+    )
+    summary_elapsed_s = 0.0
     try:
-        summary = dict(fn())
+        call_start = time.perf_counter()
+        result = fn()
+        call_elapsed_s = time.perf_counter() - call_start
+        ready_block = _block_until_ready(result)
+
+        summary_start = time.perf_counter()
+        summary = dict(summarize(result) if summarize is not None else result)
+        summary_elapsed_s = time.perf_counter() - summary_start
         status = str(summary.get("status", "ok"))
     except Exception as exc:  # pragma: no cover - kept visible in benchmark JSON.
         summary = {"error": type(exc).__name__, "detail": str(exc)}
@@ -429,8 +516,38 @@ def _time_bundle(bundle: str, fn: Callable[[], Mapping[str, Any]]) -> TimedBundl
     return TimedBundle(
         bundle=bundle,
         elapsed_s=time.perf_counter() - start,
+        call_elapsed_s=call_elapsed_s,
+        ready_block_s=ready_block.elapsed_s,
+        ready_blocked_leaves=ready_block.blocked_leaves,
+        ready_block_note=ready_block.note,
+        summary_elapsed_s=summary_elapsed_s,
         status=status,
         summary=summary,
+    )
+
+
+def _block_until_ready(value: Any) -> ReadyBlockTiming:
+    """Block on JAX leaves in ``value`` and report what was blocked."""
+
+    leaves = [
+        leaf
+        for leaf in jt.leaves(value)
+        if callable(getattr(leaf, "block_until_ready", None))
+    ]
+    if not leaves:
+        return ReadyBlockTiming(
+            elapsed_s=0.0,
+            blocked_leaves=0,
+            note="no JAX leaves with block_until_ready",
+        )
+
+    start = time.perf_counter()
+    for leaf in leaves:
+        leaf.block_until_ready()
+    return ReadyBlockTiming(
+        elapsed_s=time.perf_counter() - start,
+        blocked_leaves=len(leaves),
+        note="blocked JAX leaves with block_until_ready",
     )
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import jax.numpy as jnp
 import pytest
 
 from rlrmp.analysis.pipelines.gru_feedback_ablation import selected_feedback_ablation_bins_for_bank
@@ -102,6 +103,46 @@ def test_run_benchmark_records_and_passes_backend_context(monkeypatch, tmp_path)
         "perturbation_evaluation_backend": "serial",
         "worst_case_optimizer_backend": "serial",
     }
+    assert payload["bundles"]
+    for bundle in payload["bundles"]:
+        assert bundle["call_elapsed_s"] >= 0.0
+        assert bundle["ready_block_s"] >= 0.0
+        assert bundle["summary_elapsed_s"] >= 0.0
+        assert bundle["ready_blocked_leaves"] == 0
+        assert bundle["ready_block_note"] == "no JAX leaves with block_until_ready"
+
+
+def test_time_bundle_blocks_jax_leaves_before_summarizing() -> None:
+    seen_ready = {"value": False}
+
+    def summarize(result):
+        seen_ready["value"] = result["array"].is_ready()
+        return {"shape": tuple(result["array"].shape)}
+
+    result = benchmark._time_bundle(
+        "jax_bundle",
+        lambda: {"array": jnp.arange(4)},
+        summarize=summarize,
+    )
+
+    assert result.status == "ok"
+    assert result.ready_blocked_leaves == 1
+    assert result.ready_block_note == "blocked JAX leaves with block_until_ready"
+    assert result.call_elapsed_s >= 0.0
+    assert result.ready_block_s >= 0.0
+    assert result.summary_elapsed_s >= 0.0
+    assert result.summary == {"shape": (4,)}
+    assert seen_ready["value"] is True
+
+
+def test_time_bundle_explains_when_no_jax_leaves_are_present() -> None:
+    result = benchmark._time_bundle("plain_bundle", lambda: {"rows": 3})
+
+    assert result.status == "ok"
+    assert result.summary == {"rows": 3}
+    assert result.ready_blocked_leaves == 0
+    assert result.ready_block_s == 0.0
+    assert result.ready_block_note == "no JAX leaves with block_until_ready"
 
 
 @pytest.mark.parametrize("option", ["--perturbation-evaluation-backend", "--worst-case-optimizer-backend"])
