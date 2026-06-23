@@ -33,6 +33,8 @@ from rlrmp.train.task_model import setup_task_model_pair
 EXPERIMENT = "e901a20"
 TOPIC = "nominal_velocity_profile_comparison"
 NOMINAL_MARKER = "nominal_velocity_profile_comparison"
+NO_PGD_SPLIT_TOPIC = "no_pgd_heldout_split"
+NO_PGD_SPLIT_MARKER = "no_pgd_heldout_split"
 
 
 @dataclass(frozen=True)
@@ -61,13 +63,16 @@ class VelocityProfile:
     time_of_peak_mean_forward_velocity_s: float
 
 
+NO_PGD_REF = RunRef(
+    "020a65b",
+    "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
+    "020a65b no-PGD H0",
+    "#64748b",
+)
+
+
 RUNS: tuple[RunRef, ...] = (
-    RunRef(
-        "020a65b",
-        "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
-        "020a65b no-PGD H0",
-        "#64748b",
-    ),
+    NO_PGD_REF,
     RunRef(
         "020a65b",
         "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64",
@@ -188,8 +193,53 @@ def load_trained_model(ref: RunRef, hps: TreeNamespace, seed: int) -> Any:
     return model
 
 
-def evaluate_profile(ref: RunRef) -> VelocityProfile:
-    """Evaluate a trained run on nominal validation trials."""
+def profile_from_values(
+    ref: RunRef,
+    time_s: np.ndarray,
+    normalized_values: np.ndarray,
+    target_distance: np.ndarray,
+    target_mask: np.ndarray | None = None,
+) -> VelocityProfile:
+    """Summarize length-normalized forward velocities for a target subset."""
+
+    if target_mask is None:
+        selected = normalized_values
+        selected_distance = target_distance
+    else:
+        if target_mask.dtype != np.bool_:
+            raise TypeError("target_mask must be a boolean array")
+        if target_mask.shape != target_distance.shape:
+            raise ValueError(
+                f"target_mask shape {target_mask.shape} does not match target distances "
+                f"{target_distance.shape}"
+            )
+        if not np.any(target_mask):
+            raise ValueError(f"Target mask for {ref.label!r} selects no trials")
+        selected = normalized_values[:, target_mask, :]
+        selected_distance = target_distance[target_mask]
+
+    n_replicates = int(selected.shape[0])
+    n_trials = int(selected.shape[1])
+    pooled = selected.reshape(n_replicates * n_trials, selected.shape[-1])
+    mean = np.mean(pooled, axis=0)
+    std = np.std(pooled, axis=0, ddof=1)
+    peak_idx = int(np.nanargmax(mean))
+    return VelocityProfile(
+        run=ref,
+        time_s=time_s,
+        mean=mean,
+        std=std,
+        n_replicates=n_replicates,
+        n_trials=n_trials,
+        target_distance_min_m=float(np.min(selected_distance)),
+        target_distance_max_m=float(np.max(selected_distance)),
+        peak_mean_length_normalized_forward_velocity_1_s=float(mean[peak_idx]),
+        time_of_peak_mean_forward_velocity_s=float(time_s[peak_idx]),
+    )
+
+
+def evaluate_nominal_values(ref: RunRef) -> tuple[dict[str, Any], np.ndarray, np.ndarray, np.ndarray]:
+    """Evaluate a trained run on nominal validation trials and return per-trial profiles."""
 
     run_spec = load_run_spec(ref)
     hps = dict_to_namespace(normalize_gru_hps(run_spec["hps"]), to_type=TreeNamespace)
@@ -227,24 +277,82 @@ def evaluate_profile(ref: RunRef) -> VelocityProfile:
     values = np.asarray(forward_velocity, dtype=np.float64)
     target_distance = np.asarray(direction_norm[..., 0], dtype=np.float64)
     normalized_values = values / np.maximum(target_distance[None, :, None], 1e-12)
-    pooled = normalized_values.reshape(n_replicates * n_trials, normalized_values.shape[-1])
-    mean = np.mean(pooled, axis=0)
-    std = np.std(pooled, axis=0, ddof=1)
     dt = float(run_spec.get("game_card", {}).get("dt", getattr(hps, "dt", 0.01)))
-    time_s = np.arange(mean.shape[0], dtype=np.float64) * dt
-    peak_idx = int(np.nanargmax(mean))
-    return VelocityProfile(
-        run=ref,
-        time_s=time_s,
-        mean=mean,
-        std=std,
-        n_replicates=n_replicates,
-        n_trials=n_trials,
-        target_distance_min_m=float(np.min(target_distance)),
-        target_distance_max_m=float(np.max(target_distance)),
-        peak_mean_length_normalized_forward_velocity_1_s=float(mean[peak_idx]),
-        time_of_peak_mean_forward_velocity_s=float(time_s[peak_idx]),
+    time_s = np.arange(normalized_values.shape[-1], dtype=np.float64) * dt
+    goal_np = np.asarray(goal, dtype=np.float64)
+    if goal_np.shape[0] != n_trials:
+        raise ValueError(
+            f"Goal count {goal_np.shape[0]} does not match validation trial count {n_trials}"
+        )
+    return run_spec, time_s, normalized_values, target_distance
+
+
+def evaluate_profile(ref: RunRef) -> VelocityProfile:
+    """Evaluate a trained run on nominal validation trials."""
+
+    _run_spec, time_s, normalized_values, target_distance = evaluate_nominal_values(ref)
+    return profile_from_values(ref, time_s, normalized_values, target_distance)
+
+
+def held_out_target_mask(run_spec: dict[str, Any], trial_specs: Any) -> np.ndarray:
+    """Return a boolean mask for held-out validation targets."""
+
+    distribution = (
+        run_spec.get("hps", {})
+        .get("target_relative_multitarget", {})
+        .get("target_distribution", {})
     )
+    held_out_targets = np.asarray(distribution.get("held_out_targets_m"), dtype=np.float64)
+    if held_out_targets.ndim != 2 or held_out_targets.shape[1] != 2:
+        raise ValueError("Run spec does not contain a valid held_out_targets_m list")
+
+    goals = np.asarray(final_goal_position(trial_specs), dtype=np.float64)
+    target_mask = np.zeros(goals.shape[0], dtype=np.bool_)
+    for idx, goal in enumerate(goals):
+        target_mask[idx] = bool(np.any(np.all(np.isclose(held_out_targets, goal, atol=1e-6), axis=1)))
+    if not np.any(target_mask):
+        raise ValueError("No validation trials matched held_out_targets_m")
+    if np.all(target_mask):
+        raise ValueError("All validation trials matched held_out_targets_m")
+    return target_mask
+
+
+def evaluate_no_pgd_heldout_split() -> list[VelocityProfile]:
+    """Evaluate no-PGD nominal profiles split by held-out target membership."""
+
+    ref = NO_PGD_REF
+    run_spec = load_run_spec(ref)
+    hps = dict_to_namespace(normalize_gru_hps(run_spec["hps"]), to_type=TreeNamespace)
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(int(run_spec.get("seed", 42))))
+    trial_specs = nominalize_trial_specs(pair.task.validation_trials)
+    held_out_mask = held_out_target_mask(run_spec, trial_specs)
+    _run_spec, time_s, normalized_values, target_distance = evaluate_nominal_values(ref)
+    return [
+        profile_from_values(
+            RunRef(
+                ref.experiment,
+                f"{ref.run_id}::non_held_out",
+                "Non-held-out validation targets",
+                "#64748b",
+            ),
+            time_s,
+            normalized_values,
+            target_distance,
+            ~held_out_mask,
+        ),
+        profile_from_values(
+            RunRef(
+                ref.experiment,
+                f"{ref.run_id}::held_out",
+                "Held-out diagonal targets",
+                "#f97316",
+            ),
+            time_s,
+            normalized_values,
+            target_distance,
+            held_out_mask,
+        ),
+    ]
 
 
 def add_band_trace(fig: go.Figure, profile: VelocityProfile) -> None:
@@ -423,12 +531,159 @@ def write_outputs(profiles: list[VelocityProfile]) -> dict[str, Any]:
     return manifest
 
 
+def write_no_pgd_split_outputs(profiles: list[VelocityProfile]) -> dict[str, Any]:
+    """Write no-PGD held-out split figure, data, manifest, and note outputs."""
+
+    figure_dir = mkdir_p(figure_artifact_dir(EXPERIMENT, NO_PGD_SPLIT_TOPIC))
+    spec_dir = mkdir_p(figure_spec_dir(EXPERIMENT, NO_PGD_SPLIT_TOPIC))
+    notes_dir = mkdir_p(REPO_ROOT / "results" / EXPERIMENT / "notes")
+
+    fig = go.Figure()
+    for profile in profiles:
+        add_band_trace(fig, profile)
+    fig.update_layout(
+        title="No-PGD nominal velocity: non-held-out vs held-out validation targets",
+        width=960,
+        height=560,
+        margin={"l": 72, "r": 24, "t": 72, "b": 68},
+        hovermode="x unified",
+        legend={"orientation": "h", "y": -0.22, "x": 0.0, "groupclick": "togglegroup"},
+    )
+    fig.update_xaxes(title_text="Time (s)", zeroline=False)
+    fig.update_yaxes(title_text="Target-radial velocity / reach length (1/s)", zeroline=True)
+
+    html_path = figure_dir / "no_pgd_heldout_split.html"
+    fig.write_html(html_path, include_plotlyjs="cdn")
+    data_path = figure_dir / "no_pgd_heldout_split.npz"
+    np.savez_compressed(
+        data_path,
+        **{f"{profile.run.label}__time_s": profile.time_s for profile in profiles},
+        **{f"{profile.run.label}__mean": profile.mean for profile in profiles},
+        **{f"{profile.run.label}__std": profile.std for profile in profiles},
+    )
+
+    rows = [
+        {
+            "label": profile.run.label,
+            "n_replicates": profile.n_replicates,
+            "n_trials": profile.n_trials,
+            "n_pooled_profiles": profile.n_replicates * profile.n_trials,
+            "target_distance_min_m": profile.target_distance_min_m,
+            "target_distance_max_m": profile.target_distance_max_m,
+            "peak_mean_length_normalized_forward_velocity_1_s": (
+                profile.peak_mean_length_normalized_forward_velocity_1_s
+            ),
+            "time_of_peak_mean_forward_velocity_s": profile.time_of_peak_mean_forward_velocity_s,
+        }
+        for profile in profiles
+    ]
+    manifest = {
+        "schema_version": "rlrmp.e901a20.no_pgd_heldout_split.v1",
+        "figure": repo_relative(html_path),
+        "data": repo_relative(data_path),
+        "evaluation_lens": "nominal_clean_validation_trials",
+        "source_run": {
+            "experiment": NO_PGD_REF.experiment,
+            "run_id": NO_PGD_REF.run_id,
+            "label": NO_PGD_REF.label,
+        },
+        "split_definition": (
+            "held_out_targets_m from the no-PGD run spec versus all remaining validation targets"
+        ),
+        "velocity_definition": (
+            "effector velocity projected onto each trial's target direction, divided by "
+            "that trial's reach length"
+        ),
+        "band_definition": (
+            "one standard deviation over replicate x validation-target profiles within each split"
+        ),
+        "splits": rows,
+    }
+    manifest_path = figure_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    figure_link = spec_dir / "figure.html"
+    if figure_link.exists() or figure_link.is_symlink():
+        figure_link.unlink()
+    figure_link.symlink_to(os.path.relpath(html_path, start=figure_link.parent))
+    spec = {
+        "schema_version": "rlrmp.figure_spec.v1",
+        "topic": NO_PGD_SPLIT_TOPIC,
+        "source_script": repo_relative(Path(__file__)),
+        "manifest": repo_relative(manifest_path),
+        "figure": repo_relative(html_path),
+        "figure_link": repo_relative(figure_link),
+        "data": repo_relative(data_path),
+        "evaluation_lens": manifest["evaluation_lens"],
+        "split_definition": manifest["split_definition"],
+        "velocity_definition": manifest["velocity_definition"],
+        "band_definition": manifest["band_definition"],
+        "source_run": manifest["source_run"],
+        "splits": rows,
+        "inputs": [
+            {
+                "run_spec": repo_relative(run_spec_path(NO_PGD_REF.experiment, NO_PGD_REF.run_id)),
+                "trained_model": repo_relative(
+                    resolve_run_artifact_path(artifact_dir(NO_PGD_REF), "trained_model.eqx")
+                ),
+            }
+        ],
+    }
+    spec_path = spec_dir / "spec.json"
+    spec_path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    table_lines = [
+        "| Split | Peak mean normalized velocity (1/s) | Time of peak (s) | Reach lengths (m) | Pooled profiles |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    for row in rows:
+        table_lines.append(
+            f"| `{row['label']}` | "
+            f"{row['peak_mean_length_normalized_forward_velocity_1_s']:.4f} | "
+            f"{row['time_of_peak_mean_forward_velocity_s']:.3f} | "
+            f"{row['target_distance_min_m']:.2f}-{row['target_distance_max_m']:.2f} | "
+            f"{row['n_pooled_profiles']} |"
+        )
+    note = "\n".join(
+        [
+            "## No-PGD held-out split",
+            "",
+            "Nominal-clean validation trials for the 020a65b no-PGD H0 comparator only. "
+            "Curves use the same target-radial velocity divided by reach length as the "
+            "four-row comparison, but split validation targets into held-out diagonal "
+            "targets and all remaining validation targets. Bands are one standard "
+            "deviation over pooled replicate x validation-target profiles within each split.",
+            "",
+            *table_lines,
+            "",
+            f"- Figure: `{repo_relative(html_path)}`",
+            f"- Data: `{repo_relative(data_path)}`",
+            f"- Manifest: `{repo_relative(manifest_path)}`",
+            "",
+        ]
+    )
+    note_path = notes_dir / f"{NO_PGD_SPLIT_TOPIC}.md"
+    update_marked_section(note_path, NO_PGD_SPLIT_MARKER, note)
+    manifest["note"] = repo_relative(note_path)
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return manifest
+
+
 def main() -> None:
     """Evaluate all rows and materialize outputs."""
 
     profiles = [evaluate_profile(ref) for ref in RUNS]
-    manifest = write_outputs(profiles)
-    print(json.dumps(manifest, indent=2, sort_keys=True))
+    comparison_manifest = write_outputs(profiles)
+    no_pgd_split_manifest = write_no_pgd_split_outputs(evaluate_no_pgd_heldout_split())
+    print(
+        json.dumps(
+            {
+                "comparison": comparison_manifest,
+                "no_pgd_heldout_split": no_pgd_split_manifest,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
 
 
 if __name__ == "__main__":
