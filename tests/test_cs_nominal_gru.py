@@ -557,6 +557,8 @@ def test_policy_adversary_cli_run_spec_and_planned_rows(tmp_path: Path) -> None:
         assert parsed.policy_adversary_radius_15cm == pytest.approx(
             EFFECTIVE_020A65B_PGD_RADIUS_15CM
         )
+        assert row["lr_cosine_alpha"] == pytest.approx(0.01)
+        assert parsed.lr_cosine_alpha == pytest.approx(0.01)
         assert parsed.stop_after_batches == 1000
         assert parsed_spec.dry_run is True
 
