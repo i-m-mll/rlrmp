@@ -22,10 +22,15 @@ import equinox as eqx
 from equinox import Module, field
 import jax.numpy as jnp
 import jax.random as jr
+import jax.tree as jt
 from jaxtyping import Array, PRNGKeyArray, PyTree
 
 from feedbax.runtime.channel import ChannelState
-from feedbax.component_registry import ComponentMigration, ComponentMigrationPack, get_component_registry
+from feedbax.component_registry import (
+    ComponentMigration,
+    ComponentMigrationPack,
+    get_component_registry,
+)
 from feedbax.contracts.graph import ComponentSpec, GraphMetadata, GraphSpec, WireSpec
 from feedbax.runtime.graph import Component, Graph
 from feedbax.mechanics import LinearStateSpace
@@ -311,6 +316,7 @@ def build_cs_lss_gru_graph_spec(
     force_filter_feedback: bool = False,
     initial_hidden_encoder: bool = False,
     no_integrator_state: bool = False,
+    trainable_dtype: str | None = None,
     key: PRNGKeyArray,
 ) -> GraphSpec:
     """Build the durable GraphSpec for the C&S LinearStateSpace GRU graph."""
@@ -370,13 +376,15 @@ def build_cs_lss_gru_graph_spec(
         "population_structure": _population_structure_params(population_structure, hidden_size),
         "key": key_param,
     }
+    if trainable_dtype is not None:
+        net_params["trainable_dtype"] = str(jnp.dtype(trainable_dtype).name)
     if initial_hidden_encoder:
         net_params.update(
             {
                 "h0_input_size": feedback_dim,
                 "h0_context_source": "target_relative_delayed_feedback",
                 "h0_initialization": CS_H0_ENCODER_INIT,
-                "h0_dtype": jnp.dtype(mechanics.A.dtype).name,
+                "h0_dtype": str(jnp.dtype(trainable_dtype or mechanics.A.dtype).name),
             }
         )
 
@@ -542,6 +550,7 @@ def build_cs_lss_gru_graph(
     force_filter_feedback: bool = False,
     initial_hidden_encoder: bool = False,
     no_integrator_state: bool = False,
+    trainable_dtype: str | None = None,
     key: PRNGKeyArray,
 ) -> Graph:
     """Build the C&S LinearStateSpace GRU feedback graph.
@@ -573,6 +582,9 @@ def build_cs_lss_gru_graph(
             controller-visible feedback vector.
         initial_hidden_encoder: If true, initialize the GRU hidden state on the
             first graph step from the first controller-visible feedback vector.
+        trainable_dtype: Optional dtype for the controller trainable leaves
+            (hidden/readout and h0 encoder when present). If absent, preserve
+            the historical JAX-default construction dtype.
         key: PRNG key for network construction.
 
     Returns:
@@ -596,6 +608,7 @@ def build_cs_lss_gru_graph(
         force_filter_feedback=force_filter_feedback,
         initial_hidden_encoder=initial_hidden_encoder,
         no_integrator_state=no_integrator_state,
+        trainable_dtype=trainable_dtype,
         key=key,
     )
     return materialize_cs_lss_gru_graph_spec(graph_spec)
@@ -771,7 +784,7 @@ def _build_initial_hidden_staged_network(
     params: dict[str, Any],
 ) -> InitialHiddenStagedNetwork:
     net = _build_simple_staged_network(params)
-    return InitialHiddenStagedNetwork(
+    component = InitialHiddenStagedNetwork(
         net=net,
         h0_encoder=InitialHiddenEncoder(
             input_size=int(params["h0_input_size"]),
@@ -781,10 +794,34 @@ def _build_initial_hidden_staged_network(
         h0_context_source=str(params.get("h0_context_source", "target_relative_delayed_feedback")),
         h0_initialization=str(params.get("h0_initialization", CS_H0_ENCODER_INIT)),
     )
+    return _cast_trainable_component_dtype(component, _trainable_dtype_from_params(params))
+
+
+def _cast_trainable_component_dtype(component: Any, dtype: jnp.dtype | None) -> Any:
+    if dtype is None:
+        return component
+    trainable_parts = staged_network_trainable_parts(component)
+
+    def cast_leaf(leaf: Any) -> Any:
+        if eqx.is_array(leaf) and jnp.issubdtype(leaf.dtype, jnp.floating):
+            return leaf.astype(dtype)
+        return leaf
+
+    return eqx.tree_at(
+        staged_network_trainable_parts,
+        component,
+        jt.map(cast_leaf, trainable_parts),
+    )
+
+
+def _trainable_dtype_from_params(params: dict[str, Any]) -> jnp.dtype | None:
+    if params.get("trainable_dtype") is None:
+        return None
+    return jnp.dtype(params["trainable_dtype"])
 
 
 def _build_simple_staged_network(params: dict[str, Any]) -> SimpleStagedNetwork:
-    return SimpleStagedNetwork(
+    net = SimpleStagedNetwork(
         input_size=int(params["input_size"]),
         hidden_size=int(params["hidden_size"]),
         out_size=int(params.get("out_size", CS_FORCE_DIM)),
@@ -794,6 +831,7 @@ def _build_simple_staged_network(params: dict[str, Any]) -> SimpleStagedNetwork:
         sisu_gating=str(params.get("sisu_gating", "additive")),
         key=_key_from_params(params),
     )
+    return _cast_trainable_component_dtype(net, _trainable_dtype_from_params(params))
 
 
 def _hidden_type_from_name(name: str) -> Callable[..., Module]:

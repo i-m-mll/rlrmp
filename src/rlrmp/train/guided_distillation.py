@@ -54,6 +54,7 @@ DEFAULT_TEACHER_MANIFEST = (
 )
 DEFAULT_TEACHER_GAINS_KEY = "extlqg_controller_gains"
 DEFAULT_CHECKPOINT_INTERVAL_BATCHES = 500
+DEFAULT_TRAINABLE_DTYPE = "float32"
 BASE_RUN_ID = (
     "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64"
 )
@@ -162,6 +163,7 @@ def _standard_hps_dict(
     lr_warmup_init_fraction: float = 0.1,
     lr_cosine_alpha: float = 0.01,
     gradient_clip_norm: float = 5.0,
+    trainable_dtype: str = DEFAULT_TRAINABLE_DTYPE,
 ) -> dict[str, Any]:
     hps = _normalize_serialized_hps(_base_run_spec(base_spec_path)["hps"])
     hps["batch_size"] = int(batch_size)
@@ -179,6 +181,7 @@ def _standard_hps_dict(
     population["n_readout_only"] = 0
     population["n_recurrent_only"] = 0
     population["n_input_readout"] = int(hidden_size)
+    model["trainable_dtype"] = str(trainable_dtype)
     return hps
 
 
@@ -194,6 +197,7 @@ def _standard_hps_from_spec(
     lr_warmup_init_fraction: float,
     lr_cosine_alpha: float,
     gradient_clip_norm: float,
+    trainable_dtype: str = DEFAULT_TRAINABLE_DTYPE,
 ) -> TreeNamespace:
     hps = spec.get("hps")
     if hps is None:
@@ -208,6 +212,7 @@ def _standard_hps_from_spec(
             lr_warmup_init_fraction=lr_warmup_init_fraction,
             lr_cosine_alpha=lr_cosine_alpha,
             gradient_clip_norm=gradient_clip_norm,
+            trainable_dtype=trainable_dtype,
         )
     else:
         hps = _normalize_serialized_hps(hps)
@@ -225,6 +230,7 @@ def _standard_hps_from_spec(
         population["n_readout_only"] = 0
         population["n_recurrent_only"] = 0
         population["n_input_readout"] = int(hidden_size)
+        hps["model"]["trainable_dtype"] = str(trainable_dtype)
     return dict_to_namespace(hps, to_type=TreeNamespace)
 
 
@@ -271,6 +277,7 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
     run_spec_path = _resolve_run_spec_path(args, run_id)
     output_dir = _resolve_output_dir(args, run_id)
     teacher_gains_key = str(getattr(args, "teacher_gains_key", DEFAULT_TEACHER_GAINS_KEY))
+    trainable_dtype = str(getattr(args, "trainable_dtype", DEFAULT_TRAINABLE_DTYPE))
     if teacher_gains_key == "extlqg_controller_gains":
         primary_teacher = "6d_output_feedback_extlqg"
         diagnostic_teacher = "6d_output_feedback_hinf"
@@ -303,6 +310,7 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
         lr_warmup_init_fraction=float(getattr(args, "lr_warmup_init_fraction", 0.1)),
         lr_cosine_alpha=float(getattr(args, "lr_cosine_alpha", 0.01)),
         gradient_clip_norm=float(getattr(args, "gradient_clip_norm", 5.0)),
+        trainable_dtype=trainable_dtype,
     )
     spec = {
         "schema_version": SCHEMA_VERSION,
@@ -362,6 +370,7 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
                 "force-filter feedback",
                 "target-relative multitarget distribution",
                 "hidden size 180",
+                f"controller/trainable dtype {trainable_dtype}",
                 "5 replicates",
                 "batch size 64",
                 "AdamW learning rate 3e-3",
@@ -460,6 +469,7 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
             "n_replicates": 5,
             "vectorized_replicates": True,
             "plant_backend": "cs_lss",
+            "trainable_dtype": trainable_dtype,
             "stochastic_preset": "cs2019-rollout",
             "broad_epsilon_pgd_training": False,
         },
@@ -780,6 +790,88 @@ def _where_train_spec(model: Any) -> Any:
     return filter_spec_leaves(model, _where_train_fn)
 
 
+def _dtype_from_name(name: str) -> jnp.dtype:
+    dtype = jnp.dtype(name)
+    if dtype not in (jnp.dtype(jnp.float32), jnp.dtype(jnp.float64)):
+        raise ValueError(
+            f"Unsupported guided-distillation trainable dtype {name!r}; "
+            "expected 'float32' or 'float64'."
+        )
+    return dtype
+
+
+def _trainable_dtype_name(spec: dict[str, Any], args: argparse.Namespace) -> str:
+    """Resolve the deliberate trainable dtype request for distillation training."""
+
+    requested = []
+    model_contract = spec.get("model_contract", {})
+    if model_contract.get("trainable_dtype") is not None:
+        requested.append(str(model_contract["trainable_dtype"]))
+    hps_model = spec.get("hps", {}).get("model", {})
+    if hps_model.get("trainable_dtype") is not None:
+        requested.append(str(hps_model["trainable_dtype"]))
+    if not requested:
+        requested.append(str(getattr(args, "trainable_dtype", DEFAULT_TRAINABLE_DTYPE)))
+    unique = set(requested)
+    if len(unique) != 1:
+        raise ValueError(f"Conflicting trainable dtype requests in run spec: {sorted(unique)}.")
+    return requested[0]
+
+
+def _trainable_float_leaves(model: Any, where_train_spec: Any) -> list[jax.Array]:
+    trainable, _frozen = eqx.partition(model, where_train_spec)
+    return [
+        leaf
+        for leaf in jt.leaves(trainable)
+        if eqx.is_array(leaf) and jnp.issubdtype(leaf.dtype, jnp.floating)
+    ]
+
+
+def _cast_trainable_float_leaves(
+    model: Any,
+    where_train_spec: Any,
+    dtype: jnp.dtype,
+) -> Any:
+    trainable, frozen = eqx.partition(model, where_train_spec)
+
+    def cast_leaf(leaf: Any) -> Any:
+        if eqx.is_array(leaf) and jnp.issubdtype(leaf.dtype, jnp.floating):
+            return leaf.astype(dtype)
+        return leaf
+
+    return eqx.combine(jt.map(cast_leaf, trainable), frozen)
+
+
+def _assert_trainable_float_dtype(
+    model: Any,
+    where_train_spec: Any,
+    dtype: jnp.dtype,
+    *,
+    context: str,
+) -> None:
+    leaves = _trainable_float_leaves(model, where_train_spec)
+    if not leaves:
+        raise ValueError(f"{context} has no floating trainable leaves.")
+    observed = sorted({str(leaf.dtype) for leaf in leaves})
+    if any(jnp.dtype(leaf.dtype) != dtype for leaf in leaves):
+        raise TypeError(
+            f"{context} trainable leaves must be {dtype.name}; observed {observed}. "
+            "Pass --trainable-dtype float64 only for a deliberate float64 run."
+        )
+
+
+def _enforce_trainable_float_dtype(
+    model: Any,
+    where_train_spec: Any,
+    dtype: jnp.dtype,
+    *,
+    context: str,
+) -> Any:
+    model = _cast_trainable_float_leaves(model, where_train_spec, dtype)
+    _assert_trainable_float_dtype(model, where_train_spec, dtype, context=context)
+    return model
+
+
 def _loss_for_batch(
     model: Any,
     batch: dict[str, jax.Array],
@@ -828,35 +920,32 @@ def _loss_for_batch(
 
 @eqx.filter_jit
 def _train_step(
-    model: Any,
+    trainable_model: Any,
+    frozen_model: Any,
     optimizer_state: optax.OptState,
     optimizer: optax.GradientTransformation,
-    where_train_spec: Any,
     batch: dict[str, jax.Array],
     config: CSH0DistillationConfig,
     student_forcing_fraction: float,
 ) -> tuple[Any, optax.OptState, jax.Array, dict[str, jax.Array]]:
-    trainable, frozen = eqx.partition(model, where_train_spec)
-
     def loss_for_trainable(trainable_model: Any) -> tuple[jax.Array, dict[str, jax.Array]]:
         return _loss_for_batch(
-            eqx.combine(trainable_model, frozen),
+            eqx.combine(trainable_model, frozen_model),
             batch,
             config,
             student_forcing_fraction=student_forcing_fraction,
         )
 
     (loss, components), grads = eqx.filter_value_and_grad(loss_for_trainable, has_aux=True)(
-        trainable,
+        trainable_model,
     )
     updates, optimizer_state = optimizer.update(
         grads,
         optimizer_state,
-        trainable,
+        trainable_model,
     )
-    trainable = eqx.apply_updates(trainable, updates)
-    model = eqx.combine(trainable, frozen)
-    return model, optimizer_state, loss, components
+    trainable_model = eqx.apply_updates(trainable_model, updates)
+    return trainable_model, optimizer_state, loss, components
 
 
 def _init_standard_model_ensemble(
@@ -918,17 +1007,19 @@ def _batched_train_step(
     config: CSH0DistillationConfig,
     student_forcing_fraction: float,
 ) -> tuple[Any, optax.OptState, jax.Array, dict[str, jax.Array]]:
-    return eqx.filter_vmap(
-        lambda model, state, batch: _train_step(
-            model,
+    trainable_models, frozen_models = eqx.partition(models, where_train_spec)
+    trainable_models, optimizer_state, losses, components = eqx.filter_vmap(
+        lambda trainable_model, frozen_model, state, batch: _train_step(
+            trainable_model,
+            frozen_model,
             state,
             optimizer,
-            where_train_spec,
             batch,
             config,
             student_forcing_fraction,
         )
-    )(models, optimizer_state, batches)
+    )(trainable_models, frozen_models, optimizer_state, batches)
+    return eqx.combine(trainable_models, frozen_models), optimizer_state, losses, components
 
 
 def _single_replicate_model(
@@ -995,6 +1086,7 @@ def _checkpoint_metadata(
         "n_replicates": int(args.n_replicates),
         "batch_size": int(args.batch_size),
         "hidden_size": int(args.hidden_size),
+        "trainable_dtype": _trainable_dtype_name(spec, args),
         "horizon": int(args.horizon),
         "n_jvp_directions": int(args.n_jvp_directions),
         "checkpoint_interval_batches": int(args.checkpoint_interval_batches),
@@ -1108,6 +1200,10 @@ def _write_training_outputs(
         "n_batches": completed_batches,
         "completed_batches": completed_batches,
         "requested_batches": requested_batches,
+        "trainable_dtype": spec.get("model_contract", {}).get(
+            "trainable_dtype",
+            spec.get("hps", {}).get("model", {}).get("trainable_dtype"),
+        ),
         "vectorized_replicates": True,
         "checkpointing": {
             "enabled": checkpoint_enabled,
@@ -1149,6 +1245,7 @@ def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]
     hidden_size = int(args.hidden_size)
     horizon = int(args.horizon)
     n_jvp_directions = int(args.n_jvp_directions)
+    trainable_dtype = _dtype_from_name(_trainable_dtype_name(spec, args))
     if args.smoke_train:
         n_batches = min(n_batches, 3)
         batch_size = min(batch_size, 2)
@@ -1228,6 +1325,7 @@ def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]
         lr_warmup_init_fraction=float(args.lr_warmup_init_fraction),
         lr_cosine_alpha=float(args.lr_cosine_alpha),
         gradient_clip_norm=float(args.gradient_clip_norm),
+        trainable_dtype=trainable_dtype.name,
     )
     model = _init_standard_model_ensemble(hps=hps, key=model_key)
     model_feedback_dim = int(model.nodes["net"].net.hidden.weight_ih.shape[-1])
@@ -1237,6 +1335,12 @@ def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]
             f"expects {model_feedback_dim} controller feedback channels."
         )
     where_train_spec = _where_train_spec(model)
+    model = _enforce_trainable_float_dtype(
+        model,
+        where_train_spec,
+        trainable_dtype,
+        context="standard guided-distillation model",
+    )
     optimizer_state = _init_optimizer_state(
         model=model,
         optimizer=optimizer,
@@ -1259,6 +1363,18 @@ def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]
             model_template=model,
             optimizer_state_template=optimizer_state,
             n_replicates=n_replicates,
+        )
+        state = GuidedDistillationTrainingState(
+            model=_enforce_trainable_float_dtype(
+                state.model,
+                where_train_spec,
+                trainable_dtype,
+                context="resumed guided-distillation checkpoint",
+            ),
+            optimizer_state=state.optimizer_state,
+            completed_batches=state.completed_batches,
+            batch_keys=state.batch_keys,
+            histories=state.histories,
         )
         resumed_from = latest_checkpoint_path(checkpoint_root)
         if state.completed_batches > n_batches:
@@ -1292,10 +1408,9 @@ def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]
             config,
             forcing_fraction,
         )
-        losses_host = np.asarray(jax.device_get(losses))
-        components_host = {
-            name: np.asarray(jax.device_get(value)) for name, value in components.items()
-        }
+        losses_host, components_host = jax.device_get((losses, components))
+        losses_host = np.asarray(losses_host)
+        components_host = {name: np.asarray(value) for name, value in components_host.items()}
         for replicate_index in range(n_replicates):
             state.histories[replicate_index].append(
                 {
@@ -1437,6 +1552,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--lr-warmup-init-fraction", type=float, default=0.1)
     parser.add_argument("--lr-cosine-alpha", type=float, default=0.01)
     parser.add_argument("--gradient-clip-norm", type=float, default=5.0)
+    parser.add_argument("--trainable-dtype", default=DEFAULT_TRAINABLE_DTYPE)
     parser.add_argument("--log-step", type=int, default=10)
     parser.add_argument("--checkpoint", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument(
@@ -1482,6 +1598,7 @@ __all__ = [
     "BASE_RUN_ID",
     "DEFAULT_SPEC_PATH",
     "DEFAULT_TEACHER_GAINS_KEY",
+    "DEFAULT_TRAINABLE_DTYPE",
     "HINF_STANDARD_GRAPH_RUN_ID",
     "ISSUE_ID",
     "LEGACY_ACTION_HISTORY_RUN_ID",
