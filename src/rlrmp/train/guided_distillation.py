@@ -2,7 +2,7 @@
 
 This module is intentionally a thin entry surface around
 ``rlrmp.train.distillation``. The reusable loss/JVP implementation lives there;
-this file owns the first 6D h0 H-infinity no-launch run contract and a tiny
+this file owns the first 6D h0 extLQG no-launch run contract and a tiny
 local smoke path that proves the CLI can call the intended loss surface.
 """
 
@@ -44,13 +44,15 @@ IMPLEMENTATION_ISSUE_ID = "c314267"
 BASE_ISSUE_ID = "020a65b"
 TEACHER_ISSUE_ID = "376d023"
 LEGACY_ACTION_HISTORY_RUN_ID = "h0_hinf_6d_guided_distillation"
-RUN_ID = "h0_hinf_6d_standard_graph_distillation"
+HINF_STANDARD_GRAPH_RUN_ID = "h0_hinf_6d_standard_graph_distillation"
+RUN_ID = "h0_extlqg_6d_standard_graph_distillation"
 DEFAULT_SPEC_PATH = Path(f"results/{ISSUE_ID}/runs/{RUN_ID}.json")
 DEFAULT_OUTPUT_DIR = f"_artifacts/{ISSUE_ID}/runs/{RUN_ID}"
 DEFAULT_TEACHER_PACKAGE = "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers.npz"
 DEFAULT_TEACHER_MANIFEST = (
     "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers_manifest.json"
 )
+DEFAULT_TEACHER_GAINS_KEY = "extlqg_controller_gains"
 DEFAULT_CHECKPOINT_INTERVAL_BATCHES = 500
 BASE_RUN_ID = (
     "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64"
@@ -60,7 +62,6 @@ REQUIRED_TEACHER_KEYS = (
     "plant_A",
     "plant_B",
     "x0",
-    "hinf_controller_gains",
     "observation_matrix",
 )
 
@@ -159,7 +160,7 @@ def _standard_hps_dict(
     controller_lr: float = 3e-3,
     lr_warmup_batches: int = 500,
     lr_warmup_init_fraction: float = 0.1,
-    lr_cosine_alpha: float = 0.1,
+    lr_cosine_alpha: float = 0.01,
     gradient_clip_norm: float = 5.0,
 ) -> dict[str, Any]:
     hps = _normalize_serialized_hps(_base_run_spec(base_spec_path)["hps"])
@@ -264,11 +265,24 @@ def full_train_command(*, spec_path: Path = DEFAULT_SPEC_PATH) -> list[str]:
 
 
 def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
-    """Build the no-launch spec for the first 6D h0 H-infinity distillation row."""
+    """Build the no-launch spec for the first 6D h0 extLQG distillation row."""
 
     run_id = _resolve_run_id(args)
     run_spec_path = _resolve_run_spec_path(args, run_id)
     output_dir = _resolve_output_dir(args, run_id)
+    teacher_gains_key = str(getattr(args, "teacher_gains_key", DEFAULT_TEACHER_GAINS_KEY))
+    if teacher_gains_key == "extlqg_controller_gains":
+        primary_teacher = "6d_output_feedback_extlqg"
+        diagnostic_teacher = "6d_output_feedback_hinf"
+        teacher_label = "extLQG"
+    elif teacher_gains_key == "hinf_controller_gains":
+        primary_teacher = "6d_output_feedback_hinf"
+        diagnostic_teacher = "6d_output_feedback_extlqg"
+        teacher_label = "H-infinity"
+    else:
+        primary_teacher = teacher_gains_key
+        diagnostic_teacher = None
+        teacher_label = teacher_gains_key
     config = cs_h0_distillation_config(
         weights=DistillationLossWeights(
             clean_action=float(args.clean_action_weight),
@@ -287,7 +301,7 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
         controller_lr=float(getattr(args, "controller_lr", 3e-3)),
         lr_warmup_batches=int(getattr(args, "lr_warmup_batches", 500)),
         lr_warmup_init_fraction=float(getattr(args, "lr_warmup_init_fraction", 0.1)),
-        lr_cosine_alpha=float(getattr(args, "lr_cosine_alpha", 0.1)),
+        lr_cosine_alpha=float(getattr(args, "lr_cosine_alpha", 0.01)),
         gradient_clip_norm=float(getattr(args, "gradient_clip_norm", 5.0)),
     )
     spec = {
@@ -361,10 +375,11 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
         },
         "teacher_contract": {
             "issue": TEACHER_ISSUE_ID,
-            "primary_teacher": "6d_output_feedback_hinf",
-            "diagnostic_teacher": "6d_output_feedback_extlqg",
+            "primary_teacher": primary_teacher,
+            "diagnostic_teacher": diagnostic_teacher,
             "teacher_package": str(args.teacher_package),
             "teacher_manifest": str(args.teacher_manifest),
+            "teacher_gains_key": teacher_gains_key,
             "external_basis": {
                 "feedback_history": "target_relative_delayed_feedback_plus_force_filter",
                 "action_history": "controller_command_history",
@@ -379,7 +394,8 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
         "teacher_bank": {
             "materializer": "rlrmp.train.guided_distillation.materialize_teacher_batch",
             "source": "analytical linear teacher package",
-            "teacher": "hinf_controller_gains",
+            "teacher": teacher_gains_key,
+            "teacher_gains_key": teacher_gains_key,
             "horizon": 60,
             "sampled_initial_state_std": 0.02,
             "observation_perturbation_std": 0.05,
@@ -427,7 +443,7 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
             "lr_schedule": "warmup_cosine",
             "lr_warmup_batches": 500,
             "lr_warmup_init_fraction": 0.1,
-            "lr_cosine_alpha": 0.1,
+            "lr_cosine_alpha": 0.01,
             "gradient_clip_norm": 5.0,
         },
         "model_contract": {
@@ -474,7 +490,7 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
                 },
                 {
                     "field": "Batch / lr / clip / schedule",
-                    "020a65b_no_pgd": "64 / 3e-3 / 5 / warmup-cosine",
+                    "020a65b_no_pgd": "64 / 3e-3 / 5 / warmup-cosine alpha 0.01",
                     "corrected_distillation": "same",
                 },
                 {
@@ -485,7 +501,7 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
                 {
                     "field": "Only intended difference",
                     "020a65b_no_pgd": "standard full-Q/R/Qf rollout loss",
-                    "corrected_distillation": "H-infinity teacher-guided distillation loss",
+                    "corrected_distillation": (f"{teacher_label} teacher-guided distillation loss"),
                 },
             ],
         },
@@ -535,7 +551,7 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
             "objective comparator",
             "perturbation-response diagnostics",
             "velocity and loss figures",
-            "H-infinity phenotype sidecar where applicable",
+            "teacher phenotype sidecar where applicable",
             "all-replicate reporting",
             "teacher-guided versus rollout-discovery interpretation note",
         ],
@@ -595,13 +611,21 @@ def _require_teacher_package(path: Path) -> dict[str, np.ndarray]:
     return {key: package[key] for key in package.files}
 
 
-def load_teacher_package(path: str | Path) -> dict[str, jax.Array]:
+def load_teacher_package(
+    path: str | Path,
+    *,
+    teacher_gains_key: str = DEFAULT_TEACHER_GAINS_KEY,
+) -> dict[str, jax.Array]:
     """Load and validate the analytical teacher package."""
 
     arrays = _require_teacher_package(Path(path))
+    if teacher_gains_key not in arrays:
+        raise ValueError(
+            f"Teacher package {path} is missing selected gains key: {teacher_gains_key}."
+        )
     plant_a = arrays["plant_A"]
     plant_b = arrays["plant_B"]
-    controller_gains = arrays["hinf_controller_gains"]
+    controller_gains = arrays[teacher_gains_key]
     observation_matrix = arrays["observation_matrix"]
     if plant_a.ndim != 2 or plant_a.shape[0] != plant_a.shape[1]:
         raise ValueError("teacher plant_A must be square")
@@ -611,10 +635,12 @@ def load_teacher_package(path: str | Path) -> dict[str, jax.Array]:
         plant_b.shape[1],
         plant_a.shape[0],
     ):
-        raise ValueError("hinf_controller_gains must have shape (time, action_dim, state_dim)")
+        raise ValueError(f"{teacher_gains_key} must have shape (time, action_dim, state_dim)")
     if observation_matrix.ndim != 2 or observation_matrix.shape[1] != plant_a.shape[0]:
         raise ValueError("observation_matrix must have shape (feedback_dim, state_dim)")
-    return {key: jnp.asarray(value, dtype=jnp.float32) for key, value in arrays.items()}
+    package = {key: jnp.asarray(value, dtype=jnp.float32) for key, value in arrays.items()}
+    package["controller_gains"] = jnp.asarray(controller_gains, dtype=jnp.float32)
+    return package
 
 
 def forcing_fraction_for_batch(spec: dict[str, Any], batch_index: int) -> float:
@@ -635,7 +661,7 @@ def _teacher_rollout(
     plant_a = package["plant_A"]
     plant_b = package["plant_B"]
     observation_matrix = package["observation_matrix"]
-    gains = package["hinf_controller_gains"][:horizon]
+    gains = package["controller_gains"][:horizon]
     feedback_pinv = jnp.linalg.pinv(observation_matrix)
     feedback_gains = -jnp.einsum("tus,sf->tuf", gains, feedback_pinv)
 
@@ -1153,8 +1179,20 @@ def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]
     effective_args.n_jvp_directions = n_jvp_directions
     effective_args.checkpoint_interval_batches = checkpoint_interval_batches
 
-    package = load_teacher_package(args.teacher_package)
-    teacher_horizon = int(package["hinf_controller_gains"].shape[0])
+    teacher_gains_key = str(
+        spec.get("teacher_bank", {}).get(
+            "teacher_gains_key",
+            spec.get("teacher_bank", {}).get("teacher", args.teacher_gains_key),
+        )
+    )
+    teacher_package_path = str(
+        spec.get("teacher_contract", {}).get("teacher_package", args.teacher_package)
+    )
+    package = load_teacher_package(
+        teacher_package_path,
+        teacher_gains_key=teacher_gains_key,
+    )
+    teacher_horizon = int(package["controller_gains"].shape[0])
     if horizon > teacher_horizon:
         raise ValueError(f"Requested horizon {horizon} exceeds teacher horizon {teacher_horizon}.")
     feedback_dim = int(package["observation_matrix"].shape[0])
@@ -1382,6 +1420,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", default=None)
     parser.add_argument("--teacher-package", default=DEFAULT_TEACHER_PACKAGE)
     parser.add_argument("--teacher-manifest", default=DEFAULT_TEACHER_MANIFEST)
+    parser.add_argument("--teacher-gains-key", default=DEFAULT_TEACHER_GAINS_KEY)
     parser.add_argument("--clean-action-weight", type=float, default=1.0)
     parser.add_argument("--perturbation-response-weight", type=float, default=1.0)
     parser.add_argument("--input-output-jvp-weight", type=float, default=0.25)
@@ -1396,7 +1435,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--controller-lr", type=float, default=3e-3)
     parser.add_argument("--lr-warmup-batches", type=int, default=500)
     parser.add_argument("--lr-warmup-init-fraction", type=float, default=0.1)
-    parser.add_argument("--lr-cosine-alpha", type=float, default=0.1)
+    parser.add_argument("--lr-cosine-alpha", type=float, default=0.01)
     parser.add_argument("--gradient-clip-norm", type=float, default=5.0)
     parser.add_argument("--log-step", type=int, default=10)
     parser.add_argument("--checkpoint", action=argparse.BooleanOptionalAction, default=True)
@@ -1442,6 +1481,8 @@ def main(argv: list[str] | None = None) -> int:
 __all__ = [
     "BASE_RUN_ID",
     "DEFAULT_SPEC_PATH",
+    "DEFAULT_TEACHER_GAINS_KEY",
+    "HINF_STANDARD_GRAPH_RUN_ID",
     "ISSUE_ID",
     "LEGACY_ACTION_HISTORY_RUN_ID",
     "RUN_ID",

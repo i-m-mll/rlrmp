@@ -42,15 +42,19 @@ def _write_tiny_teacher_package(path: Path) -> None:
     observation[1, 1] = 1.0
     observation[2, 2] = 1.0
     observation[3, 3] = 1.0
-    gains = np.zeros((horizon, action_dim, state_dim), dtype=np.float32)
-    gains[:, 0, 0] = 0.5
-    gains[:, 1, 1] = 0.5
+    hinf_gains = np.zeros((horizon, action_dim, state_dim), dtype=np.float32)
+    hinf_gains[:, 0, 0] = 0.5
+    hinf_gains[:, 1, 1] = 0.5
+    extlqg_gains = np.zeros((horizon, action_dim, state_dim), dtype=np.float32)
+    extlqg_gains[:, 0, 0] = 0.25
+    extlqg_gains[:, 1, 1] = 0.75
     np.savez(
         path,
         plant_A=plant_a,
         plant_B=plant_b,
         x0=np.array([0.1, -0.1, 0.0, 0.0], dtype=np.float32),
-        hinf_controller_gains=gains,
+        extlqg_controller_gains=extlqg_gains,
+        hinf_controller_gains=hinf_gains,
         observation_matrix=observation,
     )
 
@@ -73,10 +77,15 @@ def test_distillation_entry_builds_9727d79_run_contract() -> None:
     spec = guided_distillation.build_distillation_spec(args)
 
     assert spec["issue"] == "9727d79"
-    assert spec["run_id"] == "h0_hinf_6d_standard_graph_distillation"
+    assert spec["run_id"] == "h0_extlqg_6d_standard_graph_distillation"
     assert spec["artifact_output_dir"] == (
-        "_artifacts/9727d79/runs/h0_hinf_6d_standard_graph_distillation"
+        "_artifacts/9727d79/runs/h0_extlqg_6d_standard_graph_distillation"
     )
+    assert spec["teacher_contract"]["primary_teacher"] == "6d_output_feedback_extlqg"
+    assert spec["teacher_contract"]["diagnostic_teacher"] == "6d_output_feedback_hinf"
+    assert spec["teacher_contract"]["teacher_gains_key"] == "extlqg_controller_gains"
+    assert spec["teacher_bank"]["teacher"] == "extlqg_controller_gains"
+    assert spec["teacher_bank"]["teacher_gains_key"] == "extlqg_controller_gains"
     assert spec["training_entry"]["script"] == "scripts/train_guided_distillation.py"
     assert spec["training_entry"]["loss_function"].endswith("guided_distillation_loss")
     assert spec["training_entry"]["full_train_status"] == "implemented_no_launch"
@@ -97,6 +106,8 @@ def test_distillation_entry_builds_9727d79_run_contract() -> None:
     assert spec["model_contract"]["broad_epsilon_pgd_training"] is False
     assert spec["optimizer"]["controller_lr"] == pytest.approx(3e-3)
     assert spec["optimizer"]["gradient_clip_norm"] == pytest.approx(5.0)
+    assert spec["optimizer"]["lr_cosine_alpha"] == pytest.approx(0.01)
+    assert spec["hps"]["cosine_annealing_alpha"] == pytest.approx(0.01)
     assert spec["training_schedule"]["phases"][0]["end_batch"] == 1500
     assert spec["training_schedule"]["phases"][1]["start_batch"] == 1500
     assert spec["training_schedule"]["phases"][1]["end_batch"] == 4000
@@ -109,13 +120,44 @@ def test_distillation_entry_builds_9727d79_run_contract() -> None:
 
 
 def test_corrected_distillation_default_paths_do_not_reuse_legacy_run() -> None:
-    assert guided_distillation.RUN_ID == "h0_hinf_6d_standard_graph_distillation"
+    assert guided_distillation.RUN_ID == "h0_extlqg_6d_standard_graph_distillation"
+    assert (
+        guided_distillation.HINF_STANDARD_GRAPH_RUN_ID == "h0_hinf_6d_standard_graph_distillation"
+    )
     assert guided_distillation.LEGACY_ACTION_HISTORY_RUN_ID == "h0_hinf_6d_guided_distillation"
     assert guided_distillation.DEFAULT_SPEC_PATH == Path(
-        "results/9727d79/runs/h0_hinf_6d_standard_graph_distillation.json"
+        "results/9727d79/runs/h0_extlqg_6d_standard_graph_distillation.json"
     )
     assert guided_distillation.DEFAULT_OUTPUT_DIR == (
-        "_artifacts/9727d79/runs/h0_hinf_6d_standard_graph_distillation"
+        "_artifacts/9727d79/runs/h0_extlqg_6d_standard_graph_distillation"
+    )
+    assert guided_distillation.DEFAULT_TEACHER_GAINS_KEY == "extlqg_controller_gains"
+
+
+def test_extlqg_teacher_selection_uses_distinct_package_key(tmp_path: Path) -> None:
+    teacher_package = tmp_path / "teacher.npz"
+    _write_tiny_teacher_package(teacher_package)
+
+    extlqg = guided_distillation.load_teacher_package(
+        teacher_package,
+        teacher_gains_key="extlqg_controller_gains",
+    )
+    hinf = guided_distillation.load_teacher_package(
+        teacher_package,
+        teacher_gains_key="hinf_controller_gains",
+    )
+
+    np.testing.assert_allclose(
+        np.asarray(extlqg["controller_gains"]),
+        np.asarray(extlqg["extlqg_controller_gains"]),
+    )
+    np.testing.assert_allclose(
+        np.asarray(hinf["controller_gains"]),
+        np.asarray(hinf["hinf_controller_gains"]),
+    )
+    assert not np.allclose(
+        np.asarray(extlqg["controller_gains"]),
+        np.asarray(hinf["controller_gains"]),
     )
 
 
@@ -221,7 +263,7 @@ def test_distillation_cli_smoke_train_runs_real_trainer(
     summary = json.loads((output_dir / "training_summary.json").read_text(encoding="utf-8"))
     histories = json.loads((output_dir / "loss_history.json").read_text(encoding="utf-8"))
     assert summary["n_replicates"] == 2
-    assert summary["run_id"] == "h0_hinf_6d_standard_graph_distillation"
+    assert summary["run_id"] == "h0_extlqg_6d_standard_graph_distillation"
     assert summary["completed_batches"] == 2
     assert summary["checkpointing"]["enabled"] is True
     assert summary["vectorized_replicates"] is True
@@ -233,7 +275,8 @@ def test_distillation_cli_smoke_train_runs_real_trainer(
     assert not (output_dir / "student_model_rep1.eqx").exists()
 
     spec = json.loads((output_dir / "run_spec_snapshot.json").read_text(encoding="utf-8"))
-    assert spec["run_id"] == "h0_hinf_6d_standard_graph_distillation"
+    assert spec["run_id"] == "h0_extlqg_6d_standard_graph_distillation"
+    assert spec["teacher_bank"]["teacher_gains_key"] == "extlqg_controller_gains"
     assert spec["model_contract"]["controller_input_dim"] == 6
     assert spec["model_contract"]["student_action_history_input"] is False
     hps = guided_distillation._standard_hps_from_spec(
@@ -245,7 +288,7 @@ def test_distillation_cli_smoke_train_runs_real_trainer(
         controller_lr=3e-3,
         lr_warmup_batches=500,
         lr_warmup_init_fraction=0.1,
-        lr_cosine_alpha=0.1,
+        lr_cosine_alpha=0.01,
         gradient_clip_norm=5.0,
     )
     model, _hyperparameters = load_with_hyperparameters(
@@ -281,7 +324,7 @@ def test_action_history_context_does_not_enter_student_forward_path(
         controller_lr=3e-3,
         lr_warmup_batches=500,
         lr_warmup_init_fraction=0.1,
-        lr_cosine_alpha=0.1,
+        lr_cosine_alpha=0.01,
         gradient_clip_norm=5.0,
     )
     model = guided_distillation._single_replicate_model(
@@ -423,7 +466,11 @@ def test_completed_artifact_migration_writes_standard_loadable_model(tmp_path: P
     status = module.main(
         [
             "--run-spec",
-            str(guided_distillation.DEFAULT_SPEC_PATH),
+            str(
+                guided_distillation.run_spec_path_for(
+                    guided_distillation.HINF_STANDARD_GRAPH_RUN_ID
+                )
+            ),
             "--artifact-dir",
             str(artifact_dir),
             "--no-migrate-checkpoints",
