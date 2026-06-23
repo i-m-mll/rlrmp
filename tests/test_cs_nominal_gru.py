@@ -58,6 +58,7 @@ from rlrmp.train.cs_nominal_gru import (
     main,
     _prepend_existing_training_diagnostics,
     planned_246182c_post_movement_cost_tail_rows,
+    planned_e901a20_policy_adversary_rows,
     planned_ef9c882_start_pos_hold_rows,
     resolve_run_spec_args,
     run_full_training,
@@ -74,12 +75,16 @@ from rlrmp.train.cs_perturbation_training import (
     GRAPH_ADAPTER_SPECS,
     MILD_COMBINED_FAMILIES,
     PERTURBATION_TRAINING_MODE,
+    POLICY_ADVERSARY_ENERGY_MODE,
+    POLICY_ADVERSARY_PLAIN_MODE,
+    POLICY_ADVERSARY_TRAINING_MODE,
     TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
     TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
     VALIDATION_BINS,
     BroadFullStateEpsilonTrainingConfig,
     BroadFullStateEpsilonTrainingTaskAdapter,
     PgdFullStateEpsilonTrainingConfig,
+    PolicyFullStateEpsilonTrainingConfig,
     TargetRelativeMultiTargetTrainingConfig,
     TargetRelativeMultiTargetTrainingTaskAdapter,
     _broad_epsilon_l2_radius,
@@ -87,6 +92,7 @@ from rlrmp.train.cs_perturbation_training import (
     _epsilon_time_mask,
     _expand_bool_like,
     _expand_radius,
+    _flattened_per_trial_norm,
     _normalize_flattened_per_trial,
     _project_flattened_per_trial_l2_ball,
     _set_input,
@@ -96,10 +102,12 @@ from rlrmp.train.cs_perturbation_training import (
     apply_validation_bin,
     apply_validation_target_distribution,
     config_from_broad_epsilon_pgd_hps,
+    config_from_policy_adversary_hps,
     graph_adapter_specs,
     planned_020a65b_h0_pgd_rows,
     planned_7c1f7ed_delayed_sisu_spectrum_rows,
     planned_e4800d6_sisu_spectrum_rows,
+    policy_adversary_projection_diagnostics,
     planned_fixed_target_perturbation_rows,
     planned_target_relative_multitarget_h0_rows,
     planned_target_relative_multitarget_rows,
@@ -454,6 +462,144 @@ def test_pgd_broad_epsilon_lane_requires_target_relative_and_excludes_random_lan
                 broad_epsilon_pgd_training=True,
             )
         )
+
+
+def test_policy_adversary_hps_declares_memoryless_policy_and_excludes_pgd() -> None:
+    hps = build_hps(
+        _args(
+            target_relative_multitarget=True,
+            force_filter_feedback=True,
+            initial_hidden_encoder=True,
+            perturbation_training=True,
+            perturbation_calibrated_timing=True,
+            perturbation_physical_level="small",
+            policy_adversary_training=True,
+            policy_adversary_mode=POLICY_ADVERSARY_ENERGY_MODE,
+            policy_adversary_steps=5,
+            policy_adversary_radius_15cm=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+            broad_epsilon_reach_scaling=True,
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+        )
+    )
+    cfg = config_from_policy_adversary_hps(hps.policy_adversary_training)
+
+    assert cfg.enabled is True
+    assert cfg.mode == POLICY_ADVERSARY_ENERGY_MODE
+    assert cfg.n_steps == 5
+    assert cfg.width == 64
+    assert cfg.epsilon_dim == 8
+    assert cfg.state_feature_dim == 48
+    assert cfg.reference_l2_radius == pytest.approx(EFFECTIVE_020A65B_PGD_RADIUS_15CM)
+    assert hps.policy_adversary_training.mode == POLICY_ADVERSARY_TRAINING_MODE
+    assert hps.policy_adversary_training.objective.formal_certificate is False
+    assert hps.broad_epsilon_pgd_training.enabled is False
+    assert hps.broad_epsilon_training.enabled is False
+
+    with pytest.raises(ValueError, match="separate broad-epsilon lanes"):
+        build_hps(
+            _args(
+                target_relative_multitarget=True,
+                policy_adversary_training=True,
+                broad_epsilon_pgd_training=True,
+            )
+        )
+
+
+def test_policy_adversary_cli_run_spec_and_planned_rows(tmp_path: Path) -> None:
+    args = _args(
+        output_dir=str(tmp_path / "artifacts"),
+        spec_dir=str(tmp_path / "spec"),
+        dry_run=True,
+        issue="e901a20",
+        target_relative_multitarget=True,
+        force_filter_feedback=True,
+        initial_hidden_encoder=True,
+        perturbation_training=True,
+        perturbation_calibrated_timing=True,
+        perturbation_physical_level="small",
+        policy_adversary_training=True,
+        policy_adversary_mode=POLICY_ADVERSARY_PLAIN_MODE,
+        policy_adversary_steps=5,
+        policy_adversary_radius_15cm=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+        n_train_batches=12000,
+        stop_after_batches=1000,
+        loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+    )
+
+    payload = write_run_spec(args)["run_spec"]
+    policy = payload["hps"]["policy_adversary_training"]
+    distribution = payload["training_summary"]["training_distribution"]
+
+    assert payload["adversarial_phase"] == "learned_memoryless_policy_adversary"
+    assert policy["enabled"] is True
+    assert policy["row_mode"] == POLICY_ADVERSARY_PLAIN_MODE
+    assert policy["inner_optimizer"]["n_ascent_steps_per_controller_step"] == 5
+    assert policy["budget_contract"]["effective_l2_radius_15cm"] == pytest.approx(
+        EFFECTIVE_020A65B_PGD_RADIUS_15CM
+    )
+    assert distribution["training_axes"]["policy_adversary_training"] is True
+    assert distribution["broad_epsilon_pgd_training"]["enabled"] is False
+    assert payload["training_summary"]["n_policy_adversary_ascent_steps_per_controller_step"] == 5
+
+    rows = planned_e901a20_policy_adversary_rows()
+    assert [row["row"] for row in rows] == [
+        POLICY_ADVERSARY_PLAIN_MODE,
+        POLICY_ADVERSARY_ENERGY_MODE,
+    ]
+    for row in rows:
+        parsed = _parse_planned_training_command(row["command"])
+        parsed_spec = _parse_planned_training_command(row["spec_command"])
+        assert parsed.issue == "e901a20"
+        assert parsed.policy_adversary_training is True
+        assert parsed.broad_epsilon_pgd_training is False
+        assert parsed.policy_adversary_steps == 5
+        assert parsed.policy_adversary_width == 64
+        assert parsed.policy_adversary_radius_15cm == pytest.approx(
+            EFFECTIVE_020A65B_PGD_RADIUS_15CM
+        )
+        assert parsed.stop_after_batches == 1000
+        assert parsed_spec.dry_run is True
+
+
+def test_policy_adversary_projection_reports_radius_energy_and_boundary() -> None:
+    cfg = PolicyFullStateEpsilonTrainingConfig(
+        enabled=True,
+        epsilon_dim=2,
+        state_feature_dim=4,
+        reference_l2_radius_15cm=2.0,
+        reach_length_scaling=False,
+    )
+    trial_specs = TaskTrialSpec(
+        inits=WhereDict({"mechanics.vector": jnp.zeros((2, 4), dtype=jnp.float32)}),
+        targets=WhereDict(
+            {
+                "mechanics.effector.pos": TargetSpec(
+                    value=jnp.zeros((2, 2, 2), dtype=jnp.float32),
+                )
+            }
+        ),
+        inputs={"epsilon": jnp.zeros((2, 2, 2), dtype=jnp.float32)},
+        timeline=TrialTimeline(n_steps=2),
+    )
+    raw = jnp.asarray(
+        [
+            [[3.0, 0.0], [4.0, 0.0]],
+            [[0.3, 0.4], [0.0, 0.0]],
+        ],
+        dtype=jnp.float32,
+    )
+    radius = _broad_epsilon_l2_radius(trial_specs, cfg)
+    projected = _project_flattened_per_trial_l2_ball(raw, radius)
+    diagnostics = policy_adversary_projection_diagnostics(
+        projected,
+        radius,
+        mode=POLICY_ADVERSARY_PLAIN_MODE,
+    )
+
+    np.testing.assert_allclose(_flattened_per_trial_norm(projected), np.asarray([2.0, 0.5]))
+    assert diagnostics["epsilon_norm_radius_ratio_max"] == pytest.approx(1.0)
+    assert diagnostics["epsilon_energy_mean"] == pytest.approx((4.0 + 0.25) / 2.0)
+    assert diagnostics["boundary_fraction"] == pytest.approx(0.5)
 
 
 def test_e4800d6_sisu_spectrum_planned_rows_parse_to_sisu_pgd_args() -> None:

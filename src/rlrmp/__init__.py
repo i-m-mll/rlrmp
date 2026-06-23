@@ -33,6 +33,14 @@ def _feedbax_public_api_ready() -> bool:
     return feedbax is not None and hasattr(feedbax, "AbstractTask")
 
 
+def _module_initializing(name: str) -> bool:
+    """Return whether a module is present but still executing its body."""
+
+    module = sys.modules.get(name)
+    spec = getattr(module, "__spec__", None)
+    return bool(getattr(spec, "_initializing", False))
+
+
 def register_experiment_package(registry):
     """Register this experiment package with the feedbax plugin registry.
 
@@ -118,6 +126,12 @@ def ensure_rlrmp_recipes_registered(
     if defer_if_feedbax_initializing and not _feedbax_public_api_ready():
         logger.debug(
             "Deferring rlrmp recipe registration; feedbax not fully initialized."
+        )
+        return
+    if _module_initializing("rlrmp.train.task_model"):
+        logger.debug(
+            "Deferring rlrmp recipe registration; rlrmp.train.task_model is still "
+            "initializing."
         )
         return
 
