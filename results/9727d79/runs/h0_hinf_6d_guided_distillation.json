@@ -1,13 +1,5 @@
 {
-  "schema_version": "rlrmp.guided_distillation.no_launch.v1",
-  "issue": "9727d79",
-  "implementation_issue": "c314267",
-  "launch_status": "not_launched",
-  "no_launch_boundary": "No RunPod, Modal, GPU acquisition, full training launch, push, or protected-branch auth request is authorized by this spec.",
   "base_contract": {
-    "issue": "020a65b",
-    "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
-    "run_spec": "results/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/run.json",
     "inherit": [
       "h0 encoder",
       "force-filter feedback",
@@ -22,49 +14,59 @@
       "full-Q/R/Qf warm-cos loss weights",
       "cs2019-rollout stochastic preset",
       "no PGD adversarial inner maximizer"
-    ]
-  },
-  "teacher_contract": {
-    "issue": "376d023",
-    "primary_teacher": "6d_output_feedback_hinf",
-    "diagnostic_teacher": "6d_output_feedback_extlqg",
-    "teacher_package": "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers.npz",
-    "teacher_manifest": "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers_manifest.json",
-    "external_basis": {
-      "feedback_history": "target_relative_delayed_feedback_plus_force_filter",
-      "action_history": "controller_command_history",
-      "action_output": "controller_command_history"
-    }
+    ],
+    "issue": "020a65b",
+    "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
+    "run_spec": "results/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/run.json"
   },
   "distillation_surface": {
-    "module": "rlrmp.train.distillation",
-    "config": "rlrmp.train.distillation.cs_h0_distillation_config",
-    "hidden_state_supervision": false,
     "components": {
       "clean_action": {
+        "description": "Match clean student and teacher command histories on the declared target/observation bank.",
         "enabled": true,
-        "weight": 1.0,
-        "description": "Match clean student and teacher command histories on the declared target/observation bank."
-      },
-      "perturbation_response": {
-        "enabled": true,
-        "weight": 1.0,
-        "description": "Match teacher-induced corrective command response under the calibrated perturbation bank."
+        "weight": 1.0
       },
       "input_output_jvp": {
-        "enabled": true,
-        "weight": 0.25,
-        "n_directions": 16,
         "direction_basis": "controller_visible_feedback_and_action_history",
+        "enabled": true,
         "implementation": "jax.linearize plus jax.vmap over banked directional probes; no dense Jacobian materialization in the training path",
-        "description": "Match local action-history map derivatives with respect to externally meaningful feedback and action histories."
+        "n_directions": 16,
+        "weight": 0.25
+      },
+      "perturbation_response": {
+        "description": "Match teacher-induced corrective command response under the deterministic analytical observation-perturbation bank.",
+        "enabled": true,
+        "weight": 1.0
       },
       "student_forced_rollout_anchor": {
+        "description": "Anchor student-forced rollout summaries to base-row/teacher clean behavior without selecting on hidden coordinates.",
         "enabled": true,
-        "weight": 0.25,
-        "description": "Anchor student-forced rollout summaries to base-row/teacher clean behavior without selecting on hidden coordinates."
+        "weight": 0.25
       }
-    }
+    },
+    "config": {
+      "action_basis": "controller_command_history",
+      "base_issue": "020a65b",
+      "base_run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
+      "diagnostic_teacher": "6d_output_feedback_extlqg",
+      "experiment_issue": "9727d79",
+      "feedback_basis": "target_relative_delayed_feedback_plus_force_filter",
+      "hidden_state_supervision": false,
+      "issue": "c314267",
+      "jvp_direction_basis": "controller_visible_feedback_and_action_history",
+      "jvp_direction_sampler": "banked_probe_directions",
+      "n_jvp_directions": 16,
+      "primary_teacher": "6d_output_feedback_hinf",
+      "teacher_issue": "376d023",
+      "teacher_package": "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers.npz",
+      "weights": {
+        "clean_action": 1.0,
+        "input_output_jvp": 0.25,
+        "perturbation_response": 1.0,
+        "student_forced_rollout_anchor": 0.25
+      }
+    },
+    "hidden_state_supervision": false
   },
   "evaluation_gates": [
     "standard certificate",
@@ -75,9 +77,116 @@
     "all-replicate reporting",
     "teacher-guided versus rollout-discovery interpretation note"
   ],
+  "implementation_issue": "c314267",
+  "issue": "9727d79",
+  "launch_status": "not_launched",
   "local_acceptance_checks": [
-    "JVP loss matches dense-Jacobian behavior on tiny toy maps",
-    "JVP loss is batchable and jittable with vectorized direction probes",
-    "C&S h0 distillation config surface can compose clean action, perturbation-response, JVP, and rollout-anchor components on small shapes"
-  ]
+    "scripts/train_guided_distillation.py --full-train --smoke-train runs the real trainer/loss path on tiny CPU-friendly shapes",
+    "tests/test_distillation.py covers dense-Jacobian equivalence only on tiny diagnostic maps",
+    "the full-train path fails fast only for missing teacher packages or invalid specs, not as a placeholder guard"
+  ],
+  "model_contract": {
+    "batch_size": 64,
+    "broad_epsilon_pgd_training": false,
+    "force_filter_feedback": true,
+    "hidden_size": 180,
+    "initial_hidden_encoder": true,
+    "n_replicates": 5,
+    "plant_backend": "cs_lss",
+    "stochastic_preset": "cs2019-rollout"
+  },
+  "no_launch_boundary": "No RunPod, Modal, GPU acquisition, full training launch, push, or protected-branch auth request is authorized by this spec.",
+  "optimizer": {
+    "controller_lr": 0.003,
+    "gradient_clip_norm": 5.0,
+    "lr_cosine_alpha": 0.1,
+    "lr_schedule": "warmup_cosine",
+    "lr_warmup_batches": 500,
+    "lr_warmup_init_fraction": 0.1,
+    "name": "adamw"
+  },
+  "schema_version": "rlrmp.guided_distillation.training_entry.v1",
+  "teacher_bank": {
+    "action_context": "teacher action histories for teacher-forced phases and a stop-gradient student/teacher blend for mixed/student-forced phases",
+    "approximation": "The first executable trainer uses analytical plant rollouts and a local observation-space affine teacher derived from K_t @ pinv(C). It preserves the external 6D feedback and 2D action-history loss contract, but it is not a full Feedbax task rollout or a formal output-feedback certificate materializer.",
+    "horizon": 60,
+    "materializer": "rlrmp.train.guided_distillation.materialize_teacher_batch",
+    "observation_perturbation_std": 0.05,
+    "sampled_initial_state_std": 0.02,
+    "source": "analytical linear teacher package",
+    "teacher": "hinf_controller_gains"
+  },
+  "teacher_contract": {
+    "diagnostic_teacher": "6d_output_feedback_extlqg",
+    "external_basis": {
+      "action_history": "controller_command_history",
+      "action_output": "controller_command_history",
+      "feedback_history": "target_relative_delayed_feedback_plus_force_filter"
+    },
+    "issue": "376d023",
+    "primary_teacher": "6d_output_feedback_hinf",
+    "teacher_manifest": "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers_manifest.json",
+    "teacher_package": "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers.npz"
+  },
+  "training_entry": {
+    "artifact_output_dir": "_artifacts/9727d79/runs/h0_hinf_6d_guided_distillation",
+    "command": [
+      "env",
+      "PYTHONPATH=src",
+      "uv",
+      "run",
+      "--no-sync",
+      "python",
+      "scripts/train_guided_distillation.py",
+      "--run-spec",
+      "results/9727d79/runs/h0_hinf_6d_guided_distillation.json",
+      "--full-train"
+    ],
+    "full_train_status": "implemented_no_launch",
+    "loss_function": "rlrmp.train.distillation.guided_distillation_loss",
+    "loss_module": "rlrmp.train.distillation",
+    "module": "rlrmp.train.guided_distillation",
+    "run_spec_path": "results/9727d79/runs/h0_hinf_6d_guided_distillation.json",
+    "script": "scripts/train_guided_distillation.py",
+    "spec_command": [
+      "env",
+      "PYTHONPATH=src",
+      "uv",
+      "run",
+      "--no-sync",
+      "python",
+      "scripts/train_guided_distillation.py",
+      "--run-spec-output",
+      "results/9727d79/runs/h0_hinf_6d_guided_distillation.json",
+      "--dry-run",
+      "--smoke-loss"
+    ],
+    "trainer": "rlrmp.train.guided_distillation.run_guided_distillation_training"
+  },
+  "training_schedule": {
+    "phases": [
+      {
+        "end_batch": 1500,
+        "name": "teacher_forced_warm_start",
+        "start_batch": 0,
+        "student_forcing_fraction": 0.0,
+        "teacher_forcing_fraction": 1.0
+      },
+      {
+        "end_batch": 4000,
+        "name": "mixed_teacher_student_forcing",
+        "start_batch": 1500,
+        "student_forcing_fraction": 0.5,
+        "teacher_forcing_fraction": 0.5
+      },
+      {
+        "end_batch": 12000,
+        "name": "mostly_student_forced",
+        "start_batch": 4000,
+        "student_forcing_fraction": 0.9,
+        "teacher_forcing_fraction": 0.1
+      }
+    ],
+    "total_batches": 12000
+  }
 }
