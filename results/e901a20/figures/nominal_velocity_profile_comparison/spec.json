@@ -1,0 +1,71 @@
+{
+  "data": "_artifacts/e901a20/figures/nominal_velocity_profile_comparison/nominal_forward_velocity_profiles.npz",
+  "evaluation_lens": "nominal_clean_validation_trials",
+  "figure": "_artifacts/e901a20/figures/nominal_velocity_profile_comparison/nominal_forward_velocity_profiles.html",
+  "figure_link": "results/e901a20/figures/nominal_velocity_profile_comparison/figure.html",
+  "inputs": [
+    {
+      "run_spec": "results/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/run.json",
+      "trained_model": "_artifacts/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/trained_model.eqx"
+    },
+    {
+      "run_spec": "results/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/run.json",
+      "trained_model": "_artifacts/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64/trained_model.eqx"
+    },
+    {
+      "run_spec": "results/e901a20/runs/h0_policy_adversary__plain.json",
+      "trained_model": "_artifacts/e901a20/runs/h0_policy_adversary__plain/trained_model.eqx"
+    },
+    {
+      "run_spec": "results/e901a20/runs/h0_policy_adversary__energy.json",
+      "trained_model": "_artifacts/e901a20/runs/h0_policy_adversary__energy/trained_model.eqx"
+    }
+  ],
+  "manifest": "_artifacts/e901a20/figures/nominal_velocity_profile_comparison/manifest.json",
+  "runs": [
+    {
+      "experiment": "020a65b",
+      "label": "020a65b no-PGD H0",
+      "n_pooled_profiles": 100,
+      "n_replicates": 5,
+      "n_trials": 20,
+      "peak_mean_forward_velocity_m_s": 0.5977725471516179,
+      "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
+      "time_of_peak_mean_forward_velocity_s": 0.16
+    },
+    {
+      "experiment": "020a65b",
+      "label": "020a65b PGD H0",
+      "n_pooled_profiles": 100,
+      "n_replicates": 5,
+      "n_trials": 20,
+      "peak_mean_forward_velocity_m_s": 0.6958452895128627,
+      "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64",
+      "time_of_peak_mean_forward_velocity_s": 0.16
+    },
+    {
+      "experiment": "e901a20",
+      "label": "Policy adversary plain",
+      "n_pooled_profiles": 100,
+      "n_replicates": 5,
+      "n_trials": 20,
+      "peak_mean_forward_velocity_m_s": 0.6697868618430397,
+      "run_id": "h0_policy_adversary__plain",
+      "time_of_peak_mean_forward_velocity_s": 0.16
+    },
+    {
+      "experiment": "e901a20",
+      "label": "Policy adversary energy",
+      "n_pooled_profiles": 100,
+      "n_replicates": 5,
+      "n_trials": 20,
+      "peak_mean_forward_velocity_m_s": 0.6711958250090037,
+      "run_id": "h0_policy_adversary__energy",
+      "time_of_peak_mean_forward_velocity_s": 0.16
+    }
+  ],
+  "schema_version": "rlrmp.figure_spec.v1",
+  "source_script": "results/e901a20/scripts/materialize_nominal_velocity_profile_comparison.py",
+  "topic": "nominal_velocity_profile_comparison",
+  "velocity_definition": "effector velocity projected onto target direction per trial"
+}
