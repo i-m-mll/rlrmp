@@ -41,6 +41,35 @@ from rlrmp.train.cs_perturbation_training import (
 )
 
 
+def _delayed_trial_specs(
+    go_steps: np.ndarray,
+    *,
+    n_steps: int = 60,
+    include_epsilon: bool = False,
+) -> TaskTrialSpec:
+    go_steps = np.asarray(go_steps, dtype=np.int32)
+    batch_size = int(go_steps.shape[0])
+    inputs: dict[str, object] = {
+        "effector_target": CartesianState(pos=np.zeros((batch_size, n_steps, 2))),
+    }
+    if include_epsilon:
+        inputs["epsilon"] = np.zeros((batch_size, n_steps, 8), dtype=np.float64)
+    epoch_bounds = np.stack(
+        [
+            np.zeros_like(go_steps),
+            go_steps,
+            np.full_like(go_steps, n_steps),
+        ],
+        axis=-1,
+    )
+    return TaskTrialSpec(
+        inits={"mechanics.vector": np.zeros((batch_size, 8), dtype=np.float64)},
+        targets={},
+        inputs=inputs,
+        timeline=TrialTimeline(n_steps=n_steps, epoch_bounds=epoch_bounds),
+    )
+
+
 def test_default_bank_is_json_serializable_with_required_channels() -> None:
     bank = default_cs_perturbation_bank()
 
@@ -366,6 +395,64 @@ def test_command_input_pulse_adapter_sets_external_graph_input_payload() -> None
     assert result.adapter_provenance["controller_input_mutated"] is False
 
 
+def test_movement_indexed_graph_adapter_shifts_per_trial_delayed_go_cues() -> None:
+    go_steps = np.asarray([10, 20], dtype=np.int32)
+    trial_specs = _delayed_trial_specs(go_steps)
+    perturbation = {
+        "perturbation_id": "command_input_pulse__movement_early_x_pos",
+        "channel": "command_input",
+        "family": "command_input_pulse",
+        "amplitude": 2.0,
+        "axis": "x",
+        "sign": 1,
+        "timing": {"epoch": "movement_indexed", "start_time_index": 5, "duration_steps": 2},
+    }
+
+    result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
+
+    assert result.status == "evaluated"
+    input_key = (
+        f"{GRAPH_ADAPTER_INPUT_PREFIX}.command_input."
+        "command_input_pulse__movement_early_x_pos"
+    )
+    payload = np.asarray(result.trial_specs.inputs[input_key])
+    np.testing.assert_allclose(payload[0, 15:17, 0], 2.0)
+    np.testing.assert_allclose(payload[1, 25:27, 0], 2.0)
+    assert not np.any(payload[0, : go_steps[0], :])
+    assert not np.any(payload[1, : go_steps[1], :])
+    assert result.adapter_provenance["movement_start_aligned"] is True
+    assert result.adapter_provenance["absolute_start_time_indices"] == [15, 25]
+
+
+def test_movement_indexed_graph_adapter_preserves_immediate_start_without_timeline() -> None:
+    trial_specs = TaskTrialSpec(
+        inits={"mechanics.vector": np.zeros((2, 8), dtype=np.float64)},
+        targets={},
+        inputs={"effector_target": CartesianState(pos=np.zeros((2, 10, 2)))},
+    )
+    perturbation = {
+        "perturbation_id": "command_input_pulse__movement_early_y_neg",
+        "channel": "command_input",
+        "family": "command_input_pulse",
+        "amplitude": 1.0,
+        "axis": "y",
+        "sign": -1,
+        "timing": {"epoch": "movement_indexed", "start_time_index": 3, "duration_steps": 2},
+    }
+
+    result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
+
+    assert result.status == "evaluated"
+    payload = result.trial_specs.inputs[
+        f"{GRAPH_ADAPTER_INPUT_PREFIX}.command_input."
+        "command_input_pulse__movement_early_y_neg"
+    ]
+    np.testing.assert_allclose(payload[:, 3:5, 1], -1.0)
+    np.testing.assert_allclose(payload[:, :3, :], 0.0)
+    assert result.adapter_provenance["movement_start_aligned"] is True
+    assert result.adapter_provenance["movement_start_indices"] == [0, 0]
+
+
 def test_command_input_graph_adapter_inserts_external_node_on_force_edge() -> None:
     trial_specs = TaskTrialSpec(
         inits={"mechanics.vector": np.zeros((2, 8), dtype=np.float64)},
@@ -461,6 +548,33 @@ def test_process_epsilon_pulse_adapter_offsets_epsilon_input() -> None:
     assert result.model.input_bindings[input_key][1] == "b"
 
 
+def test_movement_indexed_process_epsilon_adapter_shifts_per_trial_delayed_go_cues() -> None:
+    go_steps = np.asarray([10, 20], dtype=np.int32)
+    trial_specs = _delayed_trial_specs(go_steps, include_epsilon=True)
+    perturbation = {
+        "perturbation_id": "process_epsilon_pulse__force_state_x__early_t5_pos",
+        "channel": "process_epsilon",
+        "family": "process_epsilon_force_state_xy",
+        "epsilon_component": "force_state_x",
+        "epsilon_index": 4,
+        "amplitude": 0.25,
+        "axis": "x",
+        "sign": 1,
+        "timing": {"epoch": "movement_indexed", "start_time_index": 5, "duration_steps": 2},
+    }
+
+    result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
+
+    assert result.status == "evaluated"
+    payload = np.asarray(result.trial_specs.inputs[result.adapter_provenance["input_key"]])
+    np.testing.assert_allclose(payload[0, 15:17, 4], 0.25)
+    np.testing.assert_allclose(payload[1, 25:27, 4], 0.25)
+    assert not np.any(payload[0, : go_steps[0], :])
+    assert not np.any(payload[1, : go_steps[1], :])
+    np.testing.assert_allclose(result.trial_specs.inputs["epsilon"], 0.0)
+    assert result.adapter_provenance["absolute_start_time_indices"] == [15, 25]
+
+
 def test_process_epsilon_adapter_uses_explicit_force_state_epsilon_index() -> None:
     trial_specs = TaskTrialSpec(
         inits={"mechanics.vector": np.zeros((2, 8), dtype=np.float64)},
@@ -511,6 +625,57 @@ def test_process_epsilon_adapter_blocks_without_epsilon_input() -> None:
 
     assert result.status == "blocked"
     assert "mechanics.epsilon / B_w" in result.reason
+
+
+def test_delayed_initial_state_rows_use_movement_onset_epsilon_impulses() -> None:
+    go_steps = np.asarray([10, 20], dtype=np.int32)
+    trial_specs = _delayed_trial_specs(go_steps, include_epsilon=True)
+    perturbation = {
+        "channel": "initial_state",
+        "family": "initial_velocity_offset",
+        "amplitude": 0.05,
+        "axis": "y",
+        "sign": -1,
+        "timing": {"epoch": "initial_condition", "time_index": 0},
+    }
+
+    result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
+
+    assert result.status == "evaluated"
+    np.testing.assert_allclose(result.trial_specs.inits["mechanics.vector"], 0.0)
+    epsilon_delta = np.asarray(result.trial_specs.inputs["epsilon"] - trial_specs.inputs["epsilon"])
+    np.testing.assert_allclose(epsilon_delta[0, go_steps[0], 3], -0.05)
+    np.testing.assert_allclose(epsilon_delta[1, go_steps[1], 3], -0.05)
+    assert not np.any(epsilon_delta[0, : go_steps[0], :])
+    assert not np.any(epsilon_delta[1, : go_steps[1], :])
+    assert result.adapter_provenance["adapter"] == "trial_specs.inputs.epsilon"
+    assert result.adapter_provenance["movement_start_aligned"] is True
+
+
+def test_immediate_initial_state_rows_remain_trial_start_init_offsets() -> None:
+    trial_specs = TaskTrialSpec(
+        inits={"mechanics.vector": np.zeros((2, 8), dtype=np.float64)},
+        targets={},
+        inputs={
+            "effector_target": CartesianState(pos=np.zeros((2, 10, 2))),
+            "epsilon": np.zeros((2, 10, 8), dtype=np.float64),
+        },
+    )
+    perturbation = {
+        "channel": "initial_state",
+        "family": "initial_position_offset",
+        "amplitude": 0.01,
+        "axis": "x",
+        "sign": 1,
+        "timing": {"epoch": "initial_condition", "time_index": 0},
+    }
+
+    result = apply_perturbation_to_trial_specs(trial_specs, perturbation)
+
+    assert result.status == "evaluated"
+    np.testing.assert_allclose(result.trial_specs.inits["mechanics.vector"][:, 0], 0.01)
+    np.testing.assert_allclose(result.trial_specs.inputs["epsilon"], 0.0)
+    assert result.adapter_provenance["adapter"] == "trial_specs.inits.*[pos_vel_vector]"
 
 
 def test_sensory_adapter_uses_external_graph_channel_payload() -> None:

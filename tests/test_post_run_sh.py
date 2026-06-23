@@ -53,17 +53,23 @@ def write_json(path: Path, payload: dict[str, object]) -> str:
     return sha256(encoded.encode("utf-8")).hexdigest()
 
 
-def write_run_source(path: Path, *, manifest_run: str = "fixture__ok") -> None:
+def write_run_source(
+    path: Path,
+    *,
+    mismatched_spec_hash: bool = False,
+    include_graph_sidecar: bool = True,
+) -> None:
     path.mkdir()
     manifest_relpath = "training_run_manifest.json"
-    write_json(
-        path / "graph_spec.json",
-        {
-            "schema_version": "feedbax.graph_spec.v1",
-            "nodes": {},
-            "output_ports": [],
-        },
-    )
+    if include_graph_sidecar:
+        write_json(
+            path / "graph_spec.json",
+            {
+                "schema_version": "feedbax.graph_spec.v1",
+                "nodes": {},
+                "output_ports": [],
+            },
+        )
     run_spec = {
         "run": "fixture__ok",
         "issue": "731fdf7",
@@ -91,6 +97,7 @@ def write_run_source(path: Path, *, manifest_run: str = "fixture__ok") -> None:
     }
     run_spec_sha = write_json(path / "run.json", run_spec)
     write_json(path / "training_summary.json", run_spec["training_summary"])
+    manifest_run_spec_sha = "bad-fixture-sha" if mismatched_spec_hash else run_spec_sha
     manifest = {
         "kind": "TrainingRunManifest",
         "schema_version": "feedbax.manifest.v1",
@@ -111,7 +118,7 @@ def write_run_source(path: Path, *, manifest_run: str = "fixture__ok") -> None:
             {
                 "role": "tracked_run_spec",
                 "logical_name": "fixture__ok.json",
-                "sha256": run_spec_sha,
+                "sha256": manifest_run_spec_sha,
                 "media_type": "application/json",
                 "storage_backend": "rlrmp-results",
                 "uri": "results/731fdf7/runs/fixture__ok.json",
@@ -129,18 +136,6 @@ def write_run_source(path: Path, *, manifest_run: str = "fixture__ok") -> None:
                 },
             },
         ],
-        "graph_spec": {
-            "kind": "GraphSpec",
-            "inline": {"schema_version": "feedbax.graph_spec.v1", "nodes": {}},
-            "sha256": "fixture-graphspec",
-            "metadata": {"graph_spec_version": "feedbax.graphspec.fixture.v1"},
-        },
-        "training_spec": {
-            "kind": "RLRMPRunSpec",
-            "inline": {"run": manifest_run, "issue": "731fdf7"},
-            "ref": "results/731fdf7/runs/fixture__ok.json",
-            "sha256": run_spec_sha,
-        },
         "summary_metrics": {"completed_batches": 3, "final_validation_loss": 0.125},
     }
     write_json(path / manifest_relpath, manifest)
@@ -183,10 +178,18 @@ git commit -m "$message"
     fake_agent_commit.chmod(0o755)
 
     fake_mandible = bin_dir / "mandible"
+    checkpoint_record = Path(str(auth_record) + ".checkpoint")
     fake_mandible.write_text(
         f"""#!/usr/bin/env bash
 set -euo pipefail
-printf '%s\\n' "$*" > {str(auth_record)!r}
+# `mandible issue checkpoint add ... --payload-file -` reads JSON from stdin;
+# capture it separately. All other invocations (auth request) record their
+# args to the auth-record file.
+if [[ "$1" == "issue" && "$2" == "checkpoint" && "$3" == "add" ]]; then
+    {{ printf 'ARGS: %s\\n' "$*"; echo '---PAYLOAD---'; cat; }} > {str(checkpoint_record)!r}
+else
+    printf '%s\\n' "$*" > {str(auth_record)!r}
+fi
 """,
         encoding="utf-8",
     )
@@ -294,6 +297,166 @@ def test_local_fixture_syncs_spec_commits_and_records_auth(tmp_path: Path) -> No
     assert "--issue 731fdf7" in auth_args
     assert "--no-watch" in auth_args
 
+    # Exactly one terminal run-status checkpoint is emitted (W10/e8b5b3b).
+    checkpoint_record = Path(str(auth_record) + ".checkpoint")
+    assert checkpoint_record.is_file()
+    checkpoint_text = checkpoint_record.read_text(encoding="utf-8")
+    assert "issue checkpoint add 731fdf7 --kind run-status --payload-file -" in checkpoint_text
+    args_line, _, payload_text = checkpoint_text.partition("---PAYLOAD---")
+    assert "--kind run-status" in args_line
+    payload = json.loads(payload_text)
+    assert payload["kind"] == "run-status"
+    assert payload["schema_version"] == 1
+    assert payload["phase"] == "completed"
+    assert payload["run_id"] == "fixture__ok"
+    assert payload["run_spec_path"] == "results/731fdf7/runs/fixture__ok.json"
+    assert payload["artifact_dir"] == "_artifacts/731fdf7/runs/fixture__ok"
+    # metrics_summary references scalar summary fields, not hyperparameters.
+    assert payload["metrics_summary"]["completed_batches"] == 3
+    assert payload["metrics_summary"]["final_validation_loss"] == 0.125
+    assert "timestamp" in payload
+
+
+def test_graphspec_resolves_from_flat_recipe_sidecar_dir(tmp_path: Path) -> None:
+    """FIX B: GraphSpec bundle in the flat-recipe sidecar dir is resolvable.
+
+    Under the FLAT recipe ``results/<hash>/runs/<run>.json``, the training
+    script writes the GraphSpec bundle into the tracked sidecar directory
+    ``results/<hash>/runs/<run>/`` (beside the flat recipe), storing only the
+    bare filename in ``feedbax_graph.graph_spec_path``. ``post_run.sh`` must
+    add that sidecar dir (``spec_path.with_suffix("")``) to the GraphSpec
+    candidate paths, otherwise provenance prints ``GraphSpec hash: unavailable``.
+    """
+    repo = tmp_path / "repo"
+    source = tmp_path / "source"
+    bin_dir = tmp_path / "bin"
+    auth_record = tmp_path / "auth_args.txt"
+    init_git_repo(repo)
+    # No graph_spec.json in the source: it must NOT land in the _artifacts dir,
+    # so the only resolvable copy is the tracked flat-recipe sidecar below.
+    write_run_source(source, include_graph_sidecar=False)
+    fake_agent_commit, fake_mandible = write_fake_commands(bin_dir, auth_record)
+
+    hash_ = "731fdf7"
+    sidecar_graph = (
+        repo / "results" / hash_ / "runs" / "fixture__ok" / "graph_spec.json"
+    )
+    graph_sha = write_json(
+        sidecar_graph,
+        {"schema_version": "feedbax.graph_spec.v1", "nodes": {}, "output_ports": []},
+    )
+
+    env = os.environ.copy()
+    env["POST_RUN_AGENT_COMMIT"] = str(fake_agent_commit)
+    env["POST_RUN_MANDIBLE_AUTH"] = str(fake_mandible)
+
+    run_command(
+        [
+            "bash",
+            str(SCRIPT),
+            "--repo-root",
+            str(repo),
+            "--issue",
+            hash_,
+            "--run",
+            "fixture__ok",
+            "--artifacts-src",
+            f"local:{source}",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    spec_path = repo / "results" / hash_ / "runs" / "fixture__ok.json"
+    stamped_spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    graph = stamped_spec["post_run_provenance"]["feedbax_graph"]
+    assert graph["graph_spec_sha256"] == graph_sha
+    assert graph["graph_spec_sha256"] is not None
+    assert graph["graph_spec_version"] == "feedbax.graph_spec.v1"
+
+
+def test_dry_run_previews_run_status_checkpoint_without_writing(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    source = tmp_path / "source"
+    init_git_repo(repo)
+    write_run_source(source)
+
+    output = run_command(
+        [
+            "bash",
+            str(SCRIPT),
+            "--repo-root",
+            str(repo),
+            "--issue",
+            "731fdf7",
+            "--run",
+            "fixture__ok",
+            "--artifacts-src",
+            f"local:{source}",
+            "--dry-run",
+        ],
+        cwd=REPO_ROOT,
+    )
+
+    assert "Run-status checkpoint (preview, not written)" in output
+    assert "issue checkpoint add 731fdf7 --kind run-status --payload-file -" in output
+    # The previewed payload JSON is printed (kind + schema_version visible).
+    assert '"kind": "run-status"' in output
+    assert '"schema_version": 1' in output
+    assert '"phase": "completed"' in output
+    assert '"run_spec_path": "results/731fdf7/runs/fixture__ok.json"' in output
+    # Nothing is written on a dry run.
+    assert not (repo / "results").exists()
+    assert not (repo / "_artifacts").exists()
+
+
+def test_legacy_nested_run_spec_raises_explicit_error(tmp_path: Path) -> None:
+    """W8/e926665: a legacy nested results/<hash>/runs/<run>/run.json recipe is
+    refused with an explicit error rather than silently promoted to the flat
+    canonical path."""
+    repo = tmp_path / "repo"
+    bin_dir = tmp_path / "bin"
+    auth_record = tmp_path / "auth_args.txt"
+    init_git_repo(repo)
+    fake_agent_commit, fake_mandible = write_fake_commands(bin_dir, auth_record)
+
+    # Seed the artifact dir (with training_summary) and the LEGACY nested spec,
+    # but no flat recipe and no run.json in the artifact dir.
+    hash_ = "731fdf7"
+    artifact_dir = repo / "_artifacts" / hash_ / "runs" / "fixture__ok"
+    artifact_dir.mkdir(parents=True)
+    write_json(
+        artifact_dir / "training_summary.json",
+        {"completed_batches": 3, "final_validation_loss": 0.125},
+    )
+    legacy_spec = repo / "results" / hash_ / "runs" / "fixture__ok" / "run.json"
+    write_json(legacy_spec, {"run": "fixture__ok"})
+
+    env = os.environ.copy()
+    env["POST_RUN_AGENT_COMMIT"] = str(fake_agent_commit)
+    env["POST_RUN_MANDIBLE_AUTH"] = str(fake_mandible)
+
+    result = run_command_result(
+        [
+            "bash",
+            str(SCRIPT),
+            "--repo-root",
+            str(repo),
+            "--issue",
+            hash_,
+            "--run",
+            "fixture__ok",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    assert result.returncode != 0
+    assert "legacy nested run spec" in result.stdout
+    assert "fixture__ok/run.json" in result.stdout
+    assert not auth_record.exists()
+    assert not Path(str(auth_record) + ".checkpoint").exists()
+
 
 def test_rejects_unpinned_feedbax_runs_dir_before_writing(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
@@ -334,7 +497,7 @@ def test_manifest_run_spec_mismatch_fails_before_commit(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     auth_record = tmp_path / "auth_args.txt"
     init_git_repo(repo)
-    write_run_source(source, manifest_run="fixture__different")
+    write_run_source(source, mismatched_spec_hash=True)
     fake_agent_commit, fake_mandible = write_fake_commands(bin_dir, auth_record)
 
     env = os.environ.copy()
@@ -360,7 +523,90 @@ def test_manifest_run_spec_mismatch_fails_before_commit(tmp_path: Path) -> None:
 
     assert result.returncode != 0
     assert "parity" in result.stdout.lower()
-    assert "fixture__different" in result.stdout
+    assert "bad-fixture-sha" in result.stdout
     assert not auth_record.exists()
     log = run_command(["git", "log", "--oneline", "--all"], cwd=repo)
     assert "record post-run spec fixture__ok" not in log
+
+
+def test_dirty_uv_lock_fails_before_commit_and_auth(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    source = tmp_path / "source"
+    bin_dir = tmp_path / "bin"
+    auth_record = tmp_path / "auth_args.txt"
+    init_git_repo(repo)
+    (repo / "uv.lock").write_text("locked\n", encoding="utf-8")
+    run_command(["git", "add", "uv.lock"], cwd=repo)
+    run_command(["git", "commit", "-m", "track uv lock"], cwd=repo)
+    (repo / "uv.lock").write_text("dirty\n", encoding="utf-8")
+    write_run_source(source)
+    fake_agent_commit, fake_mandible = write_fake_commands(bin_dir, auth_record)
+
+    env = os.environ.copy()
+    env["POST_RUN_AGENT_COMMIT"] = str(fake_agent_commit)
+    env["POST_RUN_MANDIBLE_AUTH"] = str(fake_mandible)
+
+    result = run_command_result(
+        [
+            "bash",
+            str(SCRIPT),
+            "--repo-root",
+            str(repo),
+            "--issue",
+            "731fdf7",
+            "--run",
+            "fixture__ok",
+            "--artifacts-src",
+            f"local:{source}",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    assert result.returncode != 0
+    assert "uv.lock has unstaged changes" in result.stdout
+    assert "POST_RUN_ALLOW_DIRTY_UV_LOCK=1" in result.stdout
+    assert not auth_record.exists()
+    log = run_command(["git", "log", "--oneline", "-1"], cwd=repo)
+    assert "track uv lock" in log
+
+
+def test_dirty_uv_lock_emergency_override_allows_commit(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    source = tmp_path / "source"
+    bin_dir = tmp_path / "bin"
+    auth_record = tmp_path / "auth_args.txt"
+    init_git_repo(repo)
+    (repo / "uv.lock").write_text("locked\n", encoding="utf-8")
+    run_command(["git", "add", "uv.lock"], cwd=repo)
+    run_command(["git", "commit", "-m", "track uv lock"], cwd=repo)
+    (repo / "uv.lock").write_text("dirty\n", encoding="utf-8")
+    write_run_source(source)
+    fake_agent_commit, fake_mandible = write_fake_commands(bin_dir, auth_record)
+
+    env = os.environ.copy()
+    env["POST_RUN_AGENT_COMMIT"] = str(fake_agent_commit)
+    env["POST_RUN_MANDIBLE_AUTH"] = str(fake_mandible)
+    env["POST_RUN_ALLOW_DIRTY_UV_LOCK"] = "1"
+
+    output = run_command(
+        [
+            "bash",
+            str(SCRIPT),
+            "--repo-root",
+            str(repo),
+            "--issue",
+            "731fdf7",
+            "--run",
+            "fixture__ok",
+            "--artifacts-src",
+            f"local:{source}",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    assert "skipping uv.lock cleanliness guard" in output
+    assert auth_record.exists()
+    log = run_command(["git", "log", "--oneline", "-1"], cwd=repo)
+    assert "record post-run spec fixture__ok" in log

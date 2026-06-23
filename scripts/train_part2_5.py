@@ -30,7 +30,8 @@ from feedbax.training.train import (
     train_pair,
 )
 
-from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path
+from rlrmp.train.progress import make_batch_log_callbacks
 
 # build_hps + loss-mode configs were extracted to rlrmp.train.standard in
 # 8404108 (capability-named library module; previously defined inline and
@@ -378,21 +379,20 @@ class APTTrainingWrapper:
 # ---------------------------------------------------------------------------
 
 def derive_spec_dir(output_dir: Path) -> Path:
-    """Derive the run spec directory from the run artifact directory.
+    """Derive the tracked run sidecar/spec directory from the artifact directory.
 
     Applies the mirror invariant ``run_artifact_dir(exp, run)`` ↔
-    ``run_spec_dir(exp, run)``: paths under ``<repo>/_artifacts/...`` are
-    re-rooted under ``<repo>/results/...`` (and vice versa). Any path that
-    does not live under one of the two mirror roots is mapped to a sibling
-    ``_specs/`` directory next to ``output_dir`` so the script still has a
-    sensible default for ad-hoc / out-of-tree paths.
+    ``run_spec_sidecar_dir(exp, run)``: paths under ``<repo>/_artifacts/...``
+    are re-rooted under ``<repo>/results/...``. Any path that does not live
+    under the artifact root maps to a sibling ``<output_dir>_spec`` directory
+    so the script still has a sensible default for ad-hoc / out-of-tree paths.
 
     Args:
         output_dir: Absolute or relative path to the bulk-artifact directory
             (typically under ``_artifacts/<exp>/runs/<run>/``).
 
     Returns:
-        Absolute path to the corresponding spec directory under
+        Absolute path to the corresponding sidecar/spec directory under
         ``results/<exp>/runs/<run>/`` when ``output_dir`` is inside the
         ``_artifacts/`` tree; otherwise a sibling ``<output_dir>_spec``.
     """
@@ -406,6 +406,30 @@ def derive_spec_dir(output_dir: Path) -> Path:
         return out.parent / (out.name + "_spec")
 
 
+def derive_spec_path(output_dir: Path) -> Path:
+    """Derive the canonical FLAT tracked run-recipe file from the artifact dir.
+
+    The run recipe lives at the flat ``results/<exp>/runs/<run>.json`` path
+    (CLAUDE.md §Run-folder convention), NOT the legacy nested
+    ``results/<exp>/runs/<run>/run.json`` form. For artifact paths shaped like
+    ``_artifacts/<exp>/runs/<run>/`` this returns
+    ``rlrmp.paths.run_spec_path(exp, run)``; out-of-tree paths fall back to a
+    sibling ``<output_dir>.json`` file alongside the artifacts.
+    """
+    sidecar_dir = derive_spec_dir(output_dir)
+    spec_root = (REPO_ROOT / "results").resolve()
+    try:
+        rel = sidecar_dir.resolve().relative_to(spec_root)
+    except ValueError:
+        return sidecar_dir.parent / (sidecar_dir.name + ".json")
+    parts = rel.parts
+    # for_write=True forces the canonical flat path with no legacy fallback so
+    # re-training never overwrites a stale nested legacy recipe (W8/e926665).
+    if len(parts) == 3 and parts[1] == "runs":
+        return run_spec_path(parts[0], parts[2], for_write=True)
+    return sidecar_dir.parent / (sidecar_dir.name + ".json")
+
+
 # ---------------------------------------------------------------------------
 # Main training logic
 # ---------------------------------------------------------------------------
@@ -417,20 +441,21 @@ def run_training(args: argparse.Namespace) -> None:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Spec dir holds tracked recipe/run.json; artifact dir holds bulk outputs.
-    # When --spec-dir is unset, derive it from --output-dir via the mirror
-    # invariant (paths.run_artifact_dir(exp, run) ↔ paths.run_spec_dir(exp, run)).
-    # Bug: 0077b42
-    spec_dir = (
-        Path(args.spec_dir) if args.spec_dir is not None
-        else derive_spec_dir(output_dir)
-    )
-    mkdir_p(spec_dir)
+    # The canonical run recipe is written to the FLAT
+    # results/<exp>/runs/<run>.json path (CLAUDE.md §Run-folder convention),
+    # NOT the legacy nested results/<exp>/runs/<run>/run.json form. When
+    # --spec-dir is given it names the tracked sidecar directory; the recipe
+    # path is still derived flat from --output-dir via the mirror invariant
+    # (paths.run_artifact_dir(exp, run) ↔ paths.run_spec_path(exp, run)).
+    # Bug: 0077b42; W8/e926665 (flat recipe path).
+    if args.spec_dir is not None:
+        mkdir_p(Path(args.spec_dir))
+    spec_path = derive_spec_path(output_dir)
+    mkdir_p(spec_path.parent)
 
-    # Save the full configuration as a tracked spec at <spec_dir>/run.json.
+    # Save the full configuration as a tracked spec at the flat recipe path.
     config_dict = vars(args)
     config_dict["git"] = _get_git_metadata()
-    spec_path = spec_dir / "run.json"
     with open(spec_path, "w") as f:
         json.dump(config_dict, f, indent=2, default=str)
     logger.info("Saved run spec to %s", spec_path)
@@ -615,6 +640,16 @@ def run_training(args: argparse.Namespace) -> None:
 
     train_kwargs["pre_step_fn"] = pre_step_fn
 
+    # Grep-friendly per-batch progress for remote monitoring. feedbax fires
+    # these no-arg callbacks host-side (outside the JIT step), so they add no
+    # per-step device->host sync — same pattern as train_minimax.py's warmup
+    # phase. The loss is not visible to a no-arg callback, so lines report the
+    # batch index + elapsed only.
+    train_kwargs.setdefault(
+        "batch_callbacks",
+        make_batch_log_callbacks("train", n_batches, logger=logger),
+    )
+
     # Train
     logger.info("Starting training for %d batches", n_batches)
     trained_model, train_history = train_pair(
@@ -685,18 +720,18 @@ def parse_args() -> argparse.Namespace:
             "Output directory for bulk artifacts (checkpoints, .eqx, .npz, logs). "
             "Default mirrors the role-based layout: _artifacts/<exp>/runs/<run>/. "
             "Use rlrmp.paths.run_artifact_dir(exp, run) to construct this path "
-            "programmatically. Write run.json to the sibling spec directory "
-            "results/<exp>/runs/<run>/ via rlrmp.paths.run_spec_dir(exp, run)."
+            "programmatically. The canonical run recipe is written to the flat "
+            "results/<exp>/runs/<run>.json path."
         ),
     )
     parser.add_argument(
         "--spec-dir", type=str, default=None,
         help=(
-            "Spec directory for the tracked run.json recipe (default: derived "
-            "from --output-dir via the mirror invariant, mapping "
-            "_artifacts/<exp>/runs/<run>/ -> results/<exp>/runs/<run>/). "
-            "Use rlrmp.paths.run_spec_dir(exp, run) to construct this path "
-            "programmatically. Bug: 0077b42."
+            "Tracked sidecar directory (default: derived from --output-dir via "
+            "the mirror invariant, mapping _artifacts/<exp>/runs/<run>/ -> "
+            "results/<exp>/runs/<run>/). The run recipe itself is always "
+            "written to the flat rlrmp.paths.run_spec_path(exp, run) = "
+            "results/<exp>/runs/<run>.json path. Bug: 0077b42; W8/e926665."
         ),
     )
     return parser.parse_args()

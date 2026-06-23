@@ -135,13 +135,24 @@ def declared_epsilon_l2_radius(
             radius *= float(reach_length_m) / float(BROAD_EPSILON_REFERENCE_REACH_M)
         return radius
 
-    config = run_spec.get("hps", {}).get("broad_epsilon_training", {})
+    hps = run_spec.get("hps", {})
+    config = hps.get("broad_epsilon_training", {}) if isinstance(hps, Mapping) else {}
+    pgd_config = hps.get("broad_epsilon_pgd_training", {}) if isinstance(hps, Mapping) else {}
+    if not bool(config.get("enabled", False)) and bool(pgd_config.get("enabled", False)):
+        config = pgd_config
     contract = config.get("budget_contract", {})
     raw_radius = contract.get("effective_l2_radius_15cm")
     if raw_radius is None:
         raw_radius = contract.get("closed_loop_epsilon_l2_15cm")
+    schedule = config.get("budget_schedule", {})
+    if isinstance(schedule, Mapping):
+        raw_radius = (
+            schedule.get("max_l2_radius_15cm")
+            or contract.get("active_max_l2_radius_15cm")
+            or raw_radius
+        )
     if raw_radius is None:
-        raise ValueError("run spec lacks broad_epsilon_training budget_contract L2 radius")
+        raise ValueError("run spec lacks broad-epsilon budget_contract L2 radius")
     radius = float(raw_radius) * float(config.get("budget_scale", 1.0) or 1.0)
     if bool(config.get("reach_length_scaling", False)) and reach_length_m is not None:
         reference = float(contract.get("reference_reach_m", 0.15) or 0.15)
@@ -556,6 +567,13 @@ def audit_run_worst_case_epsilon(
         budget_level_override=budget_level_override,
         budget_scale_override=budget_scale_override,
     )
+    hps_mapping = run.run_spec.get("hps", {})
+    pgd_mapping = hps_mapping.get("broad_epsilon_pgd_training", {}) if isinstance(hps_mapping, Mapping) else {}
+    budget_source = (
+        "run_spec.hps.broad_epsilon_pgd_training.budget_schedule.max_l2_radius_15cm"
+        if budget_level_override is None and bool(pgd_mapping.get("enabled", False))
+        else "run_spec.hps.broad_epsilon_training.budget_contract"
+    )
     effective_step = float(step_size) if step_size is not None else max(radius * 0.25, 1e-12)
     cost_context = _full_qrf_rollout_cost_context(
         initial_states=trial_specs.inits["mechanics.vector"],
@@ -658,7 +676,7 @@ def audit_run_worst_case_epsilon(
             "source": (
                 f"BROAD_EPSILON_LEVELS[{budget_level_override!r}] override"
                 if budget_level_override is not None
-                else "run_spec.hps.broad_epsilon_training.budget_contract"
+                else budget_source
             ),
             "budget_level_override": budget_level_override,
             "budget_scale_override": budget_scale_override,

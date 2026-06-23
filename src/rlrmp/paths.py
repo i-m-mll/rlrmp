@@ -45,10 +45,12 @@ def _artifact_root() -> Path:
 # ---------------------------------------------------------------------------
 
 def run_spec_dir(exp: str, run: str) -> Path:
-    """Return the spec directory for a training run.
+    """Return the optional tracked sidecar directory for a training run.
 
-    This directory is tracked in git and holds lightweight spec files such as
-    ``run.json`` and optional ``notes.md``.
+    New run recipes use the flat ``run_spec_path(exp, run)`` convention:
+    ``results/<exp>/runs/<run>.json``. This directory is for lightweight
+    tracked sidecars that accrue after the recipe exists, or for legacy runs
+    that still keep their recipe at ``results/<exp>/runs/<run>/run.json``.
 
     Args:
         exp: Experiment slug (e.g. ``"part2_5"``).
@@ -60,14 +62,65 @@ def run_spec_dir(exp: str, run: str) -> Path:
     return _spec_root() / exp / "runs" / run
 
 
-def run_spec_path(exp: str, run: str, *, repo_root: Path | None = None) -> Path:
-    """Return the tracked run-spec file for ``exp/run``.
+def run_spec_sidecar_dir(exp: str, run: str) -> Path:
+    """Return the optional tracked sidecar directory for ``exp/run``.
 
-    New post-run artifacts use the flat ``results/<exp>/runs/<run>.json``
-    convention. Older runs may still use ``results/<exp>/runs/<run>/run.json``.
-    When neither path exists, return the flat path so new callers fail or write
-    against the current convention.
+    This is a clearer alias for ``run_spec_dir`` for new code. The older helper
+    name remains available because legacy callers still use it when reading
+    historical ``runs/<run>/run.json`` layouts.
     """
+
+    return run_spec_dir(exp, run)
+
+
+def flat_run_spec_path(exp: str, run: str, *, repo_root: Path | None = None) -> Path:
+    """Return the canonical FLAT run-recipe file for ``exp/run`` for WRITING.
+
+    This always constructs ``results/<exp>/runs/<run>.json`` directly, with no
+    legacy fallback. Writers (training scripts) MUST use this so that re-running
+    training for a run whose legacy nested ``results/<exp>/runs/<run>/run.json``
+    recipe still exists never overwrites that non-canonical path — the recipe
+    always lands at the flat convention (W8/``e926665``).
+
+    Use the resolver ``run_spec_path`` only when *finding* an existing
+    (possibly legacy) recipe to read.
+
+    Args:
+        exp: Experiment slug (e.g. ``"part2_5"``).
+        run: Run identifier (e.g. ``"baseline__standard_12k"``).
+        repo_root: Optional root override (mainly for tests).
+
+    Returns:
+        Absolute path: ``<repo_root>/results/<exp>/runs/<run>.json``.
+    """
+
+    root = REPO_ROOT if repo_root is None else repo_root
+    return root / "results" / exp / "runs" / f"{run}.json"
+
+
+def run_spec_path(
+    exp: str,
+    run: str,
+    *,
+    repo_root: Path | None = None,
+    for_write: bool = False,
+) -> Path:
+    """Return the tracked run-recipe file for ``exp/run``.
+
+    By default this is a READER/resolver: it returns the flat
+    ``results/<exp>/runs/<run>.json`` path when it exists, falls back to a
+    legacy ``results/<exp>/runs/<run>/run.json`` recipe when only that exists,
+    and otherwise returns the flat path so missing-recipe callers point at the
+    current convention. Use ``run_spec_sidecar_dir`` for optional tracked files
+    that belong to the same run but are not the recipe itself.
+
+    Pass ``for_write=True`` (or call ``flat_run_spec_path``) on the WRITER path
+    to always get the canonical flat path with no legacy fallback, so a
+    re-trained run never overwrites a stale nested legacy recipe (W8/``e926665``).
+    """
+
+    if for_write:
+        return flat_run_spec_path(exp, run, repo_root=repo_root)
 
     root = REPO_ROOT if repo_root is None else repo_root
     flat_path = root / "results" / exp / "runs" / f"{run}.json"

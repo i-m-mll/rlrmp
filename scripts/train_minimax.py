@@ -27,6 +27,7 @@ import logging
 import os
 import shutil
 import subprocess
+import time
 from functools import partial
 from pathlib import Path
 
@@ -63,8 +64,14 @@ from rlrmp.intervention_compat import (
     swap_plant_intervenor_to_dynamics_matrix,
     swap_task_intervention_to_dynamics_matrix,
 )
-from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path
 from rlrmp.model.trainable import staged_network_trainable_parts
+from rlrmp.train.progress import (
+    batch_log_every,
+    format_batch_line,
+    make_batch_log_callbacks,
+    should_log_batch,
+)
 
 # build_hps was extracted to rlrmp.train.minimax in 8404108 (capability-named
 # library module; previously defined inline here and pulled by analysis scripts
@@ -120,11 +127,11 @@ def _adversary_update(adversary_optimizer, adversary, dL_dforces, adv_opt_st):
 
 
 def derive_spec_dir(output_dir: Path) -> Path:
-    """Derive the run spec directory from the run artifact directory.
+    """Derive the tracked run sidecar/spec directory from the artifact directory.
 
     Applies the mirror invariant ``run_artifact_dir(exp, run)`` ↔
-    ``run_spec_dir(exp, run)``: paths under ``<repo>/_artifacts/...`` are
-    re-rooted under ``<repo>/results/...``. Paths outside the
+    ``run_spec_sidecar_dir(exp, run)``: paths under ``<repo>/_artifacts/...``
+    are re-rooted under ``<repo>/results/...``. Paths outside the
     ``_artifacts/`` tree fall back to a sibling ``<output_dir>_spec``.
 
     Args:
@@ -132,7 +139,7 @@ def derive_spec_dir(output_dir: Path) -> Path:
             (typically under ``_artifacts/<exp>/runs/<run>/``).
 
     Returns:
-        Absolute path to the corresponding spec directory.
+        Absolute path to the corresponding sidecar/spec directory.
     """
     out = Path(output_dir).resolve()
     artifact_root = (REPO_ROOT / "_artifacts").resolve()
@@ -142,6 +149,40 @@ def derive_spec_dir(output_dir: Path) -> Path:
         return spec_root / rel
     except ValueError:
         return out.parent / (out.name + "_spec")
+
+
+def derive_spec_path(output_dir: Path) -> Path:
+    """Derive the canonical FLAT tracked run-recipe file from the artifact dir.
+
+    The run recipe lives at the flat ``results/<exp>/runs/<run>.json`` path
+    (CLAUDE.md §Run-folder convention), NOT the legacy nested
+    ``results/<exp>/runs/<run>/run.json`` form. For artifact paths shaped like
+    ``_artifacts/<exp>/runs/<run>/`` this returns
+    ``rlrmp.paths.run_spec_path(exp, run)``; out-of-tree paths fall back to a
+    sibling ``<output_dir>.json`` file alongside the artifacts.
+
+    Args:
+        output_dir: Path to the bulk-artifact directory (typically under
+            ``_artifacts/<exp>/runs/<run>/``).
+
+    Returns:
+        Absolute path to the flat ``<run>.json`` recipe file.
+    """
+    sidecar_dir = derive_spec_dir(output_dir)
+    spec_root = (REPO_ROOT / "results").resolve()
+    try:
+        rel = sidecar_dir.resolve().relative_to(spec_root)
+    except ValueError:
+        # Out-of-tree fallback: flat <output_dir>.json sibling.
+        return sidecar_dir.parent / (sidecar_dir.name + ".json")
+    parts = rel.parts
+    # Expect <exp>/runs/<run>; map to the flat run_spec_path(exp, run).
+    # for_write=True forces the canonical flat path with no legacy fallback so
+    # re-training never overwrites a stale nested legacy recipe (W8/e926665).
+    if len(parts) == 3 and parts[1] == "runs":
+        return run_spec_path(parts[0], parts[2], for_write=True)
+    # Unexpected shape: place a flat <name>.json next to the sidecar dir.
+    return sidecar_dir.parent / (sidecar_dir.name + ".json")
 
 
 # ---------------------------------------------------------------------------
@@ -494,12 +535,17 @@ def run_training(args: argparse.Namespace) -> None:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Spec dir holds tracked recipe/run.json; artifact dir holds bulk outputs.
-    # When --spec-dir is unset, derive it from --output-dir via the mirror
-    # invariant (paths.run_artifact_dir(exp, run) ↔ paths.run_spec_dir(exp, run)).
-    # Bug: 0077b42
+    # The canonical run recipe is written to the FLAT
+    # results/<exp>/runs/<run>.json path (CLAUDE.md §Run-folder convention).
+    # The tracked sidecar directory results/<exp>/runs/<run>/ holds the
+    # GraphSpec bundle. When --spec-dir is unset, both are derived from
+    # --output-dir via the mirror invariant
+    # (paths.run_artifact_dir(exp, run) ↔ paths.run_spec_sidecar_dir(exp, run)).
+    # Bug: 0077b42 (sidecar dir), W8/e926665 (flat recipe path).
     spec_dir = Path(args.spec_dir) if args.spec_dir is not None else derive_spec_dir(output_dir)
     mkdir_p(spec_dir)
+    spec_path = derive_spec_path(output_dir)
+    mkdir_p(spec_path.parent)
 
     hps = build_hps(args)
     key = jr.PRNGKey(args.seed)
@@ -528,7 +574,6 @@ def run_training(args: argparse.Namespace) -> None:
             graph_spec_path=graph_path.name,
         ),
     }
-    spec_path = spec_dir / "run.json"
     with open(spec_path, "w") as f:
         json.dump(config_dict, f, indent=2, default=str)
     logger.info("Saved run spec to %s", spec_path)
@@ -628,6 +673,13 @@ def run_training(args: argparse.Namespace) -> None:
             chkpt_dir=chkpt_dir,
         )
 
+        # Grep-friendly per-batch progress for remote monitoring. feedbax fires
+        # these no-arg callbacks host-side (outside the JIT step), so they add
+        # no per-step device->host sync. The loss is not visible to a no-arg
+        # callback, so warmup lines report batch index + elapsed only.
+        warmup_batch_callbacks = make_batch_log_callbacks(
+            "warmup", args.n_warmup_batches, logger=logger
+        )
         warmup_model, warmup_history = train_pair(
             warmup_trainer,
             pair,
@@ -638,6 +690,7 @@ def run_training(args: argparse.Namespace) -> None:
             where_train=where_train,
             batch_size=hps.batch_size,
             log_step=max(1, args.n_warmup_batches // 20),
+            batch_callbacks=warmup_batch_callbacks,
         )
         logger.info("Warm-start complete.")
 
@@ -1253,8 +1306,12 @@ def run_training(args: argparse.Namespace) -> None:
                 ckpt_path,
             )
 
-    # Periodic logging interval
+    # Periodic logging interval for the detailed adversarial summary line.
     log_step = max(1, args.n_adversary_batches // 20)
+    # Cadence for the grep-friendly BATCH progress line consumed by remote
+    # monitors (every batch for smoke sizes, else every Nth batch).
+    batch_log_step = batch_log_every(args.n_adversary_batches)
+    adv_phase_start = time.monotonic()
 
     use_fused = args.fused
     if use_fused:
@@ -1371,6 +1428,24 @@ def run_training(args: argparse.Namespace) -> None:
         ctrl_loss_mean = float(jnp.mean(ctrl_loss_vals))
         adv_losses.append(adv_loss_mean)
         ctrl_losses.append(ctrl_loss_mean)
+
+        # Grep-friendly BATCH progress line for remote monitors. Reuses the
+        # loss scalars already synced to host above (no extra device->host
+        # sync). `loss` reports the controller loss; `adv_loss` is appended as
+        # an extra field.
+        if should_log_batch(
+            batch_idx, args.n_adversary_batches, every=batch_log_step
+        ):
+            logger.info(
+                format_batch_line(
+                    "adversarial",
+                    batch_idx,
+                    args.n_adversary_batches,
+                    loss=ctrl_loss_mean,
+                    elapsed=time.monotonic() - adv_phase_start,
+                    adv_loss=adv_loss_mean,
+                )
+            )
 
         if batch_idx % log_step == 0 or batch_idx == args.n_adversary_batches - 1:
             adv_label = f" [adv {adv_idx}]" if n_adversaries > 1 else ""
@@ -1684,8 +1759,9 @@ def parse_args() -> argparse.Namespace:
             "Output directory for bulk artifacts (checkpoints, .eqx, .npz, logs). "
             "Default mirrors the role-based layout: _artifacts/<exp>/runs/<run>/. "
             "Use rlrmp.paths.run_artifact_dir(exp, run) to construct this path "
-            "programmatically. Write run.json to the sibling spec directory "
-            "results/<exp>/runs/<run>/ via rlrmp.paths.run_spec_dir(exp, run)."
+            "programmatically. The canonical run recipe is written to the flat "
+            "results/<exp>/runs/<run>.json path; the sibling directory "
+            "results/<exp>/runs/<run>/ holds the GraphSpec sidecar."
         ),
     )
     parser.add_argument(
@@ -1693,11 +1769,12 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default=None,
         help=(
-            "Spec directory for the tracked run.json recipe (default: derived "
-            "from --output-dir via the mirror invariant, mapping "
-            "_artifacts/<exp>/runs/<run>/ -> results/<exp>/runs/<run>/). "
-            "Use rlrmp.paths.run_spec_dir(exp, run) to construct this path "
-            "programmatically. Bug: 0077b42."
+            "Tracked sidecar directory for the GraphSpec bundle (default: "
+            "derived from --output-dir via the mirror invariant, mapping "
+            "_artifacts/<exp>/runs/<run>/ -> results/<exp>/runs/<run>/). The "
+            "run recipe itself is always written to the flat "
+            "rlrmp.paths.run_spec_path(exp, run) = results/<exp>/runs/<run>.json "
+            "path. Bug: 0077b42; W8/e926665 (flat recipe)."
         ),
     )
     parser.add_argument(

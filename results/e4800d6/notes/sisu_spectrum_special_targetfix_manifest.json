@@ -1,0 +1,492 @@
+{
+  "checkpoint_policy": "validation_selected_per_replicate",
+  "inputs": {
+    "low_sisu_endpoint_reach_threshold_m": 0.05,
+    "low_sisu_peak_speed_threshold_m_s": 0.2,
+    "n_rollout_trials_per_replicate": 64,
+    "nominal_profile_epsilon_policy": "trial_specs.inputs['epsilon'] zeroed",
+    "sisu_levels": [
+      0.0,
+      0.5,
+      1.0
+    ]
+  },
+  "interpretation": "Discovery-trained robustness behavior. Not teacher/distillation behavior and not a formal H-infinity equivalence claim.",
+  "issue": "e4800d6",
+  "outputs": {
+    "compact_arrays": "_artifacts/e4800d6/sisu_spectrum_special_targetfix/sisu_velocity_profile_curves.npz",
+    "figure_html": "_artifacts/e4800d6/figures/sisu_spectrum_velocity_profiles_targetfix/figure.html",
+    "figure_spec": "results/e4800d6/figures/sisu_spectrum_velocity_profiles_targetfix/spec.json"
+  },
+  "references": {
+    "H-infinity analytical reference": {
+      "controller": "analytical_hinf_output_feedback",
+      "gamma": 12833.563799663352,
+      "gamma_factor": 1.4,
+      "n_samples": 128,
+      "n_time_steps": 61,
+      "peak_forward_velocity_m_s": 0.761541029284828
+    },
+    "extLQG analytical reference": {
+      "controller": "analytical_extlqg_output_feedback",
+      "gamma": null,
+      "gamma_factor": 1.4,
+      "n_samples": 128,
+      "n_time_steps": 61,
+      "peak_forward_velocity_m_s": 0.7301871074248268
+    }
+  },
+  "runs": {
+    "cs_gru_h0_sisu_spectrum_targetfix__effective_020a65b_pgd_radius_lr3e-3_clip5_b64": {
+      "checkpoint_selection": [
+        {
+          "best_logged_validation_batch": 9201,
+          "best_logged_validation_objective": 4014.47910015803,
+          "checkpoint_batches": 10000,
+          "checkpoint_path": "_artifacts/e4800d6/runs/cs_gru_h0_sisu_spectrum_targetfix__effective_020a65b_pgd_radius_lr3e-3_clip5_b64/checkpoints/checkpoint_0010000",
+          "final_validation_objective": 4025.50060614621,
+          "final_vs_selected_validation_degradation": 3.676983626854053,
+          "replicate": 0,
+          "scoring_validation_log_batch": 10000,
+          "scoring_validation_objective": 4021.823622519356,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 4501,
+          "best_logged_validation_objective": 4043.189479291573,
+          "checkpoint_batches": 10500,
+          "checkpoint_path": "_artifacts/e4800d6/runs/cs_gru_h0_sisu_spectrum_targetfix__effective_020a65b_pgd_radius_lr3e-3_clip5_b64/checkpoints/checkpoint_0010500",
+          "final_validation_objective": 4110.904947088232,
+          "final_vs_selected_validation_degradation": 41.68564471689979,
+          "replicate": 1,
+          "scoring_validation_log_batch": 10500,
+          "scoring_validation_objective": 4069.219302371332,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11201,
+          "best_logged_validation_objective": 4025.423970370518,
+          "checkpoint_batches": 7500,
+          "checkpoint_path": "_artifacts/e4800d6/runs/cs_gru_h0_sisu_spectrum_targetfix__effective_020a65b_pgd_radius_lr3e-3_clip5_b64/checkpoints/checkpoint_0007500",
+          "final_validation_objective": 4094.50572640033,
+          "final_vs_selected_validation_degradation": 33.95111918972361,
+          "replicate": 2,
+          "scoring_validation_log_batch": 7500,
+          "scoring_validation_objective": 4060.5546072106063,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 4101,
+          "best_logged_validation_objective": 3999.7924047010733,
+          "checkpoint_batches": 11000,
+          "checkpoint_path": "_artifacts/e4800d6/runs/cs_gru_h0_sisu_spectrum_targetfix__effective_020a65b_pgd_radius_lr3e-3_clip5_b64/checkpoints/checkpoint_0011000",
+          "final_validation_objective": 4081.570739524668,
+          "final_vs_selected_validation_degradation": 54.24730048221454,
+          "replicate": 3,
+          "scoring_validation_log_batch": 11000,
+          "scoring_validation_objective": 4027.3234390424536,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 9801,
+          "best_logged_validation_objective": 3994.915288939202,
+          "checkpoint_batches": 12000,
+          "checkpoint_path": "_artifacts/e4800d6/runs/cs_gru_h0_sisu_spectrum_targetfix__effective_020a65b_pgd_radius_lr3e-3_clip5_b64/checkpoints/checkpoint_0012000",
+          "final_validation_objective": 4025.053488129579,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 4,
+          "scoring_validation_log_batch": 12000,
+          "scoring_validation_objective": 4025.053488129579,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "curves": {
+        "sisu_0": {
+          "endpoint_error_by_replicate_m": [
+            0.0033971229411723703,
+            0.0033365113049130717,
+            0.0018979818800740058,
+            0.003308455388963832,
+            0.003580737249066118
+          ],
+          "endpoint_error_mean_m": 0.00310416175283788,
+          "final_position_by_replicate_m": [
+            [
+              0.14671423695908475,
+              0.00037768573677888936
+            ],
+            [
+              0.14675729062709533,
+              -0.0002044225984805609
+            ],
+            [
+              0.1484882312606195,
+              0.0007608395276816549
+            ],
+            [
+              0.14679942280142916,
+              0.0005231464517746977
+            ],
+            [
+              0.1465585879998851,
+              0.0007329097966508555
+            ]
+          ],
+          "final_position_mean_m": [
+            0.14706355392962275,
+            0.00043803178288110735
+          ],
+          "mean_forward_velocity_peak_m_s": 0.7363017994830275,
+          "mean_forward_velocity_peak_time_s": 0.16,
+          "peak_velocity_by_replicate_m_s": [
+            0.7299744317740614,
+            0.7322842327854155,
+            0.7444882135868773,
+            0.7388533855231935,
+            0.7360903608090217
+          ],
+          "peak_velocity_mean_m_s": 0.7363381248957139
+        },
+        "sisu_0.5": {
+          "endpoint_error_by_replicate_m": [
+            0.0013178627784414107,
+            0.001151654791856125,
+            0.00155509041290912,
+            0.0014072720739215553,
+            0.0014322285826396776
+          ],
+          "endpoint_error_mean_m": 0.0013728217279535778,
+          "final_position_by_replicate_m": [
+            [
+              0.15029005224010125,
+              0.000591335056762905
+            ],
+            [
+              0.1498042236589797,
+              -0.00016388496573607297
+            ],
+            [
+              0.15098367657651057,
+              -0.0001672466551158775
+            ],
+            [
+              0.14901839914260745,
+              -0.00012581243112397904
+            ],
+            [
+              0.14953470236281047,
+              0.0007203587892797911
+            ]
+          ],
+          "final_position_mean_m": [
+            0.1499262107962019,
+            0.0001709499588133533
+          ],
+          "mean_forward_velocity_peak_m_s": 0.7683381050867784,
+          "mean_forward_velocity_peak_time_s": 0.16,
+          "peak_velocity_by_replicate_m_s": [
+            0.766371375371498,
+            0.7668781783035026,
+            0.7652809627961804,
+            0.7719648199586648,
+            0.7713757328465422
+          ],
+          "peak_velocity_mean_m_s": 0.7683742138552776
+        },
+        "sisu_1": {
+          "endpoint_error_by_replicate_m": [
+            0.0013402804943592767,
+            0.0011648587074754098,
+            0.0016710774951831616,
+            0.0013668591431152018,
+            0.0014981213015369927
+          ],
+          "endpoint_error_mean_m": 0.0014082394283340086,
+          "final_position_by_replicate_m": [
+            [
+              0.15039157651619897,
+              0.0005361543958869782
+            ],
+            [
+              0.14994972757206942,
+              -0.00018394258511915225
+            ],
+            [
+              0.15095623638274025,
+              -0.0003609893609709658
+            ],
+            [
+              0.1491835613068052,
+              -0.00020365226556694958
+            ],
+            [
+              0.14947048025020512,
+              0.0008185913711023213
+            ]
+          ],
+          "final_position_mean_m": [
+            0.1499903164056038,
+            0.00012123231106644639
+          ],
+          "mean_forward_velocity_peak_m_s": 0.7839705589264025,
+          "mean_forward_velocity_peak_time_s": 0.16,
+          "peak_velocity_by_replicate_m_s": [
+            0.7804011242436251,
+            0.7845148606176827,
+            0.7838362630141325,
+            0.7868969107342294,
+            0.7844831987081777
+          ],
+          "peak_velocity_mean_m_s": 0.7840264714635695
+        }
+      },
+      "input_key": "input",
+      "label": "effective 020a65b PGD targetfix",
+      "target_final_position_m": [
+        0.15000000596046448,
+        0.0
+      ],
+      "validation_epsilon_l2_mean": 0.07648296439160006,
+      "validation_input_unique": [
+        1.0
+      ],
+      "within_network_robustification_sisu_1_vs_0": {
+        "endpoint_error_delta_0_minus_1_m": 0.0016959223245038714,
+        "endpoint_error_ratio_1_over_0": 0.45366174202957404,
+        "peak_velocity_delta_1_minus_0_m_s": 0.04768834656785559,
+        "peak_velocity_ratio_1_over_0": 1.0647641958979235,
+        "sisu_0_endpoint_error_mean_m": 0.00310416175283788,
+        "sisu_0_peak_velocity_mean_m_s": 0.7363381248957139,
+        "sisu_1_endpoint_error_mean_m": 0.0014082394283340086,
+        "sisu_1_peak_velocity_mean_m_s": 0.7840264714635695
+      }
+    },
+    "cs_gru_h0_sisu_spectrum_targetfix__raw_strong_gamma_1p05_radius_lr3e-3_clip5_b64": {
+      "checkpoint_selection": [
+        {
+          "best_logged_validation_batch": 11000,
+          "best_logged_validation_objective": 4064.2453497496604,
+          "checkpoint_batches": 11000,
+          "checkpoint_path": "_artifacts/e4800d6/runs/cs_gru_h0_sisu_spectrum_targetfix__raw_strong_gamma_1p05_radius_lr3e-3_clip5_b64/checkpoints/checkpoint_0011000",
+          "final_validation_objective": 4271.5231400009,
+          "final_vs_selected_validation_degradation": 207.27779025123937,
+          "replicate": 0,
+          "scoring_validation_log_batch": 11000,
+          "scoring_validation_objective": 4064.2453497496604,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11201,
+          "best_logged_validation_objective": 4152.307460556356,
+          "checkpoint_batches": 11000,
+          "checkpoint_path": "_artifacts/e4800d6/runs/cs_gru_h0_sisu_spectrum_targetfix__raw_strong_gamma_1p05_radius_lr3e-3_clip5_b64/checkpoints/checkpoint_0011000",
+          "final_validation_objective": 4182.314422648928,
+          "final_vs_selected_validation_degradation": 28.547393639845723,
+          "replicate": 1,
+          "scoring_validation_log_batch": 11000,
+          "scoring_validation_objective": 4153.767029009082,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 8101,
+          "best_logged_validation_objective": 4143.427927437241,
+          "checkpoint_batches": 12000,
+          "checkpoint_path": "_artifacts/e4800d6/runs/cs_gru_h0_sisu_spectrum_targetfix__raw_strong_gamma_1p05_radius_lr3e-3_clip5_b64/checkpoints/checkpoint_0012000",
+          "final_validation_objective": 4196.566886447836,
+          "final_vs_selected_validation_degradation": 0.0,
+          "replicate": 2,
+          "scoring_validation_log_batch": 12000,
+          "scoring_validation_objective": 4196.566886447836,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 8500,
+          "best_logged_validation_objective": 3936.525167251248,
+          "checkpoint_batches": 8500,
+          "checkpoint_path": "_artifacts/e4800d6/runs/cs_gru_h0_sisu_spectrum_targetfix__raw_strong_gamma_1p05_radius_lr3e-3_clip5_b64/checkpoints/checkpoint_0008500",
+          "final_validation_objective": 3972.0437489317906,
+          "final_vs_selected_validation_degradation": 35.51858168054241,
+          "replicate": 3,
+          "scoring_validation_log_batch": 8500,
+          "scoring_validation_objective": 3936.525167251248,
+          "selection_source": "sparse_history_fallback"
+        },
+        {
+          "best_logged_validation_batch": 11101,
+          "best_logged_validation_objective": 4039.7527640227654,
+          "checkpoint_batches": 11500,
+          "checkpoint_path": "_artifacts/e4800d6/runs/cs_gru_h0_sisu_spectrum_targetfix__raw_strong_gamma_1p05_radius_lr3e-3_clip5_b64/checkpoints/checkpoint_0011500",
+          "final_validation_objective": 4132.239576324464,
+          "final_vs_selected_validation_degradation": 76.28920724419913,
+          "replicate": 4,
+          "scoring_validation_log_batch": 11500,
+          "scoring_validation_objective": 4055.950369080265,
+          "selection_source": "sparse_history_fallback"
+        }
+      ],
+      "curves": {
+        "sisu_0": {
+          "endpoint_error_by_replicate_m": [
+            0.0032140761703475483,
+            0.0026724269236991943,
+            0.0025435516631985965,
+            0.0033306095121582295,
+            0.0032786614673360115
+          ],
+          "endpoint_error_mean_m": 0.0030078651473479157,
+          "final_position_by_replicate_m": [
+            [
+              0.14692994235306764,
+              0.0004758537295890779
+            ],
+            [
+              0.14743608046329434,
+              1.9891186301220693e-05
+            ],
+            [
+              0.14756260991775008,
+              -0.00017139013464167942
+            ],
+            [
+              0.14683590070776176,
+              0.000747799619104258
+            ],
+            [
+              0.1467908178530727,
+              -0.0001357367698861916
+            ]
+          ],
+          "final_position_mean_m": [
+            0.1471110702589893,
+            0.00018728352609333714
+          ],
+          "mean_forward_velocity_peak_m_s": 0.7346502472908164,
+          "mean_forward_velocity_peak_time_s": 0.16,
+          "peak_velocity_by_replicate_m_s": [
+            0.7327456339491301,
+            0.735248982312716,
+            0.7432155024602329,
+            0.7304232753172457,
+            0.7317233057878427
+          ],
+          "peak_velocity_mean_m_s": 0.7346713399654334
+        },
+        "sisu_0.5": {
+          "endpoint_error_by_replicate_m": [
+            0.0011062561212685858,
+            0.0010799188589630956,
+            0.001090675955679105,
+            0.0010846104145191935,
+            0.0010620902395038047
+          ],
+          "endpoint_error_mean_m": 0.001084710317986757,
+          "final_position_by_replicate_m": [
+            [
+              0.14968205686404873,
+              8.19094647988718e-05
+            ],
+            [
+              0.1496489431748014,
+              6.892639909902558e-05
+            ],
+            [
+              0.14958903791879907,
+              2.9508096397265024e-05
+            ],
+            [
+              0.14967390723274335,
+              0.0003836752352093011
+            ],
+            [
+              0.14973494380041238,
+              1.5773884854673382e-05
+            ]
+          ],
+          "final_position_mean_m": [
+            0.14966577779816098,
+            0.0001159586160718274
+          ],
+          "mean_forward_velocity_peak_m_s": 0.7618128338835478,
+          "mean_forward_velocity_peak_time_s": 0.16,
+          "peak_velocity_by_replicate_m_s": [
+            0.7599807076754601,
+            0.760043400002669,
+            0.7635385383371902,
+            0.7656097824019357,
+            0.7599825584758768
+          ],
+          "peak_velocity_mean_m_s": 0.7618309973786264
+        },
+        "sisu_1": {
+          "endpoint_error_by_replicate_m": [
+            0.001164641086423845,
+            0.0011991938166105998,
+            0.0012983641187564745,
+            0.0010875147812566925,
+            0.0011299241267686087
+          ],
+          "endpoint_error_mean_m": 0.001175927585963244,
+          "final_position_by_replicate_m": [
+            [
+              0.14981148751422943,
+              8.332326849147505e-05
+            ],
+            [
+              0.1495241726099687,
+              -4.968831743397422e-06
+            ],
+            [
+              0.1494832690371776,
+              -0.00015478580022950837
+            ],
+            [
+              0.1495655670664881,
+              0.00010349477967502105
+            ],
+            [
+              0.14977486292983855,
+              0.00011061272641935414
+            ]
+          ],
+          "final_position_mean_m": [
+            0.14963187183154045,
+            2.753522852258889e-05
+          ],
+          "mean_forward_velocity_peak_m_s": 0.7724931093051655,
+          "mean_forward_velocity_peak_time_s": 0.16,
+          "peak_velocity_by_replicate_m_s": [
+            0.7705173369554159,
+            0.7687146481610501,
+            0.7779538760980385,
+            0.7755985738581461,
+            0.7697806122667364
+          ],
+          "peak_velocity_mean_m_s": 0.7725130094678774
+        }
+      },
+      "input_key": "input",
+      "label": "raw strong gamma-1.05 targetfix",
+      "target_final_position_m": [
+        0.15000000596046448,
+        0.0
+      ],
+      "validation_epsilon_l2_mean": 0.07648296439160006,
+      "validation_input_unique": [
+        1.0
+      ],
+      "within_network_robustification_sisu_1_vs_0": {
+        "endpoint_error_delta_0_minus_1_m": 0.0018319375613846717,
+        "endpoint_error_ratio_1_over_0": 0.3909508998433919,
+        "peak_velocity_delta_1_minus_0_m_s": 0.03784166950244394,
+        "peak_velocity_ratio_1_over_0": 1.0515082968994331,
+        "sisu_0_endpoint_error_mean_m": 0.0030078651473479157,
+        "sisu_0_peak_velocity_mean_m_s": 0.7346713399654334,
+        "sisu_1_endpoint_error_mean_m": 0.001175927585963244,
+        "sisu_1_peak_velocity_mean_m_s": 0.7725130094678774
+      }
+    }
+  },
+  "schema_id": "rlrmp.sisu_spectrum_special.v2",
+  "topic": "sisu_spectrum_velocity_profiles_targetfix",
+  "verified_low_sisu_behavior": "Low-SISU reaching check passed: SISU 0.0 and 0.5 have endpoint errors <= 0.050 m and peak speeds >= 0.200 m/s in both targetfix rows."
+}

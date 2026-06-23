@@ -49,6 +49,7 @@ from rlrmp.train.cs_nominal_gru import (
     CS_DELAYED_REACH_TASK_TYPE,
     DEFAULT_DELAYED_P_CATCH_TRIAL,
     DEFAULT_STOCHASTIC_PRESET,
+    DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON,
     DELAYED_REACH_TRAINING_MODE,
     build_graph_bundle,
     build_hps,
@@ -56,14 +57,20 @@ from rlrmp.train.cs_nominal_gru import (
     derive_spec_dir,
     main,
     _prepend_existing_training_diagnostics,
+    planned_246182c_post_movement_cost_tail_rows,
+    planned_ef9c882_start_pos_hold_rows,
     resolve_run_spec_args,
     run_full_training,
     write_run_spec,
 )
 from rlrmp.train.cs_perturbation_training import (
+    BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
     BROAD_EPSILON_PGD_TRAINING_MODE,
     BROAD_EPSILON_TRAINING_MODE,
     CALIBRATED_TIMING_PERTURBATION_TRAINING_MODE,
+    DEFAULT_PGD_SISU_EXACT_ZERO_MASS,
+    DEFAULT_PGD_SISU_LEVELS,
+    EFFECTIVE_020A65B_PGD_RADIUS_15CM,
     GRAPH_ADAPTER_SPECS,
     MILD_COMBINED_FAMILIES,
     PERTURBATION_TRAINING_MODE,
@@ -72,6 +79,7 @@ from rlrmp.train.cs_perturbation_training import (
     VALIDATION_BINS,
     BroadFullStateEpsilonTrainingConfig,
     BroadFullStateEpsilonTrainingTaskAdapter,
+    PgdFullStateEpsilonTrainingConfig,
     TargetRelativeMultiTargetTrainingConfig,
     TargetRelativeMultiTargetTrainingTaskAdapter,
     _broad_epsilon_l2_radius,
@@ -90,6 +98,8 @@ from rlrmp.train.cs_perturbation_training import (
     config_from_broad_epsilon_pgd_hps,
     graph_adapter_specs,
     planned_020a65b_h0_pgd_rows,
+    planned_7c1f7ed_delayed_sisu_spectrum_rows,
+    planned_e4800d6_sisu_spectrum_rows,
     planned_fixed_target_perturbation_rows,
     planned_target_relative_multitarget_h0_rows,
     planned_target_relative_multitarget_rows,
@@ -119,6 +129,34 @@ def _args(**overrides) -> argparse.Namespace:
 def _parse_planned_training_command(command: list[str]) -> argparse.Namespace:
     script_index = command.index("scripts/train_cs_nominal_gru.py")
     return build_parser().parse_args(command[script_index + 1 :])
+
+
+def test_delayed_reach_resolves_force_filter_and_perturbation_defaults() -> None:
+    hps = build_hps(
+        _args(
+            delayed_reach=True,
+            target_relative_multitarget=True,
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+        )
+    )
+
+    assert hps.model.force_filter_feedback is True
+    assert hps.target_relative_multitarget.force_filter_feedback is True
+    assert hps.perturbation_training.enabled is True
+    assert hps.perturbation_training.calibrated_timing is True
+    assert hps.perturbation_training.timing_basis.mode == "movement_age"
+    assert hps.perturbation_training.physical_level == "small"
+
+
+def test_non_delayed_rows_keep_force_filter_and_perturbation_defaults_off() -> None:
+    hps = build_hps(_args(target_relative_multitarget=True))
+
+    assert hps.model.force_filter_feedback is False
+    assert hps.target_relative_multitarget.force_filter_feedback is False
+    assert hps.perturbation_training.enabled is False
+    assert hps.perturbation_training.calibrated_timing is False
+    assert hps.perturbation_training.timing_basis.mode == "absolute_trial_time"
+    assert hps.perturbation_training.physical_level == "moderate"
 
 
 def _where_train() -> dict[int, object]:
@@ -286,8 +324,126 @@ def test_pgd_broad_epsilon_hps_parser_consumes_nested_and_legacy_fields() -> Non
     assert parsed_dict.step_size_fraction == pytest.approx(0.2)
 
 
+def test_pgd_sisu_budget_schedule_metadata_and_parser_round_trip() -> None:
+    cfg = PgdFullStateEpsilonTrainingConfig(
+        enabled=True,
+        budget_schedule=BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
+        reach_length_scaling=False,
+        sisu_condition_input="input",
+        sisu_max_l2_radius_15cm=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+        sisu_max_radius_source="effective_020a65b_pgd_training_radius",
+    )
+    payload = cfg.to_hps_dict()
+    schedule = payload["budget_schedule"]
+
+    assert schedule["mode"] == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
+    assert schedule["levels"] == list(DEFAULT_PGD_SISU_LEVELS)
+    assert schedule["probabilities"] == pytest.approx([0.30, 0.175, 0.175, 0.175, 0.175])
+    assert schedule["exact_zero_mass"] == pytest.approx(DEFAULT_PGD_SISU_EXACT_ZERO_MASS)
+    assert schedule["mapping_rule"] == "epsilon_l2_radius = max_l2_radius_15cm * sqrt(SISU)"
+    assert schedule["max_l2_radius_15cm"] == pytest.approx(EFFECTIVE_020A65B_PGD_RADIUS_15CM)
+    assert schedule["conditioning_scalar"]["input_key"] == "input"
+    assert schedule["max_radius_source"]["source_kind"] == "effective_pgd_training_radius"
+    assert schedule["max_radius_source"]["gamma_equivalent_analytical_anchor"] is False
+    assert payload["budget_contract"]["active_max_l2_radius_15cm"] == pytest.approx(
+        EFFECTIVE_020A65B_PGD_RADIUS_15CM
+    )
+
+    parsed = config_from_broad_epsilon_pgd_hps(payload)
+    assert parsed.budget_schedule == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
+    assert parsed.sisu_condition_input == "input"
+    assert parsed.sisu_levels == DEFAULT_PGD_SISU_LEVELS
+    assert parsed.sisu_exact_zero_mass == pytest.approx(DEFAULT_PGD_SISU_EXACT_ZERO_MASS)
+    assert parsed.sisu_max_l2_radius == pytest.approx(EFFECTIVE_020A65B_PGD_RADIUS_15CM)
+    assert parsed.sisu_max_radius_source == "effective_020a65b_pgd_training_radius"
+
+
+def test_pgd_sisu_budget_radius_uses_sqrt_energy_fraction() -> None:
+    cfg = PgdFullStateEpsilonTrainingConfig(
+        enabled=True,
+        budget_schedule=BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
+        reach_length_scaling=False,
+        sisu_condition_input="input",
+        sisu_max_l2_radius_15cm=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+        epsilon_dim=1,
+    )
+    trial_specs = TaskTrialSpec(
+        inits=WhereDict({"mechanics.vector": jnp.zeros((3, 8), dtype=jnp.float32)}),
+        targets=WhereDict(
+            {
+                "mechanics.effector.pos": TargetSpec(
+                    value=jnp.zeros((3, 2, 2), dtype=jnp.float32),
+                )
+            }
+        ),
+        inputs={
+            "input": jnp.asarray(
+                [[0.0, 0.0], [0.25, 0.25], [1.0, 1.0]],
+                dtype=jnp.float32,
+            ),
+            "epsilon": jnp.zeros((3, 2, 1), dtype=jnp.float32),
+        },
+        timeline=TrialTimeline(n_steps=2),
+    )
+
+    radius = _broad_epsilon_l2_radius(trial_specs, cfg)
+
+    np.testing.assert_allclose(
+        radius,
+        np.asarray(
+            [
+                0.0,
+                0.5 * EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+                EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+            ],
+            dtype=np.float32,
+        ),
+        rtol=1e-6,
+        atol=1e-10,
+    )
+
+
+def test_pgd_sisu_budget_cli_and_run_spec_metadata(tmp_path: Path) -> None:
+    args = _args(
+        output_dir=str(tmp_path / "artifacts"),
+        spec_dir=str(tmp_path / "spec"),
+        dry_run=True,
+        broad_epsilon_pgd_training=True,
+        target_relative_multitarget=True,
+        broad_epsilon_reach_scaling=False,
+        broad_epsilon_pgd_budget_schedule=BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
+        broad_epsilon_pgd_sisu_condition_input="input",
+        broad_epsilon_pgd_sisu_max_radius=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+        broad_epsilon_pgd_sisu_max_radius_source="effective_020a65b_pgd_training_radius",
+    )
+
+    payload = write_run_spec(args)["run_spec"]
+    pgd = payload["hps"]["broad_epsilon_pgd_training"]
+    distribution = payload["training_summary"]["training_distribution"][
+        "broad_epsilon_pgd_training"
+    ]
+
+    assert pgd["enabled"] is True
+    assert pgd["reach_length_scaling"] is False
+    assert pgd["budget_schedule"]["mode"] == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
+    assert pgd["budget_schedule"]["probabilities"] == pytest.approx(
+        [0.30, 0.175, 0.175, 0.175, 0.175]
+    )
+    assert pgd["budget_schedule"]["max_l2_radius_15cm"] == pytest.approx(
+        EFFECTIVE_020A65B_PGD_RADIUS_15CM
+    )
+    assert pgd["budget_schedule"]["max_radius_source"]["source_kind"] == (
+        "effective_pgd_training_radius"
+    )
+    assert (
+        pgd["budget_schedule"]["max_radius_source"]["gamma_equivalent_analytical_anchor"] is False
+    )
+    assert distribution["budget_schedule"]["mode"] == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
+    assert payload["task_timing"]["extra_inputs"] == ["input", "target", "epsilon"]
+
+
 def test_pgd_broad_epsilon_lane_requires_target_relative_and_excludes_random_lane() -> None:
-    with pytest.raises(ValueError, match="requires --target-relative-multitarget"):
+    with pytest.raises(ValueError, match="Reach-scaled broad-epsilon"):
         build_hps(_args(broad_epsilon_pgd_training=True))
 
     with pytest.raises(ValueError, match="cannot be combined"):
@@ -298,6 +454,258 @@ def test_pgd_broad_epsilon_lane_requires_target_relative_and_excludes_random_lan
                 broad_epsilon_pgd_training=True,
             )
         )
+
+
+def test_e4800d6_sisu_spectrum_planned_rows_parse_to_sisu_pgd_args() -> None:
+    rows = planned_e4800d6_sisu_spectrum_rows()
+
+    assert [row["row"] for row in rows] == ["A", "B"]
+    assert [row["max_l2_radius_15cm"] for row in rows] == pytest.approx(
+        [0.0023284905801002004, EFFECTIVE_020A65B_PGD_RADIUS_15CM]
+    )
+    assert [row["max_radius_source"] for row in rows] == [
+        "raw_strong_gamma_1p05_radius",
+        "effective_020a65b_pgd_training_radius",
+    ]
+    assert rows[1]["max_radius_source_metadata"]["gamma_equivalent_analytical_anchor"] is False
+    for row in rows:
+        parsed = _parse_planned_training_command(row["command"])
+        parsed_gate = _parse_planned_training_command(row["checkpoint_gate_command"])
+
+        assert parsed.issue == "e4800d6"
+        assert row["command"][:6] == [
+            "env",
+            "PYTHONPATH=src",
+            "uv",
+            "run",
+            "--no-sync",
+            "python",
+        ]
+        assert "JAX_PLATFORM_NAME=cpu" not in row["command"]
+        assert row["run"].startswith("cs_gru_h0_sisu_spectrum_targetfix__")
+        assert row["remote_device"] == "runpod_rtx_5090"
+        assert row["row_kind"] == "full_train"
+        assert row["stop_after_batches"] is None
+        assert row["lr_schedule"] == "warmup_cosine"
+        assert row["lr_warmup_batches"] == 500
+        assert row["lr_warmup_init_fraction"] == pytest.approx(0.1)
+        assert row["lr_cosine_alpha"] == pytest.approx(0.1)
+        assert row["final_learning_rate"] == pytest.approx(3e-4)
+        assert row["initial_hidden_encoder"] == (
+            "zero_affine_target_relative_feedback_plus_force_filter"
+        )
+        assert parsed.target_relative_multitarget is True
+        assert parsed.initial_hidden_encoder is True
+        assert parsed.stop_after_batches is None
+        assert parsed_gate.stop_after_batches == 1000
+        assert parsed.force_filter_feedback is True
+        assert parsed.perturbation_training is True
+        assert parsed.perturbation_calibrated_timing is True
+        assert parsed.perturbation_physical_level == "small"
+        assert parsed.loss_objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
+        assert parsed.broad_epsilon_pgd_training is True
+        assert parsed.broad_epsilon_reach_scaling is False
+        assert parsed.broad_epsilon_pgd_budget_schedule == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
+        assert parsed.broad_epsilon_pgd_sisu_condition_input == "input"
+        assert parsed.broad_epsilon_pgd_sisu_max_radius == pytest.approx(row["max_l2_radius_15cm"])
+        assert parsed.broad_epsilon_pgd_sisu_max_radius_source == row["max_radius_source"]
+        assert parsed.broad_epsilon_pgd_steps == 10
+        assert parsed.broad_epsilon_pgd_step_size_fraction == pytest.approx(0.25)
+        assert parsed.lr_warmup_batches == 500
+        assert parsed.lr_warmup_init_fraction == pytest.approx(0.1)
+        assert parsed.lr_cosine_alpha == pytest.approx(0.1)
+
+
+def test_delayed_sisu_rejects_overloaded_input_condition_key() -> None:
+    with pytest.raises(ValueError, match="go cue and SISU budget key are distinct"):
+        build_hps(
+            _args(
+                delayed_reach=True,
+                target_relative_multitarget=True,
+                broad_epsilon_pgd_training=True,
+                broad_epsilon_pgd_budget_schedule=BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
+                broad_epsilon_pgd_sisu_condition_input="input",
+                broad_epsilon_pgd_sisu_max_radius=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+                broad_epsilon_reach_scaling=False,
+            )
+        )
+
+
+def test_delayed_sisu_uses_separate_budget_key_and_composite_controller_input() -> None:
+    hps = build_hps(
+        _args(
+            smoke=True,
+            batch_size=5,
+            delayed_reach=True,
+            delayed_reach_p_catch_trial=0.0,
+            target_relative_multitarget=True,
+            force_filter_feedback=True,
+            broad_epsilon_pgd_training=True,
+            broad_epsilon_pgd_budget_schedule=BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
+            broad_epsilon_pgd_sisu_condition_input="sisu",
+            broad_epsilon_pgd_sisu_max_radius=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+            broad_epsilon_reach_scaling=False,
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            hidden_size=8,
+            n_replicates=1,
+        )
+    )
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    trial = pair.task.task.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
+    go_step = int(trial.timeline.epoch_bounds[-2])
+
+    assert pair.model.input_ports[:3] == ("input", "target", "epsilon")
+    assert pair.model.nodes["net"].input_size == 8
+    assert sorted(trial.inputs) == ["epsilon", "input", "sisu", "target", "task"]
+    assert trial.inputs["input"].shape[-1] == 2
+    assert jnp.allclose(trial.inputs["input"][:go_step, 0], 0.0)
+    assert jnp.allclose(trial.inputs["input"][go_step:, 0], 1.0)
+    assert jnp.allclose(trial.inputs["input"][..., 1], trial.inputs["sisu"][..., :-1])
+
+    radius = _broad_epsilon_l2_radius(
+        trial,
+        config_from_broad_epsilon_pgd_hps(hps.broad_epsilon_pgd_training),
+    )
+    expected_radius = EFFECTIVE_020A65B_PGD_RADIUS_15CM * jnp.sqrt(
+        jnp.mean(trial.inputs["sisu"])
+    )
+    assert radius == pytest.approx(float(expected_radius))
+
+    spec = build_graph_bundle(hps).task_spec
+    summary = build_graph_bundle(hps).manifest["model_structure"]
+    assert spec["extra_inputs"] == ["input", "sisu", "target", "epsilon"]
+    assert summary["go_cue"]["controller_input_index"] == 0
+    assert summary["sisu_conditioning"]["input_key"] == "sisu"
+    assert summary["sisu_conditioning"]["controller_input_index"] == 1
+
+
+def test_delayed_sisu_catch_trials_preserve_hold_targets_with_sisu_present() -> None:
+    hps = build_hps(
+        _args(
+            smoke=True,
+            delayed_reach=True,
+            delayed_reach_p_catch_trial=1.0,
+            target_relative_multitarget=True,
+            broad_epsilon_pgd_training=True,
+            broad_epsilon_pgd_budget_schedule=BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
+            broad_epsilon_pgd_sisu_condition_input="sisu",
+            broad_epsilon_pgd_sisu_max_radius=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+            broad_epsilon_reach_scaling=False,
+            hidden_size=8,
+            n_replicates=1,
+        )
+    )
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    base = pair.task.task.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
+    sampled = apply_training_target_distribution(
+        base,
+        hps.target_relative_multitarget,
+        jr.PRNGKey(2),
+    )
+
+    assert sampled.extra is not None
+    assert bool(sampled.extra["is_catch_trial"])
+    assert "sisu" in sampled.inputs
+    assert jnp.allclose(sampled.inputs["input"][..., 0], 0.0)
+    assert jnp.allclose(sampled.inputs["input"][..., 1], sampled.inputs["sisu"][..., :-1])
+    assert jnp.any(jnp.abs(sampled.inputs["target"]) > 0.0)
+    assert jnp.allclose(
+        sampled.targets["mechanics.effector.pos"].value,
+        jnp.zeros_like(sampled.targets["mechanics.effector.pos"].value),
+    )
+
+
+def test_7c1f7ed_delayed_sisu_planned_rows_parse_and_dry_run_specs(tmp_path: Path) -> None:
+    rows = planned_7c1f7ed_delayed_sisu_spectrum_rows()
+
+    assert [row["row"] for row in rows] == ["A", "B"]
+    assert [row["max_l2_radius_15cm"] for row in rows] == pytest.approx(
+        [0.0023284905801002004, EFFECTIVE_020A65B_PGD_RADIUS_15CM]
+    )
+    assert [row["run"] for row in rows] == [
+        "delayed_sisu_spectrum__raw_strong_gamma_1p05_radius_lr1e-2_clip5_b64",
+        "delayed_sisu_spectrum__effective_020a65b_pgd_radius_lr1e-2_clip5_b64",
+    ]
+    for row in rows:
+        parsed = _parse_planned_training_command(row["command"])
+        parsed_gate = _parse_planned_training_command(row["checkpoint_gate_command"])
+
+        assert row["base_row"] == "ef9c882/hold__start_pos_zero_vel_lr1e-2"
+        assert row["controller_lr"] == pytest.approx(1e-2)
+        assert row["final_learning_rate"] == pytest.approx(1e-3)
+        assert row["hidden_size"] == 180
+        assert row["nn_output_pre_go"] == pytest.approx(0.0)
+        assert row["delayed_pre_go_force_filter_hold"] == pytest.approx(0.0)
+        assert row["delayed_pre_go_start_pos_hold"] == pytest.approx(1e6)
+        assert row["delayed_pre_go_start_pos_hold_norm"] == "l2"
+        assert row["delayed_pre_go_zero_vel_hold"] == pytest.approx(1e5)
+        assert parsed.issue == "7c1f7ed"
+        assert parsed.delayed_reach is True
+        assert parsed.delayed_reach_go_cue_min_step == 10
+        assert parsed.delayed_reach_go_cue_max_step == 30
+        assert parsed.delayed_reach_p_catch_trial == pytest.approx(0.5)
+        assert parsed.target_relative_multitarget is True
+        assert parsed.initial_hidden_encoder is False
+        assert parsed.force_filter_feedback is True
+        assert parsed.perturbation_training is True
+        assert parsed.perturbation_calibrated_timing is True
+        assert parsed.perturbation_movement_age_timing is True
+        assert parsed.perturbation_physical_level == "small"
+        assert parsed.loss_objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
+        assert parsed.nn_output_pre_go == pytest.approx(0.0)
+        assert parsed.delayed_pre_go_force_filter_hold == pytest.approx(0.0)
+        assert parsed.delayed_pre_go_start_pos_hold == pytest.approx(1e6)
+        assert parsed.delayed_pre_go_start_pos_hold_norm == "l2"
+        assert parsed.delayed_pre_go_zero_vel_hold == pytest.approx(1e5)
+        assert parsed.broad_epsilon_pgd_training is True
+        assert parsed.broad_epsilon_reach_scaling is False
+        assert parsed.broad_epsilon_pgd_budget_schedule == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
+        assert parsed.broad_epsilon_pgd_sisu_condition_input == "sisu"
+        assert parsed.broad_epsilon_pgd_sisu_max_radius == pytest.approx(
+            row["max_l2_radius_15cm"]
+        )
+        assert parsed.broad_epsilon_pgd_steps == 10
+        assert parsed.broad_epsilon_pgd_step_size_fraction == pytest.approx(0.25)
+        assert parsed.controller_lr == pytest.approx(1e-2)
+        assert parsed.lr_warmup_batches == 500
+        assert parsed.lr_warmup_init_fraction == pytest.approx(0.1)
+        assert parsed.lr_cosine_alpha == pytest.approx(0.1)
+        assert parsed.hidden_size == 180
+        assert parsed.stop_after_batches is None
+        assert parsed_gate.stop_after_batches == 1000
+        assert row["delayed_reach"]["sisu_budget_input"] == "sisu"
+        assert row["broad_epsilon_pgd_scope"] == "movement_epoch_only"
+
+        parsed.output_dir = str(tmp_path / row["run"] / "artifacts")
+        parsed.spec_dir = str(tmp_path / row["run"] / "spec")
+        parsed.dry_run = True
+        payload = write_run_spec(parsed)["run_spec"]
+        assert payload["task_timing"]["extra_inputs"] == ["input", "sisu", "target", "epsilon"]
+        assert payload["hps"]["broad_epsilon_pgd_training"]["movement_epoch_only"] is True
+        assert payload["hps"]["broad_epsilon_pgd_training"]["budget_schedule"][
+            "conditioning_scalar"
+        ]["input_key"] == "sisu"
+        assert payload["hps"]["model"]["force_filter_feedback"] is True
+        assert payload["hps"]["target_relative_multitarget"]["force_filter_feedback"] is True
+        assert payload["hps"]["perturbation_training"]["enabled"] is True
+        assert payload["hps"]["perturbation_training"]["calibrated_timing"] is True
+        assert payload["hps"]["perturbation_training"]["timing_basis"]["mode"] == "movement_age"
+        assert payload["hps"]["perturbation_training"]["physical_level"] == "small"
+        assert payload["hps"]["loss"]["weights"]["nn_output_pre_go"] == pytest.approx(0.0)
+        assert payload["hps"]["loss"]["weights"]["delayed_pre_go_force_filter_hold"] == (
+            pytest.approx(0.0)
+        )
+        assert payload["hps"]["loss"]["weights"]["delayed_pre_go_start_pos_hold"] == (
+            pytest.approx(1e6)
+        )
+        assert payload["hps"]["loss"]["delayed_pre_go_start_pos_hold_norm"] == "l2"
+        assert payload["hps"]["loss"]["weights"]["delayed_pre_go_zero_vel_hold"] == (
+            pytest.approx(1e5)
+        )
+        assert payload["hps"]["delayed_reach"]["catch_trials"]["p_catch_trial"] == pytest.approx(
+            0.5
+        )
+        assert payload["model_summary"]["initial_hidden_encoder"]["enabled"] is False
 
 
 def test_full_analytical_qrf_loss_scores_non_pos_vel_state_and_command() -> None:
@@ -1422,6 +1830,75 @@ def test_target_relative_multitarget_setup_uses_target_input_and_anchor() -> Non
     assert jnp.any(trial.inputs["target"][..., -1, :] != jnp.array([0.15, 0.0]))
 
 
+def test_sisu_conditioned_input_does_not_trigger_catch_target_rewrite() -> None:
+    hps = build_hps(
+        _args(
+            smoke=True,
+            batch_size=5,
+            target_relative_multitarget=True,
+            force_filter_feedback=True,
+            broad_epsilon_pgd_training=True,
+            broad_epsilon_pgd_budget_schedule=BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE,
+            broad_epsilon_pgd_sisu_condition_input="input",
+            broad_epsilon_pgd_sisu_max_radius=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+            broad_epsilon_reach_scaling=False,
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            hidden_size=8,
+            n_replicates=1,
+        )
+    )
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(0))
+    base = pair.task.task.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
+
+    assert hps.task.p_catch_trial == pytest.approx(0.0)
+    assert pair.model.input_ports[:3] == ("input", "target", "epsilon")
+    assert sorted(base.inputs) == ["effector_target", "epsilon", "input"]
+
+    for i, sisu in enumerate((0.0, 0.25, 0.5, 0.75, 1.0)):
+        trial = _set_input(base, "input", jnp.full_like(base.inputs["input"], sisu))
+        retargeted = apply_training_target_distribution(
+            trial,
+            hps.target_relative_multitarget,
+            jr.PRNGKey(10 + i),
+        )
+        scored_target = retargeted.targets["mechanics.effector.pos"].value
+        visible_target = retargeted.inputs["target"]
+
+        assert jnp.allclose(scored_target, visible_target)
+        assert jnp.any(jnp.abs(scored_target) > 0.0)
+
+
+def test_generic_input_without_go_cue_role_does_not_preserve_catch_target() -> None:
+    trial = TaskTrialSpec(
+        inits=WhereDict({"mechanics.vector": jnp.zeros((8,), dtype=jnp.float32)}),
+        targets=WhereDict(
+            {
+                "mechanics.effector.pos": TargetSpec(
+                    value=jnp.zeros((3, 2), dtype=jnp.float32),
+                )
+            }
+        ),
+        inputs={"input": jnp.zeros((3,), dtype=jnp.float32)},
+        timeline=TrialTimeline(n_steps=3),
+    )
+    config = TargetRelativeMultiTargetTrainingConfig(
+        enabled=True,
+        seen_directions_deg=(0.0,),
+        held_out_directions_deg=(90.0,),
+        seen_amplitudes_m=(0.15,),
+        held_out_amplitudes_m=(0.12,),
+        original_target_anchor_m=(0.15, 0.0),
+    )
+
+    retargeted = apply_training_target_distribution(trial, config, jr.PRNGKey(1))
+
+    assert jnp.allclose(
+        retargeted.targets["mechanics.effector.pos"].value,
+        retargeted.inputs["target"],
+    )
+    assert jnp.any(jnp.abs(retargeted.targets["mechanics.effector.pos"].value) > 0.0)
+
+
 def test_delayed_reach_requires_target_relative_contract() -> None:
     with pytest.raises(ValueError, match="requires --target-relative-multitarget"):
         build_hps(_args(delayed_reach=True))
@@ -1448,7 +1925,7 @@ def test_delayed_reach_setup_adds_go_cue_and_preserves_target_visibility() -> No
     assert hps.task.p_catch_trial == pytest.approx(0.0)
     assert hps.loss.weights.nn_output_pre_go == pytest.approx(1.0)
     assert pair.model.input_ports[:3] == ("input", "target", "epsilon")
-    assert pair.model.nodes["net"].input_size == 5
+    assert pair.model.nodes["net"].input_size == 7
     assert trial.timeline.epoch_names == ("prep", "movement")
     assert 10 <= go_step <= 30
     assert trial.inputs["input"].shape == (trial.timeline.n_steps - 1,)
@@ -1534,6 +2011,36 @@ def test_delayed_reach_catch_trials_survive_target_distribution() -> None:
     assert jnp.allclose(scored_target, jnp.zeros_like(scored_target))
     assert jnp.allclose(perturbed.inputs["task"].effector_target.pos, scored_target)
     assert jnp.allclose(delta, 0.0)
+
+
+def test_delayed_reach_task_hold_preserves_catch_target_without_extra_metadata() -> None:
+    hps = build_hps(
+        _args(
+            smoke=True,
+            delayed_reach=True,
+            delayed_reach_p_catch_trial=1.0,
+            target_relative_multitarget=True,
+            hidden_size=8,
+            n_replicates=1,
+        )
+    )
+    task_base = _delayed_cs_task(hps, target_relative=False, go_cue_input=False)
+    base = task_base.get_train_trial_with_intervenor_params(jr.PRNGKey(1))
+    base = eqx.tree_at(lambda trial: trial.extra, base, None)
+
+    sampled = apply_training_target_distribution(
+        base,
+        hps.target_relative_multitarget,
+        jr.PRNGKey(2),
+    )
+
+    assert sampled.extra is None
+    assert jnp.all(sampled.inputs["task"].hold > 0.5)
+    assert jnp.any(jnp.abs(sampled.inputs["target"]) > 0.0)
+    assert jnp.allclose(
+        sampled.targets["mechanics.effector.pos"].value,
+        jnp.zeros_like(sampled.targets["mechanics.effector.pos"].value),
+    )
 
 
 def test_delayed_reach_no_integrator_setup_uses_36d_state_and_6d_epsilon() -> None:
@@ -1748,6 +2255,8 @@ def test_delayed_reach_pre_go_hold_penalty_args_build_hps_and_run_spec(
             "11",
             "--delayed-pre-go-start-pos-hold",
             "22",
+            "--delayed-pre-go-start-pos-hold-norm",
+            "l1",
             "--delayed-pre-go-zero-vel-hold",
             "33",
         ]
@@ -1760,11 +2269,14 @@ def test_delayed_reach_pre_go_hold_penalty_args_build_hps_and_run_spec(
     assert hps.loss.weights.delayed_pre_go_force_filter_hold == pytest.approx(11.0)
     assert hps.loss.weights.delayed_pre_go_start_pos_hold == pytest.approx(22.0)
     assert hps.loss.weights.delayed_pre_go_zero_vel_hold == pytest.approx(33.0)
+    assert hps.loss.delayed_pre_go_start_pos_hold_norm == "l1"
     assert payload["hps"]["loss"]["weights"]["delayed_pre_go_force_filter_hold"] == 11.0
     assert payload["hps"]["loss"]["weights"]["delayed_pre_go_start_pos_hold"] == 22.0
+    assert payload["hps"]["loss"]["delayed_pre_go_start_pos_hold_norm"] == "l1"
     assert payload["hps"]["loss"]["weights"]["delayed_pre_go_zero_vel_hold"] == 33.0
     assert aux["scope"] == "prep_epoch_only"
     assert aux["movement_window_qrf_comparator"] == "unchanged"
+    assert aux["terms"]["delayed_pre_go_start_pos_hold"]["norm"] == "l1"
     assert set(aux["active_terms"]) == {
         "delayed_pre_go_force_filter_hold",
         "delayed_pre_go_start_pos_hold",
@@ -1905,8 +2417,10 @@ def test_delayed_reach_full_qrf_pre_go_hold_auxiliaries_mask_only_prep_epoch() -
     )
     loss_func = get_reach_loss(hps)
     go_step = 12
-    initial_vector = jnp.zeros((1, 48), dtype=jnp.float64).at[:, :2].set(
-        jnp.asarray([[1.0, -2.0]], dtype=jnp.float64)
+    initial_vector = (
+        jnp.zeros((1, 48), dtype=jnp.float64)
+        .at[:, :2]
+        .set(jnp.asarray([[1.0, -2.0]], dtype=jnp.float64))
     )
     trial = TaskTrialSpec(
         inits=WhereDict({"mechanics.vector": initial_vector}),
@@ -1960,6 +2474,309 @@ def test_delayed_reach_full_qrf_pre_go_hold_auxiliaries_mask_only_prep_epoch() -
         assert jnp.allclose(movement_value, base_value)
 
 
+def test_delayed_reach_start_pos_hold_supports_l1_norm() -> None:
+    hps = build_hps(
+        _args(
+            smoke=True,
+            delayed_reach=True,
+            delayed_reach_p_catch_trial=0.5,
+            target_relative_multitarget=True,
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            nn_output_pre_go=0.0,
+            delayed_pre_go_start_pos_hold=1.0,
+            delayed_pre_go_start_pos_hold_norm="l1",
+            hidden_size=8,
+            n_replicates=1,
+        )
+    )
+    loss_func = get_reach_loss(hps)
+    initial_vector = jnp.zeros((1, 48), dtype=jnp.float64)
+    trial = TaskTrialSpec(
+        inits=WhereDict({"mechanics.vector": initial_vector}),
+        targets=WhereDict({}),
+        inputs={},
+        timeline=TrialTimeline.from_epochs_events(
+            n_steps=4,
+            epoch_bounds=jnp.asarray([0, 2, 4]),
+            epoch_names=("prep", "movement"),
+        ),
+        extra={"is_catch_trial": jnp.asarray([False])},
+    )
+    pos = (
+        jnp.zeros((1, 4, 2), dtype=jnp.float64)
+        .at[:, 1, :]
+        .set(jnp.asarray([[3.0, -4.0]], dtype=jnp.float64))
+    )
+    states = TreeNamespace(
+        mechanics=TreeNamespace(
+            vector=jnp.zeros((1, 4, 48), dtype=jnp.float64),
+            effector=TreeNamespace(pos=pos, vel=jnp.zeros((1, 4, 2), dtype=jnp.float64)),
+        ),
+        net=TreeNamespace(output=jnp.zeros((1, 4, 2), dtype=jnp.float64)),
+    )
+    term = loss_func.terms["delayed_pre_go_start_pos_hold"]
+
+    assert term.norm == "l1"
+    assert term.term(states, trial, None) == pytest.approx(jnp.asarray([7.0]))
+
+
+def test_ef9c882_start_pos_hold_planned_rows_parse_and_build_specs(tmp_path: Path) -> None:
+    rows = planned_ef9c882_start_pos_hold_rows()
+
+    assert [row["run"] for row in rows] == [
+        "hold_start_pos_l2_ffpert__w1e6_lr3e-3",
+        "hold_start_pos_l2_ffpert__w1e8_lr3e-3",
+        "hold_start_pos_l1_ffpert__w1e6_lr3e-3",
+        "hold_start_pos_l1_ffpert__w1e5_lr3e-3",
+        "hold_start_pos_l2_ffpert__w1e8_lr1e-2",
+        "hold_start_pos_l1_ffpert__w1e5_lr1e-2",
+        "hold__start_pos_zero_vel_lr1e-2",
+        "hold__start_pos_zero_vel_lr3e-2",
+    ]
+    assert [row["delayed_pre_go_start_pos_hold_norm"] for row in rows] == [
+        "l2",
+        "l2",
+        "l1",
+        "l1",
+        "l2",
+        "l1",
+        "l2",
+        "l2",
+    ]
+    assert [row["delayed_pre_go_start_pos_hold"] for row in rows] == [
+        1e6,
+        1e8,
+        1e6,
+        1e5,
+        1e8,
+        1e5,
+        1e6,
+        1e6,
+    ]
+    assert [row["controller_lr"] for row in rows] == [
+        3e-3,
+        3e-3,
+        3e-3,
+        3e-3,
+        1e-2,
+        1e-2,
+        1e-2,
+        3e-2,
+    ]
+    assert [row["delayed_pre_go_zero_vel_hold"] for row in rows] == [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1e5,
+        1e5,
+    ]
+
+    for row in rows:
+        parsed = _parse_planned_training_command(row["command"])
+        parsed_spec = _parse_planned_training_command(row["spec_command"])
+        parsed.output_dir = str(tmp_path / "artifacts" / row["run"])
+        parsed.spec_dir = str(tmp_path / "specs" / row["run"])
+        parsed.dry_run = True
+        result = write_run_spec(parsed)
+        payload = result["run_spec"]
+        aux = payload["loss_summary"]["delayed_pre_go_auxiliary_terms"]
+
+        assert parsed.issue == "ef9c882"
+        assert parsed.full_train is True
+        assert parsed.resume is True
+        assert parsed_spec.dry_run is True
+        assert parsed.n_train_batches == 12000
+        assert parsed.batch_size == 64
+        assert parsed.controller_lr == pytest.approx(row["controller_lr"])
+        assert parsed.gradient_clip_norm == pytest.approx(5.0)
+        assert parsed.lr_warmup_batches == 500
+        assert parsed.lr_warmup_init_fraction == pytest.approx(0.1)
+        assert parsed.lr_cosine_alpha == pytest.approx(0.1)
+        assert parsed.n_replicates == 5
+        assert parsed.hidden_size == 180
+        assert parsed.loss_objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
+        assert parsed.delayed_reach is True
+        assert parsed.delayed_reach_go_cue_min_step == 10
+        assert parsed.delayed_reach_go_cue_max_step == 30
+        assert parsed.delayed_reach_p_catch_trial == pytest.approx(0.5)
+        assert parsed.target_relative_multitarget is True
+        assert parsed.force_filter_feedback is True
+        assert parsed.perturbation_training is True
+        assert parsed.perturbation_calibrated_timing is True
+        assert parsed.perturbation_movement_age_timing is True
+        assert parsed.perturbation_physical_level == "small"
+        assert parsed.broad_epsilon_pgd_training is False
+        assert parsed.nn_output_pre_go == pytest.approx(0.0)
+        assert parsed.delayed_pre_go_force_filter_hold == pytest.approx(0.0)
+        assert parsed.delayed_pre_go_zero_vel_hold == pytest.approx(
+            row["delayed_pre_go_zero_vel_hold"]
+        )
+        assert parsed.delayed_pre_go_start_pos_hold == pytest.approx(
+            row["delayed_pre_go_start_pos_hold"]
+        )
+        assert (
+            parsed.delayed_pre_go_start_pos_hold_norm == row["delayed_pre_go_start_pos_hold_norm"]
+        )
+
+        assert payload["issue"] == "ef9c882"
+        assert payload["n_train_batches"] == 12000
+        assert payload["batch_size"] == 64
+        assert payload["controller_lr"] == pytest.approx(row["controller_lr"])
+        assert payload["training_summary"]["n_adversary_batches"] == 0
+        assert payload["hps"]["broad_epsilon_pgd_training"]["enabled"] is False
+        assert payload["hps"]["model"]["force_filter_feedback"] is True
+        assert payload["hps"]["target_relative_multitarget"]["force_filter_feedback"] is True
+        assert payload["hps"]["perturbation_training"]["enabled"] is True
+        assert payload["hps"]["perturbation_training"]["calibrated_timing"] is True
+        assert payload["hps"]["perturbation_training"]["timing_basis"]["mode"] == "movement_age"
+        assert payload["hps"]["perturbation_training"]["physical_level"] == "small"
+        assert payload["hps"]["loss"]["weights"]["nn_output_pre_go"] == 0.0
+        assert payload["hps"]["loss"]["weights"]["delayed_pre_go_force_filter_hold"] == 0.0
+        assert payload["hps"]["loss"]["weights"]["delayed_pre_go_zero_vel_hold"] == (
+            pytest.approx(row["delayed_pre_go_zero_vel_hold"])
+        )
+        assert payload["hps"]["loss"]["weights"]["delayed_pre_go_start_pos_hold"] == (
+            pytest.approx(row["delayed_pre_go_start_pos_hold"])
+        )
+        assert (
+            payload["hps"]["loss"]["delayed_pre_go_start_pos_hold_norm"]
+            == row["delayed_pre_go_start_pos_hold_norm"]
+        )
+        expected_active_terms = {
+            "delayed_pre_go_start_pos_hold": {
+                "scale": row["delayed_pre_go_start_pos_hold"],
+                "state_key": "states.mechanics.effector.pos",
+                "target": "trial_specs.inits['mechanics.vector'][..., :2]",
+                "norm": row["delayed_pre_go_start_pos_hold_norm"],
+            }
+        }
+        if row["delayed_pre_go_zero_vel_hold"] != 0.0:
+            expected_active_terms["delayed_pre_go_zero_vel_hold"] = {
+                "scale": row["delayed_pre_go_zero_vel_hold"],
+                "state_key": "states.mechanics.effector.vel",
+                "target": "zero_velocity",
+            }
+        assert aux["active_terms"] == expected_active_terms
+        assert payload["delayed_reach"]["go_cue_sampling"]["min_step_inclusive"] == 10
+        assert payload["delayed_reach"]["go_cue_sampling"]["max_step_inclusive"] == 30
+        assert payload["delayed_reach"]["catch_trials"]["p_catch_trial"] == pytest.approx(0.5)
+
+
+def test_246182c_post_movement_cost_tail_row_parse_and_build_spec(tmp_path: Path) -> None:
+    rows = planned_246182c_post_movement_cost_tail_rows()
+    assert len(rows) == 1
+    row = rows[0]
+
+    parsed = _parse_planned_training_command(row["command"])
+    parsed_spec = _parse_planned_training_command(row["spec_command"])
+    parsed.output_dir = str(tmp_path / "artifacts" / row["run"])
+    parsed.spec_dir = str(tmp_path / "specs" / row["run"])
+    parsed.dry_run = True
+    result = write_run_spec(parsed)
+    payload = result["run_spec"]
+
+    assert row["run"] == "hold__start_pos_zero_vel_lr1e-2_flat_tail"
+    assert row["comparator"] == "ef9c882/hold__start_pos_zero_vel_lr1e-2"
+    assert row["planned_run_spec_path"] == (
+        "results/246182c/runs/hold__start_pos_zero_vel_lr1e-2_flat_tail.json"
+    )
+    assert parsed.issue == "246182c"
+    assert parsed.full_train is True
+    assert parsed.resume is True
+    assert parsed_spec.dry_run is True
+    assert parsed.n_train_batches == 12000
+    assert parsed.batch_size == 64
+    assert parsed.controller_lr == pytest.approx(1e-2)
+    assert parsed.gradient_clip_norm == pytest.approx(5.0)
+    assert parsed.lr_warmup_batches == 500
+    assert parsed.lr_warmup_init_fraction == pytest.approx(0.1)
+    assert parsed.lr_cosine_alpha == pytest.approx(0.1)
+    assert parsed.n_replicates == 5
+    assert parsed.hidden_size == 180
+    assert parsed.loss_objective == CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE
+    assert parsed.delayed_reach is True
+    assert parsed.delayed_reach_go_cue_min_step == 10
+    assert parsed.delayed_reach_go_cue_max_step == 30
+    assert parsed.delayed_reach_p_catch_trial == pytest.approx(0.5)
+    assert parsed.delayed_movement_cost_tail_mode == DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON
+    assert parsed.target_relative_multitarget is True
+    assert parsed.force_filter_feedback is True
+    assert parsed.perturbation_training is True
+    assert parsed.perturbation_calibrated_timing is True
+    assert parsed.perturbation_movement_age_timing is True
+    assert parsed.perturbation_physical_level == "small"
+    assert parsed.broad_epsilon_pgd_training is False
+    assert parsed.nn_output_pre_go == pytest.approx(0.0)
+    assert parsed.delayed_pre_go_force_filter_hold == pytest.approx(0.0)
+    assert parsed.delayed_pre_go_zero_vel_hold == pytest.approx(1e5)
+    assert parsed.delayed_pre_go_start_pos_hold == pytest.approx(1e6)
+    assert parsed.delayed_pre_go_start_pos_hold_norm == "l2"
+
+    assert payload["issue"] == "246182c"
+    assert payload["n_train_batches"] == 12000
+    assert payload["batch_size"] == 64
+    assert payload["controller_lr"] == pytest.approx(1e-2)
+    assert payload["training_summary"]["n_adversary_batches"] == 0
+    assert payload["hps"]["broad_epsilon_pgd_training"]["enabled"] is False
+    assert payload["hps"]["model"]["force_filter_feedback"] is True
+    assert payload["hps"]["perturbation_training"]["enabled"] is True
+    assert payload["hps"]["perturbation_training"]["calibrated_timing"] is True
+    assert payload["hps"]["perturbation_training"]["timing_basis"]["mode"] == "movement_age"
+    assert payload["hps"]["perturbation_training"]["physical_level"] == "small"
+    assert payload["hps"]["loss"]["weights"]["nn_output_pre_go"] == 0.0
+    assert payload["hps"]["loss"]["weights"]["delayed_pre_go_force_filter_hold"] == 0.0
+    assert payload["hps"]["loss"]["weights"]["delayed_pre_go_zero_vel_hold"] == pytest.approx(1e5)
+    assert payload["hps"]["loss"]["weights"]["delayed_pre_go_start_pos_hold"] == pytest.approx(1e6)
+    assert payload["hps"]["loss"]["delayed_pre_go_start_pos_hold_norm"] == "l2"
+    assert (
+        payload["hps"]["loss"]["delayed_movement_cost_tail_mode"]
+        == DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON
+    )
+    assert (
+        payload["delayed_reach"]["movement_epoch"]["cost_tail_mode"]
+        == DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON
+    )
+    assert payload["loss_summary"]["time_indexing"]["post_horizon_tail"] == (
+        "hold_terminal_running_qr_weights_flat_to_trial_end"
+    )
+    assert payload["loss_summary"]["time_indexing"]["terminal_state"] == (
+        "final rollout state after the variable post-horizon tail"
+    )
+
+
+def test_ef9c882_start_pos_hold_planned_rows_cli(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["--planned-ef9c882-start-pos-hold-rows"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert [row["run"] for row in payload["planned_rows"]] == [
+        "hold_start_pos_l2_ffpert__w1e6_lr3e-3",
+        "hold_start_pos_l2_ffpert__w1e8_lr3e-3",
+        "hold_start_pos_l1_ffpert__w1e6_lr3e-3",
+        "hold_start_pos_l1_ffpert__w1e5_lr3e-3",
+        "hold_start_pos_l2_ffpert__w1e8_lr1e-2",
+        "hold_start_pos_l1_ffpert__w1e5_lr1e-2",
+        "hold__start_pos_zero_vel_lr1e-2",
+        "hold__start_pos_zero_vel_lr3e-2",
+    ]
+
+
+def test_246182c_post_movement_cost_tail_planned_rows_cli(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["--planned-246182c-post-movement-cost-tail-rows"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert [row["run"] for row in payload["planned_rows"]] == [
+        "hold__start_pos_zero_vel_lr1e-2_flat_tail"
+    ]
+    assert payload["planned_rows"][0]["delayed_movement_cost_tail_mode"] == (
+        DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON
+    )
+
+
 def test_delayed_reach_run_spec_declares_task_and_movement_pgd_mask(tmp_path: Path) -> None:
     output_dir = tmp_path / "bulk"
     spec_dir = tmp_path / "spec"
@@ -1993,7 +2810,7 @@ def test_delayed_reach_run_spec_declares_task_and_movement_pgd_mask(tmp_path: Pa
         "movement_age_not_trial_age"
     )
     assert payload["model_summary"]["go_cue"]["enabled"] is True
-    assert payload["model_summary"]["controller_input_dimension"] == 5
+    assert payload["model_summary"]["controller_input_dimension"] == 7
     assert payload["hps"]["loss"]["weights"]["nn_output_pre_go"] == 1.0
     assert payload["hps"]["broad_epsilon_pgd_training"]["movement_epoch_only"] is True
     assert payload["hps"]["broad_epsilon_pgd_training"]["time_mask"]["mode"] == (
@@ -2388,6 +3205,37 @@ def test_flat_run_spec_replay_does_not_require_adjacent_graph_manifest(
     assert pgd["movement_epoch_only"] is True
     assert pgd["budget_scale"] == pytest.approx(3.688240371719434)
     assert pgd["inner_maximizer"]["n_steps"] == 10
+
+
+def test_full_train_run_spec_replay_dry_run_stays_on_spec_path(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = write_run_spec(
+        _args(
+            output_dir=str(tmp_path / "historical_artifacts"),
+            spec_dir=str(tmp_path / "historical_spec"),
+            issue="246182c",
+            smoke=True,
+            full_train=True,
+            target_relative_multitarget=True,
+            delayed_reach=True,
+            force_filter_feedback=True,
+            loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+            delayed_movement_cost_tail_mode=DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON,
+        )
+    )
+    flat_run_spec = tmp_path / "flat_full_train.json"
+    flat_run_spec.write_text(Path(result["run_spec_path"]).read_text(), encoding="utf-8")
+
+    assert main(["--run-spec", str(flat_run_spec), "--dry-run"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert "would_write" in payload
+    assert payload["run_spec"]["full_training_launch"] == "requested"
+    assert payload["run_spec"]["hps"]["loss"]["delayed_movement_cost_tail_mode"] == (
+        DELAYED_MOVEMENT_COST_TAIL_FLAT_AFTER_HORIZON
+    )
 
 
 def test_initial_hidden_encoder_requires_target_relative_hps() -> None:

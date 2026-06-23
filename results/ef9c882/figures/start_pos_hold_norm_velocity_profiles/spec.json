@@ -1,0 +1,57 @@
+{
+  "figure_family": "delayed_fixed_bank_target_radial_velocity_profiles",
+  "materializer": "results/40e1911/scripts/materialize_delayed_timing_hold_lane_velocity_profiles.py",
+  "outputs": {
+    "catch": "_artifacts/40e1911/figures/delayed_timing_hold_lane_velocity_profiles/catch",
+    "no_catch": "_artifacts/40e1911/figures/delayed_timing_hold_lane_velocity_profiles/no_catch"
+  },
+  "parameters": {
+    "checkpoint_policy": "final_checkpoint",
+    "direction_count": 20,
+    "go_cue_steps": "per_run_declared_range",
+    "include_reference": true,
+    "pre_go_context_steps": 10,
+    "reach_length_m": 0.15,
+    "shared_yaxes": "all"
+  },
+  "result_experiment": "ef9c882",
+  "run_refs": [
+    {
+      "experiment": "ef9c882",
+      "label": "L2 hold 1e4",
+      "run_id": "hold_start_pos_l2__w1e4"
+    },
+    {
+      "experiment": "ef9c882",
+      "label": "L2 hold 1e6",
+      "run_id": "hold_start_pos_l2__w1e6"
+    },
+    {
+      "experiment": "ef9c882",
+      "label": "L2 hold 1e8",
+      "run_id": "hold_start_pos_l2__w1e8"
+    },
+    {
+      "experiment": "ef9c882",
+      "label": "L1 hold 1e8",
+      "run_id": "hold_start_pos_l1__w1e8"
+    },
+    {
+      "experiment": "ef9c882",
+      "label": "L1 hold 1e6",
+      "run_id": "hold_start_pos_l1__w1e6"
+    },
+    {
+      "experiment": "ef9c882",
+      "label": "L1 hold 1e5",
+      "run_id": "hold_start_pos_l1__w1e5"
+    },
+    {
+      "experiment": "ef9c882",
+      "label": "L1 hold 1e4",
+      "run_id": "hold_start_pos_l1__w1e4"
+    }
+  ],
+  "schema_version": "rlrmp.figure_spec.delayed_timing_hold_velocity.v1",
+  "topic": "start_pos_hold_norm_velocity_profiles"
+}

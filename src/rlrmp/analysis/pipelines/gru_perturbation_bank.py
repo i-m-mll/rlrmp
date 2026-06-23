@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -1703,6 +1703,7 @@ def evaluate_run_perturbation_bank(
     write_bulk_arrays: bool,
     bulk_dir: Path,
     evaluation_backend: PerturbationEvaluationBackend = "serial",
+    trial_spec_transform: Callable[[Any], Any] | None = None,
     preferred_checkpoint_manifest_path: Path | None = None,
     checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
     repo_root: Path = REPO_ROOT,
@@ -1722,6 +1723,8 @@ def evaluate_run_perturbation_bank(
         repo_root=repo_root,
     )
     base_trial_specs = repeat_single_validation_trial(pair.task.validation_trials, n_rollout_trials)
+    if trial_spec_transform is not None:
+        base_trial_specs = trial_spec_transform(base_trial_specs)
     nominal_base_evaluation = _evaluate_model_rollout_product(
         model=model,
         task=pair.task,
@@ -2373,6 +2376,83 @@ def _constant_movement_start(trial_specs: Any) -> int | None:
     return int(starts[0])
 
 
+def _movement_start_indices(trial_specs: Any, *, batch_size: int) -> np.ndarray | None:
+    """Return per-trial movement starts from timeline metadata, if available."""
+
+    timeline = getattr(trial_specs, "timeline", None)
+    epoch_bounds = getattr(timeline, "epoch_bounds", None)
+    if epoch_bounds is None:
+        return None
+    bounds = np.asarray(epoch_bounds)
+    if bounds.ndim < 2 or bounds.shape[-1] < 2:
+        return None
+    starts = np.asarray(bounds[..., 1], dtype=np.int64).reshape(-1)
+    if starts.size == 1:
+        return np.full((batch_size,), int(starts[0]), dtype=np.int64)
+    if starts.size != batch_size:
+        raise ValueError(
+            "movement-indexed perturbation timing requires scalar or per-trial "
+            f"movement starts; got {starts.size} starts for batch size {batch_size}"
+        )
+    return starts
+
+
+def _is_movement_indexed_timing(perturbation: Mapping[str, Any]) -> bool:
+    timing = perturbation.get("timing", {})
+    return isinstance(timing, Mapping) and timing.get("epoch") == "movement_indexed"
+
+
+def _movement_aligned_start_indices(
+    trial_specs: Any,
+    perturbation: Mapping[str, Any],
+    *,
+    batch_size: int,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Resolve absolute pulse starts for trial-time and movement-indexed rows."""
+
+    timing = perturbation.get("timing", {})
+    relative_start = int(timing.get("start_time_index", 0)) if isinstance(timing, Mapping) else 0
+    if not _is_movement_indexed_timing(perturbation):
+        return (
+            np.full((batch_size,), relative_start, dtype=np.int64),
+            {
+                "timing_basis": "absolute_trial_time",
+                "movement_start_aligned": False,
+            },
+        )
+    movement_starts = _movement_start_indices(trial_specs, batch_size=batch_size)
+    if movement_starts is None:
+        movement_starts = np.zeros((batch_size,), dtype=np.int64)
+        movement_start_source = "absent_timeline_assumed_zero_for_immediate_reach"
+    else:
+        movement_start_source = "trial_specs.timeline.epoch_bounds[..., 1]"
+    return (
+        movement_starts + relative_start,
+        {
+            "timing_basis": "movement_age",
+            "movement_start_aligned": True,
+            "movement_start_indices": [int(start) for start in movement_starts.tolist()],
+            "movement_start_source": movement_start_source,
+        },
+    )
+
+
+def _validate_timed_pulse_indices(
+    start_indices: np.ndarray,
+    duration: int,
+    *,
+    n_time: int,
+) -> str | None:
+    if duration < 1:
+        return f"duration={duration} must be positive"
+    if np.any(start_indices < 0) or np.any(start_indices + duration > n_time):
+        return (
+            f"start_indices={start_indices.tolist()}, duration={duration}, "
+            f"n_time={n_time}"
+        )
+    return None
+
+
 def delta_full_qrf_cost_summary(
     base: Mapping[str, Any],
     perturbed: Mapping[str, Any],
@@ -2831,6 +2911,8 @@ def _apply_initial_state_perturbation(
             trial_specs=trial_specs,
             reason=f"unsupported initial-state family {family!r}",
         )
+    if _uses_movement_onset_initial_state_impulse(trial_specs, perturbation):
+        return _apply_movement_onset_initial_state_process_impulse(trial_specs, perturbation)
     for init_key, init_state in trial_specs.inits.items():
         if hasattr(init_state, "pos") and family == "initial_position_offset":
             updated = _offset_array_axis(init_state.pos, axis_index, amount)
@@ -2866,6 +2948,120 @@ def _apply_initial_state_perturbation(
         status="blocked",
         trial_specs=trial_specs,
         reason="trial_specs.inits does not expose compatible effector position/velocity state",
+    )
+
+
+def _uses_movement_onset_initial_state_impulse(
+    trial_specs: Any,
+    perturbation: Mapping[str, Any],
+) -> bool:
+    """Return whether delayed initial rows should use movement-onset process impulses."""
+
+    if str(perturbation.get("family")) not in {
+        "initial_position_offset",
+        "initial_velocity_offset",
+    }:
+        return False
+    if not _is_movement_indexed_timing(perturbation):
+        batch_size = _infer_batch_size(trial_specs)
+        try:
+            movement_starts = _movement_start_indices(trial_specs, batch_size=batch_size)
+        except ValueError:
+            return True
+        return movement_starts is not None and bool(np.any(movement_starts > 0))
+    return True
+
+
+def _apply_movement_onset_initial_state_process_impulse(
+    trial_specs: Any,
+    perturbation: Mapping[str, Any],
+) -> AdapterResult:
+    """Represent delayed initial-position/velocity rows as movement-onset epsilon impulses."""
+
+    if "epsilon" not in trial_specs.inputs:
+        return AdapterResult(
+            status="blocked",
+            trial_specs=trial_specs,
+            reason=(
+                "delayed movement-onset initial-state eval rows require an epsilon "
+                "input so the offset can mirror movement-age training semantics"
+            ),
+        )
+    epsilon = jnp.asarray(trial_specs.inputs["epsilon"])
+    if epsilon.ndim < 3:
+        return AdapterResult(
+            status="blocked",
+            trial_specs=trial_specs,
+            reason=f"epsilon input must have shape (batch, time, dim); got {epsilon.shape}",
+        )
+    family = str(perturbation["family"])
+    axis_index = _axis_index(str(perturbation["axis"]))
+    epsilon_index = axis_index if family == "initial_position_offset" else 2 + axis_index
+    if epsilon_index < 0 or epsilon.shape[-1] <= epsilon_index:
+        return AdapterResult(
+            status="blocked",
+            trial_specs=trial_specs,
+            reason=(
+                f"epsilon input has dimension {epsilon.shape[-1]}, cannot address "
+                f"movement-onset initial-state epsilon index {epsilon_index}"
+            ),
+        )
+    batch_size = _infer_batch_size(trial_specs)
+    try:
+        movement_starts = _movement_start_indices(trial_specs, batch_size=batch_size)
+    except ValueError as exc:
+        return AdapterResult(
+            status="blocked",
+            trial_specs=trial_specs,
+            reason=str(exc),
+        )
+    if movement_starts is None:
+        movement_starts = np.zeros((batch_size,), dtype=np.int64)
+        movement_start_source = "absent_timeline_assumed_zero_for_immediate_reach"
+    else:
+        movement_start_source = "trial_specs.timeline.epoch_bounds[..., 1]"
+    timing_error = _validate_timed_pulse_indices(
+        movement_starts,
+        1,
+        n_time=int(epsilon.shape[-2]),
+    )
+    if timing_error is not None:
+        return AdapterResult(
+            status="blocked",
+            trial_specs=trial_specs,
+            reason=(
+                "movement-onset initial-state process impulse timing is outside "
+                f"epsilon time axis: {timing_error}"
+            ),
+        )
+    amount = float(perturbation["amplitude"]) * int(perturbation["sign"])
+    payload = jnp.zeros_like(epsilon)
+    for batch_index, start in enumerate(movement_starts):
+        payload = payload.at[batch_index, int(start), epsilon_index].add(amount)
+    updated_trial_specs = _add_trial_input(trial_specs, "epsilon", epsilon + payload)
+    return AdapterResult(
+        status="evaluated",
+        trial_specs=updated_trial_specs,
+        adapter_provenance={
+            "adapter": "trial_specs.inputs.epsilon",
+            "movement_start_aligned": True,
+            "timing_basis": "movement_age",
+            "movement_start_indices": [int(start) for start in movement_starts.tolist()],
+            "movement_start_source": movement_start_source,
+            "start_time_index": int(movement_starts[0]),
+            "absolute_start_time_indices": [
+                int(start) for start in movement_starts.tolist()
+            ],
+            "relative_start_time_index": 0,
+            "duration_steps": 1,
+            "epsilon_index": epsilon_index,
+            "process_channel": "LinearStateSpace.B_w",
+            "movement_onset_initial_state_semantics": (
+                "TaskTrialSpec inits are trial-start only; delayed movement-age "
+                "initial-position/velocity eval rows mirror training by using a "
+                "one-step process-epsilon impulse at movement onset."
+            ),
+        },
     )
 
 
@@ -2938,9 +3134,22 @@ def _apply_named_graph_channel_offset(
     ) or adapter_spec
     batch_size = _infer_batch_size(trial_specs)
     timing = perturbation["timing"]
-    start = int(timing.get("start_time_index", 0))
     duration = int(timing.get("duration_steps", 1))
-    n_time = _infer_trial_n_time(trial_specs, start + duration)
+    relative_start = int(timing.get("start_time_index", 0))
+    try:
+        start_indices, timing_provenance = _movement_aligned_start_indices(
+            trial_specs,
+            perturbation,
+            batch_size=batch_size,
+        )
+    except ValueError as exc:
+        return AdapterResult(
+            status="blocked",
+            trial_specs=trial_specs,
+            model=model,
+            reason=str(exc),
+        )
+    n_time = _infer_trial_n_time(trial_specs, int(np.max(start_indices)) + duration)
     existing_payload = getattr(trial_specs, "inputs", {}).get(effective_spec.input_key)
     declared_payload_dim = additive_channel_payload_dim(effective_spec)
     payload_dim = (
@@ -2970,9 +3179,17 @@ def _apply_named_graph_channel_offset(
                 f"{effective_spec.input_key!r}."
             ),
         )
-    payload[:, start : start + duration, axis_index] = (
-        float(perturbation["amplitude"]) * int(perturbation["sign"])
-    )
+    timing_error = _validate_timed_pulse_indices(start_indices, duration, n_time=n_time)
+    if timing_error is not None:
+        return AdapterResult(
+            status="blocked",
+            trial_specs=trial_specs,
+            model=model,
+            reason=timing_error,
+        )
+    amount = float(perturbation["amplitude"]) * int(perturbation["sign"])
+    for batch_index, start in enumerate(start_indices):
+        payload[batch_index, int(start) : int(start) + duration, axis_index] = amount
     payload_array = jnp.asarray(payload)
     if existing_payload is not None:
         payload_array = jnp.asarray(existing_payload) + payload_array
@@ -2987,13 +3204,16 @@ def _apply_named_graph_channel_offset(
             effective_spec,
             adapter="feedbax.additive_channel_adapter",
         ),
-        "start_time_index": start,
+        "start_time_index": int(start_indices[0]),
+        "relative_start_time_index": relative_start,
+        "absolute_start_time_indices": [int(start) for start in start_indices.tolist()],
         "duration_steps": duration,
         "axis_index": axis_index,
         "declared_payload_dim": declared_payload_dim,
         "effective_payload_dim": payload_dim,
         "active_calibrated_components": active_calibrated_components,
         "requires_zero_payload_base": True,
+        **timing_provenance,
     }
     if payload_dim != declared_payload_dim:
         provenance["payload_shape_source"] = "existing_trial_input"
@@ -3080,15 +3300,34 @@ def _apply_process_epsilon_pulse(
             ),
         )
     timing = perturbation["timing"]
-    start = int(timing.get("start_time_index", 0))
     duration = int(timing.get("duration_steps", 1))
-    if start < 0 or duration < 1 or start + duration > epsilon.shape[-2]:
+    relative_start = int(timing.get("start_time_index", 0))
+    batch_size = _infer_batch_size(trial_specs)
+    try:
+        start_indices, timing_provenance = _movement_aligned_start_indices(
+            trial_specs,
+            perturbation,
+            batch_size=batch_size,
+        )
+    except ValueError as exc:
+        return AdapterResult(
+            status="blocked",
+            trial_specs=trial_specs,
+            model=model,
+            reason=str(exc),
+        )
+    timing_error = _validate_timed_pulse_indices(
+        start_indices,
+        duration,
+        n_time=int(epsilon.shape[-2]),
+    )
+    if timing_error is not None:
         return AdapterResult(
             status="blocked",
             trial_specs=trial_specs,
             reason=(
                 "process_epsilon_pulse timing is outside epsilon time axis: "
-                f"start={start}, duration={duration}, n_time={epsilon.shape[-2]}"
+                f"{timing_error}"
             ),
         )
     amount = float(perturbation["amplitude"]) * int(perturbation["sign"])
@@ -3097,7 +3336,10 @@ def _apply_process_epsilon_pulse(
         payload_dim=int(epsilon.shape[-1]),
     )
     payload = jnp.zeros_like(epsilon)
-    payload = payload.at[..., start : start + duration, epsilon_index].add(amount)
+    for batch_index, start in enumerate(start_indices):
+        payload = payload.at[batch_index, int(start) : int(start) + duration, epsilon_index].add(
+            amount
+        )
     if adapter_spec.input_key in trial_specs.inputs:
         payload = jnp.asarray(trial_specs.inputs[adapter_spec.input_key]) + payload
     updated_trial_specs = _add_trial_input(trial_specs, adapter_spec.input_key, payload)
@@ -3129,12 +3371,15 @@ def _apply_process_epsilon_pulse(
             ),
             "epsilon_component": perturbation.get("epsilon_component"),
             "epsilon_index": epsilon_index,
-            "start_time_index": start,
+            "start_time_index": int(start_indices[0]),
+            "relative_start_time_index": relative_start,
+            "absolute_start_time_indices": [int(start) for start in start_indices.tolist()],
             "duration_steps": duration,
             "process_channel": "LinearStateSpace.B_w",
             "requires_zero_payload_base": True,
             "graph_inserted": graph_inserted,
             "graph_insertion_requires_model": model is None,
+            **timing_provenance,
         },
     )
 

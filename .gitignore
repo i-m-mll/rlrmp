@@ -271,8 +271,8 @@ results/**
 !results/**/spec.json
 # Small Plotly figure JSON (commit only when ≤ 2 MB; enforced by the saver helper):
 !results/**/figure.json
-# Typora-style markdown sidecar assets (results/<name>.assets/*.png) — keep tracked:
-!results/**/*.assets/**
+# Typora/Obsidian-style markdown sidecar assets are bulk render assets.
+results/**/*.assets/**
 # Figure thumbnails (commit only when ≤ 300 KB at 100 DPI; enforced by the saver helper):
 !results/**/figures/**/figure.png
 # Render symlinks (relative symlink from results/<exp>/figures/<topic>/ → _artifacts/...; Bug: aaafc55):

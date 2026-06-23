@@ -193,8 +193,12 @@ Before any **billable** training launch (`runpodctl pod create` for a run, or a 
 
 ### 3. GPU choice
 (Cross-ref subagent GPU analysis, Part 2.5 session.)
-- **RTX 4090** (community cloud): cheapest validated option.
-- **RTX 4090 secure cloud**: acceptable when the user requests secure cloud; availability can be low, but do not infer failure from `uptimeSeconds: 0` (see §4b).
+- **Secure cloud is the default for billable RunPod launches.** Use community
+  cloud only when the user explicitly accepts the lower isolation tier for that
+  run.
+- **RTX 4090 secure cloud**: validated baseline when available; availability can
+  be low, but do not infer failure from `uptimeSeconds: 0` (see §4b).
+- **RTX 4090 community cloud**: cheapest validated option, but not the default.
 - **RTX 5090** (Blackwell, EUR-IS-2 or similar): faster, but some templates carry stale image references.
   - Template `runpod-torch-v280` / image `runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404` has been observed to boot and expose SSH on a 5090 (driver 570.124.06). After `uv sync`, install `jax[cuda12]`; this upgrades to CUDA 12.9 wheels (`jax==0.10.0`) and exposes `CudaDevice(id=0)`.
   - Image `runpod/pytorch:1.0.3-cu1281-torch290-ubuntu2204` or newer (`cu1290`/`cu1300`) should also support Blackwell — verify the Docker tag exists before creating the pod.
@@ -218,6 +222,9 @@ Manual fallback/debugging invariants:
 
 - Expose `22/tcp` at pod creation; the default RunPod port set can make direct
   TCP SSH unreachable.
+- Acquire the direct endpoint first: immediately read the `.ssh.ssh_command`
+  from `runpodctl pod get`, then verify it with `ssh ... 'true'` or
+  `ssh ... 'nvidia-smi'` before setup, installs, or run launches.
 - Poll readiness from the `.ssh` object and a functional SSH probe such as
   `nvidia-smi`, not from `.runtime`, `.runtime.ports`, or `uptimeSeconds`
   (Bug: b399efc).
@@ -228,6 +235,44 @@ Manual fallback/debugging invariants:
   broad `sed` globs that can corrupt TOML or lockfile metadata.
 - After installing CUDA JAX on the pod, do not run `uv sync` again. Use
   `uv run --no-sync` for subsequent commands.
+
+#### Endpoint discovery (runpodctl 2.2.0 secure pods)
+
+Confirmed by the 2026-06-20 secure-pod probe:
+
+- A secure pod's SSH endpoint lives **only** in the `.ssh` object of
+  `runpodctl pod get -o json` — read `.ssh.ip`, `.ssh.port`, and
+  `.ssh.ssh_command`. Do **not** rely on `publicIp` or `portMappings`; secure
+  pods do not surface the direct SSH endpoint there.
+- While the pod is still booting, `.ssh` is an error object
+  (`{"error":"pod not ready", ...}`), not the endpoint. Poll `.ssh` until it
+  resolves to `ip`/`port`/`ssh_command`, then prove it with `ssh ... 'true'` or
+  `ssh ... 'nvidia-smi'` before any expensive setup (Bug: b399efc).
+
+#### Dead-state rule (fail fast on a bad image)
+
+- A failed image flips `desiredStatus` → `EXITED` within seconds of creation,
+  with `lastStatusChange` reading `Exited by Runpod: ...`. Treat
+  `EXITED`/`TERMINATED` within the boot grace window as a dead pod: bail
+  immediately rather than polling to timeout. This complements the
+  `uptimeSeconds`/`.ssh`-liveness note (Bug: b399efc) — a live-but-slow pod
+  shows `uptimeSeconds: 0` while `.ssh` resolves, whereas a dead pod shows
+  `desiredStatus: EXITED`.
+
+#### Pod reuse: probe for a poisoned venv before bootstrap
+
+When reusing an existing pod (rather than a fresh image), the shared `.venv`
+can be left in a half-migrated state by a previous interrupted install. The
+diagnostic symptom is `ImportError: cannot import name 'array_creation'` (or a
+similar partially-initialized JAX/numpy import) on the first `uv run --no-sync`.
+
+- Probe consistency before doing work: run a cheap
+  `uv run --no-sync python -c 'import jax, jax.numpy; print(jax.devices())'`
+  on the pod and check it succeeds.
+- If the venv is poisoned, rebuild it: `uv venv --clear`, then re-sync the
+  environment and reinstall CUDA JAX (`uv pip install "jax[cuda12]"` per §3),
+  then resume with `uv run --no-sync`. Do not try to patch around a poisoned
+  venv in place. Cross-ref lesson `76d3a8e`.
 
 ### 5. nohup pattern (mandatory for installs)
 SSH session killed mid-install → SIGHUP kills the process → wasted bandwidth and a broken env.
@@ -249,11 +294,30 @@ Adjust flags to match the current script's CLI if it has changed.
 - **Full run**: check at 1 min (confirm JIT compilation visible), every 5 min during early loss decline, drop to every 30 min once loss is steadily descending.
 - Watch for `ptxas` warnings, `OOM`, and `Traceback` patterns alongside loss-progress signal.
 - For 1k warmup-only smoke tests on a 5090, first compilation takes ~30 s and the whole run completes in a few minutes. Pause after the smoke test and do not launch the main matrix until the user confirms.
+- **Batch-progress lines.** rlrmp training scripts emit grep-friendly
+  per-batch progress lines so a monitor can report the last batch seen between
+  the JIT message and the completion sentinel
+  (`scripts/train_minimax.py` warmup + adversarial phases and
+  `scripts/train_part2_5.py`; helper `rlrmp.train.progress`). The stable format
+  is `BATCH phase=<phase> batch=<i>/<n> [loss=<x>] [elapsed=<s>s]` — always
+  starting with the literal `BATCH` token, with `phase` and `batch=<i>/<n>` as
+  the load-bearing fields. The format is intentionally grep-friendly so
+  `poll_run.sh`'s aggregate progress parsing can consume it once that parsing
+  lands on feedbax's protected branch; until then the lines remain available
+  for it (and useful for a plain `grep BATCH` on the nohup log). The line is
+  host-side only (no per-step device→host sync; smoke-size runs log every batch,
+  larger runs every 10th). Transient poll/retry detail belongs in chat or the
+  nohup log, **not** in Mandible checkpoints (see §9 run-status convention).
 
 ### 8. Cost discipline
 (Cross-ref dotfiles `3602840`.)
 - Pod billing starts on **creation**, not on container start.
-- Verify the pod is reachable via the `.ssh.ssh_command` from `runpodctl pod get`, confirmed by a functional SSH probe (`ssh ... 'true'` or `ssh ... 'nvidia-smi'`). Do NOT rely on `uptimeSeconds > 0`, `.runtime`, or `.runtime.ports` as the primary liveness signal — a working pod can show `uptimeSeconds: 0` and no `.runtime` object while `.ssh` is valid (Bug: b399efc).
+- After creation, acquire and verify the direct SSH endpoint before any expensive
+  setup step. Use the `.ssh.ssh_command` from `runpodctl pod get`, confirmed by
+  a functional SSH probe (`ssh ... 'true'` or `ssh ... 'nvidia-smi'`). Do NOT
+  rely on `uptimeSeconds > 0`, `.runtime`, or `.runtime.ports` as the primary
+  liveness signal — a working pod can show `uptimeSeconds: 0` and no `.runtime`
+  object while `.ssh` is valid (Bug: b399efc).
 - Do not unilaterally upgrade cloud tier or GPU class — ask the user first.
 - **Modal:** destructive CLI ops (`modal app stop`, `modal volume rm`) require `--yes`/`-y`; non-interactive shells abort without it.
 
@@ -309,9 +373,43 @@ Stable post-run provenance contract:
 - Non-dry runs stamp the tracked run spec with `post_run_provenance`, then run
   Feedbax `TrainingRunManifest` parity before `git add` / `agent-commit`. A
   mismatched tracked run spec and matching manifest blocks the commit.
+- Non-dry runs must verify `uv.lock` is clean before `git add` /
+  `agent-commit` / auth submission. `POST_RUN_ALLOW_DIRTY_UV_LOCK=1` is an
+  emergency override only when the lockfile change is deliberate and documented
+  elsewhere.
 - Existing legacy runs without a matching Feedbax `TrainingRunManifest` may
   continue through the wrapper, but the output must report that parity was
   `not_found` rather than silently implying a checked manifest.
+- The run recipe must arrive at the **flat** canonical path
+  `results/<hash>/runs/<run>.json`. Training scripts now write the flat recipe
+  directly (`derive_spec_path`; W8/`e926665`). If only a **legacy nested**
+  `results/<hash>/runs/<run>/run.json` recipe is present, `post_run.sh` raises
+  an explicit error rather than silently promoting it — re-run training with
+  the updated scripts or move the recipe to the flat path first.
+
+Run-status checkpoint convention (`e8b5b3b`):
+
+- The Mandible ledger gets **one terminal run-status checkpoint per run**, not
+  a stream of transient phase checkpoints. `scripts/post_run.sh` emits exactly
+  one `kind=run-status` checkpoint (`phase=completed`) on a non-dry run via
+  `mandible issue checkpoint add <issue> --kind run-status --payload-file -`.
+  Use `phase=failed` if recording a failed run by hand. An optional `launched`
+  checkpoint at launch is justified only when a *different* session will resume
+  monitoring.
+- Schema (`schema_version=1`): `run_id`, `phase`
+  (`launched`|`completed`|`failed`), `timestamp`, `artifact_dir` (repo-relative),
+  `run_spec_path` (repo-relative **reference** to the tracked `run.json` — never
+  inline hyperparameters), and `metrics_summary` (the scalar metrics from
+  `training_summary.json`).
+- A dry run **previews** the payload (prints the intended
+  `mandible issue checkpoint add` command and the JSON) without writing it.
+- **Resumability test** — emit a ledger checkpoint only for state a fresh
+  session would need to resume or close out the run: "would a fresh session
+  need this to tell a finished run from an in-flight one?" If yes (terminal
+  status, artifact location, headline metrics) → the one run-status checkpoint.
+  If no (per-poll progress, transient retries, batch counters) → chat or the
+  nohup log, never a checkpoint. The per-batch `BATCH` progress lines (§7) are
+  log-only for exactly this reason.
 
 ## Feedbax Studio
 Feedbax Studio (web app) runs from the Feedbax repo. See feedbax repo instructions for server startup.
@@ -341,16 +439,24 @@ Inside each `<hash>/`:
 ├── RUN_PLAN.md                    if the work involves training runs
 ├── notes/<topic>.md               narrative + analysis writeups
 ├── figures/<topic>/spec.json      figure specs (one dir per topic)
-└── runs/<variant>.json            per-run hyperparameters (flat, not nested)
+└── runs/<variant>.json            canonical per-run recipe (flat, not nested)
 ```
 
-The mirror `_artifacts/<hash>/...` follows the same structure (`runs/<variant>/` is a dir here, holding the bulk training outputs; `runs/<variant>.json` in `results/` is the corresponding spec file).
+The mirror `_artifacts/<hash>/...` follows the same structure by role:
+`_artifacts/<hash>/runs/<variant>/` is a directory holding the bulk training
+outputs; `results/<hash>/runs/<variant>.json` is the corresponding canonical
+recipe. If a run needs additional tracked sidecars, use
+`results/<hash>/runs/<variant>/` for those sidecars only.
 
 ### Run-folder convention
 
 - **`runs/<variant>.json`** flat by default — one JSON file per run, not a directory with a single file in it.
+- **`runs/<variant>/`** is optional tracked sidecar space for lightweight
+  per-run notes, debug metadata, or historical `run.json` compatibility. Do not
+  put new canonical recipes there.
 - For complex sweeps where variant names balloon (~50+ chars), use `runs/<hash>.json` + `runs_index.json` mapping hash → human label + params.
-- Promote a run from file to directory (`runs/<variant>/` with `run.json` inside) only when additional per-run files accrue (notes, debug artifacts). Lazy promotion.
+- Keep bulk arrays/checkpoints/logs under `_artifacts/<hash>/runs/<variant>/`;
+  do not promote heavy run outputs into `results/<hash>/runs/<variant>/`.
 
 ### Script placement: experiment-specific vs reusable (Bug: 8404108)
 

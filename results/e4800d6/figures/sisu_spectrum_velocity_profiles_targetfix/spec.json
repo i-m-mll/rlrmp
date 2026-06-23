@@ -1,0 +1,33 @@
+{
+  "checkpoint_policy": "validation_selected_per_replicate",
+  "experiment": "e4800d6",
+  "input_contract": "SISU is carried by trial_specs.inputs['input'] for these runs; epsilon is zeroed for the nominal velocity-profile comparison.",
+  "inputs": [],
+  "interpretation": "Discovery-trained robustness, not teacher/distillation and not formal H-infinity equivalence.",
+  "labels": [
+    "raw strong gamma-1.05 targetfix",
+    "effective 020a65b PGD targetfix"
+  ],
+  "n_rollout_trials_per_replicate": 64,
+  "reference_samples": 128,
+  "run_ids": [
+    "cs_gru_h0_sisu_spectrum_targetfix__raw_strong_gamma_1p05_radius_lr3e-3_clip5_b64",
+    "cs_gru_h0_sisu_spectrum_targetfix__effective_020a65b_pgd_radius_lr3e-3_clip5_b64"
+  ],
+  "schema_id": "rlrmp.figure_spec.sisu_spectrum_velocity_profiles.v1",
+  "sisu_levels": [
+    0.0,
+    0.5,
+    1.0
+  ],
+  "timestamp": "2026-06-17T07:51:21.602178+00:00",
+  "topic": "sisu_spectrum_velocity_profiles_targetfix",
+  "versions": {
+    "equinox": "0.13.4",
+    "feedbax": "0.1.2",
+    "jax": "0.9.0",
+    "numpy": "2.4.1",
+    "plotly": "6.5.2",
+    "rlrmp": "0.1.0"
+  }
+}

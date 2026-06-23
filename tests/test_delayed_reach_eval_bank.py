@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import importlib.util
 import math
+import sys
+from pathlib import Path
 
+import numpy as np
 import pytest
 
 from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
@@ -16,6 +20,26 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     delayed_reach_fixed_rescore_bank_spec,
     plan_fixed_bank_checkpoint_rescore,
 )
+
+
+def load_delayed_timing_velocity_materializer():
+    """Load the issue-local delayed timing velocity materializer."""
+
+    module_name = "rlrmp_test_delayed_timing_velocity_materializer"
+    script_path = (
+        Path(__file__).resolve().parents[1]
+        / "results"
+        / "40e1911"
+        / "scripts"
+        / "materialize_delayed_timing_hold_lane_velocity_profiles.py"
+    )
+    spec = importlib.util.spec_from_file_location(module_name, script_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_uniform_delayed_eval_bank_preserves_historical_grid_contract() -> None:
@@ -113,6 +137,66 @@ def test_default_direction_count_matches_historical_fixed_bank() -> None:
     assert DEFAULT_DELAYED_REACH_DIRECTION_COUNT == 20
     assert payload["direction_count"] == 20
     assert payload["trial_count"] == 21 * 20
+
+
+def test_fixed_bank_projection_direction_uses_intended_target_for_catch() -> None:
+    materializer = load_delayed_timing_velocity_materializer()
+
+    direction = materializer.fixed_bank_projection_direction(
+        {
+            "bank_family": "delayed_reach_fixed_eval_bank",
+            "catch": True,
+            "direction_count": 4,
+            "target_angles_rad": [0.0, 0.5 * math.pi, math.pi, 1.5 * math.pi],
+        },
+        trial_count=8,
+    )
+
+    expected = np.asarray(
+        [
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [-1.0, 0.0],
+            [0.0, -1.0],
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [-1.0, 0.0],
+            [0.0, -1.0],
+        ]
+    )
+    assert direction == pytest.approx(expected)
+
+
+def test_delayed_velocity_input_update_preserves_composite_go_cue_sisu_width() -> None:
+    materializer = load_delayed_timing_velocity_materializer()
+    existing = {
+        "input": np.zeros((3, 5, 2), dtype=np.float32),
+        "sisu": np.zeros((3, 6), dtype=np.float32),
+    }
+    existing["input"][..., 1] = 0.75
+    go_input = np.asarray(
+        [
+            [0.0, 1.0, 1.0, 1.0, 1.0],
+            [0.0, 0.0, 1.0, 1.0, 1.0],
+            [0.0, 0.0, 0.0, 1.0, 1.0],
+        ],
+        dtype=np.float32,
+    )
+
+    updated = materializer.update_inputs(
+        existing,
+        visible_target=np.zeros((3, 6, 2), dtype=np.float32),
+        scored_target=np.zeros((3, 6, 2), dtype=np.float32),
+        hold=1.0 - go_input,
+        target_on=np.ones_like(go_input),
+        go_input=go_input,
+        sisu_level=0.25,
+    )
+
+    assert updated["input"].shape == (3, 5, 2)
+    np.testing.assert_allclose(np.asarray(updated["input"][..., 0]), go_input)
+    np.testing.assert_allclose(np.asarray(updated["input"][..., 1]), 0.25)
+    np.testing.assert_allclose(np.asarray(updated["sisu"]), 0.25)
 
 
 def test_delayed_fixed_rescore_plan_uses_delayed_selection_source(tmp_path) -> None:

@@ -89,6 +89,7 @@ class VelocityProfile:
     run_spec_path: Path
     artifact_dir: Path
     bank_kind: BankKind
+    sisu_level: float | None
     time_s: np.ndarray
     mean: np.ndarray
     std: np.ndarray
@@ -127,6 +128,7 @@ def main() -> None:
     for bank_kind in ("no_catch", "catch"):
         output_dir = output_root / bank_kind
         mkdir_p(output_dir)
+        sisu_levels = tuple(args.sisu_level or (None,))
         profiles = [
             evaluate_velocity_profile(
                 run,
@@ -139,8 +141,10 @@ def main() -> None:
                 direction_count=args.direction_count,
                 reach_length_m=args.reach_length_m,
                 pre_go_context_steps=args.pre_go_context_steps,
+                sisu_level=sisu_level,
             )
             for run in runs
+            for sisu_level in sisu_levels
         ]
         include_reference = bool(args.include_reference and bank_kind == "no_catch")
         references = (
@@ -166,6 +170,7 @@ def main() -> None:
             replicate_file=replicate_file,
             references=references,
             output_dir=output_dir,
+            issue=args.result_experiment,
             direction_split_status=(
                 "not_materialized: prior good/bad direction split was a "
                 "diagnostic grouping for earlier no-PGD rows, not a natural "
@@ -244,6 +249,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=True,
         help="Overlay extLQG references on the no-catch profile.",
     )
+    parser.add_argument(
+        "--sisu-level",
+        type=float,
+        action="append",
+        default=None,
+        help=(
+            "Evaluate each run at this SISU level. Repeat to compare levels. "
+            "When omitted, preserve each run's validation-bank SISU values."
+        ),
+    )
     return parser
 
 
@@ -302,6 +317,7 @@ def evaluate_velocity_profile(
     direction_count: int,
     reach_length_m: float,
     pre_go_context_steps: int,
+    sisu_level: float | None = None,
 ) -> VelocityProfile:
     """Evaluate the final checkpoint on one fixed delayed-reach bank."""
 
@@ -317,6 +333,7 @@ def evaluate_velocity_profile(
         direction_count=direction_count,
         reach_length_m=reach_length_m,
         movement_horizon_steps=movement_horizon_steps,
+        sisu_level=sisu_level,
     )
     model, _hyperparameters = load_with_hyperparameters(
         run.artifact_dir / "trained_model.eqx",
@@ -346,9 +363,7 @@ def evaluate_velocity_profile(
         jr.split(jr.PRNGKey(0), n_replicates),
     )
     velocity_np = np.asarray(velocity, dtype=np.float64)
-    target_position = target_position_sequence(bank.trial_specs)
-    initial_position = initial_effector_position(bank.trial_specs)
-    direction, _distance = reach_direction(initial_position, target_position[:, -1, :])
+    direction = target_radial_projection_direction(bank.trial_specs, bank.metadata)
     forward = np.sum(velocity_np * direction[None, :, None, :], axis=-1)
     go_index = np.asarray(bank.trial_specs.timeline.epoch_bounds[:, 1], dtype=np.int64)
     aligned_forward, center = align_trials(forward, go_index)
@@ -393,6 +408,7 @@ def evaluate_velocity_profile(
         run_spec_path=run.run_spec_path,
         artifact_dir=run.artifact_dir,
         bank_kind=bank_kind,
+        sisu_level=sisu_level,
         time_s=time_s,
         mean=mean,
         std=std,
@@ -413,6 +429,7 @@ def make_delayed_eval_bank(
     direction_count: int,
     reach_length_m: float,
     movement_horizon_steps: int,
+    sisu_level: float | None = None,
 ) -> DelayedEvalBank:
     """Return a uniform-grid fixed delayed-reach evaluation bank."""
 
@@ -507,6 +524,12 @@ def make_delayed_eval_bank(
         "target_radii_m": [float(reach_length_m)] * int(direction_count),
         "target_angles_rad": [float(angle) for angle in direction_angles],
         "source_trial_indices": [int(index) for index in source_index[: int(direction_count)]],
+        "sisu_level": None if sisu_level is None else float(sisu_level),
+        "sisu_conditioning": (
+            "preserved_from_source_trials"
+            if sisu_level is None
+            else "explicit_constant_sisu_level"
+        ),
     }
     updated = TaskTrialSpec(
         inits=WhereDict(update_initial_positions(remapped.inits, initial_position_batch)),
@@ -517,6 +540,7 @@ def make_delayed_eval_bank(
             hold=control_hold,
             target_on=target_on,
             go_input=go_input,
+            sisu_level=sisu_level,
         ),
         targets=WhereDict(update_targets(remapped.targets, scored_target)),
         intervene=remapped.intervene,
@@ -598,6 +622,7 @@ def update_inputs(
     hold: np.ndarray,
     target_on: np.ndarray,
     go_input: np.ndarray,
+    sisu_level: float | None = None,
 ) -> Any:
     """Return input tree with target/go-cue surfaces replaced."""
 
@@ -612,7 +637,13 @@ def update_inputs(
         return inputs
     updated = dict(inputs)
     if "input" in updated:
-        updated["input"] = like_existing_time_input(updated["input"], go_input)
+        updated["input"] = update_controller_input(
+            updated["input"],
+            go_input=go_input,
+            sisu_level=sisu_level,
+        )
+    if "sisu" in updated and sisu_level is not None:
+        updated["sisu"] = jnp.full_like(jnp.asarray(updated["sisu"]), float(sisu_level))
     if "target" in updated:
         updated["target"] = like_existing_array(updated["target"], visible_target)
     if "effector_target" in updated:
@@ -628,6 +659,27 @@ def update_inputs(
             target_on=target_on,
         )
     return updated
+
+
+def update_controller_input(
+    existing: Any,
+    *,
+    go_input: np.ndarray,
+    sisu_level: float | None,
+) -> jnp.ndarray:
+    """Return model controller input preserving delayed SISU width when present."""
+
+    array = jnp.asarray(existing)
+    if array.ndim >= 3 and array.shape[-1] >= 2:
+        replacement = array.at[..., 0].set(
+            jnp.asarray(go_input, dtype=array.dtype)
+        )
+        if sisu_level is not None:
+            replacement = replacement.at[..., 1].set(
+                jnp.full_like(replacement[..., 1], float(sisu_level))
+            )
+        return replacement
+    return like_existing_time_input(existing, go_input)
 
 
 def update_delayed_task_inputs(
@@ -714,6 +766,56 @@ def target_position_sequence(trial_specs: Any) -> np.ndarray:
     raise ValueError("Trial spec does not include 2D target sequence")
 
 
+def target_radial_projection_direction(
+    trial_specs: Any,
+    bank_metadata: Mapping[str, Any],
+) -> np.ndarray:
+    """Return intended target-radial projection directions for an eval bank."""
+
+    initial_position = initial_effector_position(trial_specs)
+    fixed_bank_direction = fixed_bank_projection_direction(
+        bank_metadata,
+        trial_count=int(initial_position.shape[0]),
+    )
+    if fixed_bank_direction is not None:
+        return fixed_bank_direction
+
+    target_position = target_position_sequence(trial_specs)
+    direction, _distance = reach_direction(initial_position, target_position[:, -1, :])
+    return direction
+
+
+def fixed_bank_projection_direction(
+    bank_metadata: Mapping[str, Any],
+    *,
+    trial_count: int,
+) -> np.ndarray | None:
+    """Return fixed-bank intended reach directions from metadata when available."""
+
+    if bank_metadata.get("bank_family") != "delayed_reach_fixed_eval_bank":
+        return None
+    angles = bank_metadata.get("target_angles_rad")
+    direction_count = int(bank_metadata.get("direction_count", 0))
+    if angles is None or direction_count <= 0:
+        return None
+
+    angles_array = np.asarray(angles, dtype=np.float64)
+    if angles_array.shape != (direction_count,):
+        raise ValueError(
+            "fixed-bank target_angles_rad must have shape "
+            f"({direction_count},); got {angles_array.shape}"
+        )
+    if trial_count % direction_count != 0:
+        raise ValueError(
+            "fixed-bank trial count must be a multiple of direction_count; "
+            f"got trial_count={trial_count}, direction_count={direction_count}"
+        )
+
+    directions = np.stack([np.cos(angles_array), np.sin(angles_array)], axis=-1)
+    repeat_count = trial_count // direction_count
+    return np.tile(directions, (repeat_count, 1))
+
+
 def reach_direction(
     initial_position: np.ndarray,
     target_position: np.ndarray,
@@ -788,6 +890,14 @@ def write_velocity_figure(
     if not profiles:
         raise ValueError("At least one profile is required")
     bank_kind = profiles[0].bank_kind
+    grouped = group_sisu_profiles(profiles)
+    if grouped is not None:
+        return write_sisu_velocity_figure(
+            grouped,
+            bank_kind=bank_kind,
+            output_dir=output_dir,
+            references=references,
+        )
     fig = profile_comparison_grid(
         n_panels=len(profiles),
         subplot_titles=[profile.label for profile in profiles],
@@ -821,6 +931,89 @@ def write_velocity_figure(
     path = output_dir / "forward_velocity_profiles_stochastic.html"
     fig.write_html(path)
     return path
+
+
+def group_sisu_profiles(
+    profiles: Sequence[VelocityProfile],
+) -> list[tuple[VelocityProfile, list[VelocityProfile]]] | None:
+    """Group explicit-SISU profiles by source run, preserving first-seen order."""
+
+    if not profiles or all(profile.sisu_level is None for profile in profiles):
+        return None
+    grouped: dict[tuple[str, str], list[VelocityProfile]] = {}
+    representatives: dict[tuple[str, str], VelocityProfile] = {}
+    for profile in profiles:
+        key = (profile.experiment, profile.run_id)
+        grouped.setdefault(key, []).append(profile)
+        representatives.setdefault(key, profile)
+    return [(representatives[key], grouped[key]) for key in grouped]
+
+
+def write_sisu_velocity_figure(
+    grouped_profiles: Sequence[tuple[VelocityProfile, Sequence[VelocityProfile]]],
+    *,
+    bank_kind: BankKind,
+    output_dir: Path,
+    references: Sequence[Any],
+) -> Path:
+    """Write a SISU comparison figure with one panel per trained row."""
+
+    fig = profile_comparison_grid(
+        n_panels=len(grouped_profiles),
+        subplot_titles=[profile.label for profile, _group in grouped_profiles],
+        vertical_spacing=0.025,
+    )
+    for row, (_representative, group) in enumerate(grouped_profiles, start=1):
+        for reference in references:
+            add_reference_trace(fig, reference=reference, row=row, showlegend=row == 1)
+        for profile in sorted(group, key=lambda item: (-1.0 if item.sisu_level is None else item.sisu_level)):
+            label = (
+                profile.label
+                if profile.sisu_level is None
+                else f"SISU={profile.sisu_level:g}"
+            )
+            legendgroup = (
+                f"sisu-{profile.sisu_level:g}"
+                if profile.sisu_level is not None
+                else f"run-{profile.experiment}-{profile.run_id}"
+            )
+            add_band_trace(
+                fig,
+                x=profile.time_s,
+                mean=profile.mean,
+                std=profile.std,
+                row=row,
+                color=sisu_color(profile.sisu_level),
+                name=label,
+                legendgroup=legendgroup,
+                showlegend=row == 1,
+            )
+        fig.add_vline(x=0.0, line={"color": "black", "dash": "dash", "width": 1}, row=row, col=1)
+    fig.update_layout(
+        title=f"Delayed SISU target-radial velocity comparison ({bank_kind})",
+        width=980,
+        height=max(540, 320 * len(grouped_profiles)),
+        margin={"l": 72, "r": 24, "t": 76, "b": 72},
+        hovermode="x unified",
+    )
+    fig.update_xaxes(title_text="Time relative to go cue (s)", row=len(grouped_profiles), col=1)
+    fig.update_yaxes(title_text="Target-radial velocity (m/s)", zeroline=True)
+    fig.update_yaxes(matches="y")
+    path = output_dir / "forward_velocity_profiles_stochastic.html"
+    fig.write_html(path)
+    return path
+
+
+def sisu_color(sisu_level: float | None) -> str:
+    """Return a stable color for SISU traces."""
+
+    if sisu_level is None:
+        return "#2563eb"
+    if float(sisu_level) <= 0.0:
+        return "#2563eb"
+    if float(sisu_level) >= 1.0:
+        return "#dc2626"
+    return "#7c3aed"
 
 
 def write_velocity_by_replicate_figure(
@@ -977,21 +1170,33 @@ def build_bank_summary(
     replicate_file: Path,
     references: Sequence[Any],
     output_dir: Path,
+    issue: str,
     direction_split_status: str,
 ) -> dict[str, Any]:
     """Return JSON-compatible sidecar metadata."""
 
     return {
         "schema_version": "rlrmp.delayed_timing_hold_velocity_profiles.v1",
-        "issue": RESULT_EXPERIMENT,
+        "issue": issue,
         "output_dir": repo_relative(output_dir),
         "bank_kind": profiles[0].bank_kind if profiles else None,
         "checkpoint_policy": "final_checkpoint",
         "figure": pooled_file.name,
         "replicate_figure": replicate_file.name,
-        "projection": "target-radial velocity: dot(effector velocity, unit(target - initial_position))",
+        "projection": (
+            "target-radial velocity: dot(effector velocity, "
+            "unit(intended_visible_target - initial_position))"
+        ),
         "error_band": (
             "mean +/- 1 SD over pooled replicate x fixed-bank go-cue/direction trials"
+        ),
+        "reference_overlay_contract": (
+            "No-catch panels include existing output-feedback extLQG analytical "
+            "references when requested. Output-feedback H-infinity traces are not "
+            "materialized for delayed fixed-bank/catch views because the current "
+            "delayed GRU certificate contract is blocked by the 6D delayed "
+            "feedback/force-filter GraphSpec versus 8D analytical reference "
+            "response-map mismatch."
         ),
         "direction_split": {"status": direction_split_status},
         "profiles": [profile_summary(profile) for profile in profiles],
@@ -1007,6 +1212,7 @@ def profile_summary(profile: VelocityProfile) -> dict[str, Any]:
         "experiment": profile.experiment,
         "run_id": profile.run_id,
         "run_label": profile.label,
+        "sisu_level": profile.sisu_level,
         "run_spec": repo_relative(profile.run_spec_path),
         "artifact_dir": repo_relative(profile.artifact_dir),
         "checkpoint_source": repo_relative(profile.artifact_dir / "trained_model.eqx"),
@@ -1128,19 +1334,29 @@ def build_figure_spec(*, runs: Sequence[RunInputs], args: argparse.Namespace) ->
                 if args.go_cue_step is None
                 else [int(step) for step in args.go_cue_step]
             ),
+            "sisu_levels": (
+                "preserve_validation_bank_values"
+                if args.sisu_level is None
+                else [float(level) for level in args.sisu_level]
+            ),
             "direction_count": int(args.direction_count),
             "reach_length_m": float(args.reach_length_m),
             "pre_go_context_steps": int(args.pre_go_context_steps),
             "include_reference": bool(args.include_reference),
+            "reference_overlay_contract": (
+                "no_catch overlays use existing output-feedback extLQG reference "
+                "profiles. Output-feedback H-infinity overlay is not materialized "
+                "for delayed fixed-bank/catch views because the current delayed "
+                "GRU standard-certificate contract is blocked by a 6D delayed "
+                "feedback/force-filter GraphSpec versus 8D analytical reference "
+                "response-map mismatch."
+            ),
             "checkpoint_policy": "final_checkpoint",
             "shared_yaxes": "all",
         },
         "outputs": {
-            "catch": "_artifacts/40e1911/figures/delayed_timing_hold_lane_velocity_profiles/catch",
-            "no_catch": (
-                "_artifacts/40e1911/figures/"
-                "delayed_timing_hold_lane_velocity_profiles/no_catch"
-            ),
+            "catch": f"_artifacts/{args.result_experiment}/figures/{args.topic}/catch",
+            "no_catch": f"_artifacts/{args.result_experiment}/figures/{args.topic}/no_catch",
         },
     }
 
@@ -1151,7 +1367,20 @@ def render_notes(manifest: Mapping[str, Any]) -> str:
     lines = [
         "## Delayed timing / pre-go hold velocity profiles",
         "",
-        "Generated six-row fixed delayed-bank target-radial velocity profiles.",
+        (
+            "Generated "
+            f"{len(manifest.get('run_refs', []))}-row fixed delayed-bank "
+            "target-radial velocity profiles."
+        ),
+        "",
+        (
+            "Reference overlay contract: no-catch panels include the existing "
+            "output-feedback extLQG analytical references when requested. "
+            "Output-feedback H-infinity traces are not overlaid for delayed "
+            "fixed-bank/catch views because the current delayed certificate "
+            "contract is blocked by the 6D delayed feedback/force-filter versus "
+            "8D analytical response-map mismatch."
+        ),
         "",
         "| Bank | Aggregate HTML | By-replicate HTML |",
         "|---|---|---|",

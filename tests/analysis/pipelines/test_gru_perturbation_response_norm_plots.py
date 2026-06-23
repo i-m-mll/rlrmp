@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from rlrmp.analysis.pipelines.gru_perturbation_response_norm_plots import (
+    _parse_training_level,
     aggregate_response_curves,
     materialize_response_norm_plots,
 )
@@ -180,3 +181,16 @@ def test_materialize_response_norm_plots_parses_proprio_label_from_run_id(
 
     assert result["runs"][run_id]["learning_rate"] == "lr1e-3"
     assert result["runs"][run_id]["training_level"] == "small"
+
+
+def test_parse_training_level_accepts_sisu_spectrum_labels() -> None:
+    raw = "H0 SISU raw strong gamma=1.05 radius"
+    effective_run_id = (
+        "cs_gru_h0_sisu_spectrum__effective_020a65b_pgd_radius_lr3e-3_clip5_b64"
+    )
+
+    assert _parse_training_level(raw) == "sisu_raw_strong_gamma_1p05"
+    assert (
+        _parse_training_level("H0 SISU effective", run_id=effective_run_id)
+        == "sisu_effective_020a65b_pgd"
+    )

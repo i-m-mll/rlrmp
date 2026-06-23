@@ -1,0 +1,2 @@
+[auth.protected_root_dirty]
+default_policy = "allow-untracked"

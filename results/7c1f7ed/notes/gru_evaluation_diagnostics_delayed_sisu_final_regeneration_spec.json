@@ -1,0 +1,177 @@
+{
+  "command": {
+    "argv": [
+      "unknown"
+    ],
+    "cwd": ".",
+    "metadata": {
+      "materializer": "rlrmp.analysis.pipelines.gru_evaluation_diagnostics.materialize_gru_evaluation_diagnostics",
+      "status": "not_recorded"
+    }
+  },
+  "inputs": [
+    {
+      "logical_name": "results/7c1f7ed/runs/delayed_sisu_spectrum__raw_strong_gamma_1p05_radius_lr1e-2_clip5_b64.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "bd05034bba44c379990a2c3271f81c8b8a21ad86e5575961859a41fdfad3db57",
+        "size_bytes": 345579
+      },
+      "role": "run_spec",
+      "sha256": "bd05034bba44c379990a2c3271f81c8b8a21ad86e5575961859a41fdfad3db57",
+      "size_bytes": 345579,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/7c1f7ed/runs/delayed_sisu_spectrum__raw_strong_gamma_1p05_radius_lr1e-2_clip5_b64.json"
+    },
+    {
+      "logical_name": "results/7c1f7ed/runs/delayed_sisu_spectrum__effective_020a65b_pgd_radius_lr1e-2_clip5_b64.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "77d1fb45d6b6a6b768168596ff12c1b16e53c505dc9a6f4e2cf3cc9a0815ac06",
+        "size_bytes": 345645
+      },
+      "role": "run_spec",
+      "sha256": "77d1fb45d6b6a6b768168596ff12c1b16e53c505dc9a6f4e2cf3cc9a0815ac06",
+      "size_bytes": 345645,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/7c1f7ed/runs/delayed_sisu_spectrum__effective_020a65b_pgd_radius_lr1e-2_clip5_b64.json"
+    },
+    {
+      "logical_name": "_artifacts/7c1f7ed/runs/delayed_sisu_spectrum__raw_strong_gamma_1p05_radius_lr1e-2_clip5_b64",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 128,
+        "hash_file_count": 128,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "28bdc9ece67123076f58e4cf143eb643a1628dbe2d6120be38cadd00337ec30d",
+        "total_bytes": 396035712
+      },
+      "role": "run_artifact_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/7c1f7ed/runs/delayed_sisu_spectrum__raw_strong_gamma_1p05_radius_lr1e-2_clip5_b64"
+    },
+    {
+      "logical_name": "_artifacts/7c1f7ed/runs/delayed_sisu_spectrum__effective_020a65b_pgd_radius_lr1e-2_clip5_b64",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 128,
+        "hash_file_count": 128,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "85a17d2238ab3060c3544e3755bec0182ad926110965de7e7e07058f7e36fb73",
+        "total_bytes": 396037590
+      },
+      "role": "run_artifact_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/7c1f7ed/runs/delayed_sisu_spectrum__effective_020a65b_pgd_radius_lr1e-2_clip5_b64"
+    }
+  ],
+  "metadata": {
+    "diagnostic_name": "gru_evaluation_diagnostics",
+    "materializer": "rlrmp.analysis.pipelines.gru_evaluation_diagnostics.materialize_gru_evaluation_diagnostics",
+    "notes": [
+      "Evaluation diagnostics are non-certificate sidecars.",
+      "Bulk rollout arrays may be deleted and regenerated from this spec if checkpoints remain."
+    ],
+    "schema_boundary": "rlrmp diagnostic payload; Feedbax regeneration custody"
+  },
+  "outputs": [
+    {
+      "logical_name": "results/7c1f7ed/notes/gru_evaluation_diagnostics_delayed_sisu_final.json",
+      "media_type": "application/json",
+      "metadata": {
+        "exists": true,
+        "kind": "file",
+        "sha256": "0a01ef3753945480685db0f427558b61c44a49bc97fccced7262666fcbb02bc5",
+        "size_bytes": 86499
+      },
+      "role": "evaluation_diagnostics_manifest",
+      "sha256": "0a01ef3753945480685db0f427558b61c44a49bc97fccced7262666fcbb02bc5",
+      "size_bytes": 86499,
+      "storage_backend": "feedbax-local",
+      "uri": "repo://results/7c1f7ed/notes/gru_evaluation_diagnostics_delayed_sisu_final.json"
+    },
+    {
+      "logical_name": "_artifacts/7c1f7ed/evaluation_diagnostics/gru_delayed_sisu_final",
+      "media_type": "application/octet-stream",
+      "metadata": {
+        "exists": true,
+        "file_count": 2,
+        "hash_file_count": 2,
+        "hash_truncated": false,
+        "kind": "directory",
+        "sample_tree_sha256": "f8d0dd0a3389f46e237f3303e6e43dae46b810e65602c66a3f8cb65329c9319e",
+        "total_bytes": 5811669
+      },
+      "role": "bulk_rollout_dir",
+      "storage_backend": "feedbax-local",
+      "uri": "repo://_artifacts/7c1f7ed/evaluation_diagnostics/gru_delayed_sisu_final"
+    }
+  ],
+  "parameters": {
+    "experiment": "7c1f7ed",
+    "jacobian_timepoints": [
+      "first",
+      "peak_forward_velocity",
+      "terminal"
+    ],
+    "labels": [
+      "raw strong gamma-1.05 radius",
+      "effective 020a65b PGD radius"
+    ],
+    "n_rollout_trials": 64,
+    "preferred_checkpoint_manifest_path": null,
+    "run_ids": [
+      "delayed_sisu_spectrum__raw_strong_gamma_1p05_radius_lr1e-2_clip5_b64",
+      "delayed_sisu_spectrum__effective_020a65b_pgd_radius_lr1e-2_clip5_b64"
+    ],
+    "use_validation_selected_checkpoints": false,
+    "write_bulk_arrays": true
+  },
+  "provenance": {
+    "dirty": true,
+    "entrypoint": {
+      "kind": "rlrmp-diagnostic-materializer",
+      "metadata": {},
+      "name": "rlrmp.analysis.pipelines.gru_evaluation_diagnostics.materialize_gru_evaluation_diagnostics"
+    },
+    "issues": [],
+    "metadata": {
+      "status_porcelain": [
+        "?? results/7c1f7ed/notes/gru_standard_certificates_delayed_sisu_final.md",
+        "?? results/7c1f7ed/notes/gru_standard_certificates_delayed_sisu_final_manifest.json",
+        "?? results/7c1f7ed/notes/gru_standard_certificates_delayed_sisu_final_manifest_regeneration_spec.json"
+      ]
+    },
+    "parents": [],
+    "source_branch": "feature/7c1f7ed-delayed-sisu-spectrum",
+    "source_commit": "7b4d2c6d4d0c5b0f80d0b695870d5759b55e306f",
+    "source_repo": "/Users/mll/Main/10 Projects/10 PhD/rlrmp/worktrees/feature__7c1f7ed-delayed-sisu-spectrum"
+  },
+  "schema_id": "feedbax.spec.regeneration",
+  "schema_version": "feedbax.spec.regeneration.v1",
+  "source_files": [
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/gru_evaluation_diagnostics.py",
+      "role": "source_file",
+      "sha256": "42a9b5a6bdef8f6f25129f8280cb850d3fde4299d4b837a60d04c54b9fbd8932",
+      "size_bytes": 35097
+    },
+    {
+      "metadata": {},
+      "path": "src/rlrmp/analysis/pipelines/gru_checkpoint_selection.py",
+      "role": "source_file",
+      "sha256": "21f939700a27492c7be2ae1aac6584b2654dfc8da7fd4290bd5c69dc1a613c1f",
+      "size_bytes": 55181
+    }
+  ],
+  "source_trees": []
+}

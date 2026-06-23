@@ -1,0 +1,32 @@
+{
+  "figure_family": "delayed_fixed_bank_target_radial_velocity_profiles",
+  "materializer": "results/40e1911/scripts/materialize_delayed_timing_hold_lane_velocity_profiles.py",
+  "outputs": {
+    "catch": "_artifacts/246182c/figures/flat_tail_vs_comparator_velocity_profiles/catch",
+    "no_catch": "_artifacts/246182c/figures/flat_tail_vs_comparator_velocity_profiles/no_catch"
+  },
+  "parameters": {
+    "checkpoint_policy": "final_checkpoint",
+    "direction_count": 20,
+    "go_cue_steps": "per_run_declared_range",
+    "include_reference": true,
+    "pre_go_context_steps": 10,
+    "reach_length_m": 0.15,
+    "shared_yaxes": "all"
+  },
+  "result_experiment": "246182c",
+  "run_refs": [
+    {
+      "experiment": "ef9c882",
+      "label": "comparator canonical tail",
+      "run_id": "hold__start_pos_zero_vel_lr1e-2"
+    },
+    {
+      "experiment": "246182c",
+      "label": "flat tail after canonical horizon",
+      "run_id": "hold__start_pos_zero_vel_lr1e-2_flat_tail"
+    }
+  ],
+  "schema_version": "rlrmp.figure_spec.delayed_timing_hold_velocity.v1",
+  "topic": "flat_tail_vs_comparator_velocity_profiles"
+}
