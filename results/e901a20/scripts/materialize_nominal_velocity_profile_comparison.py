@@ -55,7 +55,9 @@ class VelocityProfile:
     std: np.ndarray
     n_replicates: int
     n_trials: int
-    peak_mean_forward_velocity_m_s: float
+    target_distance_min_m: float
+    target_distance_max_m: float
+    peak_mean_length_normalized_forward_velocity_1_s: float
     time_of_peak_mean_forward_velocity_s: float
 
 
@@ -201,7 +203,8 @@ def evaluate_profile(ref: RunRef) -> VelocityProfile:
     init_vel = initial_effector_field(trial_specs, "vel")
     goal = final_goal_position(trial_specs)
     direction = goal - init_pos
-    direction_unit = direction / jnp.maximum(jnp.linalg.norm(direction, axis=-1, keepdims=True), 1e-12)
+    direction_norm = jnp.linalg.norm(direction, axis=-1, keepdims=True)
+    direction_unit = direction / jnp.maximum(direction_norm, 1e-12)
 
     def is_replicate_array(leaf: Any) -> bool:
         return eqx.is_array(leaf) and leaf.ndim >= 1 and leaf.shape[0] == n_replicates
@@ -222,9 +225,11 @@ def evaluate_profile(ref: RunRef) -> VelocityProfile:
         jr.split(jr.PRNGKey(0), n_replicates),
     )
     values = np.asarray(forward_velocity, dtype=np.float64)
-    pooled = values.reshape(n_replicates * n_trials, values.shape[-1])
+    target_distance = np.asarray(direction_norm[..., 0], dtype=np.float64)
+    normalized_values = values / np.maximum(target_distance[None, :, None], 1e-12)
+    pooled = normalized_values.reshape(n_replicates * n_trials, normalized_values.shape[-1])
     mean = np.mean(pooled, axis=0)
-    std = np.std(pooled, axis=0)
+    std = np.std(pooled, axis=0, ddof=1)
     dt = float(run_spec.get("game_card", {}).get("dt", getattr(hps, "dt", 0.01)))
     time_s = np.arange(mean.shape[0], dtype=np.float64) * dt
     peak_idx = int(np.nanargmax(mean))
@@ -235,7 +240,9 @@ def evaluate_profile(ref: RunRef) -> VelocityProfile:
         std=std,
         n_replicates=n_replicates,
         n_trials=n_trials,
-        peak_mean_forward_velocity_m_s=float(mean[peak_idx]),
+        target_distance_min_m=float(np.min(target_distance)),
+        target_distance_max_m=float(np.max(target_distance)),
+        peak_mean_length_normalized_forward_velocity_1_s=float(mean[peak_idx]),
         time_of_peak_mean_forward_velocity_s=float(time_s[peak_idx]),
     )
 
@@ -293,7 +300,7 @@ def write_outputs(profiles: list[VelocityProfile]) -> dict[str, Any]:
     for profile in profiles:
         add_band_trace(fig, profile)
     fig.update_layout(
-        title="Nominal target-radial velocity profiles",
+        title="Nominal length-normalized target-radial velocity profiles",
         width=960,
         height=560,
         margin={"l": 72, "r": 24, "t": 72, "b": 68},
@@ -301,7 +308,7 @@ def write_outputs(profiles: list[VelocityProfile]) -> dict[str, Any]:
         legend={"orientation": "h", "y": -0.22, "x": 0.0, "groupclick": "togglegroup"},
     )
     fig.update_xaxes(title_text="Time (s)", zeroline=False)
-    fig.update_yaxes(title_text="Target-radial velocity (m/s)", zeroline=True)
+    fig.update_yaxes(title_text="Target-radial velocity / reach length (1/s)", zeroline=True)
 
     html_path = figure_dir / "nominal_forward_velocity_profiles.html"
     fig.write_html(html_path, include_plotlyjs="cdn")
@@ -330,7 +337,11 @@ def write_outputs(profiles: list[VelocityProfile]) -> dict[str, Any]:
             "n_replicates": profile.n_replicates,
             "n_trials": profile.n_trials,
             "n_pooled_profiles": profile.n_replicates * profile.n_trials,
-            "peak_mean_forward_velocity_m_s": profile.peak_mean_forward_velocity_m_s,
+            "target_distance_min_m": profile.target_distance_min_m,
+            "target_distance_max_m": profile.target_distance_max_m,
+            "peak_mean_length_normalized_forward_velocity_1_s": (
+                profile.peak_mean_length_normalized_forward_velocity_1_s
+            ),
             "time_of_peak_mean_forward_velocity_s": profile.time_of_peak_mean_forward_velocity_s,
         }
         for profile in profiles
@@ -340,7 +351,10 @@ def write_outputs(profiles: list[VelocityProfile]) -> dict[str, Any]:
         "figure": repo_relative(html_path),
         "data": repo_relative(data_path),
         "evaluation_lens": "nominal_clean_validation_trials",
-        "velocity_definition": "effector velocity projected onto target direction per trial",
+        "velocity_definition": (
+            "effector velocity projected onto each trial's target direction, divided by "
+            "that trial's reach length"
+        ),
         "runs": rows,
     }
     manifest_path = figure_dir / "manifest.json"
@@ -374,13 +388,15 @@ def write_outputs(profiles: list[VelocityProfile]) -> dict[str, Any]:
     spec_path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     table_lines = [
-        "| Row | Peak mean forward velocity (m/s) | Time of peak (s) | Pooled profiles |",
-        "|---|---:|---:|---:|",
+        "| Row | Peak mean normalized velocity (1/s) | Time of peak (s) | Reach lengths (m) | Pooled profiles |",
+        "|---|---:|---:|---:|---:|",
     ]
     for row in rows:
         table_lines.append(
-            f"| `{row['label']}` | {row['peak_mean_forward_velocity_m_s']:.4f} | "
+            f"| `{row['label']}` | "
+            f"{row['peak_mean_length_normalized_forward_velocity_1_s']:.4f} | "
             f"{row['time_of_peak_mean_forward_velocity_s']:.3f} | "
+            f"{row['target_distance_min_m']:.2f}-{row['target_distance_max_m']:.2f} | "
             f"{row['n_pooled_profiles']} |"
         )
     note = "\n".join(
@@ -388,8 +404,9 @@ def write_outputs(profiles: list[VelocityProfile]) -> dict[str, Any]:
             "## Nominal velocity profile comparison",
             "",
             "Nominal-clean validation trials with perturbation inputs zeroed. Curves show "
-            "target-radial velocity pooled over replicates and validation trials; bands are one "
-            "standard deviation over the pooled profiles.",
+            "target-radial velocity divided by trial reach length, then pooled over replicates "
+            "and validation trials. Bands are one standard deviation over the pooled "
+            "length-normalized profiles.",
             "",
             *table_lines,
             "",
