@@ -1,0 +1,967 @@
+{
+  "base_issue": "020a65b",
+  "base_run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
+  "base_run_spec": "results/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/run.json",
+  "certificate_and_eval_gates": [
+    "clean action match on original, seen, and held-out target bins",
+    "perturbation-response match under calibrated initial-state, sensory, process/load, and command-input perturbations",
+    "input-output JVP/Jacobian match from feedback/observation history to action history",
+    "student-forced nominal velocity, endpoint, and task-cost parity with the base h0 no-PGD row",
+    "student-vs-6D-H-infinity standard certificate report; extLQG remains a diagnostic comparator"
+  ],
+  "issue": "376d023",
+  "no_launch_boundary": "No training, RunPod, Modal, GPU acquisition, auth request, or push is authorized by this plan.",
+  "preserve_from_base_run": {
+    "batch_size": 64,
+    "controller_lr": 0.003,
+    "loss_anchor_weights": {
+      "effector_final_vel": 0.0,
+      "effector_hold_pos": 0.0,
+      "effector_hold_vel": 0.0,
+      "effector_pos": 0.0,
+      "effector_pos_late": 0.0,
+      "effector_pos_mid": 0.0,
+      "effector_pos_running": 1000000.0,
+      "effector_terminal_pos": 1000000.0,
+      "effector_terminal_vel": 100000.0,
+      "effector_vel_late": 0.0,
+      "effector_vel_mid": 0.0,
+      "effector_vel_running": 100000.0,
+      "goal_hit_in_window": 0.0,
+      "mechanics_force_filter": 0.0,
+      "nn_hidden": 0.0,
+      "nn_hidden_derivative": 0.0,
+      "nn_hidden_derivative_pre_go": 0.0,
+      "nn_output": 1.0,
+      "nn_output_jerk": 0.0,
+      "nn_output_pre_go": 0.0
+    },
+    "model_summary": {
+      "controller_input_dimension": 6,
+      "controller_kind": "gru",
+      "hidden_size": 180,
+      "initial_hidden_encoder": {
+        "architecture": "affine",
+        "context_basis": "target_relative_delayed_feedback_plus_force_filter",
+        "context_shape": [
+          6
+        ],
+        "context_source": "first_controller_visible_target_relative_delayed_feedback",
+        "delayed_reach": false,
+        "enabled": true,
+        "initialization": "zero_affine",
+        "initialization_note": "Exact zero affine weights and bias preserve the zero-H0 baseline at initialization while remaining trainable through ordinary rollout loss.",
+        "output_shape": [
+          180
+        ],
+        "plant_live_preview": false,
+        "separate_hidden_width": null,
+        "teacher_or_jacobian_supervision": false
+      },
+      "n_replicates": 5,
+      "population_structure": {
+        "n_input_only": 0,
+        "n_input_readout": 180,
+        "n_readout_only": 0,
+        "n_recurrent_only": 0
+      }
+    },
+    "n_train_batches": 12000,
+    "optimizer": {
+      "constant_lr_iterations": 500,
+      "cosine_annealing_alpha": 0.01,
+      "final_learning_rate": 3e-05,
+      "gradient_clip_kind": "global_norm",
+      "gradient_clip_norm": 5.0,
+      "learning_rate_0": 0.003,
+      "name": "adamw",
+      "schedule": "warmup_cosine",
+      "training_diagnostics": {
+        "default_enabled": true,
+        "enabled": true,
+        "format": "npz+json_manifest",
+        "manifest_path": "_artifacts/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/training_diagnostics.json",
+        "opt_out_flag": "--no-training-diagnostics",
+        "scalar_groups": [
+          "optimizer_gradient_norm_pre_clip",
+          "optimizer_gradient_clipped",
+          "optimizer_clipping_fraction",
+          "optimizer_update_parameter_norm_ratio",
+          "optimizer_learning_rate",
+          "train_loss_terms",
+          "validation_loss_terms",
+          "pgd_broad_epsilon_inner_maximizer"
+        ],
+        "schema_version": "rlrmp.cs_stochastic_gru.v1.training_diagnostics.v1",
+        "sidecar_path": "_artifacts/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/training_diagnostics.npz",
+        "source": "optimizer_state plus Feedbax TaskTrainer history; no raw gradients, batches, or activations are persisted"
+      },
+      "warmup_batches": 500,
+      "warmup_init_fraction": 0.1,
+      "warmup_initial_learning_rate": 0.00030000000000000003,
+      "weight_decay": 0.0
+    },
+    "stochastic_preset": {
+      "additive_motor_noise_std": 1e-05,
+      "name": "cs2019-rollout",
+      "plant_process_force_noise_std": 0.03162277660168379,
+      "projection_notes": {
+        "additive_motor": "Project C&S input-image motor covariance to command-channel additive noise with std sqrt(motor_covariance_scale).",
+        "plant_process": "Project C&S process/load covariance to independent force noise immediately upstream of mechanics, after the force filter.",
+        "sensory": "Use the C&S sensory covariance diagonal standard deviation on the Feedbax delayed pos/vel feedback channel.",
+        "signal_dependent_motor": "Use the C&S Csdn scale as Feedbax pre-force-filter multiplicative command noise.",
+        "state_diffusion": "No arbitrary full-state diffusion is used in Feedbax GRU rollout."
+      },
+      "sensory_noise_std": 0.004791329788133908,
+      "signal_dependent_motor_noise_std": 0.02,
+      "source_contract": {
+        "additive_motor_covariance": "input_image_state_covariance_B_B_T",
+        "contract": "cs_released_stochastic_v1",
+        "motor_covariance_scale": 1e-10,
+        "motor_covariance_shape": [
+          48,
+          48
+        ],
+        "output_feedback_process_covariance_scale": 0.001,
+        "process_covariance_scale": 1.0,
+        "process_covariance_shape": [
+          48,
+          48
+        ],
+        "process_noise": "separate_output_feedback_process_covariance",
+        "sensory_covariance_diag": [
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05,
+          2.2956841138659323e-05
+        ],
+        "sensory_noise_scale": 1.0,
+        "signal_dependent_motor_noise": "input_image_state_tensor_Csdn",
+        "signal_dependent_scale": 0.02,
+        "signal_dependent_state_shape": [
+          48,
+          2,
+          2
+        ]
+      }
+    },
+    "training_distribution": {
+      "force_filter_feedback": true,
+      "initial_hidden_encoder": {
+        "architecture": "affine",
+        "context_basis": "target_relative_delayed_feedback_plus_force_filter",
+        "context_shape": [
+          6
+        ],
+        "context_source": "first_controller_visible_target_relative_delayed_feedback",
+        "delayed_reach": false,
+        "enabled": true,
+        "initialization": "zero_affine",
+        "initialization_note": "Exact zero affine weights and bias preserve the zero-H0 baseline at initialization while remaining trainable through ordinary rollout loss.",
+        "output_shape": [
+          180
+        ],
+        "plant_live_preview": false,
+        "separate_hidden_width": null,
+        "teacher_or_jacobian_supervision": false
+      },
+      "mode": "target_relative_multitarget_static_h0+fixed_target_perturbation_randomized",
+      "validation_bins": [
+        {
+          "bin": "original_target_nominal",
+          "target_role": "anchor",
+          "targets_m": [
+            [
+              0.15,
+              0.0
+            ]
+          ]
+        },
+        {
+          "bin": "seen_multitarget_nominal",
+          "target_role": "seen_training_support",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ]
+          ]
+        },
+        {
+          "bin": "held_out_multitarget_nominal",
+          "target_role": "held_out_validation_support",
+          "targets_m": [
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "initial_position_offsets",
+          "families": [
+            "initial_position"
+          ],
+          "target_role": "seen_and_held_out_static_targets",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "initial_velocity_offsets",
+          "families": [
+            "initial_velocity"
+          ],
+          "target_role": "seen_and_held_out_static_targets",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "sensory_feedback_offsets",
+          "families": [
+            "sensory_feedback"
+          ],
+          "target_role": "seen_and_held_out_static_targets",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "delayed_observation_offsets",
+          "families": [
+            "delayed_observation"
+          ],
+          "target_role": "seen_and_held_out_static_targets",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "process_load_epsilon",
+          "families": [
+            "process_epsilon"
+          ],
+          "target_role": "seen_and_held_out_static_targets",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "mild_combined",
+          "families": [
+            "initial_position",
+            "sensory_feedback",
+            "process_epsilon"
+          ],
+          "target_role": "seen_and_held_out_static_targets",
+          "targets_m": [
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        },
+        {
+          "bin": "command_input_diagnostic",
+          "checkpoint_selection": "excluded_unless_comparator_defined",
+          "families": [
+            "command_input"
+          ],
+          "target_role": "diagnostic_only",
+          "targets_m": [
+            [
+              0.15,
+              0.0
+            ],
+            [
+              0.1,
+              0.0
+            ],
+            [
+              0.05,
+              0.086602540378
+            ],
+            [
+              -0.05,
+              0.086602540378
+            ],
+            [
+              -0.1,
+              0.0
+            ],
+            [
+              -0.05,
+              -0.086602540378
+            ],
+            [
+              0.05,
+              -0.086602540378
+            ],
+            [
+              0.075,
+              0.129903810568
+            ],
+            [
+              -0.075,
+              0.129903810568
+            ],
+            [
+              -0.15,
+              0.0
+            ],
+            [
+              -0.075,
+              -0.129903810568
+            ],
+            [
+              0.075,
+              -0.129903810568
+            ],
+            [
+              0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              0.06
+            ],
+            [
+              -0.103923048454,
+              -0.06
+            ],
+            [
+              0.103923048454,
+              -0.06
+            ],
+            [
+              0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              0.09
+            ],
+            [
+              -0.155884572681,
+              -0.09
+            ],
+            [
+              0.155884572681,
+              -0.09
+            ]
+          ]
+        }
+      ]
+    },
+    "training_script_family": "scripts/train_cs_nominal_gru.py"
+  },
+  "required_changes": {
+    "loss_terms": [
+      "clean_action_imitation: match H-infinity teacher actions on nominal and target-bank observation histories",
+      "perturbation_response_imitation: match teacher action deltas and recovery trajectories under calibrated small perturbations",
+      "student_forced_rollout_anchor: keep endpoint, velocity profile, and full QRF task quality near the base row",
+      "io_jvp_match: match feedback/observation-history to action-history JVPs on a sampled local basis",
+      "extlqg_sidecar: evaluate but do not train to the extLQG teacher unless an ablation is requested"
+    ],
+    "non_certificate_terms": [
+      "hidden_state_matching is optional for optimization diagnostics only",
+      "GRU hidden-state to action Jacobians are not certificate evidence"
+    ],
+    "teacher_student_schedule": [
+      {
+        "batches": "0-1500",
+        "mode": "teacher_forced",
+        "role": "stabilize action imitation and h0 encoder under teacher observation histories"
+      },
+      {
+        "batches": "1500-4000",
+        "mode": "mixed_teacher_forced_and_student_forced",
+        "role": "introduce perturbation-response imitation and short closed-loop rollouts"
+      },
+      {
+        "batches": "4000-12000",
+        "mode": "mostly_student_forced",
+        "role": "optimize closed-loop behavior, action match, perturbation match, and I/O-map JVP gates"
+      }
+    ],
+    "training_structure": "Add a distillation-capable runner derived from the 020a65b h0 no-PGD nominal GRU runner; keep PGD off for this first teacher-distillation run."
+  },
+  "schema_version": "rlrmp.376d023.distillation_plan.v1",
+  "status": "planned_not_launched",
+  "supporting_velocity_plot": "_artifacts/376d023/figures/6d_analytical_velocity_profiles/velocity_profile_overlay.html",
+  "teacher_contract": {
+    "diagnostic_control_teacher": "6D extLQG analytical",
+    "information_contract": {
+      "basis": "oldest_delayed_physical_block_6d_force_filter",
+      "dimension": 6,
+      "observed_physical_indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    },
+    "plant_contract": {
+      "control_dim": 2,
+      "delay_steps": 5,
+      "disturbance_dim": 6,
+      "disturbance_integrators_exposed": false,
+      "dt": 0.01,
+      "physical_state_dim": 6,
+      "state_dim": 36
+    },
+    "primary_teacher": "6D output-feedback H-infinity analytical",
+    "teacher_manifest": "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers_manifest.json",
+    "teacher_package": "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers.npz"
+  }
+}
