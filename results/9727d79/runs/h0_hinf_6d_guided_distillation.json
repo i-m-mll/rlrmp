@@ -114,6 +114,39 @@
     "lr_warmup_init_fraction": 0.1,
     "name": "adamw"
   },
+  "post_run_provenance": {
+    "feedbax": {
+      "branch": "develop",
+      "commit": "753d0fe4abcbcfdf7ca074b4818b1301a13cc614",
+      "dirty": false,
+      "remote": "https://github.com/i-m-mll/feedbax.git"
+    },
+    "feedbax_graph": {
+      "graph_manifest_path": null,
+      "graph_manifest_sha256": null,
+      "graph_spec_path": null,
+      "graph_spec_sha256": null,
+      "graph_spec_version": null
+    },
+    "feedbax_manifest_root": {
+      "absolute_path_sha256": "b77671c7b627828cba9a1085ed40ff599cd5cf43ea2a5191488007b3742986ab",
+      "env": "FEEDBAX_RUNS_DIR",
+      "path": "_artifacts/feedbax_runs"
+    },
+    "rlrmp": {
+      "branch": "feature/9727d79-distillation-training-entry",
+      "commit": "85b23a85a109dbe0e461aee1da6ef324c74fb83b",
+      "dirty": false,
+      "remote": "git@github.com:i-m-mll/rlrmp.git"
+    },
+    "schema_version": "rlrmp.post_run_provenance.v1",
+    "schemas": {
+      "feedbax_manifest": "feedbax.manifest.v1",
+      "feedbax_provider": "feedbax-provider.v1",
+      "post_run_provenance": "rlrmp.post_run_provenance.v1"
+    },
+    "tool": "scripts/post_run.sh"
+  },
   "schema_version": "rlrmp.guided_distillation.training_entry.v1",
   "teacher_bank": {
     "action_context": "teacher action histories for teacher-forced phases and a stop-gradient student/teacher blend for mixed/student-forced phases",
