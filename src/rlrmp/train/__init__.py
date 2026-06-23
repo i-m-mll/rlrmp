@@ -23,9 +23,7 @@ Two top-level helpers are re-exported here for convenience:
 :license: Apache 2.0. See LICENSE for details.
 """
 
-from rlrmp.train.minimax import build_hps as build_hps_minimax
-from rlrmp.train.standard import build_hps as build_hps_standard
-from rlrmp.train.task_model import build_task_base, setup_task_model_pair
+from importlib import import_module
 
 __all__ = [
     "build_hps_minimax",
@@ -33,3 +31,22 @@ __all__ = [
     "build_task_base",
     "setup_task_model_pair",
 ]
+
+_LAZY_EXPORTS = {
+    "build_hps_minimax": ("rlrmp.train.minimax", "build_hps"),
+    "build_hps_standard": ("rlrmp.train.standard", "build_hps"),
+    "build_task_base": ("rlrmp.train.task_model", "build_task_base"),
+    "setup_task_model_pair": ("rlrmp.train.task_model", "setup_task_model_pair"),
+}
+
+
+def __getattr__(name: str):
+    """Resolve train-package convenience exports without eager imports."""
+
+    try:
+        module_name, attr_name = _LAZY_EXPORTS[name]
+    except KeyError as exc:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
+    value = getattr(import_module(module_name), attr_name)
+    globals()[name] = value
+    return value

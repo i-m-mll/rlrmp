@@ -1,0 +1,83 @@
+{
+  "schema_version": "rlrmp.guided_distillation.no_launch.v1",
+  "issue": "9727d79",
+  "implementation_issue": "c314267",
+  "launch_status": "not_launched",
+  "no_launch_boundary": "No RunPod, Modal, GPU acquisition, full training launch, push, or protected-branch auth request is authorized by this spec.",
+  "base_contract": {
+    "issue": "020a65b",
+    "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
+    "run_spec": "results/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/run.json",
+    "inherit": [
+      "h0 encoder",
+      "force-filter feedback",
+      "target-relative multitarget distribution",
+      "hidden size 180",
+      "5 replicates",
+      "batch size 64",
+      "AdamW learning rate 3e-3",
+      "global gradient clip 5.0",
+      "500-batch warmup cosine schedule",
+      "12000 train batches",
+      "full-Q/R/Qf warm-cos loss weights",
+      "cs2019-rollout stochastic preset",
+      "no PGD adversarial inner maximizer"
+    ]
+  },
+  "teacher_contract": {
+    "issue": "376d023",
+    "primary_teacher": "6d_output_feedback_hinf",
+    "diagnostic_teacher": "6d_output_feedback_extlqg",
+    "teacher_package": "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers.npz",
+    "teacher_manifest": "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers_manifest.json",
+    "external_basis": {
+      "feedback_history": "target_relative_delayed_feedback_plus_force_filter",
+      "action_history": "controller_command_history",
+      "action_output": "controller_command_history"
+    }
+  },
+  "distillation_surface": {
+    "module": "rlrmp.train.distillation",
+    "config": "rlrmp.train.distillation.cs_h0_distillation_config",
+    "hidden_state_supervision": false,
+    "components": {
+      "clean_action": {
+        "enabled": true,
+        "weight": 1.0,
+        "description": "Match clean student and teacher command histories on the declared target/observation bank."
+      },
+      "perturbation_response": {
+        "enabled": true,
+        "weight": 1.0,
+        "description": "Match teacher-induced corrective command response under the calibrated perturbation bank."
+      },
+      "input_output_jvp": {
+        "enabled": true,
+        "weight": 0.25,
+        "n_directions": 16,
+        "direction_basis": "controller_visible_feedback_and_action_history",
+        "implementation": "jax.linearize plus jax.vmap over banked directional probes; no dense Jacobian materialization in the training path",
+        "description": "Match local action-history map derivatives with respect to externally meaningful feedback and action histories."
+      },
+      "student_forced_rollout_anchor": {
+        "enabled": true,
+        "weight": 0.25,
+        "description": "Anchor student-forced rollout summaries to base-row/teacher clean behavior without selecting on hidden coordinates."
+      }
+    }
+  },
+  "evaluation_gates": [
+    "standard certificate",
+    "objective comparator",
+    "perturbation-response diagnostics",
+    "velocity and loss figures",
+    "H-infinity phenotype sidecar where applicable",
+    "all-replicate reporting",
+    "teacher-guided versus rollout-discovery interpretation note"
+  ],
+  "local_acceptance_checks": [
+    "JVP loss matches dense-Jacobian behavior on tiny toy maps",
+    "JVP loss is batchable and jittable with vectorized direction probes",
+    "C&S h0 distillation config surface can compose clean action, perturbation-response, JVP, and rollout-anchor components on small shapes"
+  ]
+}
