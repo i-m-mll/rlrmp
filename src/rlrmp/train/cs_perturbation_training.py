@@ -1877,6 +1877,32 @@ def make_broad_epsilon_pgd_pre_step(config: Any) -> Callable | None:
     return pre_step_fn
 
 
+class PolicyAdversaryPreStep(eqx.Module):
+    """Feedbax pre-step hook carrying policy weights as dynamic JAX leaves."""
+
+    policy: MemorylessFullStateEpsilonPolicy
+    config: Any = eqx.field(static=True)
+
+    def __call__(self, task, model, trial_specs, loss_func, keys_model):
+        del loss_func
+        updated, _diagnostics = policy_adversary_trial_specs(
+            self.policy,
+            task,
+            model,
+            trial_specs,
+            keys_model,
+            self.config,
+            stop_gradient_epsilon=True,
+        )
+        return updated
+
+
+def make_policy_adversary_pre_step(policy: Any, config: Any) -> PolicyAdversaryPreStep:
+    """Return a stable PyTree pre-step hook for learned policy-adversary training."""
+
+    return PolicyAdversaryPreStep(policy=policy, config=config)
+
+
 def policy_adversary_trial_specs(
     policy: MemorylessFullStateEpsilonPolicy,
     task: Any,
@@ -1884,6 +1910,8 @@ def policy_adversary_trial_specs(
     trial_specs: TaskTrialSpec,
     keys_model: Any,
     config: Any,
+    *,
+    stop_gradient_epsilon: bool = False,
 ) -> tuple[TaskTrialSpec, dict[str, jnp.ndarray]]:
     """Apply a learned policy adversary and return low-overhead diagnostics."""
 
@@ -1898,6 +1926,8 @@ def policy_adversary_trial_specs(
     time_mask = _epsilon_time_mask(specs, base_epsilon, cfg.movement_epoch_only)
     radius = _broad_epsilon_l2_radius(specs, cfg).astype(base_epsilon.dtype)
     delta = _project_flattened_per_trial_l2_ball(raw_delta * time_mask, radius) * time_mask
+    if stop_gradient_epsilon:
+        delta = jax.lax.stop_gradient(delta)
     updated = _set_input(specs, "epsilon", base_epsilon + delta)
     diagnostics = policy_adversary_projection_diagnostics(delta, radius, mode=cfg.mode)
     return updated, diagnostics

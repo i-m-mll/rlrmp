@@ -23,14 +23,16 @@ import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
+import jax.tree_util as jtu
 import numpy as np
 import optax
 from jax_cookbook import save as fbx_save
-from feedbax.runtime.batch import BatchInfo
-from jax_cookbook.tree import filter_spec_leaves
-from feedbax.training.trainer import get_model_parameters
-from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
+from feedbax.runtime.batch import BatchInfo
+from feedbax.training.train import TaskTrainer, make_delayed_cosine_schedule
+from feedbax.training.trainer import get_model_parameters, init_task_trainer_history
+from jax_cookbook.tree import array_set as tree_set
+from jax_cookbook.tree import filter_spec_leaves
 
 from rlrmp.analysis.math.cs_game_card import (
     INIT_POS,
@@ -85,6 +87,7 @@ from rlrmp.train.cs_perturbation_training import (
     config_from_policy_adversary_hps,
     make_broad_epsilon_pgd_pre_step,
     make_memoryless_policy_adversary,
+    make_policy_adversary_pre_step,
     planned_020a65b_h0_pgd_rows,
     planned_7c1f7ed_delayed_sisu_spectrum_rows,
     planned_e4800d6_sisu_spectrum_rows,
@@ -92,11 +95,11 @@ from rlrmp.train.cs_perturbation_training import (
     planned_target_relative_multitarget_h0_rows,
     planned_target_relative_multitarget_rows,
     policy_adversary_objective,
-    policy_adversary_trial_specs,
     run_broad_epsilon_pgd_inner_maximizer,
     target_relative_validation_manifest,
     validation_bin_manifest,
 )
+from rlrmp.train.progress import batch_log_every, format_batch_line, should_log_batch
 from rlrmp.train.task_model import (
     CS_LSS_PLANT_BACKEND,
     LEGACY_CAUSAL_PLANT_BACKEND,
@@ -2015,59 +2018,65 @@ def run_full_training(
     policy_adversary_diagnostic_chunks: list[dict[str, np.ndarray]] = []
     training_started = time.perf_counter()
     while state.completed_batches < int(args.n_train_batches):
+        if stop_after_batches is not None and state.completed_batches >= stop_after_batches:
+            break
         remaining = int(args.n_train_batches) - state.completed_batches
-        chunk_batches = 1 if policy_adversary_enabled else min(
+        chunk_batches = min(
             int(args.checkpoint_interval_batches),
             remaining,
         )
+        if stop_after_batches is not None:
+            chunk_batches = min(chunk_batches, stop_after_batches - state.completed_batches)
         key_chunk, key_next = jr.split(state.key, 2)
-        key_adversary_update, key_controller = jr.split(key_chunk, 2)
         chunk_started = time.perf_counter()
-        active_pre_step_fn = pre_step_fn
         policy_adversary_diagnostics = None
         if policy_adversary_enabled:
             if policy_adversary_optimizer is None:
                 raise ValueError("Policy adversary optimizer was not initialized.")
             (
+                model,
+                history_chunk,
+                optimizer_state,
                 adversary_policy,
                 adversary_optimizer_state,
                 policy_adversary_diagnostics,
-            ) = _advance_policy_adversary(
-                state.adversary_policy,
-                state.adversary_optimizer_state,
-                policy_adversary_optimizer,
-                pair.task,
-                state.model,
-                hps,
-                key=key_adversary_update,
-                batch_index=state.completed_batches,
-            )
-            active_pre_step_fn = _make_policy_adversary_pre_step(
-                adversary_policy,
-                hps.policy_adversary_training,
+            ) = _run_policy_adversary_training_chunk(
+                trainer=trainer,
+                task=pair.task,
+                model=state.model,
+                optimizer_state=state.optimizer_state,
+                adversary_policy=state.adversary_policy,
+                adversary_optimizer_state=state.adversary_optimizer_state,
+                adversary_optimizer=policy_adversary_optimizer,
+                hps=hps,
+                where_train=where_train[0],
+                key=key_chunk,
+                start_batch=state.completed_batches,
+                chunk_batches=chunk_batches,
+                log_progress=not bool(args.disable_progress),
             )
         else:
             adversary_policy = state.adversary_policy
             adversary_optimizer_state = state.adversary_optimizer_state
-        model, history_chunk, optimizer_state = trainer(
-            pair.task,
-            state.model,
-            n_batches=chunk_batches,
-            # Keep Feedbax's batch index local to the chunk: its PRNG key array
-            # is chunk-local. Passing the stable selector function avoids the
-            # dict-at-local-batch-0 path that would reinitialise optimizer state.
-            idx_start=0,
-            opt_state=state.optimizer_state,
-            key=key_controller,
-            ensembled=True,
-            loss_func=pair.task.loss_func,
-            where_train=where_train[0],
-            batch_size=int(hps.batch_size),
-            log_step=max(1, int(args.log_step)),
-            disable_progress=bool(args.disable_progress),
-            verbose_progress=not bool(args.quiet_progress),
-            pre_step_fn=active_pre_step_fn,
-        )
+            model, history_chunk, optimizer_state = trainer(
+                pair.task,
+                state.model,
+                n_batches=chunk_batches,
+                # Keep Feedbax's batch index local to the chunk: its PRNG key array
+                # is chunk-local. Passing the stable selector function avoids the
+                # dict-at-local-batch-0 path that would reinitialise optimizer state.
+                idx_start=0,
+                opt_state=state.optimizer_state,
+                key=key_chunk,
+                ensembled=True,
+                loss_func=pair.task.loss_func,
+                where_train=where_train[0],
+                batch_size=int(hps.batch_size),
+                log_step=max(1, int(args.log_step)),
+                disable_progress=bool(args.disable_progress),
+                verbose_progress=not bool(args.quiet_progress),
+                pre_step_fn=pre_step_fn,
+            )
         chunk_duration_seconds = time.perf_counter() - chunk_started
         completed = state.completed_batches + chunk_batches
         history = _append_history(state.history, history_chunk)
@@ -3684,21 +3693,187 @@ def _update_diagnostics_arrays(
 
 
 def _make_policy_adversary_pre_step(policy: Any, config: Any) -> Callable:
-    """Return a pre-step hook applying the current learned policy adversary."""
+    """Return a stable PyTree hook applying the current learned policy adversary."""
 
-    def pre_step_fn(task, model, trial_specs, loss_func, keys_model):
-        del loss_func
-        updated, _diagnostics = policy_adversary_trial_specs(
-            policy,
+    return make_policy_adversary_pre_step(policy, config)
+
+
+def _run_policy_adversary_training_chunk(
+    *,
+    trainer: TaskTrainer,
+    task: Any,
+    model: Any,
+    optimizer_state: Any,
+    adversary_policy: Any,
+    adversary_optimizer_state: Any,
+    adversary_optimizer: optax.GradientTransformation,
+    hps: TreeNamespace,
+    where_train: Callable[[Any], Any],
+    key: Any,
+    start_batch: int,
+    chunk_batches: int,
+    log_progress: bool,
+) -> tuple[Any, Any, Any, Any, Any, dict[str, np.ndarray]]:
+    """Run a policy-adversary chunk without per-batch trainer re-entry."""
+
+    if chunk_batches < 1:
+        raise ValueError("chunk_batches must be positive")
+    n_replicates = int(getattr(getattr(hps, "model", hps), "n_replicates", 1))
+    batch_size = int(hps.batch_size)
+    where_train_spec = filter_spec_leaves(model, where_train)
+    flat_model, treedef_model = jtu.tree_flatten(model)
+    flat_opt_state, treedef_opt_state = jtu.tree_flatten(optimizer_state)
+
+    def _ensemble_in_axis(leaf):
+        if eqx.is_array(leaf) and leaf.ndim > 0 and leaf.shape[0] == n_replicates:
+            return 0
+        return None
+
+    flat_model_arr_spec = jt.map(_ensemble_in_axis, flat_model)
+    train_step = eqx.filter_vmap(
+        trainer._train_step,
+        in_axes=(
+            None,
+            None,
+            None,
+            flat_model_arr_spec,
+            None,
+            0,
+            None,
+            None,
+            None,
+            0,
+            None,
+            None,
+        ),
+        out_axes=(
+            eqx.if_array(0),
+            0,
+            flat_model_arr_spec,
+            eqx.if_array(0),
+            eqx.if_array(0),
+        ),
+    )
+    history = init_task_trainer_history(
+        task.loss_func,
+        chunk_batches,
+        n_replicates,
+        ensembled=True,
+        ensemble_random_trials=True,
+        start_batch=0,
+        task=task,
+        batch_size=batch_size,
+        model=model,
+        where_train=where_train,
+    )
+    keys = jr.split(key, chunk_batches)
+    progress_every = batch_log_every(int(hps.n_batches_condition))
+    chunk_started = time.perf_counter()
+    diagnostics: dict[str, np.ndarray] = {}
+
+    for local_batch in range(chunk_batches):
+        global_batch = start_batch + local_batch
+        key_adversary, key_controller, key_eval = jr.split(keys[local_batch], 3)
+        model_for_adversary = jtu.tree_unflatten(treedef_model, flat_model)
+        (
+            adversary_policy,
+            adversary_optimizer_state,
+            diagnostics,
+        ) = _advance_policy_adversary(
+            adversary_policy,
+            adversary_optimizer_state,
+            adversary_optimizer,
             task,
-            model,
-            trial_specs,
-            keys_model,
-            config,
+            model_for_adversary,
+            hps,
+            key=key_adversary,
+            batch_index=global_batch,
         )
-        return updated
+        pre_step_fn = _make_policy_adversary_pre_step(
+            adversary_policy,
+            hps.policy_adversary_training,
+        )
+        batch_info = BatchInfo(
+            size=batch_size,
+            start=jnp.asarray(0),
+            current=jnp.asarray(local_batch),
+            total=jnp.asarray(chunk_batches),
+        )
+        key_train = jr.split(key_controller, n_replicates)
+        losses, _trial_specs, flat_model, flat_opt_state, _grads = train_step(
+            task,
+            task.loss_func,
+            batch_info,
+            flat_model,
+            treedef_model,
+            flat_opt_state,
+            treedef_opt_state,
+            where_train_spec,
+            [],
+            key_train,
+            None,
+            pre_step_fn,
+        )
+        history = eqx.tree_at(
+            lambda history: history.loss,
+            history,
+            tree_set(
+                history.loss,
+                losses.map(lambda arr: jnp.mean(arr, axis=-1)),
+                local_batch,
+            ),
+        )
+        opt_state_for_history = jtu.tree_unflatten(treedef_opt_state, flat_opt_state)
+        if (hyperparams := getattr(opt_state_for_history, "hyperparams", None)) is not None:
+            history = eqx.tree_at(
+                lambda history: history.learning_rate,
+                history,
+                history.learning_rate.at[local_batch].set(hyperparams["learning_rate"]),
+            )
+        if log_progress and should_log_batch(
+            global_batch,
+            int(hps.n_batches_condition),
+            every=progress_every,
+        ):
+            loss_mean = losses.map(jnp.mean)
+            print(
+                format_batch_line(
+                    "policy_adversary",
+                    global_batch,
+                    int(hps.n_batches_condition),
+                    loss=float(jax.device_get(loss_mean.total)),
+                    adv=float(np.asarray(diagnostics.get("adversary_objective", np.nan))),
+                    elapsed=time.perf_counter() - chunk_started,
+                ),
+                flush=True,
+            )
 
-    return pre_step_fn
+    model = jtu.tree_unflatten(treedef_model, flat_model)
+    optimizer_state = jtu.tree_unflatten(treedef_opt_state, flat_opt_state)
+    states_validation, losses_validation = task.eval_ensemble_with_loss(
+        model,
+        n_replicates,
+        key_eval,
+        ensemble_random_trials=True,
+    )
+    del states_validation
+    history = eqx.tree_at(
+        lambda history: history.loss_validation,
+        history,
+        tree_set(
+            history.loss_validation,
+            losses_validation.map(lambda arr: jnp.mean(arr, axis=-1)),
+            chunk_batches - 1,
+        ),
+    )
+    return (
+        model,
+        history,
+        optimizer_state,
+        adversary_policy,
+        adversary_optimizer_state,
+        diagnostics,
+    )
 
 
 def _advance_policy_adversary(
@@ -3714,6 +3889,37 @@ def _advance_policy_adversary(
 ) -> tuple[Any, Any, dict[str, np.ndarray]]:
     """Run the persistent policy-adversary ascent steps for one controller batch."""
 
+    policy, optimizer_state, diagnostics = _advance_policy_adversary_compiled(
+        policy,
+        optimizer_state,
+        optimizer,
+        task,
+        model,
+        hps,
+        key,
+        jnp.asarray(batch_index),
+    )
+    arrays = {
+        name: np.asarray(jax.device_get(value))
+        for name, value in diagnostics.items()
+        if eqx.is_array(value) or np.isscalar(value)
+    }
+    return policy, optimizer_state, arrays
+
+
+@eqx.filter_jit
+def _advance_policy_adversary_compiled(
+    policy: Any,
+    optimizer_state: Any,
+    optimizer: optax.GradientTransformation,
+    task: Any,
+    model: Any,
+    hps: TreeNamespace,
+    key: Any,
+    batch_index: Any,
+) -> tuple[Any, Any, dict[str, jnp.ndarray]]:
+    """Run the persistent policy-adversary ascent steps in one compiled update."""
+
     cfg = config_from_policy_adversary_hps(hps.policy_adversary_training)
 
     def loss_for_policy(candidate_policy):
@@ -3727,7 +3933,7 @@ def _advance_policy_adversary(
         )
         return -objective, diagnostics
 
-    diagnostics = None
+    diagnostics = {}
     for _ in range(int(cfg.n_steps)):
         (_loss, diagnostics), grads = eqx.filter_value_and_grad(
             loss_for_policy,
@@ -3739,19 +3945,12 @@ def _advance_policy_adversary(
             eqx.filter(policy, eqx.is_array),
         )
         policy = eqx.apply_updates(policy, updates)
-    if diagnostics is None:
-        diagnostics = {}
     diagnostics = {
         **diagnostics,
         "n_ascent_steps": jnp.asarray(cfg.n_steps, dtype=jnp.float32),
         "learning_rate": jnp.asarray(cfg.learning_rate, dtype=jnp.float32),
     }
-    arrays = {
-        name: np.asarray(jax.device_get(value))
-        for name, value in diagnostics.items()
-        if eqx.is_array(value) or np.isscalar(value)
-    }
-    return policy, optimizer_state, arrays
+    return policy, optimizer_state, diagnostics
 
 
 def _policy_adversary_batch_objective(
@@ -3767,9 +3966,9 @@ def _policy_adversary_batch_objective(
     batch_size = int(hps.batch_size)
     batch_info = BatchInfo(
         size=batch_size,
-        start=0,
-        current=int(batch_index),
-        total=int(hps.n_batches_condition),
+        start=jnp.asarray(0),
+        current=jnp.asarray(batch_index),
+        total=jnp.asarray(hps.n_batches_condition),
     )
     keys = jr.split(key, n_replicates)
     model_arrays, model_other = eqx.partition(

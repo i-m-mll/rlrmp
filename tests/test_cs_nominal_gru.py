@@ -12,6 +12,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
+import jax.tree as jt
 import numpy as np
 import optax
 import pytest
@@ -104,9 +105,11 @@ from rlrmp.train.cs_perturbation_training import (
     config_from_broad_epsilon_pgd_hps,
     config_from_policy_adversary_hps,
     graph_adapter_specs,
+    make_memoryless_policy_adversary,
     planned_020a65b_h0_pgd_rows,
     planned_7c1f7ed_delayed_sisu_spectrum_rows,
     planned_e4800d6_sisu_spectrum_rows,
+    policy_adversary_trial_specs,
     policy_adversary_projection_diagnostics,
     planned_fixed_target_perturbation_rows,
     planned_target_relative_multitarget_h0_rows,
@@ -602,6 +605,77 @@ def test_policy_adversary_projection_reports_radius_energy_and_boundary() -> Non
     assert diagnostics["epsilon_norm_radius_ratio_max"] == pytest.approx(1.0)
     assert diagnostics["epsilon_energy_mean"] == pytest.approx((4.0 + 0.25) / 2.0)
     assert diagnostics["boundary_fraction"] == pytest.approx(0.5)
+
+
+def test_policy_adversary_controller_prestep_detaches_projected_epsilon() -> None:
+    class EchoTask:
+        def eval_trials(self, model, trial_specs, keys_model):
+            del model, keys_model
+            return TreeNamespace(
+                mechanics=TreeNamespace(
+                    vector=jnp.ones((1, 2, 1), dtype=jnp.float32),
+                )
+            )
+
+    cfg = PolicyFullStateEpsilonTrainingConfig(
+        enabled=True,
+        epsilon_dim=1,
+        state_feature_dim=1,
+        width=2,
+        depth=0,
+        reference_l2_radius_15cm=10.0,
+        reach_length_scaling=False,
+    )
+    policy = make_memoryless_policy_adversary(cfg, key=jr.PRNGKey(0))
+    trial_specs = TaskTrialSpec(
+        inits=WhereDict({}),
+        targets=WhereDict(
+            {
+                "mechanics.effector.pos": TargetSpec(
+                    value=jnp.zeros((1, 2, 2), dtype=jnp.float32),
+                )
+            }
+        ),
+        inputs={"epsilon": jnp.zeros((1, 2, 1), dtype=jnp.float32)},
+        timeline=TrialTimeline(n_steps=2),
+    )
+
+    def epsilon_sum(candidate_policy, *, stop_gradient_epsilon: bool):
+        updated, _diagnostics = policy_adversary_trial_specs(
+            candidate_policy,
+            EchoTask(),
+            model=None,
+            trial_specs=trial_specs,
+            keys_model=None,
+            config=cfg,
+            stop_gradient_epsilon=stop_gradient_epsilon,
+        )
+        return jnp.sum(updated.inputs["epsilon"])
+
+    attached_grads = eqx.filter_grad(
+        lambda candidate_policy: epsilon_sum(
+            candidate_policy,
+            stop_gradient_epsilon=False,
+        )
+    )(policy)
+    detached_grads = eqx.filter_grad(
+        lambda candidate_policy: epsilon_sum(
+            candidate_policy,
+            stop_gradient_epsilon=True,
+        )
+    )(policy)
+
+    attached_norm = sum(
+        float(jnp.sum(jnp.abs(leaf)))
+        for leaf in jt.leaves(eqx.filter(attached_grads, eqx.is_array))
+    )
+    detached_norm = sum(
+        float(jnp.sum(jnp.abs(leaf)))
+        for leaf in jt.leaves(eqx.filter(detached_grads, eqx.is_array))
+    )
+
+    assert attached_norm > 0.0
+    assert detached_norm == pytest.approx(0.0)
 
 
 def test_e4800d6_sisu_spectrum_planned_rows_parse_to_sisu_pgd_args() -> None:
@@ -3688,6 +3762,57 @@ def test_full_training_smoke_writes_checkpoint_and_final_artifacts(tmp_path: Pat
     assert summary["chunks"][0]["duration_seconds"] > 0
     assert summary["chunks"][0]["batches_per_second"] > 0
     assert commits == 3
+
+
+def test_policy_adversary_full_training_uses_checkpoint_sized_chunks(tmp_path: Path) -> None:
+    output_dir = tmp_path / "bulk"
+    spec_dir = tmp_path / "spec"
+    args = _args(
+        output_dir=str(output_dir),
+        spec_dir=str(spec_dir),
+        n_train_batches=2,
+        batch_size=1,
+        n_replicates=1,
+        hidden_size=4,
+        full_train=True,
+        resume=True,
+        checkpoint_interval_batches=2,
+        controller_lr=1e-3,
+        lr_warmup_batches=1,
+        lr_warmup_init_fraction=0.1,
+        lr_cosine_alpha=0.01,
+        log_step=1,
+        disable_progress=True,
+        quiet_progress=True,
+        target_relative_multitarget=True,
+        force_filter_feedback=True,
+        initial_hidden_encoder=True,
+        perturbation_training=True,
+        perturbation_calibrated_timing=True,
+        perturbation_physical_level="small",
+        policy_adversary_training=True,
+        policy_adversary_steps=1,
+        policy_adversary_width=4,
+        policy_adversary_radius_15cm=EFFECTIVE_020A65B_PGD_RADIUS_15CM,
+        broad_epsilon_reach_scaling=True,
+        loss_objective=CS_FULL_ANALYTICAL_QRF_LOSS_OBJECTIVE,
+    )
+
+    result = run_full_training(args)
+    summary = json.loads((output_dir / "training_summary.json").read_text())
+    checkpoint_latest = output_dir / "checkpoints" / "checkpoint_latest"
+    diagnostics_manifest = json.loads((output_dir / "training_diagnostics.json").read_text())
+
+    assert result["completed_batches"] == 2
+    assert len(summary["chunks"]) == 1
+    assert summary["chunks"][0]["chunk_batches"] == 2
+    assert (output_dir / "history_chunks" / "history_0000002.eqx").exists()
+    assert (checkpoint_latest / "adversary_policy.eqx").exists()
+    assert (checkpoint_latest / "adversary_optimizer_state.eqx").exists()
+    assert (output_dir / "trained_policy_adversary.eqx").exists()
+    assert diagnostics_manifest["arrays"]["policy_adversary_diagnostic_sampled"]["shape"] == [2]
+    with np.load(output_dir / "training_diagnostics.npz") as diagnostics:
+        assert diagnostics["policy_adversary_diagnostic_sampled"].tolist() == [False, True]
 
 
 def test_full_training_stop_after_batches_resumes_to_full_count(tmp_path: Path) -> None:
