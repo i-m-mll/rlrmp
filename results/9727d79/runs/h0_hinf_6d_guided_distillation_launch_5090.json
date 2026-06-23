@@ -8,7 +8,7 @@
   "code": {
     "repo": "rlrmp",
     "branch": "feature/9727d79-distillation-training-entry",
-    "commit": "44a5d017c12f83271750246f9955cc307f3049c5",
+    "commit": "branch-head-after-vectorized-checkpointing-fix",
     "run_spec": "results/9727d79/runs/h0_hinf_6d_guided_distillation.json"
   },
   "remote": {
@@ -28,14 +28,29 @@
     "scripts/train_guided_distillation.py",
     "--run-spec",
     "results/9727d79/runs/h0_hinf_6d_guided_distillation.json",
-    "--full-train"
+    "--full-train",
+    "--resume"
   ],
   "run_contract": {
     "teacher": "6D output-feedback H-infinity package from issue 376d023",
     "student": "GRU hidden 180 with h0 encoder",
     "n_replicates": 5,
+    "replicate_execution": "vectorized batched ensemble axis via Equinox/JAX vmap",
     "batch_size": 64,
     "n_batches": 12000,
+    "checkpointing": {
+      "enabled": true,
+      "interval_batches": 500,
+      "latest_pointer": "checkpoints/checkpoint_latest",
+      "resumable_state": [
+        "batched model",
+        "optimizer state",
+        "completed batch",
+        "per-replicate batch keys",
+        "loss history so far",
+        "run/config metadata"
+      ]
+    },
     "learning_rate": 0.003,
     "lr_schedule": "warmup_cosine",
     "lr_warmup_batches": 500,
@@ -70,7 +85,7 @@
   "monitoring": {
     "startup_check": "Verify SSH, nvidia-smi, CUDA JAX import, and BATCH progress after JIT.",
     "slow_batch_rule": "If early post-JIT BATCH lines imply materially slower-than-expected progress for a supervised analytical-bank trainer, stop training and the pod, then debug before relaunch.",
-    "progress_signal": "BATCH phase=<phase> batch=<i>/<n> loss=<x> elapsed=<s>s"
+    "progress_signal": "BATCH phase=guided_distillation_vectorized batch=<i>/<n> loss=<x> replicates=5 elapsed=<s>s"
   },
   "expected_artifacts": {
     "remote_output_dir": "_artifacts/9727d79/runs/h0_hinf_6d_guided_distillation",
@@ -78,6 +93,13 @@
       "training_summary.json",
       "loss_history.json",
       "run_spec_snapshot.json",
+      "checkpoints/checkpoint_latest",
+      "checkpoints/checkpoint_index.json",
+      "checkpoints/checkpoint_*/models.eqx",
+      "checkpoints/checkpoint_*/optimizer_state.eqx",
+      "checkpoints/checkpoint_*/batch_keys.npy",
+      "checkpoints/checkpoint_*/loss_history.json",
+      "checkpoints/checkpoint_*/metadata.json",
       "student_model_rep0.eqx",
       "student_model_rep1.eqx",
       "student_model_rep2.eqx",

@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +21,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
+import jax.tree as jt
 import numpy as np
 import optax
 
@@ -42,6 +45,7 @@ DEFAULT_TEACHER_PACKAGE = "_artifacts/376d023/analytical_teachers/6d_output_feed
 DEFAULT_TEACHER_MANIFEST = (
     "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers_manifest.json"
 )
+DEFAULT_CHECKPOINT_INTERVAL_BATCHES = 500
 BASE_RUN_ID = (
     "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64"
 )
@@ -87,6 +91,7 @@ def full_train_command(*, spec_path: Path = DEFAULT_SPEC_PATH) -> list[str]:
         "--run-spec",
         str(spec_path),
         "--full-train",
+        "--resume",
     ]
 
 
@@ -123,6 +128,20 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
             "command": full_train_command(spec_path=run_spec_path),
             "full_train_status": "implemented_no_launch",
             "trainer": "rlrmp.train.guided_distillation.run_guided_distillation_training",
+            "replicate_execution": "vectorized with eqx.filter_vmap over the replicate axis",
+        },
+        "checkpointing": {
+            "enabled": bool(getattr(args, "checkpoint", True)),
+            "default": "enabled",
+            "interval_batches": int(
+                getattr(args, "checkpoint_interval_batches", DEFAULT_CHECKPOINT_INTERVAL_BATCHES)
+            ),
+            "resume_flag": "--resume",
+            "latest_pointer": "checkpoints/checkpoint_latest",
+            "format": (
+                "numbered checkpoint directories with batched model.eqx, optimizer_state.eqx, "
+                "batch_keys.npy, loss_history.json, and metadata.json"
+            ),
         },
         "base_contract": {
             "issue": BASE_ISSUE_ID,
@@ -216,6 +235,7 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
             "hidden_size": 180,
             "batch_size": 64,
             "n_replicates": 5,
+            "vectorized_replicates": True,
             "plant_backend": "cs_lss",
             "stochastic_preset": "cs2019-rollout",
             "broad_epsilon_pgd_training": False,
@@ -271,7 +291,8 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
         ],
         "local_acceptance_checks": [
             "scripts/train_guided_distillation.py --full-train --smoke-train runs "
-            "the real trainer/loss path on tiny CPU-friendly shapes",
+            "the real trainer/loss path on tiny CPU-friendly shapes with two "
+            "replicates in one vectorized batch path",
             "tests/test_distillation.py covers dense-Jacobian equivalence only on "
             "tiny diagnostic maps",
             "the full-train path fails fast only for missing teacher packages or "
@@ -333,6 +354,17 @@ class BankedAffineTeacher(eqx.Module):
             self.feedback_gains,
             feedback_delta,
         )
+
+
+@dataclass(frozen=True)
+class GuidedDistillationTrainingState:
+    """Serializable state needed to resume guided distillation training."""
+
+    models: GuidedGRUPolicy
+    optimizer_state: optax.OptState
+    completed_batches: int
+    batch_keys: jax.Array
+    histories: list[list[dict[str, Any]]]
 
 
 def _require_teacher_package(path: Path) -> dict[str, np.ndarray]:
@@ -545,29 +577,255 @@ def _train_step(
     return model, optimizer_state, loss, components
 
 
+def _replicate_keys(root_key: jax.Array, *, offset: int, n_replicates: int) -> jax.Array:
+    replicate_indices = jnp.arange(n_replicates, dtype=jnp.uint32)
+    return jax.vmap(lambda index: jr.fold_in(root_key, index + offset))(replicate_indices)
+
+
+def _init_guided_policy_ensemble(
+    *,
+    feedback_dim: int,
+    action_dim: int,
+    hidden_size: int,
+    keys: jax.Array,
+) -> GuidedGRUPolicy:
+    return eqx.filter_vmap(
+        lambda key: GuidedGRUPolicy(
+            feedback_dim=feedback_dim,
+            action_dim=action_dim,
+            hidden_size=hidden_size,
+            key=key,
+        )
+    )(keys)
+
+
+def _materialize_replicate_batches(
+    package: dict[str, jax.Array],
+    *,
+    keys: jax.Array,
+    batch_size: int,
+    horizon: int,
+    n_jvp_directions: int,
+) -> tuple[jax.Array, dict[str, jax.Array]]:
+    split_keys = jax.vmap(lambda key: jr.split(key, 2))(keys)
+    next_keys = split_keys[:, 0]
+    materialize_keys = split_keys[:, 1]
+    batches = eqx.filter_vmap(
+        lambda key: materialize_teacher_batch(
+            package,
+            key=key,
+            batch_size=batch_size,
+            horizon=horizon,
+            n_jvp_directions=n_jvp_directions,
+        )
+    )(materialize_keys)
+    return next_keys, batches
+
+
+@eqx.filter_jit
+def _batched_train_step(
+    models: GuidedGRUPolicy,
+    optimizer_state: optax.OptState,
+    optimizer: optax.GradientTransformation,
+    batches: dict[str, jax.Array],
+    config: CSH0DistillationConfig,
+    student_forcing_fraction: float,
+) -> tuple[GuidedGRUPolicy, optax.OptState, jax.Array, dict[str, jax.Array]]:
+    return eqx.filter_vmap(
+        lambda model, state, batch: _train_step(
+            model,
+            state,
+            optimizer,
+            batch,
+            config,
+            student_forcing_fraction,
+        )
+    )(models, optimizer_state, batches)
+
+
+def _single_replicate_model(
+    models: GuidedGRUPolicy,
+    *,
+    replicate_index: int,
+    n_replicates: int,
+) -> GuidedGRUPolicy:
+    def select_leaf(leaf: Any) -> Any:
+        if eqx.is_array(leaf) and leaf.ndim > 0 and int(leaf.shape[0]) == n_replicates:
+            return leaf[replicate_index]
+        return leaf
+
+    return jt.map(select_leaf, models)
+
+
+def _json_dumps(payload: Any) -> str:
+    return json.dumps(payload, indent=2, sort_keys=True) + "\n"
+
+
+def _atomic_write_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(_json_dumps(payload), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _remove_tree(path: Path) -> None:
+    for child in path.iterdir():
+        if child.is_dir() and not child.is_symlink():
+            _remove_tree(child)
+        else:
+            child.unlink()
+    path.rmdir()
+
+
+def latest_checkpoint_path(checkpoint_root: Path) -> Path:
+    """Return the path used by the durable latest-checkpoint contract."""
+
+    return checkpoint_root / "checkpoint_latest"
+
+
+def _atomic_latest_link(checkpoint_root: Path, checkpoint_name: str) -> None:
+    latest = latest_checkpoint_path(checkpoint_root)
+    tmp_link = checkpoint_root / ".checkpoint_latest.tmp"
+    if tmp_link.exists() or tmp_link.is_symlink():
+        tmp_link.unlink()
+    os.symlink(checkpoint_name, tmp_link)
+    os.replace(tmp_link, latest)
+
+
+def _checkpoint_metadata(
+    *,
+    state: GuidedDistillationTrainingState,
+    args: argparse.Namespace,
+    spec: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "schema_version": f"{SCHEMA_VERSION}.checkpoint.v1",
+        "issue": ISSUE_ID,
+        "run_id": RUN_ID,
+        "completed_batches": int(state.completed_batches),
+        "n_batches": int(args.n_batches),
+        "n_replicates": int(args.n_replicates),
+        "batch_size": int(args.batch_size),
+        "hidden_size": int(args.hidden_size),
+        "horizon": int(args.horizon),
+        "n_jvp_directions": int(args.n_jvp_directions),
+        "checkpoint_interval_batches": int(args.checkpoint_interval_batches),
+        "seed": int(args.seed),
+        "vectorized_replicates": True,
+        "replicate_execution": "eqx.filter_vmap",
+        "batch_keys_path": "batch_keys.npy",
+        "loss_history_path": "loss_history.json",
+        "model_path": "models.eqx",
+        "optimizer_state_path": "optimizer_state.eqx",
+        "run_spec": spec,
+    }
+
+
+def save_training_checkpoint(
+    checkpoint_root: Path,
+    state: GuidedDistillationTrainingState,
+    *,
+    args: argparse.Namespace,
+    spec: dict[str, Any],
+) -> Path:
+    """Write a numbered checkpoint and atomically repoint ``checkpoint_latest``."""
+
+    checkpoint_root.mkdir(parents=True, exist_ok=True)
+    checkpoint_name = f"checkpoint_{state.completed_batches:07d}"
+    target = checkpoint_root / checkpoint_name
+    tmp = checkpoint_root / f".{checkpoint_name}.tmp"
+    if tmp.exists():
+        _remove_tree(tmp)
+    tmp.mkdir(parents=True)
+
+    eqx.tree_serialise_leaves(tmp / "models.eqx", state.models)
+    eqx.tree_serialise_leaves(tmp / "optimizer_state.eqx", state.optimizer_state)
+    np.save(tmp / "batch_keys.npy", np.asarray(jax.device_get(state.batch_keys)))
+    _atomic_write_json(tmp / "loss_history.json", state.histories)
+    _atomic_write_json(
+        tmp / "metadata.json", _checkpoint_metadata(state=state, args=args, spec=spec)
+    )
+    if target.exists():
+        _remove_tree(target)
+    os.replace(tmp, target)
+    _atomic_latest_link(checkpoint_root, checkpoint_name)
+    _atomic_write_json(
+        checkpoint_root / "checkpoint_index.json",
+        {
+            "latest": checkpoint_name,
+            "latest_path": str(latest_checkpoint_path(checkpoint_root)),
+            "completed_batches": int(state.completed_batches),
+            "n_replicates": int(args.n_replicates),
+            "vectorized_replicates": True,
+        },
+    )
+    return target
+
+
+def load_latest_checkpoint(
+    checkpoint_root: Path,
+    *,
+    model_template: GuidedGRUPolicy,
+    optimizer_state_template: optax.OptState,
+    n_replicates: int,
+) -> GuidedDistillationTrainingState:
+    """Load ``checkpoint_latest`` using explicit batched model and optimizer templates."""
+
+    checkpoint_path = latest_checkpoint_path(checkpoint_root)
+    if not checkpoint_path.exists():
+        raise FileNotFoundError(f"No checkpoint_latest found under {checkpoint_root}")
+    metadata = json.loads((checkpoint_path / "metadata.json").read_text(encoding="utf-8"))
+    if int(metadata["n_replicates"]) != int(n_replicates):
+        raise ValueError(
+            f"Checkpoint {checkpoint_path} has n_replicates={metadata['n_replicates']}; "
+            f"expected {n_replicates}."
+        )
+    models = eqx.tree_deserialise_leaves(checkpoint_path / "models.eqx", model_template)
+    optimizer_state = eqx.tree_deserialise_leaves(
+        checkpoint_path / "optimizer_state.eqx",
+        optimizer_state_template,
+    )
+    batch_keys = jnp.asarray(np.load(checkpoint_path / "batch_keys.npy"), dtype=jnp.uint32)
+    histories = json.loads((checkpoint_path / "loss_history.json").read_text(encoding="utf-8"))
+    return GuidedDistillationTrainingState(
+        models=models,
+        optimizer_state=optimizer_state,
+        completed_batches=int(metadata["completed_batches"]),
+        batch_keys=batch_keys,
+        histories=histories,
+    )
+
+
 def _write_training_outputs(
     *,
     output_dir: Path,
     spec: dict[str, Any],
     histories: list[list[dict[str, Any]]],
     models: list[GuidedGRUPolicy],
+    completed_batches: int,
+    requested_batches: int,
+    checkpoint_root: Path,
+    checkpoint_enabled: bool,
+    latest_checkpoint: Path | None,
 ) -> None:
     mkdir_p(output_dir)
-    (output_dir / "run_spec_snapshot.json").write_text(
-        json.dumps(spec, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    (output_dir / "loss_history.json").write_text(
-        json.dumps(histories, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    _atomic_write_json(output_dir / "run_spec_snapshot.json", spec)
+    _atomic_write_json(output_dir / "loss_history.json", histories)
     final_losses = [history[-1]["loss_total"] for history in histories if history]
     summary = {
         "schema_version": "rlrmp.guided_distillation.training_summary.v1",
         "issue": ISSUE_ID,
         "run_id": RUN_ID,
         "n_replicates": len(histories),
-        "n_batches": len(histories[0]) if histories else 0,
+        "n_batches": completed_batches,
+        "completed_batches": completed_batches,
+        "requested_batches": requested_batches,
+        "vectorized_replicates": True,
+        "checkpointing": {
+            "enabled": checkpoint_enabled,
+            "checkpoint_root": str(checkpoint_root),
+            "latest_checkpoint": str(latest_checkpoint) if latest_checkpoint is not None else None,
+        },
         "final_loss_mean": float(np.mean(final_losses)) if final_losses else None,
         "final_loss_min": float(np.min(final_losses)) if final_losses else None,
         "final_loss_max": float(np.max(final_losses)) if final_losses else None,
@@ -579,10 +837,7 @@ def _write_training_outputs(
             ],
         },
     }
-    (output_dir / "training_summary.json").write_text(
-        json.dumps(summary, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    _atomic_write_json(output_dir / "training_summary.json", summary)
     for replicate_index, model in enumerate(models):
         eqx.tree_serialise_leaves(output_dir / f"student_model_rep{replicate_index}.eqx", model)
 
@@ -612,13 +867,33 @@ def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]
     if args.smoke_train:
         n_batches = min(n_batches, 3)
         batch_size = min(batch_size, 2)
-        n_replicates = min(n_replicates, 1)
+        n_replicates = min(n_replicates, 2)
         hidden_size = min(hidden_size, 8)
         horizon = min(horizon, 6)
         n_jvp_directions = min(n_jvp_directions, 2)
 
     if n_batches <= 0 or batch_size <= 0 or n_replicates <= 0:
         raise ValueError("n_batches, batch_size, and n_replicates must be positive.")
+    checkpoint_interval_batches = int(args.checkpoint_interval_batches)
+    checkpoint_enabled = bool(args.checkpoint)
+    if checkpoint_enabled and checkpoint_interval_batches < 1:
+        raise ValueError("--checkpoint-interval-batches must be positive when checkpointing.")
+    stop_after_batches = None if args.stop_after_batches is None else int(args.stop_after_batches)
+    if stop_after_batches is not None:
+        if stop_after_batches < 1:
+            raise ValueError("--stop-after-batches must be positive when provided.")
+        if stop_after_batches > n_batches:
+            raise ValueError("--stop-after-batches cannot exceed --n-batches.")
+    target_batches = n_batches if stop_after_batches is None else stop_after_batches
+    effective_args = argparse.Namespace(**vars(args))
+    effective_args.n_batches = n_batches
+    effective_args.batch_size = batch_size
+    effective_args.n_replicates = n_replicates
+    effective_args.hidden_size = hidden_size
+    effective_args.horizon = horizon
+    effective_args.n_jvp_directions = n_jvp_directions
+    effective_args.checkpoint_interval_batches = checkpoint_interval_batches
+
     package = load_teacher_package(args.teacher_package)
     teacher_horizon = int(package["hinf_controller_gains"].shape[0])
     if horizon > teacher_horizon:
@@ -644,79 +919,148 @@ def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]
     )
 
     root_key = jr.PRNGKey(int(args.seed))
-    histories: list[list[dict[str, Any]]] = []
-    models: list[GuidedGRUPolicy] = []
+    model_keys = _replicate_keys(root_key, offset=0, n_replicates=n_replicates)
+    batch_keys = _replicate_keys(root_key, offset=10_000, n_replicates=n_replicates)
+    models = _init_guided_policy_ensemble(
+        feedback_dim=feedback_dim,
+        action_dim=action_dim,
+        hidden_size=hidden_size,
+        keys=model_keys,
+    )
+    optimizer_state = eqx.filter_vmap(optimizer.init)(eqx.filter(models, eqx.is_array))
+    histories: list[list[dict[str, Any]]] = [[] for _ in range(n_replicates)]
+    output_dir = Path(args.output_dir)
+    checkpoint_root = output_dir / "checkpoints"
+    state = GuidedDistillationTrainingState(
+        models=models,
+        optimizer_state=optimizer_state,
+        completed_batches=0,
+        batch_keys=batch_keys,
+        histories=histories,
+    )
+    resumed_from: Path | None = None
+    if args.resume and latest_checkpoint_path(checkpoint_root).exists():
+        state = load_latest_checkpoint(
+            checkpoint_root,
+            model_template=models,
+            optimizer_state_template=optimizer_state,
+            n_replicates=n_replicates,
+        )
+        resumed_from = latest_checkpoint_path(checkpoint_root)
+        if state.completed_batches > n_batches:
+            raise ValueError(
+                f"Latest checkpoint completed {state.completed_batches} batches, "
+                f"but --n-batches is {n_batches}."
+            )
+
     started = time.perf_counter()
     log_step = max(1, int(args.log_step))
-    for replicate_index in range(n_replicates):
-        model_key = jr.fold_in(root_key, replicate_index)
-        batch_key = jr.fold_in(root_key, 10_000 + replicate_index)
-        model = GuidedGRUPolicy(
-            feedback_dim=feedback_dim,
-            action_dim=action_dim,
-            hidden_size=hidden_size,
-            key=model_key,
+    latest_checkpoint: Path | None = (
+        latest_checkpoint_path(checkpoint_root)
+        if checkpoint_enabled and latest_checkpoint_path(checkpoint_root).exists()
+        else None
+    )
+    for batch_index in range(state.completed_batches, target_batches):
+        next_batch_keys, batches = _materialize_replicate_batches(
+            package,
+            keys=state.batch_keys,
+            batch_size=batch_size,
+            horizon=horizon,
+            n_jvp_directions=n_jvp_directions,
         )
-        optimizer_state = optimizer.init(eqx.filter(model, eqx.is_array))
-        history: list[dict[str, Any]] = []
-        for batch_index in range(n_batches):
-            batch_key, materialize_key = jr.split(batch_key)
-            batch = materialize_teacher_batch(
-                package,
-                key=materialize_key,
-                batch_size=batch_size,
-                horizon=horizon,
-                n_jvp_directions=n_jvp_directions,
-            )
-            forcing_fraction = forcing_fraction_for_batch(spec, batch_index)
-            model, optimizer_state, loss, components = _train_step(
-                model,
-                optimizer_state,
-                optimizer,
-                batch,
-                config,
-                forcing_fraction,
-            )
-            history.append(
+        forcing_fraction = forcing_fraction_for_batch(spec, batch_index)
+        models, optimizer_state, losses, components = _batched_train_step(
+            state.models,
+            state.optimizer_state,
+            optimizer,
+            batches,
+            config,
+            forcing_fraction,
+        )
+        losses_host = np.asarray(jax.device_get(losses))
+        components_host = {
+            name: np.asarray(jax.device_get(value)) for name, value in components.items()
+        }
+        for replicate_index in range(n_replicates):
+            state.histories[replicate_index].append(
                 {
                     "replicate": replicate_index,
                     "batch": batch_index + 1,
                     "student_forcing_fraction": forcing_fraction,
-                    "loss_total": float(loss),
-                    "components": {name: float(value) for name, value in components.items()},
+                    "loss_total": float(losses_host[replicate_index]),
+                    "components": {
+                        name: float(value[replicate_index])
+                        for name, value in components_host.items()
+                    },
                 }
             )
-            if (
-                args.smoke_train
-                or batch_index == 0
-                or (batch_index + 1) % log_step == 0
-                or batch_index + 1 == n_batches
-            ):
-                elapsed = time.perf_counter() - started
-                print(
-                    "BATCH "
-                    f"phase=guided_distillation_rep{replicate_index} "
-                    f"batch={batch_index + 1}/{n_batches} "
-                    f"loss={float(loss):.8g} "
-                    f"elapsed={elapsed:.1f}s",
-                    file=sys.stderr,
-                    flush=True,
-                )
-        histories.append(history)
-        models.append(model)
+        state = GuidedDistillationTrainingState(
+            models=models,
+            optimizer_state=optimizer_state,
+            completed_batches=batch_index + 1,
+            batch_keys=next_batch_keys,
+            histories=state.histories,
+        )
+        if (
+            args.smoke_train
+            or batch_index == 0
+            or (batch_index + 1) % log_step == 0
+            or batch_index + 1 == n_batches
+        ):
+            elapsed = time.perf_counter() - started
+            print(
+                "BATCH "
+                "phase=guided_distillation_vectorized "
+                f"batch={batch_index + 1}/{n_batches} "
+                f"loss={float(np.mean(losses_host)):.8g} "
+                f"replicates={n_replicates} "
+                f"elapsed={elapsed:.1f}s",
+                file=sys.stderr,
+                flush=True,
+            )
+        if checkpoint_enabled and (
+            state.completed_batches % checkpoint_interval_batches == 0
+            or state.completed_batches == n_batches
+            or state.completed_batches == target_batches
+        ):
+            latest_checkpoint = save_training_checkpoint(
+                checkpoint_root,
+                state,
+                args=effective_args,
+                spec=spec,
+            )
 
-    output_dir = Path(args.output_dir)
+    unbatched_models = [
+        _single_replicate_model(
+            state.models,
+            replicate_index=replicate_index,
+            n_replicates=n_replicates,
+        )
+        for replicate_index in range(n_replicates)
+    ]
+
     _write_training_outputs(
         output_dir=output_dir,
         spec=spec,
-        histories=histories,
-        models=models,
+        histories=state.histories,
+        models=unbatched_models,
+        completed_batches=state.completed_batches,
+        requested_batches=n_batches,
+        checkpoint_root=checkpoint_root,
+        checkpoint_enabled=checkpoint_enabled,
+        latest_checkpoint=latest_checkpoint,
     )
-    final_losses = [history[-1]["loss_total"] for history in histories if history]
+    final_losses = [history[-1]["loss_total"] for history in state.histories if history]
     return {
         "output_dir": str(output_dir),
         "n_replicates": n_replicates,
-        "n_batches": n_batches,
+        "n_batches": state.completed_batches,
+        "completed_batches": state.completed_batches,
+        "requested_batches": n_batches,
+        "vectorized_replicates": True,
+        "checkpointing": checkpoint_enabled,
+        "latest_checkpoint": str(latest_checkpoint) if latest_checkpoint is not None else None,
+        "resumed_from": str(resumed_from) if resumed_from is not None else None,
         "final_loss_mean": float(np.mean(final_losses)) if final_losses else None,
         "backend": str(jax.default_backend()),
     }
@@ -786,6 +1130,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--lr-cosine-alpha", type=float, default=0.1)
     parser.add_argument("--gradient-clip-norm", type=float, default=5.0)
     parser.add_argument("--log-step", type=int, default=10)
+    parser.add_argument("--checkpoint", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--checkpoint-interval-batches",
+        type=int,
+        default=DEFAULT_CHECKPOINT_INTERVAL_BATCHES,
+    )
+    parser.add_argument("--stop-after-batches", type=int, default=None)
     parser.add_argument("--smoke-loss", action="store_true")
     parser.add_argument("--smoke-train", action="store_true")
     parser.add_argument("--full-train", action="store_true")

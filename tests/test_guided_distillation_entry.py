@@ -51,6 +51,8 @@ def test_distillation_entry_builds_9727d79_run_contract() -> None:
         input_output_jvp_weight=0.25,
         rollout_anchor_weight=0.25,
         n_jvp_directions=16,
+        checkpoint=True,
+        checkpoint_interval_batches=500,
     )
 
     spec = guided_distillation.build_distillation_spec(args)
@@ -59,11 +61,18 @@ def test_distillation_entry_builds_9727d79_run_contract() -> None:
     assert spec["training_entry"]["script"] == "scripts/train_guided_distillation.py"
     assert spec["training_entry"]["loss_function"].endswith("guided_distillation_loss")
     assert spec["training_entry"]["full_train_status"] == "implemented_no_launch"
+    assert spec["training_entry"]["replicate_execution"] == (
+        "vectorized with eqx.filter_vmap over the replicate axis"
+    )
+    assert spec["checkpointing"]["enabled"] is True
+    assert spec["checkpointing"]["interval_batches"] == 500
+    assert spec["checkpointing"]["resume_flag"] == "--resume"
     assert spec["model_contract"]["initial_hidden_encoder"] is True
     assert spec["model_contract"]["force_filter_feedback"] is True
     assert spec["model_contract"]["hidden_size"] == 180
     assert spec["model_contract"]["batch_size"] == 64
     assert spec["model_contract"]["n_replicates"] == 5
+    assert spec["model_contract"]["vectorized_replicates"] is True
     assert spec["model_contract"]["broad_epsilon_pgd_training"] is False
     assert spec["optimizer"]["controller_lr"] == pytest.approx(3e-3)
     assert spec["optimizer"]["gradient_clip_norm"] == pytest.approx(5.0)
@@ -109,6 +118,8 @@ def test_distillation_schedule_consumes_staged_forcing() -> None:
         input_output_jvp_weight=0.25,
         rollout_anchor_weight=0.25,
         n_jvp_directions=16,
+        checkpoint=True,
+        checkpoint_interval_batches=500,
     )
     spec = guided_distillation.build_distillation_spec(args)
 
@@ -141,21 +152,100 @@ def test_distillation_cli_smoke_train_runs_real_trainer(
             "--batch-size",
             "2",
             "--n-replicates",
-            "1",
+            "2",
             "--hidden-size",
             "6",
             "--horizon",
             "4",
             "--n-jvp-directions",
             "2",
+            "--checkpoint-interval-batches",
+            "1",
         ]
     )
 
-    payload = json.loads(capsys.readouterr().out)
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
     assert status == 0
     assert payload["n_batches"] == 2
-    assert payload["n_replicates"] == 1
+    assert payload["completed_batches"] == 2
+    assert payload["n_replicates"] == 2
+    assert payload["vectorized_replicates"] is True
+    assert payload["checkpointing"] is True
+    assert payload["latest_checkpoint"] is not None
     assert payload["final_loss_mean"] >= 0.0
+    assert "phase=guided_distillation_vectorized" in captured.err
+    assert "replicates=2" in captured.err
+    assert "phase=guided_distillation_rep0" not in captured.err
     assert (output_dir / "training_summary.json").is_file()
     assert (output_dir / "loss_history.json").is_file()
+    assert (output_dir / "checkpoints" / "checkpoint_latest").exists()
+    assert (output_dir / "checkpoints" / "checkpoint_0000002" / "models.eqx").is_file()
+    assert (output_dir / "checkpoints" / "checkpoint_0000002" / "optimizer_state.eqx").is_file()
+    assert (output_dir / "checkpoints" / "checkpoint_0000002" / "batch_keys.npy").is_file()
+    summary = json.loads((output_dir / "training_summary.json").read_text(encoding="utf-8"))
+    histories = json.loads((output_dir / "loss_history.json").read_text(encoding="utf-8"))
+    assert summary["n_replicates"] == 2
+    assert summary["completed_batches"] == 2
+    assert summary["checkpointing"]["enabled"] is True
+    assert summary["vectorized_replicates"] is True
+    assert len(histories) == 2
+    assert {history[0]["replicate"] for history in histories} == {0, 1}
+    assert all(len(history) == 2 for history in histories)
     assert (output_dir / "student_model_rep0.eqx").is_file()
+    assert (output_dir / "student_model_rep1.eqx").is_file()
+
+
+def test_distillation_cli_smoke_train_resumes_from_latest_checkpoint(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    teacher_package = tmp_path / "teacher.npz"
+    output_dir = tmp_path / "artifacts"
+    run_spec = tmp_path / "run.json"
+    _write_tiny_teacher_package(teacher_package)
+
+    common_args = [
+        "--full-train",
+        "--smoke-train",
+        "--teacher-package",
+        str(teacher_package),
+        "--run-spec-output",
+        str(run_spec),
+        "--output-dir",
+        str(output_dir),
+        "--n-batches",
+        "3",
+        "--batch-size",
+        "2",
+        "--n-replicates",
+        "2",
+        "--hidden-size",
+        "6",
+        "--horizon",
+        "4",
+        "--n-jvp-directions",
+        "2",
+        "--checkpoint-interval-batches",
+        "1",
+    ]
+
+    first_status = guided_distillation.main([*common_args, "--stop-after-batches", "1"])
+    first_payload = json.loads(capsys.readouterr().out)
+
+    assert first_status == 0
+    assert first_payload["completed_batches"] == 1
+    assert (output_dir / "checkpoints" / "checkpoint_0000001" / "metadata.json").is_file()
+
+    second_status = guided_distillation.main([*common_args, "--resume"])
+    captured = capsys.readouterr()
+    second_payload = json.loads(captured.out)
+
+    assert second_status == 0
+    assert second_payload["completed_batches"] == 3
+    assert second_payload["resumed_from"] is not None
+    assert (output_dir / "checkpoints" / "checkpoint_0000003" / "metadata.json").is_file()
+    histories = json.loads((output_dir / "loss_history.json").read_text(encoding="utf-8"))
+    assert len(histories) == 2
+    assert all([entry["batch"] for entry in history] == [1, 2, 3] for history in histories)
+    assert "phase=guided_distillation_vectorized" in captured.err

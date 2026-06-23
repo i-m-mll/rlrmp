@@ -19,6 +19,14 @@
     "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
     "run_spec": "results/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/run.json"
   },
+  "checkpointing": {
+    "default": "enabled",
+    "enabled": true,
+    "format": "numbered checkpoint directories with batched model.eqx, optimizer_state.eqx, batch_keys.npy, loss_history.json, and metadata.json",
+    "interval_batches": 500,
+    "latest_pointer": "checkpoints/checkpoint_latest",
+    "resume_flag": "--resume"
+  },
   "distillation_surface": {
     "components": {
       "clean_action": {
@@ -81,7 +89,7 @@
   "issue": "9727d79",
   "launch_status": "not_launched",
   "local_acceptance_checks": [
-    "scripts/train_guided_distillation.py --full-train --smoke-train runs the real trainer/loss path on tiny CPU-friendly shapes",
+    "scripts/train_guided_distillation.py --full-train --smoke-train runs the real trainer/loss path on tiny CPU-friendly shapes with two replicates in one vectorized batch path",
     "tests/test_distillation.py covers dense-Jacobian equivalence only on tiny diagnostic maps",
     "the full-train path fails fast only for missing teacher packages or invalid specs, not as a placeholder guard"
   ],
@@ -93,7 +101,8 @@
     "initial_hidden_encoder": true,
     "n_replicates": 5,
     "plant_backend": "cs_lss",
-    "stochastic_preset": "cs2019-rollout"
+    "stochastic_preset": "cs2019-rollout",
+    "vectorized_replicates": true
   },
   "no_launch_boundary": "No RunPod, Modal, GPU acquisition, full training launch, push, or protected-branch auth request is authorized by this spec.",
   "optimizer": {
@@ -140,12 +149,14 @@
       "scripts/train_guided_distillation.py",
       "--run-spec",
       "results/9727d79/runs/h0_hinf_6d_guided_distillation.json",
-      "--full-train"
+      "--full-train",
+      "--resume"
     ],
     "full_train_status": "implemented_no_launch",
     "loss_function": "rlrmp.train.distillation.guided_distillation_loss",
     "loss_module": "rlrmp.train.distillation",
     "module": "rlrmp.train.guided_distillation",
+    "replicate_execution": "vectorized with eqx.filter_vmap over the replicate axis",
     "run_spec_path": "results/9727d79/runs/h0_hinf_6d_guided_distillation.json",
     "script": "scripts/train_guided_distillation.py",
     "spec_command": [
