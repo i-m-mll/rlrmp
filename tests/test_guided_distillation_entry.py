@@ -8,7 +8,10 @@ import json
 import os
 from pathlib import Path
 import shutil
+from types import SimpleNamespace
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 import pytest
 from jax_cookbook import load_with_hyperparameters
@@ -70,6 +73,10 @@ def test_distillation_entry_builds_9727d79_run_contract() -> None:
     spec = guided_distillation.build_distillation_spec(args)
 
     assert spec["issue"] == "9727d79"
+    assert spec["run_id"] == "h0_hinf_6d_standard_graph_distillation"
+    assert spec["artifact_output_dir"] == (
+        "_artifacts/9727d79/runs/h0_hinf_6d_standard_graph_distillation"
+    )
     assert spec["training_entry"]["script"] == "scripts/train_guided_distillation.py"
     assert spec["training_entry"]["loss_function"].endswith("guided_distillation_loss")
     assert spec["training_entry"]["full_train_status"] == "implemented_no_launch"
@@ -82,6 +89,8 @@ def test_distillation_entry_builds_9727d79_run_contract() -> None:
     assert spec["model_contract"]["initial_hidden_encoder"] is True
     assert spec["model_contract"]["force_filter_feedback"] is True
     assert spec["model_contract"]["hidden_size"] == 180
+    assert spec["model_contract"]["controller_input_dim"] == 6
+    assert spec["model_contract"]["student_action_history_input"] is False
     assert spec["model_contract"]["batch_size"] == 64
     assert spec["model_contract"]["n_replicates"] == 5
     assert spec["model_contract"]["vectorized_replicates"] is True
@@ -94,7 +103,20 @@ def test_distillation_entry_builds_9727d79_run_contract() -> None:
     assert spec["training_schedule"]["phases"][2]["start_batch"] == 4000
     assert spec["training_schedule"]["phases"][2]["end_batch"] == 12000
     assert spec["distillation_surface"]["components"]["input_output_jvp"]["n_directions"] == 16
+    assert spec["distillation_surface"]["student_action_history_input"] is False
+    assert spec["launch_ready_summary"]["requires_user_confirmation_before_billable_run"] is True
     assert "approximation" in spec["teacher_bank"]
+
+
+def test_corrected_distillation_default_paths_do_not_reuse_legacy_run() -> None:
+    assert guided_distillation.RUN_ID == "h0_hinf_6d_standard_graph_distillation"
+    assert guided_distillation.LEGACY_ACTION_HISTORY_RUN_ID == "h0_hinf_6d_guided_distillation"
+    assert guided_distillation.DEFAULT_SPEC_PATH == Path(
+        "results/9727d79/runs/h0_hinf_6d_standard_graph_distillation.json"
+    )
+    assert guided_distillation.DEFAULT_OUTPUT_DIR == (
+        "_artifacts/9727d79/runs/h0_hinf_6d_standard_graph_distillation"
+    )
 
 
 def test_distillation_entry_smoke_loss_calls_guided_surface() -> None:
@@ -199,6 +221,7 @@ def test_distillation_cli_smoke_train_runs_real_trainer(
     summary = json.loads((output_dir / "training_summary.json").read_text(encoding="utf-8"))
     histories = json.loads((output_dir / "loss_history.json").read_text(encoding="utf-8"))
     assert summary["n_replicates"] == 2
+    assert summary["run_id"] == "h0_hinf_6d_standard_graph_distillation"
     assert summary["completed_batches"] == 2
     assert summary["checkpointing"]["enabled"] is True
     assert summary["vectorized_replicates"] is True
@@ -210,6 +233,9 @@ def test_distillation_cli_smoke_train_runs_real_trainer(
     assert not (output_dir / "student_model_rep1.eqx").exists()
 
     spec = json.loads((output_dir / "run_spec_snapshot.json").read_text(encoding="utf-8"))
+    assert spec["run_id"] == "h0_hinf_6d_standard_graph_distillation"
+    assert spec["model_contract"]["controller_input_dim"] == 6
+    assert spec["model_contract"]["student_action_history_input"] is False
     hps = guided_distillation._standard_hps_from_spec(
         spec,
         n_replicates=2,
@@ -227,6 +253,82 @@ def test_distillation_cli_smoke_train_runs_real_trainer(
         setup_func=lambda key, **_kwargs: _setup_task_model_pair(hps, key=key).model,
     )
     assert model.nodes["net"].net.hidden.weight_ih.shape == (2, 18, 6)
+
+
+def test_action_history_context_does_not_enter_student_forward_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args = argparse.Namespace(
+        run_spec_output=str(guided_distillation.DEFAULT_SPEC_PATH),
+        output_dir=guided_distillation.DEFAULT_OUTPUT_DIR,
+        teacher_package=guided_distillation.DEFAULT_TEACHER_PACKAGE,
+        teacher_manifest=guided_distillation.DEFAULT_TEACHER_MANIFEST,
+        clean_action_weight=1.0,
+        perturbation_response_weight=1.0,
+        input_output_jvp_weight=0.25,
+        rollout_anchor_weight=0.25,
+        n_jvp_directions=2,
+        checkpoint=True,
+        checkpoint_interval_batches=500,
+    )
+    spec = guided_distillation.build_distillation_spec(args)
+    hps = guided_distillation._standard_hps_from_spec(
+        spec,
+        n_replicates=1,
+        hidden_size=6,
+        batch_size=2,
+        n_batches=1,
+        controller_lr=3e-3,
+        lr_warmup_batches=500,
+        lr_warmup_init_fraction=0.1,
+        lr_cosine_alpha=0.1,
+        gradient_clip_norm=5.0,
+    )
+    model = guided_distillation._single_replicate_model(
+        guided_distillation._init_standard_model_ensemble(hps=hps, key=jax.random.PRNGKey(1)),
+        replicate_index=0,
+        n_replicates=1,
+    )
+    batch = {
+        "feedback_history": jnp.ones((2, 4, 6), dtype=jnp.float32),
+        "teacher_actions": jnp.zeros((2, 4, 2), dtype=jnp.float32),
+        "perturbation_feedback_history": jnp.ones((2, 4, 6), dtype=jnp.float32) * 1.1,
+        "feedback_directions": jnp.ones((2, 2, 4, 6), dtype=jnp.float32) * 0.01,
+        "action_directions": jnp.ones((2, 2, 4, 2), dtype=jnp.float32) * 0.02,
+        "feedback_gains": jnp.zeros((2, 4, 2, 6), dtype=jnp.float32),
+    }
+    observed = {}
+
+    def fake_guided_distillation_loss(**kwargs):
+        student_policy = kwargs["student_policy"]
+        feedback = kwargs["feedback_history"]
+        actions_a = jnp.zeros_like(kwargs["action_history"])
+        actions_b = jnp.ones_like(kwargs["action_history"])
+        np.testing.assert_allclose(
+            np.asarray(student_policy(feedback, actions_a)),
+            np.asarray(student_policy(feedback, actions_b)),
+            rtol=0.0,
+            atol=0.0,
+        )
+        observed["checked"] = True
+        return SimpleNamespace(total=jnp.array(0.0), components={"clean_action": jnp.array(0.0)})
+
+    monkeypatch.setattr(
+        guided_distillation,
+        "guided_distillation_loss",
+        fake_guided_distillation_loss,
+    )
+
+    loss, components = guided_distillation._loss_for_batch(
+        model,
+        batch,
+        guided_distillation.cs_h0_distillation_config(n_jvp_directions=2),
+        student_forcing_fraction=1.0,
+    )
+
+    assert float(loss) == 0.0
+    assert set(components) == {"clean_action"}
+    assert observed["checked"] is True
 
 
 def test_distillation_cli_smoke_train_resumes_from_latest_checkpoint(

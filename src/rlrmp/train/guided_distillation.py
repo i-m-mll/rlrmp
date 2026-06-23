@@ -43,7 +43,8 @@ ISSUE_ID = "9727d79"
 IMPLEMENTATION_ISSUE_ID = "c314267"
 BASE_ISSUE_ID = "020a65b"
 TEACHER_ISSUE_ID = "376d023"
-RUN_ID = "h0_hinf_6d_guided_distillation"
+LEGACY_ACTION_HISTORY_RUN_ID = "h0_hinf_6d_guided_distillation"
+RUN_ID = "h0_hinf_6d_standard_graph_distillation"
 DEFAULT_SPEC_PATH = Path(f"results/{ISSUE_ID}/runs/{RUN_ID}.json")
 DEFAULT_OUTPUT_DIR = f"_artifacts/{ISSUE_ID}/runs/{RUN_ID}"
 DEFAULT_TEACHER_PACKAGE = "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers.npz"
@@ -62,6 +63,62 @@ REQUIRED_TEACHER_KEYS = (
     "hinf_controller_gains",
     "observation_matrix",
 )
+
+
+def run_spec_path_for(run_id: str) -> Path:
+    """Return the tracked flat run-spec path for a 9727d79 run variant."""
+
+    return Path(f"results/{ISSUE_ID}/runs/{run_id}.json")
+
+
+def output_dir_for(run_id: str) -> str:
+    """Return the ignored artifact directory for a 9727d79 run variant."""
+
+    return f"_artifacts/{ISSUE_ID}/runs/{run_id}"
+
+
+def _arg_value(args: argparse.Namespace, name: str, default: Any = None) -> Any:
+    return getattr(args, name, default)
+
+
+def _resolve_run_id(args: argparse.Namespace, spec: dict[str, Any] | None = None) -> str:
+    explicit = _arg_value(args, "run_id")
+    if explicit:
+        return str(explicit)
+    if spec is not None and spec.get("run_id"):
+        return str(spec["run_id"])
+    run_spec_output = _arg_value(args, "run_spec_output")
+    if run_spec_output:
+        return Path(run_spec_output).stem
+    return RUN_ID
+
+
+def _resolve_run_spec_path(args: argparse.Namespace, run_id: str) -> Path:
+    run_spec_output = _arg_value(args, "run_spec_output")
+    if run_spec_output:
+        return Path(run_spec_output)
+    return run_spec_path_for(run_id)
+
+
+def _resolve_output_dir(
+    args: argparse.Namespace,
+    run_id: str,
+    spec: dict[str, Any] | None = None,
+) -> str:
+    output_dir = _arg_value(args, "output_dir")
+    if output_dir:
+        return str(output_dir)
+    if spec is not None and spec.get("artifact_output_dir"):
+        return str(spec["artifact_output_dir"])
+    return output_dir_for(run_id)
+
+
+def _spec_run_id(spec: dict[str, Any]) -> str:
+    if spec.get("run_id"):
+        return str(spec["run_id"])
+    if spec.get("artifact_output_dir"):
+        return Path(str(spec["artifact_output_dir"])).name
+    return RUN_ID
 
 
 def _dump_json_metadata_bytes(file: Any, hyperparameters: dict[str, Any] | None) -> None:
@@ -209,6 +266,9 @@ def full_train_command(*, spec_path: Path = DEFAULT_SPEC_PATH) -> list[str]:
 def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
     """Build the no-launch spec for the first 6D h0 H-infinity distillation row."""
 
+    run_id = _resolve_run_id(args)
+    run_spec_path = _resolve_run_spec_path(args, run_id)
+    output_dir = _resolve_output_dir(args, run_id)
     config = cs_h0_distillation_config(
         weights=DistillationLossWeights(
             clean_action=float(args.clean_action_weight),
@@ -218,7 +278,6 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
         ),
         n_jvp_directions=int(args.n_jvp_directions),
     )
-    run_spec_path = Path(args.run_spec_output)
     existing_spec = _read_json(run_spec_path) if run_spec_path.is_file() else {}
     hps = _standard_hps_dict(
         n_replicates=int(getattr(args, "n_replicates", 5)),
@@ -235,11 +294,12 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
         "schema_version": SCHEMA_VERSION,
         "issue": ISSUE_ID,
         "implementation_issue": IMPLEMENTATION_ISSUE_ID,
+        "run_id": run_id,
         "seed": int(getattr(args, "seed", 0)),
         "batch_size": int(getattr(args, "batch_size", 64)),
         "n_train_batches": int(getattr(args, "n_batches", 12000)),
         "controller_lr": float(getattr(args, "controller_lr", 3e-3)),
-        "artifact_output_dir": str(args.output_dir),
+        "artifact_output_dir": output_dir,
         "hps": hps,
         "launch_status": "not_launched",
         "no_launch_boundary": (
@@ -252,7 +312,7 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
             "loss_module": "rlrmp.train.distillation",
             "loss_function": "rlrmp.train.distillation.guided_distillation_loss",
             "run_spec_path": str(run_spec_path),
-            "artifact_output_dir": str(args.output_dir),
+            "artifact_output_dir": output_dir,
             "spec_command": default_distillation_command(spec_path=run_spec_path),
             "command": full_train_command(spec_path=run_spec_path),
             "full_train_status": "implemented_no_launch",
@@ -310,6 +370,11 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
                 "action_history": "controller_command_history",
                 "action_output": "controller_command_history",
             },
+            "student_architecture_boundary": (
+                "Teacher/student action histories are supervision and JVP context only. "
+                "The student Feedbax graph consumes the normal 6D controller feedback "
+                "from setup_task_model_pair and no explicit previous-action input."
+            ),
         },
         "teacher_bank": {
             "materializer": "rlrmp.train.guided_distillation.materialize_teacher_batch",
@@ -369,6 +434,9 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
             "setup_function": "rlrmp.train.task_model.setup_task_model_pair",
             "checkpoint_format": "jax_cookbook.save/load_with_hyperparameters",
             "final_model": "trained_model.eqx",
+            "checkpoint_model": "checkpoints/<checkpoint>/model.eqx",
+            "controller_input_dim": 6,
+            "student_action_history_input": False,
             "initial_hidden_encoder": True,
             "force_filter_feedback": True,
             "hidden_size": 180,
@@ -379,9 +447,52 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
             "stochastic_preset": "cs2019-rollout",
             "broad_epsilon_pgd_training": False,
         },
+        "launch_ready_summary": {
+            "status": "locked_preflight_no_launch",
+            "requires_user_confirmation_before_billable_run": True,
+            "recommended_gpu": "secure RunPod RTX 5090",
+            "corrected_variant": (
+                "Standard h0 Feedbax graph distillation rerun with 6 controller inputs; "
+                "separate from the legacy action-history-input run."
+            ),
+            "output_dir": output_dir,
+            "parity_table": [
+                {
+                    "field": "Base graph",
+                    "020a65b_no_pgd": "setup_task_model_pair h0 GRU",
+                    "corrected_distillation": "same",
+                },
+                {
+                    "field": "Controller inputs",
+                    "020a65b_no_pgd": "6D force-filter feedback",
+                    "corrected_distillation": "same; no previous-action input",
+                },
+                {
+                    "field": "Hidden size / replicates",
+                    "020a65b_no_pgd": "180 / 5",
+                    "corrected_distillation": "180 / 5",
+                },
+                {
+                    "field": "Batch / lr / clip / schedule",
+                    "020a65b_no_pgd": "64 / 3e-3 / 5 / warmup-cosine",
+                    "corrected_distillation": "same",
+                },
+                {
+                    "field": "Training batches / PGD",
+                    "020a65b_no_pgd": "12000 / none",
+                    "corrected_distillation": "12000 / none",
+                },
+                {
+                    "field": "Only intended difference",
+                    "020a65b_no_pgd": "standard full-Q/R/Qf rollout loss",
+                    "corrected_distillation": "H-infinity teacher-guided distillation loss",
+                },
+            ],
+        },
         "distillation_surface": {
             "config": config.summary(),
             "hidden_state_supervision": False,
+            "student_action_history_input": False,
             "components": {
                 "clean_action": {
                     "enabled": config.weights.clean_action > 0.0,
@@ -852,7 +963,7 @@ def _checkpoint_metadata(
     return {
         "schema_version": f"{SCHEMA_VERSION}.checkpoint.v1",
         "issue": ISSUE_ID,
-        "run_id": RUN_ID,
+        "run_id": _spec_run_id(spec),
         "completed_batches": int(state.completed_batches),
         "n_batches": int(args.n_batches),
         "n_replicates": int(args.n_replicates),
@@ -966,7 +1077,7 @@ def _write_training_outputs(
     summary = {
         "schema_version": "rlrmp.guided_distillation.training_summary.v1",
         "issue": ISSUE_ID,
-        "run_id": RUN_ID,
+        "run_id": _spec_run_id(spec),
         "n_replicates": len(histories),
         "n_batches": completed_batches,
         "completed_batches": completed_batches,
@@ -994,7 +1105,7 @@ def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]
     """Run the executable analytical-teacher guided-distillation trainer."""
 
     spec = build_distillation_spec(args)
-    if args.run_spec is not None:
+    if _arg_value(args, "run_spec") is not None:
         run_spec_path = Path(args.run_spec)
         if not run_spec_path.is_file():
             raise FileNotFoundError(f"Run spec not found at {run_spec_path}.")
@@ -1094,7 +1205,7 @@ def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]
         where_train_spec=where_train_spec,
     )
     histories: list[list[dict[str, Any]]] = [[] for _ in range(n_replicates)]
-    output_dir = Path(args.output_dir)
+    output_dir = Path(_resolve_output_dir(args, _spec_run_id(spec), spec))
     checkpoint_root = output_dir / "checkpoints"
     state = GuidedDistillationTrainingState(
         model=model,
@@ -1265,9 +1376,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Prepare the 9727d79 guided C&S GRU distillation no-launch spec.",
     )
+    parser.add_argument("--run-id", default=RUN_ID)
     parser.add_argument("--run-spec", default=None)
-    parser.add_argument("--run-spec-output", default=str(DEFAULT_SPEC_PATH))
-    parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--run-spec-output", default=None)
+    parser.add_argument("--output-dir", default=None)
     parser.add_argument("--teacher-package", default=DEFAULT_TEACHER_PACKAGE)
     parser.add_argument("--teacher-manifest", default=DEFAULT_TEACHER_MANIFEST)
     parser.add_argument("--clean-action-weight", type=float, default=1.0)
@@ -1307,8 +1419,6 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.run_spec is not None:
-        args.run_spec_output = args.run_spec
     if args.full_train:
         result = run_guided_distillation_training(args)
         print(json.dumps(result, indent=2, sort_keys=True), end="")
@@ -1322,7 +1432,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"run_spec": payload}, indent=2, sort_keys=True), end="")
         return 0
 
-    spec_path = Path(args.run_spec_output)
+    spec_path = _resolve_run_spec_path(args, _resolve_run_id(args, payload))
     mkdir_p(spec_path.parent)
     spec_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps({"run_spec_path": str(spec_path)}, indent=2, sort_keys=True), end="")
@@ -1333,6 +1443,7 @@ __all__ = [
     "BASE_RUN_ID",
     "DEFAULT_SPEC_PATH",
     "ISSUE_ID",
+    "LEGACY_ACTION_HISTORY_RUN_ID",
     "RUN_ID",
     "build_distillation_spec",
     "build_parser",
@@ -1342,6 +1453,8 @@ __all__ = [
     "load_teacher_package",
     "main",
     "materialize_teacher_batch",
+    "output_dir_for",
     "run_guided_distillation_training",
+    "run_spec_path_for",
     "smoke_distillation_loss",
 ]
