@@ -9,6 +9,7 @@ local smoke path that proves the CLI can call the intended loss surface.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import sys
@@ -25,7 +26,11 @@ import jax.tree as jt
 import numpy as np
 import optax
 
+from feedbax.config.namespace import TreeNamespace, dict_to_namespace
+from jax_cookbook import save as fbx_save
+from jax_cookbook.tree import filter_spec_leaves
 from rlrmp.paths import mkdir_p
+from rlrmp.model.trainable import staged_network_trainable_parts
 from rlrmp.train.distillation import (
     CSH0DistillationConfig,
     DistillationLossWeights,
@@ -57,6 +62,112 @@ REQUIRED_TEACHER_KEYS = (
     "hinf_controller_gains",
     "observation_matrix",
 )
+
+
+def _dump_json_metadata_bytes(file: Any, hyperparameters: dict[str, Any] | None) -> None:
+    file.write(json.dumps(hyperparameters, sort_keys=True).encode("utf-8") + b"\n")
+
+
+def _save_pytree(path: Path, tree: Any, *, hyperparameters: dict[str, Any] | None = None) -> None:
+    fbx_save(
+        path,
+        tree,
+        hyperparameters=hyperparameters,
+        dump_fn=_dump_json_metadata_bytes,
+    )
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _normalize_serialized_hps(hps: dict[str, Any]) -> dict[str, Any]:
+    normalized = copy.deepcopy(hps)
+    if normalized.get("hidden_type") == "equinox.nn._rnn.GRUCell":
+        normalized["hidden_type"] = None
+    return normalized
+
+
+def _base_run_spec(path: str | Path = BASE_RUN_SPEC) -> dict[str, Any]:
+    return _read_json(Path(path))
+
+
+def _standard_hps_dict(
+    *,
+    base_spec_path: str | Path = BASE_RUN_SPEC,
+    n_replicates: int = 5,
+    hidden_size: int = 180,
+    batch_size: int = 64,
+    n_batches: int = 12000,
+    controller_lr: float = 3e-3,
+    lr_warmup_batches: int = 500,
+    lr_warmup_init_fraction: float = 0.1,
+    lr_cosine_alpha: float = 0.1,
+    gradient_clip_norm: float = 5.0,
+) -> dict[str, Any]:
+    hps = _normalize_serialized_hps(_base_run_spec(base_spec_path)["hps"])
+    hps["batch_size"] = int(batch_size)
+    hps["n_batches_condition"] = int(n_batches)
+    hps["learning_rate_0"] = float(controller_lr)
+    hps["constant_lr_iterations"] = int(lr_warmup_batches)
+    hps["warmup_init_fraction"] = float(lr_warmup_init_fraction)
+    hps["cosine_annealing_alpha"] = float(lr_cosine_alpha)
+    hps["gradient_clip_norm"] = float(gradient_clip_norm)
+    model = hps.setdefault("model", {})
+    model["n_replicates"] = int(n_replicates)
+    model["hidden_size"] = int(hidden_size)
+    population = model.setdefault("population_structure", {})
+    population["n_input_only"] = 0
+    population["n_readout_only"] = 0
+    population["n_recurrent_only"] = 0
+    population["n_input_readout"] = int(hidden_size)
+    return hps
+
+
+def _standard_hps_from_spec(
+    spec: dict[str, Any],
+    *,
+    n_replicates: int,
+    hidden_size: int,
+    batch_size: int,
+    n_batches: int,
+    controller_lr: float,
+    lr_warmup_batches: int,
+    lr_warmup_init_fraction: float,
+    lr_cosine_alpha: float,
+    gradient_clip_norm: float,
+) -> TreeNamespace:
+    hps = spec.get("hps")
+    if hps is None:
+        hps = _standard_hps_dict(
+            base_spec_path=spec.get("base_contract", {}).get("run_spec", BASE_RUN_SPEC),
+            n_replicates=n_replicates,
+            hidden_size=hidden_size,
+            batch_size=batch_size,
+            n_batches=n_batches,
+            controller_lr=controller_lr,
+            lr_warmup_batches=lr_warmup_batches,
+            lr_warmup_init_fraction=lr_warmup_init_fraction,
+            lr_cosine_alpha=lr_cosine_alpha,
+            gradient_clip_norm=gradient_clip_norm,
+        )
+    else:
+        hps = _normalize_serialized_hps(hps)
+        hps["batch_size"] = int(batch_size)
+        hps["n_batches_condition"] = int(n_batches)
+        hps["learning_rate_0"] = float(controller_lr)
+        hps["constant_lr_iterations"] = int(lr_warmup_batches)
+        hps["warmup_init_fraction"] = float(lr_warmup_init_fraction)
+        hps["cosine_annealing_alpha"] = float(lr_cosine_alpha)
+        hps["gradient_clip_norm"] = float(gradient_clip_norm)
+        hps["model"]["n_replicates"] = int(n_replicates)
+        hps["model"]["hidden_size"] = int(hidden_size)
+        population = hps["model"].setdefault("population_structure", {})
+        population["n_input_only"] = 0
+        population["n_readout_only"] = 0
+        population["n_recurrent_only"] = 0
+        population["n_input_readout"] = int(hidden_size)
+    return dict_to_namespace(hps, to_type=TreeNamespace)
 
 
 def default_distillation_command(*, spec_path: Path = DEFAULT_SPEC_PATH) -> list[str]:
@@ -108,10 +219,28 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
         n_jvp_directions=int(args.n_jvp_directions),
     )
     run_spec_path = Path(args.run_spec_output)
-    return {
+    existing_spec = _read_json(run_spec_path) if run_spec_path.is_file() else {}
+    hps = _standard_hps_dict(
+        n_replicates=int(getattr(args, "n_replicates", 5)),
+        hidden_size=int(getattr(args, "hidden_size", 180)),
+        batch_size=int(getattr(args, "batch_size", 64)),
+        n_batches=int(getattr(args, "n_batches", 12000)),
+        controller_lr=float(getattr(args, "controller_lr", 3e-3)),
+        lr_warmup_batches=int(getattr(args, "lr_warmup_batches", 500)),
+        lr_warmup_init_fraction=float(getattr(args, "lr_warmup_init_fraction", 0.1)),
+        lr_cosine_alpha=float(getattr(args, "lr_cosine_alpha", 0.1)),
+        gradient_clip_norm=float(getattr(args, "gradient_clip_norm", 5.0)),
+    )
+    spec = {
         "schema_version": SCHEMA_VERSION,
         "issue": ISSUE_ID,
         "implementation_issue": IMPLEMENTATION_ISSUE_ID,
+        "seed": int(getattr(args, "seed", 0)),
+        "batch_size": int(getattr(args, "batch_size", 64)),
+        "n_train_batches": int(getattr(args, "n_batches", 12000)),
+        "controller_lr": float(getattr(args, "controller_lr", 3e-3)),
+        "artifact_output_dir": str(args.output_dir),
+        "hps": hps,
         "launch_status": "not_launched",
         "no_launch_boundary": (
             "No RunPod, Modal, GPU acquisition, full training launch, push, or "
@@ -139,9 +268,16 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
             "resume_flag": "--resume",
             "latest_pointer": "checkpoints/checkpoint_latest",
             "format": (
-                "numbered checkpoint directories with batched model.eqx, optimizer_state.eqx, "
+                "standard Feedbax graph checkpoints with model.eqx, optimizer_state.eqx, "
                 "batch_keys.npy, loss_history.json, and metadata.json"
             ),
+            "contents": [
+                "model.eqx",
+                "optimizer_state.eqx",
+                "batch_keys.npy",
+                "loss_history.json",
+                "metadata.json",
+            ],
         },
         "base_contract": {
             "issue": BASE_ISSUE_ID,
@@ -230,6 +366,9 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
             "gradient_clip_norm": 5.0,
         },
         "model_contract": {
+            "setup_function": "rlrmp.train.task_model.setup_task_model_pair",
+            "checkpoint_format": "jax_cookbook.save/load_with_hyperparameters",
+            "final_model": "trained_model.eqx",
             "initial_hidden_encoder": True,
             "force_filter_feedback": True,
             "hidden_size": 180,
@@ -299,44 +438,9 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
             "invalid specs, not as a placeholder guard",
         ],
     }
-
-
-class GuidedGRUPolicy(eqx.Module):
-    """GRU student policy over external feedback and action histories."""
-
-    h0_encoder: eqx.nn.Linear
-    cell: eqx.nn.GRUCell
-    readout: eqx.nn.Linear
-
-    def __init__(
-        self,
-        *,
-        feedback_dim: int,
-        action_dim: int,
-        hidden_size: int,
-        key: jax.Array,
-    ) -> None:
-        h0_key, cell_key, readout_key = jr.split(key, 3)
-        self.h0_encoder = eqx.nn.Linear(feedback_dim, hidden_size, key=h0_key)
-        self.cell = eqx.nn.GRUCell(feedback_dim + action_dim, hidden_size, key=cell_key)
-        self.readout = eqx.nn.Linear(hidden_size, action_dim, key=readout_key)
-
-    def _single(self, feedback_history: jax.Array, action_history: jax.Array) -> jax.Array:
-        hidden = jnp.tanh(self.h0_encoder(feedback_history[0]))
-        inputs = jnp.concatenate([feedback_history, action_history], axis=-1)
-
-        def step(carry: jax.Array, value: jax.Array) -> tuple[jax.Array, jax.Array]:
-            next_hidden = self.cell(value, carry)
-            action = self.readout(next_hidden)
-            return next_hidden, action
-
-        _, actions = jax.lax.scan(step, hidden, inputs)
-        return actions
-
-    def __call__(self, feedback_history: jax.Array, action_history: jax.Array) -> jax.Array:
-        if feedback_history.ndim == 2:
-            return self._single(feedback_history, action_history)
-        return jax.vmap(self._single)(feedback_history, action_history)
+    if "post_run_provenance" in existing_spec:
+        spec["post_run_provenance"] = existing_spec["post_run_provenance"]
+    return spec
 
 
 class BankedAffineTeacher(eqx.Module):
@@ -360,7 +464,7 @@ class BankedAffineTeacher(eqx.Module):
 class GuidedDistillationTrainingState:
     """Serializable state needed to resume guided distillation training."""
 
-    models: GuidedGRUPolicy
+    model: Any
     optimizer_state: optax.OptState
     completed_batches: int
     batch_keys: jax.Array
@@ -512,8 +616,35 @@ def _make_optimizer(
     )
 
 
+def _standard_model_actions(model: Any, feedback_history: jax.Array) -> jax.Array:
+    net_node = model.nodes["net"]
+
+    def single(feedback: jax.Array) -> jax.Array:
+        hidden = net_node.h0_encoder(feedback[0])
+
+        def step(carry: jax.Array, value: jax.Array) -> tuple[jax.Array, jax.Array]:
+            next_hidden = net_node.net.hidden(value, carry)
+            action = net_node.net.readout(next_hidden)
+            return next_hidden, action
+
+        _, actions = jax.lax.scan(step, hidden, feedback)
+        return actions
+
+    if feedback_history.ndim == 2:
+        return single(feedback_history)
+    return jax.vmap(single)(feedback_history)
+
+
+def _where_train_fn(model: Any) -> tuple[Any, ...]:
+    return staged_network_trainable_parts(model.nodes["net"])
+
+
+def _where_train_spec(model: Any) -> Any:
+    return filter_spec_leaves(model, _where_train_fn)
+
+
 def _loss_for_batch(
-    model: GuidedGRUPolicy,
+    model: Any,
     batch: dict[str, jax.Array],
     config: CSH0DistillationConfig,
     *,
@@ -524,7 +655,7 @@ def _loss_for_batch(
     teacher_context = teacher_context.at[:, 1:, :].set(teacher_actions[:, :-1, :])
     teacher_context = jax.lax.stop_gradient(teacher_context)
     teacher_forced_student = jax.lax.stop_gradient(
-        model(batch["feedback_history"], teacher_context)
+        _standard_model_actions(model, batch["feedback_history"])
     )
     student_context = jnp.zeros_like(teacher_actions)
     student_context = student_context.at[:, 1:, :].set(teacher_forced_student[:, :-1, :])
@@ -537,8 +668,13 @@ def _loss_for_batch(
         base_actions=teacher_actions,
         feedback_gains=batch["feedback_gains"],
     )
+
+    def student_policy(feedback_history: jax.Array, action_history: jax.Array) -> jax.Array:
+        del action_history
+        return _standard_model_actions(model, feedback_history)
+
     result = guided_distillation_loss(
-        student_policy=model,
+        student_policy=student_policy,
         teacher_policy=teacher,
         feedback_history=batch["feedback_history"],
         action_history=action_context,
@@ -547,7 +683,7 @@ def _loss_for_batch(
         perturbation_action_history=perturbation_context,
         feedback_directions=batch["feedback_directions"],
         action_directions=batch["action_directions"],
-        student_forced_rollout=model(batch["feedback_history"], student_context),
+        student_forced_rollout=_standard_model_actions(model, batch["feedback_history"]),
         rollout_anchor=teacher_actions,
     )
     return result.total, result.components
@@ -555,48 +691,61 @@ def _loss_for_batch(
 
 @eqx.filter_jit
 def _train_step(
-    model: GuidedGRUPolicy,
+    model: Any,
     optimizer_state: optax.OptState,
     optimizer: optax.GradientTransformation,
+    where_train_spec: Any,
     batch: dict[str, jax.Array],
     config: CSH0DistillationConfig,
     student_forcing_fraction: float,
-) -> tuple[GuidedGRUPolicy, optax.OptState, jax.Array, dict[str, jax.Array]]:
-    (loss, components), grads = eqx.filter_value_and_grad(_loss_for_batch, has_aux=True)(
-        model,
-        batch,
-        config,
-        student_forcing_fraction=student_forcing_fraction,
+) -> tuple[Any, optax.OptState, jax.Array, dict[str, jax.Array]]:
+    trainable, frozen = eqx.partition(model, where_train_spec)
+
+    def loss_for_trainable(trainable_model: Any) -> tuple[jax.Array, dict[str, jax.Array]]:
+        return _loss_for_batch(
+            eqx.combine(trainable_model, frozen),
+            batch,
+            config,
+            student_forcing_fraction=student_forcing_fraction,
+        )
+
+    (loss, components), grads = eqx.filter_value_and_grad(loss_for_trainable, has_aux=True)(
+        trainable,
     )
     updates, optimizer_state = optimizer.update(
         grads,
         optimizer_state,
-        eqx.filter(model, eqx.is_array),
+        trainable,
     )
-    model = eqx.apply_updates(model, updates)
+    trainable = eqx.apply_updates(trainable, updates)
+    model = eqx.combine(trainable, frozen)
     return model, optimizer_state, loss, components
+
+
+def _init_standard_model_ensemble(
+    *,
+    hps: TreeNamespace,
+    key: jax.Array,
+) -> Any:
+    import rlrmp.analysis  # noqa: F401
+    from rlrmp.train.task_model import setup_task_model_pair
+
+    return setup_task_model_pair(hps, key=key).model
+
+
+def _init_optimizer_state(
+    *,
+    model: Any,
+    optimizer: optax.GradientTransformation,
+    where_train_spec: Any,
+) -> optax.OptState:
+    trainable, _frozen = eqx.partition(model, where_train_spec)
+    return eqx.filter_vmap(optimizer.init)(trainable)
 
 
 def _replicate_keys(root_key: jax.Array, *, offset: int, n_replicates: int) -> jax.Array:
     replicate_indices = jnp.arange(n_replicates, dtype=jnp.uint32)
     return jax.vmap(lambda index: jr.fold_in(root_key, index + offset))(replicate_indices)
-
-
-def _init_guided_policy_ensemble(
-    *,
-    feedback_dim: int,
-    action_dim: int,
-    hidden_size: int,
-    keys: jax.Array,
-) -> GuidedGRUPolicy:
-    return eqx.filter_vmap(
-        lambda key: GuidedGRUPolicy(
-            feedback_dim=feedback_dim,
-            action_dim=action_dim,
-            hidden_size=hidden_size,
-            key=key,
-        )
-    )(keys)
 
 
 def _materialize_replicate_batches(
@@ -624,18 +773,20 @@ def _materialize_replicate_batches(
 
 @eqx.filter_jit
 def _batched_train_step(
-    models: GuidedGRUPolicy,
+    models: Any,
     optimizer_state: optax.OptState,
     optimizer: optax.GradientTransformation,
+    where_train_spec: Any,
     batches: dict[str, jax.Array],
     config: CSH0DistillationConfig,
     student_forcing_fraction: float,
-) -> tuple[GuidedGRUPolicy, optax.OptState, jax.Array, dict[str, jax.Array]]:
+) -> tuple[Any, optax.OptState, jax.Array, dict[str, jax.Array]]:
     return eqx.filter_vmap(
         lambda model, state, batch: _train_step(
             model,
             state,
             optimizer,
+            where_train_spec,
             batch,
             config,
             student_forcing_fraction,
@@ -644,11 +795,11 @@ def _batched_train_step(
 
 
 def _single_replicate_model(
-    models: GuidedGRUPolicy,
+    models: Any,
     *,
     replicate_index: int,
     n_replicates: int,
-) -> GuidedGRUPolicy:
+) -> Any:
     def select_leaf(leaf: Any) -> Any:
         if eqx.is_array(leaf) and leaf.ndim > 0 and int(leaf.shape[0]) == n_replicates:
             return leaf[replicate_index]
@@ -715,7 +866,7 @@ def _checkpoint_metadata(
         "replicate_execution": "eqx.filter_vmap",
         "batch_keys_path": "batch_keys.npy",
         "loss_history_path": "loss_history.json",
-        "model_path": "models.eqx",
+        "model_path": "model.eqx",
         "optimizer_state_path": "optimizer_state.eqx",
         "run_spec": spec,
     }
@@ -738,7 +889,7 @@ def save_training_checkpoint(
         _remove_tree(tmp)
     tmp.mkdir(parents=True)
 
-    eqx.tree_serialise_leaves(tmp / "models.eqx", state.models)
+    eqx.tree_serialise_leaves(tmp / "model.eqx", state.model)
     eqx.tree_serialise_leaves(tmp / "optimizer_state.eqx", state.optimizer_state)
     np.save(tmp / "batch_keys.npy", np.asarray(jax.device_get(state.batch_keys)))
     _atomic_write_json(tmp / "loss_history.json", state.histories)
@@ -765,7 +916,7 @@ def save_training_checkpoint(
 def load_latest_checkpoint(
     checkpoint_root: Path,
     *,
-    model_template: GuidedGRUPolicy,
+    model_template: Any,
     optimizer_state_template: optax.OptState,
     n_replicates: int,
 ) -> GuidedDistillationTrainingState:
@@ -780,7 +931,7 @@ def load_latest_checkpoint(
             f"Checkpoint {checkpoint_path} has n_replicates={metadata['n_replicates']}; "
             f"expected {n_replicates}."
         )
-    models = eqx.tree_deserialise_leaves(checkpoint_path / "models.eqx", model_template)
+    model = eqx.tree_deserialise_leaves(checkpoint_path / "model.eqx", model_template)
     optimizer_state = eqx.tree_deserialise_leaves(
         checkpoint_path / "optimizer_state.eqx",
         optimizer_state_template,
@@ -788,7 +939,7 @@ def load_latest_checkpoint(
     batch_keys = jnp.asarray(np.load(checkpoint_path / "batch_keys.npy"), dtype=jnp.uint32)
     histories = json.loads((checkpoint_path / "loss_history.json").read_text(encoding="utf-8"))
     return GuidedDistillationTrainingState(
-        models=models,
+        model=model,
         optimizer_state=optimizer_state,
         completed_batches=int(metadata["completed_batches"]),
         batch_keys=batch_keys,
@@ -801,7 +952,7 @@ def _write_training_outputs(
     output_dir: Path,
     spec: dict[str, Any],
     histories: list[list[dict[str, Any]]],
-    models: list[GuidedGRUPolicy],
+    model: Any,
     completed_batches: int,
     requested_batches: int,
     checkpoint_root: Path,
@@ -832,14 +983,11 @@ def _write_training_outputs(
         "artifacts": {
             "loss_history": "loss_history.json",
             "run_spec_snapshot": "run_spec_snapshot.json",
-            "student_model_replicates": [
-                f"student_model_rep{replicate_index}.eqx" for replicate_index in range(len(models))
-            ],
+            "trained_model": "trained_model.eqx",
         },
     }
     _atomic_write_json(output_dir / "training_summary.json", summary)
-    for replicate_index, model in enumerate(models):
-        eqx.tree_serialise_leaves(output_dir / f"student_model_rep{replicate_index}.eqx", model)
+    _save_pytree(output_dir / "trained_model.eqx", model, hyperparameters=spec)
 
 
 def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]:
@@ -899,7 +1047,6 @@ def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]
     if horizon > teacher_horizon:
         raise ValueError(f"Requested horizon {horizon} exceeds teacher horizon {teacher_horizon}.")
     feedback_dim = int(package["observation_matrix"].shape[0])
-    action_dim = int(package["plant_B"].shape[1])
     config = cs_h0_distillation_config(
         weights=DistillationLossWeights(
             clean_action=float(args.clean_action_weight),
@@ -919,20 +1066,38 @@ def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]
     )
 
     root_key = jr.PRNGKey(int(args.seed))
-    model_keys = _replicate_keys(root_key, offset=0, n_replicates=n_replicates)
+    model_key, _unused = jr.split(root_key)
     batch_keys = _replicate_keys(root_key, offset=10_000, n_replicates=n_replicates)
-    models = _init_guided_policy_ensemble(
-        feedback_dim=feedback_dim,
-        action_dim=action_dim,
+    hps = _standard_hps_from_spec(
+        spec,
+        n_replicates=n_replicates,
         hidden_size=hidden_size,
-        keys=model_keys,
+        batch_size=batch_size,
+        n_batches=n_batches,
+        controller_lr=float(args.controller_lr),
+        lr_warmup_batches=int(args.lr_warmup_batches),
+        lr_warmup_init_fraction=float(args.lr_warmup_init_fraction),
+        lr_cosine_alpha=float(args.lr_cosine_alpha),
+        gradient_clip_norm=float(args.gradient_clip_norm),
     )
-    optimizer_state = eqx.filter_vmap(optimizer.init)(eqx.filter(models, eqx.is_array))
+    model = _init_standard_model_ensemble(hps=hps, key=model_key)
+    model_feedback_dim = int(model.nodes["net"].net.hidden.weight_ih.shape[-1])
+    if feedback_dim != model_feedback_dim:
+        raise ValueError(
+            f"Teacher package feedback_dim={feedback_dim}, but the standard Feedbax graph "
+            f"expects {model_feedback_dim} controller feedback channels."
+        )
+    where_train_spec = _where_train_spec(model)
+    optimizer_state = _init_optimizer_state(
+        model=model,
+        optimizer=optimizer,
+        where_train_spec=where_train_spec,
+    )
     histories: list[list[dict[str, Any]]] = [[] for _ in range(n_replicates)]
     output_dir = Path(args.output_dir)
     checkpoint_root = output_dir / "checkpoints"
     state = GuidedDistillationTrainingState(
-        models=models,
+        model=model,
         optimizer_state=optimizer_state,
         completed_batches=0,
         batch_keys=batch_keys,
@@ -942,7 +1107,7 @@ def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]
     if args.resume and latest_checkpoint_path(checkpoint_root).exists():
         state = load_latest_checkpoint(
             checkpoint_root,
-            model_template=models,
+            model_template=model,
             optimizer_state_template=optimizer_state,
             n_replicates=n_replicates,
         )
@@ -969,10 +1134,11 @@ def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]
             n_jvp_directions=n_jvp_directions,
         )
         forcing_fraction = forcing_fraction_for_batch(spec, batch_index)
-        models, optimizer_state, losses, components = _batched_train_step(
-            state.models,
+        model, optimizer_state, losses, components = _batched_train_step(
+            state.model,
             state.optimizer_state,
             optimizer,
+            where_train_spec,
             batches,
             config,
             forcing_fraction,
@@ -995,7 +1161,7 @@ def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]
                 }
             )
         state = GuidedDistillationTrainingState(
-            models=models,
+            model=model,
             optimizer_state=optimizer_state,
             completed_batches=batch_index + 1,
             batch_keys=next_batch_keys,
@@ -1030,20 +1196,11 @@ def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]
                 spec=spec,
             )
 
-    unbatched_models = [
-        _single_replicate_model(
-            state.models,
-            replicate_index=replicate_index,
-            n_replicates=n_replicates,
-        )
-        for replicate_index in range(n_replicates)
-    ]
-
     _write_training_outputs(
         output_dir=output_dir,
         spec=spec,
         histories=state.histories,
-        models=unbatched_models,
+        model=state.model,
         completed_batches=state.completed_batches,
         requested_batches=n_batches,
         checkpoint_root=checkpoint_root,
