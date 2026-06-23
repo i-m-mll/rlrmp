@@ -8,7 +8,7 @@
   "code": {
     "repo": "rlrmp",
     "branch": "feature/9727d79-distillation-training-entry",
-    "commit": "branch-head-after-vectorized-checkpointing-fix",
+    "commit": "23ca68678aff60809330c546d9688654a7e99c4c",
     "run_spec": "results/9727d79/runs/h0_hinf_6d_guided_distillation.json"
   },
   "remote": {

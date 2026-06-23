@@ -22,7 +22,7 @@
   "checkpointing": {
     "default": "enabled",
     "enabled": true,
-    "format": "numbered checkpoint directories with batched model.eqx, optimizer_state.eqx, batch_keys.npy, loss_history.json, and metadata.json",
+    "format": "numbered checkpoint directories with batched models.eqx, optimizer_state.eqx, batch_keys.npy, loss_history.json, and metadata.json",
     "interval_batches": 500,
     "latest_pointer": "checkpoints/checkpoint_latest",
     "resume_flag": "--resume"
