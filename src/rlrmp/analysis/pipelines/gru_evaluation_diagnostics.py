@@ -27,10 +27,12 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
 from rlrmp.analysis.pipelines.gru_pilot_figures import (
     DEFAULT_N_ROLLOUT_TRIALS,
     RunFigureInputs,
-    initial_effector_velocity,
     repeat_single_validation_trial,
     resolve_run_inputs,
-    trial_effector_target_position,
+)
+from rlrmp.analysis.pipelines._selected_eval_rollouts import (
+    SelectedEvalRolloutProduct,
+    initial_effector_position as rollout_initial_effector_position,
 )
 from rlrmp.paths import REPO_ROOT, mkdir_p, resolve_run_artifact_path
 from rlrmp.runtime.spec_migrations import (
@@ -54,14 +56,14 @@ SIGN_CHANGE_EPS = 1e-6
 class RolloutEvaluation:
     """Concrete rollout arrays for one GRU run."""
 
-    position: np.ndarray
-    velocity: np.ndarray
-    command: np.ndarray
-    hidden: np.ndarray
-    gru_input: np.ndarray
-    initial_position: np.ndarray
-    initial_velocity: np.ndarray
-    target_position: np.ndarray
+    position: Any
+    velocity: Any
+    command: Any
+    hidden: Any
+    gru_input: Any
+    initial_position: Any
+    initial_velocity: Any
+    target_position: Any
     dt: float
     checkpoint_selection: tuple[ReplicateCheckpointSelection, ...] = ()
 
@@ -100,7 +102,7 @@ def materialize_gru_evaluation_diagnostics(
 
     run_summaries: dict[str, Any] = {}
     for run in runs:
-        evaluation, model = evaluate_run_rollouts(
+        evaluation, model = _evaluate_run_rollout_product(
             run,
             experiment=experiment,
             n_rollout_trials=n_rollout_trials,
@@ -290,6 +292,28 @@ def evaluate_run_rollouts(
 ) -> tuple[RolloutEvaluation, Any]:
     """Evaluate one run's final or validation-selected GRU checkpoints."""
 
+    product, model = _evaluate_run_rollout_product(
+        run,
+        experiment=experiment,
+        n_rollout_trials=n_rollout_trials,
+        use_validation_selected_checkpoints=use_validation_selected_checkpoints,
+        preferred_checkpoint_manifest_path=preferred_checkpoint_manifest_path,
+        repo_root=repo_root,
+    )
+    return product.to_rollout_evaluation(RolloutEvaluation), model
+
+
+def _evaluate_run_rollout_product(
+    run: RunFigureInputs,
+    *,
+    experiment: str,
+    n_rollout_trials: int,
+    use_validation_selected_checkpoints: bool,
+    preferred_checkpoint_manifest_path: Path | None = None,
+    repo_root: Path = REPO_ROOT,
+) -> tuple[SelectedEvalRolloutProduct, Any]:
+    """Evaluate one run and keep rollout leaves device-backed for internal consumers."""
+
     if n_rollout_trials < 1:
         raise ValueError("n_rollout_trials must be at least 1")
 
@@ -335,20 +359,11 @@ def evaluate_run_rollouts(
         model_arrays,
         jr.split(jr.PRNGKey(0), n_replicates),
     )
-    target_position = trial_effector_target_position(trial_specs)
-    initial_position = _initial_effector_position(trial_specs)
-    initial_velocity = initial_effector_velocity(trial_specs)
     dt = float(run.run_spec.get("game_card", {}).get("dt", getattr(hps, "dt", 0.01)))
     return (
-        RolloutEvaluation(
-            position=np.asarray(states.mechanics.effector.pos, dtype=np.float64),
-            velocity=np.asarray(states.mechanics.effector.vel, dtype=np.float64),
-            command=np.asarray(states.net.output, dtype=np.float64),
-            hidden=np.asarray(states.net.hidden, dtype=np.float64),
-            gru_input=np.asarray(states.net.input, dtype=np.float64),
-            initial_position=np.asarray(initial_position, dtype=np.float64),
-            initial_velocity=np.asarray(initial_velocity, dtype=np.float64),
-            target_position=target_position,
+        SelectedEvalRolloutProduct.from_states(
+            states,
+            trial_specs,
             dt=dt,
             checkpoint_selection=tuple(checkpoint_selection),
         ),
@@ -359,26 +374,34 @@ def evaluate_run_rollouts(
 def summarize_rollout_behavior(evaluation: RolloutEvaluation) -> dict[str, Any]:
     """Return JSON-compatible rollout behavior metrics for one evaluation."""
 
-    command_norm = np.linalg.norm(evaluation.command, axis=-1)
-    first_five = command_norm[..., : min(5, command_norm.shape[-1])]
-    command_jerk = np.diff(evaluation.command, n=2, axis=2)
-    command_jerk_norm = np.linalg.norm(command_jerk, axis=-1)
-    terminal_error = evaluation.position[:, :, -1, :] - evaluation.target_position[None, :, -1, :]
-    endpoint_error = np.linalg.norm(terminal_error, axis=-1)
-    terminal_speed = np.linalg.norm(evaluation.velocity[:, :, -1, :], axis=-1)
-    hidden_norm = np.linalg.norm(evaluation.hidden, axis=-1)
+    command = jnp.asarray(evaluation.command, dtype=jnp.float64)
+    position = jnp.asarray(evaluation.position, dtype=jnp.float64)
+    velocity = jnp.asarray(evaluation.velocity, dtype=jnp.float64)
+    hidden = jnp.asarray(evaluation.hidden, dtype=jnp.float64)
+    initial_position = jnp.asarray(evaluation.initial_position, dtype=jnp.float64)
+    initial_velocity = jnp.asarray(evaluation.initial_velocity, dtype=jnp.float64)
+    target_position = jnp.asarray(evaluation.target_position, dtype=jnp.float64)
 
-    full_position = _prepend_initial(evaluation.initial_position, evaluation.position)
-    full_velocity = _prepend_initial(evaluation.initial_velocity, evaluation.velocity)
+    command_norm = jnp.linalg.norm(command, axis=-1)
+    first_five = command_norm[..., : min(5, command_norm.shape[-1])]
+    command_jerk = jnp.diff(command, n=2, axis=2)
+    command_jerk_norm = jnp.linalg.norm(command_jerk, axis=-1)
+    terminal_error = position[:, :, -1, :] - target_position[None, :, -1, :]
+    endpoint_error = jnp.linalg.norm(terminal_error, axis=-1)
+    terminal_speed = jnp.linalg.norm(velocity[:, :, -1, :], axis=-1)
+    hidden_norm = jnp.linalg.norm(hidden, axis=-1)
+
+    full_position = _prepend_initial(initial_position, position)
+    full_velocity = _prepend_initial(initial_velocity, velocity)
     overshoot = _overshoot_along_reach(
         position=full_position,
-        initial_position=evaluation.initial_position,
-        target_position=evaluation.target_position[:, -1, :],
+        initial_position=initial_position,
+        target_position=target_position[:, -1, :],
     )
     forward_velocity = _forward_velocity_along_reach(
         velocity=full_velocity,
-        initial_position=evaluation.initial_position,
-        target_position=evaluation.target_position[:, -1, :],
+        initial_position=initial_position,
+        target_position=target_position[:, -1, :],
     )
     sign_changes = _post_peak_sign_changes(forward_velocity)
     velocity_summary = _velocity_profile_summary(forward_velocity, evaluation.dt)
@@ -449,7 +472,7 @@ def summarize_controller_feedback_scales(
     if statistic != CONTROLLER_FEEDBACK_SCALE_STATISTIC:
         raise ValueError(f"unsupported feedback scale statistic {statistic!r}")
 
-    gru_input = np.asarray(evaluation.gru_input, dtype=np.float64)
+    gru_input = jnp.asarray(evaluation.gru_input, dtype=jnp.float64)
     if gru_input.ndim < 4:
         raise ValueError("evaluation.gru_input must have shape replicate/trial/time/feature")
     input_dim = int(gru_input.shape[-1])
@@ -477,20 +500,20 @@ def summarize_controller_feedback_scales(
     for name, units, basis_indices in component_specs:
         absolute_indices = tuple(start + idx for idx in basis_indices)
         values = gru_input[..., absolute_indices]
-        norm = np.linalg.norm(values, axis=-1)
-        abs_values = np.abs(values)
+        norm = jnp.linalg.norm(values, axis=-1)
+        abs_values = jnp.abs(values)
         components[name] = {
             "units": units,
             "feedback_basis_indices": list(basis_indices),
             "gru_input_indices": list(absolute_indices),
-            "rms_norm": float(np.sqrt(np.mean(np.square(norm)))),
-            "p95_norm": float(np.quantile(norm.reshape(-1), 0.95)),
+            "rms_norm": float(jnp.sqrt(jnp.mean(jnp.square(norm)))),
+            "p95_norm": float(jnp.quantile(norm.reshape(-1), 0.95)),
             "per_component_rms": [
-                float(np.sqrt(np.mean(np.square(abs_values[..., idx]))))
+                float(jnp.sqrt(jnp.mean(jnp.square(abs_values[..., idx]))))
                 for idx in range(abs_values.shape[-1])
             ],
             "per_component_p95_abs": [
-                float(np.quantile(abs_values[..., idx].reshape(-1), 0.95))
+                float(jnp.quantile(abs_values[..., idx].reshape(-1), 0.95))
                 for idx in range(abs_values.shape[-1])
             ],
         }
@@ -519,11 +542,13 @@ def summarize_controller_feedback_scales(
 
 def compute_gru_gate_arrays(
     gru_cell: Any,
-    gru_input: np.ndarray,
-    hidden: np.ndarray,
-) -> dict[str, np.ndarray]:
+    gru_input: Any,
+    hidden: Any,
+) -> dict[str, Any]:
     """Return GRU gate arrays with shape ``(replicate, trial, time, hidden)``."""
 
+    gru_input = jnp.asarray(gru_input, dtype=jnp.float64)
+    hidden = jnp.asarray(hidden, dtype=jnp.float64)
     n_replicates = int(hidden.shape[0])
     h_prev = _previous_hidden(hidden)
     gate_rows = []
@@ -531,7 +556,7 @@ def compute_gru_gate_arrays(
         cell = _select_replicate_tree(gru_cell, rep_idx, n_replicates)
         gate_rows.append(_compute_single_replicate_gates(cell, gru_input[rep_idx], h_prev[rep_idx]))
     return {
-        key: np.stack([row[key] for row in gate_rows], axis=0)
+        key: jnp.stack([row[key] for row in gate_rows], axis=0)
         for key in ("reset", "update", "candidate")
     }
 
@@ -608,12 +633,12 @@ def write_bulk_rollout_arrays(
     path = bulk_dir / f"{run_id}.npz"
     np.savez_compressed(
         path,
-        position=evaluation.position,
-        velocity=evaluation.velocity,
-        command=evaluation.command,
-        hidden_norm=np.linalg.norm(evaluation.hidden, axis=-1),
-        gru_input=evaluation.gru_input,
-        target_position=evaluation.target_position,
+        position=np.asarray(evaluation.position, dtype=np.float64),
+        velocity=np.asarray(evaluation.velocity, dtype=np.float64),
+        command=np.asarray(evaluation.command, dtype=np.float64),
+        hidden_norm=np.linalg.norm(np.asarray(evaluation.hidden, dtype=np.float64), axis=-1),
+        gru_input=np.asarray(evaluation.gru_input, dtype=np.float64),
+        target_position=np.asarray(evaluation.target_position, dtype=np.float64),
     )
     return path
 
@@ -660,20 +685,20 @@ def diagnostic_definitions() -> dict[str, str]:
 
 def _compute_single_replicate_gates(
     cell: Any,
-    x: np.ndarray,
-    h_prev: np.ndarray,
-) -> dict[str, np.ndarray]:
-    weight_ih = np.asarray(cell.weight_ih, dtype=np.float64)
-    weight_hh = np.asarray(cell.weight_hh, dtype=np.float64)
-    bias = np.asarray(cell.bias if cell.use_bias else 0.0, dtype=np.float64)
-    bias_n = np.asarray(cell.bias_n if cell.use_bias else 0.0, dtype=np.float64)
+    x: Any,
+    h_prev: Any,
+) -> dict[str, Any]:
+    weight_ih = jnp.asarray(cell.weight_ih, dtype=jnp.float64)
+    weight_hh = jnp.asarray(cell.weight_hh, dtype=jnp.float64)
+    bias = jnp.asarray(cell.bias if cell.use_bias else 0.0, dtype=jnp.float64)
+    bias_n = jnp.asarray(cell.bias_n if cell.use_bias else 0.0, dtype=jnp.float64)
     flat_x = x.reshape((-1, x.shape[-1]))
     flat_h = h_prev.reshape((-1, h_prev.shape[-1]))
-    igates = np.split(flat_x @ weight_ih.T + bias, 3, axis=-1)
-    hgates = np.split(flat_h @ weight_hh.T, 3, axis=-1)
+    igates = jnp.split(flat_x @ weight_ih.T + bias, 3, axis=-1)
+    hgates = jnp.split(flat_h @ weight_hh.T, 3, axis=-1)
     reset = _sigmoid(igates[0] + hgates[0])
     update = _sigmoid(igates[1] + hgates[1])
-    candidate = np.tanh(igates[2] + reset * (hgates[2] + bias_n))
+    candidate = jnp.tanh(igates[2] + reset * (hgates[2] + bias_n))
     out_shape = x.shape[:-1] + (flat_h.shape[-1],)
     return {
         "reset": reset.reshape(out_shape),
@@ -714,11 +739,12 @@ def _per_replicate_behavior(
     return rows
 
 
-def _velocity_profile_summary(forward_velocity: np.ndarray, dt: float) -> dict[str, Any]:
-    per_trial_peak = np.max(forward_velocity, axis=-1)
-    per_trial_peak_index = np.argmax(forward_velocity, axis=-1)
-    mean_profile = np.mean(forward_velocity.reshape((-1, forward_velocity.shape[-1])), axis=0)
-    peak_idx = int(np.argmax(mean_profile))
+def _velocity_profile_summary(forward_velocity: Any, dt: float) -> dict[str, Any]:
+    forward_velocity = jnp.asarray(forward_velocity, dtype=jnp.float64)
+    per_trial_peak = jnp.max(forward_velocity, axis=-1)
+    per_trial_peak_index = jnp.argmax(forward_velocity, axis=-1)
+    mean_profile = jnp.mean(forward_velocity.reshape((-1, forward_velocity.shape[-1])), axis=0)
+    peak_idx = int(jnp.argmax(mean_profile))
     return {
         "peak_forward_velocity_m_s": _summary_stats(per_trial_peak),
         "time_to_peak_forward_velocity_s": _summary_stats(per_trial_peak_index * dt),
@@ -745,68 +771,80 @@ def _summary_stats(values: Any) -> dict[str, float | int | list[float]]:
     }
 
 
-def _gate_summary(values: np.ndarray, *, bounded: bool) -> dict[str, Any]:
+def _gate_summary(values: Any, *, bounded: bool) -> dict[str, Any]:
+    values = jnp.asarray(values, dtype=jnp.float64)
     summary = _summary_stats(values)
     if bounded:
         summary.update(
             {
-                "low_saturation_fraction": float(np.mean(values < GATE_SATURATION_LOW)),
-                "high_saturation_fraction": float(np.mean(values > GATE_SATURATION_HIGH)),
+                "low_saturation_fraction": float(jnp.mean(values < GATE_SATURATION_LOW)),
+                "high_saturation_fraction": float(jnp.mean(values > GATE_SATURATION_HIGH)),
             }
         )
     else:
         summary["abs_high_saturation_fraction"] = float(
-            np.mean(np.abs(values) > GATE_SATURATION_HIGH)
+            jnp.mean(jnp.abs(values) > GATE_SATURATION_HIGH)
         )
     return summary
 
 
-def _previous_hidden(hidden: np.ndarray) -> np.ndarray:
-    zeros = np.zeros_like(hidden[:, :, :1, :])
-    return np.concatenate([zeros, hidden[:, :, :-1, :]], axis=2)
+def _previous_hidden(hidden: Any) -> Any:
+    hidden = jnp.asarray(hidden)
+    zeros = jnp.zeros_like(hidden[:, :, :1, :])
+    return jnp.concatenate([zeros, hidden[:, :, :-1, :]], axis=2)
 
 
-def _prepend_initial(initial: np.ndarray, values: np.ndarray) -> np.ndarray:
-    initial = np.asarray(initial, dtype=np.float64)
-    return np.concatenate(
-        [np.broadcast_to(initial[None, :, None, :], values.shape[:1] + initial[:, None, :].shape), values],
+def _prepend_initial(initial: Any, values: Any) -> Any:
+    initial = jnp.asarray(initial, dtype=jnp.float64)
+    values = jnp.asarray(values, dtype=jnp.float64)
+    return jnp.concatenate(
+        [
+            jnp.broadcast_to(
+                initial[None, :, None, :],
+                values.shape[:1] + initial[:, None, :].shape,
+            ),
+            values,
+        ],
         axis=2,
     )
 
 
 def _forward_velocity_along_reach(
     *,
-    velocity: np.ndarray,
-    initial_position: np.ndarray,
-    target_position: np.ndarray,
-) -> np.ndarray:
+    velocity: Any,
+    initial_position: Any,
+    target_position: Any,
+) -> Any:
     direction, _distance = _reach_direction(initial_position, target_position)
-    return np.sum(velocity * direction[None, :, None, :], axis=-1)
+    return jnp.sum(velocity * direction[None, :, None, :], axis=-1)
 
 
 def _overshoot_along_reach(
     *,
-    position: np.ndarray,
-    initial_position: np.ndarray,
-    target_position: np.ndarray,
-) -> np.ndarray:
+    position: Any,
+    initial_position: Any,
+    target_position: Any,
+) -> Any:
     direction, distance = _reach_direction(initial_position, target_position)
     displacement = position - initial_position[None, :, None, :]
-    projection = np.sum(displacement * direction[None, :, None, :], axis=-1)
-    return np.maximum(np.max(projection - distance[None, :, None], axis=-1), 0.0)
+    projection = jnp.sum(displacement * direction[None, :, None, :], axis=-1)
+    return jnp.maximum(jnp.max(projection - distance[None, :, None], axis=-1), 0.0)
 
 
 def _reach_direction(
-    initial_position: np.ndarray,
-    target_position: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
+    initial_position: Any,
+    target_position: Any,
+) -> tuple[Any, Any]:
+    initial_position = jnp.asarray(initial_position, dtype=jnp.float64)
+    target_position = jnp.asarray(target_position, dtype=jnp.float64)
     delta = target_position - initial_position
-    distance = np.linalg.norm(delta, axis=-1)
-    safe_distance = np.where(distance > 0.0, distance, 1.0)
+    distance = jnp.linalg.norm(delta, axis=-1)
+    safe_distance = jnp.where(distance > 0.0, distance, 1.0)
     return delta / safe_distance[:, None], distance
 
 
-def _post_peak_sign_changes(forward_velocity: np.ndarray) -> np.ndarray:
+def _post_peak_sign_changes(forward_velocity: Any) -> np.ndarray:
+    forward_velocity = np.asarray(forward_velocity, dtype=np.float64)
     out = np.zeros(forward_velocity.shape[:2], dtype=np.float64)
     for index in np.ndindex(forward_velocity.shape[:2]):
         values = forward_velocity[index]
@@ -840,14 +878,7 @@ def _jacobian_sample_times(
 
 
 def _initial_effector_position(trial_specs: Any) -> jnp.ndarray:
-    for init_state in trial_specs.inits.values():
-        position = getattr(init_state, "pos", None)
-        if position is not None:
-            return position
-        shape = getattr(init_state, "shape", None)
-        if shape is not None and len(shape) >= 1 and shape[-1] >= 2:
-            return jnp.asarray(init_state)[..., 0:2]
-    raise ValueError("Trial spec does not include an effector position initial state")
+    return rollout_initial_effector_position(trial_specs)
 
 
 def _select_replicate_tree(tree: Any, replicate: int, n_replicates: int) -> Any:
@@ -861,8 +892,8 @@ def _is_replicate_array(leaf: Any, n_replicates: int) -> bool:
     return eqx.is_array(leaf) and leaf.ndim >= 1 and leaf.shape[0] == n_replicates
 
 
-def _sigmoid(x: np.ndarray) -> np.ndarray:
-    return 1.0 / (1.0 + np.exp(-x))
+def _sigmoid(x: Any) -> Any:
+    return 1.0 / (1.0 + jnp.exp(-x))
 
 
 def _repo_relative(path: Path, *, repo_root: Path = REPO_ROOT) -> str:

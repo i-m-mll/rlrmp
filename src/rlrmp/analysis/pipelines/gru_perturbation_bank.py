@@ -39,13 +39,12 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     load_materialized_fixed_bank_manifest,
     load_validation_selected_checkpoint_model,
 )
+from rlrmp.analysis.pipelines._selected_eval_rollouts import SelectedEvalRolloutProduct
 from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluation
 from rlrmp.analysis.pipelines.gru_pilot_figures import (
     RunFigureInputs,
-    initial_effector_velocity,
     repeat_single_validation_trial,
     resolve_run_inputs,
-    trial_effector_target_position,
 )
 from rlrmp.analysis.math.output_feedback import (
     OutputFeedbackConfig,
@@ -88,6 +87,7 @@ PerturbationChannel = Literal[
 PerturbationStatus = Literal["evaluated", "blocked", "not_implemented", "not_applicable"]
 
 GRAPH_ADAPTER_INPUT_PREFIX = "perturbation.channel"
+PerturbationEvaluationBackend = Literal["serial"]
 
 
 @dataclass(frozen=True)
@@ -1702,6 +1702,7 @@ def evaluate_run_perturbation_bank(
     n_rollout_trials: int,
     write_bulk_arrays: bool,
     bulk_dir: Path,
+    evaluation_backend: PerturbationEvaluationBackend = "serial",
     trial_spec_transform: Callable[[Any], Any] | None = None,
     preferred_checkpoint_manifest_path: Path | None = None,
     checkpoint_selection_mode: CheckpointSelectionMode = "sparse_history",
@@ -1724,7 +1725,7 @@ def evaluate_run_perturbation_bank(
     base_trial_specs = repeat_single_validation_trial(pair.task.validation_trials, n_rollout_trials)
     if trial_spec_transform is not None:
         base_trial_specs = trial_spec_transform(base_trial_specs)
-    nominal_base_evaluation = _evaluate_model_on_trial_specs(
+    nominal_base_evaluation = _evaluate_model_rollout_product(
         model=model,
         task=pair.task,
         trial_specs=base_trial_specs,
@@ -1736,6 +1737,12 @@ def evaluate_run_perturbation_bank(
     robust_context = _build_robust_output_feedback_comparator_context()
     rows = []
     bulk_files: dict[str, str] = {}
+    if evaluation_backend != "serial":
+        raise ValueError(
+            f"unsupported perturbation evaluation backend {evaluation_backend!r}; "
+            "expected 'serial'"
+        )
+
     for perturbation in bank["perturbations"]:
         adapter = apply_perturbation_to_trial_specs(
             base_trial_specs,
@@ -1771,6 +1778,7 @@ def evaluate_run_perturbation_bank(
                 }
             )
             continue
+
         row_base_model, row_base_trial_specs = _paired_base_for_adapter(
             model=model,
             base_trial_specs=base_trial_specs,
@@ -1780,7 +1788,7 @@ def evaluate_run_perturbation_bank(
             base_evaluation = nominal_base_evaluation
             base_cost = nominal_base_cost
         else:
-            base_evaluation = _evaluate_model_on_trial_specs(
+            base_evaluation = _evaluate_model_rollout_product(
                 model=row_base_model,
                 task=pair.task,
                 trial_specs=row_base_trial_specs,
@@ -1788,7 +1796,7 @@ def evaluate_run_perturbation_bank(
                 seed=0,
             )
             base_cost = full_qrf_cost_summary(base_evaluation, row_base_trial_specs)
-        perturbed_evaluation = _evaluate_model_on_trial_specs(
+        perturbed_evaluation = _evaluate_model_rollout_product(
             model=adapter.model if adapter.model is not None else model,
             task=pair.task,
             trial_specs=adapter.trial_specs,
@@ -1796,107 +1804,21 @@ def evaluate_run_perturbation_bank(
             seed=0,
         )
         perturbed_cost = full_qrf_cost_summary(perturbed_evaluation, adapter.trial_specs)
-        metrics = summarize_perturbation_response(
-            base_evaluation,
-            perturbed_evaluation,
-            base_full_qrf_cost=base_cost,
-            perturbed_full_qrf_cost=perturbed_cost,
-        )
-        metrics = _with_attenuation_metrics(metrics, perturbation)
-        no_op_guard = _command_input_no_op_guard(
-            perturbation=perturbation,
-            adapter=adapter,
-            metrics=metrics,
-        )
-        if no_op_guard is not None and no_op_guard["status"] == "blocked":
-            rows.append(
-                {
-                    "perturbation_id": perturbation["perturbation_id"],
-                    "channel": perturbation["channel"],
-                    "family": perturbation.get("family"),
-                    "axis": perturbation.get("axis"),
-                    "sign": perturbation.get("sign"),
-                    "amplitude": perturbation.get("amplitude"),
-                    "timing_bin": perturbation.get("timing_bin"),
-                    "semantic_family": perturbation.get("semantic_family"),
-                    "timing": perturbation.get("timing"),
-                    "perturbation": dict(perturbation),
-                    "status": "blocked",
-                    "reason": no_op_guard["reason"],
-                    "adapter": adapter.to_json(),
-                    "metrics": metrics,
-                    "evaluation_guard": no_op_guard,
-                    "extlqg_comparator": extlqg_comparator_status(
-                        perturbation,
-                        status="not_applicable",
-                    ),
-                    "robust_output_feedback_comparator": (
-                        robust_output_feedback_comparator_status(
-                            perturbation,
-                            status="not_applicable",
-                        )
-                    ),
-                }
-            )
-            continue
-        extlqg_comparator = evaluate_extlqg_perturbation_comparator(
-            perturbation,
-            context=extlqg_context,
-            gru_metrics=metrics,
-        )
-        robust_comparator = evaluate_robust_output_feedback_perturbation_comparator(
-            perturbation,
-            context=robust_context,
-            gru_metrics=metrics,
-        )
-        bulk_file = None
-        if write_bulk_arrays:
-            bulk_file = _write_perturbation_bulk_arrays(
-                base_evaluation,
-                perturbed_evaluation,
-                bulk_dir=bulk_dir / run.run_id,
-                perturbation_id=str(perturbation["perturbation_id"]),
-            )
-            bulk_files[str(perturbation["perturbation_id"])] = _repo_relative(
-                bulk_file,
-                repo_root=repo_root,
-            )
         rows.append(
-            {
-                "perturbation_id": perturbation["perturbation_id"],
-                "channel": perturbation["channel"],
-                "family": perturbation.get("family"),
-                "axis": perturbation.get("axis"),
-                "sign": perturbation.get("sign"),
-                "amplitude": perturbation.get("amplitude"),
-                "timing_bin": perturbation.get("timing_bin"),
-                "semantic_family": perturbation.get("semantic_family"),
-                "timing": perturbation.get("timing"),
-                "perturbation": dict(perturbation),
-                "status": "evaluated",
-                "adapter": adapter.to_json(),
-                "metrics": metrics,
-                "evaluation_guard": no_op_guard
-                or {"status": "passed", "guard": "command_input_nonzero_payload_nonzero_effect"},
-                "extlqg_comparator": extlqg_comparator,
-                "robust_output_feedback_comparator": robust_comparator,
-                "bulk_arrays": None
-                if bulk_file is None
-                else {
-                    "path": _repo_relative(bulk_file, repo_root=repo_root),
-                    "format": "np.savez_compressed",
-                    "arrays": [
-                        "delta_action",
-                        "delta_gru_input",
-                        "delta_position",
-                        "delta_velocity",
-                        "base_position",
-                        "perturbed_position",
-                        "base_gru_input",
-                        "perturbed_gru_input",
-                    ],
-                },
-            }
+            _evaluated_perturbation_row(
+                perturbation=perturbation,
+                adapter=adapter,
+                base_evaluation=base_evaluation,
+                perturbed_evaluation=perturbed_evaluation,
+                base_cost=base_cost,
+                perturbed_cost=perturbed_cost,
+                extlqg_context=extlqg_context,
+                robust_context=robust_context,
+                write_bulk_arrays=write_bulk_arrays,
+                bulk_dir=bulk_dir / run.run_id,
+                repo_root=repo_root,
+                bulk_files=bulk_files,
+            )
         )
 
     return {
@@ -1944,6 +1866,126 @@ def _paired_base_for_adapter(
     return model, base_trial_specs
 
 
+def _evaluated_perturbation_row(
+    *,
+    perturbation: Mapping[str, Any],
+    adapter: AdapterResult,
+    base_evaluation: RolloutEvaluation,
+    perturbed_evaluation: RolloutEvaluation,
+    base_cost: Mapping[str, Any],
+    perturbed_cost: Mapping[str, Any],
+    extlqg_context: Mapping[str, Any],
+    robust_context: Mapping[str, Any],
+    write_bulk_arrays: bool,
+    bulk_dir: Path,
+    repo_root: Path,
+    bulk_files: dict[str, str],
+) -> dict[str, Any]:
+    """Build the manifest row for one evaluated perturbation."""
+
+    metrics = summarize_perturbation_response(
+        base_evaluation,
+        perturbed_evaluation,
+        base_full_qrf_cost=base_cost,
+        perturbed_full_qrf_cost=perturbed_cost,
+    )
+    metrics = _with_attenuation_metrics(metrics, perturbation)
+    no_op_guard = _command_input_no_op_guard(
+        perturbation=perturbation,
+        adapter=adapter,
+        metrics=metrics,
+    )
+    if no_op_guard is not None and no_op_guard["status"] == "blocked":
+        return {
+            "perturbation_id": perturbation["perturbation_id"],
+            "channel": perturbation["channel"],
+            "family": perturbation.get("family"),
+            "axis": perturbation.get("axis"),
+            "sign": perturbation.get("sign"),
+            "amplitude": perturbation.get("amplitude"),
+            "timing_bin": perturbation.get("timing_bin"),
+            "semantic_family": perturbation.get("semantic_family"),
+            "timing": perturbation.get("timing"),
+            "perturbation": dict(perturbation),
+            "status": "blocked",
+            "reason": no_op_guard["reason"],
+            "adapter": adapter.to_json(),
+            "metrics": metrics,
+            "evaluation_guard": no_op_guard,
+            "extlqg_comparator": extlqg_comparator_status(
+                perturbation,
+                status="not_applicable",
+            ),
+            "robust_output_feedback_comparator": (
+                robust_output_feedback_comparator_status(
+                    perturbation,
+                    status="not_applicable",
+                )
+            ),
+        }
+    extlqg_comparator = evaluate_extlqg_perturbation_comparator(
+        perturbation,
+        context=extlqg_context,
+        gru_metrics=metrics,
+    )
+    robust_comparator = evaluate_robust_output_feedback_perturbation_comparator(
+        perturbation,
+        context=robust_context,
+        gru_metrics=metrics,
+    )
+    bulk_file = None
+    if write_bulk_arrays:
+        bulk_file = _write_perturbation_bulk_arrays(
+            base_evaluation,
+            perturbed_evaluation,
+            bulk_dir=bulk_dir,
+            perturbation_id=str(perturbation["perturbation_id"]),
+        )
+        bulk_files[str(perturbation["perturbation_id"])] = _repo_relative(
+            bulk_file,
+            repo_root=repo_root,
+        )
+    return {
+        "perturbation_id": perturbation["perturbation_id"],
+        "channel": perturbation["channel"],
+        "family": perturbation.get("family"),
+        "axis": perturbation.get("axis"),
+        "sign": perturbation.get("sign"),
+        "amplitude": perturbation.get("amplitude"),
+        "timing_bin": perturbation.get("timing_bin"),
+        "semantic_family": perturbation.get("semantic_family"),
+        "timing": perturbation.get("timing"),
+        "perturbation": dict(perturbation),
+        "status": "evaluated",
+        "adapter": adapter.to_json(),
+        "metrics": metrics,
+        "evaluation_guard": no_op_guard
+        or {"status": "passed", "guard": "command_input_nonzero_payload_nonzero_effect"},
+        "extlqg_comparator": extlqg_comparator,
+        "robust_output_feedback_comparator": robust_comparator,
+        "bulk_arrays": None
+        if bulk_file is None
+        else {
+            "path": _repo_relative(bulk_file, repo_root=repo_root),
+            "format": "np.savez_compressed",
+            "arrays": [
+                "delta_action",
+                "delta_gru_input",
+                "delta_position",
+                "delta_velocity",
+                "base_position",
+                "perturbed_position",
+                "base_velocity",
+                "perturbed_velocity",
+                "base_action",
+                "perturbed_action",
+                "base_gru_input",
+                "perturbed_gru_input",
+            ],
+        },
+    }
+
+
 def summarize_perturbation_response(
     base: RolloutEvaluation,
     perturbed: RolloutEvaluation,
@@ -1953,27 +1995,38 @@ def summarize_perturbation_response(
 ) -> dict[str, Any]:
     """Compute paired perturbation-response metrics."""
 
-    delta_action = perturbed.command - base.command
-    delta_input = perturbed.gru_input - base.gru_input
-    delta_position = perturbed.position - base.position
-    delta_velocity = perturbed.velocity - base.velocity
-    delta_position_norm = np.linalg.norm(delta_position, axis=-1)
-    delta_velocity_norm = np.linalg.norm(delta_velocity, axis=-1)
-    delta_state_norm = np.linalg.norm(
-        np.concatenate([delta_position, delta_velocity], axis=-1),
+    base_command = jnp.asarray(base.command, dtype=jnp.float64)
+    base_input = jnp.asarray(base.gru_input, dtype=jnp.float64)
+    base_position = jnp.asarray(base.position, dtype=jnp.float64)
+    base_velocity = jnp.asarray(base.velocity, dtype=jnp.float64)
+    base_target = jnp.asarray(base.target_position, dtype=jnp.float64)
+    perturbed_command = jnp.asarray(perturbed.command, dtype=jnp.float64)
+    perturbed_input = jnp.asarray(perturbed.gru_input, dtype=jnp.float64)
+    perturbed_position = jnp.asarray(perturbed.position, dtype=jnp.float64)
+    perturbed_velocity = jnp.asarray(perturbed.velocity, dtype=jnp.float64)
+    perturbed_target = jnp.asarray(perturbed.target_position, dtype=jnp.float64)
+
+    delta_action = perturbed_command - base_command
+    delta_input = perturbed_input - base_input
+    delta_position = perturbed_position - base_position
+    delta_velocity = perturbed_velocity - base_velocity
+    delta_position_norm = jnp.linalg.norm(delta_position, axis=-1)
+    delta_velocity_norm = jnp.linalg.norm(delta_velocity, axis=-1)
+    delta_state_norm = jnp.linalg.norm(
+        jnp.concatenate([delta_position, delta_velocity], axis=-1),
         axis=-1,
     )
-    delta_action_norm = np.linalg.norm(delta_action, axis=-1)
-    endpoint_recovery = np.linalg.norm(
-        perturbed.position[:, :, -1, :] - perturbed.target_position[None, :, -1, :],
+    delta_action_norm = jnp.linalg.norm(delta_action, axis=-1)
+    endpoint_recovery = jnp.linalg.norm(
+        perturbed_position[:, :, -1, :] - perturbed_target[None, :, -1, :],
         axis=-1,
     )
-    base_endpoint = np.linalg.norm(
-        base.position[:, :, -1, :] - base.target_position[None, :, -1, :],
+    base_endpoint = jnp.linalg.norm(
+        base_position[:, :, -1, :] - base_target[None, :, -1, :],
         axis=-1,
     )
-    terminal_speed = np.linalg.norm(perturbed.velocity[:, :, -1, :], axis=-1)
-    base_terminal_speed = np.linalg.norm(base.velocity[:, :, -1, :], axis=-1)
+    terminal_speed = jnp.linalg.norm(perturbed_velocity[:, :, -1, :], axis=-1)
+    base_terminal_speed = jnp.linalg.norm(base_velocity[:, :, -1, :], axis=-1)
     metrics = {
         "delta_action_norm": _summary_stats(delta_action_norm),
         "delta_position_trajectory_norm_m": _summary_stats(delta_position_norm),
@@ -2167,9 +2220,9 @@ def score_full_qrf_rollout_cost(
     """
 
     _plant, schedule = build_canonical_game()
-    state_array = np.asarray(states, dtype=np.float64)
-    command_array = np.asarray(commands, dtype=np.float64)
-    initial_array = np.asarray(initial_states, dtype=np.float64)
+    state_array = jnp.asarray(states, dtype=jnp.float64)
+    command_array = jnp.asarray(commands, dtype=jnp.float64)
+    initial_array = jnp.asarray(initial_states, dtype=jnp.float64)
     if state_array.shape[-1] != schedule.Q.shape[-1]:
         raise ValueError(
             f"Full-Q/R/Q_f scorer expected state dim {schedule.Q.shape[-1]}, "
@@ -2190,18 +2243,21 @@ def score_full_qrf_rollout_cost(
         raise ValueError(
             f"Full-Q/R/Q_f scorer expected {horizon} commands, got {command_array.shape[-2]}."
         )
-    initial_array = np.broadcast_to(initial_array, (*state_array.shape[:-2], state_array.shape[-1]))
-    x_pre = np.concatenate([initial_array[..., None, :], state_array[..., :-1, :]], axis=-2)
+    initial_array = jnp.broadcast_to(
+        initial_array,
+        (*state_array.shape[:-2], state_array.shape[-1]),
+    )
+    x_pre = jnp.concatenate([initial_array[..., None, :], state_array[..., :-1, :]], axis=-2)
     x_pre = _goal_centered_vectors(x_pre, target_pos=target_pos)
     x_terminal = _goal_centered_vectors(state_array[..., -1, :], target_pos=target_pos)
-    q = np.asarray(schedule.Q, dtype=np.float64)
-    r = np.asarray(schedule.R, dtype=np.float64)
-    q_f = np.asarray(schedule.Q_f, dtype=np.float64)
-    state_terms = np.einsum("...ti,tij,...tj->...t", x_pre, q, x_pre)
-    control_terms = np.einsum("...ti,tij,...tj->...t", command_array, r, command_array)
-    terminal_terms = np.einsum("...i,ij,...j->...", x_terminal, q_f, x_terminal)
-    stage_state = np.sum(state_terms, axis=-1)
-    control = np.sum(control_terms, axis=-1)
+    q = jnp.asarray(schedule.Q, dtype=jnp.float64)
+    r = jnp.asarray(schedule.R, dtype=jnp.float64)
+    q_f = jnp.asarray(schedule.Q_f, dtype=jnp.float64)
+    state_terms = jnp.einsum("...ti,tij,...tj->...t", x_pre, q, x_pre)
+    control_terms = jnp.einsum("...ti,tij,...tj->...t", command_array, r, command_array)
+    terminal_terms = jnp.einsum("...i,ij,...j->...", x_terminal, q_f, x_terminal)
+    stage_state = jnp.sum(state_terms, axis=-1)
+    control = jnp.sum(control_terms, axis=-1)
     total = stage_state + control + terminal_terms
     return {
         "status": "available",
@@ -2256,14 +2312,14 @@ def _full_qrf_window_inputs(
     states: Any,
     commands: Any,
     trial_specs: Any,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
+) -> tuple[Any, Any, Any, dict[str, Any]]:
     """Return C&S full-QRF movement-window arrays for immediate or delayed trials."""
 
     _plant, schedule = build_canonical_game()
     horizon = int(schedule.T)
-    state_array = np.asarray(states, dtype=np.float64)
-    command_array = np.asarray(commands, dtype=np.float64)
-    initial_array = np.asarray(trial_specs.inits["mechanics.vector"], dtype=np.float64)
+    state_array = jnp.asarray(states, dtype=jnp.float64)
+    command_array = jnp.asarray(commands, dtype=jnp.float64)
+    initial_array = jnp.asarray(trial_specs.inits["mechanics.vector"], dtype=jnp.float64)
     if state_array.shape[-2] == horizon and command_array.shape[-2] == horizon:
         return (
             state_array,
@@ -2294,7 +2350,7 @@ def _full_qrf_window_inputs(
     window_initial = (
         initial_array
         if start == 0
-        else np.asarray(state_array[..., start - 1, :], dtype=np.float64)
+        else state_array[..., start - 1, :]
     )
     return (
         state_array[..., start:stop, :],
@@ -3451,6 +3507,24 @@ def _evaluate_model_on_trial_specs(
     n_replicates: int,
     seed: int,
 ) -> RolloutEvaluation:
+    product = _evaluate_model_rollout_product(
+        model=model,
+        task=task,
+        trial_specs=trial_specs,
+        n_replicates=n_replicates,
+        seed=seed,
+    )
+    return product.to_rollout_evaluation(RolloutEvaluation)
+
+
+def _evaluate_model_rollout_product(
+    *,
+    model: Any,
+    task: Any,
+    trial_specs: Any,
+    n_replicates: int,
+    seed: int,
+) -> SelectedEvalRolloutProduct:
     model_arrays, model_other = eqx.partition(
         model,
         lambda leaf: _is_replicate_array(leaf, n_replicates),
@@ -3468,24 +3542,12 @@ def _evaluate_model_on_trial_specs(
         model_arrays,
         jr.split(jr.PRNGKey(seed), n_replicates),
     )
-    target_position = trial_effector_target_position(trial_specs)
-    evaluation = RolloutEvaluation(
-        position=np.asarray(states.mechanics.effector.pos, dtype=np.float64),
-        velocity=np.asarray(states.mechanics.effector.vel, dtype=np.float64),
-        command=np.asarray(states.net.output, dtype=np.float64),
-        hidden=np.asarray(states.net.hidden, dtype=np.float64),
-        gru_input=np.asarray(states.net.input, dtype=np.float64),
-        initial_position=np.asarray(_initial_effector_position(trial_specs), dtype=np.float64),
-        initial_velocity=np.asarray(initial_effector_velocity(trial_specs), dtype=np.float64),
-        target_position=target_position,
+    return SelectedEvalRolloutProduct.from_states(
+        states,
+        trial_specs,
         dt=0.01,
+        include_mechanics_vector=True,
     )
-    object.__setattr__(
-        evaluation,
-        "mechanics_vector",
-        np.asarray(states.mechanics.vector, dtype=np.float64),
-    )
-    return evaluation
 
 
 def _build_extlqg_comparator_context() -> dict[str, Any]:
@@ -3889,33 +3951,33 @@ def _write_perturbation_bulk_arrays(
     path = bulk_dir / f"{perturbation_id}.npz"
     np.savez_compressed(
         path,
-        delta_action=perturbed.command - base.command,
-        delta_gru_input=perturbed.gru_input - base.gru_input,
-        delta_position=perturbed.position - base.position,
-        delta_velocity=perturbed.velocity - base.velocity,
-        base_position=base.position,
-        perturbed_position=perturbed.position,
-        base_velocity=base.velocity,
-        perturbed_velocity=perturbed.velocity,
-        base_action=base.command,
-        perturbed_action=perturbed.command,
-        base_gru_input=base.gru_input,
-        perturbed_gru_input=perturbed.gru_input,
+        delta_action=np.asarray(perturbed.command - base.command, dtype=np.float64),
+        delta_gru_input=np.asarray(perturbed.gru_input - base.gru_input, dtype=np.float64),
+        delta_position=np.asarray(perturbed.position - base.position, dtype=np.float64),
+        delta_velocity=np.asarray(perturbed.velocity - base.velocity, dtype=np.float64),
+        base_position=np.asarray(base.position, dtype=np.float64),
+        perturbed_position=np.asarray(perturbed.position, dtype=np.float64),
+        base_velocity=np.asarray(base.velocity, dtype=np.float64),
+        perturbed_velocity=np.asarray(perturbed.velocity, dtype=np.float64),
+        base_action=np.asarray(base.command, dtype=np.float64),
+        perturbed_action=np.asarray(perturbed.command, dtype=np.float64),
+        base_gru_input=np.asarray(base.gru_input, dtype=np.float64),
+        perturbed_gru_input=np.asarray(perturbed.gru_input, dtype=np.float64),
     )
     return path
 
 
-def _goal_centered_vectors(values: Any, *, target_pos: Any) -> np.ndarray:
+def _goal_centered_vectors(values: Any, *, target_pos: Any) -> Any:
     """Subtract target position from every 8D physical block's x/y entries."""
 
-    result = np.array(values, dtype=np.float64, copy=True)
-    target = np.asarray(target_pos, dtype=np.float64)
+    result = jnp.asarray(values, dtype=jnp.float64)
+    target = jnp.asarray(target_pos, dtype=jnp.float64)
     if target.shape != (2,):
         raise ValueError(f"target_pos must have shape (2,), got {target.shape}")
     if result.shape[-1] % 8 != 0:
         raise ValueError(f"state dimension {result.shape[-1]} is not divisible by 8")
     for start in range(0, result.shape[-1], 8):
-        result[..., start : start + 2] -= target
+        result = result.at[..., start : start + 2].add(-target)
     return result
 
 

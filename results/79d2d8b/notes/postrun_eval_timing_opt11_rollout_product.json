@@ -1,0 +1,185 @@
+{
+  "bundles": [
+    {
+      "bundle": "standard_certificate",
+      "call_elapsed_s": 12.231906333006918,
+      "elapsed_s": 12.23208850005176,
+      "ready_block_note": "no JAX leaves with block_until_ready",
+      "ready_block_s": 0.0,
+      "ready_blocked_leaves": 0,
+      "status": "ok",
+      "summary": {
+        "checkpoint_policy": "final_checkpoint",
+        "output": "_artifacts/79d2d8b/postrun_eval_benchmark/opt11_rollout_product/notes/gru_standard_manifest.json",
+        "rows": 1
+      },
+      "summary_elapsed_s": 1.7915968783199787e-05
+    },
+    {
+      "bundle": "evaluation_diagnostics",
+      "call_elapsed_s": 3.601152000017464,
+      "elapsed_s": 3.601494707982056,
+      "ready_block_note": "no JAX leaves with block_until_ready",
+      "ready_block_s": 0.0,
+      "ready_blocked_leaves": 0,
+      "status": "ok",
+      "summary": {
+        "run_status_counts": {
+          "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64": {}
+        },
+        "runs": 1
+      },
+      "summary_elapsed_s": 5.749985575675964e-06
+    },
+    {
+      "bundle": "pilot_figures",
+      "call_elapsed_s": 3.927381500019692,
+      "elapsed_s": 3.9274308750173077,
+      "ready_block_note": "no JAX leaves with block_until_ready",
+      "ready_block_s": 0.0,
+      "ready_blocked_leaves": 0,
+      "status": "ok",
+      "summary": {
+        "figure_keys": [
+          "checkpoint_policy",
+          "checkpoint_selection",
+          "issue",
+          "loss_plots",
+          "runs",
+          "velocity_profiles"
+        ]
+      },
+      "summary_elapsed_s": 2.5830231606960297e-06
+    },
+    {
+      "bundle": "objective_comparator",
+      "call_elapsed_s": 27.232367791002616,
+      "elapsed_s": 27.232386833056808,
+      "ready_block_note": "no JAX leaves with block_until_ready",
+      "ready_block_s": 0.0,
+      "ready_blocked_leaves": 0,
+      "status": "materialized",
+      "summary": {
+        "keys": [
+          "extlqg_deterministic_full_qrf",
+          "extlqg_total_expected_cost",
+          "n_rows",
+          "schema_version",
+          "standard_split_bank_comparator_status",
+          "status"
+        ],
+        "status": "materialized"
+      },
+      "summary_elapsed_s": 1.7919810488820076e-06
+    },
+    {
+      "bundle": "map_decomposition",
+      "call_elapsed_s": 4.1276357910828665,
+      "elapsed_s": 4.12828800000716,
+      "ready_block_note": "no JAX leaves with block_until_ready",
+      "ready_block_s": 0.0,
+      "ready_blocked_leaves": 0,
+      "status": "ok",
+      "summary": {
+        "keys": [
+          "checkpoint_policy",
+          "format",
+          "issue",
+          "rows",
+          "selection_role",
+          "source_issue",
+          "source_standard_manifest"
+        ],
+        "rows": 1
+      },
+      "summary_elapsed_s": 0.0004532500170171261
+    },
+    {
+      "bundle": "perturbation_response",
+      "call_elapsed_s": 8.075550875044428,
+      "elapsed_s": 8.078283624956384,
+      "ready_block_note": "no JAX leaves with block_until_ready",
+      "ready_block_s": 0.0,
+      "ready_blocked_leaves": 0,
+      "status": "ok",
+      "summary": {
+        "rows": 20,
+        "status_counts": {
+          "evaluated": 20
+        }
+      },
+      "summary_elapsed_s": 2.250075340270996e-06
+    },
+    {
+      "bundle": "feedback_ablation",
+      "call_elapsed_s": 13.761717332992703,
+      "elapsed_s": 13.762946333969012,
+      "ready_block_note": "no JAX leaves with block_until_ready",
+      "ready_block_s": 0.0,
+      "ready_blocked_leaves": 0,
+      "status": "ok",
+      "summary": {
+        "rows": 0,
+        "status_counts": {
+          "evaluated": 35
+        }
+      },
+      "summary_elapsed_s": 1.1669471859931946e-06
+    },
+    {
+      "bundle": "worst_case_epsilon",
+      "call_elapsed_s": 2.8139991250354797,
+      "elapsed_s": 2.8141687919851393,
+      "ready_block_note": "no JAX leaves with block_until_ready",
+      "ready_block_s": 0.0,
+      "ready_blocked_leaves": 0,
+      "status": "evaluated",
+      "summary": {
+        "keys": [
+          "artifact_dir",
+          "budget",
+          "bulk_arrays",
+          "candidates",
+          "checkpoint_selection",
+          "epsilon_dim",
+          "horizon",
+          "label",
+          "n_replicates",
+          "n_rollout_trials_per_replicate",
+          "optimizer",
+          "run_spec_path",
+          "status",
+          "summary"
+        ],
+        "status": "evaluated"
+      },
+      "summary_elapsed_s": 2.166023477911949e-06
+    }
+  ],
+  "captured_at_unix_s": 1782092573.9740632,
+  "context": {
+    "feedback_bins": 5,
+    "n_rollout_trials": 1,
+    "perturbation_evaluation_backend": "serial",
+    "perturbation_rows": 20,
+    "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
+    "source_experiment": "020a65b",
+    "worst_case_optimizer_backend": "serial",
+    "worst_case_restarts": 3,
+    "worst_case_steps": 4,
+    "write_bulk_arrays": false
+  },
+  "environment": {
+    "jax_default_backend": "cpu",
+    "jax_devices": [
+      "TFRT_CPU_0"
+    ],
+    "jax_version": "0.9.0",
+    "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+    "python": "3.13.5"
+  },
+  "issue": "79d2d8b",
+  "schema_version": "rlrmp.postrun_eval_materialization_benchmark.v1",
+  "step_label": "opt11_rollout_product",
+  "total_elapsed_s": 75.77776937489398
+}

@@ -27,6 +27,7 @@ from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
     load_validation_selected_checkpoint_model,
     validation_objective_history,
 )
+from rlrmp.analysis.pipelines._selected_eval_rollouts import SelectedEvalRolloutProduct
 from rlrmp.analysis.pipelines.gru_evaluation_diagnostics import RolloutEvaluation
 from rlrmp.analysis.pipelines.gru_perturbation_bank import (
     apply_perturbation_to_trial_specs,
@@ -36,10 +37,8 @@ from rlrmp.analysis.pipelines.gru_perturbation_bank import (
 )
 from rlrmp.analysis.pipelines.gru_pilot_figures import (
     RunFigureInputs,
-    initial_effector_velocity,
     repeat_single_validation_trial,
     resolve_run_inputs,
-    trial_effector_target_position,
 )
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
 from rlrmp.train.task_model import setup_task_model_pair
@@ -132,9 +131,9 @@ class DetailedRolloutEvaluation:
     otherwise.
     """
 
-    rollout: RolloutEvaluation
-    feedback: np.ndarray
-    mechanics_vector: np.ndarray
+    rollout: Any
+    feedback: Any
+    mechanics_vector: Any
 
 
 class ObservationOverride(Component):
@@ -302,13 +301,13 @@ def _select_representative_perturbation_id(
 def build_observation_tape(
     mode: AblationMode,
     *,
-    bin_feedback: np.ndarray,
-    nominal_feedback: np.ndarray,
-) -> np.ndarray | None:
+    bin_feedback: Any,
+    nominal_feedback: Any,
+) -> Any | None:
     """Return the external delayed-feedback tape for a payload-based ablation."""
 
-    feedback = np.asarray(bin_feedback, dtype=np.float64)
-    nominal = np.asarray(nominal_feedback, dtype=np.float64)
+    feedback = jnp.asarray(bin_feedback, dtype=jnp.float64)
+    nominal = jnp.asarray(nominal_feedback, dtype=jnp.float64)
     if feedback.shape != nominal.shape:
         raise ValueError(
             "bin_feedback and nominal_feedback must have the same shape; "
@@ -323,11 +322,11 @@ def build_observation_tape(
         return nominal
     if mode == "shuffled_observation_history":
         if feedback.shape[1] < 2:
-            return feedback.copy()
-        return np.roll(feedback, shift=1, axis=1)
+            return jnp.array(feedback, copy=True)
+        return jnp.roll(feedback, shift=1, axis=1)
     if mode == "lagged_observation_history":
         first = feedback[:, :, :1, :]
-        return np.concatenate([first, feedback[:, :, :-1, :]], axis=2)
+        return jnp.concatenate([first, feedback[:, :, :-1, :]], axis=2)
     if mode in {"position_only_observation", "velocity_only_observation"}:
         return None
     raise ValueError(f"unsupported feedback ablation mode {mode!r}")
@@ -1084,13 +1083,16 @@ def evaluate_run_feedback_ablation(
                 continue
             trial_specs = adapter.trial_specs
             bin_model = adapter.model if adapter.model is not None else model
-        baseline = _evaluate_model_on_trial_specs(
-            model=bin_model,
-            task=pair.task,
-            trial_specs=trial_specs,
-            n_replicates=n_replicates,
-            seed=0,
-        )
+        if perturbation_id is None and bin_model is model and trial_specs is base_trial_specs:
+            baseline = nominal
+        else:
+            baseline = _evaluate_model_on_trial_specs(
+                model=bin_model,
+                task=pair.task,
+                trial_specs=trial_specs,
+                n_replicates=n_replicates,
+                seed=0,
+            )
         baseline_cost = full_qrf_cost_summary(baseline.rollout, trial_specs)
         for mode in default_ablation_modes():
             spec = build_observation_ablation_spec(mode, bin_id=bin_id)
@@ -1590,8 +1592,8 @@ def _per_replicate_command_penalty_metrics(
     perturbed_command: Any,
     n_replicates: int,
 ) -> list[dict[str, Any]]:
-    baseline = np.asarray(baseline_command, dtype=np.float64)
-    perturbed = np.asarray(perturbed_command, dtype=np.float64)
+    baseline = jnp.asarray(baseline_command, dtype=jnp.float64)
+    perturbed = jnp.asarray(perturbed_command, dtype=jnp.float64)
     if baseline.shape != perturbed.shape or baseline.shape[:1] != (n_replicates,):
         return [
             {
@@ -1607,13 +1609,13 @@ def _per_replicate_command_penalty_metrics(
         pert = perturbed[replicate]
         metrics: dict[str, Any] = {"replicate": replicate, "status": "available"}
         metrics["command_energy_ratio"] = _safe_ratio(
-            float(np.mean(np.sum(np.square(pert), axis=-1))),
-            float(np.mean(np.sum(np.square(base), axis=-1))),
+            float(jnp.mean(jnp.sum(jnp.square(pert), axis=-1))),
+            float(jnp.mean(jnp.sum(jnp.square(base), axis=-1))),
         )
         if base.shape[-2] >= 2:
             metrics["command_smoothness_ratio"] = _safe_ratio(
-                float(np.mean(np.sum(np.square(np.diff(pert, axis=-2)), axis=-1))),
-                float(np.mean(np.sum(np.square(np.diff(base, axis=-2)), axis=-1))),
+                float(jnp.mean(jnp.sum(jnp.square(jnp.diff(pert, axis=-2)), axis=-1))),
+                float(jnp.mean(jnp.sum(jnp.square(jnp.diff(base, axis=-2)), axis=-1))),
             )
         else:
             metrics["command_smoothness_ratio"] = None
@@ -2377,24 +2379,17 @@ def _evaluate_model_on_trial_specs(
             model_arrays,
             jr.split(jr.PRNGKey(seed), n_replicates),
         )
-    target_position = trial_effector_target_position(trial_specs)
-    rollout = RolloutEvaluation(
-        position=np.asarray(states.mechanics.effector.pos, dtype=np.float64),
-        velocity=np.asarray(states.mechanics.effector.vel, dtype=np.float64),
-        command=np.asarray(states.net.output, dtype=np.float64),
-        hidden=np.asarray(states.net.hidden, dtype=np.float64),
-        gru_input=np.asarray(states.net.input, dtype=np.float64),
-        initial_position=np.asarray(_initial_effector_position(trial_specs), dtype=np.float64),
-        initial_velocity=np.asarray(initial_effector_velocity(trial_specs), dtype=np.float64),
-        target_position=target_position,
+    rollout = SelectedEvalRolloutProduct.from_states(
+        states,
+        trial_specs,
         dt=0.01,
+        include_mechanics_vector=True,
+        include_feedback=True,
     )
-    mechanics_vector = np.asarray(states.mechanics.vector, dtype=np.float64)
-    object.__setattr__(rollout, "mechanics_vector", mechanics_vector)
     return DetailedRolloutEvaluation(
         rollout=rollout,
-        feedback=np.asarray(states.sensory.output, dtype=np.float64),
-        mechanics_vector=mechanics_vector,
+        feedback=rollout.feedback,
+        mechanics_vector=rollout.mechanics_vector,
     )
 
 

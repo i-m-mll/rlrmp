@@ -1,0 +1,185 @@
+{
+  "bundles": [
+    {
+      "bundle": "standard_certificate",
+      "call_elapsed_s": 12.367733958992176,
+      "elapsed_s": 12.36791870801244,
+      "ready_block_note": "no JAX leaves with block_until_ready",
+      "ready_block_s": 0.0,
+      "ready_blocked_leaves": 0,
+      "status": "ok",
+      "summary": {
+        "checkpoint_policy": "final_checkpoint",
+        "output": "_artifacts/79d2d8b/postrun_eval_benchmark/opt10_host_transfer_safe/notes/gru_standard_manifest.json",
+        "rows": 1
+      },
+      "summary_elapsed_s": 2.462498378008604e-05
+    },
+    {
+      "bundle": "evaluation_diagnostics",
+      "call_elapsed_s": 2.922644916921854,
+      "elapsed_s": 2.922838708036579,
+      "ready_block_note": "no JAX leaves with block_until_ready",
+      "ready_block_s": 0.0,
+      "ready_blocked_leaves": 0,
+      "status": "ok",
+      "summary": {
+        "run_status_counts": {
+          "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64": {}
+        },
+        "runs": 1
+      },
+      "summary_elapsed_s": 4.584086127579212e-06
+    },
+    {
+      "bundle": "pilot_figures",
+      "call_elapsed_s": 3.3171592500293627,
+      "elapsed_s": 3.31720316701103,
+      "ready_block_note": "no JAX leaves with block_until_ready",
+      "ready_block_s": 0.0,
+      "ready_blocked_leaves": 0,
+      "status": "ok",
+      "summary": {
+        "figure_keys": [
+          "checkpoint_policy",
+          "checkpoint_selection",
+          "issue",
+          "loss_plots",
+          "runs",
+          "velocity_profiles"
+        ]
+      },
+      "summary_elapsed_s": 2.874992787837982e-06
+    },
+    {
+      "bundle": "objective_comparator",
+      "call_elapsed_s": 28.41485445899889,
+      "elapsed_s": 28.414868708932772,
+      "ready_block_note": "no JAX leaves with block_until_ready",
+      "ready_block_s": 0.0,
+      "ready_blocked_leaves": 0,
+      "status": "materialized",
+      "summary": {
+        "keys": [
+          "extlqg_deterministic_full_qrf",
+          "extlqg_total_expected_cost",
+          "n_rows",
+          "schema_version",
+          "standard_split_bank_comparator_status",
+          "status"
+        ],
+        "status": "materialized"
+      },
+      "summary_elapsed_s": 2.1670712158083916e-06
+    },
+    {
+      "bundle": "map_decomposition",
+      "call_elapsed_s": 4.620461457991041,
+      "elapsed_s": 4.621170917060226,
+      "ready_block_note": "no JAX leaves with block_until_ready",
+      "ready_block_s": 0.0,
+      "ready_blocked_leaves": 0,
+      "status": "ok",
+      "summary": {
+        "keys": [
+          "checkpoint_policy",
+          "format",
+          "issue",
+          "rows",
+          "selection_role",
+          "source_issue",
+          "source_standard_manifest"
+        ],
+        "rows": 1
+      },
+      "summary_elapsed_s": 0.0005552500952035189
+    },
+    {
+      "bundle": "perturbation_response",
+      "call_elapsed_s": 8.286517624976113,
+      "elapsed_s": 8.289296332979575,
+      "ready_block_note": "no JAX leaves with block_until_ready",
+      "ready_block_s": 0.0,
+      "ready_blocked_leaves": 0,
+      "status": "ok",
+      "summary": {
+        "rows": 20,
+        "status_counts": {
+          "evaluated": 20
+        }
+      },
+      "summary_elapsed_s": 1.2919772416353226e-06
+    },
+    {
+      "bundle": "feedback_ablation",
+      "call_elapsed_s": 14.475240083993413,
+      "elapsed_s": 14.476464750012383,
+      "ready_block_note": "no JAX leaves with block_until_ready",
+      "ready_block_s": 0.0,
+      "ready_blocked_leaves": 0,
+      "status": "ok",
+      "summary": {
+        "rows": 0,
+        "status_counts": {
+          "evaluated": 35
+        }
+      },
+      "summary_elapsed_s": 1.5828991308808327e-06
+    },
+    {
+      "bundle": "worst_case_epsilon",
+      "call_elapsed_s": 2.8589737080037594,
+      "elapsed_s": 2.8591312499484047,
+      "ready_block_note": "no JAX leaves with block_until_ready",
+      "ready_block_s": 0.0,
+      "ready_blocked_leaves": 0,
+      "status": "evaluated",
+      "summary": {
+        "keys": [
+          "artifact_dir",
+          "budget",
+          "bulk_arrays",
+          "candidates",
+          "checkpoint_selection",
+          "epsilon_dim",
+          "horizon",
+          "label",
+          "n_replicates",
+          "n_rollout_trials_per_replicate",
+          "optimizer",
+          "run_spec_path",
+          "status",
+          "summary"
+        ],
+        "status": "evaluated"
+      },
+      "summary_elapsed_s": 2.0830193534493446e-06
+    }
+  ],
+  "captured_at_unix_s": 1782091469.924125,
+  "context": {
+    "feedback_bins": 5,
+    "n_rollout_trials": 1,
+    "perturbation_evaluation_backend": "serial",
+    "perturbation_rows": 20,
+    "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
+    "source_experiment": "020a65b",
+    "worst_case_optimizer_backend": "serial",
+    "worst_case_restarts": 3,
+    "worst_case_steps": 4,
+    "write_bulk_arrays": false
+  },
+  "environment": {
+    "jax_default_backend": "cpu",
+    "jax_devices": [
+      "TFRT_CPU_0"
+    ],
+    "jax_version": "0.9.0",
+    "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+    "python": "3.13.5"
+  },
+  "issue": "79d2d8b",
+  "schema_version": "rlrmp.postrun_eval_materialization_benchmark.v1",
+  "step_label": "opt10_host_transfer_safe",
+  "total_elapsed_s": 77.26955108391121
+}

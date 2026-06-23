@@ -6,6 +6,7 @@ import json
 
 import jax.numpy as jnp
 import jax.random as jr
+from jax import Array as JaxArray
 import numpy as np
 from feedbax import TaskTrialSpec
 from feedbax.runtime.graph import Wire
@@ -14,6 +15,7 @@ from feedbax.runtime.state import CartesianState
 from rlrmp.analysis.pipelines.gru_feedback_ablation import (
     FEEDBACK_AUDIT_SELECTION_ROLE,
     SCHEMA_VERSION,
+    _per_replicate_command_penalty_metrics,
     _per_replicate_cost_delta_values,
     build_observation_ablation_spec,
     build_observation_tape,
@@ -103,6 +105,35 @@ def test_observation_tape_modes_transform_expected_axes() -> None:
         bin_feedback=feedback,
         nominal_feedback=nominal,
     ) is None
+
+
+def test_observation_tape_preserves_jax_array_boundary() -> None:
+    feedback = jnp.arange(2 * 3 * 4 * 4, dtype=jnp.float64).reshape(2, 3, 4, 4)
+    nominal = jnp.full_like(feedback, -1.0)
+
+    frozen = build_observation_tape(
+        "frozen_nominal_observation_tape",
+        bin_feedback=feedback,
+        nominal_feedback=nominal,
+    )
+    shuffled = build_observation_tape(
+        "shuffled_observation_history",
+        bin_feedback=feedback,
+        nominal_feedback=nominal,
+    )
+    lagged = build_observation_tape(
+        "lagged_observation_history",
+        bin_feedback=feedback,
+        nominal_feedback=nominal,
+    )
+
+    assert isinstance(frozen, JaxArray)
+    assert isinstance(shuffled, JaxArray)
+    assert isinstance(lagged, JaxArray)
+    np.testing.assert_allclose(np.asarray(frozen), np.asarray(nominal))
+    np.testing.assert_allclose(np.asarray(shuffled[:, 0]), np.asarray(feedback[:, -1]))
+    np.testing.assert_allclose(np.asarray(lagged[:, :, 0]), np.asarray(feedback[:, :, 0]))
+    np.testing.assert_allclose(np.asarray(lagged[:, :, 1:]), np.asarray(feedback[:, :, :-1]))
 
 
 def test_feedback_ablation_inserts_override_and_mask_nodes() -> None:
@@ -277,6 +308,28 @@ def test_per_replicate_cost_delta_values_reduces_trials_only() -> None:
         perturbed_cost,
         n_replicates=2,
     ) == [2.0, 12.0]
+
+
+def test_per_replicate_command_penalty_metrics_accepts_jax_arrays() -> None:
+    baseline = jnp.asarray(
+        [
+            [[[1.0, 0.0], [0.0, 1.0], [-1.0, 0.0]]],
+            [[[2.0, 0.0], [0.0, 2.0], [-2.0, 0.0]]],
+        ],
+        dtype=jnp.float64,
+    )
+    perturbed = baseline * 2.0
+
+    metrics = _per_replicate_command_penalty_metrics(
+        baseline_command=baseline,
+        perturbed_command=perturbed,
+        n_replicates=2,
+    )
+
+    assert [row["status"] for row in metrics] == ["available", "available"]
+    np.testing.assert_allclose(metrics[0]["command_energy_ratio"], 4.0)
+    np.testing.assert_allclose(metrics[1]["command_smoothness_ratio"], 4.0)
+    assert metrics[0]["command_oscillation_ratio"] == metrics[1]["command_oscillation_ratio"]
 
 
 def test_markdown_renders_not_available_rows() -> None:

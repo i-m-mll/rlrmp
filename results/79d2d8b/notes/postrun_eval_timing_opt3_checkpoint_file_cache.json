@@ -1,0 +1,143 @@
+{
+  "bundles": [
+    {
+      "bundle": "standard_certificate",
+      "elapsed_s": 11.013880916987546,
+      "status": "ok",
+      "summary": {
+        "checkpoint_policy": "final_checkpoint",
+        "output": "_artifacts/79d2d8b/postrun_eval_benchmark/opt3_checkpoint_file_cache/notes/gru_standard_manifest.json",
+        "rows": 1
+      }
+    },
+    {
+      "bundle": "evaluation_diagnostics",
+      "elapsed_s": 1.7432078749407083,
+      "status": "ok",
+      "summary": {
+        "run_status_counts": {
+          "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64": {}
+        },
+        "runs": 1
+      }
+    },
+    {
+      "bundle": "pilot_figures",
+      "elapsed_s": 3.041004416998476,
+      "status": "ok",
+      "summary": {
+        "figure_keys": [
+          "checkpoint_policy",
+          "checkpoint_selection",
+          "issue",
+          "loss_plots",
+          "runs",
+          "velocity_profiles"
+        ]
+      }
+    },
+    {
+      "bundle": "objective_comparator",
+      "elapsed_s": 24.262906583957374,
+      "status": "materialized",
+      "summary": {
+        "keys": [
+          "extlqg_deterministic_full_qrf",
+          "extlqg_total_expected_cost",
+          "n_rows",
+          "schema_version",
+          "standard_split_bank_comparator_status",
+          "status"
+        ],
+        "status": "materialized"
+      }
+    },
+    {
+      "bundle": "map_decomposition",
+      "elapsed_s": 4.01081291702576,
+      "status": "ok",
+      "summary": {
+        "keys": [
+          "checkpoint_policy",
+          "format",
+          "issue",
+          "rows",
+          "selection_role",
+          "source_issue",
+          "source_standard_manifest"
+        ],
+        "rows": 1
+      }
+    },
+    {
+      "bundle": "perturbation_response",
+      "elapsed_s": 3.0754732920322567,
+      "status": "ok",
+      "summary": {
+        "rows": 7,
+        "status_counts": {
+          "evaluated": 7
+        }
+      }
+    },
+    {
+      "bundle": "feedback_ablation",
+      "elapsed_s": 12.26799604203552,
+      "status": "ok",
+      "summary": {
+        "rows": 0,
+        "status_counts": {
+          "evaluated": 35
+        }
+      }
+    },
+    {
+      "bundle": "worst_case_epsilon",
+      "elapsed_s": 2.282821625005454,
+      "status": "evaluated",
+      "summary": {
+        "keys": [
+          "artifact_dir",
+          "budget",
+          "bulk_arrays",
+          "candidates",
+          "checkpoint_selection",
+          "epsilon_dim",
+          "horizon",
+          "label",
+          "n_replicates",
+          "n_rollout_trials_per_replicate",
+          "optimizer",
+          "run_spec_path",
+          "status",
+          "summary"
+        ],
+        "status": "evaluated"
+      }
+    }
+  ],
+  "captured_at_unix_s": 1781711172.9122372,
+  "context": {
+    "feedback_bins": 5,
+    "n_rollout_trials": 1,
+    "perturbation_rows": 7,
+    "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
+    "source_experiment": "020a65b",
+    "worst_case_restarts": 1,
+    "worst_case_steps": 1,
+    "write_bulk_arrays": false
+  },
+  "environment": {
+    "jax_default_backend": "cpu",
+    "jax_devices": [
+      "TFRT_CPU_0"
+    ],
+    "jax_version": "0.9.0",
+    "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+    "python": "3.13.5"
+  },
+  "issue": "79d2d8b",
+  "schema_version": "rlrmp.postrun_eval_materialization_benchmark.v1",
+  "step_label": "opt3_checkpoint_file_cache",
+  "total_elapsed_s": 61.698157542035915
+}

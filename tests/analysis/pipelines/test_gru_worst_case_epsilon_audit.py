@@ -2,14 +2,32 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import jax.numpy as jnp
 import numpy as np
 
+import rlrmp.analysis.pipelines.gru_worst_case_epsilon_audit as audit
 from rlrmp.analysis.pipelines.gru_worst_case_epsilon_audit import (
     declared_epsilon_l2_radius,
     optimize_epsilon_sequence,
     project_l2_ball,
 )
+
+
+def _assert_numeric_dict_sequence_close(
+    actual: tuple[dict[str, float | int], ...],
+    expected: tuple[dict[str, float | int], ...],
+) -> None:
+    assert len(actual) == len(expected)
+    for actual_row, expected_row in zip(actual, expected, strict=True):
+        assert actual_row.keys() == expected_row.keys()
+        for key, expected_value in expected_row.items():
+            actual_value = actual_row[key]
+            if isinstance(expected_value, int):
+                assert actual_value == expected_value
+            else:
+                np.testing.assert_allclose(actual_value, expected_value, rtol=1e-12, atol=1e-12)
 
 
 def test_project_l2_ball_preserves_inside_and_projects_outside() -> None:
@@ -113,3 +131,123 @@ def test_optimize_epsilon_sequence_improves_quadratic_objective() -> None:
     assert result.objective > result.initial_objective
     assert result.l2_norm <= 1.0 + 1e-12
     np.testing.assert_allclose(result.epsilon, np.asarray(target), atol=0.21)
+
+
+def test_staged_optimizer_matches_serial_with_multiple_restarts() -> None:
+    weights = jnp.asarray([[1.0, 0.5], [0.25, 1.5]], dtype=jnp.float64)
+    target = jnp.asarray([[0.35, -0.15], [0.1, 0.25]], dtype=jnp.float64)
+
+    def objective(epsilon):
+        return -jnp.sum(weights * jnp.square(epsilon - target)) + 0.05 * jnp.sum(epsilon)
+
+    kwargs = {
+        "shape": (2, 2),
+        "radius": 0.9,
+        "n_steps": 5,
+        "n_restarts": 4,
+        "step_size": 0.17,
+        "seed": 21,
+        "initial_candidates": (
+            jnp.zeros((2, 2), dtype=jnp.float64),
+            jnp.asarray([[0.8, 0.0], [0.0, 0.0]], dtype=jnp.float64),
+        ),
+    }
+
+    serial = optimize_epsilon_sequence(objective, backend="serial", **kwargs)
+    staged = optimize_epsilon_sequence(objective, backend="staged", **kwargs)
+
+    assert staged.restart_index == serial.restart_index
+    np.testing.assert_allclose(staged.epsilon, serial.epsilon, rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(staged.objective, serial.objective, rtol=1e-12, atol=1e-12)
+    _assert_numeric_dict_sequence_close(staged.history, serial.history)
+    _assert_numeric_dict_sequence_close(staged.restart_summaries, serial.restart_summaries)
+
+
+def test_staged_optimizer_matches_serial_zero_step_candidate_edge() -> None:
+    candidates = (
+        jnp.asarray([[0.2, 0.0], [0.0, 0.0]], dtype=jnp.float64),
+        jnp.asarray([[0.0, 0.4], [0.0, 0.0]], dtype=jnp.float64),
+    )
+
+    def objective(epsilon):
+        return epsilon[0, 1] - 0.5 * epsilon[0, 0]
+
+    kwargs = {
+        "shape": (2, 2),
+        "radius": 1.0,
+        "n_steps": 0,
+        "n_restarts": 0,
+        "step_size": 0.25,
+        "seed": 3,
+        "initial_candidates": candidates,
+    }
+
+    serial = optimize_epsilon_sequence(objective, backend="serial", **kwargs)
+    staged = optimize_epsilon_sequence(objective, backend="staged", **kwargs)
+
+    assert staged.restart_index == serial.restart_index == 1
+    np.testing.assert_allclose(staged.epsilon, serial.epsilon, rtol=1e-12, atol=1e-12)
+    assert staged.history == serial.history == (
+        {"step": 0, "objective": 0.4, "epsilon_l2": 0.4},
+    )
+    assert len(staged.restart_summaries) == len(candidates)
+    assert staged.restart_summaries == serial.restart_summaries
+
+
+def test_prebuilt_full_qrf_cost_context_matches_default_and_reuses_setup(monkeypatch) -> None:
+    calls = {"build_canonical_game": 0}
+    horizon = 3
+    state_dim = 8
+    command_dim = 2
+
+    def fake_build_canonical_game():
+        calls["build_canonical_game"] += 1
+        schedule = SimpleNamespace(
+            Q=jnp.stack([jnp.eye(state_dim) * (idx + 1.0) for idx in range(horizon)]),
+            R=jnp.stack([jnp.eye(command_dim) * (idx + 0.5) for idx in range(horizon)]),
+            Q_f=jnp.eye(state_dim) * 4.0,
+        )
+        return None, schedule
+
+    monkeypatch.setattr(audit, "build_canonical_game", fake_build_canonical_game)
+
+    states = jnp.arange(2 * horizon * state_dim, dtype=jnp.float64).reshape(2, horizon, state_dim)
+    states = states / 100.0
+    commands = jnp.arange(2 * horizon * command_dim, dtype=jnp.float64).reshape(
+        2,
+        horizon,
+        command_dim,
+    )
+    commands = commands / 10.0
+    initial_states = jnp.asarray([[0.1] * state_dim, [0.2] * state_dim], dtype=jnp.float64)
+    target_pos = jnp.asarray([0.05, -0.025], dtype=jnp.float64)
+
+    context = audit._full_qrf_rollout_cost_context(
+        initial_states=initial_states,
+        target_pos=target_pos,
+    )
+    assert calls["build_canonical_game"] == 1
+
+    with_context = audit._jax_full_qrf_rollout_cost(
+        states=states,
+        commands=commands,
+        context=context,
+    )
+    second_with_context = audit._jax_full_qrf_rollout_cost(
+        states=states,
+        commands=commands,
+        context=context,
+    )
+    assert calls["build_canonical_game"] == 1
+
+    default = audit._jax_full_qrf_rollout_cost(
+        states=states,
+        commands=commands,
+        initial_states=initial_states,
+        target_pos=target_pos,
+    )
+    assert calls["build_canonical_game"] == 2
+
+    for key, value in default.items():
+        np.testing.assert_allclose(with_context[key], value, rtol=1e-12, atol=1e-12)
+        np.testing.assert_allclose(second_with_context[key], value, rtol=1e-12, atol=1e-12)
