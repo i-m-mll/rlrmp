@@ -246,6 +246,7 @@ def add_band_trace(fig: go.Figure, profile: VelocityProfile) -> None:
     upper = profile.mean + profile.std
     lower = profile.mean - profile.std
     color = profile.run.color
+    legend_group = f"{profile.run.experiment}::{profile.run.run_id}"
     fig.add_trace(
         go.Scatter(
             x=np.concatenate([profile.time_s, profile.time_s[::-1]]),
@@ -254,6 +255,8 @@ def add_band_trace(fig: go.Figure, profile: VelocityProfile) -> None:
             fillcolor=hex_to_rgba(color, 0.13),
             line={"color": "rgba(0,0,0,0)"},
             hoverinfo="skip",
+            legendgroup=legend_group,
+            name=profile.run.label,
             showlegend=False,
         )
     )
@@ -263,6 +266,7 @@ def add_band_trace(fig: go.Figure, profile: VelocityProfile) -> None:
             y=profile.mean,
             mode="lines",
             line={"color": color, "width": 2.5},
+            legendgroup=legend_group,
             name=profile.run.label,
         )
     )
@@ -294,7 +298,7 @@ def write_outputs(profiles: list[VelocityProfile]) -> dict[str, Any]:
         height=560,
         margin={"l": 72, "r": 24, "t": 72, "b": 68},
         hovermode="x unified",
-        legend={"orientation": "h", "y": -0.22, "x": 0.0},
+        legend={"orientation": "h", "y": -0.22, "x": 0.0, "groupclick": "togglegroup"},
     )
     fig.update_xaxes(title_text="Time (s)", zeroline=False)
     fig.update_yaxes(title_text="Target-radial velocity (m/s)", zeroline=True)
