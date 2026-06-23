@@ -7,6 +7,7 @@ import jax.numpy as jnp
 from rlrmp.analysis.math.cs_game_card import (
     OUTPUT_FEEDBACK_CERTIFICATE_GAMMA_FACTOR,
     PRIMARY_GAMMA_FACTOR,
+    build_no_integrator_game,
     materialize_reference,
 )
 from rlrmp.analysis.math.hinf_riccati import simulate_closed_loop
@@ -21,6 +22,7 @@ from rlrmp.analysis.math.output_feedback import (
     kalman_estimator_joint_matrices,
     make_cs_output_feedback_initial_state,
     measurement_covariance,
+    process_covariance,
     output_feedback_cost,
     output_feedback_lqr_bellman_objective,
     position_velocity_observation_config,
@@ -69,6 +71,17 @@ def test_position_velocity_observation_matrix_selects_oldest_4d_feedback_block()
     assert jnp.allclose(H[:, :40], 0.0)
     assert jnp.allclose(H[:, 40:44], jnp.eye(4))
     assert jnp.allclose(H[:, 44:48], 0.0)
+
+
+def test_six_dimensional_process_covariance_does_not_populate_lag_positions() -> None:
+    plant, _schedule = build_no_integrator_game()
+    config = OutputFeedbackConfig(n_phys=6)
+    Q_proc = process_covariance(plant, config)
+
+    assert plant.n == 36
+    assert Q_proc.shape == (36, 36)
+    assert jnp.any(jnp.abs(Q_proc[4:6, 4:6]) > 0.0)
+    assert jnp.allclose(Q_proc[6:8, 6:8], 0.0)
 
 
 def test_kalman_estimator_clean_lqr_matches_true_state_rollout() -> None:

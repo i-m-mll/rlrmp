@@ -204,8 +204,9 @@ def process_covariance(
     """Return the C&S process covariance proxy for estimator recursions."""
 
     Q_proc = config.process_covariance_scale * (plant.B @ plant.B.T)
-    top_force = Q_proc[4:6, 4:6]
-    Q_proc = Q_proc.at[6:8, 6:8].set(top_force)
+    if config.n_phys >= 8:
+        top_force = Q_proc[4:6, 4:6]
+        Q_proc = Q_proc.at[6:8, 6:8].set(top_force)
     return 0.5 * (Q_proc + Q_proc.T)
 
 

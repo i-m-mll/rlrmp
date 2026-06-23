@@ -1,0 +1,104 @@
+{
+  "schema_version": "rlrmp.runpod_launch_spec.v1",
+  "issue": "9727d79",
+  "run_id": "h0_hinf_6d_standard_graph_distillation",
+  "launch_status": "not_launched",
+  "user_confirmed": false,
+  "confirmed_in_conversation": false,
+  "confirmation_scope": "No billable RunPod acquisition or training launch is authorized by this preflight spec. Before launch, present this table and get explicit user confirmation in the current conversation.",
+  "code": {
+    "repo": "rlrmp",
+    "branch": "feature/9727d79-distillation-training-entry",
+    "commit": null,
+    "commit_policy": "Use the committed branch head produced by the corrected standard-graph preflight pass.",
+    "run_spec": "results/9727d79/runs/h0_hinf_6d_standard_graph_distillation.json"
+  },
+  "remote": {
+    "provider": "runpod",
+    "cloud_type": "SECURE",
+    "gpu": "NVIDIA GeForce RTX 5090",
+    "gpu_count": 1,
+    "image": "runpod/pytorch:1.0.3-cu1281-torch290-ubuntu2204",
+    "requires_preflight": [
+      "Verify Docker image tag exists before pod create.",
+      "Check secure RTX 5090 availability by datacenter.",
+      "After pod create, poll the .ssh object and prove SSH with nvidia-smi before setup."
+    ]
+  },
+  "launch_gate_table": [
+    {
+      "field": "Run id",
+      "value": "h0_hinf_6d_standard_graph_distillation"
+    },
+    {
+      "field": "Tracked run spec",
+      "value": "results/9727d79/runs/h0_hinf_6d_standard_graph_distillation.json"
+    },
+    {
+      "field": "Output directory",
+      "value": "_artifacts/9727d79/runs/h0_hinf_6d_standard_graph_distillation"
+    },
+    {
+      "field": "Student graph",
+      "value": "setup_task_model_pair h0 Feedbax GRU, hidden size 180, 5 replicates"
+    },
+    {
+      "field": "Controller inputs",
+      "value": "6D force-filter feedback only; no previous-action/action-history network input"
+    },
+    {
+      "field": "Task distribution",
+      "value": "target-relative multitarget distribution inherited from 020a65b h0 no-PGD"
+    },
+    {
+      "field": "Optimizer",
+      "value": "AdamW, lr 3e-3, warmup/cosine schedule, gradient clip 5"
+    },
+    {
+      "field": "Training size",
+      "value": "12000 batches, batch size 64, vectorized 5-replicate axis, no PGD"
+    },
+    {
+      "field": "Distillation-only differences",
+      "value": "6D H-infinity teacher loading plus clean-action, perturbation-response, directional-JVP, and rollout-anchor losses"
+    }
+  ],
+  "training_command": [
+    "env",
+    "PYTHONPATH=src",
+    "uv",
+    "run",
+    "--no-sync",
+    "python",
+    "scripts/train_guided_distillation.py",
+    "--run-spec",
+    "results/9727d79/runs/h0_hinf_6d_standard_graph_distillation.json",
+    "--full-train",
+    "--resume"
+  ],
+  "expected_artifacts": {
+    "remote_output_dir": "_artifacts/9727d79/runs/h0_hinf_6d_standard_graph_distillation",
+    "files": [
+      "training_summary.json",
+      "loss_history.json",
+      "run_spec_snapshot.json",
+      "trained_model.eqx",
+      "checkpoints/checkpoint_latest",
+      "checkpoints/checkpoint_index.json",
+      "checkpoints/checkpoint_*/model.eqx",
+      "checkpoints/checkpoint_*/optimizer_state.eqx",
+      "checkpoints/checkpoint_*/batch_keys.npy",
+      "checkpoints/checkpoint_*/loss_history.json",
+      "checkpoints/checkpoint_*/metadata.json"
+    ],
+    "forbidden_corrected_run_outputs": [
+      "student_model_rep*.eqx",
+      "checkpoints/checkpoint_*/models.eqx"
+    ]
+  },
+  "monitoring": {
+    "startup_check": "Verify SSH, nvidia-smi, CUDA JAX import, and BATCH progress after JIT.",
+    "progress_signal": "BATCH phase=guided_distillation_vectorized batch=<i>/<n> loss=<x> replicates=5 elapsed=<s>s",
+    "post_run_entrypoint": "scripts/post_run.sh --issue 9727d79 --run h0_hinf_6d_standard_graph_distillation --artifacts-src <source>"
+  }
+}

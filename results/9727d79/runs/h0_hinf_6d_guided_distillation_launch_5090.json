@@ -1,0 +1,114 @@
+{
+  "schema_version": "rlrmp.runpod_launch_spec.v1",
+  "issue": "9727d79",
+  "run_id": "h0_hinf_6d_guided_distillation",
+  "user_confirmed": true,
+  "confirmed_in_conversation": true,
+  "confirmation_scope": "Acquire one secure RunPod RTX 5090 and run the first guided 6D H-infinity h0 GRU distillation training job. Stop and debug if batch progress is materially slow after startup/JIT.",
+  "code": {
+    "repo": "rlrmp",
+    "branch": "feature/9727d79-distillation-training-entry",
+    "commit": "23ca68678aff60809330c546d9688654a7e99c4c",
+    "run_spec": "results/9727d79/runs/h0_hinf_6d_guided_distillation.json"
+  },
+  "remote": {
+    "provider": "runpod",
+    "cloud_type": "SECURE",
+    "gpu": "NVIDIA GeForce RTX 5090",
+    "gpu_count": 1,
+    "image": "runpod/pytorch:1.0.3-cu1281-torch290-ubuntu2204"
+  },
+  "training_command": [
+    "env",
+    "PYTHONPATH=src",
+    "uv",
+    "run",
+    "--no-sync",
+    "python",
+    "scripts/train_guided_distillation.py",
+    "--run-spec",
+    "results/9727d79/runs/h0_hinf_6d_guided_distillation.json",
+    "--full-train",
+    "--resume"
+  ],
+  "run_contract": {
+    "teacher": "6D output-feedback H-infinity package from issue 376d023",
+    "student": "GRU hidden 180 with h0 encoder",
+    "n_replicates": 5,
+    "replicate_execution": "vectorized batched ensemble axis via Equinox/JAX vmap",
+    "batch_size": 64,
+    "n_batches": 12000,
+    "checkpointing": {
+      "enabled": true,
+      "interval_batches": 500,
+      "latest_pointer": "checkpoints/checkpoint_latest",
+      "resumable_state": [
+        "batched model",
+        "optimizer state",
+        "completed batch",
+        "per-replicate batch keys",
+        "loss history so far",
+        "run/config metadata"
+      ]
+    },
+    "learning_rate": 0.003,
+    "lr_schedule": "warmup_cosine",
+    "lr_warmup_batches": 500,
+    "gradient_clip_norm": 5.0,
+    "loss_weights": {
+      "clean_action": 1.0,
+      "perturbation_response": 1.0,
+      "input_output_jvp": 0.25,
+      "student_forced_rollout_anchor": 0.25
+    },
+    "forcing_schedule": [
+      {
+        "phase": "teacher_forced_warm_start",
+        "start_batch": 0,
+        "end_batch": 1500,
+        "student_forcing_fraction": 0.0
+      },
+      {
+        "phase": "mixed_teacher_student_forcing",
+        "start_batch": 1500,
+        "end_batch": 4000,
+        "student_forcing_fraction": 0.5
+      },
+      {
+        "phase": "mostly_student_forced",
+        "start_batch": 4000,
+        "end_batch": 12000,
+        "student_forcing_fraction": 0.9
+      }
+    ]
+  },
+  "monitoring": {
+    "startup_check": "Verify SSH, nvidia-smi, CUDA JAX import, and BATCH progress after JIT.",
+    "slow_batch_rule": "If early post-JIT BATCH lines imply materially slower-than-expected progress for a supervised analytical-bank trainer, stop training and the pod, then debug before relaunch.",
+    "progress_signal": "BATCH phase=guided_distillation_vectorized batch=<i>/<n> loss=<x> replicates=5 elapsed=<s>s"
+  },
+  "expected_artifacts": {
+    "remote_output_dir": "_artifacts/9727d79/runs/h0_hinf_6d_guided_distillation",
+    "files": [
+      "training_summary.json",
+      "loss_history.json",
+      "run_spec_snapshot.json",
+      "checkpoints/checkpoint_latest",
+      "checkpoints/checkpoint_index.json",
+      "checkpoints/checkpoint_*/models.eqx",
+      "checkpoints/checkpoint_*/optimizer_state.eqx",
+      "checkpoints/checkpoint_*/batch_keys.npy",
+      "checkpoints/checkpoint_*/loss_history.json",
+      "checkpoints/checkpoint_*/metadata.json",
+      "student_model_rep0.eqx",
+      "student_model_rep1.eqx",
+      "student_model_rep2.eqx",
+      "student_model_rep3.eqx",
+      "student_model_rep4.eqx"
+    ]
+  },
+  "known_limitations": [
+    "This first trainer uses analytical plant rollouts and a local observation-space affine teacher K_t @ pinv(C) over the 6D external feedback bank.",
+    "It is not a full Feedbax task rollout and does not itself materialize the standard certificate."
+  ]
+}
