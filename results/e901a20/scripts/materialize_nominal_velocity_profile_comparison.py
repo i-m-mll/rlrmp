@@ -20,6 +20,10 @@ from feedbax.models.networks import MaskedLinear
 from jax_cookbook import load_with_hyperparameters
 
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
+from rlrmp.analysis.pipelines.gru_checkpoint_selection import (
+    ReplicateCheckpointSelection,
+    select_validation_checkpoints_for_run,
+)
 from rlrmp.disturbance import PLANT_INTERVENOR_LABEL
 from rlrmp.io import update_marked_section
 from rlrmp.paths import (
@@ -48,6 +52,11 @@ NO_PGD_SPLIT_TOPIC = "no_pgd_heldout_split"
 NO_PGD_SPLIT_MARKER = "no_pgd_heldout_split"
 NO_PGD_CROSSED_TOPIC = "no_pgd_crossed_target_grid"
 NO_PGD_CROSSED_MARKER = "no_pgd_crossed_target_grid"
+OLD_COMPAT_FIRST_TARGET_TOPIC = "old_compatible_first_target_velocity"
+OLD_COMPAT_FIRST_TARGET_MARKER = "old_compatible_first_target_velocity"
+OLD_COMPAT_ALL_TARGET_TOPIC = "old_compatible_all_target_aligned_velocity"
+OLD_COMPAT_ALL_TARGET_MARKER = "old_compatible_all_target_aligned_velocity"
+OLD_COMPAT_N_ROLLOUT_REPEATS = 64
 NUMERIC_SCALAR_TYPES = (bool, int, float, np.bool_, np.integer, np.floating)
 
 
@@ -104,6 +113,24 @@ class CrossedPanel:
     evaluation: NominalEvaluation
     primary_profile: VelocityProfile
     secondary_profile: VelocityProfile
+
+
+@dataclass(frozen=True)
+class CompanionProfile:
+    """One validation-selected stochastic companion velocity profile."""
+
+    run: RunRef
+    time_s: np.ndarray
+    mean: np.ndarray
+    std: np.ndarray
+    n_replicates: int
+    n_target_conditions: int
+    n_rollout_repeats: int
+    target_distance_min_m: float
+    target_distance_max_m: float
+    peak_mean_velocity: float
+    time_of_peak_mean_velocity_s: float
+    selected_checkpoints: tuple[ReplicateCheckpointSelection, ...]
 
 
 NO_PGD_REF = RunRef(
@@ -400,6 +427,59 @@ def load_trained_model(ref: RunRef, hps: TreeNamespace, seed: int) -> Any:
             ) from restore_error
 
 
+def checkpoint_model_template(hps: TreeNamespace, seed: int) -> Any:
+    """Return a checkpoint model template for normal or legacy checkpoint leaves."""
+
+    return setup_task_model_pair(hps, key=jr.PRNGKey(seed)).model
+
+
+def load_checkpoint_model_compatible(path: Path, hps: TreeNamespace, seed: int) -> Any:
+    """Load one checkpoint model with the same legacy compatibility as final models."""
+
+    template = checkpoint_model_template(hps, seed)
+    try:
+        return eqx.tree_deserialise_leaves(path, template)
+    except Exception:
+        n_replicates = int(hps.model.n_replicates)
+        legacy_template = legacy_static_numeric_template(
+            force_legacy_masked_readout(template),
+            n_replicates,
+        )
+        model = eqx.tree_deserialise_leaves(
+            path,
+            legacy_template,
+            filter_spec=legacy_static_numeric_filter,
+        )
+        return restore_legacy_static_numeric_metadata(model)
+
+
+def load_validation_selected_model(ref: RunRef, run_spec: dict[str, Any], hps: TreeNamespace) -> tuple[
+    tuple[Any, ...],
+    tuple[ReplicateCheckpointSelection, ...],
+]:
+    """Load validation-selected checkpoint models for per-replicate evaluation."""
+
+    n_replicates = int(hps.model.n_replicates)
+    seed = int(run_spec.get("seed", 42))
+    selections = tuple(
+        select_validation_checkpoints_for_run(
+            experiment=ref.experiment,
+            run_id=ref.run_id,
+            repo_root=REPO_ROOT,
+        )
+    )
+    if len(selections) != n_replicates:
+        raise ValueError(
+            f"Selection count {len(selections)} does not match n_replicates={n_replicates}"
+        )
+    models = tuple(
+        load_checkpoint_model_compatible(selection.checkpoint_path / "model.eqx", hps, seed)
+        for selection in selections
+    )
+
+    return models, selections
+
+
 def target_adapter_from_pair(pair: Any) -> Any:
     """Return the target-relative task adapter from the task stack."""
 
@@ -450,6 +530,42 @@ def target_angle_deg(targets_m: np.ndarray) -> np.ndarray:
     """Return target angles in degrees on [0, 360)."""
 
     return np.mod(np.degrees(np.arctan2(targets_m[:, 1], targets_m[:, 0])), 360.0)
+
+
+def trial_count_from_specs(trial_specs: Any) -> int:
+    """Return the leading trial-axis length from a trial-spec tree."""
+
+    for target in getattr(trial_specs, "targets", {}).values():
+        value = getattr(target, "value", None)
+        shape = getattr(value, "shape", None)
+        if shape is not None and len(shape) >= 1:
+            return int(shape[0])
+    for init in getattr(trial_specs, "inits", {}).values():
+        shape = getattr(init, "shape", None)
+        if shape is not None and len(shape) >= 1:
+            return int(shape[0])
+    for value in getattr(trial_specs, "inputs", {}).values():
+        shape = getattr(value, "shape", None)
+        if shape is not None and len(shape) >= 1:
+            return int(shape[0])
+    raise ValueError("Could not infer trial count from trial specs")
+
+
+def repeat_trial_axis(trial_specs: Any, repeats: int, *, first_only: bool) -> Any:
+    """Repeat trial-axis leaves for stochastic old-compatible evaluation."""
+
+    if repeats < 1:
+        raise ValueError("repeats must be positive")
+    source_trials = trial_count_from_specs(trial_specs)
+
+    def repeat_leaf(leaf: Any) -> Any:
+        shape = getattr(leaf, "shape", None)
+        if shape is not None and len(shape) >= 1 and shape[0] == source_trials:
+            source = leaf[:1] if first_only else leaf
+            return jnp.repeat(source, repeats, axis=0)
+        return leaf
+
+    return jt.map(repeat_leaf, trial_specs)
 
 
 def profile_from_values(
@@ -575,6 +691,155 @@ def evaluate_profile(ref: RunRef) -> VelocityProfile:
         evaluation.normalized_values,
         evaluation.target_distance,
     )
+
+
+def companion_profile_from_values(
+    ref: RunRef,
+    *,
+    time_s: np.ndarray,
+    values: np.ndarray,
+    target_distance: np.ndarray,
+    n_target_conditions: int,
+    n_rollout_repeats: int,
+    selected_checkpoints: tuple[ReplicateCheckpointSelection, ...],
+) -> CompanionProfile:
+    """Summarize stochastic companion profiles over replicates and trials."""
+
+    n_replicates = int(values.shape[0])
+    pooled = values.reshape(n_replicates * values.shape[1], values.shape[-1])
+    mean = np.mean(pooled, axis=0)
+    std = np.std(pooled, axis=0, ddof=1)
+    peak_idx = int(np.nanargmax(mean))
+    return CompanionProfile(
+        run=ref,
+        time_s=time_s,
+        mean=mean,
+        std=std,
+        n_replicates=n_replicates,
+        n_target_conditions=n_target_conditions,
+        n_rollout_repeats=n_rollout_repeats,
+        target_distance_min_m=float(np.min(target_distance)),
+        target_distance_max_m=float(np.max(target_distance)),
+        peak_mean_velocity=float(mean[peak_idx]),
+        time_of_peak_mean_velocity_s=float(time_s[peak_idx]),
+        selected_checkpoints=selected_checkpoints,
+    )
+
+
+def evaluate_validation_selected_stochastic_values(
+    ref: RunRef,
+    *,
+    first_target_only: bool,
+    raw_x_velocity: bool,
+    length_normalize: bool,
+    n_rollout_repeats: int = OLD_COMPAT_N_ROLLOUT_REPEATS,
+) -> CompanionProfile:
+    """Evaluate one row with validation-selected checkpoints and repeated rollouts."""
+
+    run_spec = load_run_spec(ref)
+    hps = dict_to_namespace(normalize_gru_hps(run_spec["hps"]), to_type=TreeNamespace)
+    seed = int(run_spec.get("seed", 42))
+    n_replicates = int(hps.model.n_replicates)
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
+    base_trials = nominalize_trial_specs(pair.task.validation_trials)
+    base_trial_count = trial_count_from_specs(base_trials)
+    trial_specs = repeat_trial_axis(
+        base_trials,
+        n_rollout_repeats,
+        first_only=first_target_only,
+    )
+    selected_models, selected_checkpoints = load_validation_selected_model(ref, run_spec, hps)
+    n_trials = int(next(iter(trial_specs.targets.values())).value.shape[0])
+    init_pos = initial_effector_field(trial_specs, "pos")
+    init_vel = initial_effector_field(trial_specs, "vel")
+    goal = final_goal_position(trial_specs)
+    direction = goal - init_pos
+    direction_norm = jnp.linalg.norm(direction, axis=-1, keepdims=True)
+    direction_unit = direction / jnp.maximum(direction_norm, 1e-12)
+
+    def is_replicate_array(leaf: Any) -> bool:
+        return eqx.is_array(leaf) and leaf.ndim >= 1 and leaf.shape[0] == n_replicates
+
+    def replicate_model_from_checkpoint(model: Any, replicate: int) -> Any:
+        model_arrays, model_other = eqx.partition(model, is_replicate_array)
+
+        def select_replicate(leaf: Any) -> Any:
+            if eqx.is_array(leaf) and leaf.ndim >= 1 and leaf.shape[0] == n_replicates:
+                return leaf[replicate]
+            return leaf
+
+        return eqx.combine(jt.map(select_replicate, model_arrays), model_other)
+
+    def eval_one_replicate(replicate_model: Any, key: Any) -> jnp.ndarray:
+        states = pair.task.eval_trials(replicate_model, trial_specs, jr.split(key, n_trials))
+        velocity = jnp.concatenate(
+            [init_vel[:, None, :], states.mechanics.effector.vel],
+            axis=1,
+        )
+        if raw_x_velocity:
+            return velocity[..., 0]
+        projected = jnp.sum(velocity * direction_unit[:, None, :], axis=-1)
+        if length_normalize:
+            projected = projected / jnp.maximum(direction_norm[:, 0, None], 1e-12)
+        return projected
+
+    values = jnp.stack(
+        [
+            eval_one_replicate(
+                replicate_model_from_checkpoint(model, selection.replicate),
+                key,
+            )
+            for model, selection, key in zip(
+                selected_models,
+                selected_checkpoints,
+                jr.split(jr.PRNGKey(0), n_replicates),
+                strict=True,
+            )
+        ],
+        axis=0,
+    )
+    values_np = np.asarray(values, dtype=np.float64)
+    target_distance = np.asarray(direction_norm[..., 0], dtype=np.float64)
+    dt = float(run_spec.get("game_card", {}).get("dt", getattr(hps, "dt", 0.01)))
+    time_s = np.arange(values_np.shape[-1], dtype=np.float64) * dt
+    n_target_conditions = 1 if first_target_only else base_trial_count
+    return companion_profile_from_values(
+        ref,
+        time_s=time_s,
+        values=values_np,
+        target_distance=target_distance,
+        n_target_conditions=n_target_conditions,
+        n_rollout_repeats=n_rollout_repeats,
+        selected_checkpoints=selected_checkpoints,
+    )
+
+
+def evaluate_old_compatible_first_target_profiles() -> list[CompanionProfile]:
+    """Evaluate first-target old-compatible profiles for all comparison rows."""
+
+    return [
+        evaluate_validation_selected_stochastic_values(
+            ref,
+            first_target_only=True,
+            raw_x_velocity=True,
+            length_normalize=False,
+        )
+        for ref in RUNS
+    ]
+
+
+def evaluate_old_compatible_all_target_profiles() -> list[CompanionProfile]:
+    """Evaluate all-target aligned/scaled old-compatible profiles."""
+
+    return [
+        evaluate_validation_selected_stochastic_values(
+            ref,
+            first_target_only=False,
+            raw_x_velocity=False,
+            length_normalize=True,
+        )
+        for ref in RUNS
+    ]
 
 
 def held_out_target_mask(run_spec: dict[str, Any], trial_specs: Any) -> np.ndarray:
@@ -1329,6 +1594,198 @@ def write_no_pgd_crossed_outputs(panels: list[CrossedPanel]) -> dict[str, Any]:
     return manifest
 
 
+def add_companion_trace(fig: go.Figure, profile: CompanionProfile) -> None:
+    """Add a companion mean trace with a paired one-SD band."""
+
+    upper = profile.mean + profile.std
+    lower = profile.mean - profile.std
+    color = profile.run.color
+    legend_group = f"{profile.run.experiment}::{profile.run.run_id}"
+    fig.add_trace(
+        go.Scatter(
+            x=np.concatenate([profile.time_s, profile.time_s[::-1]]),
+            y=np.concatenate([upper, lower[::-1]]),
+            fill="toself",
+            fillcolor=hex_to_rgba(color, 0.13),
+            line={"color": "rgba(0,0,0,0)"},
+            hoverinfo="skip",
+            legendgroup=legend_group,
+            name=profile.run.label,
+            showlegend=False,
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=profile.time_s,
+            y=profile.mean,
+            mode="lines",
+            line={"color": color, "width": 2.5},
+            legendgroup=legend_group,
+            name=profile.run.label,
+        )
+    )
+
+
+def companion_profile_row(profile: CompanionProfile) -> dict[str, Any]:
+    """Return JSON-ready summary for one companion profile."""
+
+    return {
+        "experiment": profile.run.experiment,
+        "run_id": profile.run.run_id,
+        "label": profile.run.label,
+        "n_replicates": profile.n_replicates,
+        "n_target_conditions": profile.n_target_conditions,
+        "n_rollout_repeats_per_target_per_replicate": profile.n_rollout_repeats,
+        "n_pooled_profiles": profile.n_replicates
+        * profile.n_target_conditions
+        * profile.n_rollout_repeats,
+        "target_distance_min_m": profile.target_distance_min_m,
+        "target_distance_max_m": profile.target_distance_max_m,
+        "peak_mean_velocity": profile.peak_mean_velocity,
+        "time_of_peak_mean_velocity_s": profile.time_of_peak_mean_velocity_s,
+        "selected_checkpoints": [
+            selection.to_json(repo_root=REPO_ROOT) for selection in profile.selected_checkpoints
+        ],
+    }
+
+
+def write_old_compatible_outputs(
+    profiles: list[CompanionProfile],
+    *,
+    topic: str,
+    marker: str,
+    title: str,
+    yaxis_title: str,
+    velocity_definition: str,
+    evaluation_lens: str,
+    unit_label: str,
+) -> dict[str, Any]:
+    """Write one old-compatible companion figure, data, manifest, spec, and note."""
+
+    figure_dir = mkdir_p(figure_artifact_dir(EXPERIMENT, topic))
+    spec_dir = mkdir_p(figure_spec_dir(EXPERIMENT, topic))
+    notes_dir = mkdir_p(REPO_ROOT / "results" / EXPERIMENT / "notes")
+
+    fig = go.Figure()
+    for profile in profiles:
+        add_companion_trace(fig, profile)
+    fig.update_layout(
+        title=title,
+        width=960,
+        height=560,
+        margin={"l": 72, "r": 24, "t": 72, "b": 68},
+        hovermode="x unified",
+        legend={"orientation": "h", "y": -0.22, "x": 0.0, "groupclick": "togglegroup"},
+    )
+    fig.update_xaxes(title_text="Time (s)", zeroline=False)
+    fig.update_yaxes(title_text=yaxis_title, zeroline=True)
+
+    html_path = figure_dir / f"{topic}.html"
+    fig.write_html(html_path, include_plotlyjs="cdn")
+    data_path = figure_dir / f"{topic}.npz"
+    np.savez_compressed(
+        data_path,
+        **{
+            f"{profile.run.experiment}__{profile.run.run_id}__time_s": profile.time_s
+            for profile in profiles
+        },
+        **{
+            f"{profile.run.experiment}__{profile.run.run_id}__mean": profile.mean
+            for profile in profiles
+        },
+        **{
+            f"{profile.run.experiment}__{profile.run.run_id}__std": profile.std
+            for profile in profiles
+        },
+    )
+
+    rows = [companion_profile_row(profile) for profile in profiles]
+    manifest = {
+        "schema_version": f"rlrmp.e901a20.{topic}.v1",
+        "figure": repo_relative(html_path),
+        "data": repo_relative(data_path),
+        "evaluation_lens": evaluation_lens,
+        "velocity_definition": velocity_definition,
+        "band_definition": (
+            "one standard deviation over pooled replicate x target-condition x stochastic "
+            "rollout profiles"
+        ),
+        "checkpoint_policy": "validation_selected_per_replicate_sparse_history",
+        "stochastic_runtime_policy": (
+            f"{OLD_COMPAT_N_ROLLOUT_REPEATS} stochastic repeats per target condition per "
+            "replicate, using jr.split(PRNGKey(0), n_replicates)"
+        ),
+        "runs": rows,
+    }
+    manifest_path = figure_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    figure_link = spec_dir / "figure.html"
+    if figure_link.exists() or figure_link.is_symlink():
+        figure_link.unlink()
+    figure_link.symlink_to(os.path.relpath(html_path, start=figure_link.parent))
+    spec = {
+        "schema_version": "rlrmp.figure_spec.v1",
+        "topic": topic,
+        "source_script": repo_relative(Path(__file__)),
+        "manifest": repo_relative(manifest_path),
+        "figure": repo_relative(html_path),
+        "figure_link": repo_relative(figure_link),
+        "data": repo_relative(data_path),
+        "evaluation_lens": evaluation_lens,
+        "velocity_definition": velocity_definition,
+        "band_definition": manifest["band_definition"],
+        "checkpoint_policy": manifest["checkpoint_policy"],
+        "stochastic_runtime_policy": manifest["stochastic_runtime_policy"],
+        "runs": rows,
+        "inputs": [
+            {
+                "run_spec": repo_relative(run_spec_path(profile.run.experiment, profile.run.run_id)),
+                "artifact_dir": repo_relative(artifact_dir(profile.run)),
+            }
+            for profile in profiles
+        ],
+    }
+    spec_path = spec_dir / "spec.json"
+    spec_path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    table_lines = [
+        f"| Row | Peak mean velocity ({unit_label}) | Time of peak (s) | Targets | Repeats/target/rep | Pooled profiles |",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
+    for row in rows:
+        table_lines.append(
+            f"| `{row['label']}` | "
+            f"{row['peak_mean_velocity']:.4f} | "
+            f"{row['time_of_peak_mean_velocity_s']:.3f} | "
+            f"{row['n_target_conditions']} | "
+            f"{row['n_rollout_repeats_per_target_per_replicate']} | "
+            f"{row['n_pooled_profiles']} |"
+        )
+    note = "\n".join(
+        [
+            f"## {title}",
+            "",
+            velocity_definition,
+            "",
+            "All rows use validation-selected per-replicate checkpoints and 64 stochastic "
+            "rollout repeats per target condition, matching the old pilot-figure checkpoint "
+            "and repeat convention while keeping the requested target set for this panel.",
+            "",
+            *table_lines,
+            "",
+            f"- Figure: `{repo_relative(html_path)}`",
+            f"- Data: `{repo_relative(data_path)}`",
+            f"- Manifest: `{repo_relative(manifest_path)}`",
+            "",
+        ]
+    )
+    note_path = notes_dir / f"{topic}.md"
+    update_marked_section(note_path, marker, note)
+    manifest["note"] = repo_relative(note_path)
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return manifest
+
+
 def main() -> None:
     """Evaluate all rows and materialize outputs."""
 
@@ -1336,10 +1793,39 @@ def main() -> None:
     comparison_manifest = write_outputs(profiles)
     no_pgd_split_manifest = write_no_pgd_split_outputs(evaluate_no_pgd_heldout_split())
     no_pgd_crossed_manifest = write_no_pgd_crossed_outputs(evaluate_no_pgd_crossed_panels())
+    first_target_manifest = write_old_compatible_outputs(
+        evaluate_old_compatible_first_target_profiles(),
+        topic=OLD_COMPAT_FIRST_TARGET_TOPIC,
+        marker=OLD_COMPAT_FIRST_TARGET_MARKER,
+        title="Old-compatible first-target velocity profiles",
+        yaxis_title="Forward velocity (m/s)",
+        velocity_definition=(
+            "First validation target only, repeated 64 times per replicate; curves show raw "
+            "x-axis effector velocity in m/s."
+        ),
+        evaluation_lens="validation_selected_first_target_stochastic_raw_x_velocity",
+        unit_label="m/s",
+    )
+    all_target_manifest = write_old_compatible_outputs(
+        evaluate_old_compatible_all_target_profiles(),
+        topic=OLD_COMPAT_ALL_TARGET_TOPIC,
+        marker=OLD_COMPAT_ALL_TARGET_MARKER,
+        title="Old-compatible all-target aligned velocity profiles",
+        yaxis_title="Target-radial velocity / reach length (1/s)",
+        velocity_definition=(
+            "All nominal validation targets, each repeated 64 times per replicate; curves "
+            "show effector velocity projected onto each trial's target direction and divided "
+            "by that trial's reach length."
+        ),
+        evaluation_lens="validation_selected_all_targets_stochastic_target_radial_length_normalized",
+        unit_label="1/s",
+    )
     print(
         json.dumps(
             {
+                "all_target_aligned_old_compatible": all_target_manifest,
                 "comparison": comparison_manifest,
+                "first_target_old_compatible": first_target_manifest,
                 "no_pgd_crossed_target_grid": no_pgd_crossed_manifest,
                 "no_pgd_heldout_split": no_pgd_split_manifest,
             },
