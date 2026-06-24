@@ -33,13 +33,12 @@ def _default_spec_args(**overrides) -> argparse.Namespace:
         "trainable_dtype": closed_loop_distillation.DEFAULT_TRAINABLE_DTYPE,
         "kinematics_trajectory_weight": 1.0,
         "velocity_weight": 1.0,
-        "endpoint_weight": 1.0,
-        "settling_weight": 0.5,
+        "endpoint_weight": 0.0,
+        "settling_weight": 0.0,
         "action_force_weight": 1.0,
         "perturbation_response_weight": 1.0,
         "input_output_jvp_weight": 0.25,
         "task_rollout_loss_weight": 0.0,
-        "n_jvp_directions": 16,
         "checkpoint_interval_batches": 500,
     }
     values.update(overrides)
@@ -97,12 +96,21 @@ def test_closed_loop_distillation_builds_a378b34_contract() -> None:
     assert spec["closed_loop_semantics"]["teacher_forced_feedback_bank_imitation"] is False
     assert spec["closed_loop_semantics"]["old_guided_trainer_is_main_path"] is False
     assert spec["loss_surface"]["weights"]["task_qr_rollout"] == 0.0
+    assert spec["loss_surface"]["weights"]["endpoint"] == 0.0
+    assert spec["loss_surface"]["weights"]["settling"] == 0.0
     assert spec["loss_surface"]["task_qr_rollout_loss_can_be_enabled_later"] is True
     assert spec["execution_target"]["billable_launch_authorized"] is False
     assert spec["checkpointing"]["interval_batches"] == 500
     assert spec["locked_spec_summary"]["n_batches"] == 12000
+    assert spec["loss_surface"]["components"]["directional_input_output_jvp"]["basis"] == (
+        "full_6d_coordinate_basis"
+    )
+    assert spec["loss_surface"]["components"]["directional_input_output_jvp"]["jacobian_shape"] == [
+        2,
+        6,
+    ]
     assert (
-        "dense Jacobian materialization is forbidden"
+        "full local 2x6 feedback-to-action Jacobian"
         in (spec["loss_surface"]["components"]["directional_input_output_jvp"]["implementation"])
     )
 
@@ -128,8 +136,8 @@ def test_closed_loop_distillation_cli_dry_run_smoke(
     assert status == 0
     assert payload["run_spec"]["issue"] == "a378b34"
     assert payload["smoke_preflight"]["finite"] is True
-    assert payload["smoke_preflight"]["implementation"] == "directional_jvp_vmap"
-    assert payload["smoke_preflight"]["shape"] == [3, 2, 1, 2]
+    assert payload["smoke_preflight"]["implementation"] == "full_local_jacobian_basis_jvp_vmap"
+    assert payload["smoke_preflight"]["shape"] == [6, 2, 1, 2]
     assert written["run_id"] == "h0_extlqg_6d_closed_loop_distillation"
 
 

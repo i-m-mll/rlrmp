@@ -56,8 +56,8 @@ class ClosedLoopLossWeights:
 
     kinematics_trajectory: float = 1.0
     velocity: float = 1.0
-    endpoint: float = 1.0
-    settling: float = 0.5
+    endpoint: float = 0.0
+    settling: float = 0.0
     action_force_trajectory: float = 1.0
     perturbation_response_trajectory: float = 1.0
     directional_input_output_jvp: float = 0.25
@@ -189,7 +189,6 @@ class ClosedLoopDistillationLoss(AbstractLoss):
 
     reference: ExtLQGClosedLoopReference
     weights: ClosedLoopLossWeights = eqx.field(static=True)
-    n_jvp_directions: int = eqx.field(default=16, static=True)
     label: str = eqx.field(default="closed_loop_extlqg_distillation", static=True)
 
     @jax.named_scope("rlrmp.ClosedLoopDistillationLoss")
@@ -199,7 +198,6 @@ class ClosedLoopDistillationLoss(AbstractLoss):
             trial_specs,
             model,
             reference=self.reference,
-            n_jvp_directions=self.n_jvp_directions,
         )
         weights = self.weights.summary()
         leaves = {
@@ -306,12 +304,11 @@ def build_closed_loop_distillation_spec(args: argparse.Namespace) -> dict[str, A
     run_spec_path = Path(_arg_value(args, "run_spec_output", run_spec_path_for(run_id)))
     output_dir = str(_arg_value(args, "output_dir", output_dir_for(run_id)))
     trainable_dtype = str(_arg_value(args, "trainable_dtype", DEFAULT_TRAINABLE_DTYPE))
-    n_jvp_directions = int(_arg_value(args, "n_jvp_directions", 16))
     weights = ClosedLoopLossWeights(
         kinematics_trajectory=float(_arg_value(args, "kinematics_trajectory_weight", 1.0)),
         velocity=float(_arg_value(args, "velocity_weight", 1.0)),
-        endpoint=float(_arg_value(args, "endpoint_weight", 1.0)),
-        settling=float(_arg_value(args, "settling_weight", 0.5)),
+        endpoint=float(_arg_value(args, "endpoint_weight", 0.0)),
+        settling=float(_arg_value(args, "settling_weight", 0.0)),
         action_force_trajectory=float(_arg_value(args, "action_force_weight", 1.0)),
         perturbation_response_trajectory=float(
             _arg_value(args, "perturbation_response_weight", 1.0)
@@ -391,8 +388,8 @@ def build_closed_loop_distillation_spec(args: argparse.Namespace) -> dict[str, A
             "reference_basis_note": (
                 "The extLQG package is 36D while the standard h0 student state is 48D; "
                 "the training loss matches shared observable behavior: position, velocity, "
-                "command/action, force-filter, endpoint/settling, perturbation response, "
-                "and local 6D feedback-to-action directional JVPs."
+                "command/action, force-filter, perturbation response, and the full local "
+                "2x6 feedback-to-action Jacobian computed by coordinate-basis JVPs."
             ),
         },
         "closed_loop_semantics": {
@@ -433,14 +430,9 @@ def build_closed_loop_distillation_spec(args: argparse.Namespace) -> dict[str, A
                     "enabled": weights.kinematics_trajectory > 0.0,
                     "weight": weights.kinematics_trajectory,
                 },
-                "velocity_endpoint_settling": {
-                    "enabled": any(
-                        weight > 0.0
-                        for weight in (weights.velocity, weights.endpoint, weights.settling)
-                    ),
-                    "velocity_weight": weights.velocity,
-                    "endpoint_weight": weights.endpoint,
-                    "settling_weight": weights.settling,
+                "velocity_trajectory": {
+                    "enabled": weights.velocity > 0.0,
+                    "weight": weights.velocity,
                 },
                 "action_force_trajectory": {
                     "enabled": weights.action_force_trajectory > 0.0,
@@ -453,11 +445,13 @@ def build_closed_loop_distillation_spec(args: argparse.Namespace) -> dict[str, A
                 "directional_input_output_jvp": {
                     "enabled": weights.directional_input_output_jvp > 0.0,
                     "weight": weights.directional_input_output_jvp,
-                    "n_directions": n_jvp_directions,
+                    "basis": "full_6d_coordinate_basis",
+                    "jacobian_shape": [2, 6],
                     "implementation": (
-                        "jax.linearize plus jax.vmap over deterministic directional "
-                        "probes through the controller-visible feedback map; dense "
-                        "Jacobian materialization is forbidden in the hot path"
+                        "jax.jvp plus jax.vmap over the six coordinate-basis directions "
+                        "of the controller-visible feedback input, yielding the full "
+                        "local 2x6 feedback-to-action Jacobian without dense Jacobian "
+                        "materialization in the training path"
                     ),
                 },
                 "task_qr_rollout": {
@@ -494,19 +488,19 @@ def build_closed_loop_distillation_spec(args: argparse.Namespace) -> dict[str, A
                 "NaN/Inf loss",
                 "teacher package/reference shape mismatch",
                 "smoke-train failure",
-                "no endpoint/settling improvement in early monitored losses",
+                "no position/velocity trajectory improvement in early monitored losses",
             ],
             "monitoring": [
                 "first JIT/compile completion",
                 "BATCH progress lines or trainer iteration losses",
-                "component losses for kinematics, action/force, settling, response, JVP",
+                "component losses for position, velocity, action/force, response, local Jacobian",
             ],
         },
         "post_run_analyses": [
-            "closed-loop kinematic and endpoint/settling summaries versus extLQG",
+            "closed-loop position and velocity summaries versus extLQG",
             "action/force trajectory mismatch",
             "perturbation-response trajectory mismatch",
-            "directional local feedback-to-action JVP mismatch",
+            "full local 2x6 feedback-to-action Jacobian mismatch",
             "standard certificate-style post-run diagnostics where applicable",
         ],
         "locked_spec_summary": {
@@ -520,7 +514,7 @@ def build_closed_loop_distillation_spec(args: argparse.Namespace) -> dict[str, A
         },
         "local_acceptance_checks": [
             "JSON run spec parses and validates with rlrmp.train.closed_loop_distillation.",
-            "Dry-run smoke checks directional-JVP code path without dense Jacobians.",
+            "Dry-run smoke checks full local-Jacobian basis-JVP code path.",
             "--smoke-train exercises Feedbax TaskTrainer/train_pair with a custom loss.",
             "--full-train requires explicit user launch approval, not a Feedbax hook blocker.",
         ],
@@ -642,17 +636,17 @@ def _last_window(values: jax.Array, width: int = 10) -> jax.Array:
     return values[..., start:, :]
 
 
-def _deterministic_feedback_directions(
-    feedback_history: jax.Array,
-    *,
-    n_directions: int,
-) -> jax.Array:
+def _coordinate_feedback_directions(feedback_history: jax.Array) -> jax.Array:
+    """Return full coordinate-basis directions for the local 6D feedback input."""
+
     feedback_history = jnp.asarray(feedback_history, dtype=jnp.float32)
-    size = int(np.prod((int(n_directions), *feedback_history.shape)))
-    phase = jnp.arange(size, dtype=feedback_history.dtype).reshape(
-        (int(n_directions), *feedback_history.shape)
+    feedback_dim = int(feedback_history.shape[-1])
+    basis = jnp.eye(feedback_dim, dtype=feedback_history.dtype)
+    direction_shape = (feedback_dim, *feedback_history.shape)
+    return jnp.broadcast_to(
+        basis.reshape((feedback_dim, *([1] * (feedback_history.ndim - 1)), feedback_dim)),
+        direction_shape,
     )
-    return 0.01 * jnp.sin(phase + 1.0)
 
 
 def _model_feedback_policy(model: Any, feedback_history: jax.Array) -> jax.Array:
@@ -674,38 +668,68 @@ def _model_feedback_policy(model: Any, feedback_history: jax.Array) -> jax.Array
     return jax.vmap(single)(feedback_history)
 
 
-def _directional_jvp_component(
+def _model_local_feedback_jvps(model: Any, feedback_history: jax.Array) -> jax.Array:
+    """Return full local feedback-to-action Jacobian columns by basis JVPs.
+
+    The local map is the per-step controller update ``feedback_t -> action_t``
+    with the recurrent carry entering that step held fixed. The returned tensor
+    has shape ``(feedback_dim, batch, time, action_dim)``.
+    """
+
+    net_node = model.nodes["net"]
+    feedback_history = jnp.asarray(feedback_history, dtype=jnp.float32)
+    feedback_dim = int(feedback_history.shape[-1])
+    basis = jnp.eye(feedback_dim, dtype=feedback_history.dtype)
+
+    def sequence_jvps(feedback: jax.Array) -> jax.Array:
+        hidden0 = net_node.h0_encoder(feedback[0])
+
+        def collect_pre_hidden(carry: jax.Array, value: jax.Array) -> tuple[jax.Array, jax.Array]:
+            next_hidden = net_node.net.hidden(value, carry)
+            return next_hidden, carry
+
+        _, hidden_before = jax.lax.scan(collect_pre_hidden, hidden0, feedback)
+
+        def step_jvps(hidden: jax.Array, value: jax.Array) -> jax.Array:
+            def action_for_feedback(local_feedback: jax.Array) -> jax.Array:
+                return net_node.net.readout(net_node.net.hidden(local_feedback, hidden))
+
+            return jax.vmap(
+                lambda direction: jax.jvp(action_for_feedback, (value,), (direction,))[1]
+            )(basis)
+
+        time_major = jax.vmap(step_jvps)(hidden_before, feedback)
+        return jnp.moveaxis(time_major, 0, 1)
+
+    return jax.vmap(sequence_jvps)(feedback_history).transpose(1, 0, 2, 3)
+
+
+def _teacher_local_feedback_jvps(
+    reference: ExtLQGClosedLoopReference,
+    feedback_history: jax.Array,
+) -> jax.Array:
+    """Return full local teacher feedback-to-action Jacobian columns."""
+
+    n_steps = int(feedback_history.shape[-2])
+    feedback_dim = int(feedback_history.shape[-1])
+    indices = jnp.clip(jnp.arange(n_steps), 0, reference.feedback_gains.shape[0] - 1)
+    gains = reference.feedback_gains[indices]
+    columns = jnp.moveaxis(gains[:, :, :feedback_dim], -1, 0)
+    return jnp.broadcast_to(
+        columns[:, None, :, :], (feedback_dim, feedback_history.shape[0], n_steps, 2)
+    )
+
+
+def _full_local_jacobian_component(
     *,
     model: Any,
     reference: ExtLQGClosedLoopReference,
     feedback_history: jax.Array,
-    n_jvp_directions: int,
 ) -> jax.Array:
     if feedback_history.shape[-1] != reference.observation_matrix.shape[0]:
         return jnp.zeros(feedback_history.shape[0], dtype=jnp.float32)
-    action_history = jnp.zeros((*feedback_history.shape[:-1], 2), dtype=feedback_history.dtype)
-    feedback_dirs = _deterministic_feedback_directions(
-        feedback_history,
-        n_directions=n_jvp_directions,
-    )
-    action_dirs = jnp.zeros(
-        (int(n_jvp_directions), *action_history.shape),
-        dtype=feedback_history.dtype,
-    )
-    student_jvps = batched_directional_jvps(
-        lambda feedback, action: _model_feedback_policy(model, feedback),
-        feedback_history,
-        action_history,
-        feedback_dirs,
-        action_dirs,
-    )
-    teacher_jvps = batched_directional_jvps(
-        lambda feedback, action: reference.feedback_policy(feedback),
-        feedback_history,
-        action_history,
-        feedback_dirs,
-        action_dirs,
-    )
+    student_jvps = _model_local_feedback_jvps(model, feedback_history)
+    teacher_jvps = _teacher_local_feedback_jvps(reference, feedback_history)
     return jnp.mean(jnp.square(student_jvps - teacher_jvps), axis=(0, 2, 3))
 
 
@@ -715,7 +739,6 @@ def closed_loop_distillation_components(
     model: Any,
     *,
     reference: ExtLQGClosedLoopReference,
-    n_jvp_directions: int,
 ) -> dict[str, jax.Array]:
     """Compute unweighted per-trial closed-loop distillation components."""
 
@@ -743,11 +766,10 @@ def closed_loop_distillation_components(
         "perturbation_response_trajectory": _per_trial_mse(
             (pos - pos[..., :1, :]) - (teacher["position"] - teacher["position"][..., :1, :])
         ),
-        "directional_input_output_jvp": _directional_jvp_component(
+        "directional_input_output_jvp": _full_local_jacobian_component(
             model=model,
             reference=reference,
             feedback_history=feedback_history,
-            n_jvp_directions=n_jvp_directions,
         ),
     }
 
@@ -778,12 +800,6 @@ def build_closed_loop_loss(
             ),
             directional_input_output_jvp=float(weights.get("directional_input_output_jvp", 0.25)),
             task_qr_rollout=float(weights.get("task_qr_rollout", 0.0)),
-        ),
-        n_jvp_directions=int(
-            spec.get("loss_surface", {})
-            .get("components", {})
-            .get("directional_input_output_jvp", {})
-            .get("n_directions", 16)
         ),
     )
 
@@ -831,12 +847,12 @@ def _training_hps_from_spec(
 
 
 def smoke_directional_jvp() -> dict[str, Any]:
-    """Run a tiny directional-JVP smoke without materializing dense Jacobians."""
+    """Run a tiny full-local-Jacobian smoke using coordinate-basis JVPs."""
 
     feedback = jnp.arange(12, dtype=jnp.float32).reshape(2, 1, 6) / 10.0
     actions = jnp.zeros((2, 1, 2), dtype=jnp.float32)
-    feedback_dirs = jnp.ones((3, *feedback.shape), dtype=jnp.float32) * 0.01
-    action_dirs = jnp.zeros((3, *actions.shape), dtype=jnp.float32)
+    feedback_dirs = _coordinate_feedback_directions(feedback)
+    action_dirs = jnp.zeros((6, *actions.shape), dtype=jnp.float32)
 
     def policy(feedback_history: jax.Array, action_history: jax.Array) -> jax.Array:
         del action_history
@@ -852,7 +868,7 @@ def smoke_directional_jvp() -> dict[str, Any]:
     return {
         "finite": bool(jnp.all(jnp.isfinite(jvps))),
         "shape": list(jvps.shape),
-        "implementation": "directional_jvp_vmap",
+        "implementation": "full_local_jacobian_basis_jvp_vmap",
     }
 
 
@@ -966,13 +982,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--trainable-dtype", default=DEFAULT_TRAINABLE_DTYPE)
     parser.add_argument("--kinematics-trajectory-weight", type=float, default=1.0)
     parser.add_argument("--velocity-weight", type=float, default=1.0)
-    parser.add_argument("--endpoint-weight", type=float, default=1.0)
-    parser.add_argument("--settling-weight", type=float, default=0.5)
+    parser.add_argument("--endpoint-weight", type=float, default=0.0)
+    parser.add_argument("--settling-weight", type=float, default=0.0)
     parser.add_argument("--action-force-weight", type=float, default=1.0)
     parser.add_argument("--perturbation-response-weight", type=float, default=1.0)
     parser.add_argument("--input-output-jvp-weight", type=float, default=0.25)
     parser.add_argument("--task-rollout-loss-weight", type=float, default=0.0)
-    parser.add_argument("--n-jvp-directions", type=int, default=16)
     parser.add_argument("--write-run-spec", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--smoke-preflight", action="store_true")
