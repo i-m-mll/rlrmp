@@ -55,6 +55,7 @@ DEFAULT_TEACHER_MANIFEST = (
 DEFAULT_TEACHER_GAINS_KEY = "extlqg_controller_gains"
 DEFAULT_CHECKPOINT_INTERVAL_BATCHES = 500
 DEFAULT_TRAINABLE_DTYPE = "float32"
+DEFAULT_POPULATION_MASK_MODE = "plain_all_ones"
 BASE_RUN_ID = (
     "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64"
 )
@@ -164,6 +165,7 @@ def _standard_hps_dict(
     lr_cosine_alpha: float = 0.01,
     gradient_clip_norm: float = 5.0,
     trainable_dtype: str = DEFAULT_TRAINABLE_DTYPE,
+    population_mask_mode: str | None = None,
 ) -> dict[str, Any]:
     hps = _normalize_serialized_hps(_base_run_spec(base_spec_path)["hps"])
     hps["batch_size"] = int(batch_size)
@@ -182,6 +184,8 @@ def _standard_hps_dict(
     population["n_recurrent_only"] = 0
     population["n_input_readout"] = int(hidden_size)
     model["trainable_dtype"] = str(trainable_dtype)
+    if population_mask_mode is not None:
+        model["population_mask_mode"] = str(population_mask_mode)
     return hps
 
 
@@ -198,7 +202,10 @@ def _standard_hps_from_spec(
     lr_cosine_alpha: float,
     gradient_clip_norm: float,
     trainable_dtype: str = DEFAULT_TRAINABLE_DTYPE,
+    population_mask_mode: str | None = None,
 ) -> TreeNamespace:
+    if population_mask_mode is None:
+        population_mask_mode = spec.get("model_contract", {}).get("population_mask_mode")
     hps = spec.get("hps")
     if hps is None:
         hps = _standard_hps_dict(
@@ -213,6 +220,7 @@ def _standard_hps_from_spec(
             lr_cosine_alpha=lr_cosine_alpha,
             gradient_clip_norm=gradient_clip_norm,
             trainable_dtype=trainable_dtype,
+            population_mask_mode=population_mask_mode,
         )
     else:
         hps = _normalize_serialized_hps(hps)
@@ -231,6 +239,8 @@ def _standard_hps_from_spec(
         population["n_recurrent_only"] = 0
         population["n_input_readout"] = int(hidden_size)
         hps["model"]["trainable_dtype"] = str(trainable_dtype)
+        if population_mask_mode is not None:
+            hps["model"]["population_mask_mode"] = str(population_mask_mode)
     return dict_to_namespace(hps, to_type=TreeNamespace)
 
 
@@ -278,6 +288,7 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
     output_dir = _resolve_output_dir(args, run_id)
     teacher_gains_key = str(getattr(args, "teacher_gains_key", DEFAULT_TEACHER_GAINS_KEY))
     trainable_dtype = str(getattr(args, "trainable_dtype", DEFAULT_TRAINABLE_DTYPE))
+    population_mask_mode = str(getattr(args, "population_mask_mode", DEFAULT_POPULATION_MASK_MODE))
     if teacher_gains_key == "extlqg_controller_gains":
         primary_teacher = "6d_output_feedback_extlqg"
         diagnostic_teacher = "6d_output_feedback_hinf"
@@ -311,6 +322,7 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
         lr_cosine_alpha=float(getattr(args, "lr_cosine_alpha", 0.01)),
         gradient_clip_norm=float(getattr(args, "gradient_clip_norm", 5.0)),
         trainable_dtype=trainable_dtype,
+        population_mask_mode=population_mask_mode,
     )
     spec = {
         "schema_version": SCHEMA_VERSION,
@@ -371,6 +383,7 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
                 "target-relative multitarget distribution",
                 "hidden size 180",
                 f"controller/trainable dtype {trainable_dtype}",
+                f"population mask mode {population_mask_mode}",
                 "5 replicates",
                 "batch size 64",
                 "AdamW learning rate 3e-3",
@@ -470,6 +483,7 @@ def build_distillation_spec(args: argparse.Namespace) -> dict[str, Any]:
             "vectorized_replicates": True,
             "plant_backend": "cs_lss",
             "trainable_dtype": trainable_dtype,
+            "population_mask_mode": population_mask_mode,
             "stochastic_preset": "cs2019-rollout",
             "broad_epsilon_pgd_training": False,
         },
@@ -818,6 +832,26 @@ def _trainable_dtype_name(spec: dict[str, Any], args: argparse.Namespace) -> str
     return requested[0]
 
 
+def _population_mask_mode_name(spec: dict[str, Any], args: argparse.Namespace) -> str:
+    """Resolve the deliberate Feedbax population-mask materialization policy."""
+
+    requested = []
+    model_contract = spec.get("model_contract", {})
+    if model_contract.get("population_mask_mode") is not None:
+        requested.append(str(model_contract["population_mask_mode"]))
+    hps_model = spec.get("hps", {}).get("model", {})
+    if hps_model.get("population_mask_mode") is not None:
+        requested.append(str(hps_model["population_mask_mode"]))
+    if not requested:
+        requested.append(str(getattr(args, "population_mask_mode", DEFAULT_POPULATION_MASK_MODE)))
+    unique = set(requested)
+    if len(unique) != 1:
+        raise ValueError(
+            f"Conflicting population mask mode requests in run spec: {sorted(unique)}."
+        )
+    return requested[0]
+
+
 def _trainable_float_leaves(model: Any, where_train_spec: Any) -> list[jax.Array]:
     trainable, _frozen = eqx.partition(model, where_train_spec)
     return [
@@ -1087,6 +1121,7 @@ def _checkpoint_metadata(
         "batch_size": int(args.batch_size),
         "hidden_size": int(args.hidden_size),
         "trainable_dtype": _trainable_dtype_name(spec, args),
+        "population_mask_mode": _population_mask_mode_name(spec, args),
         "horizon": int(args.horizon),
         "n_jvp_directions": int(args.n_jvp_directions),
         "checkpoint_interval_batches": int(args.checkpoint_interval_batches),
@@ -1204,6 +1239,10 @@ def _write_training_outputs(
             "trainable_dtype",
             spec.get("hps", {}).get("model", {}).get("trainable_dtype"),
         ),
+        "population_mask_mode": spec.get("model_contract", {}).get(
+            "population_mask_mode",
+            spec.get("hps", {}).get("model", {}).get("population_mask_mode"),
+        ),
         "vectorized_replicates": True,
         "checkpointing": {
             "enabled": checkpoint_enabled,
@@ -1246,6 +1285,7 @@ def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]
     horizon = int(args.horizon)
     n_jvp_directions = int(args.n_jvp_directions)
     trainable_dtype = _dtype_from_name(_trainable_dtype_name(spec, args))
+    population_mask_mode = _population_mask_mode_name(spec, args)
     if args.smoke_train:
         n_batches = min(n_batches, 3)
         batch_size = min(batch_size, 2)
@@ -1326,6 +1366,7 @@ def run_guided_distillation_training(args: argparse.Namespace) -> dict[str, Any]
         lr_cosine_alpha=float(args.lr_cosine_alpha),
         gradient_clip_norm=float(args.gradient_clip_norm),
         trainable_dtype=trainable_dtype.name,
+        population_mask_mode=population_mask_mode,
     )
     model = _init_standard_model_ensemble(hps=hps, key=model_key)
     model_feedback_dim = int(model.nodes["net"].net.hidden.weight_ih.shape[-1])
@@ -1553,6 +1594,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--lr-cosine-alpha", type=float, default=0.01)
     parser.add_argument("--gradient-clip-norm", type=float, default=5.0)
     parser.add_argument("--trainable-dtype", default=DEFAULT_TRAINABLE_DTYPE)
+    parser.add_argument("--population-mask-mode", default=DEFAULT_POPULATION_MASK_MODE)
     parser.add_argument("--log-step", type=int, default=10)
     parser.add_argument("--checkpoint", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument(
@@ -1598,6 +1640,7 @@ __all__ = [
     "BASE_RUN_ID",
     "DEFAULT_SPEC_PATH",
     "DEFAULT_TEACHER_GAINS_KEY",
+    "DEFAULT_POPULATION_MASK_MODE",
     "DEFAULT_TRAINABLE_DTYPE",
     "HINF_STANDARD_GRAPH_RUN_ID",
     "ISSUE_ID",

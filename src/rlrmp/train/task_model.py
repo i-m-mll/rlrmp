@@ -770,6 +770,7 @@ def _create_cs_lss_gru_ensemble(
             initial_hidden_encoder=bool(getattr(hps.model, "initial_hidden_encoder", False)),
             no_integrator_state=no_integrator_state,
             trainable_dtype=getattr(hps.model, "trainable_dtype", None),
+            population_mask_mode=getattr(hps.model, "population_mask_mode", None),
             key=key_one,
         )
 
