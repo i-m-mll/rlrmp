@@ -57,7 +57,7 @@
   ],
   "locked_spec_summary": {
     "batch_size": 64,
-    "dtype": "float64",
+    "dtype": "float32",
     "graph_contract": "standard h0 setup_task_model_pair Feedbax graph",
     "n_batches": 12000,
     "n_replicates": 5,
@@ -152,7 +152,7 @@
     "n_replicates": 5,
     "n_train_batches": 12000,
     "setup_function": "rlrmp.train.task_model.setup_task_model_pair",
-    "trainable_dtype": "float64"
+    "trainable_dtype": "float32"
   },
   "teacher_contract": {
     "controller": "6d_output_feedback_extlqg",

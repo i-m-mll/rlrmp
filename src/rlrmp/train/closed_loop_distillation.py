@@ -42,7 +42,7 @@ DEFAULT_SPEC_PATH = Path(f"results/{ISSUE_ID}/runs/{RUN_ID}.json")
 DEFAULT_OUTPUT_DIR = f"_artifacts/{ISSUE_ID}/runs/{RUN_ID}"
 DEFAULT_TEACHER_PACKAGE = "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers.npz"
 DEFAULT_TEACHER_GAINS_KEY = "extlqg_controller_gains"
-DEFAULT_TRAINABLE_DTYPE = "float64"
+DEFAULT_TRAINABLE_DTYPE = "float32"
 DEFAULT_CHECKPOINT_INTERVAL_BATCHES = 500
 BASE_RUN_ID = (
     "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64"

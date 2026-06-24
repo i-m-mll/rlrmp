@@ -91,7 +91,7 @@ def test_closed_loop_distillation_builds_a378b34_contract() -> None:
     assert spec["student_contract"]["lr_cosine_alpha"] == pytest.approx(0.01)
     assert spec["student_contract"]["gradient_clip_norm"] == pytest.approx(5.0)
     assert spec["student_contract"]["broad_epsilon_pgd_training"] is False
-    assert spec["student_contract"]["trainable_dtype"] == "float64"
+    assert spec["student_contract"]["trainable_dtype"] == "float32"
     assert spec["closed_loop_semantics"]["student_actions_feed_future_observations"] is True
     assert spec["closed_loop_semantics"]["teacher_forced_feedback_bank_imitation"] is False
     assert spec["closed_loop_semantics"]["old_guided_trainer_is_main_path"] is False
