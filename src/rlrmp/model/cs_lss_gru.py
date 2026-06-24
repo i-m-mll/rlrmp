@@ -15,6 +15,7 @@ training covariance contract into this runtime remains future work.
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable
 from typing import Any
 
@@ -318,6 +319,7 @@ def build_cs_lss_gru_graph_spec(
     initial_hidden_encoder: bool = False,
     no_integrator_state: bool = False,
     trainable_dtype: str | None = None,
+    population_mask_mode: str | None = None,
     key: PRNGKeyArray,
 ) -> GraphSpec:
     """Build the durable GraphSpec for the C&S LinearStateSpace GRU graph."""
@@ -379,6 +381,8 @@ def build_cs_lss_gru_graph_spec(
     }
     trainable_dtype_name = str(jnp.dtype(trainable_dtype or CS_DEFAULT_TRAINABLE_DTYPE).name)
     net_params["trainable_dtype"] = trainable_dtype_name
+    if population_mask_mode is not None:
+        net_params["population_mask_mode"] = str(population_mask_mode)
     if initial_hidden_encoder:
         net_params.update(
             {
@@ -553,6 +557,7 @@ def build_cs_lss_gru_graph(
     initial_hidden_encoder: bool = False,
     no_integrator_state: bool = False,
     trainable_dtype: str | None = None,
+    population_mask_mode: str | None = None,
     key: PRNGKeyArray,
 ) -> Graph:
     """Build the C&S LinearStateSpace GRU feedback graph.
@@ -587,6 +592,9 @@ def build_cs_lss_gru_graph(
         trainable_dtype: Optional dtype for the controller trainable leaves
             (hidden/readout and h0 encoder when present). Defaults to float32;
             pass ``"float64"`` only for a deliberately explicit float64 run.
+        population_mask_mode: Optional Feedbax population-mask materialization policy.
+            Missing preserves Feedbax's legacy serialized template; new runs may pass
+            ``"plain_all_ones"`` to lower structurally all-ones masks to plain Linear.
         key: PRNG key for network construction.
 
     Returns:
@@ -611,6 +619,7 @@ def build_cs_lss_gru_graph(
         initial_hidden_encoder=initial_hidden_encoder,
         no_integrator_state=no_integrator_state,
         trainable_dtype=trainable_dtype,
+        population_mask_mode=population_mask_mode,
         key=key,
     )
     return materialize_cs_lss_gru_graph_spec(graph_spec)
@@ -841,6 +850,13 @@ def _trainable_dtype_from_params(params: dict[str, Any]) -> jnp.dtype | None:
 
 
 def _build_simple_staged_network(params: dict[str, Any]) -> SimpleStagedNetwork:
+    mask_kwargs: dict[str, Any] = {}
+    population_mask_mode = params.get("population_mask_mode")
+    if (
+        population_mask_mode is not None
+        and "population_mask_mode" in inspect.signature(SimpleStagedNetwork).parameters
+    ):
+        mask_kwargs["population_mask_mode"] = str(population_mask_mode)
     net = SimpleStagedNetwork(
         input_size=int(params["input_size"]),
         hidden_size=int(params["hidden_size"]),
@@ -850,6 +866,7 @@ def _build_simple_staged_network(params: dict[str, Any]) -> SimpleStagedNetwork:
         population_structure=_population_structure_from_params(params.get("population_structure")),
         sisu_gating=str(params.get("sisu_gating", "additive")),
         dtype=jnp.dtype(params.get("trainable_dtype", jnp.float32)),
+        **mask_kwargs,
         key=_key_from_params(params),
     )
     return _cast_trainable_component_dtype(net, _trainable_dtype_from_params(params))

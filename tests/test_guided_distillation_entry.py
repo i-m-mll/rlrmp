@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import importlib.util
 import json
 import os
@@ -16,6 +17,7 @@ import numpy as np
 import pytest
 from jax_cookbook import load_with_hyperparameters
 
+from feedbax.models.networks import SimpleStagedNetwork
 from rlrmp.train import guided_distillation
 
 
@@ -74,6 +76,7 @@ def _default_spec_args(**overrides) -> argparse.Namespace:
         "checkpoint": True,
         "checkpoint_interval_batches": 500,
         "trainable_dtype": guided_distillation.DEFAULT_TRAINABLE_DTYPE,
+        "population_mask_mode": guided_distillation.DEFAULT_POPULATION_MASK_MODE,
     }
     values.update(overrides)
     return argparse.Namespace(**values)
@@ -93,6 +96,7 @@ def _tiny_hps(spec: dict, *, trainable_dtype: str | None = None):
         gradient_clip_norm=5.0,
         trainable_dtype=trainable_dtype
         or spec.get("model_contract", {}).get("trainable_dtype", "float32"),
+        population_mask_mode=spec.get("model_contract", {}).get("population_mask_mode"),
     )
 
 
@@ -129,7 +133,9 @@ def test_distillation_entry_builds_9727d79_run_contract() -> None:
     assert spec["model_contract"]["n_replicates"] == 5
     assert spec["model_contract"]["vectorized_replicates"] is True
     assert spec["model_contract"]["trainable_dtype"] == "float32"
+    assert spec["model_contract"]["population_mask_mode"] == "plain_all_ones"
     assert spec["hps"]["model"]["trainable_dtype"] == "float32"
+    assert spec["hps"]["model"]["population_mask_mode"] == "plain_all_ones"
     assert spec["model_contract"]["broad_epsilon_pgd_training"] is False
     assert spec["optimizer"]["controller_lr"] == pytest.approx(3e-3)
     assert spec["optimizer"]["gradient_clip_norm"] == pytest.approx(5.0)
@@ -168,6 +174,8 @@ def test_standard_graph_distillation_trainable_leaves_default_to_float32() -> No
     assert model.nodes["net"].net.hidden.weight_ih.dtype == jnp.dtype(jnp.float32)
     assert model.nodes["net"].net.readout.weight.dtype == jnp.dtype(jnp.float32)
     assert model.nodes["net"].h0_encoder.weight.dtype == jnp.dtype(jnp.float32)
+    if "population_mask_mode" in inspect.signature(SimpleStagedNetwork).parameters:
+        assert not hasattr(model.nodes["net"].net.readout, "linear")
 
 
 def test_standard_graph_distillation_preserves_explicit_float64_request() -> None:
