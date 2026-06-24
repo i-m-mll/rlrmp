@@ -77,17 +77,19 @@ from rlrmp.train.cs_perturbation_training import (
     POLICY_ADVERSARY_ENERGY_MODE,
     POLICY_ADVERSARY_PLAIN_MODE,
     POLICY_ADVERSARY_TRAINING_MODE,
+    TARGET_SUPPORT_PROFILE_020A65B,
+    TARGET_SUPPORT_PROFILES,
     TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
     TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
     BroadFullStateEpsilonTrainingConfig,
     FixedTargetPerturbationTrainingConfig,
     PgdFullStateEpsilonTrainingConfig,
     PolicyFullStateEpsilonTrainingConfig,
-    TargetRelativeMultiTargetTrainingConfig,
     config_from_policy_adversary_hps,
     make_broad_epsilon_pgd_pre_step,
     make_memoryless_policy_adversary,
     make_policy_adversary_pre_step,
+    planned_33b0dcb_target_support_rows,
     planned_020a65b_h0_pgd_rows,
     planned_7c1f7ed_delayed_sisu_spectrum_rows,
     planned_e4800d6_sisu_spectrum_rows,
@@ -96,6 +98,7 @@ from rlrmp.train.cs_perturbation_training import (
     planned_target_relative_multitarget_rows,
     policy_adversary_objective,
     run_broad_epsilon_pgd_inner_maximizer,
+    target_relative_target_support_config,
     target_relative_validation_manifest,
     validation_bin_manifest,
 )
@@ -263,14 +266,21 @@ def stochastic_preset(name: str) -> StochasticPreset:
 def derive_spec_dir(output_dir: Path) -> Path:
     """Return the tracked spec directory corresponding to an artifact directory."""
 
-    out = Path(output_dir).resolve()
-    artifact_root = (REPO_ROOT / "_artifacts").resolve()
-    spec_root = (REPO_ROOT / "results").resolve()
+    out = Path(output_dir)
+    artifact_root = REPO_ROOT / "_artifacts"
+    spec_root = REPO_ROOT / "results"
+    logical_out = out if out.is_absolute() else REPO_ROOT / out
     try:
-        rel = out.relative_to(artifact_root)
+        rel = logical_out.relative_to(artifact_root)
         return spec_root / rel
     except ValueError:
-        return out.parent / f"{out.name}_spec"
+        pass
+    resolved_out = out.resolve()
+    try:
+        rel = resolved_out.relative_to(artifact_root.resolve())
+        return spec_root / rel
+    except ValueError:
+        return resolved_out.parent / f"{resolved_out.name}_spec"
 
 
 def _dump_json_metadata_bytes(file: Any, hyperparameters: dict[str, Any] | None) -> None:
@@ -340,6 +350,7 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
     broad_pgd_conditioning = _dict_value(broad_pgd_schedule, "conditioning_scalar")
     broad_pgd_max_radius_source = _dict_value(broad_pgd_schedule, "max_radius_source")
     target_relative = _dict_value(hps, "target_relative_multitarget")
+    target_distribution = _dict_value(target_relative, "target_distribution")
     delayed = _dict_value(hps, "delayed_reach")
     delayed_go = _dict_value(delayed, "go_cue_sampling")
     delayed_catch = _dict_value(delayed, "catch_trials")
@@ -428,6 +439,9 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
         "perturbation_movement_age_timing": bool(perturbation.get("movement_age_timing", False)),
         "perturbation_physical_level": str(perturbation.get("physical_level", "moderate")),
         "target_relative_multitarget": bool(target_relative.get("enabled", False)),
+        "target_support_profile": str(
+            target_distribution.get("target_support_profile", TARGET_SUPPORT_PROFILE_020A65B)
+        ),
         "delayed_reach": bool(delayed.get("enabled", False)),
         "delayed_reach_go_cue_min_step": int(
             delayed_go.get("min_step_inclusive", DEFAULT_DELAYED_GO_CUE_MIN_STEP)
@@ -497,9 +511,7 @@ def _args_values_from_run_spec(run_spec: dict[str, Any]) -> dict[str, Any]:
             policy_optimizer.get("n_ascent_steps_per_controller_step", 5)
         ),
         "policy_adversary_lr": float(policy_optimizer.get("learning_rate", 3e-4)),
-        "policy_adversary_energy_gamma": float(
-            policy_objective.get("energy_penalty_gamma", 1.0)
-        ),
+        "policy_adversary_energy_gamma": float(policy_objective.get("energy_penalty_gamma", 1.0)),
         "policy_adversary_radius_15cm": float(
             policy_budget.get(
                 "effective_l2_radius_15cm",
@@ -829,9 +841,10 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "Delayed SISU-conditioned PGD must use --broad-epsilon-pgd-sisu-condition-input "
             "sisu (or auto) so the delayed go cue and SISU budget key are distinct."
         )
-    target_relative_multitarget = TargetRelativeMultiTargetTrainingConfig(
+    target_relative_multitarget = target_relative_target_support_config(
         enabled=bool(args.target_relative_multitarget),
         force_filter_feedback=force_filter_feedback,
+        profile=str(args.target_support_profile),
     )
     enabled_broad_lanes = [
         broad_epsilon_training.enabled,
@@ -845,11 +858,9 @@ def build_hps(args: argparse.Namespace) -> TreeNamespace:
             "be combined in the same row."
         )
     broad_epsilon_needs_target_relative = (
-        broad_epsilon_training.enabled and broad_epsilon_training.reach_length_scaling
-    ) or (
-        broad_epsilon_pgd_training.enabled and broad_epsilon_pgd_training.reach_length_scaling
-    ) or (
-        policy_adversary_training.enabled and policy_adversary_training.reach_length_scaling
+        (broad_epsilon_training.enabled and broad_epsilon_training.reach_length_scaling)
+        or (broad_epsilon_pgd_training.enabled and broad_epsilon_pgd_training.reach_length_scaling)
+        or (policy_adversary_training.enabled and policy_adversary_training.reach_length_scaling)
     )
     if broad_epsilon_needs_target_relative and not target_relative_multitarget.enabled:
         raise ValueError(
@@ -2524,6 +2535,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--target-support-profile",
+        choices=TARGET_SUPPORT_PROFILES,
+        default=TARGET_SUPPORT_PROFILE_020A65B,
+        help=(
+            "Named finite target-support profile for --target-relative-multitarget. "
+            "The default preserves the old 020a65b seen/held-out target bank."
+        ),
+    )
+    parser.add_argument(
         "--delayed-reach",
         action="store_true",
         help=(
@@ -2753,6 +2773,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the two planned local issue 020a65b H0 no-PGD/PGD gate rows and exit.",
     )
     parser.add_argument(
+        "--planned-33b0dcb-target-support-rows",
+        action="store_true",
+        help="Print the planned issue 33b0dcb no-PGD H0 target-support rows and exit.",
+    )
+    parser.add_argument(
         "--planned-e901a20-policy-adversary-rows",
         action="store_true",
         help="Print the two planned issue e901a20 H0 policy-adversary gate rows and exit.",
@@ -2839,6 +2864,9 @@ def main(
         return 0
     if args.planned_020a65b_h0_pgd_rows:
         print(_json_dumps({"planned_rows": planned_020a65b_h0_pgd_rows()}), end="")
+        return 0
+    if args.planned_33b0dcb_target_support_rows:
+        print(_json_dumps({"planned_rows": planned_33b0dcb_target_support_rows()}), end="")
         return 0
     if args.planned_e901a20_policy_adversary_rows:
         print(_json_dumps({"planned_rows": planned_e901a20_policy_adversary_rows()}), end="")

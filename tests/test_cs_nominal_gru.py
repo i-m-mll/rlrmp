@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
+import sys
 import warnings
 from functools import partial
 from pathlib import Path
@@ -79,6 +81,15 @@ from rlrmp.train.cs_perturbation_training import (
     POLICY_ADVERSARY_ENERGY_MODE,
     POLICY_ADVERSARY_PLAIN_MODE,
     POLICY_ADVERSARY_TRAINING_MODE,
+    TARGET_SUPPORT_CONST_REACH_M,
+    TARGET_SUPPORT_DENSE_N_DIRECTIONS,
+    TARGET_SUPPORT_PROFILE_020A65B,
+    TARGET_SUPPORT_PROFILE_CONST_BAND8,
+    TARGET_SUPPORT_PROFILE_CONST_BAND16,
+    TARGET_SUPPORT_PROFILE_CONST_BAND36,
+    TARGET_SUPPORT_PROFILE_CONST_DENSE_ALL,
+    TARGET_SUPPORT_PROFILE_CONST_SPARSE8,
+    TARGET_SUPPORT_SPARSE_N_DIRECTIONS,
     TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE,
     TARGET_RELATIVE_MULTITARGET_TRAINING_MODE,
     VALIDATION_BINS,
@@ -106,6 +117,7 @@ from rlrmp.train.cs_perturbation_training import (
     config_from_policy_adversary_hps,
     graph_adapter_specs,
     make_memoryless_policy_adversary,
+    planned_33b0dcb_target_support_rows,
     planned_020a65b_h0_pgd_rows,
     planned_7c1f7ed_delayed_sisu_spectrum_rows,
     planned_e4800d6_sisu_spectrum_rows,
@@ -115,6 +127,7 @@ from rlrmp.train.cs_perturbation_training import (
     planned_target_relative_multitarget_h0_rows,
     planned_target_relative_multitarget_rows,
     run_broad_epsilon_pgd_inner_maximizer,
+    target_relative_target_support_config,
     target_relative_validation_manifest,
     validation_bin_manifest,
 )
@@ -3664,6 +3677,143 @@ def test_020a65b_h0_pgd_planned_rows_cli(capsys: pytest.CaptureFixture[str]) -> 
 
     assert [row["experiment"] for row in payload["planned_rows"]] == ["020a65b", "020a65b"]
     assert [row["stop_after_batches"] for row in payload["planned_rows"]] == [1000, 1000]
+
+
+def test_33b0dcb_target_support_profiles() -> None:
+    old = target_relative_target_support_config(
+        profile=TARGET_SUPPORT_PROFILE_020A65B,
+        enabled=True,
+        force_filter_feedback=True,
+    )
+    dense = target_relative_target_support_config(
+        profile=TARGET_SUPPORT_PROFILE_CONST_DENSE_ALL,
+        enabled=True,
+        force_filter_feedback=True,
+    )
+    sparse = target_relative_target_support_config(
+        profile=TARGET_SUPPORT_PROFILE_CONST_SPARSE8,
+        enabled=True,
+        force_filter_feedback=True,
+    )
+    band8 = target_relative_target_support_config(
+        profile=TARGET_SUPPORT_PROFILE_CONST_BAND8,
+        enabled=True,
+        force_filter_feedback=True,
+    )
+    band16 = target_relative_target_support_config(
+        profile=TARGET_SUPPORT_PROFILE_CONST_BAND16,
+        enabled=True,
+        force_filter_feedback=True,
+    )
+    band36 = target_relative_target_support_config(
+        profile=TARGET_SUPPORT_PROFILE_CONST_BAND36,
+        enabled=True,
+        force_filter_feedback=True,
+    )
+
+    assert old.target_support_profile == TARGET_SUPPORT_PROFILE_020A65B
+    assert len(old.seen_targets_m) == 12
+    assert len(old.held_out_targets_m) == 8
+    assert len(dense.seen_targets_m) == TARGET_SUPPORT_DENSE_N_DIRECTIONS
+    assert len(dense.held_out_targets_m) == 0
+    assert len(dense.validation_targets_m) == TARGET_SUPPORT_DENSE_N_DIRECTIONS
+    assert len(sparse.seen_targets_m) == TARGET_SUPPORT_SPARSE_N_DIRECTIONS
+    assert len(sparse.held_out_targets_m) == (
+        TARGET_SUPPORT_DENSE_N_DIRECTIONS - TARGET_SUPPORT_SPARSE_N_DIRECTIONS
+    )
+    assert len(band8.seen_targets_m) == 64
+    assert len(band8.held_out_targets_m) == 8
+    assert len(band16.seen_targets_m) == 56
+    assert len(band16.held_out_targets_m) == 16
+    assert len(band36.seen_targets_m) == 36
+    assert len(band36.held_out_targets_m) == 36
+    assert len(band8.seen_targets_m) + len(band8.held_out_targets_m) == (
+        TARGET_SUPPORT_DENSE_N_DIRECTIONS
+    )
+    assert len(band16.seen_targets_m) + len(band16.held_out_targets_m) == (
+        TARGET_SUPPORT_DENSE_N_DIRECTIONS
+    )
+    assert len(band36.seen_targets_m) + len(band36.held_out_targets_m) == (
+        TARGET_SUPPORT_DENSE_N_DIRECTIONS
+    )
+    assert len(band36.held_out_targets_m) > len(band16.held_out_targets_m)
+    assert len(band16.held_out_targets_m) > len(band8.held_out_targets_m)
+
+    for config in (dense, sparse, band8, band16, band36):
+        all_targets = [*config.seen_targets_m, *config.held_out_targets_m]
+        radii = np.linalg.norm(np.asarray(all_targets, dtype=np.float64), axis=1)
+        assert np.allclose(radii, TARGET_SUPPORT_CONST_REACH_M)
+        assert not set(config.seen_targets_m).intersection(set(config.held_out_targets_m))
+
+
+def test_33b0dcb_target_support_planned_rows_and_specs(tmp_path: Path) -> None:
+    rows = planned_33b0dcb_target_support_rows()
+
+    assert [row["target_support_profile"] for row in rows] == [
+        TARGET_SUPPORT_PROFILE_020A65B,
+        TARGET_SUPPORT_PROFILE_CONST_DENSE_ALL,
+        TARGET_SUPPORT_PROFILE_CONST_SPARSE8,
+        TARGET_SUPPORT_PROFILE_CONST_BAND8,
+        TARGET_SUPPORT_PROFILE_CONST_BAND16,
+        TARGET_SUPPORT_PROFILE_CONST_BAND36,
+    ]
+    assert [row["stop_after_batches"] for row in rows] == [1000] * 6
+    assert all(row["broad_epsilon_pgd_training"] is False for row in rows)
+
+    expected_counts = {
+        TARGET_SUPPORT_PROFILE_020A65B: (12, 8),
+        TARGET_SUPPORT_PROFILE_CONST_DENSE_ALL: (72, 0),
+        TARGET_SUPPORT_PROFILE_CONST_SPARSE8: (8, 64),
+        TARGET_SUPPORT_PROFILE_CONST_BAND8: (64, 8),
+        TARGET_SUPPORT_PROFILE_CONST_BAND16: (56, 16),
+        TARGET_SUPPORT_PROFILE_CONST_BAND36: (36, 36),
+    }
+    for row in rows:
+        parsed = _parse_planned_training_command(row["command"])
+        parsed.output_dir = str(tmp_path / "artifacts" / row["run"])
+        parsed.spec_dir = str(tmp_path / "specs" / row["run"])
+        parsed.dry_run = True
+        payload = write_run_spec(parsed)["run_spec"]
+        target_distribution = payload["hps"]["target_relative_multitarget"]["target_distribution"]
+        seen_count, held_out_count = expected_counts[str(row["target_support_profile"])]
+
+        assert parsed.issue == "33b0dcb"
+        assert parsed.full_train is True
+        assert parsed.resume is True
+        assert parsed.stop_after_batches == 1000
+        assert parsed.target_support_profile == row["target_support_profile"]
+        assert payload["issue"] == "33b0dcb"
+        assert payload["full_training_launch"] == "requested"
+        assert target_distribution["target_support_profile"] == row["target_support_profile"]
+        assert len(target_distribution["seen_targets_m"]) == seen_count
+        assert len(target_distribution["held_out_targets_m"]) == held_out_count
+        assert payload["hps"]["broad_epsilon_pgd_training"]["enabled"] is False
+
+
+def test_33b0dcb_target_support_planned_rows_cli(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["--planned-33b0dcb-target-support-rows"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert [row["experiment"] for row in payload["planned_rows"]] == ["33b0dcb"] * 6
+    assert payload["planned_rows"][0]["target_support_profile"] == TARGET_SUPPORT_PROFILE_020A65B
+
+
+def test_33b0dcb_target_support_planned_rows_script_cli() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/train_cs_nominal_gru.py",
+            "--planned-33b0dcb-target-support-rows",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    payload = json.loads(result.stdout)
+
+    assert [row["experiment"] for row in payload["planned_rows"]] == ["33b0dcb"] * 6
 
 
 def test_resume_training_diagnostics_stitches_replicate_major_current_chunk(

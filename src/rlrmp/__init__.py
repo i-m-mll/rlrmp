@@ -124,14 +124,16 @@ def ensure_rlrmp_recipes_registered(
         return
 
     if defer_if_feedbax_initializing and not _feedbax_public_api_ready():
-        logger.debug(
-            "Deferring rlrmp recipe registration; feedbax not fully initialized."
-        )
+        logger.debug("Deferring rlrmp recipe registration; feedbax not fully initialized.")
         return
-    if _module_initializing("rlrmp.train.task_model"):
+    initializing_train_modules = (
+        "rlrmp.train.task_model",
+        "rlrmp.train.cs_perturbation_training",
+        "rlrmp.train.cs_nominal_gru",
+    )
+    if any(_module_initializing(name) for name in initializing_train_modules):
         logger.debug(
-            "Deferring rlrmp recipe registration; rlrmp.train.task_model is still "
-            "initializing."
+            "Deferring rlrmp recipe registration; an rlrmp.train module is still initializing."
         )
         return
 
