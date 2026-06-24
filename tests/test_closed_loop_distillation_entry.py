@@ -142,6 +142,23 @@ def test_closed_loop_distillation_cli_dry_run_smoke(
     assert written["run_id"] == "h0_extlqg_6d_closed_loop_distillation"
 
 
+def test_full_training_artifact_writer_materializes_summary_and_pytrees(tmp_path: Path) -> None:
+    output_dir = tmp_path / "artifacts"
+    paths = closed_loop_distillation._save_full_training_artifacts(
+        spec={"artifact_output_dir": str(output_dir), "run_id": closed_loop_distillation.RUN_ID},
+        trained_model={"weight": jnp.ones((2,), dtype=jnp.float32)},
+        history={"loss": jnp.array([1.0], dtype=jnp.float32)},
+        summary={"mode": "full_train", "completed_batches": 1},
+    )
+
+    summary = json.loads((output_dir / "training_summary.json").read_text(encoding="utf-8"))
+    assert Path(paths["trained_model"]).is_file()
+    assert Path(paths["training_history"]).is_file()
+    assert (output_dir / "run_spec_snapshot.json").is_file()
+    assert summary["mode"] == "full_train"
+    assert summary["artifacts"]["training_summary"] == str(output_dir / "training_summary.json")
+
+
 def test_closed_loop_distillation_smoke_train_uses_tasktrainer_train_pair() -> None:
     spec = closed_loop_distillation.build_closed_loop_distillation_spec(_default_spec_args())
     observed = {}

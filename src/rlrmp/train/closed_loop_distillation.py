@@ -880,6 +880,36 @@ def write_run_spec(path: Path, spec: dict[str, Any]) -> None:
     path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _save_full_training_artifacts(
+    *,
+    spec: dict[str, Any],
+    trained_model: Any,
+    history: Any,
+    summary: dict[str, Any],
+) -> dict[str, str]:
+    """Write the required full-run artifacts for the closed-loop row."""
+
+    output_dir = Path(spec["artifact_output_dir"])
+    output_dir.mkdir(parents=True, exist_ok=True)
+    paths = {
+        "output_dir": str(output_dir),
+        "run_spec_snapshot": str(output_dir / "run_spec_snapshot.json"),
+        "training_summary": str(output_dir / "training_summary.json"),
+        "trained_model": str(output_dir / "trained_model.eqx"),
+        "training_history": str(output_dir / "training_history.eqx"),
+    }
+    _write_json(Path(paths["run_spec_snapshot"]), spec)
+    _write_json(Path(paths["training_summary"]), {**summary, "artifacts": paths})
+    eqx.tree_serialise_leaves(paths["trained_model"], trained_model)
+    eqx.tree_serialise_leaves(paths["training_history"], history)
+    return paths
+
+
 def run_closed_loop_distillation_training(
     *,
     spec: dict[str, Any],
@@ -940,7 +970,7 @@ def run_closed_loop_distillation_training(
         disable_progress=True,
         verbose_progress=False,
     )
-    return {
+    result = {
         "run_id": spec["run_id"],
         "mode": "smoke_train" if smoke else "full_train",
         "trainer_path": "Feedbax TaskTrainer/train_pair",
@@ -952,6 +982,14 @@ def run_closed_loop_distillation_training(
         "trained_model_type": type(trained_model).__name__,
         "history_type": type(history).__name__,
     }
+    if not smoke:
+        result["artifacts"] = _save_full_training_artifacts(
+            spec=spec,
+            trained_model=trained_model,
+            history=history,
+            summary=result,
+        )
+    return result
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -1045,11 +1083,17 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             return 2
-    if args.dry_run or args.smoke_preflight or args.write_run_spec or args.smoke_train:
+    if (
+        args.dry_run
+        or args.smoke_preflight
+        or args.write_run_spec
+        or args.smoke_train
+        or args.full_train
+    ):
         payload: dict[str, Any] = {"run_spec": spec}
         if smoke is not None:
             payload["smoke_preflight"] = smoke
         if train_result is not None:
-            payload["smoke_train"] = train_result
+            payload["smoke_train" if args.smoke_train else "training"] = train_result
         print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
