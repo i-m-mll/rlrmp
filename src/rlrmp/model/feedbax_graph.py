@@ -11,7 +11,11 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jt
 from feedbax.models.feedback import FeedbackChannels, SimpleFeedbackState
-from feedbax.component_registry import ComponentMigration, ComponentMigrationPack, get_component_registry
+from feedbax.component_registry import (
+    ComponentMigration,
+    ComponentMigrationPack,
+    get_component_registry,
+)
 from feedbax.contracts.graph import (
     ComponentSpec,
     GraphMetadata,
@@ -47,6 +51,8 @@ EXECUTION_BACKEND = "feedbax.contracts.graphs.serialization.spec_to_graph"
 
 def tree_sum_n_features(tree) -> int:
     return jt.reduce(lambda x, y: x + y, jt.map(lambda x: x.shape[-1], tree))
+
+
 GRAPH_PLANT_INTERVENOR_NODE = PLANT_INTERVENOR_LABEL
 NATIVE_POINT_MASS_COMPONENT = "PointMass"
 NATIVE_FEEDBACK_CHANNELS_COMPONENT = "FeedbackChannels"
@@ -254,10 +260,7 @@ def _normalize_legacy_rlrmp_graph_topology(graph_spec: GraphSpec) -> GraphSpec:
             )
         elif node_spec.type == "DynamicsMatrixPerturb" and "delta_A_shape" in params:
             shape = params.pop("delta_A_shape")
-            params["delta_A"] = [
-                [0.0 for _ in range(int(shape[1]))]
-                for _ in range(int(shape[0]))
-            ]
+            params["delta_A"] = [[0.0 for _ in range(int(shape[1]))] for _ in range(int(shape[0]))]
             nodes[node_id] = node_spec.model_copy(update={"params": params})
         elif node_spec.type == "CurlField" and "amplitude" not in params:
             params["amplitude"] = 1.0
@@ -292,14 +295,18 @@ def _normalize_legacy_rlrmp_graph_topology(graph_spec: GraphSpec) -> GraphSpec:
     return graph_spec.model_copy(update={"nodes": nodes, "wires": wires})
 
 
-def resolve_registered_graph_component_migrations(graph_spec: GraphSpec, registry: Any) -> GraphSpec:
+def resolve_registered_graph_component_migrations(
+    graph_spec: GraphSpec, registry: Any
+) -> GraphSpec:
     """Apply registered Feedbax component migrations before prototype inference."""
 
     registry_names = set(registry.names()) if callable(getattr(registry, "names", None)) else set()
     nodes: dict[str, ComponentSpec] = {}
     changed = False
     for node_id, node_spec in graph_spec.nodes.items():
-        should_try = node_spec.type not in registry_names or node_spec.param_schema_version is not None
+        should_try = (
+            node_spec.type not in registry_names or node_spec.param_schema_version is not None
+        )
         if not should_try:
             nodes[node_id] = node_spec
             continue
@@ -419,6 +426,7 @@ def _build_simple_staged_network(params: dict[str, Any]) -> SimpleStagedNetwork:
         hidden_type=hidden_type,
         population_structure=population_structure,
         sisu_gating=str(params.get("sisu_gating", "additive")),
+        dtype=jnp.dtype(params.get("trainable_dtype", jnp.float32)),
         key=key,
     )
 

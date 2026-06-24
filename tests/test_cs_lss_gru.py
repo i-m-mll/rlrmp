@@ -192,9 +192,9 @@ def test_cs_lss_graph_specs_round_trip_and_materialize_representative_variants(
             True,
             False,
             {
-                "state": jnp.zeros((48,), dtype=jnp.float32).at[40:44].set(
-                    jnp.array([0.02, -0.03, 0.40, -0.20], dtype=jnp.float32)
-                ),
+                "state": jnp.zeros((48,), dtype=jnp.float32)
+                .at[40:44]
+                .set(jnp.array([0.02, -0.03, 0.40, -0.20], dtype=jnp.float32)),
                 "target": jnp.array([0.15, 0.01], dtype=jnp.float32),
             },
             jnp.array([0.13, 0.04, -0.40, 0.20], dtype=jnp.float32),
@@ -209,9 +209,9 @@ def test_cs_lss_graph_specs_round_trip_and_materialize_representative_variants(
             True,
             True,
             {
-                "state": jnp.zeros((48,), dtype=jnp.float32).at[40:46].set(
-                    jnp.array([0.02, -0.03, 0.40, -0.20, 0.70, -0.80], dtype=jnp.float32)
-                ),
+                "state": jnp.zeros((48,), dtype=jnp.float32)
+                .at[40:46]
+                .set(jnp.array([0.02, -0.03, 0.40, -0.20, 0.70, -0.80], dtype=jnp.float32)),
                 "target": jnp.array([0.15, 0.01], dtype=jnp.float32),
             },
             jnp.array([0.13, 0.04, -0.40, 0.20, 0.70, -0.80], dtype=jnp.float32),
@@ -247,13 +247,11 @@ def test_legacy_cs_lss_feedback_selector_ids_materialize_through_migration(
 
     assert graph.nodes["feedback"].__class__.__name__ == "StateFeedbackSelector"
     definition = next(
-        item for item in registry.list_all() if item.name == FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT
-    )
-    migration = next(
         item
-        for item in definition.migrations
-        if item.source_type == legacy_type
+        for item in registry.list_all()
+        if item.name == FEEDBAX_STATE_FEEDBACK_SELECTOR_COMPONENT
     )
+    migration = next(item for item in definition.migrations if item.source_type == legacy_type)
     assert migration.owner == "rlrmp"
     outputs, _ = graph.nodes["feedback"](
         inputs,
@@ -434,8 +432,8 @@ def test_no_integrator_graph_uses_reduced_lss_state_and_epsilon() -> None:
 
     outputs, _state, _cycle = graph.step(
         {
-            "target": jnp.array([0.15, 0.0], dtype=jnp.float64),
-            "epsilon": jnp.zeros((CS_REDUCED_EPSILON_DIM,), dtype=jnp.float64),
+            "target": jnp.array([0.15, 0.0], dtype=jnp.float32),
+            "epsilon": jnp.zeros((CS_REDUCED_EPSILON_DIM,), dtype=jnp.float32),
         },
         state,
         cycle_port_values=None,
@@ -552,9 +550,10 @@ def test_initial_hidden_encoder_uses_target_relative_feedback_context_shape() ->
     assert jnp.allclose(net.h0_encoder(context), jnp.zeros((7,)))
 
 
-def test_initial_hidden_encoder_dtype_matches_mechanics_dtype() -> None:
+def test_initial_hidden_encoder_defaults_to_float32_even_with_float64_mechanics() -> None:
     spec = build_cs_lss_gru_graph_spec(
         hidden_size=7,
+        initial_state=jnp.arange(48, dtype=jnp.float64),
         bind_epsilon_input=True,
         target_relative_feedback=True,
         initial_hidden_encoder=True,
@@ -562,8 +561,37 @@ def test_initial_hidden_encoder_dtype_matches_mechanics_dtype() -> None:
     )
     graph = materialize_cs_lss_gru_graph_spec(spec)
 
-    expected_dtype = jnp.dtype(graph.nodes["mechanics"].A.dtype)
+    expected_dtype = jnp.dtype(jnp.float32)
+    assert jnp.dtype(graph.nodes["mechanics"].A.dtype) == expected_dtype
+    assert jnp.dtype(graph.nodes["mechanics"].state_index.init.vector.dtype) == expected_dtype
+    assert spec.nodes["net"].params["trainable_dtype"] == expected_dtype.name
     assert spec.nodes["net"].params["h0_dtype"] == expected_dtype.name
+    assert jnp.dtype(graph.nodes["mechanics"].A.dtype) == expected_dtype
+    assert jnp.dtype(graph.nodes["mechanics"].state_index.init.vector.dtype) == expected_dtype
+    assert jnp.dtype(graph.nodes["net"].net.hidden.weight_ih.dtype) == expected_dtype
+    assert jnp.dtype(graph.nodes["net"].net.readout.weight.dtype) == expected_dtype
+    assert jnp.dtype(graph.nodes["net"].h0_encoder.weight.dtype) == expected_dtype
+    assert jnp.dtype(graph.nodes["net"].h0_encoder.bias.dtype) == expected_dtype
+
+
+def test_initial_hidden_encoder_preserves_explicit_float64_trainable_dtype() -> None:
+    if not jax.config.jax_enable_x64:
+        pytest.skip("explicit float64 trainable dtype requires jax_enable_x64")
+    spec = build_cs_lss_gru_graph_spec(
+        hidden_size=7,
+        bind_epsilon_input=True,
+        target_relative_feedback=True,
+        initial_hidden_encoder=True,
+        trainable_dtype="float64",
+        key=jax.random.PRNGKey(16),
+    )
+    graph = materialize_cs_lss_gru_graph_spec(spec)
+
+    expected_dtype = jnp.dtype(jnp.float64)
+    assert spec.nodes["net"].params["trainable_dtype"] == expected_dtype.name
+    assert spec.nodes["net"].params["h0_dtype"] == expected_dtype.name
+    assert jnp.dtype(graph.nodes["net"].net.hidden.weight_ih.dtype) == expected_dtype
+    assert jnp.dtype(graph.nodes["net"].net.readout.weight.dtype) == expected_dtype
     assert jnp.dtype(graph.nodes["net"].h0_encoder.weight.dtype) == expected_dtype
     assert jnp.dtype(graph.nodes["net"].h0_encoder.bias.dtype) == expected_dtype
 
