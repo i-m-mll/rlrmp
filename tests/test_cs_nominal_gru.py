@@ -58,6 +58,7 @@ from rlrmp.train.cs_nominal_gru import (
     build_hps,
     build_parser,
     derive_spec_dir,
+    derive_spec_path,
     main,
     _prepend_existing_training_diagnostics,
     planned_246182c_post_movement_cost_tail_rows,
@@ -1163,6 +1164,9 @@ def test_derive_spec_dir_preserves_artifact_results_mirror() -> None:
         "30f2313",
         "cs_stochastic_gru__no_hidden_penalty",
     )
+    assert derive_spec_path(artifact) == (
+        REPO_ROOT / "results" / "30f2313" / "runs" / "cs_stochastic_gru__no_hidden_penalty.json"
+    )
 
 
 def test_dry_run_does_not_write_files(tmp_path: Path) -> None:
@@ -1224,13 +1228,15 @@ def test_write_run_spec_creates_only_lightweight_spec_files(tmp_path: Path) -> N
 
     result = write_run_spec(args)
 
+    spec_path = spec_dir.with_suffix(".json")
     run_path = Path(result["run_spec_path"])
     graph_path = result["graph_spec_path"]
     manifest_path = Path(result["graph_manifest_path"])
     payload = json.loads(run_path.read_text())
     manifest = json.loads(manifest_path.read_text())
 
-    assert run_path == spec_dir / "run.json"
+    assert run_path == spec_path
+    assert not (spec_dir / "run.json").exists()
     assert graph_path is None
     assert manifest_path == spec_dir / "model.graph.manifest.json"
     assert not (spec_dir / "model.graph.json").exists()
@@ -3434,7 +3440,9 @@ def test_flat_run_spec_replay_does_not_require_adjacent_graph_manifest(
     replay_payload = json.loads(Path(replay_result["run_spec_path"]).read_text())
 
     assert Path(replay_result["graph_manifest_path"]).is_file()
-    assert Path(replay_result["run_spec_path"]).parent == replay_spec_dir
+    assert Path(replay_result["graph_manifest_path"]).parent == replay_spec_dir
+    assert Path(replay_result["run_spec_path"]) == replay_spec_dir.with_suffix(".json")
+    assert not (replay_spec_dir / "run.json").exists()
     pgd = replay_payload["hps"]["broad_epsilon_pgd_training"]
     assert pgd["enabled"] is True
     assert pgd["epsilon_dim"] == 8
@@ -4082,11 +4090,14 @@ def test_target_relative_h0_full_training_smoke_emits_diagnostics(tmp_path: Path
     )
 
     result = run_full_training(args)
-    run_spec = json.loads((spec_dir / "run.json").read_text())
+    run_spec_path = Path(result["run_spec_path"])
+    run_spec = json.loads(run_spec_path.read_text())
     summary = json.loads((output_dir / "training_summary.json").read_text())
     diagnostics_manifest = json.loads((output_dir / "training_diagnostics.json").read_text())
 
     assert result["completed_batches"] == 2
+    assert run_spec_path == spec_dir.with_suffix(".json")
+    assert not (spec_dir / "run.json").exists()
     assert run_spec["training_summary"]["training_mode"] == (
         f"{TARGET_RELATIVE_MULTITARGET_H0_TRAINING_MODE}+{PERTURBATION_TRAINING_MODE}"
     )
@@ -4293,10 +4304,13 @@ def test_pgd_broad_epsilon_full_training_emits_inner_diagnostics(tmp_path: Path)
     )
 
     result = run_full_training(args)
-    run_spec = json.loads((spec_dir / "run.json").read_text())
+    run_spec_path = Path(result["run_spec_path"])
+    run_spec = json.loads(run_spec_path.read_text())
     diagnostics_manifest = json.loads((output_dir / "training_diagnostics.json").read_text())
 
     assert result["completed_batches"] == 2
+    assert run_spec_path == spec_dir.with_suffix(".json")
+    assert not (spec_dir / "run.json").exists()
     assert BROAD_EPSILON_PGD_TRAINING_MODE in run_spec["training_summary"]["training_mode"]
     assert run_spec["hps"]["broad_epsilon_pgd_training"]["inner_maximizer"]["n_steps"] == 1
     assert "pgd_broad_epsilon_inner_objective_before" in diagnostics_manifest["arrays"]
@@ -4343,10 +4357,13 @@ def test_full_training_smoke_can_disable_diagnostics(tmp_path: Path) -> None:
     )
 
     result = run_full_training(args)
-    run_spec = json.loads((spec_dir / "run.json").read_text())
+    run_spec_path = Path(result["run_spec_path"])
+    run_spec = json.loads(run_spec_path.read_text())
     summary = json.loads((output_dir / "training_summary.json").read_text())
 
     assert result["completed_batches"] == 1
+    assert run_spec_path == spec_dir.with_suffix(".json")
+    assert not (spec_dir / "run.json").exists()
     assert run_spec["training_diagnostics"]["enabled"] is False
     assert run_spec["training_summary"]["training_diagnostics"]["enabled"] is False
     assert summary["training_diagnostics"]["enabled"] is False

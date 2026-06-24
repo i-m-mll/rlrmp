@@ -61,7 +61,7 @@ from rlrmp.loss import (
     CS_PARTIAL_FEEDBAX_LOSS_OBJECTIVE,
     CS_PARTIAL_NET_FORCE_FILTER_LOSS_OBJECTIVE,
 )
-from rlrmp.paths import REPO_ROOT, mkdir_p
+from rlrmp.paths import REPO_ROOT, mkdir_p, run_spec_path
 from rlrmp.runtime.run_specs import validate_nominal_gru_run_spec
 from rlrmp.model.stochastic_runtime import (
     graphspec_noise_contract,
@@ -281,6 +281,34 @@ def derive_spec_dir(output_dir: Path) -> Path:
         return spec_root / rel
     except ValueError:
         return resolved_out.parent / f"{resolved_out.name}_spec"
+
+
+def derive_spec_path(output_dir: Path) -> Path:
+    """Return the canonical flat run-recipe file for an artifact directory.
+
+    The recipe is written to ``results/<exp>/runs/<run>.json``. The sibling
+    ``results/<exp>/runs/<run>/`` directory remains available for lightweight
+    sidecars such as GraphSpec manifests.
+    """
+
+    sidecar_dir = derive_spec_dir(output_dir)
+    spec_root = (REPO_ROOT / "results").resolve()
+    try:
+        rel = sidecar_dir.resolve().relative_to(spec_root)
+    except ValueError:
+        return sidecar_dir.parent / f"{sidecar_dir.name}.json"
+    parts = rel.parts
+    if len(parts) == 3 and parts[1] == "runs":
+        return run_spec_path(parts[0], parts[2], for_write=True)
+    return sidecar_dir.parent / f"{sidecar_dir.name}.json"
+
+
+def _run_spec_path_for_write(*, output_dir: Path, spec_dir: Path, explicit_spec_dir: bool) -> Path:
+    """Return the flat recipe path paired with ``spec_dir`` sidecars."""
+
+    if explicit_spec_dir:
+        return spec_dir.parent / f"{spec_dir.name}.json"
+    return derive_spec_path(output_dir)
 
 
 def _dump_json_metadata_bytes(file: Any, hyperparameters: dict[str, Any] | None) -> None:
@@ -1537,7 +1565,13 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
 
     args = _apply_smoke_overrides(args)
     output_dir = Path(args.output_dir)
-    spec_dir = Path(args.spec_dir) if args.spec_dir is not None else derive_spec_dir(output_dir)
+    explicit_spec_dir = args.spec_dir is not None
+    spec_dir = Path(args.spec_dir) if explicit_spec_dir else derive_spec_dir(output_dir)
+    run_path = _run_spec_path_for_write(
+        output_dir=output_dir,
+        spec_dir=spec_dir,
+        explicit_spec_dir=explicit_spec_dir,
+    )
     hps = build_hps(args)
     graph_bundle = build_graph_bundle(hps)
     payload = build_run_spec(
@@ -1548,7 +1582,7 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
     )
 
     if args.dry_run:
-        would_write = [str(spec_dir / "run.json"), str(spec_dir / "model.graph.manifest.json")]
+        would_write = [str(run_path), str(spec_dir / "model.graph.manifest.json")]
         if _should_write_graph_spec(hps):
             would_write.append(str(spec_dir / "model.graph.json"))
         return {
@@ -1557,12 +1591,12 @@ def write_run_spec(args: argparse.Namespace) -> dict[str, Any]:
         }
 
     mkdir_p(spec_dir)
+    mkdir_p(run_path.parent)
     graph_path = _write_graph_bundle_for_backend(hps, graph_bundle, spec_dir)
     payload["feedbax_graph"] = graph_bundle.to_run_metadata(
         graph_spec_path=None if graph_path is None else graph_path.name,
     )
     validate_nominal_gru_run_spec(payload, spec_dir=spec_dir)
-    run_path = spec_dir / "run.json"
     run_path.write_text(_json_dumps(payload), encoding="utf-8")
     return {
         "run_spec_path": str(run_path),
