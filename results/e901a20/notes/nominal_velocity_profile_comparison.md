@@ -5,10 +5,10 @@ Nominal-clean validation trials with perturbation inputs zeroed. Curves show tar
 
 | Row | Peak mean normalized velocity (1/s) | Time of peak (s) | Reach lengths (m) | Pooled profiles |
 |---|---:|---:|---:|---:|
-| `020a65b no-PGD H0` | 4.4829 | 0.160 | 0.10-0.18 | 100 |
-| `020a65b PGD H0` | 5.1541 | 0.160 | 0.10-0.18 | 100 |
-| `Policy adversary plain` | 4.9806 | 0.160 | 0.10-0.18 | 100 |
-| `Policy adversary energy` | 4.9907 | 0.160 | 0.10-0.18 | 100 |
+| `020a65b no-PGD H0` | 4.3902 | 0.200 | 0.10-0.18 | 100 |
+| `020a65b PGD H0` | 4.8111 | 0.220 | 0.10-0.18 | 100 |
+| `Policy adversary plain` | 4.7102 | 0.200 | 0.10-0.18 | 100 |
+| `Policy adversary energy` | 4.6897 | 0.200 | 0.10-0.18 | 100 |
 
 - Figure: `_artifacts/e901a20/figures/nominal_velocity_profile_comparison/nominal_forward_velocity_profiles.html`
 - Data: `_artifacts/e901a20/figures/nominal_velocity_profile_comparison/nominal_forward_velocity_profiles.npz`

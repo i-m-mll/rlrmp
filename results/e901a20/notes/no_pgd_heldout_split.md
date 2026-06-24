@@ -5,8 +5,8 @@ Nominal-clean validation trials for the 020a65b no-PGD H0 comparator only. Curve
 
 | Split | Peak mean normalized velocity (1/s) | Time of peak (s) | Reach lengths (m) | Pooled profiles |
 |---|---:|---:|---:|---:|
-| `Non-held-out validation targets` | 4.8746 | 0.160 | 0.10-0.15 | 60 |
-| `Held-out diagonal targets` | 3.8953 | 0.160 | 0.12-0.18 | 40 |
+| `Non-held-out validation targets` | 4.7714 | 0.200 | 0.10-0.15 | 60 |
+| `Held-out diagonal targets` | 3.8185 | 0.200 | 0.12-0.18 | 40 |
 
 - Figure: `_artifacts/e901a20/figures/no_pgd_heldout_split/no_pgd_heldout_split.html`
 - Data: `_artifacts/e901a20/figures/no_pgd_heldout_split/no_pgd_heldout_split.npz`

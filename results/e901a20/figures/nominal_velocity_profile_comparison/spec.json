@@ -29,11 +29,11 @@
       "n_pooled_profiles": 100,
       "n_replicates": 5,
       "n_trials": 20,
-      "peak_mean_length_normalized_forward_velocity_1_s": 4.4828588110690255,
+      "peak_mean_length_normalized_forward_velocity_1_s": 4.39022741039644,
       "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
       "target_distance_max_m": 0.18000000710799857,
       "target_distance_min_m": 0.09999999902641167,
-      "time_of_peak_mean_forward_velocity_s": 0.16
+      "time_of_peak_mean_forward_velocity_s": 0.2
     },
     {
       "experiment": "020a65b",
@@ -41,11 +41,11 @@
       "n_pooled_profiles": 100,
       "n_replicates": 5,
       "n_trials": 20,
-      "peak_mean_length_normalized_forward_velocity_1_s": 5.154129245856259,
+      "peak_mean_length_normalized_forward_velocity_1_s": 4.81105883208021,
       "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_pgd_ofb_lr3e-3_clip5_b64",
       "target_distance_max_m": 0.18000000710799857,
       "target_distance_min_m": 0.09999999902641167,
-      "time_of_peak_mean_forward_velocity_s": 0.16
+      "time_of_peak_mean_forward_velocity_s": 0.22
     },
     {
       "experiment": "e901a20",
@@ -53,11 +53,11 @@
       "n_pooled_profiles": 100,
       "n_replicates": 5,
       "n_trials": 20,
-      "peak_mean_length_normalized_forward_velocity_1_s": 4.980553441209463,
+      "peak_mean_length_normalized_forward_velocity_1_s": 4.710167451937189,
       "run_id": "h0_policy_adversary__plain",
       "target_distance_max_m": 0.18000000710799857,
       "target_distance_min_m": 0.09999999902641167,
-      "time_of_peak_mean_forward_velocity_s": 0.16
+      "time_of_peak_mean_forward_velocity_s": 0.2
     },
     {
       "experiment": "e901a20",
@@ -65,11 +65,11 @@
       "n_pooled_profiles": 100,
       "n_replicates": 5,
       "n_trials": 20,
-      "peak_mean_length_normalized_forward_velocity_1_s": 4.990716701975767,
+      "peak_mean_length_normalized_forward_velocity_1_s": 4.689660048686641,
       "run_id": "h0_policy_adversary__energy",
       "target_distance_max_m": 0.18000000710799857,
       "target_distance_min_m": 0.09999999902641167,
-      "time_of_peak_mean_forward_velocity_s": 0.16
+      "time_of_peak_mean_forward_velocity_s": 0.2
     }
   ],
   "schema_version": "rlrmp.figure_spec.v1",

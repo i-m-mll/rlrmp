@@ -9,11 +9,14 @@ from pathlib import Path
 from typing import Any
 
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 import jax.random as jr
+import jax.tree as jt
 import numpy as np
 import plotly.graph_objects as go
 from feedbax.config.namespace import TreeNamespace, dict_to_namespace
+from feedbax.models.networks import MaskedLinear
 from jax_cookbook import load_with_hyperparameters
 
 from rlrmp.analysis.pipelines.cs_gru_standard_materialization import normalize_gru_hps
@@ -27,7 +30,15 @@ from rlrmp.paths import (
     resolve_run_artifact_path,
     run_spec_path,
 )
+from rlrmp.train.cs_perturbation_training import (
+    TargetRelativeMultiTargetTrainingConfig,
+    apply_validation_bin,
+    apply_validation_target_distribution,
+)
 from rlrmp.train.task_model import setup_task_model_pair
+from rlrmp.viz import profile_comparison_grid
+
+jax.config.update("jax_enable_x64", True)
 
 
 EXPERIMENT = "e901a20"
@@ -35,6 +46,9 @@ TOPIC = "nominal_velocity_profile_comparison"
 NOMINAL_MARKER = "nominal_velocity_profile_comparison"
 NO_PGD_SPLIT_TOPIC = "no_pgd_heldout_split"
 NO_PGD_SPLIT_MARKER = "no_pgd_heldout_split"
+NO_PGD_CROSSED_TOPIC = "no_pgd_crossed_target_grid"
+NO_PGD_CROSSED_MARKER = "no_pgd_crossed_target_grid"
+NUMERIC_SCALAR_TYPES = (bool, int, float, np.bool_, np.integer, np.floating)
 
 
 @dataclass(frozen=True)
@@ -61,6 +75,35 @@ class VelocityProfile:
     target_distance_max_m: float
     peak_mean_length_normalized_forward_velocity_1_s: float
     time_of_peak_mean_forward_velocity_s: float
+
+
+@dataclass(frozen=True)
+class NominalEvaluation:
+    """Per-replicate nominal target-radial velocity profiles."""
+
+    run_spec: dict[str, Any]
+    time_s: np.ndarray
+    normalized_values: np.ndarray
+    target_distance: np.ndarray
+    targets_m: np.ndarray
+
+
+@dataclass(frozen=True)
+class CrossedPanel:
+    """One crossed target-grid diagnostic panel."""
+
+    name: str
+    title: str
+    target_config: TargetRelativeMultiTargetTrainingConfig
+    primary_label: str
+    secondary_label: str
+    primary_color: str
+    secondary_color: str
+    primary_targets_m: np.ndarray
+    secondary_targets_m: np.ndarray
+    evaluation: NominalEvaluation
+    primary_profile: VelocityProfile
+    secondary_profile: VelocityProfile
 
 
 NO_PGD_REF = RunRef(
@@ -180,17 +223,233 @@ def final_goal_position(trial_specs: Any) -> jnp.ndarray:
     return target[:, -1, :]
 
 
+def force_legacy_masked_readout(model: Any) -> Any:
+    """Return a model template with the legacy dynamic readout-mask leaf present."""
+
+    net = model.nodes["net"].net
+    if getattr(net, "dtype", None) is not jnp.float64:
+        # This static dtype is not a PyTree leaf, so ``eqx.tree_at`` cannot target it.
+        # The model is a fresh deserialization template, so the local mutation is contained.
+        object.__setattr__(net, "dtype", jnp.float64)
+        net = model.nodes["net"].net
+    if not isinstance(net.readout, eqx.nn.Linear):
+        return model
+    mask = jnp.ones_like(net.readout.weight, dtype=bool)
+    masked_readout = MaskedLinear(
+        net.readout.weight.shape[-1],
+        net.readout.weight.shape[-2],
+        mask,
+        use_bias=net.readout.bias is not None,
+        dtype=net.readout.weight.dtype,
+        key=jr.PRNGKey(0),
+    )
+    masked_readout = eqx.tree_at(
+        lambda layer: (layer.linear.weight, layer.linear.bias),
+        masked_readout,
+        (net.readout.weight, net.readout.bias),
+    )
+    return eqx.tree_at(lambda m: m.nodes["net"].net.readout, model, masked_readout)
+
+
+def legacy_static_numeric_template(tree: Any, n_replicates: int) -> Any:
+    """Return a template that consumes legacy serialized numeric scalar leaves."""
+
+    def replace_numeric_scalar(leaf: Any) -> Any:
+        if isinstance(leaf, NUMERIC_SCALAR_TYPES):
+            return jnp.full((n_replicates,), leaf)
+        if eqx.is_array(leaf) and np.issubdtype(leaf.dtype, np.floating):
+            return leaf.astype(jnp.float64)
+        return leaf
+
+    return jt.map(replace_numeric_scalar, tree)
+
+
+def legacy_static_numeric_filter(file_obj: Any, leaf: Any) -> Any:
+    """Deserialize legacy numeric scalar placeholders while preserving template shape."""
+
+    if eqx.is_array(leaf):
+        out = jnp.load(file_obj)
+        if leaf.ndim == 1 and out.shape == ():
+            out = jnp.full(leaf.shape, out, dtype=leaf.dtype)
+        if out.dtype != leaf.dtype:
+            out = out.astype(leaf.dtype)
+        return out
+    return eqx.default_deserialise_filter_spec(file_obj, leaf)
+
+
+def scalar_from_legacy_array(value: Any, scalar_type: type) -> Any:
+    """Return the first scalar from a legacy replicated scalar array."""
+
+    raw = np.asarray(value).reshape(-1)[0]
+    if scalar_type is bool:
+        return bool(raw)
+    return scalar_type(raw)
+
+
+def restore_legacy_static_numeric_metadata(model: Any) -> Any:
+    """Restore known legacy scalar metadata fields after compatibility loading."""
+
+    return eqx.tree_at(
+        lambda m: (
+            m.nodes["efferent"].delay,
+            m.nodes["efferent"].noise_func.terms[0].noise_func.std,
+            m.nodes["efferent"].noise_func.terms[0].noise_func.mean,
+            m.nodes["efferent"].noise_func.terms[1].std,
+            m.nodes["efferent"].noise_func.terms[1].mean,
+            m.nodes["efferent"].add_noise,
+            m.nodes["efferent"].init_value,
+            m.nodes["mechanics"].dt,
+            m.nodes["net"].net.input_size,
+            m.nodes["net"].net.hidden_size,
+            m.nodes["net"].net.out_size,
+            m.nodes["net"].net.population_structure.n_input_only,
+            m.nodes["net"].net.population_structure.n_readout_only,
+            m.nodes["net"].net.population_structure.n_recurrent_only,
+            m.nodes["net"].net.population_structure.n_input_readout,
+            m.nodes["sensory"].delay,
+            m.nodes["sensory"].noise_func.std,
+            m.nodes["sensory"].noise_func.mean,
+            m.nodes["sensory"].add_noise,
+            m.nodes["sensory"].init_value,
+        ),
+        model,
+        (
+            scalar_from_legacy_array(model.nodes["efferent"].delay, int),
+            scalar_from_legacy_array(
+                model.nodes["efferent"].noise_func.terms[0].noise_func.std,
+                float,
+            ),
+            scalar_from_legacy_array(
+                model.nodes["efferent"].noise_func.terms[0].noise_func.mean,
+                float,
+            ),
+            scalar_from_legacy_array(model.nodes["efferent"].noise_func.terms[1].std, float),
+            scalar_from_legacy_array(model.nodes["efferent"].noise_func.terms[1].mean, float),
+            scalar_from_legacy_array(model.nodes["efferent"].add_noise, bool),
+            scalar_from_legacy_array(model.nodes["efferent"].init_value, float),
+            scalar_from_legacy_array(model.nodes["mechanics"].dt, float),
+            scalar_from_legacy_array(model.nodes["net"].net.input_size, int),
+            scalar_from_legacy_array(model.nodes["net"].net.hidden_size, int),
+            scalar_from_legacy_array(model.nodes["net"].net.out_size, int),
+            scalar_from_legacy_array(
+                model.nodes["net"].net.population_structure.n_input_only,
+                int,
+            ),
+            scalar_from_legacy_array(
+                model.nodes["net"].net.population_structure.n_readout_only,
+                int,
+            ),
+            scalar_from_legacy_array(
+                model.nodes["net"].net.population_structure.n_recurrent_only,
+                int,
+            ),
+            scalar_from_legacy_array(
+                model.nodes["net"].net.population_structure.n_input_readout,
+                int,
+            ),
+            scalar_from_legacy_array(model.nodes["sensory"].delay, int),
+            scalar_from_legacy_array(model.nodes["sensory"].noise_func.std, float),
+            scalar_from_legacy_array(model.nodes["sensory"].noise_func.mean, float),
+            scalar_from_legacy_array(model.nodes["sensory"].add_noise, bool),
+            scalar_from_legacy_array(model.nodes["sensory"].init_value, float),
+        ),
+    )
+
+
 def load_trained_model(ref: RunRef, hps: TreeNamespace, seed: int) -> Any:
     """Load a trained model with the matching template."""
 
     path = resolve_run_artifact_path(artifact_dir(ref), "trained_model.eqx")
     if not path.exists():
         raise FileNotFoundError(f"Missing trained model for {ref.run_id}: {path}")
-    model, _hyperparameters = load_with_hyperparameters(
-        path,
-        setup_func=lambda key, **_kwargs: setup_task_model_pair(hps, key=key).model,
+
+    def base_template(key: Any) -> Any:
+        return setup_task_model_pair(hps, key=key).model
+
+    try:
+        model, _hyperparameters = load_with_hyperparameters(
+            path,
+            setup_func=lambda key, **_kwargs: base_template(key),
+        )
+        return model
+    except Exception:
+        n_replicates = int(hps.model.n_replicates)
+
+        def legacy_template(key: Any) -> Any:
+            return legacy_static_numeric_template(
+                force_legacy_masked_readout(base_template(key)),
+                n_replicates,
+            )
+
+        try:
+            model, _hyperparameters = load_with_hyperparameters(
+                path,
+                setup_func=lambda key, **_kwargs: legacy_template(key),
+                filter_spec=legacy_static_numeric_filter,
+            )
+        except Exception as legacy_error:
+            raise RuntimeError(
+                f"Could not load trained model for {ref.run_id!r} with either normal "
+                "or legacy static-numeric compatibility templates."
+            ) from legacy_error
+        try:
+            return restore_legacy_static_numeric_metadata(model)
+        except Exception as restore_error:
+            raise RuntimeError(
+                f"Loaded legacy model for {ref.run_id!r} but could not restore scalar metadata."
+            ) from restore_error
+
+
+def target_adapter_from_pair(pair: Any) -> Any:
+    """Return the target-relative task adapter from the task stack."""
+
+    task = pair.task
+    for _depth in range(8):
+        if task.__class__.__name__ == "TargetRelativeMultiTargetTrainingTaskAdapter":
+            return task
+        task = getattr(task, "task", None)
+        if task is None:
+            break
+    raise ValueError("Could not find TargetRelativeMultiTargetTrainingTaskAdapter")
+
+
+def nominal_trial_specs_for_target_config(pair: Any, target_config: Any) -> Any:
+    """Build nominal validation trial specs for a custom target grid."""
+
+    target_adapter = target_adapter_from_pair(pair)
+    trial_specs = apply_validation_target_distribution(
+        target_adapter.task.validation_trials,
+        target_config,
     )
-    return model
+    top_task = pair.task
+    if top_task.__class__.__name__ == "FixedTargetPerturbationTrainingTaskAdapter":
+        trial_specs = apply_validation_bin(trial_specs, top_task.config, "nominal")
+    return nominalize_trial_specs(trial_specs)
+
+
+def target_array(targets: tuple[tuple[float, float], ...]) -> np.ndarray:
+    """Return target tuples as a stable float array."""
+
+    return np.asarray(targets, dtype=np.float64)
+
+
+def target_membership_mask(targets_m: np.ndarray, reference_targets_m: np.ndarray) -> np.ndarray:
+    """Return a boolean mask selecting targets present in ``reference_targets_m``."""
+
+    mask = np.zeros(targets_m.shape[0], dtype=np.bool_)
+    for idx, target in enumerate(targets_m):
+        mask[idx] = bool(
+            np.any(np.all(np.isclose(reference_targets_m, target, atol=1e-6), axis=1))
+        )
+    if not np.any(mask):
+        raise ValueError("Target membership mask selects no trials")
+    return mask
+
+
+def target_angle_deg(targets_m: np.ndarray) -> np.ndarray:
+    """Return target angles in degrees on [0, 360)."""
+
+    return np.mod(np.degrees(np.arctan2(targets_m[:, 1], targets_m[:, 0])), 360.0)
 
 
 def profile_from_values(
@@ -238,16 +497,18 @@ def profile_from_values(
     )
 
 
-def evaluate_nominal_values(ref: RunRef) -> tuple[dict[str, Any], np.ndarray, np.ndarray, np.ndarray]:
-    """Evaluate a trained run on nominal validation trials and return per-trial profiles."""
+def evaluate_nominal_values_for_trial_specs(
+    ref: RunRef,
+    run_spec: dict[str, Any],
+    hps: TreeNamespace,
+    trial_specs: Any,
+) -> NominalEvaluation:
+    """Evaluate a trained run on explicit nominal trial specs."""
 
-    run_spec = load_run_spec(ref)
-    hps = dict_to_namespace(normalize_gru_hps(run_spec["hps"]), to_type=TreeNamespace)
     n_replicates = int(hps.model.n_replicates)
     seed = int(run_spec.get("seed", 42))
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
     model = load_trained_model(ref, hps, seed)
-    trial_specs = nominalize_trial_specs(pair.task.validation_trials)
     n_trials = int(next(iter(trial_specs.targets.values())).value.shape[0])
     init_pos = initial_effector_field(trial_specs, "pos")
     init_vel = initial_effector_field(trial_specs, "vel")
@@ -284,14 +545,36 @@ def evaluate_nominal_values(ref: RunRef) -> tuple[dict[str, Any], np.ndarray, np
         raise ValueError(
             f"Goal count {goal_np.shape[0]} does not match validation trial count {n_trials}"
         )
-    return run_spec, time_s, normalized_values, target_distance
+    return NominalEvaluation(
+        run_spec=run_spec,
+        time_s=time_s,
+        normalized_values=normalized_values,
+        target_distance=target_distance,
+        targets_m=goal_np,
+    )
+
+
+def evaluate_nominal_values(ref: RunRef) -> NominalEvaluation:
+    """Evaluate a trained run on nominal validation trials and return per-trial profiles."""
+
+    run_spec = load_run_spec(ref)
+    hps = dict_to_namespace(normalize_gru_hps(run_spec["hps"]), to_type=TreeNamespace)
+    seed = int(run_spec.get("seed", 42))
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
+    trial_specs = nominalize_trial_specs(pair.task.validation_trials)
+    return evaluate_nominal_values_for_trial_specs(ref, run_spec, hps, trial_specs)
 
 
 def evaluate_profile(ref: RunRef) -> VelocityProfile:
     """Evaluate a trained run on nominal validation trials."""
 
-    _run_spec, time_s, normalized_values, target_distance = evaluate_nominal_values(ref)
-    return profile_from_values(ref, time_s, normalized_values, target_distance)
+    evaluation = evaluate_nominal_values(ref)
+    return profile_from_values(
+        ref,
+        evaluation.time_s,
+        evaluation.normalized_values,
+        evaluation.target_distance,
+    )
 
 
 def held_out_target_mask(run_spec: dict[str, Any], trial_specs: Any) -> np.ndarray:
@@ -326,7 +609,7 @@ def evaluate_no_pgd_heldout_split() -> list[VelocityProfile]:
     pair = setup_task_model_pair(hps, key=jr.PRNGKey(int(run_spec.get("seed", 42))))
     trial_specs = nominalize_trial_specs(pair.task.validation_trials)
     held_out_mask = held_out_target_mask(run_spec, trial_specs)
-    _run_spec, time_s, normalized_values, target_distance = evaluate_nominal_values(ref)
+    evaluation = evaluate_nominal_values(ref)
     return [
         profile_from_values(
             RunRef(
@@ -335,9 +618,9 @@ def evaluate_no_pgd_heldout_split() -> list[VelocityProfile]:
                 "Non-held-out validation targets",
                 "#64748b",
             ),
-            time_s,
-            normalized_values,
-            target_distance,
+            evaluation.time_s,
+            evaluation.normalized_values,
+            evaluation.target_distance,
             ~held_out_mask,
         ),
         profile_from_values(
@@ -347,10 +630,118 @@ def evaluate_no_pgd_heldout_split() -> list[VelocityProfile]:
                 "Held-out diagonal targets",
                 "#f97316",
             ),
-            time_s,
-            normalized_values,
-            target_distance,
+            evaluation.time_s,
+            evaluation.normalized_values,
+            evaluation.target_distance,
             held_out_mask,
+        ),
+    ]
+
+
+def evaluate_no_pgd_crossed_panels() -> list[CrossedPanel]:
+    """Evaluate crossed direction/length grids for the no-PGD row."""
+
+    ref = NO_PGD_REF
+    run_spec = load_run_spec(ref)
+    hps = dict_to_namespace(normalize_gru_hps(run_spec["hps"]), to_type=TreeNamespace)
+    seed = int(run_spec.get("seed", 42))
+    pair = setup_task_model_pair(hps, key=jr.PRNGKey(seed))
+    base_cfg = target_adapter_from_pair(pair).config
+
+    direction_cfg = TargetRelativeMultiTargetTrainingConfig(
+        enabled=True,
+        force_filter_feedback=bool(base_cfg.force_filter_feedback),
+        seen_directions_deg=tuple(float(x) for x in base_cfg.seen_directions_deg),
+        held_out_directions_deg=tuple(float(x) for x in base_cfg.held_out_directions_deg),
+        seen_amplitudes_m=tuple(float(x) for x in base_cfg.seen_amplitudes_m),
+        held_out_amplitudes_m=tuple(float(x) for x in base_cfg.seen_amplitudes_m),
+        original_target_anchor_m=tuple(float(x) for x in base_cfg.original_target_anchor_m),
+    )
+    direction_trials = nominal_trial_specs_for_target_config(pair, direction_cfg)
+    direction_eval = evaluate_nominal_values_for_trial_specs(
+        ref,
+        run_spec,
+        hps,
+        direction_trials,
+    )
+    direction_seen_targets = target_array(direction_cfg.seen_targets_m)
+    direction_held_targets = target_array(direction_cfg.held_out_targets_m)
+    direction_seen_mask = target_membership_mask(direction_eval.targets_m, direction_seen_targets)
+    direction_held_mask = target_membership_mask(direction_eval.targets_m, direction_held_targets)
+
+    length_cfg = TargetRelativeMultiTargetTrainingConfig(
+        enabled=True,
+        force_filter_feedback=bool(base_cfg.force_filter_feedback),
+        seen_directions_deg=tuple(float(x) for x in base_cfg.seen_directions_deg),
+        held_out_directions_deg=tuple(float(x) for x in base_cfg.seen_directions_deg),
+        seen_amplitudes_m=tuple(float(x) for x in base_cfg.seen_amplitudes_m),
+        held_out_amplitudes_m=tuple(float(x) for x in base_cfg.held_out_amplitudes_m),
+        original_target_anchor_m=tuple(float(x) for x in base_cfg.original_target_anchor_m),
+    )
+    length_trials = nominal_trial_specs_for_target_config(pair, length_cfg)
+    length_eval = evaluate_nominal_values_for_trial_specs(ref, run_spec, hps, length_trials)
+    length_seen_targets = target_array(length_cfg.seen_targets_m)
+    length_held_targets = target_array(length_cfg.held_out_targets_m)
+    length_seen_mask = target_membership_mask(length_eval.targets_m, length_seen_targets)
+    length_held_mask = target_membership_mask(length_eval.targets_m, length_held_targets)
+
+    return [
+        CrossedPanel(
+            name="direction_effect_seen_lengths",
+            title="Direction effect at seen lengths",
+            target_config=direction_cfg,
+            primary_label="Seen directions, seen lengths",
+            secondary_label="Held-out directions, seen lengths",
+            primary_color="#64748b",
+            secondary_color="#f97316",
+            primary_targets_m=direction_seen_targets,
+            secondary_targets_m=direction_held_targets,
+            evaluation=direction_eval,
+            primary_profile=profile_from_values(
+                RunRef(ref.experiment, f"{ref.run_id}::seen_dirs_seen_lengths", "", "#64748b"),
+                direction_eval.time_s,
+                direction_eval.normalized_values,
+                direction_eval.target_distance,
+                direction_seen_mask,
+            ),
+            secondary_profile=profile_from_values(
+                RunRef(
+                    ref.experiment,
+                    f"{ref.run_id}::held_dirs_seen_lengths",
+                    "",
+                    "#f97316",
+                ),
+                direction_eval.time_s,
+                direction_eval.normalized_values,
+                direction_eval.target_distance,
+                direction_held_mask,
+            ),
+        ),
+        CrossedPanel(
+            name="length_effect_seen_directions",
+            title="Length effect at seen directions",
+            target_config=length_cfg,
+            primary_label="Seen lengths, seen directions",
+            secondary_label="Held-out lengths, seen directions",
+            primary_color="#64748b",
+            secondary_color="#7c3aed",
+            primary_targets_m=length_seen_targets,
+            secondary_targets_m=length_held_targets,
+            evaluation=length_eval,
+            primary_profile=profile_from_values(
+                RunRef(ref.experiment, f"{ref.run_id}::seen_lengths_seen_dirs", "", "#64748b"),
+                length_eval.time_s,
+                length_eval.normalized_values,
+                length_eval.target_distance,
+                length_seen_mask,
+            ),
+            secondary_profile=profile_from_values(
+                RunRef(ref.experiment, f"{ref.run_id}::held_lengths_seen_dirs", "", "#7c3aed"),
+                length_eval.time_s,
+                length_eval.normalized_values,
+                length_eval.target_distance,
+                length_held_mask,
+            ),
         ),
     ]
 
@@ -668,16 +1059,288 @@ def write_no_pgd_split_outputs(profiles: list[VelocityProfile]) -> dict[str, Any
     return manifest
 
 
+def profile_summary_row(label: str, profile: VelocityProfile) -> dict[str, Any]:
+    """Return manifest metadata for one profile."""
+
+    return {
+        "label": label,
+        "n_replicates": profile.n_replicates,
+        "n_trials": profile.n_trials,
+        "n_pooled_profiles": profile.n_replicates * profile.n_trials,
+        "target_distance_min_m": profile.target_distance_min_m,
+        "target_distance_max_m": profile.target_distance_max_m,
+        "peak_mean_length_normalized_forward_velocity_1_s": (
+            profile.peak_mean_length_normalized_forward_velocity_1_s
+        ),
+        "time_of_peak_mean_forward_velocity_s": profile.time_of_peak_mean_forward_velocity_s,
+    }
+
+
+def target_summary_rows(panel: CrossedPanel) -> list[dict[str, Any]]:
+    """Return per-target peak metadata for one crossed panel."""
+
+    primary_mask = target_membership_mask(panel.evaluation.targets_m, panel.primary_targets_m)
+    secondary_mask = target_membership_mask(panel.evaluation.targets_m, panel.secondary_targets_m)
+    rows = []
+    for idx, target in enumerate(panel.evaluation.targets_m):
+        if primary_mask[idx]:
+            group = panel.primary_label
+        elif secondary_mask[idx]:
+            group = panel.secondary_label
+        else:
+            group = "unmatched"
+        mean_curve = np.mean(panel.evaluation.normalized_values[:, idx, :], axis=0)
+        peak_idx = int(np.nanargmax(mean_curve))
+        rows.append(
+            {
+                "panel": panel.name,
+                "target_index": idx,
+                "target_x_m": float(target[0]),
+                "target_y_m": float(target[1]),
+                "target_radius_m": float(panel.evaluation.target_distance[idx]),
+                "target_angle_deg": float(target_angle_deg(panel.evaluation.targets_m[[idx]])[0]),
+                "group": group,
+                "peak_mean_length_normalized_forward_velocity_1_s": float(mean_curve[peak_idx]),
+                "time_of_peak_mean_forward_velocity_s": float(panel.evaluation.time_s[peak_idx]),
+            }
+        )
+    return rows
+
+
+def add_panel_trace(
+    fig: go.Figure,
+    *,
+    profile: VelocityProfile,
+    label: str,
+    color: str,
+    legend_group: str,
+    row: int,
+    col: int = 1,
+) -> None:
+    """Add a profile trace and band to a subplot panel."""
+
+    upper = profile.mean + profile.std
+    lower = profile.mean - profile.std
+    fig.add_trace(
+        go.Scatter(
+            x=np.concatenate([profile.time_s, profile.time_s[::-1]]),
+            y=np.concatenate([upper, lower[::-1]]),
+            fill="toself",
+            fillcolor=hex_to_rgba(color, 0.13),
+            line={"color": "rgba(0,0,0,0)"},
+            hoverinfo="skip",
+            legendgroup=legend_group,
+            name=label,
+            showlegend=False,
+        ),
+        row=row,
+        col=col,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=profile.time_s,
+            y=profile.mean,
+            mode="lines",
+            line={"color": color, "width": 2.5},
+            legendgroup=legend_group,
+            name=label,
+        ),
+        row=row,
+        col=col,
+    )
+
+
+def write_no_pgd_crossed_outputs(panels: list[CrossedPanel]) -> dict[str, Any]:
+    """Write crossed direction/length diagnostic outputs for the no-PGD row."""
+
+    figure_dir = mkdir_p(figure_artifact_dir(EXPERIMENT, NO_PGD_CROSSED_TOPIC))
+    spec_dir = mkdir_p(figure_spec_dir(EXPERIMENT, NO_PGD_CROSSED_TOPIC))
+    notes_dir = mkdir_p(REPO_ROOT / "results" / EXPERIMENT / "notes")
+
+    fig = profile_comparison_grid(
+        len(panels),
+        subplot_titles=[panel.title for panel in panels],
+        vertical_spacing=0.12,
+    )
+    for row_idx, panel in enumerate(panels, start=1):
+        add_panel_trace(
+            fig,
+            profile=panel.primary_profile,
+            label=panel.primary_label,
+            color=panel.primary_color,
+            legend_group=f"{panel.name}::primary",
+            row=row_idx,
+        )
+        add_panel_trace(
+            fig,
+            profile=panel.secondary_profile,
+            label=panel.secondary_label,
+            color=panel.secondary_color,
+            legend_group=f"{panel.name}::secondary",
+            row=row_idx,
+        )
+    fig.update_layout(
+        title="No-PGD crossed target-grid velocity profiles",
+        width=980,
+        height=760,
+        margin={"l": 72, "r": 24, "t": 82, "b": 76},
+        hovermode="x unified",
+        legend={"orientation": "h", "y": -0.14, "x": 0.0, "groupclick": "togglegroup"},
+    )
+    fig.update_xaxes(title_text="Time (s)", zeroline=False)
+    fig.update_yaxes(title_text="Target-radial velocity / reach length (1/s)", zeroline=True)
+
+    html_path = figure_dir / "no_pgd_crossed_target_grid.html"
+    fig.write_html(html_path, include_plotlyjs="cdn")
+    data_path = figure_dir / "no_pgd_crossed_target_grid.npz"
+    data_payload: dict[str, Any] = {}
+    for panel in panels:
+        prefix = panel.name
+        primary_mask = target_membership_mask(panel.evaluation.targets_m, panel.primary_targets_m)
+        secondary_mask = target_membership_mask(panel.evaluation.targets_m, panel.secondary_targets_m)
+        group = np.full(panel.evaluation.targets_m.shape[0], "", dtype="<U64")
+        group[primary_mask] = panel.primary_label
+        group[secondary_mask] = panel.secondary_label
+        data_payload[f"{prefix}__time_s"] = panel.evaluation.time_s
+        data_payload[f"{prefix}__values"] = panel.evaluation.normalized_values
+        data_payload[f"{prefix}__targets_m"] = panel.evaluation.targets_m
+        data_payload[f"{prefix}__target_radius_m"] = panel.evaluation.target_distance
+        data_payload[f"{prefix}__target_angle_deg"] = target_angle_deg(panel.evaluation.targets_m)
+        data_payload[f"{prefix}__target_group"] = group
+        data_payload[f"{prefix}__primary_mean"] = panel.primary_profile.mean
+        data_payload[f"{prefix}__primary_std"] = panel.primary_profile.std
+        data_payload[f"{prefix}__secondary_mean"] = panel.secondary_profile.mean
+        data_payload[f"{prefix}__secondary_std"] = panel.secondary_profile.std
+    np.savez_compressed(data_path, **data_payload)
+
+    panel_rows = []
+    target_rows = []
+    for panel in panels:
+        panel_rows.append(
+            {
+                "name": panel.name,
+                "title": panel.title,
+                "primary": profile_summary_row(panel.primary_label, panel.primary_profile),
+                "secondary": profile_summary_row(panel.secondary_label, panel.secondary_profile),
+                "seen_directions_deg": list(panel.target_config.seen_directions_deg),
+                "held_out_directions_deg": list(panel.target_config.held_out_directions_deg),
+                "seen_amplitudes_m": list(panel.target_config.seen_amplitudes_m),
+                "held_out_amplitudes_m": list(panel.target_config.held_out_amplitudes_m),
+            }
+        )
+        target_rows.extend(target_summary_rows(panel))
+
+    manifest = {
+        "schema_version": "rlrmp.e901a20.no_pgd_crossed_target_grid.v1",
+        "figure": repo_relative(html_path),
+        "data": repo_relative(data_path),
+        "evaluation_lens": "nominal_clean_custom_target_grid_final_checkpoint",
+        "source_run": {
+            "experiment": NO_PGD_REF.experiment,
+            "run_id": NO_PGD_REF.run_id,
+            "label": NO_PGD_REF.label,
+        },
+        "velocity_definition": (
+            "effector velocity projected onto each trial's target direction, divided by "
+            "that trial's reach length"
+        ),
+        "band_definition": (
+            "one standard deviation over replicate x custom-target profiles within each curve"
+        ),
+        "checkpoint_policy": "final trained_model.eqx, matching the current split figure",
+        "stochastic_runtime_policy": "unchanged from the current split figure",
+        "panels": panel_rows,
+        "targets": target_rows,
+    }
+    manifest_path = figure_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    figure_link = spec_dir / "figure.html"
+    if figure_link.exists() or figure_link.is_symlink():
+        figure_link.unlink()
+    figure_link.symlink_to(os.path.relpath(html_path, start=figure_link.parent))
+    spec = {
+        "schema_version": "rlrmp.figure_spec.v1",
+        "topic": NO_PGD_CROSSED_TOPIC,
+        "source_script": repo_relative(Path(__file__)),
+        "manifest": repo_relative(manifest_path),
+        "figure": repo_relative(html_path),
+        "figure_link": repo_relative(figure_link),
+        "data": repo_relative(data_path),
+        "evaluation_lens": manifest["evaluation_lens"],
+        "velocity_definition": manifest["velocity_definition"],
+        "band_definition": manifest["band_definition"],
+        "checkpoint_policy": manifest["checkpoint_policy"],
+        "stochastic_runtime_policy": manifest["stochastic_runtime_policy"],
+        "source_run": manifest["source_run"],
+        "panels": panel_rows,
+        "targets": target_rows,
+        "inputs": [
+            {
+                "run_spec": repo_relative(run_spec_path(NO_PGD_REF.experiment, NO_PGD_REF.run_id)),
+                "trained_model": repo_relative(
+                    resolve_run_artifact_path(artifact_dir(NO_PGD_REF), "trained_model.eqx")
+                ),
+            }
+        ],
+    }
+    spec_path = spec_dir / "spec.json"
+    spec_path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    table_lines = [
+        "| Panel | Curve | Peak mean normalized velocity (1/s) | Time of peak (s) | Reach lengths (m) | Pooled profiles |",
+        "|---|---|---:|---:|---:|---:|",
+    ]
+    for panel in panel_rows:
+        for key in ("primary", "secondary"):
+            row = panel[key]
+            table_lines.append(
+                f"| {panel['title']} | `{row['label']}` | "
+                f"{row['peak_mean_length_normalized_forward_velocity_1_s']:.4f} | "
+                f"{row['time_of_peak_mean_forward_velocity_s']:.3f} | "
+                f"{row['target_distance_min_m']:.2f}-{row['target_distance_max_m']:.2f} | "
+                f"{row['n_pooled_profiles']} |"
+            )
+    note = "\n".join(
+        [
+            "## No-PGD crossed target grid",
+            "",
+            "Nominal-clean custom target-grid trials for the 020a65b no-PGD H0 comparator. "
+            "The first panel compares seen versus held-out directions while holding reach "
+            "lengths to the seen training lengths (`0.10 m`, `0.15 m`). The second panel "
+            "compares seen versus held-out lengths while holding directions to the seen "
+            "training directions (`0, 60, 120, 180, 240, 300 deg`).",
+            "",
+            "This uses the final checkpoint and the same stochastic runtime behavior as the "
+            "current split figure; it is intended to separate direction and length support "
+            "before any validation-selected checkpoint follow-up.",
+            "",
+            *table_lines,
+            "",
+            f"- Figure: `{repo_relative(html_path)}`",
+            f"- Data: `{repo_relative(data_path)}`",
+            f"- Manifest: `{repo_relative(manifest_path)}`",
+            "",
+        ]
+    )
+    note_path = notes_dir / f"{NO_PGD_CROSSED_TOPIC}.md"
+    update_marked_section(note_path, NO_PGD_CROSSED_MARKER, note)
+    manifest["note"] = repo_relative(note_path)
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return manifest
+
+
 def main() -> None:
     """Evaluate all rows and materialize outputs."""
 
     profiles = [evaluate_profile(ref) for ref in RUNS]
     comparison_manifest = write_outputs(profiles)
     no_pgd_split_manifest = write_no_pgd_split_outputs(evaluate_no_pgd_heldout_split())
+    no_pgd_crossed_manifest = write_no_pgd_crossed_outputs(evaluate_no_pgd_crossed_panels())
     print(
         json.dumps(
             {
                 "comparison": comparison_manifest,
+                "no_pgd_crossed_target_grid": no_pgd_crossed_manifest,
                 "no_pgd_heldout_split": no_pgd_split_manifest,
             },
             indent=2,

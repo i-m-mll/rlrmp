@@ -25,20 +25,20 @@
       "n_pooled_profiles": 60,
       "n_replicates": 5,
       "n_trials": 12,
-      "peak_mean_length_normalized_forward_velocity_1_s": 4.874593909337738,
+      "peak_mean_length_normalized_forward_velocity_1_s": 4.771409759421248,
       "target_distance_max_m": 0.15000000596046448,
       "target_distance_min_m": 0.09999999902641167,
-      "time_of_peak_mean_forward_velocity_s": 0.16
+      "time_of_peak_mean_forward_velocity_s": 0.2
     },
     {
       "label": "Held-out diagonal targets",
       "n_pooled_profiles": 40,
       "n_replicates": 5,
       "n_trials": 8,
-      "peak_mean_length_normalized_forward_velocity_1_s": 3.8952561636659566,
+      "peak_mean_length_normalized_forward_velocity_1_s": 3.8184538868592193,
       "target_distance_max_m": 0.18000000710799857,
       "target_distance_min_m": 0.11999999642362849,
-      "time_of_peak_mean_forward_velocity_s": 0.16
+      "time_of_peak_mean_forward_velocity_s": 0.2
     }
   ],
   "topic": "no_pgd_heldout_split",
