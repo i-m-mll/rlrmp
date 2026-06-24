@@ -30,6 +30,7 @@ from rlrmp.analysis.math.cs_released_simulation import (
 )
 from rlrmp.analysis.math.output_feedback import OutputFeedbackConfig, process_covariance
 from rlrmp.model.cs_lss_gru import (
+    CS_DEFAULT_TRAINABLE_DTYPE,
     CS_PHYSICAL_STATE_DIM,
     CS_REDUCED_PHYSICAL_STATE_DIM,
     build_cs_lss_gru_graph,
@@ -138,15 +139,19 @@ SISU_FNS = LDict.of("train__method")(
                 and trial_specs.timeline.epoch_bounds.ndim > 1
                 else (trial_specs.timeline.n_steps,)
             ),
-            dtype=float,
+            dtype=jnp.float32,
         ),
         "bcs": lambda trial_specs, key: trial_specs.intervene[PLANT_INTERVENOR_LABEL].active.astype(
-            float
+            jnp.float32
         ),
-        "dai": lambda trial_specs, key: get_field_amplitude(
-            trial_specs.intervene[PLANT_INTERVENOR_LABEL]
+        "dai": lambda trial_specs, key: jnp.asarray(
+            get_field_amplitude(trial_specs.intervene[PLANT_INTERVENOR_LABEL]),
+            dtype=jnp.float32,
         ),
-        "pai-asf": lambda trial_specs, key: trial_specs.intervene[PLANT_INTERVENOR_LABEL].scale,
+        "pai-asf": lambda trial_specs, key: jnp.asarray(
+            trial_specs.intervene[PLANT_INTERVENOR_LABEL].scale,
+            dtype=jnp.float32,
+        ),
     }
 )
 
@@ -294,10 +299,17 @@ def setup_task_model_pair(
         physical_state_dim = (
             CS_REDUCED_PHYSICAL_STATE_DIM if no_integrator_state else CS_PHYSICAL_STATE_DIM
         )
+        runtime_dtype = jnp.dtype(
+            getattr(hps.model, "trainable_dtype", None) or CS_DEFAULT_TRAINABLE_DTYPE
+        )
         delayed_reach = _cs_delayed_reach_enabled(hps)
         sisu_conditioned_pgd = _sisu_conditioned_pgd_budget_enabled(hps)
         task = _add_cs_lss_task_inputs(
-            _CsLssTaskAdapter(task_base, physical_state_dim=physical_state_dim),
+            _CsLssTaskAdapter(
+                task_base,
+                physical_state_dim=physical_state_dim,
+                dtype=runtime_dtype,
+            ),
             target_relative=target_training.enabled,
             go_cue_input=target_training.enabled and delayed_reach,
             scalar_input=sisu_conditioned_pgd,
@@ -306,6 +318,7 @@ def setup_task_model_pair(
             if sisu_conditioned_pgd
             else None,
             physical_state_dim=physical_state_dim,
+            dtype=runtime_dtype,
         )
         models = _create_cs_lss_gru_ensemble(
             hps,
@@ -408,6 +421,7 @@ class _CsLssTaskAdapter(AbstractTask):
 
     task: object
     physical_state_dim: int = eqx.field(default=CS_PHYSICAL_STATE_DIM, static=True)
+    dtype: jnp.dtype = eqx.field(default=jnp.dtype(CS_DEFAULT_TRAINABLE_DTYPE), static=True)
 
     def __getattr__(self, name: str):
         return getattr(self.task, name)
@@ -441,6 +455,7 @@ class _CsLssTaskAdapter(AbstractTask):
         return _CsLssTaskAdapter(
             self.task.add_input(name, input_fn, exist_ok=exist_ok),
             physical_state_dim=self.physical_state_dim,
+            dtype=self.dtype,
         )
 
     def get_train_trial(self, key: PRNGKeyArray, batch_info=None) -> TaskTrialSpec:
@@ -474,6 +489,7 @@ class _CsLssTaskAdapter(AbstractTask):
         lss_vector = _effector_init_to_lss_vector(
             effector_init,
             physical_state_dim=self.physical_state_dim,
+            dtype=self.dtype,
         )
         return TaskTrialSpec(
             inits=WhereDict({"mechanics.vector": lss_vector}),
@@ -489,16 +505,17 @@ def _effector_init_to_lss_vector(
     effector_init: CartesianState,
     *,
     physical_state_dim: int = CS_PHYSICAL_STATE_DIM,
+    dtype=jnp.float32,
 ) -> jax.Array:
-    pos = jnp.asarray(effector_init.pos)
-    vel = jnp.asarray(effector_init.vel)
-    force = jnp.asarray(effector_init.force)
+    pos = jnp.asarray(effector_init.pos, dtype=dtype)
+    vel = jnp.asarray(effector_init.vel, dtype=dtype)
+    force = jnp.asarray(effector_init.force, dtype=dtype)
     if int(physical_state_dim) < CS_REDUCED_PHYSICAL_STATE_DIM:
         raise ValueError(f"physical_state_dim must be >= 6; got {physical_state_dim}.")
     batch_shape = jnp.broadcast_shapes(pos.shape[:-1], vel.shape[:-1], force.shape[:-1])
     vector = jnp.zeros(
         (*batch_shape, 6 * int(physical_state_dim)),
-        dtype=jnp.result_type(pos, vel, force, float),
+        dtype=dtype,
     )
     return (
         vector.at[..., 0:2]
@@ -519,6 +536,7 @@ def _add_cs_lss_task_inputs(
     scalar_input_name: str = "input",
     scalar_input_fn: Callable | None = None,
     physical_state_dim: int = CS_PHYSICAL_STATE_DIM,
+    dtype=jnp.float32,
 ) -> _CsLssTaskAdapter:
     if go_cue_input and scalar_input:
         scalar_fn = scalar_input_fn or SISU_FNS["nominal-cs-gru"]
@@ -551,6 +569,7 @@ def _add_cs_lss_task_inputs(
             trial_spec,
             key,
             physical_state_dim=physical_state_dim,
+            dtype=dtype,
         ),
     )
 
@@ -658,6 +677,7 @@ def _sample_cs_lss_process_epsilon(
     key: PRNGKeyArray,
     *,
     physical_state_dim: int = CS_PHYSICAL_STATE_DIM,
+    dtype=jnp.float32,
 ) -> jax.Array:
     """Sample the temporary physical-process epsilon bridge for C&S LSS GRUs.
 
@@ -670,15 +690,16 @@ def _sample_cs_lss_process_epsilon(
     target = trial_spec.targets["mechanics.effector.pos"].value
     batch_shape = target.shape[:-2] if target.ndim >= 3 else ()
     n_steps = int(target.shape[-2])
-    factor = _cs_lss_process_epsilon_factor(physical_state_dim=physical_state_dim)
+    factor = _cs_lss_process_epsilon_factor(physical_state_dim=physical_state_dim, dtype=dtype)
     epsilon_dim = int(factor.shape[0])
-    draws = jr.normal(key, (*batch_shape, n_steps, epsilon_dim), dtype=jnp.float64)
+    draws = jr.normal(key, (*batch_shape, n_steps, epsilon_dim), dtype=dtype)
     return draws @ factor.T
 
 
 def _cs_lss_process_epsilon_factor(
     *,
     physical_state_dim: int = CS_PHYSICAL_STATE_DIM,
+    dtype=jnp.float32,
 ) -> jax.Array:
     """Return a square-root factor for the physical process epsilon covariance."""
 
@@ -697,7 +718,8 @@ def _cs_lss_process_epsilon_factor(
     )
     physical_cov = process_cov[: int(physical_state_dim), : int(physical_state_dim)]
     eigvals, eigvecs = jnp.linalg.eigh(0.5 * (physical_cov + physical_cov.T))
-    return eigvecs @ jnp.diag(jnp.sqrt(jnp.clip(eigvals, min=0.0)))
+    factor = eigvecs @ jnp.diag(jnp.sqrt(jnp.clip(eigvals, min=0.0)))
+    return factor.astype(dtype)
 
 
 def _create_cs_lss_gru_ensemble(

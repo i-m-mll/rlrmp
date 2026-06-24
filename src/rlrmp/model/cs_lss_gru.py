@@ -60,6 +60,7 @@ CS_PROPRIOCEPTIVE_FEEDBACK_DIM = 6
 CS_TARGET_DIM = 2
 CS_H0_CONTEXT_DIM = CS_FEEDBACK_DIM
 CS_H0_ENCODER_INIT = "zero_affine"
+CS_DEFAULT_TRAINABLE_DTYPE = "float32"
 CS_LSS_GRAPH_SPEC_VERSION = "1.0.0"
 CS_LSS_DELAYED_FEEDBACK_COMPONENT = "RLRMPCsLssDelayedPositionVelocityFeedback"
 CS_LSS_TARGET_FEEDBACK_COMPONENT = "RLRMPCsLssTargetRelativeDelayedFeedback"
@@ -376,14 +377,15 @@ def build_cs_lss_gru_graph_spec(
         "population_structure": _population_structure_params(population_structure, hidden_size),
         "key": key_param,
     }
-    net_params["trainable_dtype"] = str(jnp.dtype(trainable_dtype or mechanics.A.dtype).name)
+    trainable_dtype_name = str(jnp.dtype(trainable_dtype or CS_DEFAULT_TRAINABLE_DTYPE).name)
+    net_params["trainable_dtype"] = trainable_dtype_name
     if initial_hidden_encoder:
         net_params.update(
             {
                 "h0_input_size": feedback_dim,
                 "h0_context_source": "target_relative_delayed_feedback",
                 "h0_initialization": CS_H0_ENCODER_INIT,
-                "h0_dtype": str(jnp.dtype(trainable_dtype or mechanics.A.dtype).name),
+                "h0_dtype": trainable_dtype_name,
             }
         )
 
@@ -520,6 +522,7 @@ def materialize_cs_lss_gru_graph_spec(
     _validate_cs_lss_stochastic_contract(graph_spec)
     graph_spec = resolve_registered_graph_component_migrations(graph_spec, registry)
     graph = spec_to_graph(graph_spec, registry)
+    graph = _cast_graph_floating_dtype(graph, _graph_runtime_dtype(graph_spec))
     return install_cs_lss_gru_runtime_hooks(graph)
 
 
@@ -582,9 +585,8 @@ def build_cs_lss_gru_graph(
         initial_hidden_encoder: If true, initialize the GRU hidden state on the
             first graph step from the first controller-visible feedback vector.
         trainable_dtype: Optional dtype for the controller trainable leaves
-            (hidden/readout and h0 encoder when present). If absent, use the
-            mechanics dtype so retained controller state and C&S LSS/channel
-            state updates remain dtype-compatible when x64 is enabled.
+            (hidden/readout and h0 encoder when present). Defaults to float32;
+            pass ``"float64"`` only for a deliberately explicit float64 run.
         key: PRNG key for network construction.
 
     Returns:
@@ -812,6 +814,24 @@ def _cast_trainable_component_dtype(component: Any, dtype: jnp.dtype | None) -> 
         component,
         jt.map(cast_leaf, trainable_parts),
     )
+
+
+def _graph_runtime_dtype(graph_spec: GraphSpec) -> jnp.dtype:
+    net = graph_spec.nodes.get("net")
+    if net is None:
+        return jnp.dtype(CS_DEFAULT_TRAINABLE_DTYPE)
+    return jnp.dtype(net.params.get("trainable_dtype", CS_DEFAULT_TRAINABLE_DTYPE))
+
+
+def _cast_graph_floating_dtype(graph: Graph, dtype: jnp.dtype) -> Graph:
+    arrays = eqx.filter(graph, eqx.is_array)
+
+    def cast_leaf(leaf: Any) -> Any:
+        if eqx.is_array(leaf) and jnp.issubdtype(leaf.dtype, jnp.floating):
+            return leaf.astype(dtype)
+        return leaf
+
+    return eqx.combine(jt.map(cast_leaf, arrays), graph)
 
 
 def _trainable_dtype_from_params(params: dict[str, Any]) -> jnp.dtype | None:

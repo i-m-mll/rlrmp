@@ -566,9 +566,7 @@ def test_delayed_sisu_uses_separate_budget_key_and_composite_controller_input() 
         trial,
         config_from_broad_epsilon_pgd_hps(hps.broad_epsilon_pgd_training),
     )
-    expected_radius = EFFECTIVE_020A65B_PGD_RADIUS_15CM * jnp.sqrt(
-        jnp.mean(trial.inputs["sisu"])
-    )
+    expected_radius = EFFECTIVE_020A65B_PGD_RADIUS_15CM * jnp.sqrt(jnp.mean(trial.inputs["sisu"]))
     assert radius == pytest.approx(float(expected_radius))
 
     spec = build_graph_bundle(hps).task_spec
@@ -661,9 +659,7 @@ def test_7c1f7ed_delayed_sisu_planned_rows_parse_and_dry_run_specs(tmp_path: Pat
         assert parsed.broad_epsilon_reach_scaling is False
         assert parsed.broad_epsilon_pgd_budget_schedule == BROAD_EPSILON_PGD_SISU_BUDGET_SCHEDULE
         assert parsed.broad_epsilon_pgd_sisu_condition_input == "sisu"
-        assert parsed.broad_epsilon_pgd_sisu_max_radius == pytest.approx(
-            row["max_l2_radius_15cm"]
-        )
+        assert parsed.broad_epsilon_pgd_sisu_max_radius == pytest.approx(row["max_l2_radius_15cm"])
         assert parsed.broad_epsilon_pgd_steps == 10
         assert parsed.broad_epsilon_pgd_step_size_fraction == pytest.approx(0.25)
         assert parsed.controller_lr == pytest.approx(1e-2)
@@ -682,9 +678,12 @@ def test_7c1f7ed_delayed_sisu_planned_rows_parse_and_dry_run_specs(tmp_path: Pat
         payload = write_run_spec(parsed)["run_spec"]
         assert payload["task_timing"]["extra_inputs"] == ["input", "sisu", "target", "epsilon"]
         assert payload["hps"]["broad_epsilon_pgd_training"]["movement_epoch_only"] is True
-        assert payload["hps"]["broad_epsilon_pgd_training"]["budget_schedule"][
-            "conditioning_scalar"
-        ]["input_key"] == "sisu"
+        assert (
+            payload["hps"]["broad_epsilon_pgd_training"]["budget_schedule"]["conditioning_scalar"][
+                "input_key"
+            ]
+            == "sisu"
+        )
         assert payload["hps"]["model"]["force_filter_feedback"] is True
         assert payload["hps"]["target_relative_multitarget"]["force_filter_feedback"] is True
         assert payload["hps"]["perturbation_training"]["enabled"] is True
@@ -836,7 +835,9 @@ def test_runtime_task_executes_sixty_fixed_cs_targets() -> None:
     assert targets.shape == (60, 2)
     assert jnp.allclose(trial.inits["mechanics.vector"][:4], jnp.zeros(4))
     assert trial.inputs["input"].shape == (60,)
+    assert trial.inputs["input"].dtype == jnp.dtype(jnp.float32)
     assert trial.inputs["epsilon"].shape == (60, CS_EPSILON_DIM)
+    assert trial.inputs["epsilon"].dtype == jnp.dtype(jnp.float32)
     assert jnp.allclose(trial.inputs["epsilon"][:, :4], 0.0)
     assert jnp.any(jnp.abs(trial.inputs["epsilon"]) > 0.0)
     assert jnp.allclose(targets, jnp.broadcast_to(jnp.array([0.15, 0.0]), (60, 2)))
@@ -846,7 +847,7 @@ def test_lss_process_epsilon_factor_matches_cs_physical_covariance() -> None:
     plant, _schedule = build_canonical_game()
     covariances = default_cs_noise_covariances(plant, OutputFeedbackConfig())
     expected = covariances.process[:CS_EPSILON_DIM, :CS_EPSILON_DIM]
-    factor = _cs_lss_process_epsilon_factor()
+    factor = _cs_lss_process_epsilon_factor(dtype=jnp.float64)
 
     assert factor.shape == (CS_EPSILON_DIM, CS_EPSILON_DIM)
     assert jnp.allclose(factor @ factor.T, expected, atol=1e-14)

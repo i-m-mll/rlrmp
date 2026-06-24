@@ -225,5 +225,6 @@
     ],
     "trainer_path": "setup_task_model_pair -> Feedbax TaskTrainer/train_pair -> ClosedLoopDistillationLoss"
   },
-  "umbrella_issue": "40e1911"
+  "umbrella_issue": "40e1911",
+  "user_confirmed": true
 }

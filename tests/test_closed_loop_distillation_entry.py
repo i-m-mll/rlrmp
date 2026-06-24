@@ -66,6 +66,7 @@ def test_closed_loop_distillation_builds_a378b34_contract() -> None:
     closed_loop_distillation.validate_run_spec(spec)
     assert spec["issue"] == "a378b34"
     assert spec["run_id"] == "h0_extlqg_6d_closed_loop_distillation"
+    assert spec["user_confirmed"] is False
     assert spec["artifact_output_dir"] == (
         "_artifacts/a378b34/runs/h0_extlqg_6d_closed_loop_distillation"
     )

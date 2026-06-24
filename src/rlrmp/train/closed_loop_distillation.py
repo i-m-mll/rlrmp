@@ -325,6 +325,7 @@ def build_closed_loop_distillation_spec(args: argparse.Namespace) -> dict[str, A
         "guided_jvp_issue": GUIDED_JVP_ISSUE_ID,
         "run_id": run_id,
         "seed": int(_arg_value(args, "seed", 0)),
+        "user_confirmed": bool(_arg_value(args, "user_confirmed", False)),
         "artifact_output_dir": output_dir,
         "launch_status": "implemented_no_launch_pending_user_approval",
         "no_launch_boundary": (
@@ -997,6 +998,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--full-train", action="store_true")
     parser.add_argument("--confirm-full-train", action="store_true")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--user-confirmed", action="store_true")
     return parser
 
 
