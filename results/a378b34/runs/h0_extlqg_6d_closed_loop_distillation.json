@@ -1,0 +1,164 @@
+{
+  "artifact_output_dir": "_artifacts/a378b34/runs/h0_extlqg_6d_closed_loop_distillation",
+  "base_contract": {
+    "inherit": [
+      "h0 encoder",
+      "6D force-filter feedback input",
+      "target-relative multitarget task distribution",
+      "hidden size 180",
+      "5 replicates",
+      "batch size 64",
+      "AdamW learning rate 3e-3",
+      "gradient clip 5",
+      "warmup/cosine schedule alpha 0.01",
+      "12000 train batches",
+      "no PGD adversarial inner maximizer"
+    ],
+    "issue": "020a65b",
+    "run_id": "target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64",
+    "run_spec": "results/020a65b/runs/target_relative_multitarget_h0_fullqrf_warmcos__proprio_cal_small_no_pgd_lr3e-3_clip5_b64/run.json"
+  },
+  "closed_loop_semantics": {
+    "old_guided_trainer_is_main_path": false,
+    "required_hook": "Differentiate a Feedbax rollout where the student action at t drives the plant transition and the resulting state determines later observations.",
+    "student_actions_feed_future_observations": true,
+    "student_rollout": "normal_feedbax_plant_task_surface",
+    "teacher_forced_feedback_bank_imitation": false
+  },
+  "expected_artifacts": {
+    "bulk_output_dir": "_artifacts/a378b34/runs/h0_extlqg_6d_closed_loop_distillation",
+    "checkpoints": "_artifacts/a378b34/runs/h0_extlqg_6d_closed_loop_distillation/checkpoints/",
+    "final_model": "_artifacts/a378b34/runs/h0_extlqg_6d_closed_loop_distillation/trained_model.eqx",
+    "tracked_run_spec": "results/a378b34/runs/h0_extlqg_6d_closed_loop_distillation.json",
+    "training_summary": "_artifacts/a378b34/runs/h0_extlqg_6d_closed_loop_distillation/training_summary.json"
+  },
+  "guided_jvp_issue": "c314267",
+  "issue": "a378b34",
+  "launch_status": "preflight_only_not_launched",
+  "local_acceptance_checks": [
+    "JSON run spec parses and validates with rlrmp.train.closed_loop_distillation.",
+    "Dry-run smoke checks directional-JVP code path without dense Jacobians.",
+    "--full-train fails closed until the Feedbax closed-loop hook is implemented."
+  ],
+  "loss_surface": {
+    "components": {
+      "action_force_trajectory": {
+        "enabled": true,
+        "weight": 1.0
+      },
+      "closed_loop_kinematics_trajectory": {
+        "enabled": true,
+        "weight": 1.0
+      },
+      "directional_input_output_jvp": {
+        "enabled": true,
+        "implementation": "jax.linearize plus jax.vmap over directional probes; dense Jacobian materialization is forbidden in the hot path",
+        "n_directions": 16,
+        "weight": 0.25
+      },
+      "perturbation_response_trajectory": {
+        "enabled": true,
+        "weight": 1.0
+      },
+      "task_qr_rollout": {
+        "enabled": false,
+        "weight": 0.0
+      },
+      "velocity_endpoint_settling": {
+        "enabled": true,
+        "endpoint_weight": 1.0,
+        "settling_weight": 0.5,
+        "velocity_weight": 1.0
+      }
+    },
+    "default_task_qr_rollout_loss": "off",
+    "task_qr_rollout_loss_can_be_enabled_later": true,
+    "weights": {
+      "action_force_trajectory": 1.0,
+      "directional_input_output_jvp": 0.25,
+      "endpoint": 1.0,
+      "kinematics_trajectory": 1.0,
+      "perturbation_response_trajectory": 1.0,
+      "settling": 0.5,
+      "task_qr_rollout": 0.0,
+      "velocity": 1.0
+    }
+  },
+  "no_launch_boundary": "This spec does not authorize RunPod, Modal, GPU acquisition, full training, push, or protected-branch auth.",
+  "prior_guided_issue": "9727d79",
+  "run_id": "h0_extlqg_6d_closed_loop_distillation",
+  "schema_version": "rlrmp.closed_loop_distillation.preflight.v1",
+  "seed": 0,
+  "student_contract": {
+    "batch_size": 64,
+    "broad_epsilon_pgd_training": false,
+    "controller_input_dim": 6,
+    "controller_lr": 0.003,
+    "feedback_input_basis": "target_relative_delayed_feedback_plus_force_filter",
+    "force_filter_feedback": true,
+    "gradient_clip_norm": 5.0,
+    "graph_source": "standard h0 Feedbax GraphSpec via setup_task_model_pair",
+    "hidden_size": 180,
+    "initial_hidden_encoder": true,
+    "lr_cosine_alpha": 0.01,
+    "lr_schedule": "warmup_cosine",
+    "lr_warmup_batches": 500,
+    "n_replicates": 5,
+    "n_train_batches": 12000,
+    "setup_function": "rlrmp.train.task_model.setup_task_model_pair",
+    "trainable_dtype": "float32"
+  },
+  "teacher_contract": {
+    "controller": "6d_output_feedback_extlqg",
+    "feedback_basis": "target_relative_delayed_feedback_plus_force_filter",
+    "issue": "376d023",
+    "matched_inputs": [
+      "seeds",
+      "trial specifications",
+      "initial conditions",
+      "targets",
+      "process and observation noise",
+      "perturbation schedule"
+    ],
+    "required_package_key": "extlqg_controller_gains",
+    "teacher_gains_key": "extlqg_controller_gains",
+    "teacher_package": "_artifacts/376d023/analytical_teachers/6d_output_feedback_teachers.npz"
+  },
+  "tracker_issue": "7792ef1",
+  "training_entry": {
+    "artifact_output_dir": "_artifacts/a378b34/runs/h0_extlqg_6d_closed_loop_distillation",
+    "failure_guard": "run_closed_loop_distillation_training raises ClosedLoopTrainingUnavailableError until the differentiable Feedbax closed-loop rollout hook is implemented.",
+    "full_train_status": "fail_closed_pending_feedbax_closed_loop_hook",
+    "intended_full_train_command": [
+      "env",
+      "PYTHONPATH=src",
+      "uv",
+      "run",
+      "--no-sync",
+      "python",
+      "scripts/train_closed_loop_distillation.py",
+      "--run-spec",
+      "results/a378b34/runs/h0_extlqg_6d_closed_loop_distillation.json",
+      "--full-train",
+      "--resume"
+    ],
+    "module": "rlrmp.train.closed_loop_distillation",
+    "preflight_command": [
+      "env",
+      "PYTHONPATH=src",
+      "uv",
+      "run",
+      "--no-sync",
+      "python",
+      "scripts/train_closed_loop_distillation.py",
+      "--run-spec-output",
+      "results/a378b34/runs/h0_extlqg_6d_closed_loop_distillation.json",
+      "--write-run-spec",
+      "--dry-run",
+      "--smoke-preflight"
+    ],
+    "run_spec_path": "results/a378b34/runs/h0_extlqg_6d_closed_loop_distillation.json",
+    "script": "scripts/train_closed_loop_distillation.py"
+  },
+  "umbrella_issue": "40e1911"
+}

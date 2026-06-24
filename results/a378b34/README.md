@@ -1,0 +1,1 @@
+Issue a378b34 owns the no-launch preflight for pure closed-loop extLQG distillation into the standard h0 C&S GRU. The row uses the 6D extLQG analytical teacher from issue 376d023 and the h0 force-filter feedback graph contract from issue 020a65b, but full training is intentionally fail-closed until the differentiable Feedbax closed-loop rollout hook exists.
