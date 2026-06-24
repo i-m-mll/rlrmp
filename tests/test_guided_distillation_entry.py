@@ -59,20 +59,45 @@ def _write_tiny_teacher_package(path: Path) -> None:
     )
 
 
-def test_distillation_entry_builds_9727d79_run_contract() -> None:
-    args = argparse.Namespace(
-        run_spec_output=str(guided_distillation.DEFAULT_SPEC_PATH),
-        output_dir=guided_distillation.DEFAULT_OUTPUT_DIR,
-        teacher_package=guided_distillation.DEFAULT_TEACHER_PACKAGE,
-        teacher_manifest=guided_distillation.DEFAULT_TEACHER_MANIFEST,
-        clean_action_weight=1.0,
-        perturbation_response_weight=1.0,
-        input_output_jvp_weight=0.25,
-        rollout_anchor_weight=0.25,
-        n_jvp_directions=16,
-        checkpoint=True,
-        checkpoint_interval_batches=500,
+def _default_spec_args(**overrides) -> argparse.Namespace:
+    values = {
+        "run_spec_output": str(guided_distillation.DEFAULT_SPEC_PATH),
+        "output_dir": guided_distillation.DEFAULT_OUTPUT_DIR,
+        "teacher_package": guided_distillation.DEFAULT_TEACHER_PACKAGE,
+        "teacher_manifest": guided_distillation.DEFAULT_TEACHER_MANIFEST,
+        "teacher_gains_key": guided_distillation.DEFAULT_TEACHER_GAINS_KEY,
+        "clean_action_weight": 1.0,
+        "perturbation_response_weight": 1.0,
+        "input_output_jvp_weight": 0.25,
+        "rollout_anchor_weight": 0.25,
+        "n_jvp_directions": 16,
+        "checkpoint": True,
+        "checkpoint_interval_batches": 500,
+        "trainable_dtype": guided_distillation.DEFAULT_TRAINABLE_DTYPE,
+    }
+    values.update(overrides)
+    return argparse.Namespace(**values)
+
+
+def _tiny_hps(spec: dict, *, trainable_dtype: str | None = None):
+    return guided_distillation._standard_hps_from_spec(
+        spec,
+        n_replicates=1,
+        hidden_size=6,
+        batch_size=2,
+        n_batches=1,
+        controller_lr=3e-3,
+        lr_warmup_batches=500,
+        lr_warmup_init_fraction=0.1,
+        lr_cosine_alpha=0.01,
+        gradient_clip_norm=5.0,
+        trainable_dtype=trainable_dtype
+        or spec.get("model_contract", {}).get("trainable_dtype", "float32"),
     )
+
+
+def test_distillation_entry_builds_9727d79_run_contract() -> None:
+    args = _default_spec_args()
 
     spec = guided_distillation.build_distillation_spec(args)
 
@@ -103,6 +128,8 @@ def test_distillation_entry_builds_9727d79_run_contract() -> None:
     assert spec["model_contract"]["batch_size"] == 64
     assert spec["model_contract"]["n_replicates"] == 5
     assert spec["model_contract"]["vectorized_replicates"] is True
+    assert spec["model_contract"]["trainable_dtype"] == "float32"
+    assert spec["hps"]["model"]["trainable_dtype"] == "float32"
     assert spec["model_contract"]["broad_epsilon_pgd_training"] is False
     assert spec["optimizer"]["controller_lr"] == pytest.approx(3e-3)
     assert spec["optimizer"]["gradient_clip_norm"] == pytest.approx(5.0)
@@ -117,6 +144,57 @@ def test_distillation_entry_builds_9727d79_run_contract() -> None:
     assert spec["distillation_surface"]["student_action_history_input"] is False
     assert spec["launch_ready_summary"]["requires_user_confirmation_before_billable_run"] is True
     assert "approximation" in spec["teacher_bank"]
+
+
+def test_standard_graph_distillation_trainable_leaves_default_to_float32() -> None:
+    spec = guided_distillation.build_distillation_spec(_default_spec_args())
+    hps = _tiny_hps(spec)
+    raw_model = guided_distillation._init_standard_model_ensemble(
+        hps=hps,
+        key=jax.random.PRNGKey(11),
+    )
+    where_train_spec = guided_distillation._where_train_spec(raw_model)
+
+    model = guided_distillation._enforce_trainable_float_dtype(
+        raw_model,
+        where_train_spec,
+        jnp.dtype(jnp.float32),
+        context="test standard guided-distillation model",
+    )
+
+    leaves = guided_distillation._trainable_float_leaves(model, where_train_spec)
+    assert leaves
+    assert {leaf.dtype for leaf in leaves} == {jnp.dtype(jnp.float32)}
+    assert model.nodes["net"].net.hidden.weight_ih.dtype == jnp.dtype(jnp.float32)
+    assert model.nodes["net"].net.readout.weight.dtype == jnp.dtype(jnp.float32)
+    assert model.nodes["net"].h0_encoder.weight.dtype == jnp.dtype(jnp.float32)
+
+
+def test_standard_graph_distillation_preserves_explicit_float64_request() -> None:
+    if not jax.config.jax_enable_x64:
+        pytest.skip("explicit float64 trainable dtype requires jax_enable_x64")
+    spec = guided_distillation.build_distillation_spec(
+        _default_spec_args(trainable_dtype="float64")
+    )
+    hps = _tiny_hps(spec, trainable_dtype="float64")
+    raw_model = guided_distillation._init_standard_model_ensemble(
+        hps=hps,
+        key=jax.random.PRNGKey(12),
+    )
+    where_train_spec = guided_distillation._where_train_spec(raw_model)
+
+    model = guided_distillation._enforce_trainable_float_dtype(
+        raw_model,
+        where_train_spec,
+        jnp.dtype(jnp.float64),
+        context="test float64 guided-distillation model",
+    )
+
+    leaves = guided_distillation._trainable_float_leaves(model, where_train_spec)
+    assert leaves
+    assert {leaf.dtype for leaf in leaves} == {jnp.dtype(jnp.float64)}
+    assert spec["model_contract"]["trainable_dtype"] == "float64"
+    assert spec["hps"]["model"]["trainable_dtype"] == "float64"
 
 
 def test_corrected_distillation_default_paths_do_not_reuse_legacy_run() -> None:
@@ -265,6 +343,7 @@ def test_distillation_cli_smoke_train_runs_real_trainer(
     assert summary["n_replicates"] == 2
     assert summary["run_id"] == "h0_extlqg_6d_standard_graph_distillation"
     assert summary["completed_batches"] == 2
+    assert summary["trainable_dtype"] == "float32"
     assert summary["checkpointing"]["enabled"] is True
     assert summary["vectorized_replicates"] is True
     assert len(histories) == 2
@@ -279,6 +358,7 @@ def test_distillation_cli_smoke_train_runs_real_trainer(
     assert spec["teacher_bank"]["teacher_gains_key"] == "extlqg_controller_gains"
     assert spec["model_contract"]["controller_input_dim"] == 6
     assert spec["model_contract"]["student_action_history_input"] is False
+    assert spec["model_contract"]["trainable_dtype"] == "float32"
     hps = guided_distillation._standard_hps_from_spec(
         spec,
         n_replicates=2,
@@ -290,6 +370,7 @@ def test_distillation_cli_smoke_train_runs_real_trainer(
         lr_warmup_init_fraction=0.1,
         lr_cosine_alpha=0.01,
         gradient_clip_norm=5.0,
+        trainable_dtype="float32",
     )
     model, _hyperparameters = load_with_hyperparameters(
         output_dir / "trained_model.eqx",

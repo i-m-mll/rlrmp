@@ -747,6 +747,7 @@ def _create_cs_lss_gru_ensemble(
             force_filter_feedback=target_training.force_filter_feedback,
             initial_hidden_encoder=bool(getattr(hps.model, "initial_hidden_encoder", False)),
             no_integrator_state=no_integrator_state,
+            trainable_dtype=getattr(hps.model, "trainable_dtype", None),
             key=key_one,
         )
 

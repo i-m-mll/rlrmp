@@ -73,6 +73,20 @@ def _setup_task_model_pair(hps: Any, *, key: Any) -> Any:
     return setup_task_model_pair(hps, key=key)
 
 
+def _linear_weight(layer: Any) -> jax.Array:
+    """Return the underlying linear weight for plain or masked readout layers."""
+
+    linear = getattr(layer, "linear", layer)
+    return linear.weight
+
+
+def _linear_bias(layer: Any) -> jax.Array:
+    """Return the underlying linear bias for plain or masked readout layers."""
+
+    linear = getattr(layer, "linear", layer)
+    return linear.bias
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-spec", default=str(DEFAULT_SPEC_PATH))
@@ -105,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
     n_replicates = int(hps.model.n_replicates)
     hidden_size = int(hps.model.hidden_size)
     feedback_dim = int(standard_template.nodes["net"].net.hidden.weight_ih.shape[-1])
-    action_dim = int(standard_template.nodes["net"].net.readout.linear.weight.shape[-2])
+    action_dim = int(_linear_weight(standard_template.nodes["net"].net.readout).shape[-2])
     legacy_template = eqx.filter_vmap(
         lambda key: LegacyGuidedDistillationPolicy(
             feedback_dim=feedback_dim,
@@ -188,8 +202,8 @@ def migrate_one_model(
             model.nodes["net"].net.hidden.weight_hh,
             model.nodes["net"].net.hidden.bias,
             model.nodes["net"].net.hidden.bias_n,
-            model.nodes["net"].net.readout.linear.weight,
-            model.nodes["net"].net.readout.linear.bias,
+            _linear_weight(model.nodes["net"].net.readout),
+            _linear_bias(model.nodes["net"].net.readout),
         ),
         standard,
         replace=(
@@ -204,9 +218,9 @@ def migrate_one_model(
             _like(legacy_model.cell.bias_n, standard.nodes["net"].net.hidden.bias_n),
             _like(
                 legacy_model.readout.weight,
-                standard.nodes["net"].net.readout.linear.weight,
+                _linear_weight(standard.nodes["net"].net.readout),
             ),
-            _like(legacy_model.readout.bias, standard.nodes["net"].net.readout.linear.bias),
+            _like(legacy_model.readout.bias, _linear_bias(standard.nodes["net"].net.readout)),
         ),
     )
 
